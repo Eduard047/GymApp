@@ -1,0 +1,112 @@
+﻿<resources>
+    <string name="app_name">Трекер тренувань</string>
+
+    <string name="tab_workouts">Тренування</string>
+    <string name="tab_exercises">Вправи</string>
+    <string name="tab_progress">Прогрес</string>
+
+    <string name="title_workouts">Тренування</string>
+    <string name="title_add_workout">Нове тренування</string>
+    <string name="title_workout_detail">Деталі тренування</string>
+    <string name="title_exercises">Вправи</string>
+    <string name="title_progress">Прогрес</string>
+
+    <string name="action_add_workout">Додати тренування</string>
+    <string name="action_add_exercise">Додати вправу</string>
+    <string name="action_add_set">Додати підхід</string>
+    <string name="action_add_set_last_weight">Швидко + Остання</string>
+    <string name="action_save_workout">Зберегти тренування</string>
+    <string name="action_delete">Видалити</string>
+    <string name="action_edit">Редагувати</string>
+    <string name="action_undo">Скасувати</string>
+    <string name="action_cancel">Скасувати</string>
+    <string name="action_save">Зберегти</string>
+    <string name="action_current_month">Поточний</string>
+    <string name="action_repeat_last_workout">Повторити попереднє тренування</string>
+    <string name="action_apply_last_weight">Взяти останню вагу</string>
+    <string name="action_timer_90">Старт 90с</string>
+    <string name="action_timer_180">Старт 180с</string>
+    <string name="action_timer_stop">Стоп</string>
+    <string name="action_stop_timer">Зупинити таймер</string>
+
+    <string name="label_note">Нотатка</string>
+    <string name="hint_note">Нотатка до сесії</string>
+    <string name="label_workout_date">Дата</string>
+    <string name="label_exercise">Вправа</string>
+    <string name="label_select_exercise">Оберіть вправу</string>
+    <string name="label_last_weight">Остання: %1$.1f кг</string>
+    <string name="label_set">Підхід %1$d</string>
+    <string name="label_set_short">Підхід</string>
+    <string name="label_weight_kg">Вага (кг)</string>
+    <string name="hint_optional">Необовʼязково</string>
+    <string name="label_reps">Повтори</string>
+    <string name="label_exercise_name">Назва вправи</string>
+    <string name="hint_exercise_name">наприклад, Жим лежачи</string>
+    <string name="label_rest_timer">Таймер відпочинку</string>
+    <string name="label_timer_ready">Готово</string>
+    <string name="label_personal_record">Новий PR</string>
+    <string name="timer_notification_running_title">Таймер відпочинку</string>
+    <string name="timer_notification_running_text">Залишилось: %1$s</string>
+    <string name="timer_notification_finished_title">Відпочинок завершено</string>
+    <string name="timer_notification_finished_text">Натисніть, щоб повернутися до тренування.</string>
+    <string name="timer_channel_running_name">Таймер працює</string>
+    <string name="timer_channel_running_description">Поточний відлік відпочинку.</string>
+    <string name="timer_channel_finished_name">Сигнал таймера</string>
+    <string name="timer_channel_finished_description">Звук і спливаюче сповіщення після завершення таймера.</string>
+
+    <string name="exercise_block_title">Вправа %1$d</string>
+
+    <string name="empty_workouts">У цьому місяці тренувань немає.</string>
+    <string name="empty_exercises">Вправ поки немає.</string>
+    <string name="empty_progress">У цьому місяці історії немає.</string>
+    <string name="empty_detail">Тренування не знайдено.</string>
+
+    <string name="message_validation_error">Заповніть усі обрані вправи та підходи.</string>
+    <string name="message_set_deleted">Підхід видалено</string>
+    <string name="message_invalid_set_input">Введіть коректні повтори та необовʼязкову вагу.</string>
+    <string name="message_exercise_error">Не вдалося зберегти вправу. Назва може вже існувати.</string>
+
+    <string name="stats_exercises">Вправ: %1$d</string>
+    <string name="stats_sets">Підходів: %1$d</string>
+    <string name="stats_volume">Обсяг: %1$.0f</string>
+
+    <string name="dashboard_title">Підсумок місяця</string>
+    <string name="dashboard_subtitle">Відстежуй регулярність, обсяг і інтенсивність одним поглядом.</string>
+    <string name="kpi_workouts">Тренування</string>
+    <string name="kpi_streak">Серія</string>
+    <string name="kpi_streak_value">%1$d дн</string>
+    <string name="kpi_total_volume">Загальний обсяг</string>
+    <string name="kpi_volume_value">%1$.0f</string>
+    <string name="kpi_avg_intensity">Середнє / підхід</string>
+    <string name="kpi_avg_intensity_value">%1$.1f</string>
+
+    <string name="progress_summary_title">Зведення прогресу</string>
+    <string name="progress_chart_max_weight">Тренд максимальної ваги</string>
+    <string name="progress_chart_volume">Обсяг по сесіях</string>
+    <string name="progress_stat_best_weight">Найкраща вага</string>
+    <string name="progress_stat_avg_weight">Середній максимум</string>
+    <string name="progress_stat_total_reps">Загалом повторів</string>
+    <string name="progress_weight_value">%1$.1f кг</string>
+    <string name="progress_reps_value">%1$d повт</string>
+    <string name="chart_no_data">Додайте підходи, щоб побачити графік.</string>
+
+    <string name="language_button">Мова</string>
+    <string name="language_english">EN</string>
+    <string name="language_ukrainian">UKR</string>
+
+    <string name="session_item_title">Тренування %1$s</string>
+    <string name="details_note">Нотатка: %1$s</string>
+    <string name="details_no_note">Без нотатки</string>
+
+    <string name="dialog_edit_set_title">Редагувати підхід</string>
+
+    <string name="cd_language">Змінити мову</string>
+    <string name="cd_add_workout">Додати тренування</string>
+    <string name="cd_delete">Видалити</string>
+    <string name="cd_edit">Редагувати</string>
+    <string name="cd_remove_set">Видалити підхід</string>
+    <string name="cd_remove_exercise">Видалити вправу</string>
+    <string name="cd_prev_month">Попередній місяць</string>
+    <string name="cd_next_month">Наступний місяць</string>
+    <string name="cd_back">Назад</string>
+</resources>

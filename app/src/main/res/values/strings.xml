@@ -1,0 +1,112 @@
+﻿<resources>
+    <string name="app_name">Gym Workout Tracker</string>
+
+    <string name="tab_workouts">Workouts</string>
+    <string name="tab_exercises">Exercises</string>
+    <string name="tab_progress">Progress</string>
+
+    <string name="title_workouts">Workouts</string>
+    <string name="title_add_workout">Add Workout</string>
+    <string name="title_workout_detail">Workout Details</string>
+    <string name="title_exercises">Exercises</string>
+    <string name="title_progress">Progress</string>
+
+    <string name="action_add_workout">Add Workout</string>
+    <string name="action_add_exercise">Add Exercise</string>
+    <string name="action_add_set">Add Set</string>
+    <string name="action_add_set_last_weight">Quick + Last</string>
+    <string name="action_save_workout">Save Workout</string>
+    <string name="action_delete">Delete</string>
+    <string name="action_edit">Edit</string>
+    <string name="action_undo">Undo</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_save">Save</string>
+    <string name="action_current_month">Current</string>
+    <string name="action_repeat_last_workout">Repeat Last Workout</string>
+    <string name="action_apply_last_weight">Use Last Weight</string>
+    <string name="action_timer_90">Start 90s</string>
+    <string name="action_timer_180">Start 180s</string>
+    <string name="action_timer_stop">Stop</string>
+    <string name="action_stop_timer">Stop timer</string>
+
+    <string name="label_note">Note</string>
+    <string name="hint_note">Session note</string>
+    <string name="label_workout_date">Date</string>
+    <string name="label_exercise">Exercise</string>
+    <string name="label_select_exercise">Select exercise</string>
+    <string name="label_last_weight">Last: %1$.1f kg</string>
+    <string name="label_set">Set %1$d</string>
+    <string name="label_set_short">Set</string>
+    <string name="label_weight_kg">Weight (kg)</string>
+    <string name="hint_optional">Optional</string>
+    <string name="label_reps">Reps</string>
+    <string name="label_exercise_name">Exercise name</string>
+    <string name="hint_exercise_name">e.g. Bench Press</string>
+    <string name="label_rest_timer">Rest Timer</string>
+    <string name="label_timer_ready">Ready</string>
+    <string name="label_personal_record">New PR</string>
+    <string name="timer_notification_running_title">Rest timer</string>
+    <string name="timer_notification_running_text">%1$s remaining</string>
+    <string name="timer_notification_finished_title">Rest timer done</string>
+    <string name="timer_notification_finished_text">Tap to return to workout.</string>
+    <string name="timer_channel_running_name">Rest timer running</string>
+    <string name="timer_channel_running_description">Ongoing rest countdown.</string>
+    <string name="timer_channel_finished_name">Rest timer alert</string>
+    <string name="timer_channel_finished_description">Sound and popup when rest timer completes.</string>
+
+    <string name="exercise_block_title">Exercise %1$d</string>
+
+    <string name="empty_workouts">No workouts in this month.</string>
+    <string name="empty_exercises">No exercises yet.</string>
+    <string name="empty_progress">No history in this month.</string>
+    <string name="empty_detail">Workout not found.</string>
+
+    <string name="message_validation_error">Please fill all selected exercises and sets.</string>
+    <string name="message_set_deleted">Set deleted</string>
+    <string name="message_invalid_set_input">Enter valid reps and optional weight.</string>
+    <string name="message_exercise_error">Unable to save exercise. Name may already exist.</string>
+
+    <string name="stats_exercises">Exercises: %1$d</string>
+    <string name="stats_sets">Sets: %1$d</string>
+    <string name="stats_volume">Volume: %1$.0f</string>
+
+    <string name="dashboard_title">Monthly Snapshot</string>
+    <string name="dashboard_subtitle">Track consistency, output and intensity at a glance.</string>
+    <string name="kpi_workouts">Workouts</string>
+    <string name="kpi_streak">Streak</string>
+    <string name="kpi_streak_value">%1$d d</string>
+    <string name="kpi_total_volume">Total Volume</string>
+    <string name="kpi_volume_value">%1$.0f</string>
+    <string name="kpi_avg_intensity">Avg / Set</string>
+    <string name="kpi_avg_intensity_value">%1$.1f</string>
+
+    <string name="progress_summary_title">Progress Summary</string>
+    <string name="progress_chart_max_weight">Max Weight Trend</string>
+    <string name="progress_chart_volume">Volume by Session</string>
+    <string name="progress_stat_best_weight">Best Weight</string>
+    <string name="progress_stat_avg_weight">Average Max</string>
+    <string name="progress_stat_total_reps">Total Reps</string>
+    <string name="progress_weight_value">%1$.1f kg</string>
+    <string name="progress_reps_value">%1$d reps</string>
+    <string name="chart_no_data">Add sets to see chart.</string>
+
+    <string name="language_button">Language</string>
+    <string name="language_english">EN</string>
+    <string name="language_ukrainian">UKR</string>
+
+    <string name="session_item_title">Workout %1$s</string>
+    <string name="details_note">Note: %1$s</string>
+    <string name="details_no_note">No note</string>
+
+    <string name="dialog_edit_set_title">Edit Set</string>
+
+    <string name="cd_language">Change language</string>
+    <string name="cd_add_workout">Add workout</string>
+    <string name="cd_delete">Delete</string>
+    <string name="cd_edit">Edit</string>
+    <string name="cd_remove_set">Remove set</string>
+    <string name="cd_remove_exercise">Remove exercise</string>
+    <string name="cd_prev_month">Previous month</string>
+    <string name="cd_next_month">Next month</string>
+    <string name="cd_back">Back</string>
+</resources>

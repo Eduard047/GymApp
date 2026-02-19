@@ -1,0 +1,43 @@
+*.iml
+.gradle
+/local.properties
+/.idea/
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+
+# Android Studio / IntelliJ
+/.idea/deploymentTargetSelector.xml
+/.idea/deviceManager.xml
+/.idea/compiler.xml
+/.idea/AndroidProjectSystem.xml
+/.idea/misc.xml
+/.idea/vcs.xml
+/.kotlin/
+
+# APK / AAB artifacts
+*.apk
+*.aab
+/app-debug.apk
+
+# Signing / secrets
+*.jks
+*.keystore
+keystore.properties
+
+# Logs / temp
+*.log
+*.tmp
+*.temp
+
+# Local helper files
+/CON
