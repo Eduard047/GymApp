@@ -24,7 +24,10 @@
     <string name="action_current_month">Поточний</string>
     <string name="action_repeat_last_workout">Повторити попереднє тренування</string>
     <string name="action_apply_last_weight">Взяти останню вагу</string>
+    <string name="action_add_to_workout">Додати в тренування</string>
+    <string name="action_timer_60">Старт 60с</string>
     <string name="action_timer_90">Старт 90с</string>
+    <string name="action_timer_120">Старт 120с</string>
     <string name="action_timer_180">Старт 180с</string>
     <string name="action_timer_stop">Стоп</string>
     <string name="action_stop_timer">Зупинити таймер</string>
@@ -43,8 +46,16 @@
     <string name="label_exercise_name">Назва вправи</string>
     <string name="hint_exercise_name">наприклад, Жим лежачи</string>
     <string name="label_rest_timer">Таймер відпочинку</string>
+    <string name="label_rest_timer_shared">Спільний таймер відпочинку</string>
+    <string name="label_rest_timer_exercise">Таймер для вправи</string>
+    <string name="label_exercise_rest_remaining">Відпочинок %1$s</string>
+    <string name="label_timer_preset_60">60с</string>
+    <string name="label_timer_preset_90">90с</string>
+    <string name="label_timer_preset_180">180с</string>
     <string name="label_timer_ready">Готово</string>
     <string name="label_personal_record">Новий PR</string>
+    <string name="title_add_exercise_to_workout_section">Додати вправу в це тренування</string>
+    <string name="label_all_exercises_added">Усі збережені вправи вже додані в це тренування.</string>
     <string name="timer_notification_running_title">Таймер відпочинку</string>
     <string name="timer_notification_running_text">Залишилось: %1$s</string>
     <string name="timer_notification_finished_title">Відпочинок завершено</string>
@@ -81,14 +92,29 @@
     <string name="kpi_avg_intensity_value">%1$.1f</string>
 
     <string name="progress_summary_title">Зведення прогресу</string>
+    <string name="progress_history_title">Історія тренувань</string>
+    <string name="progress_recent_sessions_title">Останні сесії</string>
+    <string name="progress_recent_sessions_subtitle">Список оновлюється для вибраного місяця і вправи.</string>
     <string name="progress_chart_max_weight">Тренд максимальної ваги</string>
     <string name="progress_chart_volume">Обсяг по сесіях</string>
+    <string name="progress_stat_sessions">Сесії</string>
+    <string name="progress_stat_total_sets">Підходи</string>
     <string name="progress_stat_best_weight">Найкраща вага</string>
     <string name="progress_stat_avg_weight">Середній максимум</string>
     <string name="progress_stat_total_reps">Загалом повторів</string>
+    <string name="progress_stat_total_volume">Загальний обсяг</string>
     <string name="progress_weight_value">%1$.1f кг</string>
     <string name="progress_reps_value">%1$d повт</string>
+    <string name="progress_session_max_weight_inline">Макс %1$.1f кг</string>
+    <string name="progress_session_volume_inline">Обсяг %1$s</string>
     <string name="chart_no_data">Додайте підходи, щоб побачити графік.</string>
+
+    <string name="exercise_history_sessions">Сесії</string>
+    <string name="exercise_history_sets">Підходи</string>
+    <string name="exercise_history_volume">Обсяг</string>
+    <string name="exercise_history_empty">Для цієї вправи ще немає історії.</string>
+    <string name="exercise_history_sets_inline">Підходів: %1$d</string>
+    <string name="exercise_history_volume_inline">Обсяг: %1$s</string>
 
     <string name="language_button">Мова</string>
     <string name="language_english">EN</string>

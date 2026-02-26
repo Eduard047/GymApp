@@ -1,6 +1,5 @@
 ﻿package com.example.gymapp.ui.screens
 
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -8,7 +7,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -19,6 +17,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SnackbarHost
@@ -32,20 +31,22 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
+import com.example.gymapp.data.entity.ExerciseHistoryEntry
 import com.example.gymapp.ui.viewmodel.ExerciseProgressPoint
 import com.example.gymapp.ui.viewmodel.ExerciseProgressUiState
 import com.example.gymapp.util.DateTimeUtils
 import kotlinx.coroutines.launch
+import java.util.Locale
+
+private data class ProgressSessionHistoryGroup(
+    val sessionId: Long,
+    val sessionDate: Long,
+    val sets: List<ExerciseHistoryEntry>
+)
 
 @Composable
 fun ExerciseProgressScreen(
@@ -61,9 +62,21 @@ fun ExerciseProgressScreen(
     val coroutineScope = rememberCoroutineScope()
     val setDeletedMessage = stringResource(R.string.message_set_deleted)
 
-    Box(
-        modifier = modifier.fillMaxSize()
-    ) {
+    val sessionGroups = remember(uiState.history) {
+        uiState.history
+            .groupBy { it.sessionId }
+            .values
+            .map { entries ->
+                ProgressSessionHistoryGroup(
+                    sessionId = entries.first().sessionId,
+                    sessionDate = entries.first().sessionDate,
+                    sets = entries.sortedBy { it.setOrderIndex }
+                )
+            }
+            .sortedByDescending { it.sessionDate }
+    }
+
+    Box(modifier = modifier.fillMaxSize()) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(
@@ -92,11 +105,22 @@ fun ExerciseProgressScreen(
                 )
             }
 
-            item { ProgressSummaryCard(uiState) }
-            item { MaxWeightLineChartCard(uiState.progressPoints) }
-            item { VolumeBarChartCard(uiState.progressPoints) }
+            item {
+                ProgressSummaryCard(
+                    uiState = uiState,
+                    sessionCount = sessionGroups.size,
+                    setCount = uiState.history.size,
+                    totalVolume = uiState.history.sumOf { it.weight * it.reps }
+                )
+            }
 
-            if (uiState.history.isEmpty()) {
+            item {
+                ProgressTrendCard(
+                    points = uiState.progressPoints
+                )
+            }
+
+            if (sessionGroups.isEmpty()) {
                 item {
                     Card(modifier = Modifier.fillMaxWidth()) {
                         Text(
@@ -107,56 +131,28 @@ fun ExerciseProgressScreen(
                     }
                 }
             } else {
+                item {
+                    Text(
+                        text = stringResource(R.string.progress_history_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
+                }
+
                 items(
-                    items = uiState.history,
-                    key = { it.setId }
-                ) { historyEntry ->
-                    Card(modifier = Modifier.fillMaxWidth()) {
-                        Column(
-                            modifier = Modifier.padding(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Text(
-                                text = DateTimeUtils.formatDate(historyEntry.sessionDate),
-                                style = MaterialTheme.typography.titleSmall
-                            )
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Text(
-                                    text = stringResource(R.string.progress_weight_value, historyEntry.weight),
-                                    modifier = Modifier.weight(1f),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Text(
-                                    text = stringResource(R.string.progress_reps_value, historyEntry.reps),
-                                    modifier = Modifier.weight(1f),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                IconButton(
-                                    onClick = {
-                                        onDeleteHistoryEntry(historyEntry.setId)
-                                        coroutineScope.launch {
-                                            snackbarHostState.showSnackbar(
-                                                message = setDeletedMessage
-                                            )
-                                        }
-                                    }
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Delete,
-                                        contentDescription = stringResource(R.string.cd_delete)
-                                    )
-                                }
+                    items = sessionGroups,
+                    key = { it.sessionId }
+                ) { sessionGroup ->
+                    ProgressSessionHistoryCard(
+                        sessionGroup = sessionGroup,
+                        onDeleteHistoryEntry = { setId ->
+                            onDeleteHistoryEntry(setId)
+                            coroutineScope.launch {
+                                snackbarHostState.showSnackbar(message = setDeletedMessage)
                             }
                         }
-                    }
+                    )
                 }
             }
         }
@@ -218,18 +214,45 @@ private fun ExerciseProgressSelector(
 }
 
 @Composable
-private fun ProgressSummaryCard(uiState: ExerciseProgressUiState) {
+private fun ProgressSummaryCard(
+    uiState: ExerciseProgressUiState,
+    sessionCount: Int,
+    setCount: Int,
+    totalVolume: Double
+) {
     val totalReps = uiState.progressPoints.sumOf { it.totalReps }
 
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Text(
                 text = stringResource(R.string.progress_summary_title),
                 style = MaterialTheme.typography.titleSmall
             )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                ProgressMetric(
+                    label = stringResource(R.string.progress_stat_sessions),
+                    value = sessionCount.toString(),
+                    modifier = Modifier.weight(1f)
+                )
+                ProgressMetric(
+                    label = stringResource(R.string.progress_stat_total_sets),
+                    value = setCount.toString(),
+                    modifier = Modifier.weight(1f)
+                )
+                ProgressMetric(
+                    label = stringResource(R.string.progress_stat_total_reps),
+                    value = totalReps.toString(),
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -249,8 +272,8 @@ private fun ProgressSummaryCard(uiState: ExerciseProgressUiState) {
                     modifier = Modifier.weight(1f)
                 )
                 ProgressMetric(
-                    label = stringResource(R.string.progress_stat_total_reps),
-                    value = totalReps.toString(),
+                    label = stringResource(R.string.progress_stat_total_volume),
+                    value = String.format(Locale.getDefault(), "%.0f", totalVolume),
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -284,18 +307,20 @@ private fun ProgressMetric(
 }
 
 @Composable
-private fun MaxWeightLineChartCard(points: List<ExerciseProgressPoint>) {
-    val lineColor = MaterialTheme.colorScheme.primary
-    val gridColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
-
+private fun ProgressTrendCard(points: List<ExerciseProgressPoint>) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(
-                text = stringResource(R.string.progress_chart_max_weight),
+                text = stringResource(R.string.progress_recent_sessions_title),
                 style = MaterialTheme.typography.titleSmall
+            )
+            Text(
+                text = stringResource(R.string.progress_recent_sessions_subtitle),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
             if (points.isEmpty()) {
@@ -304,53 +329,40 @@ private fun MaxWeightLineChartCard(points: List<ExerciseProgressPoint>) {
                     style = MaterialTheme.typography.bodyMedium
                 )
             } else {
-                Canvas(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(170.dp)
-                        .padding(top = 4.dp)
-                ) {
-                    val maxValue = (points.maxOfOrNull { it.maxWeight } ?: 1.0).toFloat().coerceAtLeast(1f)
-                    val chartHeight = size.height
-                    val chartWidth = size.width
-                    val horizontalStep = if (points.size <= 1) 0f else chartWidth / (points.size - 1)
+                val recentPoints = points.sortedByDescending { it.sessionDate }.take(8)
+                val maxVolume = (recentPoints.maxOfOrNull { it.totalVolume } ?: 1.0).coerceAtLeast(1.0)
 
-                    repeat(4) { index ->
-                        val y = chartHeight * index / 3f
-                        drawLine(
-                            color = gridColor,
-                            start = Offset(0f, y),
-                            end = Offset(chartWidth, y),
-                            strokeWidth = 2f
-                        )
-                    }
-
-                    val path = Path()
-                    points.forEachIndexed { index, point ->
-                        val x = index * horizontalStep
-                        val normalized = (point.maxWeight.toFloat() / maxValue).coerceIn(0f, 1f)
-                        val y = chartHeight - (normalized * chartHeight)
-                        if (index == 0) {
-                            path.moveTo(x, y)
-                        } else {
-                            path.lineTo(x, y)
+                recentPoints.forEach { point ->
+                    val progress = (point.totalVolume / maxVolume).toFloat().coerceIn(0f, 1f)
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = DateTimeUtils.formatDate(point.sessionDate),
+                                modifier = Modifier.weight(1f),
+                                style = MaterialTheme.typography.bodyMedium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = stringResource(R.string.progress_session_max_weight_inline, point.maxWeight),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                text = stringResource(
+                                    R.string.progress_session_volume_inline,
+                                    String.format(Locale.getDefault(), "%.0f", point.totalVolume)
+                                ),
+                                style = MaterialTheme.typography.bodySmall
+                            )
                         }
-                    }
-
-                    drawPath(
-                        path = path,
-                        color = lineColor,
-                        style = Stroke(width = 6f, cap = StrokeCap.Round)
-                    )
-
-                    points.forEachIndexed { index, point ->
-                        val x = index * horizontalStep
-                        val normalized = (point.maxWeight.toFloat() / maxValue).coerceIn(0f, 1f)
-                        val y = chartHeight - (normalized * chartHeight)
-                        drawCircle(
-                            color = lineColor,
-                            radius = 7f,
-                            center = Offset(x, y)
+                        LinearProgressIndicator(
+                            progress = { progress },
+                            modifier = Modifier.fillMaxWidth()
                         )
                     }
                 }
@@ -360,8 +372,12 @@ private fun MaxWeightLineChartCard(points: List<ExerciseProgressPoint>) {
 }
 
 @Composable
-private fun VolumeBarChartCard(points: List<ExerciseProgressPoint>) {
-    val barColor = MaterialTheme.colorScheme.secondary
+private fun ProgressSessionHistoryCard(
+    sessionGroup: ProgressSessionHistoryGroup,
+    onDeleteHistoryEntry: (Long) -> Unit
+) {
+    val totalVolume = sessionGroup.sets.sumOf { it.weight * it.reps }
+    val totalReps = sessionGroup.sets.sumOf { it.reps }
 
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -369,34 +385,87 @@ private fun VolumeBarChartCard(points: List<ExerciseProgressPoint>) {
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(
-                text = stringResource(R.string.progress_chart_volume),
+                text = DateTimeUtils.formatDate(sessionGroup.sessionDate),
                 style = MaterialTheme.typography.titleSmall
             )
-
-            if (points.isEmpty()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 Text(
-                    text = stringResource(R.string.chart_no_data),
-                    style = MaterialTheme.typography.bodyMedium
+                    text = stringResource(R.string.stats_sets, sessionGroup.sets.size),
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.weight(1f)
                 )
-            } else {
-                Canvas(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(155.dp)
-                ) {
-                    val maxValue = (points.maxOfOrNull { it.totalVolume } ?: 1.0).toFloat().coerceAtLeast(1f)
-                    val slotWidth = size.width / points.size
-                    val barWidth = slotWidth * 0.62f
+                Text(
+                    text = stringResource(R.string.progress_reps_value, totalReps),
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = stringResource(R.string.stats_volume, totalVolume),
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
 
-                    points.forEachIndexed { index, point ->
-                        val normalized = (point.totalVolume.toFloat() / maxValue).coerceIn(0f, 1f)
-                        val barHeight = normalized * size.height
-                        val left = index * slotWidth + (slotWidth - barWidth) / 2f
-                        drawRoundRect(
-                            color = barColor,
-                            topLeft = Offset(left, size.height - barHeight),
-                            size = Size(barWidth, barHeight),
-                            cornerRadius = CornerRadius(10f, 10f)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.label_set_short),
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.labelLarge
+                )
+                Text(
+                    text = stringResource(R.string.label_weight_kg),
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.labelLarge
+                )
+                Text(
+                    text = stringResource(R.string.label_reps),
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.labelLarge
+                )
+                Text(
+                    text = "",
+                    modifier = Modifier.weight(0.55f)
+                )
+            }
+
+            sessionGroup.sets.forEachIndexed { setIndex, set ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = stringResource(R.string.label_set, setIndex + 1),
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Text(
+                        text = String.format(Locale.getDefault(), "%.1f", set.weight),
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Text(
+                        text = set.reps.toString(),
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    IconButton(
+                        onClick = { onDeleteHistoryEntry(set.setId) },
+                        modifier = Modifier.weight(0.55f)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = stringResource(R.string.cd_delete)
                         )
                     }
                 }

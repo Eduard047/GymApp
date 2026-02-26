@@ -6,35 +6,57 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.gymapp.data.entity.ExerciseEntity
+import com.example.gymapp.data.entity.ExerciseHistoryEntry
 import com.example.gymapp.data.repository.GymRepository
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 data class ExerciseListUiState(
     val exercises: List<ExerciseEntity> = emptyList(),
     val newExerciseName: String = "",
-    val hasInputError: Boolean = false
+    val hasInputError: Boolean = false,
+    val selectedExerciseId: Long? = null,
+    val selectedExerciseName: String? = null,
+    val selectedExerciseHistory: List<ExerciseHistoryEntry> = emptyList()
 )
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class ExerciseListViewModel(
     private val repository: GymRepository
 ) : ViewModel() {
     private val newExerciseName = MutableStateFlow("")
     private val hasInputError = MutableStateFlow(false)
+    private val selectedExerciseId = MutableStateFlow<Long?>(null)
+
+    private val selectedExerciseHistory = selectedExerciseId.flatMapLatest { exerciseId ->
+        if (exerciseId == null) {
+            flowOf(emptyList())
+        } else {
+            repository.observeExerciseHistory(exerciseId)
+        }
+    }
 
     val uiState: StateFlow<ExerciseListUiState> = combine(
         repository.observeExercises(),
         newExerciseName,
-        hasInputError
-    ) { exercises, name, error ->
+        hasInputError,
+        selectedExerciseId,
+        selectedExerciseHistory
+    ) { exercises, name, error, selectedId, history ->
         ExerciseListUiState(
             exercises = exercises,
             newExerciseName = name,
-            hasInputError = error
+            hasInputError = error,
+            selectedExerciseId = selectedId,
+            selectedExerciseName = exercises.firstOrNull { it.id == selectedId }?.name,
+            selectedExerciseHistory = history
         )
     }.stateIn(
         scope = viewModelScope,
@@ -70,6 +92,14 @@ class ExerciseListViewModel(
         viewModelScope.launch {
             repository.deleteExercise(exercise)
         }
+    }
+
+    fun openExerciseHistory(exerciseId: Long) {
+        selectedExerciseId.value = exerciseId
+    }
+
+    fun closeExerciseHistory() {
+        selectedExerciseId.value = null
     }
 
     companion object {

@@ -24,7 +24,10 @@
     <string name="action_current_month">Current</string>
     <string name="action_repeat_last_workout">Repeat Last Workout</string>
     <string name="action_apply_last_weight">Use Last Weight</string>
+    <string name="action_add_to_workout">Add to Workout</string>
+    <string name="action_timer_60">Start 60s</string>
     <string name="action_timer_90">Start 90s</string>
+    <string name="action_timer_120">Start 120s</string>
     <string name="action_timer_180">Start 180s</string>
     <string name="action_timer_stop">Stop</string>
     <string name="action_stop_timer">Stop timer</string>
@@ -43,8 +46,16 @@
     <string name="label_exercise_name">Exercise name</string>
     <string name="hint_exercise_name">e.g. Bench Press</string>
     <string name="label_rest_timer">Rest Timer</string>
+    <string name="label_rest_timer_shared">Shared Rest Timer</string>
+    <string name="label_rest_timer_exercise">Exercise Rest</string>
+    <string name="label_exercise_rest_remaining">Rest %1$s</string>
+    <string name="label_timer_preset_60">60s</string>
+    <string name="label_timer_preset_90">90s</string>
+    <string name="label_timer_preset_180">180s</string>
     <string name="label_timer_ready">Ready</string>
     <string name="label_personal_record">New PR</string>
+    <string name="title_add_exercise_to_workout_section">Add Exercise to This Workout</string>
+    <string name="label_all_exercises_added">All saved exercises are already in this workout.</string>
     <string name="timer_notification_running_title">Rest timer</string>
     <string name="timer_notification_running_text">%1$s remaining</string>
     <string name="timer_notification_finished_title">Rest timer done</string>
@@ -81,14 +92,29 @@
     <string name="kpi_avg_intensity_value">%1$.1f</string>
 
     <string name="progress_summary_title">Progress Summary</string>
+    <string name="progress_history_title">Workout History</string>
+    <string name="progress_recent_sessions_title">Recent Sessions</string>
+    <string name="progress_recent_sessions_subtitle">This list changes with the selected month and exercise.</string>
     <string name="progress_chart_max_weight">Max Weight Trend</string>
     <string name="progress_chart_volume">Volume by Session</string>
+    <string name="progress_stat_sessions">Sessions</string>
+    <string name="progress_stat_total_sets">Total Sets</string>
     <string name="progress_stat_best_weight">Best Weight</string>
     <string name="progress_stat_avg_weight">Average Max</string>
     <string name="progress_stat_total_reps">Total Reps</string>
+    <string name="progress_stat_total_volume">Total Volume</string>
     <string name="progress_weight_value">%1$.1f kg</string>
     <string name="progress_reps_value">%1$d reps</string>
+    <string name="progress_session_max_weight_inline">Max %1$.1f kg</string>
+    <string name="progress_session_volume_inline">Vol %1$s</string>
     <string name="chart_no_data">Add sets to see chart.</string>
+
+    <string name="exercise_history_sessions">Sessions</string>
+    <string name="exercise_history_sets">Sets</string>
+    <string name="exercise_history_volume">Volume</string>
+    <string name="exercise_history_empty">No history for this exercise yet.</string>
+    <string name="exercise_history_sets_inline">Sets: %1$d</string>
+    <string name="exercise_history_volume_inline">Volume: %1$s</string>
 
     <string name="language_button">Language</string>
     <string name="language_english">EN</string>

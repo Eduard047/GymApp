@@ -207,6 +207,33 @@ class GymRepository(
         )
     }
 
+    suspend fun addExerciseToSession(
+        sessionId: Long,
+        exerciseId: Long,
+        initialWeight: Double,
+        initialReps: Int
+    ): Long {
+        return database.withTransaction {
+            val nextOrderIndex = (workoutDao.getMaxWorkoutExerciseOrderIndex(sessionId) ?: -1) + 1
+            val workoutExerciseId = workoutDao.insertWorkoutExercise(
+                WorkoutExerciseEntity(
+                    sessionId = sessionId,
+                    exerciseId = exerciseId,
+                    orderIndex = nextOrderIndex
+                )
+            )
+            setDao.insert(
+                SetEntryEntity(
+                    workoutExerciseId = workoutExerciseId,
+                    weight = initialWeight,
+                    reps = initialReps,
+                    orderIndex = 0
+                )
+            )
+            workoutExerciseId
+        }
+    }
+
     suspend fun insertSet(setEntry: SetEntryEntity): Long {
         return setDao.insert(setEntry.copy(id = 0))
     }

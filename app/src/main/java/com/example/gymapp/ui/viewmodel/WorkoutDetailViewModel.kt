@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.entity.SetEntryEntity
 import com.example.gymapp.data.entity.WorkoutSessionDetails
 import com.example.gymapp.data.repository.GymRepository
@@ -24,7 +25,8 @@ data class WorkoutDetailUiState(
     val sessionDetails: WorkoutSessionDetails? = null,
     val canUndoDelete: Boolean = false,
     val personalRecordFlags: Map<Long, Boolean> = emptyMap(),
-    val restSecondsRemaining: Int = 0
+    val restSecondsRemaining: Int = 0,
+    val availableExercisesToAdd: List<ExerciseEntity> = emptyList()
 )
 
 sealed interface WorkoutDetailEvent {
@@ -39,6 +41,7 @@ class WorkoutDetailViewModel(
     private val restTimerController: RestTimerController
 ) : ViewModel() {
     private val sessionDetailsFlow = repository.observeSessionDetails(sessionId)
+    private val allExercisesFlow = repository.observeExercises()
     private val deletedSetForUndo = MutableStateFlow<SetEntryEntity?>(null)
     private val personalRecordFlags = sessionDetailsFlow.mapLatest { details ->
         if (details == null) {
@@ -66,13 +69,20 @@ class WorkoutDetailViewModel(
         sessionDetailsFlow,
         deletedSetForUndo,
         personalRecordFlags,
-        restTimerController.remainingSeconds
-    ) { details, deletedSet, prFlags, restSeconds ->
+        restTimerController.remainingSeconds,
+        allExercisesFlow
+    ) { details, deletedSet, prFlags, restSeconds, allExercises ->
+        val selectedExerciseIds = details
+            ?.workoutExercises
+            ?.map { it.workoutExercise.exerciseId }
+            ?.toSet()
+            .orEmpty()
         WorkoutDetailUiState(
             sessionDetails = details,
             canUndoDelete = deletedSet != null,
             personalRecordFlags = prFlags,
-            restSecondsRemaining = restSeconds
+            restSecondsRemaining = restSeconds,
+            availableExercisesToAdd = allExercises.filterNot { it.id in selectedExerciseIds }
         )
     }.stateIn(
         scope = viewModelScope,
@@ -82,38 +92,43 @@ class WorkoutDetailViewModel(
 
     fun addSet(workoutExerciseId: Long) {
         viewModelScope.launch {
-            val existingSets = uiState.value.sessionDetails
-                ?.workoutExercises
-                ?.firstOrNull { it.workoutExercise.id == workoutExerciseId }
-                ?.sets
+            val currentDetails = uiState.value.sessionDetails ?: return@launch
+            val workoutExercise = currentDetails.workoutExercises
+                .firstOrNull { it.workoutExercise.id == workoutExerciseId }
+                ?: return@launch
+            val existingSets = workoutExercise.sets
             val template = existingSets?.maxByOrNull { it.orderIndex }
+            val historicalWeight = repository.getLastWeightBeforeDate(
+                exerciseId = workoutExercise.workoutExercise.exerciseId,
+                beforeDate = currentDetails.session.date
+            )
             repository.addSet(
                 workoutExerciseId = workoutExerciseId,
-                weight = template?.weight ?: 20.0,
+                weight = template?.weight ?: historicalWeight ?: 20.0,
                 reps = template?.reps ?: 10
             )
-            startRestTimer()
         }
     }
 
-    fun addSetFromLastWeight(workoutExerciseId: Long, exerciseId: Long) {
+    fun addExerciseToWorkout(exerciseId: Long) {
         viewModelScope.launch {
             val currentDetails = uiState.value.sessionDetails ?: return@launch
-            val fallbackTemplate = currentDetails.workoutExercises
-                .firstOrNull { it.workoutExercise.id == workoutExerciseId }
-                ?.sets
-                ?.maxByOrNull { it.orderIndex }
+            val alreadyAdded = currentDetails.workoutExercises.any {
+                it.workoutExercise.exerciseId == exerciseId
+            }
+            if (alreadyAdded) return@launch
+
             val historicalWeight = repository.getLastWeightBeforeDate(
                 exerciseId = exerciseId,
                 beforeDate = currentDetails.session.date
-            )
+            ) ?: 20.0
 
-            repository.addSet(
-                workoutExerciseId = workoutExerciseId,
-                weight = historicalWeight ?: fallbackTemplate?.weight ?: 20.0,
-                reps = fallbackTemplate?.reps ?: 10
+            repository.addExerciseToSession(
+                sessionId = currentDetails.session.id,
+                exerciseId = exerciseId,
+                initialWeight = historicalWeight,
+                initialReps = 10
             )
-            startRestTimer()
         }
     }
 

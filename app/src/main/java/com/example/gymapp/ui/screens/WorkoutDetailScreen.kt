@@ -11,12 +11,17 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -30,6 +35,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -37,14 +44,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
+import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.entity.SetEntryEntity
 import com.example.gymapp.ui.viewmodel.WorkoutDetailEvent
 import com.example.gymapp.ui.viewmodel.WorkoutDetailUiState
 import com.example.gymapp.util.DateTimeUtils
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import java.util.Locale
 
@@ -52,13 +62,11 @@ import java.util.Locale
 fun WorkoutDetailScreen(
     uiState: WorkoutDetailUiState,
     events: Flow<WorkoutDetailEvent>,
+    onAddExerciseToWorkout: (Long) -> Unit,
     onAddSet: (Long) -> Unit,
-    onAddSetFromLastWeight: (Long, Long) -> Unit,
     onDeleteSet: (SetEntryEntity) -> Unit,
     onUpdateSet: (SetEntryEntity, String, String) -> Unit,
     onUndoDelete: () -> Unit,
-    onStartRestTimer: (Int) -> Unit,
-    onStopRestTimer: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
@@ -66,6 +74,41 @@ fun WorkoutDetailScreen(
     var editingSet by remember { mutableStateOf<SetEntryEntity?>(null) }
     var editWeight by remember { mutableStateOf("") }
     var editReps by remember { mutableStateOf("") }
+
+    val exerciseTimerTargets = remember { mutableStateMapOf<Long, Long>() }
+    var exerciseTimerNowMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
+
+    LaunchedEffect(exerciseTimerTargets.keys.toList(), exerciseTimerTargets.values.toList()) {
+        if (exerciseTimerTargets.isEmpty()) return@LaunchedEffect
+
+        while (exerciseTimerTargets.isNotEmpty()) {
+            val now = System.currentTimeMillis()
+            exerciseTimerNowMillis = now
+            val expiredIds = exerciseTimerTargets
+                .filterValues { it <= now }
+                .keys
+                .toList()
+            expiredIds.forEach { exerciseTimerTargets.remove(it) }
+            if (exerciseTimerTargets.isEmpty()) break
+            delay(500)
+        }
+    }
+
+    fun startExerciseTimer(workoutExerciseId: Long, seconds: Int) {
+        if (seconds <= 0) return
+        exerciseTimerNowMillis = System.currentTimeMillis()
+        exerciseTimerTargets[workoutExerciseId] = exerciseTimerNowMillis + seconds * 1_000L
+    }
+
+    fun stopExerciseTimer(workoutExerciseId: Long) {
+        exerciseTimerTargets.remove(workoutExerciseId)
+    }
+
+    fun remainingExerciseTimerSeconds(workoutExerciseId: Long): Int {
+        val target = exerciseTimerTargets[workoutExerciseId] ?: return 0
+        val remainingMillis = (target - exerciseTimerNowMillis).coerceAtLeast(0L)
+        return ((remainingMillis + 999L) / 1_000L).toInt()
+    }
 
     LaunchedEffect(events, context) {
         events.collect { event ->
@@ -110,13 +153,6 @@ fun WorkoutDetailScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 item {
-                    RestTimerCard(
-                        restSecondsRemaining = uiState.restSecondsRemaining,
-                        onStartRestTimer = onStartRestTimer,
-                        onStopRestTimer = onStopRestTimer
-                    )
-                }
-                item {
                     Card(modifier = Modifier.fillMaxWidth()) {
                         Column(
                             modifier = Modifier.padding(12.dp),
@@ -137,10 +173,20 @@ fun WorkoutDetailScreen(
                     }
                 }
 
+                item {
+                    WorkoutExerciseQuickAddCard(
+                        availableExercises = uiState.availableExercisesToAdd,
+                        onAddExerciseToWorkout = onAddExerciseToWorkout
+                    )
+                }
+
                 items(
                     items = details.workoutExercises,
                     key = { it.workoutExercise.id }
                 ) { exerciseDetails ->
+                    val workoutExerciseId = exerciseDetails.workoutExercise.id
+                    val localRestSecondsRemaining = remainingExerciseTimerSeconds(workoutExerciseId)
+
                     Card(modifier = Modifier.fillMaxWidth()) {
                         Column(
                             modifier = Modifier.padding(12.dp),
@@ -158,9 +204,22 @@ fun WorkoutDetailScreen(
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
-                                if (uiState.personalRecordFlags[exerciseDetails.workoutExercise.id] == true) {
+                                if (localRestSecondsRemaining > 0) {
                                     AssistChip(
-                                        onClick = {},
+                                        onClick = { },
+                                        label = {
+                                            Text(
+                                                text = stringResource(
+                                                    R.string.label_exercise_rest_remaining,
+                                                    formatTimerLabel(localRestSecondsRemaining)
+                                                )
+                                            )
+                                        }
+                                    )
+                                }
+                                if (uiState.personalRecordFlags[workoutExerciseId] == true) {
+                                    AssistChip(
+                                        onClick = { },
                                         label = { Text(stringResource(R.string.label_personal_record)) },
                                         leadingIcon = {
                                             Icon(
@@ -171,6 +230,14 @@ fun WorkoutDetailScreen(
                                     )
                                 }
                             }
+
+                            ExerciseRestTimerRow(
+                                restSecondsRemaining = localRestSecondsRemaining,
+                                onStart60 = { startExerciseTimer(workoutExerciseId, 60) },
+                                onStart90 = { startExerciseTimer(workoutExerciseId, 90) },
+                                onStart180 = { startExerciseTimer(workoutExerciseId, 180) },
+                                onStop = { stopExerciseTimer(workoutExerciseId) }
+                            )
 
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -199,14 +266,14 @@ fun WorkoutDetailScreen(
                                 )
                             }
 
-                            exerciseDetails.sets.forEachIndexed { index, setEntry ->
+                            exerciseDetails.sets.forEachIndexed { setIndex, setEntry ->
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
                                     Text(
-                                        text = stringResource(R.string.label_set, index + 1),
+                                        text = stringResource(R.string.label_set, setIndex + 1),
                                         modifier = Modifier.weight(1f),
                                         maxLines = 1
                                     )
@@ -249,35 +316,26 @@ fun WorkoutDetailScreen(
                                 }
                             }
 
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            if (exerciseDetails.sets.isEmpty()) {
+                                Text(
+                                    text = stringResource(R.string.empty_progress),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+
+                            OutlinedButton(
+                                onClick = {
+                                    onAddSet(workoutExerciseId)
+                                    startExerciseTimer(workoutExerciseId, 90)
+                                },
+                                modifier = Modifier.fillMaxWidth()
                             ) {
-                                OutlinedButton(
-                                    onClick = { onAddSet(exerciseDetails.workoutExercise.id) },
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Text(
-                                        text = stringResource(R.string.action_add_set),
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                                OutlinedButton(
-                                    onClick = {
-                                        onAddSetFromLastWeight(
-                                            exerciseDetails.workoutExercise.id,
-                                            exerciseDetails.workoutExercise.exerciseId
-                                        )
-                                    },
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Text(
-                                        text = stringResource(R.string.action_add_set_last_weight),
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
+                                Text(
+                                    text = stringResource(R.string.action_add_set),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
                             }
                         }
                     }
@@ -339,58 +397,179 @@ fun WorkoutDetailScreen(
 }
 
 @Composable
-private fun RestTimerCard(
-    restSecondsRemaining: Int,
-    onStartRestTimer: (Int) -> Unit,
-    onStopRestTimer: () -> Unit
+private fun WorkoutExerciseQuickAddCard(
+    availableExercises: List<ExerciseEntity>,
+    onAddExerciseToWorkout: (Long) -> Unit
 ) {
+    var expanded by remember(availableExercises) { mutableStateOf(false) }
+    var selectedExerciseId by remember(availableExercises) {
+        mutableStateOf(availableExercises.firstOrNull()?.id)
+    }
+    val selectedExerciseName = availableExercises
+        .firstOrNull { it.id == selectedExerciseId }
+        ?.name
+        ?: stringResource(R.string.label_select_exercise)
+
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text(
-                text = stringResource(R.string.label_rest_timer),
-                style = MaterialTheme.typography.titleSmall
-            )
-            val timerText = if (restSecondsRemaining > 0) {
-                String.format(
-                    Locale.getDefault(),
-                    "%02d:%02d",
-                    restSecondsRemaining / 60,
-                    restSecondsRemaining % 60
-                )
-            } else {
-                stringResource(R.string.label_timer_ready)
-            }
-            Text(
-                text = timerText,
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.primary
-            )
             Row(
                 modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                OutlinedButton(
-                    onClick = { onStartRestTimer(90) },
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text(text = stringResource(R.string.action_timer_90))
+                Icon(
+                    imageVector = Icons.Default.Add,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    text = stringResource(R.string.title_add_exercise_to_workout_section),
+                    style = MaterialTheme.typography.titleSmall
+                )
+            }
+
+            if (availableExercises.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.label_all_exercises_added),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    OutlinedButton(
+                        onClick = { expanded = true },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = selectedExerciseName,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+
+                    DropdownMenu(
+                        expanded = expanded,
+                        onDismissRequest = { expanded = false }
+                    ) {
+                        availableExercises.forEach { exercise ->
+                            DropdownMenuItem(
+                                text = { Text(exercise.name) },
+                                onClick = {
+                                    selectedExerciseId = exercise.id
+                                    expanded = false
+                                }
+                            )
+                        }
+                    }
                 }
+
                 OutlinedButton(
-                    onClick = { onStartRestTimer(180) },
-                    modifier = Modifier.weight(1f)
+                    onClick = {
+                        val selectedId = selectedExerciseId ?: return@OutlinedButton
+                        onAddExerciseToWorkout(selectedId)
+                    },
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(text = stringResource(R.string.action_timer_180))
-                }
-                OutlinedButton(
-                    onClick = onStopRestTimer,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text(text = stringResource(R.string.action_timer_stop))
+                    Text(text = stringResource(R.string.action_add_to_workout))
                 }
             }
         }
     }
+}
+
+@Composable
+private fun ExerciseRestTimerRow(
+    restSecondsRemaining: Int,
+    onStart60: () -> Unit,
+    onStart90: () -> Unit,
+    onStart180: () -> Unit,
+    onStop: () -> Unit
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                text = stringResource(R.string.label_rest_timer_exercise),
+                style = MaterialTheme.typography.labelLarge
+            )
+            Text(
+                text = if (restSecondsRemaining > 0) {
+                    formatTimerLabel(restSecondsRemaining)
+                } else {
+                    stringResource(R.string.label_timer_ready)
+                },
+                style = MaterialTheme.typography.labelLarge,
+                color = if (restSecondsRemaining > 0) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                }
+            )
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            TimerPresetButton(
+                label = stringResource(R.string.label_timer_preset_60),
+                onClick = onStart60,
+                modifier = Modifier.weight(1f)
+            )
+            TimerPresetButton(
+                label = stringResource(R.string.label_timer_preset_90),
+                onClick = onStart90,
+                modifier = Modifier.weight(1f)
+            )
+            TimerPresetButton(
+                label = stringResource(R.string.label_timer_preset_180),
+                onClick = onStart180,
+                modifier = Modifier.weight(1f)
+            )
+        }
+        OutlinedButton(
+            onClick = onStop,
+            modifier = Modifier.fillMaxWidth(),
+            enabled = restSecondsRemaining > 0
+        ) {
+            Text(text = stringResource(R.string.action_timer_stop))
+        }
+    }
+}
+
+@Composable
+private fun TimerPresetButton(
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    FilledTonalButton(
+        onClick = onClick,
+        modifier = modifier,
+        shape = ButtonDefaults.filledTonalShape,
+        contentPadding = ButtonDefaults.ButtonWithIconContentPadding
+    ) {
+        Text(
+            text = label,
+            maxLines = 1,
+            fontWeight = FontWeight.SemiBold
+        )
+    }
+}
+
+private fun formatTimerLabel(totalSeconds: Int): String {
+    return String.format(
+        Locale.getDefault(),
+        "%02d:%02d",
+        totalSeconds / 60,
+        totalSeconds % 60
+    )
 }

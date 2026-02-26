@@ -218,13 +218,11 @@ fun GymAppRoot(
                     WorkoutDetailScreen(
                         uiState = uiState,
                         events = viewModel.events,
+                        onAddExerciseToWorkout = viewModel::addExerciseToWorkout,
                         onAddSet = viewModel::addSet,
-                        onAddSetFromLastWeight = viewModel::addSetFromLastWeight,
                         onDeleteSet = viewModel::deleteSet,
                         onUpdateSet = viewModel::updateSet,
                         onUndoDelete = viewModel::undoDeleteSet,
-                        onStartRestTimer = viewModel::startRestTimer,
-                        onStopRestTimer = viewModel::stopRestTimer,
                         modifier = Modifier.fillMaxSize()
                     )
                 }
@@ -239,7 +237,9 @@ fun GymAppRoot(
                         uiState = uiState,
                         onNameChange = viewModel::updateNewExerciseName,
                         onAddExercise = viewModel::addExercise,
+                        onExerciseClick = viewModel::openExerciseHistory,
                         onDeleteExercise = viewModel::deleteExercise,
+                        onDismissHistory = viewModel::closeExerciseHistory,
                         modifier = Modifier.fillMaxSize()
                     )
                 }
