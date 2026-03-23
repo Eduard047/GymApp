@@ -2,7 +2,7 @@
 
 import androidx.annotation.StringRes
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
 import androidx.compose.material.icons.automirrored.filled.ShowChart
 import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -22,7 +22,7 @@ sealed class AppDestination(
     data object Exercises : AppDestination(
         route = "exercises",
         labelRes = R.string.tab_exercises,
-        icon = Icons.AutoMirrored.Filled.List
+        icon = Icons.AutoMirrored.Filled.FormatListBulleted
     )
 
     data object Progress : AppDestination(
@@ -43,11 +43,21 @@ sealed class AppDestination(
         icon = Icons.Default.FitnessCenter
     )
 
+    data object PostWorkoutSummary : AppDestination(
+        route = "post_workout_summary/{sessionId}",
+        labelRes = R.string.title_workout_detail,
+        icon = Icons.Default.FitnessCenter
+    )
+
     companion object {
         val bottomTabs = listOf(Workouts, Exercises, Progress)
 
         fun workoutDetailRoute(sessionId: Long): String {
             return "workout_detail/$sessionId"
+        }
+
+        fun postWorkoutSummaryRoute(sessionId: Long): String {
+            return "post_workout_summary/$sessionId"
         }
     }
 }

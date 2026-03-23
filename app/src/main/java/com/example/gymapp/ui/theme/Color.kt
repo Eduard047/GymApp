@@ -1,19 +1,20 @@
-﻿package com.example.gymapp.ui.theme
+package com.example.gymapp.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-val EnergyBlue = Color(0xFF1877F2)
-val TurboOrange = Color(0xFFFF6B2D)
-val LiftGreen = Color(0xFF17B978)
-val SurfaceLight = Color(0xFFF4F7FB)
-val SurfaceVariantLight = Color(0xFFE8EEF9)
-val OnSurfaceLight = Color(0xFF0B1A33)
-val AccentPurple = Color(0xFF5D4DFF)
+val InkBlue = Color(0xFF14304A)
+val SlateBlue = Color(0xFF2E5673)
+val SageGreen = Color(0xFF4F7A68)
+val ClayOrange = Color(0xFFC9774D)
+val Mist = Color(0xFFF4F1EC)
+val Sand = Color(0xFFE7DED2)
+val Cloud = Color(0xFFFFFBF7)
+val Ink = Color(0xFF1E2934)
 
-val EnergyBlueDark = Color(0xFF8BB8FF)
-val TurboOrangeDark = Color(0xFFFFA06E)
-val LiftGreenDark = Color(0xFF7BE6BE)
-val SurfaceDark = Color(0xFF07101F)
-val SurfaceVariantDark = Color(0xFF12213A)
-val OnSurfaceDark = Color(0xFFE8F0FF)
-val AccentPurpleDark = Color(0xFFB5AFFF)
+val Night = Color(0xFF08131C)
+val NightSurface = Color(0xFF11202D)
+val NightSurfaceAlt = Color(0xFF162A3A)
+val Frost = Color(0xFFE8EEF2)
+val FrostMuted = Color(0xFFB4C3CF)
+val SageGlow = Color(0xFF88B8A3)
+val ClayGlow = Color(0xFFF0AD86)

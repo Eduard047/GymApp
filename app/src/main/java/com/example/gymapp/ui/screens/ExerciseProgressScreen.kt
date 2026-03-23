@@ -17,7 +17,6 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SnackbarHost
@@ -36,7 +35,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
 import com.example.gymapp.data.entity.ExerciseHistoryEntry
-import com.example.gymapp.ui.viewmodel.ExerciseProgressPoint
+import com.example.gymapp.ui.components.ExerciseSpotlightCard
+import com.example.gymapp.ui.components.ExerciseTrendChartsCard
 import com.example.gymapp.ui.viewmodel.ExerciseProgressUiState
 import com.example.gymapp.util.DateTimeUtils
 import kotlinx.coroutines.launch
@@ -115,9 +115,11 @@ fun ExerciseProgressScreen(
             }
 
             item {
-                ProgressTrendCard(
-                    points = uiState.progressPoints
-                )
+                ExerciseSpotlightCard(spotlight = uiState.spotlight)
+            }
+
+            item {
+                ExerciseTrendChartsCard(chart = uiState.trendChart)
             }
 
             if (sessionGroups.isEmpty()) {
@@ -231,6 +233,11 @@ private fun ProgressSummaryCard(
                 text = stringResource(R.string.progress_summary_title),
                 style = MaterialTheme.typography.titleSmall
             )
+            Text(
+                text = stringResource(R.string.progress_summary_subtitle),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -303,71 +310,6 @@ private fun ProgressMetric(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
-    }
-}
-
-@Composable
-private fun ProgressTrendCard(points: List<ExerciseProgressPoint>) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Text(
-                text = stringResource(R.string.progress_recent_sessions_title),
-                style = MaterialTheme.typography.titleSmall
-            )
-            Text(
-                text = stringResource(R.string.progress_recent_sessions_subtitle),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            if (points.isEmpty()) {
-                Text(
-                    text = stringResource(R.string.chart_no_data),
-                    style = MaterialTheme.typography.bodyMedium
-                )
-            } else {
-                val recentPoints = points.sortedByDescending { it.sessionDate }.take(8)
-                val maxVolume = (recentPoints.maxOfOrNull { it.totalVolume } ?: 1.0).coerceAtLeast(1.0)
-
-                recentPoints.forEach { point ->
-                    val progress = (point.totalVolume / maxVolume).toFloat().coerceIn(0f, 1f)
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = DateTimeUtils.formatDate(point.sessionDate),
-                                modifier = Modifier.weight(1f),
-                                style = MaterialTheme.typography.bodyMedium,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Text(
-                                text = stringResource(R.string.progress_session_max_weight_inline, point.maxWeight),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            Text(
-                                text = stringResource(
-                                    R.string.progress_session_volume_inline,
-                                    String.format(Locale.getDefault(), "%.0f", point.totalVolume)
-                                ),
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                        }
-                        LinearProgressIndicator(
-                            progress = { progress },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-                }
-            }
-        }
     }
 }
 

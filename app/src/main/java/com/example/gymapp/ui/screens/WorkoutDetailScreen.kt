@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
@@ -57,6 +58,11 @@ import com.example.gymapp.util.DateTimeUtils
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import java.util.Locale
+
+private const val SETS_TABLE_SET_WEIGHT = 0.95f
+private const val SETS_TABLE_WEIGHT_WEIGHT = 1.1f
+private const val SETS_TABLE_REPS_WEIGHT = 0.9f
+private val SETS_TABLE_ACTIONS_WIDTH = 104.dp
 
 @Composable
 fun WorkoutDetailScreen(
@@ -241,28 +247,32 @@ fun WorkoutDetailScreen(
 
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 Text(
                                     text = stringResource(R.string.label_set_short),
-                                    modifier = Modifier.weight(1f),
+                                    modifier = Modifier.weight(SETS_TABLE_SET_WEIGHT),
                                     style = MaterialTheme.typography.labelLarge,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
                                 Text(
                                     text = stringResource(R.string.label_weight_kg),
-                                    modifier = Modifier.weight(1f),
+                                    modifier = Modifier.weight(SETS_TABLE_WEIGHT_WEIGHT),
                                     style = MaterialTheme.typography.labelLarge,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
                                 Text(
                                     text = stringResource(R.string.label_reps),
-                                    modifier = Modifier.weight(1f),
+                                    modifier = Modifier.weight(SETS_TABLE_REPS_WEIGHT),
                                     style = MaterialTheme.typography.labelLarge,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
+                                )
+                                Box(
+                                    modifier = Modifier.width(SETS_TABLE_ACTIONS_WIDTH)
                                 )
                             }
 
@@ -274,44 +284,57 @@ fun WorkoutDetailScreen(
                                 ) {
                                     Text(
                                         text = stringResource(R.string.label_set, setIndex + 1),
-                                        modifier = Modifier.weight(1f),
+                                        modifier = Modifier.weight(SETS_TABLE_SET_WEIGHT),
                                         maxLines = 1
                                     )
                                     Text(
                                         text = String.format(Locale.getDefault(), "%.1f", setEntry.weight),
-                                        modifier = Modifier.weight(1f),
+                                        modifier = Modifier.weight(SETS_TABLE_WEIGHT_WEIGHT),
                                         maxLines = 1
                                     )
                                     Text(
                                         text = setEntry.reps.toString(),
-                                        modifier = Modifier.weight(1f),
+                                        modifier = Modifier.weight(SETS_TABLE_REPS_WEIGHT),
                                         maxLines = 1
                                     )
-                                    IconButton(
-                                        onClick = {
-                                            editingSet = setEntry
-                                            editWeight = if (setEntry.weight == 0.0) {
-                                                ""
-                                            } else {
-                                                String.format(
-                                                    Locale.getDefault(),
-                                                    "%.1f",
-                                                    setEntry.weight
+                                    Box(
+                                        modifier = Modifier.width(SETS_TABLE_ACTIONS_WIDTH)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(
+                                                8.dp,
+                                                Alignment.End
+                                            ),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            IconButton(
+                                                onClick = {
+                                                    editingSet = setEntry
+                                                    editWeight = if (setEntry.weight == 0.0) {
+                                                        ""
+                                                    } else {
+                                                        String.format(
+                                                            Locale.getDefault(),
+                                                            "%.1f",
+                                                            setEntry.weight
+                                                        )
+                                                    }
+                                                    editReps = setEntry.reps.toString()
+                                                }
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Edit,
+                                                    contentDescription = stringResource(R.string.cd_edit)
                                                 )
                                             }
-                                            editReps = setEntry.reps.toString()
+                                            IconButton(onClick = { onDeleteSet(setEntry) }) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Delete,
+                                                    contentDescription = stringResource(R.string.cd_delete)
+                                                )
+                                            }
                                         }
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Edit,
-                                            contentDescription = stringResource(R.string.cd_edit)
-                                        )
-                                    }
-                                    IconButton(onClick = { onDeleteSet(setEntry) }) {
-                                        Icon(
-                                            imageVector = Icons.Default.Delete,
-                                            contentDescription = stringResource(R.string.cd_delete)
-                                        )
                                     }
                                 }
                             }

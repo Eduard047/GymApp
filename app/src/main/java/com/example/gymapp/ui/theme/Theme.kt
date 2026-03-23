@@ -1,4 +1,4 @@
-﻿package com.example.gymapp.ui.theme
+package com.example.gymapp.ui.theme
 
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -12,36 +12,49 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 
 private val DarkColorScheme = darkColorScheme(
-    primary = EnergyBlue,
-    onPrimary = Color.White,
-    primaryContainer = Color(0xFF1F3F5E),
-    onPrimaryContainer = Color.White,
-    secondary = TurboOrangeDark,
-    onSecondary = Color.White,
-    secondaryContainer = Color(0xFF4A2A1A),
-    onSecondaryContainer = Color.White,
-    tertiary = AccentPurpleDark,
-    onTertiary = Color.White,
-    tertiaryContainer = Color(0xFF3B3266),
-    onTertiaryContainer = Color.White,
-    background = SurfaceDark,
-    surface = SurfaceVariantDark,
-    surfaceVariant = Color(0xFF1A2E4A),
-    onSurfaceVariant = Color.White,
-    onSurface = Color.White,
-    onBackground = Color.White
+    primary = Frost,
+    onPrimary = Night,
+    primaryContainer = SlateBlue,
+    onPrimaryContainer = Frost,
+    secondary = SageGlow,
+    onSecondary = Night,
+    secondaryContainer = Color(0xFF1D4036),
+    onSecondaryContainer = Frost,
+    tertiary = ClayGlow,
+    onTertiary = Night,
+    tertiaryContainer = Color(0xFF4A2B1A),
+    onTertiaryContainer = Frost,
+    background = Night,
+    surface = NightSurface,
+    surfaceVariant = NightSurfaceAlt,
+    onSurfaceVariant = FrostMuted,
+    onSurface = Frost,
+    onBackground = Frost,
+    outline = Color(0xFF304858),
+    outlineVariant = Color(0xFF213644)
 )
 
 private val LightColorScheme = lightColorScheme(
-    primary = EnergyBlue,
-    onPrimary = androidx.compose.ui.graphics.Color.White,
-    secondary = TurboOrange,
-    tertiary = AccentPurple,
-    background = SurfaceLight,
-    surface = androidx.compose.ui.graphics.Color.White,
-    surfaceVariant = SurfaceVariantLight,
-    onSurface = OnSurfaceLight,
-    onBackground = OnSurfaceLight
+    primary = InkBlue,
+    onPrimary = Color.White,
+    primaryContainer = Color(0xFFDCEAF4),
+    onPrimaryContainer = InkBlue,
+    secondary = SageGreen,
+    onSecondary = Color.White,
+    secondaryContainer = Color(0xFFD7E8E0),
+    onSecondaryContainer = Ink,
+    tertiary = ClayOrange,
+    onTertiary = Color.White,
+    tertiaryContainer = Color(0xFFF7DDCF),
+    onTertiaryContainer = Ink,
+    background = Mist,
+    surface = Cloud,
+    surfaceVariant = Sand,
+    onSurfaceVariant = Color(0xFF5A6772),
+    onSurface = Ink,
+    onBackground = Ink,
+    outline = Color(0xFFC3B5A4),
+    outlineVariant = Color(0xFFE0D4C6)
 )
 
 @Composable
@@ -63,6 +76,7 @@ fun GymAppTheme(
     MaterialTheme(
         colorScheme = colorScheme,
         typography = Typography,
+        shapes = Shapes,
         content = content
     )
 }

@@ -10,9 +10,11 @@ import com.example.gymapp.data.entity.WorkoutSessionDetails
 import com.example.gymapp.data.entity.WorkoutSessionEntity
 import com.example.gymapp.data.entity.WorkoutSessionSummary
 import com.example.gymapp.util.DateTimeUtils
+import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import java.time.temporal.TemporalAdjusters
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
@@ -33,7 +35,8 @@ data class DashboardStats(
     val workoutCount: Int,
     val totalVolume: Double,
     val averageIntensity: Double,
-    val streakDays: Int
+    val streakDays: Int,
+    val weeklyStreakWeeks: Int = 0
 )
 
 class GymRepository(
@@ -61,6 +64,26 @@ class GymRepository(
     fun observeSessions(): Flow<List<WorkoutSessionSummary>> = workoutDao.getSessions()
         .catch { emit(emptyList()) }
 
+    fun observeGamificationSnapshot(): Flow<GamificationSnapshot> {
+        return observeSessions()
+            .map { sessions ->
+                GamificationEngine.buildSnapshot(
+                    sessions = sessions,
+                    nowMillis = System.currentTimeMillis(),
+                    zoneId = ZoneId.systemDefault()
+                )
+            }
+            .catch {
+                emit(
+                    GamificationEngine.buildSnapshot(
+                        sessions = emptyList(),
+                        nowMillis = System.currentTimeMillis(),
+                        zoneId = ZoneId.systemDefault()
+                    )
+                )
+            }
+    }
+
     fun observeSessions(
         startTimestamp: Long,
         endTimestamp: Long
@@ -80,11 +103,14 @@ class GymRepository(
         ) { monthSessions, allSessions ->
             val totalVolume = monthSessions.sumOf { it.totalVolume }
             val totalSets = monthSessions.sumOf { it.setCount }
+            val streakDays = calculateStreakDays(allSessions)
+            val weeklyStreakWeeks = calculateWeeklyStreakWeeks(allSessions)
             DashboardStats(
                 workoutCount = monthSessions.size,
                 totalVolume = totalVolume,
                 averageIntensity = if (totalSets == 0) 0.0 else totalVolume / totalSets,
-                streakDays = calculateStreakDays(allSessions)
+                streakDays = streakDays,
+                weeklyStreakWeeks = weeklyStreakWeeks
             )
         }
     }
@@ -300,6 +326,32 @@ class GymRepository(
         while (workoutDays.contains(cursorDay)) {
             streak += 1
             cursorDay -= 1
+        }
+        return streak
+    }
+
+    private fun calculateWeeklyStreakWeeks(allSessions: List<WorkoutSessionSummary>): Int {
+        if (allSessions.isEmpty()) {
+            return 0
+        }
+
+        val zoneId = ZoneId.systemDefault()
+        val weekStarts = allSessions.groupingBy { session ->
+            Instant.ofEpochMilli(session.session.date)
+                .atZone(zoneId)
+                .toLocalDate()
+                .with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+        }.eachCount()
+
+        var cursorWeekStart = LocalDate.now(zoneId).with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+        if ((weekStarts[cursorWeekStart] ?: 0) < 3) {
+            cursorWeekStart = cursorWeekStart.minusWeeks(1)
+        }
+
+        var streak = 0
+        while ((weekStarts[cursorWeekStart] ?: 0) >= 3) {
+            streak += 1
+            cursorWeekStart = cursorWeekStart.minusWeeks(1)
         }
         return streak
     }
