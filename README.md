@@ -6,7 +6,7 @@ Android Gym Workout Tracker built with Kotlin, Jetpack Compose, MVVM, Room, Coro
 
 <p align="center">
   <a href="https://github.com/Eduard047/GymApp/releases/latest">
-    <img alt="Latest Release" src="https://img.shields.io/github/v/release/Eduard047/GymApp?display_name=tag&include_prereleases=true&style=for-the-badge&label=Latest%20Release">
+    <img alt="Latest Release" src="https://img.shields.io/github/v/release/Eduard047/GymApp?display_name=tag&style=for-the-badge&label=Latest%20Release">
   </a>
   <a href="https://github.com/Eduard047/GymApp/releases/latest">
     <img alt="Releases" src="https://img.shields.io/badge/Open-Releases-181717?style=for-the-badge&logo=github&logoColor=white">
