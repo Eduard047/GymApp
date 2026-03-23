@@ -5,25 +5,25 @@ Android Gym Workout Tracker built with Kotlin, Jetpack Compose, MVVM, Room, Coro
 ## Download APK
 
 <p align="center">
-  <a href="https://github.com/Eduard047/GymApp/releases/latest">
-    <img alt="Latest Release" src="https://img.shields.io/github/v/release/Eduard047/GymApp?display_name=tag&style=for-the-badge&label=Latest%20Release">
+  <a href="https://github.com/Eduard047/GymApp/releases/tag/debug-v1774304282">
+    <img alt="Latest Build" src="https://img.shields.io/github/v/tag/Eduard047/GymApp?style=for-the-badge&label=Latest%20Build">
   </a>
   <a href="https://github.com/Eduard047/GymApp/releases/latest">
     <img alt="Releases" src="https://img.shields.io/badge/Open-Releases-181717?style=for-the-badge&logo=github&logoColor=white">
   </a>
-  <a href="https://github.com/Eduard047/GymApp/releases/latest/download/app-debug.apk">
+  <a href="https://github.com/Eduard047/GymApp/releases/download/debug-v1774304282/app-debug.apk">
     <img alt="Download APK" src="https://img.shields.io/badge/Download-APK-34A853?style=for-the-badge&logo=android&logoColor=white">
   </a>
 </p>
 
 <p align="center">
-  Android debug build for testing. If direct download fails, open the latest release and download the APK asset manually.
+  Android debug build for testing. If direct download fails, open Releases and download the APK asset manually.
 </p>
 
 ## Releases
 
 - Latest releases page: https://github.com/Eduard047/GymApp/releases/latest
-- Latest APK (expected asset name: `app-debug.apk`): https://github.com/Eduard047/GymApp/releases/latest/download/app-debug.apk
+- Current debug APK: https://github.com/Eduard047/GymApp/releases/download/debug-v1774304282/app-debug.apk
 
 ## Build Update APK (preserve app data)
 
