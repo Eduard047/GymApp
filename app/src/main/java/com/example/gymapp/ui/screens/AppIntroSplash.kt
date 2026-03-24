@@ -1,11 +1,7 @@
 package com.example.gymapp.ui.screens
 
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -29,8 +25,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -54,17 +48,6 @@ fun AppIntroSplash(modifier: Modifier = Modifier) {
         label = "introAlpha"
     )
 
-    val infiniteTransition = rememberInfiniteTransition(label = "splash")
-    val glowShift by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 3600, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "glowShift"
-    )
-
     LaunchedEffect(Unit) {
         visible = true
     }
@@ -72,47 +55,9 @@ fun AppIntroSplash(modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        colorScheme.surfaceVariant,
-                        colorScheme.background,
-                        colorScheme.surface
-                    )
-                )
-            ),
+            .background(colorScheme.surface),
         contentAlignment = Alignment.Center
     ) {
-        val primaryGlow = colorScheme.primary.copy(alpha = 0.14f)
-        val secondaryGlow = colorScheme.secondary.copy(alpha = 0.12f)
-        val tertiaryGlow = colorScheme.tertiary.copy(alpha = 0.10f)
-
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(primaryGlow, Color.Transparent),
-                    center = Offset(size.width * (0.75f + glowShift * 0.08f), size.height * 0.16f),
-                    radius = size.minDimension * 0.34f
-                ),
-                radius = size.minDimension * 0.34f,
-                center = Offset(size.width * (0.75f + glowShift * 0.08f), size.height * 0.16f)
-            )
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(secondaryGlow, Color.Transparent),
-                    center = Offset(size.width * 0.26f, size.height * (0.78f - glowShift * 0.08f)),
-                    radius = size.minDimension * 0.28f
-                ),
-                radius = size.minDimension * 0.28f,
-                center = Offset(size.width * 0.26f, size.height * (0.78f - glowShift * 0.08f))
-            )
-            drawCircle(
-                color = tertiaryGlow,
-                radius = size.minDimension * 0.18f,
-                center = Offset(size.width * 0.58f, size.height * 0.82f)
-            )
-        }
-
         Column(
             modifier = Modifier.width(260.dp),
             horizontalAlignment = Alignment.CenterHorizontally,

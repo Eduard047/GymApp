@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.DropdownMenu
@@ -58,6 +59,8 @@ import com.example.gymapp.ui.screens.AppIntroSplash
 import com.example.gymapp.ui.screens.ExerciseListScreen
 import com.example.gymapp.ui.screens.ExerciseProgressScreen
 import com.example.gymapp.ui.screens.GymBackground
+import com.example.gymapp.ui.screens.MissionsScreen
+import com.example.gymapp.ui.screens.RanksScreen
 import com.example.gymapp.ui.screens.PostWorkoutSummaryScreen
 import com.example.gymapp.ui.screens.WorkoutDetailScreen
 import com.example.gymapp.ui.screens.WorkoutListScreen
@@ -93,11 +96,13 @@ fun GymAppRoot(
     val isBottomTabRoute = AppDestination.bottomTabs.any { it.route == currentRoute }
     val titleRes = when {
         currentRoute == AppDestination.Workouts.route -> R.string.title_workouts
+        currentRoute == AppDestination.Missions.route -> R.string.title_missions
         currentRoute == AppDestination.Exercises.route -> R.string.title_exercises
         currentRoute == AppDestination.Progress.route -> R.string.title_progress
+        currentRoute == AppDestination.Ranks.route -> R.string.title_ranks
         currentRoute == AppDestination.AddWorkout.route -> R.string.title_add_workout
         currentRoute?.startsWith("workout_detail/") == true -> R.string.title_workout_detail
-        currentRoute?.startsWith("post_workout_summary/") == true -> R.string.title_workout_detail
+        currentRoute?.startsWith("post_workout_summary/") == true -> R.string.title_post_workout_summary
         else -> R.string.app_name
     }
 
@@ -187,20 +192,45 @@ fun GymAppRoot(
                     }
                 },
                 floatingActionButton = {
-                    if (currentRoute == AppDestination.Workouts.route) {
-                        ExtendedFloatingActionButton(
-                            onClick = { navController.navigate(AppDestination.AddWorkout.route) },
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor = MaterialTheme.colorScheme.onPrimary,
-                            expanded = true,
-                            text = { Text(text = stringResource(R.string.action_add_workout)) },
-                            icon = {
-                                Icon(
-                                    imageVector = Icons.Default.Add,
-                                    contentDescription = stringResource(R.string.cd_add_workout)
+                    when {
+                        currentRoute == AppDestination.Workouts.route -> {
+                            ExtendedFloatingActionButton(
+                                onClick = { navController.navigate(AppDestination.AddWorkout.route) },
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = MaterialTheme.colorScheme.onPrimary,
+                                expanded = true,
+                                text = { Text(text = stringResource(R.string.action_add_workout)) },
+                                icon = {
+                                    Icon(
+                                        imageVector = Icons.Default.Add,
+                                        contentDescription = stringResource(R.string.cd_add_workout)
+                                    )
+                                }
+                            )
+                        }
+
+                        currentRoute?.startsWith("workout_detail/") == true -> {
+                            val sessionId = navBackStackEntry?.arguments?.getLong("sessionId")
+                            if (sessionId != null) {
+                                ExtendedFloatingActionButton(
+                                    onClick = {
+                                        navController.navigate(AppDestination.postWorkoutSummaryRoute(sessionId)) {
+                                            launchSingleTop = true
+                                        }
+                                    },
+                                    containerColor = MaterialTheme.colorScheme.tertiary,
+                                    contentColor = MaterialTheme.colorScheme.onTertiary,
+                                    expanded = true,
+                                    text = { Text(text = stringResource(R.string.action_finish_workout)) },
+                                    icon = {
+                                        Icon(
+                                            imageVector = Icons.Default.CheckCircle,
+                                            contentDescription = stringResource(R.string.action_finish_workout)
+                                        )
+                                    }
                                 )
                             }
-                        )
+                        }
                     }
                 }
             ) { innerPadding ->
@@ -232,6 +262,35 @@ fun GymAppRoot(
                             )
                         }
 
+                        composable(route = AppDestination.Missions.route) {
+                            val viewModel: WorkoutListViewModel = viewModel(
+                                factory = WorkoutListViewModel.factory(repository)
+                            )
+                            val uiState by viewModel.uiState.collectAsState()
+
+                            MissionsScreen(
+                                uiState = uiState,
+                                onOpenRanks = {
+                                    navController.navigate(AppDestination.Ranks.route) {
+                                        launchSingleTop = true
+                                    }
+                                },
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+
+                        composable(route = AppDestination.Ranks.route) {
+                            val viewModel: WorkoutListViewModel = viewModel(
+                                factory = WorkoutListViewModel.factory(repository)
+                            )
+                            val uiState by viewModel.uiState.collectAsState()
+
+                            RanksScreen(
+                                uiState = uiState,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+
                         composable(route = AppDestination.AddWorkout.route) {
                             val viewModel: AddWorkoutViewModel = viewModel(
                                 factory = AddWorkoutViewModel.factory(repository)
@@ -241,7 +300,7 @@ fun GymAppRoot(
                             LaunchedEffect(uiState.createdSessionId) {
                                 val createdSessionId = uiState.createdSessionId
                                 if (createdSessionId != null) {
-                                    navController.navigate(AppDestination.postWorkoutSummaryRoute(createdSessionId)) {
+                                    navController.navigate(AppDestination.workoutDetailRoute(createdSessionId)) {
                                         popUpTo(AppDestination.AddWorkout.route) {
                                             inclusive = true
                                         }
@@ -293,12 +352,18 @@ fun GymAppRoot(
                                     }
                                 },
                                 onDone = {
-                                    navController.navigate(AppDestination.Workouts.route) {
-                                        popUpTo(navController.graph.startDestinationId) {
-                                            saveState = true
+                                    val returnedToWorkouts = navController.popBackStack(
+                                        AppDestination.Workouts.route,
+                                        inclusive = false
+                                    )
+                                    if (!returnedToWorkouts) {
+                                        navController.navigate(AppDestination.Workouts.route) {
+                                            popUpTo(navController.graph.startDestinationId) {
+                                                saveState = true
+                                            }
+                                            launchSingleTop = true
+                                            restoreState = true
                                         }
-                                        launchSingleTop = true
-                                        restoreState = true
                                     }
                                 },
                                 modifier = Modifier.fillMaxSize()

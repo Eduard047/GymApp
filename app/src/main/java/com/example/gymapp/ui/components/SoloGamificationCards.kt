@@ -132,7 +132,15 @@ fun SoloProgressHero(
             ) {
                 SoloHeroStat(
                     label = stringResource(R.string.solo_month_xp_label),
-                    value = "${progress.monthXp} XP",
+                    value = if (progress.missionXp > 0) {
+                        stringResource(
+                            R.string.solo_month_xp_with_missions,
+                            progress.monthXp,
+                            progress.missionXp
+                        )
+                    } else {
+                        "${progress.monthXp} XP"
+                    },
                     modifier = Modifier.weight(1f),
                     emphasized = true
                 )

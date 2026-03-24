@@ -35,7 +35,6 @@ import com.example.gymapp.ui.components.EmptyStatePanel
 import com.example.gymapp.ui.components.HeroPanel
 import com.example.gymapp.ui.components.InfoPill
 import com.example.gymapp.ui.components.MetricTile
-import com.example.gymapp.ui.components.MissionProgressCard
 import com.example.gymapp.ui.components.SoloProgressHero
 import com.example.gymapp.ui.viewmodel.WorkoutListUiState
 import com.example.gymapp.util.DateTimeUtils
@@ -54,7 +53,7 @@ fun WorkoutListScreen(
     val coroutineScope = rememberCoroutineScope()
     var workoutsSelected by rememberSaveable { mutableStateOf(false) }
     // Fixed overview item count before the workout list header.
-    val workoutSectionIndex = 6
+    val workoutSectionIndex = 4
 
     Column(
         modifier = modifier.fillMaxSize(),
@@ -100,22 +99,6 @@ fun WorkoutListScreen(
 
             item {
                 ActivityHeatmapCard(heatmap = uiState.activityHeatmap)
-            }
-
-            item {
-                MissionProgressCard(
-                    title = stringResource(R.string.missions_daily_title),
-                    supporting = stringResource(R.string.missions_daily_supporting),
-                    missions = uiState.dailyMissions
-                )
-            }
-
-            item {
-                MissionProgressCard(
-                    title = stringResource(R.string.missions_weekly_title),
-                    supporting = stringResource(R.string.missions_weekly_supporting),
-                    missions = uiState.weeklyMissions
-                )
             }
 
             item {

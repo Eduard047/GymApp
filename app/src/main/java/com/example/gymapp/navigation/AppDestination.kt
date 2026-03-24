@@ -4,6 +4,7 @@ import androidx.annotation.StringRes
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
 import androidx.compose.material.icons.automirrored.filled.ShowChart
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.example.gymapp.R
@@ -17,6 +18,12 @@ sealed class AppDestination(
         route = "workouts",
         labelRes = R.string.tab_workouts,
         icon = Icons.Default.FitnessCenter
+    )
+
+    data object Missions : AppDestination(
+        route = "missions",
+        labelRes = R.string.tab_missions,
+        icon = Icons.Default.CheckCircle
     )
 
     data object Exercises : AppDestination(
@@ -37,6 +44,12 @@ sealed class AppDestination(
         icon = Icons.Default.FitnessCenter
     )
 
+    data object Ranks : AppDestination(
+        route = "ranks",
+        labelRes = R.string.title_ranks,
+        icon = Icons.Default.FitnessCenter
+    )
+
     data object WorkoutDetail : AppDestination(
         route = "workout_detail/{sessionId}",
         labelRes = R.string.title_workout_detail,
@@ -45,12 +58,12 @@ sealed class AppDestination(
 
     data object PostWorkoutSummary : AppDestination(
         route = "post_workout_summary/{sessionId}",
-        labelRes = R.string.title_workout_detail,
+        labelRes = R.string.title_post_workout_summary,
         icon = Icons.Default.FitnessCenter
     )
 
     companion object {
-        val bottomTabs = listOf(Workouts, Exercises, Progress)
+        val bottomTabs = listOf(Workouts, Missions, Exercises, Progress)
 
         fun workoutDetailRoute(sessionId: Long): String {
             return "workout_detail/$sessionId"

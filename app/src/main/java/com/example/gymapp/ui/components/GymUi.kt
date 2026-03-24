@@ -12,7 +12,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -21,7 +20,7 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun AppPanel(
     modifier: Modifier = Modifier,
-    containerColor: Color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+    containerColor: Color = MaterialTheme.colorScheme.surface,
     contentColor: Color = MaterialTheme.colorScheme.onSurface,
     highlighted: Boolean = false,
     content: @Composable () -> Unit
@@ -36,9 +35,9 @@ fun AppPanel(
         border = BorderStroke(
             width = 1.dp,
             color = if (highlighted) {
-                MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+                MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
             } else {
-                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f)
+                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
             }
         )
     ) {
@@ -51,25 +50,15 @@ fun HeroPanel(
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit
 ) {
-    val colors = listOf(
-        MaterialTheme.colorScheme.primary,
-        MaterialTheme.colorScheme.secondary.copy(alpha = 0.95f),
-        MaterialTheme.colorScheme.tertiary.copy(alpha = 0.92f)
-    )
-
     Surface(
         modifier = modifier,
-        color = Color.Transparent,
+        color = MaterialTheme.colorScheme.primary,
         shape = MaterialTheme.shapes.extraLarge,
-        shadowElevation = 12.dp
+        shadowElevation = 8.dp
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(
-                    brush = Brush.linearGradient(colors),
-                    shape = MaterialTheme.shapes.extraLarge
-                )
                 .padding(20.dp)
         ) {
             content()
@@ -117,10 +106,10 @@ fun MetricTile(
     onHero: Boolean = false
 ) {
     val tileContainerColor = when {
-        onHero && emphasized -> MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.18f)
-        onHero -> MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.14f)
-        emphasized -> MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
-        else -> MaterialTheme.colorScheme.surface.copy(alpha = 0.82f)
+        onHero && emphasized -> MaterialTheme.colorScheme.primary
+        onHero -> MaterialTheme.colorScheme.primary
+        emphasized -> MaterialTheme.colorScheme.surfaceVariant
+        else -> MaterialTheme.colorScheme.surface
     }
     val tileContentColor = if (onHero) {
         MaterialTheme.colorScheme.onPrimary
