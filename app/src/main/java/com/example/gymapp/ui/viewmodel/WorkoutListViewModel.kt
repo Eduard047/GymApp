@@ -302,16 +302,11 @@ class WorkoutListViewModel(
     ): List<MissionProgressUiModel> {
         val stats = buildDailyMissionStats(allSessions)
         val seed = LocalDate.now(zoneId).toEpochDay()
-        val requiredFamilies = if (historyStats.maxDayVolume >= 3_500) {
-            setOf("volume")
-        } else {
-            setOf("workouts")
-        }
         val selectedTemplates = selectMissionTemplates(
             templates = dailyMissionCatalog(),
             count = ACTIVE_DAILY_MISSIONS,
             seed = seed,
-            requiredFamilies = requiredFamilies,
+            requiredFamilies = setOf("workouts"),
             scoreSelector = { template ->
                 missionSelectionScore(
                     goal = template.goal,
@@ -344,16 +339,11 @@ class WorkoutListViewModel(
         val stats = buildWeeklyMissionStats(allSessions)
         val weekStart = LocalDate.now(zoneId).with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
         val seed = weekStart.toEpochDay()
-        val requiredFamilies = if (historyStats.maxWeekVolume >= 12_000) {
-            setOf("volume")
-        } else {
-            setOf("workouts")
-        }
         val selectedTemplates = selectMissionTemplates(
             templates = weeklyMissionCatalog(),
             count = ACTIVE_WEEKLY_MISSIONS,
             seed = seed,
-            requiredFamilies = requiredFamilies,
+            requiredFamilies = setOf("workouts"),
             scoreSelector = { template ->
                 missionSelectionScore(
                     goal = template.goal,
@@ -385,16 +375,11 @@ class WorkoutListViewModel(
     ): List<MissionProgressUiModel> {
         val stats = buildMonthlyMissionStats(allSessions)
         val monthSeed = YearMonth.now(zoneId).atDay(1).toEpochDay()
-        val requiredFamilies = if (historyStats.maxMonthVolume >= 45_000) {
-            setOf("volume")
-        } else {
-            setOf("workouts")
-        }
         val selectedTemplates = selectMissionTemplates(
             templates = monthlyMissionCatalog(),
             count = ACTIVE_MONTHLY_MISSIONS,
             seed = monthSeed,
-            requiredFamilies = requiredFamilies,
+            requiredFamilies = setOf("workouts"),
             scoreSelector = { template ->
                 missionSelectionScore(
                     goal = template.goal,
@@ -438,7 +423,7 @@ class WorkoutListViewModel(
         addAll(
             createDailyTemplates(
                 family = "exercises",
-                goals = intSeries(3, 1, 20),
+                goals = intSeries(3, 1, 10),
                 idForGoal = { goal -> "daily-exercises-$goal" },
                 unitEn = "exercises",
                 unitUk = "вправ",
@@ -452,7 +437,7 @@ class WorkoutListViewModel(
         addAll(
             createDailyTemplates(
                 family = "sets",
-                goals = intSeries(8, 2, 18),
+                goals = intSeries(8, 2, 9),
                 idForGoal = { goal -> "daily-sets-$goal" },
                 unitEn = "sets",
                 unitUk = "підходів",
@@ -467,8 +452,8 @@ class WorkoutListViewModel(
             createDailyTemplates(
                 family = "volume",
                 goals = scaledSeries(
-                    base = 900,
-                    factors = listOf(1.0, 1.15, 1.3, 1.5, 1.75, 2.0, 2.4, 2.8, 3.2, 3.7, 4.3, 5.0, 5.8, 6.7, 7.7, 8.8, 10.0, 11.5, 13.0, 15.0, 17.5, 20.0)
+                    base = 1_800,
+                    factors = listOf(0.8, 1.0, 1.2, 1.4, 1.6, 1.9, 2.2, 2.5, 2.8, 3.1, 3.5, 3.9, 4.3)
                 ),
                 idForGoal = { goal -> "daily-volume-$goal" },
                 unitEn = "volume",
@@ -484,8 +469,8 @@ class WorkoutListViewModel(
             createDailyTemplates(
                 family = "max-session-volume",
                 goals = scaledSeries(
-                    base = 600,
-                    factors = listOf(1.0, 1.25, 1.5, 1.8, 2.1, 2.5, 3.0, 3.6, 4.3, 5.1, 6.0, 7.0, 8.2, 9.5, 11.0, 13.0, 15.0)
+                    base = 1_300,
+                    factors = listOf(0.8, 1.0, 1.2, 1.4, 1.6, 1.9, 2.2, 2.5, 2.8, 3.1, 3.5, 3.9, 4.4, 4.9, 5.5)
                 ),
                 idForGoal = { goal -> "daily-max-session-volume-$goal" },
                 unitEn = "volume",
@@ -500,7 +485,7 @@ class WorkoutListViewModel(
         addAll(
             createDailyTemplates(
                 family = "max-session-exercises",
-                goals = intSeries(4, 1, 18),
+                goals = intSeries(3, 1, 8),
                 idForGoal = { goal -> "daily-max-session-exercises-$goal" },
                 unitEn = "exercises",
                 unitUk = "вправ",
@@ -514,7 +499,7 @@ class WorkoutListViewModel(
         addAll(
             createDailyTemplates(
                 family = "max-session-sets",
-                goals = intSeries(8, 2, 18),
+                goals = intSeries(8, 2, 8),
                 idForGoal = { goal -> "daily-max-session-sets-$goal" },
                 unitEn = "sets",
                 unitUk = "підходів",
@@ -531,7 +516,7 @@ class WorkoutListViewModel(
         addAll(
             createWeeklyTemplates(
                 family = "workouts",
-                goals = intSeries(3, 1, 24),
+                goals = intSeries(2, 1, 2),
                 idForGoal = { goal -> "weekly-workouts-$goal" },
                 unitEn = "workouts",
                 unitUk = "тренування",
@@ -545,7 +530,7 @@ class WorkoutListViewModel(
         addAll(
             createWeeklyTemplates(
                 family = "active-days",
-                goals = intSeries(3, 1, 12),
+                goals = intSeries(2, 1, 2),
                 idForGoal = { goal -> "weekly-active-days-$goal" },
                 unitEn = "days",
                 unitUk = "днів",
@@ -559,7 +544,7 @@ class WorkoutListViewModel(
         addAll(
             createWeeklyTemplates(
                 family = "sets",
-                goals = intSeries(18, 6, 20),
+                goals = intSeries(24, 4, 10),
                 idForGoal = { goal -> "weekly-sets-$goal" },
                 unitEn = "sets",
                 unitUk = "підходів",
@@ -574,8 +559,8 @@ class WorkoutListViewModel(
             createWeeklyTemplates(
                 family = "volume",
                 goals = scaledSeries(
-                    base = 5_000,
-                    factors = listOf(1.0, 1.15, 1.3, 1.5, 1.75, 2.0, 2.3, 2.6, 3.0, 3.5, 4.0, 4.6, 5.3, 6.1, 7.0, 8.0, 9.2, 10.5, 12.0, 13.5, 15.0, 17.0, 19.0, 21.5, 24.0, 27.0)
+                    base = 8_000,
+                    factors = listOf(0.8, 0.95, 1.1, 1.25, 1.4, 1.55, 1.75, 1.95, 2.2, 2.5, 2.8, 3.1)
                 ),
                 idForGoal = { goal -> "weekly-volume-$goal" },
                 unitEn = "volume",
@@ -590,7 +575,7 @@ class WorkoutListViewModel(
         addAll(
             createWeeklyTemplates(
                 family = "exercises",
-                goals = intSeries(12, 4, 20),
+                goals = intSeries(14, 3, 12),
                 idForGoal = { goal -> "weekly-exercises-$goal" },
                 unitEn = "exercises",
                 unitUk = "вправ",
@@ -604,7 +589,7 @@ class WorkoutListViewModel(
         addAll(
             createWeeklyTemplates(
                 family = "days-10-sets",
-                goals = intSeries(2, 1, 12),
+                goals = intSeries(1, 1, 3),
                 idForGoal = { goal -> "weekly-days-10-sets-$goal" },
                 unitEn = "days",
                 unitUk = "днів",
@@ -618,7 +603,7 @@ class WorkoutListViewModel(
         addAll(
             createWeeklyTemplates(
                 family = "days-1000-volume",
-                goals = intSeries(2, 1, 12),
+                goals = intSeries(1, 1, 3),
                 idForGoal = { goal -> "weekly-days-1000-volume-$goal" },
                 unitEn = "days",
                 unitUk = "днів",
@@ -632,7 +617,7 @@ class WorkoutListViewModel(
         addAll(
             createWeeklyTemplates(
                 family = "sessions-8-sets",
-                goals = intSeries(3, 1, 16),
+                goals = intSeries(1, 1, 3),
                 idForGoal = { goal -> "weekly-sessions-8-sets-$goal" },
                 unitEn = "sessions",
                 unitUk = "сесій",
@@ -646,7 +631,7 @@ class WorkoutListViewModel(
         addAll(
             createWeeklyTemplates(
                 family = "sessions-3-exercises",
-                goals = intSeries(2, 1, 16),
+                goals = intSeries(1, 1, 3),
                 idForGoal = { goal -> "weekly-sessions-3-exercises-$goal" },
                 unitEn = "sessions",
                 unitUk = "сесій",
@@ -663,7 +648,7 @@ class WorkoutListViewModel(
         addAll(
             createMonthlyTemplates(
                 family = "workouts",
-                goals = intSeries(12, 2, 30),
+                goals = intSeries(8, 1, 7),
                 idForGoal = { goal -> "monthly-workouts-$goal" },
                 unitEn = "workouts",
                 unitUk = "тренування",
@@ -677,7 +662,7 @@ class WorkoutListViewModel(
         addAll(
             createMonthlyTemplates(
                 family = "active-days",
-                goals = intSeries(10, 1, 22),
+                goals = intSeries(8, 1, 7),
                 idForGoal = { goal -> "monthly-active-days-$goal" },
                 unitEn = "days",
                 unitUk = "днів",
@@ -691,7 +676,7 @@ class WorkoutListViewModel(
         addAll(
             createMonthlyTemplates(
                 family = "sets",
-                goals = intSeries(80, 10, 28),
+                goals = intSeries(70, 10, 12),
                 idForGoal = { goal -> "monthly-sets-$goal" },
                 unitEn = "sets",
                 unitUk = "підходів",
@@ -706,8 +691,8 @@ class WorkoutListViewModel(
             createMonthlyTemplates(
                 family = "volume",
                 goals = scaledSeries(
-                    base = 15_000,
-                    factors = listOf(1.0, 1.2, 1.45, 1.75, 2.1, 2.5, 3.0, 3.6, 4.3, 5.1, 6.0, 7.1, 8.3, 9.6, 11.0, 12.6, 14.3, 16.2, 18.2, 20.5)
+                    base = 45_000,
+                    factors = listOf(0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.55, 1.7, 1.85, 2.0)
                 ),
                 idForGoal = { goal -> "monthly-volume-$goal" },
                 unitEn = "volume",
@@ -722,7 +707,7 @@ class WorkoutListViewModel(
         addAll(
             createMonthlyTemplates(
                 family = "exercises",
-                goals = intSeries(35, 5, 20),
+                goals = intSeries(45, 7, 14),
                 idForGoal = { goal -> "monthly-exercises-$goal" },
                 unitEn = "exercises",
                 unitUk = "вправ",
@@ -736,7 +721,7 @@ class WorkoutListViewModel(
         addAll(
             createMonthlyTemplates(
                 family = "days-10-sets",
-                goals = intSeries(6, 1, 16),
+                goals = intSeries(4, 1, 9),
                 idForGoal = { goal -> "monthly-days-10-sets-$goal" },
                 unitEn = "days",
                 unitUk = "днів",
@@ -750,7 +735,7 @@ class WorkoutListViewModel(
         addAll(
             createMonthlyTemplates(
                 family = "days-1000-volume",
-                goals = intSeries(6, 1, 16),
+                goals = intSeries(4, 1, 9),
                 idForGoal = { goal -> "monthly-days-1000-volume-$goal" },
                 unitEn = "days",
                 unitUk = "днів",
@@ -764,7 +749,7 @@ class WorkoutListViewModel(
         addAll(
             createMonthlyTemplates(
                 family = "sessions-8-sets",
-                goals = intSeries(10, 2, 20),
+                goals = intSeries(5, 1, 9),
                 idForGoal = { goal -> "monthly-sessions-8-sets-$goal" },
                 unitEn = "sessions",
                 unitUk = "сесій",
@@ -778,7 +763,7 @@ class WorkoutListViewModel(
         addAll(
             createMonthlyTemplates(
                 family = "sessions-3-exercises",
-                goals = intSeries(8, 2, 16),
+                goals = intSeries(5, 1, 9),
                 idForGoal = { goal -> "monthly-sessions-3-exercises-$goal" },
                 unitEn = "sessions",
                 unitUk = "сесій",
@@ -793,8 +778,8 @@ class WorkoutListViewModel(
             createMonthlyTemplates(
                 family = "max-session-volume",
                 goals = scaledSeries(
-                    base = 1_200,
-                    factors = listOf(1.0, 1.2, 1.45, 1.75, 2.1, 2.5, 3.0, 3.6, 4.3, 5.1, 6.1, 7.3, 8.6, 10.0, 11.6, 13.3)
+                    base = 1_400,
+                    factors = listOf(1.0, 1.15, 1.3, 1.45, 1.6, 1.8, 2.0, 2.25, 2.5, 2.8, 3.1, 3.5, 3.9, 4.3, 4.8, 5.3)
                 ),
                 idForGoal = { goal -> "monthly-max-session-volume-$goal" },
                 unitEn = "volume",
@@ -809,7 +794,7 @@ class WorkoutListViewModel(
         addAll(
             createMonthlyTemplates(
                 family = "max-session-sets",
-                goals = intSeries(12, 2, 20),
+                goals = intSeries(10, 2, 11),
                 idForGoal = { goal -> "monthly-max-session-sets-$goal" },
                 unitEn = "sets",
                 unitUk = "підходів",
@@ -823,7 +808,7 @@ class WorkoutListViewModel(
         addAll(
             createMonthlyTemplates(
                 family = "max-session-exercises",
-                goals = intSeries(5, 1, 16),
+                goals = intSeries(4, 1, 9),
                 idForGoal = { goal -> "monthly-max-session-exercises-$goal" },
                 unitEn = "exercises",
                 unitUk = "вправ",
@@ -1185,10 +1170,13 @@ class WorkoutListViewModel(
     private fun missionSelectionScore(goal: Int, target: Int, seed: Long): Long {
         val adjustedTarget = target.coerceAtLeast(1)
         val distance = abs(goal - adjustedTarget).toLong()
-        // Penalize easier-than-target goals, so strong users receive harder missions first.
-        val underTargetPenalty = if (goal < adjustedTarget) (adjustedTarget - goal).toLong() * 3L else 0L
+        val underTargetDistance = (adjustedTarget - goal).coerceAtLeast(0).toLong()
+        val overTargetDistance = (goal - adjustedTarget).coerceAtLeast(0).toLong()
         val jitter = abs(missionOrderScore(goal.toString(), seed) % 31L)
-        return (distance * 100L) + (underTargetPenalty * 100L) + jitter
+        return (distance * 100L) +
+            (underTargetDistance * 40L) +
+            (overTargetDistance * 120L) +
+            jitter
     }
 
     private fun missionTargetForFamily(
@@ -1199,44 +1187,49 @@ class WorkoutListViewModel(
         return when (cadence) {
             MissionCadence.Daily -> when (family) {
                 "workouts" -> 1
-                "exercises" -> maxOf(8, history.maxDayExercises)
-                "sets" -> maxOf(16, history.maxDaySets)
-                "volume" -> maxOf(6_000, history.maxDayVolume)
-                "max-session-volume" -> maxOf(2_500, history.maxSessionVolume)
-                "max-session-exercises" -> maxOf(6, history.maxSessionExercises)
-                "max-session-sets" -> maxOf(12, history.maxSessionSets)
+                "exercises" -> boundedTarget(history.maxDayExercises, fallback = 8, min = 5, max = 12)
+                "sets" -> boundedTarget(history.maxDaySets, fallback = 14, min = 10, max = 24)
+                "volume" -> boundedTarget(history.maxDayVolume, fallback = 4_800, min = 3_000, max = 8_000)
+                "max-session-volume" -> boundedTarget(history.maxSessionVolume, fallback = 4_000, min = 2_500, max = 7_500)
+                "max-session-exercises" -> boundedTarget(history.maxSessionExercises, fallback = 6, min = 4, max = 10)
+                "max-session-sets" -> boundedTarget(history.maxSessionSets, fallback = 12, min = 8, max = 22)
                 else -> 1
             }
 
             MissionCadence.Weekly -> when (family) {
-                "workouts" -> maxOf(6, history.maxWeekWorkouts)
-                "active-days" -> maxOf(4, history.maxWeekActiveDays)
-                "exercises" -> maxOf(28, history.maxWeekExercises)
-                "sets" -> maxOf(60, history.maxWeekSets)
-                "volume" -> maxOf(20_000, history.maxWeekVolume)
-                "days-10-sets" -> maxOf(3, history.maxWeekDaysWithTenPlusSets)
-                "days-1000-volume" -> maxOf(3, history.maxWeekDaysWithThousandVolume)
-                "sessions-8-sets" -> maxOf(4, history.maxWeekSessionsWithEightPlusSets)
-                "sessions-3-exercises" -> maxOf(4, history.maxWeekSessionsWithThreePlusExercises)
+                "workouts" -> boundedTarget(history.maxWeekWorkouts, fallback = 3, min = 2, max = 3)
+                "active-days" -> boundedTarget(history.maxWeekActiveDays, fallback = 3, min = 2, max = 3)
+                "exercises" -> boundedTarget(history.maxWeekExercises, fallback = 28, min = 18, max = 48)
+                "sets" -> boundedTarget(history.maxWeekSets, fallback = 40, min = 24, max = 64)
+                "volume" -> boundedTarget(history.maxWeekVolume, fallback = 16_000, min = 9_000, max = 24_000)
+                "days-10-sets" -> boundedTarget(history.maxWeekDaysWithTenPlusSets, fallback = 2, min = 1, max = 3)
+                "days-1000-volume" -> boundedTarget(history.maxWeekDaysWithThousandVolume, fallback = 2, min = 1, max = 3)
+                "sessions-8-sets" -> boundedTarget(history.maxWeekSessionsWithEightPlusSets, fallback = 2, min = 1, max = 3)
+                "sessions-3-exercises" -> boundedTarget(history.maxWeekSessionsWithThreePlusExercises, fallback = 2, min = 1, max = 3)
                 else -> 1
             }
 
             MissionCadence.Monthly -> when (family) {
-                "workouts" -> maxOf(20, history.maxMonthWorkouts)
-                "active-days" -> maxOf(14, history.maxMonthActiveDays)
-                "exercises" -> maxOf(70, history.maxMonthExercises)
-                "sets" -> maxOf(180, history.maxMonthSets)
-                "volume" -> maxOf(70_000, history.maxMonthVolume)
-                "days-10-sets" -> maxOf(10, history.maxMonthDaysWithTenPlusSets)
-                "days-1000-volume" -> maxOf(10, history.maxMonthDaysWithThousandVolume)
-                "sessions-8-sets" -> maxOf(16, history.maxMonthSessionsWithEightPlusSets)
-                "sessions-3-exercises" -> maxOf(14, history.maxMonthSessionsWithThreePlusExercises)
-                "max-session-volume" -> maxOf(3_500, history.maxSessionVolume)
-                "max-session-sets" -> maxOf(16, history.maxSessionSets)
-                "max-session-exercises" -> maxOf(7, history.maxSessionExercises)
+                "workouts" -> boundedTarget(history.maxMonthWorkouts, fallback = 12, min = 8, max = 14)
+                "active-days" -> boundedTarget(history.maxMonthActiveDays, fallback = 12, min = 8, max = 14)
+                "exercises" -> boundedTarget(history.maxMonthExercises, fallback = 90, min = 45, max = 140)
+                "sets" -> boundedTarget(history.maxMonthSets, fallback = 130, min = 70, max = 200)
+                "volume" -> boundedTarget(history.maxMonthVolume, fallback = 65_000, min = 35_000, max = 95_000)
+                "days-10-sets" -> boundedTarget(history.maxMonthDaysWithTenPlusSets, fallback = 8, min = 4, max = 12)
+                "days-1000-volume" -> boundedTarget(history.maxMonthDaysWithThousandVolume, fallback = 8, min = 4, max = 12)
+                "sessions-8-sets" -> boundedTarget(history.maxMonthSessionsWithEightPlusSets, fallback = 8, min = 4, max = 12)
+                "sessions-3-exercises" -> boundedTarget(history.maxMonthSessionsWithThreePlusExercises, fallback = 8, min = 4, max = 12)
+                "max-session-volume" -> boundedTarget(history.maxSessionVolume, fallback = 5_000, min = 2_500, max = 8_000)
+                "max-session-sets" -> boundedTarget(history.maxSessionSets, fallback = 18, min = 10, max = 30)
+                "max-session-exercises" -> boundedTarget(history.maxSessionExercises, fallback = 8, min = 4, max = 12)
                 else -> 1
             }
         }
+    }
+
+    private fun boundedTarget(observed: Int, fallback: Int, min: Int, max: Int): Int {
+        val baseline = if (observed > 0) observed else fallback
+        return baseline.coerceIn(min, max)
     }
 
     private fun missionXpReward(cadence: MissionCadence, goal: Int, target: Int): Int {
