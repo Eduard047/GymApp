@@ -26,6 +26,12 @@ data class WorkoutSetDraft(
     val reps: Int
 )
 
+data class NamedWorkoutSetDraft(
+    val exerciseName: String,
+    val weight: Double,
+    val reps: Int
+)
+
 data class WorkoutExerciseDraft(
     val exerciseId: Long,
     val sets: List<WorkoutSetDraft>
@@ -209,6 +215,45 @@ class GymRepository(
         }
     }
 
+    suspend fun createWorkoutSessionFromNamedSets(
+        date: Long,
+        note: String?,
+        sets: List<NamedWorkoutSetDraft>
+    ): Long? {
+        if (sets.isEmpty()) {
+            return null
+        }
+
+        val exerciseIdByName = linkedMapOf<String, Long>()
+        val groupedDrafts = linkedMapOf<Long, MutableList<WorkoutSetDraft>>()
+
+        for (set in sets) {
+            val name = set.exerciseName.trim()
+            if (name.isBlank()) continue
+
+            val key = name.lowercase()
+            val exerciseId = exerciseIdByName.getOrPut(key) {
+                runCatching { exerciseDao.getByName(name) }.getOrNull()?.id
+                    ?: exerciseDao.insert(ExerciseEntity(name = name))
+            }
+
+            groupedDrafts.getOrPut(exerciseId) { mutableListOf() }
+                .add(WorkoutSetDraft(weight = set.weight, reps = set.reps))
+        }
+
+        if (groupedDrafts.isEmpty()) {
+            return null
+        }
+
+        return createWorkoutSession(
+            date = date,
+            note = note,
+            workoutExercises = groupedDrafts.map { (exerciseId, drafts) ->
+                WorkoutExerciseDraft(exerciseId = exerciseId, sets = drafts)
+            }
+        )
+    }
+
     suspend fun updateWorkoutSession(session: WorkoutSessionEntity) {
         workoutDao.update(session)
     }
@@ -268,6 +313,16 @@ class GymRepository(
         setDao.update(setEntry)
     }
 
+    suspend fun updateSetById(setId: Long, weight: Double, reps: Int) {
+        val existing = setDao.getById(setId) ?: return
+        setDao.update(
+            existing.copy(
+                weight = weight,
+                reps = reps
+            )
+        )
+    }
+
     suspend fun deleteSet(setEntry: SetEntryEntity) {
         deleteSetById(setEntry.id)
     }
@@ -305,6 +360,10 @@ class GymRepository(
                     exercise.copy(sets = exercise.sets.sortedBy { it.orderIndex })
                 }
         )
+    }
+
+    suspend fun getSessionDetailsForSync(limit: Int = 120): List<WorkoutSessionDetails> {
+        return workoutDao.getSessionDetailsForSync(limit).map(::sortSessionDetails)
     }
 
     private fun calculateStreakDays(allSessions: List<WorkoutSessionSummary>): Int {

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Gym Watch</string>
+    <string name="tab_record">Record</string>
+    <string name="tab_history">History</string>
+    <string name="label_workout_note">Workout note</string>
+    <string name="label_set_exercise">Exercise</string>
+    <string name="label_set_weight">Weight (kg)</string>
+    <string name="label_set_reps">Reps</string>
+    <string name="action_add_set">Add set</string>
+    <string name="action_save_workout">Save workout</string>
+    <string name="action_back">Back</string>
+    <string name="action_edit">Edit</string>
+    <string name="action_delete">Delete</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_save">Save</string>
+    <string name="action_sync_now">Sync now</string>
+    <string name="action_weight_minus">-2.5</string>
+    <string name="action_weight_plus">+2.5</string>
+    <string name="action_reps_minus">-1</string>
+    <string name="action_reps_plus">+1</string>
+    <string name="title_workout_details">Workout details</string>
+    <string name="empty_history">No workouts yet.</string>
+    <string name="hint_note_optional">Optional note</string>
+    <string name="hint_optional">Optional</string>
+    <string name="message_workout_saved">Workout saved</string>
+    <string name="message_invalid_draft">Please enter valid exercise, reps and optional weight.</string>
+    <string name="message_invalid_set_input">Please enter valid reps and optional weight.</string>
+    <string name="message_sync_unavailable">Phone is not connected. Open app on phone and retry.</string>
+    <string name="label_session_sets">%1$d sets</string>
+    <string name="label_session_volume">Vol %1$.1f</string>
+    <string name="label_set_summary">%1$s • %2$.1f kg x %3$d</string>
+</resources>

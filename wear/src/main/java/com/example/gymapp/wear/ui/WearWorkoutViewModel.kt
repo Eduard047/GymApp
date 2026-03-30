@@ -1,0 +1,249 @@
+package com.example.gymapp.wear.ui
+
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
+import com.example.gymapp.wear.R
+import com.example.gymapp.wear.WearGymApplication
+import com.example.gymapp.wear.data.WearSetUiModel
+import com.example.gymapp.wear.data.WearWorkoutRepository
+import com.example.gymapp.wear.data.WearWorkoutSessionUiModel
+import com.example.gymapp.wear.data.WearWorkoutSetDraft
+import com.example.gymapp.wear.sync.WearSyncClient
+import com.example.gymapp.wear.util.parseWeightInputOrNull
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+
+data class WearSetInputUiState(
+    val id: Long,
+    val exerciseName: String = "",
+    val weight: String = "",
+    val reps: String = ""
+)
+
+data class WearWorkoutUiState(
+    val note: String = "",
+    val draftSets: List<WearSetInputUiState> = emptyList(),
+    val sessions: List<WearWorkoutSessionUiModel> = emptyList(),
+    val selectedSessionId: Long? = null,
+    val isSaving: Boolean = false,
+    val message: String? = null
+) {
+    val selectedSession: WearWorkoutSessionUiModel?
+        get() = sessions.firstOrNull { it.id == selectedSessionId }
+}
+
+class WearWorkoutViewModel(
+    application: Application,
+    private val repository: WearWorkoutRepository,
+    private val syncClient: WearSyncClient
+) : AndroidViewModel(application) {
+    private val appContext = application.applicationContext
+
+    private var nextDraftSetId = 2L
+    private val note = MutableStateFlow("")
+    private val draftSets = MutableStateFlow(listOf(WearSetInputUiState(id = 1L)))
+    private val selectedSessionId = MutableStateFlow<Long?>(null)
+    private val isSaving = MutableStateFlow(false)
+    private val message = MutableStateFlow<String?>(null)
+
+    private val editorState = combine(
+        note,
+        draftSets,
+        repository.observeWorkoutSessions()
+    ) { noteValue, setInputs, sessions ->
+        Triple(noteValue, setInputs, sessions)
+    }
+
+    val uiState: StateFlow<WearWorkoutUiState> = combine(
+        editorState,
+        selectedSessionId,
+        isSaving,
+        message
+    ) { editor, selectedId, saving, currentMessage ->
+        WearWorkoutUiState(
+            note = editor.first,
+            draftSets = editor.second,
+            sessions = editor.third,
+            selectedSessionId = selectedId,
+            isSaving = saving,
+            message = currentMessage
+        )
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5_000),
+        initialValue = WearWorkoutUiState(draftSets = listOf(WearSetInputUiState(id = 1L)))
+    )
+
+    init {
+        requestRemoteSync(showError = false)
+    }
+
+    fun updateNote(value: String) {
+        note.value = value
+    }
+
+    fun addDraftSet() {
+        draftSets.update { current ->
+            current + WearSetInputUiState(id = nextDraftSetId++)
+        }
+    }
+
+    fun removeDraftSet(setId: Long) {
+        draftSets.update { current ->
+            val updated = current.filterNot { it.id == setId }
+            if (updated.isEmpty()) listOf(WearSetInputUiState(id = nextDraftSetId++)) else updated
+        }
+    }
+
+    fun updateDraftExercise(setId: Long, value: String) {
+        draftSets.update { current ->
+            current.map { set ->
+                if (set.id == setId) set.copy(exerciseName = value) else set
+            }
+        }
+    }
+
+    fun updateDraftWeight(setId: Long, value: String) {
+        draftSets.update { current ->
+            current.map { set ->
+                if (set.id == setId) set.copy(weight = value) else set
+            }
+        }
+    }
+
+    fun updateDraftReps(setId: Long, value: String) {
+        draftSets.update { current ->
+            current.map { set ->
+                if (set.id == setId) set.copy(reps = value) else set
+            }
+        }
+    }
+
+    fun saveWorkout() {
+        viewModelScope.launch {
+            val parsedSets = draftSets.value.mapNotNull(::parseDraftSet)
+            if (parsedSets.size != draftSets.value.size || parsedSets.isEmpty()) {
+                message.value = appContext.getString(R.string.message_invalid_draft)
+                return@launch
+            }
+
+            isSaving.value = true
+            runCatching {
+                syncClient.createWorkout(
+                    startedAt = System.currentTimeMillis(),
+                    note = note.value,
+                    sets = parsedSets
+                )
+            }.onSuccess {
+                note.value = ""
+                draftSets.value = listOf(WearSetInputUiState(id = nextDraftSetId++))
+                selectedSessionId.value = null
+                message.value = appContext.getString(R.string.message_workout_saved)
+                requestRemoteSync(showError = false)
+            }.onFailure {
+                message.value = appContext.getString(R.string.message_sync_unavailable)
+            }
+            isSaving.value = false
+        }
+    }
+
+    fun selectSession(sessionId: Long?) {
+        selectedSessionId.value = sessionId
+    }
+
+    fun updateExistingSet(
+        set: WearSetUiModel,
+        updatedWeight: String,
+        updatedReps: String
+    ) {
+        val parsedWeight = parseWeightInputOrNull(updatedWeight)
+        val parsedReps = updatedReps.trim().toIntOrNull()
+        if (parsedWeight == null || parsedReps == null || parsedWeight < 0.0 || parsedReps <= 0) {
+            message.value = appContext.getString(R.string.message_invalid_set_input)
+            return
+        }
+
+        viewModelScope.launch {
+            runCatching {
+                syncClient.updateSet(
+                    setId = set.id,
+                    weight = parsedWeight,
+                    reps = parsedReps
+                )
+            }.onSuccess {
+                requestRemoteSync(showError = false)
+            }.onFailure {
+                message.value = appContext.getString(R.string.message_sync_unavailable)
+            }
+        }
+    }
+
+    fun deleteSet(setId: Long) {
+        viewModelScope.launch {
+            runCatching {
+                syncClient.deleteSet(setId)
+            }.onSuccess {
+                requestRemoteSync(showError = false)
+            }.onFailure {
+                message.value = appContext.getString(R.string.message_sync_unavailable)
+            }
+        }
+    }
+
+    fun consumeMessage() {
+        message.value = null
+    }
+
+    fun requestRemoteSync(showError: Boolean = true) {
+        viewModelScope.launch {
+            runCatching {
+                syncClient.requestFullSync()
+            }.onFailure {
+                if (showError) {
+                    message.value = appContext.getString(R.string.message_sync_unavailable)
+                }
+            }
+        }
+    }
+
+    private fun parseDraftSet(input: WearSetInputUiState): WearWorkoutSetDraft? {
+        val exerciseName = input.exerciseName.trim()
+        if (exerciseName.isBlank()) {
+            return null
+        }
+
+        val weight = parseWeightInputOrNull(input.weight) ?: return null
+        val reps = input.reps.trim().toIntOrNull() ?: return null
+        if (weight < 0.0 || reps <= 0) {
+            return null
+        }
+
+        return WearWorkoutSetDraft(
+            exerciseName = exerciseName,
+            weight = weight,
+            reps = reps
+        )
+    }
+
+    companion object {
+        fun factory(application: Application): ViewModelProvider.Factory = viewModelFactory {
+            initializer {
+                val app = application as WearGymApplication
+                WearWorkoutViewModel(
+                    application = application,
+                    repository = app.repository,
+                    syncClient = WearSyncClient(application)
+                )
+            }
+        }
+    }
+}

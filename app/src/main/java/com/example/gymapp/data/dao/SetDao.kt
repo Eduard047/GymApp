@@ -25,6 +25,9 @@ interface SetDao {
     @Query("SELECT workoutExerciseId FROM set_entries WHERE id = :setId LIMIT 1")
     suspend fun getWorkoutExerciseIdBySetId(setId: Long): Long?
 
+    @Query("SELECT * FROM set_entries WHERE id = :setId LIMIT 1")
+    suspend fun getById(setId: Long): SetEntryEntity?
+
     @Query("DELETE FROM set_entries WHERE id = :setId")
     suspend fun deleteById(setId: Long)
 

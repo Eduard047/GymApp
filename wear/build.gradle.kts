@@ -5,11 +5,8 @@ plugins {
     id("org.jetbrains.kotlin.kapt")
 }
 
-val appVersionCode = (findProperty("appVersionCode") as String?)?.toIntOrNull() ?: 1
-val appVersionName = (findProperty("appVersionName") as String?) ?: "1.0.0"
-
 android {
-    namespace = "com.example.gymapp"
+    namespace = "com.example.gymapp.wear"
     compileSdk {
         version = release(36) {
             minorApiLevel = 1
@@ -17,11 +14,11 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.gymapp"
-        minSdk = 24
+        applicationId = "com.example.gymapp.wear"
+        minSdk = 30
         targetSdk = 36
-        versionCode = appVersionCode
-        versionName = appVersionName
+        versionCode = 1
+        versionName = "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -35,14 +32,16 @@ android {
             )
         }
     }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
-        isCoreLibraryDesugaringEnabled = true
     }
+
     kotlinOptions {
         jvmTarget = "11"
     }
+
     buildFeatures {
         compose = true
     }
@@ -53,32 +52,23 @@ kapt {
 }
 
 dependencies {
-    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
-    implementation("androidx.appcompat:appcompat:1.7.0")
-    implementation("com.google.android.material:material:1.12.0")
-    implementation("androidx.room:room-runtime:2.8.4")
-    implementation("androidx.room:room-ktx:2.8.4")
-    kapt("androidx.room:room-compiler:2.8.4")
-    implementation("androidx.navigation:navigation-compose:2.7.7")
+    implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1")
     implementation("com.google.android.gms:play-services-wearable:19.0.0")
+
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
-    implementation("androidx.compose.material:material-icons-extended")
-    testImplementation(libs.junit)
-    androidTestImplementation(libs.androidx.junit)
-    androidTestImplementation(libs.androidx.espresso.core)
-    androidTestImplementation(platform(libs.androidx.compose.bom))
-    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+
+    implementation("androidx.room:room-runtime:2.8.4")
+    implementation("androidx.room:room-ktx:2.8.4")
+    kapt("androidx.room:room-compiler:2.8.4")
+
     debugImplementation(libs.androidx.compose.ui.tooling)
-    debugImplementation(libs.androidx.compose.ui.test.manifest)
 }

@@ -10,6 +10,7 @@ import com.example.gymapp.data.entity.SetEntryEntity
 import com.example.gymapp.data.entity.WorkoutSessionDetails
 import com.example.gymapp.data.repository.GymRepository
 import com.example.gymapp.util.RestTimerController
+import com.example.gymapp.util.parseWeightInputOrNull
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -133,9 +134,9 @@ class WorkoutDetailViewModel(
     }
 
     fun updateSet(setEntry: SetEntryEntity, weight: String, reps: String) {
-        val parsedWeight = weight.trim().takeIf { it.isNotBlank() }?.toDoubleOrNull() ?: 0.0
+        val parsedWeight = parseWeightInputOrNull(weight)
         val parsedReps = reps.trim().toIntOrNull()
-        if (parsedReps == null || parsedWeight < 0.0 || parsedReps <= 0) {
+        if (parsedWeight == null || parsedReps == null || parsedWeight < 0.0 || parsedReps <= 0) {
             viewModelScope.launch {
                 _events.emit(WorkoutDetailEvent.InvalidInput)
             }

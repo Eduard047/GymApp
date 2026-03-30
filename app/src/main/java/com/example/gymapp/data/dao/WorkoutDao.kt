@@ -110,6 +110,23 @@ interface WorkoutDao {
     )
     suspend fun getLatestSessionDetails(): WorkoutSessionDetails?
 
+    @androidx.room.Transaction
+    @Query(
+        """
+        SELECT *
+        FROM workout_sessions ws
+        WHERE EXISTS (
+            SELECT 1
+            FROM workout_exercises we
+            INNER JOIN set_entries se ON se.workoutExerciseId = we.id
+            WHERE we.sessionId = ws.id
+        )
+        ORDER BY ws.date DESC
+        LIMIT :limit
+        """
+    )
+    suspend fun getSessionDetailsForSync(limit: Int): List<WorkoutSessionDetails>
+
     @Query(
         """
         SELECT

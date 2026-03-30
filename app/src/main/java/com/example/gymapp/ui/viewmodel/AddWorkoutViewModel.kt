@@ -9,6 +9,7 @@ import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.repository.GymRepository
 import com.example.gymapp.data.repository.WorkoutExerciseDraft
 import com.example.gymapp.data.repository.WorkoutSetDraft
+import com.example.gymapp.util.parseWeightInputOrNull
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -306,8 +307,7 @@ class AddWorkoutViewModel(
         return drafts.mapNotNull { draft ->
             val exerciseId = draft.exerciseId ?: return@mapNotNull null
             val sets = draft.sets.mapNotNull { set ->
-                val weightText = set.weight.trim()
-                val weight = if (weightText.isBlank()) 0.0 else weightText.toDoubleOrNull()
+                val weight = parseWeightInputOrNull(set.weight)
                 val reps = set.reps.trim().toIntOrNull()
                 if (weight == null || reps == null || weight < 0.0 || reps <= 0) {
                     null
