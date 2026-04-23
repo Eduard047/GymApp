@@ -5,16 +5,16 @@ Android Gym Workout Tracker built with Kotlin, Jetpack Compose, MVVM, Room, Coro
 ## Download APK
 
 <p align="center">
-  <a href="https://github.com/Eduard047/GymApp/releases/latest">
+  <a href="https://github.com/Eduard047/GymApp/releases/tag/debug-v20260423">
     <img alt="Latest Build" src="https://img.shields.io/github/v/release/Eduard047/GymApp?include_prereleases&style=for-the-badge&label=Latest%20Build">
   </a>
-  <a href="https://github.com/Eduard047/GymApp/releases/latest">
+  <a href="https://github.com/Eduard047/GymApp/releases">
     <img alt="Releases" src="https://img.shields.io/badge/Open-Releases-181717?style=for-the-badge&logo=github&logoColor=white">
   </a>
-  <a href="https://github.com/Eduard047/GymApp/releases/latest/download/GymApp-phone-debug.apk">
+  <a href="https://github.com/Eduard047/GymApp/releases/download/debug-v20260423/GymApp-phone-debug.apk">
     <img alt="Download Phone APK" src="https://img.shields.io/badge/Download-Phone%20APK-34A853?style=for-the-badge&logo=android&logoColor=white">
   </a>
-  <a href="https://github.com/Eduard047/GymApp/releases/latest/download/GymApp-watch-debug.apk">
+  <a href="https://github.com/Eduard047/GymApp/releases/download/debug-v20260423/GymApp-watch-debug.apk">
     <img alt="Download Watch APK" src="https://img.shields.io/badge/Download-Watch%20APK-3D7DFF?style=for-the-badge&logo=wearos&logoColor=white">
   </a>
 </p>
@@ -25,9 +25,10 @@ Android Gym Workout Tracker built with Kotlin, Jetpack Compose, MVVM, Room, Coro
 
 ## Releases
 
-- Latest releases page: https://github.com/Eduard047/GymApp/releases/latest
-- Current phone debug APK: https://github.com/Eduard047/GymApp/releases/latest/download/GymApp-phone-debug.apk
-- Current watch debug APK: https://github.com/Eduard047/GymApp/releases/latest/download/GymApp-watch-debug.apk
+- Releases page: https://github.com/Eduard047/GymApp/releases
+- Current release tag: https://github.com/Eduard047/GymApp/releases/tag/debug-v20260423
+- Current phone debug APK: https://github.com/Eduard047/GymApp/releases/download/debug-v20260423/GymApp-phone-debug.apk
+- Current watch debug APK: https://github.com/Eduard047/GymApp/releases/download/debug-v20260423/GymApp-watch-debug.apk
 
 ## Build Update APK (preserve app data)
 
