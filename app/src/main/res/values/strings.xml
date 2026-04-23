@@ -19,6 +19,8 @@
     <string name="action_add_exercise">Add Exercise</string>
     <string name="action_add_set">Add Set</string>
     <string name="action_add_set_last_weight">Quick + Last</string>
+    <string name="action_copy_last_set">Copy Last Set</string>
+    <string name="action_copy_last_plus">Copy Last +2.5 kg</string>
     <string name="action_save_workout">Save Workout</string>
     <string name="action_delete">Delete</string>
     <string name="action_edit">Edit</string>
@@ -27,6 +29,7 @@
     <string name="action_save">Save</string>
     <string name="action_current_month">Current</string>
     <string name="action_repeat_last_workout">Repeat Last Workout</string>
+    <string name="action_sync_plan_to_watch">Sync Plan to Watch</string>
     <string name="action_apply_last_weight">Use Last Weight</string>
     <string name="action_add_to_workout">Add to Workout</string>
     <string name="action_finish_workout">Finish Workout</string>
@@ -48,6 +51,18 @@
     <string name="label_weight_kg">Weight (kg)</string>
     <string name="hint_optional">Optional</string>
     <string name="label_reps">Reps</string>
+    <string name="add_workout_intro_title">Build todays session</string>
+    <string name="add_workout_intro_supporting">Log your plan fast and keep momentum with smart set shortcuts.</string>
+    <string name="add_workout_active_exercises">Exercises: %1$d</string>
+    <string name="add_workout_total_sets">Sets: %1$d</string>
+    <string name="add_workout_plan_templates">Quick session templates</string>
+    <string name="add_workout_save_hint">Check your sets, then save to move straight into workout details.</string>
+    <string name="note_template_push">Push day</string>
+    <string name="note_template_pull">Pull day</string>
+    <string name="note_template_legs">Leg day</string>
+    <string name="note_template_upper">Upper body</string>
+    <string name="note_template_lower">Lower body</string>
+    <string name="note_template_deload">Deload</string>
     <string name="label_exercise_name">Exercise name</string>
     <string name="hint_exercise_name">e.g. Bench Press</string>
     <string name="label_rest_timer">Rest Timer</string>
@@ -78,6 +93,8 @@
     <string name="empty_detail">Workout not found.</string>
 
     <string name="message_validation_error">Please fill all selected exercises and sets.</string>
+    <string name="message_plan_sync_success">Plan synced to watch.</string>
+    <string name="message_plan_sync_failed">Unable to sync plan to watch. Check Bluetooth connection.</string>
     <string name="message_set_deleted">Set deleted</string>
     <string name="message_invalid_set_input">Enter valid reps and optional weight.</string>
     <string name="message_exercise_error">Unable to save exercise. Name may already exist.</string>

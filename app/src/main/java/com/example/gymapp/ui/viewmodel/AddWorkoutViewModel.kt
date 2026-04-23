@@ -1,14 +1,15 @@
 ﻿package com.example.gymapp.ui.viewmodel
 
-import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.repository.GymRepository
+import com.example.gymapp.data.repository.NamedWorkoutSetDraft
 import com.example.gymapp.data.repository.WorkoutExerciseDraft
 import com.example.gymapp.data.repository.WorkoutSetDraft
+import com.example.gymapp.sync.PhoneSyncClient
 import com.example.gymapp.util.parseWeightInputOrNull
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -40,6 +41,8 @@ data class AddWorkoutUiState(
     val lastWeights: Map<Long, Double?> = emptyMap(),
     val canRepeatFromLast: Boolean = false,
     val isTemplateLoading: Boolean = false,
+    val isSyncingPlanToWatch: Boolean = false,
+    val didSyncPlanToWatch: Boolean? = null,
     val isSaving: Boolean = false,
     val hasValidationError: Boolean = false,
     val createdSessionId: Long? = null
@@ -47,12 +50,23 @@ data class AddWorkoutUiState(
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class AddWorkoutViewModel(
-    private val repository: GymRepository
-) : ViewModel() {
+    private val repository: GymRepository,
+    private val syncClient: PhoneSyncClient
+) : androidx.lifecycle.ViewModel() {
+    private data class TransientState(
+        val isSyncingPlanToWatch: Boolean,
+        val didSyncPlanToWatch: Boolean?,
+        val isSaving: Boolean,
+        val hasValidationError: Boolean,
+        val createdSessionId: Long?
+    )
+
     private data class LocalState(
         val note: String,
         val exerciseDrafts: List<ExerciseInputState>,
         val isTemplateLoading: Boolean,
+        val isSyncingPlanToWatch: Boolean,
+        val didSyncPlanToWatch: Boolean?,
         val isSaving: Boolean,
         val hasValidationError: Boolean,
         val createdSessionId: Long?
@@ -63,6 +77,8 @@ class AddWorkoutViewModel(
     private val note = MutableStateFlow("")
     private val exerciseDrafts = MutableStateFlow(listOf(ExerciseInputState(draftId = 1L)))
     private val isTemplateLoading = MutableStateFlow(false)
+    private val isSyncingPlanToWatch = MutableStateFlow(false)
+    private val didSyncPlanToWatch = MutableStateFlow<Boolean?>(null)
     private val isSaving = MutableStateFlow(false)
     private val hasValidationError = MutableStateFlow(false)
     private val createdSessionId = MutableStateFlow<Long?>(null)
@@ -74,6 +90,10 @@ class AddWorkoutViewModel(
 
     private val selectedExerciseIds = exerciseDrafts.map { drafts ->
         drafts.mapNotNull { it.exerciseId }
+    }
+
+    private fun resetWatchPlanSyncResult() {
+        didSyncPlanToWatch.value = null
     }
 
     private val lastWeights = selectedExerciseIds.flatMapLatest { ids ->
@@ -88,19 +108,35 @@ class AddWorkoutViewModel(
         Triple(noteValue, drafts, templateLoading)
     }
 
-    private val localState = combine(
-        editorState,
+    private val transientState = combine(
+        isSyncingPlanToWatch,
+        didSyncPlanToWatch,
         isSaving,
         hasValidationError,
         createdSessionId
-    ) { editor, saving, validationError, createdId ->
+    ) { syncingPlan, planSyncState, saving, validationError, createdId ->
+        TransientState(
+            isSyncingPlanToWatch = syncingPlan,
+            didSyncPlanToWatch = planSyncState,
+            isSaving = saving,
+            hasValidationError = validationError,
+            createdSessionId = createdId
+        )
+    }
+
+    private val localState = combine(
+        editorState,
+        transientState
+    ) { editor, transient ->
         LocalState(
             note = editor.first,
             exerciseDrafts = editor.second,
             isTemplateLoading = editor.third,
-            isSaving = saving,
-            hasValidationError = validationError,
-            createdSessionId = createdId
+            isSyncingPlanToWatch = transient.isSyncingPlanToWatch,
+            didSyncPlanToWatch = transient.didSyncPlanToWatch,
+            isSaving = transient.isSaving,
+            hasValidationError = transient.hasValidationError,
+            createdSessionId = transient.createdSessionId
         )
     }
 
@@ -117,6 +153,8 @@ class AddWorkoutViewModel(
             lastWeights = lastWeightsMap,
             canRepeatFromLast = canRepeat,
             isTemplateLoading = local.isTemplateLoading,
+            isSyncingPlanToWatch = local.isSyncingPlanToWatch,
+            didSyncPlanToWatch = local.didSyncPlanToWatch,
             isSaving = local.isSaving,
             hasValidationError = local.hasValidationError,
             createdSessionId = local.createdSessionId
@@ -128,16 +166,19 @@ class AddWorkoutViewModel(
     )
 
     fun updateNote(value: String) {
+        resetWatchPlanSyncResult()
         note.value = value
     }
 
     fun addExerciseDraft() {
+        resetWatchPlanSyncResult()
         exerciseDrafts.update { current ->
             current + ExerciseInputState(draftId = nextDraftId++)
         }
     }
 
     fun removeExerciseDraft(draftId: Long) {
+        resetWatchPlanSyncResult()
         exerciseDrafts.update { current ->
             val updated = current.filterNot { it.draftId == draftId }
             if (updated.isEmpty()) listOf(ExerciseInputState(draftId = nextDraftId++)) else updated
@@ -146,6 +187,7 @@ class AddWorkoutViewModel(
 
     fun updateExerciseSelection(draftId: Long, exerciseId: Long) {
         hasValidationError.value = false
+        resetWatchPlanSyncResult()
         exerciseDrafts.update { current ->
             current.map { draft ->
                 if (draft.draftId == draftId) draft.copy(exerciseId = exerciseId) else draft
@@ -155,6 +197,7 @@ class AddWorkoutViewModel(
 
     fun addSet(draftId: Long) {
         hasValidationError.value = false
+        resetWatchPlanSyncResult()
         val lastWeightsSnapshot = uiState.value.lastWeights
         exerciseDrafts.update { current ->
             current.map { draft ->
@@ -172,7 +215,38 @@ class AddWorkoutViewModel(
         }
     }
 
+    fun addSetFromPrevious(draftId: Long, weightDelta: Double = 0.0) {
+        hasValidationError.value = false
+        resetWatchPlanSyncResult()
+        exerciseDrafts.update { current ->
+            current.map { draft ->
+                if (draft.draftId != draftId) {
+                    draft
+                } else {
+                    val previousSet = draft.sets.lastOrNull() ?: SetInputState()
+                    val nextWeight = when {
+                        previousSet.weight.isBlank() -> ""
+                        weightDelta == 0.0 -> previousSet.weight
+                        else -> {
+                            val parsedWeight = parseWeightInputOrNull(previousSet.weight)
+                            if (parsedWeight == null) {
+                                previousSet.weight
+                            } else {
+                                formatWeight((parsedWeight + weightDelta).coerceAtLeast(0.0))
+                            }
+                        }
+                    }
+
+                    draft.copy(
+                        sets = draft.sets + previousSet.copy(weight = nextWeight)
+                    )
+                }
+            }
+        }
+    }
+
     fun removeSet(draftId: Long, setIndex: Int) {
+        resetWatchPlanSyncResult()
         exerciseDrafts.update { current ->
             current.map { draft ->
                 if (draft.draftId != draftId) {
@@ -187,6 +261,7 @@ class AddWorkoutViewModel(
 
     fun updateSetWeight(draftId: Long, setIndex: Int, value: String) {
         hasValidationError.value = false
+        resetWatchPlanSyncResult()
         exerciseDrafts.update { current ->
             current.map { draft ->
                 if (draft.draftId == draftId) {
@@ -203,6 +278,7 @@ class AddWorkoutViewModel(
 
     fun updateSetReps(draftId: Long, setIndex: Int, value: String) {
         hasValidationError.value = false
+        resetWatchPlanSyncResult()
         exerciseDrafts.update { current ->
             current.map { draft ->
                 if (draft.draftId == draftId) {
@@ -244,9 +320,42 @@ class AddWorkoutViewModel(
         }
     }
 
+    fun syncPlanToWatch() {
+        viewModelScope.launch {
+            val namedSets = parseNamedDrafts(
+                drafts = exerciseDrafts.value,
+                exercises = uiState.value.exercises
+            )
+            if (namedSets.isEmpty()) {
+                hasValidationError.value = true
+                didSyncPlanToWatch.value = false
+                return@launch
+            }
+
+            hasValidationError.value = false
+            isSyncingPlanToWatch.value = true
+            didSyncPlanToWatch.value = null
+
+            runCatching {
+                val exerciseCatalog = uiState.value.exercises.map { it.name }
+                syncClient.pushWorkoutPlan(
+                    sets = namedSets,
+                    exerciseCatalog = exerciseCatalog
+                )
+            }.onSuccess {
+                didSyncPlanToWatch.value = true
+            }.onFailure {
+                didSyncPlanToWatch.value = false
+            }
+
+            isSyncingPlanToWatch.value = false
+        }
+    }
+
     fun repeatLastWorkout() {
         viewModelScope.launch {
             isTemplateLoading.value = true
+            resetWatchPlanSyncResult()
             val latestWorkout = repository.getLatestWorkoutTemplate()
             if (latestWorkout == null) {
                 isTemplateLoading.value = false
@@ -279,6 +388,7 @@ class AddWorkoutViewModel(
     }
 
     fun applyLastWeight(draftId: Long) {
+        resetWatchPlanSyncResult()
         val draftsSnapshot = uiState.value.exerciseDrafts
         val selectedExerciseId = draftsSnapshot.firstOrNull { it.draftId == draftId }?.exerciseId ?: return
         val lastWeight = uiState.value.lastWeights[selectedExerciseId] ?: return
@@ -327,6 +437,47 @@ class AddWorkoutViewModel(
         }
     }
 
+    private fun parseNamedDrafts(
+        drafts: List<ExerciseInputState>,
+        exercises: List<ExerciseEntity>
+    ): List<NamedWorkoutSetDraft> {
+        val exerciseNameById = exercises.associate { it.id to it.name.trim() }
+        val result = mutableListOf<NamedWorkoutSetDraft>()
+
+        drafts.forEach { draft ->
+            val exerciseId = draft.exerciseId ?: return@forEach
+            val exerciseName = exerciseNameById[exerciseId].orEmpty()
+            if (exerciseName.isBlank()) {
+                return emptyList()
+            }
+
+            val sourceSets = if (draft.sets.isEmpty()) listOf(SetInputState()) else draft.sets
+            val parsedSets = sourceSets.map { set ->
+                val parsedWeight = parseWeightInputOrNull(set.weight)
+                val parsedReps = set.reps.trim().toIntOrNull()
+                val safeWeight = parsedWeight?.takeIf { it >= 0.0 } ?: 0.0
+                val safeReps = parsedReps?.takeIf { it > 0 } ?: 1
+                NamedWorkoutSetDraft(
+                    exerciseName = exerciseName,
+                    weight = safeWeight,
+                    reps = safeReps
+                )
+            }
+
+            if (parsedSets.isEmpty()) {
+                result += NamedWorkoutSetDraft(
+                    exerciseName = exerciseName,
+                    weight = 0.0,
+                    reps = 1
+                )
+            } else {
+                result += parsedSets
+            }
+        }
+
+        return result
+    }
+
     private fun formatWeight(weight: Double): String {
         return if (weight % 1.0 == 0.0) {
             weight.toInt().toString()
@@ -336,9 +487,15 @@ class AddWorkoutViewModel(
     }
 
     companion object {
-        fun factory(repository: GymRepository): ViewModelProvider.Factory = viewModelFactory {
+        fun factory(
+            repository: GymRepository,
+            syncClient: PhoneSyncClient
+        ): ViewModelProvider.Factory = viewModelFactory {
             initializer {
-                AddWorkoutViewModel(repository)
+                AddWorkoutViewModel(
+                    repository = repository,
+                    syncClient = syncClient
+                )
             }
         }
     }

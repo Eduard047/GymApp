@@ -14,16 +14,34 @@ class WatchSyncListenerService : WearableListenerService() {
 
     override fun onMessageReceived(messageEvent: MessageEvent) {
         super.onMessageReceived(messageEvent)
-        if (messageEvent.path != SyncPaths.FULL_SYNC_PAYLOAD) {
-            return
-        }
+        when (messageEvent.path) {
+            SyncPaths.FULL_SYNC_PAYLOAD -> {
+                val rawPayload = messageEvent.data.toString(Charsets.UTF_8)
+                val sessions = WatchSyncJson.parseFullSyncPayload(rawPayload)
+                val exerciseCatalog = WatchSyncJson.parseExerciseCatalogFromFullSync(rawPayload)
 
-        val rawPayload = messageEvent.data.toString(Charsets.UTF_8)
-        val sessions = WatchSyncJson.parseFullSyncPayload(rawPayload)
+                WatchExerciseCatalogStorage.save(
+                    context = applicationContext,
+                    exerciseNames = exerciseCatalog
+                )
 
-        serviceScope.launch {
-            val app = applicationContext as WearGymApplication
-            app.repository.replaceSessionsFromSync(sessions)
+                serviceScope.launch {
+                    val app = applicationContext as WearGymApplication
+                    app.repository.replaceSessionsFromSync(sessions)
+                }
+            }
+
+            SyncPaths.PUSH_WORKOUT_PLAN -> {
+                val rawPayload = messageEvent.data.toString(Charsets.UTF_8)
+                WatchPlanStorage.save(applicationContext, rawPayload)
+                val exerciseCatalog = WatchSyncJson.parseExerciseCatalogFromWorkoutPlan(rawPayload)
+                if (exerciseCatalog.isNotEmpty()) {
+                    WatchExerciseCatalogStorage.save(
+                        context = applicationContext,
+                        exerciseNames = exerciseCatalog
+                    )
+                }
+            }
         }
     }
 

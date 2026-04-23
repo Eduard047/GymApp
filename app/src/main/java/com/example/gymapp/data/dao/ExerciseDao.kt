@@ -28,5 +28,8 @@ interface ExerciseDao {
 
     @Query("SELECT * FROM exercises WHERE LOWER(name) = LOWER(:name) LIMIT 1")
     suspend fun getByName(name: String): ExerciseEntity?
+
+    @Query("SELECT name FROM exercises WHERE TRIM(name) != '' ORDER BY name COLLATE NOCASE ASC")
+    suspend fun getExerciseNamesForSync(): List<String>
 }
 

@@ -366,6 +366,14 @@ class GymRepository(
         return workoutDao.getSessionDetailsForSync(limit).map(::sortSessionDetails)
     }
 
+    suspend fun getExerciseNamesForSync(limit: Int = 400): List<String> {
+        return exerciseDao.getExerciseNamesForSync()
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .distinctBy { it.lowercase() }
+            .take(limit)
+    }
+
     private fun calculateStreakDays(allSessions: List<WorkoutSessionSummary>): Int {
         if (allSessions.isEmpty()) {
             return 0

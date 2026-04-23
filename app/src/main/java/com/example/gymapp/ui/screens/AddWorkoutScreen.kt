@@ -3,19 +3,21 @@
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -23,6 +25,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -37,6 +40,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
 import com.example.gymapp.data.entity.ExerciseEntity
+import com.example.gymapp.ui.components.AppPanel
+import com.example.gymapp.ui.components.HeroPanel
+import com.example.gymapp.ui.components.InfoPill
 import com.example.gymapp.ui.viewmodel.AddWorkoutUiState
 import com.example.gymapp.ui.viewmodel.ExerciseInputState
 import com.example.gymapp.util.DateTimeUtils
@@ -49,67 +55,147 @@ fun AddWorkoutScreen(
     onRemoveExerciseDraft: (Long) -> Unit,
     onExerciseSelected: (Long, Long) -> Unit,
     onAddSet: (Long) -> Unit,
+    onAddSetFromPrevious: (Long, Double) -> Unit,
     onRemoveSet: (Long, Int) -> Unit,
     onSetWeightChanged: (Long, Int, String) -> Unit,
     onSetRepsChanged: (Long, Int, String) -> Unit,
     onApplyLastWeight: (Long) -> Unit,
     onRepeatLastWorkout: () -> Unit,
+    onSyncPlanToWatch: () -> Unit,
     onSaveWorkout: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+    val selectedExerciseCount = uiState.exerciseDrafts.count { it.exerciseId != null }
+    val totalSetCount = uiState.exerciseDrafts.sumOf { it.sets.size }
+    val noteTemplates = listOf(
+        stringResource(R.string.note_template_push),
+        stringResource(R.string.note_template_pull),
+        stringResource(R.string.note_template_legs),
+        stringResource(R.string.note_template_upper),
+        stringResource(R.string.note_template_lower),
+        stringResource(R.string.note_template_deload)
+    )
+
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(
-                modifier = Modifier.padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Text(
-                    text = stringResource(R.string.label_workout_date),
-                    style = MaterialTheme.typography.labelLarge
-                )
-                Text(
-                    text = DateTimeUtils.formatDate(uiState.workoutDate),
-                    style = MaterialTheme.typography.titleMedium
-                )
-                OutlinedButton(
-                    onClick = onRepeatLastWorkout,
-                    enabled = uiState.canRepeatFromLast && !uiState.isTemplateLoading,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(imageVector = Icons.Default.Replay, contentDescription = null)
+        item {
+            HeroPanel(modifier = Modifier.fillMaxWidth()) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
-                        text = stringResource(R.string.action_repeat_last_workout),
-                        modifier = Modifier.padding(start = 8.dp)
+                        text = stringResource(R.string.add_workout_intro_title),
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.onPrimary
                     )
+                    Text(
+                        text = stringResource(R.string.add_workout_intro_supporting),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.9f)
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        InfoPill(
+                            text = stringResource(R.string.label_workout_date),
+                            accent = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.weight(1f)
+                        )
+                        InfoPill(
+                            text = DateTimeUtils.formatDate(uiState.workoutDate),
+                            accent = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.weight(2f)
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        InfoPill(
+                            text = stringResource(R.string.add_workout_active_exercises, selectedExerciseCount),
+                            accent = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.weight(1f)
+                        )
+                        InfoPill(
+                            text = stringResource(R.string.add_workout_total_sets, totalSetCount),
+                            accent = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    OutlinedButton(
+                        onClick = onRepeatLastWorkout,
+                        enabled = uiState.canRepeatFromLast && !uiState.isTemplateLoading,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(imageVector = Icons.Default.Replay, contentDescription = null)
+                        Text(
+                            text = stringResource(R.string.action_repeat_last_workout),
+                            modifier = Modifier.padding(start = 8.dp)
+                        )
+                    }
                 }
             }
         }
 
-        OutlinedTextField(
-            value = uiState.note,
-            onValueChange = onNoteChange,
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text(stringResource(R.string.label_note)) },
-            placeholder = { Text(stringResource(R.string.hint_note)) },
-            minLines = 2,
-            maxLines = 4
-        )
-
-        if (uiState.hasValidationError) {
-            Text(
-                text = stringResource(R.string.message_validation_error),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.error
-            )
+        item {
+            AppPanel(modifier = Modifier.fillMaxWidth(), highlighted = true) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = stringResource(R.string.label_note),
+                        style = MaterialTheme.typography.titleSmall
+                    )
+                    OutlinedTextField(
+                        value = uiState.note,
+                        onValueChange = onNoteChange,
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text(stringResource(R.string.label_note)) },
+                        placeholder = { Text(stringResource(R.string.hint_note)) },
+                        minLines = 2,
+                        maxLines = 4
+                    )
+                    Text(
+                        text = stringResource(R.string.add_workout_plan_templates),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(noteTemplates) { template ->
+                            SuggestionChip(
+                                onClick = {
+                                    onNoteChange(
+                                        appendTemplateToNote(
+                                            currentNote = uiState.note,
+                                            template = template
+                                        )
+                                    )
+                                },
+                                label = { Text(template) }
+                            )
+                        }
+                    }
+                }
+            }
         }
 
-        uiState.exerciseDrafts.forEachIndexed { index, draft ->
+        if (uiState.hasValidationError) {
+            item {
+                Text(
+                    text = stringResource(R.string.message_validation_error),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+        }
+
+        itemsIndexed(
+            items = uiState.exerciseDrafts,
+            key = { _, draft -> draft.draftId }
+        ) { index, draft ->
             ExerciseDraftCard(
                 index = index,
                 draft = draft,
@@ -119,6 +205,9 @@ fun AddWorkoutScreen(
                     onExerciseSelected(draft.draftId, selectedExerciseId)
                 },
                 onAddSet = { onAddSet(draft.draftId) },
+                onAddSetFromPrevious = { increment ->
+                    onAddSetFromPrevious(draft.draftId, increment)
+                },
                 onRemoveSet = { setIndex -> onRemoveSet(draft.draftId, setIndex) },
                 onWeightChanged = { setIndex, value ->
                     onSetWeightChanged(draft.draftId, setIndex, value)
@@ -131,25 +220,75 @@ fun AddWorkoutScreen(
             )
         }
 
-        OutlinedButton(
-            onClick = onAddExerciseDraft,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Icon(imageVector = Icons.Default.Add, contentDescription = null)
-            Text(
-                text = stringResource(R.string.action_add_exercise),
-                modifier = Modifier.padding(start = 8.dp)
-            )
+        item {
+            OutlinedButton(
+                onClick = onAddExerciseDraft,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(imageVector = Icons.Default.Add, contentDescription = null)
+                Text(
+                    text = stringResource(R.string.action_add_exercise),
+                    modifier = Modifier.padding(start = 8.dp)
+                )
+            }
         }
 
-        Button(
-            onClick = onSaveWorkout,
-            modifier = Modifier.fillMaxWidth(),
-            enabled = !uiState.isSaving
-        ) {
-            Text(text = stringResource(R.string.action_save_workout))
+        item {
+            AppPanel(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = stringResource(R.string.add_workout_save_hint),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    OutlinedButton(
+                        onClick = onSyncPlanToWatch,
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !uiState.isSyncingPlanToWatch
+                    ) {
+                        Text(text = stringResource(R.string.action_sync_plan_to_watch))
+                    }
+                    when (uiState.didSyncPlanToWatch) {
+                        true -> Text(
+                            text = stringResource(R.string.message_plan_sync_success),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        false -> Text(
+                            text = stringResource(R.string.message_plan_sync_failed),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                        null -> Unit
+                    }
+                    Button(
+                        onClick = onSaveWorkout,
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !uiState.isSaving
+                    ) {
+                        Text(text = stringResource(R.string.action_save_workout))
+                    }
+                }
+            }
         }
     }
+}
+
+private fun appendTemplateToNote(
+    currentNote: String,
+    template: String
+): String {
+    val trimmed = currentNote.trim()
+    if (trimmed.isBlank()) {
+        return template
+    }
+    if (trimmed.contains(template, ignoreCase = true)) {
+        return trimmed
+    }
+    return "$trimmed | $template"
 }
 
 @Composable
@@ -160,32 +299,29 @@ private fun ExerciseDraftCard(
     lastWeight: Double?,
     onExerciseSelected: (Long) -> Unit,
     onAddSet: () -> Unit,
+    onAddSetFromPrevious: (Double) -> Unit,
     onRemoveSet: (Int) -> Unit,
     onWeightChanged: (Int, String) -> Unit,
     onRepsChanged: (Int, String) -> Unit,
     onApplyLastWeight: () -> Unit,
     onRemoveExerciseDraft: () -> Unit
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth()
+    AppPanel(
+        modifier = Modifier.fillMaxWidth(),
+        highlighted = true
     ) {
         Column(
-            modifier = Modifier.padding(12.dp),
+            modifier = Modifier.padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Text(
-                text = stringResource(R.string.exercise_block_title, index + 1),
-                style = MaterialTheme.typography.titleSmall
-            )
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                ExerciseSelector(
-                    selectedExerciseId = draft.exerciseId,
-                    exercises = exercises,
-                    onExerciseSelected = onExerciseSelected,
+                Text(
+                    text = stringResource(R.string.exercise_block_title, index + 1),
+                    style = MaterialTheme.typography.titleSmall,
                     modifier = Modifier.weight(1f)
                 )
                 IconButton(onClick = onRemoveExerciseDraft) {
@@ -195,6 +331,13 @@ private fun ExerciseDraftCard(
                     )
                 }
             }
+
+            ExerciseSelector(
+                selectedExerciseId = draft.exerciseId,
+                exercises = exercises,
+                onExerciseSelected = onExerciseSelected,
+                modifier = Modifier.fillMaxWidth()
+            )
 
             if (lastWeight != null) {
                 Row(
@@ -216,9 +359,34 @@ private fun ExerciseDraftCard(
                 }
             }
 
-            draft.sets.forEachIndexed { index, set ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = onAddSet,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(text = stringResource(R.string.action_add_set))
+                }
+                OutlinedButton(
+                    onClick = { onAddSetFromPrevious(0.0) },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(text = stringResource(R.string.action_copy_last_set))
+                }
+            }
+
+            OutlinedButton(
+                onClick = { onAddSetFromPrevious(2.5) },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(text = stringResource(R.string.action_copy_last_plus))
+            }
+
+            draft.sets.forEachIndexed { setIndex, set ->
                 Text(
-                    text = stringResource(R.string.label_set, index + 1),
+                    text = stringResource(R.string.label_set, setIndex + 1),
                     style = MaterialTheme.typography.labelLarge
                 )
                 Row(
@@ -228,7 +396,7 @@ private fun ExerciseDraftCard(
                 ) {
                     OutlinedTextField(
                         value = set.weight,
-                        onValueChange = { onWeightChanged(index, it) },
+                        onValueChange = { onWeightChanged(setIndex, it) },
                         modifier = Modifier.weight(1f),
                         label = { Text(stringResource(R.string.label_weight_kg)) },
                         placeholder = { Text(stringResource(R.string.hint_optional)) },
@@ -237,30 +405,19 @@ private fun ExerciseDraftCard(
                     )
                     OutlinedTextField(
                         value = set.reps,
-                        onValueChange = { onRepsChanged(index, it) },
+                        onValueChange = { onRepsChanged(setIndex, it) },
                         modifier = Modifier.weight(1f),
                         label = { Text(stringResource(R.string.label_reps)) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         singleLine = true
                     )
-                    IconButton(onClick = { onRemoveSet(index) }) {
+                    IconButton(onClick = { onRemoveSet(setIndex) }) {
                         Icon(
                             imageVector = Icons.Default.Delete,
                             contentDescription = stringResource(R.string.cd_remove_set)
                         )
                     }
                 }
-            }
-
-            OutlinedButton(
-                onClick = onAddSet,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    text = stringResource(R.string.action_add_set),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
             }
         }
     }

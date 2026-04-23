@@ -92,6 +92,10 @@ class PhoneSyncListenerService : WearableListenerService() {
 
     private suspend fun buildFullSyncPayload(): String {
         val details = repository.getSessionDetailsForSync(limit = 160)
-        return PhoneSyncJson.encodeFullSyncPayload(details)
+        val exerciseCatalog = repository.getExerciseNamesForSync(limit = 400)
+        return PhoneSyncJson.encodeFullSyncPayload(
+            detailsList = details,
+            exerciseCatalog = exerciseCatalog
+        )
     }
 }

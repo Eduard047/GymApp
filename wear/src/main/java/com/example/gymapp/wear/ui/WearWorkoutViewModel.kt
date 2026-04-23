@@ -12,7 +12,10 @@ import com.example.gymapp.wear.data.WearSetUiModel
 import com.example.gymapp.wear.data.WearWorkoutRepository
 import com.example.gymapp.wear.data.WearWorkoutSessionUiModel
 import com.example.gymapp.wear.data.WearWorkoutSetDraft
+import com.example.gymapp.wear.sync.WatchExerciseCatalogStorage
+import com.example.gymapp.wear.sync.WatchPlanStorage
 import com.example.gymapp.wear.sync.WearSyncClient
+import com.example.gymapp.wear.sync.WatchSyncJson
 import com.example.gymapp.wear.util.parseWeightInputOrNull
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -30,8 +33,8 @@ data class WearSetInputUiState(
 )
 
 data class WearWorkoutUiState(
-    val note: String = "",
     val draftSets: List<WearSetInputUiState> = emptyList(),
+    val availableExercises: List<String> = emptyList(),
     val sessions: List<WearWorkoutSessionUiModel> = emptyList(),
     val selectedSessionId: Long? = null,
     val isSaving: Boolean = false,
@@ -47,20 +50,48 @@ class WearWorkoutViewModel(
     private val syncClient: WearSyncClient
 ) : AndroidViewModel(application) {
     private val appContext = application.applicationContext
+    private var lastAppliedWorkoutPlanRaw: String? = null
 
     private var nextDraftSetId = 2L
-    private val note = MutableStateFlow("")
     private val draftSets = MutableStateFlow(listOf(WearSetInputUiState(id = 1L)))
     private val selectedSessionId = MutableStateFlow<Long?>(null)
     private val isSaving = MutableStateFlow(false)
     private val message = MutableStateFlow<String?>(null)
 
     private val editorState = combine(
-        note,
         draftSets,
-        repository.observeWorkoutSessions()
-    ) { noteValue, setInputs, sessions ->
-        Triple(noteValue, setInputs, sessions)
+        repository.observeWorkoutSessions(),
+        WatchExerciseCatalogStorage.observe(appContext)
+    ) { setInputs, sessions, syncedCatalog ->
+        val catalogExercises = syncedCatalog
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+
+        val historicalExercises = sessions
+            .flatMap { session -> session.sets }
+            .map { set -> set.exerciseName.trim() }
+            .filter { it.isNotBlank() }
+            .groupingBy { it }
+            .eachCount()
+            .entries
+            .sortedWith(compareByDescending<Map.Entry<String, Int>> { it.value }.thenBy { it.key })
+            .map { it.key }
+
+        val draftOnlyExercises = setInputs
+            .map { it.exerciseName.trim() }
+            .filter { it.isNotBlank() && it !in historicalExercises }
+
+        val allExercises = buildList {
+            addAll(catalogExercises)
+            addAll(historicalExercises.filterNot { it in catalogExercises })
+            addAll(draftOnlyExercises.filterNot { it in catalogExercises || it in historicalExercises })
+        }.distinctBy { it.lowercase() }
+
+        EditorState(
+            draftSets = setInputs,
+            availableExercises = allExercises,
+            sessions = sessions
+        )
     }
 
     val uiState: StateFlow<WearWorkoutUiState> = combine(
@@ -70,9 +101,9 @@ class WearWorkoutViewModel(
         message
     ) { editor, selectedId, saving, currentMessage ->
         WearWorkoutUiState(
-            note = editor.first,
-            draftSets = editor.second,
-            sessions = editor.third,
+            draftSets = editor.draftSets,
+            availableExercises = editor.availableExercises,
+            sessions = editor.sessions,
             selectedSessionId = selectedId,
             isSaving = saving,
             message = currentMessage
@@ -84,16 +115,40 @@ class WearWorkoutViewModel(
     )
 
     init {
+        applyPendingWorkoutPlanFromSync()
+        viewModelScope.launch {
+            WatchPlanStorage.observe(appContext).collect { rawPlan ->
+                applyPendingWorkoutPlanFromSync(rawPlan)
+            }
+        }
         requestRemoteSync(showError = false)
-    }
-
-    fun updateNote(value: String) {
-        note.value = value
     }
 
     fun addDraftSet() {
         draftSets.update { current ->
             current + WearSetInputUiState(id = nextDraftSetId++)
+        }
+    }
+
+    fun duplicateLastDraftSet(weightDelta: Double = 0.0) {
+        draftSets.update { current ->
+            val lastSet = current.lastOrNull() ?: WearSetInputUiState(id = nextDraftSetId++)
+            val adjustedWeight = when {
+                lastSet.weight.isBlank() -> ""
+                weightDelta == 0.0 -> lastSet.weight
+                else -> {
+                    val parsed = parseWeightInputOrNull(lastSet.weight)
+                    if (parsed == null) {
+                        lastSet.weight
+                    } else {
+                        formatWeight((parsed + weightDelta).coerceAtLeast(0.0))
+                    }
+                }
+            }
+            current + lastSet.copy(
+                id = nextDraftSetId++,
+                weight = adjustedWeight
+            )
         }
     }
 
@@ -140,13 +195,13 @@ class WearWorkoutViewModel(
             runCatching {
                 syncClient.createWorkout(
                     startedAt = System.currentTimeMillis(),
-                    note = note.value,
+                    note = null,
                     sets = parsedSets
                 )
             }.onSuccess {
-                note.value = ""
                 draftSets.value = listOf(WearSetInputUiState(id = nextDraftSetId++))
                 selectedSessionId.value = null
+                WatchPlanStorage.clear(appContext)
                 message.value = appContext.getString(R.string.message_workout_saved)
                 requestRemoteSync(showError = false)
             }.onFailure {
@@ -234,6 +289,44 @@ class WearWorkoutViewModel(
         )
     }
 
+    private fun applyPendingWorkoutPlanFromSync() {
+        applyPendingWorkoutPlanFromSync(WatchPlanStorage.load(appContext))
+    }
+
+    private fun applyPendingWorkoutPlanFromSync(rawPlan: String?) {
+        if (rawPlan == null) {
+            lastAppliedWorkoutPlanRaw = null
+            return
+        }
+        if (rawPlan == lastAppliedWorkoutPlanRaw) {
+            return
+        }
+
+        val parsedSets = WatchSyncJson.parseWorkoutPlanPayload(rawPlan)
+        if (parsedSets.isEmpty()) {
+            return
+        }
+
+        val mappedDrafts = parsedSets.map { draft ->
+            WearSetInputUiState(
+                id = nextDraftSetId++,
+                exerciseName = draft.exerciseName,
+                weight = formatWeight(draft.weight),
+                reps = draft.reps.toString()
+            )
+        }
+        draftSets.value = mappedDrafts
+        lastAppliedWorkoutPlanRaw = rawPlan
+    }
+
+    private fun formatWeight(weight: Double): String {
+        return if (weight % 1.0 == 0.0) {
+            weight.toInt().toString()
+        } else {
+            String.format(java.util.Locale.US, "%.1f", weight)
+        }
+    }
+
     companion object {
         fun factory(application: Application): ViewModelProvider.Factory = viewModelFactory {
             initializer {
@@ -247,3 +340,9 @@ class WearWorkoutViewModel(
         }
     }
 }
+
+private data class EditorState(
+    val draftSets: List<WearSetInputUiState>,
+    val availableExercises: List<String>,
+    val sessions: List<WearWorkoutSessionUiModel>
+)

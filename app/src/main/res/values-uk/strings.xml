@@ -19,6 +19,8 @@
     <string name="action_add_exercise">Додати вправу</string>
     <string name="action_add_set">Додати підхід</string>
     <string name="action_add_set_last_weight">Швидко + Остання</string>
+    <string name="action_copy_last_set">Копіювати попередній</string>
+    <string name="action_copy_last_plus">Копіювати +2.5 кг</string>
     <string name="action_save_workout">Зберегти тренування</string>
     <string name="action_delete">Видалити</string>
     <string name="action_edit">Редагувати</string>
@@ -27,6 +29,7 @@
     <string name="action_save">Зберегти</string>
     <string name="action_current_month">Поточний</string>
     <string name="action_repeat_last_workout">Повторити попереднє тренування</string>
+    <string name="action_sync_plan_to_watch">Синхронізувати план на годинник</string>
     <string name="action_apply_last_weight">Взяти останню вагу</string>
     <string name="action_add_to_workout">Додати в тренування</string>
     <string name="action_finish_workout">Завершити тренування</string>
@@ -48,6 +51,18 @@
     <string name="label_weight_kg">Вага (кг)</string>
     <string name="hint_optional">Необовʼязково</string>
     <string name="label_reps">Повтори</string>
+    <string name="add_workout_intro_title">Склади тренування на сьогодні</string>
+    <string name="add_workout_intro_supporting">Записуй план швидко та тримай темп завдяки розумним ярликам для підходів.</string>
+    <string name="add_workout_active_exercises">Вправи: %1$d</string>
+    <string name="add_workout_total_sets">Підходи: %1$d</string>
+    <string name="add_workout_plan_templates">Швидкі шаблони сесії</string>
+    <string name="add_workout_save_hint">Перевір підходи та збережи, щоб одразу перейти в деталі тренування.</string>
+    <string name="note_template_push">День жиму</string>
+    <string name="note_template_pull">День тяги</string>
+    <string name="note_template_legs">День ніг</string>
+    <string name="note_template_upper">Верх тіла</string>
+    <string name="note_template_lower">Низ тіла</string>
+    <string name="note_template_deload">Делод</string>
     <string name="label_exercise_name">Назва вправи</string>
     <string name="hint_exercise_name">наприклад, Жим лежачи</string>
     <string name="label_rest_timer">Таймер відпочинку</string>
@@ -78,6 +93,8 @@
     <string name="empty_detail">Тренування не знайдено.</string>
 
     <string name="message_validation_error">Заповніть усі обрані вправи та підходи.</string>
+    <string name="message_plan_sync_success">План синхронізовано на годинник.</string>
+    <string name="message_plan_sync_failed">Не вдалося синхронізувати план. Перевірте Bluetooth-зʼєднання.</string>
     <string name="message_set_deleted">Підхід видалено</string>
     <string name="message_invalid_set_input">Введіть коректні повтори та необовʼязкову вагу.</string>
     <string name="message_exercise_error">Не вдалося зберегти вправу. Назва може вже існувати.</string>

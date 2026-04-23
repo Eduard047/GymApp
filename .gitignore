@@ -41,3 +41,7 @@ keystore.properties
 
 # Local helper files
 /CON
+
+# Local database backups
+/db-backup/
+/db-backup-raw/

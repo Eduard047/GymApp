@@ -57,6 +57,67 @@ object WatchSyncJson {
             .toString()
     }
 
+    fun parseWorkoutPlanPayload(raw: String): List<WearWorkoutSetDraft> {
+        return runCatching {
+            val root = JSONObject(raw)
+            val setsArray = root.optJSONArray("sets") ?: JSONArray()
+            buildList {
+                for (index in 0 until setsArray.length()) {
+                    val item = setsArray.optJSONObject(index) ?: continue
+                    val exerciseName = item.optString("exerciseName", "").trim()
+                    val weight = item.optDouble("weight", Double.NaN)
+                    val reps = item.optInt("reps", -1)
+                    if (
+                        exerciseName.isBlank() ||
+                        !weight.isFinite() ||
+                        weight < 0.0 ||
+                        reps <= 0
+                    ) {
+                        continue
+                    }
+
+                    add(
+                        WearWorkoutSetDraft(
+                            exerciseName = exerciseName,
+                            weight = weight,
+                            reps = reps
+                        )
+                    )
+                }
+            }
+        }.getOrElse { emptyList() }
+    }
+
+    fun parseExerciseCatalogFromWorkoutPlan(raw: String): List<String> {
+        return runCatching {
+            val root = JSONObject(raw)
+            val catalog = root.optJSONArray("exerciseCatalog") ?: JSONArray()
+            val unique = linkedSetOf<String>()
+            for (index in 0 until catalog.length()) {
+                val item = catalog.optString(index, "").trim()
+                if (item.isNotBlank()) {
+                    unique += item
+                }
+            }
+            unique.toList()
+        }.getOrElse { emptyList() }
+    }
+
+    fun parseExerciseCatalogFromFullSync(raw: String): List<String> {
+        return runCatching {
+            val root = JSONObject(raw)
+            val catalog = root.optJSONArray("exerciseCatalog") ?: JSONArray()
+            val unique = linkedSetOf<String>()
+            for (index in 0 until catalog.length()) {
+                val item = catalog.optString(index, "").trim()
+                if (item.isNotBlank()) {
+                    unique += item
+                }
+            }
+            unique.toList()
+        }.getOrElse { emptyList() }
+    }
+
     fun parseFullSyncPayload(raw: String): List<SyncedSessionPayload> {
         return runCatching {
             val root = JSONObject(raw)

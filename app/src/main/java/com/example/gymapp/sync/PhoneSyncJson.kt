@@ -22,6 +22,35 @@ data class DeleteSetCommand(
 )
 
 object PhoneSyncJson {
+    fun encodeWorkoutPlanPayload(
+        sets: List<NamedWorkoutSetDraft>,
+        exerciseCatalog: List<String>
+    ): String {
+        val setsJson = JSONArray()
+        sets.forEach { set ->
+            setsJson.put(
+                JSONObject()
+                    .put("exerciseName", set.exerciseName)
+                    .put("weight", set.weight)
+                    .put("reps", set.reps)
+            )
+        }
+
+        val exercisesJson = JSONArray()
+        exerciseCatalog.forEach { exerciseName ->
+            val trimmed = exerciseName.trim()
+            if (trimmed.isNotBlank()) {
+                exercisesJson.put(trimmed)
+            }
+        }
+
+        return JSONObject()
+            .put("generatedAt", System.currentTimeMillis())
+            .put("sets", setsJson)
+            .put("exerciseCatalog", exercisesJson)
+            .toString()
+    }
+
     fun parseCreateWorkoutCommand(raw: String): CreateWorkoutCommand? {
         return runCatching {
             val root = JSONObject(raw)
@@ -72,7 +101,10 @@ object PhoneSyncJson {
         }.getOrNull()
     }
 
-    fun encodeFullSyncPayload(detailsList: List<WorkoutSessionDetails>): String {
+    fun encodeFullSyncPayload(
+        detailsList: List<WorkoutSessionDetails>,
+        exerciseCatalog: List<String>
+    ): String {
         val sessions = JSONArray()
         detailsList.forEach { details ->
             val setsJson = JSONArray()
@@ -100,8 +132,17 @@ object PhoneSyncJson {
             )
         }
 
+        val exercisesJson = JSONArray()
+        exerciseCatalog.forEach { exerciseName ->
+            val trimmed = exerciseName.trim()
+            if (trimmed.isNotBlank()) {
+                exercisesJson.put(trimmed)
+            }
+        }
+
         return JSONObject()
             .put("sessions", sessions)
+            .put("exerciseCatalog", exercisesJson)
             .toString()
     }
 }

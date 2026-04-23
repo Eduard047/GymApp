@@ -42,6 +42,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.style.TextAlign
@@ -70,6 +71,7 @@ import com.example.gymapp.ui.viewmodel.ExerciseProgressViewModel
 import com.example.gymapp.ui.viewmodel.PostWorkoutSummaryViewModel
 import com.example.gymapp.ui.viewmodel.WorkoutDetailViewModel
 import com.example.gymapp.ui.viewmodel.WorkoutListViewModel
+import com.example.gymapp.sync.PhoneSyncClient
 import com.example.gymapp.util.AppLanguage
 import com.example.gymapp.util.LanguageManager
 import com.example.gymapp.util.RestTimerController
@@ -292,8 +294,13 @@ fun GymAppRoot(
                         }
 
                         composable(route = AppDestination.AddWorkout.route) {
+                            val context = LocalContext.current
+                            val syncClient = remember(context) { PhoneSyncClient(context) }
                             val viewModel: AddWorkoutViewModel = viewModel(
-                                factory = AddWorkoutViewModel.factory(repository)
+                                factory = AddWorkoutViewModel.factory(
+                                    repository = repository,
+                                    syncClient = syncClient
+                                )
                             )
                             val uiState by viewModel.uiState.collectAsState()
 
@@ -316,11 +323,13 @@ fun GymAppRoot(
                                 onRemoveExerciseDraft = viewModel::removeExerciseDraft,
                                 onExerciseSelected = viewModel::updateExerciseSelection,
                                 onAddSet = viewModel::addSet,
+                                onAddSetFromPrevious = viewModel::addSetFromPrevious,
                                 onRemoveSet = viewModel::removeSet,
                                 onSetWeightChanged = viewModel::updateSetWeight,
                                 onSetRepsChanged = viewModel::updateSetReps,
                                 onApplyLastWeight = viewModel::applyLastWeight,
                                 onRepeatLastWorkout = viewModel::repeatLastWorkout,
+                                onSyncPlanToWatch = viewModel::syncPlanToWatch,
                                 onSaveWorkout = viewModel::saveWorkout,
                                 modifier = Modifier.fillMaxSize()
                             )
