@@ -176,6 +176,26 @@ interface WorkoutDao {
 
     @Query(
         """
+        SELECT
+            se.id AS setId,
+            ws.id AS sessionId,
+            ws.date AS sessionDate,
+            e.id AS exerciseId,
+            e.name AS exerciseName,
+            se.weight AS weight,
+            se.reps AS reps,
+            se.orderIndex AS setOrderIndex
+        FROM set_entries se
+        INNER JOIN workout_exercises we ON we.id = se.workoutExerciseId
+        INNER JOIN workout_sessions ws ON ws.id = we.sessionId
+        INNER JOIN exercises e ON e.id = we.exerciseId
+        ORDER BY ws.date DESC, e.name COLLATE NOCASE ASC, se.orderIndex ASC
+        """
+    )
+    fun getAllExerciseHistory(): Flow<List<ExerciseHistoryEntry>>
+
+    @Query(
+        """
         SELECT se.weight
         FROM set_entries se
         INNER JOIN workout_exercises we ON we.id = se.workoutExerciseId

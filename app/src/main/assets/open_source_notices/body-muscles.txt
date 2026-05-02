@@ -1,0 +1,8 @@
+Body Muscles
+Copyright 2024 Ivan Vulovic
+
+This product includes adapted SVG region data from body-muscles:
+https://github.com/vulovix/body-muscles
+
+Licensed under the Apache License, Version 2.0:
+https://www.apache.org/licenses/LICENSE-2.0

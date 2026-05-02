@@ -176,6 +176,20 @@
     <string name="activity_heatmap_more">More</string>
     <string name="achievements_title">Achievements</string>
     <string name="achievements_supporting">Recent unlocks and the next solo milestones.</string>
+    <string name="muscle_heatmap_title">Muscle Map</string>
+    <string name="muscle_heatmap_supporting">Colors show which muscle groups carried the most load across your logged training history.</string>
+    <string name="muscle_heatmap_sets">Sets</string>
+    <string name="muscle_heatmap_load">Load</string>
+    <string name="muscle_heatmap_mapped">Mapped</string>
+    <string name="muscle_heatmap_mapped_value">%1$d/%2$d</string>
+    <string name="muscle_heatmap_front">Front</string>
+    <string name="muscle_heatmap_back">Back</string>
+    <string name="muscle_heatmap_less">Less</string>
+    <string name="muscle_heatmap_more">More</string>
+    <string name="muscle_heatmap_empty">Log sets to light up the body map.</string>
+    <string name="muscle_heatmap_top_title">Top muscle groups</string>
+    <string name="muscle_heatmap_load_value">%1$d load</string>
+    <string name="muscle_heatmap_muscle_detail">%1$d sets • %2$d sessions • %3$d exercises</string>
 
     <string name="progress_summary_title">Progress Summary</string>
     <string name="progress_summary_subtitle">Volume = weight × reps across all completed sets.</string>

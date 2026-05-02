@@ -176,6 +176,20 @@
     <string name="activity_heatmap_more">Більше</string>
     <string name="achievements_title">Досягнення</string>
     <string name="achievements_supporting">Останні відкриття та найближчі соло-цілі.</string>
+    <string name="muscle_heatmap_title">Карта мʼязів</string>
+    <string name="muscle_heatmap_supporting">Кольори показують, які групи мʼязів отримали найбільше навантаження за всю історію тренувань.</string>
+    <string name="muscle_heatmap_sets">Підходи</string>
+    <string name="muscle_heatmap_load">Навантаження</string>
+    <string name="muscle_heatmap_mapped">Зіставлено</string>
+    <string name="muscle_heatmap_mapped_value">%1$d/%2$d</string>
+    <string name="muscle_heatmap_front">Спереду</string>
+    <string name="muscle_heatmap_back">Ззаду</string>
+    <string name="muscle_heatmap_less">Менше</string>
+    <string name="muscle_heatmap_more">Більше</string>
+    <string name="muscle_heatmap_empty">Запиши підходи, щоб підсвітити карту тіла.</string>
+    <string name="muscle_heatmap_top_title">Найбільш навантажені групи</string>
+    <string name="muscle_heatmap_load_value">%1$d навант.</string>
+    <string name="muscle_heatmap_muscle_detail">%1$d підходів • %2$d сесій • %3$d вправ</string>
 
     <string name="progress_summary_title">Зведення прогресу</string>
     <string name="progress_summary_subtitle">Обсяг = вага × повтори в усіх виконаних підходах.</string>

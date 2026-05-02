@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.lifecycle.viewModelScope
+import com.example.gymapp.data.entity.ExerciseHistoryEntry
 import com.example.gymapp.data.entity.WorkoutSessionSummary
 import com.example.gymapp.data.repository.DashboardStats
 import com.example.gymapp.data.repository.GymRepository
@@ -26,6 +27,7 @@ import java.time.format.TextStyle
 import java.time.temporal.TemporalAdjusters
 import java.util.Locale
 import kotlin.math.abs
+import kotlin.math.pow
 import kotlin.math.roundToInt
 
 data class SoloProgressUiModel(
@@ -60,6 +62,26 @@ data class ActivityHeatmapUiModel(
     val sessionCount: Int = 0,
     val totalVolume: Double = 0.0,
     val weeks: List<List<ActivityHeatmapDayUiModel>> = emptyList()
+)
+
+data class MuscleProgressUiModel(
+    val id: String,
+    val label: String,
+    val load: Int = 0,
+    val sets: Int = 0,
+    val sessions: Int = 0,
+    val exercises: Int = 0,
+    val intensity: Float = 0f
+)
+
+data class MuscleHeatmapUiModel(
+    val periodLabel: String = DateTimeUtils.monthLabel(0),
+    val totalSets: Int = 0,
+    val totalLoad: Int = 0,
+    val mappedExerciseCount: Int = 0,
+    val totalExerciseCount: Int = 0,
+    val muscles: List<MuscleProgressUiModel> = emptyList(),
+    val topMuscles: List<MuscleProgressUiModel> = emptyList()
 )
 
 data class MissionProgressUiModel(
@@ -111,6 +133,7 @@ data class WorkoutListUiState(
     ),
     val soloProgress: SoloProgressUiModel = SoloProgressUiModel(),
     val activityHeatmap: ActivityHeatmapUiModel = ActivityHeatmapUiModel(),
+    val muscleHeatmap: MuscleHeatmapUiModel = MuscleHeatmapUiModel(),
     val dailyMissions: List<MissionProgressUiModel> = emptyList(),
     val weeklyMissions: List<MissionProgressUiModel> = emptyList(),
     val monthlyMissions: List<MissionProgressUiModel> = emptyList(),
@@ -134,13 +157,15 @@ class WorkoutListViewModel(
     }
 
     private val allSessionsFlow = repository.observeSessions()
+    private val exerciseHistoryFlow = repository.observeAllExerciseHistory()
 
     val uiState: StateFlow<WorkoutListUiState> = combine(
         monthOffset,
         sessionsFlow,
         dashboardFlow,
-        allSessionsFlow
-    ) { offset, sessions, dashboardStats, allSessions ->
+        allSessionsFlow,
+        exerciseHistoryFlow
+    ) { offset, sessions, dashboardStats, allSessions, exerciseHistory ->
         val historyStats = buildMissionHistoryStats(allSessions)
         val dailyMissions = buildDailyMissions(allSessions, historyStats)
         val weeklyMissions = buildWeeklyMissions(allSessions, historyStats)
@@ -161,6 +186,7 @@ class WorkoutListViewModel(
             dashboardStats = dashboardStats,
             soloProgress = soloProgress,
             activityHeatmap = buildHeatmap(offset, sessions),
+            muscleHeatmap = buildMuscleHeatmap(exerciseHistory),
             dailyMissions = dailyMissions,
             weeklyMissions = weeklyMissions,
             monthlyMissions = monthlyMissions,
@@ -293,6 +319,72 @@ class WorkoutListViewModel(
             sessionCount = sessions.size,
             totalVolume = sessions.sumOf { it.totalVolume },
             weeks = cells.chunked(7)
+        )
+    }
+
+    private fun buildMuscleHeatmap(
+        exerciseHistory: List<ExerciseHistoryEntry>
+    ): MuscleHeatmapUiModel {
+        val historyEntries = exerciseHistory
+        val distinctExerciseKeys = historyEntries
+            .map { it.exerciseName.normalizedExerciseName() }
+            .filter { it.isNotBlank() }
+            .toSet()
+        val statsByMuscle = MUSCLE_DEFINITIONS.associate { definition ->
+            definition.id to MutableMuscleProgress()
+        }.toMutableMap()
+        val mappedExerciseKeys = linkedSetOf<String>()
+
+        historyEntries.forEach { entry ->
+            val contributions = muscleContributionsForExercise(entry.exerciseName)
+            if (contributions.isEmpty()) {
+                return@forEach
+            }
+
+            mappedExerciseKeys += entry.exerciseName.normalizedExerciseName()
+            val setLoad = entry.estimatedLoad()
+            contributions.forEach { contribution ->
+                val stats = statsByMuscle.getOrPut(contribution.muscleId) {
+                    MutableMuscleProgress()
+                }
+                stats.load += setLoad * contribution.weight
+                stats.setIds += entry.setId
+                stats.sessionIds += entry.sessionId
+                stats.exerciseKeys += entry.exerciseName.normalizedExerciseName()
+            }
+        }
+
+        val maxLoad = statsByMuscle.values.maxOfOrNull { it.load } ?: 0.0
+        val muscles = MUSCLE_DEFINITIONS.map { definition ->
+            val stats = statsByMuscle[definition.id] ?: MutableMuscleProgress()
+            val loadRatio = if (maxLoad <= 0.0) {
+                0.0
+            } else {
+                (stats.load / maxLoad).coerceIn(0.0, 1.0)
+            }
+            MuscleProgressUiModel(
+                id = definition.id,
+                label = t(en = definition.titleEn, uk = definition.titleUk),
+                load = stats.load.roundToInt(),
+                sets = stats.setIds.size,
+                sessions = stats.sessionIds.size,
+                exercises = stats.exerciseKeys.size,
+                intensity = loadRatio.pow(0.72).toFloat().coerceIn(0f, 1f)
+            )
+        }
+        val topMuscles = muscles
+            .filter { it.load > 0 }
+            .sortedByDescending { it.load }
+            .take(5)
+
+        return MuscleHeatmapUiModel(
+            periodLabel = t(en = "All time", uk = "За весь час"),
+            totalSets = historyEntries.size,
+            totalLoad = historyEntries.sumOf { it.estimatedLoad() }.roundToInt(),
+            mappedExerciseCount = mappedExerciseKeys.size,
+            totalExerciseCount = distinctExerciseKeys.size,
+            muscles = muscles,
+            topMuscles = topMuscles
         )
     }
 
@@ -1652,6 +1744,198 @@ private data class MissionHistoryStats(
     val maxSessionExercises: Int = 0,
     val maxSessionSets: Int = 0
 )
+
+private data class MuscleDefinition(
+    val id: String,
+    val titleEn: String,
+    val titleUk: String
+)
+
+private data class MuscleContribution(
+    val muscleId: String,
+    val weight: Double
+)
+
+private data class MutableMuscleProgress(
+    var load: Double = 0.0,
+    val setIds: MutableSet<Long> = linkedSetOf(),
+    val sessionIds: MutableSet<Long> = linkedSetOf(),
+    val exerciseKeys: MutableSet<String> = linkedSetOf()
+)
+
+private const val BODYWEIGHT_LOAD_PROXY = 72.0
+private const val SET_COMPLETION_LOAD = 35.0
+
+private val MUSCLE_DEFINITIONS = listOf(
+    MuscleDefinition("chest", "Chest", "Груди"),
+    MuscleDefinition("shoulders", "Shoulders", "Плечі"),
+    MuscleDefinition("biceps", "Biceps", "Біцепс"),
+    MuscleDefinition("triceps", "Triceps", "Трицепс"),
+    MuscleDefinition("forearms", "Forearms", "Передпліччя"),
+    MuscleDefinition("abs", "Abs", "Прес"),
+    MuscleDefinition("obliques", "Obliques", "Косі мʼязи"),
+    MuscleDefinition("lats", "Lats", "Широчайші"),
+    MuscleDefinition("upperBack", "Upper back", "Верх спини"),
+    MuscleDefinition("lowerBack", "Lower back", "Поперек"),
+    MuscleDefinition("glutes", "Glutes", "Сідниці"),
+    MuscleDefinition("quads", "Quads", "Квадрицепси"),
+    MuscleDefinition("hamstrings", "Hamstrings", "Біцепс стегна"),
+    MuscleDefinition("adductors", "Adductors", "Привідні"),
+    MuscleDefinition("calves", "Calves", "Ікри")
+)
+
+private val EXACT_MUSCLE_MAP = mapOf(
+    "нахили в сторони на гіперекстензії" to muscles("obliques" to 0.9, "abs" to 0.35, "lowerBack" to 0.25),
+    "присід зі штангою" to muscles("quads" to 1.0, "glutes" to 0.7, "hamstrings" to 0.45, "lowerBack" to 0.25, "abs" to 0.2),
+    "бокові нахили" to muscles("obliques" to 0.9, "abs" to 0.3),
+    "брусья" to muscles("triceps" to 0.85, "chest" to 0.75, "shoulders" to 0.35),
+    "біцепс з гантелями сидячи" to muscles("biceps" to 1.0, "forearms" to 0.25),
+    "гантеля над головою" to muscles("triceps" to 1.0, "shoulders" to 0.3),
+    "гантелі лежачи" to muscles("chest" to 0.9, "triceps" to 0.55, "shoulders" to 0.45),
+    "горизонтальна важільна тяга" to muscles("upperBack" to 1.0, "lats" to 0.75, "biceps" to 0.45, "forearms" to 0.25),
+    "гіперекстензія" to muscles("lowerBack" to 1.0, "glutes" to 0.55, "hamstrings" to 0.45),
+    "жим лежачи" to muscles("chest" to 1.0, "triceps" to 0.6, "shoulders" to 0.5),
+    "жим ногами" to muscles("quads" to 1.0, "glutes" to 0.55, "hamstrings" to 0.35, "calves" to 0.15),
+    "жим сидячи" to muscles("shoulders" to 1.0, "triceps" to 0.55, "chest" to 0.2),
+    "журавель" to muscles("abs" to 0.75, "obliques" to 0.45),
+    "зведення ніг" to muscles("adductors" to 1.0, "quads" to 0.25),
+    "згибання ніг" to muscles("hamstrings" to 1.0, "calves" to 0.2),
+    "махи в сторони" to muscles("shoulders" to 1.0),
+    "метелик в середину" to muscles("chest" to 1.0, "shoulders" to 0.25),
+    "метелик в сторони" to muscles("shoulders" to 0.75, "upperBack" to 0.65),
+    "прес з диском в сторони" to muscles("obliques" to 0.85, "abs" to 0.45),
+    "прес звичайний з диском" to muscles("abs" to 1.0, "obliques" to 0.25),
+    "прес(підйом ніг)" to muscles("abs" to 1.0, "hipFlexors" to 0.25),
+    "протяжка" to muscles("shoulders" to 0.85, "upperBack" to 0.55, "biceps" to 0.25),
+    "підйом на носки" to muscles("calves" to 1.0),
+    "підтягування в гравітроні" to muscles("lats" to 1.0, "upperBack" to 0.65, "biceps" to 0.55, "forearms" to 0.3),
+    "підтягування з резинкою" to muscles("lats" to 1.0, "upperBack" to 0.65, "biceps" to 0.55, "forearms" to 0.3),
+    "розгинання ніг" to muscles("quads" to 1.0),
+    "румунська тяга" to muscles("hamstrings" to 1.0, "glutes" to 0.85, "lowerBack" to 0.65, "upperBack" to 0.2),
+    "станова тяга" to muscles("lowerBack" to 0.9, "glutes" to 0.85, "hamstrings" to 0.8, "upperBack" to 0.45, "quads" to 0.35, "forearms" to 0.3),
+    "тренажер скота(біцепс)" to muscles("biceps" to 1.0, "forearms" to 0.25),
+    "трицепс трикутник" to muscles("triceps" to 1.0),
+    "французький жим" to muscles("triceps" to 1.0, "shoulders" to 0.15),
+    "фронтальна тяга" to muscles("lats" to 1.0, "upperBack" to 0.7, "biceps" to 0.5, "forearms" to 0.25),
+    "штанга на біцепс" to muscles("biceps" to 1.0, "forearms" to 0.35)
+)
+
+private fun ExerciseHistoryEntry.estimatedLoad(): Double {
+    val repsValue = reps.coerceAtLeast(0)
+    val trackedLoad = weight.coerceAtLeast(0.0) * repsValue
+    val exerciseLoad = if (trackedLoad > 0.0) {
+        trackedLoad
+    } else {
+        BODYWEIGHT_LOAD_PROXY * repsValue
+    }
+    return exerciseLoad + SET_COMPLETION_LOAD
+}
+
+private fun muscleContributionsForExercise(exerciseName: String): List<MuscleContribution> {
+    val normalizedName = exerciseName.normalizedExerciseName()
+    EXACT_MUSCLE_MAP[normalizedName]?.let { return it }
+
+    val inferred = linkedMapOf<String, Double>()
+    fun add(muscleId: String, weight: Double) {
+        inferred[muscleId] = (inferred[muscleId] ?: 0.0).coerceAtLeast(weight.coerceIn(0.0, 1.0))
+    }
+
+    if (normalizedName.containsAny("біцепс", "bicep", "curl")) {
+        add("biceps", 1.0)
+        add("forearms", 0.25)
+    }
+    if (normalizedName.containsAny("трицепс", "tricep", "француз")) {
+        add("triceps", 1.0)
+    }
+    if (normalizedName.contains("жим") && normalizedName.containsAny("ног", "leg press")) {
+        add("quads", 1.0)
+        add("glutes", 0.55)
+        add("hamstrings", 0.35)
+    }
+    if (normalizedName.contains("жим") && !normalizedName.containsAny("ног", "leg press")) {
+        add("chest", 0.85)
+        add("triceps", 0.55)
+        add("shoulders", 0.45)
+    }
+    if (normalizedName.containsAny("плеч", "дельт", "махи", "shoulder", "press overhead")) {
+        add("shoulders", 1.0)
+    }
+    if (normalizedName.containsAny("підтяг", "pull up", "pulldown")) {
+        add("lats", 1.0)
+        add("upperBack", 0.65)
+        add("biceps", 0.55)
+        add("forearms", 0.3)
+    }
+    if (normalizedName.contains("тяга") && normalizedName.containsAny("румун", "станов", "deadlift")) {
+        add("hamstrings", 0.9)
+        add("glutes", 0.85)
+        add("lowerBack", 0.75)
+        add("upperBack", 0.3)
+        add("forearms", 0.25)
+    }
+    if (normalizedName.contains("тяга") && !normalizedName.containsAny("румун", "станов", "deadlift")) {
+        add("lats", 0.9)
+        add("upperBack", 0.85)
+        add("biceps", 0.45)
+        add("forearms", 0.25)
+    }
+    if (normalizedName.containsAny("прис", "squat")) {
+        add("quads", 1.0)
+        add("glutes", 0.7)
+        add("hamstrings", 0.45)
+        add("lowerBack", 0.25)
+    }
+    if (normalizedName.containsAny("розгинання ніг", "leg extension")) {
+        add("quads", 1.0)
+    }
+    if (normalizedName.containsAny("згибання ніг", "leg curl")) {
+        add("hamstrings", 1.0)
+    }
+    if (normalizedName.containsAny("підйом на носки", "calf")) {
+        add("calves", 1.0)
+    }
+    if (normalizedName.containsAny("прес", "crunch", "sit up", "leg raise")) {
+        add("abs", 1.0)
+    }
+    if (normalizedName.containsAny("нахил", "сторони", "side bend")) {
+        add("obliques", 0.85)
+    }
+    if (normalizedName.containsAny("гіперекстензі", "hyperextension")) {
+        add("lowerBack", 1.0)
+        add("glutes", 0.55)
+        add("hamstrings", 0.45)
+    }
+    if (normalizedName.containsAny("зведення ніг", "adductor")) {
+        add("adductors", 1.0)
+    }
+
+    return inferred.map { (muscleId, weight) ->
+        MuscleContribution(muscleId = muscleId, weight = weight)
+    }
+}
+
+private fun muscles(vararg values: Pair<String, Double>): List<MuscleContribution> {
+    return values
+        .filter { (muscleId, _) -> MUSCLE_DEFINITIONS.any { it.id == muscleId } }
+        .map { (muscleId, weight) ->
+            MuscleContribution(
+                muscleId = muscleId,
+                weight = weight.coerceIn(0.0, 1.0)
+            )
+        }
+}
+
+private fun String.normalizedExerciseName(): String {
+    return lowercase(Locale.ROOT)
+        .replace('ʼ', '\'')
+        .replace('’', '\'')
+        .replace(Regex("\\s+"), " ")
+        .trim()
+}
+
+private fun String.containsAny(vararg tokens: String): Boolean {
+    return tokens.any { token -> contains(token) }
+}
 
 private data class RankDefinition(
     val id: String,

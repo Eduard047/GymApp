@@ -145,6 +145,11 @@ class GymRepository(
             .catch { emit(emptyList()) }
     }
 
+    fun observeAllExerciseHistory(): Flow<List<ExerciseHistoryEntry>> {
+        return workoutDao.getAllExerciseHistory()
+            .catch { emit(emptyList()) }
+    }
+
     fun observeExerciseHistoryForMonth(
         exerciseId: Long,
         monthOffset: Int
