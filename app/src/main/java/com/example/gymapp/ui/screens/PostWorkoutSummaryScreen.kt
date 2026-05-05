@@ -34,6 +34,8 @@ import com.example.gymapp.ui.components.MetricTile
 import com.example.gymapp.ui.components.SectionTitle
 import com.example.gymapp.ui.viewmodel.CompletedMissionUiState
 import com.example.gymapp.ui.viewmodel.NewBadgeUiState
+import com.example.gymapp.ui.viewmodel.PostWorkoutMuscleUiState
+import com.example.gymapp.ui.viewmodel.PostWorkoutPrUiState
 import com.example.gymapp.ui.viewmodel.PostWorkoutSummaryUiState
 import com.example.gymapp.util.DateTimeUtils
 import java.util.Locale
@@ -82,6 +84,16 @@ fun PostWorkoutSummaryScreen(
 
                 item {
                     SummaryMetrics(uiState = uiState)
+                }
+
+                item {
+                    WorkoutImpactCard(uiState = uiState)
+                }
+
+                if (uiState.personalRecords.isNotEmpty()) {
+                    item {
+                        PersonalRecordsCard(records = uiState.personalRecords)
+                    }
                 }
 
                 item {
@@ -242,6 +254,111 @@ private fun SummaryMetrics(uiState: PostWorkoutSummaryUiState) {
                 value = String.format(Locale.getDefault(), "%.0f", uiState.volume),
                 modifier = Modifier.weight(1f)
             )
+        }
+    }
+}
+
+@Composable
+private fun WorkoutImpactCard(uiState: PostWorkoutSummaryUiState) {
+    AppPanel(
+        modifier = Modifier.fillMaxWidth(),
+        highlighted = uiState.muscles.isNotEmpty()
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.post_workout_impact_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = uiState.topMuscleLabel?.let {
+                    stringResource(R.string.post_workout_top_muscle, it)
+                } ?: stringResource(R.string.post_workout_no_muscle_impact),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            uiState.muscles.take(5).forEach { muscle ->
+                MuscleImpactRow(muscle = muscle)
+            }
+        }
+    }
+}
+
+@Composable
+private fun MuscleImpactRow(muscle: PostWorkoutMuscleUiState) {
+    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = muscle.label,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.weight(1f),
+                maxLines = 1
+            )
+            Text(
+                text = stringResource(R.string.post_workout_muscle_load, muscle.load, muscle.sets),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+        LinearProgressIndicator(
+            progress = { muscle.intensity.coerceIn(0f, 1f) },
+            modifier = Modifier.fillMaxWidth()
+        )
+    }
+}
+
+@Composable
+private fun PersonalRecordsCard(records: List<PostWorkoutPrUiState>) {
+    AppPanel(
+        modifier = Modifier.fillMaxWidth(),
+        highlighted = true
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.post_workout_pr_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            records.take(5).forEach { record ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Text(
+                            text = record.exerciseName,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1
+                        )
+                        Text(
+                            text = record.previousBest?.let {
+                                stringResource(R.string.post_workout_pr_previous, it)
+                            } ?: stringResource(R.string.post_workout_pr_first),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    InfoPill(
+                        text = stringResource(R.string.progress_weight_value, record.weight),
+                        accent = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
         }
     }
 }

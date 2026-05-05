@@ -127,6 +127,22 @@ interface WorkoutDao {
     )
     suspend fun getSessionDetailsForSync(limit: Int): List<WorkoutSessionDetails>
 
+    @androidx.room.Transaction
+    @Query(
+        """
+        SELECT *
+        FROM workout_sessions ws
+        WHERE EXISTS (
+            SELECT 1
+            FROM workout_exercises we
+            INNER JOIN set_entries se ON se.workoutExerciseId = we.id
+            WHERE we.sessionId = ws.id
+        )
+        ORDER BY ws.date ASC
+        """
+    )
+    suspend fun getAllSessionDetailsForBackup(): List<WorkoutSessionDetails>
+
     @Query(
         """
         SELECT

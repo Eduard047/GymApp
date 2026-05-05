@@ -5,6 +5,8 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.example.gymapp.data.entity.ExerciseHistoryEntry
+import com.example.gymapp.data.entity.ExerciseMuscleMappingEntity
 import com.example.gymapp.data.repository.BadgeRarity
 import com.example.gymapp.data.repository.GamificationEngine
 import com.example.gymapp.data.repository.GamificationSnapshot
@@ -16,6 +18,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import java.time.ZoneId
+import kotlin.math.pow
+import kotlin.math.roundToInt
 
 data class CompletedMissionUiState(
     val title: String,
@@ -29,6 +33,20 @@ data class NewBadgeUiState(
     val title: String,
     val rarity: BadgeRarity,
     val rewardXp: Int
+)
+
+data class PostWorkoutMuscleUiState(
+    val id: String,
+    val label: String,
+    val load: Int,
+    val sets: Int,
+    val intensity: Float
+)
+
+data class PostWorkoutPrUiState(
+    val exerciseName: String,
+    val weight: Double,
+    val previousBest: Double?
 )
 
 data class PostWorkoutSummaryUiState(
@@ -58,8 +76,16 @@ data class PostWorkoutSummaryUiState(
     val comebackGapDays: Int? = null,
     val comebackMultiplier: Double = 1.0,
     val comebackBonusXp: Int = 0,
+    val topMuscleLabel: String? = null,
+    val muscles: List<PostWorkoutMuscleUiState> = emptyList(),
+    val personalRecords: List<PostWorkoutPrUiState> = emptyList(),
     val completedMissions: List<CompletedMissionUiState> = emptyList(),
     val newBadges: List<NewBadgeUiState> = emptyList()
+)
+
+private data class MutableSessionMuscleStats(
+    var load: Double = 0.0,
+    val setIds: MutableSet<Long> = linkedSetOf()
 )
 
 class PostWorkoutSummaryViewModel(
@@ -70,8 +96,10 @@ class PostWorkoutSummaryViewModel(
 
     val uiState: StateFlow<PostWorkoutSummaryUiState> = combine(
         repository.observeSessionDetails(sessionId),
-        repository.observeSessions()
-    ) { sessionDetails, sessions ->
+        repository.observeSessions(),
+        repository.observeAllExerciseHistory(),
+        repository.observeExerciseMuscleMappings()
+    ) { sessionDetails, sessions, exerciseHistory, muscleMappings ->
         if (sessionDetails == null) {
             PostWorkoutSummaryUiState(
                 isLoading = false,
@@ -106,6 +134,28 @@ class PostWorkoutSummaryViewModel(
             val volume = sessionDetails.workoutExercises.sumOf { workoutExercise ->
                 workoutExercise.sets.sumOf { set -> set.weight * set.reps }
             }
+            val sessionHistoryEntries = sessionDetails.workoutExercises.flatMap { workoutExercise ->
+                workoutExercise.sets.map { set ->
+                    ExerciseHistoryEntry(
+                        setId = set.id,
+                        sessionId = sessionDetails.session.id,
+                        sessionDate = sessionDetails.session.date,
+                        exerciseId = workoutExercise.exercise.id,
+                        exerciseName = workoutExercise.exercise.name,
+                        weight = set.weight,
+                        reps = set.reps,
+                        setOrderIndex = set.orderIndex
+                    )
+                }
+            }
+            val muscles = buildSessionMuscles(
+                sessionHistoryEntries = sessionHistoryEntries,
+                muscleMappings = muscleMappings
+            )
+            val personalRecords = buildPersonalRecords(
+                sessionEntries = sessionHistoryEntries,
+                allHistory = exerciseHistory
+            )
 
             PostWorkoutSummaryUiState(
                 isLoading = false,
@@ -134,6 +184,9 @@ class PostWorkoutSummaryViewModel(
                 comebackGapDays = afterSnapshot.comeback.gapDays,
                 comebackMultiplier = afterSnapshot.comeback.multiplier,
                 comebackBonusXp = afterSnapshot.comeback.bonusXp,
+                topMuscleLabel = muscles.firstOrNull()?.label,
+                muscles = muscles,
+                personalRecords = personalRecords,
                 completedMissions = completedMissions,
                 newBadges = newBadges
             )
@@ -180,6 +233,74 @@ class PostWorkoutSummaryViewModel(
                     rewardXp = achievement.rewardXp
                 )
             }
+    }
+
+    private fun buildSessionMuscles(
+        sessionHistoryEntries: List<ExerciseHistoryEntry>,
+        muscleMappings: List<ExerciseMuscleMappingEntity>
+    ): List<PostWorkoutMuscleUiState> {
+        val manualMap = muscleMappings.groupBy { it.exerciseNameKey }
+            .mapValues { (_, mappings) ->
+                mappings.map {
+                    MuscleContribution(
+                        muscleId = it.muscleId,
+                        weight = it.weight.coerceIn(0.0, 1.0)
+                    )
+                }
+            }
+        val statsByMuscle = MUSCLE_DEFINITIONS.associate { it.id to MutableSessionMuscleStats() }.toMutableMap()
+
+        sessionHistoryEntries.forEach { entry ->
+            val load = entry.estimatedLoad()
+            muscleContributionsForExercise(entry.exerciseName, manualMap).forEach { contribution ->
+                val stats = statsByMuscle.getOrPut(contribution.muscleId) { MutableSessionMuscleStats() }
+                stats.load += load * contribution.weight
+                stats.setIds += entry.setId
+            }
+        }
+
+        val maxLoad = statsByMuscle.values.maxOfOrNull { it.load } ?: 0.0
+        return MUSCLE_DEFINITIONS.mapNotNull { definition ->
+            val stats = statsByMuscle[definition.id] ?: return@mapNotNull null
+            if (stats.load <= 0.0) return@mapNotNull null
+            val ratio = if (maxLoad <= 0.0) 0.0 else (stats.load / maxLoad).coerceIn(0.0, 1.0)
+            PostWorkoutMuscleUiState(
+                id = definition.id,
+                label = definition.titleEn,
+                load = stats.load.roundToInt(),
+                sets = stats.setIds.size,
+                intensity = ratio.pow(0.72).toFloat().coerceIn(0f, 1f)
+            )
+        }.sortedByDescending { it.load }
+    }
+
+    private fun buildPersonalRecords(
+        sessionEntries: List<ExerciseHistoryEntry>,
+        allHistory: List<ExerciseHistoryEntry>
+    ): List<PostWorkoutPrUiState> {
+        val previousBestByExercise = allHistory
+            .filterNot { it.sessionId == sessionId }
+            .groupBy { it.exerciseId }
+            .mapValues { (_, entries) -> entries.maxOfOrNull { it.weight } ?: 0.0 }
+
+        return sessionEntries
+            .groupBy { it.exerciseId }
+            .mapNotNull { (exerciseId, entries) ->
+                val bestCurrentSet = entries.maxByOrNull { it.weight } ?: return@mapNotNull null
+                val previousBest = previousBestByExercise[exerciseId]
+                if (bestCurrentSet.weight <= 0.0) {
+                    return@mapNotNull null
+                }
+                if (previousBest != null && bestCurrentSet.weight <= previousBest) {
+                    return@mapNotNull null
+                }
+                PostWorkoutPrUiState(
+                    exerciseName = bestCurrentSet.exerciseName,
+                    weight = bestCurrentSet.weight,
+                    previousBest = previousBest
+                )
+            }
+            .sortedByDescending { it.weight }
     }
 
     private fun MissionSnapshot.toCompletedMissionUiState(cadence: String): CompletedMissionUiState {

@@ -37,6 +37,8 @@ import com.example.gymapp.ui.components.InfoPill
 import com.example.gymapp.ui.components.MetricTile
 import com.example.gymapp.ui.components.MuscleHeatmapCard
 import com.example.gymapp.ui.components.SoloProgressHero
+import com.example.gymapp.ui.viewmodel.MuscleMapPeriod
+import com.example.gymapp.ui.viewmodel.TrainingRecommendationUiModel
 import com.example.gymapp.ui.viewmodel.WorkoutListUiState
 import com.example.gymapp.util.DateTimeUtils
 import kotlinx.coroutines.launch
@@ -48,13 +50,18 @@ fun WorkoutListScreen(
     onPreviousMonth: () -> Unit,
     onCurrentMonth: () -> Unit,
     onNextMonth: () -> Unit,
+    onMuscleMapPeriodSelected: (MuscleMapPeriod) -> Unit,
+    onMuscleSelected: (String) -> Unit,
+    onEditExerciseMapping: (String) -> Unit,
+    onSaveExerciseMapping: (String, List<String>) -> Unit,
+    onCloseExerciseMapping: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
     var workoutsSelected by rememberSaveable { mutableStateOf(false) }
     // Fixed overview item count before the workout list header.
-    val workoutSectionIndex = 5
+    val workoutSectionIndex = 6
 
     Column(
         modifier = modifier.fillMaxSize(),
@@ -103,7 +110,18 @@ fun WorkoutListScreen(
             }
 
             item {
-                MuscleHeatmapCard(heatmap = uiState.muscleHeatmap)
+                MuscleHeatmapCard(
+                    heatmap = uiState.muscleHeatmap,
+                    onPeriodSelected = onMuscleMapPeriodSelected,
+                    onMuscleSelected = onMuscleSelected,
+                    onEditExerciseMapping = onEditExerciseMapping,
+                    onSaveExerciseMapping = onSaveExerciseMapping,
+                    onCloseExerciseMapping = onCloseExerciseMapping
+                )
+            }
+
+            item {
+                RecommendationsCard(recommendations = uiState.trainingRecommendations)
             }
 
             item {
@@ -287,6 +305,69 @@ private fun WorkoutSectionChip(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
+        }
+    }
+}
+
+@Composable
+private fun RecommendationsCard(
+    recommendations: List<TrainingRecommendationUiModel>,
+    modifier: Modifier = Modifier
+) {
+    AppPanel(
+        modifier = modifier.fillMaxWidth(),
+        highlighted = recommendations.isNotEmpty()
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.recommendations_title),
+                style = MaterialTheme.typography.titleMedium
+            )
+            Text(
+                text = stringResource(R.string.recommendations_supporting),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            recommendations.forEach { recommendation ->
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.78f),
+                    shape = MaterialTheme.shapes.small,
+                    border = BorderStroke(
+                        1.dp,
+                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f)
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier.padding(10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            Text(
+                                text = recommendation.title,
+                                style = MaterialTheme.typography.bodyMedium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = recommendation.supporting,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        InfoPill(text = recommendation.priorityLabel)
+                    }
+                }
+            }
         }
     }
 }

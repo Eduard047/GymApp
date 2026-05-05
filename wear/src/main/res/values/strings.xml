@@ -4,6 +4,7 @@
     <string name="tab_record">Запис</string>
     <string name="tab_history">Історія</string>
     <string name="title_record_summary">Поточна чернетка</string>
+    <string name="title_current_set">Поточний підхід</string>
     <string name="label_workout_note">Нотатка тренування</string>
     <string name="label_set_exercise">Вправа</string>
     <string name="label_set_weight">Вага (кг)</string>
@@ -36,6 +37,10 @@
     <string name="message_invalid_draft">Введи коректні вправу, повтори та за потреби вагу.</string>
     <string name="message_invalid_set_input">Введи коректні повтори та за потреби вагу.</string>
     <string name="message_sync_unavailable">Телефон не підключено. Відкрий застосунок на телефоні та спробуй ще раз.</string>
+    <string name="sync_status_idle">sync: idle</string>
+    <string name="sync_status_waiting">sync: waiting phone</string>
+    <string name="sync_status_sent">sync: sent</string>
+    <string name="sync_status_failed">sync: failed</string>
     <string name="label_session_sets">%1$d підходів</string>
     <string name="label_session_volume">Обсяг %1$.1f</string>
     <string name="label_set_summary">%1$s - %2$.1f кг x %3$d</string>

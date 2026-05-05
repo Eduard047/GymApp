@@ -27,6 +27,7 @@
     <string name="action_undo">Скасувати</string>
     <string name="action_cancel">Скасувати</string>
     <string name="action_save">Зберегти</string>
+    <string name="action_close">Закрити</string>
     <string name="action_current_month">Поточний</string>
     <string name="action_repeat_last_workout">Повторити попереднє тренування</string>
     <string name="action_sync_plan_to_watch">Синхронізувати план на годинник</string>
@@ -190,6 +191,15 @@
     <string name="muscle_heatmap_top_title">Найбільш навантажені групи</string>
     <string name="muscle_heatmap_load_value">%1$d навант.</string>
     <string name="muscle_heatmap_muscle_detail">%1$d підходів • %2$d сесій • %3$d вправ</string>
+    <string name="muscle_heatmap_selected_title">%1$s навантажили</string>
+    <string name="muscle_heatmap_selected_empty">У вибраному періоді немає зіставлених підходів для цієї групи.</string>
+    <string name="muscle_heatmap_exercise_detail">%1$d навант. • %2$d підходів • %3$d сесій</string>
+    <string name="muscle_heatmap_unmapped_title">Нові / незіставлені вправи</string>
+    <string name="muscle_heatmap_unmapped_detail">%1$d підходів • %2$d сесій</string>
+    <string name="muscle_heatmap_map_action">Задати</string>
+    <string name="muscle_heatmap_manual_title">Зіставити “%1$s”</string>
+    <string name="recommendations_title">Рекомендації</string>
+    <string name="recommendations_supporting">На основі навантаження мʼязів і пауз у тренуваннях.</string>
 
     <string name="progress_summary_title">Зведення прогресу</string>
     <string name="progress_summary_subtitle">Обсяг = вага × повтори в усіх виконаних підходах.</string>
@@ -224,6 +234,16 @@
     <string name="exercise_history_empty">Для цієї вправи ще немає історії.</string>
     <string name="exercise_history_sets_inline">Підходів: %1$d</string>
     <string name="exercise_history_volume_inline">Обсяг: %1$s</string>
+    <string name="backup_tools_title">Бекап і діагностика</string>
+    <string name="backup_export_json">Експорт JSON</string>
+    <string name="backup_import_json">Імпорт JSON</string>
+    <string name="backup_export_diagnostics">Надіслати diagnostics / знімок БД</string>
+    <string name="backup_export_ready">Backup JSON готовий</string>
+    <string name="backup_copy_json">Копіювати JSON</string>
+    <string name="backup_share_json">Поділитися JSON</string>
+    <string name="backup_import_title">Імпорт backup</string>
+    <string name="backup_import_placeholder">Встав сюди експортований GymApp JSON</string>
+    <string name="backup_import_action">Імпорт</string>
 
     <string name="language_button">Мова</string>
     <string name="language_english">EN</string>
@@ -254,6 +274,13 @@
     <string name="post_workout_metric_exercises">Вправи</string>
     <string name="post_workout_metric_sets">Підходи</string>
     <string name="post_workout_metric_volume">Обсяг</string>
+    <string name="post_workout_impact_title">Вплив тренування</string>
+    <string name="post_workout_top_muscle">Найбільше навантаження сьогодні: %1$s</string>
+    <string name="post_workout_no_muscle_impact">Навантаження мʼязів зʼявиться після збереження підходів.</string>
+    <string name="post_workout_muscle_load">%1$d навант. • %2$d підходів</string>
+    <string name="post_workout_pr_title">Особисті рекорди</string>
+    <string name="post_workout_pr_previous">Попередній максимум %1$.1f кг</string>
+    <string name="post_workout_pr_first">Перший зафіксований максимум</string>
     <string name="post_workout_level_progress_title">Прогрес рівня</string>
     <string name="post_workout_level_progress_value">Рівень %1$d - %2$s</string>
     <string name="post_workout_xp_into_level">%1$d XP у цьому рівні</string>

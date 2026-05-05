@@ -24,7 +24,26 @@ data class ExerciseListUiState(
     val hasInputError: Boolean = false,
     val selectedExerciseId: Long? = null,
     val selectedExerciseName: String? = null,
-    val selectedExerciseHistory: List<ExerciseHistoryEntry> = emptyList()
+    val selectedExerciseHistory: List<ExerciseHistoryEntry> = emptyList(),
+    val backupJson: String? = null,
+    val backupMessage: String? = null,
+    val importJson: String = "",
+    val isImportOpen: Boolean = false
+)
+
+private data class ExerciseListBaseState(
+    val exercises: List<ExerciseEntity>,
+    val newExerciseName: String,
+    val hasInputError: Boolean,
+    val selectedExerciseId: Long?,
+    val selectedExerciseHistory: List<ExerciseHistoryEntry>
+)
+
+private data class ExerciseBackupState(
+    val backupJson: String?,
+    val backupMessage: String?,
+    val importJson: String,
+    val isImportOpen: Boolean
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -34,6 +53,10 @@ class ExerciseListViewModel(
     private val newExerciseName = MutableStateFlow("")
     private val hasInputError = MutableStateFlow(false)
     private val selectedExerciseId = MutableStateFlow<Long?>(null)
+    private val backupJson = MutableStateFlow<String?>(null)
+    private val backupMessage = MutableStateFlow<String?>(null)
+    private val importJson = MutableStateFlow("")
+    private val isImportOpen = MutableStateFlow(false)
 
     private val selectedExerciseHistory = selectedExerciseId.flatMapLatest { exerciseId ->
         if (exerciseId == null) {
@@ -43,20 +66,51 @@ class ExerciseListViewModel(
         }
     }
 
-    val uiState: StateFlow<ExerciseListUiState> = combine(
+    private val baseState = combine(
         repository.observeExercises(),
         newExerciseName,
         hasInputError,
         selectedExerciseId,
         selectedExerciseHistory
     ) { exercises, name, error, selectedId, history ->
-        ExerciseListUiState(
+        ExerciseListBaseState(
             exercises = exercises,
             newExerciseName = name,
             hasInputError = error,
             selectedExerciseId = selectedId,
-            selectedExerciseName = exercises.firstOrNull { it.id == selectedId }?.name,
             selectedExerciseHistory = history
+        )
+    }
+
+    private val backupState = combine(
+        backupJson,
+        backupMessage,
+        importJson,
+        isImportOpen
+    ) { backup, backupStatus, importText, importOpen ->
+        ExerciseBackupState(
+            backupJson = backup,
+            backupMessage = backupStatus,
+            importJson = importText,
+            isImportOpen = importOpen
+        )
+    }
+
+    val uiState: StateFlow<ExerciseListUiState> = combine(
+        baseState,
+        backupState
+    ) { base, backup ->
+        ExerciseListUiState(
+            exercises = base.exercises,
+            newExerciseName = base.newExerciseName,
+            hasInputError = base.hasInputError,
+            selectedExerciseId = base.selectedExerciseId,
+            selectedExerciseName = base.exercises.firstOrNull { it.id == base.selectedExerciseId }?.name,
+            selectedExerciseHistory = base.selectedExerciseHistory,
+            backupJson = backup.backupJson,
+            backupMessage = backup.backupMessage,
+            importJson = backup.importJson,
+            isImportOpen = backup.isImportOpen
         )
     }.stateIn(
         scope = viewModelScope,
@@ -100,6 +154,63 @@ class ExerciseListViewModel(
 
     fun closeExerciseHistory() {
         selectedExerciseId.value = null
+    }
+
+    fun exportBackup() {
+        viewModelScope.launch {
+            runCatching {
+                repository.exportBackupJson(includeDiagnostics = false)
+            }.onSuccess { json ->
+                backupJson.value = json
+                backupMessage.value = "Backup JSON ready"
+            }.onFailure {
+                backupMessage.value = "Backup export failed"
+            }
+        }
+    }
+
+    fun exportDiagnostics() {
+        viewModelScope.launch {
+            runCatching {
+                repository.exportBackupJson(includeDiagnostics = true)
+            }.onSuccess { json ->
+                backupJson.value = json
+                backupMessage.value = "Diagnostics snapshot ready"
+            }.onFailure {
+                backupMessage.value = "Diagnostics export failed"
+            }
+        }
+    }
+
+    fun clearBackupJson() {
+        backupJson.value = null
+    }
+
+    fun openImport() {
+        isImportOpen.value = true
+    }
+
+    fun closeImport() {
+        isImportOpen.value = false
+    }
+
+    fun updateImportJson(value: String) {
+        importJson.value = value
+    }
+
+    fun importBackup() {
+        val rawJson = importJson.value
+        viewModelScope.launch {
+            runCatching {
+                repository.importBackupJson(rawJson)
+            }.onSuccess { importedSessions ->
+                backupMessage.value = "Imported $importedSessions workouts"
+                importJson.value = ""
+                isImportOpen.value = false
+            }.onFailure {
+                backupMessage.value = "Backup import failed"
+            }
+        }
     }
 
     companion object {

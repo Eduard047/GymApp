@@ -32,13 +32,21 @@ data class WearSetInputUiState(
     val reps: String = ""
 )
 
+enum class WearSyncStatus {
+    Idle,
+    WaitingPhone,
+    Sent,
+    Failed
+}
+
 data class WearWorkoutUiState(
     val draftSets: List<WearSetInputUiState> = emptyList(),
     val availableExercises: List<String> = emptyList(),
     val sessions: List<WearWorkoutSessionUiModel> = emptyList(),
     val selectedSessionId: Long? = null,
     val isSaving: Boolean = false,
-    val message: String? = null
+    val message: String? = null,
+    val syncStatus: WearSyncStatus = WearSyncStatus.Idle
 ) {
     val selectedSession: WearWorkoutSessionUiModel?
         get() = sessions.firstOrNull { it.id == selectedSessionId }
@@ -57,6 +65,7 @@ class WearWorkoutViewModel(
     private val selectedSessionId = MutableStateFlow<Long?>(null)
     private val isSaving = MutableStateFlow(false)
     private val message = MutableStateFlow<String?>(null)
+    private val syncStatus = MutableStateFlow(WearSyncStatus.Idle)
 
     private val editorState = combine(
         draftSets,
@@ -98,15 +107,17 @@ class WearWorkoutViewModel(
         editorState,
         selectedSessionId,
         isSaving,
-        message
-    ) { editor, selectedId, saving, currentMessage ->
+        message,
+        syncStatus
+    ) { editor, selectedId, saving, currentMessage, currentSyncStatus ->
         WearWorkoutUiState(
             draftSets = editor.draftSets,
             availableExercises = editor.availableExercises,
             sessions = editor.sessions,
             selectedSessionId = selectedId,
             isSaving = saving,
-            message = currentMessage
+            message = currentMessage,
+            syncStatus = currentSyncStatus
         )
     }.stateIn(
         scope = viewModelScope,
@@ -192,6 +203,7 @@ class WearWorkoutViewModel(
             }
 
             isSaving.value = true
+            syncStatus.value = WearSyncStatus.WaitingPhone
             runCatching {
                 syncClient.createWorkout(
                     startedAt = System.currentTimeMillis(),
@@ -203,9 +215,11 @@ class WearWorkoutViewModel(
                 selectedSessionId.value = null
                 WatchPlanStorage.clear(appContext)
                 message.value = appContext.getString(R.string.message_workout_saved)
+                syncStatus.value = WearSyncStatus.Sent
                 requestRemoteSync(showError = false)
             }.onFailure {
                 message.value = appContext.getString(R.string.message_sync_unavailable)
+                syncStatus.value = WearSyncStatus.Failed
             }
             isSaving.value = false
         }
@@ -228,6 +242,7 @@ class WearWorkoutViewModel(
         }
 
         viewModelScope.launch {
+            syncStatus.value = WearSyncStatus.WaitingPhone
             runCatching {
                 syncClient.updateSet(
                     setId = set.id,
@@ -235,21 +250,26 @@ class WearWorkoutViewModel(
                     reps = parsedReps
                 )
             }.onSuccess {
+                syncStatus.value = WearSyncStatus.Sent
                 requestRemoteSync(showError = false)
             }.onFailure {
                 message.value = appContext.getString(R.string.message_sync_unavailable)
+                syncStatus.value = WearSyncStatus.Failed
             }
         }
     }
 
     fun deleteSet(setId: Long) {
         viewModelScope.launch {
+            syncStatus.value = WearSyncStatus.WaitingPhone
             runCatching {
                 syncClient.deleteSet(setId)
             }.onSuccess {
+                syncStatus.value = WearSyncStatus.Sent
                 requestRemoteSync(showError = false)
             }.onFailure {
                 message.value = appContext.getString(R.string.message_sync_unavailable)
+                syncStatus.value = WearSyncStatus.Failed
             }
         }
     }
@@ -260,9 +280,13 @@ class WearWorkoutViewModel(
 
     fun requestRemoteSync(showError: Boolean = true) {
         viewModelScope.launch {
+            syncStatus.value = WearSyncStatus.WaitingPhone
             runCatching {
                 syncClient.requestFullSync()
+            }.onSuccess {
+                syncStatus.value = WearSyncStatus.Sent
             }.onFailure {
+                syncStatus.value = WearSyncStatus.Failed
                 if (showError) {
                     message.value = appContext.getString(R.string.message_sync_unavailable)
                 }

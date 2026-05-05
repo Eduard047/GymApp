@@ -2,6 +2,8 @@ package com.example.gymapp.ui.components
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,15 +12,22 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -26,18 +35,26 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.PathParser
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
 import com.example.gymapp.ui.viewmodel.MuscleHeatmapUiModel
+import com.example.gymapp.ui.viewmodel.MuscleMapPeriod
+import com.example.gymapp.ui.viewmodel.MuscleOptionUiModel
 import com.example.gymapp.ui.viewmodel.MuscleProgressUiModel
 import kotlin.math.min
 
 @Composable
 fun MuscleHeatmapCard(
     heatmap: MuscleHeatmapUiModel,
+    onPeriodSelected: (MuscleMapPeriod) -> Unit,
+    onMuscleSelected: (String) -> Unit,
+    onEditExerciseMapping: (String) -> Unit,
+    onSaveExerciseMapping: (String, List<String>) -> Unit,
+    onCloseExerciseMapping: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     AppPanel(
@@ -70,6 +87,11 @@ fun MuscleHeatmapCard(
                 InfoPill(text = heatmap.periodLabel)
             }
 
+            MusclePeriodSelector(
+                heatmap = heatmap,
+                onPeriodSelected = onPeriodSelected
+            )
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -98,6 +120,7 @@ fun MuscleHeatmapCard(
 
             MuscleBodyMap(
                 muscles = heatmap.muscles,
+                onMuscleSelected = onMuscleSelected,
                 modifier = Modifier.fillMaxWidth()
             )
 
@@ -119,6 +142,29 @@ fun MuscleHeatmapCard(
 
             MuscleLegend()
 
+            if (heatmap.selectedMuscleLabel != null) {
+                SelectedMuscleExercises(
+                    heatmap = heatmap,
+                    onEditExerciseMapping = onEditExerciseMapping
+                )
+            }
+
+            if (heatmap.unmappedExercises.isNotEmpty()) {
+                UnmappedExercises(
+                    heatmap = heatmap,
+                    onEditExerciseMapping = onEditExerciseMapping
+                )
+            }
+
+            if (heatmap.manualEditorExerciseName != null) {
+                ManualMappingEditor(
+                    exerciseName = heatmap.manualEditorExerciseName,
+                    muscles = heatmap.manualMuscles,
+                    onClose = onCloseExerciseMapping,
+                    onSave = onSaveExerciseMapping
+                )
+            }
+
             if (heatmap.topMuscles.isEmpty()) {
                 Text(
                     text = stringResource(R.string.muscle_heatmap_empty),
@@ -132,7 +178,11 @@ fun MuscleHeatmapCard(
                         style = MaterialTheme.typography.titleSmall
                     )
                     heatmap.topMuscles.forEach { muscle ->
-                        TopMuscleRow(muscle = muscle)
+                        TopMuscleRow(
+                            muscle = muscle,
+                            selected = muscle.id == heatmap.selectedMuscleId,
+                            onClick = { onMuscleSelected(muscle.id) }
+                        )
                     }
                 }
             }
@@ -141,8 +191,55 @@ fun MuscleHeatmapCard(
 }
 
 @Composable
+private fun MusclePeriodSelector(
+    heatmap: MuscleHeatmapUiModel,
+    onPeriodSelected: (MuscleMapPeriod) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        heatmap.periodOptions.forEach { option ->
+            Surface(
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable { onPeriodSelected(option.period) },
+                color = if (option.isSelected) {
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
+                } else {
+                    MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)
+                },
+                shape = MaterialTheme.shapes.small,
+                border = androidx.compose.foundation.BorderStroke(
+                    width = 1.dp,
+                    color = if (option.isSelected) {
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.42f)
+                    } else {
+                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f)
+                    }
+                )
+            ) {
+                Text(
+                    text = option.label,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = if (option.isSelected) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun MuscleBodyMap(
     muscles: List<MuscleProgressUiModel>,
+    onMuscleSelected: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val inactiveColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.52f)
@@ -160,7 +257,20 @@ private fun MuscleBodyMap(
     }
 
     Canvas(
-        modifier = modifier.height(390.dp)
+        modifier = modifier
+            .height(390.dp)
+            .pointerInput(frontRegions, backRegions) {
+                detectTapGestures { offset ->
+                    findTappedMuscle(
+                        offset = offset,
+                        canvasWidth = size.width.toFloat(),
+                        canvasHeight = size.height.toFloat(),
+                        horizontalGap = 28.dp.toPx(),
+                        frontRegions = frontRegions,
+                        backRegions = backRegions
+                    )?.let(onMuscleSelected)
+                }
+            }
     ) {
         val horizontalGap = 28.dp.toPx()
         val availableFigureWidth = ((size.width - horizontalGap) / 2f).coerceAtLeast(96.dp.toPx())
@@ -249,8 +359,230 @@ private fun MuscleLegend() {
 }
 
 @Composable
+private fun SelectedMuscleExercises(
+    heatmap: MuscleHeatmapUiModel,
+    onEditExerciseMapping: (String) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = stringResource(
+                R.string.muscle_heatmap_selected_title,
+                heatmap.selectedMuscleLabel.orEmpty()
+            ),
+            style = MaterialTheme.typography.titleSmall
+        )
+        if (heatmap.selectedMuscleExercises.isEmpty()) {
+            Text(
+                text = stringResource(R.string.muscle_heatmap_selected_empty),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        } else {
+            heatmap.selectedMuscleExercises.forEach { exercise ->
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.78f),
+                    shape = MaterialTheme.shapes.small,
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.54f)
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier.padding(10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            Text(
+                                text = exercise.exerciseName,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = stringResource(
+                                    R.string.muscle_heatmap_exercise_detail,
+                                    exercise.load,
+                                    exercise.sets,
+                                    exercise.sessions
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        OutlinedButton(onClick = { onEditExerciseMapping(exercise.exerciseName) }) {
+                            Text(
+                                text = stringResource(R.string.muscle_heatmap_map_action),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun UnmappedExercises(
+    heatmap: MuscleHeatmapUiModel,
+    onEditExerciseMapping: (String) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = stringResource(R.string.muscle_heatmap_unmapped_title),
+            style = MaterialTheme.typography.titleSmall
+        )
+        heatmap.unmappedExercises.forEach { exercise ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    Text(
+                        text = exercise.exerciseName,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = stringResource(
+                            R.string.muscle_heatmap_unmapped_detail,
+                            exercise.sets,
+                            exercise.sessions
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                FilledTonalButton(onClick = { onEditExerciseMapping(exercise.exerciseName) }) {
+                    Text(
+                        text = stringResource(R.string.muscle_heatmap_map_action),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ManualMappingEditor(
+    exerciseName: String,
+    muscles: List<MuscleOptionUiModel>,
+    onClose: () -> Unit,
+    onSave: (String, List<String>) -> Unit
+) {
+    var selectedIds by remember(exerciseName, muscles) {
+        mutableStateOf(muscles.filter { it.isSelected }.map { it.id }.toSet())
+    }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+        shape = MaterialTheme.shapes.medium,
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.28f)
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.muscle_heatmap_manual_title, exerciseName),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold
+            )
+            muscles.chunked(3).forEach { rowMuscles ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    rowMuscles.forEach { muscle ->
+                        val selected = muscle.id in selectedIds
+                        Surface(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable {
+                                    selectedIds = if (selected) {
+                                        selectedIds - muscle.id
+                                    } else {
+                                        selectedIds + muscle.id
+                                    }
+                                },
+                            color = if (selected) {
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+                            } else {
+                                MaterialTheme.colorScheme.surface.copy(alpha = 0.7f)
+                            },
+                            shape = MaterialTheme.shapes.small,
+                            border = androidx.compose.foundation.BorderStroke(
+                                1.dp,
+                                if (selected) {
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+                                } else {
+                                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
+                                }
+                            )
+                        ) {
+                            Text(
+                                text = muscle.label,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp),
+                                style = MaterialTheme.typography.labelMedium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                    repeat(3 - rowMuscles.size) {
+                        Box(modifier = Modifier.weight(1f))
+                    }
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = onClose,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+                FilledTonalButton(
+                    onClick = { onSave(exerciseName, selectedIds.toList()) },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(stringResource(R.string.action_save))
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun TopMuscleRow(
     muscle: MuscleProgressUiModel,
+    selected: Boolean,
+    onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val accent = heatColor(
@@ -263,7 +595,18 @@ private fun TopMuscleRow(
     )
 
     Column(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.small)
+            .background(
+                if (selected) {
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
+                } else {
+                    Color.Transparent
+                }
+            )
+            .clickable(onClick = onClick)
+            .padding(8.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         Row(
@@ -311,6 +654,77 @@ private fun TopMuscleRow(
     }
 }
 
+private fun findTappedMuscle(
+    offset: Offset,
+    canvasWidth: Float,
+    canvasHeight: Float,
+    horizontalGap: Float,
+    frontRegions: List<RenderedSourceRegion>,
+    backRegions: List<RenderedSourceRegion>
+): String? {
+    val availableFigureWidth = ((canvasWidth - horizontalGap) / 2f).coerceAtLeast(96f)
+    val availableFigureHeight = canvasHeight - 6f
+    val scale = min(
+        availableFigureWidth / SOURCE_BODY_VIEWBOX_WIDTH,
+        availableFigureHeight / SOURCE_BODY_VIEWBOX_HEIGHT
+    )
+    val figureWidth = SOURCE_BODY_VIEWBOX_WIDTH * scale
+    val figureHeight = SOURCE_BODY_VIEWBOX_HEIGHT * scale
+    val top = (canvasHeight - figureHeight) / 2f
+    val frontLeft = canvasWidth * 0.27f - figureWidth / 2f
+    val backLeft = canvasWidth * 0.73f - figureWidth / 2f
+
+    return findTappedMuscleInFigure(
+        offset = offset,
+        regions = frontRegions,
+        viewBoxMinX = SOURCE_FRONT_VIEWBOX_MIN_X,
+        left = frontLeft,
+        top = top,
+        figureWidth = figureWidth,
+        figureHeight = figureHeight,
+        scale = scale
+    ) ?: findTappedMuscleInFigure(
+        offset = offset,
+        regions = backRegions,
+        viewBoxMinX = SOURCE_BACK_VIEWBOX_MIN_X,
+        left = backLeft,
+        top = top,
+        figureWidth = figureWidth,
+        figureHeight = figureHeight,
+        scale = scale
+    )
+}
+
+private fun findTappedMuscleInFigure(
+    offset: Offset,
+    regions: List<RenderedSourceRegion>,
+    viewBoxMinX: Float,
+    left: Float,
+    top: Float,
+    figureWidth: Float,
+    figureHeight: Float,
+    scale: Float
+): String? {
+    if (offset.x < left || offset.x > left + figureWidth || offset.y < top || offset.y > top + figureHeight) {
+        return null
+    }
+    val sourcePoint = Offset(
+        x = (offset.x - left) / scale + viewBoxMinX,
+        y = (offset.y - top) / scale
+    )
+
+    return regions
+        .asReversed()
+        .firstNotNullOfOrNull { region ->
+            val bounds = region.bounds
+            val isHit = sourcePoint.x >= bounds.left &&
+                sourcePoint.x <= bounds.right &&
+                sourcePoint.y >= bounds.top &&
+                sourcePoint.y <= bounds.bottom
+            if (isHit) muscleIdForSourceRegion(region.source.id) else null
+        }
+}
+
 private fun DrawScope.drawSourceBody(
     regions: List<RenderedSourceRegion>,
     viewBoxMinX: Float,
@@ -356,9 +770,11 @@ private fun DrawScope.drawSourceBody(
 }
 
 private fun parseSourceRegion(region: SourceMuscleRegion): RenderedSourceRegion {
+    val path = PathParser().parsePathString(region.pathData).toPath()
     return RenderedSourceRegion(
         source = region,
-        path = PathParser().parsePathString(region.pathData).toPath()
+        path = path,
+        bounds = path.getBounds()
     )
 }
 
@@ -403,5 +819,6 @@ private fun heatColor(
 
 private data class RenderedSourceRegion(
     val source: SourceMuscleRegion,
-    val path: Path
+    val path: Path,
+    val bounds: Rect
 )

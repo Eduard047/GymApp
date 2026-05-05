@@ -46,7 +46,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -57,6 +60,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.gymapp.wear.R
 import com.example.gymapp.wear.data.WearSetUiModel
 import com.example.gymapp.wear.data.WearWorkoutSessionUiModel
+import com.example.gymapp.wear.ui.WearSyncStatus
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import java.text.DateFormat
@@ -458,6 +462,109 @@ private fun WearPanel(
 }
 
 @Composable
+private fun CurrentSetPanel(
+    set: WearSetInputUiState,
+    weightLabel: String,
+    repsLabel: String,
+    layout: WearLayoutSpec,
+    haptic: HapticFeedback,
+    isSaving: Boolean,
+    onSelectExercise: () -> Unit,
+    onWeightClick: () -> Unit,
+    onRepsClick: () -> Unit,
+    onWeightPreset: (String) -> Unit,
+    onRepsPreset: (String) -> Unit,
+    onSave: () -> Unit
+) {
+    WearPanel(
+        layout = layout,
+        highlighted = true,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Text(
+            text = stringResource(R.string.title_current_set),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold
+        )
+        OutlinedButton(
+            onClick = { hapticClick(haptic, onSelectExercise) },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(
+                text = if (set.exerciseName.isBlank()) {
+                    stringResource(R.string.action_select_exercise)
+                } else {
+                    set.exerciseName
+                },
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            NumericValueButton(
+                label = weightLabel,
+                value = set.weight,
+                onClick = { hapticClick(haptic, onWeightClick) },
+                modifier = Modifier.weight(1f)
+            )
+            NumericValueButton(
+                label = repsLabel,
+                value = set.reps,
+                onClick = { hapticClick(haptic, onRepsClick) },
+                modifier = Modifier.weight(1f)
+            )
+        }
+        QuickPresetRow(
+            values = listOf("20", "40", "60"),
+            onValueSelected = { value -> hapticClick(haptic) { onWeightPreset(value) } }
+        )
+        QuickPresetRow(
+            values = listOf("8", "10", "12"),
+            onValueSelected = { value -> hapticClick(haptic) { onRepsPreset(value) } }
+        )
+        FilledTonalButton(
+            onClick = { hapticClick(haptic, onSave) },
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !isSaving
+        ) {
+            if (isSaving) {
+                CircularProgressIndicator(modifier = Modifier.width(20.dp), strokeWidth = 2.dp)
+            } else {
+                Text(stringResource(R.string.action_save_workout))
+            }
+        }
+    }
+}
+
+@Composable
+private fun QuickPresetRow(
+    values: List<String>,
+    onValueSelected: (String) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        values.forEach { value ->
+            OutlinedButton(
+                onClick = { onValueSelected(value) },
+                modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+            ) {
+                Text(
+                    text = value,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun RecordScreen(
     uiState: WearWorkoutUiState,
     onAddSet: () -> Unit,
@@ -475,6 +582,8 @@ private fun RecordScreen(
     val estimatedVolume = estimateDraftVolume(uiState.draftSets)
     val weightLabel = stringResource(R.string.label_set_weight)
     val repsLabel = stringResource(R.string.label_set_reps)
+    val haptic = LocalHapticFeedback.current
+    val currentSet = uiState.draftSets.lastOrNull()
     var numericEditor by remember { mutableStateOf<NumericEditorState?>(null) }
 
     Box(modifier = modifier) {
@@ -514,6 +623,44 @@ private fun RecordScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    Text(
+                        text = syncStatusLabel(uiState.syncStatus),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = syncStatusColor(uiState.syncStatus)
+                    )
+                }
+            }
+
+            if (currentSet != null) {
+                item {
+                    CurrentSetPanel(
+                        set = currentSet,
+                        weightLabel = weightLabel,
+                        repsLabel = repsLabel,
+                        layout = layout,
+                        haptic = haptic,
+                        isSaving = uiState.isSaving,
+                        onSelectExercise = { onSelectExercise(currentSet.id) },
+                        onWeightClick = {
+                            numericEditor = NumericEditorState(
+                                title = weightLabel,
+                                value = currentSet.weight,
+                                allowDecimal = true,
+                                onConfirm = { onWeightChanged(currentSet.id, it) }
+                            )
+                        },
+                        onRepsClick = {
+                            numericEditor = NumericEditorState(
+                                title = repsLabel,
+                                value = currentSet.reps,
+                                allowDecimal = false,
+                                onConfirm = { onRepsChanged(currentSet.id, it) }
+                            )
+                        },
+                        onWeightPreset = { value -> onWeightChanged(currentSet.id, value) },
+                        onRepsPreset = { value -> onRepsChanged(currentSet.id, value) },
+                        onSave = onSave
+                    )
                 }
             }
 
@@ -524,7 +671,7 @@ private fun RecordScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     OutlinedButton(
-                        onClick = onDuplicateLastSet,
+                        onClick = { hapticClick(haptic, onDuplicateLastSet) },
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
@@ -534,7 +681,7 @@ private fun RecordScreen(
                         )
                     }
                     OutlinedButton(
-                        onClick = onDuplicateWithWeight,
+                        onClick = { hapticClick(haptic, onDuplicateWithWeight) },
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
@@ -550,7 +697,7 @@ private fun RecordScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     OutlinedButton(
-                        onClick = onDuplicateLastSet,
+                        onClick = { hapticClick(haptic, onDuplicateLastSet) },
                         modifier = Modifier.weight(1f)
                     ) {
                         Text(
@@ -560,7 +707,7 @@ private fun RecordScreen(
                         )
                     }
                     OutlinedButton(
-                        onClick = onDuplicateWithWeight,
+                        onClick = { hapticClick(haptic, onDuplicateWithWeight) },
                         modifier = Modifier.weight(1f)
                     ) {
                         Text(
@@ -667,6 +814,7 @@ private fun RecordScreen(
                 ) {
                     OutlinedButton(
                         onClick = {
+                            hapticClick(haptic)
                             onWeightChanged(
                                 set.id,
                                 adjustWeightText(set.weight, delta = -2.5)
@@ -678,6 +826,7 @@ private fun RecordScreen(
                     }
                     OutlinedButton(
                         onClick = {
+                            hapticClick(haptic)
                             onWeightChanged(
                                 set.id,
                                 adjustWeightText(set.weight, delta = 2.5)
@@ -695,6 +844,7 @@ private fun RecordScreen(
                 ) {
                     OutlinedButton(
                         onClick = {
+                            hapticClick(haptic)
                             onRepsChanged(
                                 set.id,
                                 adjustRepsText(set.reps, delta = -1)
@@ -706,6 +856,7 @@ private fun RecordScreen(
                     }
                     OutlinedButton(
                         onClick = {
+                            hapticClick(haptic)
                             onRepsChanged(
                                 set.id,
                                 adjustRepsText(set.reps, delta = 1)
@@ -719,7 +870,7 @@ private fun RecordScreen(
 
                 if (uiState.draftSets.size > 1) {
                     OutlinedButton(
-                        onClick = { onRemoveSet(set.id) },
+                        onClick = { hapticClick(haptic) { onRemoveSet(set.id) } },
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(stringResource(R.string.action_delete))
@@ -730,7 +881,7 @@ private fun RecordScreen(
 
         item {
             OutlinedButton(
-                onClick = onAddSet,
+                onClick = { hapticClick(haptic, onAddSet) },
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(stringResource(R.string.action_add_set))
@@ -739,7 +890,7 @@ private fun RecordScreen(
 
         item {
             FilledTonalButton(
-                onClick = onSave,
+                onClick = { hapticClick(haptic, onSave) },
                 modifier = Modifier.fillMaxWidth(),
                 enabled = !uiState.isSaving
             ) {
@@ -944,6 +1095,7 @@ private fun SessionDetailScreen(
     var editReps by remember { mutableStateOf("") }
     val weightLabel = stringResource(R.string.label_set_weight)
     val repsLabel = stringResource(R.string.label_set_reps)
+    val haptic = LocalHapticFeedback.current
     var numericEditor by remember { mutableStateOf<NumericEditorState?>(null) }
 
     Box(modifier = modifier) {
@@ -1009,7 +1161,7 @@ private fun SessionDetailScreen(
                             Text(stringResource(R.string.action_edit))
                         }
                         OutlinedButton(
-                            onClick = { onDeleteSet(set.id) },
+                            onClick = { hapticClick(haptic) { onDeleteSet(set.id) } },
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(stringResource(R.string.action_delete))
@@ -1030,7 +1182,7 @@ private fun SessionDetailScreen(
                                 Text(stringResource(R.string.action_edit))
                             }
                             OutlinedButton(
-                                onClick = { onDeleteSet(set.id) },
+                                onClick = { hapticClick(haptic) { onDeleteSet(set.id) } },
                                 modifier = Modifier.weight(1f)
                             ) {
                                 Text(stringResource(R.string.action_delete))
@@ -1066,11 +1218,13 @@ private fun SessionDetailScreen(
                 },
                 onDismiss = { editingSet = null },
                 onSave = {
-                    val currentSet = editingSet
-                    if (currentSet != null) {
-                        onUpdateSet(currentSet, editWeight, editReps)
+                    hapticClick(haptic) {
+                        val currentSet = editingSet
+                        if (currentSet != null) {
+                            onUpdateSet(currentSet, editWeight, editReps)
+                        }
+                        editingSet = null
                     }
-                    editingSet = null
                 }
             )
         }
@@ -1217,6 +1371,7 @@ private fun NumericInputOverlay(
     onConfirm: (String) -> Unit
 ) {
     var currentValue by remember(editor) { mutableStateOf(editor.value.trim()) }
+    val haptic = LocalHapticFeedback.current
     val keypadRows = if (editor.allowDecimal) {
         listOf(
             listOf("1", "2", "3"),
@@ -1288,6 +1443,7 @@ private fun NumericInputOverlay(
                         row.forEach { key ->
                             OutlinedButton(
                                 onClick = {
+                                    hapticClick(haptic)
                                     currentValue = nextNumericValue(
                                         current = currentValue,
                                         key = key,
@@ -1326,7 +1482,7 @@ private fun NumericInputOverlay(
                         )
                     }
                     FilledTonalButton(
-                        onClick = { onConfirm(currentValue) },
+                        onClick = { hapticClick(haptic) { onConfirm(currentValue) } },
                         modifier = Modifier.weight(1f),
                         contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
                     ) {
@@ -1340,6 +1496,34 @@ private fun NumericInputOverlay(
             }
         }
     }
+}
+
+@Composable
+private fun syncStatusLabel(status: WearSyncStatus): String {
+    return when (status) {
+        WearSyncStatus.Idle -> stringResource(R.string.sync_status_idle)
+        WearSyncStatus.WaitingPhone -> stringResource(R.string.sync_status_waiting)
+        WearSyncStatus.Sent -> stringResource(R.string.sync_status_sent)
+        WearSyncStatus.Failed -> stringResource(R.string.sync_status_failed)
+    }
+}
+
+@Composable
+private fun syncStatusColor(status: WearSyncStatus): Color {
+    return when (status) {
+        WearSyncStatus.Failed -> MaterialTheme.colorScheme.error
+        WearSyncStatus.Sent -> MaterialTheme.colorScheme.primary
+        WearSyncStatus.WaitingPhone -> MaterialTheme.colorScheme.secondary
+        WearSyncStatus.Idle -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+}
+
+private fun hapticClick(
+    haptic: HapticFeedback,
+    action: () -> Unit = {}
+) {
+    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+    action()
 }
 
 private fun estimateDraftVolume(draftSets: List<WearSetInputUiState>): Double {

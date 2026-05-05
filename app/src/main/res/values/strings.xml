@@ -27,6 +27,7 @@
     <string name="action_undo">Undo</string>
     <string name="action_cancel">Cancel</string>
     <string name="action_save">Save</string>
+    <string name="action_close">Close</string>
     <string name="action_current_month">Current</string>
     <string name="action_repeat_last_workout">Repeat Last Workout</string>
     <string name="action_sync_plan_to_watch">Sync Plan to Watch</string>
@@ -190,6 +191,15 @@
     <string name="muscle_heatmap_top_title">Top muscle groups</string>
     <string name="muscle_heatmap_load_value">%1$d load</string>
     <string name="muscle_heatmap_muscle_detail">%1$d sets • %2$d sessions • %3$d exercises</string>
+    <string name="muscle_heatmap_selected_title">%1$s loaded by</string>
+    <string name="muscle_heatmap_selected_empty">No mapped sets for this muscle in the selected period.</string>
+    <string name="muscle_heatmap_exercise_detail">%1$d load • %2$d sets • %3$d sessions</string>
+    <string name="muscle_heatmap_unmapped_title">Unmapped / new exercises</string>
+    <string name="muscle_heatmap_unmapped_detail">%1$d sets • %2$d sessions</string>
+    <string name="muscle_heatmap_map_action">Map</string>
+    <string name="muscle_heatmap_manual_title">Map “%1$s”</string>
+    <string name="recommendations_title">Recommendations</string>
+    <string name="recommendations_supporting">Based on muscle load and recent training gaps.</string>
 
     <string name="progress_summary_title">Progress Summary</string>
     <string name="progress_summary_subtitle">Volume = weight × reps across all completed sets.</string>
@@ -224,6 +234,16 @@
     <string name="exercise_history_empty">No history for this exercise yet.</string>
     <string name="exercise_history_sets_inline">Sets: %1$d</string>
     <string name="exercise_history_volume_inline">Volume: %1$s</string>
+    <string name="backup_tools_title">Backup and diagnostics</string>
+    <string name="backup_export_json">Export JSON</string>
+    <string name="backup_import_json">Import JSON</string>
+    <string name="backup_export_diagnostics">Send diagnostics / DB snapshot</string>
+    <string name="backup_export_ready">Backup JSON ready</string>
+    <string name="backup_copy_json">Copy JSON</string>
+    <string name="backup_share_json">Share JSON</string>
+    <string name="backup_import_title">Import backup</string>
+    <string name="backup_import_placeholder">Paste exported GymApp JSON here</string>
+    <string name="backup_import_action">Import</string>
 
     <string name="language_button">Language</string>
     <string name="language_english">EN</string>
@@ -254,6 +274,13 @@
     <string name="post_workout_metric_exercises">Exercises</string>
     <string name="post_workout_metric_sets">Sets</string>
     <string name="post_workout_metric_volume">Volume</string>
+    <string name="post_workout_impact_title">Workout impact</string>
+    <string name="post_workout_top_muscle">Most loaded today: %1$s</string>
+    <string name="post_workout_no_muscle_impact">Mapped muscle load will appear after sets are saved.</string>
+    <string name="post_workout_muscle_load">%1$d load • %2$d sets</string>
+    <string name="post_workout_pr_title">Personal records</string>
+    <string name="post_workout_pr_previous">Previous best %1$.1f kg</string>
+    <string name="post_workout_pr_first">First logged best</string>
     <string name="post_workout_level_progress_title">Level progress</string>
     <string name="post_workout_level_progress_value">Level %1$d - %2$s</string>
     <string name="post_workout_xp_into_level">%1$d XP into this level</string>

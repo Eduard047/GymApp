@@ -1,6 +1,7 @@
 ﻿package com.example.gymapp.ui.screens
 
 import androidx.compose.foundation.clickable
+import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -12,6 +13,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -26,7 +28,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
@@ -54,6 +59,13 @@ fun ExerciseListScreen(
     onExerciseClick: (Long) -> Unit,
     onDeleteExercise: (ExerciseEntity) -> Unit,
     onDismissHistory: () -> Unit,
+    onExportBackup: () -> Unit,
+    onExportDiagnostics: () -> Unit,
+    onClearBackup: () -> Unit,
+    onOpenImport: () -> Unit,
+    onCloseImport: () -> Unit,
+    onImportJsonChange: (String) -> Unit,
+    onImportBackup: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -87,6 +99,13 @@ fun ExerciseListScreen(
                 style = MaterialTheme.typography.bodyMedium
             )
         }
+
+        BackupToolsCard(
+            message = uiState.backupMessage,
+            onExportBackup = onExportBackup,
+            onExportDiagnostics = onExportDiagnostics,
+            onOpenImport = onOpenImport
+        )
 
         if (uiState.exercises.isEmpty()) {
             Text(
@@ -140,6 +159,202 @@ fun ExerciseListScreen(
                 exerciseName = selectedExerciseName,
                 history = uiState.selectedExerciseHistory
             )
+        }
+    }
+
+    val backupJson = uiState.backupJson
+    if (backupJson != null) {
+        ModalBottomSheet(onDismissRequest = onClearBackup) {
+            BackupJsonBottomSheetContent(
+                json = backupJson,
+                onDismiss = onClearBackup
+            )
+        }
+    }
+
+    if (uiState.isImportOpen) {
+        ModalBottomSheet(onDismissRequest = onCloseImport) {
+            ImportBackupBottomSheetContent(
+                importJson = uiState.importJson,
+                onImportJsonChange = onImportJsonChange,
+                onImportBackup = onImportBackup,
+                onDismiss = onCloseImport
+            )
+        }
+    }
+}
+
+@Composable
+private fun BackupToolsCard(
+    message: String?,
+    onExportBackup: () -> Unit,
+    onExportDiagnostics: () -> Unit,
+    onOpenImport: () -> Unit
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.backup_tools_title),
+                style = MaterialTheme.typography.titleSmall
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = onExportBackup,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(
+                        text = stringResource(R.string.backup_export_json),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                OutlinedButton(
+                    onClick = onOpenImport,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(
+                        text = stringResource(R.string.backup_import_json),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+            OutlinedButton(
+                onClick = onExportDiagnostics,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(stringResource(R.string.backup_export_diagnostics))
+            }
+            if (!message.isNullOrBlank()) {
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun BackupJsonBottomSheetContent(
+    json: String,
+    onDismiss: () -> Unit
+) {
+    val clipboardManager = LocalClipboardManager.current
+    val context = LocalContext.current
+
+    LazyColumn(
+        modifier = Modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(start = 16.dp, top = 4.dp, end = 16.dp, bottom = 28.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        item {
+            Text(
+                text = stringResource(R.string.backup_export_ready),
+                style = MaterialTheme.typography.headlineSmall
+            )
+        }
+        item {
+            OutlinedTextField(
+                value = json,
+                onValueChange = {},
+                modifier = Modifier.fillMaxWidth(),
+                readOnly = true,
+                minLines = 6,
+                maxLines = 12
+            )
+        }
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(
+                    onClick = {
+                        clipboardManager.setText(AnnotatedString(json))
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(stringResource(R.string.backup_copy_json))
+                }
+                OutlinedButton(
+                    onClick = {
+                        val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                            type = "application/json"
+                            putExtra(Intent.EXTRA_TEXT, json)
+                        }
+                        context.startActivity(
+                            Intent.createChooser(
+                                sendIntent,
+                                context.getString(R.string.backup_share_json)
+                            )
+                        )
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(stringResource(R.string.backup_share_json))
+                }
+            }
+        }
+        item {
+            OutlinedButton(
+                onClick = onDismiss,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(stringResource(R.string.action_close))
+            }
+        }
+    }
+}
+
+@Composable
+private fun ImportBackupBottomSheetContent(
+    importJson: String,
+    onImportJsonChange: (String) -> Unit,
+    onImportBackup: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, top = 4.dp, end = 16.dp, bottom = 28.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Text(
+            text = stringResource(R.string.backup_import_title),
+            style = MaterialTheme.typography.headlineSmall
+        )
+        OutlinedTextField(
+            value = importJson,
+            onValueChange = onImportJsonChange,
+            modifier = Modifier.fillMaxWidth(),
+            minLines = 6,
+            maxLines = 12,
+            placeholder = { Text(stringResource(R.string.backup_import_placeholder)) }
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            OutlinedButton(
+                onClick = onDismiss,
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(stringResource(R.string.action_cancel))
+            }
+            Button(
+                onClick = onImportBackup,
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(stringResource(R.string.backup_import_action))
+            }
         }
     }
 }

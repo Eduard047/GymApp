@@ -4,6 +4,7 @@ import androidx.room.withTransaction
 import com.example.gymapp.data.database.GymDatabase
 import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.entity.ExerciseHistoryEntry
+import com.example.gymapp.data.entity.ExerciseMuscleMappingEntity
 import com.example.gymapp.data.entity.SetEntryEntity
 import com.example.gymapp.data.entity.WorkoutExerciseEntity
 import com.example.gymapp.data.entity.WorkoutSessionDetails
@@ -15,11 +16,14 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.temporal.TemporalAdjusters
+import java.util.Locale
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import org.json.JSONArray
+import org.json.JSONObject
 
 data class WorkoutSetDraft(
     val weight: Double,
@@ -51,6 +55,7 @@ class GymRepository(
     private val exerciseDao = database.exerciseDao()
     private val workoutDao = database.workoutDao()
     private val setDao = database.setDao()
+    private val muscleMappingDao = database.muscleMappingDao()
 
     fun observeExercises(): Flow<List<ExerciseEntity>> = exerciseDao.getExercises()
         .catch { emit(emptyList()) }
@@ -148,6 +153,164 @@ class GymRepository(
     fun observeAllExerciseHistory(): Flow<List<ExerciseHistoryEntry>> {
         return workoutDao.getAllExerciseHistory()
             .catch { emit(emptyList()) }
+    }
+
+    fun observeExerciseMuscleMappings(): Flow<List<ExerciseMuscleMappingEntity>> {
+        return muscleMappingDao.observeMappings()
+            .catch { emit(emptyList()) }
+    }
+
+    suspend fun saveExerciseMuscleMapping(
+        exerciseName: String,
+        muscleIds: List<String>
+    ) {
+        val cleanedName = exerciseName.trim()
+        if (cleanedName.isBlank()) return
+
+        val exerciseNameKey = cleanedName.toExerciseMappingKey()
+        val now = System.currentTimeMillis()
+        val mappings = muscleIds
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .distinct()
+            .map { muscleId ->
+                ExerciseMuscleMappingEntity(
+                    exerciseNameKey = exerciseNameKey,
+                    exerciseName = cleanedName,
+                    muscleId = muscleId,
+                    weight = 1.0,
+                    updatedAt = now
+                )
+            }
+
+        database.withTransaction {
+            muscleMappingDao.deleteForExercise(exerciseNameKey)
+            if (mappings.isNotEmpty()) {
+                muscleMappingDao.insertAll(mappings)
+            }
+        }
+    }
+
+    suspend fun exportBackupJson(includeDiagnostics: Boolean = false): String {
+        val exercises = exerciseDao.getExercisesSnapshot()
+        val sessions = workoutDao.getAllSessionDetailsForBackup().map(::sortSessionDetails)
+        val root = JSONObject()
+            .put("schemaVersion", 1)
+            .put("exportedAt", System.currentTimeMillis())
+            .put("app", "GymApp")
+            .put("diagnostics", includeDiagnostics)
+            .put("exercises", JSONArray().apply {
+                exercises.forEach { exercise ->
+                    put(
+                        JSONObject()
+                            .put("name", exercise.name)
+                    )
+                }
+            })
+            .put("sessions", JSONArray().apply {
+                sessions.forEach { sessionDetails ->
+                    put(
+                        JSONObject()
+                            .put("date", sessionDetails.session.date)
+                            .put("note", sessionDetails.session.note)
+                            .put("exercises", JSONArray().apply {
+                                sessionDetails.workoutExercises.forEach { workoutExercise ->
+                                    put(
+                                        JSONObject()
+                                            .put("name", workoutExercise.exercise.name)
+                                            .put("sets", JSONArray().apply {
+                                                workoutExercise.sets.forEach { set ->
+                                                    put(
+                                                        JSONObject()
+                                                            .put("weight", set.weight)
+                                                            .put("reps", set.reps)
+                                                    )
+                                                }
+                                            })
+                                    )
+                                }
+                            })
+                    )
+                }
+            })
+
+        if (includeDiagnostics) {
+            root.put(
+                "summary",
+                JSONObject()
+                    .put("exerciseCount", exercises.size)
+                    .put("sessionCount", sessions.size)
+                    .put(
+                        "setCount",
+                        sessions.sumOf { session ->
+                            session.workoutExercises.sumOf { exercise -> exercise.sets.size }
+                        }
+                    )
+            )
+        }
+
+        return root.toString(2)
+    }
+
+    suspend fun importBackupJson(rawJson: String): Int {
+        val root = JSONObject(rawJson)
+        val sessions = root.optJSONArray("sessions") ?: JSONArray()
+        val exercises = root.optJSONArray("exercises") ?: JSONArray()
+        var importedSessions = 0
+
+        database.withTransaction {
+            repeat(exercises.length()) { index ->
+                val name = exercises.optJSONObject(index)
+                    ?.optString("name")
+                    ?.trim()
+                    .orEmpty()
+                if (name.isNotBlank() && exerciseDao.getByName(name) == null) {
+                    exerciseDao.insert(ExerciseEntity(name = name))
+                }
+            }
+
+            repeat(sessions.length()) { sessionIndex ->
+                val sessionJson = sessions.optJSONObject(sessionIndex) ?: return@repeat
+                val exerciseJsonArray = sessionJson.optJSONArray("exercises") ?: JSONArray()
+                val drafts = mutableListOf<WorkoutExerciseDraft>()
+
+                repeat(exerciseJsonArray.length()) { exerciseIndex ->
+                    val exerciseJson = exerciseJsonArray.optJSONObject(exerciseIndex) ?: return@repeat
+                    val exerciseName = exerciseJson.optString("name").trim()
+                    if (exerciseName.isBlank()) return@repeat
+
+                    val exerciseId = exerciseDao.getByName(exerciseName)?.id
+                        ?: exerciseDao.insert(ExerciseEntity(name = exerciseName))
+                    val setJsonArray = exerciseJson.optJSONArray("sets") ?: JSONArray()
+                    val sets = mutableListOf<WorkoutSetDraft>()
+                    repeat(setJsonArray.length()) { setIndex ->
+                        val setJson = setJsonArray.optJSONObject(setIndex) ?: return@repeat
+                        val weight = setJson.optDouble("weight", 0.0).coerceAtLeast(0.0)
+                        val reps = setJson.optInt("reps", 0).coerceAtLeast(0)
+                        if (reps > 0) {
+                            sets += WorkoutSetDraft(weight = weight, reps = reps)
+                        }
+                    }
+                    if (sets.isNotEmpty()) {
+                        drafts += WorkoutExerciseDraft(
+                            exerciseId = exerciseId,
+                            sets = sets
+                        )
+                    }
+                }
+
+                if (drafts.isNotEmpty()) {
+                    createWorkoutSession(
+                        date = sessionJson.optLong("date", System.currentTimeMillis()),
+                        note = sessionJson.optString("note").takeIf { it.isNotBlank() },
+                        workoutExercises = drafts
+                    )
+                    importedSessions += 1
+                }
+            }
+        }
+
+        return importedSessions
     }
 
     fun observeExerciseHistoryForMonth(
@@ -427,5 +590,13 @@ class GymRepository(
         }
         return streak
     }
+}
+
+private fun String.toExerciseMappingKey(): String {
+    return lowercase(Locale.ROOT)
+        .replace('ʼ', '\'')
+        .replace('’', '\'')
+        .replace(Regex("\\s+"), " ")
+        .trim()
 }
 

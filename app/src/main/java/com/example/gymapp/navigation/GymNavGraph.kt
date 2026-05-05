@@ -260,6 +260,11 @@ fun GymAppRoot(
                                 onPreviousMonth = viewModel::previousMonth,
                                 onCurrentMonth = viewModel::currentMonth,
                                 onNextMonth = viewModel::nextMonth,
+                                onMuscleMapPeriodSelected = viewModel::selectMuscleMapPeriod,
+                                onMuscleSelected = viewModel::selectMuscle,
+                                onEditExerciseMapping = viewModel::openManualMuscleMapping,
+                                onSaveExerciseMapping = viewModel::saveManualMuscleMapping,
+                                onCloseExerciseMapping = viewModel::closeManualMuscleMapping,
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
@@ -307,7 +312,7 @@ fun GymAppRoot(
                             LaunchedEffect(uiState.createdSessionId) {
                                 val createdSessionId = uiState.createdSessionId
                                 if (createdSessionId != null) {
-                                    navController.navigate(AppDestination.workoutDetailRoute(createdSessionId)) {
+                                    navController.navigate(AppDestination.postWorkoutSummaryRoute(createdSessionId)) {
                                         popUpTo(AppDestination.AddWorkout.route) {
                                             inclusive = true
                                         }
@@ -421,6 +426,13 @@ fun GymAppRoot(
                                 onExerciseClick = viewModel::openExerciseHistory,
                                 onDeleteExercise = viewModel::deleteExercise,
                                 onDismissHistory = viewModel::closeExerciseHistory,
+                                onExportBackup = viewModel::exportBackup,
+                                onExportDiagnostics = viewModel::exportDiagnostics,
+                                onClearBackup = viewModel::clearBackupJson,
+                                onOpenImport = viewModel::openImport,
+                                onCloseImport = viewModel::closeImport,
+                                onImportJsonChange = viewModel::updateImportJson,
+                                onImportBackup = viewModel::importBackup,
                                 modifier = Modifier.fillMaxSize()
                             )
                         }

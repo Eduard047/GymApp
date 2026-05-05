@@ -7,6 +7,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.lifecycle.viewModelScope
 import com.example.gymapp.data.entity.ExerciseHistoryEntry
+import com.example.gymapp.data.entity.ExerciseMuscleMappingEntity
 import com.example.gymapp.data.entity.WorkoutSessionSummary
 import com.example.gymapp.data.repository.DashboardStats
 import com.example.gymapp.data.repository.GymRepository
@@ -18,6 +19,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalDate
@@ -74,14 +76,60 @@ data class MuscleProgressUiModel(
     val intensity: Float = 0f
 )
 
+enum class MuscleMapPeriod {
+    AllTime,
+    Month,
+    Week
+}
+
+data class MuscleMapPeriodOptionUiModel(
+    val period: MuscleMapPeriod,
+    val label: String,
+    val isSelected: Boolean = false
+)
+
+data class MuscleExerciseContributionUiModel(
+    val exerciseName: String,
+    val load: Int = 0,
+    val sets: Int = 0,
+    val sessions: Int = 0
+)
+
+data class UnmappedExerciseUiModel(
+    val exerciseName: String,
+    val sets: Int = 0,
+    val sessions: Int = 0
+)
+
+data class MuscleOptionUiModel(
+    val id: String,
+    val label: String,
+    val isSelected: Boolean = false
+)
+
 data class MuscleHeatmapUiModel(
     val periodLabel: String = DateTimeUtils.monthLabel(0),
+    val period: MuscleMapPeriod = MuscleMapPeriod.AllTime,
+    val periodOptions: List<MuscleMapPeriodOptionUiModel> = emptyList(),
     val totalSets: Int = 0,
     val totalLoad: Int = 0,
     val mappedExerciseCount: Int = 0,
     val totalExerciseCount: Int = 0,
     val muscles: List<MuscleProgressUiModel> = emptyList(),
-    val topMuscles: List<MuscleProgressUiModel> = emptyList()
+    val topMuscles: List<MuscleProgressUiModel> = emptyList(),
+    val selectedMuscleId: String? = null,
+    val selectedMuscleLabel: String? = null,
+    val selectedMuscleExercises: List<MuscleExerciseContributionUiModel> = emptyList(),
+    val unmappedExercises: List<UnmappedExerciseUiModel> = emptyList(),
+    val manualEditorExerciseName: String? = null,
+    val manualMuscles: List<MuscleOptionUiModel> = emptyList()
+)
+
+data class TrainingRecommendationUiModel(
+    val id: String,
+    val title: String,
+    val supporting: String,
+    val priorityLabel: String
 )
 
 data class MissionProgressUiModel(
@@ -134,6 +182,7 @@ data class WorkoutListUiState(
     val soloProgress: SoloProgressUiModel = SoloProgressUiModel(),
     val activityHeatmap: ActivityHeatmapUiModel = ActivityHeatmapUiModel(),
     val muscleHeatmap: MuscleHeatmapUiModel = MuscleHeatmapUiModel(),
+    val trainingRecommendations: List<TrainingRecommendationUiModel> = emptyList(),
     val dailyMissions: List<MissionProgressUiModel> = emptyList(),
     val weeklyMissions: List<MissionProgressUiModel> = emptyList(),
     val monthlyMissions: List<MissionProgressUiModel> = emptyList(),
@@ -147,6 +196,9 @@ class WorkoutListViewModel(
 ) : ViewModel() {
     private val zoneId = ZoneId.systemDefault()
     private val monthOffset = MutableStateFlow(0)
+    private val muscleMapPeriod = MutableStateFlow(MuscleMapPeriod.AllTime)
+    private val selectedMuscleId = MutableStateFlow<String?>(null)
+    private val manualMappingExerciseName = MutableStateFlow<String?>(null)
 
     private val sessionsFlow = monthOffset.flatMapLatest { offset ->
         repository.observeSessionsForMonth(offset)
@@ -158,14 +210,36 @@ class WorkoutListViewModel(
 
     private val allSessionsFlow = repository.observeSessions()
     private val exerciseHistoryFlow = repository.observeAllExerciseHistory()
+    private val muscleMappingsFlow = repository.observeExerciseMuscleMappings()
 
-    val uiState: StateFlow<WorkoutListUiState> = combine(
+    private val sourceState = combine(
         monthOffset,
         sessionsFlow,
         dashboardFlow,
         allSessionsFlow,
         exerciseHistoryFlow
     ) { offset, sessions, dashboardStats, allSessions, exerciseHistory ->
+        WorkoutListSourceState(
+            offset = offset,
+            sessions = sessions,
+            dashboardStats = dashboardStats,
+            allSessions = allSessions,
+            exerciseHistory = exerciseHistory
+        )
+    }
+
+    val uiState: StateFlow<WorkoutListUiState> = combine(
+        sourceState,
+        muscleMapPeriod,
+        selectedMuscleId,
+        manualMappingExerciseName,
+        muscleMappingsFlow
+    ) { source, selectedPeriod, selectedMuscle, editorExerciseName, muscleMappings ->
+        val offset = source.offset
+        val sessions = source.sessions
+        val dashboardStats = source.dashboardStats
+        val allSessions = source.allSessions
+        val exerciseHistory = source.exerciseHistory
         val historyStats = buildMissionHistoryStats(allSessions)
         val dailyMissions = buildDailyMissions(allSessions, historyStats)
         val weeklyMissions = buildWeeklyMissions(allSessions, historyStats)
@@ -186,7 +260,17 @@ class WorkoutListViewModel(
             dashboardStats = dashboardStats,
             soloProgress = soloProgress,
             activityHeatmap = buildHeatmap(offset, sessions),
-            muscleHeatmap = buildMuscleHeatmap(exerciseHistory),
+            muscleHeatmap = buildMuscleHeatmap(
+                exerciseHistory = exerciseHistory,
+                period = selectedPeriod,
+                selectedMuscleId = selectedMuscle,
+                manualEditorExerciseName = editorExerciseName,
+                muscleMappings = muscleMappings
+            ),
+            trainingRecommendations = buildTrainingRecommendations(
+                exerciseHistory = exerciseHistory,
+                muscleMappings = muscleMappings
+            ),
             dailyMissions = dailyMissions,
             weeklyMissions = weeklyMissions,
             monthlyMissions = monthlyMissions,
@@ -209,6 +293,32 @@ class WorkoutListViewModel(
 
     fun currentMonth() {
         monthOffset.value = 0
+    }
+
+    fun selectMuscleMapPeriod(period: MuscleMapPeriod) {
+        muscleMapPeriod.value = period
+    }
+
+    fun selectMuscle(muscleId: String) {
+        selectedMuscleId.value = if (selectedMuscleId.value == muscleId) null else muscleId
+    }
+
+    fun openManualMuscleMapping(exerciseName: String) {
+        manualMappingExerciseName.value = exerciseName
+    }
+
+    fun closeManualMuscleMapping() {
+        manualMappingExerciseName.value = null
+    }
+
+    fun saveManualMuscleMapping(exerciseName: String, muscleIds: List<String>) {
+        viewModelScope.launch {
+            repository.saveExerciseMuscleMapping(
+                exerciseName = exerciseName,
+                muscleIds = muscleIds
+            )
+            manualMappingExerciseName.value = null
+        }
     }
 
     private fun buildSoloProgress(
@@ -323,9 +433,14 @@ class WorkoutListViewModel(
     }
 
     private fun buildMuscleHeatmap(
-        exerciseHistory: List<ExerciseHistoryEntry>
+        exerciseHistory: List<ExerciseHistoryEntry>,
+        period: MuscleMapPeriod,
+        selectedMuscleId: String?,
+        manualEditorExerciseName: String?,
+        muscleMappings: List<ExerciseMuscleMappingEntity>
     ): MuscleHeatmapUiModel {
-        val historyEntries = exerciseHistory
+        val manualMap = muscleMappings.toManualContributionMap()
+        val historyEntries = exerciseHistory.filterForMusclePeriod(period)
         val distinctExerciseKeys = historyEntries
             .map { it.exerciseName.normalizedExerciseName() }
             .filter { it.isNotBlank() }
@@ -334,14 +449,23 @@ class WorkoutListViewModel(
             definition.id to MutableMuscleProgress()
         }.toMutableMap()
         val mappedExerciseKeys = linkedSetOf<String>()
+        val unmappedExerciseStats = linkedMapOf<String, MutableExerciseContribution>()
+        val selectedExerciseStats = linkedMapOf<String, MutableExerciseContribution>()
 
         historyEntries.forEach { entry ->
-            val contributions = muscleContributionsForExercise(entry.exerciseName)
+            val exerciseKey = entry.exerciseName.normalizedExerciseName()
+            val contributions = muscleContributionsForExercise(entry.exerciseName, manualMap)
             if (contributions.isEmpty()) {
+                val stats = unmappedExerciseStats.getOrPut(entry.exerciseName) {
+                    MutableExerciseContribution()
+                }
+                stats.load += entry.estimatedLoad()
+                stats.setIds += entry.setId
+                stats.sessionIds += entry.sessionId
                 return@forEach
             }
 
-            mappedExerciseKeys += entry.exerciseName.normalizedExerciseName()
+            mappedExerciseKeys += exerciseKey
             val setLoad = entry.estimatedLoad()
             contributions.forEach { contribution ->
                 val stats = statsByMuscle.getOrPut(contribution.muscleId) {
@@ -350,7 +474,16 @@ class WorkoutListViewModel(
                 stats.load += setLoad * contribution.weight
                 stats.setIds += entry.setId
                 stats.sessionIds += entry.sessionId
-                stats.exerciseKeys += entry.exerciseName.normalizedExerciseName()
+                stats.exerciseKeys += exerciseKey
+
+                if (contribution.muscleId == selectedMuscleId) {
+                    val exerciseStats = selectedExerciseStats.getOrPut(entry.exerciseName) {
+                        MutableExerciseContribution()
+                    }
+                    exerciseStats.load += setLoad * contribution.weight
+                    exerciseStats.setIds += entry.setId
+                    exerciseStats.sessionIds += entry.sessionId
+                }
             }
         }
 
@@ -376,16 +509,241 @@ class WorkoutListViewModel(
             .filter { it.load > 0 }
             .sortedByDescending { it.load }
             .take(5)
+        val selectedLabel = selectedMuscleId
+            ?.let { id -> MUSCLE_DEFINITIONS.firstOrNull { it.id == id } }
+            ?.let { definition -> t(en = definition.titleEn, uk = definition.titleUk) }
+        val selectedExercises = selectedExerciseStats
+            .map { (exerciseName, stats) ->
+                MuscleExerciseContributionUiModel(
+                    exerciseName = exerciseName,
+                    load = stats.load.roundToInt(),
+                    sets = stats.setIds.size,
+                    sessions = stats.sessionIds.size
+                )
+            }
+            .sortedByDescending { it.load }
+            .take(8)
+        val unmappedExercises = unmappedExerciseStats
+            .map { (exerciseName, stats) ->
+                UnmappedExerciseUiModel(
+                    exerciseName = exerciseName,
+                    sets = stats.setIds.size,
+                    sessions = stats.sessionIds.size
+                )
+            }
+            .sortedWith(compareByDescending<UnmappedExerciseUiModel> { it.sets }.thenBy { it.exerciseName })
+            .take(8)
+        val manualEditorSelectedIds = manualEditorExerciseName
+            ?.let { exerciseName ->
+                manualMap[exerciseName.normalizedExerciseName()]
+                    ?: muscleContributionsForExercise(exerciseName).takeIf { it.isNotEmpty() }
+            }
+            .orEmpty()
+            .map { it.muscleId }
+            .toSet()
+        val manualMuscles = MUSCLE_DEFINITIONS.map { definition ->
+            MuscleOptionUiModel(
+                id = definition.id,
+                label = t(en = definition.titleEn, uk = definition.titleUk),
+                isSelected = definition.id in manualEditorSelectedIds
+            )
+        }
 
         return MuscleHeatmapUiModel(
-            periodLabel = t(en = "All time", uk = "За весь час"),
+            periodLabel = period.label(),
+            period = period,
+            periodOptions = MuscleMapPeriod.values().map { option ->
+                MuscleMapPeriodOptionUiModel(
+                    period = option,
+                    label = option.label(),
+                    isSelected = option == period
+                )
+            },
             totalSets = historyEntries.size,
             totalLoad = historyEntries.sumOf { it.estimatedLoad() }.roundToInt(),
             mappedExerciseCount = mappedExerciseKeys.size,
             totalExerciseCount = distinctExerciseKeys.size,
             muscles = muscles,
-            topMuscles = topMuscles
+            topMuscles = topMuscles,
+            selectedMuscleId = selectedMuscleId,
+            selectedMuscleLabel = selectedLabel,
+            selectedMuscleExercises = selectedExercises,
+            unmappedExercises = unmappedExercises,
+            manualEditorExerciseName = manualEditorExerciseName,
+            manualMuscles = manualMuscles
         )
+    }
+
+    private fun List<ExerciseHistoryEntry>.filterForMusclePeriod(
+        period: MuscleMapPeriod
+    ): List<ExerciseHistoryEntry> {
+        if (period == MuscleMapPeriod.AllTime) {
+            return this
+        }
+
+        val today = LocalDate.now(zoneId)
+        val startDate = when (period) {
+            MuscleMapPeriod.AllTime -> LocalDate.MIN
+            MuscleMapPeriod.Month -> today.withDayOfMonth(1)
+            MuscleMapPeriod.Week -> today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+        }
+        val endDateExclusive = when (period) {
+            MuscleMapPeriod.AllTime -> LocalDate.MAX
+            MuscleMapPeriod.Month -> startDate.plusMonths(1)
+            MuscleMapPeriod.Week -> startDate.plusWeeks(1)
+        }
+        val startMillis = startDate.atStartOfDay(zoneId).toInstant().toEpochMilli()
+        val endMillis = endDateExclusive.atStartOfDay(zoneId).toInstant().toEpochMilli()
+        return filter { entry -> entry.sessionDate in startMillis until endMillis }
+    }
+
+    private fun MuscleMapPeriod.label(): String {
+        return when (this) {
+            MuscleMapPeriod.AllTime -> t(en = "All time", uk = "За весь час")
+            MuscleMapPeriod.Month -> t(en = "Month", uk = "Місяць")
+            MuscleMapPeriod.Week -> t(en = "Week", uk = "Тиждень")
+        }
+    }
+
+    private fun List<ExerciseMuscleMappingEntity>.toManualContributionMap(): Map<String, List<MuscleContribution>> {
+        return groupBy { it.exerciseNameKey }
+            .mapValues { (_, mappings) ->
+                mappings
+                    .filter { mapping -> MUSCLE_DEFINITIONS.any { it.id == mapping.muscleId } }
+                    .map { mapping ->
+                        MuscleContribution(
+                            muscleId = mapping.muscleId,
+                            weight = mapping.weight.coerceIn(0.0, 1.0)
+                        )
+                    }
+            }
+    }
+
+    private fun buildTrainingRecommendations(
+        exerciseHistory: List<ExerciseHistoryEntry>,
+        muscleMappings: List<ExerciseMuscleMappingEntity>
+    ): List<TrainingRecommendationUiModel> {
+        if (exerciseHistory.isEmpty()) {
+            return listOf(
+                TrainingRecommendationUiModel(
+                    id = "start",
+                    title = t(en = "Log a few workouts", uk = "Запиши кілька тренувань"),
+                    supporting = t(
+                        en = "Recommendations need enough history to compare muscle groups.",
+                        uk = "Рекомендаціям потрібна історія, щоб порівнювати групи мʼязів."
+                    ),
+                    priorityLabel = t(en = "Setup", uk = "Старт")
+                )
+            )
+        }
+
+        val manualMap = muscleMappings.toManualContributionMap()
+        val today = LocalDate.now(zoneId)
+        val lastDateByMuscle = mutableMapOf<String, LocalDate>()
+        val loadByMuscle = mutableMapOf<String, Double>()
+
+        exerciseHistory.forEach { entry ->
+            val entryDate = entry.sessionDate.toLocalDate()
+            val setLoad = entry.estimatedLoad()
+            muscleContributionsForExercise(entry.exerciseName, manualMap).forEach { contribution ->
+                val previousDate = lastDateByMuscle[contribution.muscleId]
+                if (previousDate == null || entryDate.isAfter(previousDate)) {
+                    lastDateByMuscle[contribution.muscleId] = entryDate
+                }
+                loadByMuscle[contribution.muscleId] =
+                    (loadByMuscle[contribution.muscleId] ?: 0.0) + setLoad * contribution.weight
+            }
+        }
+
+        val recommendations = mutableListOf<TrainingRecommendationUiModel>()
+        val staleMuscles = listOf("lats", "upperBack", "chest", "quads", "hamstrings", "glutes")
+            .mapNotNull { muscleId ->
+                val lastDate = lastDateByMuscle[muscleId] ?: return@mapNotNull muscleId to 999L
+                muscleId to java.time.temporal.ChronoUnit.DAYS.between(lastDate, today)
+            }
+            .filter { (_, days) -> days >= 8 }
+            .sortedByDescending { (_, days) -> days }
+            .take(3)
+
+        if (staleMuscles.isNotEmpty()) {
+            val names = staleMuscles.joinToString(", ") { (muscleId, _) -> muscleLabel(muscleId) }
+            recommendations += TrainingRecommendationUiModel(
+                id = "stale",
+                title = t(en = "Long gap: $names", uk = "Давно не було: $names"),
+                supporting = t(
+                    en = "These groups have not had meaningful work for 8+ days.",
+                    uk = "Ці групи не отримували помітного навантаження 8+ днів."
+                ),
+                priorityLabel = t(en = "Balance", uk = "Баланс")
+            )
+        }
+
+        val quadLoad = loadByMuscle["quads"] ?: 0.0
+        val posteriorLoad = (loadByMuscle["hamstrings"] ?: 0.0) +
+            (loadByMuscle["glutes"] ?: 0.0) +
+            (loadByMuscle["lowerBack"] ?: 0.0)
+        if (quadLoad > 0.0 && posteriorLoad > 0.0 && quadLoad / posteriorLoad > 1.8) {
+            recommendations += TrainingRecommendationUiModel(
+                id = "posterior-chain",
+                title = t(en = "Posterior chain is behind", uk = "Задня лінія відстає"),
+                supporting = t(
+                    en = "Quad load is much higher than hamstrings, glutes and lower back combined.",
+                    uk = "Квадрицепси сильно випереджають біцепс стегна, сідниці та поперек разом."
+                ),
+                priorityLabel = t(en = "Legs", uk = "Ноги")
+            )
+        }
+
+        recommendations += nextWorkoutRecommendation(lastDateByMuscle)
+
+        return recommendations.distinctBy { it.id }.take(4)
+    }
+
+    private fun nextWorkoutRecommendation(
+        lastDateByMuscle: Map<String, LocalDate>
+    ): TrainingRecommendationUiModel {
+        val groups = listOf(
+            TrainingGroup(
+                id = "pull",
+                label = "Pull",
+                muscleIds = listOf("lats", "upperBack", "biceps", "forearms")
+            ),
+            TrainingGroup(
+                id = "legs",
+                label = "Legs",
+                muscleIds = listOf("quads", "hamstrings", "glutes", "calves")
+            ),
+            TrainingGroup(
+                id = "push",
+                label = "Push",
+                muscleIds = listOf("chest", "shoulders", "triceps")
+            )
+        )
+        val nextGroup = groups.minByOrNull { group ->
+            group.muscleIds
+                .mapNotNull { lastDateByMuscle[it] }
+                .maxOrNull()
+                ?.toEpochDay()
+                ?: Long.MIN_VALUE
+        } ?: groups.first()
+
+        return TrainingRecommendationUiModel(
+            id = "next-${nextGroup.id}",
+            title = t(
+                en = "Next workout: ${nextGroup.label}",
+                uk = "Наступне тренування: ${nextGroup.label}"
+            ),
+            supporting = t(
+                en = "Picked from the muscle groups with the oldest recent work.",
+                uk = "Обрано за групами, які найдовше не були в роботі."
+            ),
+            priorityLabel = t(en = "Next", uk = "Далі")
+        )
+    }
+
+    private fun muscleLabel(muscleId: String): String {
+        val definition = MUSCLE_DEFINITIONS.firstOrNull { it.id == muscleId }
+        return definition?.let { t(en = it.titleEn, uk = it.titleUk) } ?: muscleId
     }
 
     private fun buildDailyMissions(
@@ -1696,6 +2054,20 @@ private data class WeeklyDayAggregate(
     val totalVolume: Double = 0.0
 )
 
+private data class WorkoutListSourceState(
+    val offset: Int,
+    val sessions: List<WorkoutSessionSummary>,
+    val dashboardStats: DashboardStats,
+    val allSessions: List<WorkoutSessionSummary>,
+    val exerciseHistory: List<ExerciseHistoryEntry>
+)
+
+private data class TrainingGroup(
+    val id: String,
+    val label: String,
+    val muscleIds: List<String>
+)
+
 private enum class MissionCadence {
     Daily,
     Weekly,
@@ -1745,13 +2117,13 @@ private data class MissionHistoryStats(
     val maxSessionSets: Int = 0
 )
 
-private data class MuscleDefinition(
+data class MuscleDefinition(
     val id: String,
     val titleEn: String,
     val titleUk: String
 )
 
-private data class MuscleContribution(
+data class MuscleContribution(
     val muscleId: String,
     val weight: Double
 )
@@ -1763,10 +2135,16 @@ private data class MutableMuscleProgress(
     val exerciseKeys: MutableSet<String> = linkedSetOf()
 )
 
+private data class MutableExerciseContribution(
+    var load: Double = 0.0,
+    val setIds: MutableSet<Long> = linkedSetOf(),
+    val sessionIds: MutableSet<Long> = linkedSetOf()
+)
+
 private const val BODYWEIGHT_LOAD_PROXY = 72.0
 private const val SET_COMPLETION_LOAD = 35.0
 
-private val MUSCLE_DEFINITIONS = listOf(
+val MUSCLE_DEFINITIONS = listOf(
     MuscleDefinition("chest", "Chest", "Груди"),
     MuscleDefinition("shoulders", "Shoulders", "Плечі"),
     MuscleDefinition("biceps", "Biceps", "Біцепс"),
@@ -1820,7 +2198,7 @@ private val EXACT_MUSCLE_MAP = mapOf(
     "штанга на біцепс" to muscles("biceps" to 1.0, "forearms" to 0.35)
 )
 
-private fun ExerciseHistoryEntry.estimatedLoad(): Double {
+fun ExerciseHistoryEntry.estimatedLoad(): Double {
     val repsValue = reps.coerceAtLeast(0)
     val trackedLoad = weight.coerceAtLeast(0.0) * repsValue
     val exerciseLoad = if (trackedLoad > 0.0) {
@@ -1831,8 +2209,12 @@ private fun ExerciseHistoryEntry.estimatedLoad(): Double {
     return exerciseLoad + SET_COMPLETION_LOAD
 }
 
-private fun muscleContributionsForExercise(exerciseName: String): List<MuscleContribution> {
+fun muscleContributionsForExercise(
+    exerciseName: String,
+    manualMappings: Map<String, List<MuscleContribution>> = emptyMap()
+): List<MuscleContribution> {
     val normalizedName = exerciseName.normalizedExerciseName()
+    manualMappings[normalizedName]?.takeIf { it.isNotEmpty() }?.let { return it }
     EXACT_MUSCLE_MAP[normalizedName]?.let { return it }
 
     val inferred = linkedMapOf<String, Double>()
@@ -1925,7 +2307,7 @@ private fun muscles(vararg values: Pair<String, Double>): List<MuscleContributio
         }
 }
 
-private fun String.normalizedExerciseName(): String {
+fun String.normalizedExerciseName(): String {
     return lowercase(Locale.ROOT)
         .replace('ʼ', '\'')
         .replace('’', '\'')

@@ -23,6 +23,9 @@ interface ExerciseDao {
     @Query("SELECT * FROM exercises ORDER BY name ASC")
     fun getExercises(): Flow<List<ExerciseEntity>>
 
+    @Query("SELECT * FROM exercises ORDER BY name COLLATE NOCASE ASC")
+    suspend fun getExercisesSnapshot(): List<ExerciseEntity>
+
     @Query("SELECT * FROM exercises WHERE id = :exerciseId LIMIT 1")
     suspend fun getById(exerciseId: Long): ExerciseEntity?
 
