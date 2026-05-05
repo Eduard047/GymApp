@@ -24,15 +24,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -52,7 +49,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -79,6 +75,13 @@ private data class WearLayoutSpec(
     val itemSpacing: Dp,
     val cardPadding: Dp,
     val cardInnerSpacing: Dp
+)
+
+private data class NumericEditorState(
+    val title: String,
+    val value: String,
+    val allowDecimal: Boolean,
+    val onConfirm: (String) -> Unit
 )
 
 @Composable
@@ -470,45 +473,49 @@ private fun RecordScreen(
     modifier: Modifier = Modifier
 ) {
     val estimatedVolume = estimateDraftVolume(uiState.draftSets)
+    val weightLabel = stringResource(R.string.label_set_weight)
+    val repsLabel = stringResource(R.string.label_set_reps)
+    var numericEditor by remember { mutableStateOf<NumericEditorState?>(null) }
 
-    LazyColumn(
-        state = listState,
-        modifier = modifier,
-        contentPadding = PaddingValues(
-            start = layout.horizontalPadding,
-            end = layout.horizontalPadding,
-            top = layout.verticalPadding,
-            bottom = if (layout.isRound) 22.dp else 10.dp
-        ),
-        verticalArrangement = Arrangement.spacedBy(layout.itemSpacing)
-    ) {
-        item {
-            WearPanel(
-                layout = layout,
-                highlighted = true,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    text = stringResource(R.string.title_record_summary),
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Text(
-                    text = stringResource(R.string.label_draft_sets_count, uiState.draftSets.size),
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                Text(
-                    text = stringResource(R.string.label_draft_volume, estimatedVolume),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    text = stringResource(R.string.hint_record_shortcut),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+    Box(modifier = modifier) {
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(
+                start = layout.horizontalPadding,
+                end = layout.horizontalPadding,
+                top = layout.verticalPadding,
+                bottom = if (layout.isRound) 22.dp else 10.dp
+            ),
+            verticalArrangement = Arrangement.spacedBy(layout.itemSpacing)
+        ) {
+            item {
+                WearPanel(
+                    layout = layout,
+                    highlighted = true,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = stringResource(R.string.title_record_summary),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = stringResource(R.string.label_draft_sets_count, uiState.draftSets.size),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Text(
+                        text = stringResource(R.string.label_draft_volume, estimatedVolume),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = stringResource(R.string.hint_record_shortcut),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
-        }
 
         item {
             if (layout.isRound) {
@@ -594,42 +601,62 @@ private fun RecordScreen(
                 }
 
                 if (layout.isRound) {
-                    OutlinedTextField(
+                    NumericValueButton(
+                        label = weightLabel,
                         value = set.weight,
-                        onValueChange = { onWeightChanged(set.id, it) },
-                        label = { Text(stringResource(R.string.label_set_weight)) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
+                        onClick = {
+                            numericEditor = NumericEditorState(
+                                title = weightLabel,
+                                value = set.weight,
+                                allowDecimal = true,
+                                onConfirm = { onWeightChanged(set.id, it) }
+                            )
+                        }
                     )
-                    OutlinedTextField(
+                    NumericValueButton(
+                        label = repsLabel,
                         value = set.reps,
-                        onValueChange = { onRepsChanged(set.id, it) },
-                        label = { Text(stringResource(R.string.label_set_reps)) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
+                        onClick = {
+                            numericEditor = NumericEditorState(
+                                title = repsLabel,
+                                value = set.reps,
+                                allowDecimal = false,
+                                onConfirm = { onRepsChanged(set.id, it) }
+                            )
+                        }
                     )
                 } else {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        OutlinedTextField(
+                        NumericValueButton(
+                            label = weightLabel,
                             value = set.weight,
-                            onValueChange = { onWeightChanged(set.id, it) },
-                            label = { Text(stringResource(R.string.label_set_weight)) },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                             modifier = Modifier.weight(1f),
-                            singleLine = true
+                            onClick = {
+                                numericEditor = NumericEditorState(
+                                    title = weightLabel,
+                                    value = set.weight,
+                                    allowDecimal = true,
+                                    onConfirm = { onWeightChanged(set.id, it) }
+                                )
+                            }
                         )
-                        OutlinedTextField(
+                        NumericValueButton(
+                            label = repsLabel,
                             value = set.reps,
-                            onValueChange = { onRepsChanged(set.id, it) },
-                            label = { Text(stringResource(R.string.label_set_reps)) },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                             modifier = Modifier.weight(1f),
-                            singleLine = true
+                            onClick = {
+                                numericEditor = NumericEditorState(
+                                    title = repsLabel,
+                                    value = set.reps,
+                                    allowDecimal = false,
+                                    onConfirm = { onRepsChanged(set.id, it) }
+                                )
+                            }
                         )
                     }
                 }
@@ -722,6 +749,19 @@ private fun RecordScreen(
                     Text(stringResource(R.string.action_save_workout))
                 }
             }
+        }
+    }
+
+        numericEditor?.let { editor ->
+            NumericInputOverlay(
+                editor = editor,
+                layout = layout,
+                onDismiss = { numericEditor = null },
+                onConfirm = { value ->
+                    editor.onConfirm(value)
+                    numericEditor = null
+                }
+            )
         }
     }
 }
@@ -902,142 +942,403 @@ private fun SessionDetailScreen(
     var editingSet by remember { mutableStateOf<WearSetUiModel?>(null) }
     var editWeight by remember { mutableStateOf("") }
     var editReps by remember { mutableStateOf("") }
+    val weightLabel = stringResource(R.string.label_set_weight)
+    val repsLabel = stringResource(R.string.label_set_reps)
+    var numericEditor by remember { mutableStateOf<NumericEditorState?>(null) }
 
-    LazyColumn(
-        state = listState,
-        modifier = modifier,
-        contentPadding = PaddingValues(
-            start = layout.horizontalPadding,
-            end = layout.horizontalPadding,
-            top = layout.verticalPadding,
-            bottom = if (layout.isRound) 22.dp else 10.dp
-        ),
-        verticalArrangement = Arrangement.spacedBy(layout.itemSpacing)
-    ) {
-        item {
-            OutlinedButton(
-                onClick = onBack,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(stringResource(R.string.action_back))
+    Box(modifier = modifier) {
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(
+                start = layout.horizontalPadding,
+                end = layout.horizontalPadding,
+                top = layout.verticalPadding,
+                bottom = if (layout.isRound) 22.dp else 10.dp
+            ),
+            verticalArrangement = Arrangement.spacedBy(layout.itemSpacing)
+        ) {
+            item {
+                OutlinedButton(
+                    onClick = onBack,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(stringResource(R.string.action_back))
+                }
             }
-        }
 
-        item {
-            WearPanel(layout = layout, highlighted = true, modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    text = stringResource(R.string.title_workout_details),
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Text(
-                    text = formatDateTime(session.startedAt),
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                Text(
-                    text = stringResource(R.string.label_session_sets, session.setCount),
-                    style = MaterialTheme.typography.bodyMedium
-                )
+            item {
+                WearPanel(layout = layout, highlighted = true, modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = stringResource(R.string.title_workout_details),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = formatDateTime(session.startedAt),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Text(
+                        text = stringResource(R.string.label_session_sets, session.setCount),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
             }
-        }
 
-        items(session.sets, key = { it.id }) { set ->
-            WearPanel(layout = layout, modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    text = stringResource(
-                        R.string.label_set_summary,
-                        set.exerciseName,
-                        set.weight,
-                        set.reps
-                    ),
-                    style = MaterialTheme.typography.bodyMedium
-                )
+            items(session.sets, key = { it.id }) { set ->
+                WearPanel(layout = layout, modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = stringResource(
+                            R.string.label_set_summary,
+                            set.exerciseName,
+                            set.weight,
+                            set.reps
+                        ),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
 
-                if (layout.isRound) {
-                    OutlinedButton(
-                        onClick = {
-                            editingSet = set
-                            editWeight = String.format(Locale.US, "%.1f", set.weight)
-                            editReps = set.reps.toString()
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(stringResource(R.string.action_edit))
-                    }
-                    OutlinedButton(
-                        onClick = { onDeleteSet(set.id) },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(stringResource(R.string.action_delete))
-                    }
-                } else {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
+                    if (layout.isRound) {
                         OutlinedButton(
                             onClick = {
                                 editingSet = set
                                 editWeight = String.format(Locale.US, "%.1f", set.weight)
                                 editReps = set.reps.toString()
                             },
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(stringResource(R.string.action_edit))
                         }
                         OutlinedButton(
                             onClick = { onDeleteSet(set.id) },
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(stringResource(R.string.action_delete))
+                        }
+                    } else {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = {
+                                    editingSet = set
+                                    editWeight = String.format(Locale.US, "%.1f", set.weight)
+                                    editReps = set.reps.toString()
+                                },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text(stringResource(R.string.action_edit))
+                            }
+                            OutlinedButton(
+                                onClick = { onDeleteSet(set.id) },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text(stringResource(R.string.action_delete))
+                            }
                         }
                     }
                 }
             }
         }
-    }
 
-    if (editingSet != null) {
-        AlertDialog(
-            onDismissRequest = { editingSet = null },
-            title = { Text(stringResource(R.string.action_edit)) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
+        if (editingSet != null) {
+            EditSetOverlay(
+                layout = layout,
+                weight = editWeight,
+                reps = editReps,
+                weightLabel = weightLabel,
+                repsLabel = repsLabel,
+                onWeightClick = {
+                    numericEditor = NumericEditorState(
+                        title = weightLabel,
                         value = editWeight,
-                        onValueChange = { editWeight = it },
-                        label = { Text(stringResource(R.string.label_set_weight)) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        singleLine = true
+                        allowDecimal = true,
+                        onConfirm = { editWeight = it }
                     )
-                    OutlinedTextField(
+                },
+                onRepsClick = {
+                    numericEditor = NumericEditorState(
+                        title = repsLabel,
                         value = editReps,
-                        onValueChange = { editReps = it },
-                        label = { Text(stringResource(R.string.label_set_reps)) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        singleLine = true
+                        allowDecimal = false,
+                        onConfirm = { editReps = it }
                     )
-                }
-            },
-            confirmButton = {
-                OutlinedButton(
-                    onClick = {
-                        val currentSet = editingSet
-                        if (currentSet != null) {
-                            onUpdateSet(currentSet, editWeight, editReps)
-                        }
-                        editingSet = null
+                },
+                onDismiss = { editingSet = null },
+                onSave = {
+                    val currentSet = editingSet
+                    if (currentSet != null) {
+                        onUpdateSet(currentSet, editWeight, editReps)
                     }
-                ) {
-                    Text(stringResource(R.string.action_save))
+                    editingSet = null
                 }
-            },
-            dismissButton = {
-                OutlinedButton(onClick = { editingSet = null }) {
-                    Text(stringResource(R.string.action_cancel))
+            )
+        }
+
+        numericEditor?.let { editor ->
+            NumericInputOverlay(
+                editor = editor,
+                layout = layout,
+                onDismiss = { numericEditor = null },
+                onConfirm = { value ->
+                    editor.onConfirm(value)
+                    numericEditor = null
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun NumericValueButton(
+    label: String,
+    value: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier.clickable(onClick = onClick),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f),
+        shape = RoundedCornerShape(14.dp),
+        border = BorderStroke(
+            width = 1.dp,
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.78f)
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp)
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = value.ifBlank { "0" },
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+@Composable
+private fun EditSetOverlay(
+    layout: WearLayoutSpec,
+    weight: String,
+    reps: String,
+    weightLabel: String,
+    repsLabel: String,
+    onWeightClick: () -> Unit,
+    onRepsClick: () -> Unit,
+    onDismiss: () -> Unit,
+    onSave: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = if (layout.isRound) 0.62f else 0.55f))
+    ) {
+        Surface(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .fillMaxWidth(if (layout.isRound) 0.9f else 0.76f)
+                .padding(if (layout.isRound) 10.dp else 0.dp),
+            shape = RoundedCornerShape(if (layout.isRound) 26.dp else 20.dp),
+            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f),
+            border = BorderStroke(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f)
+            )
+        ) {
+            Column(
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.action_edit),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                NumericValueButton(
+                    label = weightLabel,
+                    value = weight,
+                    onClick = onWeightClick,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                NumericValueButton(
+                    label = repsLabel,
+                    value = reps,
+                    onClick = onRepsClick,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.action_cancel),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    FilledTonalButton(
+                        onClick = onSave,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.action_save),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun NumericInputOverlay(
+    editor: NumericEditorState,
+    layout: WearLayoutSpec,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    var currentValue by remember(editor) { mutableStateOf(editor.value.trim()) }
+    val keypadRows = if (editor.allowDecimal) {
+        listOf(
+            listOf("1", "2", "3"),
+            listOf("4", "5", "6"),
+            listOf("7", "8", "9"),
+            listOf(".", "0", "Del")
         )
+    } else {
+        listOf(
+            listOf("1", "2", "3"),
+            listOf("4", "5", "6"),
+            listOf("7", "8", "9"),
+            listOf("C", "0", "Del")
+        )
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = if (layout.isRound) 0.7f else 0.62f))
+    ) {
+        Surface(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .fillMaxWidth(if (layout.isRound) 0.92f else 0.78f)
+                .padding(if (layout.isRound) 8.dp else 0.dp),
+            shape = RoundedCornerShape(if (layout.isRound) 26.dp else 20.dp),
+            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f),
+            border = BorderStroke(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.34f)
+            )
+        ) {
+            Column(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = editor.title,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Surface(
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.24f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = currentValue.ifBlank { "0" },
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                keypadRows.forEach { row ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        row.forEach { key ->
+                            OutlinedButton(
+                                onClick = {
+                                    currentValue = nextNumericValue(
+                                        current = currentValue,
+                                        key = key,
+                                        allowDecimal = editor.allowDecimal
+                                    )
+                                },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(38.dp),
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                            ) {
+                                Text(
+                                    text = key,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.action_cancel),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    FilledTonalButton(
+                        onClick = { onConfirm(currentValue) },
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.action_save),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -1052,6 +1353,39 @@ private fun estimateDraftVolume(draftSets: List<WearSetInputUiState>): Double {
 private fun formatDateTime(timestamp: Long): String {
     val formatter = DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT)
     return formatter.format(Date(timestamp))
+}
+
+private fun nextNumericValue(
+    current: String,
+    key: String,
+    allowDecimal: Boolean
+): String {
+    val normalized = current.trim().replace(',', '.')
+    return when (key) {
+        "Del" -> normalized.dropLast(1)
+        "C" -> ""
+        "." -> {
+            if (!allowDecimal || normalized.contains('.')) {
+                normalized
+            } else if (normalized.isBlank()) {
+                "0."
+            } else {
+                "$normalized."
+            }
+        }
+        else -> {
+            if (!key.all { it.isDigit() }) {
+                normalized
+            } else {
+                val next = if (normalized == "0") key else normalized + key
+                if (allowDecimal) {
+                    next.take(6)
+                } else {
+                    next.take(3)
+                }
+            }
+        }
+    }
 }
 
 private fun adjustWeightText(current: String, delta: Double): String {
