@@ -136,6 +136,10 @@ class GymRepository(
         return workoutDao.getLatestSessionDetails()?.let(::sortSessionDetails)
     }
 
+    suspend fun getWorkoutTemplate(sessionId: Long): WorkoutSessionDetails? {
+        return workoutDao.getSessionDetailsSnapshot(sessionId)?.let(::sortSessionDetails)
+    }
+
     fun observeExerciseHistory(exerciseId: Long): Flow<List<ExerciseHistoryEntry>> {
         return workoutDao.getExerciseHistory(exerciseId)
             .catch { emit(emptyList()) }

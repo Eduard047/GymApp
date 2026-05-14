@@ -20,9 +20,12 @@ import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SuggestionChip
@@ -45,8 +48,11 @@ import com.example.gymapp.ui.components.HeroPanel
 import com.example.gymapp.ui.components.InfoPill
 import com.example.gymapp.ui.viewmodel.AddWorkoutUiState
 import com.example.gymapp.ui.viewmodel.ExerciseInputState
+import com.example.gymapp.ui.viewmodel.WorkoutTemplatePreviewUiModel
 import com.example.gymapp.util.DateTimeUtils
+import java.util.Locale
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddWorkoutScreen(
     uiState: AddWorkoutUiState,
@@ -61,6 +67,9 @@ fun AddWorkoutScreen(
     onSetRepsChanged: (Long, Int, String) -> Unit,
     onApplyLastWeight: (Long) -> Unit,
     onRepeatLastWorkout: () -> Unit,
+    onOpenTemplatePicker: () -> Unit,
+    onCloseTemplatePicker: () -> Unit,
+    onCopyWorkoutTemplate: (Long) -> Unit,
     onSyncPlanToWatch: () -> Unit,
     onSaveWorkout: () -> Unit,
     modifier: Modifier = Modifier
@@ -132,6 +141,17 @@ fun AddWorkoutScreen(
                         Icon(imageVector = Icons.Default.Replay, contentDescription = null)
                         Text(
                             text = stringResource(R.string.action_repeat_last_workout),
+                            modifier = Modifier.padding(start = 8.dp)
+                        )
+                    }
+                    OutlinedButton(
+                        onClick = onOpenTemplatePicker,
+                        enabled = uiState.workoutTemplates.isNotEmpty() && !uiState.isTemplateLoading,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(imageVector = Icons.Default.Replay, contentDescription = null)
+                        Text(
+                            text = stringResource(R.string.action_copy_workout_day),
                             modifier = Modifier.padding(start = 8.dp)
                         )
                     }
@@ -272,6 +292,94 @@ fun AddWorkoutScreen(
                         Text(text = stringResource(R.string.action_save_workout))
                     }
                 }
+            }
+        }
+    }
+
+    if (uiState.isTemplatePickerOpen) {
+        ModalBottomSheet(onDismissRequest = onCloseTemplatePicker) {
+            WorkoutTemplatePickerContent(
+                templates = uiState.workoutTemplates,
+                onCopyWorkoutTemplate = onCopyWorkoutTemplate,
+                onDismiss = onCloseTemplatePicker
+            )
+        }
+    }
+}
+
+@Composable
+private fun WorkoutTemplatePickerContent(
+    templates: List<WorkoutTemplatePreviewUiModel>,
+    onCopyWorkoutTemplate: (Long) -> Unit,
+    onDismiss: () -> Unit
+) {
+    LazyColumn(
+        modifier = Modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(start = 16.dp, top = 4.dp, end = 16.dp, bottom = 28.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        item {
+            Text(
+                text = stringResource(R.string.template_picker_title),
+                style = MaterialTheme.typography.headlineSmall
+            )
+        }
+
+        if (templates.isEmpty()) {
+            item {
+                Text(
+                    text = stringResource(R.string.template_picker_empty),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        } else {
+            items(
+                items = templates,
+                key = { it.sessionId }
+            ) { template ->
+                AppPanel(
+                    modifier = Modifier.fillMaxWidth(),
+                    highlighted = true
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = DateTimeUtils.formatDate(template.date),
+                            style = MaterialTheme.typography.titleSmall
+                        )
+                        Text(
+                            text = stringResource(
+                                R.string.template_picker_summary,
+                                template.exerciseCount,
+                                template.setCount,
+                                String.format(Locale.getDefault(), "%.0f", template.totalVolume)
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Button(
+                            onClick = { onCopyWorkoutTemplate(template.sessionId) },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(stringResource(R.string.action_copy_workout_day))
+                        }
+                    }
+                }
+            }
+        }
+
+        item {
+            HorizontalDivider()
+            OutlinedButton(
+                onClick = onDismiss,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 10.dp)
+            ) {
+                Text(stringResource(R.string.action_cancel))
             }
         }
     }

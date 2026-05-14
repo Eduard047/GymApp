@@ -30,6 +30,7 @@
     <string name="action_close">Закрити</string>
     <string name="action_current_month">Поточний</string>
     <string name="action_repeat_last_workout">Повторити попереднє тренування</string>
+    <string name="action_copy_workout_day">Скопіювати минуле тренування</string>
     <string name="action_sync_plan_to_watch">Синхронізувати план на годинник</string>
     <string name="action_apply_last_weight">Взяти останню вагу</string>
     <string name="action_add_to_workout">Додати в тренування</string>
@@ -57,6 +58,9 @@
     <string name="add_workout_active_exercises">Вправи: %1$d</string>
     <string name="add_workout_total_sets">Підходи: %1$d</string>
     <string name="add_workout_plan_templates">Швидкі шаблони сесії</string>
+    <string name="template_picker_title">Скопіювати минуле тренування</string>
+    <string name="template_picker_empty">Попередніх тренувань ще немає.</string>
+    <string name="template_picker_summary">%1$d вправ • %2$d підходів • %3$s обсяг</string>
     <string name="add_workout_save_hint">Перевір підходи та збережи, щоб одразу перейти в деталі тренування.</string>
     <string name="note_template_push">День жиму</string>
     <string name="note_template_pull">День тяги</string>
@@ -241,6 +245,7 @@
     <string name="backup_export_ready">Backup JSON готовий</string>
     <string name="backup_copy_json">Копіювати JSON</string>
     <string name="backup_share_json">Поділитися JSON</string>
+    <string name="backup_share_pdf">Поділитися PDF звітом</string>
     <string name="backup_import_title">Імпорт backup</string>
     <string name="backup_import_placeholder">Встав сюди експортований GymApp JSON</string>
     <string name="backup_import_action">Імпорт</string>

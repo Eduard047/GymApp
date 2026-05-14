@@ -1,7 +1,11 @@
 ﻿package com.example.gymapp.ui.screens
 
-import androidx.compose.foundation.clickable
 import android.content.Intent
+import android.content.Context
+import android.graphics.Paint
+import android.graphics.Typeface
+import android.graphics.pdf.PdfDocument
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -34,6 +38,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
 import com.example.gymapp.R
 import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.entity.ExerciseHistoryEntry
@@ -42,7 +47,11 @@ import java.time.Instant
 import java.time.YearMonth
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.text.DateFormat
+import java.util.Date
 import java.util.Locale
+import java.io.File
+import org.json.JSONObject
 
 private data class ExerciseHistorySessionGroup(
     val sessionId: Long,
@@ -305,6 +314,14 @@ private fun BackupJsonBottomSheetContent(
         }
         item {
             OutlinedButton(
+                onClick = { shareBackupPdf(context, json) },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(stringResource(R.string.backup_share_pdf))
+            }
+        }
+        item {
+            OutlinedButton(
                 onClick = onDismiss,
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -357,6 +374,187 @@ private fun ImportBackupBottomSheetContent(
             }
         }
     }
+}
+
+private fun shareBackupPdf(context: Context, json: String) {
+    val file = createBackupPdfFile(context, json)
+    val uri = FileProvider.getUriForFile(
+        context,
+        "${context.packageName}.fileprovider",
+        file
+    )
+    val sendIntent = Intent(Intent.ACTION_SEND).apply {
+        type = "application/pdf"
+        putExtra(Intent.EXTRA_STREAM, uri)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+    context.startActivity(
+        Intent.createChooser(
+            sendIntent,
+            context.getString(R.string.backup_share_pdf)
+        )
+    )
+}
+
+private fun createBackupPdfFile(context: Context, json: String): File {
+    val document = PdfDocument()
+    val pageWidth = 595
+    val pageHeight = 842
+    val left = 42f
+    val top = 48f
+    val bottom = 800f
+    val lineHeight = 16f
+    var pageNumber = 1
+    var y = top
+    var page = document.startPage(
+        PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pageNumber).create()
+    )
+
+    val titlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = android.graphics.Color.rgb(20, 32, 44)
+        textSize = 18f
+        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+    }
+    val headingPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = android.graphics.Color.rgb(20, 32, 44)
+        textSize = 12f
+        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+    }
+    val bodyPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = android.graphics.Color.rgb(45, 56, 70)
+        textSize = 10f
+    }
+
+    fun newPage() {
+        document.finishPage(page)
+        pageNumber += 1
+        page = document.startPage(
+            PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pageNumber).create()
+        )
+        y = top
+    }
+
+    fun drawWrapped(text: String, paint: Paint = bodyPaint, maxChars: Int = 92) {
+        wrapPdfLine(text, maxChars).forEach { line ->
+            if (y > bottom) {
+                newPage()
+            }
+            page.canvas.drawText(line, left, y, paint)
+            y += lineHeight
+        }
+    }
+
+    backupReportLines(json).forEachIndexed { index, line ->
+        when {
+            index == 0 -> {
+                drawWrapped(line, titlePaint, maxChars = 58)
+                y += 8f
+            }
+            line.startsWith("## ") -> {
+                y += 6f
+                drawWrapped(line.removePrefix("## "), headingPaint, maxChars = 76)
+                y += 2f
+            }
+            else -> drawWrapped(line)
+        }
+    }
+
+    document.finishPage(page)
+    val outputFile = File(context.cacheDir, "gymapp-diagnostics-${System.currentTimeMillis()}.pdf")
+    outputFile.outputStream().use(document::writeTo)
+    document.close()
+    return outputFile
+}
+
+private fun backupReportLines(json: String): List<String> {
+    val root = JSONObject(json)
+    val exportedAt = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
+        .format(Date(root.optLong("exportedAt", System.currentTimeMillis())))
+    val exercises = root.optJSONArray("exercises")
+    val sessions = root.optJSONArray("sessions")
+    val summary = root.optJSONObject("summary")
+    val lines = mutableListOf<String>()
+
+    lines += "GymApp diagnostics report"
+    lines += "Exported: $exportedAt"
+    lines += "Schema: ${root.optInt("schemaVersion", 1)}"
+    lines += ""
+    lines += "## Summary"
+    lines += "Exercises: ${summary?.optInt("exerciseCount") ?: (exercises?.length() ?: 0)}"
+    lines += "Workouts: ${summary?.optInt("sessionCount") ?: (sessions?.length() ?: 0)}"
+    summary?.let {
+        lines += "Sets: ${it.optInt("setCount")}"
+    }
+
+    lines += ""
+    lines += "## Exercises"
+    if (exercises == null || exercises.length() == 0) {
+        lines += "No exercises exported."
+    } else {
+        repeat(exercises.length().coerceAtMost(120)) { index ->
+            val name = exercises.optJSONObject(index)?.optString("name").orEmpty()
+            if (name.isNotBlank()) {
+                lines += "- $name"
+            }
+        }
+        if (exercises.length() > 120) {
+            lines += "... ${exercises.length() - 120} more exercises"
+        }
+    }
+
+    lines += ""
+    lines += "## Workouts"
+    if (sessions == null || sessions.length() == 0) {
+        lines += "No workouts exported."
+    } else {
+        repeat(sessions.length().coerceAtMost(80)) { sessionIndex ->
+            val session = sessions.optJSONObject(sessionIndex) ?: return@repeat
+            val date = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
+                .format(Date(session.optLong("date", 0L)))
+            val note = session.optString("note").takeIf { it.isNotBlank() }
+            lines += "$date${note?.let { " - $it" }.orEmpty()}"
+            val sessionExercises = session.optJSONArray("exercises")
+            repeat(sessionExercises?.length() ?: 0) { exerciseIndex ->
+                val exercise = sessionExercises?.optJSONObject(exerciseIndex) ?: return@repeat
+                val sets = exercise.optJSONArray("sets")
+                val setText = buildString {
+                    repeat(sets?.length() ?: 0) { setIndex ->
+                        val set = sets?.optJSONObject(setIndex) ?: return@repeat
+                        if (isNotEmpty()) append(", ")
+                        append(set.optDouble("weight", 0.0).toString().trimEnd('0').trimEnd('.'))
+                        append("kg x ")
+                        append(set.optInt("reps", 0))
+                    }
+                }
+                lines += "  - ${exercise.optString("name")}: $setText"
+            }
+            lines += ""
+        }
+        if (sessions.length() > 80) {
+            lines += "... ${sessions.length() - 80} more workouts"
+        }
+    }
+
+    return lines
+}
+
+private fun wrapPdfLine(text: String, maxChars: Int): List<String> {
+    if (text.length <= maxChars) return listOf(text)
+    val words = text.split(" ")
+    val lines = mutableListOf<String>()
+    var current = ""
+    words.forEach { word ->
+        if (current.isBlank()) {
+            current = word
+        } else if (current.length + word.length + 1 <= maxChars) {
+            current += " $word"
+        } else {
+            lines += current
+            current = word
+        }
+    }
+    if (current.isNotBlank()) lines += current
+    return lines
 }
 
 @Composable

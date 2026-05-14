@@ -30,6 +30,7 @@
     <string name="action_close">Close</string>
     <string name="action_current_month">Current</string>
     <string name="action_repeat_last_workout">Repeat Last Workout</string>
+    <string name="action_copy_workout_day">Copy Previous Workout</string>
     <string name="action_sync_plan_to_watch">Sync Plan to Watch</string>
     <string name="action_apply_last_weight">Use Last Weight</string>
     <string name="action_add_to_workout">Add to Workout</string>
@@ -57,6 +58,9 @@
     <string name="add_workout_active_exercises">Exercises: %1$d</string>
     <string name="add_workout_total_sets">Sets: %1$d</string>
     <string name="add_workout_plan_templates">Quick session templates</string>
+    <string name="template_picker_title">Copy a previous workout</string>
+    <string name="template_picker_empty">No previous workouts yet.</string>
+    <string name="template_picker_summary">%1$d exercises • %2$d sets • %3$s volume</string>
     <string name="add_workout_save_hint">Check your sets, then save to move straight into workout details.</string>
     <string name="note_template_push">Push day</string>
     <string name="note_template_pull">Pull day</string>
@@ -241,6 +245,7 @@
     <string name="backup_export_ready">Backup JSON ready</string>
     <string name="backup_copy_json">Copy JSON</string>
     <string name="backup_share_json">Share JSON</string>
+    <string name="backup_share_pdf">Share PDF report</string>
     <string name="backup_import_title">Import backup</string>
     <string name="backup_import_placeholder">Paste exported GymApp JSON here</string>
     <string name="backup_import_action">Import</string>

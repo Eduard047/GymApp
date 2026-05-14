@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.gymapp.data.entity.ExerciseEntity
+import com.example.gymapp.data.entity.WorkoutSessionDetails
 import com.example.gymapp.data.repository.GymRepository
 import com.example.gymapp.data.repository.NamedWorkoutSetDraft
 import com.example.gymapp.data.repository.WorkoutExerciseDraft
@@ -33,6 +34,14 @@ data class ExerciseInputState(
     val sets: List<SetInputState> = listOf(SetInputState())
 )
 
+data class WorkoutTemplatePreviewUiModel(
+    val sessionId: Long,
+    val date: Long,
+    val exerciseCount: Int,
+    val setCount: Int,
+    val totalVolume: Double
+)
+
 data class AddWorkoutUiState(
     val workoutDate: Long = System.currentTimeMillis(),
     val note: String = "",
@@ -40,6 +49,8 @@ data class AddWorkoutUiState(
     val exerciseDrafts: List<ExerciseInputState> = emptyList(),
     val lastWeights: Map<Long, Double?> = emptyMap(),
     val canRepeatFromLast: Boolean = false,
+    val workoutTemplates: List<WorkoutTemplatePreviewUiModel> = emptyList(),
+    val isTemplatePickerOpen: Boolean = false,
     val isTemplateLoading: Boolean = false,
     val isSyncingPlanToWatch: Boolean = false,
     val didSyncPlanToWatch: Boolean? = null,
@@ -64,6 +75,7 @@ class AddWorkoutViewModel(
     private data class LocalState(
         val note: String,
         val exerciseDrafts: List<ExerciseInputState>,
+        val isTemplatePickerOpen: Boolean,
         val isTemplateLoading: Boolean,
         val isSyncingPlanToWatch: Boolean,
         val didSyncPlanToWatch: Boolean?,
@@ -72,10 +84,18 @@ class AddWorkoutViewModel(
         val createdSessionId: Long?
     )
 
+    private data class EditorState(
+        val note: String,
+        val exerciseDrafts: List<ExerciseInputState>,
+        val isTemplatePickerOpen: Boolean,
+        val isTemplateLoading: Boolean
+    )
+
     private var nextDraftId = 2L
 
     private val note = MutableStateFlow("")
     private val exerciseDrafts = MutableStateFlow(listOf(ExerciseInputState(draftId = 1L)))
+    private val isTemplatePickerOpen = MutableStateFlow(false)
     private val isTemplateLoading = MutableStateFlow(false)
     private val isSyncingPlanToWatch = MutableStateFlow(false)
     private val didSyncPlanToWatch = MutableStateFlow<Boolean?>(null)
@@ -84,8 +104,18 @@ class AddWorkoutViewModel(
     private val createdSessionId = MutableStateFlow<Long?>(null)
 
     private val exercises = repository.observeExercises()
-    private val hasPreviousWorkouts = repository.observeSessions().map { sessions ->
-        sessions.isNotEmpty()
+    private val workoutTemplates = repository.observeSessions().map { sessions ->
+        sessions
+            .take(60)
+            .map { summary ->
+                WorkoutTemplatePreviewUiModel(
+                    sessionId = summary.session.id,
+                    date = summary.session.date,
+                    exerciseCount = summary.exerciseCount,
+                    setCount = summary.setCount,
+                    totalVolume = summary.totalVolume
+                )
+            }
     }
 
     private val selectedExerciseIds = exerciseDrafts.map { drafts ->
@@ -103,9 +133,15 @@ class AddWorkoutViewModel(
     private val editorState = combine(
         note,
         exerciseDrafts,
+        isTemplatePickerOpen,
         isTemplateLoading
-    ) { noteValue, drafts, templateLoading ->
-        Triple(noteValue, drafts, templateLoading)
+    ) { noteValue, drafts, templatePickerOpen, templateLoading ->
+        EditorState(
+            note = noteValue,
+            exerciseDrafts = drafts,
+            isTemplatePickerOpen = templatePickerOpen,
+            isTemplateLoading = templateLoading
+        )
     }
 
     private val transientState = combine(
@@ -129,9 +165,10 @@ class AddWorkoutViewModel(
         transientState
     ) { editor, transient ->
         LocalState(
-            note = editor.first,
-            exerciseDrafts = editor.second,
-            isTemplateLoading = editor.third,
+            note = editor.note,
+            exerciseDrafts = editor.exerciseDrafts,
+            isTemplatePickerOpen = editor.isTemplatePickerOpen,
+            isTemplateLoading = editor.isTemplateLoading,
             isSyncingPlanToWatch = transient.isSyncingPlanToWatch,
             didSyncPlanToWatch = transient.didSyncPlanToWatch,
             isSaving = transient.isSaving,
@@ -143,15 +180,17 @@ class AddWorkoutViewModel(
     val uiState: StateFlow<AddWorkoutUiState> = combine(
         exercises,
         lastWeights,
-        hasPreviousWorkouts,
+        workoutTemplates,
         localState
-    ) { exerciseList, lastWeightsMap, canRepeat, local ->
+    ) { exerciseList, lastWeightsMap, templates, local ->
         AddWorkoutUiState(
             note = local.note,
             exercises = exerciseList,
             exerciseDrafts = local.exerciseDrafts,
             lastWeights = lastWeightsMap,
-            canRepeatFromLast = canRepeat,
+            canRepeatFromLast = templates.isNotEmpty(),
+            workoutTemplates = templates,
+            isTemplatePickerOpen = local.isTemplatePickerOpen,
             isTemplateLoading = local.isTemplateLoading,
             isSyncingPlanToWatch = local.isSyncingPlanToWatch,
             didSyncPlanToWatch = local.didSyncPlanToWatch,
@@ -352,6 +391,32 @@ class AddWorkoutViewModel(
         }
     }
 
+    fun openWorkoutTemplatePicker() {
+        isTemplatePickerOpen.value = true
+    }
+
+    fun closeWorkoutTemplatePicker() {
+        isTemplatePickerOpen.value = false
+    }
+
+    fun copyWorkoutTemplate(sessionId: Long) {
+        viewModelScope.launch {
+            isTemplateLoading.value = true
+            resetWatchPlanSyncResult()
+            runCatching {
+                repository.getWorkoutTemplate(sessionId)
+            }.onSuccess { template ->
+                if (template != null) {
+                    applyWorkoutTemplate(template)
+                    isTemplatePickerOpen.value = false
+                }
+            }.onFailure {
+                hasValidationError.value = true
+            }
+            isTemplateLoading.value = false
+        }
+    }
+
     fun repeatLastWorkout() {
         viewModelScope.launch {
             isTemplateLoading.value = true
@@ -362,27 +427,7 @@ class AddWorkoutViewModel(
                 return@launch
             }
 
-            note.value = latestWorkout.session.note.orEmpty()
-            val drafts = latestWorkout.workoutExercises.map { exerciseDetails ->
-                val mappedSets = exerciseDetails.sets.map { set ->
-                    SetInputState(
-                        weight = formatWeight(set.weight),
-                        reps = set.reps.toString()
-                    )
-                }
-                ExerciseInputState(
-                    draftId = nextDraftId++,
-                    exerciseId = exerciseDetails.workoutExercise.exerciseId,
-                    sets = if (mappedSets.isEmpty()) listOf(SetInputState()) else mappedSets
-                )
-            }
-
-            exerciseDrafts.value = if (drafts.isEmpty()) {
-                listOf(ExerciseInputState(draftId = nextDraftId++))
-            } else {
-                drafts
-            }
-            hasValidationError.value = false
+            applyWorkoutTemplate(latestWorkout)
             isTemplateLoading.value = false
         }
     }
@@ -411,6 +456,30 @@ class AddWorkoutViewModel(
 
     fun consumeCreatedSession() {
         createdSessionId.value = null
+    }
+
+    private fun applyWorkoutTemplate(template: WorkoutSessionDetails) {
+        note.value = template.session.note.orEmpty()
+        val drafts = template.workoutExercises.map { exerciseDetails ->
+            val mappedSets = exerciseDetails.sets.map { set ->
+                SetInputState(
+                    weight = formatWeight(set.weight),
+                    reps = set.reps.toString()
+                )
+            }
+            ExerciseInputState(
+                draftId = nextDraftId++,
+                exerciseId = exerciseDetails.workoutExercise.exerciseId,
+                sets = if (mappedSets.isEmpty()) listOf(SetInputState()) else mappedSets
+            )
+        }
+
+        exerciseDrafts.value = if (drafts.isEmpty()) {
+            listOf(ExerciseInputState(draftId = nextDraftId++))
+        } else {
+            drafts
+        }
+        hasValidationError.value = false
     }
 
     private fun parseDrafts(drafts: List<ExerciseInputState>): List<WorkoutExerciseDraft> {

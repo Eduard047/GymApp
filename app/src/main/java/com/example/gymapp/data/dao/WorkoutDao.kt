@@ -94,6 +94,10 @@ interface WorkoutDao {
     fun getSessionDetails(sessionId: Long): Flow<WorkoutSessionDetails?>
 
     @androidx.room.Transaction
+    @Query("SELECT * FROM workout_sessions WHERE id = :sessionId LIMIT 1")
+    suspend fun getSessionDetailsSnapshot(sessionId: Long): WorkoutSessionDetails?
+
+    @androidx.room.Transaction
     @Query(
         """
         SELECT *

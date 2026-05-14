@@ -334,6 +334,9 @@ fun GymAppRoot(
                                 onSetRepsChanged = viewModel::updateSetReps,
                                 onApplyLastWeight = viewModel::applyLastWeight,
                                 onRepeatLastWorkout = viewModel::repeatLastWorkout,
+                                onOpenTemplatePicker = viewModel::openWorkoutTemplatePicker,
+                                onCloseTemplatePicker = viewModel::closeWorkoutTemplatePicker,
+                                onCopyWorkoutTemplate = viewModel::copyWorkoutTemplate,
                                 onSyncPlanToWatch = viewModel::syncPlanToWatch,
                                 onSaveWorkout = viewModel::saveWorkout,
                                 modifier = Modifier.fillMaxSize()
