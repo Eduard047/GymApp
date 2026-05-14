@@ -353,7 +353,7 @@ private fun RecommendationsCard(
                             Text(
                                 text = recommendation.title,
                                 style = MaterialTheme.typography.bodyMedium,
-                                maxLines = 1,
+                                maxLines = 2,
                                 overflow = TextOverflow.Ellipsis
                             )
                             Text(

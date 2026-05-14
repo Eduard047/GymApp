@@ -705,17 +705,32 @@ class WorkoutListViewModel(
         val groups = listOf(
             TrainingGroup(
                 id = "pull",
-                label = "Pull",
+                titleEn = "Pull day",
+                titleUk = "Тяговий день",
+                supportingEn = "Back, biceps and forearms have the oldest recent work.",
+                supportingUk = "Спина, біцепс і передпліччя найдовше не були в роботі.",
+                priorityEn = "Pull",
+                priorityUk = "Тяга",
                 muscleIds = listOf("lats", "upperBack", "biceps", "forearms")
             ),
             TrainingGroup(
                 id = "legs",
-                label = "Legs",
+                titleEn = "Leg day",
+                titleUk = "День ніг",
+                supportingEn = "Quads, hamstrings, glutes and calves are next in the rotation.",
+                supportingUk = "Квадрицепси, біцепс стегна, сідниці та ікри наступні в черзі.",
+                priorityEn = "Legs",
+                priorityUk = "Ноги",
                 muscleIds = listOf("quads", "hamstrings", "glutes", "calves")
             ),
             TrainingGroup(
                 id = "push",
-                label = "Push",
+                titleEn = "Push day",
+                titleUk = "Жимовий день",
+                supportingEn = "Chest, shoulders and triceps have the oldest recent work.",
+                supportingUk = "Груди, плечі й трицепс найдовше не були в роботі.",
+                priorityEn = "Push",
+                priorityUk = "Жим",
                 muscleIds = listOf("chest", "shoulders", "triceps")
             )
         )
@@ -730,14 +745,14 @@ class WorkoutListViewModel(
         return TrainingRecommendationUiModel(
             id = "next-${nextGroup.id}",
             title = t(
-                en = "Next workout: ${nextGroup.label}",
-                uk = "Наступне тренування: ${nextGroup.label}"
+                en = "Next: ${nextGroup.titleEn}",
+                uk = "Наступне: ${nextGroup.titleUk}"
             ),
             supporting = t(
-                en = "Picked from the muscle groups with the oldest recent work.",
-                uk = "Обрано за групами, які найдовше не були в роботі."
+                en = nextGroup.supportingEn,
+                uk = nextGroup.supportingUk
             ),
-            priorityLabel = t(en = "Next", uk = "Далі")
+            priorityLabel = t(en = nextGroup.priorityEn, uk = nextGroup.priorityUk)
         )
     }
 
@@ -2064,7 +2079,12 @@ private data class WorkoutListSourceState(
 
 private data class TrainingGroup(
     val id: String,
-    val label: String,
+    val titleEn: String,
+    val titleUk: String,
+    val supportingEn: String,
+    val supportingUk: String,
+    val priorityEn: String,
+    val priorityUk: String,
     val muscleIds: List<String>
 )
 

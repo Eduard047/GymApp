@@ -1,6 +1,7 @@
 ﻿package com.example.gymapp.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -18,6 +19,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -136,23 +138,43 @@ fun AddWorkoutScreen(
                     OutlinedButton(
                         onClick = onRepeatLastWorkout,
                         enabled = uiState.canRepeatFromLast && !uiState.isTemplateLoading,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.onPrimary,
+                            disabledContentColor = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.55f)
+                        ),
+                        border = BorderStroke(
+                            1.dp,
+                            MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.64f)
+                        )
                     ) {
                         Icon(imageVector = Icons.Default.Replay, contentDescription = null)
                         Text(
                             text = stringResource(R.string.action_repeat_last_workout),
-                            modifier = Modifier.padding(start = 8.dp)
+                            modifier = Modifier.padding(start = 8.dp),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                     OutlinedButton(
                         onClick = onOpenTemplatePicker,
                         enabled = uiState.workoutTemplates.isNotEmpty() && !uiState.isTemplateLoading,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.onPrimary,
+                            disabledContentColor = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.55f)
+                        ),
+                        border = BorderStroke(
+                            1.dp,
+                            MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.64f)
+                        )
                     ) {
                         Icon(imageVector = Icons.Default.Replay, contentDescription = null)
                         Text(
                             text = stringResource(R.string.action_copy_workout_day),
-                            modifier = Modifier.padding(start = 8.dp)
+                            modifier = Modifier.padding(start = 8.dp),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
