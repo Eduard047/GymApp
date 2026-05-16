@@ -4,6 +4,7 @@
     <string name="tab_record">Запис</string>
     <string name="tab_history">Історія</string>
     <string name="title_record_summary">Поточна чернетка</string>
+    <string name="title_smart_plan">Smart Coach</string>
     <string name="title_current_set">Поточний підхід</string>
     <string name="label_workout_note">Нотатка тренування</string>
     <string name="label_set_exercise">Вправа</string>
@@ -13,6 +14,7 @@
     <string name="title_select_exercise">Вибір вправи</string>
     <string name="message_no_exercises_to_pick">Немає вправ для вибору. Синхронізуй історію з телефона.</string>
     <string name="label_draft_sets_count">Підходів у чернетці: %1$d</string>
+    <string name="label_smart_plan_sets">%1$d підходів з телефона</string>
     <string name="label_draft_volume">Оцін. обсяг: %1$.1f</string>
     <string name="hint_record_shortcut">Використовуй дублювання для швидкого додавання повторюваних підходів.</string>
     <string name="action_add_set">Додати підхід</string>

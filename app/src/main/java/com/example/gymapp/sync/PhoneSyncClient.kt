@@ -2,6 +2,7 @@ package com.example.gymapp.sync
 
 import android.content.Context
 import com.example.gymapp.data.repository.NamedWorkoutSetDraft
+import com.example.gymapp.util.TrainingProfile
 import com.google.android.gms.wearable.Wearable
 import kotlinx.coroutines.tasks.await
 
@@ -12,7 +13,8 @@ class PhoneSyncClient(
 
     suspend fun pushWorkoutPlan(
         sets: List<NamedWorkoutSetDraft>,
-        exerciseCatalog: List<String>
+        exerciseCatalog: List<String>,
+        trainingProfile: TrainingProfile
     ) {
         if (sets.isEmpty()) {
             throw IllegalArgumentException("Workout plan is empty")
@@ -20,7 +22,8 @@ class PhoneSyncClient(
 
         val payload = PhoneSyncJson.encodeWorkoutPlanPayload(
             sets = sets,
-            exerciseCatalog = exerciseCatalog
+            exerciseCatalog = exerciseCatalog,
+            trainingProfile = trainingProfile
         )
             .toByteArray(Charsets.UTF_8)
         val nodes = Wearable.getNodeClient(appContext).connectedNodes.await()

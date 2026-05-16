@@ -54,6 +54,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.example.gymapp.R
+import com.example.gymapp.gymApplication
 import com.example.gymapp.data.repository.GymRepository
 import com.example.gymapp.ui.screens.AddWorkoutScreen
 import com.example.gymapp.ui.screens.AppIntroSplash
@@ -304,7 +305,8 @@ fun GymAppRoot(
                             val viewModel: AddWorkoutViewModel = viewModel(
                                 factory = AddWorkoutViewModel.factory(
                                     repository = repository,
-                                    syncClient = syncClient
+                                    syncClient = syncClient,
+                                    trainingProfileManager = context.gymApplication.trainingProfileManager
                                 )
                             )
                             val uiState by viewModel.uiState.collectAsState()
@@ -324,6 +326,11 @@ fun GymAppRoot(
                             AddWorkoutScreen(
                                 uiState = uiState,
                                 onNoteChange = viewModel::updateNote,
+                                onTrainingSplitSelected = viewModel::updateTrainingSplit,
+                                onWorkoutsPerWeekSelected = viewModel::updateWorkoutsPerWeek,
+                                onTrainingGoalSelected = viewModel::updateTrainingGoal,
+                                onCalorieModeSelected = viewModel::updateCalorieMode,
+                                onGenerateSmartWorkout = viewModel::generateSmartWorkout,
                                 onAddExerciseDraft = viewModel::addExerciseDraft,
                                 onRemoveExerciseDraft = viewModel::removeExerciseDraft,
                                 onExerciseSelected = viewModel::updateExerciseSelection,
@@ -333,6 +340,7 @@ fun GymAppRoot(
                                 onSetWeightChanged = viewModel::updateSetWeight,
                                 onSetRepsChanged = viewModel::updateSetReps,
                                 onApplyLastWeight = viewModel::applyLastWeight,
+                                onApplyWorkoutRecommendation = viewModel::applyWorkoutRecommendation,
                                 onRepeatLastWorkout = viewModel::repeatLastWorkout,
                                 onOpenTemplatePicker = viewModel::openWorkoutTemplatePicker,
                                 onCloseTemplatePicker = viewModel::closeWorkoutTemplatePicker,

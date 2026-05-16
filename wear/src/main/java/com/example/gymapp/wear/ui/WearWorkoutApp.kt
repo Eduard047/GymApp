@@ -60,6 +60,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.gymapp.wear.R
 import com.example.gymapp.wear.data.WearSetUiModel
 import com.example.gymapp.wear.data.WearWorkoutSessionUiModel
+import com.example.gymapp.wear.sync.SyncedWorkoutPlanMeta
 import com.example.gymapp.wear.ui.WearSyncStatus
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
@@ -631,6 +632,17 @@ private fun RecordScreen(
                 }
             }
 
+            uiState.workoutPlanMeta?.let { planMeta ->
+                item {
+                    SmartPlanWatchPanel(
+                        planMeta = planMeta,
+                        setCount = uiState.draftSets.size,
+                        layout = layout,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+
             if (currentSet != null) {
                 item {
                     CurrentSetPanel(
@@ -914,6 +926,40 @@ private fun RecordScreen(
                 }
             )
         }
+    }
+}
+
+@Composable
+private fun SmartPlanWatchPanel(
+    planMeta: SyncedWorkoutPlanMeta,
+    setCount: Int,
+    layout: WearLayoutSpec,
+    modifier: Modifier = Modifier
+) {
+    WearPanel(
+        layout = layout,
+        highlighted = true,
+        modifier = modifier
+    ) {
+        Text(
+            text = stringResource(R.string.title_smart_plan),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Text(
+            text = stringResource(R.string.label_smart_plan_sets, setCount),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = planMeta.smartPlanSummary(),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
@@ -1585,4 +1631,40 @@ private fun adjustWeightText(current: String, delta: Double): String {
 private fun adjustRepsText(current: String, delta: Int): String {
     val parsed = current.trim().toIntOrNull() ?: 1
     return (parsed + delta).coerceAtLeast(1).toString()
+}
+
+private fun SyncedWorkoutPlanMeta.smartPlanSummary(): String {
+    val parts = buildList {
+        split?.let {
+            add(
+                when (it) {
+                    "UpperLower" -> "верх/низ"
+                    "FullBody" -> "все тіло"
+                    "PushPullLegs" -> "жим/тяга/ноги"
+                    else -> "своя програма"
+                }
+            )
+        }
+        workoutsPerWeek?.let { add("$it/тиж") }
+        goal?.let {
+            add(
+                when (it) {
+                    "AestheticFatLoss" -> "естетика"
+                    "MuscleGain" -> "маса"
+                    "Strength" -> "сила"
+                    else -> "баланс"
+                }
+            )
+        }
+        calorieMode?.let {
+            add(
+                when (it) {
+                    "Deficit" -> "дефіцит"
+                    "Surplus" -> "профіцит"
+                    else -> "підтримка"
+                }
+            )
+        }
+    }
+    return parts.joinToString(" · ").ifBlank { planSource }
 }

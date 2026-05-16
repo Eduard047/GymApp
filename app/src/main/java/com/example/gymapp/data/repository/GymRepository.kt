@@ -11,6 +11,7 @@ import com.example.gymapp.data.entity.WorkoutSessionDetails
 import com.example.gymapp.data.entity.WorkoutSessionEntity
 import com.example.gymapp.data.entity.WorkoutSessionSummary
 import com.example.gymapp.util.DateTimeUtils
+import com.example.gymapp.util.TrainingProfile
 import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalDate
@@ -344,6 +345,28 @@ class GymRepository(
 
         val flows = uniqueIds.map { exerciseId ->
             observeLastWeight(exerciseId).map { weight -> exerciseId to weight }
+        }
+
+        return combine(flows) { entries -> entries.toMap() }
+    }
+
+    fun observeWorkoutRecommendations(
+        exerciseIds: List<Long>,
+        trainingProfile: TrainingProfile
+    ): Flow<Map<Long, WorkoutRecommendation>> {
+        val uniqueIds = exerciseIds.distinct()
+        if (uniqueIds.isEmpty()) {
+            return flowOf(emptyMap())
+        }
+
+        val flows = uniqueIds.map { exerciseId ->
+            observeExerciseHistory(exerciseId).map { history ->
+                exerciseId to WorkoutRecommendationEngine.buildForExercise(
+                    exerciseId = exerciseId,
+                    history = history,
+                    trainingProfile = trainingProfile
+                )
+            }
         }
 
         return combine(flows) { entries -> entries.toMap() }

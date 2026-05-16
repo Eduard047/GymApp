@@ -2,6 +2,7 @@ package com.example.gymapp.sync
 
 import com.example.gymapp.data.entity.WorkoutSessionDetails
 import com.example.gymapp.data.repository.NamedWorkoutSetDraft
+import com.example.gymapp.util.TrainingProfile
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -24,7 +25,8 @@ data class DeleteSetCommand(
 object PhoneSyncJson {
     fun encodeWorkoutPlanPayload(
         sets: List<NamedWorkoutSetDraft>,
-        exerciseCatalog: List<String>
+        exerciseCatalog: List<String>,
+        trainingProfile: TrainingProfile
     ): String {
         val setsJson = JSONArray()
         sets.forEach { set ->
@@ -46,6 +48,15 @@ object PhoneSyncJson {
 
         return JSONObject()
             .put("generatedAt", System.currentTimeMillis())
+            .put("planSource", "smart_coach")
+            .put(
+                "trainingProfile",
+                JSONObject()
+                    .put("split", trainingProfile.split.name)
+                    .put("workoutsPerWeek", trainingProfile.workoutsPerWeek)
+                    .put("goal", trainingProfile.goal.name)
+                    .put("calorieMode", trainingProfile.calorieMode.name)
+            )
             .put("sets", setsJson)
             .put("exerciseCatalog", exercisesJson)
             .toString()

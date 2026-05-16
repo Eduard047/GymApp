@@ -20,6 +20,14 @@ data class SyncedSessionPayload(
     val sets: List<SyncedSetPayload>
 )
 
+data class SyncedWorkoutPlanMeta(
+    val planSource: String,
+    val split: String?,
+    val workoutsPerWeek: Int?,
+    val goal: String?,
+    val calorieMode: String?
+)
+
 object WatchSyncJson {
     fun buildCreateWorkoutPayload(
         startedAt: Long,
@@ -86,6 +94,20 @@ object WatchSyncJson {
                 }
             }
         }.getOrElse { emptyList() }
+    }
+
+    fun parseWorkoutPlanMeta(raw: String): SyncedWorkoutPlanMeta? {
+        return runCatching {
+            val root = JSONObject(raw)
+            val profile = root.optJSONObject("trainingProfile")
+            SyncedWorkoutPlanMeta(
+                planSource = root.optString("planSource", "").ifBlank { "manual" },
+                split = profile?.optString("split", "")?.takeIf { it.isNotBlank() },
+                workoutsPerWeek = profile?.optInt("workoutsPerWeek", -1)?.takeIf { it > 0 },
+                goal = profile?.optString("goal", "")?.takeIf { it.isNotBlank() },
+                calorieMode = profile?.optString("calorieMode", "")?.takeIf { it.isNotBlank() }
+            )
+        }.getOrNull()
     }
 
     fun parseExerciseCatalogFromWorkoutPlan(raw: String): List<String> {

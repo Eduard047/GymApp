@@ -5,12 +5,20 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.gymapp.data.entity.ExerciseEntity
+import com.example.gymapp.data.entity.ExerciseHistoryEntry
 import com.example.gymapp.data.entity.WorkoutSessionDetails
 import com.example.gymapp.data.repository.GymRepository
 import com.example.gymapp.data.repository.NamedWorkoutSetDraft
+import com.example.gymapp.data.repository.WorkoutRecommendation
+import com.example.gymapp.data.repository.WorkoutRecommendationEngine
 import com.example.gymapp.data.repository.WorkoutExerciseDraft
 import com.example.gymapp.data.repository.WorkoutSetDraft
 import com.example.gymapp.sync.PhoneSyncClient
+import com.example.gymapp.util.CalorieMode
+import com.example.gymapp.util.TrainingGoal
+import com.example.gymapp.util.TrainingProfile
+import com.example.gymapp.util.TrainingProfileManager
+import com.example.gymapp.util.TrainingSplit
 import com.example.gymapp.util.parseWeightInputOrNull
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -48,6 +56,8 @@ data class AddWorkoutUiState(
     val exercises: List<ExerciseEntity> = emptyList(),
     val exerciseDrafts: List<ExerciseInputState> = emptyList(),
     val lastWeights: Map<Long, Double?> = emptyMap(),
+    val workoutRecommendations: Map<Long, WorkoutRecommendation> = emptyMap(),
+    val trainingProfile: TrainingProfile = TrainingProfile(),
     val canRepeatFromLast: Boolean = false,
     val workoutTemplates: List<WorkoutTemplatePreviewUiModel> = emptyList(),
     val isTemplatePickerOpen: Boolean = false,
@@ -62,7 +72,8 @@ data class AddWorkoutUiState(
 @OptIn(ExperimentalCoroutinesApi::class)
 class AddWorkoutViewModel(
     private val repository: GymRepository,
-    private val syncClient: PhoneSyncClient
+    private val syncClient: PhoneSyncClient,
+    private val trainingProfileManager: TrainingProfileManager
 ) : androidx.lifecycle.ViewModel() {
     private data class TransientState(
         val isSyncingPlanToWatch: Boolean,
@@ -75,6 +86,7 @@ class AddWorkoutViewModel(
     private data class LocalState(
         val note: String,
         val exerciseDrafts: List<ExerciseInputState>,
+        val trainingProfile: TrainingProfile,
         val isTemplatePickerOpen: Boolean,
         val isTemplateLoading: Boolean,
         val isSyncingPlanToWatch: Boolean,
@@ -104,6 +116,12 @@ class AddWorkoutViewModel(
     private val createdSessionId = MutableStateFlow<Long?>(null)
 
     private val exercises = repository.observeExercises()
+    private val exerciseHistory: StateFlow<List<ExerciseHistoryEntry>> = repository.observeAllExerciseHistory()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000),
+            initialValue = emptyList()
+        )
     private val workoutTemplates = repository.observeSessions().map { sessions ->
         sessions
             .take(60)
@@ -128,6 +146,12 @@ class AddWorkoutViewModel(
 
     private val lastWeights = selectedExerciseIds.flatMapLatest { ids ->
         repository.observeLastWeights(ids)
+    }
+
+    private val workoutRecommendations = selectedExerciseIds.flatMapLatest { ids ->
+        trainingProfileManager.profile.flatMapLatest { profile ->
+            repository.observeWorkoutRecommendations(ids, profile)
+        }
     }
 
     private val editorState = combine(
@@ -162,11 +186,13 @@ class AddWorkoutViewModel(
 
     private val localState = combine(
         editorState,
-        transientState
-    ) { editor, transient ->
+        transientState,
+        trainingProfileManager.profile
+    ) { editor, transient, profile ->
         LocalState(
             note = editor.note,
             exerciseDrafts = editor.exerciseDrafts,
+            trainingProfile = profile,
             isTemplatePickerOpen = editor.isTemplatePickerOpen,
             isTemplateLoading = editor.isTemplateLoading,
             isSyncingPlanToWatch = transient.isSyncingPlanToWatch,
@@ -180,14 +206,17 @@ class AddWorkoutViewModel(
     val uiState: StateFlow<AddWorkoutUiState> = combine(
         exercises,
         lastWeights,
+        workoutRecommendations,
         workoutTemplates,
         localState
-    ) { exerciseList, lastWeightsMap, templates, local ->
+    ) { exerciseList, lastWeightsMap, recommendations, templates, local ->
         AddWorkoutUiState(
             note = local.note,
             exercises = exerciseList,
             exerciseDrafts = local.exerciseDrafts,
             lastWeights = lastWeightsMap,
+            workoutRecommendations = recommendations,
+            trainingProfile = local.trainingProfile,
             canRepeatFromLast = templates.isNotEmpty(),
             workoutTemplates = templates,
             isTemplatePickerOpen = local.isTemplatePickerOpen,
@@ -207,6 +236,57 @@ class AddWorkoutViewModel(
     fun updateNote(value: String) {
         resetWatchPlanSyncResult()
         note.value = value
+    }
+
+    fun updateTrainingSplit(split: TrainingSplit) {
+        resetWatchPlanSyncResult()
+        trainingProfileManager.updateSplit(split)
+    }
+
+    fun updateWorkoutsPerWeek(value: Int) {
+        resetWatchPlanSyncResult()
+        trainingProfileManager.updateWorkoutsPerWeek(value)
+    }
+
+    fun updateTrainingGoal(goal: TrainingGoal) {
+        resetWatchPlanSyncResult()
+        trainingProfileManager.updateGoal(goal)
+    }
+
+    fun updateCalorieMode(mode: CalorieMode) {
+        resetWatchPlanSyncResult()
+        trainingProfileManager.updateCalorieMode(mode)
+    }
+
+    fun generateSmartWorkout() {
+        val currentState = uiState.value
+        val plan = WorkoutRecommendationEngine.buildWorkoutPlan(
+            exercises = currentState.exercises,
+            history = exerciseHistory.value,
+            trainingProfile = currentState.trainingProfile
+        )
+        if (plan.exercises.isEmpty()) {
+            hasValidationError.value = true
+            return
+        }
+
+        resetWatchPlanSyncResult()
+        hasValidationError.value = false
+        exerciseDrafts.value = plan.exercises.map { plannedExercise ->
+            ExerciseInputState(
+                draftId = nextDraftId++,
+                exerciseId = plannedExercise.exercise.id,
+                sets = plannedExercise.recommendation.sets.map { set ->
+                    SetInputState(
+                        weight = set.weight?.let(::formatWeight).orEmpty(),
+                        reps = set.reps.toString()
+                    )
+                }
+            )
+        }
+        if (note.value.isBlank()) {
+            note.value = "Smart Coach plan"
+        }
     }
 
     fun addExerciseDraft() {
@@ -379,7 +459,8 @@ class AddWorkoutViewModel(
                 val exerciseCatalog = uiState.value.exercises.map { it.name }
                 syncClient.pushWorkoutPlan(
                     sets = namedSets,
-                    exerciseCatalog = exerciseCatalog
+                    exerciseCatalog = exerciseCatalog,
+                    trainingProfile = uiState.value.trainingProfile
                 )
             }.onSuccess {
                 didSyncPlanToWatch.value = true
@@ -506,6 +587,31 @@ class AddWorkoutViewModel(
         }
     }
 
+    fun applyWorkoutRecommendation(draftId: Long) {
+        hasValidationError.value = false
+        resetWatchPlanSyncResult()
+        val draftsSnapshot = uiState.value.exerciseDrafts
+        val selectedExerciseId = draftsSnapshot.firstOrNull { it.draftId == draftId }?.exerciseId ?: return
+        val recommendation = uiState.value.workoutRecommendations[selectedExerciseId] ?: return
+
+        exerciseDrafts.update { current ->
+            current.map { draft ->
+                if (draft.draftId == draftId) {
+                    draft.copy(
+                        sets = recommendation.sets.map { set ->
+                            SetInputState(
+                                weight = set.weight?.let(::formatWeight).orEmpty(),
+                                reps = set.reps.toString()
+                            )
+                        }
+                    )
+                } else {
+                    draft
+                }
+            }
+        }
+    }
+
     private fun parseNamedDrafts(
         drafts: List<ExerciseInputState>,
         exercises: List<ExerciseEntity>
@@ -558,12 +664,14 @@ class AddWorkoutViewModel(
     companion object {
         fun factory(
             repository: GymRepository,
-            syncClient: PhoneSyncClient
+            syncClient: PhoneSyncClient,
+            trainingProfileManager: TrainingProfileManager
         ): ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 AddWorkoutViewModel(
                     repository = repository,
-                    syncClient = syncClient
+                    syncClient = syncClient,
+                    trainingProfileManager = trainingProfileManager
                 )
             }
         }
