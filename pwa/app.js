@@ -59,10 +59,10 @@ const text = {
 };
 
 const muscles = [
-  ["chest", "Chest"], ["shoulders", "Shoulders"], ["biceps", "Biceps"], ["triceps", "Triceps"],
-  ["forearms", "Forearms"], ["abs", "Abs"], ["obliques", "Obliques"], ["upperBack", "Upper Back"],
-  ["lats", "Lats"], ["lowerBack", "Lower Back"], ["glutes", "Glutes"], ["quads", "Quads"],
-  ["hamstrings", "Hamstrings"], ["adductors", "Adductors"], ["calves", "Calves"]
+  ["chest", "Chest", "Груди"], ["shoulders", "Shoulders", "Плечі"], ["biceps", "Biceps", "Біцепс"], ["triceps", "Triceps", "Трицепс"],
+  ["forearms", "Forearms", "Передпліччя"], ["abs", "Abs", "Прес"], ["obliques", "Obliques", "Косі м'язи"], ["upperBack", "Upper Back", "Верх спини"],
+  ["lats", "Lats", "Широчайші"], ["lowerBack", "Lower Back", "Поперек"], ["glutes", "Glutes", "Сідниці"], ["quads", "Quads", "Квадрицепси"],
+  ["hamstrings", "Hamstrings", "Біцепс стегна"], ["adductors", "Adductors", "Привідні"], ["calves", "Calves", "Ікри"]
 ];
 
 const defaultMappings = {
@@ -73,6 +73,807 @@ const defaultMappings = {
   "lateral raise": ["shoulders"], "biceps curl": ["biceps", "forearms"], "triceps pushdown": ["triceps"],
   "calf raise": ["calves"], "plank": ["abs", "obliques"]
 };
+
+function weightedMuscles(values) {
+  return values.map(([muscleId, weight]) => ({ muscleId, weight }));
+}
+
+const exactMuscleMap = Object.fromEntries(Object.entries({
+  "нахили в сторони на гіперекстензії": [
+    [
+      "obliques",
+      0.9
+    ],
+    [
+      "abs",
+      0.35
+    ],
+    [
+      "lowerBack",
+      0.25
+    ]
+  ],
+  "бокові нахили на гіперекстензії": [
+    [
+      "obliques",
+      0.9
+    ],
+    [
+      "abs",
+      0.35
+    ],
+    [
+      "lowerBack",
+      0.25
+    ]
+  ],
+  "присід зі штангою": [
+    [
+      "quads",
+      1
+    ],
+    [
+      "glutes",
+      0.7
+    ],
+    [
+      "hamstrings",
+      0.45
+    ],
+    [
+      "lowerBack",
+      0.25
+    ],
+    [
+      "abs",
+      0.2
+    ]
+  ],
+  "присідання зі штангою": [
+    [
+      "quads",
+      1
+    ],
+    [
+      "glutes",
+      0.7
+    ],
+    [
+      "hamstrings",
+      0.45
+    ],
+    [
+      "lowerBack",
+      0.25
+    ],
+    [
+      "abs",
+      0.2
+    ]
+  ],
+  "бокові нахили": [
+    [
+      "obliques",
+      0.9
+    ],
+    [
+      "abs",
+      0.3
+    ]
+  ],
+  "бокові нахили з обтяженням": [
+    [
+      "obliques",
+      0.9
+    ],
+    [
+      "abs",
+      0.3
+    ]
+  ],
+  "брусья": [
+    [
+      "triceps",
+      0.85
+    ],
+    [
+      "chest",
+      0.75
+    ],
+    [
+      "shoulders",
+      0.35
+    ]
+  ],
+  "віджимання на брусах": [
+    [
+      "triceps",
+      0.85
+    ],
+    [
+      "chest",
+      0.75
+    ],
+    [
+      "shoulders",
+      0.35
+    ]
+  ],
+  "біцепс з гантелями сидячи": [
+    [
+      "biceps",
+      1
+    ],
+    [
+      "forearms",
+      0.25
+    ]
+  ],
+  "згинання рук з гантелями сидячи": [
+    [
+      "biceps",
+      1
+    ],
+    [
+      "forearms",
+      0.25
+    ]
+  ],
+  "гантеля над головою": [
+    [
+      "triceps",
+      1
+    ],
+    [
+      "shoulders",
+      0.3
+    ]
+  ],
+  "розгинання гантелі над головою": [
+    [
+      "triceps",
+      1
+    ],
+    [
+      "shoulders",
+      0.3
+    ]
+  ],
+  "гантелі лежачи": [
+    [
+      "chest",
+      0.9
+    ],
+    [
+      "triceps",
+      0.55
+    ],
+    [
+      "shoulders",
+      0.45
+    ]
+  ],
+  "жим гантелей лежачи": [
+    [
+      "chest",
+      0.9
+    ],
+    [
+      "triceps",
+      0.55
+    ],
+    [
+      "shoulders",
+      0.45
+    ]
+  ],
+  "горизонтальна важільна тяга": [
+    [
+      "upperBack",
+      1
+    ],
+    [
+      "lats",
+      0.75
+    ],
+    [
+      "biceps",
+      0.45
+    ],
+    [
+      "forearms",
+      0.25
+    ]
+  ],
+  "горизонтальна тяга у важільному тренажері": [
+    [
+      "upperBack",
+      1
+    ],
+    [
+      "lats",
+      0.75
+    ],
+    [
+      "biceps",
+      0.45
+    ],
+    [
+      "forearms",
+      0.25
+    ]
+  ],
+  "гіперекстензія": [
+    [
+      "lowerBack",
+      1
+    ],
+    [
+      "glutes",
+      0.55
+    ],
+    [
+      "hamstrings",
+      0.45
+    ]
+  ],
+  "жим лежачи": [
+    [
+      "chest",
+      1
+    ],
+    [
+      "triceps",
+      0.6
+    ],
+    [
+      "shoulders",
+      0.5
+    ]
+  ],
+  "жим штанги лежачи": [
+    [
+      "chest",
+      1
+    ],
+    [
+      "triceps",
+      0.6
+    ],
+    [
+      "shoulders",
+      0.5
+    ]
+  ],
+  "жим ногами": [
+    [
+      "quads",
+      1
+    ],
+    [
+      "glutes",
+      0.55
+    ],
+    [
+      "hamstrings",
+      0.35
+    ],
+    [
+      "calves",
+      0.15
+    ]
+  ],
+  "жим ногами у тренажері": [
+    [
+      "quads",
+      1
+    ],
+    [
+      "glutes",
+      0.55
+    ],
+    [
+      "hamstrings",
+      0.35
+    ],
+    [
+      "calves",
+      0.15
+    ]
+  ],
+  "жим сидячи": [
+    [
+      "shoulders",
+      1
+    ],
+    [
+      "triceps",
+      0.55
+    ],
+    [
+      "chest",
+      0.2
+    ]
+  ],
+  "жим сидячи над головою": [
+    [
+      "shoulders",
+      1
+    ],
+    [
+      "triceps",
+      0.55
+    ],
+    [
+      "chest",
+      0.2
+    ]
+  ],
+  "журавель": [
+    [
+      "lats",
+      1
+    ],
+    [
+      "upperBack",
+      0.75
+    ],
+    [
+      "biceps",
+      0.45
+    ],
+    [
+      "forearms",
+      0.25
+    ]
+  ],
+  "тяга верхніх блоків у тренажері": [
+    [
+      "lats",
+      1
+    ],
+    [
+      "upperBack",
+      0.75
+    ],
+    [
+      "biceps",
+      0.45
+    ],
+    [
+      "forearms",
+      0.25
+    ]
+  ],
+  "тяга верхних блоков в тренажере": [
+    [
+      "lats",
+      1
+    ],
+    [
+      "upperBack",
+      0.75
+    ],
+    [
+      "biceps",
+      0.45
+    ],
+    [
+      "forearms",
+      0.25
+    ]
+  ],
+  "зведення ніг": [
+    [
+      "adductors",
+      1
+    ],
+    [
+      "quads",
+      0.25
+    ]
+  ],
+  "зведення ніг у тренажері": [
+    [
+      "adductors",
+      1
+    ],
+    [
+      "quads",
+      0.25
+    ]
+  ],
+  "згибання ніг": [
+    [
+      "hamstrings",
+      1
+    ],
+    [
+      "calves",
+      0.2
+    ]
+  ],
+  "згинання ніг у тренажері": [
+    [
+      "hamstrings",
+      1
+    ],
+    [
+      "calves",
+      0.2
+    ]
+  ],
+  "махи в сторони": [
+    [
+      "shoulders",
+      1
+    ]
+  ],
+  "підйоми гантелей через сторони": [
+    [
+      "shoulders",
+      1
+    ]
+  ],
+  "метелик в середину": [
+    [
+      "chest",
+      1
+    ],
+    [
+      "shoulders",
+      0.25
+    ]
+  ],
+  "зведення рук у тренажері": [
+    [
+      "chest",
+      1
+    ],
+    [
+      "shoulders",
+      0.25
+    ]
+  ],
+  "метелик в сторони": [
+    [
+      "shoulders",
+      0.75
+    ],
+    [
+      "upperBack",
+      0.65
+    ]
+  ],
+  "зворотні розведення у тренажері": [
+    [
+      "shoulders",
+      0.75
+    ],
+    [
+      "upperBack",
+      0.65
+    ]
+  ],
+  "прес з диском в сторони": [
+    [
+      "obliques",
+      0.85
+    ],
+    [
+      "abs",
+      0.45
+    ]
+  ],
+  "повороти корпусу з диском": [
+    [
+      "obliques",
+      0.85
+    ],
+    [
+      "abs",
+      0.45
+    ]
+  ],
+  "прес звичайний з диском": [
+    [
+      "abs",
+      1
+    ],
+    [
+      "obliques",
+      0.25
+    ]
+  ],
+  "скручування з диском": [
+    [
+      "abs",
+      1
+    ],
+    [
+      "obliques",
+      0.25
+    ]
+  ],
+  "прес(підйом ніг)": [
+    [
+      "abs",
+      1
+    ]
+  ],
+  "підйом ніг у висі": [
+    [
+      "abs",
+      1
+    ]
+  ],
+  "протяжка": [
+    [
+      "shoulders",
+      0.85
+    ],
+    [
+      "upperBack",
+      0.55
+    ],
+    [
+      "biceps",
+      0.25
+    ]
+  ],
+  "тяга штанги до підборіддя": [
+    [
+      "shoulders",
+      0.85
+    ],
+    [
+      "upperBack",
+      0.55
+    ],
+    [
+      "biceps",
+      0.25
+    ]
+  ],
+  "підйом на носки": [
+    [
+      "calves",
+      1
+    ]
+  ],
+  "підйом на носки стоячи": [
+    [
+      "calves",
+      1
+    ]
+  ],
+  "підтягування в гравітроні": [
+    [
+      "lats",
+      1
+    ],
+    [
+      "upperBack",
+      0.65
+    ],
+    [
+      "biceps",
+      0.55
+    ],
+    [
+      "forearms",
+      0.3
+    ]
+  ],
+  "підтягування у гравітроні": [
+    [
+      "lats",
+      1
+    ],
+    [
+      "upperBack",
+      0.65
+    ],
+    [
+      "biceps",
+      0.55
+    ],
+    [
+      "forearms",
+      0.3
+    ]
+  ],
+  "підтягування з резинкою": [
+    [
+      "lats",
+      1
+    ],
+    [
+      "upperBack",
+      0.65
+    ],
+    [
+      "biceps",
+      0.55
+    ],
+    [
+      "forearms",
+      0.3
+    ]
+  ],
+  "підтягування з еспандером": [
+    [
+      "lats",
+      1
+    ],
+    [
+      "upperBack",
+      0.65
+    ],
+    [
+      "biceps",
+      0.55
+    ],
+    [
+      "forearms",
+      0.3
+    ]
+  ],
+  "розгинання ніг": [
+    [
+      "quads",
+      1
+    ]
+  ],
+  "розгинання ніг у тренажері": [
+    [
+      "quads",
+      1
+    ]
+  ],
+  "румунська тяга": [
+    [
+      "hamstrings",
+      1
+    ],
+    [
+      "glutes",
+      0.85
+    ],
+    [
+      "lowerBack",
+      0.65
+    ],
+    [
+      "upperBack",
+      0.2
+    ]
+  ],
+  "станова тяга": [
+    [
+      "lowerBack",
+      0.9
+    ],
+    [
+      "glutes",
+      0.85
+    ],
+    [
+      "hamstrings",
+      0.8
+    ],
+    [
+      "upperBack",
+      0.45
+    ],
+    [
+      "quads",
+      0.35
+    ],
+    [
+      "forearms",
+      0.3
+    ]
+  ],
+  "тренажер скота(біцепс)": [
+    [
+      "biceps",
+      1
+    ],
+    [
+      "forearms",
+      0.25
+    ]
+  ],
+  "згинання рук на лаві скотта": [
+    [
+      "biceps",
+      1
+    ],
+    [
+      "forearms",
+      0.25
+    ]
+  ],
+  "трицепс трикутник": [
+    [
+      "triceps",
+      1
+    ]
+  ],
+  "розгинання рук на блоці з v-рукояттю": [
+    [
+      "triceps",
+      1
+    ]
+  ],
+  "французький жим": [
+    [
+      "triceps",
+      1
+    ],
+    [
+      "shoulders",
+      0.15
+    ]
+  ],
+  "фронтальна тяга": [
+    [
+      "lats",
+      1
+    ],
+    [
+      "upperBack",
+      0.7
+    ],
+    [
+      "biceps",
+      0.5
+    ],
+    [
+      "forearms",
+      0.25
+    ]
+  ],
+  "тяга верхнього блока до грудей": [
+    [
+      "lats",
+      1
+    ],
+    [
+      "upperBack",
+      0.7
+    ],
+    [
+      "biceps",
+      0.5
+    ],
+    [
+      "forearms",
+      0.25
+    ]
+  ],
+  "штанга на біцепс": [
+    [
+      "biceps",
+      1
+    ],
+    [
+      "forearms",
+      0.35
+    ]
+  ],
+  "згинання рук зі штангою": [
+    [
+      "biceps",
+      1
+    ],
+    [
+      "forearms",
+      0.35
+    ]
+  ]
+}).map(([name, entries]) => [normalizeExerciseKey(name), weightedMuscles(entries)]));
 
 const defaultExercises = Object.keys(defaultMappings).map(name => titleCase(name));
 
@@ -113,6 +914,15 @@ function t(key) {
 
 function tx(en, uk) {
   return state.language === "uk" ? uk : en;
+}
+
+function muscleLabel(id) {
+  const row = muscles.find(([muscleId]) => muscleId === id);
+  return row ? (state.language === "uk" ? row[2] : row[1]) : id;
+}
+
+function normalizeExerciseKey(name) {
+  return String(name || "").toLowerCase().replace(/[??]/g, "'").replace(/\s+/g, " ").trim();
 }
 
 function n(count, enOne, enMany, ukOne, ukFew, ukMany) {
@@ -544,15 +1354,14 @@ function muscleMapCard() {
   const data = muscleStats();
   const max = Math.max(1, ...data.map(item => item.load));
   const top = data.filter(item => item.load > 0).sort((a, b) => b.load - a.load);
-  const selected = selectedMuscle ? top.find(item => item.id === selectedMuscle) : null;
-  const unmapped = groupedExercises().filter(ex => !mappingFor(ex.name).length);
+  const selected = selectedMuscle ? data.find(item => item.id === selectedMuscle) : null;
+  const selectedExercises = selected ? selected.exercises.slice().sort((a, b) => b.load - a.load) : [];
   return `<section class="panel">
     <div class="section-title"><div><h2>${t("muscleMap")}</h2><p>${tx("Colors show which muscle groups carried the most load.", "Кольори показують, які групи м'язів отримали найбільше навантаження.")}</p></div><span class="pill">${musclePeriodLabel(musclePeriod)}</span></div>
     <div class="period-tabs">${["all", "month", "week"].map(period => `<button class="${musclePeriod === period ? "selected" : ""}" data-action="muscle-period" data-period="${period}">${musclePeriodLabel(period)}</button>`).join("")}</div>
-    <div class="metric-grid three"><div><span>${tx("Sets", "Підходи")}</span><strong>${allSets(periodSessions()).length}</strong></div><div><span>${tx("Load", "Навантаження")}</span><strong>${Math.round(totalVolume(periodSessions()))}</strong></div><div><span>${tx("Mapped", "Зіставлено")}</span><strong>${mappedCount()}/${state.exercises.length}</strong></div></div>
+    <div class="metric-grid three"><div><span>${tx("Sets", "Підходи")}</span><strong>${allSets(periodSessions()).length}</strong></div><div><span>${tx("Load", "Навантаження")}</span><strong>${Math.round(trainingLoad(periodSessions()))}</strong></div><div><span>${tx("Mapped", "Зіставлено")}</span><strong>${mappedCount()}/${state.exercises.length}</strong></div></div>
     ${sourceBodyMapSvg(data, max)}
-    ${selected ? `<div class="subpanel"><h3>${selected.label} ${tx("loaded by", "навантажено через")}</h3>${selected.exercises.map(ex => `<div class="row-line"><span>${escapeHtml(ex.name)}</span><button class="button ghost mini" data-action="map-exercise" data-name="${escapeAttr(ex.name)}">${tx("Map", "Карта")}</button></div>`).join("")}</div>` : ""}
-    ${unmapped.length ? `<div class="subpanel"><h3>${tx("Unmapped / new exercises", "Нові вправи без мапінгу")}</h3>${unmapped.map(ex => `<div class="row-line"><span>${escapeHtml(ex.name)} - ${n(ex.sets, "set", "sets", "підхід", "підходи", "підходів")}</span><button class="button secondary mini" data-action="map-exercise" data-name="${escapeAttr(ex.name)}">${tx("Map", "Мапити")}</button></div>`).join("")}</div>` : ""}
+    ${selected ? `<div class="subpanel"><h3>${tx("Exercises for", "Вправи для")}: ${selected.label}</h3>${selectedExercises.length ? selectedExercises.map(ex => `<div class="row-line"><span>${escapeHtml(ex.name)}</span><span class="muted">${n(ex.sets, "set", "sets", "підхід", "підходи", "підходів")} - ${n(ex.sessions.size, "session", "sessions", "сесія", "сесії", "сесій")} - ${Math.round(ex.load)} ${tx("load", "навантаження")}</span></div>`).join("") : `<div class="empty">${tx("No logged exercises for this muscle in the selected period.", "У вибраному періоді для цієї групи ще немає вправ.")}</div>`}</div>` : ""}
     <h3>${tx("Top muscle groups", "Топ груп м'язів")}</h3><div class="bars">${top.length ? top.slice(0, 8).map(item => barRow(item.label, item.load, max, `${n(item.sets, "set", "sets", "підхід", "підходи", "підходів")} - ${n(item.sessions.size, "session", "sessions", "сесія", "сесії", "сесій")}`)).join("") : `<div class="empty">${tx("Log sets to light up the body map.", "Запиши підходи, щоб підсвітити карту тіла.")}</div>`}</div>
   </section>`;
 }
@@ -573,25 +1382,25 @@ function periodSessions() {
 }
 
 function mappedCount() {
-  return state.exercises.filter(ex => mappingFor(ex.name).length).length;
+  return state.exercises.filter(ex => contributionFor(ex.name).length).length;
 }
 
 function mappingFor(name) {
-  const normalized = normalizeExerciseName(name);
-  const manual = state.mappings[normalized];
+  const manual = state.mappings[normalizeExerciseName(name)];
   if (manual?.length) return manual;
-  return inferMuscleContributions(name).map(item => item.muscleId);
+  return contributionFor(name).map(item => item.muscleId);
 }
 
 function contributionFor(name) {
   const normalized = normalizeExerciseName(name);
   const manual = state.mappings[normalized];
   if (manual?.length) return manual.map(muscleId => ({ muscleId, weight: 1 }));
+  if (exactMuscleMap[normalized]?.length) return exactMuscleMap[normalized];
   return inferMuscleContributions(name);
 }
 
 function normalizeExerciseName(name) {
-  return String(name || "").toLowerCase().replace(/[ʼ’]/g, "'").replace(/\s+/g, " ").trim();
+  return normalizeExerciseKey(name);
 }
 
 function inferMuscleContributions(name) {
@@ -622,7 +1431,7 @@ function inferMuscleContributions(name) {
 }
 
 function muscleStats(sessions = periodSessions()) {
-  const map = new Map(muscles.map(([id, label]) => [id, { id, label, load: 0, sets: 0, sessions: new Set(), exercises: [] }]));
+  const map = new Map(muscles.map(([id]) => [id, { id, label: muscleLabel(id), load: 0, sets: 0, sessions: new Set(), exercises: [] }]));
   allSets(sessions).forEach(set => {
     const contributions = contributionFor(set.exerciseName);
     contributions.forEach(contribution => {
@@ -630,10 +1439,18 @@ function muscleStats(sessions = periodSessions()) {
       if (!item) return;
       const trackedLoad = Math.max(0, Number(set.weight || 0)) * Math.max(0, Number(set.reps || 0));
       const load = (trackedLoad > 0 ? trackedLoad : 72 * Math.max(0, Number(set.reps || 0))) + 35;
-      item.load += load * contribution.weight;
+      const weightedLoad = load * contribution.weight;
+      item.load += weightedLoad;
       item.sets += 1;
       item.sessions.add(set.session.id);
-      if (!item.exercises.some(ex => ex.name === set.exerciseName)) item.exercises.push({ name: set.exerciseName });
+      let exercise = item.exercises.find(ex => ex.name === set.exerciseName);
+      if (!exercise) {
+        exercise = { name: set.exerciseName, load: 0, sets: 0, sessions: new Set() };
+        item.exercises.push(exercise);
+      }
+      exercise.load += weightedLoad;
+      exercise.sets += 1;
+      exercise.sessions.add(set.session.id);
     });
   });
   return [...map.values()];
@@ -1179,7 +1996,7 @@ function exerciseHistoryMarkup(exercise) {
 
 function mappingEditor(name) {
   const current = new Set(mappingFor(name));
-  return `<h2>${tx("Map", "Мапінг")} "${escapeHtml(name)}"</h2><div class="mapping-grid">${muscles.map(([id, label]) => `<button class="chip buttonlike ${current.has(id) ? "selected" : ""}" data-action="toggle-map" data-id="${id}">${label}</button>`).join("")}</div><button class="button full" data-action="save-map" data-name="${escapeAttr(name)}">${tx("Save", "Зберегти")}</button>`;
+  return `<h2>${tx("Map", "Мапінг")} "${escapeHtml(name)}"</h2><div class="mapping-grid">${muscles.map(([id]) => `<button class="chip buttonlike ${current.has(id) ? "selected" : ""}" data-action="toggle-map" data-id="${id}">${muscleLabel(id)}</button>`).join("")}</div><button class="button full" data-action="save-map" data-name="${escapeAttr(name)}">${tx("Save", "Зберегти")}</button>`;
 }
 
 function bindEvents() {
