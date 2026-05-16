@@ -142,6 +142,8 @@ adb -s <phone-ip>:<connect-port> install -r -d .\app\build\outputs\apk\debug\app
 
 The Android app cannot be installed on iPhone as an APK, so this repo also includes a standalone PWA in `pwa/`.
 
+The PWA is a browser port of the phone app experience: workouts, workout detail, post-workout summary, exercises, exercise history, progress, missions, ranks, solo XP, activity heatmap, muscle map, smart workout generation, templates, local timers, JSON backup/import, and diagnostics export.
+
 Run it locally:
 
 ```powershell
@@ -156,4 +158,4 @@ http://127.0.0.1:4173
 
 To install on iPhone, host the `pwa/` folder over HTTPS, open the URL in Safari, then use `Share` -> `Add to Home Screen`.
 
-The PWA stores workouts locally in the browser and supports JSON export/import from the Exercises backup tools.
+The PWA stores workouts locally in the browser and supports JSON export/import from the Exercises backup tools. Watch sync is represented as a local-ready action because iPhone Safari cannot talk to the Wear OS Data Layer used by the Android app.

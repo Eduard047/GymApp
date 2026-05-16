@@ -1,0 +1,19 @@
+{
+  "name": "Gym Workout Tracker",
+  "short_name": "Gym Tracker",
+  "description": "Workout logging, progress, missions, and local backup for iPhone and desktop.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#08131c",
+  "theme_color": "#08131c",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
