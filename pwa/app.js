@@ -76,6 +76,27 @@ const defaultMappings = {
 
 const defaultExercises = Object.keys(defaultMappings).map(name => titleCase(name));
 
+const rankDefinitions = [
+  ["rookie", 1, "Rookie", "Новачок"], ["starter", 3, "Starter", "Стартовий"],
+  ["steady", 5, "Steady", "Стабільний"], ["driven", 7, "Driven", "Вмотивований"],
+  ["striker", 9, "Striker", "Ударний"], ["ironclad", 11, "Ironclad", "Незламний"],
+  ["vanguard", 13, "Vanguard", "Авангард"], ["challenger", 15, "Challenger", "Претендент"],
+  ["dominator", 17, "Dominator", "Домінатор"], ["elite", 19, "Elite", "Еліта"],
+  ["titan", 21, "Titan", "Титан"], ["colossus", 23, "Colossus", "Колос"],
+  ["warborn", 25, "Warborn", "Воїн"], ["apex", 27, "Apex", "Апекс"],
+  ["mythic", 29, "Mythic", "Міфічний"], ["legend", 31, "Legend", "Легенда"],
+  ["eternal", 33, "Eternal", "Вічний"], ["immortal", 35, "Immortal", "Безсмертний"],
+  ["paragon", 37, "Paragon", "Парагон"], ["overlord", 39, "Overlord", "Володар"],
+  ["ascendant", 41, "Ascendant", "Вознесений"], ["conqueror", 43, "Conqueror", "Завойовник"],
+  ["sovereign", 45, "Sovereign", "Суверен"], ["prime", 47, "Prime", "Прайм"],
+  ["omni", 49, "Omni", "Омні"], ["galactic", 51, "Galactic", "Галактичний"],
+  ["nova", 53, "Nova", "Нова"], ["singularity", 55, "Singularity", "Сингулярність"],
+  ["omega", 57, "Omega", "Омега"], ["transcendent", 60, "Transcendent", "Трансцендентний"],
+  ["celestial", 64, "Celestial", "Небесний"], ["empyrean", 68, "Empyrean", "Емпірей"],
+  ["infinite", 72, "Infinite", "Нескінченний"], ["beyond", 76, "Beyond", "Понадмежний"],
+  ["cosmic-warlord", 80, "Cosmic Warlord", "Космічний воєвода"]
+].map(([id, level, titleEn, titleUk]) => ({ id, level, titleEn, titleUk }));
+
 let state = loadState();
 let nav = [{ name: "workouts" }];
 let modal = null;
@@ -217,7 +238,7 @@ function sessionSummary(session) {
 }
 
 function xpForSessions(sessions) {
-  return Math.round(totalVolume(sessions) / 35) + allSets(sessions).length * 8 + sessions.length * 35;
+  return sessions.reduce((sum, session) => sum + sessionXp(session), 0);
 }
 
 function totalXp() {
@@ -225,18 +246,61 @@ function totalXp() {
 }
 
 function levelFromXp(value = totalXp()) {
-  return Math.max(1, Math.floor(value / 500) + 1);
+  return levelProgress(value).level;
 }
 
 function rankTitle(value = totalXp()) {
-  return rankLadder().filter(rank => value >= rank.xp).at(-1)?.title || "Rookie";
+  const level = levelFromXp(value);
+  const rank = rankDefinitions.filter(item => level >= item.level).at(-1) || rankDefinitions[0];
+  return state.language === "uk" ? rank.titleUk : rank.titleEn;
 }
 
 function rankLadder() {
-  return [
-    ["Rookie", 1, 0], ["Regular", 2, 500], ["Iron Builder", 4, 1500], ["Strength Adept", 7, 3200],
-    ["Barbell Veteran", 10, 5600], ["Peak Chaser", 14, 9000], ["Elite Lifter", 18, 13500], ["Legend", 24, 21000]
-  ].map(([title, level, xp], id) => ({ id, title, level, xp }));
+  const xp = totalXp();
+  const current = rankDefinitions.filter(item => xp >= cumulativeXpForLevel(item.level)).at(-1)?.id;
+  return rankDefinitions.map((rank, index) => {
+    const requiredXp = cumulativeXpForLevel(rank.level);
+    const previousXp = index === 0 ? 0 : cumulativeXpForLevel(rankDefinitions[index - 1].level);
+    const segment = Math.max(1, requiredXp - previousXp);
+    return {
+      id: rank.id,
+      title: state.language === "uk" ? rank.titleUk : rank.titleEn,
+      level: rank.level,
+      xp: requiredXp,
+      xpRemaining: Math.max(0, requiredXp - xp),
+      progressFraction: Math.min(1, Math.max(0, (xp - previousXp) / segment)),
+      isCurrent: rank.id === current,
+      isUnlocked: xp >= requiredXp
+    };
+  });
+}
+
+function sessionXp(session) {
+  const summary = sessionSummary(session);
+  return 90 + summary.exercises * 16 + summary.sets * 8 + Math.round(summary.volume / 80);
+}
+
+function xpRequirementForLevel(level) {
+  const stage = Math.max(0, level - 1);
+  return 200 + stage * 85 + stage * stage * 8;
+}
+
+function cumulativeXpForLevel(level) {
+  let total = 0;
+  for (let current = 1; current < level; current++) total += xpRequirementForLevel(current);
+  return total;
+}
+
+function levelProgress(value = totalXp()) {
+  let level = 1;
+  let remaining = value;
+  let next = xpRequirementForLevel(level);
+  while (remaining >= next) {
+    remaining -= next;
+    level += 1;
+    next = xpRequirementForLevel(level);
+  }
+  return { level, currentLevelXp: remaining, xpForNextLevel: next, progressFraction: Math.min(1, remaining / next) };
 }
 
 function streakDays() {
@@ -340,14 +404,15 @@ function overviewCards(sessions) {
 
 function soloProgressHero() {
   const xp = totalXp();
-  const level = levelFromXp(xp);
-  const into = xp % 500;
-  const next = rankLadder().find(rank => rank.xp > xp)?.title || "Max title";
+  const progress = levelProgress(xp);
+  const level = progress.level;
+  const next = rankDefinitions.find(rank => level < rank.level);
+  const nextTitle = next ? (state.language === "uk" ? next.titleUk : next.titleEn) : rankTitle(xp);
   return `<section class="hero-panel">
     <div class="eyebrow">${t("soloProgress")}</div>
-    <div class="hero-split"><div><span class="pill hero-pill">LEVEL ${level}</span><h2>${rankTitle(xp)}</h2><p>${into} / 500 XP to next level</p></div><div class="hero-stat"><span>TOTAL XP</span><strong>${xp}</strong><small>earned</small></div></div>
-    <div class="progress"><span style="width:${into / 5}%"></span></div>
-    <div class="metric-grid three"><div><span>Month XP</span><strong>${xpForSessions(selectedMonthSessions())} XP</strong></div><div><span>Next title</span><strong>${next}</strong></div><div><span>Week streak</span><strong>${weeklyStreak()} wk</strong></div></div>
+    <div class="hero-split"><div><span class="pill hero-pill">LEVEL ${level}</span><h2>${rankTitle(xp)}</h2><p>${progress.currentLevelXp} / ${progress.xpForNextLevel} XP to next level</p></div><div class="hero-stat"><span>TOTAL XP</span><strong>${xp}</strong><small>earned</small></div></div>
+    <div class="progress"><span style="width:${progress.progressFraction * 100}%"></span></div>
+    <div class="metric-grid three"><div><span>Month XP</span><strong>${xpForSessions(selectedMonthSessions())} XP</strong></div><div><span>Next title</span><strong>${nextTitle}</strong></div><div><span>Week streak</span><strong>${weeklyStreak()} wk</strong></div></div>
   </section>`;
 }
 
@@ -399,10 +464,7 @@ function muscleMapCard() {
     <div class="section-title"><div><h2>${t("muscleMap")}</h2><p>Colors show which muscle groups carried the most load.</p></div><span class="pill">${musclePeriod}</span></div>
     <div class="period-tabs">${["all", "month", "week"].map(period => `<button class="${musclePeriod === period ? "selected" : ""}" data-action="muscle-period" data-period="${period}">${period === "all" ? "All time" : titleCase(period)}</button>`).join("")}</div>
     <div class="metric-grid three"><div><span>Sets</span><strong>${allSets(periodSessions()).length}</strong></div><div><span>Load</span><strong>${Math.round(totalVolume(periodSessions()))}</strong></div><div><span>Mapped</span><strong>${mappedCount()}/${state.exercises.length}</strong></div></div>
-    <div class="body-map">${muscles.map(([id, label]) => {
-      const item = data.find(x => x.id === id) || { load: 0 };
-      return `<button class="muscle-tile ${selectedMuscle === id ? "selected" : ""}" data-action="select-muscle" data-id="${id}" style="--i:${item.load / max}"><span>${label}</span><small>${Math.round(item.load)}</small></button>`;
-    }).join("")}</div>
+    ${sourceBodyMapSvg(data, max)}
     ${selected ? `<div class="subpanel"><h3>${selected.label} loaded by</h3>${selected.exercises.map(ex => `<div class="row-line"><span>${escapeHtml(ex.name)}</span><button class="button ghost mini" data-action="map-exercise" data-name="${escapeAttr(ex.name)}">Map</button></div>`).join("")}</div>` : ""}
     ${unmapped.length ? `<div class="subpanel"><h3>Unmapped / new exercises</h3>${unmapped.map(ex => `<div class="row-line"><span>${escapeHtml(ex.name)} · ${ex.sets} sets</span><button class="button secondary mini" data-action="map-exercise" data-name="${escapeAttr(ex.name)}">Map</button></div>`).join("")}</div>` : ""}
     <h3>Top muscle groups</h3><div class="bars">${top.length ? top.slice(0, 8).map(item => barRow(item.label, item.load, max, `${item.sets} sets · ${item.sessions.size} sessions`)).join("") : `<div class="empty">Log sets to light up the body map.</div>`}</div>
@@ -421,24 +483,121 @@ function mappedCount() {
 }
 
 function mappingFor(name) {
-  return state.mappings[name.trim().toLowerCase()] || [];
+  const normalized = normalizeExerciseName(name);
+  const manual = state.mappings[normalized];
+  if (manual?.length) return manual;
+  return inferMuscleContributions(name).map(item => item.muscleId);
+}
+
+function contributionFor(name) {
+  const normalized = normalizeExerciseName(name);
+  const manual = state.mappings[normalized];
+  if (manual?.length) return manual.map(muscleId => ({ muscleId, weight: 1 }));
+  return inferMuscleContributions(name);
+}
+
+function normalizeExerciseName(name) {
+  return String(name || "").toLowerCase().replace(/[ʼ’]/g, "'").replace(/\s+/g, " ").trim();
+}
+
+function inferMuscleContributions(name) {
+  const normalized = normalizeExerciseName(name);
+  const inferred = new Map();
+  const add = (muscleId, weight) => inferred.set(muscleId, Math.max(inferred.get(muscleId) || 0, clamp(weight, 0, 1)));
+  const has = (...tokens) => tokens.some(token => normalized.includes(token));
+  (defaultMappings[normalized] || []).forEach(id => add(id, 1));
+  if (has("біцепс", "бицепс", "bicep", "curl", "сгибание рук", "згинання рук")) { add("biceps", 1); add("forearms", 0.25); }
+  if (has("трицепс", "tricep", "француз", "розгинання рук", "разгибание рук", "pushdown")) add("triceps", 1);
+  if (has("жим ног", "жим ногами", "leg press")) { add("quads", 1); add("glutes", 0.55); add("hamstrings", 0.35); }
+  if (has("жим", "press", "bench") && !has("ног", "leg press")) { add("chest", 0.85); add("triceps", 0.55); add("shoulders", 0.45); }
+  if (has("плеч", "дельт", "махи", "розведення", "разведение", "підйом гантелей", "подъем гантелей", "shoulder", "lateral raise", "rear delt", "face pull", "overhead press")) add("shoulders", 1);
+  if (has("підтяг", "подтяг", "pull up", "pullup", "pulldown", "тяга верхнього блока", "тяга верхнего блока", "верхній блок", "верхний блок")) { add("lats", 1); add("upperBack", 0.65); add("biceps", 0.55); add("forearms", 0.3); }
+  if (has("тяга", "deadlift", "row") && has("румун", "станов", "становая", "deadlift")) { add("hamstrings", 0.9); add("glutes", 0.85); add("lowerBack", 0.75); add("upperBack", 0.3); add("forearms", 0.25); }
+  if (has("тяга", "row") && !has("румун", "станов", "становая", "deadlift", "підборід", "подбород")) { add("lats", 0.9); add("upperBack", 0.85); add("biceps", 0.45); add("forearms", 0.25); }
+  if (has("прис", "присед", "squat", "випади", "выпады", "lunge")) { add("quads", 1); add("glutes", 0.7); add("hamstrings", 0.45); add("lowerBack", 0.25); }
+  if (has("розгинання ніг", "разгибание ног", "leg extension")) add("quads", 1);
+  if (has("згинання ніг", "згибання ніг", "сгибание ног", "leg curl")) add("hamstrings", 1);
+  if (has("підйом на носки", "підйоми на носки", "подъем на носки", "икры", "calf")) add("calves", 1);
+  if (has("прес", "скруч", "планка", "crunch", "sit up", "leg raise", "plank")) add("abs", 1);
+  if (has("нахил", "наклон", "сторони", "стороны", "поворот корпус", "rotation", "side bend", "russian twist")) add("obliques", 0.85);
+  if (has("гіперекстензі", "гиперэкстенз", "hyperextension")) { add("lowerBack", 1); add("glutes", 0.55); add("hamstrings", 0.45); }
+  if (has("сідниц", "ягодиц", "glute", "hip thrust", "місток", "мостик")) { add("glutes", 1); add("hamstrings", 0.35); }
+  if (has("зведення ніг", "сведение ног", "adductor")) add("adductors", 1);
+  if (has("метелик", "pec deck", "зведення рук", "сведение рук", "fly", "flies")) { add("chest", 1); add("shoulders", 0.25); }
+  return [...inferred].filter(([muscleId]) => muscles.some(([id]) => id === muscleId)).map(([muscleId, weight]) => ({ muscleId, weight }));
 }
 
 function muscleStats(sessions = periodSessions()) {
   const map = new Map(muscles.map(([id, label]) => [id, { id, label, load: 0, sets: 0, sessions: new Set(), exercises: [] }]));
   allSets(sessions).forEach(set => {
-    const ids = mappingFor(set.exerciseName);
-    ids.forEach(id => {
-      const item = map.get(id);
+    const contributions = contributionFor(set.exerciseName);
+    contributions.forEach(contribution => {
+      const item = map.get(contribution.muscleId);
       if (!item) return;
-      const load = Number(set.weight || 0) * Number(set.reps || 0);
-      item.load += load / ids.length;
+      const trackedLoad = Math.max(0, Number(set.weight || 0)) * Math.max(0, Number(set.reps || 0));
+      const load = (trackedLoad > 0 ? trackedLoad : 72 * Math.max(0, Number(set.reps || 0))) + 35;
+      item.load += load * contribution.weight;
       item.sets += 1;
       item.sessions.add(set.session.id);
       if (!item.exercises.some(ex => ex.name === set.exerciseName)) item.exercises.push({ name: set.exerciseName });
     });
   });
   return [...map.values()];
+}
+
+function sourceBodyMapSvg(data, maxLoad) {
+  const byId = new Map(data.map(item => [item.id, item]));
+  const front = window.SOURCE_FRONT_MUSCLE_REGIONS || [];
+  const back = window.SOURCE_BACK_MUSCLE_REGIONS || [];
+  const regionMarkup = [...front, ...back].map(region => {
+    const muscleId = muscleIdForSourceRegion(region.id);
+    const item = muscleId ? byId.get(muscleId) : null;
+    const intensity = item && maxLoad > 0 ? Math.min(1, item.load / maxLoad) : 0;
+    const selected = muscleId && selectedMuscle === muscleId;
+    return `<path class="body-region ${selected ? "selected" : ""}" d="${escapeAttr(region.pathData)}" fill="${heatColor(intensity)}" data-action="${muscleId ? "select-muscle" : ""}" data-id="${muscleId || ""}"><title>${escapeHtml(region.name)}${item ? ` · ${Math.round(item.load)} load` : ""}</title></path>`;
+  }).join("");
+  return `<div class="body-map-svg-wrap">
+    <svg class="body-map-svg" viewBox="0 0 72 93" role="img" aria-label="Muscle load map">
+      ${regionMarkup}
+    </svg>
+    <div class="body-labels"><span>Front</span><span>Back</span></div>
+  </div>`;
+}
+
+function muscleIdForSourceRegion(regionId) {
+  if (!regionId) return null;
+  if (regionId.includes("chest")) return "chest";
+  if (regionId.includes("shoulder") || regionId.includes("deltoid")) return "shoulders";
+  if (regionId.includes("biceps")) return "biceps";
+  if (regionId.includes("triceps")) return "triceps";
+  if (regionId.includes("forearm")) return "forearms";
+  if (regionId.includes("obliques") || regionId.includes("serratus")) return "obliques";
+  if (regionId.includes("abs")) return "abs";
+  if (regionId.includes("traps")) return "upperBack";
+  if (regionId.includes("lats")) return "lats";
+  if (regionId === "spine" || regionId.includes("lower-back")) return "lowerBack";
+  if (regionId.includes("gluteus")) return "glutes";
+  if (regionId.includes("quads")) return "quads";
+  if (regionId.includes("adductors") || regionId.includes("hip-flexor")) return "adductors";
+  if (regionId.includes("hamstrings")) return "hamstrings";
+  if (regionId.includes("calves") || regionId.includes("tibialis")) return "calves";
+  return null;
+}
+
+function heatColor(intensity) {
+  const value = Math.min(1, Math.max(0, intensity));
+  if (value <= 0) return "rgba(180,195,207,0.22)";
+  if (value < 0.28) return `rgba(59,130,246,${0.42 + value / 0.28 * 0.58})`;
+  if (value < 0.58) return mixHex("#3b82f6", "#8b5cf6", (value - 0.28) / 0.3);
+  if (value < 0.86) return mixHex("#8b5cf6", "#e11d48", (value - 0.58) / 0.28);
+  return mixHex("#e11d48", "#f59e0b", (value - 0.86) / 0.14);
+}
+
+function mixHex(a, b, t) {
+  const av = a.match(/\w\w/g).map(x => parseInt(x, 16));
+  const bv = b.match(/\w\w/g).map(x => parseInt(x, 16));
+  const cv = av.map((v, i) => Math.round(v + (bv[i] - v) * Math.min(1, Math.max(0, t))));
+  return `rgb(${cv[0]},${cv[1]},${cv[2]})`;
 }
 
 function recommendationsCard() {
@@ -468,11 +627,12 @@ function nextWorkoutType(last) {
 
 function achievementsCard() {
   const achievements = [
-    achievement("First Baseline", "Save your first workout.", state.sessions.length, 1),
-    achievement("Volume Builder", "Reach 10,000 total volume.", totalVolume(), 10000),
-    achievement("Set Collector", "Log 100 total sets.", allSets().length, 100),
-    achievement("Consistency", "Build a 7 day streak.", streakDays(), 7)
-  ];
+    achievement("First session", "Log your first workout.", state.sessions.length, 1),
+    achievement("Ten sessions", "Reach ten logged workouts.", state.sessions.length, 10),
+    achievement("Streak keeper", "Hold a 7-day streak.", streakDays(), 7),
+    achievement("Set century", "Finish 100 total sets.", allSets().length, 100),
+    achievement("Volume builder", "Accumulate 10000 total volume.", Math.round(totalVolume()), 10000)
+  ].sort((a, b) => Number(b.progress >= b.target) - Number(a.progress >= a.target) || (b.progress / b.target) - (a.progress / a.target) || a.target - b.target).slice(0, 4);
   return `<section class="panel highlighted"><h2>${t("achievements")}</h2><p class="muted">Recent unlocks and the next solo milestones.</p>
     ${achievements.map(a => `<div class="achievement"><div class="percent">${Math.min(100, Math.round(a.progress / a.target * 100))}%</div><div><strong>${a.title}</strong><p>${a.description}</p><div class="progress"><span style="width:${Math.min(100, a.progress / a.target * 100)}%"></span></div><small>${Math.round(a.progress)} / ${a.target}</small></div></div>`).join("")}
   </section>`;
@@ -529,7 +689,7 @@ function draftBlock(block, blockIndex) {
 }
 
 function smartPanel(rec, blockIndex) {
-  return `<div class="subpanel smart"><div class="row-head"><div><strong>${t("smartCoach")}</strong><p>${rec.kind}</p></div>${svg("auto", "small-icon")}</div><p>${rec.sets.map(s => `${s.weight.toFixed(1)} kg x ${s.reps}`).join(" | ")}</p><div class="progress"><span style="width:${rec.confidence * 100}%"></span></div><small>Confidence ${Math.round(rec.confidence * 100)}%</small><p class="muted">${rec.reason}</p><button class="button full" data-action="apply-smart" data-block="${blockIndex}">${t("applySmart")}</button></div>`;
+  return `<div class="subpanel smart"><div class="row-head"><div><strong>${t("smartCoach")}</strong><p>${rec.kind}</p></div>${svg("auto", "small-icon")}</div><p>${rec.sets.map(s => `${s.weight == null ? "light" : `${s.weight.toFixed(1)} kg`} x ${s.reps}`).join(" | ")}</p><div class="progress"><span style="width:${rec.confidence * 100}%"></span></div><small>Confidence ${Math.round(rec.confidence * 100)}%</small>${rec.reasons.map(reason => `<p class="muted">${escapeHtml(reason)}</p>`).join("")}<button class="button full" data-action="apply-smart" data-block="${blockIndex}">${t("applySmart")}</button></div>`;
 }
 
 function createDraft(source) {
@@ -538,13 +698,151 @@ function createDraft(source) {
 }
 
 function smartRecommendation(name) {
-  const history = allSets().filter(set => set.exerciseName.toLowerCase() === name.toLowerCase()).sort((a, b) => b.session.startedAt - a.session.startedAt);
-  if (!history.length) return { kind: "Starter plan: build clean reps and save the first baseline.", sets: [{ weight: 20, reps: 10 }, { weight: 20, reps: 10 }, { weight: 20, reps: 10 }], confidence: 0.62, reason: "No saved history yet, so this starts with a clean baseline." };
-  const best = Math.max(...history.map(s => s.weight));
-  const recent = history.slice(0, 3);
-  const avgReps = recent.reduce((sum, s) => sum + s.reps, 0) / recent.length;
-  const weight = avgReps >= 8 ? best + 2.5 : Math.max(0, best - 2.5);
-  return { kind: avgReps >= 8 ? "Progression plan: small load increase with controlled reps." : "Recovery plan: reduce load because the last result looked strained.", sets: [{ weight, reps: 8 }, { weight, reps: 8 }, { weight, reps: 8 }], confidence: 0.78, reason: avgReps >= 8 ? "Last session was stable across the sets." : "Recent reps dipped, so the plan stays conservative." };
+  const history = allSets()
+    .filter(set => set.exerciseName.toLowerCase() === name.toLowerCase())
+    .sort((a, b) => b.session.startedAt - a.session.startedAt || a.orderIndex - b.orderIndex)
+    .slice(0, 120);
+  if (!history.length) {
+    return {
+      kindId: "NewExercise",
+      kind: "Starter plan: build clean reps and save the first baseline.",
+      sets: Array.from({ length: 3 }, () => ({ weight: null, reps: 10 })),
+      confidence: 0.35,
+      estimatedVolume: 0,
+      daysSinceLastSession: null,
+      reasons: ["No saved history yet, so this starts with a clean baseline."],
+      reason: "No saved history yet, so this starts with a clean baseline."
+    };
+  }
+
+  const sessions = Object.values(history.reduce((acc, set) => {
+    acc[set.session.id] ||= { id: set.session.id, date: set.session.startedAt, sets: [] };
+    acc[set.session.id].sets.push(set);
+    return acc;
+  }, {})).sort((a, b) => b.date - a.date).map(snapshotForExerciseSession);
+  const latest = sessions[0];
+  const previous = sessions[1];
+  const daysSinceLastSession = daysBetween(latest.date, Date.now());
+  const recentSessions = sessions.slice(0, 5);
+  const bestEstimatedMax = Math.max(...sessions.map(s => s.estimatedMax));
+  const recentMaxWeights = recentSessions.map(s => s.maxWeight);
+  const plateauDetected = recentMaxWeights.length >= 4 && Math.max(...recentMaxWeights) - Math.min(...recentMaxWeights) <= 1.25;
+  const latestNearBest = latest.estimatedMax >= bestEstimatedMax * 0.97;
+  const previousVolume = previous?.volume || latest.volume;
+  const volumeRatio = previousVolume <= 0 ? 1 : latest.volume / previousVolume;
+  const latestStable = latest.minReps >= 8 && latest.sets.length >= 3;
+  const latestStrained = latest.minReps <= 5 || volumeRatio < 0.88;
+  const isFatLossDeficit = state.profile.goal === "Aesthetic Cut" && state.profile.calories === "Deficit";
+
+  let kindId;
+  if (daysSinceLastSession >= 10) kindId = "Comeback";
+  else if (latestStrained || (isFatLossDeficit && volumeRatio < 0.96)) kindId = "Deload";
+  else if (plateauDetected) kindId = "PlateauBreak";
+  else if (latestStable && volumeRatio >= 0.95 && !isFatLossDeficit) kindId = "ProgressiveOverload";
+  else kindId = "HoldAndBuild";
+
+  const targetSetCount = state.profile.goal === "Strength"
+    ? clamp(latest.sets.length, 3, 5)
+    : isFatLossDeficit
+      ? clamp(latest.sets.length, 3, 4)
+      : clamp(latest.sets.length, 2, 5);
+  const targetWeight = (() => {
+    if (kindId === "ProgressiveOverload") return latest.maxWeight + chooseWeightStep(latest.maxWeight);
+    if (kindId === "HoldAndBuild" || kindId === "PlateauBreak") return latest.maxWeight;
+    if (kindId === "Deload") return latest.maxWeight * (isFatLossDeficit ? 0.9 : 0.92);
+    if (kindId === "Comeback") return latest.maxWeight * comebackMultiplier(daysSinceLastSession);
+    return null;
+  })();
+  const roundedWeight = targetWeight == null ? null : roundToNearestHalf(targetWeight);
+  const avgReps = Math.round(latest.averageReps);
+  const targetReps = (() => {
+    if (kindId === "ProgressiveOverload") return clamp(avgReps, 6, goalMaxReps());
+    if (kindId === "HoldAndBuild") return clamp(avgReps + 1, 8, goalMaxReps());
+    if (kindId === "Deload") return clamp(avgReps + 1, 8, 12);
+    if (kindId === "Comeback") return clamp(avgReps, 8, 12);
+    if (kindId === "PlateauBreak") return latest.averageReps >= 9 && !isFatLossDeficit ? 6 : 11;
+    return 10;
+  })();
+  const sets = Array.from({ length: targetSetCount }, (_, index) => ({
+    weight: roundedWeight,
+    reps: kindId === "PlateauBreak" && targetReps <= 6
+      ? Math.max(4, targetReps - Math.floor(index / 2))
+      : index >= 3
+        ? Math.max(5, targetReps - 1)
+        : targetReps
+  }));
+  const reasons = [];
+  if (latestStable) reasons.push("Last session was stable across the sets.");
+  if (latestStrained) reasons.push("Recent reps or volume dipped, so the plan stays conservative.");
+  if (daysSinceLastSession >= 10) reasons.push(`${daysSinceLastSession} days since this exercise, so the load is adjusted down.`);
+  if (volumeRatio >= 1.08) reasons.push("Recent volume is trending up.");
+  if (volumeRatio < 0.9) reasons.push("Recent volume dropped compared with the previous session.");
+  if (plateauDetected) reasons.push("Several sessions stayed near the same top weight.");
+  if (latestNearBest) reasons.push("This is close to your best estimated strength for the exercise.");
+  if (state.profile.goal === "Aesthetic Cut") reasons.push("Aesthetic goal: the plan favors clean volume and technique.");
+  if (state.profile.calories === "Deficit") reasons.push("Calorie deficit: progression is more conservative to protect recovery.");
+  if (state.profile.days === 4 && state.profile.split === "Upper / Lower") reasons.push("Upper/lower 4-day plan: the load leaves room for the next session.");
+  if (kindId === "ProgressiveOverload") reasons.push("The increase is intentionally conservative.");
+  const uniqueReasons = [...new Set(reasons)].slice(0, 3);
+  return {
+    kindId,
+    kind: smartKindLabel(kindId),
+    sets,
+    confidence: confidenceFor(sessions.length, latest.sets.length, daysSinceLastSession),
+    estimatedVolume: sets.reduce((sum, set) => sum + (set.weight || 0) * set.reps, 0),
+    daysSinceLastSession,
+    reasons: uniqueReasons.length ? uniqueReasons : ["The increase is intentionally conservative."],
+    reason: (uniqueReasons[0] || "The increase is intentionally conservative.")
+  };
+}
+
+function snapshotForExerciseSession(session) {
+  const weights = session.sets.map(set => Number(set.weight || 0));
+  const reps = session.sets.map(set => Number(set.reps || 0));
+  return {
+    ...session,
+    maxWeight: Math.max(...weights),
+    minReps: Math.min(...reps),
+    averageReps: reps.reduce((sum, value) => sum + value, 0) / reps.length,
+    volume: session.sets.reduce((sum, set) => sum + set.weight * set.reps, 0),
+    estimatedMax: Math.max(...session.sets.map(set => set.weight * (1 + set.reps / 30)))
+  };
+}
+
+function chooseWeightStep(weight) {
+  const baseStep = weight < 20 ? 1 : weight < 60 ? 2.5 : weight < 120 ? 5 : 7.5;
+  return state.profile.goal === "Aesthetic Cut" || state.profile.calories === "Deficit" ? baseStep * 0.5 : baseStep;
+}
+
+function goalMaxReps() {
+  if (state.profile.goal === "Strength") return 8;
+  if (state.profile.goal === "Aesthetic Cut") return 14;
+  return 12;
+}
+
+function comebackMultiplier(days) {
+  if (days >= 45) return 0.82;
+  if (days >= 30) return 0.86;
+  return 0.9;
+}
+
+function confidenceFor(sessionCount, lastSetCount, daysSinceLastSession) {
+  const historyScore = Math.min(sessionCount, 6) * 0.09;
+  const setScore = Math.min(lastSetCount, 4) * 0.05;
+  const profileScore = state.profile.days > 0 ? 0.06 : 0;
+  const recencyPenalty = daysSinceLastSession >= 30 ? 0.18 : daysSinceLastSession >= 14 ? 0.08 : 0;
+  return clamp(0.35 + historyScore + setScore + profileScore - recencyPenalty, 0.25, 0.94);
+}
+
+function smartKindLabel(kindId) {
+  return {
+    NewExercise: "Starter plan: build clean reps and save the first baseline.",
+    ProgressiveOverload: "Progression plan: small load increase with controlled reps.",
+    HoldAndBuild: "Build plan: hold weight and add reps before the next jump.",
+    Deload: "Recovery plan: reduce load because the last result looked strained.",
+    Comeback: "Comeback plan: restart below the last weight after a training gap.",
+    PlateauBreak: "Plateau plan: change the rep target to break the flat trend."
+  }[kindId] || "Build plan: hold weight and add reps before the next jump.";
 }
 
 function lastWeightFor(name) {
@@ -587,6 +885,7 @@ function summaryScreen(id) {
   const summary = sessionSummary(session);
   const xpGain = xpForSessions([session]);
   const xpTotal = totalXp();
+  const progress = levelProgress(xpTotal);
   const records = [...new Set(session.sets.map(s => s.exerciseName))].map(name => {
     const prev = Math.max(0, ...allSets(before).filter(s => s.exerciseName === name).map(s => s.weight));
     const now = Math.max(0, ...session.sets.filter(s => s.exerciseName === name).map(s => s.weight));
@@ -597,7 +896,7 @@ function summaryScreen(id) {
     <section class="metric-grid post"><div><span>Current title</span><strong>${rankTitle(xpTotal)}</strong></div><div><span>Streak</span><strong>${streakDays()} d</strong></div><div><span>Exercises</span><strong>${summary.exercises}</strong></div><div><span>Sets</span><strong>${summary.sets}</strong></div><div><span>Volume</span><strong>${Math.round(summary.volume)}</strong></div></section>
     <section class="panel"><h2>${t("impact")}</h2><p class="muted">${mStats[0] ? `Most loaded today: ${mStats[0].label}` : "Mapped muscle load will appear after sets are saved."}</p>${mStats.slice(0, 5).map(m => barRow(m.label, m.load, mStats[0]?.load || 1, `${Math.round(m.load)} load · ${m.sets} sets`)).join("")}</section>
     ${records.length ? `<section class="panel highlighted"><h2>${t("personalRecords")}</h2>${records.map(r => `<div class="row-line"><div><strong>${escapeHtml(r.name)}</strong><p>${r.prev ? `Previous best ${r.prev.toFixed(1)} kg` : "First logged best"}</p></div><span class="pill">${r.now.toFixed(1)} kg</span></div>`).join("")}</section>` : ""}
-    <section class="panel"><h2>${t("levelProgress")}</h2><p>Level ${levelFromXp(xpTotal)} - ${rankTitle(xpTotal)}</p><div class="progress"><span style="width:${xpTotal % 500 / 5}%"></span></div><div class="row-line"><span>${xpTotal % 500} XP into this level</span><strong>${500 - xpTotal % 500} XP to next</strong></div></section>
+    <section class="panel"><h2>${t("levelProgress")}</h2><p>Level ${levelFromXp(xpTotal)} - ${rankTitle(xpTotal)}</p><div class="progress"><span style="width:${progress.progressFraction * 100}%"></span></div><div class="row-line"><span>${progress.currentLevelXp} XP into this level</span><strong>${progress.xpForNextLevel - progress.currentLevelXp} XP to next</strong></div></section>
     <section class="panel"><h2>${t("momentum")}</h2><p>${streakDays() > 1 ? `Streak extended to ${streakDays()} days.` : "A fresh streak has started."}</p><div class="chip-row"><span class="chip">Logged today</span><span class="chip">Best ${streakDays()} d</span></div></section>
     <div class="actions vertical"><button class="button full" data-action="summary-view" data-id="${session.id}">View workout</button><button class="button ghost full" data-action="summary-done">Back to workouts</button></div>`;
 }
@@ -653,10 +952,48 @@ function missionsScreen() {
 
 function missionGroups() {
   const month = selectedMonthSessions();
+  const weekSessions = state.sessions.filter(s => s.startedAt >= startOfWeek());
+  const todaySessions = state.sessions.filter(s => new Date(s.startedAt).toDateString() === new Date().toDateString());
+  const todaySets = allSets(todaySessions);
+  const weekSets = allSets(weekSessions);
+  const monthSets = allSets(month);
+  const todayExerciseCount = new Set(todaySets.map(s => s.exerciseName)).size;
+  const weekExerciseCount = new Set(weekSets.map(s => s.exerciseName)).size;
+  const monthExerciseCount = new Set(monthSets.map(s => s.exerciseName)).size;
+  const weekActiveDays = new Set(weekSessions.map(s => new Date(s.startedAt).toDateString())).size;
+  const monthActiveDays = new Set(month.map(s => new Date(s.startedAt).toDateString())).size;
   return {
-    daily: [mission("daily_workout", "Log a workout today", hasWorkoutToday(), 1, 120), mission("daily_sets", "Complete 10 sets today", setsToday(), 10, 90)],
-    weekly: [mission("weekly_workouts", "Complete 3 workouts this week", workoutsThisWeek(), 3, 300), mission("weekly_volume", "Reach 8,000 weekly volume", volumeThisWeek(), 8000, 260)],
-    monthly: [mission("monthly_volume", "Reach 20,000 volume this month", totalVolume(month), 20000, 500), mission("monthly_sets", "Log 80 sets this month", allSets(month).length, 80, 350)]
+    daily: [
+      mission("daily-check-in", "Complete a workout", todaySessions.length, 1, 30),
+      mission("daily-sets-8", "Log 8 sets", todaySets.length, 8, 25),
+      mission("daily-exercises-3", "Train 3 exercises", todayExerciseCount, 3, 35),
+      mission("daily-volume-1000", "Move 1,000 volume", totalVolume(todaySessions), 1000, 40),
+      mission("daily-session-density", "Finish a dense session", Math.max(0, ...todaySessions.map(s => s.sets.length)), 10, 45)
+    ],
+    weekly: [
+      mission("weekly-days-3", "Train on 3 days", weekActiveDays, 3, 60),
+      mission("weekly-workouts-4", "Complete 4 workouts", weekSessions.length, 4, 70),
+      mission("weekly-sets-30", "Log 30 sets", weekSets.length, 30, 80),
+      mission("weekly-volume-5000", "Move 5,000 volume", totalVolume(weekSessions), 5000, 100),
+      mission("weekly-exercises-10", "Touch 10 exercises", weekExerciseCount, 10, 85),
+      mission("weekly-big-session", "Hit 12 sets in one session", Math.max(0, ...weekSessions.map(s => s.sets.length)), 12, 75),
+      mission("weekly-heavy-day", "Move 2,000 volume in one session", Math.max(0, ...weekSessions.map(s => totalVolume([s]))), 2000, 90),
+      mission("weekly-frequency", "Complete 5 workouts", weekSessions.length, 5, 110),
+      mission("weekly-set-stack", "Log 45 sets", weekSets.length, 45, 120),
+      mission("weekly-volume-push", "Move 8,000 volume", totalVolume(weekSessions), 8000, 140)
+    ],
+    monthly: [
+      mission("monthly-days-10", "Train on 10 days", monthActiveDays, 10, 180),
+      mission("monthly-workouts-14", "Complete 14 workouts", month.length, 14, 220),
+      mission("monthly-sets-120", "Log 120 sets", monthSets.length, 120, 240),
+      mission("monthly-volume-20000", "Move 20,000 volume", totalVolume(month), 20000, 280),
+      mission("monthly-exercises-18", "Touch 18 exercises", monthExerciseCount, 18, 230),
+      mission("monthly-big-session", "Hit 16 sets in one session", Math.max(0, ...month.map(s => s.sets.length)), 16, 180),
+      mission("monthly-heavy-day", "Move 3,500 volume in one session", Math.max(0, ...month.map(s => totalVolume([s]))), 3500, 210),
+      mission("monthly-consistency", "Train on 16 days", monthActiveDays, 16, 300),
+      mission("monthly-set-stack", "Log 180 sets", monthSets.length, 180, 340),
+      mission("monthly-volume-push", "Move 35,000 volume", totalVolume(month), 35000, 380)
+    ]
   };
 }
 
@@ -680,9 +1017,9 @@ function ranksScreen() {
   const xp = totalXp();
   return `<section class="hero-panel"><h2>${t("ranks")}</h2><p>See every title, its level gate, and the XP needed to unlock it.</p><div class="metric-grid"><div><span>TOTAL XP</span><strong>${xp}</strong></div><div><span>Current level</span><strong>${levelFromXp(xp)}</strong></div></div><p>Current title: ${rankTitle(xp)}</p></section>
     ${rankLadder().map(rank => {
-      const unlocked = xp >= rank.xp;
-      const current = rank.title === rankTitle(xp);
-      return `<section class="panel ${current ? "highlighted" : ""}"><div class="row-head"><div><h2>${rank.title}</h2><p>${current ? "Current" : unlocked ? "Unlocked" : "Locked"}</p></div><span class="pill">${current ? "Current" : unlocked ? "Unlocked" : "Locked"}</span></div><div class="metric-grid"><div><span>Required level</span><strong>${rank.level}</strong></div><div><span>Required total XP</span><strong>${rank.xp}</strong></div></div><div class="progress"><span style="width:${unlocked ? 100 : Math.min(100, xp / rank.xp * 100)}%"></span></div><div class="row-line"><span>${Math.min(xp, rank.xp)} / ${rank.xp} XP</span>${!unlocked ? `<strong>${rank.xp - xp} XP left</strong>` : ""}</div></section>`;
+      const unlocked = rank.isUnlocked;
+      const current = rank.isCurrent;
+      return `<section class="panel ${current ? "highlighted" : ""}"><div class="row-head"><div><h2>${rank.title}</h2><p>${current ? "Current" : unlocked ? "Unlocked" : "Locked"}</p></div><span class="pill">${current ? "Current" : unlocked ? "Unlocked" : "Locked"}</span></div><div class="metric-grid"><div><span>Required level</span><strong>${rank.level}</strong></div><div><span>Required total XP</span><strong>${rank.xp}</strong></div></div><div class="progress"><span style="width:${rank.progressFraction * 100}%"></span></div><div class="row-line"><span>${Math.min(xp, rank.xp)} / ${rank.xp} XP</span>${!unlocked ? `<strong>${rank.xpRemaining} XP left</strong>` : ""}</div></section>`;
     }).join("")}`;
 }
 
@@ -813,11 +1150,92 @@ function applyNoteTemplate(note) {
 }
 
 function generateSmartWorkout() {
-  const groups = groupedExercises();
-  const names = groups.length ? groups.slice(0, 4).map(g => g.name) : ["Bench Press", "Barbell Row", "Squat"];
-  modal.draft.blocks = names.map(name => ({ exerciseName: name, sets: smartRecommendation(name).sets.map(s => ({ weight: s.weight, reps: s.reps })) }));
-  showToast("Smart workout generated.");
+  const plan = buildSmartWorkoutPlan();
+  modal.draft.blocks = plan.exercises.map(({ name, recommendation }) => ({
+    exerciseName: name,
+    sets: recommendation.sets.map(set => ({ weight: set.weight ?? "", reps: set.reps }))
+  }));
+  showToast(`Smart workout generated: ${plan.focus}.`);
   render();
+}
+
+function buildSmartWorkoutPlan() {
+  const focus = chooseWorkoutFocus();
+  const targetExerciseCount = focus === "FullBody" ? 6 : 5;
+  const candidates = state.exercises.map(exercise => {
+    const exerciseHistory = allSets().filter(set => set.exerciseName === exercise.name);
+    const bodyGroup = classifyExercise(exercise.name);
+    const latest = exerciseHistory.reduce((max, set) => Math.max(max, set.session.startedAt), 0);
+    const daysSince = latest ? daysBetween(latest, Date.now()) : 90;
+    const sessionCount = new Set(exerciseHistory.map(set => set.session.id)).size;
+    const focusScore = focus === "FullBody" ? 24 : isCandidateForFocus(bodyGroup, focus) && bodyGroup !== "FullBody" ? 80 : bodyGroup === "FullBody" ? 34 : -35;
+    const noveltyScore = sessionCount === 0 ? 18 : 0;
+    const dueScore = Math.min(daysSince, 45) * 1.6;
+    const confidenceScore = Math.min(sessionCount, 6) * 3;
+    return { exercise, bodyGroup, score: focusScore + noveltyScore + dueScore + confidenceScore };
+  }).sort((a, b) => b.score - a.score || a.exercise.name.localeCompare(b.exercise.name));
+  const primary = candidates.filter(candidate => isCandidateForFocus(candidate.bodyGroup, focus)).slice(0, targetExerciseCount);
+  const fallback = primary.length >= targetExerciseCount ? [] : candidates.filter(candidate => !primary.some(item => item.exercise.id === candidate.exercise.id)).slice(0, targetExerciseCount - primary.length);
+  return {
+    focus,
+    exercises: [...primary, ...fallback].slice(0, targetExerciseCount).map(candidate => ({
+      name: candidate.exercise.name,
+      recommendation: smartRecommendation(candidate.exercise.name)
+    }))
+  };
+}
+
+function chooseWorkoutFocus() {
+  const history = allSets();
+  if (!history.length) {
+    if (state.profile.split === "Upper / Lower") return "Upper";
+    if (state.profile.split === "Push Pull Legs") return "Push";
+    return "FullBody";
+  }
+  const latestSessionId = history.reduce((best, set) => set.session.startedAt > best.date ? { id: set.session.id, date: set.session.startedAt } : best, { id: null, date: 0 }).id;
+  const latest = history.filter(set => set.session.id === latestSessionId);
+  if (state.profile.split === "Upper / Lower") {
+    const lowerCount = latest.filter(set => ["Lower", "Legs"].includes(classifyExercise(set.exerciseName))).length;
+    const upperCount = latest.filter(set => ["Upper", "Push", "Pull"].includes(classifyExercise(set.exerciseName))).length;
+    return lowerCount > upperCount ? "Upper" : "Lower";
+  }
+  if (state.profile.split === "Push Pull Legs") {
+    const push = latest.filter(set => classifyExercise(set.exerciseName) === "Push").length;
+    const pull = latest.filter(set => classifyExercise(set.exerciseName) === "Pull").length;
+    const legs = latest.filter(set => ["Lower", "Legs"].includes(classifyExercise(set.exerciseName))).length;
+    if (legs >= push && legs >= pull) return "Push";
+    return push >= pull ? "Pull" : "Legs";
+  }
+  if (state.profile.split === "Custom") return chooseMostNeglectedFocus(history);
+  return "FullBody";
+}
+
+function classifyExercise(name) {
+  const normalized = name.toLowerCase().replace(/\s+/g, " ").trim();
+  const has = (...tokens) => tokens.some(token => normalized.includes(token));
+  if (has("нога", "ноги", "прис", "squat", "leg", "квад", "стег", "ікр", "икр", "calf", "румун", "станов", "deadlift", "glute")) return "Legs";
+  if (has("спин", "тяга", "row", "pull", "підтяг", "подтяг", "біцеп", "бицеп", "curl")) return "Pull";
+  if (has("жим", "груд", "chest", "плеч", "shoulder", "tricep", "трицеп", "брусь", "dips", "press")) return "Push";
+  if (has("прес", "abs", "crunch", "oblique", "гіперекстензі", "hyperextension")) return "FullBody";
+  return "FullBody";
+}
+
+function isCandidateForFocus(candidateFocus, workoutFocus) {
+  if (workoutFocus === "Upper") return ["Upper", "Push", "Pull", "FullBody"].includes(candidateFocus);
+  if (workoutFocus === "Lower" || workoutFocus === "Legs") return ["Lower", "Legs", "FullBody"].includes(candidateFocus);
+  if (workoutFocus === "Push") return candidateFocus === "Push" || candidateFocus === "FullBody";
+  if (workoutFocus === "Pull") return candidateFocus === "Pull" || candidateFocus === "FullBody";
+  return true;
+}
+
+function chooseMostNeglectedFocus(history) {
+  const focuses = ["Push", "Pull", "Legs", "FullBody"];
+  const latestByFocus = Object.fromEntries(focuses.map(focus => [focus, 0]));
+  history.forEach(set => {
+    const focus = classifyExercise(set.exerciseName);
+    latestByFocus[focus] = Math.max(latestByFocus[focus] || 0, set.session.startedAt);
+  });
+  return focuses.sort((a, b) => latestByFocus[a] - latestByFocus[b])[0] || "FullBody";
 }
 
 function copyDraftSet(blockIndex, plus) {
@@ -837,7 +1255,7 @@ function applyLast(blockIndex) {
 
 function applySmart(blockIndex) {
   const block = modal.draft.blocks[blockIndex];
-  block.sets = smartRecommendation(block.exerciseName).sets.map(set => ({ weight: set.weight, reps: set.reps }));
+  block.sets = smartRecommendation(block.exerciseName).sets.map(set => ({ weight: set.weight ?? "", reps: set.reps }));
   render();
 }
 
@@ -1049,6 +1467,22 @@ function startOfWeek() {
   start.setDate(now.getDate() - ((now.getDay() + 6) % 7));
   start.setHours(0, 0, 0, 0);
   return start.getTime();
+}
+
+function daysBetween(fromMillis, toMillis) {
+  const from = new Date(fromMillis);
+  const to = new Date(toMillis);
+  from.setHours(0, 0, 0, 0);
+  to.setHours(0, 0, 0, 0);
+  return Math.max(0, Math.round((to - from) / 86400000));
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function roundToNearestHalf(value) {
+  return Math.round(value * 2) / 2;
 }
 
 function timerRemaining(key) {

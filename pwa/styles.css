@@ -575,6 +575,39 @@ textarea:focus {
   margin: 12px 0;
 }
 
+.body-map-svg-wrap {
+  margin: 14px auto 8px;
+  max-width: 560px;
+}
+
+.body-map-svg {
+  display: block;
+  width: 100%;
+  height: min(58vh, 430px);
+}
+
+.body-region {
+  stroke: rgba(232, 238, 242, 0.28);
+  stroke-width: 0.12;
+  cursor: pointer;
+  transition: filter 160ms ease, stroke-width 160ms ease;
+}
+
+.body-region:hover,
+.body-region.selected {
+  filter: brightness(1.22);
+  stroke: var(--sage);
+  stroke-width: 0.34;
+}
+
+.body-labels {
+  display: flex;
+  justify-content: space-around;
+  color: var(--muted);
+  font-weight: 720;
+  font-size: 13px;
+}
+
 .muscle-tile {
   min-height: 64px;
   padding: 9px;
