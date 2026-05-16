@@ -46,16 +46,16 @@ Important: PDF is for reading and sharing only. JSON is the source of truth for 
 ## Download APK
 
 <p align="center">
-  <a href="https://github.com/Eduard047/GymApp/releases/tag/debug-v20260423">
+  <a href="https://github.com/Eduard047/GymApp/releases/latest">
     <img alt="Latest Build" src="https://img.shields.io/github/v/release/Eduard047/GymApp?include_prereleases&style=for-the-badge&label=Latest%20Build">
   </a>
   <a href="https://github.com/Eduard047/GymApp/releases">
     <img alt="Releases" src="https://img.shields.io/badge/Open-Releases-181717?style=for-the-badge&logo=github&logoColor=white">
   </a>
-  <a href="https://github.com/Eduard047/GymApp/releases/download/debug-v20260423/GymApp-phone-debug.apk">
+  <a href="https://github.com/Eduard047/GymApp/releases/download/v2.0.16/GymApp-2.0.16-debug.apk">
     <img alt="Download Phone APK" src="https://img.shields.io/badge/Download-Phone%20APK-34A853?style=for-the-badge&logo=android&logoColor=white">
   </a>
-  <a href="https://github.com/Eduard047/GymApp/releases/download/debug-v20260423/GymApp-watch-debug.apk">
+  <a href="https://github.com/Eduard047/GymApp/releases/download/v2.0.16/GymApp-watch-2.0.16-debug.apk">
     <img alt="Download Watch APK" src="https://img.shields.io/badge/Download-Watch%20APK-3D7DFF?style=for-the-badge&logo=wearos&logoColor=white">
   </a>
 </p>
@@ -67,17 +67,18 @@ Important: PDF is for reading and sharing only. JSON is the source of truth for 
 ## Releases
 
 - Releases page: https://github.com/Eduard047/GymApp/releases
-- Current release tag: https://github.com/Eduard047/GymApp/releases/tag/debug-v20260423
-- Current phone debug APK: https://github.com/Eduard047/GymApp/releases/download/debug-v20260423/GymApp-phone-debug.apk
-- Current watch debug APK: https://github.com/Eduard047/GymApp/releases/download/debug-v20260423/GymApp-watch-debug.apk
+- Latest release: https://github.com/Eduard047/GymApp/releases/latest
+- Current release tag: https://github.com/Eduard047/GymApp/releases/tag/v2.0.16
+- Current phone debug APK: https://github.com/Eduard047/GymApp/releases/download/v2.0.16/GymApp-2.0.16-debug.apk
+- Current watch debug APK: https://github.com/Eduard047/GymApp/releases/download/v2.0.16/GymApp-watch-2.0.16-debug.apk
 
-When publishing a new phone build, replace `GymApp-phone-debug.apk` in the current release with:
+When publishing a new phone build, upload the debug APK asset to the current release:
 
 ```text
 app/build/outputs/apk/debug/app-debug.apk
 ```
 
-When publishing a new watch build, replace `GymApp-watch-debug.apk` with:
+When publishing a new watch build, upload the watch debug APK asset to the current release:
 
 ```text
 wear/build/outputs/apk/debug/wear-debug.apk
@@ -136,3 +137,23 @@ adb pair <phone-ip>:<pairing-port> <pairing-code>
 adb connect <phone-ip>:<connect-port>
 adb -s <phone-ip>:<connect-port> install -r -d .\app\build\outputs\apk\debug\app-debug.apk
 ```
+
+## iPhone PWA
+
+The Android app cannot be installed on iPhone as an APK, so this repo also includes a standalone PWA in `pwa/`.
+
+Run it locally:
+
+```powershell
+python -m http.server 4173 --directory .\pwa
+```
+
+Open:
+
+```text
+http://127.0.0.1:4173
+```
+
+To install on iPhone, host the `pwa/` folder over HTTPS, open the URL in Safari, then use `Share` -> `Add to Home Screen`.
+
+The PWA stores workouts locally in the browser and supports JSON export/import from the Exercises backup tools.
