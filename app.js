@@ -143,7 +143,7 @@ function loadState() {
     return {
       ...fallback,
       ...parsed,
-      exercises: Array.isArray(parsed.exercises) ? parsed.exercises : fallback.exercises,
+      exercises: normalizeExerciseCatalog(parsed.exercises || parsed.exerciseCatalog, fallback.exercises),
       sessions,
       mappings: { ...fallback.mappings, ...(parsed.mappings || {}) },
       profile: { ...fallback.profile, ...(parsed.profile || {}) }
@@ -158,18 +158,19 @@ function normalizeSessions(sessions) {
     id: Number(session.id || uid()),
     startedAt: Number(session.startedAt || session.date || Date.now()),
     note: session.note || "",
+    exerciseNames: normalizeSessionExerciseNames(session),
     sets: normalizeSessionSets(session)
   }));
 }
 
 function normalizeSessionSets(session) {
   const flatSets = Array.isArray(session.sets) ? session.sets : [];
-  const nestedSets = Array.isArray(session.exercises)
-    ? session.exercises.flatMap(exercise => (exercise.sets || []).map(set => ({
+  const sessionExercises = nestedSessionExercises(session);
+  const nestedSets = sessionExercises
+    .flatMap(exercise => nestedExerciseSets(exercise).map(set => ({
       ...set,
-      exerciseName: set.exerciseName || exercise.name || exercise.exerciseName || exercise.title
-    })))
-    : [];
+      exerciseName: set.exerciseName || exerciseNameFromImport(exercise)
+    })));
   return [...flatSets, ...nestedSets].flatMap((set, index) => {
     const exerciseName = set.exerciseName || set.name || set.exercise || set.title;
     if (!exerciseName) return [];
@@ -181,6 +182,39 @@ function normalizeSessionSets(session) {
       orderIndex: set.orderIndex ?? set.index ?? index
     }];
   }).filter(set => set.reps > 0);
+}
+
+function normalizeSessionExerciseNames(session) {
+  const names = [
+    ...nestedSessionExercises(session).map(exerciseNameFromImport),
+    ...(Array.isArray(session.sets) ? session.sets.map(set => set.exerciseName || set.name || set.exercise || set.title) : [])
+  ].map(name => String(name || "").trim()).filter(Boolean);
+  return [...new Set(names)];
+}
+
+function nestedSessionExercises(session) {
+  return [session.exercises, session.workoutExercises, session.exerciseDetails, session.items]
+    .find(Array.isArray) || [];
+}
+
+function nestedExerciseSets(exercise) {
+  return [exercise.sets, exercise.setEntries, exercise.entries, exercise.history]
+    .find(Array.isArray) || [];
+}
+
+function exerciseNameFromImport(exercise) {
+  if (typeof exercise === "string") return exercise;
+  if (exercise.exercise && typeof exercise.exercise === "object") return exercise.exercise.name || exercise.exercise.title;
+  return exercise.name || exercise.exerciseName || exercise.title;
+}
+
+function normalizeExerciseCatalog(input, fallback = []) {
+  const items = Array.isArray(input) ? input : [];
+  const normalized = items.map((item, index) => ({
+    id: Number(item?.id || index + 1),
+    name: String(typeof item === "string" ? item : item?.name || item?.exerciseName || item?.title || "").trim()
+  })).filter(item => item.name);
+  return normalized.length ? normalized : fallback;
 }
 
 function saveState() {
@@ -276,11 +310,16 @@ function groupedExercises(sets = allSets()) {
 }
 
 function sessionSummary(session) {
+  const names = exerciseNamesForSession(session);
   return {
-    exercises: new Set(session.sets.map(set => set.exerciseName)).size,
+    exercises: names.length,
     sets: session.sets.length,
     volume: totalVolume([session])
   };
+}
+
+function exerciseNamesForSession(session) {
+  return [...new Set([...(session.exerciseNames || []), ...((session.sets || []).map(set => set.exerciseName))].filter(Boolean))];
 }
 
 function xpForSessions(sessions) {
@@ -392,7 +431,7 @@ function isRootRoute(name) {
 function titleForRoute(current) {
   return {
     workouts: t("workouts"), missions: t("missions"), exercises: t("exercises"), progress: t("progress"),
-    add: t("addWorkout"), detail: "Workout Details", summary: "Workout Summary", ranks: t("ranks")
+    add: t("addWorkout"), detail: tx("Workout Details", "Деталі тренування"), summary: tx("Workout Summary", "Підсумок тренування"), ranks: t("ranks")
   }[current.name] || "Gym Workout Tracker";
 }
 
@@ -476,7 +515,7 @@ function workoutItem(session) {
   const summary = sessionSummary(session);
   return `<article class="workout-item clickable" data-action="open-detail" data-id="${session.id}">
     <div class="workout-head"><div><h3 class="workout-title">${tx("Workout", "Тренування")} ${fmtDate(session.startedAt)}</h3><span class="muted">${session.note ? `${t("note")}: ${escapeHtml(session.note)}` : tx("No note", "Без нотатки")}</span></div><span class="chip">${tx("Sets", "Підходи")}: ${summary.sets}</span></div>
-    <div class="chip-row"><span class="chip">${tx("Exercises", "Вправи")}: ${summary.exercises}</span><span class="chip">${tx("Volume", "Обсяг")}: ${Math.round(summary.volume)}</span>${[...new Set(session.sets.map(set => set.exerciseName))].slice(0, 5).map(name => `<span class="chip">${escapeHtml(name)}</span>`).join("")}</div>
+    <div class="chip-row"><span class="chip">${tx("Exercises", "Вправи")}: ${summary.exercises}</span><span class="chip">${tx("Volume", "Обсяг")}: ${Math.round(summary.volume)}</span>${exerciseNamesForSession(session).slice(0, 5).map(name => `<span class="chip">${escapeHtml(name)}</span>`).join("")}</div>
   </article>`;
 }
 
@@ -942,9 +981,10 @@ function lastWeightFor(name) {
 function detailScreen(id) {
   const session = state.sessions.find(s => s.id === id);
   if (!session) return `<div class="empty">${tx("Workout not found.", "Тренування не знайдено.")}</div>`;
-  const grouped = [...new Set(session.sets.map(s => s.exerciseName))].map(name => ({ name, sets: session.sets.filter(s => s.exerciseName === name) }));
+  const grouped = exerciseNamesForSession(session).map(name => ({ name, sets: session.sets.filter(s => s.exerciseName === name) }));
   const available = state.exercises.filter(ex => !grouped.some(g => g.name === ex.name));
   return `<section class="panel"><h2>${fmtDate(session.startedAt)}</h2><p>${session.note || tx("No note", "Без нотатки")}</p></section>
+    ${!session.sets.length && grouped.length ? `<section class="panel warning"><h2>${tx("No set data", "Немає даних підходів")}</h2><p>${tx("This imported workout contains exercise names, but no weights or reps. Export a full Backup JSON from the Android app and import it again.", "У цьому імпортованому тренуванні є назви вправ, але немає ваги й повторів. Експортуй повний Backup JSON з Android-додатка й імпортуй ще раз.")}</p></section>` : ""}
     <section class="panel"><div class="section-title"><h2>${tx("Add Exercise to This Workout", "Додати вправу в це тренування")}</h2></div>${available.length ? `<select id="quick-add">${available.map(ex => `<option value="${ex.id}">${escapeHtml(ex.name)}</option>`).join("")}</select><button class="button full" data-action="quick-add-exercise">${tx("Add to Workout", "Додати до тренування")}</button>` : `<p class="muted">${tx("All saved exercises are already in this workout.", "Усі збережені вправи вже є в цьому тренуванні.")}</p>`}</section>
     ${grouped.map(group => exerciseDetailCard(session, group)).join("")}
     <button class="fab" data-action="finish-workout" data-id="${session.id}">${svg("check", "small-icon")}${t("finishWorkout")}</button>`;
@@ -954,8 +994,8 @@ function exerciseDetailCard(session, group) {
   const key = `${session.id}:${group.name}`;
   const remaining = timerRemaining(key);
   return `<section class="panel highlighted"><div class="row-head"><h2>${escapeHtml(group.name)}</h2>${isPr(session, group.name) ? `<span class="pill">${svg("trophy", "small-icon")}${tx("New PR", "Новий PR")}</span>` : ""}</div>
-    <div class="timer-row"><div><strong>${tx("Exercise Rest", "Відпочинок")}</strong><span>${remaining > 0 ? formatTimer(remaining) : tx("Ready", "Готово")}</span></div><div class="actions"><button class="button ghost mini" data-action="timer" data-key="${key}" data-seconds="60">60s</button><button class="button ghost mini" data-action="timer" data-key="${key}" data-seconds="90">90s</button><button class="button ghost mini" data-action="timer" data-key="${key}" data-seconds="180">180s</button><button class="button ghost mini" data-action="timer-stop" data-key="${key}" ${remaining ? "" : "disabled"}>${tx("Stop", "Стоп")}</button></div></div>
-    <div class="table"><div class="table-head"><span>${tx("Set", "Підхід")}</span><span>${tx("Weight (kg)", "Вага (кг)")}</span><span>${tx("Reps", "Повтори")}</span><span></span></div>${group.sets.map((set, i) => `<div class="table-row"><span>${tx("Set", "Підхід")} ${i + 1}</span><span>${Number(set.weight).toFixed(1)}</span><span>${set.reps}</span><span><button class="icon-button" data-action="edit-set" data-id="${set.id}">${svg("edit")}</button><button class="icon-button" data-action="delete-set" data-id="${set.id}">${svg("delete")}</button></span></div>`).join("")}</div>
+    ${group.sets.length ? `<div class="timer-row"><div><strong>${tx("Exercise Rest", "Відпочинок")}</strong><span>${remaining > 0 ? formatTimer(remaining) : tx("Ready", "Готово")}</span></div><div class="actions"><button class="button ghost mini" data-action="timer" data-key="${key}" data-seconds="60">60s</button><button class="button ghost mini" data-action="timer" data-key="${key}" data-seconds="90">90s</button><button class="button ghost mini" data-action="timer" data-key="${key}" data-seconds="180">180s</button><button class="button ghost mini" data-action="timer-stop" data-key="${key}" ${remaining ? "" : "disabled"}>${tx("Stop", "Стоп")}</button></div></div>
+    <div class="table"><div class="table-head"><span>${tx("Set", "Підхід")}</span><span>${tx("Weight (kg)", "Вага (кг)")}</span><span>${tx("Reps", "Повтори")}</span><span></span></div>${group.sets.map((set, i) => `<div class="table-row"><span>${tx("Set", "Підхід")} ${i + 1}</span><span>${Number(set.weight).toFixed(1)}</span><span>${set.reps}</span><span><button class="icon-button" data-action="edit-set" data-id="${set.id}">${svg("edit")}</button><button class="icon-button" data-action="delete-set" data-id="${set.id}">${svg("delete")}</button></span></div>`).join("")}</div>` : `<div class="empty">${tx("No sets were imported for this exercise.", "Для цієї вправи не імпортовано підходи.")}</div>`}
     <button class="button ghost full" data-action="detail-add-set" data-session="${session.id}" data-name="${escapeAttr(group.name)}">${t("addSet")}</button>
   </section>`;
 }
@@ -1499,7 +1539,7 @@ function exportPayload(diagnostics) {
 function applyImport() {
   try {
     const parsed = JSON.parse(document.querySelector("#import-json").value);
-    state.exercises = parsed.exercises || (parsed.exerciseCatalog || []).map((name, index) => ({ id: index + 1, name }));
+    state.exercises = normalizeExerciseCatalog(parsed.exercises || parsed.exerciseCatalog, state.exercises);
     state.sessions = normalizeSessions(parsed.sessions || []);
     state.mappings = { ...defaultMappings, ...(parsed.mappings || {}) };
     state.profile = { ...state.profile, ...(parsed.profile || {}) };
