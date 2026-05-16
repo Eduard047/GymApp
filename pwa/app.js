@@ -132,14 +132,19 @@ function loadState() {
     profile: { split: "Push Pull Legs", days: 4, goal: "Balanced", calories: "Maintenance" }
   };
   try {
-    const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(LEGACY_KEY);
+    const currentRaw = localStorage.getItem(STORAGE_KEY);
+    const legacyRaw = localStorage.getItem(LEGACY_KEY);
+    const raw = currentRaw || legacyRaw;
     if (!raw) return fallback;
     const parsed = JSON.parse(raw);
+    const normalizedSessions = Array.isArray(parsed.sessions) ? normalizeSessions(parsed.sessions) : [];
+    const legacySessions = legacyRaw ? normalizeSessions(JSON.parse(legacyRaw).sessions || []) : [];
+    const sessions = normalizedSessions.length && !allSetsFromSessions(normalizedSessions).length && allSetsFromSessions(legacySessions).length ? legacySessions : normalizedSessions;
     return {
       ...fallback,
       ...parsed,
       exercises: Array.isArray(parsed.exercises) ? parsed.exercises : fallback.exercises,
-      sessions: Array.isArray(parsed.sessions) ? normalizeSessions(parsed.sessions) : [],
+      sessions,
       mappings: { ...fallback.mappings, ...(parsed.mappings || {}) },
       profile: { ...fallback.profile, ...(parsed.profile || {}) }
     };
@@ -153,11 +158,29 @@ function normalizeSessions(sessions) {
     id: Number(session.id || uid()),
     startedAt: Number(session.startedAt || session.date || Date.now()),
     note: session.note || "",
-    sets: (session.sets || []).flatMap((set, index) => {
-      if (set.exerciseName) return [{ id: Number(set.id || uid()), exerciseName: set.exerciseName, weight: Number(set.weight || 0), reps: Number(set.reps || 0), orderIndex: set.orderIndex ?? index }];
-      return [];
-    })
+    sets: normalizeSessionSets(session)
   }));
+}
+
+function normalizeSessionSets(session) {
+  const flatSets = Array.isArray(session.sets) ? session.sets : [];
+  const nestedSets = Array.isArray(session.exercises)
+    ? session.exercises.flatMap(exercise => (exercise.sets || []).map(set => ({
+      ...set,
+      exerciseName: set.exerciseName || exercise.name || exercise.exerciseName || exercise.title
+    })))
+    : [];
+  return [...flatSets, ...nestedSets].flatMap((set, index) => {
+    const exerciseName = set.exerciseName || set.name || set.exercise || set.title;
+    if (!exerciseName) return [];
+    return [{
+      id: Number(set.id || uid() + index),
+      exerciseName: String(exerciseName),
+      weight: Number(set.weight ?? set.weightKg ?? set.kg ?? 0),
+      reps: Number(set.reps ?? set.repeatCount ?? set.count ?? 0),
+      orderIndex: set.orderIndex ?? set.index ?? index
+    }];
+  }).filter(set => set.reps > 0);
 }
 
 function saveState() {
@@ -220,11 +243,22 @@ function selectedMonthSessions() {
 }
 
 function allSets(sessions = state.sessions) {
-  return sessions.flatMap(session => session.sets.map(set => ({ ...set, session })));
+  return allSetsFromSessions(sessions);
+}
+
+function allSetsFromSessions(sessions = []) {
+  return sessions.flatMap(session => (session.sets || []).map(set => ({ ...set, session })));
 }
 
 function totalVolume(sessions = state.sessions) {
   return allSets(sessions).reduce((sum, set) => sum + Number(set.weight || 0) * Number(set.reps || 0), 0);
+}
+
+function trainingLoad(sessions = state.sessions) {
+  return allSets(sessions).reduce((sum, set) => {
+    const weighted = Number(set.weight || 0) * Number(set.reps || 0);
+    return sum + (weighted > 0 ? weighted : Number(set.reps || 0) * 72 + 35);
+  }, 0);
 }
 
 function groupedExercises(sets = allSets()) {
@@ -457,11 +491,11 @@ function activityHeatmapCard() {
   const byDay = new Map();
   monthSessions.forEach(session => {
     const day = new Date(session.startedAt).getDate();
-    byDay.set(day, (byDay.get(day) || 0) + totalVolume([session]));
+    byDay.set(day, (byDay.get(day) || 0) + trainingLoad([session]));
   });
   const max = Math.max(1, ...byDay.values());
   return `<section class="panel"><div class="section-title"><div><h2>${t("heatmap")}</h2><p>${fmtDate(d.getTime(), { month: "long", year: "numeric" })}</p></div><span class="pill">${n(byDay.size, "active day", "active days", "активний день", "активні дні", "активних днів")}</span></div>
-    <div class="metric-grid"><div><span>${tx("Sessions", "Сесії")}</span><strong>${monthSessions.length}</strong></div><div><span>${tx("Volume", "Обсяг")}</span><strong>${Math.round(totalVolume(monthSessions))}</strong></div></div>
+    <div class="metric-grid"><div><span>${tx("Sessions", "Сесії")}</span><strong>${monthSessions.length}</strong></div><div><span>${tx("Load", "Навантаження")}</span><strong>${Math.round(trainingLoad(monthSessions))}</strong></div></div>
     <div class="heatmap-grid">${cells.map(day => `<button class="heat-cell ${day ? "" : "outside"}" style="${day ? `--i:${(byDay.get(day) || 0) / max}` : ""}" title="${day || ""}">${day || ""}</button>`).join("")}</div>
     <div class="legend"><span>${tx("Less", "Менше")}</span><i></i><i></i><i></i><i></i><span>${tx("More", "Більше")}</span></div>
   </section>`;
