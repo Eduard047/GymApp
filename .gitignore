@@ -28,6 +28,7 @@ local.properties
 *.apk
 *.aab
 /app-debug.apk
+/apk_share/
 
 # Signing / secrets
 *.jks
