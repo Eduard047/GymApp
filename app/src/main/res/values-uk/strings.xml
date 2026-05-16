@@ -90,6 +90,7 @@
     <string name="note_template_deload">Делод</string>
     <string name="label_exercise_name">Назва вправи</string>
     <string name="hint_exercise_name">наприклад, Жим лежачи</string>
+    <string name="exercise_rename_title">Перейменувати вправу</string>
     <string name="label_rest_timer">Таймер відпочинку</string>
     <string name="label_rest_timer_shared">Спільний таймер відпочинку</string>
     <string name="label_rest_timer_exercise">Таймер для вправи</string>

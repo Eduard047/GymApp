@@ -24,7 +24,7 @@ import com.example.gymapp.data.entity.WorkoutSessionEntity
         SetEntryEntity::class,
         ExerciseMuscleMappingEntity::class
     ],
-    version = 2,
+    version = 4,
     exportSchema = false
 )
 abstract class GymDatabase : RoomDatabase() {
@@ -60,6 +60,122 @@ abstract class GymDatabase : RoomDatabase() {
             }
         }
 
+        private val EXERCISE_RENAMES = listOf(
+            "Присід зі штангою" to "Присідання зі штангою",
+            "жим лежачи" to "Жим штанги лежачи",
+            "гіперекстензія" to "Гіперекстензія",
+            "прес(підйом ніг)" to "Підйом ніг у висі",
+            "прес з диском в сторони" to "Повороти корпусу з диском",
+            "прес звичайний з диском" to "Скручування з диском",
+            "жим ногами" to "Жим ногами у тренажері",
+            "згибання ніг" to "Згинання ніг у тренажері",
+            "розгинання ніг" to "Розгинання ніг у тренажері",
+            "підйом на носки" to "Підйом на носки стоячи",
+            "румунська тяга" to "Румунська тяга",
+            "зведення ніг" to "Зведення ніг у тренажері",
+            "підтягування з резинкою" to "Підтягування з еспандером",
+            "журавель" to "Тяга верхніх блоків у тренажері",
+            "горизонтальна важільна тяга" to "Горизонтальна тяга у важільному тренажері",
+            "штанга на біцепс" to "Згинання рук зі штангою",
+            "фронтальна тяга" to "Тяга верхнього блока до грудей",
+            "тренажер скота(біцепс)" to "Згинання рук на лаві Скотта",
+            "метелик в сторони" to "Зворотні розведення у тренажері",
+            "метелик в середину" to "Зведення рук у тренажері",
+            "гантелі лежачи" to "Жим гантелей лежачи",
+            "брусья" to "Віджимання на брусах",
+            "трицепс трикутник" to "Розгинання рук на блоці з V-рукояттю",
+            "протяжка" to "Тяга штанги до підборіддя",
+            "махи в сторони" to "Підйоми гантелей через сторони",
+            "гантеля над головою" to "Розгинання гантелі над головою",
+            "станова тяга" to "Станова тяга",
+            "жим сидячи" to "Жим сидячи над головою",
+            "біцепс з гантелями сидячи" to "Згинання рук з гантелями сидячи",
+            "підтягування в гравітроні" to "Підтягування у гравітроні",
+            "французький жим" to "Французький жим",
+            "бокові нахили" to "Бокові нахили з обтяженням",
+            "Нахили в сторони на гіперекстензії" to "Бокові нахили на гіперекстензії"
+        )
+
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                EXERCISE_RENAMES.forEach { (oldName, newName) ->
+                    db.execSQL(
+                        """
+                        UPDATE exercises
+                        SET name = '${newName.sqlEscaped()}'
+                        WHERE name = '${oldName.sqlEscaped()}'
+                            AND NOT EXISTS (
+                                SELECT 1
+                                FROM exercises
+                                WHERE name = '${newName.sqlEscaped()}'
+                            )
+                        """.trimIndent()
+                    )
+                    db.execSQL(
+                        """
+                        UPDATE exercise_muscle_mappings
+                        SET exerciseNameKey = '${newName.toExerciseMappingKey().sqlEscaped()}',
+                            exerciseName = '${newName.sqlEscaped()}',
+                            updatedAt = strftime('%s', 'now') * 1000
+                        WHERE exerciseNameKey = '${oldName.toExerciseMappingKey().sqlEscaped()}'
+                            AND NOT EXISTS (
+                                SELECT 1
+                                FROM exercise_muscle_mappings existing
+                                WHERE existing.exerciseNameKey = '${newName.toExerciseMappingKey().sqlEscaped()}'
+                                    AND existing.muscleId = exercise_muscle_mappings.muscleId
+                            )
+                        """.trimIndent()
+                    )
+                    db.execSQL(
+                        """
+                        DELETE FROM exercise_muscle_mappings
+                        WHERE exerciseNameKey = '${oldName.toExerciseMappingKey().sqlEscaped()}'
+                        """.trimIndent()
+                    )
+                }
+            }
+        }
+
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                EXERCISE_RENAMES.forEach { (oldName, newName) ->
+                    db.execSQL(
+                        """
+                        UPDATE exercises
+                        SET name = '${oldName.sqlEscaped()}'
+                        WHERE name = '${newName.sqlEscaped()}'
+                            AND NOT EXISTS (
+                                SELECT 1
+                                FROM exercises
+                                WHERE name = '${oldName.sqlEscaped()}'
+                            )
+                        """.trimIndent()
+                    )
+                    db.execSQL(
+                        """
+                        UPDATE exercise_muscle_mappings
+                        SET exerciseNameKey = '${oldName.toExerciseMappingKey().sqlEscaped()}',
+                            exerciseName = '${oldName.sqlEscaped()}',
+                            updatedAt = strftime('%s', 'now') * 1000
+                        WHERE exerciseNameKey = '${newName.toExerciseMappingKey().sqlEscaped()}'
+                            AND NOT EXISTS (
+                                SELECT 1
+                                FROM exercise_muscle_mappings existing
+                                WHERE existing.exerciseNameKey = '${oldName.toExerciseMappingKey().sqlEscaped()}'
+                                    AND existing.muscleId = exercise_muscle_mappings.muscleId
+                            )
+                        """.trimIndent()
+                    )
+                    db.execSQL(
+                        """
+                        DELETE FROM exercise_muscle_mappings
+                        WHERE exerciseNameKey = '${newName.toExerciseMappingKey().sqlEscaped()}'
+                        """.trimIndent()
+                    )
+                }
+            }
+        }
+
         fun getInstance(context: Context): GymDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -67,11 +183,21 @@ abstract class GymDatabase : RoomDatabase() {
                     GymDatabase::class.java,
                     "gym_database"
                 )
-                    .addMigrations(MIGRATION_1_2)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                     .build()
                     .also { INSTANCE = it }
             }
         }
+
+        private fun String.toExerciseMappingKey(): String {
+            return lowercase()
+                .replace('ʼ', '\'')
+                .replace('’', '\'')
+                .replace(Regex("\\s+"), " ")
+                .trim()
+        }
+
+        private fun String.sqlEscaped(): String = replace("'", "''")
     }
 }
 

@@ -69,6 +69,42 @@ class GymRepository(
         exerciseDao.update(exercise)
     }
 
+    suspend fun renameExercise(exercise: ExerciseEntity, newName: String) {
+        val cleanedName = newName.trim()
+        require(cleanedName.isNotBlank())
+
+        val existing = exerciseDao.getByName(cleanedName)
+        require(existing == null || existing.id == exercise.id)
+
+        val oldKey = exercise.name.toExerciseMappingKey()
+        val newKey = cleanedName.toExerciseMappingKey()
+        val now = System.currentTimeMillis()
+
+        database.withTransaction {
+            val oldMappings = muscleMappingDao.getForExercise(oldKey)
+            exerciseDao.update(exercise.copy(name = cleanedName))
+
+            if (oldKey == newKey) {
+                muscleMappingDao.updateExerciseName(
+                    exerciseNameKey = oldKey,
+                    exerciseName = cleanedName,
+                    updatedAt = now
+                )
+            } else if (oldMappings.isNotEmpty()) {
+                muscleMappingDao.deleteForExercise(oldKey)
+                muscleMappingDao.insertAll(
+                    oldMappings.map { mapping ->
+                        mapping.copy(
+                            exerciseNameKey = newKey,
+                            exerciseName = cleanedName,
+                            updatedAt = now
+                        )
+                    }
+                )
+            }
+        }
+    }
+
     suspend fun deleteExercise(exercise: ExerciseEntity) {
         exerciseDao.delete(exercise)
     }

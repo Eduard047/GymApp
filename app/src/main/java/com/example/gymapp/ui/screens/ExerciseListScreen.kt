@@ -17,6 +17,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -66,6 +67,10 @@ fun ExerciseListScreen(
     onNameChange: (String) -> Unit,
     onAddExercise: () -> Unit,
     onExerciseClick: (Long) -> Unit,
+    onStartRenameExercise: (ExerciseEntity) -> Unit,
+    onRenameExerciseNameChange: (String) -> Unit,
+    onSaveRenameExercise: () -> Unit,
+    onDismissRenameExercise: () -> Unit,
     onDeleteExercise: (ExerciseEntity) -> Unit,
     onDismissHistory: () -> Unit,
     onExportBackup: () -> Unit,
@@ -147,6 +152,12 @@ fun ExerciseListScreen(
                                 modifier = Modifier.weight(1f),
                                 style = MaterialTheme.typography.bodyLarge
                             )
+                            IconButton(onClick = { onStartRenameExercise(exercise) }) {
+                                Icon(
+                                    imageVector = Icons.Default.Edit,
+                                    contentDescription = stringResource(R.string.cd_edit)
+                                )
+                            }
                             IconButton(onClick = { onDeleteExercise(exercise) }) {
                                 Icon(
                                     imageVector = Icons.Default.Delete,
@@ -157,6 +168,19 @@ fun ExerciseListScreen(
                     }
                 }
             }
+        }
+    }
+
+    val editingExercise = uiState.editingExercise
+    if (editingExercise != null) {
+        ModalBottomSheet(onDismissRequest = onDismissRenameExercise) {
+            RenameExerciseBottomSheetContent(
+                exerciseName = uiState.editingExerciseName,
+                hasInputError = uiState.hasInputError,
+                onExerciseNameChange = onRenameExerciseNameChange,
+                onSave = onSaveRenameExercise,
+                onDismiss = onDismissRenameExercise
+            )
         }
     }
 
@@ -189,6 +213,58 @@ fun ExerciseListScreen(
                 onImportBackup = onImportBackup,
                 onDismiss = onCloseImport
             )
+        }
+    }
+}
+
+@Composable
+private fun RenameExerciseBottomSheetContent(
+    exerciseName: String,
+    hasInputError: Boolean,
+    onExerciseNameChange: (String) -> Unit,
+    onSave: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, top = 4.dp, end = 16.dp, bottom = 28.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Text(
+            text = stringResource(R.string.exercise_rename_title),
+            style = MaterialTheme.typography.headlineSmall
+        )
+        OutlinedTextField(
+            value = exerciseName,
+            onValueChange = onExerciseNameChange,
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text(stringResource(R.string.label_exercise_name)) },
+            singleLine = true
+        )
+        if (hasInputError) {
+            Text(
+                text = stringResource(R.string.message_exercise_error),
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodyMedium
+            )
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            OutlinedButton(
+                onClick = onDismiss,
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(stringResource(R.string.action_cancel))
+            }
+            Button(
+                onClick = onSave,
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(stringResource(R.string.action_save))
+            }
         }
     }
 }

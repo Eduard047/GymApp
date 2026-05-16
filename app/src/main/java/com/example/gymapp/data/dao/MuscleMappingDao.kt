@@ -21,6 +21,23 @@ interface MuscleMappingDao {
     @Query("DELETE FROM exercise_muscle_mappings WHERE exerciseNameKey = :exerciseNameKey")
     suspend fun deleteForExercise(exerciseNameKey: String)
 
+    @Query("SELECT * FROM exercise_muscle_mappings WHERE exerciseNameKey = :exerciseNameKey")
+    suspend fun getForExercise(exerciseNameKey: String): List<ExerciseMuscleMappingEntity>
+
+    @Query(
+        """
+        UPDATE exercise_muscle_mappings
+        SET exerciseName = :exerciseName,
+            updatedAt = :updatedAt
+        WHERE exerciseNameKey = :exerciseNameKey
+        """
+    )
+    suspend fun updateExerciseName(
+        exerciseNameKey: String,
+        exerciseName: String,
+        updatedAt: Long
+    )
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(mappings: List<ExerciseMuscleMappingEntity>)
 }

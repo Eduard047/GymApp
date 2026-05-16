@@ -90,6 +90,7 @@
     <string name="note_template_deload">Deload</string>
     <string name="label_exercise_name">Exercise name</string>
     <string name="hint_exercise_name">e.g. Bench Press</string>
+    <string name="exercise_rename_title">Rename exercise</string>
     <string name="label_rest_timer">Rest Timer</string>
     <string name="label_rest_timer_shared">Shared Rest Timer</string>
     <string name="label_rest_timer_exercise">Exercise Rest</string>

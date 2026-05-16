@@ -22,6 +22,8 @@ data class ExerciseListUiState(
     val exercises: List<ExerciseEntity> = emptyList(),
     val newExerciseName: String = "",
     val hasInputError: Boolean = false,
+    val editingExercise: ExerciseEntity? = null,
+    val editingExerciseName: String = "",
     val selectedExerciseId: Long? = null,
     val selectedExerciseName: String? = null,
     val selectedExerciseHistory: List<ExerciseHistoryEntry> = emptyList(),
@@ -39,6 +41,11 @@ private data class ExerciseListBaseState(
     val selectedExerciseHistory: List<ExerciseHistoryEntry>
 )
 
+private data class ExerciseEditState(
+    val editingExercise: ExerciseEntity?,
+    val editingExerciseName: String
+)
+
 private data class ExerciseBackupState(
     val backupJson: String?,
     val backupMessage: String?,
@@ -52,6 +59,8 @@ class ExerciseListViewModel(
 ) : ViewModel() {
     private val newExerciseName = MutableStateFlow("")
     private val hasInputError = MutableStateFlow(false)
+    private val editingExercise = MutableStateFlow<ExerciseEntity?>(null)
+    private val editingExerciseName = MutableStateFlow("")
     private val selectedExerciseId = MutableStateFlow<Long?>(null)
     private val backupJson = MutableStateFlow<String?>(null)
     private val backupMessage = MutableStateFlow<String?>(null)
@@ -82,6 +91,16 @@ class ExerciseListViewModel(
         )
     }
 
+    private val editState = combine(
+        editingExercise,
+        editingExerciseName
+    ) { exercise, name ->
+        ExerciseEditState(
+            editingExercise = exercise,
+            editingExerciseName = name
+        )
+    }
+
     private val backupState = combine(
         backupJson,
         backupMessage,
@@ -98,12 +117,15 @@ class ExerciseListViewModel(
 
     val uiState: StateFlow<ExerciseListUiState> = combine(
         baseState,
+        editState,
         backupState
-    ) { base, backup ->
+    ) { base, edit, backup ->
         ExerciseListUiState(
             exercises = base.exercises,
             newExerciseName = base.newExerciseName,
             hasInputError = base.hasInputError,
+            editingExercise = edit.editingExercise,
+            editingExerciseName = edit.editingExerciseName,
             selectedExerciseId = base.selectedExerciseId,
             selectedExerciseName = base.exercises.firstOrNull { it.id == base.selectedExerciseId }?.name,
             selectedExerciseHistory = base.selectedExerciseHistory,
@@ -145,6 +167,42 @@ class ExerciseListViewModel(
     fun deleteExercise(exercise: ExerciseEntity) {
         viewModelScope.launch {
             repository.deleteExercise(exercise)
+        }
+    }
+
+    fun startRenameExercise(exercise: ExerciseEntity) {
+        editingExercise.value = exercise
+        editingExerciseName.value = exercise.name
+        hasInputError.value = false
+    }
+
+    fun updateEditingExerciseName(value: String) {
+        editingExerciseName.value = value
+        hasInputError.value = false
+    }
+
+    fun closeRenameExercise() {
+        editingExercise.value = null
+        editingExerciseName.value = ""
+    }
+
+    fun saveRenameExercise() {
+        val exercise = editingExercise.value ?: return
+        val candidate = editingExerciseName.value.trim()
+        if (candidate.isEmpty()) {
+            hasInputError.value = true
+            return
+        }
+
+        viewModelScope.launch {
+            runCatching {
+                repository.renameExercise(exercise, candidate)
+            }.onSuccess {
+                closeRenameExercise()
+                hasInputError.value = false
+            }.onFailure {
+                hasInputError.value = true
+            }
         }
     }
 
