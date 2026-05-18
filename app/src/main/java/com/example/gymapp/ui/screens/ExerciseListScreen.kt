@@ -80,6 +80,7 @@ fun ExerciseListScreen(
     onCloseImport: () -> Unit,
     onImportJsonChange: (String) -> Unit,
     onImportBackup: () -> Unit,
+    onLogout: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -88,6 +89,13 @@ fun ExerciseListScreen(
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
+        AccountStatusCard(
+            label = uiState.accountLabel,
+            supporting = uiState.accountSupporting,
+            canLogout = uiState.canLogout,
+            onLogout = onLogout
+        )
+
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -213,6 +221,43 @@ fun ExerciseListScreen(
                 onImportBackup = onImportBackup,
                 onDismiss = onCloseImport
             )
+        }
+    }
+}
+
+@Composable
+private fun AccountStatusCard(
+    label: String,
+    supporting: String,
+    canLogout: Boolean,
+    onLogout: () -> Unit
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.titleSmall
+                )
+                Text(
+                    text = supporting,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            if (canLogout) {
+                OutlinedButton(onClick = onLogout) {
+                    Text(stringResource(R.string.auth_switch_account))
+                }
+            }
         }
     }
 }

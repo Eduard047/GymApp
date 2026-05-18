@@ -43,6 +43,7 @@
     <string name="action_timer_180">Start 180s</string>
     <string name="action_timer_stop">Stop</string>
     <string name="action_stop_timer">Stop timer</string>
+    <string name="auth_switch_account">Switch</string>
 
     <string name="label_note">Note</string>
     <string name="hint_note">Session note</string>

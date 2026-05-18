@@ -34,6 +34,7 @@ class MainActivity : AppCompatActivity() {
             GymAppTheme {
                 GymAppRoot(
                     repository = app.repository,
+                    authManager = app.cloudAuthManager,
                     languageManager = app.languageManager,
                     restTimerController = app.restTimerController
                 )

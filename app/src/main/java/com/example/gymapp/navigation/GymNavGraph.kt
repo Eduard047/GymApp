@@ -38,6 +38,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -55,10 +56,14 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.example.gymapp.R
+import com.example.gymapp.auth.AccountSession
+import com.example.gymapp.auth.CloudAuthManager
+import com.example.gymapp.data.repository.BackupOwner
 import com.example.gymapp.gymApplication
 import com.example.gymapp.data.repository.GymRepository
 import com.example.gymapp.ui.screens.AddWorkoutScreen
 import com.example.gymapp.ui.screens.AppIntroSplash
+import com.example.gymapp.ui.screens.AuthScreen
 import com.example.gymapp.ui.screens.ExerciseListScreen
 import com.example.gymapp.ui.screens.ExerciseProgressScreen
 import com.example.gymapp.ui.screens.GymBackground
@@ -77,12 +82,18 @@ import com.example.gymapp.sync.PhoneSyncClient
 import com.example.gymapp.util.AppLanguage
 import com.example.gymapp.util.LanguageManager
 import com.example.gymapp.util.RestTimerController
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, FlowPreview::class)
 @Composable
 fun GymAppRoot(
     repository: GymRepository,
+    authManager: CloudAuthManager,
     languageManager: LanguageManager,
     restTimerController: RestTimerController
 ) {
@@ -90,6 +101,8 @@ fun GymAppRoot(
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
     val selectedLanguage by languageManager.selectedLanguage.collectAsState()
+    val authState by authManager.authState.collectAsState()
+    val coroutineScope = rememberCoroutineScope()
     var showIntro by rememberSaveable { mutableStateOf(true) }
 
     LaunchedEffect(Unit) {
@@ -98,6 +111,38 @@ fun GymAppRoot(
     }
 
     val isBottomTabRoute = AppDestination.bottomTabs.any { it.route == currentRoute }
+    val cloudSession = authState.session as? AccountSession.Cloud
+
+    LaunchedEffect(cloudSession?.userId) {
+        val session = cloudSession ?: return@LaunchedEffect
+        combine(
+            repository.observeSessions(),
+            repository.observeExercises(),
+            repository.observeExerciseMuscleMappings()
+        ) { sessions, exercises, mappings ->
+            Triple(sessions.size, exercises.size, mappings.size)
+        }
+            .debounce(1_500)
+            .collectLatest {
+                if (authManager.authState.value.isLoading) return@collectLatest
+                runCatching {
+                    val owner = BackupOwner(
+                        accountId = session.userId,
+                        userId = session.userId,
+                        email = session.email,
+                        remote = true
+                    )
+                    val stats = repository.getSyncProfileStats()
+                    authManager.saveRemoteState(
+                        session = session,
+                        state = repository.buildBackupJson(owner = owner),
+                        xp = stats.xp,
+                        level = stats.level,
+                        workouts = stats.workouts
+                    )
+                }
+            }
+    }
     val titleRes = when {
         currentRoute == AppDestination.Workouts.route -> R.string.title_workouts
         currentRoute == AppDestination.Missions.route -> R.string.title_missions
@@ -112,6 +157,81 @@ fun GymAppRoot(
 
     GymBackground {
         Box(modifier = Modifier.fillMaxSize()) {
+            if (authState.session == null) {
+                AuthScreen(
+                    uiState = authState,
+                    onLogin = { email, password ->
+                        coroutineScope.launch {
+                            authManager.setLoading(true)
+                            runCatching {
+                                val session = authManager.login(email, password)
+                                val remoteState = authManager.loadRemoteState(session)
+                                if (remoteState != null && remoteState.length() > 0) {
+                                    repository.importBackupJsonObject(
+                                        remoteState,
+                                        activeUserId = session.userId,
+                                        activeRemote = true
+                                    )
+                                } else {
+                                    val owner = BackupOwner(
+                                        accountId = session.userId,
+                                        userId = session.userId,
+                                        email = session.email,
+                                        remote = true
+                                    )
+                                    val stats = repository.getSyncProfileStats()
+                                    authManager.saveRemoteState(
+                                        session = session,
+                                        state = repository.buildBackupJson(owner = owner),
+                                        xp = stats.xp,
+                                        level = stats.level,
+                                        workouts = stats.workouts
+                                    )
+                                }
+                                authManager.setMessage(null)
+                            }.onFailure { throwable ->
+                                authManager.setMessage(throwable.message ?: "Login failed")
+                            }
+                        }
+                    },
+                    onSignUp = { email, password, displayName ->
+                        coroutineScope.launch {
+                            authManager.setLoading(true)
+                            runCatching {
+                                val session = authManager.signUp(email, password, displayName)
+                                val owner = BackupOwner(
+                                    accountId = session.userId,
+                                    userId = session.userId,
+                                    email = session.email,
+                                    remote = true
+                                )
+                                val stats = repository.getSyncProfileStats()
+                                authManager.saveRemoteState(
+                                    session = session,
+                                    state = repository.buildBackupJson(owner = owner),
+                                    xp = stats.xp,
+                                    level = stats.level,
+                                    workouts = stats.workouts
+                                )
+                                authManager.setMessage(null)
+                            }.onFailure { throwable ->
+                                authManager.setMessage(throwable.message ?: "Sign up failed")
+                            }
+                        }
+                    },
+                    onLocal = { name -> authManager.setLocal(name) },
+                    modifier = Modifier.fillMaxSize()
+                )
+                AnimatedVisibility(
+                    visible = showIntro,
+                    enter = fadeIn() + slideInVertically(initialOffsetY = { it / 8 }),
+                    exit = fadeOut() + scaleOut(targetScale = 1.03f)
+                ) {
+                    AppIntroSplash()
+                }
+                return@Box
+            }
+
             Scaffold(
                 modifier = Modifier.fillMaxSize(),
                 containerColor = Color.Transparent,
@@ -427,7 +547,7 @@ fun GymAppRoot(
 
                         composable(route = AppDestination.Exercises.route) {
                             val viewModel: ExerciseListViewModel = viewModel(
-                                factory = ExerciseListViewModel.factory(repository)
+                                factory = ExerciseListViewModel.factory(repository, authManager)
                             )
                             val uiState by viewModel.uiState.collectAsState()
 
@@ -449,6 +569,7 @@ fun GymAppRoot(
                                 onCloseImport = viewModel::closeImport,
                                 onImportJsonChange = viewModel::updateImportJson,
                                 onImportBackup = viewModel::importBackup,
+                                onLogout = viewModel::logout,
                                 modifier = Modifier.fillMaxSize()
                             )
                         }

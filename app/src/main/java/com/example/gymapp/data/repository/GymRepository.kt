@@ -50,6 +50,19 @@ data class DashboardStats(
     val weeklyStreakWeeks: Int = 0
 )
 
+data class BackupOwner(
+    val accountId: String? = null,
+    val userId: String? = null,
+    val email: String? = null,
+    val remote: Boolean = false
+)
+
+data class SyncProfileStats(
+    val xp: Int,
+    val level: Int,
+    val workouts: Int
+)
+
 class GymRepository(
     private val database: GymDatabase
 ) {
@@ -232,14 +245,30 @@ class GymRepository(
         }
     }
 
-    suspend fun exportBackupJson(includeDiagnostics: Boolean = false): String {
+    suspend fun exportBackupJson(
+        includeDiagnostics: Boolean = false,
+        owner: BackupOwner? = null
+    ): String {
+        return buildBackupJson(includeDiagnostics = includeDiagnostics, owner = owner).toString(2)
+    }
+
+    suspend fun buildBackupJson(
+        includeDiagnostics: Boolean = false,
+        owner: BackupOwner? = null
+    ): JSONObject {
         val exercises = exerciseDao.getExercisesSnapshot()
         val sessions = workoutDao.getAllSessionDetailsForBackup().map(::sortSessionDetails)
         val root = JSONObject()
-            .put("schemaVersion", 1)
+            .put("schemaVersion", 2)
             .put("exportedAt", System.currentTimeMillis())
             .put("app", "GymApp")
             .put("diagnostics", includeDiagnostics)
+            .put("owner", JSONObject().apply {
+                put("accountId", owner?.accountId)
+                put("userId", owner?.userId)
+                put("email", owner?.email)
+                put("remote", owner?.remote ?: false)
+            })
             .put("exercises", JSONArray().apply {
                 exercises.forEach { exercise ->
                     put(
@@ -275,31 +304,78 @@ class GymRepository(
                 }
             })
 
-        if (includeDiagnostics) {
-            root.put(
-                "summary",
-                JSONObject()
-                    .put("exerciseCount", exercises.size)
-                    .put("sessionCount", sessions.size)
-                    .put(
-                        "setCount",
-                        sessions.sumOf { session ->
-                            session.workoutExercises.sumOf { exercise -> exercise.sets.size }
-                        }
-                    )
-            )
+        val setCount = sessions.sumOf { session ->
+            session.workoutExercises.sumOf { exercise -> exercise.sets.size }
         }
+        val totalVolume = sessions.sumOf { session ->
+            session.workoutExercises.sumOf { exercise ->
+                exercise.sets.sumOf { set -> set.weight * set.reps }
+            }
+        }
+        root.put(
+            "summary",
+            JSONObject()
+                .put("exerciseCount", exercises.size)
+                .put("sessionCount", sessions.size)
+                .put("setCount", setCount)
+                .put("totalVolume", totalVolume)
+        )
 
-        return root.toString(2)
+        return root
     }
 
-    suspend fun importBackupJson(rawJson: String): Int {
+    suspend fun getSyncProfileStats(): SyncProfileStats {
+        val sessions = workoutDao.getAllSessionDetailsForBackup().map(::sortSessionDetails)
+        val summaries = sessions.map { details ->
+            WorkoutSessionSummary(
+                session = details.session,
+                exerciseCount = details.workoutExercises.size,
+                setCount = details.workoutExercises.sumOf { it.sets.size },
+                totalVolume = details.workoutExercises.sumOf { exercise ->
+                    exercise.sets.sumOf { set -> set.weight * set.reps }
+                }
+            )
+        }
+        val snapshot = GamificationEngine.buildSnapshot(
+            sessions = summaries,
+            nowMillis = System.currentTimeMillis(),
+            zoneId = ZoneId.systemDefault()
+        )
+        return SyncProfileStats(
+            xp = snapshot.progression.totalXp,
+            level = snapshot.progression.level,
+            workouts = snapshot.summary.workoutCount
+        )
+    }
+
+    suspend fun importBackupJson(
+        rawJson: String,
+        activeAccountId: String? = null,
+        activeUserId: String? = null,
+        activeRemote: Boolean = false
+    ): Int {
         val root = JSONObject(rawJson)
+        validateBackupOwner(root, activeAccountId, activeUserId, activeRemote)
+        return importBackupJsonObject(root, activeAccountId, activeUserId, activeRemote)
+    }
+
+    suspend fun importBackupJsonObject(
+        root: JSONObject,
+        activeAccountId: String? = null,
+        activeUserId: String? = null,
+        activeRemote: Boolean = false
+    ): Int {
+        validateBackupOwner(root, activeAccountId, activeUserId, activeRemote)
         val sessions = root.optJSONArray("sessions") ?: JSONArray()
         val exercises = root.optJSONArray("exercises") ?: JSONArray()
         var importedSessions = 0
 
         database.withTransaction {
+            val existingSignatures = workoutDao.getAllSessionDetailsForBackup()
+                .map(::sortSessionDetails)
+                .map(::sessionImportSignature)
+                .toMutableSet()
+
             repeat(exercises.length()) { index ->
                 val name = exercises.optJSONObject(index)
                     ?.optString("name")
@@ -312,46 +388,96 @@ class GymRepository(
 
             repeat(sessions.length()) { sessionIndex ->
                 val sessionJson = sessions.optJSONObject(sessionIndex) ?: return@repeat
-                val exerciseJsonArray = sessionJson.optJSONArray("exercises") ?: JSONArray()
+                val exerciseJsonArray = sessionJson.optJSONArray("exercises")
+                val flatSetJsonArray = sessionJson.optJSONArray("sets")
                 val drafts = mutableListOf<WorkoutExerciseDraft>()
 
-                repeat(exerciseJsonArray.length()) { exerciseIndex ->
-                    val exerciseJson = exerciseJsonArray.optJSONObject(exerciseIndex) ?: return@repeat
-                    val exerciseName = exerciseJson.optString("name").trim()
-                    if (exerciseName.isBlank()) return@repeat
+                if (exerciseJsonArray != null) {
+                    repeat(exerciseJsonArray.length()) { exerciseIndex ->
+                        val exerciseJson = exerciseJsonArray.optJSONObject(exerciseIndex) ?: return@repeat
+                        val exerciseName = exerciseJson.optString("name").trim()
+                        if (exerciseName.isBlank()) return@repeat
 
-                    val exerciseId = exerciseDao.getByName(exerciseName)?.id
-                        ?: exerciseDao.insert(ExerciseEntity(name = exerciseName))
-                    val setJsonArray = exerciseJson.optJSONArray("sets") ?: JSONArray()
-                    val sets = mutableListOf<WorkoutSetDraft>()
-                    repeat(setJsonArray.length()) { setIndex ->
-                        val setJson = setJsonArray.optJSONObject(setIndex) ?: return@repeat
-                        val weight = setJson.optDouble("weight", 0.0).coerceAtLeast(0.0)
-                        val reps = setJson.optInt("reps", 0).coerceAtLeast(0)
-                        if (reps > 0) {
-                            sets += WorkoutSetDraft(weight = weight, reps = reps)
+                        val exerciseId = exerciseDao.getByName(exerciseName)?.id
+                            ?: exerciseDao.insert(ExerciseEntity(name = exerciseName))
+                        val setJsonArray = exerciseJson.optJSONArray("sets") ?: JSONArray()
+                        val sets = mutableListOf<WorkoutSetDraft>()
+                        repeat(setJsonArray.length()) { setIndex ->
+                            val setJson = setJsonArray.optJSONObject(setIndex) ?: return@repeat
+                            val weight = setJson.optDouble("weight", 0.0).coerceAtLeast(0.0)
+                            val reps = setJson.optInt("reps", 0).coerceAtLeast(0)
+                            if (reps > 0) {
+                                sets += WorkoutSetDraft(weight = weight, reps = reps)
+                            }
+                        }
+                        if (sets.isNotEmpty()) {
+                            drafts += WorkoutExerciseDraft(
+                                exerciseId = exerciseId,
+                                sets = sets
+                            )
                         }
                     }
-                    if (sets.isNotEmpty()) {
-                        drafts += WorkoutExerciseDraft(
-                            exerciseId = exerciseId,
-                            sets = sets
-                        )
+                } else if (flatSetJsonArray != null) {
+                    val grouped = linkedMapOf<String, MutableList<WorkoutSetDraft>>()
+                    repeat(flatSetJsonArray.length()) { setIndex ->
+                        val setJson = flatSetJsonArray.optJSONObject(setIndex) ?: return@repeat
+                        val exerciseName = setJson.optString("exerciseName").trim()
+                            .ifBlank { setJson.optString("name").trim() }
+                        val reps = setJson.optInt("reps", 0).coerceAtLeast(0)
+                        if (exerciseName.isNotBlank() && reps > 0) {
+                            grouped.getOrPut(exerciseName) { mutableListOf() } += WorkoutSetDraft(
+                                weight = setJson.optDouble("weight", 0.0).coerceAtLeast(0.0),
+                                reps = reps
+                            )
+                        }
+                    }
+                    grouped.forEach { (exerciseName, sets) ->
+                        val exerciseId = exerciseDao.getByName(exerciseName)?.id
+                            ?: exerciseDao.insert(ExerciseEntity(name = exerciseName))
+                        drafts += WorkoutExerciseDraft(exerciseId = exerciseId, sets = sets)
                     }
                 }
 
                 if (drafts.isNotEmpty()) {
-                    createWorkoutSession(
-                        date = sessionJson.optLong("date", System.currentTimeMillis()),
-                        note = sessionJson.optString("note").takeIf { it.isNotBlank() },
-                        workoutExercises = drafts
+                    val sessionDate = sessionJson.optLong(
+                        "date",
+                        sessionJson.optLong("startedAt", System.currentTimeMillis())
                     )
-                    importedSessions += 1
+                    val sessionNote = sessionJson.optString("note").takeIf { it.isNotBlank() }
+                    val signature = sessionImportSignature(sessionDate, sessionNote, drafts)
+                    if (existingSignatures.add(signature)) {
+                        createWorkoutSession(
+                            date = sessionDate,
+                            note = sessionNote,
+                            workoutExercises = drafts
+                        )
+                        importedSessions += 1
+                    }
                 }
             }
         }
 
         return importedSessions
+    }
+
+    private fun validateBackupOwner(
+        root: JSONObject,
+        activeAccountId: String?,
+        activeUserId: String?,
+        activeRemote: Boolean
+    ) {
+        val owner = root.optJSONObject("owner") ?: return
+        val backupUserId = owner.optString("userId").takeIf { it.isNotBlank() && it != "null" }
+        val backupAccountId = owner.optString("accountId").takeIf { it.isNotBlank() && it != "null" }
+        if (activeRemote) {
+            require(backupUserId == null || backupUserId == activeUserId) {
+                "This backup belongs to another account."
+            }
+        } else {
+            require(backupUserId == null && (backupAccountId == null || backupAccountId == activeAccountId)) {
+                "This backup belongs to another account."
+            }
+        }
     }
 
     fun observeExerciseHistoryForMonth(
@@ -652,6 +778,45 @@ class GymRepository(
             cursorWeekStart = cursorWeekStart.minusWeeks(1)
         }
         return streak
+    }
+
+    private fun sessionImportSignature(details: WorkoutSessionDetails): String {
+        return sessionImportSignature(
+            date = details.session.date,
+            note = details.session.note,
+            workoutExercises = details.workoutExercises
+                .sortedBy { it.workoutExercise.orderIndex }
+                .map { exercise ->
+                    WorkoutExerciseDraft(
+                        exerciseId = exercise.exercise.id,
+                        sets = exercise.sets.sortedBy { it.orderIndex }.map { set ->
+                            WorkoutSetDraft(weight = set.weight, reps = set.reps)
+                        }
+                    )
+                }
+        )
+    }
+
+    private fun sessionImportSignature(
+        date: Long,
+        note: String?,
+        workoutExercises: List<WorkoutExerciseDraft>
+    ): String {
+        return buildString {
+            append(date)
+            append('|')
+            append(note.orEmpty().trim())
+            workoutExercises.forEach { exercise ->
+                append('|')
+                append(exercise.exerciseId)
+                exercise.sets.forEach { set ->
+                    append(':')
+                    append(set.weight)
+                    append('x')
+                    append(set.reps)
+                }
+            }
+        }
     }
 }
 

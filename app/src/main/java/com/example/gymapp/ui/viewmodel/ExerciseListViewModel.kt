@@ -5,6 +5,9 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.example.gymapp.auth.AccountSession
+import com.example.gymapp.auth.CloudAuthManager
+import com.example.gymapp.data.repository.BackupOwner
 import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.entity.ExerciseHistoryEntry
 import com.example.gymapp.data.repository.GymRepository
@@ -30,7 +33,10 @@ data class ExerciseListUiState(
     val backupJson: String? = null,
     val backupMessage: String? = null,
     val importJson: String = "",
-    val isImportOpen: Boolean = false
+    val isImportOpen: Boolean = false,
+    val accountLabel: String = "Local",
+    val accountSupporting: String = "Offline on this phone",
+    val canLogout: Boolean = false
 )
 
 private data class ExerciseListBaseState(
@@ -55,7 +61,8 @@ private data class ExerciseBackupState(
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ExerciseListViewModel(
-    private val repository: GymRepository
+    private val repository: GymRepository,
+    private val authManager: CloudAuthManager? = null
 ) : ViewModel() {
     private val newExerciseName = MutableStateFlow("")
     private val hasInputError = MutableStateFlow(false)
@@ -132,7 +139,10 @@ class ExerciseListViewModel(
             backupJson = backup.backupJson,
             backupMessage = backup.backupMessage,
             importJson = backup.importJson,
-            isImportOpen = backup.isImportOpen
+            isImportOpen = backup.isImportOpen,
+            accountLabel = activeAccountLabel(),
+            accountSupporting = activeAccountSupporting(),
+            canLogout = authManager != null
         )
     }.stateIn(
         scope = viewModelScope,
@@ -217,7 +227,7 @@ class ExerciseListViewModel(
     fun exportBackup() {
         viewModelScope.launch {
             runCatching {
-                repository.exportBackupJson(includeDiagnostics = false)
+                repository.exportBackupJson(includeDiagnostics = false, owner = activeBackupOwner())
             }.onSuccess { json ->
                 backupJson.value = json
                 backupMessage.value = "Backup JSON ready"
@@ -230,7 +240,7 @@ class ExerciseListViewModel(
     fun exportDiagnostics() {
         viewModelScope.launch {
             runCatching {
-                repository.exportBackupJson(includeDiagnostics = true)
+                repository.exportBackupJson(includeDiagnostics = true, owner = activeBackupOwner())
             }.onSuccess { json ->
                 backupJson.value = json
                 backupMessage.value = "Diagnostics snapshot ready"
@@ -260,7 +270,13 @@ class ExerciseListViewModel(
         val rawJson = importJson.value
         viewModelScope.launch {
             runCatching {
-                repository.importBackupJson(rawJson)
+                val session = authManager?.authState?.value?.session
+                repository.importBackupJson(
+                    rawJson,
+                    activeAccountId = (session as? AccountSession.Local)?.displayName,
+                    activeUserId = (session as? AccountSession.Cloud)?.userId,
+                    activeRemote = session is AccountSession.Cloud
+                )
             }.onSuccess { importedSessions ->
                 backupMessage.value = "Imported $importedSessions workouts"
                 importJson.value = ""
@@ -271,10 +287,49 @@ class ExerciseListViewModel(
         }
     }
 
+    fun logout() {
+        authManager?.logout()
+    }
+
+    private fun activeBackupOwner(): BackupOwner? {
+        return when (val session = authManager?.authState?.value?.session) {
+            is AccountSession.Cloud -> BackupOwner(
+                accountId = session.userId,
+                userId = session.userId,
+                email = session.email,
+                remote = true
+            )
+            is AccountSession.Local -> BackupOwner(
+                accountId = session.displayName,
+                remote = false
+            )
+            null -> null
+        }
+    }
+
+    private fun activeAccountLabel(): String {
+        return when (val session = authManager?.authState?.value?.session) {
+            is AccountSession.Cloud -> session.displayName
+            is AccountSession.Local -> session.displayName
+            null -> "Local"
+        }
+    }
+
+    private fun activeAccountSupporting(): String {
+        return when (val session = authManager?.authState?.value?.session) {
+            is AccountSession.Cloud -> session.email
+            is AccountSession.Local -> "Offline on this phone"
+            null -> "Offline on this phone"
+        }
+    }
+
     companion object {
-        fun factory(repository: GymRepository): ViewModelProvider.Factory = viewModelFactory {
+        fun factory(
+            repository: GymRepository,
+            authManager: CloudAuthManager? = null
+        ): ViewModelProvider.Factory = viewModelFactory {
             initializer {
-                ExerciseListViewModel(repository)
+                ExerciseListViewModel(repository, authManager)
             }
         }
     }
