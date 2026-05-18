@@ -226,6 +226,18 @@ button { border: 0; }
   color: var(--muted);
 }
 
+.mapping-row span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.mapping-row small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.25;
+}
+
 .button {
   display: inline-flex;
   align-items: center;

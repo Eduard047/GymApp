@@ -2,6 +2,9 @@
 
 const STORAGE_KEY = "gym-pwa-state-v2";
 const LEGACY_KEY = "gym-pwa-state-v1";
+const AUTH_KEY = "gym-pwa-active-account-v1";
+const ACCOUNT_LIST_KEY = "gym-pwa-account-list-v1";
+const ACCOUNT_PREFIX = "gym-pwa-account:";
 const app = document.querySelector("#app");
 
 const icons = {
@@ -898,6 +901,7 @@ const rankDefinitions = [
   ["cosmic-warlord", 80, "Cosmic Warlord", "Космічний воєвода"]
 ].map(([id, level, titleEn, titleUk]) => ({ id, level, titleEn, titleUk }));
 
+let activeAccount = loadActiveAccount();
 let state = loadState();
 let nav = [{ name: "workouts" }];
 let modal = null;
@@ -922,7 +926,7 @@ function muscleLabel(id) {
 }
 
 function normalizeExerciseKey(name) {
-  return String(name || "").toLowerCase().replace(/[??]/g, "'").replace(/\s+/g, " ").trim();
+  return String(name || "").toLowerCase().replace(/[\u02bc\u2019]/g, "'").replace(/\s+/g, " ").trim();
 }
 
 function n(count, enOne, enMany, ukOne, ukFew, ukMany) {
@@ -933,18 +937,56 @@ function n(count, enOne, enMany, ukOne, ukFew, ukMany) {
   return `${count} ${word}`;
 }
 
-function loadState() {
-  const fallback = {
+function defaultAppState() {
+  return {
     language: "en",
     exercises: defaultExercises.map((name, index) => ({ id: index + 1, name })),
     sessions: [],
     mappings: { ...defaultMappings },
     profile: { split: "Push Pull Legs", days: 4, goal: "Balanced", calories: "Maintenance" }
   };
+}
+
+function normalizeAccountId(name) {
+  return String(name || "").toLowerCase().replace(/[^a-z0-9а-яіїєґ_-]+/gi, "-").replace(/^-+|-+$/g, "").slice(0, 48);
+}
+
+function loadActiveAccount() {
   try {
-    const currentRaw = localStorage.getItem(STORAGE_KEY);
+    const parsed = JSON.parse(localStorage.getItem(AUTH_KEY) || "null");
+    return parsed?.id && parsed?.name ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function activeStorageKey(account = activeAccount) {
+  return account?.id ? ACCOUNT_PREFIX + account.id : STORAGE_KEY;
+}
+
+function accountList() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(ACCOUNT_LIST_KEY) || "[]");
+    return Array.isArray(parsed) ? parsed.filter(item => item?.id && item?.name) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveAccountList(accounts) {
+  const unique = [];
+  accounts.forEach(account => {
+    if (account?.id && !unique.some(item => item.id === account.id)) unique.push(account);
+  });
+  localStorage.setItem(ACCOUNT_LIST_KEY, JSON.stringify(unique));
+}
+
+function loadState() {
+  const fallback = defaultAppState();
+  try {
+    const currentRaw = localStorage.getItem(activeStorageKey());
     const legacyRaw = localStorage.getItem(LEGACY_KEY);
-    const raw = currentRaw || legacyRaw;
+    const raw = currentRaw || (!activeAccount ? legacyRaw : null);
     if (!raw) return fallback;
     const parsed = JSON.parse(raw);
     const normalizedSessions = Array.isArray(parsed.sessions) ? normalizeSessions(parsed.sessions) : [];
@@ -1028,7 +1070,7 @@ function normalizeExerciseCatalog(input, fallback = []) {
 }
 
 function saveState() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  localStorage.setItem(activeStorageKey(), JSON.stringify(state));
 }
 
 function uid() {
@@ -1217,7 +1259,25 @@ function weeklyStreak() {
   return Math.ceil(streakDays() / 7);
 }
 
+function loginScreen() {
+  const accounts = accountList();
+  return `<div class="app-shell auth-shell">
+    <header class="topbar"><span></span><h1>${tx("Login", "Вхід")}</h1><button class="icon-button" data-action="language" aria-label="Language">${svg("lang")}</button></header>
+    <main class="screen auth-screen">
+      <section class="hero-panel"><h2>GymApp</h2><p>${tx("Choose a local account for this device.", "Обери локальний акаунт для цього пристрою.")}</p></section>
+      <section class="panel"><h2>${tx("Account", "Акаунт")}</h2><p class="muted">${tx("GitHub Pages has no server database, so this separates data locally in this browser.", "На GitHub Pages немає серверної бази, тому дані розділяються локально в цьому браузері.")}</p><div class="field-row"><input id="login-name" autocomplete="username" placeholder="${tx("Name", "Ім'я")}"><button class="button" data-action="login-account">${tx("Enter", "Увійти")}</button></div></section>
+      ${accounts.length ? `<section class="panel"><h2>${tx("Saved accounts", "Збережені акаунти")}</h2><div class="chip-row">${accounts.map(account => `<button class="chip buttonlike" data-action="login-account" data-name="${escapeAttr(account.name)}">${escapeHtml(account.name)}</button>`).join("")}</div></section>` : ""}
+      <div id="toast" class="toast hidden"></div>
+    </main>
+  </div>`;
+}
+
 function render() {
+  if (!activeAccount) {
+    app.innerHTML = loginScreen();
+    bindEvents();
+    return;
+  }
   const current = route();
   app.innerHTML = `
     <header class="topbar">
@@ -1350,6 +1410,15 @@ function activityHeatmapCard() {
   </section>`;
 }
 
+function mappingOverviewCard() {
+  const rows = groupedExercises().sort((a, b) => Number(!mappingFor(a.name).length) - Number(!mappingFor(b.name).length) || a.name.localeCompare(b.name));
+  return `<div class="subpanel"><div class="row-head"><div><h3>${tx("Exercise mapping", "Мапінг вправ")}</h3><p>${tx("Auto mapping works first, manual choices override it.", "Автомапінг працює базово, ручний вибір перекриває його.")}</p></div><span class="pill">${mappedCount()}/${state.exercises.length}</span></div>${rows.length ? rows.map(ex => {
+    const ids = mappingFor(ex.name);
+    const labels = ids.length ? ids.map(muscleLabel).join(", ") : tx("Not mapped", "Не зіставлено");
+    return `<div class="row-line mapping-row"><span>${escapeHtml(ex.name)}<small>${escapeHtml(labels)}</small></span><button class="button secondary mini" data-action="map-exercise" data-name="${escapeAttr(ex.name)}">${tx("Map", "Мапити")}</button></div>`;
+  }).join("") : `<div class="empty">${tx("No exercises yet.", "Вправ ще немає.")}</div>`}</div>`;
+}
+
 function muscleMapCard() {
   const data = muscleStats();
   const max = Math.max(1, ...data.map(item => item.load));
@@ -1361,7 +1430,8 @@ function muscleMapCard() {
     <div class="period-tabs">${["all", "month", "week"].map(period => `<button class="${musclePeriod === period ? "selected" : ""}" data-action="muscle-period" data-period="${period}">${musclePeriodLabel(period)}</button>`).join("")}</div>
     <div class="metric-grid three"><div><span>${tx("Sets", "Підходи")}</span><strong>${allSets(periodSessions()).length}</strong></div><div><span>${tx("Load", "Навантаження")}</span><strong>${Math.round(trainingLoad(periodSessions()))}</strong></div><div><span>${tx("Mapped", "Зіставлено")}</span><strong>${mappedCount()}/${state.exercises.length}</strong></div></div>
     ${sourceBodyMapSvg(data, max)}
-    ${selected ? `<div class="subpanel"><h3>${tx("Exercises for", "Вправи для")}: ${selected.label}</h3>${selectedExercises.length ? selectedExercises.map(ex => `<div class="row-line"><span>${escapeHtml(ex.name)}</span><span class="muted">${n(ex.sets, "set", "sets", "підхід", "підходи", "підходів")} - ${n(ex.sessions.size, "session", "sessions", "сесія", "сесії", "сесій")} - ${Math.round(ex.load)} ${tx("load", "навантаження")}</span></div>`).join("") : `<div class="empty">${tx("No logged exercises for this muscle in the selected period.", "У вибраному періоді для цієї групи ще немає вправ.")}</div>`}</div>` : ""}
+    ${selected ? `<div class="subpanel"><h3>${tx("Exercises for", "Вправи для")}: ${selected.label}</h3>${selectedExercises.length ? selectedExercises.map(ex => `<div class="row-line"><span>${escapeHtml(ex.name)}</span><span class="muted">${n(ex.sets, "set", "sets", "підхід", "підходи", "підходів")} - ${n(ex.sessions.size, "session", "sessions", "сесія", "сесії", "сесій")} - ${Math.round(ex.load)} ${tx("load", "навантаження")}</span><button class="button ghost mini" data-action="map-exercise" data-name="${escapeAttr(ex.name)}">${tx("Map", "Мапити")}</button></div>`).join("") : `<div class="empty">${tx("No logged exercises for this muscle in the selected period.", "У вибраному періоді для цієї групи ще немає вправ.")}</div>`}</div>` : ""}
+    ${mappingOverviewCard()}
     <h3>${tx("Top muscle groups", "Топ груп м'язів")}</h3><div class="bars">${top.length ? top.slice(0, 8).map(item => barRow(item.label, item.load, max, `${n(item.sets, "set", "sets", "підхід", "підходи", "підходів")} - ${n(item.sessions.size, "session", "sessions", "сесія", "сесії", "сесій")}`)).join("") : `<div class="empty">${tx("Log sets to light up the body map.", "Запиши підходи, щоб підсвітити карту тіла.")}</div>`}</div>
   </section>`;
 }
@@ -1846,8 +1916,40 @@ function summaryScreen(id) {
     <div class="actions vertical"><button class="button full" data-action="summary-view" data-id="${session.id}">${tx("View workout", "Переглянути тренування")}</button><button class="button ghost full" data-action="summary-done">${tx("Back to workouts", "Назад до тренувань")}</button></div>`;
 }
 
+function loginAccount(rawName) {
+  const name = String(rawName || "").trim();
+  if (!name) return showToast(tx("Enter account name.", "Введи назву акаунта."));
+  const id = normalizeAccountId(name);
+  if (!id) return showToast(tx("Use letters or numbers for account name.", "Використай літери або цифри для назви акаунта."));
+  const account = { id, name };
+  const key = activeStorageKey(account);
+  saveAccountList([...accountList().filter(item => item.id !== id), account]);
+  localStorage.setItem(AUTH_KEY, JSON.stringify(account));
+  if (!localStorage.getItem(key)) localStorage.setItem(key, JSON.stringify(state));
+  activeAccount = account;
+  state = loadState();
+  nav = [{ name: "workouts" }];
+  modal = null;
+  render();
+}
+
+function logoutAccount() {
+  saveState();
+  localStorage.removeItem(AUTH_KEY);
+  activeAccount = null;
+  state = loadState();
+  nav = [{ name: "workouts" }];
+  modal = null;
+  render();
+}
+
+function accountPanel() {
+  const label = activeAccount?.name || tx("Local", "Локальний");
+  return `<section class="panel"><div class="row-head"><div><h2>${tx("Account", "Акаунт")}</h2><p>${escapeHtml(label)}</p></div><button class="button ghost" data-action="logout-account">${tx("Switch", "Змінити")}</button></div></section>`;
+}
+
 function exercisesScreen() {
-  return `<section class="panel"><div class="field-row"><input id="new-exercise-name" placeholder="e.g. Bench Press"><button class="button" data-action="save-exercise">${t("addExercise")}</button></div></section>
+  return `${accountPanel()}<section class="panel"><div class="field-row"><input id="new-exercise-name" placeholder="e.g. Bench Press"><button class="button" data-action="save-exercise">${t("addExercise")}</button></div></section>
     <section class="panel"><h2>${t("backup")}</h2><div class="actions"><button class="button ghost" data-action="export-json">${t("exportJson")}</button><button class="button ghost" data-action="import-json">${t("importJson")}</button><button class="button ghost full" data-action="export-diagnostics">${t("diagnostics")}</button></div></section>
     <section class="exercise-list">${state.exercises.length ? state.exercises.map(exerciseRow).join("") : `<div class="empty">${tx("No exercises yet.", "Вправ ще немає.")}</div>`}</section>`;
 }
@@ -2005,6 +2107,10 @@ function bindEvents() {
     ev.stopPropagation();
     handleAction(el.dataset.action, el);
   }));
+  const loginName = app.querySelector("#login-name");
+  if (loginName) loginName.addEventListener("keydown", ev => {
+    if (ev.key === "Enter") loginAccount(loginName.value);
+  });
   app.querySelectorAll("[data-block][data-field]").forEach(input => input.addEventListener("input", () => updateDraftInput(input)));
   app.querySelectorAll("[data-draft]").forEach(input => input.addEventListener("input", () => {
     if (modal?.draft) modal.draft[input.dataset.draft] = input.value;
@@ -2018,6 +2124,8 @@ function bindEvents() {
 }
 
 function handleAction(action, el) {
+  if (action === "login-account") return loginAccount(el.dataset.name || document.querySelector("#login-name")?.value);
+  if (action === "logout-account") return logoutAccount();
   if (action === "back") return back();
   if (action === "language") { state.language = state.language === "en" ? "uk" : "en"; saveState(); return render(); }
   if (action === "backup") { modal = { type: "backup-json", json: exportPayload(false) }; return render(); }
@@ -2325,7 +2433,7 @@ function deleteExercise(id) {
 
 function saveMapping(name) {
   const ids = [...document.querySelectorAll(".mapping-grid .selected")].map(el => el.dataset.id);
-  state.mappings[name.toLowerCase()] = ids;
+  state.mappings[normalizeExerciseName(name)] = ids;
   saveState();
   modal = null;
   render();
