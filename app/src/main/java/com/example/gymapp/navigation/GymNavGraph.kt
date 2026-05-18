@@ -5,6 +5,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -133,17 +134,17 @@ fun GymAppRoot(
                             contentAlignment = Alignment.BottomCenter
                         ) {
                             Surface(
-                                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
+                                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
                                 shape = MaterialTheme.shapes.extraLarge,
-                                tonalElevation = 4.dp,
-                                shadowElevation = 12.dp,
-                                border = androidx.compose.foundation.BorderStroke(
+                                tonalElevation = 0.dp,
+                                shadowElevation = 18.dp,
+                                border = BorderStroke(
                                     1.dp,
-                                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.8f)
+                                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.92f)
                                 )
                             ) {
                                 NavigationBar(
-                                    modifier = Modifier.height(74.dp),
+                                    modifier = Modifier.height(76.dp),
                                     containerColor = Color.Transparent,
                                     tonalElevation = 0.dp
                                 ) {
@@ -162,7 +163,7 @@ fun GymAppRoot(
                                             colors = NavigationBarItemDefaults.colors(
                                                 selectedIconColor = MaterialTheme.colorScheme.primary,
                                                 selectedTextColor = MaterialTheme.colorScheme.primary,
-                                                indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                                                indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
                                                 unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
                                                 unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
                                             ),
@@ -509,9 +510,9 @@ private fun AppTopBar(
                     modifier = Modifier.padding(start = 12.dp),
                     color = MaterialTheme.colorScheme.surface.copy(alpha = 0.84f),
                     shape = MaterialTheme.shapes.small,
-                    border = androidx.compose.foundation.BorderStroke(
+                    border = BorderStroke(
                         1.dp,
-                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.8f)
+                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.9f)
                     )
                 ) {
                     IconButton(onClick = onBack) {
@@ -543,9 +544,9 @@ private fun LanguageSelector(
         Surface(
             color = MaterialTheme.colorScheme.surface.copy(alpha = 0.84f),
             shape = MaterialTheme.shapes.small,
-            border = androidx.compose.foundation.BorderStroke(
+            border = BorderStroke(
                 1.dp,
-                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.8f)
+                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.9f)
             )
         ) {
             IconButton(onClick = { expanded = true }) {

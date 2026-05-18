@@ -12,49 +12,49 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 
 private val DarkColorScheme = darkColorScheme(
-    primary = Frost,
+    primary = SageGlow,
     onPrimary = Night,
-    primaryContainer = SlateBlue,
+    primaryContainer = Color(0xFF214C40),
     onPrimaryContainer = Frost,
-    secondary = SageGlow,
+    secondary = SkyGlow,
     onSecondary = Night,
-    secondaryContainer = Color(0xFF1D4036),
+    secondaryContainer = Color(0xFF183D5E),
     onSecondaryContainer = Frost,
     tertiary = ClayGlow,
     onTertiary = Night,
     tertiaryContainer = Color(0xFF4A2B1A),
     onTertiaryContainer = Frost,
     background = Night,
-    surface = NightSurface,
-    surfaceVariant = NightSurfaceAlt,
+    surface = NightSurface.copy(alpha = 0.92f),
+    surfaceVariant = NightSurfaceAlt.copy(alpha = 0.9f),
     onSurfaceVariant = FrostMuted,
     onSurface = Frost,
     onBackground = Frost,
-    outline = Color(0xFF304858),
-    outlineVariant = Color(0xFF213644)
+    outline = Color(0xFF4E6A7A),
+    outlineVariant = GlassStroke
 )
 
 private val LightColorScheme = lightColorScheme(
-    primary = InkBlue,
+    primary = SageGreen,
     onPrimary = Color.White,
-    primaryContainer = Color(0xFFDCEAF4),
+    primaryContainer = Color(0xFFDDF4EB),
     onPrimaryContainer = InkBlue,
-    secondary = SageGreen,
+    secondary = SlateBlue,
     onSecondary = Color.White,
-    secondaryContainer = Color(0xFFD7E8E0),
+    secondaryContainer = Color(0xFFDDEEF7),
     onSecondaryContainer = Ink,
     tertiary = ClayOrange,
     onTertiary = Color.White,
     tertiaryContainer = Color(0xFFF7DDCF),
     onTertiaryContainer = Ink,
-    background = Mist,
-    surface = Cloud,
-    surfaceVariant = Sand,
-    onSurfaceVariant = Color(0xFF5A6772),
+    background = Color(0xFFEAF1F5),
+    surface = Cloud.copy(alpha = 0.94f),
+    surfaceVariant = Sand.copy(alpha = 0.88f),
+    onSurfaceVariant = Color(0xFF5B6975),
     onSurface = Ink,
     onBackground = Ink,
-    outline = Color(0xFFC3B5A4),
-    outlineVariant = Color(0xFFE0D4C6)
+    outline = Color(0xFFB3C2CB),
+    outlineVariant = Color(0xCCFFFFFF)
 )
 
 @Composable

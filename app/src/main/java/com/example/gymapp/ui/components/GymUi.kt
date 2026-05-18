@@ -2,6 +2,7 @@ package com.example.gymapp.ui.components
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,6 +13,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -25,21 +28,29 @@ fun AppPanel(
     highlighted: Boolean = false,
     content: @Composable () -> Unit
 ) {
-    Surface(
-        modifier = modifier,
-        color = containerColor,
-        contentColor = contentColor,
-        shape = MaterialTheme.shapes.large,
-        tonalElevation = if (highlighted) 2.dp else 0.dp,
-        shadowElevation = if (highlighted) 10.dp else 2.dp,
-        border = BorderStroke(
-            width = 1.dp,
-            color = if (highlighted) {
-                MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
-            } else {
-                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
-            }
+    val shape = MaterialTheme.shapes.large
+    val panelBrush = Brush.verticalGradient(
+        colors = listOf(
+            containerColor.copy(alpha = if (highlighted) 0.86f else 0.68f),
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (highlighted) 0.62f else 0.42f)
         )
+    )
+    val strokeColor = if (highlighted) {
+        MaterialTheme.colorScheme.primary.copy(alpha = 0.38f)
+    } else {
+        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.74f)
+    }
+
+    Surface(
+        modifier = modifier
+            .clip(shape)
+            .background(panelBrush, shape)
+            .border(BorderStroke(1.dp, strokeColor), shape),
+        color = Color.Transparent,
+        contentColor = contentColor,
+        shape = shape,
+        tonalElevation = 0.dp,
+        shadowElevation = if (highlighted) 16.dp else 6.dp
     ) {
         content()
     }
@@ -50,11 +61,28 @@ fun HeroPanel(
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit
 ) {
+    val shape = MaterialTheme.shapes.extraLarge
     Surface(
-        modifier = modifier,
-        color = MaterialTheme.colorScheme.primary,
-        shape = MaterialTheme.shapes.extraLarge,
-        shadowElevation = 8.dp
+        modifier = modifier
+            .clip(shape)
+            .background(
+                brush = Brush.linearGradient(
+                    colors = listOf(
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.86f),
+                        MaterialTheme.colorScheme.secondary.copy(alpha = 0.68f),
+                        MaterialTheme.colorScheme.tertiary.copy(alpha = 0.58f)
+                    )
+                ),
+                shape = shape
+            )
+            .border(
+                BorderStroke(1.dp, MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.2f)),
+                shape
+            ),
+        color = Color.Transparent,
+        contentColor = MaterialTheme.colorScheme.onPrimary,
+        shape = shape,
+        shadowElevation = 18.dp
     ) {
         Box(
             modifier = Modifier
