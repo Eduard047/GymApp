@@ -5,6 +5,7 @@ const LEGACY_KEY = "gym-pwa-state-v1";
 const AUTH_KEY = "gym-pwa-active-account-v1";
 const ACCOUNT_LIST_KEY = "gym-pwa-account-list-v1";
 const ACCOUNT_PREFIX = "gym-pwa-account:";
+const REMOTE_SESSION_KEY = "gym-pwa-supabase-session-v1";
 const app = document.querySelector("#app");
 
 const icons = {
@@ -981,6 +982,115 @@ function saveAccountList(accounts) {
   localStorage.setItem(ACCOUNT_LIST_KEY, JSON.stringify(unique));
 }
 
+function supabaseConfig() {
+  const config = window.GYM_SUPABASE || {};
+  return {
+    url: String(config.url || "").replace(/\/+$/, ""),
+    anonKey: String(config.anonKey || "")
+  };
+}
+
+function remoteAuthEnabled() {
+  const config = supabaseConfig();
+  return Boolean(config.url && config.anonKey);
+}
+
+function loadRemoteSession() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(REMOTE_SESSION_KEY) || "null");
+    return parsed?.access_token && parsed?.user?.id ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveRemoteSession(session) {
+  localStorage.setItem(REMOTE_SESSION_KEY, JSON.stringify(session));
+}
+
+function remoteHeaders(session = loadRemoteSession()) {
+  const config = supabaseConfig();
+  return {
+    apikey: config.anonKey,
+    Authorization: `Bearer ${session?.access_token || config.anonKey}`,
+    "Content-Type": "application/json"
+  };
+}
+
+async function supabaseRequest(path, options = {}) {
+  const config = supabaseConfig();
+  const response = await fetch(`${config.url}${path}`, {
+    ...options,
+    headers: { ...remoteHeaders(options.session), ...(options.headers || {}) }
+  });
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(text || `Request failed: ${response.status}`);
+  }
+  if (response.status === 204) return null;
+  const body = await response.text();
+  return body ? JSON.parse(body) : null;
+}
+
+function remoteAccountFromSession(session) {
+  const email = session?.user?.email || "";
+  return {
+    id: `remote-${session.user.id}`,
+    name: session.user.user_metadata?.display_name || email.split("@")[0] || "Supabase",
+    email,
+    userId: session.user.id,
+    remote: "supabase"
+  };
+}
+
+async function loadRemoteState(session) {
+  const rows = await supabaseRequest(`/rest/v1/user_states?user_id=eq.${encodeURIComponent(session.user.id)}&select=state`, { session });
+  return Array.isArray(rows) && rows[0]?.state ? rows[0].state : null;
+}
+
+function remoteStatePayload() {
+  return JSON.parse(JSON.stringify({
+    language: state.language,
+    exercises: state.exercises,
+    sessions: state.sessions,
+    mappings: state.mappings,
+    profile: state.profile
+  }));
+}
+
+let remoteSaveTimer = null;
+
+function queueRemoteSave() {
+  if (!activeAccount?.remote || !remoteAuthEnabled()) return;
+  clearTimeout(remoteSaveTimer);
+  remoteSaveTimer = setTimeout(() => saveRemoteState().catch(() => showToast(tx("Cloud sync failed.", "Синхронізація не вдалася."))), 700);
+}
+
+async function saveRemoteState() {
+  const session = loadRemoteSession();
+  if (!session?.user?.id) return;
+  const payload = remoteStatePayload();
+  await supabaseRequest("/rest/v1/user_states", {
+    method: "POST",
+    session,
+    headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+    body: JSON.stringify({ user_id: session.user.id, state: payload, updated_at: new Date().toISOString() })
+  });
+  await supabaseRequest("/rest/v1/profiles", {
+    method: "POST",
+    session,
+    headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+    body: JSON.stringify({
+      user_id: session.user.id,
+      display_name: activeAccount.name,
+      xp: totalXp(),
+      level: levelFromXp(totalXp()),
+      workouts: state.sessions.length,
+      updated_at: new Date().toISOString()
+    })
+  });
+}
+
 function loadState() {
   const fallback = defaultAppState();
   try {
@@ -1003,6 +1113,18 @@ function loadState() {
   } catch {
     return fallback;
   }
+}
+
+function normalizeImportedState(parsed, fallback = defaultAppState()) {
+  const normalizedSessions = Array.isArray(parsed.sessions) ? normalizeSessions(parsed.sessions) : [];
+  return {
+    ...fallback,
+    ...parsed,
+    exercises: normalizeExerciseCatalog(parsed.exercises || parsed.exerciseCatalog, fallback.exercises),
+    sessions: normalizedSessions,
+    mappings: { ...fallback.mappings, ...(parsed.mappings || {}) },
+    profile: { ...fallback.profile, ...(parsed.profile || {}) }
+  };
 }
 
 function normalizeSessions(sessions) {
@@ -1071,6 +1193,7 @@ function normalizeExerciseCatalog(input, fallback = []) {
 
 function saveState() {
   localStorage.setItem(activeStorageKey(), JSON.stringify(state));
+  queueRemoteSave();
 }
 
 function uid() {
@@ -1260,12 +1383,14 @@ function weeklyStreak() {
 }
 
 function loginScreen() {
-  const accounts = accountList();
+  const accounts = accountList().filter(account => !account.remote);
+  const remoteEnabled = remoteAuthEnabled();
   return `<div class="app-shell auth-shell">
     <header class="topbar"><span></span><h1>${tx("Login", "Вхід")}</h1><button class="icon-button" data-action="language" aria-label="Language">${svg("lang")}</button></header>
     <main class="screen auth-screen">
-      <section class="hero-panel"><h2>GymApp</h2><p>${tx("Choose a local account for this device.", "Обери локальний акаунт для цього пристрою.")}</p></section>
-      <section class="panel"><h2>${tx("Account", "Акаунт")}</h2><p class="muted">${tx("GitHub Pages has no server database, so this separates data locally in this browser.", "На GitHub Pages немає серверної бази, тому дані розділяються локально в цьому браузері.")}</p><div class="field-row"><input id="login-name" autocomplete="username" placeholder="${tx("Name", "Ім'я")}"><button class="button" data-action="login-account">${tx("Enter", "Увійти")}</button></div></section>
+      <section class="hero-panel"><h2>GymApp</h2><p>${remoteEnabled ? tx("Sign in to sync workouts across devices.", "Увійди, щоб синхронізувати тренування між пристроями.") : tx("Cloud login is ready after Supabase keys are added.", "Хмарний вхід запрацює після додавання ключів Supabase.")}</p></section>
+      ${remoteEnabled ? `<section class="panel"><h2>${tx("Cloud account", "Хмарний акаунт")}</h2><div class="field-stack"><input id="login-email" autocomplete="email" inputmode="email" placeholder="email@example.com"><input id="login-password" autocomplete="current-password" type="password" placeholder="${tx("Password", "Пароль")}"><input id="login-name" autocomplete="name" placeholder="${tx("Display name", "Ім'я в рейтингу")}"></div><div class="actions"><button class="button" data-action="remote-login">${tx("Log in", "Увійти")}</button><button class="button ghost" data-action="remote-signup">${tx("Create account", "Створити акаунт")}</button></div></section>` : ""}
+      <section class="panel"><h2>${tx("Local account", "Локальний акаунт")}</h2><p class="muted">${remoteEnabled ? tx("Offline fallback for this browser only.", "Запасний режим лише для цього браузера.") : tx("Paste Supabase keys into supabase-config.js to enable real network login.", "Встав ключі Supabase у supabase-config.js, щоб увімкнути справжній мережевий вхід.")}</p><div class="field-row"><input id="local-login-name" autocomplete="username" placeholder="${tx("Name", "Ім'я")}"><button class="button" data-action="login-account">${tx("Enter", "Увійти")}</button></div></section>
       ${accounts.length ? `<section class="panel"><h2>${tx("Saved accounts", "Збережені акаунти")}</h2><div class="chip-row">${accounts.map(account => `<button class="chip buttonlike" data-action="login-account" data-name="${escapeAttr(account.name)}">${escapeHtml(account.name)}</button>`).join("")}</div></section>` : ""}
       <div id="toast" class="toast hidden"></div>
     </main>
@@ -1933,9 +2058,44 @@ function loginAccount(rawName) {
   render();
 }
 
+async function remoteLogin(createAccount) {
+  if (!remoteAuthEnabled()) return showToast(tx("Supabase is not configured.", "Supabase ще не налаштований."));
+  const email = document.querySelector("#login-email")?.value.trim();
+  const password = document.querySelector("#login-password")?.value;
+  const displayName = document.querySelector("#login-name")?.value.trim();
+  if (!email || !password) return showToast(tx("Enter email and password.", "Введи email і пароль."));
+  try {
+    const path = createAccount ? "/auth/v1/signup" : "/auth/v1/token?grant_type=password";
+    const session = await supabaseRequest(path, {
+      method: "POST",
+      body: JSON.stringify(createAccount ? { email, password, data: { display_name: displayName || email.split("@")[0] } } : { email, password })
+    });
+    if (!session?.access_token || !session?.user?.id) {
+      showToast(tx("Check email to confirm account, then log in.", "Підтверди акаунт через email, потім увійди."));
+      return;
+    }
+    saveRemoteSession(session);
+    const account = remoteAccountFromSession(session);
+    if (displayName) account.name = displayName;
+    localStorage.setItem(AUTH_KEY, JSON.stringify(account));
+    saveAccountList([...accountList().filter(item => item.id !== account.id), account]);
+    activeAccount = account;
+    const cloudState = await loadRemoteState(session);
+    state = cloudState ? normalizeImportedState(cloudState, defaultAppState()) : defaultAppState();
+    saveState();
+    nav = [{ name: "workouts" }];
+    modal = null;
+    render();
+    showToast(tx("Cloud login complete.", "Хмарний вхід виконано."));
+  } catch {
+    showToast(tx("Login failed. Check email and password.", "Вхід не вдався. Перевір email і пароль."));
+  }
+}
+
 function logoutAccount() {
   saveState();
   localStorage.removeItem(AUTH_KEY);
+  localStorage.removeItem(REMOTE_SESSION_KEY);
   activeAccount = null;
   state = loadState();
   nav = [{ name: "workouts" }];
@@ -2107,9 +2267,13 @@ function bindEvents() {
     ev.stopPropagation();
     handleAction(el.dataset.action, el);
   }));
-  const loginName = app.querySelector("#login-name");
+  const loginName = app.querySelector("#local-login-name");
   if (loginName) loginName.addEventListener("keydown", ev => {
     if (ev.key === "Enter") loginAccount(loginName.value);
+  });
+  const loginPassword = app.querySelector("#login-password");
+  if (loginPassword) loginPassword.addEventListener("keydown", ev => {
+    if (ev.key === "Enter") remoteLogin(false);
   });
   app.querySelectorAll("[data-block][data-field]").forEach(input => input.addEventListener("input", () => updateDraftInput(input)));
   app.querySelectorAll("[data-draft]").forEach(input => input.addEventListener("input", () => {
@@ -2124,7 +2288,9 @@ function bindEvents() {
 }
 
 function handleAction(action, el) {
-  if (action === "login-account") return loginAccount(el.dataset.name || document.querySelector("#login-name")?.value);
+  if (action === "remote-login") return remoteLogin(false);
+  if (action === "remote-signup") return remoteLogin(true);
+  if (action === "login-account") return loginAccount(el.dataset.name || document.querySelector("#local-login-name")?.value);
   if (action === "logout-account") return logoutAccount();
   if (action === "back") return back();
   if (action === "language") { state.language = state.language === "en" ? "uk" : "en"; saveState(); return render(); }
@@ -2444,6 +2610,12 @@ function exportPayload(diagnostics) {
     schemaVersion: 2,
     exportedAt: Date.now(),
     source: diagnostics ? "gym-pwa-diagnostics" : "gym-pwa",
+    owner: {
+      accountId: activeAccount?.id || null,
+      userId: activeAccount?.userId || null,
+      email: activeAccount?.email || null,
+      remote: activeAccount?.remote || null
+    },
     exercises: state.exercises,
     sessions: state.sessions.map(session => ({
       id: session.id,
@@ -2461,13 +2633,25 @@ function exportPayload(diagnostics) {
   return JSON.stringify(payload, null, 2);
 }
 
+function importAllowed(parsed) {
+  if (!activeAccount?.remote) {
+    return !parsed.owner?.accountId || parsed.owner.accountId === activeAccount?.id;
+  }
+  return Boolean(parsed.owner?.userId && parsed.owner.userId === activeAccount.userId);
+}
+
 function applyImport() {
   try {
     const parsed = JSON.parse(document.querySelector("#import-json").value);
-    state.exercises = normalizeExerciseCatalog(parsed.exercises || parsed.exerciseCatalog, state.exercises);
-    state.sessions = normalizeSessions(parsed.sessions || []);
-    state.mappings = { ...defaultMappings, ...(parsed.mappings || {}) };
-    state.profile = { ...state.profile, ...(parsed.profile || {}) };
+    if (!importAllowed(parsed)) {
+      showToast(tx("This backup belongs to another account.", "Цей бекап належить іншому акаунту."));
+      return;
+    }
+    const imported = normalizeImportedState(parsed, state);
+    state.exercises = imported.exercises;
+    state.sessions = imported.sessions;
+    state.mappings = imported.mappings;
+    state.profile = imported.profile;
     saveState();
     modal = null;
     goRoot("workouts");
