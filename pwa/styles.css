@@ -304,7 +304,7 @@ button:disabled {
   bottom: 0;
   z-index: 11;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 4px;
   padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
   border-top: 1px solid var(--line);
@@ -330,6 +330,44 @@ button:disabled {
 }
 
 .tab-button span { font-size: 11px; }
+
+.leaderboard-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.leaderboard-row {
+  display: grid;
+  grid-template-columns: 38px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(17, 32, 45, 0.74);
+}
+
+.leaderboard-row h3,
+.leaderboard-row p {
+  margin: 0;
+}
+
+.leaderboard-row p {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.rank-place {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius);
+  color: var(--sage);
+  background: rgba(136, 184, 163, 0.12);
+  font-weight: 800;
+}
 
 .fab {
   position: fixed;
