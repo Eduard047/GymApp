@@ -911,6 +911,7 @@ let selectedMonthOffset = 0;
 let overviewMode = "overview";
 let musclePeriod = "month";
 let selectedMuscle = null;
+let leaderboardState = { status: "idle", rows: [], error: "" };
 let timerInterval = null;
 
 function t(key) {
@@ -1417,10 +1418,11 @@ function render() {
   `;
   bindEvents();
   startTimerTicker();
+  if (current.name === "leaderboard") refreshLeaderboard();
 }
 
 function isRootRoute(name) {
-  return ["workouts", "missions", "exercises", "progress"].includes(name);
+  return ["workouts", "missions", "exercises", "progress", "leaderboard"].includes(name);
 }
 
 function titleForRoute(current) {
@@ -1431,7 +1433,7 @@ function titleForRoute(current) {
 }
 
 function bottomNav() {
-  const tabs = [["workouts", "list", t("workouts")], ["missions", "medal", t("missions")], ["exercises", "weight", t("exercises")], ["progress", "chart", t("progress")]];
+  const tabs = [["workouts", "list", t("workouts")], ["missions", "medal", t("missions")], ["exercises", "weight", t("exercises")], ["progress", "chart", t("progress")], ["leaderboard", "trophy", tx("Rating", "Рейтинг")]];
   return `<nav class="bottom-nav">${tabs.map(([id, icon, label]) => `
     <button class="tab-button ${route().name === id ? "active" : ""}" data-route="${id}">${svg(icon)}<span>${label}</span></button>`).join("")}</nav>`;
 }
@@ -1440,6 +1442,7 @@ function screenMarkup(current) {
   if (current.name === "missions") return missionsScreen();
   if (current.name === "exercises") return exercisesScreen();
   if (current.name === "progress") return progressScreen();
+  if (current.name === "leaderboard") return leaderboardScreen();
   if (current.name === "add") return addWorkoutScreen();
   if (current.name === "detail") return detailScreen(current.id);
   if (current.name === "summary") return summaryScreen(current.id);
@@ -2108,6 +2111,55 @@ function accountPanel() {
   return `<section class="panel"><div class="row-head"><div><h2>${tx("Account", "Акаунт")}</h2><p>${escapeHtml(label)}</p></div><button class="button ghost" data-action="logout-account">${tx("Switch", "Змінити")}</button></div></section>`;
 }
 
+function localLeaderboardRow() {
+  return {
+    display_name: activeAccount?.name || tx("Local", "Локальний"),
+    xp: totalXp(),
+    level: levelFromXp(),
+    workouts: state.sessions.length,
+    updated_at: new Date().toISOString(),
+    isCurrent: true
+  };
+}
+
+async function refreshLeaderboard(force = false) {
+  if (leaderboardState.status === "loading") return;
+  if (!force && leaderboardState.status === "loaded") return;
+  if (!remoteAuthEnabled()) {
+    leaderboardState = { status: "loaded", rows: [localLeaderboardRow()], error: "" };
+    return render();
+  }
+  leaderboardState = { ...leaderboardState, status: "loading", error: "" };
+  render();
+  try {
+    if (activeAccount?.remote) await saveRemoteState();
+    const rows = await supabaseRequest("/rest/v1/leaderboard?select=display_name,xp,level,workouts,updated_at&limit=50");
+    leaderboardState = {
+      status: "loaded",
+      rows: (Array.isArray(rows) ? rows : []).map(row => ({ ...row, isCurrent: activeAccount?.name && row.display_name === activeAccount.name })),
+      error: ""
+    };
+  } catch {
+    leaderboardState = { status: "error", rows: [localLeaderboardRow()], error: tx("Could not load cloud rating.", "Не вдалося завантажити хмарний рейтинг.") };
+  }
+  render();
+}
+
+function leaderboardScreen() {
+  const rows = leaderboardState.rows.length ? leaderboardState.rows : [localLeaderboardRow()];
+  const loading = leaderboardState.status === "loading";
+  return `<section class="hero-panel"><div class="hero-split"><div><span class="pill hero-pill">${tx("Global", "Загальний")}</span><h2>${tx("Rating", "Рейтинг")}</h2><p>${tx("Top users by XP, level and saved workouts.", "Топ користувачів за XP, рівнем і тренуваннями.")}</p></div><div class="hero-stat"><span>${tx("Your XP", "Твої XP")}</span><strong>${totalXp()}</strong><small>${rankTitle()}</small></div></div></section>
+    <section class="panel"><div class="row-head"><div><h2>${tx("Leaderboard", "Таблиця рейтингу")}</h2><p>${remoteAuthEnabled() ? tx("Synced through Supabase.", "Синхронізовано через Supabase.") : tx("Cloud rating is disabled until Supabase is configured.", "Хмарний рейтинг вимкнений, доки Supabase не налаштований.")}</p></div><button class="button ghost" data-action="refresh-leaderboard">${loading ? tx("Loading", "Завантаження") : tx("Refresh", "Оновити")}</button></div>${leaderboardState.error ? `<div class="empty">${escapeHtml(leaderboardState.error)}</div>` : ""}<div class="leaderboard-list">${rows.map(leaderboardRow).join("")}</div></section>`;
+}
+
+function leaderboardRow(row, index) {
+  const name = row.display_name || tx("Anonymous", "Без імені");
+  const xp = Number(row.xp || 0);
+  const level = Number(row.level || 1);
+  const workouts = Number(row.workouts || 0);
+  return `<article class="leaderboard-row ${row.isCurrent ? "highlighted" : ""}"><div class="rank-place">${index + 1}</div><div><h3>${escapeHtml(name)}</h3><p>${tx("Level", "Рівень")} ${level} - ${n(workouts, "workout", "workouts", "тренування", "тренування", "тренувань")}</p></div><strong>${xp} XP</strong></article>`;
+}
+
 function exercisesScreen() {
   return `${accountPanel()}<section class="panel"><div class="field-row"><input id="new-exercise-name" placeholder="e.g. Bench Press"><button class="button" data-action="save-exercise">${t("addExercise")}</button></div></section>
     <section class="panel"><h2>${t("backup")}</h2><div class="actions"><button class="button ghost" data-action="export-json">${t("exportJson")}</button><button class="button ghost" data-action="import-json">${t("importJson")}</button><button class="button ghost full" data-action="export-diagnostics">${t("diagnostics")}</button></div></section>
@@ -2292,6 +2344,7 @@ function handleAction(action, el) {
   if (action === "remote-signup") return remoteLogin(true);
   if (action === "login-account") return loginAccount(el.dataset.name || document.querySelector("#local-login-name")?.value);
   if (action === "logout-account") return logoutAccount();
+  if (action === "refresh-leaderboard") return refreshLeaderboard(true);
   if (action === "back") return back();
   if (action === "language") { state.language = state.language === "en" ? "uk" : "en"; saveState(); return render(); }
   if (action === "backup") { modal = { type: "backup-json", json: exportPayload(false) }; return render(); }
