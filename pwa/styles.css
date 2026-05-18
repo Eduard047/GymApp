@@ -207,6 +207,11 @@ button { border: 0; }
   gap: 10px;
 }
 
+.field-stack {
+  display: grid;
+  gap: 10px;
+}
+
 .section-title {
   margin: 16px 0 10px;
 }

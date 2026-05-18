@@ -1,9 +1,10 @@
-const CACHE_NAME = "gym-pwa-v8";
+const CACHE_NAME = "gym-pwa-v9";
 const ASSETS = [
   "./",
   "./index.html",
   "./styles.css",
   "./muscle-regions.js",
+  "./supabase-config.js",
   "./app.js",
   "./manifest.webmanifest",
   "./icon.svg"
