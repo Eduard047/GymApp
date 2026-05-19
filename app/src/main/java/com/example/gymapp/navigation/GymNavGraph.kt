@@ -110,6 +110,7 @@ fun GymAppRoot(
     val legacyRepository = remember { repositoryProvider(null) }
     val coroutineScope = rememberCoroutineScope()
     var showIntro by rememberSaveable { mutableStateOf(true) }
+    var cloudPullUserId by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
         delay(1400)
@@ -121,6 +122,23 @@ fun GymAppRoot(
 
     LaunchedEffect(cloudSession?.userId) {
         val session = cloudSession ?: return@LaunchedEffect
+        cloudPullUserId = null
+        runCatching {
+            val remoteState = authManager.loadRemoteState(session)
+            if (remoteState != null && remoteState.length() > 0) {
+                repository.importBackupJsonObject(
+                    remoteState,
+                    activeUserId = session.userId,
+                    activeRemote = true
+                )
+            }
+        }
+        cloudPullUserId = session.userId
+    }
+
+    LaunchedEffect(cloudSession?.userId, cloudPullUserId) {
+        val session = cloudSession ?: return@LaunchedEffect
+        if (cloudPullUserId != session.userId) return@LaunchedEffect
         combine(
             repository.observeSessions(),
             repository.observeExercises(),
