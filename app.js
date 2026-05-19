@@ -2200,10 +2200,11 @@ async function refreshLeaderboard(force = false) {
   leaderboardState = { ...leaderboardState, status: "loading", error: "" };
   render();
   try {
-    const rows = await supabaseRequest("/rest/v1/leaderboard?select=display_name,xp,level,workouts,updated_at&limit=50");
+    const session = loadRemoteSession();
+    const rows = await supabaseRequest("/rest/v1/profiles?select=user_id,display_name,xp,level,workouts,updated_at&order=xp.desc,workouts.desc,updated_at.asc&limit=50", { session });
     leaderboardState = {
       status: "loaded",
-      rows: (Array.isArray(rows) ? rows : []).map(row => ({ ...row, isCurrent: activeAccount?.name && row.display_name === activeAccount.name })),
+      rows: (Array.isArray(rows) ? rows : []).map(row => ({ ...row, isCurrent: session?.user?.id && row.user_id === session.user.id })),
       error: ""
     };
   } catch {
