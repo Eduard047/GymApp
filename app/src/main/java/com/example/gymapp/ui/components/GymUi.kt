@@ -16,7 +16,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -31,12 +30,11 @@ fun AppPanel(
     content: @Composable () -> Unit
 ) {
     val shape = MaterialTheme.shapes.large
-    val panelBrush = Brush.verticalGradient(
-        colors = listOf(
-            containerColor.copy(alpha = if (highlighted) 0.86f else 0.68f),
-            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (highlighted) 0.62f else 0.42f)
-        )
-    )
+    val panelColor = if (highlighted) {
+        containerColor.copy(alpha = 0.82f)
+    } else {
+        containerColor.copy(alpha = 0.68f)
+    }
     val strokeColor = if (highlighted) {
         MaterialTheme.colorScheme.primary.copy(alpha = 0.38f)
     } else {
@@ -46,7 +44,7 @@ fun AppPanel(
     Box(
         modifier = modifier
             .clip(shape)
-            .background(panelBrush, shape)
+            .background(panelColor, shape)
             .border(BorderStroke(1.dp, strokeColor), shape)
     ) {
         CompositionLocalProvider(LocalContentColor provides contentColor) {
@@ -65,13 +63,7 @@ fun HeroPanel(
         modifier = modifier
             .clip(shape)
             .background(
-                brush = Brush.linearGradient(
-                    colors = listOf(
-                        MaterialTheme.colorScheme.primary.copy(alpha = 0.86f),
-                        MaterialTheme.colorScheme.secondary.copy(alpha = 0.68f),
-                        MaterialTheme.colorScheme.tertiary.copy(alpha = 0.58f)
-                    )
-                ),
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.72f),
                 shape = shape
             )
             .border(

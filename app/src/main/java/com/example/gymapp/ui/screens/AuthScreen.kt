@@ -35,6 +35,7 @@ fun AuthScreen(
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var displayName by remember { mutableStateOf("") }
+    var isSignUp by remember { mutableStateOf(false) }
 
     Column(
         modifier = modifier
@@ -61,7 +62,7 @@ fun AuthScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(
-                    text = "Cloud account",
+                    text = if (isSignUp) "Create account" else "Cloud account",
                     style = MaterialTheme.typography.titleLarge
                 )
                 OutlinedTextField(
@@ -80,20 +81,26 @@ fun AuthScreen(
                     singleLine = true,
                     visualTransformation = PasswordVisualTransformation()
                 )
-                OutlinedTextField(
-                    value = displayName,
-                    onValueChange = { value ->
-                        displayName = value
-                            .filter { it.isLetterOrDigit() || it == ' ' || it == '.' || it == '-' || it == '_' }
-                            .replace(Regex("\\s+"), " ")
-                            .take(32)
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Display name") },
-                    singleLine = true
-                )
+                if (isSignUp) {
+                    OutlinedTextField(
+                        value = displayName,
+                        onValueChange = { value ->
+                            displayName = value
+                                .filter { it.isLetterOrDigit() || it == ' ' || it == '.' || it == '-' || it == '_' }
+                                .replace(Regex("\\s+"), " ")
+                                .take(32)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Display name") },
+                        singleLine = true
+                    )
+                }
                 Text(
-                    text = "Password must be 8+ characters and include letters and numbers. Display name allows letters, numbers, spaces, dot, dash and underscore.",
+                    text = if (isSignUp) {
+                        "Password must be 8+ characters and include letters and numbers. Display name allows letters, numbers, spaces, dot, dash and underscore."
+                    } else {
+                        "Password must be 8+ characters and include letters and numbers."
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -102,18 +109,24 @@ fun AuthScreen(
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Button(
-                        onClick = { onLogin(email, password) },
+                        onClick = {
+                            if (isSignUp) {
+                                onSignUp(email, password, displayName)
+                            } else {
+                                onLogin(email, password)
+                            }
+                        },
                         enabled = !uiState.isLoading,
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text("Log in")
+                        Text(if (isSignUp) "Create account" else "Log in")
                     }
                     OutlinedButton(
-                        onClick = { onSignUp(email, password, displayName) },
+                        onClick = { isSignUp = !isSignUp },
                         enabled = !uiState.isLoading,
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text("Create account")
+                        Text(if (isSignUp) "Log in instead" else "Create account")
                     }
                 }
             }

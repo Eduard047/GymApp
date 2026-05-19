@@ -5,6 +5,7 @@
     <string name="tab_missions">Missions</string>
     <string name="tab_exercises">Exercises</string>
     <string name="tab_progress">Progress</string>
+    <string name="tab_rating">Rating</string>
 
     <string name="title_workouts">Workouts</string>
     <string name="title_missions">Missions</string>
@@ -14,6 +15,7 @@
     <string name="title_ranks">Rank Titles</string>
     <string name="title_exercises">Exercises</string>
     <string name="title_progress">Progress</string>
+    <string name="title_rating">Rating</string>
 
     <string name="action_add_workout">Add Workout</string>
     <string name="action_add_exercise">Add Exercise</string>

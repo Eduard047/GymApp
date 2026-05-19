@@ -43,6 +43,14 @@ data class AuthUiState(
     val message: String? = null
 )
 
+data class LeaderboardRow(
+    val displayName: String,
+    val xp: Int,
+    val level: Int,
+    val workouts: Int,
+    val isCurrentUser: Boolean = false
+)
+
 class CloudAuthManager(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences("gym_cloud_auth", Context.MODE_PRIVATE)
     private val _authState = MutableStateFlow(AuthUiState(session = readSession()))
@@ -155,6 +163,27 @@ class CloudAuthManager(context: Context) {
                 .toString()
         )
     }
+
+    suspend fun loadLeaderboard(session: AccountSession.Cloud, limit: Int = 50): List<LeaderboardRow> =
+        withContext(Dispatchers.IO) {
+            val freshSession = freshCloudSession(session)
+            val response = request(
+                path = "/rest/v1/leaderboard?select=display_name,xp,level,workouts,updated_at&limit=$limit",
+                method = "GET",
+                token = freshSession.accessToken
+            )
+            val rows = JSONArray(response)
+            List(rows.length()) { index ->
+                val row = rows.optJSONObject(index) ?: JSONObject()
+                LeaderboardRow(
+                    displayName = row.optString("display_name").ifBlank { "GymApp user" },
+                    xp = row.optInt("xp"),
+                    level = row.optInt("level", 1),
+                    workouts = row.optInt("workouts"),
+                    isCurrentUser = row.optString("display_name") == session.displayName
+                )
+            }
+        }
 
     private suspend fun refreshSession(session: AccountSession.Cloud): AccountSession.Cloud = withContext(Dispatchers.IO) {
         val refreshToken = session.refreshToken ?: return@withContext session

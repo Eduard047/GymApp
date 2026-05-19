@@ -5,6 +5,7 @@
     <string name="tab_missions">Завдання</string>
     <string name="tab_exercises">Вправи</string>
     <string name="tab_progress">Прогрес</string>
+    <string name="tab_rating">Рейтинг</string>
 
     <string name="title_workouts">Тренування</string>
     <string name="title_missions">Завдання</string>
@@ -14,6 +15,7 @@
     <string name="title_ranks">Титули</string>
     <string name="title_exercises">Вправи</string>
     <string name="title_progress">Прогрес</string>
+    <string name="title_rating">Рейтинг</string>
 
     <string name="action_add_workout">Додати тренування</string>
     <string name="action_add_exercise">Додати вправу</string>

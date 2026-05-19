@@ -58,6 +58,7 @@ import androidx.navigation.navArgument
 import com.example.gymapp.R
 import com.example.gymapp.auth.AccountSession
 import com.example.gymapp.auth.CloudAuthManager
+import com.example.gymapp.auth.LeaderboardRow
 import com.example.gymapp.data.repository.BackupOwner
 import com.example.gymapp.gymApplication
 import com.example.gymapp.data.repository.GymRepository
@@ -67,6 +68,7 @@ import com.example.gymapp.ui.screens.AuthScreen
 import com.example.gymapp.ui.screens.ExerciseListScreen
 import com.example.gymapp.ui.screens.ExerciseProgressScreen
 import com.example.gymapp.ui.screens.GymBackground
+import com.example.gymapp.ui.screens.LeaderboardScreen
 import com.example.gymapp.ui.screens.MissionsScreen
 import com.example.gymapp.ui.screens.RanksScreen
 import com.example.gymapp.ui.screens.PostWorkoutSummaryScreen
@@ -150,6 +152,7 @@ fun GymAppRoot(
         currentRoute == AppDestination.Missions.route -> R.string.title_missions
         currentRoute == AppDestination.Exercises.route -> R.string.title_exercises
         currentRoute == AppDestination.Progress.route -> R.string.title_progress
+        currentRoute == AppDestination.Leaderboard.route -> R.string.title_rating
         currentRoute == AppDestination.Ranks.route -> R.string.title_ranks
         currentRoute == AppDestination.AddWorkout.route -> R.string.title_add_workout
         currentRoute?.startsWith("workout_detail/") == true -> R.string.title_workout_detail
@@ -602,6 +605,52 @@ fun GymAppRoot(
                                 onPreviousMonth = viewModel::previousMonth,
                                 onCurrentMonth = viewModel::currentMonth,
                                 onNextMonth = viewModel::nextMonth,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+
+                        composable(route = AppDestination.Leaderboard.route) {
+                            val viewModel: WorkoutListViewModel = viewModel(
+                                factory = WorkoutListViewModel.factory(repository)
+                            )
+                            val uiState by viewModel.uiState.collectAsState()
+                            var rows by remember { mutableStateOf<List<LeaderboardRow>>(emptyList()) }
+                            var isLoading by remember { mutableStateOf(false) }
+                            var error by remember { mutableStateOf<String?>(null) }
+
+                            fun refreshLeaderboard() {
+                                val session = authState.session as? AccountSession.Cloud
+                                if (session == null) {
+                                    error = "Log in to load the cloud rating."
+                                    rows = emptyList()
+                                    return
+                                }
+                                coroutineScope.launch {
+                                    isLoading = true
+                                    error = null
+                                    runCatching {
+                                        authManager.loadLeaderboard(session)
+                                    }.onSuccess { loadedRows ->
+                                        rows = loadedRows
+                                        isLoading = false
+                                    }.onFailure { throwable ->
+                                        error = throwable.message ?: "Could not load cloud rating."
+                                        rows = emptyList()
+                                        isLoading = false
+                                    }
+                                }
+                            }
+
+                            LaunchedEffect(cloudSession?.userId) {
+                                refreshLeaderboard()
+                            }
+
+                            LeaderboardScreen(
+                                rows = rows,
+                                soloProgress = uiState.soloProgress,
+                                isLoading = isLoading,
+                                error = error,
+                                onRefresh = { refreshLeaderboard() },
                                 modifier = Modifier.fillMaxSize()
                             )
                         }

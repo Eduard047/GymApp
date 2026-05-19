@@ -5,6 +5,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
 import androidx.compose.material.icons.automirrored.filled.ShowChart
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.example.gymapp.R
@@ -38,6 +39,12 @@ sealed class AppDestination(
         icon = Icons.AutoMirrored.Filled.ShowChart
     )
 
+    data object Leaderboard : AppDestination(
+        route = "leaderboard",
+        labelRes = R.string.tab_rating,
+        icon = Icons.Default.EmojiEvents
+    )
+
     data object AddWorkout : AppDestination(
         route = "add_workout",
         labelRes = R.string.title_add_workout,
@@ -63,7 +70,7 @@ sealed class AppDestination(
     )
 
     companion object {
-        val bottomTabs = listOf(Workouts, Missions, Exercises, Progress)
+        val bottomTabs = listOf(Workouts, Missions, Exercises, Progress, Leaderboard)
 
         fun workoutDetailRoute(sessionId: Long): String {
             return "workout_detail/$sessionId"
