@@ -16,6 +16,16 @@
     <string name="title_exercises">Вправи</string>
     <string name="title_progress">Прогрес</string>
     <string name="title_rating">Рейтинг</string>
+    <string name="leaderboard_hero_title">Рейтинг</string>
+    <string name="leaderboard_hero_supporting">Топ користувачів за XP, рівнем і збереженими тренуваннями.</string>
+    <string name="leaderboard_your_xp">Твої XP</string>
+    <string name="leaderboard_title">Таблиця рейтингу</string>
+    <string name="leaderboard_loading_supporting">Завантажуємо хмарний рейтинг...</string>
+    <string name="leaderboard_synced_supporting">Синхронізовано через Supabase.</string>
+    <string name="leaderboard_loading_action">Завантаження</string>
+    <string name="leaderboard_refresh_action">Оновити</string>
+    <string name="leaderboard_empty">У рейтингу ще немає користувачів.</string>
+    <string name="leaderboard_row_detail">Рівень %1$d - %2$d тренувань</string>
 
     <string name="action_add_workout">Додати тренування</string>
     <string name="action_add_exercise">Додати вправу</string>

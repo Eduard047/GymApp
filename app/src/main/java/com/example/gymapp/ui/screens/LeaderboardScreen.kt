@@ -17,9 +17,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.example.gymapp.R
 import com.example.gymapp.auth.LeaderboardRow
 import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.HeroPanel
@@ -51,17 +53,17 @@ fun LeaderboardScreen(
                         verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         Text(
-                            text = "Rating",
+                            text = stringResource(R.string.leaderboard_hero_title),
                             style = MaterialTheme.typography.headlineMedium
                         )
                         Text(
-                            text = "Top users by XP, level and saved workouts.",
+                            text = stringResource(R.string.leaderboard_hero_supporting),
                             style = MaterialTheme.typography.bodyMedium
                         )
                     }
                     Column(horizontalAlignment = Alignment.End) {
                         Text(
-                            text = "Your XP",
+                            text = stringResource(R.string.leaderboard_your_xp),
                             style = MaterialTheme.typography.labelMedium
                         )
                         Text(
@@ -93,11 +95,15 @@ fun LeaderboardScreen(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Leaderboard",
+                                text = stringResource(R.string.leaderboard_title),
                                 style = MaterialTheme.typography.titleLarge
                             )
                             Text(
-                                text = if (isLoading) "Loading cloud rating..." else "Synced through Supabase.",
+                                text = if (isLoading) {
+                                    stringResource(R.string.leaderboard_loading_supporting)
+                                } else {
+                                    stringResource(R.string.leaderboard_synced_supporting)
+                                },
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -106,7 +112,13 @@ fun LeaderboardScreen(
                             onClick = onRefresh,
                             enabled = !isLoading
                         ) {
-                            Text(if (isLoading) "Loading" else "Refresh")
+                            Text(
+                                if (isLoading) {
+                                    stringResource(R.string.leaderboard_loading_action)
+                                } else {
+                                    stringResource(R.string.leaderboard_refresh_action)
+                                }
+                            )
                         }
                     }
                     error?.let {
@@ -118,7 +130,7 @@ fun LeaderboardScreen(
                     }
                     if (rows.isEmpty() && !isLoading) {
                         Text(
-                            text = "No users in the rating yet.",
+                            text = stringResource(R.string.leaderboard_empty),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -173,7 +185,7 @@ private fun LeaderboardRowCard(
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = "Level ${row.level} - ${row.workouts} workouts",
+                    text = stringResource(R.string.leaderboard_row_detail, row.level, row.workouts),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,

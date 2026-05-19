@@ -16,6 +16,16 @@
     <string name="title_exercises">Exercises</string>
     <string name="title_progress">Progress</string>
     <string name="title_rating">Rating</string>
+    <string name="leaderboard_hero_title">Rating</string>
+    <string name="leaderboard_hero_supporting">Top users by XP, level and saved workouts.</string>
+    <string name="leaderboard_your_xp">Your XP</string>
+    <string name="leaderboard_title">Leaderboard</string>
+    <string name="leaderboard_loading_supporting">Loading cloud rating...</string>
+    <string name="leaderboard_synced_supporting">Synced through Supabase.</string>
+    <string name="leaderboard_loading_action">Loading</string>
+    <string name="leaderboard_refresh_action">Refresh</string>
+    <string name="leaderboard_empty">No users in the rating yet.</string>
+    <string name="leaderboard_row_detail">Level %1$d - %2$d workouts</string>
 
     <string name="action_add_workout">Add Workout</string>
     <string name="action_add_exercise">Add Exercise</string>

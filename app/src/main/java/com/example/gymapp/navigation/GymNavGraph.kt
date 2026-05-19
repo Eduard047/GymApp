@@ -47,7 +47,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -320,10 +322,13 @@ fun GymAppRoot(
                                             label = {
                                                 Text(
                                                     text = stringResource(tab.labelRes),
-                                                    style = MaterialTheme.typography.labelSmall,
+                                                    style = MaterialTheme.typography.labelSmall.copy(
+                                                        fontSize = 10.sp
+                                                    ),
                                                     modifier = Modifier.fillMaxWidth(),
                                                     textAlign = TextAlign.Center,
-                                                    maxLines = 1
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
                                                 )
                                             }
                                         )
@@ -628,7 +633,7 @@ fun GymAppRoot(
                                 coroutineScope.launch {
                                     isLoading = true
                                     error = null
-                                    runCatching {
+                                    val localRows = runCatching {
                                         val owner = BackupOwner(
                                             accountId = session.userId,
                                             userId = session.userId,
@@ -636,32 +641,47 @@ fun GymAppRoot(
                                             remote = true
                                         )
                                         val stats = repository.getSyncProfileStats()
-                                        authManager.saveRemoteState(
-                                            session = session,
-                                            state = repository.buildBackupJson(owner = owner),
-                                            xp = stats.xp,
-                                            level = stats.level,
-                                            workouts = stats.workouts
-                                        )
-                                        val currentUserRow = LeaderboardRow(
+                                        runCatching {
+                                            authManager.saveRemoteState(
+                                                session = session,
+                                                state = repository.buildBackupJson(owner = owner),
+                                                xp = stats.xp,
+                                                level = stats.level,
+                                                workouts = stats.workouts
+                                            )
+                                        }.onFailure { throwable ->
+                                            error = throwable.message ?: "Could not sync your cloud profile."
+                                        }
+                                        LeaderboardRow(
                                             displayName = session.displayName,
                                             xp = stats.xp,
                                             level = stats.level,
                                             workouts = stats.workouts,
                                             isCurrentUser = true
                                         )
+                                    }.getOrElse {
+                                        LeaderboardRow(
+                                            displayName = session.displayName,
+                                            xp = uiState.soloProgress.totalXp,
+                                            level = uiState.soloProgress.level,
+                                            workouts = uiState.dashboardStats.workoutCount,
+                                            isCurrentUser = true
+                                        )
+                                    }
+
+                                    runCatching {
                                         val loadedRows = authManager.loadLeaderboard(session)
                                         if (loadedRows.any { it.displayName == session.displayName }) {
                                             loadedRows
                                         } else {
-                                            listOf(currentUserRow) + loadedRows
+                                            listOf(localRows) + loadedRows
                                         }
                                     }.onSuccess { loadedRows ->
                                         rows = loadedRows
                                         isLoading = false
                                     }.onFailure { throwable ->
                                         error = throwable.message ?: "Could not load cloud rating."
-                                        rows = emptyList()
+                                        rows = listOf(localRows)
                                         isLoading = false
                                     }
                                 }
