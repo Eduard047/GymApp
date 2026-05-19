@@ -1050,6 +1050,17 @@ async function loadRemoteState(session) {
   return Array.isArray(rows) && rows[0]?.state ? rows[0].state : null;
 }
 
+async function pullRemoteState() {
+  if (!activeAccount?.remote || !remoteAuthEnabled()) return false;
+  const session = loadRemoteSession();
+  if (!session?.user?.id) return false;
+  const cloudState = await loadRemoteState(session);
+  if (!cloudState) return false;
+  state = normalizeImportedState(cloudState, defaultAppState());
+  saveState();
+  return true;
+}
+
 function remoteStatePayload() {
   return JSON.parse(JSON.stringify({
     language: state.language,
@@ -2189,7 +2200,6 @@ async function refreshLeaderboard(force = false) {
   leaderboardState = { ...leaderboardState, status: "loading", error: "" };
   render();
   try {
-    if (activeAccount?.remote) await saveRemoteState();
     const rows = await supabaseRequest("/rest/v1/leaderboard?select=display_name,xp,level,workouts,updated_at&limit=50");
     leaderboardState = {
       status: "loaded",
@@ -2882,3 +2892,8 @@ if ("serviceWorker" in navigator) {
 }
 
 render();
+pullRemoteState()
+  .then(updated => {
+    if (updated) render();
+  })
+  .catch(() => showToast(tx("Cloud sync failed.", "Синхронізація не вдалася.")));
