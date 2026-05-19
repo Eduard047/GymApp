@@ -629,7 +629,33 @@ fun GymAppRoot(
                                     isLoading = true
                                     error = null
                                     runCatching {
-                                        authManager.loadLeaderboard(session)
+                                        val owner = BackupOwner(
+                                            accountId = session.userId,
+                                            userId = session.userId,
+                                            email = session.email,
+                                            remote = true
+                                        )
+                                        val stats = repository.getSyncProfileStats()
+                                        authManager.saveRemoteState(
+                                            session = session,
+                                            state = repository.buildBackupJson(owner = owner),
+                                            xp = stats.xp,
+                                            level = stats.level,
+                                            workouts = stats.workouts
+                                        )
+                                        val currentUserRow = LeaderboardRow(
+                                            displayName = session.displayName,
+                                            xp = stats.xp,
+                                            level = stats.level,
+                                            workouts = stats.workouts,
+                                            isCurrentUser = true
+                                        )
+                                        val loadedRows = authManager.loadLeaderboard(session)
+                                        if (loadedRows.any { it.displayName == session.displayName }) {
+                                            loadedRows
+                                        } else {
+                                            listOf(currentUserRow) + loadedRows
+                                        }
                                     }.onSuccess { loadedRows ->
                                         rows = loadedRows
                                         isLoading = false
