@@ -107,7 +107,6 @@ fun GymAppRoot(
     val selectedLanguage by languageManager.selectedLanguage.collectAsState()
     val authState by authManager.authState.collectAsState()
     val repository = remember(authState.session) { repositoryProvider(authState.session) }
-    val legacyRepository = remember { repositoryProvider(null) }
     val coroutineScope = rememberCoroutineScope()
     var showIntro by rememberSaveable { mutableStateOf(true) }
     var cloudPullUserId by remember { mutableStateOf<String?>(null) }
@@ -157,6 +156,18 @@ fun GymAppRoot(
                         remote = true
                     )
                     val stats = repository.getSyncProfileStats()
+                    val remoteProfile = authManager.loadOwnProfile(session)
+                    if (remoteProfile != null && (remoteProfile.workouts > stats.workouts || remoteProfile.xp > stats.xp)) {
+                        val remoteState = authManager.loadRemoteState(session)
+                        if (remoteState != null && remoteState.length() > 0) {
+                            repository.importBackupJsonObject(
+                                remoteState,
+                                activeUserId = session.userId,
+                                activeRemote = true
+                            )
+                        }
+                        return@collectLatest
+                    }
                     authManager.saveRemoteState(
                         session = session,
                         state = repository.buildBackupJson(owner = owner),
@@ -205,20 +216,15 @@ fun GymAppRoot(
                                         email = session.email,
                                         remote = true
                                     )
-                                    val sourceRepository = legacyRepository
-                                    val uploadState = sourceRepository.buildBackupJson(owner = owner)
-                                    val stats = sourceRepository.getSyncProfileStats()
+                                    val accountRepository = repositoryProvider(session)
+                                    val uploadState = accountRepository.buildBackupJson(owner = owner)
+                                    val stats = accountRepository.getSyncProfileStats()
                                     authManager.saveRemoteState(
                                         session = session,
                                         state = uploadState,
                                         xp = stats.xp,
                                         level = stats.level,
                                         workouts = stats.workouts
-                                    )
-                                    repositoryProvider(session).importBackupJsonObject(
-                                        uploadState,
-                                        activeUserId = session.userId,
-                                        activeRemote = true
                                     )
                                 }
                                 authManager.setMessage(null)
@@ -238,19 +244,15 @@ fun GymAppRoot(
                                     email = session.email,
                                     remote = true
                                 )
-                                val stats = legacyRepository.getSyncProfileStats()
-                                val uploadState = legacyRepository.buildBackupJson(owner = owner)
+                                val accountRepository = repositoryProvider(session)
+                                val stats = accountRepository.getSyncProfileStats()
+                                val uploadState = accountRepository.buildBackupJson(owner = owner)
                                 authManager.saveRemoteState(
                                     session = session,
                                     state = uploadState,
                                     xp = stats.xp,
                                     level = stats.level,
                                     workouts = stats.workouts
-                                )
-                                repositoryProvider(session).importBackupJsonObject(
-                                    uploadState,
-                                    activeUserId = session.userId,
-                                    activeRemote = true
                                 )
                                 authManager.setMessage(null)
                             }.onFailure { throwable ->
@@ -658,26 +660,45 @@ fun GymAppRoot(
                                             email = session.email,
                                             remote = true
                                         )
-                                        runCatching {
+                                        val remoteProfile = authManager.loadOwnProfile(session)
+                                        val localStats = repository.getSyncProfileStats()
+                                        if (remoteProfile != null && (remoteProfile.workouts > localStats.workouts || remoteProfile.xp > localStats.xp)) {
+                                            val remoteState = authManager.loadRemoteState(session)
+                                            if (remoteState != null && remoteState.length() > 0) {
+                                                repository.importBackupJsonObject(
+                                                    remoteState,
+                                                    activeUserId = session.userId,
+                                                    activeRemote = true
+                                                )
+                                            }
+                                            LeaderboardRow(
+                                                userId = session.userId,
+                                                displayName = remoteProfile.displayName,
+                                                xp = remoteProfile.xp,
+                                                level = remoteProfile.level,
+                                                workouts = remoteProfile.workouts,
+                                                isCurrentUser = true
+                                            )
+                                        } else {
                                             authManager.saveRemoteState(
                                                 session = session,
                                                 state = repository.buildBackupJson(owner = owner),
-                                                xp = uiState.soloProgress.totalXp,
-                                                level = uiState.soloProgress.level,
-                                                workouts = uiState.sessions.size
+                                                xp = localStats.xp,
+                                                level = localStats.level,
+                                                workouts = localStats.workouts
                                             )
-                                        }.onFailure { throwable ->
-                                            error = throwable.message ?: "Could not sync your cloud profile."
+                                            LeaderboardRow(
+                                                userId = session.userId,
+                                                displayName = session.displayName,
+                                                xp = localStats.xp,
+                                                level = localStats.level,
+                                                workouts = localStats.workouts,
+                                                isCurrentUser = true
+                                            )
                                         }
-                                        LeaderboardRow(
-                                            displayName = session.displayName,
-                                            xp = uiState.soloProgress.totalXp,
-                                            level = uiState.soloProgress.level,
-                                            workouts = uiState.sessions.size,
-                                            isCurrentUser = true
-                                        )
                                     }.getOrElse {
                                         LeaderboardRow(
+                                            userId = session.userId,
                                             displayName = session.displayName,
                                             xp = uiState.soloProgress.totalXp,
                                             level = uiState.soloProgress.level,
