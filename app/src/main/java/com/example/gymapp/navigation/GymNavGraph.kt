@@ -640,23 +640,22 @@ fun GymAppRoot(
                                             email = session.email,
                                             remote = true
                                         )
-                                        val stats = repository.getSyncProfileStats()
                                         runCatching {
                                             authManager.saveRemoteState(
                                                 session = session,
                                                 state = repository.buildBackupJson(owner = owner),
-                                                xp = stats.xp,
-                                                level = stats.level,
-                                                workouts = stats.workouts
+                                                xp = uiState.soloProgress.totalXp,
+                                                level = uiState.soloProgress.level,
+                                                workouts = uiState.sessions.size
                                             )
                                         }.onFailure { throwable ->
                                             error = throwable.message ?: "Could not sync your cloud profile."
                                         }
                                         LeaderboardRow(
                                             displayName = session.displayName,
-                                            xp = stats.xp,
-                                            level = stats.level,
-                                            workouts = stats.workouts,
+                                            xp = uiState.soloProgress.totalXp,
+                                            level = uiState.soloProgress.level,
+                                            workouts = uiState.sessions.size,
                                             isCurrentUser = true
                                         )
                                     }.getOrElse {

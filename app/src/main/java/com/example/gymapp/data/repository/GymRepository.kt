@@ -18,6 +18,7 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.temporal.TemporalAdjusters
 import java.util.Locale
+import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
@@ -336,16 +337,32 @@ class GymRepository(
                 }
             )
         }
-        val snapshot = GamificationEngine.buildSnapshot(
-            sessions = summaries,
-            nowMillis = System.currentTimeMillis(),
-            zoneId = ZoneId.systemDefault()
-        )
+        val xp = summaries.sumOf { session ->
+            90 + session.exerciseCount * 16 + session.setCount * 8 + (session.totalVolume / 80.0).roundToInt()
+        }
+        val level = calculateSyncLevel(xp)
         return SyncProfileStats(
-            xp = snapshot.progression.totalXp,
-            level = snapshot.progression.level,
-            workouts = snapshot.summary.workoutCount
+            xp = xp,
+            level = level,
+            workouts = summaries.size
         )
+    }
+
+    private fun calculateSyncLevel(totalXp: Int): Int {
+        var level = 1
+        var remainingXp = totalXp
+        var xpForNextLevel = syncXpRequirementForLevel(level)
+        while (remainingXp >= xpForNextLevel) {
+            remainingXp -= xpForNextLevel
+            level += 1
+            xpForNextLevel = syncXpRequirementForLevel(level)
+        }
+        return level
+    }
+
+    private fun syncXpRequirementForLevel(level: Int): Int {
+        val stage = (level - 1).coerceAtLeast(0)
+        return 200 + (stage * 85) + ((stage * stage) * 8)
     }
 
     suspend fun importBackupJson(
