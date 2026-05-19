@@ -43,23 +43,33 @@ if (-not $javaExePath) {
     throw "Java not found. Set JAVA_HOME or install a JDK."
 }
 
-$versionCode = [int][DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+$versionBase = [DateTimeOffset]::Parse("2026-01-01T00:00:00Z")
+$versionCode = 2000000000 + [int][Math]::Floor(([DateTimeOffset]::UtcNow - $versionBase).TotalMinutes)
 $versionName = (Get-Date).ToString("yyyy.MM.dd.HHmm")
 
-Write-Host "Building debug APK with versionCode=$versionCode versionName=$versionName"
+Write-Host "Building debug APKs with versionCode=$versionCode versionName=$versionName"
 
-& "$projectRoot\gradlew.bat" :app:assembleDebug "-PappVersionCode=$versionCode" "-PappVersionName=$versionName"
+& "$projectRoot\gradlew.bat" :app:assembleDebug :wear:assembleDebug "-PappVersionCode=$versionCode" "-PappVersionName=$versionName" "-PwearVersionCode=$versionCode" "-PwearVersionName=$versionName"
 if ($LASTEXITCODE -ne 0) {
     throw "Gradle build failed."
 }
 
-$apkSource = Join-Path $projectRoot "app\build\outputs\apk\debug\app-debug.apk"
-$apkTarget = Join-Path $projectRoot "app-debug.apk"
+$phoneApkSource = Join-Path $projectRoot "app\build\outputs\apk\debug\app-debug.apk"
+$phoneApkTarget = Join-Path $projectRoot "gymapp-phone-debug.apk"
+$wearApkSource = Join-Path $projectRoot "wear\build\outputs\apk\debug\wear-debug.apk"
+$wearApkTarget = Join-Path $projectRoot "gymapp-watch-debug.apk"
 
-if (-not (Test-Path $apkSource)) {
-    throw "APK not found at: $apkSource"
+if (-not (Test-Path $phoneApkSource)) {
+    throw "Phone APK not found at: $phoneApkSource"
 }
 
-Copy-Item -Path $apkSource -Destination $apkTarget -Force
-Write-Host "Copied APK to: $apkTarget"
-Write-Host "Install update command: adb install -r app-debug.apk"
+if (-not (Test-Path $wearApkSource)) {
+    throw "Watch APK not found at: $wearApkSource"
+}
+
+Copy-Item -Path $phoneApkSource -Destination $phoneApkTarget -Force
+Copy-Item -Path $wearApkSource -Destination $wearApkTarget -Force
+Write-Host "Copied phone APK to: $phoneApkTarget"
+Write-Host "Copied watch APK to: $wearApkTarget"
+Write-Host "Phone install command: adb install -r gymapp-phone-debug.apk"
+Write-Host "Watch install command: adb install -r gymapp-watch-debug.apk"

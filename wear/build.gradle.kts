@@ -1,9 +1,24 @@
+import java.time.Duration
+import java.time.Instant
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     id("org.jetbrains.kotlin.kapt")
 }
+
+fun autoVersionCode(): Int {
+    val base = Instant.parse("2026-01-01T00:00:00Z")
+    val minutes = Duration.between(base, Instant.now()).toMinutes().toInt()
+    return 2_000_000_000 + minutes
+}
+
+val wearVersionCode = (findProperty("wearVersionCode") as String?)?.toIntOrNull() ?: autoVersionCode()
+val wearVersionName = (findProperty("wearVersionName") as String?) ?: LocalDateTime.now()
+    .format(DateTimeFormatter.ofPattern("yyyy.MM.dd.HHmm"))
 
 android {
     namespace = "com.example.gymapp.wear"
@@ -17,8 +32,8 @@ android {
         applicationId = "com.example.gymapp"
         minSdk = 30
         targetSdk = 36
-        versionCode = 2000000010
-        versionName = "2.0.0"
+        versionCode = wearVersionCode
+        versionName = wearVersionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

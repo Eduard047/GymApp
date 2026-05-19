@@ -1,3 +1,8 @@
+import java.time.Duration
+import java.time.Instant
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -5,8 +10,15 @@ plugins {
     id("org.jetbrains.kotlin.kapt")
 }
 
-val appVersionCode = (findProperty("appVersionCode") as String?)?.toIntOrNull() ?: 1
-val appVersionName = (findProperty("appVersionName") as String?) ?: "1.0.0"
+fun autoVersionCode(): Int {
+    val base = Instant.parse("2026-01-01T00:00:00Z")
+    val minutes = Duration.between(base, Instant.now()).toMinutes().toInt()
+    return 2_000_000_000 + minutes
+}
+
+val appVersionCode = (findProperty("appVersionCode") as String?)?.toIntOrNull() ?: autoVersionCode()
+val appVersionName = (findProperty("appVersionName") as String?) ?: LocalDateTime.now()
+    .format(DateTimeFormatter.ofPattern("yyyy.MM.dd.HHmm"))
 
 android {
     namespace = "com.example.gymapp"

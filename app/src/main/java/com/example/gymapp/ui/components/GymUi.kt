@@ -9,9 +9,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
@@ -41,18 +43,15 @@ fun AppPanel(
         MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.74f)
     }
 
-    Surface(
+    Box(
         modifier = modifier
             .clip(shape)
             .background(panelBrush, shape)
-            .border(BorderStroke(1.dp, strokeColor), shape),
-        color = Color.Transparent,
-        contentColor = contentColor,
-        shape = shape,
-        tonalElevation = 0.dp,
-        shadowElevation = if (highlighted) 16.dp else 6.dp
+            .border(BorderStroke(1.dp, strokeColor), shape)
     ) {
-        content()
+        CompositionLocalProvider(LocalContentColor provides contentColor) {
+            content()
+        }
     }
 }
 
@@ -62,7 +61,7 @@ fun HeroPanel(
     content: @Composable () -> Unit
 ) {
     val shape = MaterialTheme.shapes.extraLarge
-    Surface(
+    Box(
         modifier = modifier
             .clip(shape)
             .background(
@@ -78,18 +77,16 @@ fun HeroPanel(
             .border(
                 BorderStroke(1.dp, MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.2f)),
                 shape
-            ),
-        color = Color.Transparent,
-        contentColor = MaterialTheme.colorScheme.onPrimary,
-        shape = shape,
-        shadowElevation = 18.dp
+            )
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(20.dp)
-        ) {
-            content()
+        CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onPrimary) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(20.dp)
+            ) {
+                content()
+            }
         }
     }
 }
