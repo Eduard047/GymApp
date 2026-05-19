@@ -217,6 +217,7 @@ fun ExerciseListScreen(
         ModalBottomSheet(onDismissRequest = onCloseImport) {
             ImportBackupBottomSheetContent(
                 importJson = uiState.importJson,
+                importMessage = uiState.importMessage,
                 onImportJsonChange = onImportJsonChange,
                 onImportBackup = onImportBackup,
                 onDismiss = onCloseImport
@@ -455,6 +456,7 @@ private fun BackupJsonBottomSheetContent(
 @Composable
 private fun ImportBackupBottomSheetContent(
     importJson: String,
+    importMessage: String?,
     onImportJsonChange: (String) -> Unit,
     onImportBackup: () -> Unit,
     onDismiss: () -> Unit
@@ -477,6 +479,13 @@ private fun ImportBackupBottomSheetContent(
             maxLines = 12,
             placeholder = { Text(stringResource(R.string.backup_import_placeholder)) }
         )
+        if (!importMessage.isNullOrBlank()) {
+            Text(
+                text = importMessage,
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodyMedium
+            )
+        }
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)

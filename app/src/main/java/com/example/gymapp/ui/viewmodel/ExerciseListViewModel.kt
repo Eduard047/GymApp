@@ -33,6 +33,7 @@ data class ExerciseListUiState(
     val backupJson: String? = null,
     val backupMessage: String? = null,
     val importJson: String = "",
+    val importMessage: String? = null,
     val isImportOpen: Boolean = false,
     val accountLabel: String = "Local",
     val accountSupporting: String = "Offline on this phone",
@@ -56,6 +57,7 @@ private data class ExerciseBackupState(
     val backupJson: String?,
     val backupMessage: String?,
     val importJson: String,
+    val importMessage: String?,
     val isImportOpen: Boolean
 )
 
@@ -72,6 +74,7 @@ class ExerciseListViewModel(
     private val backupJson = MutableStateFlow<String?>(null)
     private val backupMessage = MutableStateFlow<String?>(null)
     private val importJson = MutableStateFlow("")
+    private val importMessage = MutableStateFlow<String?>(null)
     private val isImportOpen = MutableStateFlow(false)
 
     private val selectedExerciseHistory = selectedExerciseId.flatMapLatest { exerciseId ->
@@ -112,12 +115,14 @@ class ExerciseListViewModel(
         backupJson,
         backupMessage,
         importJson,
+        importMessage,
         isImportOpen
-    ) { backup, backupStatus, importText, importOpen ->
+    ) { backup, backupStatus, importText, importStatus, importOpen ->
         ExerciseBackupState(
             backupJson = backup,
             backupMessage = backupStatus,
             importJson = importText,
+            importMessage = importStatus,
             isImportOpen = importOpen
         )
     }
@@ -139,6 +144,7 @@ class ExerciseListViewModel(
             backupJson = backup.backupJson,
             backupMessage = backup.backupMessage,
             importJson = backup.importJson,
+            importMessage = backup.importMessage,
             isImportOpen = backup.isImportOpen,
             accountLabel = activeAccountLabel(),
             accountSupporting = activeAccountSupporting(),
@@ -255,19 +261,26 @@ class ExerciseListViewModel(
     }
 
     fun openImport() {
+        importMessage.value = null
         isImportOpen.value = true
     }
 
     fun closeImport() {
         isImportOpen.value = false
+        importMessage.value = null
     }
 
     fun updateImportJson(value: String) {
         importJson.value = value
+        importMessage.value = null
     }
 
     fun importBackup() {
-        val rawJson = importJson.value
+        val rawJson = importJson.value.trim()
+        if (rawJson.isBlank()) {
+            importMessage.value = "Paste backup JSON first"
+            return
+        }
         viewModelScope.launch {
             runCatching {
                 val session = authManager?.authState?.value?.session
@@ -278,11 +291,20 @@ class ExerciseListViewModel(
                     activeRemote = session is AccountSession.Cloud
                 )
             }.onSuccess { importedSessions ->
-                backupMessage.value = "Imported $importedSessions workouts"
+                backupMessage.value = if (importedSessions > 0) {
+                    "Imported $importedSessions workouts"
+                } else {
+                    "Import finished: no new workouts found"
+                }
                 importJson.value = ""
+                importMessage.value = null
                 isImportOpen.value = false
-            }.onFailure {
-                backupMessage.value = "Backup import failed"
+            }.onFailure { throwable ->
+                val message = throwable.message
+                    ?.takeIf { it.isNotBlank() }
+                    ?: "Backup import failed. Check that the pasted text is valid GymApp JSON."
+                importMessage.value = message
+                backupMessage.value = message
             }
         }
     }
