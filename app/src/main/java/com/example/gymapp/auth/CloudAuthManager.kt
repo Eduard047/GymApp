@@ -15,6 +15,7 @@ import java.net.URL
 
 private const val SUPABASE_URL = "https://owrcbsrectdgaotndtxy.supabase.co"
 private const val SUPABASE_KEY = "sb_publishable_vvOMzx6V_sPBpD-b3VZfzg_y14u8kIg"
+private const val AUTH_REDIRECT_URL = "https://eduard047.github.io/GymApp/"
 
 sealed class AccountSession {
     data class Cloud(
@@ -48,6 +49,7 @@ class CloudAuthManager(context: Context) {
     val authState: StateFlow<AuthUiState> = _authState.asStateFlow()
 
     suspend fun login(email: String, password: String): AccountSession.Cloud {
+        validateAuthInput(email = email, password = password)
         return authenticate(
             path = "/auth/v1/token?grant_type=password",
             payload = JSONObject()
@@ -57,14 +59,16 @@ class CloudAuthManager(context: Context) {
     }
 
     suspend fun signUp(email: String, password: String, displayName: String): AccountSession.Cloud {
+        val cleanName = sanitizeDisplayName(displayName.ifBlank { email.substringBefore("@") })
+        validateAuthInput(email = email, password = password, displayName = cleanName)
         return authenticate(
-            path = "/auth/v1/signup",
+            path = "/auth/v1/signup?redirect_to=${java.net.URLEncoder.encode(AUTH_REDIRECT_URL, "UTF-8")}",
             payload = JSONObject()
                 .put("email", email.trim())
                 .put("password", password)
                 .put(
                     "data",
-                    JSONObject().put("display_name", displayName.ifBlank { email.substringBefore("@") })
+                    JSONObject().put("display_name", cleanName)
                 )
         )
     }
@@ -223,7 +227,7 @@ class CloudAuthManager(context: Context) {
 
     private fun readSession(): AccountSession? {
         return when (prefs.getString("mode", null)) {
-            "local" -> AccountSession.Local(prefs.getString("local_name", "Local") ?: "Local")
+            "local" -> null
             "cloud" -> runCatching {
                 val json = JSONObject(prefs.getString("cloud", null).orEmpty())
                 AccountSession.Cloud(
@@ -270,5 +274,28 @@ class CloudAuthManager(context: Context) {
             error(text.ifBlank { "Network request failed: ${connection.responseCode}" })
         }
         return text.ifBlank { "[]" }
+    }
+
+    private fun validateAuthInput(email: String, password: String, displayName: String = "") {
+        val cleanEmail = email.trim()
+        require(Regex("^[^\\s@]+@[^\\s@]+\\.[^\\s@]{2,}$").matches(cleanEmail) && cleanEmail.length <= 254) {
+            "Enter a valid email address."
+        }
+        require(password.length in 8..72 && password.any { it.isLetter() } && password.any { it.isDigit() }) {
+            "Password must be 8-72 characters and include letters and numbers."
+        }
+        if (displayName.isNotBlank()) {
+            require(displayName.length in 2..32 && displayName.all { it.isLetterOrDigit() || it == ' ' || it == '.' || it == '-' || it == '_' }) {
+                "Display name can use letters, numbers, spaces, dot, dash and underscore."
+            }
+        }
+    }
+
+    private fun sanitizeDisplayName(value: String): String {
+        return value
+            .filter { it.isLetterOrDigit() || it == ' ' || it == '.' || it == '-' || it == '_' }
+            .replace(Regex("\\s+"), " ")
+            .trim()
+            .take(32)
     }
 }

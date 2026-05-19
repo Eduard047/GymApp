@@ -6,6 +6,7 @@ const AUTH_KEY = "gym-pwa-active-account-v1";
 const ACCOUNT_LIST_KEY = "gym-pwa-account-list-v1";
 const ACCOUNT_PREFIX = "gym-pwa-account:";
 const REMOTE_SESSION_KEY = "gym-pwa-supabase-session-v1";
+const AUTH_REDIRECT_URL = "https://eduard047.github.io/GymApp/";
 const app = document.querySelector("#app");
 
 const icons = {
@@ -956,7 +957,7 @@ function normalizeAccountId(name) {
 function loadActiveAccount() {
   try {
     const parsed = JSON.parse(localStorage.getItem(AUTH_KEY) || "null");
-    return parsed?.id && parsed?.name ? parsed : null;
+    return parsed?.id && parsed?.name && parsed?.remote ? parsed : null;
   } catch {
     return null;
   }
@@ -2095,6 +2096,62 @@ async function remoteLogin(createAccount) {
   }
 }
 
+function sanitizeDisplayName(value) {
+  return String(value || "").replace(/[^\p{L}\p{N} ._-]/gu, "").replace(/\s+/g, " ").trim().slice(0, 32);
+}
+
+function validateAuthInput(email, password, displayName = "") {
+  const cleanEmail = String(email || "").trim();
+  const cleanPassword = String(password || "");
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(cleanEmail) || cleanEmail.length > 254) {
+    return tx("Enter a valid email address.", "Enter a valid email address.");
+  }
+  if (cleanPassword.length < 8 || cleanPassword.length > 72 || !/[A-Za-z]/.test(cleanPassword) || !/\d/.test(cleanPassword)) {
+    return tx("Password must be 8-72 characters and include letters and numbers.", "Password must be 8-72 characters and include letters and numbers.");
+  }
+  if (displayName && !/^[\p{L}\p{N} ._-]{2,32}$/u.test(displayName)) {
+    return tx("Display name can use letters, numbers, spaces, dot, dash and underscore.", "Display name can use letters, numbers, spaces, dot, dash and underscore.");
+  }
+  return "";
+}
+
+async function remoteLogin(createAccount) {
+  if (!remoteAuthEnabled()) return showToast(tx("Supabase is not configured.", "Supabase is not configured."));
+  const email = document.querySelector("#login-email")?.value.trim();
+  const password = document.querySelector("#login-password")?.value;
+  const displayName = sanitizeDisplayName(document.querySelector("#login-name")?.value.trim() || "");
+  const validationError = validateAuthInput(email, password, createAccount ? displayName : "");
+  if (validationError) return showToast(validationError);
+  try {
+    const path = createAccount
+      ? `/auth/v1/signup?redirect_to=${encodeURIComponent(AUTH_REDIRECT_URL)}`
+      : "/auth/v1/token?grant_type=password";
+    const session = await supabaseRequest(path, {
+      method: "POST",
+      body: JSON.stringify(createAccount ? { email, password, data: { display_name: displayName || email.split("@")[0] } } : { email, password })
+    });
+    if (!session?.access_token || !session?.user?.id) {
+      showToast(tx("Check email to confirm account, then log in.", "Check email to confirm account, then log in."));
+      return;
+    }
+    saveRemoteSession(session);
+    const account = remoteAccountFromSession(session);
+    if (displayName) account.name = displayName;
+    localStorage.setItem(AUTH_KEY, JSON.stringify(account));
+    saveAccountList([...accountList().filter(item => item.id !== account.id), account]);
+    activeAccount = account;
+    const cloudState = await loadRemoteState(session);
+    state = cloudState ? normalizeImportedState(cloudState, defaultAppState()) : defaultAppState();
+    saveState();
+    nav = [{ name: "workouts" }];
+    modal = null;
+    render();
+    showToast(tx("Cloud login complete.", "Cloud login complete."));
+  } catch {
+    showToast(tx("Login failed. Check email, password, and email confirmation.", "Login failed. Check email, password, and email confirmation."));
+  }
+}
+
 function logoutAccount() {
   saveState();
   localStorage.removeItem(AUTH_KEY);
@@ -2342,7 +2399,7 @@ function bindEvents() {
 function handleAction(action, el) {
   if (action === "remote-login") return remoteLogin(false);
   if (action === "remote-signup") return remoteLogin(true);
-  if (action === "login-account") return loginAccount(el.dataset.name || document.querySelector("#local-login-name")?.value);
+  if (action === "login-account") return showToast(tx("Local login has been removed.", "Local login has been removed."));
   if (action === "logout-account") return logoutAccount();
   if (action === "refresh-leaderboard") return refreshLeaderboard(true);
   if (action === "back") return back();

@@ -235,21 +235,6 @@ fun GymAppRoot(
                             }
                         }
                     },
-                    onLocal = { name ->
-                        coroutineScope.launch {
-                            val displayName = name.trim().ifBlank { "Local" }
-                            val session = AccountSession.Local(displayName)
-                            runCatching {
-                                repositoryProvider(session).importBackupJsonObject(
-                                    legacyRepository.buildBackupJson(
-                                        owner = BackupOwner(accountId = displayName, remote = false)
-                                    ),
-                                    activeAccountId = displayName
-                                )
-                            }
-                            authManager.setLocal(displayName)
-                        }
-                    },
                     modifier = Modifier.fillMaxSize()
                 )
                 AnimatedVisibility(

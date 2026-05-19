@@ -287,6 +287,11 @@ button { border: 0; }
   margin-top: 12px;
 }
 
+.auth-panel:has(#local-login-name),
+.panel:has([data-action="login-account"][data-name]) {
+  display: none;
+}
+
 .login-actions {
   display: grid;
   grid-template-columns: minmax(140px, 0.7fr) minmax(170px, 1fr);

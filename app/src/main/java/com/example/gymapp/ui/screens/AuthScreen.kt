@@ -30,13 +30,11 @@ fun AuthScreen(
     uiState: AuthUiState,
     onLogin: (email: String, password: String) -> Unit,
     onSignUp: (email: String, password: String, displayName: String) -> Unit,
-    onLocal: (displayName: String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var displayName by remember { mutableStateOf("") }
-    var localName by remember { mutableStateOf("") }
 
     Column(
         modifier = modifier
@@ -84,10 +82,20 @@ fun AuthScreen(
                 )
                 OutlinedTextField(
                     value = displayName,
-                    onValueChange = { displayName = it },
+                    onValueChange = { value ->
+                        displayName = value
+                            .filter { it.isLetterOrDigit() || it == ' ' || it == '.' || it == '-' || it == '_' }
+                            .replace(Regex("\\s+"), " ")
+                            .take(32)
+                    },
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text("Display name") },
                     singleLine = true
+                )
+                Text(
+                    text = "Password must be 8+ characters and include letters and numbers. Display name allows letters, numbers, spaces, dot, dash and underscore.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -107,37 +115,6 @@ fun AuthScreen(
                     ) {
                         Text("Create account")
                     }
-                }
-            }
-        }
-
-        AppPanel {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Text(
-                    text = "Local account",
-                    style = MaterialTheme.typography.titleLarge
-                )
-                Text(
-                    text = "Offline fallback for this phone only.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                OutlinedTextField(
-                    value = localName,
-                    onValueChange = { localName = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Name") },
-                    singleLine = true
-                )
-                OutlinedButton(
-                    onClick = { onLocal(localName) },
-                    enabled = !uiState.isLoading,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Continue locally")
                 }
             }
         }
