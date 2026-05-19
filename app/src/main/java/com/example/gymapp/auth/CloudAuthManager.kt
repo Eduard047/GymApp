@@ -28,6 +28,14 @@ sealed class AccountSession {
     data class Local(val displayName: String) : AccountSession()
 }
 
+fun AccountSession.databaseName(): String {
+    val raw = when (this) {
+        is AccountSession.Cloud -> "cloud_$userId"
+        is AccountSession.Local -> "local_${displayName.lowercase().trim()}"
+    }
+    return raw.replace(Regex("[^A-Za-z0-9_.-]"), "_").ifBlank { "local_default" }
+}
+
 data class AuthUiState(
     val session: AccountSession? = null,
     val isLoading: Boolean = false,
@@ -84,11 +92,20 @@ class CloudAuthManager(context: Context) {
         _authState.value = AuthUiState()
     }
 
+    suspend fun freshCloudSession(session: AccountSession.Cloud): AccountSession.Cloud {
+        return if (session.refreshToken.isNullOrBlank()) {
+            session
+        } else {
+            refreshSession(session)
+        }
+    }
+
     suspend fun loadRemoteState(session: AccountSession.Cloud): JSONObject? = withContext(Dispatchers.IO) {
+        val freshSession = freshCloudSession(session)
         val response = request(
             path = "/rest/v1/user_states?select=state&user_id=eq.${session.userId}&limit=1",
             method = "GET",
-            token = session.accessToken
+            token = freshSession.accessToken
         )
         val rows = JSONArray(response)
         rows.optJSONObject(0)?.optJSONObject("state")
@@ -101,11 +118,12 @@ class CloudAuthManager(context: Context) {
         level: Int,
         workouts: Int
     ) = withContext(Dispatchers.IO) {
+        val freshSession = freshCloudSession(session)
         val now = System.currentTimeMillis()
         request(
             path = "/rest/v1/user_states?on_conflict=user_id",
             method = "POST",
-            token = session.accessToken,
+            token = freshSession.accessToken,
             prefer = "resolution=merge-duplicates",
             body = JSONArray()
                 .put(
@@ -118,7 +136,7 @@ class CloudAuthManager(context: Context) {
         request(
             path = "/rest/v1/profiles?on_conflict=user_id",
             method = "POST",
-            token = session.accessToken,
+            token = freshSession.accessToken,
             prefer = "resolution=merge-duplicates",
             body = JSONArray()
                 .put(
@@ -132,6 +150,26 @@ class CloudAuthManager(context: Context) {
                 )
                 .toString()
         )
+    }
+
+    private suspend fun refreshSession(session: AccountSession.Cloud): AccountSession.Cloud = withContext(Dispatchers.IO) {
+        val refreshToken = session.refreshToken ?: return@withContext session
+        val json = JSONObject(
+            request(
+                path = "/auth/v1/token?grant_type=refresh_token",
+                method = "POST",
+                body = JSONObject().put("refresh_token", refreshToken).toString()
+            )
+        )
+        val accessToken = json.optString("access_token")
+        if (accessToken.isBlank()) return@withContext session
+        val refreshed = session.copy(
+            accessToken = accessToken,
+            refreshToken = json.optString("refresh_token").takeIf { it.isNotBlank() } ?: session.refreshToken
+        )
+        persist(refreshed)
+        _authState.value = _authState.value.copy(session = refreshed)
+        refreshed
     }
 
     private suspend fun authenticate(path: String, payload: JSONObject): AccountSession.Cloud = withContext(Dispatchers.IO) {

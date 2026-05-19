@@ -65,7 +65,9 @@ class PhoneSyncListenerService : WearableListenerService() {
     }
 
     private val repository
-        get() = applicationContext.gymApplication.repository
+        get() = applicationContext.gymApplication.repositoryFor(
+            applicationContext.gymApplication.cloudAuthManager.authState.value.session
+        )
 
     private suspend fun pushFullSyncToNode(nodeId: String) {
         val payload = buildFullSyncPayload()

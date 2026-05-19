@@ -33,7 +33,7 @@ class MainActivity : AppCompatActivity() {
         setContent {
             GymAppTheme {
                 GymAppRoot(
-                    repository = app.repository,
+                    repositoryProvider = app::repositoryFor,
                     authManager = app.cloudAuthManager,
                     languageManager = app.languageManager,
                     restTimerController = app.restTimerController

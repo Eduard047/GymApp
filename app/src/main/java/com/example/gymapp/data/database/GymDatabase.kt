@@ -15,6 +15,7 @@ import com.example.gymapp.data.entity.ExerciseMuscleMappingEntity
 import com.example.gymapp.data.entity.SetEntryEntity
 import com.example.gymapp.data.entity.WorkoutExerciseEntity
 import com.example.gymapp.data.entity.WorkoutSessionEntity
+import java.util.concurrent.ConcurrentHashMap
 
 @Database(
     entities = [
@@ -34,8 +35,7 @@ abstract class GymDatabase : RoomDatabase() {
     abstract fun muscleMappingDao(): MuscleMappingDao
 
     companion object {
-        @Volatile
-        private var INSTANCE: GymDatabase? = null
+        private val INSTANCES = ConcurrentHashMap<String, GymDatabase>()
 
         private val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -176,16 +176,18 @@ abstract class GymDatabase : RoomDatabase() {
             }
         }
 
-        fun getInstance(context: Context): GymDatabase {
-            return INSTANCE ?: synchronized(this) {
-                INSTANCE ?: Room.databaseBuilder(
+        fun getInstance(context: Context, databaseName: String = "gym_database"): GymDatabase {
+            val safeName = databaseName
+                .replace(Regex("[^A-Za-z0-9_.-]"), "_")
+                .ifBlank { "gym_database" }
+            return INSTANCES.getOrPut(safeName) {
+                Room.databaseBuilder(
                     context.applicationContext,
                     GymDatabase::class.java,
-                    "gym_database"
+                    safeName
                 )
                     .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                     .build()
-                    .also { INSTANCE = it }
             }
         }
 

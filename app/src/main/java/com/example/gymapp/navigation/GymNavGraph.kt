@@ -92,7 +92,7 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class, FlowPreview::class)
 @Composable
 fun GymAppRoot(
-    repository: GymRepository,
+    repositoryProvider: (AccountSession?) -> GymRepository,
     authManager: CloudAuthManager,
     languageManager: LanguageManager,
     restTimerController: RestTimerController
@@ -102,6 +102,8 @@ fun GymAppRoot(
     val currentRoute = navBackStackEntry?.destination?.route
     val selectedLanguage by languageManager.selectedLanguage.collectAsState()
     val authState by authManager.authState.collectAsState()
+    val repository = remember(authState.session) { repositoryProvider(authState.session) }
+    val legacyRepository = remember { repositoryProvider(null) }
     val coroutineScope = rememberCoroutineScope()
     var showIntro by rememberSaveable { mutableStateOf(true) }
 
@@ -167,7 +169,8 @@ fun GymAppRoot(
                                 val session = authManager.login(email, password)
                                 val remoteState = authManager.loadRemoteState(session)
                                 if (remoteState != null && remoteState.length() > 0) {
-                                    repository.importBackupJsonObject(
+                                    val accountRepository = repositoryProvider(session)
+                                    accountRepository.importBackupJsonObject(
                                         remoteState,
                                         activeUserId = session.userId,
                                         activeRemote = true
@@ -179,13 +182,20 @@ fun GymAppRoot(
                                         email = session.email,
                                         remote = true
                                     )
-                                    val stats = repository.getSyncProfileStats()
+                                    val sourceRepository = legacyRepository
+                                    val uploadState = sourceRepository.buildBackupJson(owner = owner)
+                                    val stats = sourceRepository.getSyncProfileStats()
                                     authManager.saveRemoteState(
                                         session = session,
-                                        state = repository.buildBackupJson(owner = owner),
+                                        state = uploadState,
                                         xp = stats.xp,
                                         level = stats.level,
                                         workouts = stats.workouts
+                                    )
+                                    repositoryProvider(session).importBackupJsonObject(
+                                        uploadState,
+                                        activeUserId = session.userId,
+                                        activeRemote = true
                                     )
                                 }
                                 authManager.setMessage(null)
@@ -205,13 +215,19 @@ fun GymAppRoot(
                                     email = session.email,
                                     remote = true
                                 )
-                                val stats = repository.getSyncProfileStats()
+                                val stats = legacyRepository.getSyncProfileStats()
+                                val uploadState = legacyRepository.buildBackupJson(owner = owner)
                                 authManager.saveRemoteState(
                                     session = session,
-                                    state = repository.buildBackupJson(owner = owner),
+                                    state = uploadState,
                                     xp = stats.xp,
                                     level = stats.level,
                                     workouts = stats.workouts
+                                )
+                                repositoryProvider(session).importBackupJsonObject(
+                                    uploadState,
+                                    activeUserId = session.userId,
+                                    activeRemote = true
                                 )
                                 authManager.setMessage(null)
                             }.onFailure { throwable ->
@@ -219,7 +235,21 @@ fun GymAppRoot(
                             }
                         }
                     },
-                    onLocal = { name -> authManager.setLocal(name) },
+                    onLocal = { name ->
+                        coroutineScope.launch {
+                            val displayName = name.trim().ifBlank { "Local" }
+                            val session = AccountSession.Local(displayName)
+                            runCatching {
+                                repositoryProvider(session).importBackupJsonObject(
+                                    legacyRepository.buildBackupJson(
+                                        owner = BackupOwner(accountId = displayName, remote = false)
+                                    ),
+                                    activeAccountId = displayName
+                                )
+                            }
+                            authManager.setLocal(displayName)
+                        }
+                    },
                     modifier = Modifier.fillMaxSize()
                 )
                 AnimatedVisibility(
