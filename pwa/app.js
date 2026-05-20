@@ -2278,49 +2278,11 @@ function missionsScreen() {
 }
 
 function missionGroups() {
-  const month = selectedMonthSessions();
-  const weekSessions = state.sessions.filter(s => s.startedAt >= startOfWeek());
-  const todaySessions = state.sessions.filter(s => new Date(s.startedAt).toDateString() === new Date().toDateString());
-  const todaySets = allSets(todaySessions);
-  const weekSets = allSets(weekSessions);
-  const monthSets = allSets(month);
-  const todayExerciseCount = new Set(todaySets.map(s => s.exerciseName)).size;
-  const weekExerciseCount = new Set(weekSets.map(s => s.exerciseName)).size;
-  const monthExerciseCount = new Set(monthSets.map(s => s.exerciseName)).size;
-  const weekActiveDays = new Set(weekSessions.map(s => new Date(s.startedAt).toDateString())).size;
-  const monthActiveDays = new Set(month.map(s => new Date(s.startedAt).toDateString())).size;
+  const history = missionHistoryStats();
   return {
-    daily: [
-      mission("daily-check-in", tx("Complete a workout", "Заверши тренування"), todaySessions.length, 1, 30),
-      mission("daily-sets-8", tx("Log 8 sets", "Запиши 8 підходів"), todaySets.length, 8, 25),
-      mission("daily-exercises-3", tx("Train 3 exercises", "Зроби 3 вправи"), todayExerciseCount, 3, 35),
-      mission("daily-volume-1000", tx("Move 1,000 volume", "Набери 1 000 обсягу"), totalVolume(todaySessions), 1000, 40),
-      mission("daily-session-density", tx("Finish a dense session", "Заверши щільну сесію"), Math.max(0, ...todaySessions.map(s => s.sets.length)), 10, 45)
-    ],
-    weekly: [
-      mission("weekly-days-3", tx("Train on 3 days", "Тренуйся 3 дні"), weekActiveDays, 3, 60),
-      mission("weekly-workouts-4", tx("Complete 4 workouts", "Заверши 4 тренування"), weekSessions.length, 4, 70),
-      mission("weekly-sets-30", tx("Log 30 sets", "Запиши 30 підходів"), weekSets.length, 30, 80),
-      mission("weekly-volume-5000", tx("Move 5,000 volume", "Набери 5 000 обсягу"), totalVolume(weekSessions), 5000, 100),
-      mission("weekly-exercises-10", tx("Touch 10 exercises", "Зачепи 10 вправ"), weekExerciseCount, 10, 85),
-      mission("weekly-big-session", tx("Hit 12 sets in one session", "Зроби 12 підходів за сесію"), Math.max(0, ...weekSessions.map(s => s.sets.length)), 12, 75),
-      mission("weekly-heavy-day", tx("Move 2,000 volume in one session", "Набери 2 000 обсягу за сесію"), Math.max(0, ...weekSessions.map(s => totalVolume([s]))), 2000, 90),
-      mission("weekly-frequency", tx("Complete 5 workouts", "Заверши 5 тренувань"), weekSessions.length, 5, 110),
-      mission("weekly-set-stack", tx("Log 45 sets", "Запиши 45 підходів"), weekSets.length, 45, 120),
-      mission("weekly-volume-push", tx("Move 8,000 volume", "Набери 8 000 обсягу"), totalVolume(weekSessions), 8000, 140)
-    ],
-    monthly: [
-      mission("monthly-days-10", tx("Train on 10 days", "Тренуйся 10 днів"), monthActiveDays, 10, 180),
-      mission("monthly-workouts-14", tx("Complete 14 workouts", "Заверши 14 тренувань"), month.length, 14, 220),
-      mission("monthly-sets-120", tx("Log 120 sets", "Запиши 120 підходів"), monthSets.length, 120, 240),
-      mission("monthly-volume-20000", tx("Move 20,000 volume", "Набери 20 000 обсягу"), totalVolume(month), 20000, 280),
-      mission("monthly-exercises-18", tx("Touch 18 exercises", "Зачепи 18 вправ"), monthExerciseCount, 18, 230),
-      mission("monthly-big-session", tx("Hit 16 sets in one session", "Зроби 16 підходів за сесію"), Math.max(0, ...month.map(s => s.sets.length)), 16, 180),
-      mission("monthly-heavy-day", tx("Move 3,500 volume in one session", "Набери 3 500 обсягу за сесію"), Math.max(0, ...month.map(s => totalVolume([s]))), 3500, 210),
-      mission("monthly-consistency", tx("Train on 16 days", "Тренуйся 16 днів"), monthActiveDays, 16, 300),
-      mission("monthly-set-stack", tx("Log 180 sets", "Запиши 180 підходів"), monthSets.length, 180, 340),
-      mission("monthly-volume-push", tx("Move 35,000 volume", "Набери 35 000 обсягу"), totalVolume(month), 35000, 380)
-    ]
+    daily: buildMissionSet("daily", dailyMissionCatalog(), 5, dayNumber(new Date()), ["workouts"], dailyMissionStats(), history),
+    weekly: buildMissionSet("weekly", weeklyMissionCatalog(), 10, dayNumber(startOfWeekDate()), ["workouts"], weeklyMissionStats(), history),
+    monthly: buildMissionSet("monthly", monthlyMissionCatalog(), 10, dayNumber(new Date(new Date().getFullYear(), new Date().getMonth(), 1)), ["workouts"], monthlyMissionStats(), history)
   };
 }
 
@@ -2328,8 +2290,338 @@ function completedMissions() {
   return Object.values(missionGroups()).flat().filter(m => m.done);
 }
 
-function mission(id, title, progress, target, reward) {
-  return { id, title, summary: `${Math.round(progress)} / ${target}`, progress, target, reward, done: progress >= target };
+function mission(template, cadence, stats, history) {
+  const target = missionTargetForFamily(cadence, template.family, history);
+  const progress = template.progress(stats);
+  const reward = missionXpReward(cadence, template.goal, target);
+  return {
+    id: template.id,
+    title: tx(template.titleEn, template.titleUk),
+    summary: `${Math.round(progress)} / ${template.goal} ${tx(template.unitEn, template.unitUk)}`,
+    progress,
+    target: template.goal,
+    reward,
+    done: progress >= template.goal
+  };
+}
+
+function buildMissionSet(cadence, templates, count, seed, requiredFamilies, stats, history) {
+  const ranked = [...templates].sort((a, b) => {
+    const score = compareBigInt(missionSelectionScore(a.goal, missionTargetForFamily(cadence, a.family, history), seed), missionSelectionScore(b.goal, missionTargetForFamily(cadence, b.family, history), seed));
+    return score || compareBigInt(missionOrderScore(a.id, seed), missionOrderScore(b.id, seed));
+  });
+  const selected = [];
+  const selectedIds = new Set();
+  const selectedFamilies = new Set();
+  for (const family of requiredFamilies) {
+    const template = ranked.find(item => item.family === family && !selectedIds.has(item.id));
+    if (template) addMissionTemplate(template, selected, selectedIds, selectedFamilies);
+  }
+  for (const template of ranked) {
+    if (selected.length >= count) break;
+    if (!selectedFamilies.has(template.family)) addMissionTemplate(template, selected, selectedIds, selectedFamilies);
+  }
+  for (const template of ranked) {
+    if (selected.length >= count) break;
+    if (!selectedIds.has(template.id)) addMissionTemplate(template, selected, selectedIds, selectedFamilies);
+  }
+  return selected.map(template => mission(template, cadence, stats, history));
+}
+
+function addMissionTemplate(template, selected, selectedIds, selectedFamilies) {
+  selected.push(template);
+  selectedIds.add(template.id);
+  selectedFamilies.add(template.family);
+}
+
+function dailyMissionCatalog() {
+  return [
+    ...templates("workouts", [1], "daily-check-in", "workout", "тренування", goal => "Daily check-in", goal => "Щоденний чек-ін", s => s.workoutCount),
+    ...templates("exercises", intSeries(3, 1, 10), goal => `daily-exercises-${goal}`, "exercises", "вправ", goal => `${goal} exercises today`, goal => `${goal} вправ за день`, s => s.exerciseCount),
+    ...templates("sets", intSeries(8, 2, 9), goal => `daily-sets-${goal}`, "sets", "підходів", goal => `${goal}-set target`, goal => `Ціль: ${goal} підходів`, s => s.setCount),
+    ...templates("volume", scaledSeries(1800, [0.8, 1, 1.2, 1.4, 1.6, 1.9, 2.2, 2.5, 2.8, 3.1, 3.5, 3.9, 4.3]), goal => `daily-volume-${goal}`, "volume", "обсягу", goal => `Volume target ${goal}`, goal => `Ціль обсягу ${goal}`, s => s.totalVolume),
+    ...templates("max-session-volume", scaledSeries(1300, [0.8, 1, 1.2, 1.4, 1.6, 1.9, 2.2, 2.5, 2.8, 3.1, 3.5, 3.9, 4.4, 4.9, 5.5]), goal => `daily-max-session-volume-${goal}`, "volume", "обсягу", goal => `Best session ${goal} volume`, goal => `Краща сесія: ${goal} обсягу`, s => s.maxSessionVolume),
+    ...templates("max-session-exercises", intSeries(3, 1, 8), goal => `daily-max-session-exercises-${goal}`, "exercises", "вправ", goal => `Session breadth ${goal}`, goal => `Ширина сесії ${goal}`, s => s.maxSessionExercises),
+    ...templates("max-session-sets", intSeries(8, 2, 8), goal => `daily-max-session-sets-${goal}`, "sets", "підходів", goal => `Session sets ${goal}`, goal => `Підходи в сесії: ${goal}`, s => s.maxSessionSets)
+  ];
+}
+
+function weeklyMissionCatalog() {
+  return [
+    ...templates("workouts", intSeries(2, 1, 2), goal => `weekly-workouts-${goal}`, "workouts", "тренування", goal => `${goal}-workout week`, goal => `Тиждень на ${goal} тренувань`, s => s.workoutCount),
+    ...templates("active-days", intSeries(2, 1, 2), goal => `weekly-active-days-${goal}`, "days", "днів", goal => `${goal} active days`, goal => `${goal} активних днів`, s => s.activeDays),
+    ...templates("sets", intSeries(24, 4, 10), goal => `weekly-sets-${goal}`, "sets", "підходів", goal => `${goal}-set week`, goal => `Тиждень на ${goal} підходів`, s => s.setCount),
+    ...templates("volume", scaledSeries(8000, [0.8, 0.95, 1.1, 1.25, 1.4, 1.55, 1.75, 1.95, 2.2, 2.5, 2.8, 3.1]), goal => `weekly-volume-${goal}`, "volume", "обсягу", goal => `Weekly volume ${goal}`, goal => `Тижневий обсяг ${goal}`, s => s.totalVolume),
+    ...templates("exercises", intSeries(14, 3, 12), goal => `weekly-exercises-${goal}`, "exercises", "вправ", goal => `${goal} exercises this week`, goal => `${goal} вправ за тиждень`, s => s.exerciseCount),
+    ...templates("days-10-sets", intSeries(1, 1, 3), goal => `weekly-days-10-sets-${goal}`, "days", "днів", goal => `High-output days ${goal}`, goal => `Потужних днів: ${goal}`, s => s.daysWithTenPlusSets),
+    ...templates("days-1000-volume", intSeries(1, 1, 3), goal => `weekly-days-1000-volume-${goal}`, "days", "днів", goal => `Volume days ${goal}`, goal => `Днів обсягу: ${goal}`, s => s.daysWithThousandVolume),
+    ...templates("sessions-8-sets", intSeries(1, 1, 3), goal => `weekly-sessions-8-sets-${goal}`, "sessions", "сесій", goal => `Strong sessions ${goal}`, goal => `Сильних сесій: ${goal}`, s => s.sessionsWithEightPlusSets),
+    ...templates("sessions-3-exercises", intSeries(1, 1, 3), goal => `weekly-sessions-3-exercises-${goal}`, "sessions", "сесій", goal => `Wide sessions ${goal}`, goal => `Широких сесій: ${goal}`, s => s.sessionsWithThreePlusExercises)
+  ];
+}
+
+function monthlyMissionCatalog() {
+  return [
+    ...templates("workouts", intSeries(8, 1, 7), goal => `monthly-workouts-${goal}`, "workouts", "тренування", goal => `${goal}-workout month`, goal => `Місяць на ${goal} тренувань`, s => s.workoutCount),
+    ...templates("active-days", intSeries(8, 1, 7), goal => `monthly-active-days-${goal}`, "days", "днів", goal => `${goal} active days`, goal => `${goal} активних днів`, s => s.activeDays),
+    ...templates("sets", intSeries(70, 10, 12), goal => `monthly-sets-${goal}`, "sets", "підходів", goal => `${goal}-set month`, goal => `Місяць на ${goal} підходів`, s => s.setCount),
+    ...templates("volume", scaledSeries(45000, [0.7, 0.8, 0.9, 1, 1.1, 1.2, 1.3, 1.4, 1.55, 1.7, 1.85, 2]), goal => `monthly-volume-${goal}`, "volume", "обсягу", goal => `Monthly volume ${goal}`, goal => `Місячний обсяг ${goal}`, s => s.totalVolume),
+    ...templates("exercises", intSeries(45, 7, 14), goal => `monthly-exercises-${goal}`, "exercises", "вправ", goal => `${goal} exercises this month`, goal => `${goal} вправ за місяць`, s => s.exerciseCount),
+    ...templates("days-10-sets", intSeries(4, 1, 9), goal => `monthly-days-10-sets-${goal}`, "days", "днів", goal => `High-output days ${goal}`, goal => `Потужних днів: ${goal}`, s => s.daysWithTenPlusSets),
+    ...templates("days-1000-volume", intSeries(4, 1, 9), goal => `monthly-days-1000-volume-${goal}`, "days", "днів", goal => `Volume days ${goal}`, goal => `Днів обсягу: ${goal}`, s => s.daysWithThousandVolume),
+    ...templates("sessions-8-sets", intSeries(5, 1, 9), goal => `monthly-sessions-8-sets-${goal}`, "sessions", "сесій", goal => `Strong sessions ${goal}`, goal => `Сильних сесій: ${goal}`, s => s.sessionsWithEightPlusSets),
+    ...templates("sessions-3-exercises", intSeries(5, 1, 9), goal => `monthly-sessions-3-exercises-${goal}`, "sessions", "сесій", goal => `Wide sessions ${goal}`, goal => `Широких сесій: ${goal}`, s => s.sessionsWithThreePlusExercises),
+    ...templates("max-session-volume", scaledSeries(1400, [1, 1.15, 1.3, 1.45, 1.6, 1.8, 2, 2.25, 2.5, 2.8, 3.1, 3.5, 3.9, 4.3, 4.8, 5.3]), goal => `monthly-max-session-volume-${goal}`, "volume", "обсягу", goal => `Best session ${goal} volume`, goal => `Краща сесія: ${goal} обсягу`, s => s.maxSessionVolume),
+    ...templates("max-session-sets", intSeries(10, 2, 11), goal => `monthly-max-session-sets-${goal}`, "sets", "підходів", goal => `Best session ${goal} sets`, goal => `Краща сесія: ${goal} підходів`, s => s.maxSessionSets),
+    ...templates("max-session-exercises", intSeries(4, 1, 9), goal => `monthly-max-session-exercises-${goal}`, "exercises", "вправ", goal => `Best session ${goal} exercises`, goal => `Краща сесія: ${goal} вправ`, s => s.maxSessionExercises)
+  ];
+}
+
+function templates(family, goals, idForGoal, unitEn, unitUk, titleEn, titleUk, progress) {
+  return goals.map(goal => ({
+    family,
+    goal,
+    id: typeof idForGoal === "function" ? idForGoal(goal) : idForGoal,
+    unitEn,
+    unitUk,
+    titleEn: titleEn(goal),
+    titleUk: titleUk(goal),
+    progress
+  }));
+}
+
+function intSeries(start, step, count) {
+  return Array.from({ length: count }, (_, index) => start + index * step);
+}
+
+function scaledSeries(base, factors) {
+  return [...new Set(factors.map(factor => Math.max(1, Math.round(base * factor))))].sort((a, b) => a - b);
+}
+
+function missionXpReward(cadence, goal, target) {
+  const base = cadence === "daily" ? 90 : cadence === "weekly" ? 220 : 420;
+  const ratio = goal / Math.max(1, target);
+  const multiplier = ratio >= 1.35 ? 1.9 : ratio >= 1.2 ? 1.65 : ratio >= 1.05 ? 1.45 : ratio >= 0.9 ? 1.25 : ratio >= 0.75 ? 1.05 : 0.9;
+  return Math.max(Math.round(base * 0.8), Math.round(base * multiplier));
+}
+
+function dailyMissionStats() {
+  return periodStats(state.sessions.filter(session => sameDay(session.startedAt, Date.now())));
+}
+
+function weeklyMissionStats() {
+  const start = startOfWeek();
+  const end = start + 7 * 86400000;
+  return periodStats(state.sessions.filter(session => session.startedAt >= start && session.startedAt < end));
+}
+
+function monthlyMissionStats() {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+  const end = new Date(now.getFullYear(), now.getMonth() + 1, 1).getTime();
+  return periodStats(state.sessions.filter(session => session.startedAt >= start && session.startedAt < end));
+}
+
+function periodStats(sessions) {
+  const summaries = sessions.map(sessionSummary);
+  const byDay = groupBy(sessions, session => dayKey(session.startedAt));
+  const dayAggregates = Object.values(byDay).map(aggregateSessions);
+  return {
+    workoutCount: sessions.length,
+    activeDays: Object.keys(byDay).length,
+    exerciseCount: summaries.reduce((sum, item) => sum + item.exercises, 0),
+    setCount: summaries.reduce((sum, item) => sum + item.sets, 0),
+    totalVolume: Math.round(summaries.reduce((sum, item) => sum + item.volume, 0)),
+    daysWithTenPlusSets: dayAggregates.filter(item => item.setCount >= 10).length,
+    daysWithThousandVolume: dayAggregates.filter(item => item.totalVolume >= 1000).length,
+    sessionsWithEightPlusSets: summaries.filter(item => item.sets >= 8).length,
+    sessionsWithThreePlusExercises: summaries.filter(item => item.exercises >= 3).length,
+    maxSessionVolume: Math.round(Math.max(0, ...summaries.map(item => item.volume))),
+    maxSessionSets: Math.max(0, ...summaries.map(item => item.sets)),
+    maxSessionExercises: Math.max(0, ...summaries.map(item => item.exercises))
+  };
+}
+
+function missionHistoryStats() {
+  if (!state.sessions.length) return {};
+  const dayAggregates = Object.values(groupBy(state.sessions, session => dayKey(session.startedAt))).map(aggregateSessions);
+  const weekAggregates = Object.values(groupBy(state.sessions, session => dayKey(startOfWeekDate(new Date(session.startedAt))))).map(aggregatePeriod);
+  const monthAggregates = Object.values(groupBy(state.sessions, session => monthKey(session.startedAt))).map(aggregatePeriod);
+  const summaries = state.sessions.map(sessionSummary);
+  return {
+    maxDayWorkouts: maxOf(dayAggregates, "workoutCount"),
+    maxDayExercises: maxOf(dayAggregates, "exerciseCount"),
+    maxDaySets: maxOf(dayAggregates, "setCount"),
+    maxDayVolume: maxOf(dayAggregates, "totalVolume"),
+    maxWeekWorkouts: maxOf(weekAggregates, "workoutCount"),
+    maxWeekActiveDays: maxOf(weekAggregates, "activeDays"),
+    maxWeekExercises: maxOf(weekAggregates, "exerciseCount"),
+    maxWeekSets: maxOf(weekAggregates, "setCount"),
+    maxWeekVolume: maxOf(weekAggregates, "totalVolume"),
+    maxWeekDaysWithTenPlusSets: maxOf(weekAggregates, "daysWithTenPlusSets"),
+    maxWeekDaysWithThousandVolume: maxOf(weekAggregates, "daysWithThousandVolume"),
+    maxWeekSessionsWithEightPlusSets: maxOf(weekAggregates, "sessionsWithEightPlusSets"),
+    maxWeekSessionsWithThreePlusExercises: maxOf(weekAggregates, "sessionsWithThreePlusExercises"),
+    maxMonthWorkouts: maxOf(monthAggregates, "workoutCount"),
+    maxMonthActiveDays: maxOf(monthAggregates, "activeDays"),
+    maxMonthExercises: maxOf(monthAggregates, "exerciseCount"),
+    maxMonthSets: maxOf(monthAggregates, "setCount"),
+    maxMonthVolume: maxOf(monthAggregates, "totalVolume"),
+    maxMonthDaysWithTenPlusSets: maxOf(monthAggregates, "daysWithTenPlusSets"),
+    maxMonthDaysWithThousandVolume: maxOf(monthAggregates, "daysWithThousandVolume"),
+    maxMonthSessionsWithEightPlusSets: maxOf(monthAggregates, "sessionsWithEightPlusSets"),
+    maxMonthSessionsWithThreePlusExercises: maxOf(monthAggregates, "sessionsWithThreePlusExercises"),
+    maxSessionVolume: Math.round(Math.max(0, ...summaries.map(item => item.volume))),
+    maxSessionExercises: Math.max(0, ...summaries.map(item => item.exercises)),
+    maxSessionSets: Math.max(0, ...summaries.map(item => item.sets))
+  };
+}
+
+function aggregatePeriod(sessions) {
+  const aggregate = aggregateSessions(sessions);
+  const byDay = Object.values(groupBy(sessions, session => dayKey(session.startedAt))).map(aggregateSessions);
+  aggregate.activeDays = byDay.length;
+  aggregate.daysWithTenPlusSets = byDay.filter(item => item.setCount >= 10).length;
+  aggregate.daysWithThousandVolume = byDay.filter(item => item.totalVolume >= 1000).length;
+  aggregate.sessionsWithEightPlusSets = sessions.filter(session => sessionSummary(session).sets >= 8).length;
+  aggregate.sessionsWithThreePlusExercises = sessions.filter(session => sessionSummary(session).exercises >= 3).length;
+  return aggregate;
+}
+
+function aggregateSessions(sessions) {
+  const summaries = sessions.map(sessionSummary);
+  return {
+    workoutCount: sessions.length,
+    activeDays: new Set(sessions.map(session => dayKey(session.startedAt))).size,
+    exerciseCount: summaries.reduce((sum, item) => sum + item.exercises, 0),
+    setCount: summaries.reduce((sum, item) => sum + item.sets, 0),
+    totalVolume: Math.round(summaries.reduce((sum, item) => sum + item.volume, 0)),
+    daysWithTenPlusSets: 0,
+    daysWithThousandVolume: 0,
+    sessionsWithEightPlusSets: 0,
+    sessionsWithThreePlusExercises: 0,
+    maxSessionVolume: Math.round(Math.max(0, ...summaries.map(item => item.volume))),
+    maxSessionSets: Math.max(0, ...summaries.map(item => item.sets)),
+    maxSessionExercises: Math.max(0, ...summaries.map(item => item.exercises))
+  };
+}
+
+function missionTargetForFamily(cadence, family, history) {
+  if (cadence === "daily") {
+    if (family === "workouts") return 1;
+    if (family === "exercises") return boundedTarget(history.maxDayExercises, 8, 5, 12);
+    if (family === "sets") return boundedTarget(history.maxDaySets, 14, 10, 24);
+    if (family === "volume") return boundedTarget(history.maxDayVolume, 4800, 3000, 8000);
+    if (family === "max-session-volume") return boundedTarget(history.maxSessionVolume, 4000, 2500, 7500);
+    if (family === "max-session-exercises") return boundedTarget(history.maxSessionExercises, 6, 4, 10);
+    if (family === "max-session-sets") return boundedTarget(history.maxSessionSets, 12, 8, 22);
+  }
+  if (cadence === "weekly") {
+    if (family === "workouts") return boundedTarget(history.maxWeekWorkouts, 3, 2, 3);
+    if (family === "active-days") return boundedTarget(history.maxWeekActiveDays, 3, 2, 3);
+    if (family === "exercises") return boundedTarget(history.maxWeekExercises, 28, 18, 48);
+    if (family === "sets") return boundedTarget(history.maxWeekSets, 40, 24, 64);
+    if (family === "volume") return boundedTarget(history.maxWeekVolume, 16000, 9000, 24000);
+    if (family === "days-10-sets") return boundedTarget(history.maxWeekDaysWithTenPlusSets, 2, 1, 3);
+    if (family === "days-1000-volume") return boundedTarget(history.maxWeekDaysWithThousandVolume, 2, 1, 3);
+    if (family === "sessions-8-sets") return boundedTarget(history.maxWeekSessionsWithEightPlusSets, 2, 1, 3);
+    if (family === "sessions-3-exercises") return boundedTarget(history.maxWeekSessionsWithThreePlusExercises, 2, 1, 3);
+  }
+  if (cadence === "monthly") {
+    if (family === "workouts") return boundedTarget(history.maxMonthWorkouts, 12, 8, 14);
+    if (family === "active-days") return boundedTarget(history.maxMonthActiveDays, 12, 8, 14);
+    if (family === "exercises") return boundedTarget(history.maxMonthExercises, 90, 45, 140);
+    if (family === "sets") return boundedTarget(history.maxMonthSets, 130, 70, 200);
+    if (family === "volume") return boundedTarget(history.maxMonthVolume, 65000, 35000, 95000);
+    if (family === "days-10-sets") return boundedTarget(history.maxMonthDaysWithTenPlusSets, 8, 4, 12);
+    if (family === "days-1000-volume") return boundedTarget(history.maxMonthDaysWithThousandVolume, 8, 4, 12);
+    if (family === "sessions-8-sets") return boundedTarget(history.maxMonthSessionsWithEightPlusSets, 8, 4, 12);
+    if (family === "sessions-3-exercises") return boundedTarget(history.maxMonthSessionsWithThreePlusExercises, 8, 4, 12);
+    if (family === "max-session-volume") return boundedTarget(history.maxSessionVolume, 5000, 2500, 8000);
+    if (family === "max-session-sets") return boundedTarget(history.maxSessionSets, 18, 10, 30);
+    if (family === "max-session-exercises") return boundedTarget(history.maxSessionExercises, 8, 4, 12);
+  }
+  return 1;
+}
+
+function boundedTarget(observed, fallback, min, max) {
+  return clamp(observed > 0 ? observed : fallback, min, max);
+}
+
+function missionSelectionScore(goal, target, seed) {
+  const adjustedTarget = Math.max(1, target);
+  const distance = Math.abs(goal - adjustedTarget);
+  const underTargetDistance = Math.max(0, adjustedTarget - goal);
+  const overTargetDistance = Math.max(0, goal - adjustedTarget);
+  const jitter = absBigInt(missionOrderScore(String(goal), seed)) % 31n;
+  return BigInt(distance * 100 + underTargetDistance * 40 + overTargetDistance * 120) + jitter;
+}
+
+function missionOrderScore(id, seed) {
+  let mixed = toLong(BigInt(javaStringHash(id))) ^ toLong(BigInt(seed) * 1000003n);
+  mixed = toLong(mixed ^ toLong(mixed << 21n));
+  mixed = toLong(mixed ^ (toUnsigned(mixed) >> 35n));
+  mixed = toLong(mixed ^ toLong(mixed << 4n));
+  return toSigned(mixed);
+}
+
+function javaStringHash(value) {
+  let hash = 0;
+  for (let index = 0; index < value.length; index++) hash = ((hash * 31) + value.charCodeAt(index)) | 0;
+  return hash;
+}
+
+function toLong(value) {
+  return value & ((1n << 64n) - 1n);
+}
+
+function toUnsigned(value) {
+  return value & ((1n << 64n) - 1n);
+}
+
+function toSigned(value) {
+  const normalized = toLong(value);
+  return normalized >= (1n << 63n) ? normalized - (1n << 64n) : normalized;
+}
+
+function absBigInt(value) {
+  return value < 0n ? -value : value;
+}
+
+function compareBigInt(a, b) {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+function groupBy(items, keySelector) {
+  return items.reduce((groups, item) => {
+    const key = keySelector(item);
+    (groups[key] ||= []).push(item);
+    return groups;
+  }, {});
+}
+
+function maxOf(items, key) {
+  return Math.max(0, ...items.map(item => Number(item[key] || 0)));
+}
+
+function sameDay(a, b) {
+  return dayKey(a) === dayKey(b);
+}
+
+function dayKey(value) {
+  const date = new Date(value);
+  return `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
+}
+
+function startOfWeekDate(date = new Date()) {
+  const start = new Date(date);
+  start.setDate(start.getDate() - ((start.getDay() + 6) % 7));
+  start.setHours(0, 0, 0, 0);
+  return start;
+}
+
+function dayNumber(date) {
+  return Math.floor(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / 86400000);
 }
 
 function missionSection(title, missions) {
