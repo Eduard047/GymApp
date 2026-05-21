@@ -913,6 +913,8 @@ let overviewMode = "overview";
 let musclePeriod = "month";
 let selectedMuscle = null;
 let leaderboardState = { status: "idle", rows: [], error: "" };
+let leaderboardRequestController = null;
+let leaderboardRequestId = 0;
 let timerInterval = null;
 
 function t(key) {
@@ -1021,10 +1023,22 @@ function remoteHeaders(session = loadRemoteSession()) {
 
 async function supabaseRequest(path, options = {}) {
   const config = supabaseConfig();
-  const response = await fetch(`${config.url}${path}`, {
-    ...options,
-    headers: { ...remoteHeaders(options.session), ...(options.headers || {}) }
-  });
+  const { timeoutMs = 12000, ...fetchOptions } = options;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  if (fetchOptions.signal) {
+    fetchOptions.signal.addEventListener("abort", () => controller.abort(), { once: true });
+  }
+  let response;
+  try {
+    response = await fetch(`${config.url}${path}`, {
+      ...fetchOptions,
+      signal: controller.signal,
+      headers: { ...remoteHeaders(fetchOptions.session), ...(fetchOptions.headers || {}) }
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
   if (!response.ok) {
     const text = await response.text().catch(() => "");
     throw new Error(text || `Request failed: ${response.status}`);
@@ -2191,24 +2205,43 @@ function localLeaderboardRow() {
 }
 
 async function refreshLeaderboard(force = false) {
-  if (leaderboardState.status === "loading") return;
+  if (leaderboardState.status === "loading" && !force) return;
+  if (leaderboardState.status === "loading" && force) {
+    leaderboardRequestController?.abort();
+  }
   if (!force && leaderboardState.status === "loaded") return;
   if (!remoteAuthEnabled()) {
     leaderboardState = { status: "loaded", rows: [localLeaderboardRow()], error: "" };
     return render();
   }
+  const requestId = ++leaderboardRequestId;
+  leaderboardRequestController = new AbortController();
   leaderboardState = { ...leaderboardState, status: "loading", error: "" };
   render();
   try {
     const session = loadRemoteSession();
-    const rows = await supabaseRequest("/rest/v1/profiles?select=user_id,display_name,xp,level,workouts,updated_at&order=xp.desc,workouts.desc,updated_at.asc&limit=50", { session });
+    if (session?.user?.id && activeAccount?.remote) {
+      saveRemoteState().catch(() => {});
+    }
+    const rows = await supabaseRequest(
+      "/rest/v1/profiles?select=user_id,display_name,xp,level,workouts,updated_at&order=xp.desc,workouts.desc,updated_at.asc&limit=50",
+      { session: null, signal: leaderboardRequestController.signal, timeoutMs: 10000 }
+    );
+    if (requestId !== leaderboardRequestId) return;
     leaderboardState = {
       status: "loaded",
       rows: (Array.isArray(rows) ? rows : []).map(row => ({ ...row, isCurrent: session?.user?.id && row.user_id === session.user.id })),
       error: ""
     };
-  } catch {
-    leaderboardState = { status: "error", rows: [localLeaderboardRow()], error: tx("Could not load cloud rating.", "Не вдалося завантажити хмарний рейтинг.") };
+  } catch (error) {
+    if (requestId !== leaderboardRequestId) return;
+    leaderboardState = {
+      status: "error",
+      rows: [localLeaderboardRow()],
+      error: tx("Could not load cloud rating. Try refresh again.", "Не вдалося завантажити хмарний рейтинг. Спробуй оновити ще раз.")
+    };
+  } finally {
+    if (requestId === leaderboardRequestId) leaderboardRequestController = null;
   }
   render();
 }
