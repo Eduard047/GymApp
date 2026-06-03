@@ -107,8 +107,12 @@ if ($LASTEXITCODE -ne 0) {
     throw "git push failed."
 }
 
-$existingRelease = (& gh release view $TagName --json tagName 2>$null)
-if ($LASTEXITCODE -eq 0 -and $existingRelease) {
+$existingRelease = (& gh release list --json tagName --jq ".[] | select(.tagName == `"$TagName`") | .tagName")
+if ($LASTEXITCODE -ne 0) {
+    throw "GitHub release lookup failed."
+}
+
+if ($existingRelease) {
     gh release upload $TagName $phoneApk $watchApk --clobber
     if ($LASTEXITCODE -ne 0) {
         throw "GitHub release upload failed."
