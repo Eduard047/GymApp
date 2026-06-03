@@ -210,6 +210,7 @@
     <string name="activity_heatmap_active_days">%1$d активних днів</string>
     <string name="activity_heatmap_sessions">Сесії</string>
     <string name="activity_heatmap_volume">Обсяг</string>
+    <string name="activity_heatmap_legend">Колір показує денний обсяг у цьому місяці: вага × повтори. Темніше — менше, оранжеве — більше.</string>
     <string name="activity_heatmap_less">Менше</string>
     <string name="activity_heatmap_more">Більше</string>
     <string name="achievements_title">Досягнення</string>

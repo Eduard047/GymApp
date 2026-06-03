@@ -211,6 +211,7 @@
     <string name="activity_heatmap_active_days">%1$d active days</string>
     <string name="activity_heatmap_sessions">Sessions</string>
     <string name="activity_heatmap_volume">Volume</string>
+    <string name="activity_heatmap_legend">Color shows daily training volume in this month: weight x reps, darker is less, orange is more.</string>
     <string name="activity_heatmap_less">Less</string>
     <string name="activity_heatmap_more">More</string>
     <string name="achievements_title">Achievements</string>
