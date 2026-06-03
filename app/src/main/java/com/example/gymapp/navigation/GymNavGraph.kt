@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
@@ -290,6 +291,7 @@ fun GymAppRoot(
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .navigationBarsPadding()
                                 .padding(horizontal = 16.dp, vertical = 12.dp),
                             contentAlignment = Alignment.BottomCenter
                         ) {
@@ -380,6 +382,7 @@ fun GymAppRoot(
                             val sessionId = navBackStackEntry?.arguments?.getLong("sessionId")
                             if (sessionId != null) {
                                 ExtendedFloatingActionButton(
+                                    modifier = Modifier.navigationBarsPadding(),
                                     onClick = {
                                         navController.navigate(AppDestination.postWorkoutSummaryRoute(sessionId)) {
                                             launchSingleTop = true
