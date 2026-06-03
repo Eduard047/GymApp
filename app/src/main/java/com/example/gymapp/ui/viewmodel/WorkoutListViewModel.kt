@@ -321,6 +321,12 @@ class WorkoutListViewModel(
         }
     }
 
+    fun deleteSession(sessionId: Long) {
+        viewModelScope.launch {
+            repository.deleteWorkoutSessionById(sessionId)
+        }
+    }
+
     private fun buildSoloProgress(
         allSessions: List<WorkoutSessionSummary>,
         monthSessions: List<WorkoutSessionSummary>,
@@ -389,7 +395,11 @@ class WorkoutListViewModel(
         val sessionsByDay = sessions.groupBy { session ->
             Instant.ofEpochMilli(session.session.date).atZone(zoneId).toLocalDate()
         }
-        val maxSessionsInDay = sessionsByDay.values.maxOfOrNull { it.size } ?: 0
+        val dailyLoads = sessionsByDay.mapValues { (_, daySessions) ->
+            val volume = daySessions.sumOf { it.totalVolume }
+            if (volume > 0.0) volume else daySessions.size.toDouble()
+        }
+        val maxDailyLoad = dailyLoads.values.maxOrNull() ?: 0.0
 
         val cells = mutableListOf<ActivityHeatmapDayUiModel>()
         repeat(firstDay.dayOfWeek.value - DayOfWeek.MONDAY.value) { index ->
@@ -401,9 +411,10 @@ class WorkoutListViewModel(
             val daySessions = sessionsByDay[cursor].orEmpty()
             val sessionCount = daySessions.size
             val totalVolume = daySessions.sumOf { it.totalVolume }
+            val dailyLoad = dailyLoads[cursor] ?: 0.0
             val intensity = when {
-                sessionCount == 0 || maxSessionsInDay == 0 -> 0f
-                else -> (0.28f + (sessionCount.toFloat() / maxSessionsInDay.toFloat()) * 0.72f)
+                sessionCount == 0 || maxDailyLoad <= 0.0 -> 0f
+                else -> (0.28f + (dailyLoad.toFloat() / maxDailyLoad.toFloat()) * 0.72f)
                     .coerceIn(0f, 1f)
             }
             cells += ActivityHeatmapDayUiModel(

@@ -210,6 +210,7 @@
     <string name="activity_heatmap_active_days">%1$d активних днів</string>
     <string name="activity_heatmap_sessions">Сесії</string>
     <string name="activity_heatmap_volume">Обсяг</string>
+    <string name="activity_heatmap_legend">Колір показує денний обсяг у цьому місяці: вага × повтори. Темніше — менше, оранжеве — більше.</string>
     <string name="activity_heatmap_less">Менше</string>
     <string name="activity_heatmap_more">Більше</string>
     <string name="achievements_title">Досягнення</string>
@@ -313,6 +314,8 @@
     <string name="details_no_note">Без нотатки</string>
 
     <string name="dialog_edit_set_title">Редагувати підхід</string>
+    <string name="dialog_delete_workout_title">Видалити тренування?</string>
+    <string name="dialog_delete_workout_message">Буде видалено тренування за %1$s з усіма вправами й підходами.</string>
     <string name="post_workout_unavailable_title">Підсумок тренування недоступний</string>
     <string name="post_workout_unavailable_supporting">Не вдалося завантажити це тренування.</string>
     <string name="post_workout_rewards_eyebrow">Нагороди</string>

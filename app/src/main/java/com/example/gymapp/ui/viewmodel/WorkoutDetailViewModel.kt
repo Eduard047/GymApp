@@ -32,6 +32,7 @@ data class WorkoutDetailUiState(
 
 sealed interface WorkoutDetailEvent {
     data object SetDeleted : WorkoutDetailEvent
+    data object SessionDeleted : WorkoutDetailEvent
     data object InvalidInput : WorkoutDetailEvent
 }
 
@@ -166,6 +167,13 @@ class WorkoutDetailViewModel(
         viewModelScope.launch {
             repository.insertSet(setToRestore)
             deletedSetForUndo.value = null
+        }
+    }
+
+    fun deleteSession() {
+        viewModelScope.launch {
+            repository.deleteWorkoutSessionById(sessionId)
+            _events.emit(WorkoutDetailEvent.SessionDeleted)
         }
     }
 

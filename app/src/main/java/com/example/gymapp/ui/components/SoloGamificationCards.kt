@@ -227,6 +227,12 @@ fun ActivityHeatmapCard(
                 )
             }
 
+            Text(
+                text = stringResource(R.string.activity_heatmap_legend),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
             heatmap.weeks.forEach { week ->
                 Row(
                     modifier = Modifier.fillMaxWidth(),

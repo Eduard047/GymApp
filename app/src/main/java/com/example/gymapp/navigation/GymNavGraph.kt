@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
@@ -156,18 +157,6 @@ fun GymAppRoot(
                         remote = true
                     )
                     val stats = repository.getSyncProfileStats()
-                    val remoteProfile = authManager.loadOwnProfile(session)
-                    if (remoteProfile != null && (remoteProfile.workouts > stats.workouts || remoteProfile.xp > stats.xp)) {
-                        val remoteState = authManager.loadRemoteState(session)
-                        if (remoteState != null && remoteState.length() > 0) {
-                            repository.importBackupJsonObject(
-                                remoteState,
-                                activeUserId = session.userId,
-                                activeRemote = true
-                            )
-                        }
-                        return@collectLatest
-                    }
                     authManager.saveRemoteState(
                         session = session,
                         state = repository.buildBackupJson(owner = owner),
@@ -290,6 +279,7 @@ fun GymAppRoot(
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .navigationBarsPadding()
                                 .padding(horizontal = 16.dp, vertical = 12.dp),
                             contentAlignment = Alignment.BottomCenter
                         ) {
@@ -380,6 +370,7 @@ fun GymAppRoot(
                             val sessionId = navBackStackEntry?.arguments?.getLong("sessionId")
                             if (sessionId != null) {
                                 ExtendedFloatingActionButton(
+                                    modifier = Modifier.navigationBarsPadding(),
                                     onClick = {
                                         navController.navigate(AppDestination.postWorkoutSummaryRoute(sessionId)) {
                                             launchSingleTop = true
@@ -430,6 +421,7 @@ fun GymAppRoot(
                                 onEditExerciseMapping = viewModel::openManualMuscleMapping,
                                 onSaveExerciseMapping = viewModel::saveManualMuscleMapping,
                                 onCloseExerciseMapping = viewModel::closeManualMuscleMapping,
+                                onDeleteSession = viewModel::deleteSession,
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
@@ -582,6 +574,8 @@ fun GymAppRoot(
                                 onAddExerciseToWorkout = viewModel::addExerciseToWorkout,
                                 onAddSet = viewModel::addSet,
                                 onDeleteSet = viewModel::deleteSet,
+                                onDeleteSession = viewModel::deleteSession,
+                                onSessionDeleted = { navController.popBackStack() },
                                 onUpdateSet = viewModel::updateSet,
                                 onUndoDelete = viewModel::undoDeleteSet,
                                 modifier = Modifier.fillMaxSize()
@@ -662,40 +656,21 @@ fun GymAppRoot(
                                         )
                                         val remoteProfile = authManager.loadOwnProfile(session)
                                         val localStats = repository.getSyncProfileStats()
-                                        if (remoteProfile != null && (remoteProfile.workouts > localStats.workouts || remoteProfile.xp > localStats.xp)) {
-                                            val remoteState = authManager.loadRemoteState(session)
-                                            if (remoteState != null && remoteState.length() > 0) {
-                                                repository.importBackupJsonObject(
-                                                    remoteState,
-                                                    activeUserId = session.userId,
-                                                    activeRemote = true
-                                                )
-                                            }
-                                            LeaderboardRow(
-                                                userId = session.userId,
-                                                displayName = remoteProfile.displayName,
-                                                xp = remoteProfile.xp,
-                                                level = remoteProfile.level,
-                                                workouts = remoteProfile.workouts,
-                                                isCurrentUser = true
-                                            )
-                                        } else {
-                                            authManager.saveRemoteState(
-                                                session = session,
-                                                state = repository.buildBackupJson(owner = owner),
-                                                xp = localStats.xp,
-                                                level = localStats.level,
-                                                workouts = localStats.workouts
-                                            )
-                                            LeaderboardRow(
-                                                userId = session.userId,
-                                                displayName = session.displayName,
-                                                xp = localStats.xp,
-                                                level = localStats.level,
-                                                workouts = localStats.workouts,
-                                                isCurrentUser = true
-                                            )
-                                        }
+                                        authManager.saveRemoteState(
+                                            session = session,
+                                            state = repository.buildBackupJson(owner = owner),
+                                            xp = localStats.xp,
+                                            level = localStats.level,
+                                            workouts = localStats.workouts
+                                        )
+                                        LeaderboardRow(
+                                            userId = session.userId,
+                                            displayName = remoteProfile?.displayName ?: session.displayName,
+                                            xp = localStats.xp,
+                                            level = localStats.level,
+                                            workouts = localStats.workouts,
+                                            isCurrentUser = true
+                                        )
                                     }.getOrElse {
                                         LeaderboardRow(
                                             userId = session.userId,

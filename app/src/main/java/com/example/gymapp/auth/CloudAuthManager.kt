@@ -5,6 +5,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -12,6 +14,7 @@ import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.Base64
 
 private const val SUPABASE_URL = "https://owrcbsrectdgaotndtxy.supabase.co"
 private const val SUPABASE_KEY = "sb_publishable_vvOMzx6V_sPBpD-b3VZfzg_y14u8kIg"
@@ -62,6 +65,7 @@ data class CloudProfile(
 
 class CloudAuthManager(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences("gym_cloud_auth", Context.MODE_PRIVATE)
+    private val refreshMutex = Mutex()
     private val _authState = MutableStateFlow(AuthUiState(session = readSession()))
     val authState: StateFlow<AuthUiState> = _authState.asStateFlow()
 
@@ -114,10 +118,21 @@ class CloudAuthManager(context: Context) {
     }
 
     suspend fun freshCloudSession(session: AccountSession.Cloud): AccountSession.Cloud {
-        return if (session.refreshToken.isNullOrBlank()) {
-            session
-        } else {
-            refreshSession(session)
+        val currentSession = (_authState.value.session as? AccountSession.Cloud)
+            ?.takeIf { it.userId == session.userId }
+            ?: session
+        if (!currentSession.needsRefresh()) return currentSession
+        if (currentSession.refreshToken.isNullOrBlank()) return currentSession
+
+        return refreshMutex.withLock {
+            val latestSession = (_authState.value.session as? AccountSession.Cloud)
+                ?.takeIf { it.userId == session.userId }
+                ?: currentSession
+            if (!latestSession.needsRefresh() || latestSession.refreshToken.isNullOrBlank()) {
+                latestSession
+            } else {
+                refreshSession(latestSession)
+            }
         }
     }
 
@@ -354,5 +369,18 @@ class CloudAuthManager(context: Context) {
             .replace(Regex("\\s+"), " ")
             .trim()
             .take(32)
+    }
+
+    private fun AccountSession.Cloud.needsRefresh(nowSeconds: Long = System.currentTimeMillis() / 1_000L): Boolean {
+        val expiresAt = accessTokenExpirationSeconds() ?: return false
+        return expiresAt - nowSeconds <= 60
+    }
+
+    private fun AccountSession.Cloud.accessTokenExpirationSeconds(): Long? {
+        return runCatching {
+            val payload = accessToken.split(".").getOrNull(1) ?: return@runCatching null
+            val decoded = Base64.getUrlDecoder().decode(payload)
+            JSONObject(String(decoded, Charsets.UTF_8)).optLong("exp").takeIf { it > 0L }
+        }.getOrNull()
     }
 }

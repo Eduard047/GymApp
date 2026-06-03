@@ -69,7 +69,19 @@ if (-not (Test-Path $wearApkSource)) {
 
 Copy-Item -Path $phoneApkSource -Destination $phoneApkTarget -Force
 Copy-Item -Path $wearApkSource -Destination $wearApkTarget -Force
+
+$metadataDir = Join-Path $projectRoot "tmp"
+New-Item -ItemType Directory -Path $metadataDir -Force | Out-Null
+$metadataPath = Join-Path $metadataDir "last-build-apk.json"
+[ordered]@{
+    versionCode = $versionCode
+    versionName = $versionName
+    phoneApk = $phoneApkTarget
+    watchApk = $wearApkTarget
+} | ConvertTo-Json | Set-Content -Path $metadataPath -Encoding UTF8
+
 Write-Host "Copied phone APK to: $phoneApkTarget"
 Write-Host "Copied watch APK to: $wearApkTarget"
+Write-Host "Build metadata written to: $metadataPath"
 Write-Host "Phone install command: adb install -r gymapp-phone-debug.apk"
 Write-Host "Watch install command: adb install -r gymapp-watch-debug.apk"

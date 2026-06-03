@@ -119,7 +119,7 @@ class AddWorkoutViewModel(
     private val exerciseHistory: StateFlow<List<ExerciseHistoryEntry>> = repository.observeAllExerciseHistory()
         .stateIn(
             scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5_000),
+            started = SharingStarted.Eagerly,
             initialValue = emptyList()
         )
     private val workoutTemplates = repository.observeSessions().map { sessions ->

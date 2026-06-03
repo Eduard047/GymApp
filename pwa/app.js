@@ -1416,7 +1416,7 @@ function loginScreen() {
     <header class="topbar"><span></span><h1>${tx("Login", "Вхід")}</h1><button class="icon-button" data-action="language" aria-label="Language">${svg("lang")}</button></header>
     <main class="screen auth-screen">
       <section class="hero-panel auth-hero"><p class="eyebrow">${tx("Training log", "Журнал тренувань")}</p><h2>GymApp</h2><p>${remoteEnabled ? tx("Sign in to sync workouts across devices.", "Увійди, щоб синхронізувати тренування між пристроями.") : tx("Cloud login is ready after Supabase keys are added.", "Хмарний вхід запрацює після додавання ключів Supabase.")}</p></section>
-      ${remoteEnabled ? `<section class="panel auth-panel"><h2>${tx("Cloud account", "Хмарний акаунт")}</h2><div class="field-stack"><input id="login-email" autocomplete="email" inputmode="email" placeholder="email@example.com"><input id="login-password" autocomplete="current-password" type="password" placeholder="${tx("Password", "Пароль")}"></div><div class="actions login-actions"><button class="button" data-action="remote-login">${tx("Log in", "Увійти")}</button></div><details class="signup-details"><summary>${tx("Create account", "Створити акаунт")}</summary><div class="field-stack"><input id="login-name" autocomplete="name" placeholder="${tx("Display name", "Ім'я в рейтингу")}"><button class="button ghost" data-action="remote-signup">${tx("Create account", "Створити акаунт")}</button></div></details></section>` : ""}
+      ${remoteEnabled ? `<section class="panel auth-panel"><h2>${tx("Cloud account", "Хмарний акаунт")}</h2><div class="field-stack"><input id="login-email" autocomplete="email" inputmode="email" placeholder="email@example.com"><input id="login-password" autocomplete="current-password" type="password" placeholder="${tx("Password", "Пароль")}"></div><div class="actions login-actions"><button class="button" data-action="remote-login">${tx("Log in", "Увійти")}</button></div><details class="signup-details" open><summary>${tx("Create account", "Створити акаунт")}</summary><div class="field-stack"><input id="signup-name" autocomplete="name" placeholder="${tx("Display name", "Ім'я в рейтингу")}"><input id="signup-email" autocomplete="email" inputmode="email" placeholder="email@example.com"><input id="signup-password" autocomplete="new-password" type="password" placeholder="${tx("Password", "Пароль")}"><input id="signup-password-confirm" autocomplete="new-password" type="password" placeholder="${tx("Repeat password", "Повтори пароль")}"><p class="muted">${tx("Use 8+ characters with letters and numbers.", "Використай 8+ символів з літерами й цифрами.")}</p><button class="button ghost" data-action="remote-signup">${tx("Create account", "Створити акаунт")}</button></div></details></section>` : ""}
       <section class="panel auth-panel"><h2>${tx("Local account", "Локальний акаунт")}</h2><p class="muted">${remoteEnabled ? tx("Offline fallback for this browser only.", "Запасний режим лише для цього браузера.") : tx("Paste Supabase keys into supabase-config.js to enable real network login.", "Встав ключі Supabase у supabase-config.js, щоб увімкнути справжній мережевий вхід.")}</p><div class="field-row login-row"><input id="local-login-name" autocomplete="username" placeholder="${tx("Name", "Ім'я")}"><button class="button" data-action="login-account">${tx("Enter", "Увійти")}</button></div></section>
       ${accounts.length ? `<section class="panel"><h2>${tx("Saved accounts", "Збережені акаунти")}</h2><div class="chip-row">${accounts.map(account => `<button class="chip buttonlike" data-action="login-account" data-name="${escapeAttr(account.name)}">${escapeHtml(account.name)}</button>`).join("")}</div></section>` : ""}
       <div id="toast" class="toast hidden"></div>
@@ -2087,40 +2087,6 @@ function loginAccount(rawName) {
   render();
 }
 
-async function remoteLogin(createAccount) {
-  if (!remoteAuthEnabled()) return showToast(tx("Supabase is not configured.", "Supabase ще не налаштований."));
-  const email = document.querySelector("#login-email")?.value.trim();
-  const password = document.querySelector("#login-password")?.value;
-  const displayName = document.querySelector("#login-name")?.value.trim();
-  if (!email || !password) return showToast(tx("Enter email and password.", "Введи email і пароль."));
-  try {
-    const path = createAccount ? "/auth/v1/signup" : "/auth/v1/token?grant_type=password";
-    const session = await supabaseRequest(path, {
-      method: "POST",
-      body: JSON.stringify(createAccount ? { email, password, data: { display_name: displayName || email.split("@")[0] } } : { email, password })
-    });
-    if (!session?.access_token || !session?.user?.id) {
-      showToast(tx("Check email to confirm account, then log in.", "Підтверди акаунт через email, потім увійди."));
-      return;
-    }
-    saveRemoteSession(session);
-    const account = remoteAccountFromSession(session);
-    if (displayName) account.name = displayName;
-    localStorage.setItem(AUTH_KEY, JSON.stringify(account));
-    saveAccountList([...accountList().filter(item => item.id !== account.id), account]);
-    activeAccount = account;
-    const cloudState = await loadRemoteState(session);
-    state = cloudState ? normalizeImportedState(cloudState, defaultAppState()) : defaultAppState();
-    saveState();
-    nav = [{ name: "workouts" }];
-    modal = null;
-    render();
-    showToast(tx("Cloud login complete.", "Хмарний вхід виконано."));
-  } catch {
-    showToast(tx("Login failed. Check email and password.", "Вхід не вдався. Перевір email і пароль."));
-  }
-}
-
 function sanitizeDisplayName(value) {
   return String(value || "").replace(/[^\p{L}\p{N} ._-]/gu, "").replace(/\s+/g, " ").trim().slice(0, 32);
 }
@@ -2142,11 +2108,19 @@ function validateAuthInput(email, password, displayName = "") {
 
 async function remoteLogin(createAccount) {
   if (!remoteAuthEnabled()) return showToast(tx("Supabase is not configured.", "Supabase is not configured."));
-  const email = document.querySelector("#login-email")?.value.trim();
-  const password = document.querySelector("#login-password")?.value;
-  const displayName = sanitizeDisplayName(document.querySelector("#login-name")?.value.trim() || "");
+  const email = createAccount
+    ? document.querySelector("#signup-email")?.value.trim()
+    : document.querySelector("#login-email")?.value.trim();
+  const password = createAccount
+    ? document.querySelector("#signup-password")?.value
+    : document.querySelector("#login-password")?.value;
+  const passwordConfirm = document.querySelector("#signup-password-confirm")?.value;
+  const displayName = sanitizeDisplayName(document.querySelector("#signup-name")?.value.trim() || "");
   const validationError = validateAuthInput(email, password, createAccount ? displayName : "");
   if (validationError) return showToast(validationError);
+  if (createAccount && password !== passwordConfirm) {
+    return showToast(tx("Passwords do not match.", "Паролі не збігаються."));
+  }
   try {
     const path = createAccount
       ? `/auth/v1/signup?redirect_to=${encodeURIComponent(AUTH_REDIRECT_URL)}`
