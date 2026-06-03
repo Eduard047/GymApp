@@ -8,6 +8,9 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+if (Get-Variable PSNativeCommandUseErrorActionPreference -ErrorAction SilentlyContinue) {
+    $PSNativeCommandUseErrorActionPreference = $false
+}
 
 $projectRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location $projectRoot
