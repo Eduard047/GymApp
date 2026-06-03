@@ -217,7 +217,7 @@ object WorkoutRecommendationEngine {
             return SmartWorkoutPlan(focus = SmartWorkoutFocus.FullBody, exercises = emptyList())
         }
 
-        val focus = chooseWorkoutFocus(history, trainingProfile)
+        val focus = chooseWorkoutFocus(history, trainingProfile, nowMillis, zoneId)
         val targetExerciseCount = when (focus) {
             SmartWorkoutFocus.Upper -> 5
             SmartWorkoutFocus.Lower -> 5
@@ -243,6 +243,13 @@ object WorkoutRecommendationEngine {
                 .map { it.sessionId }
                 .distinct()
                 .size * 16.0
+            val sameWeekExercisePenalty = if (
+                exerciseHistory.any { daysBetween(it.sessionDate, nowMillis, zoneId) <= 6 }
+            ) {
+                55.0
+            } else {
+                0.0
+            }
             val focusScore = when {
                 focus == SmartWorkoutFocus.FullBody -> 44.0
                 isCandidateForFocus(analysis.category, focus) -> 86.0
@@ -257,7 +264,8 @@ object WorkoutRecommendationEngine {
             ExerciseCandidate(
                 exercise = exercise,
                 analysis = analysis,
-                score = focusScore + muscleMatchScore + noveltyScore + dueScore + confidenceScore - recentExercisePenalty
+                score = focusScore + muscleMatchScore + noveltyScore + dueScore + confidenceScore -
+                    recentExercisePenalty - sameWeekExercisePenalty
             )
         }
 
@@ -346,7 +354,9 @@ object WorkoutRecommendationEngine {
 
     private fun chooseWorkoutFocus(
         history: List<ExerciseHistoryEntry>,
-        trainingProfile: TrainingProfile
+        trainingProfile: TrainingProfile,
+        nowMillis: Long,
+        zoneId: ZoneId
     ): SmartWorkoutFocus {
         if (history.isEmpty()) {
             return when (trainingProfile.split) {
@@ -357,19 +367,25 @@ object WorkoutRecommendationEngine {
             }
         }
 
-        val latestSession = history
-            .groupBy { it.sessionId }
-            .values
-            .maxByOrNull { entries -> entries.maxOf { it.sessionDate } }
+        val sessions = history.sessionGroupsByDate()
+        val latestSession = sessions.firstOrNull()?.entries
             ?: return SmartWorkoutFocus.Upper
         val latestFocus = dominantFocus(latestSession)
 
         return when (trainingProfile.split) {
             TrainingSplit.UpperLower -> {
-                if (latestFocus == SmartWorkoutFocus.Lower || latestFocus == SmartWorkoutFocus.Legs) {
-                    SmartWorkoutFocus.Upper
-                } else {
-                    SmartWorkoutFocus.Lower
+                val thisWeekSessions = sessions.filter { session ->
+                    daysBetween(session.date, nowMillis, zoneId) <= 6
+                }
+                val latestWeekFocus = thisWeekSessions.firstOrNull()?.entries?.let(::dominantFocus) ?: latestFocus
+                when {
+                    latestWeekFocus.isLowerDay() -> SmartWorkoutFocus.Upper
+                    latestWeekFocus.isUpperDay() -> SmartWorkoutFocus.Lower
+                    else -> {
+                        val upperCount = thisWeekSessions.count { dominantFocus(it.entries).isUpperDay() }
+                        val lowerCount = thisWeekSessions.count { dominantFocus(it.entries).isLowerDay() }
+                        if (lowerCount < upperCount) SmartWorkoutFocus.Lower else SmartWorkoutFocus.Upper
+                    }
                 }
             }
             TrainingSplit.PushPullLegs -> {
@@ -421,38 +437,83 @@ object WorkoutRecommendationEngine {
     private fun analyzeExercise(name: String): ExerciseAnalysis {
         val normalized = name.normalizedExerciseName()
         val muscles = linkedSetOf<String>()
+        val patterns = linkedSetOf<MovementPattern>()
 
         fun add(vararg ids: String) {
             muscles += ids
         }
+        fun pattern(vararg values: MovementPattern) {
+            patterns += values
+        }
 
-        if (normalized.containsAny("жим ног", "leg press")) add("quads", "glutes", "hamstrings")
-        if (normalized.containsAny("прис", "присед", "squat", "випад", "выпад", "lunge")) add("quads", "glutes", "hamstrings")
-        if (normalized.containsAny("румун", "станов", "становая", "deadlift")) add("hamstrings", "glutes", "lowerBack", "upperBack")
-        if (normalized.containsAny("згинання ніг", "згибання ніг", "сгибание ног", "leg curl")) add("hamstrings")
-        if (normalized.containsAny("розгинання ніг", "разгибание ног", "leg extension")) add("quads")
-        if (normalized.containsAny("сідниц", "ягодиц", "glute", "hip thrust", "місток", "мостик")) add("glutes", "hamstrings")
-        if (normalized.containsAny("икр", "ікр", "calf", "носок", "носки")) add("calves")
+        if (normalized.containsAny("жим ног", "leg press")) {
+            add("quads", "glutes", "hamstrings")
+            pattern(MovementPattern.LegPress)
+        }
+        if (normalized.containsAny("прис", "присед", "squat", "випад", "выпад", "lunge")) {
+            add("quads", "glutes", "hamstrings")
+            pattern(MovementPattern.Squat)
+        }
+        if (normalized.containsAny("румун", "румын", "станов", "становая", "deadlift")) {
+            add("hamstrings", "glutes", "lowerBack", "upperBack")
+            pattern(MovementPattern.Hinge)
+        }
+        if (normalized.containsAny("згинання ніг", "згибання ніг", "сгибание ног", "leg curl")) {
+            add("hamstrings")
+            pattern(MovementPattern.KneeFlexion)
+        }
+        if (normalized.containsAny("розгинання ніг", "разгибание ног", "leg extension")) {
+            add("quads")
+            pattern(MovementPattern.KneeExtension)
+        }
+        if (normalized.containsAny("сідниц", "ягодиц", "glute", "hip thrust", "місток", "мостик")) {
+            add("glutes", "hamstrings")
+            pattern(MovementPattern.Hinge)
+        }
+        if (normalized.containsAny("икр", "ікр", "calf", "носок", "носки")) {
+            add("calves")
+            pattern(MovementPattern.Calf)
+        }
         if (normalized.containsAny("зведення ніг", "сведение ног", "adductor")) add("adductors")
 
         if (normalized.containsAny("жим", "press", "bench", "віджим", "отжим", "push up", "dips", "брусь") &&
             !normalized.containsAny("ног", "leg press")
         ) {
             add("chest", "triceps", "shoulders")
+            if (normalized.containsAny("сидя", "сидячи", "над голов", "overhead", "shoulder")) {
+                pattern(MovementPattern.VerticalPress)
+            } else {
+                pattern(MovementPattern.HorizontalPress)
+            }
         }
         if (normalized.containsAny("груд", "груди", "chest", "метелик", "pec deck", "зведення рук", "сведение рук", "fly", "flies")) add("chest", "shoulders")
-        if (normalized.containsAny("плеч", "дельт", "махи", "розведення", "разведение", "lateral raise", "rear delt", "shoulder", "overhead")) add("shoulders")
+        if (normalized.containsAny("плеч", "дельт", "махи", "розведення", "разведение", "lateral raise", "rear delt", "shoulder", "overhead")) {
+            add("shoulders")
+            pattern(MovementPattern.VerticalPress)
+        }
         if (normalized.containsAny("трицепс", "tricep", "француз", "розгинання рук", "разгибание рук", "pushdown")) add("triceps")
 
-        if (normalized.containsAny("підтяг", "подтяг", "pull up", "pullup", "pulldown", "верхній блок", "верхний блок")) add("lats", "upperBack", "biceps")
-        if (normalized.containsAny("тяга", "row") && !normalized.containsAny("румун", "станов", "становая", "deadlift", "підборід", "подбород")) add("lats", "upperBack", "biceps")
+        if (normalized.containsAny("підтяг", "подтяг", "pull up", "pullup", "pulldown", "верхній блок", "верхний блок")) {
+            add("lats", "upperBack", "biceps")
+            pattern(MovementPattern.VerticalPull)
+        }
+        if (normalized.containsAny("тяга", "row") && !normalized.containsAny("румун", "румын", "станов", "становая", "deadlift", "підборід", "подбород")) {
+            add("lats", "upperBack", "biceps")
+            pattern(MovementPattern.HorizontalPull)
+        }
         if (normalized.containsAny("спин", "спина", "back")) add("lats", "upperBack")
         if (normalized.containsAny("біцепс", "бицепс", "bicep", "curl", "згинання рук", "сгибание рук")) add("biceps", "forearms")
         if (normalized.containsAny("передпліч", "предплеч", "forearm")) add("forearms")
 
-        if (normalized.containsAny("прес", "abs", "crunch", "скруч", "планка", "plank", "leg raise")) add("abs")
+        if (normalized.containsAny("прес", "abs", "crunch", "скруч", "планка", "plank", "leg raise")) {
+            add("abs")
+            pattern(MovementPattern.Core)
+        }
         if (normalized.containsAny("нахил", "наклон", "сторони", "стороны", "oblique", "rotation", "twist")) add("obliques")
-        if (normalized.containsAny("гіперекстензі", "гиперэкстенз", "hyperextension")) add("lowerBack", "glutes", "hamstrings")
+        if (normalized.containsAny("гіперекстензі", "гиперэкстенз", "hyperextension")) {
+            add("lowerBack", "glutes", "hamstrings")
+            pattern(MovementPattern.Hinge)
+        }
 
         val category = when {
             muscles.any { it in lowerMuscles } -> SmartWorkoutFocus.Legs
@@ -464,7 +525,8 @@ object WorkoutRecommendationEngine {
 
         return ExerciseAnalysis(
             category = category,
-            muscles = muscles.ifEmpty { linkedSetOf("abs") }
+            muscles = muscles.ifEmpty { linkedSetOf("abs") },
+            patterns = patterns.ifEmpty { linkedSetOf(MovementPattern.Accessory) }
         )
     }
 
@@ -495,6 +557,23 @@ object WorkoutRecommendationEngine {
             .filter { candidate -> isCandidateForFocus(candidate.analysis.category, focus) }
             .ifEmpty { candidates }
             .toMutableList()
+
+        if (focus == SmartWorkoutFocus.Lower || focus == SmartWorkoutFocus.Legs) {
+            selectRequiredPattern(
+                remaining = remaining,
+                selected = selected,
+                coveredMuscles = coveredMuscles,
+                patterns = setOf(MovementPattern.Squat, MovementPattern.LegPress)
+            )
+            if (shouldPrioritizeHeavyLower(history)) {
+                selectRequiredPattern(
+                    remaining = remaining,
+                    selected = selected,
+                    coveredMuscles = coveredMuscles,
+                    patterns = setOf(MovementPattern.Hinge)
+                )
+            }
+        }
 
         if (focus == SmartWorkoutFocus.FullBody) {
             listOf(SmartWorkoutFocus.Push, SmartWorkoutFocus.Pull, SmartWorkoutFocus.Legs).forEach { requiredFocus ->
@@ -534,6 +613,35 @@ object WorkoutRecommendationEngine {
         }
 
         return selected.take(targetExerciseCount)
+    }
+
+    private fun selectRequiredPattern(
+        remaining: MutableList<ExerciseCandidate>,
+        selected: MutableList<ExerciseCandidate>,
+        coveredMuscles: MutableSet<String>,
+        patterns: Set<MovementPattern>
+    ) {
+        val best = remaining
+            .filter { candidate -> candidate.analysis.patterns.any { it in patterns } }
+            .maxByOrNull { candidate -> candidate.score + candidate.analysis.patterns.count { it in patterns } * 35.0 }
+            ?: return
+
+        selected += best
+        coveredMuscles += best.analysis.muscles
+        remaining.removeAll { it.exercise.id == best.exercise.id }
+    }
+
+    private fun shouldPrioritizeHeavyLower(history: List<ExerciseHistoryEntry>): Boolean {
+        val latestLowerSession = history
+            .sessionGroupsByDate()
+            .firstOrNull { dominantFocus(it.entries).isLowerDay() }
+            ?: return true
+        val patterns = latestLowerSession.entries
+            .flatMap { analyzeExercise(it.exerciseName).patterns }
+            .toSet()
+        return MovementPattern.Squat !in patterns &&
+            MovementPattern.LegPress !in patterns &&
+            MovementPattern.Hinge !in patterns
     }
 
     private fun balancedScore(
@@ -654,8 +762,24 @@ object WorkoutRecommendationEngine {
 
     private data class ExerciseAnalysis(
         val category: SmartWorkoutFocus,
-        val muscles: Set<String>
+        val muscles: Set<String>,
+        val patterns: Set<MovementPattern>
     )
+
+    private enum class MovementPattern {
+        Squat,
+        LegPress,
+        Hinge,
+        KneeFlexion,
+        KneeExtension,
+        Calf,
+        HorizontalPress,
+        VerticalPress,
+        HorizontalPull,
+        VerticalPull,
+        Core,
+        Accessory
+    }
 
     private val upperFocuses = setOf(SmartWorkoutFocus.Upper, SmartWorkoutFocus.Push, SmartWorkoutFocus.Pull)
     private val lowerFocuses = setOf(SmartWorkoutFocus.Lower, SmartWorkoutFocus.Legs)
@@ -675,4 +799,30 @@ private fun String.normalizedExerciseName(): String {
 
 private fun String.containsAny(vararg tokens: String): Boolean {
     return tokens.any { token -> contains(token) }
+}
+
+private data class SessionGroup(
+    val id: Long,
+    val date: Long,
+    val entries: List<ExerciseHistoryEntry>
+)
+
+private fun List<ExerciseHistoryEntry>.sessionGroupsByDate(): List<SessionGroup> {
+    return groupBy { it.sessionId }
+        .map { (sessionId, entries) ->
+            SessionGroup(
+                id = sessionId,
+                date = entries.maxOf { it.sessionDate },
+                entries = entries
+            )
+        }
+        .sortedByDescending { it.date }
+}
+
+private fun SmartWorkoutFocus.isUpperDay(): Boolean {
+    return this == SmartWorkoutFocus.Upper || this == SmartWorkoutFocus.Push || this == SmartWorkoutFocus.Pull
+}
+
+private fun SmartWorkoutFocus.isLowerDay(): Boolean {
+    return this == SmartWorkoutFocus.Lower || this == SmartWorkoutFocus.Legs
 }
