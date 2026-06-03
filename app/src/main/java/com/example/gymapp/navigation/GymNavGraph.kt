@@ -157,18 +157,6 @@ fun GymAppRoot(
                         remote = true
                     )
                     val stats = repository.getSyncProfileStats()
-                    val remoteProfile = authManager.loadOwnProfile(session)
-                    if (remoteProfile != null && (remoteProfile.workouts > stats.workouts || remoteProfile.xp > stats.xp)) {
-                        val remoteState = authManager.loadRemoteState(session)
-                        if (remoteState != null && remoteState.length() > 0) {
-                            repository.importBackupJsonObject(
-                                remoteState,
-                                activeUserId = session.userId,
-                                activeRemote = true
-                            )
-                        }
-                        return@collectLatest
-                    }
                     authManager.saveRemoteState(
                         session = session,
                         state = repository.buildBackupJson(owner = owner),
@@ -668,40 +656,21 @@ fun GymAppRoot(
                                         )
                                         val remoteProfile = authManager.loadOwnProfile(session)
                                         val localStats = repository.getSyncProfileStats()
-                                        if (remoteProfile != null && (remoteProfile.workouts > localStats.workouts || remoteProfile.xp > localStats.xp)) {
-                                            val remoteState = authManager.loadRemoteState(session)
-                                            if (remoteState != null && remoteState.length() > 0) {
-                                                repository.importBackupJsonObject(
-                                                    remoteState,
-                                                    activeUserId = session.userId,
-                                                    activeRemote = true
-                                                )
-                                            }
-                                            LeaderboardRow(
-                                                userId = session.userId,
-                                                displayName = remoteProfile.displayName,
-                                                xp = remoteProfile.xp,
-                                                level = remoteProfile.level,
-                                                workouts = remoteProfile.workouts,
-                                                isCurrentUser = true
-                                            )
-                                        } else {
-                                            authManager.saveRemoteState(
-                                                session = session,
-                                                state = repository.buildBackupJson(owner = owner),
-                                                xp = localStats.xp,
-                                                level = localStats.level,
-                                                workouts = localStats.workouts
-                                            )
-                                            LeaderboardRow(
-                                                userId = session.userId,
-                                                displayName = session.displayName,
-                                                xp = localStats.xp,
-                                                level = localStats.level,
-                                                workouts = localStats.workouts,
-                                                isCurrentUser = true
-                                            )
-                                        }
+                                        authManager.saveRemoteState(
+                                            session = session,
+                                            state = repository.buildBackupJson(owner = owner),
+                                            xp = localStats.xp,
+                                            level = localStats.level,
+                                            workouts = localStats.workouts
+                                        )
+                                        LeaderboardRow(
+                                            userId = session.userId,
+                                            displayName = remoteProfile?.displayName ?: session.displayName,
+                                            xp = localStats.xp,
+                                            level = localStats.level,
+                                            workouts = localStats.workouts,
+                                            isCurrentUser = true
+                                        )
                                     }.getOrElse {
                                         LeaderboardRow(
                                             userId = session.userId,
