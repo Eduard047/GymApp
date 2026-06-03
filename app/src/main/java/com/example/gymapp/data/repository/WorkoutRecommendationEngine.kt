@@ -252,7 +252,7 @@ object WorkoutRecommendationEngine {
             }
             val focusScore = when {
                 focus == SmartWorkoutFocus.FullBody -> 44.0
-                isCandidateForFocus(analysis.category, focus) -> 86.0
+                isExerciseEligibleForFocus(analysis, focus) -> 86.0
                 analysis.category == SmartWorkoutFocus.FullBody -> 32.0
                 else -> -60.0
             }
@@ -487,13 +487,13 @@ object WorkoutRecommendationEngine {
             }
         }
         if (normalized.containsAny("груд", "груди", "chest", "метелик", "pec deck", "зведення рук", "сведение рук", "fly", "flies")) add("chest", "shoulders")
-        if (normalized.containsAny("плеч", "дельт", "махи", "розведення", "разведение", "lateral raise", "rear delt", "shoulder", "overhead")) {
+        if (normalized.containsAny("плеч", "дельт", "махи", "розведення", "разведение", "lateral raise", "rear delt", "shoulder", "overhead", "над голов")) {
             add("shoulders")
             pattern(MovementPattern.VerticalPress)
         }
-        if (normalized.containsAny("трицепс", "tricep", "француз", "розгинання рук", "разгибание рук", "pushdown")) add("triceps")
+        if (normalized.containsAny("трицепс", "tricep", "француз", "розгинання рук", "разгибание рук", "pushdown", "гантеля над голов", "гантель над голов")) add("triceps")
 
-        if (normalized.containsAny("підтяг", "подтяг", "pull up", "pullup", "pulldown", "верхній блок", "верхний блок")) {
+        if (normalized.containsAny("підтяг", "подтяг", "pull up", "pullup", "pulldown", "верхній блок", "верхний блок", "журавель")) {
             add("lats", "upperBack", "biceps")
             pattern(MovementPattern.VerticalPull)
         }
@@ -525,18 +525,18 @@ object WorkoutRecommendationEngine {
 
         return ExerciseAnalysis(
             category = category,
-            muscles = muscles.ifEmpty { linkedSetOf("abs") },
+            muscles = muscles,
             patterns = patterns.ifEmpty { linkedSetOf(MovementPattern.Accessory) }
         )
     }
 
-    private fun isCandidateForFocus(candidateFocus: SmartWorkoutFocus, workoutFocus: SmartWorkoutFocus): Boolean {
+    private fun isExerciseEligibleForFocus(analysis: ExerciseAnalysis, workoutFocus: SmartWorkoutFocus): Boolean {
         return when (workoutFocus) {
-            SmartWorkoutFocus.Upper -> candidateFocus in upperFocuses || candidateFocus == SmartWorkoutFocus.FullBody
-            SmartWorkoutFocus.Lower -> candidateFocus in lowerFocuses || candidateFocus == SmartWorkoutFocus.FullBody
-            SmartWorkoutFocus.Push -> candidateFocus == SmartWorkoutFocus.Push || candidateFocus == SmartWorkoutFocus.FullBody
-            SmartWorkoutFocus.Pull -> candidateFocus == SmartWorkoutFocus.Pull || candidateFocus == SmartWorkoutFocus.FullBody
-            SmartWorkoutFocus.Legs -> candidateFocus in lowerFocuses || candidateFocus == SmartWorkoutFocus.FullBody
+            SmartWorkoutFocus.Upper -> analysis.category in upperFocuses
+            SmartWorkoutFocus.Lower,
+            SmartWorkoutFocus.Legs -> analysis.category in lowerFocuses || analysis.muscles.any { it in coreMuscles }
+            SmartWorkoutFocus.Push -> analysis.category == SmartWorkoutFocus.Push
+            SmartWorkoutFocus.Pull -> analysis.category == SmartWorkoutFocus.Pull
             SmartWorkoutFocus.FullBody -> true
         }
     }
@@ -554,8 +554,14 @@ object WorkoutRecommendationEngine {
         val coveredMuscles = mutableSetOf<String>()
         val lastTrainedByMuscle = lastTrainedByMuscle(history)
         val remaining = candidates
-            .filter { candidate -> isCandidateForFocus(candidate.analysis.category, focus) }
-            .ifEmpty { candidates }
+            .filter { candidate -> isExerciseEligibleForFocus(candidate.analysis, focus) }
+            .ifEmpty {
+                if (focus == SmartWorkoutFocus.Lower || focus == SmartWorkoutFocus.Legs) {
+                    emptyList()
+                } else {
+                    candidates
+                }
+            }
             .toMutableList()
 
         if (focus == SmartWorkoutFocus.Lower || focus == SmartWorkoutFocus.Legs) {
@@ -607,6 +613,7 @@ object WorkoutRecommendationEngine {
 
         if (selected.size < targetExerciseCount) {
             selected += candidates
+                .filter { candidate -> isExerciseEligibleForFocus(candidate.analysis, focus) }
                 .filterNot { candidate -> selected.any { it.exercise.id == candidate.exercise.id } }
                 .sortedWith(compareByDescending<ExerciseCandidate> { it.score }.thenBy { it.exercise.name.lowercase() })
                 .take(targetExerciseCount - selected.size)

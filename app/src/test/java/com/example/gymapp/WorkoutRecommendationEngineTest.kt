@@ -55,7 +55,7 @@ class WorkoutRecommendationEngineTest {
 
         assertEquals(SmartWorkoutFocus.Upper, plan.focus)
         assertTrue(plan.exerciseNames().any { it.contains("Row") || it.contains("Pull Up") })
-        assertTrue(plan.exerciseNames().any { it.contains("Lateral Raise") || it.contains("Shoulder Press") })
+        assertTrue(plan.exerciseNames().any { it.contains("Press") || it.contains("Lateral Raise") || it.contains("Overhead") })
     }
 
     @Test
@@ -119,6 +119,32 @@ class WorkoutRecommendationEngineTest {
     }
 
     @Test
+    fun lowerWorkoutDoesNotFallbackToUpperOrUnknownExercises() {
+        val history = session(1, daysAgo = 2, exerciseId = 9, exerciseName = "Leg Extension") +
+            session(2, daysAgo = 1, exerciseId = 1, exerciseName = "Bench Press")
+
+        val plan = WorkoutRecommendationEngine.buildWorkoutPlan(
+            exercises = catalog(),
+            history = history,
+            trainingProfile = TrainingProfile(split = TrainingSplit.UpperLower),
+            nowMillis = nowMillis,
+            zoneId = zoneId
+        )
+
+        val names = plan.exerciseNames()
+        assertEquals(SmartWorkoutFocus.Lower, plan.focus)
+        assertFalse(names.contains("Overhead Dumbbell Extension"))
+        assertFalse(names.contains("Crane Pulldown"))
+        assertTrue(names.all { name ->
+            name.contains("Squat") ||
+                name.contains("Leg") ||
+                name.contains("Romanian") ||
+                name.contains("Calf") ||
+                name.contains("Crunch")
+        })
+    }
+
+    @Test
     fun fullBodyIncludesUpperAndLowerPatterns() {
         val plan = WorkoutRecommendationEngine.buildWorkoutPlan(
             exercises = catalog(),
@@ -161,7 +187,9 @@ class WorkoutRecommendationEngineTest {
         ExerciseEntity(id = 10, name = "Leg Curl"),
         ExerciseEntity(id = 11, name = "Romanian Deadlift"),
         ExerciseEntity(id = 12, name = "Calf Raise"),
-        ExerciseEntity(id = 13, name = "Weighted Crunch")
+        ExerciseEntity(id = 13, name = "Weighted Crunch"),
+        ExerciseEntity(id = 14, name = "Overhead Dumbbell Extension"),
+        ExerciseEntity(id = 15, name = "Crane Pulldown")
     )
 
     private fun session(
