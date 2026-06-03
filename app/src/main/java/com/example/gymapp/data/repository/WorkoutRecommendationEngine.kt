@@ -8,6 +8,7 @@ import com.example.gymapp.util.TrainingProfile
 import com.example.gymapp.util.TrainingSplit
 import java.time.Instant
 import java.time.ZoneId
+import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
@@ -227,50 +228,48 @@ object WorkoutRecommendationEngine {
         }
 
         val historyByExerciseId = history.groupBy { it.exerciseId }
-        val candidates = exercises
-            .map { exercise ->
-                val exerciseHistory = historyByExerciseId[exercise.id].orEmpty()
-                val bodyGroup = classifyExercise(exercise.name)
-                val daysSince = exerciseHistory
-                    .maxOfOrNull { it.sessionDate }
-                    ?.let { daysBetween(it, nowMillis, zoneId) }
-                    ?: 90
-                val sessionCount = exerciseHistory.map { it.sessionId }.distinct().size
-                val focusScore = when {
-                    focus == SmartWorkoutFocus.FullBody -> 24
-                    isCandidateForFocus(bodyGroup, focus) && bodyGroup != SmartWorkoutFocus.FullBody -> 80
-                    bodyGroup == SmartWorkoutFocus.FullBody -> 34
-                    else -> -35
-                }
-                val noveltyScore = if (sessionCount == 0) 18 else 0
-                val dueScore = daysSince.coerceAtMost(45) * 1.6
-                val confidenceScore = sessionCount.coerceAtMost(6) * 3.0
-
-                ExerciseCandidate(
-                    exercise = exercise,
-                    bodyGroup = bodyGroup,
-                    score = focusScore + noveltyScore + dueScore + confidenceScore
-                )
+        val recentSessionIds = recentSessionIds(history, limit = 3)
+        val targetMuscles = targetMusclesForFocus(focus)
+        val candidates = exercises.map { exercise ->
+            val exerciseHistory = historyByExerciseId[exercise.id].orEmpty()
+            val analysis = analyzeExercise(exercise.name)
+            val daysSince = exerciseHistory
+                .maxOfOrNull { it.sessionDate }
+                ?.let { daysBetween(it, nowMillis, zoneId) }
+                ?: 90
+            val sessionCount = exerciseHistory.map { it.sessionId }.distinct().size
+            val recentExercisePenalty = exerciseHistory
+                .filter { it.sessionId in recentSessionIds }
+                .map { it.sessionId }
+                .distinct()
+                .size * 16.0
+            val focusScore = when {
+                focus == SmartWorkoutFocus.FullBody -> 44.0
+                isCandidateForFocus(analysis.category, focus) -> 86.0
+                analysis.category == SmartWorkoutFocus.FullBody -> 32.0
+                else -> -60.0
             }
-            .sortedWith(
-                compareByDescending<ExerciseCandidate> { it.score }
-                    .thenBy { it.exercise.name.lowercase() }
+            val muscleMatchScore = analysis.muscles.count { it in targetMuscles } * 9.0
+            val noveltyScore = if (sessionCount == 0) 12.0 else 0.0
+            val dueScore = daysSince.coerceAtMost(28) * 1.25
+            val confidenceScore = sessionCount.coerceAtMost(4) * 2.0
+
+            ExerciseCandidate(
+                exercise = exercise,
+                analysis = analysis,
+                score = focusScore + muscleMatchScore + noveltyScore + dueScore + confidenceScore - recentExercisePenalty
             )
-
-        val primary = candidates
-            .filter { candidate ->
-                isCandidateForFocus(candidate.bodyGroup, focus)
-            }
-            .take(targetExerciseCount)
-        val fallback = if (primary.size >= targetExerciseCount) {
-            emptyList()
-        } else {
-            candidates
-                .filterNot { candidate -> primary.any { it.exercise.id == candidate.exercise.id } }
-                .take(targetExerciseCount - primary.size)
         }
 
-        val selected = (primary + fallback).take(targetExerciseCount)
+        val selected = selectBalancedExercises(
+            candidates = candidates,
+            focus = focus,
+            targetMuscles = targetMuscles,
+            targetExerciseCount = targetExerciseCount,
+            history = history,
+            nowMillis = nowMillis,
+            zoneId = zoneId
+        )
         return SmartWorkoutPlan(
             focus = focus,
             exercises = selected.map { candidate ->
@@ -358,23 +357,29 @@ object WorkoutRecommendationEngine {
             }
         }
 
-        val latestSessionId = history.maxByOrNull { it.sessionDate }?.sessionId ?: return SmartWorkoutFocus.Upper
-        val latestSession = history.filter { it.sessionId == latestSessionId }
+        val latestSession = history
+            .groupBy { it.sessionId }
+            .values
+            .maxByOrNull { entries -> entries.maxOf { it.sessionDate } }
+            ?: return SmartWorkoutFocus.Upper
+        val latestFocus = dominantFocus(latestSession)
 
         return when (trainingProfile.split) {
             TrainingSplit.UpperLower -> {
-                val lowerCount = latestSession.count { classifyExercise(it.exerciseName) in lowerFocuses }
-                val upperCount = latestSession.count { classifyExercise(it.exerciseName) in upperFocuses }
-                if (lowerCount > upperCount) SmartWorkoutFocus.Upper else SmartWorkoutFocus.Lower
+                if (latestFocus == SmartWorkoutFocus.Lower || latestFocus == SmartWorkoutFocus.Legs) {
+                    SmartWorkoutFocus.Upper
+                } else {
+                    SmartWorkoutFocus.Lower
+                }
             }
             TrainingSplit.PushPullLegs -> {
-                val pushCount = latestSession.count { classifyExercise(it.exerciseName) == SmartWorkoutFocus.Push }
-                val pullCount = latestSession.count { classifyExercise(it.exerciseName) == SmartWorkoutFocus.Pull }
-                val legsCount = latestSession.count { classifyExercise(it.exerciseName) in lowerFocuses }
-                when {
-                    legsCount >= pushCount && legsCount >= pullCount -> SmartWorkoutFocus.Push
-                    pushCount >= pullCount -> SmartWorkoutFocus.Pull
-                    else -> SmartWorkoutFocus.Legs
+                when (latestFocus) {
+                    SmartWorkoutFocus.Push -> SmartWorkoutFocus.Pull
+                    SmartWorkoutFocus.Pull -> SmartWorkoutFocus.Legs
+                    SmartWorkoutFocus.Legs,
+                    SmartWorkoutFocus.Lower -> SmartWorkoutFocus.Push
+                    SmartWorkoutFocus.Upper,
+                    SmartWorkoutFocus.FullBody -> chooseMostNeglectedFocus(history)
                 }
             }
             TrainingSplit.FullBody -> SmartWorkoutFocus.FullBody
@@ -413,6 +418,56 @@ object WorkoutRecommendationEngine {
         }
     }
 
+    private fun analyzeExercise(name: String): ExerciseAnalysis {
+        val normalized = name.normalizedExerciseName()
+        val muscles = linkedSetOf<String>()
+
+        fun add(vararg ids: String) {
+            muscles += ids
+        }
+
+        if (normalized.containsAny("жим ног", "leg press")) add("quads", "glutes", "hamstrings")
+        if (normalized.containsAny("прис", "присед", "squat", "випад", "выпад", "lunge")) add("quads", "glutes", "hamstrings")
+        if (normalized.containsAny("румун", "станов", "становая", "deadlift")) add("hamstrings", "glutes", "lowerBack", "upperBack")
+        if (normalized.containsAny("згинання ніг", "згибання ніг", "сгибание ног", "leg curl")) add("hamstrings")
+        if (normalized.containsAny("розгинання ніг", "разгибание ног", "leg extension")) add("quads")
+        if (normalized.containsAny("сідниц", "ягодиц", "glute", "hip thrust", "місток", "мостик")) add("glutes", "hamstrings")
+        if (normalized.containsAny("икр", "ікр", "calf", "носок", "носки")) add("calves")
+        if (normalized.containsAny("зведення ніг", "сведение ног", "adductor")) add("adductors")
+
+        if (normalized.containsAny("жим", "press", "bench", "віджим", "отжим", "push up", "dips", "брусь") &&
+            !normalized.containsAny("ног", "leg press")
+        ) {
+            add("chest", "triceps", "shoulders")
+        }
+        if (normalized.containsAny("груд", "груди", "chest", "метелик", "pec deck", "зведення рук", "сведение рук", "fly", "flies")) add("chest", "shoulders")
+        if (normalized.containsAny("плеч", "дельт", "махи", "розведення", "разведение", "lateral raise", "rear delt", "shoulder", "overhead")) add("shoulders")
+        if (normalized.containsAny("трицепс", "tricep", "француз", "розгинання рук", "разгибание рук", "pushdown")) add("triceps")
+
+        if (normalized.containsAny("підтяг", "подтяг", "pull up", "pullup", "pulldown", "верхній блок", "верхний блок")) add("lats", "upperBack", "biceps")
+        if (normalized.containsAny("тяга", "row") && !normalized.containsAny("румун", "станов", "становая", "deadlift", "підборід", "подбород")) add("lats", "upperBack", "biceps")
+        if (normalized.containsAny("спин", "спина", "back")) add("lats", "upperBack")
+        if (normalized.containsAny("біцепс", "бицепс", "bicep", "curl", "згинання рук", "сгибание рук")) add("biceps", "forearms")
+        if (normalized.containsAny("передпліч", "предплеч", "forearm")) add("forearms")
+
+        if (normalized.containsAny("прес", "abs", "crunch", "скруч", "планка", "plank", "leg raise")) add("abs")
+        if (normalized.containsAny("нахил", "наклон", "сторони", "стороны", "oblique", "rotation", "twist")) add("obliques")
+        if (normalized.containsAny("гіперекстензі", "гиперэкстенз", "hyperextension")) add("lowerBack", "glutes", "hamstrings")
+
+        val category = when {
+            muscles.any { it in lowerMuscles } -> SmartWorkoutFocus.Legs
+            muscles.any { it in pullMuscles } && muscles.none { it in pushMuscles } -> SmartWorkoutFocus.Pull
+            muscles.any { it in pushMuscles } -> SmartWorkoutFocus.Push
+            muscles.any { it in coreMuscles } -> SmartWorkoutFocus.FullBody
+            else -> SmartWorkoutFocus.FullBody
+        }
+
+        return ExerciseAnalysis(
+            category = category,
+            muscles = muscles.ifEmpty { linkedSetOf("abs") }
+        )
+    }
+
     private fun isCandidateForFocus(candidateFocus: SmartWorkoutFocus, workoutFocus: SmartWorkoutFocus): Boolean {
         return when (workoutFocus) {
             SmartWorkoutFocus.Upper -> candidateFocus in upperFocuses || candidateFocus == SmartWorkoutFocus.FullBody
@@ -424,9 +479,146 @@ object WorkoutRecommendationEngine {
         }
     }
 
+    private fun selectBalancedExercises(
+        candidates: List<ExerciseCandidate>,
+        focus: SmartWorkoutFocus,
+        targetMuscles: Set<String>,
+        targetExerciseCount: Int,
+        history: List<ExerciseHistoryEntry>,
+        nowMillis: Long,
+        zoneId: ZoneId
+    ): List<ExerciseCandidate> {
+        val selected = mutableListOf<ExerciseCandidate>()
+        val coveredMuscles = mutableSetOf<String>()
+        val lastTrainedByMuscle = lastTrainedByMuscle(history)
+        val remaining = candidates
+            .filter { candidate -> isCandidateForFocus(candidate.analysis.category, focus) }
+            .ifEmpty { candidates }
+            .toMutableList()
+
+        if (focus == SmartWorkoutFocus.FullBody) {
+            listOf(SmartWorkoutFocus.Push, SmartWorkoutFocus.Pull, SmartWorkoutFocus.Legs).forEach { requiredFocus ->
+                val best = remaining
+                    .filter { it.analysis.category == requiredFocus }
+                    .maxByOrNull { it.score }
+                    ?: return@forEach
+                selected += best
+                coveredMuscles += best.analysis.muscles
+                remaining.removeAll { it.exercise.id == best.exercise.id }
+            }
+        }
+
+        while (selected.size < targetExerciseCount && remaining.isNotEmpty()) {
+            val best = remaining.maxWithOrNull(
+                compareBy<ExerciseCandidate> { candidate ->
+                    balancedScore(
+                        candidate = candidate,
+                        coveredMuscles = coveredMuscles,
+                        targetMuscles = targetMuscles,
+                        lastTrainedByMuscle = lastTrainedByMuscle,
+                        nowMillis = nowMillis,
+                        zoneId = zoneId
+                    )
+                }.thenByDescending { it.exercise.name.lowercase() }
+            ) ?: break
+            selected += best
+            coveredMuscles += best.analysis.muscles
+            remaining.removeAll { it.exercise.id == best.exercise.id }
+        }
+
+        if (selected.size < targetExerciseCount) {
+            selected += candidates
+                .filterNot { candidate -> selected.any { it.exercise.id == candidate.exercise.id } }
+                .sortedWith(compareByDescending<ExerciseCandidate> { it.score }.thenBy { it.exercise.name.lowercase() })
+                .take(targetExerciseCount - selected.size)
+        }
+
+        return selected.take(targetExerciseCount)
+    }
+
+    private fun balancedScore(
+        candidate: ExerciseCandidate,
+        coveredMuscles: Set<String>,
+        targetMuscles: Set<String>,
+        lastTrainedByMuscle: Map<String, Long>,
+        nowMillis: Long,
+        zoneId: ZoneId
+    ): Double {
+        val newTargetMuscles = candidate.analysis.muscles.count { it in targetMuscles && it !in coveredMuscles }
+        val targetOverlap = candidate.analysis.muscles.count { it in targetMuscles }
+        val fatiguePenalty = candidate.analysis.muscles.sumOf { muscle ->
+            val lastTrained = lastTrainedByMuscle[muscle] ?: return@sumOf 0.0
+            when (daysBetween(lastTrained, nowMillis, zoneId)) {
+                0 -> 28.0
+                1 -> 18.0
+                2 -> 8.0
+                else -> 0.0
+            }
+        }
+        val tooMuchSameCategoryPenalty = if (
+            coveredMuscles.isNotEmpty() &&
+            candidate.analysis.muscles.all { it in coveredMuscles }
+        ) {
+            10.0
+        } else {
+            0.0
+        }
+
+        return candidate.score + newTargetMuscles * 24.0 + targetOverlap * 4.0 - fatiguePenalty - tooMuchSameCategoryPenalty
+    }
+
+    private fun dominantFocus(entries: List<ExerciseHistoryEntry>): SmartWorkoutFocus {
+        val counts = entries
+            .groupingBy { analyzeExercise(it.exerciseName).category }
+            .eachCount()
+        val lowerCount = (counts[SmartWorkoutFocus.Legs] ?: 0) + (counts[SmartWorkoutFocus.Lower] ?: 0)
+        val upperCount = (counts[SmartWorkoutFocus.Push] ?: 0) + (counts[SmartWorkoutFocus.Pull] ?: 0) + (counts[SmartWorkoutFocus.Upper] ?: 0)
+
+        return when {
+            lowerCount > upperCount -> SmartWorkoutFocus.Lower
+            upperCount > lowerCount -> {
+                val pushCount = counts[SmartWorkoutFocus.Push] ?: 0
+                val pullCount = counts[SmartWorkoutFocus.Pull] ?: 0
+                if (pushCount >= pullCount) SmartWorkoutFocus.Push else SmartWorkoutFocus.Pull
+            }
+            else -> SmartWorkoutFocus.FullBody
+        }
+    }
+
+    private fun recentSessionIds(history: List<ExerciseHistoryEntry>, limit: Int): Set<Long> {
+        return history
+            .groupBy { it.sessionId }
+            .values
+            .sortedByDescending { entries -> entries.maxOf { it.sessionDate } }
+            .take(limit)
+            .map { entries -> entries.first().sessionId }
+            .toSet()
+    }
+
+    private fun lastTrainedByMuscle(history: List<ExerciseHistoryEntry>): Map<String, Long> {
+        val result = mutableMapOf<String, Long>()
+        history.forEach { entry ->
+            analyzeExercise(entry.exerciseName).muscles.forEach { muscle ->
+                result[muscle] = max(result[muscle] ?: 0L, entry.sessionDate)
+            }
+        }
+        return result
+    }
+
+    private fun targetMusclesForFocus(focus: SmartWorkoutFocus): Set<String> {
+        return when (focus) {
+            SmartWorkoutFocus.Upper -> pushMuscles + pullMuscles
+            SmartWorkoutFocus.Lower,
+            SmartWorkoutFocus.Legs -> lowerMuscles + coreMuscles
+            SmartWorkoutFocus.Push -> pushMuscles
+            SmartWorkoutFocus.Pull -> pullMuscles
+            SmartWorkoutFocus.FullBody -> pushMuscles + pullMuscles + lowerMuscles + coreMuscles
+        }
+    }
+
     private fun chooseMostNeglectedFocus(history: List<ExerciseHistoryEntry>): SmartWorkoutFocus {
         val lastByFocus = history
-            .groupBy { classifyExercise(it.exerciseName) }
+            .groupBy { analyzeExercise(it.exerciseName).category }
             .mapValues { (_, entries) -> entries.maxOfOrNull { it.sessionDate } ?: 0L }
         val focusOrder = listOf(
             SmartWorkoutFocus.Push,
@@ -456,10 +648,31 @@ object WorkoutRecommendationEngine {
 
     private data class ExerciseCandidate(
         val exercise: ExerciseEntity,
-        val bodyGroup: SmartWorkoutFocus,
+        val analysis: ExerciseAnalysis,
         val score: Double
+    )
+
+    private data class ExerciseAnalysis(
+        val category: SmartWorkoutFocus,
+        val muscles: Set<String>
     )
 
     private val upperFocuses = setOf(SmartWorkoutFocus.Upper, SmartWorkoutFocus.Push, SmartWorkoutFocus.Pull)
     private val lowerFocuses = setOf(SmartWorkoutFocus.Lower, SmartWorkoutFocus.Legs)
+    private val pushMuscles = setOf("chest", "shoulders", "triceps")
+    private val pullMuscles = setOf("lats", "upperBack", "biceps", "forearms")
+    private val lowerMuscles = setOf("quads", "hamstrings", "glutes", "calves", "adductors", "lowerBack")
+    private val coreMuscles = setOf("abs", "obliques")
+}
+
+private fun String.normalizedExerciseName(): String {
+    return lowercase(Locale.ROOT)
+        .replace('ʼ', '\'')
+        .replace('’', '\'')
+        .replace(Regex("\\s+"), " ")
+        .trim()
+}
+
+private fun String.containsAny(vararg tokens: String): Boolean {
+    return tokens.any { token -> contains(token) }
 }

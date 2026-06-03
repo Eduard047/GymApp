@@ -71,6 +71,8 @@ fun WorkoutDetailScreen(
     onAddExerciseToWorkout: (Long) -> Unit,
     onAddSet: (Long) -> Unit,
     onDeleteSet: (SetEntryEntity) -> Unit,
+    onDeleteSession: () -> Unit,
+    onSessionDeleted: () -> Unit,
     onUpdateSet: (SetEntryEntity, String, String) -> Unit,
     onUndoDelete: () -> Unit,
     modifier: Modifier = Modifier
@@ -80,6 +82,7 @@ fun WorkoutDetailScreen(
     var editingSet by remember { mutableStateOf<SetEntryEntity?>(null) }
     var editWeight by remember { mutableStateOf("") }
     var editReps by remember { mutableStateOf("") }
+    var confirmDeleteSession by remember { mutableStateOf(false) }
 
     val exerciseTimerTargets = remember { mutableStateMapOf<Long, Long>() }
     var exerciseTimerNowMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -130,6 +133,10 @@ fun WorkoutDetailScreen(
                     }
                 }
 
+                WorkoutDetailEvent.SessionDeleted -> {
+                    onSessionDeleted()
+                }
+
                 WorkoutDetailEvent.InvalidInput -> {
                     snackbarHostState.showSnackbar(
                         message = context.getString(R.string.message_invalid_set_input),
@@ -164,10 +171,23 @@ fun WorkoutDetailScreen(
                             modifier = Modifier.padding(12.dp),
                             verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            Text(
-                                text = DateTimeUtils.formatDate(details.session.date),
-                                style = MaterialTheme.typography.titleMedium
-                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    text = DateTimeUtils.formatDate(details.session.date),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                IconButton(onClick = { confirmDeleteSession = true }) {
+                                    Icon(
+                                        imageVector = Icons.Default.Delete,
+                                        contentDescription = stringResource(R.string.cd_delete)
+                                    )
+                                }
+                            }
                             Text(
                                 text = details.session.note
                                     ?.takeIf { it.isNotBlank() }
@@ -412,6 +432,37 @@ fun WorkoutDetailScreen(
             },
             dismissButton = {
                 OutlinedButton(onClick = { editingSet = null }) {
+                    Text(text = stringResource(R.string.action_cancel))
+                }
+            }
+        )
+    }
+
+    if (confirmDeleteSession) {
+        val details = uiState.sessionDetails
+        AlertDialog(
+            onDismissRequest = { confirmDeleteSession = false },
+            title = { Text(text = stringResource(R.string.dialog_delete_workout_title)) },
+            text = {
+                Text(
+                    text = stringResource(
+                        R.string.dialog_delete_workout_message,
+                        details?.session?.date?.let(DateTimeUtils::formatDate).orEmpty()
+                    )
+                )
+            },
+            confirmButton = {
+                OutlinedButton(
+                    onClick = {
+                        confirmDeleteSession = false
+                        onDeleteSession()
+                    }
+                ) {
+                    Text(text = stringResource(R.string.action_delete))
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { confirmDeleteSession = false }) {
                     Text(text = stringResource(R.string.action_cancel))
                 }
             }

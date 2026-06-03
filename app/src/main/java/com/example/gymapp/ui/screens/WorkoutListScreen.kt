@@ -13,12 +13,19 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -27,6 +34,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
+import com.example.gymapp.data.entity.WorkoutSessionEntity
 import com.example.gymapp.data.repository.DashboardStats
 import com.example.gymapp.ui.components.AchievementPreviewCard
 import com.example.gymapp.ui.components.ActivityHeatmapCard
@@ -55,11 +63,13 @@ fun WorkoutListScreen(
     onEditExerciseMapping: (String) -> Unit,
     onSaveExerciseMapping: (String, List<String>) -> Unit,
     onCloseExerciseMapping: () -> Unit,
+    onDeleteSession: (Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
     var workoutsSelected by rememberSaveable { mutableStateOf(false) }
+    var sessionPendingDelete by remember { mutableStateOf<WorkoutSessionEntity?>(null) }
     // Fixed overview item count before the workout list header.
     val workoutSectionIndex = 6
 
@@ -169,6 +179,14 @@ fun WorkoutListScreen(
                                     modifier = Modifier.weight(1f)
                                 )
                                 InfoPill(text = stringResource(R.string.stats_sets, sessionSummary.setCount))
+                                IconButton(
+                                    onClick = { sessionPendingDelete = sessionSummary.session }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Delete,
+                                        contentDescription = stringResource(R.string.cd_delete)
+                                    )
+                                }
                             }
 
                             Text(
@@ -222,6 +240,37 @@ fun WorkoutListScreen(
                 }
             }
         }
+    }
+
+    val deletingSession = sessionPendingDelete
+    if (deletingSession != null) {
+        AlertDialog(
+            onDismissRequest = { sessionPendingDelete = null },
+            title = { Text(text = stringResource(R.string.dialog_delete_workout_title)) },
+            text = {
+                Text(
+                    text = stringResource(
+                        R.string.dialog_delete_workout_message,
+                        DateTimeUtils.formatDate(deletingSession.date)
+                    )
+                )
+            },
+            confirmButton = {
+                OutlinedButton(
+                    onClick = {
+                        onDeleteSession(deletingSession.id)
+                        sessionPendingDelete = null
+                    }
+                ) {
+                    Text(text = stringResource(R.string.action_delete))
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { sessionPendingDelete = null }) {
+                    Text(text = stringResource(R.string.action_cancel))
+                }
+            }
+        )
     }
 }
 

@@ -313,6 +313,8 @@
     <string name="details_no_note">Без нотатки</string>
 
     <string name="dialog_edit_set_title">Редагувати підхід</string>
+    <string name="dialog_delete_workout_title">Видалити тренування?</string>
+    <string name="dialog_delete_workout_message">Буде видалено тренування за %1$s з усіма вправами й підходами.</string>
     <string name="post_workout_unavailable_title">Підсумок тренування недоступний</string>
     <string name="post_workout_unavailable_supporting">Не вдалося завантажити це тренування.</string>
     <string name="post_workout_rewards_eyebrow">Нагороди</string>

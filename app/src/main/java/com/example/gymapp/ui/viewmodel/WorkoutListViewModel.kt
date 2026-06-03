@@ -321,6 +321,12 @@ class WorkoutListViewModel(
         }
     }
 
+    fun deleteSession(sessionId: Long) {
+        viewModelScope.launch {
+            repository.deleteWorkoutSessionById(sessionId)
+        }
+    }
+
     private fun buildSoloProgress(
         allSessions: List<WorkoutSessionSummary>,
         monthSessions: List<WorkoutSessionSummary>,

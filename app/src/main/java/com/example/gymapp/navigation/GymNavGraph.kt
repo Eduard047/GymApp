@@ -433,6 +433,7 @@ fun GymAppRoot(
                                 onEditExerciseMapping = viewModel::openManualMuscleMapping,
                                 onSaveExerciseMapping = viewModel::saveManualMuscleMapping,
                                 onCloseExerciseMapping = viewModel::closeManualMuscleMapping,
+                                onDeleteSession = viewModel::deleteSession,
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
@@ -585,6 +586,8 @@ fun GymAppRoot(
                                 onAddExerciseToWorkout = viewModel::addExerciseToWorkout,
                                 onAddSet = viewModel::addSet,
                                 onDeleteSet = viewModel::deleteSet,
+                                onDeleteSession = viewModel::deleteSession,
+                                onSessionDeleted = { navController.popBackStack() },
                                 onUpdateSet = viewModel::updateSet,
                                 onUndoDelete = viewModel::undoDeleteSet,
                                 modifier = Modifier.fillMaxSize()

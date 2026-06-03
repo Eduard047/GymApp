@@ -636,6 +636,11 @@ class GymRepository(
         workoutDao.delete(session)
     }
 
+    suspend fun deleteWorkoutSessionById(sessionId: Long) {
+        if (sessionId <= 0) return
+        workoutDao.deleteSessionById(sessionId)
+    }
+
     suspend fun addSet(
         workoutExerciseId: Long,
         weight: Double,
