@@ -107,10 +107,15 @@ if ($LASTEXITCODE -ne 0) {
     throw "git push failed."
 }
 
-$existingRelease = (& gh release list --json tagName --jq ".[] | select(.tagName == `"$TagName`") | .tagName")
+$releaseListJson = (& gh release list --json tagName)
 if ($LASTEXITCODE -ne 0) {
     throw "GitHub release lookup failed."
 }
+
+$existingRelease = $releaseListJson |
+    ConvertFrom-Json |
+    Where-Object { $_.tagName -eq $TagName } |
+    Select-Object -First 1
 
 if ($existingRelease) {
     gh release upload $TagName $phoneApk $watchApk --clobber
