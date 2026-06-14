@@ -195,6 +195,7 @@ abstract class GymDatabase : RoomDatabase() {
             return lowercase()
                 .replace('ʼ', '\'')
                 .replace('’', '\'')
+                .replace('ё', 'е')
                 .replace(Regex("\\s+"), " ")
                 .trim()
         }

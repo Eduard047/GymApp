@@ -8,7 +8,6 @@ import com.example.gymapp.util.TrainingProfile
 import com.example.gymapp.util.TrainingSplit
 import java.time.Instant
 import java.time.ZoneId
-import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
@@ -794,14 +793,6 @@ object WorkoutRecommendationEngine {
     private val pullMuscles = setOf("lats", "upperBack", "biceps", "forearms")
     private val lowerMuscles = setOf("quads", "hamstrings", "glutes", "calves", "adductors", "lowerBack")
     private val coreMuscles = setOf("abs", "obliques")
-}
-
-private fun String.normalizedExerciseName(): String {
-    return lowercase(Locale.ROOT)
-        .replace('ʼ', '\'')
-        .replace('’', '\'')
-        .replace(Regex("\\s+"), " ")
-        .trim()
 }
 
 private fun String.containsAny(vararg tokens: String): Boolean {

@@ -24,6 +24,9 @@ interface MuscleMappingDao {
     @Query("SELECT * FROM exercise_muscle_mappings WHERE exerciseNameKey = :exerciseNameKey")
     suspend fun getForExercise(exerciseNameKey: String): List<ExerciseMuscleMappingEntity>
 
+    @Query("SELECT * FROM exercise_muscle_mappings")
+    suspend fun getMappingsSnapshot(): List<ExerciseMuscleMappingEntity>
+
     @Query(
         """
         UPDATE exercise_muscle_mappings

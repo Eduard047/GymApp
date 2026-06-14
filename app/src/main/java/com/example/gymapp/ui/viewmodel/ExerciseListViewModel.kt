@@ -11,6 +11,10 @@ import com.example.gymapp.data.repository.BackupOwner
 import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.entity.ExerciseHistoryEntry
 import com.example.gymapp.data.repository.GymRepository
+import com.example.gymapp.data.repository.MUSCLE_DEFINITIONS
+import com.example.gymapp.data.repository.defaultContributionsForExercise
+import com.example.gymapp.data.repository.normalizedExerciseName
+import com.example.gymapp.data.repository.toManualContributionMap
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -23,6 +27,9 @@ import kotlinx.coroutines.launch
 
 data class ExerciseListUiState(
     val exercises: List<ExerciseEntity> = emptyList(),
+    val muscleMappings: List<ExerciseMuscleMappingUiModel> = emptyList(),
+    val mappingEditorExerciseName: String? = null,
+    val mappingEditorMuscles: List<MuscleOptionUiModel> = emptyList(),
     val newExerciseName: String = "",
     val hasInputError: Boolean = false,
     val editingExercise: ExerciseEntity? = null,
@@ -38,6 +45,12 @@ data class ExerciseListUiState(
     val accountLabel: String = "Local",
     val accountSupporting: String = "Offline on this phone",
     val canLogout: Boolean = false
+)
+
+data class ExerciseMuscleMappingUiModel(
+    val exerciseName: String,
+    val muscleLabels: String,
+    val isMapped: Boolean
 )
 
 private data class ExerciseListBaseState(
@@ -61,6 +74,12 @@ private data class ExerciseBackupState(
     val isImportOpen: Boolean
 )
 
+private data class ExerciseMappingState(
+    val mappings: List<ExerciseMuscleMappingUiModel>,
+    val editorExerciseName: String?,
+    val editorMuscles: List<MuscleOptionUiModel>
+)
+
 @OptIn(ExperimentalCoroutinesApi::class)
 class ExerciseListViewModel(
     private val repository: GymRepository,
@@ -76,6 +95,7 @@ class ExerciseListViewModel(
     private val importJson = MutableStateFlow("")
     private val importMessage = MutableStateFlow<String?>(null)
     private val isImportOpen = MutableStateFlow(false)
+    private val mappingEditorExerciseName = MutableStateFlow<String?>(null)
 
     private val selectedExerciseHistory = selectedExerciseId.flatMapLatest { exerciseId ->
         if (exerciseId == null) {
@@ -127,13 +147,62 @@ class ExerciseListViewModel(
         )
     }
 
+    private val mappingState = combine(
+        repository.observeExercises(),
+        repository.observeExerciseMuscleMappings(),
+        mappingEditorExerciseName
+    ) { exercises, muscleMappings, editorExerciseName ->
+        val manualMap = muscleMappings.toManualContributionMap()
+        val muscleLabelById = MUSCLE_DEFINITIONS.associate { definition ->
+            definition.id to definition.titleUk
+        }
+        val mappingRows = exercises.map { exercise ->
+            val contributions = manualMap[exercise.name.normalizedExerciseName()]
+                ?: defaultContributionsForExercise(exercise.name)
+            val labels = contributions
+                .mapNotNull { muscleLabelById[it.muscleId] }
+                .distinct()
+            ExerciseMuscleMappingUiModel(
+                exerciseName = exercise.name,
+                muscleLabels = labels.joinToString(", "),
+                isMapped = labels.isNotEmpty()
+            )
+        }.sortedWith(
+            compareBy<ExerciseMuscleMappingUiModel> { it.isMapped }
+                .thenBy { it.exerciseName.lowercase() }
+        )
+        val editorSelectedIds = editorExerciseName
+            ?.let { name ->
+                manualMap[name.normalizedExerciseName()]
+                    ?: defaultContributionsForExercise(name).takeIf { it.isNotEmpty() }
+            }
+            ?.map { it.muscleId }
+            ?.toSet()
+            ?: emptySet()
+        ExerciseMappingState(
+            mappings = mappingRows,
+            editorExerciseName = editorExerciseName,
+            editorMuscles = MUSCLE_DEFINITIONS.map { definition ->
+                MuscleOptionUiModel(
+                    id = definition.id,
+                    label = definition.titleUk,
+                    isSelected = definition.id in editorSelectedIds
+                )
+            }
+        )
+    }
+
     val uiState: StateFlow<ExerciseListUiState> = combine(
         baseState,
         editState,
-        backupState
-    ) { base, edit, backup ->
+        backupState,
+        mappingState
+    ) { base, edit, backup, mapping ->
         ExerciseListUiState(
             exercises = base.exercises,
+            muscleMappings = mapping.mappings,
+            mappingEditorExerciseName = mapping.editorExerciseName,
+            mappingEditorMuscles = mapping.editorMuscles,
             newExerciseName = base.newExerciseName,
             hasInputError = base.hasInputError,
             editingExercise = edit.editingExercise,
@@ -155,6 +224,12 @@ class ExerciseListViewModel(
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = ExerciseListUiState()
     )
+
+    init {
+        viewModelScope.launch {
+            repository.seedDefaultExerciseMuscleMappings()
+        }
+    }
 
     fun updateNewExerciseName(value: String) {
         newExerciseName.value = value
@@ -228,6 +303,39 @@ class ExerciseListViewModel(
 
     fun closeExerciseHistory() {
         selectedExerciseId.value = null
+    }
+
+    fun openExerciseMapping(exerciseName: String) {
+        mappingEditorExerciseName.value = exerciseName
+    }
+
+    fun closeExerciseMapping() {
+        mappingEditorExerciseName.value = null
+    }
+
+    fun toggleExerciseMappingMuscle(muscleId: String) {
+        val current = mappingEditorExerciseName.value ?: return
+        val selectedIds = uiState.value.mappingEditorMuscles
+            .filter { it.isSelected }
+            .map { it.id }
+            .toMutableSet()
+        if (!selectedIds.add(muscleId)) {
+            selectedIds.remove(muscleId)
+        }
+        viewModelScope.launch {
+            repository.saveExerciseMuscleMapping(current, selectedIds.toList())
+        }
+    }
+
+    fun saveExerciseMapping() {
+        val exerciseName = mappingEditorExerciseName.value ?: return
+        val selectedIds = uiState.value.mappingEditorMuscles
+            .filter { it.isSelected }
+            .map { it.id }
+        viewModelScope.launch {
+            repository.saveExerciseMuscleMapping(exerciseName, selectedIds)
+            closeExerciseMapping()
+        }
     }
 
     fun exportBackup() {

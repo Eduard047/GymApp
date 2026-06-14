@@ -41,6 +41,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
+import com.example.gymapp.ui.viewmodel.ExerciseMappingUiModel
 import com.example.gymapp.ui.viewmodel.MuscleHeatmapUiModel
 import com.example.gymapp.ui.viewmodel.MuscleMapPeriod
 import com.example.gymapp.ui.viewmodel.MuscleOptionUiModel
@@ -120,6 +121,7 @@ fun MuscleHeatmapCard(
 
             MuscleBodyMap(
                 muscles = heatmap.muscles,
+                selectedMuscleId = heatmap.selectedMuscleId,
                 onMuscleSelected = onMuscleSelected,
                 modifier = Modifier.fillMaxWidth()
             )
@@ -143,6 +145,7 @@ fun MuscleHeatmapCard(
             MuscleLegend()
 
             if (heatmap.selectedMuscleLabel != null) {
+                SelectedMuscleHighlight(heatmap = heatmap)
                 SelectedMuscleExercises(
                     heatmap = heatmap,
                     onEditExerciseMapping = onEditExerciseMapping
@@ -151,6 +154,13 @@ fun MuscleHeatmapCard(
 
             if (heatmap.unmappedExercises.isNotEmpty()) {
                 UnmappedExercises(
+                    heatmap = heatmap,
+                    onEditExerciseMapping = onEditExerciseMapping
+                )
+            }
+
+            if (heatmap.exerciseMappings.isNotEmpty()) {
+                ExerciseMappings(
                     heatmap = heatmap,
                     onEditExerciseMapping = onEditExerciseMapping
                 )
@@ -239,6 +249,7 @@ private fun MusclePeriodSelector(
 @Composable
 private fun MuscleBodyMap(
     muscles: List<MuscleProgressUiModel>,
+    selectedMuscleId: String?,
     onMuscleSelected: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -248,6 +259,7 @@ private fun MuscleBodyMap(
     val mediumColor = Color(0xFF8B5CF6)
     val highColor = Color(0xFFE11D48)
     val peakColor = Color(0xFFF59E0B)
+    val selectedOutlineColor = MaterialTheme.colorScheme.primary
     val intensityByMuscle = muscles.associate { muscle -> muscle.id to muscle.intensity }
     val frontRegions = remember {
         SOURCE_FRONT_MUSCLE_REGIONS.map(::parseSourceRegion)
@@ -297,7 +309,9 @@ private fun MuscleBodyMap(
             lowColor = lowColor,
             mediumColor = mediumColor,
             highColor = highColor,
-            peakColor = peakColor
+            peakColor = peakColor,
+            selectedMuscleId = selectedMuscleId,
+            selectedOutlineColor = selectedOutlineColor
         )
         drawSourceBody(
             regions = backRegions,
@@ -311,7 +325,9 @@ private fun MuscleBodyMap(
             lowColor = lowColor,
             mediumColor = mediumColor,
             highColor = highColor,
-            peakColor = peakColor
+            peakColor = peakColor,
+            selectedMuscleId = selectedMuscleId,
+            selectedOutlineColor = selectedOutlineColor
         )
     }
 }
@@ -354,6 +370,37 @@ private fun MuscleLegend() {
             text = stringResource(R.string.muscle_heatmap_more),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun SelectedMuscleHighlight(
+    heatmap: MuscleHeatmapUiModel
+) {
+    val muscle = heatmap.muscles.firstOrNull { it.id == heatmap.selectedMuscleId } ?: return
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.42f),
+        shape = MaterialTheme.shapes.small,
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
+        )
+    ) {
+        Text(
+            text = stringResource(
+                R.string.muscle_heatmap_highlight_detail,
+                muscle.label,
+                muscle.load,
+                muscle.sets,
+                muscle.sessions
+            ),
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onPrimaryContainer,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
         )
     }
 }
@@ -477,6 +524,87 @@ private fun UnmappedExercises(
                         overflow = TextOverflow.Ellipsis
                     )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ExerciseMappings(
+    heatmap: MuscleHeatmapUiModel,
+    onEditExerciseMapping: (String) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = stringResource(R.string.muscle_heatmap_mappings_title),
+            style = MaterialTheme.typography.titleSmall
+        )
+        heatmap.exerciseMappings.forEach { exercise ->
+            ExerciseMappingRow(
+                exercise = exercise,
+                onEditExerciseMapping = onEditExerciseMapping
+            )
+        }
+    }
+}
+
+@Composable
+private fun ExerciseMappingRow(
+    exercise: ExerciseMappingUiModel,
+    onEditExerciseMapping: (String) -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
+        shape = MaterialTheme.shapes.small,
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+        )
+    ) {
+        Row(
+            modifier = Modifier.padding(10.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Text(
+                    text = exercise.exerciseName,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = if (exercise.isMapped) {
+                        stringResource(
+                            R.string.muscle_heatmap_mapping_detail,
+                            exercise.muscleLabels,
+                            exercise.sets,
+                            exercise.sessions
+                        )
+                    } else {
+                        stringResource(
+                            R.string.muscle_heatmap_mapping_unmapped_detail,
+                            exercise.sets,
+                            exercise.sessions
+                        )
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            OutlinedButton(onClick = { onEditExerciseMapping(exercise.exerciseName) }) {
+                Text(
+                    text = stringResource(R.string.muscle_heatmap_map_action),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
         }
     }
@@ -737,7 +865,9 @@ private fun DrawScope.drawSourceBody(
     lowColor: Color,
     mediumColor: Color,
     highColor: Color,
-    peakColor: Color
+    peakColor: Color,
+    selectedMuscleId: String?,
+    selectedOutlineColor: Color
 ) {
     withTransform({
         translate(left = left - viewBoxMinX * scale, top = top)
@@ -758,13 +888,24 @@ private fun DrawScope.drawSourceBody(
                     peak = peakColor
                 )
             }
+            val selected = muscleId != null && muscleId == selectedMuscleId
 
-            drawPath(path = region.path, color = fillColor)
+            drawPath(
+                path = region.path,
+                color = if (selected) fillColor.copy(alpha = 0.95f) else fillColor
+            )
             drawPath(
                 path = region.path,
                 color = outlineColor.copy(alpha = 0.5f),
                 style = Stroke(width = 0.12f)
             )
+            if (selected) {
+                drawPath(
+                    path = region.path,
+                    color = selectedOutlineColor,
+                    style = Stroke(width = 0.42f)
+                )
+            }
         }
     }
 }

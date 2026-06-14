@@ -17,7 +17,6 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.temporal.TemporalAdjusters
-import java.util.Locale
 import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
@@ -213,6 +212,32 @@ class GymRepository(
     fun observeExerciseMuscleMappings(): Flow<List<ExerciseMuscleMappingEntity>> {
         return muscleMappingDao.observeMappings()
             .catch { emit(emptyList()) }
+    }
+
+    suspend fun seedDefaultExerciseMuscleMappings() {
+        val now = System.currentTimeMillis()
+        database.withTransaction {
+            val existingKeys = muscleMappingDao.getMappingsSnapshot()
+                .map { it.exerciseNameKey }
+                .toSet()
+            val seedMappings = exerciseDao.getExercisesSnapshot()
+                .filter { exercise -> exercise.name.toExerciseMappingKey() !in existingKeys }
+                .flatMap { exercise ->
+                    val key = exercise.name.toExerciseMappingKey()
+                    defaultContributionsForExercise(exercise.name).map { contribution ->
+                        ExerciseMuscleMappingEntity(
+                            exerciseNameKey = key,
+                            exerciseName = exercise.name,
+                            muscleId = contribution.muscleId,
+                            weight = contribution.weight,
+                            updatedAt = now
+                        )
+                    }
+                }
+            if (seedMappings.isNotEmpty()) {
+                muscleMappingDao.insertAll(seedMappings)
+            }
+        }
     }
 
     suspend fun saveExerciseMuscleMapping(
@@ -843,10 +868,6 @@ class GymRepository(
 }
 
 private fun String.toExerciseMappingKey(): String {
-    return lowercase(Locale.ROOT)
-        .replace('ʼ', '\'')
-        .replace('’', '\'')
-        .replace(Regex("\\s+"), " ")
-        .trim()
+    return normalizedExerciseName()
 }
 

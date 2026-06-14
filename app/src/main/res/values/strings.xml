@@ -226,6 +226,7 @@
     <string name="muscle_heatmap_back">Back</string>
     <string name="muscle_heatmap_less">Less</string>
     <string name="muscle_heatmap_more">More</string>
+    <string name="muscle_heatmap_highlight_detail">Highlighted: %1$s • %2$d load • %3$d sets • %4$d sessions</string>
     <string name="muscle_heatmap_empty">Log sets to light up the body map.</string>
     <string name="muscle_heatmap_top_title">Top muscle groups</string>
     <string name="muscle_heatmap_load_value">%1$d load</string>
@@ -235,8 +236,15 @@
     <string name="muscle_heatmap_exercise_detail">%1$d load • %2$d sets • %3$d sessions</string>
     <string name="muscle_heatmap_unmapped_title">Unmapped / new exercises</string>
     <string name="muscle_heatmap_unmapped_detail">%1$d sets • %2$d sessions</string>
+    <string name="muscle_heatmap_mappings_title">Exercise muscle mappings</string>
+    <string name="muscle_heatmap_mapping_detail">%1$s • %2$d sets • %3$d sessions</string>
+    <string name="muscle_heatmap_mapping_unmapped_detail">Unmapped • %1$d sets • %2$d sessions</string>
     <string name="muscle_heatmap_map_action">Map</string>
     <string name="muscle_heatmap_manual_title">Map “%1$s”</string>
+    <string name="exercise_mappings_title">Exercise muscle mappings</string>
+    <string name="exercise_mappings_unmapped">Unmapped</string>
+    <string name="exercise_mappings_edit">Edit</string>
+    <string name="exercise_mappings_editor_title">Map “%1$s”</string>
     <string name="recommendations_title">Recommendations</string>
     <string name="recommendations_supporting">Based on muscle load and recent training gaps.</string>
     <string name="smart_coach_title">Smart Coach</string>

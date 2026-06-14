@@ -11,8 +11,12 @@ import com.example.gymapp.data.repository.BadgeRarity
 import com.example.gymapp.data.repository.GamificationEngine
 import com.example.gymapp.data.repository.GamificationSnapshot
 import com.example.gymapp.data.repository.GymRepository
+import com.example.gymapp.data.repository.MUSCLE_DEFINITIONS
 import com.example.gymapp.data.repository.MissionBoardSnapshot
 import com.example.gymapp.data.repository.MissionSnapshot
+import com.example.gymapp.data.repository.estimatedLoad
+import com.example.gymapp.data.repository.muscleContributionsForExercise
+import com.example.gymapp.data.repository.toManualContributionMap
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -239,15 +243,7 @@ class PostWorkoutSummaryViewModel(
         sessionHistoryEntries: List<ExerciseHistoryEntry>,
         muscleMappings: List<ExerciseMuscleMappingEntity>
     ): List<PostWorkoutMuscleUiState> {
-        val manualMap = muscleMappings.groupBy { it.exerciseNameKey }
-            .mapValues { (_, mappings) ->
-                mappings.map {
-                    MuscleContribution(
-                        muscleId = it.muscleId,
-                        weight = it.weight.coerceIn(0.0, 1.0)
-                    )
-                }
-            }
+        val manualMap = muscleMappings.toManualContributionMap()
         val statsByMuscle = MUSCLE_DEFINITIONS.associate { it.id to MutableSessionMuscleStats() }.toMutableMap()
 
         sessionHistoryEntries.forEach { entry ->

@@ -225,6 +225,7 @@
     <string name="muscle_heatmap_back">Ззаду</string>
     <string name="muscle_heatmap_less">Менше</string>
     <string name="muscle_heatmap_more">Більше</string>
+    <string name="muscle_heatmap_highlight_detail">Підсвічено: %1$s • %2$d навант. • %3$d підходів • %4$d сесій</string>
     <string name="muscle_heatmap_empty">Запиши підходи, щоб підсвітити карту тіла.</string>
     <string name="muscle_heatmap_top_title">Найбільш навантажені групи</string>
     <string name="muscle_heatmap_load_value">%1$d навант.</string>
@@ -234,8 +235,15 @@
     <string name="muscle_heatmap_exercise_detail">%1$d навант. • %2$d підходів • %3$d сесій</string>
     <string name="muscle_heatmap_unmapped_title">Нові / незіставлені вправи</string>
     <string name="muscle_heatmap_unmapped_detail">%1$d підходів • %2$d сесій</string>
+    <string name="muscle_heatmap_mappings_title">Зіставлення вправ із мʼязами</string>
+    <string name="muscle_heatmap_mapping_detail">%1$s • %2$d підходів • %3$d сесій</string>
+    <string name="muscle_heatmap_mapping_unmapped_detail">Не зіставлено • %1$d підходів • %2$d сесій</string>
     <string name="muscle_heatmap_map_action">Задати</string>
     <string name="muscle_heatmap_manual_title">Зіставити “%1$s”</string>
+    <string name="exercise_mappings_title">Зіставлення вправ із мʼязами</string>
+    <string name="exercise_mappings_unmapped">Не зіставлено</string>
+    <string name="exercise_mappings_edit">Змінити</string>
+    <string name="exercise_mappings_editor_title">Зіставити “%1$s”</string>
     <string name="recommendations_title">Рекомендації</string>
     <string name="recommendations_supporting">На основі навантаження мʼязів і пауз у тренуваннях.</string>
     <string name="smart_coach_title">Розумний тренер</string>

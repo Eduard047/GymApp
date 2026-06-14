@@ -10,6 +10,8 @@
 /.idea/assetWizardSettings.xml
 .DS_Store
 /build
+/app/build/
+/wear/build/
 /captures
 .externalNativeBuild
 .cxx
@@ -39,6 +41,7 @@ keystore.properties
 *.log
 *.tmp
 *.temp
+/tmp/
 
 # Local helper files
 /CON
@@ -46,3 +49,7 @@ keystore.properties
 # Local database backups
 /db-backup/
 /db-backup-raw/
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*

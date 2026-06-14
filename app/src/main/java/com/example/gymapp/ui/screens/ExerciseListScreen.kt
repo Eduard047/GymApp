@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -44,6 +45,8 @@ import com.example.gymapp.R
 import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.entity.ExerciseHistoryEntry
 import com.example.gymapp.ui.viewmodel.ExerciseListUiState
+import com.example.gymapp.ui.viewmodel.ExerciseMuscleMappingUiModel
+import com.example.gymapp.ui.viewmodel.MuscleOptionUiModel
 import java.time.Instant
 import java.time.YearMonth
 import java.time.ZoneId
@@ -72,6 +75,10 @@ fun ExerciseListScreen(
     onSaveRenameExercise: () -> Unit,
     onDismissRenameExercise: () -> Unit,
     onDeleteExercise: (ExerciseEntity) -> Unit,
+    onEditExerciseMapping: (String) -> Unit,
+    onToggleExerciseMappingMuscle: (String) -> Unit,
+    onSaveExerciseMapping: () -> Unit,
+    onDismissExerciseMapping: () -> Unit,
     onDismissHistory: () -> Unit,
     onExportBackup: () -> Unit,
     onExportDiagnostics: () -> Unit,
@@ -139,6 +146,14 @@ fun ExerciseListScreen(
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                if (uiState.muscleMappings.isNotEmpty()) {
+                    item {
+                        ExerciseMuscleMappingsCard(
+                            mappings = uiState.muscleMappings,
+                            onEditExerciseMapping = onEditExerciseMapping
+                        )
+                    }
+                }
                 items(
                     items = uiState.exercises,
                     key = { it.id }
@@ -203,6 +218,19 @@ fun ExerciseListScreen(
         }
     }
 
+    val mappingExerciseName = uiState.mappingEditorExerciseName
+    if (mappingExerciseName != null) {
+        ModalBottomSheet(onDismissRequest = onDismissExerciseMapping) {
+            ExerciseMappingBottomSheetContent(
+                exerciseName = mappingExerciseName,
+                muscles = uiState.mappingEditorMuscles,
+                onToggleMuscle = onToggleExerciseMappingMuscle,
+                onSave = onSaveExerciseMapping,
+                onDismiss = onDismissExerciseMapping
+            )
+        }
+    }
+
     val backupJson = uiState.backupJson
     if (backupJson != null) {
         ModalBottomSheet(onDismissRequest = onClearBackup) {
@@ -222,6 +250,117 @@ fun ExerciseListScreen(
                 onImportBackup = onImportBackup,
                 onDismiss = onCloseImport
             )
+        }
+    }
+}
+
+@Composable
+private fun ExerciseMuscleMappingsCard(
+    mappings: List<ExerciseMuscleMappingUiModel>,
+    onEditExerciseMapping: (String) -> Unit
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.exercise_mappings_title),
+                style = MaterialTheme.typography.titleSmall
+            )
+            mappings.forEach { mapping ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = mapping.exerciseName,
+                            style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = if (mapping.isMapped) {
+                                mapping.muscleLabels
+                            } else {
+                                stringResource(R.string.exercise_mappings_unmapped)
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    OutlinedButton(onClick = { onEditExerciseMapping(mapping.exerciseName) }) {
+                        Text(stringResource(R.string.exercise_mappings_edit))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ExerciseMappingBottomSheetContent(
+    exerciseName: String,
+    muscles: List<MuscleOptionUiModel>,
+    onToggleMuscle: (String) -> Unit,
+    onSave: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    LazyColumn(
+        modifier = Modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(start = 16.dp, top = 4.dp, end = 16.dp, bottom = 28.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        item {
+            Text(
+                text = stringResource(R.string.exercise_mappings_editor_title, exerciseName),
+                style = MaterialTheme.typography.headlineSmall
+            )
+        }
+        items(
+            items = muscles,
+            key = { it.id }
+        ) { muscle ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onToggleMuscle(muscle.id) }
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Checkbox(
+                    checked = muscle.isSelected,
+                    onCheckedChange = { onToggleMuscle(muscle.id) }
+                )
+                Text(
+                    text = muscle.label,
+                    style = MaterialTheme.typography.bodyLarge
+                )
+            }
+        }
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+                Button(
+                    onClick = onSave,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(stringResource(R.string.action_save))
+                }
+            }
         }
     }
 }
