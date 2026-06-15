@@ -33,14 +33,6 @@
             android:exported="false"
             android:foregroundServiceType="shortService" />
 
-        <service
-            android:name=".sync.PhoneSyncListenerService"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="com.google.android.gms.wearable.BIND_LISTENER" />
-            </intent-filter>
-        </service>
-
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
