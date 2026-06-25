@@ -133,31 +133,87 @@ class WorkoutView extends Ui.View {
         dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
         dc.drawText(w / 2, 10, Gfx.FONT_XTINY, "GYMAPP STRENGTH", Gfx.TEXT_JUSTIFY_CENTER);
 
-        dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, 34, Gfx.FONT_LARGE, GymSession.elapsedText(), Gfx.TEXT_JUSTIFY_CENTER);
+        dc.setColor(Gfx.COLOR_DK_GRAY, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(w / 2, 34, Gfx.FONT_SMALL, GymSession.elapsedText(), Gfx.TEXT_JUSTIFY_CENTER);
 
         var hrText = GymSession.hr == null ? "--" : GymSession.hr.toString();
-        var zText = GymSession.zone == 0 ? "Z-" : "Z" + GymSession.zone.toString();
         var garminKcal = GymSession.garminCalories == null ? "--" : GymSession.garminCalories.toString();
 
-        drawMetric(dc, 56, 94, "HR", hrText, "bpm");
-        drawMetric(dc, 164, 94, "ZONE", zText, "");
-        drawMetric(dc, 56, 154, "GYM KCAL", GymSession.gymCalories.format("%.0f"), "");
-        drawMetric(dc, 164, 154, "GARM KCAL", garminKcal, "");
+        dc.setColor(zoneColor(GymSession.zone), Gfx.COLOR_TRANSPARENT);
+        dc.drawText(w / 2, 54, Gfx.FONT_NUMBER_HOT, hrText, Gfx.TEXT_JUSTIFY_CENTER);
+        dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(w / 2, 120, Gfx.FONT_XTINY, "bpm  " + zoneLabel(GymSession.zone), Gfx.TEXT_JUSTIFY_CENTER);
+
+        drawHeartRateZones(dc, w, 148);
+
+        drawCompactValue(dc, 54, 188, "GYM", GymSession.gymCalories.format("%.0f"));
+        drawCompactValue(dc, 130, 188, "GARMIN", garminKcal);
+        drawCompactValue(dc, 206, 188, "SETS", GymStore.sets.size().toString());
 
         var rest = GymStore.restSeconds();
-        var footer = rest > 0 ? ("REST " + rest.toString() + "s") : "tap/right: set  back: save";
+        var footer = rest > 0 ? ("REST " + rest.toString() + "s") : "tap: set   back: save";
         dc.setColor(rest > 0 ? Gfx.COLOR_YELLOW : Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
         dc.drawText(w / 2, 226, Gfx.FONT_XTINY, footer, Gfx.TEXT_JUSTIFY_CENTER);
     }
 
-    function drawMetric(dc, x, y, label, value, unit) {
-        dc.setColor(Gfx.COLOR_DK_GRAY, Gfx.COLOR_TRANSPARENT);
-        dc.fillRoundedRectangle(x - 48, y - 8, 96, 48, 10);
+    function drawCompactValue(dc, x, y, label, value) {
         dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(x, y - 6, Gfx.FONT_XTINY, label, Gfx.TEXT_JUSTIFY_CENTER);
+        dc.drawText(x, y, Gfx.FONT_XTINY, label, Gfx.TEXT_JUSTIFY_CENTER);
         dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(x, y + 10, Gfx.FONT_SMALL, value + unit, Gfx.TEXT_JUSTIFY_CENTER);
+        dc.drawText(x, y + 18, Gfx.FONT_SMALL, value, Gfx.TEXT_JUSTIFY_CENTER);
+    }
+
+    function drawHeartRateZones(dc, w, y) {
+        var left = 34;
+        var segmentWidth = 38;
+        var gap = 4;
+        for (var i = 1; i <= 5; i += 1) {
+            var x = left + ((i - 1) * (segmentWidth + gap));
+            dc.setColor(zoneColor(i), Gfx.COLOR_TRANSPARENT);
+            dc.fillRoundedRectangle(x, y, segmentWidth, 12, 4);
+            dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
+            dc.drawText(x + (segmentWidth / 2), y + 15, Gfx.FONT_XTINY, "Z" + i.toString(), Gfx.TEXT_JUSTIFY_CENTER);
+        }
+
+        var markerZone = GymSession.zone;
+        if (markerZone < 1) {
+            markerZone = 1;
+        } else if (markerZone > 5) {
+            markerZone = 5;
+        }
+        var markerX = left + ((markerZone - 1) * (segmentWidth + gap)) + (segmentWidth / 2);
+        dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
+        dc.fillPolygon([[markerX, y - 7], [markerX - 6, y - 1], [markerX + 6, y - 1]]);
+    }
+
+    function zoneColor(zone) {
+        if (zone == 1) {
+            return Gfx.COLOR_BLUE;
+        } else if (zone == 2) {
+            return Gfx.COLOR_GREEN;
+        } else if (zone == 3) {
+            return Gfx.COLOR_YELLOW;
+        } else if (zone == 4) {
+            return Gfx.COLOR_ORANGE;
+        } else if (zone >= 5) {
+            return Gfx.COLOR_RED;
+        }
+        return Gfx.COLOR_WHITE;
+    }
+
+    function zoneLabel(zone) {
+        if (zone == 1) {
+            return "Zone 1 Easy";
+        } else if (zone == 2) {
+            return "Zone 2 Fat burn";
+        } else if (zone == 3) {
+            return "Zone 3 Tempo";
+        } else if (zone == 4) {
+            return "Zone 4 Hard";
+        } else if (zone >= 5) {
+            return "Zone 5 Max";
+        }
+        return "No zone";
     }
 
     function drawEntry(dc, w, h) {
