@@ -225,11 +225,35 @@ class GarminSyncManager(
         var delivered = false
         devices.forEach { device ->
             registerAppEvents(device)
-            if (sendAndWait(device, payload)) {
+            if (isGymAppInstalled(device) && sendAndWait(device, payload)) {
                 delivered = true
             }
         }
         return delivered
+    }
+
+    private suspend fun isGymAppInstalled(device: IQDevice): Boolean {
+        val result = CompletableDeferred<Boolean>()
+        runCatching {
+            connectIQ.getApplicationInfo(GARMIN_APP_ID, device, object : ConnectIQ.IQApplicationInfoListener {
+                override fun onApplicationInfoReceived(app: IQApp) {
+                    val installed = app.status == IQApp.IQAppStatus.INSTALLED
+                    if (!installed) {
+                        Log.i(TAG, "GymApp ConnectIQ status on ${device.friendlyName}: ${app.status}")
+                    }
+                    result.complete(installed)
+                }
+
+                override fun onApplicationNotInstalled(applicationId: String) {
+                    Log.i(TAG, "GymApp ConnectIQ app not installed on ${device.friendlyName}: $applicationId")
+                    result.complete(false)
+                }
+            })
+        }.onFailure { error ->
+            Log.i(TAG, "Cannot read GymApp ConnectIQ install status on ${device.friendlyName}", error)
+            result.complete(false)
+        }
+        return withTimeoutOrNull(8_000L) { result.await() } ?: false
     }
 
     private suspend fun sendAndWait(device: IQDevice, payload: Map<String, Any>): Boolean {
