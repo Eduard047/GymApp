@@ -242,34 +242,34 @@ class WorkoutView extends Ui.View {
 
     function drawEntry(dc, w, h) {
         dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, 10, Gfx.FONT_XTINY, "SET ENTRY", Gfx.TEXT_JUSTIFY_CENTER);
+        drawArcHeader(dc, w, "SET ENTRY");
 
         dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, 34, Gfx.FONT_SMALL, fitText(GymStore.currentExercise(), 18), Gfx.TEXT_JUSTIFY_CENTER);
-        dc.drawText(w / 2, 72, Gfx.FONT_MEDIUM, GymStore.weight.format("%.1f") + " kg x " + GymStore.reps.toString(), Gfx.TEXT_JUSTIFY_CENTER);
+        dc.drawText(w / 2, 36, Gfx.FONT_SMALL, fitText(GymStore.currentExercise(), 16), Gfx.TEXT_JUSTIFY_CENTER);
+        dc.drawText(w / 2, 70, Gfx.FONT_SMALL, GymStore.weight.format("%.1f") + " kg x " + GymStore.reps.toString(), Gfx.TEXT_JUSTIFY_CENTER);
 
-        drawRow(dc, 0, 112, "EXERCISE", "next");
-        drawRow(dc, 1, 150, "WEIGHT", "+/- " + GymStore.weightStep.format("%.1f"));
-        drawRow(dc, 2, 188, "REPS", "+/- 1");
-        drawRow(dc, 3, 212, "SAVE SET", GymStore.sets.size().toString());
+        drawRow(dc, 0, 102, "EXERCISE", "next");
+        drawRow(dc, 1, 136, "WEIGHT", "+/- " + GymStore.weightStep.format("%.1f"));
+        drawRow(dc, 2, 170, "REPS", "+/- 1");
+        drawRow(dc, 3, 204, "SAVE", GymStore.sets.size().toString());
 
         dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, 236, Gfx.FONT_XTINY, "select row  back: main", Gfx.TEXT_JUSTIFY_CENTER);
+        dc.drawText(w / 2, 226, Gfx.FONT_XTINY, "START change  BACK main", Gfx.TEXT_JUSTIFY_CENTER);
     }
 
     function drawPauseMenu(dc, w, h) {
         dc.setColor(Gfx.COLOR_YELLOW, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, 28, Gfx.FONT_SMALL, "PAUSED", Gfx.TEXT_JUSTIFY_CENTER);
+        drawArcHeader(dc, w, "PAUSED");
 
         dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, 58, Gfx.FONT_MEDIUM, GymSession.elapsedText(), Gfx.TEXT_JUSTIFY_CENTER);
+        dc.drawText(w / 2, 54, Gfx.FONT_SMALL, GymSession.elapsedText(), Gfx.TEXT_JUSTIFY_CENTER);
 
-        drawMenuRow(dc, 0, 104, "RESUME");
-        drawMenuRow(dc, 1, 146, "SAVE");
-        drawMenuRow(dc, 2, 188, "DISCARD");
+        drawMenuRow(dc, 0, 94, "RESUME");
+        drawMenuRow(dc, 1, 136, "SAVE");
+        drawMenuRow(dc, 2, 178, "DISCARD");
 
         dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, 226, Gfx.FONT_XTINY, "up/down  start/select", Gfx.TEXT_JUSTIFY_CENTER);
+        dc.drawText(w / 2, 220, Gfx.FONT_XTINY, "UP/DOWN  START select", Gfx.TEXT_JUSTIFY_CENTER);
     }
 
     function drawSummary(dc, w, h) {
@@ -298,59 +298,59 @@ class WorkoutView extends Ui.View {
 
     function drawDebug(dc, w, h) {
         dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, 10, Gfx.FONT_XTINY, "DEBUG", Gfx.TEXT_JUSTIFY_CENTER);
+        drawArcHeader(dc, w, "DEBUG");
 
-        drawDebugLine(dc, 34, "HR", GymSession.hr == null ? "--" : GymSession.hr.toString());
-        drawDebugLine(dc, 58, "ZONE", GymSession.zone.toString());
-        drawDebugLine(dc, 82, "STATE", GymSession.effortState);
-        drawDebugLine(dc, 106, "TREND", GymSession.hrTrend.format("%.1f"));
+        drawDebugLine(dc, 38, "HR", GymSession.hr == null ? "--" : GymSession.hr.toString());
+        drawDebugLine(dc, 61, "ZONE", GymSession.zone.toString());
+        drawDebugLine(dc, 84, "STATE", GymSession.effortState);
+        drawDebugLine(dc, 107, "TREND", GymSession.hrTrend.format("%.1f"));
         drawDebugLine(dc, 130, "AUTO", GymStore.autoPromptEnabled ? "ON" : "OFF");
-        drawDebugLine(dc, 154, "SENS", GymStore.sensitivityLabel());
-        drawDebugLine(dc, 178, "REASON", fitText(GymSession.lastAutoReason, 16));
-        drawDebugLine(dc, 202, "DEBUG", fitText(GymSession.debugText, 18));
+        drawDebugLine(dc, 153, "SENS", GymStore.sensitivityLabel());
+        drawDebugLine(dc, 176, "WHY", fitText(GymSession.lastAutoReason, 14));
+        drawDebugLine(dc, 199, "DBG", fitText(GymSession.debugText, 14));
 
         dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, 230, Gfx.FONT_XTINY, "swipe: settings  back: main", Gfx.TEXT_JUSTIFY_CENTER);
+        dc.drawText(w / 2, 222, Gfx.FONT_XTINY, "SWIPE settings  BACK main", Gfx.TEXT_JUSTIFY_CENTER);
     }
 
     function drawDebugLine(dc, y, label, value) {
         dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(44, y, Gfx.FONT_XTINY, label, Gfx.TEXT_JUSTIFY_LEFT);
+        dc.drawText(54, y, Gfx.FONT_XTINY, label, Gfx.TEXT_JUSTIFY_LEFT);
         dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(216, y, Gfx.FONT_XTINY, value, Gfx.TEXT_JUSTIFY_RIGHT);
+        dc.drawText(206, y, Gfx.FONT_XTINY, value, Gfx.TEXT_JUSTIFY_RIGHT);
     }
 
     function drawSettings(dc, w, h) {
         dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, 10, Gfx.FONT_XTINY, "SETTINGS", Gfx.TEXT_JUSTIFY_CENTER);
+        drawArcHeader(dc, w, "SETTINGS");
 
-        drawSettingsRow(dc, 0, 44, "AUTO LOG", GymStore.autoPromptEnabled ? "ON" : "OFF");
+        drawSettingsRow(dc, 0, 46, "AUTO", GymStore.autoPromptEnabled ? "ON" : "OFF");
         drawSettingsRow(dc, 1, 82, "SENS", GymStore.sensitivityLabel());
-        drawSettingsRow(dc, 2, 120, "W STEP", GymStore.weightStep.format("%.1f"));
-        drawSettingsRow(dc, 3, 158, "REST", GymStore.restSecondsDefault.toString() + "s");
-        drawSettingsRow(dc, 4, 196, "REPS", GymStore.reps.toString());
+        drawSettingsRow(dc, 2, 118, "STEP", GymStore.weightStep.format("%.1f"));
+        drawSettingsRow(dc, 3, 154, "REST", GymStore.restSecondsDefault.toString() + "s");
+        drawSettingsRow(dc, 4, 190, "REPS", GymStore.reps.toString());
 
         dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, 232, Gfx.FONT_XTINY, "up/down  select: change", Gfx.TEXT_JUSTIFY_CENTER);
+        dc.drawText(w / 2, 222, Gfx.FONT_XTINY, "UP/DOWN  START change", Gfx.TEXT_JUSTIFY_CENTER);
     }
 
     function drawSettingsRow(dc, index, y, label, value) {
         var selectedRow = index == settingsSelected;
         if (selectedRow) {
             dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_BLACK);
-            dc.fillRoundedRectangle(36, y - 5, 188, 32, 8);
+            dc.fillRoundedRectangle(42, y - 5, 176, 31, 8);
             dc.setColor(Gfx.COLOR_BLACK, Gfx.COLOR_TRANSPARENT);
         } else {
             dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
         }
-        dc.drawText(46, y, Gfx.FONT_XTINY, label, Gfx.TEXT_JUSTIFY_LEFT);
-        dc.drawText(214, y + 8, Gfx.FONT_XTINY, value, Gfx.TEXT_JUSTIFY_RIGHT);
+        dc.drawText(54, y, Gfx.FONT_XTINY, label, Gfx.TEXT_JUSTIFY_LEFT);
+        dc.drawText(204, y + 8, Gfx.FONT_XTINY, value, Gfx.TEXT_JUSTIFY_RIGHT);
     }
 
     function drawMenuRow(dc, index, y, label) {
         if (index == pauseSelected) {
             dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_BLACK);
-            dc.fillRoundedRectangle(48, y - 6, 164, 34, 8);
+            dc.fillRoundedRectangle(54, y - 6, 152, 34, 8);
             dc.setColor(Gfx.COLOR_BLACK, Gfx.COLOR_TRANSPARENT);
         } else {
             dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
@@ -362,13 +362,22 @@ class WorkoutView extends Ui.View {
         var selectedRow = index == selected;
         if (selectedRow) {
             dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_BLACK);
-            dc.fillRoundedRectangle(36, y - 5, 188, 36, 8);
+            dc.fillRoundedRectangle(42, y - 5, 176, 31, 8);
             dc.setColor(Gfx.COLOR_BLACK, Gfx.COLOR_TRANSPARENT);
         } else {
             dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
         }
-        dc.drawText(46, y, Gfx.FONT_XTINY, label, Gfx.TEXT_JUSTIFY_LEFT);
-        dc.drawText(214, y + 11, Gfx.FONT_SMALL, value, Gfx.TEXT_JUSTIFY_RIGHT);
+        dc.drawText(54, y, Gfx.FONT_XTINY, label, Gfx.TEXT_JUSTIFY_LEFT);
+        dc.drawText(204, y + 9, Gfx.FONT_XTINY, value, Gfx.TEXT_JUSTIFY_RIGHT);
+    }
+
+    function drawArcHeader(dc, w, label) {
+        // Connect IQ does not expose true text-on-path here, so keep the
+        // heading in the round-safe top chord and draw a subtle arc guide.
+        dc.setColor(Gfx.COLOR_DK_GRAY, Gfx.COLOR_TRANSPARENT);
+        dc.drawArc(42, 8, 176, 44, Gfx.ARC_CLOCKWISE, 205, 335);
+        dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(w / 2, 21, Gfx.FONT_XTINY, label, Gfx.TEXT_JUSTIFY_CENTER);
     }
 
     function fitText(text, maxLen) {
@@ -391,18 +400,30 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
     }
 
     function onSelect() {
-        handleSelect();
+        if (view.page == 3) {
+            view.saveAndExit();
+        } else if (view.page == 2) {
+            handlePauseMenu();
+        } else if (view.page == 5) {
+            handleSettings();
+        } else if (view.page == 4) {
+            view.page = 0;
+        } else {
+            handleSelect();
+        }
+        Ui.requestUpdate();
         return true;
     }
 
     function onNextPage() {
         if (view.page == 2) {
-            return true;
-        }
-        if (view.page == 0) {
-            view.page = 1;
+            view.pauseSelected = (view.pauseSelected + 1) % 3;
         } else if (view.page == 1) {
-            view.page = 4;
+            view.selected = (view.selected + 1) % 4;
+        } else if (view.page == 5) {
+            view.settingsSelected = (view.settingsSelected + 1) % 5;
+        } else if (view.page == 0) {
+            view.page = 1;
         } else if (view.page == 4) {
             view.page = 5;
         } else {
@@ -416,13 +437,13 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         if (view.page == 3) {
             view.page = 2;
         } else if (view.page == 2) {
-            view.page = 0;
+            view.pauseSelected = (view.pauseSelected + 2) % 3;
         } else if (view.page == 1) {
-            view.page = 0;
+            view.selected = (view.selected + 3) % 4;
         } else if (view.page == 4) {
             view.page = 1;
         } else if (view.page == 5) {
-            view.page = 4;
+            view.settingsSelected = (view.settingsSelected + 4) % 5;
         } else {
             view.page = 5;
         }
@@ -458,8 +479,10 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         if (view.page == 3) {
             view.saveAndExit();
         } else if (view.page == 2) {
+            selectPauseByTouch(evt);
             handlePauseMenu();
         } else if (view.page == 5) {
+            selectSettingsByTouch(evt);
             handleSettings();
         } else if (view.page == 4) {
             view.page = 0;
@@ -468,6 +491,7 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         } else if (view.page == 0) {
             view.page = 1;
         } else {
+            selectEntryByTouch(evt);
             handleSelect();
         }
         Ui.requestUpdate();
@@ -550,7 +574,7 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
                 handlePauseMenu();
             } else {
                 GymSession.togglePause();
-                view.page = GymSession.paused ? 2 : 0;
+                view.page = 0;
             }
         } else if (key == Ui.KEY_MENU) {
             if (!GymSession.paused) {
@@ -627,6 +651,56 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
             }
             GymStore.save();
         }
+    }
+
+    function selectEntryByTouch(evt) {
+        var y = touchY(evt);
+        if (y < 119) {
+            view.selected = 0;
+        } else if (y < 153) {
+            view.selected = 1;
+        } else if (y < 187) {
+            view.selected = 2;
+        } else {
+            view.selected = 3;
+        }
+    }
+
+    function selectPauseByTouch(evt) {
+        var y = touchY(evt);
+        if (y < 120) {
+            view.pauseSelected = 0;
+        } else if (y < 162) {
+            view.pauseSelected = 1;
+        } else {
+            view.pauseSelected = 2;
+        }
+    }
+
+    function selectSettingsByTouch(evt) {
+        var y = touchY(evt);
+        if (y < 64) {
+            view.settingsSelected = 0;
+        } else if (y < 100) {
+            view.settingsSelected = 1;
+        } else if (y < 136) {
+            view.settingsSelected = 2;
+        } else if (y < 172) {
+            view.settingsSelected = 3;
+        } else {
+            view.settingsSelected = 4;
+        }
+    }
+
+    function touchY(evt) {
+        try {
+            var xy = evt.getCoordinates();
+            if (xy != null && xy.size() > 1) {
+                return xy[1];
+            }
+        } catch (ex) {
+        }
+        return 130;
     }
 }
 
