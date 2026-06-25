@@ -242,7 +242,8 @@ class GymStore {
             }
             status = "PLAN " + plan.size().toString();
         } else {
-            status = "SYNCED";
+            GymStore.plan = [];
+            status = "EMPTY PLAN";
         }
         save();
     }

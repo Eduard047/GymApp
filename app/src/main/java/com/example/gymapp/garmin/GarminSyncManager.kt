@@ -9,10 +9,12 @@ import com.garmin.android.connectiq.IQApp
 import com.garmin.android.connectiq.IQDevice
 import com.garmin.android.connectiq.exception.InvalidStateException
 import com.garmin.android.connectiq.exception.ServiceUnavailableException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.ConcurrentHashMap
@@ -22,6 +24,8 @@ private const val GARMIN_APP_ID = "A72A5B9F4E3D4E5A8B72C1D9F6123E40"
 private const val PLAN_PREFERENCES = "garmin_sync"
 private const val PLAN_KEY = "cached_plan"
 private const val PROCESSED_IDS_KEY = "processed_ids"
+private const val MAX_WATCH_EXERCISES = 60
+private const val MAX_WATCH_PLAN_SETS = 60
 
 class GarminSyncManager(
     private val application: GymApplication
@@ -57,7 +61,7 @@ class GarminSyncManager(
         }
     }
 
-    fun cacheAndPushPlan(
+    suspend fun cacheAndPushPlan(
         sets: List<NamedWorkoutSetDraft>,
         exerciseCatalog: List<String>
     ): Boolean {
@@ -119,13 +123,13 @@ class GarminSyncManager(
     private suspend fun pushSync(device: IQDevice) {
         val repository = activeRepository()
         val exercises = repository.getExerciseNamesForSync(limit = 200)
-        send(device, syncPayload(exercises, cachedPlan()))
+        sendAndWait(device, syncPayload(exercises, cachedPlan()))
     }
 
     private suspend fun createWorkout(device: IQDevice, command: Map<Any?, Any?>) {
         val requestId = command["requestId"]?.toString().orEmpty()
         if (requestId.isNotEmpty() && requestId in processedRequestIds()) {
-            send(device, mapOf("type" to "ack", "requestId" to requestId))
+            sendAndWait(device, mapOf("type" to "ack", "requestId" to requestId))
             return
         }
 
@@ -152,26 +156,36 @@ class GarminSyncManager(
             sets = sets
         )
         rememberProcessed(requestId)
-        send(device, mapOf("type" to "ack", "requestId" to requestId))
+        sendAndWait(device, mapOf("type" to "ack", "requestId" to requestId))
         pushSync(device)
     }
 
     private fun syncPayload(
         exercises: List<String>,
         plan: List<NamedWorkoutSetDraft>
-    ): Map<String, Any> = mapOf(
-        "type" to "sync",
-        "exercises" to exercises.distinct().take(200),
-        "plan" to plan.map { set ->
-            mapOf(
-                "exerciseName" to set.exerciseName,
-                "weight" to set.weight,
-                "reps" to set.reps
-            )
-        }
-    )
+    ): Map<String, Any> {
+        val compactPlan = plan.take(MAX_WATCH_PLAN_SETS)
+        val planExerciseNames = compactPlan.map { it.exerciseName }
+        val compactExercises = (planExerciseNames + exercises)
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+            .take(MAX_WATCH_EXERCISES)
 
-    private fun sendToConnectedDevices(payload: Map<String, Any>): Boolean {
+        return mapOf(
+            "type" to "sync",
+            "exercises" to compactExercises,
+            "plan" to compactPlan.map { set ->
+                mapOf(
+                    "exerciseName" to set.exerciseName,
+                    "weight" to set.weight,
+                    "reps" to set.reps
+                )
+            }
+        )
+    }
+
+    private suspend fun sendToConnectedDevices(payload: Map<String, Any>): Boolean {
         if (!sdkReady) return false
         val devices = try {
             val connected = connectIQ.connectedDevices.orEmpty()
@@ -192,21 +206,31 @@ class GarminSyncManager(
             Log.i(TAG, "Cannot resolve connected Garmin devices", error)
             return false
         }
+        var delivered = false
         devices.forEach { device ->
             registerAppEvents(device)
-            send(device, payload)
+            if (sendAndWait(device, payload)) {
+                delivered = true
+            }
         }
-        return devices.isNotEmpty()
+        return delivered
     }
 
-    private fun send(device: IQDevice, payload: Map<String, Any>) {
+    private suspend fun sendAndWait(device: IQDevice, payload: Map<String, Any>): Boolean {
+        val result = CompletableDeferred<Boolean>()
         runCatching {
             connectIQ.sendMessage(device, garminApp, payload) { _, _, status ->
-                if (status.name != "SUCCESS") {
+                val success = status == ConnectIQ.IQMessageStatus.SUCCESS
+                if (!success) {
                     Log.i(TAG, "Message delivery status: $status")
                 }
+                result.complete(success)
             }
-        }.onFailure { Log.i(TAG, "Cannot send message to Garmin", it) }
+        }.onFailure { error ->
+            Log.i(TAG, "Cannot send message to Garmin", error)
+            result.complete(false)
+        }
+        return withTimeoutOrNull(8_000L) { result.await() } ?: false
     }
 
     private fun activeRepository() = application.repositoryFor(
