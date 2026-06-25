@@ -247,7 +247,7 @@ class GarminSyncManager(
         var delivered = false
         devices.forEach { device ->
             registerAppEvents(device)
-            if (isGymAppInstalled(device) && sendAndConfirmSync(device, payload, syncId)) {
+            if (sendAndConfirmSync(device, payload, syncId)) {
                 delivered = true
             }
         }
