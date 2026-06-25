@@ -2024,10 +2024,12 @@ function detailScreen(id) {
   if (!session) return `<div class="empty">${tx("Workout not found.", "Тренування не знайдено.")}</div>`;
   const grouped = exerciseNamesForSession(session).map(name => ({ name, sets: session.sets.filter(s => s.exerciseName === name) }));
   const available = state.exercises.filter(ex => !grouped.some(g => g.name === ex.name));
+  const garmin = parseGarminWorkoutMetrics(session.note || "");
   return `<section class="panel"><h2>${fmtDate(session.startedAt)}</h2><p>${session.note || tx("No note", "Без нотатки")}</p></section>
     ${!session.sets.length && grouped.length ? `<section class="panel warning"><h2>${tx("No set data", "Немає даних підходів")}</h2><p>${tx("This imported workout contains exercise names, but no weights or reps. Export a full Backup JSON from the Android app and import it again.", "У цьому імпортованому тренуванні є назви вправ, але немає ваги й повторів. Експортуй повний Backup JSON з Android-додатка й імпортуй ще раз.")}</p></section>` : ""}
     <section class="panel"><div class="section-title"><h2>${tx("Add Exercise to This Workout", "Додати вправу в це тренування")}</h2></div>${available.length ? `<select id="quick-add">${available.map(ex => `<option value="${ex.id}">${escapeHtml(ex.name)}</option>`).join("")}</select><button class="button full" data-action="quick-add-exercise">${tx("Add to Workout", "Додати до тренування")}</button>` : `<p class="muted">${tx("All saved exercises are already in this workout.", "Усі збережені вправи вже є в цьому тренуванні.")}</p>`}</section>
-    ${grouped.map(group => exerciseDetailCard(session, group)).join("")}
+    ${garmin ? garminWorkoutMetricsCard(session, garmin, grouped) : ""}
+    ${grouped.map(group => exerciseDetailCard(session, group, Boolean(garmin))).join("")}
     <button class="fab" data-action="finish-workout" data-id="${session.id}">${svg("check", "small-icon")}${t("finishWorkout")}</button>`;
 }
 
@@ -2039,6 +2041,76 @@ function exerciseDetailCard(session, group) {
     <div class="table"><div class="table-head"><span>${tx("Set", "Підхід")}</span><span>${tx("Weight (kg)", "Вага (кг)")}</span><span>${tx("Reps", "Повтори")}</span><span></span></div>${group.sets.map((set, i) => `<div class="table-row"><span>${tx("Set", "Підхід")} ${i + 1}</span><span>${Number(set.weight).toFixed(1)}</span><span>${set.reps}</span><span><button class="icon-button" data-action="edit-set" data-id="${set.id}">${svg("edit")}</button><button class="icon-button" data-action="delete-set" data-id="${set.id}">${svg("delete")}</button></span></div>`).join("")}</div>` : `<div class="empty">${tx("No sets were imported for this exercise.", "Для цієї вправи не імпортовано підходи.")}</div>`}
     <button class="button ghost full" data-action="detail-add-set" data-session="${session.id}" data-name="${escapeAttr(group.name)}">${t("addSet")}</button>
   </section>`;
+}
+
+function detailScreen(id) {
+  const session = state.sessions.find(s => s.id === id);
+  if (!session) return `<div class="empty">${tx("Workout not found.", "Workout not found.")}</div>`;
+  const grouped = exerciseNamesForSession(session).map(name => ({ name, sets: session.sets.filter(s => s.exerciseName === name) }));
+  const available = state.exercises.filter(ex => !grouped.some(g => g.name === ex.name));
+  const garmin = parseGarminWorkoutMetrics(session.note || "");
+  return `${garmin ? garminWorkoutHeader(session, garmin, grouped) : `<section class="panel"><h2>${fmtDate(session.startedAt)}</h2><p>${session.note || tx("No note", "No note")}</p></section>`}
+    ${garmin ? garminWorkoutMetricsCard(garmin) : ""}
+    ${!session.sets.length && grouped.length ? `<section class="panel warning"><h2>${tx("No set data", "No set data")}</h2><p>${tx("This imported workout contains exercise names, but no weights or reps. Export a full Backup JSON from the Android app and import it again.", "This imported workout contains exercise names, but no weights or reps. Export a full Backup JSON from the Android app and import it again.")}</p></section>` : ""}
+    <section class="panel"><div class="section-title"><h2>${tx("Add Exercise to This Workout", "Add Exercise to This Workout")}</h2></div>${available.length ? `<select id="quick-add">${available.map(ex => `<option value="${ex.id}">${escapeHtml(ex.name)}</option>`).join("")}</select><button class="button full" data-action="quick-add-exercise">${tx("Add to Workout", "Add to Workout")}</button>` : `<p class="muted">${tx("All saved exercises are already in this workout.", "All saved exercises are already in this workout.")}</p>`}</section>
+    ${grouped.map(group => exerciseDetailCard(session, group, Boolean(garmin))).join("")}
+    <button class="fab" data-action="finish-workout" data-id="${session.id}">${svg("check", "small-icon")}${t("finishWorkout")}</button>`;
+}
+
+function garminWorkoutHeader(session, metrics, grouped) {
+  const setCount = grouped.reduce((sum, group) => sum + group.sets.length, 0);
+  return `<section class="panel highlighted garmin-header"><div class="row-head"><div><h2>${tx("Garmin strength workout", "Garmin strength workout")}</h2><p class="muted">${fmtDate(session.startedAt)} · ${tx("synced from Fenix 8", "synced from Fenix 8")}</p></div></div>
+    <div class="metric-grid"><div><span>${tx("Duration", "Duration")}</span><strong>${metrics.duration || "—"}</strong><small>${tx("watch session", "watch session")}</small></div><div><span>${tx("Logged", "Logged")}</span><strong>${setCount} ${tx("sets", "sets")}</strong><small>${grouped.length} ${tx("exercises", "exercises")}</small></div></div>
+    <p class="muted">${tx("Synced sets are grouped below. Expand an exercise to edit weight, reps, add a missed set, or delete a wrong one.", "Synced sets are grouped below. Expand an exercise to edit weight, reps, add a missed set, or delete a wrong one.")}</p>
+  </section>`;
+}
+
+function garminWorkoutMetricsCard(metrics) {
+  return `<section class="panel garmin-metrics"><h2>${tx("Garmin strength metrics", "Garmin strength metrics")}</h2>
+    <div class="metric-grid">
+      <div><span>${tx("Gym kcal", "Gym kcal")}</span><strong>${metrics.gymCalories ?? "—"}</strong><small>${tx("our formula", "our formula")}</small></div>
+      <div><span>${tx("Garmin kcal", "Garmin kcal")}</span><strong>${metrics.garminCalories ?? "—"}</strong><small>${tx("system", "system")}</small></div>
+      <div><span>${tx("Avg HR", "Avg HR")}</span><strong>${metrics.avgHeartRate ? `${metrics.avgHeartRate} bpm` : "—"}</strong><small>${metrics.duration || tx("duration", "duration")}</small></div>
+      <div><span>${tx("Max HR", "Max HR")}</span><strong>${metrics.maxHeartRate ? `${metrics.maxHeartRate} bpm` : "—"}</strong><small>${metrics.heartRateZone || tx("peak", "peak")}</small></div>
+    </div>
+    <p class="muted">${tx("Gym kcal is saved from the Garmin app strength formula. Garmin kcal is the system value Garmin Connect uses for daily calories.", "Gym kcal is saved from the Garmin app strength formula. Garmin kcal is the system value Garmin Connect uses for daily calories.")}</p>
+  </section>`;
+}
+
+function parseGarminWorkoutMetrics(note) {
+  if (!/Garmin Fenix 8/i.test(note || "")) return null;
+  const findText = regex => (regex.exec(note || "") || [])[1] || "";
+  const findNumber = regex => {
+    const value = Number.parseInt(findText(regex), 10);
+    return Number.isFinite(value) ? value : null;
+  };
+  return {
+    duration: findText(/Duration\s+([0-9]+:[0-9]{2}(?::[0-9]{2})?)/i),
+    gymCalories: findNumber(/Gym kcal\s+([0-9]+)/i),
+    garminCalories: findNumber(/Garmin kcal\s+([0-9]+)/i),
+    avgHeartRate: findNumber(/Avg HR\s+([0-9]+)/i),
+    maxHeartRate: findNumber(/Max HR\s+([0-9]+)/i),
+    heartRateZone: findText(/HR zone\s+(Z[0-9]+)/i)
+  };
+}
+
+function exerciseDetailCard(session, group, isGarminWorkout = false) {
+  const key = `${session.id}:${group.name}`;
+  const remaining = timerRemaining(key);
+  const setSummary = group.sets.length
+    ? `${group.sets.length} ${tx("sets", "sets")} · ${group.sets.map(set => `${formatSetWeight(set.weight)} kg × ${set.reps}`).join(" · ")}`
+    : tx("No sets", "No sets");
+  const restTimer = isGarminWorkout ? "" : `<div class="timer-row"><div><strong>${tx("Exercise Rest", "Exercise Rest")}</strong><span>${remaining > 0 ? formatTimer(remaining) : tx("Ready", "Ready")}</span></div><div class="actions"><button class="button ghost mini" data-action="timer" data-key="${key}" data-seconds="60">60s</button><button class="button ghost mini" data-action="timer" data-key="${key}" data-seconds="90">90s</button><button class="button ghost mini" data-action="timer" data-key="${key}" data-seconds="180">180s</button><button class="button ghost mini" data-action="timer-stop" data-key="${key}" ${remaining ? "" : "disabled"}>${tx("Stop", "Stop")}</button></div></div>`;
+  return `<section class="panel highlighted workout-exercise-card"><details ${isGarminWorkout ? "" : "open"}><summary class="detail-summary"><div><h2>${escapeHtml(group.name)}</h2><p class="muted">${escapeHtml(setSummary)}</p></div>${isPr(session, group.name) ? `<span class="pill">${svg("trophy", "small-icon")}${tx("New PR", "New PR")}</span>` : ""}</summary>
+    ${group.sets.length ? `${restTimer}<div class="table"><div class="table-head"><span>${tx("Set", "Set")}</span><span>${tx("Weight (kg)", "Weight (kg)")}</span><span>${tx("Reps", "Reps")}</span><span></span></div>${group.sets.map((set, i) => `<div class="table-row"><span>${tx("Set", "Set")} ${i + 1}</span><span>${Number(set.weight).toFixed(1)}</span><span>${set.reps}</span><span><button class="icon-button" data-action="edit-set" data-id="${set.id}">${svg("edit")}</button><button class="icon-button" data-action="delete-set" data-id="${set.id}">${svg("delete")}</button></span></div>`).join("")}</div>` : `<div class="empty">${tx("No sets were imported for this exercise.", "No sets were imported for this exercise.")}</div>`}
+    <button class="button ghost full" data-action="detail-add-set" data-session="${session.id}" data-name="${escapeAttr(group.name)}">${t("addSet")}</button>
+  </details></section>`;
+}
+
+function formatSetWeight(weight) {
+  const value = Number(weight);
+  if (!Number.isFinite(value)) return "0";
+  return value % 1 === 0 ? String(value.toFixed(0)) : value.toFixed(1);
 }
 
 function isPr(session, name) {

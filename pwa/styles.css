@@ -915,6 +915,67 @@ textarea:focus {
 
 .hidden { display: none !important; }
 
+.garmin-header .metric-grid,
+.garmin-metrics .metric-grid {
+  margin-top: 10px;
+}
+
+.garmin-metrics small,
+.garmin-header small {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+.workout-exercise-card details {
+  display: grid;
+  gap: 12px;
+}
+
+.detail-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.detail-summary::-webkit-details-marker {
+  display: none;
+}
+
+.detail-summary::after {
+  content: "⌄";
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--surface-strong);
+  color: var(--text);
+  font-weight: 900;
+}
+
+.workout-exercise-card details[open] .detail-summary::after {
+  content: "⌃";
+}
+
+.detail-summary h2,
+.detail-summary p {
+  margin: 0;
+}
+
+.workout-exercise-card details > .table,
+.workout-exercise-card details > .timer-row,
+.workout-exercise-card details > .empty,
+.workout-exercise-card details > .button {
+  margin-top: 12px;
+}
+
 @media (max-width: 760px) {
   .metric-grid.post,
   .metric-grid.three {
