@@ -146,9 +146,9 @@ class WorkoutView extends Ui.View {
 
         drawHeartRateZones(dc, w, 148);
 
-        drawCompactValue(dc, 54, 188, "GYM", GymSession.gymCalories.format("%.0f"));
-        drawCompactValue(dc, 130, 188, "GARMIN", garminKcal);
-        drawCompactValue(dc, 206, 188, "SETS", GymStore.sets.size().toString());
+        drawCompactValue(dc, 68, 186, "GYM", GymSession.gymCalories.format("%.0f"));
+        drawCompactValue(dc, 130, 186, "GARMIN", garminKcal);
+        drawCompactValue(dc, 192, 186, "SETS", GymStore.sets.size().toString());
 
         var rest = GymStore.restSeconds();
         var footer = rest > 0 ? ("REST " + rest.toString() + "s") : "tap: set   back: save";
@@ -160,7 +160,7 @@ class WorkoutView extends Ui.View {
         dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
         dc.drawText(x, y, Gfx.FONT_XTINY, label, Gfx.TEXT_JUSTIFY_CENTER);
         dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(x, y + 18, Gfx.FONT_SMALL, value, Gfx.TEXT_JUSTIFY_CENTER);
+        dc.drawText(x, y + 16, Gfx.FONT_XTINY, value, Gfx.TEXT_JUSTIFY_CENTER);
     }
 
     function drawHeartRateZones(dc, w, y) {
