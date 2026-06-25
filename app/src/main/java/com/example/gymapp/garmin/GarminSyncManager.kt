@@ -166,7 +166,12 @@ class GarminSyncManager(
     ): Map<String, Any> {
         val compactPlan = plan.take(MAX_WATCH_PLAN_SETS)
         val planExerciseNames = compactPlan.map { it.exerciseName }
-        val compactExercises = (planExerciseNames + exercises)
+        val exerciseSource = if (planExerciseNames.isNotEmpty()) {
+            planExerciseNames
+        } else {
+            exercises
+        }
+        val compactExercises = exerciseSource
             .map { it.trim() }
             .filter { it.isNotEmpty() }
             .distinct()

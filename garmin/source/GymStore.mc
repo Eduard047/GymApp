@@ -93,10 +93,15 @@ class GymStore {
         if (plan.size() == 0) {
             return;
         }
-        if (exerciseIndex >= plan.size()) {
-            exerciseIndex = 0;
+        var exerciseName = currentExercise();
+        var item = null;
+        for (var i = 0; i < plan.size(); i += 1) {
+            var candidate = plan[i];
+            if (candidate instanceof Lang.Dictionary && candidate.get("exerciseName") == exerciseName) {
+                item = candidate;
+                break;
+            }
         }
-        var item = plan[exerciseIndex];
         if (item instanceof Lang.Dictionary) {
             var plannedWeight = item.get("weight");
             var plannedReps = item.get("reps");
@@ -230,7 +235,7 @@ class GymStore {
                 var item = plan[i];
                 if (item instanceof Lang.Dictionary) {
                     var name = item.get("exerciseName");
-                    if (name != null) {
+                    if (name != null && !containsName(plannedExercises, name.toString())) {
                         plannedExercises.add(name.toString());
                     }
                 }
@@ -246,5 +251,14 @@ class GymStore {
             status = "EMPTY PLAN";
         }
         save();
+    }
+
+    static function containsName(list, name) {
+        for (var i = 0; i < list.size(); i += 1) {
+            if (list[i] == name) {
+                return true;
+            }
+        }
+        return false;
     }
 }

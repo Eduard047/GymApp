@@ -273,9 +273,6 @@ class WorkoutView extends Ui.View {
         drawRow(dc, 1, 130, "KG", "+" + GymStore.weightStep.format("%.1f"));
         drawRow(dc, 2, 160, "REP", "+1");
         drawRow(dc, 3, 190, "SAVE", GymStore.sets.size().toString());
-
-        dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, 208, Gfx.FONT_XTINY, "UP/DOWN START", Gfx.TEXT_JUSTIFY_CENTER);
     }
 
     function drawPauseMenu(dc, w, h) {
