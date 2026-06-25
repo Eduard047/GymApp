@@ -70,6 +70,7 @@ class GymStore {
             "weight" => weight,
             "reps" => reps
         });
+        GymSession.addSetBoost(weight, reps);
         restEndsAt = System.getTimer() + 90000;
         status = "SET SAVED";
         save();
