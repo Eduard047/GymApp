@@ -21,10 +21,9 @@ class WorkoutView extends Ui.View {
     function initialize() {
         View.initialize();
         GymStore.load();
+        Comm.setMailboxListener(method(:onMail));
         if (Comm has :registerForPhoneAppMessages) {
             Comm.registerForPhoneAppMessages(method(:onPhoneMessage));
-        } else {
-            Comm.setMailboxListener(method(:onMail));
         }
         if (Comm has :registerForPhoneAppMessageErrors) {
             Comm.registerForPhoneAppMessageErrors(method(:onPhoneMessageError));
