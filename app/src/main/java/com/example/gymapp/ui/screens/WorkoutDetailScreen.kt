@@ -167,6 +167,7 @@ fun WorkoutDetailScreen(
             val garminMetrics = remember(details.session.note) {
                 parseGarminWorkoutMetrics(details.session.note.orEmpty())
             }
+            val isGarminWorkout = garminMetrics != null
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(
@@ -176,36 +177,20 @@ fun WorkoutDetailScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 item {
-                    Card(modifier = Modifier.fillMaxWidth()) {
-                        Column(
-                            modifier = Modifier.padding(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Text(
-                                    text = DateTimeUtils.formatDate(details.session.date),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                IconButton(onClick = { confirmDeleteSession = true }) {
-                                    Icon(
-                                        imageVector = Icons.Default.Delete,
-                                        contentDescription = stringResource(R.string.cd_delete)
-                                    )
-                                }
-                            }
-                            Text(
-                                text = details.session.note
-                                    ?.takeIf { it.isNotBlank() }
-                                    ?.let { stringResource(R.string.details_note, it) }
-                                    ?: stringResource(R.string.details_no_note),
-                                style = MaterialTheme.typography.bodyLarge
-                            )
-                        }
+                    if (garminMetrics != null) {
+                        GarminWorkoutHeaderCard(
+                            date = DateTimeUtils.formatDate(details.session.date),
+                            metrics = garminMetrics,
+                            exerciseCount = details.workoutExercises.size,
+                            setCount = details.workoutExercises.sumOf { it.sets.size },
+                            onDelete = { confirmDeleteSession = true }
+                        )
+                    } else {
+                        WorkoutHeaderCard(
+                            date = DateTimeUtils.formatDate(details.session.date),
+                            note = details.session.note,
+                            onDelete = { confirmDeleteSession = true }
+                        )
                     }
                 }
 
@@ -228,7 +213,9 @@ fun WorkoutDetailScreen(
                 ) { exerciseDetails ->
                     val workoutExerciseId = exerciseDetails.workoutExercise.id
                     val localRestSecondsRemaining = remainingExerciseTimerSeconds(workoutExerciseId)
-                    var isExpanded by rememberSaveable(workoutExerciseId) { mutableStateOf(true) }
+                    var isExpanded by rememberSaveable(workoutExerciseId, isGarminWorkout) {
+                        mutableStateOf(!isGarminWorkout)
+                    }
                     val muscleIntensities = remember(exerciseDetails.exercise.name) {
                         defaultContributionsForExercise(exerciseDetails.exercise.name)
                             .associate { contribution ->
@@ -330,7 +317,7 @@ fun WorkoutDetailScreen(
                             }
 
                             if (isExpanded) {
-                            if (muscleIntensities.isNotEmpty()) {
+                            if (!isGarminWorkout && muscleIntensities.isNotEmpty()) {
                                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                     Text(
                                         text = stringResource(R.string.exercise_muscles_title),
@@ -346,13 +333,15 @@ fun WorkoutDetailScreen(
                                 }
                             }
 
-                            ExerciseRestTimerRow(
-                                restSecondsRemaining = localRestSecondsRemaining,
-                                onStart60 = { startExerciseTimer(workoutExerciseId, 60) },
-                                onStart90 = { startExerciseTimer(workoutExerciseId, 90) },
-                                onStart180 = { startExerciseTimer(workoutExerciseId, 180) },
-                                onStop = { stopExerciseTimer(workoutExerciseId) }
-                            )
+                            if (!isGarminWorkout) {
+                                ExerciseRestTimerRow(
+                                    restSecondsRemaining = localRestSecondsRemaining,
+                                    onStart60 = { startExerciseTimer(workoutExerciseId, 60) },
+                                    onStart90 = { startExerciseTimer(workoutExerciseId, 90) },
+                                    onStart180 = { startExerciseTimer(workoutExerciseId, 180) },
+                                    onStop = { stopExerciseTimer(workoutExerciseId) }
+                                )
+                            }
 
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -557,6 +546,109 @@ fun WorkoutDetailScreen(
                 }
             }
         )
+    }
+}
+
+@Composable
+private fun WorkoutHeaderCard(
+    date: String,
+    note: String?,
+    onDelete: () -> Unit
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = date,
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f)
+                )
+                IconButton(onClick = onDelete) {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = stringResource(R.string.cd_delete)
+                    )
+                }
+            }
+            Text(
+                text = note
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { stringResource(R.string.details_note, it) }
+                    ?: stringResource(R.string.details_no_note),
+                style = MaterialTheme.typography.bodyLarge
+            )
+        }
+    }
+}
+
+@Composable
+private fun GarminWorkoutHeaderCard(
+    date: String,
+    metrics: GarminWorkoutMetrics,
+    exerciseCount: Int,
+    setCount: Int,
+    onDelete: () -> Unit
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Garmin strength workout",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Text(
+                        text = "$date · synced from Fenix 8",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                IconButton(onClick = onDelete) {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = stringResource(R.string.cd_delete)
+                    )
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                GarminMetricCell(
+                    label = "Duration",
+                    value = metrics.duration ?: "—",
+                    helper = "watch session",
+                    modifier = Modifier.weight(1f)
+                )
+                GarminMetricCell(
+                    label = "Logged",
+                    value = "$setCount sets",
+                    helper = "$exerciseCount exercises",
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            Text(
+                text = "Synced sets are grouped below. Expand an exercise to edit weight, reps, add a missed set, or delete a wrong one.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }
 
