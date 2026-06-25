@@ -127,8 +127,10 @@ class WorkoutView extends Ui.View {
             drawDashboard(dc, w, h);
         } else if (page == 1) {
             drawEntry(dc, w, h);
-        } else {
+        } else if (page == 2) {
             drawPauseMenu(dc, w, h);
+        } else {
+            drawSummary(dc, w, h);
         }
     }
 
@@ -153,10 +155,11 @@ class WorkoutView extends Ui.View {
         drawCompactValue(dc, 188, 184, "GARMIN", garminKcal);
 
         dc.setColor(stateColor(GymSession.effortState), Gfx.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, 212, Gfx.FONT_XTINY, GymSession.effortState, Gfx.TEXT_JUSTIFY_CENTER);
+        var stateText = GymSession.autoLogPrompt ? "LOG SET?" : GymSession.effortState;
+        dc.drawText(w / 2, 212, Gfx.FONT_XTINY, stateText, Gfx.TEXT_JUSTIFY_CENTER);
 
         var rest = GymStore.restSeconds();
-        var footer = rest > 0 ? ("REST " + rest.toString() + "s") : "start: pause  tap: edit";
+        var footer = GymSession.autoLogPrompt ? "select: save set" : (rest > 0 ? ("REST " + rest.toString() + "s") : "start: pause  tap: edit");
         dc.setColor(rest > 0 ? Gfx.COLOR_YELLOW : Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
         dc.drawText(w / 2, 228, Gfx.FONT_XTINY, footer, Gfx.TEXT_JUSTIFY_CENTER);
     }
@@ -234,15 +237,19 @@ class WorkoutView extends Ui.View {
 
     function drawEntry(dc, w, h) {
         dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, 10, Gfx.FONT_XTINY, "SET ENTRY  " + GymStore.status, Gfx.TEXT_JUSTIFY_CENTER);
+        dc.drawText(w / 2, 10, Gfx.FONT_XTINY, "SET ENTRY", Gfx.TEXT_JUSTIFY_CENTER);
 
-        drawRow(dc, 0, 45, "EXERCISE", fitText(GymStore.currentExercise(), 16));
-        drawRow(dc, 1, 88, "WEIGHT", GymStore.weight.format("%.1f") + "kg");
-        drawRow(dc, 2, 131, "REPS", GymStore.reps.toString());
-        drawRow(dc, 3, 174, "ADD SET", GymStore.sets.size().toString());
+        dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(w / 2, 34, Gfx.FONT_SMALL, fitText(GymStore.currentExercise(), 18), Gfx.TEXT_JUSTIFY_CENTER);
+        dc.drawText(w / 2, 72, Gfx.FONT_MEDIUM, GymStore.weight.format("%.1f") + " kg x " + GymStore.reps.toString(), Gfx.TEXT_JUSTIFY_CENTER);
+
+        drawRow(dc, 0, 112, "EXERCISE", "next");
+        drawRow(dc, 1, 150, "WEIGHT", "+/- " + GymStore.weightStep.format("%.1f"));
+        drawRow(dc, 2, 188, "REPS", "+/- 1");
+        drawRow(dc, 3, 212, "SAVE SET", GymStore.sets.size().toString());
 
         dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, 226, Gfx.FONT_XTINY, "start: pause  back: main", Gfx.TEXT_JUSTIFY_CENTER);
+        dc.drawText(w / 2, 236, Gfx.FONT_XTINY, "select row  back: main", Gfx.TEXT_JUSTIFY_CENTER);
     }
 
     function drawPauseMenu(dc, w, h) {
@@ -258,6 +265,30 @@ class WorkoutView extends Ui.View {
 
         dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
         dc.drawText(w / 2, 226, Gfx.FONT_XTINY, "up/down  start/select", Gfx.TEXT_JUSTIFY_CENTER);
+    }
+
+    function drawSummary(dc, w, h) {
+        dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(w / 2, 12, Gfx.FONT_XTINY, "SAVE SUMMARY", Gfx.TEXT_JUSTIFY_CENTER);
+
+        dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(w / 2, 38, Gfx.FONT_SMALL, GymSession.elapsedText(), Gfx.TEXT_JUSTIFY_CENTER);
+        drawSummaryValue(dc, 70, 78, "GYM", GymSession.gymCalories.format("%.0f"));
+        var garminKcal = GymSession.garminCalories == null ? "--" : GymSession.garminCalories.toString();
+        drawSummaryValue(dc, 190, 78, "GARMIN", garminKcal);
+        drawSummaryValue(dc, 70, 128, "AVG HR", GymSession.avgHr.toString());
+        drawSummaryValue(dc, 190, 128, "MAX HR", GymSession.maxHr.toString());
+        drawSummaryValue(dc, 130, 178, "SETS", GymStore.sets.size().toString());
+
+        dc.setColor(Gfx.COLOR_GREEN, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(w / 2, 218, Gfx.FONT_XTINY, "select: save  back: pause", Gfx.TEXT_JUSTIFY_CENTER);
+    }
+
+    function drawSummaryValue(dc, x, y, label, value) {
+        dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(x, y, Gfx.FONT_XTINY, label, Gfx.TEXT_JUSTIFY_CENTER);
+        dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(x, y + 17, Gfx.FONT_SMALL, value, Gfx.TEXT_JUSTIFY_CENTER);
     }
 
     function drawMenuRow(dc, index, y, label) {
@@ -318,7 +349,9 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
     }
 
     function onPreviousPage() {
-        if (view.page == 2) {
+        if (view.page == 3) {
+            view.page = 2;
+        } else if (view.page == 2) {
             view.page = 0;
         } else if (view.page == 1) {
             view.page = 0;
@@ -330,6 +363,11 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
     }
 
     function onBack() {
+        if (view.page == 3) {
+            view.page = 2;
+            Ui.requestUpdate();
+            return true;
+        }
         if (view.page == 2) {
             view.page = 0;
             Ui.requestUpdate();
@@ -349,8 +387,12 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
     }
 
     function onTap(evt) {
-        if (view.page == 2) {
+        if (view.page == 3) {
+            view.saveAndExit();
+        } else if (view.page == 2) {
             handlePauseMenu();
+        } else if (view.page == 0 && GymSession.autoLogPrompt) {
+            GymStore.addSet();
         } else if (view.page == 0) {
             view.page = 1;
         } else {
@@ -362,7 +404,9 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
 
     function onSwipe(evt) {
         var direction = evt.getDirection();
-        if (view.page == 2 && direction == Ui.SWIPE_UP) {
+        if (view.page == 3) {
+            return true;
+        } else if (view.page == 2 && direction == Ui.SWIPE_UP) {
             view.pauseSelected = (view.pauseSelected + 1) % 3;
         } else if (view.page == 2 && direction == Ui.SWIPE_DOWN) {
             view.pauseSelected = (view.pauseSelected + 2) % 3;
@@ -388,7 +432,9 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         } else if (key == Ui.KEY_DOWN && view.page == 1) {
             view.selected = (view.selected + 1) % 4;
         } else if (key == Ui.KEY_ENTER) {
-            if (view.page == 2) {
+            if (view.page == 3) {
+                view.saveAndExit();
+            } else if (view.page == 2) {
                 handlePauseMenu();
             } else {
                 handleSelect();
@@ -396,7 +442,9 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         } else if (key == Ui.KEY_ESC) {
             onBack();
         } else if (key == Ui.KEY_START) {
-            if (view.page == 2) {
+            if (view.page == 3) {
+                view.saveAndExit();
+            } else if (view.page == 2) {
                 handlePauseMenu();
             } else {
                 GymSession.togglePause();
@@ -415,7 +463,9 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
     }
 
     function handleSelect() {
-        if (view.page == 0) {
+        if (view.page == 0 && GymSession.autoLogPrompt) {
+            GymStore.addSet();
+        } else if (view.page == 0) {
             view.page = 1;
         } else {
             activate(1);
@@ -427,7 +477,7 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
             GymSession.resume();
             view.page = 0;
         } else if (view.pauseSelected == 1) {
-            view.saveAndExit();
+            view.page = 3;
         } else {
             GymStore.clearWorkout();
             GymSession.discard();
@@ -439,7 +489,7 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         if (view.selected == 0) {
             GymStore.nextExercise(delta);
         } else if (view.selected == 1) {
-            GymStore.weight += 2.5 * delta;
+            GymStore.weight += GymStore.weightStep * delta;
             if (GymStore.weight < 0.0) {
                 GymStore.weight = 0.0;
             }

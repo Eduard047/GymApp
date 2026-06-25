@@ -33,6 +33,10 @@ class GymSession {
     static var effortState = "WARMUP";
     static var lastHr = null;
     static var lastHrChangeSeconds = 0;
+    static var autoLogPrompt = false;
+    static var activeSetSeen = false;
+    static var lastPromptSeconds = 0;
+    static var debugText = "";
 
     static function start() {
         loadProfile();
@@ -50,6 +54,10 @@ class GymSession {
         effortState = "WARMUP";
         lastHr = null;
         lastHrChangeSeconds = 0;
+        autoLogPrompt = false;
+        activeSetSeen = false;
+        lastPromptSeconds = 0;
+        debugText = "init";
         status = "REC";
         paused = false;
 
@@ -271,13 +279,26 @@ class GymSession {
 
         var delta = value - previous;
         if (delta >= 2 || zone >= 3) {
+            if (effortState != "SET ACTIVE") {
+                activeSetSeen = true;
+            }
             effortState = "SET ACTIVE";
             lastHrChangeSeconds = elapsedSeconds;
         } else if (delta <= -2 || elapsedSeconds - lastHrChangeSeconds > 45) {
+            if (activeSetSeen && !autoLogPrompt && elapsedSeconds - lastPromptSeconds > 30) {
+                autoLogPrompt = true;
+                lastPromptSeconds = elapsedSeconds;
+            }
             effortState = "REST";
         } else if (zone == 2) {
             effortState = "READY";
         }
+        debugText = "d" + delta.toString() + " z" + zone.toString() + " " + effortState;
+    }
+
+    static function clearAutoPrompt() {
+        autoLogPrompt = false;
+        activeSetSeen = false;
     }
 
     static function loadProfile() {

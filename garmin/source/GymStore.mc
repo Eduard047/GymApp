@@ -12,6 +12,9 @@ class GymStore {
     static var reps = 10;
     static var restEndsAt = 0;
     static var status = "READY";
+    static var weightStep = 2.5;
+    static var restSecondsDefault = 90;
+    static var autoPromptEnabled = true;
 
     static function load() {
         var savedExercises = Storage.getValue("exercises");
@@ -71,7 +74,8 @@ class GymStore {
             "reps" => reps
         });
         GymSession.addSetBoost(weight, reps);
-        restEndsAt = System.getTimer() + 90000;
+        GymSession.clearAutoPrompt();
+        restEndsAt = System.getTimer() + (restSecondsDefault * 1000);
         status = "SET SAVED";
         save();
     }
@@ -107,6 +111,7 @@ class GymStore {
             "maxHeartRate" => GymSession.maxHr,
             "lastHeartRate" => GymSession.hr,
             "heartRateZone" => GymSession.zone,
+            "debug" => GymSession.debugText,
             "sets" => sets
         };
     }
