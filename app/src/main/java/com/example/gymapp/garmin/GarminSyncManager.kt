@@ -63,6 +63,11 @@ class GarminSyncManager(
     ): Boolean {
         val payload = syncPayload(exerciseCatalog, sets)
         cachePlan(sets)
+        if (sdkReady) {
+            registerConnectedDevices()
+        } else {
+            initialize()
+        }
         return sendToConnectedDevices(payload)
     }
 
@@ -169,10 +174,22 @@ class GarminSyncManager(
     private fun sendToConnectedDevices(payload: Map<String, Any>): Boolean {
         if (!sdkReady) return false
         val devices = try {
-            connectIQ.connectedDevices.orEmpty()
+            val connected = connectIQ.connectedDevices.orEmpty()
+            if (connected.isNotEmpty()) {
+                connected
+            } else {
+                connectIQ.knownDevices.orEmpty().filter { device ->
+                    runCatching {
+                        connectIQ.getDeviceStatus(device) == IQDevice.IQDeviceStatus.CONNECTED
+                    }.getOrDefault(false)
+                }
+            }
         } catch (_: InvalidStateException) {
             return false
         } catch (_: ServiceUnavailableException) {
+            return false
+        } catch (error: Exception) {
+            Log.i(TAG, "Cannot resolve connected Garmin devices", error)
             return false
         }
         devices.forEach { device ->

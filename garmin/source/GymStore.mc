@@ -6,6 +6,7 @@ using Toybox.Time as Time;
 class GymStore {
     static var exercises = ["Bench Press", "Squat", "Deadlift", "Pull Up", "Overhead Press"];
     static var sets = [];
+    static var plan = [];
     static var pending = [];
     static var exerciseIndex = 0;
     static var weight = 50.0;
@@ -25,6 +26,10 @@ class GymStore {
         var savedSets = Storage.getValue("sets");
         if (savedSets instanceof Lang.Array) {
             sets = savedSets;
+        }
+        var savedPlan = Storage.getValue("plan");
+        if (savedPlan instanceof Lang.Array) {
+            plan = savedPlan;
         }
         var savedPending = Storage.getValue("pending");
         if (savedPending instanceof Lang.Array) {
@@ -64,6 +69,7 @@ class GymStore {
     static function save() {
         Storage.setValue("exercises", exercises);
         Storage.setValue("sets", sets);
+        Storage.setValue("plan", plan);
         Storage.setValue("pending", pending);
         Storage.setValue("weight", weight);
         Storage.setValue("reps", reps);
@@ -83,6 +89,26 @@ class GymStore {
         return exercises[exerciseIndex];
     }
 
+    static function applyCurrentPlanSet() {
+        if (plan.size() == 0) {
+            return;
+        }
+        if (exerciseIndex >= plan.size()) {
+            exerciseIndex = 0;
+        }
+        var item = plan[exerciseIndex];
+        if (item instanceof Lang.Dictionary) {
+            var plannedWeight = item.get("weight");
+            var plannedReps = item.get("reps");
+            if (plannedWeight instanceof Lang.Number || plannedWeight instanceof Lang.Float) {
+                weight = plannedWeight;
+            }
+            if (plannedReps instanceof Lang.Number) {
+                reps = plannedReps;
+            }
+        }
+    }
+
     static function nextExercise(delta) {
         if (exercises.size() == 0) {
             return;
@@ -91,6 +117,7 @@ class GymStore {
         if (exerciseIndex < 0) {
             exerciseIndex += exercises.size();
         }
+        applyCurrentPlanSet();
     }
 
     static function addSet() {
@@ -154,6 +181,7 @@ class GymStore {
 
     static function clearWorkout() {
         sets = [];
+        plan = [];
         restEndsAt = 0;
         save();
     }
@@ -196,9 +224,26 @@ class GymStore {
         }
         var plan = message.get("plan");
         if (plan instanceof Lang.Array && plan.size() > 0) {
-            sets = plan;
+            GymStore.plan = plan;
+            var plannedExercises = [];
+            for (var i = 0; i < plan.size(); i += 1) {
+                var item = plan[i];
+                if (item instanceof Lang.Dictionary) {
+                    var name = item.get("exerciseName");
+                    if (name != null) {
+                        plannedExercises.add(name.toString());
+                    }
+                }
+            }
+            if (plannedExercises.size() > 0) {
+                exercises = plannedExercises;
+                exerciseIndex = 0;
+                applyCurrentPlanSet();
+            }
+            status = "PLAN " + plan.size().toString();
+        } else {
+            status = "SYNCED";
         }
-        status = "SYNCED";
         save();
     }
 }

@@ -14,6 +14,7 @@ class WorkoutView extends Ui.View {
     var ticker;
     var restWasActive = false;
     var pauseFlashUntil = 0;
+    var lastSyncRequestAt = 0;
 
     function initialize() {
         View.initialize();
@@ -29,7 +30,7 @@ class WorkoutView extends Ui.View {
         } else {
             GymSession.startSensors();
         }
-        GymComm.requestSync(method(:onSyncSent));
+        requestSyncNow();
         flushPending();
     }
 
@@ -47,11 +48,19 @@ class WorkoutView extends Ui.View {
             GymStore.status = "REST DONE";
         }
         restWasActive = active;
+        if ((System.getTimer() - lastSyncRequestAt) > 20000) {
+            requestSyncNow();
+        }
         Ui.requestUpdate();
     }
 
+    function requestSyncNow() {
+        lastSyncRequestAt = System.getTimer();
+        GymComm.requestSync(method(:onSyncSent));
+    }
+
     function onSyncSent(ok) {
-        GymStore.status = ok ? "PHONE..." : "OFFLINE";
+        GymStore.status = ok ? "SYNC REQ" : "NO PHONE";
         Ui.requestUpdate();
     }
 
@@ -138,33 +147,30 @@ class WorkoutView extends Ui.View {
         } else {
             drawSettings(dc, w, h);
         }
+        drawPageDots(dc, w, h);
     }
 
     function drawDashboard(dc, w, h) {
         dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, 10, Gfx.FONT_XTINY, "GYMAPP STRENGTH", Gfx.TEXT_JUSTIFY_CENTER);
+        dc.drawText(w / 2, 12, Gfx.FONT_XTINY, "GYMAPP", Gfx.TEXT_JUSTIFY_CENTER);
 
         dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, 32, Gfx.FONT_MEDIUM, GymSession.elapsedText(), Gfx.TEXT_JUSTIFY_CENTER);
+        dc.drawText(w / 2, 32, Gfx.FONT_SMALL, GymSession.elapsedText(), Gfx.TEXT_JUSTIFY_CENTER);
 
         var hrText = GymSession.hr == null ? "--" : GymSession.hr.toString();
         var garminKcal = GymSession.garminCalories == null ? "--" : GymSession.garminCalories.toString();
 
         dc.setColor(zoneColor(GymSession.zone), Gfx.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, 54, Gfx.FONT_NUMBER_HOT, hrText, Gfx.TEXT_JUSTIFY_CENTER);
-        drawHeartRateZones(dc, w, 140);
+        dc.drawText(w / 2, 52, Gfx.FONT_NUMBER_MEDIUM, hrText, Gfx.TEXT_JUSTIFY_CENTER);
+        drawHeartRateZones(dc, w, 126);
 
-        drawCompactValue(dc, 82, 184, "GYM", GymSession.gymCalories.format("%.0f"));
-        drawCompactValue(dc, 178, 184, "GAR", garminKcal);
-
-        dc.setColor(stateColor(GymSession.effortState), Gfx.COLOR_TRANSPARENT);
-        var stateText = GymSession.autoLogPrompt ? "LOG SET?" : GymSession.effortState;
-        dc.drawText(w / 2, 212, Gfx.FONT_XTINY, stateText, Gfx.TEXT_JUSTIFY_CENTER);
+        drawCompactValue(dc, 82, 174, "GYM", GymSession.gymCalories.format("%.0f"));
+        drawCompactValue(dc, 178, 174, "GAR", garminKcal);
 
         var rest = GymStore.restSeconds();
-        var footer = GymSession.autoLogPrompt ? "select: save set" : (rest > 0 ? ("REST " + rest.toString() + "s") : "start: pause  tap: edit");
-        dc.setColor(rest > 0 ? Gfx.COLOR_YELLOW : Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, 208, Gfx.FONT_XTINY, footer, Gfx.TEXT_JUSTIFY_CENTER);
+        var status = GymSession.autoLogPrompt ? "LOG SET? START" : (rest > 0 ? ("REST " + rest.toString() + "s") : GymSession.effortState);
+        dc.setColor(GymSession.autoLogPrompt ? Gfx.COLOR_GREEN : (rest > 0 ? Gfx.COLOR_YELLOW : stateColor(GymSession.effortState)), Gfx.COLOR_TRANSPARENT);
+        dc.drawText(w / 2, 204, Gfx.FONT_XTINY, status, Gfx.TEXT_JUSTIFY_CENTER);
 
         if (GymSession.paused) {
             drawPausedOverlay(dc, w, h);
@@ -192,15 +198,15 @@ class WorkoutView extends Ui.View {
     }
 
     function drawHeartRateZones(dc, w, y) {
-        var left = 34;
-        var segmentWidth = 38;
-        var gap = 4;
+        var left = 48;
+        var segmentWidth = 30;
+        var gap = 5;
         for (var i = 1; i <= 5; i += 1) {
             var x = left + ((i - 1) * (segmentWidth + gap));
             dc.setColor(zoneColor(i), Gfx.COLOR_TRANSPARENT);
             dc.fillRoundedRectangle(x, y, segmentWidth, 12, 4);
             dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
-            dc.drawText(x + (segmentWidth / 2), y + 15, Gfx.FONT_XTINY, "Z" + i.toString(), Gfx.TEXT_JUSTIFY_CENTER);
+            dc.drawText(x + (segmentWidth / 2), y + 13, Gfx.FONT_XTINY, "Z" + i.toString(), Gfx.TEXT_JUSTIFY_CENTER);
         }
 
         var markerZone = GymSession.zone;
@@ -338,27 +344,40 @@ class WorkoutView extends Ui.View {
         dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
         drawHeader(dc, w, "SETTINGS");
 
-        drawSettingsRow(dc, 0, 54, "AUTO", GymStore.autoPromptEnabled ? "ON" : "OFF");
-        drawSettingsRow(dc, 1, 84, "SENS", fitText(GymStore.sensitivityLabel(), 7));
-        drawSettingsRow(dc, 2, 114, "STEP", GymStore.weightStep.format("%.1f"));
+        drawSettingsRow(dc, 0, 54, "AUTOSET", GymStore.autoPromptEnabled ? "ON" : "OFF");
+        drawSettingsRow(dc, 1, 84, "DETECT", fitText(GymStore.sensitivityLabel(), 6));
+        drawSettingsRow(dc, 2, 114, "KG STEP", GymStore.weightStep.format("%.1f"));
         drawSettingsRow(dc, 3, 144, "REST", GymStore.restSecondsDefault.toString() + "s");
         drawSettingsRow(dc, 4, 174, "REPS", GymStore.reps.toString());
 
         dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, 208, Gfx.FONT_XTINY, "UP/DOWN START", Gfx.TEXT_JUSTIFY_CENTER);
+        dc.drawText(w / 2, 204, Gfx.FONT_XTINY, settingsHint(), Gfx.TEXT_JUSTIFY_CENTER);
+    }
+
+    function settingsHint() {
+        if (settingsSelected == 0) {
+            return "auto save prompt";
+        } else if (settingsSelected == 1) {
+            return "work/rest detect";
+        } else if (settingsSelected == 2) {
+            return "weight change";
+        } else if (settingsSelected == 3) {
+            return "rest timer";
+        }
+        return "default reps";
     }
 
     function drawSettingsRow(dc, index, y, label, value) {
         var selectedRow = index == settingsSelected;
         if (selectedRow) {
             dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_BLACK);
-            dc.fillRoundedRectangle(70, y - 2, 120, 28, 7);
+            dc.fillRoundedRectangle(62, y - 2, 136, 28, 7);
             dc.setColor(Gfx.COLOR_BLACK, Gfx.COLOR_TRANSPARENT);
         } else {
             dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
         }
-        dc.drawText(78, y + 6, Gfx.FONT_XTINY, label, Gfx.TEXT_JUSTIFY_LEFT);
-        dc.drawText(182, y + 6, Gfx.FONT_XTINY, value, Gfx.TEXT_JUSTIFY_RIGHT);
+        dc.drawText(70, y + 6, Gfx.FONT_XTINY, label, Gfx.TEXT_JUSTIFY_LEFT);
+        dc.drawText(190, y + 6, Gfx.FONT_XTINY, value, Gfx.TEXT_JUSTIFY_RIGHT);
     }
 
     function drawMenuRow(dc, index, y, label) {
@@ -388,6 +407,35 @@ class WorkoutView extends Ui.View {
     function drawHeader(dc, w, label) {
         dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
         dc.drawText(w / 2, 34, Gfx.FONT_XTINY, label, Gfx.TEXT_JUSTIFY_CENTER);
+    }
+
+    function drawPageDots(dc, w, h) {
+        if (page == 2 || page == 3) {
+            return;
+        }
+        var dotPage = 0;
+        if (page == 0) {
+            dotPage = 0;
+        } else if (page == 1) {
+            dotPage = 1;
+        } else if (page == 4) {
+            dotPage = 2;
+        } else if (page == 5) {
+            dotPage = 3;
+        } else {
+            return;
+        }
+        var x = 24;
+        var y0 = 96;
+        for (var i = 0; i < 4; i += 1) {
+            var y = y0 + (i * 18);
+            dc.setColor(i == dotPage ? Gfx.COLOR_WHITE : Gfx.COLOR_DK_GRAY, Gfx.COLOR_TRANSPARENT);
+            if (i == dotPage) {
+                dc.fillCircle(x, y, 4);
+            } else {
+                dc.drawCircle(x, y, 3);
+            }
+        }
     }
 
     function fitText(text, maxLen) {
