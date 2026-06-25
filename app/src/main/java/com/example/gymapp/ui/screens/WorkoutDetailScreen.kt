@@ -164,6 +164,9 @@ fun WorkoutDetailScreen(
                 modifier = Modifier.padding(16.dp)
             )
         } else {
+            val garminMetrics = remember(details.session.note) {
+                parseGarminWorkoutMetrics(details.session.note.orEmpty())
+            }
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(
@@ -203,6 +206,12 @@ fun WorkoutDetailScreen(
                                 style = MaterialTheme.typography.bodyLarge
                             )
                         }
+                    }
+                }
+
+                if (garminMetrics != null) {
+                    item {
+                        GarminWorkoutMetricsCard(metrics = garminMetrics)
                     }
                 }
 
@@ -552,6 +561,97 @@ fun WorkoutDetailScreen(
 }
 
 @Composable
+private fun GarminWorkoutMetricsCard(metrics: GarminWorkoutMetrics) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(
+                text = "Garmin strength metrics",
+                style = MaterialTheme.typography.titleMedium
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                GarminMetricCell(
+                    label = "Gym kcal",
+                    value = metrics.gymCalories?.toString() ?: "—",
+                    helper = "our formula",
+                    modifier = Modifier.weight(1f)
+                )
+                GarminMetricCell(
+                    label = "Garmin kcal",
+                    value = metrics.garminCalories?.toString() ?: "—",
+                    helper = "system",
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                GarminMetricCell(
+                    label = "Avg HR",
+                    value = metrics.avgHeartRate?.let { "$it bpm" } ?: "—",
+                    helper = metrics.duration?.let { "duration $it" } ?: "heart rate",
+                    modifier = Modifier.weight(1f)
+                )
+                GarminMetricCell(
+                    label = "Max HR",
+                    value = metrics.maxHeartRate?.let { "$it bpm" } ?: "—",
+                    helper = metrics.heartRateZone ?: "peak",
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            Text(
+                text = "Gym kcal is saved from the Garmin app strength formula. Garmin kcal is the system value Garmin Connect uses for daily calories.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun GarminMetricCell(
+    label: String,
+    value: String,
+    helper: String,
+    modifier: Modifier = Modifier
+) {
+    Card(modifier = modifier) {
+        Column(
+            modifier = Modifier.padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = value,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = helper,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+@Composable
 private fun WorkoutExerciseQuickAddCard(
     availableExercises: List<ExerciseEntity>,
     onAddExerciseToWorkout: (Long) -> Unit
@@ -735,4 +835,55 @@ private fun formatCompactWeight(weight: Double): String {
     } else {
         String.format(Locale.getDefault(), "%.1f", weight)
     }
+}
+
+private data class GarminWorkoutMetrics(
+    val duration: String?,
+    val gymCalories: Int?,
+    val garminCalories: Int?,
+    val avgHeartRate: Int?,
+    val maxHeartRate: Int?,
+    val heartRateZone: String?
+)
+
+private fun parseGarminWorkoutMetrics(note: String): GarminWorkoutMetrics? {
+    if (!note.contains("Garmin Fenix 8", ignoreCase = true)) return null
+
+    val duration = Regex("""Duration\s+([0-9]+:[0-9]{2}(?::[0-9]{2})?)""")
+        .find(note)
+        ?.groupValues
+        ?.getOrNull(1)
+    val gymCalories = Regex("""Gym kcal\s+([0-9]+)""")
+        .find(note)
+        ?.groupValues
+        ?.getOrNull(1)
+        ?.toIntOrNull()
+    val garminCalories = Regex("""Garmin kcal\s+([0-9]+)""")
+        .find(note)
+        ?.groupValues
+        ?.getOrNull(1)
+        ?.toIntOrNull()
+    val avgHeartRate = Regex("""Avg HR\s+([0-9]+)""")
+        .find(note)
+        ?.groupValues
+        ?.getOrNull(1)
+        ?.toIntOrNull()
+    val maxHeartRate = Regex("""Max HR\s+([0-9]+)""")
+        .find(note)
+        ?.groupValues
+        ?.getOrNull(1)
+        ?.toIntOrNull()
+    val zone = Regex("""HR zone\s+(Z[0-9]+)""")
+        .find(note)
+        ?.groupValues
+        ?.getOrNull(1)
+
+    return GarminWorkoutMetrics(
+        duration = duration,
+        gymCalories = gymCalories,
+        garminCalories = garminCalories,
+        avgHeartRate = avgHeartRate,
+        maxHeartRate = maxHeartRate,
+        heartRateZone = zone
+    )
 }
