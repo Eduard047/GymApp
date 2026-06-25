@@ -14,6 +14,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
 import org.json.JSONObject
@@ -67,11 +68,7 @@ class GarminSyncManager(
     ): Boolean {
         val payload = syncPayload(exerciseCatalog, sets)
         cachePlan(sets)
-        if (sdkReady) {
-            registerConnectedDevices()
-        } else {
-            initialize()
-        }
+        if (!ensureSdkReady()) return false
         return sendToConnectedDevices(payload)
     }
 
@@ -95,6 +92,19 @@ class GarminSyncManager(
                 }
             }.onFailure { Log.i(TAG, "Cannot register ${device.friendlyName}", it) }
         }
+    }
+
+    private suspend fun ensureSdkReady(): Boolean {
+        if (!sdkReady) {
+            initialize()
+            withTimeoutOrNull(8_000L) {
+                while (!sdkReady) {
+                    delay(150L)
+                }
+            } ?: return false
+        }
+        registerConnectedDevices()
+        return true
     }
 
     private fun registerAppEvents(device: IQDevice) {
@@ -179,6 +189,7 @@ class GarminSyncManager(
 
         return mapOf(
             "type" to "sync",
+            "language" to application.languageManager.currentLanguage().tag,
             "exercises" to compactExercises,
             "plan" to compactPlan.map { set ->
                 mapOf(

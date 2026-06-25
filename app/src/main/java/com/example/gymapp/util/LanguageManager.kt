@@ -42,6 +42,10 @@ class LanguageManager(
         _selectedLanguage.value = language
     }
 
+    fun currentLanguage(): AppLanguage {
+        return _selectedLanguage.value
+    }
+
     private fun resolveCurrentLanguage(): AppLanguage {
         val appLocales = AppCompatDelegate.getApplicationLocales()
         val appliedTag = if (appLocales.isEmpty) null else appLocales[0]?.language

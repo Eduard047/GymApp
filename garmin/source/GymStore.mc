@@ -17,6 +17,7 @@ class GymStore {
     static var restSecondsDefault = 90;
     static var autoPromptEnabled = true;
     static var sensitivityIndex = 1;
+    static var language = "en";
 
     static function load() {
         var savedExercises = Storage.getValue("exercises");
@@ -64,6 +65,10 @@ class GymStore {
                 sensitivityIndex = 2;
             }
         }
+        var savedLanguage = Storage.getValue("language");
+        if (savedLanguage != null) {
+            language = savedLanguage.toString() == "uk" ? "uk" : "en";
+        }
     }
 
     static function save() {
@@ -77,6 +82,22 @@ class GymStore {
         Storage.setValue("restSecondsDefault", restSecondsDefault);
         Storage.setValue("autoPromptEnabled", autoPromptEnabled);
         Storage.setValue("sensitivityIndex", sensitivityIndex);
+        Storage.setValue("language", language);
+    }
+
+    static function isUk() {
+        return language == "uk";
+    }
+
+    static function tr(en, uk) {
+        return isUk() ? uk : en;
+    }
+
+    static function onOff(value) {
+        if (isUk()) {
+            return value ? "ТАК" : "НІ";
+        }
+        return value ? "ON" : "OFF";
     }
 
     static function currentExercise() {
@@ -176,6 +197,14 @@ class GymStore {
     }
 
     static function sensitivityLabel() {
+        if (isUk()) {
+            if (sensitivityIndex == 0) {
+                return "НИЗ";
+            } else if (sensitivityIndex == 2) {
+                return "ВИС";
+            }
+            return "НОРМ";
+        }
         if (sensitivityIndex == 0) {
             return "LOW";
         } else if (sensitivityIndex == 2) {
@@ -222,6 +251,10 @@ class GymStore {
     }
 
     static function applySync(message) {
+        var syncedLanguage = message.get("language");
+        if (syncedLanguage != null) {
+            language = syncedLanguage.toString() == "uk" ? "uk" : "en";
+        }
         var syncedExercises = message.get("exercises");
         if (syncedExercises instanceof Lang.Array && syncedExercises.size() > 0) {
             exercises = syncedExercises;
