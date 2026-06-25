@@ -137,7 +137,7 @@
 
     <string name="message_validation_error">Please fill all selected exercises and sets.</string>
     <string name="message_plan_sync_success">Plan synced to watch.</string>
-    <string name="message_plan_sync_failed">Unable to sync plan to watch. Check Bluetooth connection.</string>
+    <string name="message_plan_sync_failed">Unable to sync plan to watch. Open GymApp on Garmin and check Connect IQ/Bluetooth connection.</string>
     <string name="message_set_deleted">Set deleted</string>
     <string name="message_invalid_set_input">Enter valid reps and optional weight.</string>
     <string name="message_exercise_error">Unable to save exercise. Name may already exist.</string>

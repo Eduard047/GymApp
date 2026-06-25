@@ -21,25 +21,46 @@ class PhoneSyncClient(
             throw IllegalArgumentException("Workout plan is empty")
         }
 
-        val garminSent = appContext.gymApplication.garminSyncManager.cacheAndPushPlan(
-            sets = sets,
-            exerciseCatalog = exerciseCatalog
-        )
+        val garminPlanQueued = runCatching {
+            appContext.gymApplication.garminSyncManager.cacheAndPushPlan(
+                sets = sets,
+                exerciseCatalog = exerciseCatalog
+            )
+            true
+        }.getOrDefault(false)
+
         val payload = PhoneSyncJson.encodeWorkoutPlanPayload(
             sets = sets,
             exerciseCatalog = exerciseCatalog,
             trainingProfile = trainingProfile
         )
             .toByteArray(Charsets.UTF_8)
-        val nodes = Wearable.getNodeClient(appContext).connectedNodes.await()
-        if (nodes.isEmpty() && !garminSent) {
+
+        val nodes = runCatching {
+            Wearable.getNodeClient(appContext).connectedNodes.await()
+        }.getOrElse { error ->
+            if (garminPlanQueued) {
+                emptyList()
+            } else {
+                throw error
+            }
+        }
+
+        if (nodes.isEmpty()) {
+            if (garminPlanQueued) return
             throw IllegalStateException("Watch not connected")
         }
 
-        nodes.forEach { node ->
-            Wearable.getMessageClient(appContext)
-                .sendMessage(node.id, SyncPaths.PUSH_WORKOUT_PLAN, payload)
-                .await()
+        val wearSendFailed = nodes.any { node ->
+            runCatching {
+                Wearable.getMessageClient(appContext)
+                    .sendMessage(node.id, SyncPaths.PUSH_WORKOUT_PLAN, payload)
+                    .await()
+            }.isFailure
+        }
+
+        if (wearSendFailed && !garminPlanQueued) {
+            throw IllegalStateException("Watch not connected")
         }
     }
 }

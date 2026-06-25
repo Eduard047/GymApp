@@ -137,7 +137,7 @@
 
     <string name="message_validation_error">Заповніть усі обрані вправи та підходи.</string>
     <string name="message_plan_sync_success">План синхронізовано на годинник.</string>
-    <string name="message_plan_sync_failed">Не вдалося синхронізувати план. Перевірте Bluetooth-зʼєднання.</string>
+    <string name="message_plan_sync_failed">Не вдалося синхронізувати план. Відкрийте GymApp на Garmin і перевірте Connect IQ/Bluetooth.</string>
     <string name="message_set_deleted">Підхід видалено</string>
     <string name="message_invalid_set_input">Введіть коректні повтори та необовʼязкову вагу.</string>
     <string name="message_exercise_error">Не вдалося зберегти вправу. Назва може вже існувати.</string>
