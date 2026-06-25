@@ -18,6 +18,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
 private const val TAG = "GarminSync"
@@ -35,6 +36,7 @@ class GarminSyncManager(
     private val connectIQ = ConnectIQ.getInstance(application, ConnectIQ.IQConnectType.WIRELESS)
     private val garminApp = IQApp(GARMIN_APP_ID)
     private val registeredDevices = ConcurrentHashMap.newKeySet<Long>()
+    private val pendingSyncAcks = ConcurrentHashMap<String, CompletableDeferred<Boolean>>()
     @Volatile private var sdkReady = false
 
     private val listener = object : ConnectIQ.ConnectIQListener {
@@ -66,10 +68,11 @@ class GarminSyncManager(
         sets: List<NamedWorkoutSetDraft>,
         exerciseCatalog: List<String>
     ): Boolean {
-        val payload = syncPayload(exerciseCatalog, sets)
+        val syncId = UUID.randomUUID().toString()
+        val payload = syncPayload(exerciseCatalog, sets, syncId)
         cachePlan(sets)
         if (!ensureSdkReady()) return false
-        return sendToConnectedDevices(payload)
+        return sendToConnectedDevices(payload, syncId)
     }
 
     private fun registerConnectedDevices() {
@@ -127,7 +130,18 @@ class GarminSyncManager(
         when (command["type"]?.toString()) {
             "request_sync" -> scope.launch { pushSync(device) }
             "create_workout" -> scope.launch { createWorkout(device, command) }
+            "sync_ack" -> handleSyncAck(command)
         }
+    }
+
+    private fun handleSyncAck(command: Map<Any?, Any?>) {
+        val syncId = command["syncId"]?.toString().orEmpty()
+        if (syncId.isEmpty()) return
+        Log.i(
+            TAG,
+            "Garmin sync ack syncId=$syncId plan=${command["planCount"]} exercises=${command["exerciseCount"]} lang=${command["language"]}"
+        )
+        pendingSyncAcks.remove(syncId)?.complete(true)
     }
 
     private suspend fun pushSync(device: IQDevice) {
@@ -172,7 +186,8 @@ class GarminSyncManager(
 
     private fun syncPayload(
         exercises: List<String>,
-        plan: List<NamedWorkoutSetDraft>
+        plan: List<NamedWorkoutSetDraft>,
+        syncId: String? = null
     ): Map<String, Any> {
         val compactPlan = plan.take(MAX_WATCH_PLAN_SETS)
         val planExerciseNames = compactPlan.map { it.exerciseName }
@@ -187,7 +202,7 @@ class GarminSyncManager(
             .distinct()
             .take(MAX_WATCH_EXERCISES)
 
-        return mapOf(
+        val payload = mutableMapOf<String, Any>(
             "type" to "sync",
             "language" to application.languageManager.currentLanguage().tag,
             "exercises" to compactExercises,
@@ -202,9 +217,13 @@ class GarminSyncManager(
                 )
             }
         )
+        if (!syncId.isNullOrBlank()) {
+            payload["syncId"] = syncId
+        }
+        return payload
     }
 
-    private suspend fun sendToConnectedDevices(payload: Map<String, Any>): Boolean {
+    private suspend fun sendToConnectedDevices(payload: Map<String, Any>, syncId: String? = null): Boolean {
         if (!sdkReady) return false
         val devices = try {
             val connected = connectIQ.connectedDevices.orEmpty()
@@ -228,11 +247,34 @@ class GarminSyncManager(
         var delivered = false
         devices.forEach { device ->
             registerAppEvents(device)
-            if (isGymAppInstalled(device) && sendAndWait(device, payload)) {
+            if (isGymAppInstalled(device) && sendAndConfirmSync(device, payload, syncId)) {
                 delivered = true
             }
         }
         return delivered
+    }
+
+    private suspend fun sendAndConfirmSync(
+        device: IQDevice,
+        payload: Map<String, Any>,
+        syncId: String?
+    ): Boolean {
+        if (syncId.isNullOrBlank()) {
+            return sendAndWait(device, payload)
+        }
+        val ack = CompletableDeferred<Boolean>()
+        pendingSyncAcks[syncId] = ack
+        val sent = sendAndWait(device, payload)
+        if (!sent) {
+            pendingSyncAcks.remove(syncId)
+            return false
+        }
+        val confirmed = withTimeoutOrNull(12_000L) { ack.await() } ?: false
+        pendingSyncAcks.remove(syncId)
+        if (!confirmed) {
+            Log.i(TAG, "Garmin sync ack timeout for ${device.friendlyName}, syncId=$syncId")
+        }
+        return confirmed
     }
 
     private suspend fun isGymAppInstalled(device: IQDevice): Boolean {

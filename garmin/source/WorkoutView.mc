@@ -21,7 +21,14 @@ class WorkoutView extends Ui.View {
     function initialize() {
         View.initialize();
         GymStore.load();
-        Comm.setMailboxListener(method(:onMail));
+        if (Comm has :registerForPhoneAppMessages) {
+            Comm.registerForPhoneAppMessages(method(:onPhoneMessage));
+        } else {
+            Comm.setMailboxListener(method(:onMail));
+        }
+        if (Comm has :registerForPhoneAppMessageErrors) {
+            Comm.registerForPhoneAppMessageErrors(method(:onPhoneMessageError));
+        }
         ticker = new Timer.Timer();
     }
 
@@ -112,22 +119,62 @@ class WorkoutView extends Ui.View {
     function onMail(iterator as Comm.MailboxIterator) as Void {
         var message = iterator.next();
         while (message != null) {
-            if (message instanceof Lang.Dictionary) {
-                var type = message.get("type");
-                if (type == "sync") {
-                    GymStore.applySync(message);
-                } else if (type == "ack") {
-                    if (GymStore.pending.size() > 0) {
-                        GymStore.pending.remove(0);
-                        GymStore.save();
-                    }
-                    GymStore.status = "SAVED";
-                }
-            }
+            handlePhonePayload(message);
             message = iterator.next();
         }
         Comm.emptyMailbox();
         Ui.requestUpdate();
+    }
+
+    function onPhoneMessage(message as Comm.PhoneAppMessage) as Void {
+        handlePhonePayload(message.data);
+        Ui.requestUpdate();
+    }
+
+    function onPhoneMessageError(error as Comm.PhoneAppMessageError) as Void {
+        GymStore.status = "MSG ERR";
+        Ui.requestUpdate();
+    }
+
+    function handlePhonePayload(message) {
+        if (!(message instanceof Lang.Dictionary)) {
+            GymStore.status = "BAD MSG";
+            return;
+        }
+        var type = message.get("type");
+        if (type == "sync") {
+            GymStore.applySync(message);
+            sendSyncAck(message);
+        } else if (type == "ack") {
+            if (GymStore.pending.size() > 0) {
+                GymStore.pending.remove(0);
+                GymStore.save();
+            }
+            GymStore.status = "SAVED";
+        } else {
+            GymStore.status = "MSG " + type.toString();
+        }
+    }
+
+    function sendSyncAck(message) {
+        var syncId = message.get("syncId");
+        if (syncId == null) {
+            return;
+        }
+        GymComm.send({
+            "type" => "sync_ack",
+            "syncId" => syncId.toString(),
+            "language" => GymStore.language,
+            "planCount" => GymStore.plan.size(),
+            "exerciseCount" => GymStore.exercises.size()
+        }, method(:onSyncAckSent));
+    }
+
+    function onSyncAckSent(ok) {
+        if (!ok) {
+            GymStore.status = "ACK FAIL";
+            Ui.requestUpdate();
+        }
     }
 
     function onUpdate(dc) {
@@ -351,7 +398,7 @@ class WorkoutView extends Ui.View {
         drawDebugLine(dc, 114, "TR", GymSession.hrTrend.format("%.1f"));
         drawDebugLine(dc, 136, "AUTO", GymStore.onOff(GymStore.autoPromptEnabled));
         drawDebugLine(dc, 158, "SENS", fitText(GymStore.sensitivityLabel(), 7));
-        drawDebugLine(dc, 180, "WHY", fitText(GymSession.lastAutoReason, 7));
+        drawDebugLine(dc, 180, "SYNC", fitText(GymStore.status, 7));
     }
 
     function drawDebugLine(dc, y, label, value) {
