@@ -100,6 +100,13 @@ class GymStore {
             "type" => "create_workout",
             "requestId" => requestId,
             "startedAtSeconds" => Time.now().value(),
+            "durationSeconds" => GymSession.elapsedSeconds,
+            "gymCalories" => GymSession.gymCalories,
+            "garminCalories" => GymSession.garminCalories,
+            "avgHeartRate" => GymSession.avgHr,
+            "maxHeartRate" => GymSession.maxHr,
+            "lastHeartRate" => GymSession.hr,
+            "heartRateZone" => GymSession.zone,
             "sets" => sets
         };
     }

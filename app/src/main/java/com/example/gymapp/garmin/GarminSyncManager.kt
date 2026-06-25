@@ -140,9 +140,10 @@ class GarminSyncManager(
         if (sets.isEmpty()) return
 
         val startedAtSeconds = (command["startedAtSeconds"] as? Number)?.toLong()
+        val note = buildGarminWorkoutNote(command)
         activeRepository().createWorkoutSessionFromNamedSets(
             date = startedAtSeconds?.times(1000L) ?: System.currentTimeMillis(),
-            note = "Garmin Fenix 8",
+            note = note,
             sets = sets
         )
         rememberProcessed(requestId)
@@ -194,6 +195,31 @@ class GarminSyncManager(
     private fun activeRepository() = application.repositoryFor(
         application.cloudAuthManager.authState.value.session
     )
+
+    private fun buildGarminWorkoutNote(command: Map<Any?, Any?>): String {
+        val details = mutableListOf("Garmin Fenix 8")
+        (command["durationSeconds"] as? Number)?.toLong()?.takeIf { it > 0L }?.let { seconds ->
+            val minutes = seconds / 60
+            val remainder = seconds % 60
+            details += "Duration ${minutes}:${remainder.toString().padStart(2, '0')}"
+        }
+        (command["gymCalories"] as? Number)?.toDouble()?.takeIf { it > 0.0 }?.let { calories ->
+            details += "Gym kcal ${calories.toInt()}"
+        }
+        (command["garminCalories"] as? Number)?.toInt()?.takeIf { it > 0 }?.let { calories ->
+            details += "Garmin kcal $calories"
+        }
+        (command["avgHeartRate"] as? Number)?.toInt()?.takeIf { it > 0 }?.let { bpm ->
+            details += "Avg HR $bpm"
+        }
+        (command["maxHeartRate"] as? Number)?.toInt()?.takeIf { it > 0 }?.let { bpm ->
+            details += "Max HR $bpm"
+        }
+        (command["heartRateZone"] as? Number)?.toInt()?.takeIf { it > 0 }?.let { zone ->
+            details += "HR zone Z$zone"
+        }
+        return details.joinToString(separator = " · ")
+    }
 
     private fun cachePlan(sets: List<NamedWorkoutSetDraft>) {
         val json = JSONArray()
