@@ -19,15 +19,16 @@ class PhoneSyncClient(
             throw IllegalArgumentException("Workout plan is empty")
         }
 
+        val garminSyncManager = appContext.gymApplication.garminSyncManager
         val garminDelivered = runCatching {
-            appContext.gymApplication.garminSyncManager.cacheAndPushPlan(
+            garminSyncManager.cacheAndPushPlan(
                 sets = sets,
                 exerciseCatalog = exerciseCatalog
             )
         }.getOrDefault(false)
 
         if (!garminDelivered) {
-            throw IllegalStateException("Garmin watch not connected")
+            throw IllegalStateException(garminSyncManager.lastPlanSyncStatus)
         }
     }
 }

@@ -64,6 +64,7 @@ data class AddWorkoutUiState(
     val isTemplateLoading: Boolean = false,
     val isSyncingPlanToWatch: Boolean = false,
     val didSyncPlanToWatch: Boolean? = null,
+    val watchPlanSyncError: String? = null,
     val isSaving: Boolean = false,
     val hasValidationError: Boolean = false,
     val createdSessionId: Long? = null
@@ -78,6 +79,7 @@ class AddWorkoutViewModel(
     private data class TransientState(
         val isSyncingPlanToWatch: Boolean,
         val didSyncPlanToWatch: Boolean?,
+        val watchPlanSyncError: String?,
         val isSaving: Boolean,
         val hasValidationError: Boolean,
         val createdSessionId: Long?
@@ -91,6 +93,7 @@ class AddWorkoutViewModel(
         val isTemplateLoading: Boolean,
         val isSyncingPlanToWatch: Boolean,
         val didSyncPlanToWatch: Boolean?,
+        val watchPlanSyncError: String?,
         val isSaving: Boolean,
         val hasValidationError: Boolean,
         val createdSessionId: Long?
@@ -111,6 +114,7 @@ class AddWorkoutViewModel(
     private val isTemplateLoading = MutableStateFlow(false)
     private val isSyncingPlanToWatch = MutableStateFlow(false)
     private val didSyncPlanToWatch = MutableStateFlow<Boolean?>(null)
+    private val watchPlanSyncError = MutableStateFlow<String?>(null)
     private val isSaving = MutableStateFlow(false)
     private val hasValidationError = MutableStateFlow(false)
     private val createdSessionId = MutableStateFlow<Long?>(null)
@@ -142,6 +146,7 @@ class AddWorkoutViewModel(
 
     private fun resetWatchPlanSyncResult() {
         didSyncPlanToWatch.value = null
+        watchPlanSyncError.value = null
     }
 
     private val lastWeights = selectedExerciseIds.flatMapLatest { ids ->
@@ -168,16 +173,24 @@ class AddWorkoutViewModel(
         )
     }
 
+    private val planSyncResult = combine(
+        didSyncPlanToWatch,
+        watchPlanSyncError
+    ) { planSyncState, planSyncError ->
+        planSyncState to planSyncError
+    }
+
     private val transientState = combine(
         isSyncingPlanToWatch,
-        didSyncPlanToWatch,
+        planSyncResult,
         isSaving,
         hasValidationError,
         createdSessionId
-    ) { syncingPlan, planSyncState, saving, validationError, createdId ->
+    ) { syncingPlan, planSyncResult, saving, validationError, createdId ->
         TransientState(
             isSyncingPlanToWatch = syncingPlan,
-            didSyncPlanToWatch = planSyncState,
+            didSyncPlanToWatch = planSyncResult.first,
+            watchPlanSyncError = planSyncResult.second,
             isSaving = saving,
             hasValidationError = validationError,
             createdSessionId = createdId
@@ -197,6 +210,7 @@ class AddWorkoutViewModel(
             isTemplateLoading = editor.isTemplateLoading,
             isSyncingPlanToWatch = transient.isSyncingPlanToWatch,
             didSyncPlanToWatch = transient.didSyncPlanToWatch,
+            watchPlanSyncError = transient.watchPlanSyncError,
             isSaving = transient.isSaving,
             hasValidationError = transient.hasValidationError,
             createdSessionId = transient.createdSessionId
@@ -223,6 +237,7 @@ class AddWorkoutViewModel(
             isTemplateLoading = local.isTemplateLoading,
             isSyncingPlanToWatch = local.isSyncingPlanToWatch,
             didSyncPlanToWatch = local.didSyncPlanToWatch,
+            watchPlanSyncError = local.watchPlanSyncError,
             isSaving = local.isSaving,
             hasValidationError = local.hasValidationError,
             createdSessionId = local.createdSessionId
@@ -448,12 +463,14 @@ class AddWorkoutViewModel(
             if (namedSets.isEmpty()) {
                 hasValidationError.value = true
                 didSyncPlanToWatch.value = false
+                watchPlanSyncError.value = "Workout plan is empty"
                 return@launch
             }
 
             hasValidationError.value = false
             isSyncingPlanToWatch.value = true
             didSyncPlanToWatch.value = null
+            watchPlanSyncError.value = null
 
             runCatching {
                 val exerciseCatalog = uiState.value.exercises.map { it.name }
@@ -464,8 +481,10 @@ class AddWorkoutViewModel(
                 )
             }.onSuccess {
                 didSyncPlanToWatch.value = true
-            }.onFailure {
+                watchPlanSyncError.value = null
+            }.onFailure { error ->
                 didSyncPlanToWatch.value = false
+                watchPlanSyncError.value = error.message
             }
 
             isSyncingPlanToWatch.value = false

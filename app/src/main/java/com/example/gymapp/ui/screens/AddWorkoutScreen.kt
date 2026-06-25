@@ -336,7 +336,8 @@ fun AddWorkoutScreen(
                             color = MaterialTheme.colorScheme.primary
                         )
                         false -> Text(
-                            text = stringResource(R.string.message_plan_sync_failed),
+                            text = uiState.watchPlanSyncError
+                                ?: stringResource(R.string.message_plan_sync_failed),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error
                         )
