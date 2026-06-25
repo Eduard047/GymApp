@@ -191,6 +191,9 @@ class GarminSyncManager(
             "type" to "sync",
             "language" to application.languageManager.currentLanguage().tag,
             "exercises" to compactExercises,
+            "planNames" to compactPlan.map { it.exerciseName },
+            "planWeights" to compactPlan.map { it.weight },
+            "planReps" to compactPlan.map { it.reps },
             "plan" to compactPlan.map { set ->
                 mapOf(
                     "exerciseName" to set.exerciseName,

@@ -255,33 +255,46 @@ class GymStore {
         if (syncedLanguage != null) {
             language = syncedLanguage.toString() == "uk" ? "uk" : "en";
         }
-        var syncedExercises = message.get("exercises");
-        if (syncedExercises instanceof Lang.Array && syncedExercises.size() > 0) {
-            exercises = syncedExercises;
-            exerciseIndex = 0;
-        }
-        var plan = message.get("plan");
-        if (plan instanceof Lang.Array && plan.size() > 0) {
-            GymStore.plan = plan;
+        var flatNames = message.get("planNames");
+        var flatWeights = message.get("planWeights");
+        var flatReps = message.get("planReps");
+        if (flatNames instanceof Lang.Array && flatNames.size() > 0) {
+            var flatPlan = [];
             var plannedExercises = [];
-            for (var i = 0; i < plan.size(); i += 1) {
-                var item = plan[i];
-                if (item instanceof Lang.Dictionary) {
-                    var name = item.get("exerciseName");
-                    if (name != null && !containsName(plannedExercises, name.toString())) {
-                        plannedExercises.add(name.toString());
+            for (var f = 0; f < flatNames.size(); f += 1) {
+                var flatName = flatNames[f].toString();
+                if (flatName.length() > 0) {
+                    var flatWeight = 0.0;
+                    var flatRep = reps;
+                    if (flatWeights instanceof Lang.Array && f < flatWeights.size()) {
+                        flatWeight = flatWeights[f];
+                    }
+                    if (flatReps instanceof Lang.Array && f < flatReps.size()) {
+                        flatRep = flatReps[f];
+                    }
+                    flatPlan.add({ "exerciseName" => flatName, "weight" => flatWeight, "reps" => flatRep });
+                    if (!containsName(plannedExercises, flatName)) {
+                        plannedExercises.add(flatName);
                     }
                 }
             }
+            GymStore.plan = flatPlan;
             if (plannedExercises.size() > 0) {
                 exercises = plannedExercises;
                 exerciseIndex = 0;
                 applyCurrentPlanSet();
             }
-            status = "PLAN " + plan.size().toString();
+            status = "PLAN " + flatPlan.size().toString();
         } else {
-            GymStore.plan = [];
-            status = "EMPTY PLAN";
+            var syncedExercises = message.get("exercises");
+            if (syncedExercises instanceof Lang.Array && syncedExercises.size() > 0) {
+                exercises = syncedExercises;
+                exerciseIndex = 0;
+                status = "EX " + syncedExercises.size().toString();
+            } else {
+                GymStore.plan = [];
+                status = "EMPTY PLAN";
+            }
         }
         save();
     }
