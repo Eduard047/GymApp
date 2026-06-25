@@ -55,6 +55,7 @@
     <string name="action_timer_180">Старт 180с</string>
     <string name="action_timer_stop">Стоп</string>
     <string name="action_stop_timer">Зупинити таймер</string>
+    <string name="auth_switch_account">Перемкнути</string>
 
     <string name="label_note">Нотатка</string>
     <string name="hint_note">Нотатка до сесії</string>

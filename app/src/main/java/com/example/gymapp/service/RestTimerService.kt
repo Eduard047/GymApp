@@ -1,5 +1,6 @@
 package com.example.gymapp.service
 
+import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -9,7 +10,9 @@ import android.content.Context
 import android.content.Intent
 import android.media.AudioAttributes
 import android.media.RingtoneManager
+import android.os.Build
 import android.os.IBinder
+import android.content.pm.PackageManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
@@ -185,6 +188,8 @@ class RestTimerService : Service() {
     }
 
     private fun createNotificationChannels() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+
         val runningChannel = NotificationChannel(
             CHANNEL_RUNNING_ID,
             getString(R.string.timer_channel_running_name),
@@ -220,6 +225,14 @@ class RestTimerService : Service() {
     }
 
     private fun notifySafely(id: Int, notification: Notification) {
+        if (
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
+                PackageManager.PERMISSION_GRANTED
+        ) {
+            return
+        }
+
         runCatching {
             NotificationManagerCompat.from(this).notify(id, notification)
         }

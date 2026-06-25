@@ -48,7 +48,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -91,7 +91,7 @@ private data class NumericEditorState(
 
 @Composable
 private fun rememberWearLayoutSpec(): WearLayoutSpec {
-    val configuration = LocalContext.current.resources.configuration
+    val configuration = LocalConfiguration.current
     val isRound = (configuration.screenLayout and Configuration.SCREENLAYOUT_ROUND_MASK) ==
         Configuration.SCREENLAYOUT_ROUND_YES
 
