@@ -10,7 +10,10 @@ using Toybox.UserProfile as UserProfile;
 class GymSession {
     static var session = null;
     static var recording = false;
+    static var paused = false;
     static var startedAt = 0;
+    static var pausedAt = 0;
+    static var pausedAccumSeconds = 0;
     static var elapsedSeconds = 0;
     static var hr = null;
     static var avgHr = 0;
@@ -35,6 +38,8 @@ class GymSession {
         loadProfile();
         startSensors();
         startedAt = Time.now().value();
+        pausedAt = 0;
+        pausedAccumSeconds = 0;
         elapsedSeconds = 0;
         gymCalories = 0.0;
         setBoostCalories = 0.0;
@@ -46,6 +51,7 @@ class GymSession {
         lastHr = null;
         lastHrChangeSeconds = 0;
         status = "REC";
+        paused = false;
 
         if (Toybox has :ActivityRecording) {
             try {
@@ -65,6 +71,54 @@ class GymSession {
         }
     }
 
+    static function pause() {
+        if (paused) {
+            return;
+        }
+        paused = true;
+        pausedAt = Time.now().value();
+        stopSensors();
+        if (session != null) {
+            try {
+                if (session.isRecording()) {
+                    session.stop();
+                }
+            } catch (ex) {
+            }
+        }
+        status = "PAUSED";
+        effortState = "PAUSED";
+    }
+
+    static function resume() {
+        if (!paused) {
+            return;
+        }
+        var now = Time.now().value();
+        if (pausedAt > 0) {
+            pausedAccumSeconds += now - pausedAt;
+        }
+        pausedAt = 0;
+        paused = false;
+        startSensors();
+        if (session != null) {
+            try {
+                session.start();
+            } catch (ex) {
+            }
+        }
+        status = "REC";
+        effortState = "READY";
+    }
+
+    static function togglePause() {
+        if (paused) {
+            resume();
+        } else {
+            pause();
+        }
+    }
+
     static function stopAndSave() {
         stopSensors();
         if (session != null) {
@@ -80,6 +134,7 @@ class GymSession {
         gymKcalField = null;
         gymZoneField = null;
         recording = false;
+        paused = false;
         status = "SAVED";
     }
 
@@ -98,6 +153,7 @@ class GymSession {
         gymKcalField = null;
         gymZoneField = null;
         recording = false;
+        paused = false;
         status = "DISCARD";
     }
 
@@ -133,7 +189,12 @@ class GymSession {
 
     static function tick() {
         if (startedAt > 0) {
-            elapsedSeconds = Time.now().value() - startedAt;
+            var now = Time.now().value();
+            var currentPaused = paused && pausedAt > 0 ? now - pausedAt : 0;
+            elapsedSeconds = now - startedAt - pausedAccumSeconds - currentPaused;
+        }
+        if (paused) {
+            return;
         }
         updateHeartRateFromSensor();
         updateGarminActivityInfo();

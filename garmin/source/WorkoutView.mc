@@ -9,6 +9,7 @@ using Toybox.WatchUi as Ui;
 class WorkoutView extends Ui.View {
     var selected = 0;
     var page = 0;
+    var pauseSelected = 0;
     var ticker;
     var restWasActive = false;
 
@@ -124,8 +125,10 @@ class WorkoutView extends Ui.View {
 
         if (page == 0) {
             drawDashboard(dc, w, h);
-        } else {
+        } else if (page == 1) {
             drawEntry(dc, w, h);
+        } else {
+            drawPauseMenu(dc, w, h);
         }
     }
 
@@ -153,7 +156,7 @@ class WorkoutView extends Ui.View {
         dc.drawText(w / 2, 212, Gfx.FONT_XTINY, GymSession.effortState, Gfx.TEXT_JUSTIFY_CENTER);
 
         var rest = GymStore.restSeconds();
-        var footer = rest > 0 ? ("REST " + rest.toString() + "s") : "tap: edit   back: save";
+        var footer = rest > 0 ? ("REST " + rest.toString() + "s") : "start: pause  tap: edit";
         dc.setColor(rest > 0 ? Gfx.COLOR_YELLOW : Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
         dc.drawText(w / 2, 228, Gfx.FONT_XTINY, footer, Gfx.TEXT_JUSTIFY_CENTER);
     }
@@ -239,7 +242,33 @@ class WorkoutView extends Ui.View {
         drawRow(dc, 3, 174, "ADD SET", GymStore.sets.size().toString());
 
         dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, 226, Gfx.FONT_XTINY, "swipe/tap/select  back: main", Gfx.TEXT_JUSTIFY_CENTER);
+        dc.drawText(w / 2, 226, Gfx.FONT_XTINY, "start: pause  back: main", Gfx.TEXT_JUSTIFY_CENTER);
+    }
+
+    function drawPauseMenu(dc, w, h) {
+        dc.setColor(Gfx.COLOR_YELLOW, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(w / 2, 28, Gfx.FONT_SMALL, "PAUSED", Gfx.TEXT_JUSTIFY_CENTER);
+
+        dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(w / 2, 58, Gfx.FONT_MEDIUM, GymSession.elapsedText(), Gfx.TEXT_JUSTIFY_CENTER);
+
+        drawMenuRow(dc, 0, 104, "RESUME");
+        drawMenuRow(dc, 1, 146, "SAVE");
+        drawMenuRow(dc, 2, 188, "DISCARD");
+
+        dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(w / 2, 226, Gfx.FONT_XTINY, "up/down  start/select", Gfx.TEXT_JUSTIFY_CENTER);
+    }
+
+    function drawMenuRow(dc, index, y, label) {
+        if (index == pauseSelected) {
+            dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_BLACK);
+            dc.fillRoundedRectangle(48, y - 6, 164, 34, 8);
+            dc.setColor(Gfx.COLOR_BLACK, Gfx.COLOR_TRANSPARENT);
+        } else {
+            dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
+        }
+        dc.drawText(130, y, Gfx.FONT_SMALL, label, Gfx.TEXT_JUSTIFY_CENTER);
     }
 
     function drawRow(dc, index, y, label, value) {
@@ -262,7 +291,7 @@ class WorkoutView extends Ui.View {
         if (text.length() <= maxLen) {
             return text;
         }
-        return text.substring(0, maxLen - 1) + "…";
+        return text.substring(0, maxLen - 3) + "...";
     }
 }
 
@@ -280,13 +309,18 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
     }
 
     function onNextPage() {
+        if (view.page == 2) {
+            return true;
+        }
         view.page = 1;
         Ui.requestUpdate();
         return true;
     }
 
     function onPreviousPage() {
-        if (view.page == 1) {
+        if (view.page == 2) {
+            view.page = 0;
+        } else if (view.page == 1) {
             view.page = 0;
         } else {
             view.page = 1;
@@ -296,17 +330,28 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
     }
 
     function onBack() {
+        if (view.page == 2) {
+            view.page = 0;
+            Ui.requestUpdate();
+            return true;
+        }
         if (view.page == 1) {
             view.page = 0;
             Ui.requestUpdate();
             return true;
         }
-        view.saveAndExit();
+        if (!GymSession.paused) {
+            GymSession.pause();
+        }
+        view.page = 2;
+        Ui.requestUpdate();
         return true;
     }
 
     function onTap(evt) {
-        if (view.page == 0) {
+        if (view.page == 2) {
+            handlePauseMenu();
+        } else if (view.page == 0) {
             view.page = 1;
         } else {
             handleSelect();
@@ -317,7 +362,11 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
 
     function onSwipe(evt) {
         var direction = evt.getDirection();
-        if (direction == Ui.SWIPE_LEFT || direction == Ui.SWIPE_RIGHT) {
+        if (view.page == 2 && direction == Ui.SWIPE_UP) {
+            view.pauseSelected = (view.pauseSelected + 1) % 3;
+        } else if (view.page == 2 && direction == Ui.SWIPE_DOWN) {
+            view.pauseSelected = (view.pauseSelected + 2) % 3;
+        } else if (direction == Ui.SWIPE_LEFT || direction == Ui.SWIPE_RIGHT) {
             view.page = view.page == 0 ? 1 : 0;
         } else if (direction == Ui.SWIPE_UP && view.page == 1) {
             view.selected = (view.selected + 1) % 4;
@@ -330,18 +379,34 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
 
     function onKey(evt) {
         var key = evt.getKey();
-        if (key == Ui.KEY_UP && view.page == 1) {
+        if (key == Ui.KEY_UP && view.page == 2) {
+            view.pauseSelected = (view.pauseSelected + 2) % 3;
+        } else if (key == Ui.KEY_DOWN && view.page == 2) {
+            view.pauseSelected = (view.pauseSelected + 1) % 3;
+        } else if (key == Ui.KEY_UP && view.page == 1) {
             view.selected = (view.selected + 3) % 4;
         } else if (key == Ui.KEY_DOWN && view.page == 1) {
             view.selected = (view.selected + 1) % 4;
         } else if (key == Ui.KEY_ENTER) {
-            handleSelect();
+            if (view.page == 2) {
+                handlePauseMenu();
+            } else {
+                handleSelect();
+            }
         } else if (key == Ui.KEY_ESC) {
             onBack();
         } else if (key == Ui.KEY_START) {
-            handleSelect();
+            if (view.page == 2) {
+                handlePauseMenu();
+            } else {
+                GymSession.togglePause();
+                view.page = GymSession.paused ? 2 : 0;
+            }
         } else if (key == Ui.KEY_MENU) {
-            view.saveAndExit();
+            if (!GymSession.paused) {
+                GymSession.pause();
+            }
+            view.page = 2;
         } else {
             return false;
         }
@@ -354,6 +419,19 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
             view.page = 1;
         } else {
             activate(1);
+        }
+    }
+
+    function handlePauseMenu() {
+        if (view.pauseSelected == 0) {
+            GymSession.resume();
+            view.page = 0;
+        } else if (view.pauseSelected == 1) {
+            view.saveAndExit();
+        } else {
+            GymStore.clearWorkout();
+            GymSession.discard();
+            System.exit();
         }
     }
 
@@ -377,3 +455,4 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         GymStore.save();
     }
 }
+
