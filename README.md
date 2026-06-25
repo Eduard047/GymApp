@@ -43,6 +43,14 @@ Important: PDF is for reading and sharing only. JSON is the source of truth for 
 - Large current-set mode.
 - Explicit sync status: idle, waiting phone, sent, failed.
 
+### Garmin Fenix 8 Solar app
+
+- Native Connect IQ app for the Fenix 8 Solar 47 mm 260x260 MIP display.
+- Record exercises, weight, reps, and sets with the five hardware buttons.
+- 90-second rest timer with vibration.
+- Offline workout queue and two-way sync through Garmin Connect and the Android app.
+- Source and build instructions: `garmin/README.md`.
+
 ## Download APK
 
 <p align="center">

@@ -6,7 +6,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -16,6 +18,8 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.EmojiEvents
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.ButtonDefaults
@@ -40,6 +44,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -52,6 +57,8 @@ import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
 import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.entity.SetEntryEntity
+import com.example.gymapp.data.repository.defaultContributionsForExercise
+import com.example.gymapp.ui.components.ExerciseMuscleMap
 import com.example.gymapp.ui.viewmodel.WorkoutDetailEvent
 import com.example.gymapp.ui.viewmodel.WorkoutDetailUiState
 import com.example.gymapp.util.DateTimeUtils
@@ -212,6 +219,23 @@ fun WorkoutDetailScreen(
                 ) { exerciseDetails ->
                     val workoutExerciseId = exerciseDetails.workoutExercise.id
                     val localRestSecondsRemaining = remainingExerciseTimerSeconds(workoutExerciseId)
+                    var isExpanded by rememberSaveable(workoutExerciseId) { mutableStateOf(true) }
+                    val muscleIntensities = remember(exerciseDetails.exercise.name) {
+                        defaultContributionsForExercise(exerciseDetails.exercise.name)
+                            .associate { contribution ->
+                                contribution.muscleId to contribution.weight.toFloat()
+                            }
+                    }
+                    val setCountLabel = stringResource(
+                        R.string.exercise_set_count_compact,
+                        exerciseDetails.sets.size
+                    )
+                    val setSummary = remember(exerciseDetails.sets, setCountLabel) {
+                        val detailsText = exerciseDetails.sets.joinToString(separator = " · ") { set ->
+                            "${formatCompactWeight(set.weight)} kg × ${set.reps}"
+                        }
+                        if (detailsText.isBlank()) setCountLabel else "$setCountLabel · $detailsText"
+                    }
 
                     Card(modifier = Modifier.fillMaxWidth()) {
                         Column(
@@ -253,6 +277,62 @@ fun WorkoutDetailScreen(
                                                 contentDescription = null
                                             )
                                         }
+                                    )
+                                }
+                                IconButton(onClick = { isExpanded = !isExpanded }) {
+                                    Icon(
+                                        imageVector = if (isExpanded) {
+                                            Icons.Default.ExpandLess
+                                        } else {
+                                            Icons.Default.ExpandMore
+                                        },
+                                        contentDescription = stringResource(
+                                            if (isExpanded) {
+                                                R.string.cd_collapse_exercise
+                                            } else {
+                                                R.string.cd_expand_exercise
+                                            }
+                                        )
+                                    )
+                                }
+                            }
+
+                            if (!isExpanded) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Text(
+                                        text = setSummary,
+                                        modifier = Modifier.weight(1f),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    if (muscleIntensities.isNotEmpty()) {
+                                        ExerciseMuscleMap(
+                                            muscleIntensities = muscleIntensities,
+                                            modifier = Modifier.size(width = 96.dp, height = 72.dp)
+                                        )
+                                    }
+                                }
+                            }
+
+                            if (isExpanded) {
+                            if (muscleIntensities.isNotEmpty()) {
+                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Text(
+                                        text = stringResource(R.string.exercise_muscles_title),
+                                        style = MaterialTheme.typography.labelLarge,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    ExerciseMuscleMap(
+                                        muscleIntensities = muscleIntensities,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(132.dp)
                                     )
                                 }
                             }
@@ -379,6 +459,7 @@ fun WorkoutDetailScreen(
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
+                            }
                             }
                         }
                     }
@@ -646,4 +727,12 @@ private fun formatTimerLabel(totalSeconds: Int): String {
         totalSeconds / 60,
         totalSeconds % 60
     )
+}
+
+private fun formatCompactWeight(weight: Double): String {
+    return if (weight % 1.0 == 0.0) {
+        weight.toInt().toString()
+    } else {
+        String.format(Locale.getDefault(), "%.1f", weight)
+    }
 }

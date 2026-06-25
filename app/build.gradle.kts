@@ -105,6 +105,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1")
     implementation("com.google.android.gms:play-services-wearable:19.0.0")
+    implementation("com.garmin.connectiq:ciq-companion-app-sdk:2.4.0@aar")
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)

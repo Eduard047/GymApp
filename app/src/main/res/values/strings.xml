@@ -125,6 +125,10 @@
     <string name="timer_channel_finished_description">Sound and popup when rest timer completes.</string>
 
     <string name="exercise_block_title">Exercise %1$d</string>
+    <string name="exercise_set_count_compact">%1$d sets</string>
+    <string name="exercise_muscles_title">Muscles worked</string>
+    <string name="cd_collapse_exercise">Collapse exercise</string>
+    <string name="cd_expand_exercise">Expand exercise</string>
 
     <string name="empty_workouts">No workouts in this month.</string>
     <string name="empty_exercises">No exercises yet.</string>

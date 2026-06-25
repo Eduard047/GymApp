@@ -1,6 +1,7 @@
 package com.example.gymapp.sync
 
 import android.content.Context
+import com.example.gymapp.gymApplication
 import com.example.gymapp.data.repository.NamedWorkoutSetDraft
 import com.example.gymapp.util.TrainingProfile
 import com.google.android.gms.wearable.Wearable
@@ -20,6 +21,10 @@ class PhoneSyncClient(
             throw IllegalArgumentException("Workout plan is empty")
         }
 
+        val garminSent = appContext.gymApplication.garminSyncManager.cacheAndPushPlan(
+            sets = sets,
+            exerciseCatalog = exerciseCatalog
+        )
         val payload = PhoneSyncJson.encodeWorkoutPlanPayload(
             sets = sets,
             exerciseCatalog = exerciseCatalog,
@@ -27,7 +32,7 @@ class PhoneSyncClient(
         )
             .toByteArray(Charsets.UTF_8)
         val nodes = Wearable.getNodeClient(appContext).connectedNodes.await()
-        if (nodes.isEmpty()) {
+        if (nodes.isEmpty() && !garminSent) {
             throw IllegalStateException("Watch not connected")
         }
 

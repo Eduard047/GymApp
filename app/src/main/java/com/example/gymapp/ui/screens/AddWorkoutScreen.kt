@@ -8,7 +8,9 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -18,6 +20,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -39,6 +43,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -51,7 +56,9 @@ import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.repository.WorkoutRecommendation
 import com.example.gymapp.data.repository.WorkoutRecommendationKind
 import com.example.gymapp.data.repository.WorkoutRecommendationReason
+import com.example.gymapp.data.repository.defaultContributionsForExercise
 import com.example.gymapp.ui.components.AppPanel
+import com.example.gymapp.ui.components.ExerciseMuscleMap
 import com.example.gymapp.ui.components.HeroPanel
 import com.example.gymapp.ui.components.InfoPill
 import com.example.gymapp.ui.viewmodel.AddWorkoutUiState
@@ -605,6 +612,24 @@ private fun ExerciseDraftCard(
     onApplyWorkoutRecommendation: () -> Unit,
     onRemoveExerciseDraft: () -> Unit
 ) {
+    var isExpanded by rememberSaveable(draft.draftId) { mutableStateOf(true) }
+    val selectedExercise = exercises.firstOrNull { it.id == draft.exerciseId }
+    val muscleIntensities = remember(selectedExercise?.name) {
+        selectedExercise
+            ?.let { defaultContributionsForExercise(it.name) }
+            .orEmpty()
+            .associate { contribution -> contribution.muscleId to contribution.weight.toFloat() }
+    }
+    val setCountLabel = stringResource(R.string.exercise_set_count_compact, draft.sets.size)
+    val setSummary = remember(draft.sets, setCountLabel) {
+        val details = draft.sets.joinToString(separator = " · ") { set ->
+            val weight = set.weight.ifBlank { "—" }
+            val reps = set.reps.ifBlank { "—" }
+            "$weight kg × $reps"
+        }
+        if (details.isBlank()) setCountLabel else "$setCountLabel · $details"
+    }
+
     AppPanel(
         modifier = Modifier.fillMaxWidth(),
         highlighted = true
@@ -619,10 +644,22 @@ private fun ExerciseDraftCard(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
-                    text = stringResource(R.string.exercise_block_title, index + 1),
+                    text = if (!isExpanded && selectedExercise != null) {
+                        selectedExercise.name
+                    } else {
+                        stringResource(R.string.exercise_block_title, index + 1)
+                    },
                     style = MaterialTheme.typography.titleSmall,
                     modifier = Modifier.weight(1f)
                 )
+                IconButton(onClick = { isExpanded = !isExpanded }) {
+                    Icon(
+                        imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                        contentDescription = stringResource(
+                            if (isExpanded) R.string.cd_collapse_exercise else R.string.cd_expand_exercise
+                        )
+                    )
+                }
                 IconButton(onClick = onRemoveExerciseDraft) {
                     Icon(
                         imageVector = Icons.Default.Delete,
@@ -631,12 +668,52 @@ private fun ExerciseDraftCard(
                 }
             }
 
+            if (!isExpanded) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = setSummary,
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (muscleIntensities.isNotEmpty()) {
+                        ExerciseMuscleMap(
+                            muscleIntensities = muscleIntensities,
+                            modifier = Modifier.size(width = 96.dp, height = 72.dp)
+                        )
+                    }
+                }
+            }
+
+            if (isExpanded) {
             ExerciseSelector(
                 selectedExerciseId = draft.exerciseId,
                 exercises = exercises,
                 onExerciseSelected = onExerciseSelected,
                 modifier = Modifier.fillMaxWidth()
             )
+
+            if (muscleIntensities.isNotEmpty()) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = stringResource(R.string.exercise_muscles_title),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    ExerciseMuscleMap(
+                        muscleIntensities = muscleIntensities,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(132.dp)
+                    )
+                }
+            }
 
             if (lastWeight != null) {
                 Row(
@@ -724,6 +801,7 @@ private fun ExerciseDraftCard(
                         )
                     }
                 }
+            }
             }
         }
     }

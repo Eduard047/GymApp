@@ -124,6 +124,10 @@
     <string name="timer_channel_finished_description">Звук і спливаюче сповіщення після завершення таймера.</string>
 
     <string name="exercise_block_title">Вправа %1$d</string>
+    <string name="exercise_set_count_compact">%1$d підх.</string>
+    <string name="exercise_muscles_title">Задіяні мʼязи</string>
+    <string name="cd_collapse_exercise">Згорнути вправу</string>
+    <string name="cd_expand_exercise">Розгорнути вправу</string>
 
     <string name="empty_workouts">У цьому місяці тренувань немає.</string>
     <string name="empty_exercises">Вправ поки немає.</string>

@@ -253,6 +253,34 @@ private fun MuscleBodyMap(
     onMuscleSelected: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    MuscleBodyMapCanvas(
+        intensityByMuscle = muscles.associate { muscle -> muscle.id to muscle.intensity },
+        selectedMuscleId = selectedMuscleId,
+        onMuscleSelected = onMuscleSelected,
+        modifier = modifier.height(390.dp)
+    )
+}
+
+@Composable
+fun ExerciseMuscleMap(
+    muscleIntensities: Map<String, Float>,
+    modifier: Modifier = Modifier
+) {
+    MuscleBodyMapCanvas(
+        intensityByMuscle = muscleIntensities,
+        selectedMuscleId = null,
+        onMuscleSelected = null,
+        modifier = modifier
+    )
+}
+
+@Composable
+private fun MuscleBodyMapCanvas(
+    intensityByMuscle: Map<String, Float>,
+    selectedMuscleId: String?,
+    onMuscleSelected: ((String) -> Unit)?,
+    modifier: Modifier
+) {
     val inactiveColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.52f)
     val outlineColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f)
     val lowColor = Color(0xFF3B82F6)
@@ -260,7 +288,6 @@ private fun MuscleBodyMap(
     val highColor = Color(0xFFE11D48)
     val peakColor = Color(0xFFF59E0B)
     val selectedOutlineColor = MaterialTheme.colorScheme.primary
-    val intensityByMuscle = muscles.associate { muscle -> muscle.id to muscle.intensity }
     val frontRegions = remember {
         SOURCE_FRONT_MUSCLE_REGIONS.map(::parseSourceRegion)
     }
@@ -268,24 +295,26 @@ private fun MuscleBodyMap(
         SOURCE_BACK_MUSCLE_REGIONS.map(::parseSourceRegion)
     }
 
-    Canvas(
-        modifier = modifier
-            .height(390.dp)
-            .pointerInput(frontRegions, backRegions) {
+    val canvasModifier = if (onMuscleSelected != null) {
+        modifier.pointerInput(frontRegions, backRegions) {
                 detectTapGestures { offset ->
                     findTappedMuscle(
                         offset = offset,
                         canvasWidth = size.width.toFloat(),
                         canvasHeight = size.height.toFloat(),
-                        horizontalGap = 28.dp.toPx(),
+                        horizontalGap = min(28.dp.toPx(), size.width.toFloat() * 0.12f),
                         frontRegions = frontRegions,
                         backRegions = backRegions
                     )?.let(onMuscleSelected)
                 }
             }
-    ) {
-        val horizontalGap = 28.dp.toPx()
-        val availableFigureWidth = ((size.width - horizontalGap) / 2f).coerceAtLeast(96.dp.toPx())
+    } else {
+        modifier
+    }
+
+    Canvas(modifier = canvasModifier) {
+        val horizontalGap = min(28.dp.toPx(), size.width * 0.12f)
+        val availableFigureWidth = ((size.width - horizontalGap) / 2f).coerceAtLeast(24.dp.toPx())
         val availableFigureHeight = size.height - 6.dp.toPx()
         val scale = min(
             availableFigureWidth / SOURCE_BODY_VIEWBOX_WIDTH,

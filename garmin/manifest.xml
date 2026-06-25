@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<iq:manifest xmlns:iq="http://www.garmin.com/xml/connectiq" version="1">
+    <iq:application
+        id="A72A5B9F4E3D4E5A8B72C1D9F6123E40"
+        type="watch-app"
+        name="@Strings.AppName"
+        entry="GymApp"
+        launcherIcon="@Drawables.LauncherIcon"
+        minApiLevel="3.2.0">
+        <iq:products>
+            <iq:product id="fenix8solar47mm" />
+        </iq:products>
+        <iq:permissions>
+            <iq:uses-permission id="Communications" />
+        </iq:permissions>
+        <iq:languages>
+            <iq:language>eng</iq:language>
+            <iq:language>ukr</iq:language>
+        </iq:languages>
+    </iq:application>
+</iq:manifest>
