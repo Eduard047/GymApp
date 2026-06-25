@@ -27,6 +27,9 @@ class GymSession {
     static var status = "READY";
     static var gymKcalField = null;
     static var gymZoneField = null;
+    static var effortState = "WARMUP";
+    static var lastHr = null;
+    static var lastHrChangeSeconds = 0;
 
     static function start() {
         loadProfile();
@@ -39,6 +42,9 @@ class GymSession {
         maxHr = 0;
         hrSamples = 0;
         zone = 0;
+        effortState = "WARMUP";
+        lastHr = null;
+        lastHrChangeSeconds = 0;
         status = "REC";
 
         if (Toybox has :ActivityRecording) {
@@ -192,6 +198,25 @@ class GymSession {
             maxHr = value;
         }
         zone = zoneFor(value);
+        updateEffortState(value);
+    }
+
+    static function updateEffortState(value) {
+        var previous = lastHr;
+        lastHr = value;
+        if (previous == null) {
+            return;
+        }
+
+        var delta = value - previous;
+        if (delta >= 2 || zone >= 3) {
+            effortState = "SET ACTIVE";
+            lastHrChangeSeconds = elapsedSeconds;
+        } else if (delta <= -2 || elapsedSeconds - lastHrChangeSeconds > 45) {
+            effortState = "REST";
+        } else if (zone == 2) {
+            effortState = "READY";
+        }
     }
 
     static function loadProfile() {

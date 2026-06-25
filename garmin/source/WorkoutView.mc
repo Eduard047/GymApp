@@ -133,8 +133,8 @@ class WorkoutView extends Ui.View {
         dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
         dc.drawText(w / 2, 10, Gfx.FONT_XTINY, "GYMAPP STRENGTH", Gfx.TEXT_JUSTIFY_CENTER);
 
-        dc.setColor(Gfx.COLOR_DK_GRAY, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, 34, Gfx.FONT_SMALL, GymSession.elapsedText(), Gfx.TEXT_JUSTIFY_CENTER);
+        dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(w / 2, 32, Gfx.FONT_MEDIUM, GymSession.elapsedText(), Gfx.TEXT_JUSTIFY_CENTER);
 
         var hrText = GymSession.hr == null ? "--" : GymSession.hr.toString();
         var garminKcal = GymSession.garminCalories == null ? "--" : GymSession.garminCalories.toString();
@@ -146,14 +146,16 @@ class WorkoutView extends Ui.View {
 
         drawHeartRateZones(dc, w, 148);
 
-        drawCompactValue(dc, 68, 186, "GYM", GymSession.gymCalories.format("%.0f"));
-        drawCompactValue(dc, 130, 186, "GARMIN", garminKcal);
-        drawCompactValue(dc, 192, 186, "SETS", GymStore.sets.size().toString());
+        drawCompactValue(dc, 72, 184, "GYM", GymSession.gymCalories.format("%.0f"));
+        drawCompactValue(dc, 188, 184, "GARMIN", garminKcal);
+
+        dc.setColor(stateColor(GymSession.effortState), Gfx.COLOR_TRANSPARENT);
+        dc.drawText(w / 2, 212, Gfx.FONT_XTINY, GymSession.effortState, Gfx.TEXT_JUSTIFY_CENTER);
 
         var rest = GymStore.restSeconds();
-        var footer = rest > 0 ? ("REST " + rest.toString() + "s") : "tap: set   back: save";
+        var footer = rest > 0 ? ("REST " + rest.toString() + "s") : "tap: edit   back: save";
         dc.setColor(rest > 0 ? Gfx.COLOR_YELLOW : Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, 226, Gfx.FONT_XTINY, footer, Gfx.TEXT_JUSTIFY_CENTER);
+        dc.drawText(w / 2, 228, Gfx.FONT_XTINY, footer, Gfx.TEXT_JUSTIFY_CENTER);
     }
 
     function drawCompactValue(dc, x, y, label, value) {
@@ -214,6 +216,17 @@ class WorkoutView extends Ui.View {
             return "Zone 5 Max";
         }
         return "No zone";
+    }
+
+    function stateColor(state) {
+        if (state == "SET ACTIVE") {
+            return Gfx.COLOR_GREEN;
+        } else if (state == "REST") {
+            return Gfx.COLOR_BLUE;
+        } else if (state == "READY") {
+            return Gfx.COLOR_YELLOW;
+        }
+        return Gfx.COLOR_LT_GRAY;
     }
 
     function drawEntry(dc, w, h) {
