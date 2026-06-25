@@ -37,6 +37,10 @@ class GymSession {
     static var activeSetSeen = false;
     static var lastPromptSeconds = 0;
     static var debugText = "";
+    static var hrTrend = 0.0;
+    static var activeStartSeconds = 0;
+    static var lastSetEndSeconds = 0;
+    static var lastAutoReason = "init";
 
     static function start() {
         loadProfile();
@@ -57,6 +61,10 @@ class GymSession {
         autoLogPrompt = false;
         activeSetSeen = false;
         lastPromptSeconds = 0;
+        hrTrend = 0.0;
+        activeStartSeconds = 0;
+        lastSetEndSeconds = 0;
+        lastAutoReason = "init";
         debugText = "init";
         status = "REC";
         paused = false;
@@ -274,31 +282,75 @@ class GymSession {
         var previous = lastHr;
         lastHr = value;
         if (previous == null) {
+            lastAutoReason = "first hr";
+            debugText = "hr " + value.toString() + " z" + zone.toString();
             return;
         }
 
         var delta = value - previous;
-        if (delta >= 2 || zone >= 3) {
+        hrTrend = ((hrTrend * 2.0) + delta.toFloat()) / 3.0;
+
+        var riseThreshold = 2;
+        var fallThreshold = -2;
+        var activeZone = 3;
+        var minActiveSeconds = 12;
+        var restDetectSeconds = 35;
+        var promptGapSeconds = 45;
+
+        if (GymStore.sensitivityIndex == 0) {
+            riseThreshold = 3;
+            fallThreshold = -3;
+            activeZone = 3;
+            minActiveSeconds = 18;
+            restDetectSeconds = 45;
+            promptGapSeconds = 60;
+        } else if (GymStore.sensitivityIndex == 2) {
+            riseThreshold = 1;
+            fallThreshold = -1;
+            activeZone = 2;
+            minActiveSeconds = 8;
+            restDetectSeconds = 25;
+            promptGapSeconds = 30;
+        }
+
+        if (delta >= riseThreshold || hrTrend >= riseThreshold || zone >= activeZone) {
             if (effortState != "SET ACTIVE") {
                 activeSetSeen = true;
+                activeStartSeconds = elapsedSeconds;
+                lastAutoReason = "rise";
             }
             effortState = "SET ACTIVE";
             lastHrChangeSeconds = elapsedSeconds;
-        } else if (delta <= -2 || elapsedSeconds - lastHrChangeSeconds > 45) {
-            if (activeSetSeen && !autoLogPrompt && elapsedSeconds - lastPromptSeconds > 30) {
+        } else if (delta <= fallThreshold || hrTrend <= fallThreshold || elapsedSeconds - lastHrChangeSeconds > restDetectSeconds) {
+            var activeDuration = elapsedSeconds - activeStartSeconds;
+            if (
+                GymStore.autoPromptEnabled &&
+                activeSetSeen &&
+                !autoLogPrompt &&
+                activeDuration >= minActiveSeconds &&
+                elapsedSeconds - lastPromptSeconds > promptGapSeconds
+            ) {
                 autoLogPrompt = true;
                 lastPromptSeconds = elapsedSeconds;
+                lastSetEndSeconds = elapsedSeconds;
+                lastAutoReason = "rest after " + activeDuration.toString() + "s";
+            } else {
+                lastAutoReason = "rest no prompt";
             }
             effortState = "REST";
         } else if (zone == 2) {
             effortState = "READY";
+            lastAutoReason = "zone ready";
+        } else {
+            lastAutoReason = "hold";
         }
-        debugText = "d" + delta.toString() + " z" + zone.toString() + " " + effortState;
+        debugText = "d" + delta.toString() + " t" + hrTrend.format("%.1f") + " z" + zone.toString() + " " + lastAutoReason;
     }
 
     static function clearAutoPrompt() {
         autoLogPrompt = false;
         activeSetSeen = false;
+        lastAutoReason = "set logged";
     }
 
     static function loadProfile() {

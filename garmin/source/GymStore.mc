@@ -15,6 +15,7 @@ class GymStore {
     static var weightStep = 2.5;
     static var restSecondsDefault = 90;
     static var autoPromptEnabled = true;
+    static var sensitivityIndex = 1;
 
     static function load() {
         var savedExercises = Storage.getValue("exercises");
@@ -37,6 +38,27 @@ class GymStore {
         if (savedReps instanceof Lang.Number) {
             reps = savedReps;
         }
+        var savedWeightStep = Storage.getValue("weightStep");
+        if (savedWeightStep instanceof Lang.Number || savedWeightStep instanceof Lang.Float) {
+            weightStep = savedWeightStep;
+        }
+        var savedRest = Storage.getValue("restSecondsDefault");
+        if (savedRest instanceof Lang.Number) {
+            restSecondsDefault = savedRest;
+        }
+        var savedAuto = Storage.getValue("autoPromptEnabled");
+        if (savedAuto instanceof Lang.Boolean) {
+            autoPromptEnabled = savedAuto;
+        }
+        var savedSensitivity = Storage.getValue("sensitivityIndex");
+        if (savedSensitivity instanceof Lang.Number) {
+            sensitivityIndex = savedSensitivity;
+            if (sensitivityIndex < 0) {
+                sensitivityIndex = 0;
+            } else if (sensitivityIndex > 2) {
+                sensitivityIndex = 2;
+            }
+        }
     }
 
     static function save() {
@@ -45,6 +67,10 @@ class GymStore {
         Storage.setValue("pending", pending);
         Storage.setValue("weight", weight);
         Storage.setValue("reps", reps);
+        Storage.setValue("weightStep", weightStep);
+        Storage.setValue("restSecondsDefault", restSecondsDefault);
+        Storage.setValue("autoPromptEnabled", autoPromptEnabled);
+        Storage.setValue("sensitivityIndex", sensitivityIndex);
     }
 
     static function currentExercise() {
@@ -78,6 +104,52 @@ class GymStore {
         restEndsAt = System.getTimer() + (restSecondsDefault * 1000);
         status = "SET SAVED";
         save();
+    }
+
+    static function cycleWeightStep() {
+        if (weightStep < 5.0) {
+            weightStep = 5.0;
+        } else if (weightStep < 10.0) {
+            weightStep = 10.0;
+        } else {
+            weightStep = 2.5;
+        }
+        save();
+    }
+
+    static function cycleRestDefault() {
+        if (restSecondsDefault < 90) {
+            restSecondsDefault = 90;
+        } else if (restSecondsDefault < 120) {
+            restSecondsDefault = 120;
+        } else if (restSecondsDefault < 180) {
+            restSecondsDefault = 180;
+        } else {
+            restSecondsDefault = 60;
+        }
+        save();
+    }
+
+    static function toggleAutoPrompt() {
+        autoPromptEnabled = !autoPromptEnabled;
+        if (!autoPromptEnabled) {
+            GymSession.clearAutoPrompt();
+        }
+        save();
+    }
+
+    static function cycleSensitivity() {
+        sensitivityIndex = (sensitivityIndex + 1) % 3;
+        save();
+    }
+
+    static function sensitivityLabel() {
+        if (sensitivityIndex == 0) {
+            return "LOW";
+        } else if (sensitivityIndex == 2) {
+            return "HIGH";
+        }
+        return "NORMAL";
     }
 
     static function clearWorkout() {

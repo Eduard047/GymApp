@@ -9,6 +9,9 @@ Connect IQ watch app targeting the `fenix8solar47mm` 260x260 MIP device.
 - When the watch detects a likely completed set, the dashboard shows `LOG SET?`; tap/select logs the set with the currently selected exercise, weight, and reps.
 - Tap/right/select from the dashboard opens the set entry screen.
 - Set entry screen lets you pick exercise, adjust weight by 2.5 kg, adjust reps, and save a set.
+- Swipe between dashboard, set entry, debug, and settings screens.
+- Debug screen shows HR, zone, effort state, HR trend, auto-log status, sensitivity, and the latest auto-detect reason.
+- Settings screen lets you change auto-log on/off, auto-detect sensitivity, weight step, default rest time, and default reps.
 - `START`: pause/resume the workout.
 - `BACK` from dashboard: open pause menu.
 - Pause menu has `RESUME`, `SAVE`, and `DISCARD`.
@@ -22,6 +25,16 @@ Connect IQ watch app targeting the `fenix8solar47mm` 260x260 MIP device.
 - GymApp calculates its own strength-focused kcal estimate and also shows Garmin's reported kcal for comparison.
 - The phone app receives workout duration, Gym kcal, Garmin kcal, average/max HR, HR zones, set count, and debug state.
 - Exercise name, weight, and reps still require the selected values on the watch; heart rate cannot reliably infer exercise/kg/reps by itself.
+
+## Auto set detection
+
+The watch estimates set/rest transitions from heart-rate movement:
+
+- `LOW`: fewer false positives, waits longer before suggesting a logged set.
+- `NORMAL`: default balance.
+- `HIGH`: reacts sooner and can detect lighter/shorter sets, but may suggest more false positives.
+
+When `LOG SET?` appears, tap/select saves the current exercise, weight, and reps as a set. If the suggestion is wrong, ignore it or turn `AUTO LOG` off in settings.
 
 ## Build prerequisites
 
