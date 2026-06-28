@@ -1,7 +1,5 @@
 using Toybox.Attention as Attention;
-using Toybox.Communications as Comm;
 using Toybox.Graphics as Gfx;
-using Toybox.Lang as Lang;
 using Toybox.System as System;
 using Toybox.Timer as Timer;
 using Toybox.WatchUi as Ui;
@@ -21,13 +19,6 @@ class WorkoutView extends Ui.View {
     function initialize() {
         View.initialize();
         GymStore.load();
-        Comm.setMailboxListener(method(:onMail));
-        if (Comm has :registerForPhoneAppMessages) {
-            Comm.registerForPhoneAppMessages(method(:onPhoneMessage));
-        }
-        if (Comm has :registerForPhoneAppMessageErrors) {
-            Comm.registerForPhoneAppMessageErrors(method(:onPhoneMessageError));
-        }
         ticker = new Timer.Timer();
     }
 
@@ -38,6 +29,7 @@ class WorkoutView extends Ui.View {
         } else {
             GymSession.startSensors();
         }
+        getApp().pollMailbox();
         requestSyncNow();
         flushPending();
     }
@@ -49,6 +41,7 @@ class WorkoutView extends Ui.View {
     }
 
     function tick() {
+        getApp().pollMailbox();
         GymSession.tick();
         var active = GymStore.restSeconds() > 0;
         if (restWasActive && !active) {
@@ -113,67 +106,6 @@ class WorkoutView extends Ui.View {
         finishWorkout();
         GymSession.stopAndSave();
         System.exit();
-    }
-
-    function onMail(iterator as Comm.MailboxIterator) as Void {
-        var message = iterator.next();
-        while (message != null) {
-            handlePhonePayload(message);
-            message = iterator.next();
-        }
-        Comm.emptyMailbox();
-        Ui.requestUpdate();
-    }
-
-    function onPhoneMessage(message as Comm.PhoneAppMessage) as Void {
-        handlePhonePayload(message.data);
-        Ui.requestUpdate();
-    }
-
-    function onPhoneMessageError(error as Comm.PhoneAppMessageError) as Void {
-        GymStore.status = "MSG ERR";
-        Ui.requestUpdate();
-    }
-
-    function handlePhonePayload(message) {
-        if (!(message instanceof Lang.Dictionary)) {
-            GymStore.status = "BAD MSG";
-            return;
-        }
-        var type = message.get("type");
-        if (type == "sync") {
-            GymStore.applySync(message);
-            sendSyncAck(message);
-        } else if (type == "ack") {
-            if (GymStore.pending.size() > 0) {
-                GymStore.pending.remove(0);
-                GymStore.save();
-            }
-            GymStore.status = "SAVED";
-        } else {
-            GymStore.status = "MSG " + type.toString();
-        }
-    }
-
-    function sendSyncAck(message) {
-        var syncId = message.get("syncId");
-        if (syncId == null) {
-            return;
-        }
-        GymComm.send({
-            "type" => "sync_ack",
-            "syncId" => syncId.toString(),
-            "language" => GymStore.language,
-            "planCount" => GymStore.plan.size(),
-            "exerciseCount" => GymStore.exercises.size()
-        }, method(:onSyncAckSent));
-    }
-
-    function onSyncAckSent(ok) {
-        if (!ok) {
-            GymStore.status = "ACK FAIL";
-            Ui.requestUpdate();
-        }
     }
 
     function onUpdate(dc) {
@@ -316,11 +248,11 @@ class WorkoutView extends Ui.View {
     }
 
     function stateColor(state) {
-        if (state == "SET ACTIVE") {
+        if (state.equals("SET ACTIVE")) {
             return Gfx.COLOR_GREEN;
-        } else if (state == "REST") {
+        } else if (state.equals("REST")) {
             return Gfx.COLOR_BLUE;
-        } else if (state == "READY") {
+        } else if (state.equals("READY")) {
             return Gfx.COLOR_YELLOW;
         }
         return Gfx.COLOR_LT_GRAY;
@@ -330,11 +262,11 @@ class WorkoutView extends Ui.View {
         if (!GymStore.isUk()) {
             return state;
         }
-        if (state == "SET ACTIVE") {
+        if (state.equals("SET ACTIVE")) {
             return "ПІДХІД";
-        } else if (state == "REST") {
+        } else if (state.equals("REST")) {
             return "ВІДП";
-        } else if (state == "READY") {
+        } else if (state.equals("READY")) {
             return "ГОТОВ";
         }
         return state;
@@ -391,13 +323,14 @@ class WorkoutView extends Ui.View {
         dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
         drawHeader(dc, w, GymStore.tr("DEBUG", "ДЕБАГ"));
 
-        drawDebugLine(dc, 48, "HR", GymSession.hr == null ? "--" : GymSession.hr.toString());
-        drawDebugLine(dc, 70, "ZN", GymSession.zone.toString());
-        drawDebugLine(dc, 92, "ST", fitText(effortLabel(GymSession.effortState), 7));
-        drawDebugLine(dc, 114, "TR", GymSession.hrTrend.format("%.1f"));
-        drawDebugLine(dc, 136, "AUTO", GymStore.onOff(GymStore.autoPromptEnabled));
-        drawDebugLine(dc, 158, "SENS", fitText(GymStore.sensitivityLabel(), 7));
-        drawDebugLine(dc, 180, "SYNC", fitText(GymStore.status, 7));
+        drawDebugLine(dc, 46, "HR", GymSession.hr == null ? "--" : GymSession.hr.toString());
+        drawDebugLine(dc, 66, "ZN", GymSession.zone.toString());
+        drawDebugLine(dc, 86, "ST", fitText(effortLabel(GymSession.effortState), 7));
+        drawDebugLine(dc, 106, "MET", GymSession.lastMet.format("%.1f"));
+        drawDebugLine(dc, 126, "K/M", GymSession.lastKcalPerMinute.format("%.1f"));
+        drawDebugLine(dc, 146, "AUTO", GymStore.onOff(GymStore.autoPromptEnabled));
+        drawDebugLine(dc, 166, "SENS", fitText(GymStore.sensitivityLabel(), 7));
+        drawDebugLine(dc, 186, "SYNC", fitText(GymStore.status, 7));
     }
 
     function drawDebugLine(dc, y, label, value) {

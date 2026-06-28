@@ -608,11 +608,11 @@ private fun GarminWorkoutHeaderCard(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Garmin strength workout",
+                        text = stringResource(R.string.garmin_workout_title),
                         style = MaterialTheme.typography.titleMedium
                     )
                     Text(
-                        text = "$date · synced from Fenix 8",
+                        text = stringResource(R.string.garmin_workout_synced_from, date),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
@@ -631,20 +631,20 @@ private fun GarminWorkoutHeaderCard(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 GarminMetricCell(
-                    label = "Duration",
+                    label = stringResource(R.string.garmin_metric_duration),
                     value = metrics.duration ?: "—",
-                    helper = "watch session",
+                    helper = stringResource(R.string.garmin_metric_watch_session),
                     modifier = Modifier.weight(1f)
                 )
                 GarminMetricCell(
-                    label = "Logged",
-                    value = "$setCount sets",
-                    helper = "$exerciseCount exercises",
+                    label = stringResource(R.string.garmin_metric_logged),
+                    value = stringResource(R.string.garmin_metric_sets_value, setCount),
+                    helper = stringResource(R.string.garmin_metric_exercises_value, exerciseCount),
                     modifier = Modifier.weight(1f)
                 )
             }
             Text(
-                text = "Synced sets are grouped below. Expand an exercise to edit weight, reps, add a missed set, or delete a wrong one.",
+                text = stringResource(R.string.garmin_synced_sets_hint),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -660,7 +660,7 @@ private fun GarminWorkoutMetricsCard(metrics: GarminWorkoutMetrics) {
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Text(
-                text = "Garmin strength metrics",
+                text = stringResource(R.string.garmin_metrics_title),
                 style = MaterialTheme.typography.titleMedium
             )
             Row(
@@ -668,15 +668,15 @@ private fun GarminWorkoutMetricsCard(metrics: GarminWorkoutMetrics) {
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 GarminMetricCell(
-                    label = "Gym kcal",
+                    label = stringResource(R.string.garmin_metric_gym_kcal),
                     value = metrics.gymCalories?.toString() ?: "—",
-                    helper = "our formula",
+                    helper = stringResource(R.string.garmin_metric_our_formula),
                     modifier = Modifier.weight(1f)
                 )
                 GarminMetricCell(
-                    label = "Garmin kcal",
+                    label = stringResource(R.string.garmin_metric_garmin_kcal),
                     value = metrics.garminCalories?.toString() ?: "—",
-                    helper = "system",
+                    helper = stringResource(R.string.garmin_metric_system),
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -685,20 +685,21 @@ private fun GarminWorkoutMetricsCard(metrics: GarminWorkoutMetrics) {
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 GarminMetricCell(
-                    label = "Avg HR",
-                    value = metrics.avgHeartRate?.let { "$it bpm" } ?: "—",
-                    helper = metrics.duration?.let { "duration $it" } ?: "heart rate",
+                    label = stringResource(R.string.garmin_metric_avg_hr),
+                    value = metrics.avgHeartRate?.let { stringResource(R.string.garmin_metric_bpm_value, it) } ?: "—",
+                    helper = metrics.duration?.let { stringResource(R.string.garmin_metric_duration_value, it) }
+                        ?: stringResource(R.string.garmin_metric_heart_rate),
                     modifier = Modifier.weight(1f)
                 )
                 GarminMetricCell(
-                    label = "Max HR",
-                    value = metrics.maxHeartRate?.let { "$it bpm" } ?: "—",
-                    helper = metrics.heartRateZone ?: "peak",
+                    label = stringResource(R.string.garmin_metric_max_hr),
+                    value = metrics.maxHeartRate?.let { stringResource(R.string.garmin_metric_bpm_value, it) } ?: "—",
+                    helper = metrics.heartRateZone ?: stringResource(R.string.garmin_metric_peak),
                     modifier = Modifier.weight(1f)
                 )
             }
             Text(
-                text = "Gym kcal is saved from the Garmin app strength formula. Garmin kcal is the system value Garmin Connect uses for daily calories.",
+                text = stringResource(R.string.garmin_kcal_explainer),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -941,31 +942,31 @@ private data class GarminWorkoutMetrics(
 private fun parseGarminWorkoutMetrics(note: String): GarminWorkoutMetrics? {
     if (!note.contains("Garmin Fenix 8", ignoreCase = true)) return null
 
-    val duration = Regex("""Duration\s+([0-9]+:[0-9]{2}(?::[0-9]{2})?)""")
+    val duration = Regex("""(?:Duration|Тривалість)\s+([0-9]+:[0-9]{2}(?::[0-9]{2})?)""")
         .find(note)
         ?.groupValues
         ?.getOrNull(1)
-    val gymCalories = Regex("""Gym kcal\s+([0-9]+)""")
-        .find(note)
-        ?.groupValues
-        ?.getOrNull(1)
-        ?.toIntOrNull()
-    val garminCalories = Regex("""Garmin kcal\s+([0-9]+)""")
+    val gymCalories = Regex("""Gym\s+(?:kcal|ккал)\s+([0-9]+)""")
         .find(note)
         ?.groupValues
         ?.getOrNull(1)
         ?.toIntOrNull()
-    val avgHeartRate = Regex("""Avg HR\s+([0-9]+)""")
+    val garminCalories = Regex("""Garmin\s+(?:kcal|ккал)\s+([0-9]+)""")
         .find(note)
         ?.groupValues
         ?.getOrNull(1)
         ?.toIntOrNull()
-    val maxHeartRate = Regex("""Max HR\s+([0-9]+)""")
+    val avgHeartRate = Regex("""(?:Avg HR|Сер пульс)\s+([0-9]+)""")
         .find(note)
         ?.groupValues
         ?.getOrNull(1)
         ?.toIntOrNull()
-    val zone = Regex("""HR zone\s+(Z[0-9]+)""")
+    val maxHeartRate = Regex("""(?:Max HR|Макс пульс)\s+([0-9]+)""")
+        .find(note)
+        ?.groupValues
+        ?.getOrNull(1)
+        ?.toIntOrNull()
+    val zone = Regex("""(?:HR zone|Зона пульсу)\s+(Z[0-9]+)""")
         .find(note)
         ?.groupValues
         ?.getOrNull(1)

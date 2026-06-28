@@ -44,6 +44,7 @@
     <string name="action_repeat_last_workout">Повторити попереднє тренування</string>
     <string name="action_copy_workout_day">Скопіювати минуле тренування</string>
     <string name="action_sync_plan_to_watch">Синхронізувати план на годинник</string>
+    <string name="action_sync_plan_to_watch_in_progress">Синхронізація…</string>
     <string name="action_apply_last_weight">Взяти останню вагу</string>
     <string name="action_apply_smart_plan">Застосувати розумний план</string>
     <string name="action_generate_smart_workout">Згенерувати розумне тренування</string>
@@ -325,6 +326,26 @@
     <string name="session_item_title">Тренування %1$s</string>
     <string name="details_note">Нотатка: %1$s</string>
     <string name="details_no_note">Без нотатки</string>
+    <string name="garmin_workout_title">Силове тренування Garmin</string>
+    <string name="garmin_workout_synced_from">%1$s · синхронізовано з Fenix 8</string>
+    <string name="garmin_metric_duration">Тривалість</string>
+    <string name="garmin_metric_watch_session">сесія з годинника</string>
+    <string name="garmin_metric_logged">Записано</string>
+    <string name="garmin_metric_sets_value">%1$d підходів</string>
+    <string name="garmin_metric_exercises_value">%1$d вправ</string>
+    <string name="garmin_synced_sets_hint">Синхронізовані підходи згруповані нижче. Розкрийте вправу, щоб змінити вагу, повторення, додати пропущений підхід або видалити помилковий.</string>
+    <string name="garmin_metrics_title">Метрики силового Garmin</string>
+    <string name="garmin_metric_gym_kcal">Gym ккал</string>
+    <string name="garmin_metric_garmin_kcal">Garmin ккал</string>
+    <string name="garmin_metric_our_formula">наша формула</string>
+    <string name="garmin_metric_system">система</string>
+    <string name="garmin_metric_avg_hr">Сер пульс</string>
+    <string name="garmin_metric_max_hr">Макс пульс</string>
+    <string name="garmin_metric_bpm_value">%1$d уд/хв</string>
+    <string name="garmin_metric_duration_value">тривалість %1$s</string>
+    <string name="garmin_metric_heart_rate">пульс</string>
+    <string name="garmin_metric_peak">пік</string>
+    <string name="garmin_kcal_explainer">Gym ккал збережені з формули силового тренування GymApp на Garmin. Garmin ккал — це системне значення, яке Garmin Connect враховує в денних калоріях.</string>
 
     <string name="dialog_edit_set_title">Редагувати підхід</string>
     <string name="dialog_delete_workout_title">Видалити тренування?</string>

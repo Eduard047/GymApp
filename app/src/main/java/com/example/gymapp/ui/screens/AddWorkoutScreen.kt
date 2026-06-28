@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -327,7 +328,21 @@ fun AddWorkoutScreen(
                         modifier = Modifier.fillMaxWidth(),
                         enabled = !uiState.isSyncingPlanToWatch
                     ) {
-                        Text(text = stringResource(R.string.action_sync_plan_to_watch))
+                        if (uiState.isSyncingPlanToWatch) {
+                            CircularProgressIndicator(
+                                modifier = Modifier
+                                    .padding(end = 8.dp)
+                                    .size(18.dp),
+                                strokeWidth = 2.dp
+                            )
+                        }
+                        Text(
+                            text = if (uiState.isSyncingPlanToWatch) {
+                                stringResource(R.string.action_sync_plan_to_watch_in_progress)
+                            } else {
+                                stringResource(R.string.action_sync_plan_to_watch)
+                            }
+                        )
                     }
                     when (uiState.didSyncPlanToWatch) {
                         true -> Text(

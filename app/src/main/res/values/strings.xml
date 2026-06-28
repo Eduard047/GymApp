@@ -44,6 +44,7 @@
     <string name="action_repeat_last_workout">Repeat Last Workout</string>
     <string name="action_copy_workout_day">Copy Previous Workout</string>
     <string name="action_sync_plan_to_watch">Sync Plan to Watch</string>
+    <string name="action_sync_plan_to_watch_in_progress">Syncing…</string>
     <string name="action_apply_last_weight">Use Last Weight</string>
     <string name="action_apply_smart_plan">Apply Smart Plan</string>
     <string name="action_generate_smart_workout">Generate Smart Workout</string>
@@ -325,6 +326,26 @@
     <string name="session_item_title">Workout %1$s</string>
     <string name="details_note">Note: %1$s</string>
     <string name="details_no_note">No note</string>
+    <string name="garmin_workout_title">Garmin strength workout</string>
+    <string name="garmin_workout_synced_from">%1$s · synced from Fenix 8</string>
+    <string name="garmin_metric_duration">Duration</string>
+    <string name="garmin_metric_watch_session">watch session</string>
+    <string name="garmin_metric_logged">Logged</string>
+    <string name="garmin_metric_sets_value">%1$d sets</string>
+    <string name="garmin_metric_exercises_value">%1$d exercises</string>
+    <string name="garmin_synced_sets_hint">Synced sets are grouped below. Expand an exercise to edit weight, reps, add a missed set, or delete a wrong one.</string>
+    <string name="garmin_metrics_title">Garmin strength metrics</string>
+    <string name="garmin_metric_gym_kcal">Gym kcal</string>
+    <string name="garmin_metric_garmin_kcal">Garmin kcal</string>
+    <string name="garmin_metric_our_formula">our formula</string>
+    <string name="garmin_metric_system">system</string>
+    <string name="garmin_metric_avg_hr">Avg HR</string>
+    <string name="garmin_metric_max_hr">Max HR</string>
+    <string name="garmin_metric_bpm_value">%1$d bpm</string>
+    <string name="garmin_metric_duration_value">duration %1$s</string>
+    <string name="garmin_metric_heart_rate">heart rate</string>
+    <string name="garmin_metric_peak">peak</string>
+    <string name="garmin_kcal_explainer">Gym kcal is saved from the Garmin app strength formula. Garmin kcal is the system value Garmin Connect uses for daily calories.</string>
 
     <string name="dialog_edit_set_title">Edit Set</string>
     <string name="dialog_delete_workout_title">Delete workout?</string>

@@ -2,8 +2,11 @@ package com.example.gymapp.garmin
 
 import android.util.Log
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import com.example.gymapp.GymApplication
 import com.example.gymapp.data.repository.NamedWorkoutSetDraft
+import com.example.gymapp.util.AppLanguage
 import com.garmin.android.connectiq.ConnectIQ
 import com.garmin.android.connectiq.IQApp
 import com.garmin.android.connectiq.IQDevice
@@ -27,6 +30,10 @@ private const val PLAN_KEY = "cached_plan"
 private const val PROCESSED_IDS_KEY = "processed_ids"
 private const val MAX_WATCH_EXERCISES = 60
 private const val MAX_WATCH_PLAN_SETS = 60
+private const val GARMIN_SDK_READY_TIMEOUT_MS = 60_000L
+private const val GARMIN_SEND_TIMEOUT_MS = 90_000L
+private const val GARMIN_SYNC_ACK_TIMEOUT_MS = 30_000L
+private const val GARMIN_CONNECT_WAIT_MS = 45_000L
 
 class GarminSyncManager(
     private val application: GymApplication
@@ -36,32 +43,59 @@ class GarminSyncManager(
     private val garminApp = IQApp(GARMIN_APP_ID)
     private val registeredDevices = ConcurrentHashMap.newKeySet<Long>()
     private val pendingSyncAcks = ConcurrentHashMap<String, CompletableDeferred<Boolean>>()
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val initializationLock = Any()
     @Volatile var lastPlanSyncStatus: String = "Not started"
         private set
     @Volatile private var sdkReady = false
+    @Volatile private var sdkInitializationRequested = false
 
     private val listener = object : ConnectIQ.ConnectIQListener {
         override fun onSdkReady() {
             sdkReady = true
+            sdkInitializationRequested = false
+            Log.i(TAG, "Connect IQ SDK ready")
             registerConnectedDevices()
         }
 
         override fun onInitializeError(errStatus: ConnectIQ.IQSdkErrorStatus) {
             sdkReady = false
+            sdkInitializationRequested = false
             Log.i(TAG, "Connect IQ unavailable: $errStatus")
         }
 
         override fun onSdkShutDown() {
             sdkReady = false
+            sdkInitializationRequested = false
             registeredDevices.clear()
+            Log.i(TAG, "Connect IQ SDK shut down")
         }
     }
 
     fun initialize() {
-        runCatching {
-            connectIQ.initialize(application, true, listener)
-        }.onFailure { error ->
-            Log.i(TAG, "Connect IQ initialization skipped", error)
+        synchronized(initializationLock) {
+            if (sdkReady || sdkInitializationRequested) {
+                Log.i(TAG, "Connect IQ initialization already requested")
+                return
+            }
+            sdkInitializationRequested = true
+        }
+
+        val startSdk = {
+            Log.i(TAG, "Initializing Connect IQ SDK")
+            runCatching {
+                connectIQ.initialize(application, true, listener)
+            }.onFailure { error ->
+                sdkInitializationRequested = false
+                Log.i(TAG, "Connect IQ initialization skipped", error)
+            }
+            Unit
+        }
+
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            startSdk()
+        } else {
+            mainHandler.post(startSdk)
         }
     }
 
@@ -87,15 +121,19 @@ class GarminSyncManager(
             Log.i(TAG, "Cannot list Garmin devices", error)
             emptyList()
         }
+        Log.i(TAG, "Known Garmin devices=${devices.joinToString { "${it.friendlyName}:${it.status}" }}")
 
         devices.forEach { device ->
             runCatching {
                 connectIQ.registerForDeviceEvents(device) { changedDevice, status ->
+                    Log.i(TAG, "Device event ${changedDevice.friendlyName}: $status")
                     if (status == IQDevice.IQDeviceStatus.CONNECTED) {
                         registerAppEvents(changedDevice)
                     }
                 }
-                if (connectIQ.getDeviceStatus(device) == IQDevice.IQDeviceStatus.CONNECTED) {
+                val status = connectIQ.getDeviceStatus(device)
+                Log.i(TAG, "Device status ${device.friendlyName}: $status")
+                if (status == IQDevice.IQDeviceStatus.CONNECTED) {
                     registerAppEvents(device)
                 }
             }.onFailure { Log.i(TAG, "Cannot register ${device.friendlyName}", it) }
@@ -105,7 +143,7 @@ class GarminSyncManager(
     private suspend fun ensureSdkReady(): Boolean {
         if (!sdkReady) {
             initialize()
-            withTimeoutOrNull(8_000L) {
+            withTimeoutOrNull(GARMIN_SDK_READY_TIMEOUT_MS) {
                 while (!sdkReady) {
                     delay(150L)
                 }
@@ -119,12 +157,15 @@ class GarminSyncManager(
         if (!registeredDevices.add(device.deviceIdentifier)) return
         try {
             connectIQ.registerForAppEvents(device, garminApp) { source, _, messages, _ ->
+                Log.i(TAG, "Received ${messages.size} Garmin message(s) from ${source.friendlyName}")
                 messages.forEach { message ->
                     @Suppress("UNCHECKED_CAST")
                     val command = message as? Map<Any?, Any?> ?: return@forEach
+                    Log.i(TAG, "Garmin command type=${command["type"]} payload=$command")
                     handleCommand(source, command)
                 }
             }
+            Log.i(TAG, "Registered Garmin app events for ${device.friendlyName}")
         } catch (error: Exception) {
             registeredDevices.remove(device.deviceIdentifier)
             Log.i(TAG, "Cannot listen for GymApp messages", error)
@@ -153,7 +194,10 @@ class GarminSyncManager(
     private suspend fun pushSync(device: IQDevice) {
         val repository = activeRepository()
         val exercises = repository.getExerciseNamesForSync(limit = 200)
-        sendAndWait(device, syncPayload(exercises, cachedPlan()))
+        val syncId = "rq" + System.currentTimeMillis().toString(36)
+        val payload = syncPayload(exercises, cachedPlan(), syncId)
+        Log.i(TAG, "Replying to watch request_sync payload=${payloadSummary(payload)}")
+        sendAndConfirmSync(device, payload, syncId)
     }
 
     private suspend fun createWorkout(device: IQDevice, command: Map<Any?, Any?>) {
@@ -226,40 +270,88 @@ class GarminSyncManager(
 
     private suspend fun sendToConnectedDevices(payload: Map<String, Any>, syncId: String? = null): Boolean {
         if (!sdkReady) return false
-        val devices = try {
-            val connected = connectIQ.connectedDevices.orEmpty()
-            if (connected.isNotEmpty()) {
-                connected
-            } else {
-                connectIQ.knownDevices.orEmpty().filter { device ->
-                    runCatching {
-                        connectIQ.getDeviceStatus(device) == IQDevice.IQDeviceStatus.CONNECTED
-                    }.getOrDefault(false)
+        val initial = resolveGarminDevices()
+        if (initial.failedStatus != null) {
+            lastPlanSyncStatus = initial.failedStatus
+            return false
+        }
+        var devices = initial.connected
+        val knownDevices = initial.known
+
+        if (devices.isEmpty() && knownDevices.isNotEmpty()) {
+            lastPlanSyncStatus = "Waiting for Garmin Bluetooth: ${knownDeviceStatus(knownDevices)}"
+            Log.i(TAG, lastPlanSyncStatus)
+            val deadline = System.currentTimeMillis() + GARMIN_CONNECT_WAIT_MS
+            while (devices.isEmpty() && System.currentTimeMillis() < deadline) {
+                delay(1_000L)
+                val retry = resolveGarminDevices()
+                if (retry.failedStatus != null) {
+                    lastPlanSyncStatus = retry.failedStatus
+                    return false
                 }
+                devices = retry.connected
             }
-        } catch (_: InvalidStateException) {
-            lastPlanSyncStatus = "Garmin SDK invalid state"
-            return false
-        } catch (_: ServiceUnavailableException) {
-            lastPlanSyncStatus = "Garmin Connect service unavailable"
-            return false
-        } catch (error: Exception) {
-            Log.i(TAG, "Cannot resolve connected Garmin devices", error)
-            lastPlanSyncStatus = "Cannot list Garmin devices: ${error.message.orEmpty()}"
+        }
+
+        val targets = if (devices.isNotEmpty()) {
+            devices
+        } else {
+            // Connect IQ can occasionally report a stale NOT_CONNECTED status even
+            // when the watch app is open. Try paired devices once; sendMessage will
+            // return a concrete transport status if Bluetooth is truly unavailable.
+            knownDevices
+        }
+
+        if (targets.isEmpty()) {
+            lastPlanSyncStatus = if (knownDevices.isEmpty()) {
+                "No Garmin devices paired in Garmin Connect"
+            } else {
+                "Garmin Bluetooth not ready: ${knownDeviceStatus(knownDevices)}. Disconnect watch USB, open Garmin Connect, then open GymApp on watch."
+            }
+            Log.i(TAG, lastPlanSyncStatus)
             return false
         }
+
         if (devices.isEmpty()) {
-            lastPlanSyncStatus = "No connected Garmin devices"
-            return false
+            Log.i(TAG, "Trying paired Garmin devices despite no CONNECTED status: ${knownDeviceStatus(targets)}")
         }
-        var delivered = false
-        devices.forEach { device ->
+        Log.i(TAG, "Sending sync to devices=${targets.joinToString { it.friendlyName }} payload=${payloadSummary(payload)}")
+        targets.forEach { device ->
             registerAppEvents(device)
             if (sendAndConfirmSync(device, payload, syncId)) {
-                delivered = true
+                lastPlanSyncStatus = lastPlanSyncStatus.ifBlank { "ACK" }
+                Log.i(TAG, "Garmin sync completed on ${device.friendlyName}; skipping remaining devices")
+                return true
             }
         }
-        return delivered
+        return false
+    }
+
+    private data class GarminDeviceResolution(
+        val connected: List<IQDevice>,
+        val known: List<IQDevice>,
+        val failedStatus: String? = null
+    )
+
+    private fun resolveGarminDevices(): GarminDeviceResolution = try {
+        val connected = connectIQ.connectedDevices.orEmpty()
+        val known = connectIQ.knownDevices.orEmpty()
+        val connectedByStatus = known.filter { device ->
+            runCatching {
+                connectIQ.getDeviceStatus(device) == IQDevice.IQDeviceStatus.CONNECTED
+            }.getOrDefault(false)
+        }
+        GarminDeviceResolution(
+            connected = (connected + connectedByStatus).distinctBy { it.deviceIdentifier },
+            known = known
+        )
+    } catch (_: InvalidStateException) {
+        GarminDeviceResolution(emptyList(), emptyList(), "Garmin SDK invalid state")
+    } catch (_: ServiceUnavailableException) {
+        GarminDeviceResolution(emptyList(), emptyList(), "Garmin Connect service unavailable")
+    } catch (error: Exception) {
+        Log.i(TAG, "Cannot resolve connected Garmin devices", error)
+        GarminDeviceResolution(emptyList(), emptyList(), "Cannot list Garmin devices: ${error.message.orEmpty()}")
     }
 
     private suspend fun sendAndConfirmSync(
@@ -277,10 +369,10 @@ class GarminSyncManager(
             pendingSyncAcks.remove(syncId)
             return false
         }
-        val confirmed = withTimeoutOrNull(12_000L) { ack.await() } ?: false
+        val confirmed = withTimeoutOrNull(GARMIN_SYNC_ACK_TIMEOUT_MS) { ack.await() } ?: false
         pendingSyncAcks.remove(syncId)
         if (!confirmed) {
-            lastPlanSyncStatus = "No sync_ack from watch"
+            lastPlanSyncStatus = "No sync_ack from watch after send SUCCESS. Open watch DEBUG screen and check SYNC status."
             Log.i(TAG, "Garmin sync ack timeout for ${device.friendlyName}, syncId=$syncId")
         }
         return confirmed
@@ -291,9 +383,9 @@ class GarminSyncManager(
         runCatching {
             connectIQ.sendMessage(device, garminApp, payload) { _, _, status ->
                 val success = status == ConnectIQ.IQMessageStatus.SUCCESS
+                Log.i(TAG, "Message delivery to ${device.friendlyName}: $status payload=${payloadSummary(payload)}")
                 if (!success) {
                     lastPlanSyncStatus = "Send status $status"
-                    Log.i(TAG, "Message delivery status: $status")
                 }
                 result.complete(success)
             }
@@ -302,11 +394,23 @@ class GarminSyncManager(
             lastPlanSyncStatus = "Cannot send: ${error.message.orEmpty()}"
             result.complete(false)
         }
-        val sent = withTimeoutOrNull(8_000L) { result.await() } ?: false
-        if (!sent && lastPlanSyncStatus == "Waiting for Garmin SDK") {
+        val sent = withTimeoutOrNull(GARMIN_SEND_TIMEOUT_MS) { result.await() }
+        if (sent == null) {
             lastPlanSyncStatus = "Send timeout"
         }
-        return sent
+        return sent ?: false
+    }
+
+    private fun payloadSummary(payload: Map<String, Any>): String {
+        val planCount = (payload["planNames"] as? List<*>)?.size ?: 0
+        val exerciseCount = (payload["exercises"] as? List<*>)?.size ?: 0
+        return "type=${payload["type"]} syncId=${payload["syncId"]} lang=${payload["language"]} plan=$planCount exercises=$exerciseCount"
+    }
+
+    private fun knownDeviceStatus(devices: List<IQDevice>): String = devices.joinToString { device ->
+        val status = runCatching { connectIQ.getDeviceStatus(device) }
+            .getOrDefault(device.status)
+        "${device.friendlyName}:$status"
     }
 
     private fun activeRepository() = application.repositoryFor(
@@ -314,26 +418,31 @@ class GarminSyncManager(
     )
 
     private fun buildGarminWorkoutNote(command: Map<Any?, Any?>): String {
+        val isUk = application.languageManager.currentLanguage() == AppLanguage.UK
         val details = mutableListOf("Garmin Fenix 8")
         (command["durationSeconds"] as? Number)?.toLong()?.takeIf { it > 0L }?.let { seconds ->
             val minutes = seconds / 60
             val remainder = seconds % 60
-            details += "Duration ${minutes}:${remainder.toString().padStart(2, '0')}"
+            details += if (isUk) {
+                "Тривалість ${minutes}:${remainder.toString().padStart(2, '0')}"
+            } else {
+                "Duration ${minutes}:${remainder.toString().padStart(2, '0')}"
+            }
         }
         (command["gymCalories"] as? Number)?.toDouble()?.takeIf { it > 0.0 }?.let { calories ->
-            details += "Gym kcal ${calories.toInt()}"
+            details += if (isUk) "Gym ккал ${calories.toInt()}" else "Gym kcal ${calories.toInt()}"
         }
         (command["garminCalories"] as? Number)?.toInt()?.takeIf { it > 0 }?.let { calories ->
-            details += "Garmin kcal $calories"
+            details += if (isUk) "Garmin ккал $calories" else "Garmin kcal $calories"
         }
         (command["avgHeartRate"] as? Number)?.toInt()?.takeIf { it > 0 }?.let { bpm ->
-            details += "Avg HR $bpm"
+            details += if (isUk) "Сер пульс $bpm" else "Avg HR $bpm"
         }
         (command["maxHeartRate"] as? Number)?.toInt()?.takeIf { it > 0 }?.let { bpm ->
-            details += "Max HR $bpm"
+            details += if (isUk) "Макс пульс $bpm" else "Max HR $bpm"
         }
         (command["heartRateZone"] as? Number)?.toInt()?.takeIf { it > 0 }?.let { zone ->
-            details += "HR zone Z$zone"
+            details += if (isUk) "Зона пульсу Z$zone" else "HR zone Z$zone"
         }
         return details.joinToString(separator = " · ")
     }

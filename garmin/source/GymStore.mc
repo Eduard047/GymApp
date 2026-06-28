@@ -67,7 +67,7 @@ class GymStore {
         }
         var savedLanguage = Storage.getValue("language");
         if (savedLanguage != null) {
-            language = savedLanguage.toString() == "uk" ? "uk" : "en";
+            language = savedLanguage.toString().equals("uk") ? "uk" : "en";
         }
     }
 
@@ -86,7 +86,7 @@ class GymStore {
     }
 
     static function isUk() {
-        return language == "uk";
+        return language.equals("uk");
     }
 
     static function tr(en, uk) {
@@ -118,7 +118,7 @@ class GymStore {
         var item = null;
         for (var i = 0; i < plan.size(); i += 1) {
             var candidate = plan[i];
-            if (candidate instanceof Lang.Dictionary && candidate.get("exerciseName") == exerciseName) {
+            if (candidate instanceof Lang.Dictionary && candidate.get("exerciseName").toString().equals(exerciseName)) {
                 item = candidate;
                 break;
             }
@@ -253,7 +253,7 @@ class GymStore {
     static function applySync(message) {
         var syncedLanguage = message.get("language");
         if (syncedLanguage != null) {
-            language = syncedLanguage.toString() == "uk" ? "uk" : "en";
+            language = syncedLanguage.toString().equals("uk") ? "uk" : "en";
         }
         var flatNames = message.get("planNames");
         var flatWeights = message.get("planWeights");
@@ -301,7 +301,7 @@ class GymStore {
 
     static function containsName(list, name) {
         for (var i = 0; i < list.size(); i += 1) {
-            if (list[i] == name) {
+            if (list[i].toString().equals(name)) {
                 return true;
             }
         }

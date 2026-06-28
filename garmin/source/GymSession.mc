@@ -24,8 +24,14 @@ class GymSession {
     static var zones = null;
     static var zone = 0;
     static var profileWeightKg = 80.0;
+    static var profileAge = 30;
+    static var profileGender = null;
+    static var profileVo2Max = null;
     static var restingHr = 60;
     static var maxHrEstimate = 185;
+    static var lastCalorieSeconds = 0;
+    static var lastMet = 0.0;
+    static var lastKcalPerMinute = 0.0;
     static var setBoostCalories = 0.0;
     static var status = "READY";
     static var gymKcalField = null;
@@ -41,6 +47,12 @@ class GymSession {
     static var activeStartSeconds = 0;
     static var lastSetEndSeconds = 0;
     static var lastAutoReason = "init";
+    static var minuteBucket = -1;
+    static var minuteHrSum = 0;
+    static var minuteHrSamples = 0;
+    static var previousMinuteHr = null;
+    static var sessionBaselineHr = null;
+    static var activeSignalCount = 0;
 
     static function start() {
         loadProfile();
@@ -50,6 +62,9 @@ class GymSession {
         pausedAccumSeconds = 0;
         elapsedSeconds = 0;
         gymCalories = 0.0;
+        lastCalorieSeconds = 0;
+        lastMet = 0.0;
+        lastKcalPerMinute = 0.0;
         setBoostCalories = 0.0;
         avgHr = 0;
         maxHr = 0;
@@ -65,6 +80,12 @@ class GymSession {
         activeStartSeconds = 0;
         lastSetEndSeconds = 0;
         lastAutoReason = "init";
+        minuteBucket = -1;
+        minuteHrSum = 0;
+        minuteHrSamples = 0;
+        previousMinuteHr = null;
+        sessionBaselineHr = null;
+        activeSignalCount = 0;
         debugText = "init";
         status = "REC";
         paused = false;
@@ -156,13 +177,19 @@ class GymSession {
 
     static function discard() {
         stopSensors();
+        var discarded = false;
         if (session != null) {
             try {
-                if (session.isRecording()) {
-                    session.stop();
-                }
-                session.discard();
+                discarded = session.discard();
             } catch (ex) {
+                try {
+                    if (session.isRecording()) {
+                        session.stop();
+                    }
+                    discarded = session.discard();
+                } catch (ex2) {
+                    discarded = false;
+                }
             }
         }
         session = null;
@@ -170,7 +197,7 @@ class GymSession {
         gymZoneField = null;
         recording = false;
         paused = false;
-        status = "DISCARD";
+        status = discarded ? "DISCARD" : "DISC ERR";
     }
 
     static function createFitFields() {
@@ -274,13 +301,34 @@ class GymSession {
         if (value > maxHr) {
             maxHr = value;
         }
+        trackMinuteHeartRate(value);
         zone = zoneFor(value);
         updateEffortState(value);
+    }
+
+    static function trackMinuteHeartRate(value) {
+        var bucket = (elapsedSeconds / 60).toNumber();
+        if (minuteBucket < 0) {
+            minuteBucket = bucket;
+        }
+        if (bucket != minuteBucket) {
+            if (minuteHrSamples > 0) {
+                previousMinuteHr = (minuteHrSum / minuteHrSamples).toNumber();
+            }
+            minuteHrSum = 0;
+            minuteHrSamples = 0;
+            minuteBucket = bucket;
+        }
+        minuteHrSum += value;
+        minuteHrSamples += 1;
     }
 
     static function updateEffortState(value) {
         var previous = lastHr;
         lastHr = value;
+        if (sessionBaselineHr == null) {
+            sessionBaselineHr = value;
+        }
         if (previous == null) {
             lastAutoReason = "first hr";
             debugText = "hr " + value.toString() + " z" + zone.toString();
@@ -290,34 +338,49 @@ class GymSession {
         var delta = value - previous;
         hrTrend = ((hrTrend * 2.0) + delta.toFloat()) / 3.0;
 
-        var riseThreshold = 2;
-        var fallThreshold = -2;
+        var riseThreshold = 5;
+        var trendThreshold = 3.0;
+        var minRiseFromBaseline = 10;
+        var fallThreshold = -3;
         var activeZone = 3;
-        var minActiveSeconds = 12;
+        var minActiveSeconds = 15;
         var restDetectSeconds = 35;
         var promptGapSeconds = 45;
 
         if (GymStore.sensitivityIndex == 0) {
-            riseThreshold = 3;
-            fallThreshold = -3;
+            riseThreshold = 7;
+            trendThreshold = 4.0;
+            minRiseFromBaseline = 12;
+            fallThreshold = -4;
             activeZone = 3;
-            minActiveSeconds = 18;
+            minActiveSeconds = 20;
             restDetectSeconds = 45;
             promptGapSeconds = 60;
         } else if (GymStore.sensitivityIndex == 2) {
-            riseThreshold = 1;
-            fallThreshold = -1;
+            riseThreshold = 4;
+            trendThreshold = 2.5;
+            minRiseFromBaseline = 8;
+            fallThreshold = -2;
             activeZone = 2;
-            minActiveSeconds = 8;
+            minActiveSeconds = 12;
             restDetectSeconds = 25;
             promptGapSeconds = 30;
         }
 
-        if (delta >= riseThreshold || hrTrend >= riseThreshold || zone >= activeZone) {
-            if (effortState != "SET ACTIVE") {
+        var baselineDelta = value - sessionBaselineHr;
+        var risingEnough = (delta >= riseThreshold || hrTrend >= trendThreshold) && baselineDelta >= minRiseFromBaseline;
+        var zoneEnough = zone >= activeZone && baselineDelta >= (minRiseFromBaseline / 2);
+        if (risingEnough || zoneEnough) {
+            activeSignalCount += 1;
+        } else {
+            activeSignalCount = 0;
+        }
+
+        if (activeSignalCount >= 2) {
+            if (!effortState.equals("SET ACTIVE")) {
                 activeSetSeen = true;
                 activeStartSeconds = elapsedSeconds;
-                lastAutoReason = "rise";
+                lastAutoReason = "rise +" + baselineDelta.toString();
             }
             effortState = "SET ACTIVE";
             lastHrChangeSeconds = elapsedSeconds;
@@ -338,18 +401,31 @@ class GymSession {
                 lastAutoReason = "rest no prompt";
             }
             effortState = "REST";
+            if (value < sessionBaselineHr || (!activeSetSeen && baselineDelta < 4)) {
+                sessionBaselineHr = ((sessionBaselineHr * 3) + value) / 4;
+            }
         } else if (zone == 2) {
             effortState = "READY";
             lastAutoReason = "zone ready";
+            if (!activeSetSeen && baselineDelta < 4) {
+                sessionBaselineHr = ((sessionBaselineHr * 3) + value) / 4;
+            }
         } else {
             lastAutoReason = "hold";
+            if (!activeSetSeen && baselineDelta < 4) {
+                sessionBaselineHr = ((sessionBaselineHr * 3) + value) / 4;
+            }
         }
-        debugText = "d" + delta.toString() + " t" + hrTrend.format("%.1f") + " z" + zone.toString() + " " + lastAutoReason;
+        debugText = "d" + delta.toString() + " b" + baselineDelta.toString() + " s" + activeSignalCount.toString() + " " + lastAutoReason;
     }
 
     static function clearAutoPrompt() {
         autoLogPrompt = false;
         activeSetSeen = false;
+        activeSignalCount = 0;
+        if (hr != null) {
+            sessionBaselineHr = hr;
+        }
         lastAutoReason = "set logged";
     }
 
@@ -360,6 +436,15 @@ class GymSession {
                 // Garmin UserProfile.Profile.weight is grams.
                 profileWeightKg = profile.weight / 1000.0;
             }
+            if (profile != null && profile.gender != null) {
+                profileGender = profile.gender;
+            }
+            profileVo2Max = null;
+            if (profile != null && profile.vo2maxRunning != null && profile.vo2maxRunning > 0) {
+                profileVo2Max = profile.vo2maxRunning;
+            } else if (profile != null && profile.vo2maxCycling != null && profile.vo2maxCycling > 0) {
+                profileVo2Max = profile.vo2maxCycling;
+            }
             if (profile != null && profile.restingHeartRate != null && profile.restingHeartRate > 30) {
                 restingHr = profile.restingHeartRate;
             } else if (profile != null && profile.averageRestingHeartRate != null && profile.averageRestingHeartRate > 30) {
@@ -367,6 +452,7 @@ class GymSession {
             }
             if (profile != null && profile.birthYear != null && profile.birthYear > 1900) {
                 var age = Time.Gregorian.info(Time.now(), Time.FORMAT_MEDIUM).year - profile.birthYear;
+                profileAge = age;
                 maxHrEstimate = (208.0 - (0.7 * age)).toNumber();
             }
         } catch (ex) {
@@ -417,11 +503,21 @@ class GymSession {
         if (!recording || elapsedSeconds <= 0) {
             return;
         }
+        var deltaSeconds = elapsedSeconds - lastCalorieSeconds;
+        if (deltaSeconds <= 0) {
+            return;
+        }
+        if (deltaSeconds > 30) {
+            deltaSeconds = 30;
+        }
         var met = metForHeartRate();
+        lastMet = met;
+        lastKcalPerMinute = met * 3.5 * profileWeightKg / 200.0;
         // Standard MET estimate: kcal/min = MET * 3.5 * kg / 200.
         // For strength work this is an estimate; Garmin's proprietary calorie
         // model is not exposed to Connect IQ apps.
-        gymCalories = (met * 3.5 * profileWeightKg / 200.0 * (elapsedSeconds / 60.0)) + setBoostCalories;
+        gymCalories += lastKcalPerMinute * (deltaSeconds / 60.0);
+        lastCalorieSeconds = elapsedSeconds;
         if (gymKcalField != null) {
             try {
                 gymKcalField.setData(gymCalories.toFloat());
@@ -448,11 +544,12 @@ class GymSession {
             boost = 7.0;
         }
         setBoostCalories += boost;
+        gymCalories += boost;
     }
 
     static function metForHeartRate() {
-        if (hr == null || hr <= restingHr || maxHrEstimate <= restingHr) {
-            return 3.5;
+        if (hr == null || maxHrEstimate <= restingHr) {
+            return 1.2;
         }
         var hrr = (hr - restingHr).toFloat() / (maxHrEstimate - restingHr).toFloat();
         if (hrr < 0.0) {
@@ -460,13 +557,115 @@ class GymSession {
         } else if (hrr > 1.0) {
             hrr = 1.0;
         }
-        var met = 2.8 + (hrr * 8.5);
-        // Free-weight strength rarely behaves like easy walking even when HR
-        // drops during rest, so keep a realistic floor.
-        if (met < 3.8) {
-            met = 3.8;
+
+        var lowHr = (hr <= restingHr + 25 || hrr <= 0.30) && zone <= 1;
+        if (lowHr && (!activeSetSeen || effortState.equals("READY") || effortState.equals("WARMUP") || effortState.equals("REST"))) {
+            if (!activeSetSeen) {
+                return 0.15 + (hrr * 0.25);
+            }
+            return 0.65 + (hrr * 0.55);
         }
-        return met;
+
+        if (effortState.equals("SET ACTIVE") || zone >= 3 || hrr >= 0.45) {
+            var hrrMet = hrrBasedActiveMet(hrr);
+            var modelMet = researchExerciseMet();
+            var activeMet = hrrMet;
+            if (modelMet != null) {
+                // The intermittent HR model is more specific for strength/circuit
+                // work, but HRR keeps the result stable if profile data is sparse.
+                activeMet = (modelMet * 0.70) + (hrrMet * 0.30);
+            }
+            return clampMet(activeMet, 3.8, 12.0);
+        }
+
+        if (effortState.equals("REST") || activeSetSeen) {
+            var recoveryMet = 0.75 + (hrr * 2.2);
+            if (previousMinuteHr != null && previousMinuteHr > hr + 10) {
+                // Short strength rests still have elevated oxygen cost from the
+                // previous set, but cap it so sitting/resting never explodes.
+                recoveryMet += 0.20;
+            }
+            return clampMet(recoveryMet, 0.65, 2.6);
+        }
+
+        return clampMet(0.25 + (hrr * 0.8), 0.15, 1.4);
+    }
+
+    static function hrrBasedActiveMet(hrr) {
+        var vo2Scale = 1.0;
+        if (profileVo2Max != null && profileVo2Max > 20) {
+            vo2Scale = profileVo2Max / 42.0;
+            if (vo2Scale < 0.85) {
+                vo2Scale = 0.85;
+            } else if (vo2Scale > 1.25) {
+                vo2Scale = 1.25;
+            }
+        }
+        return 3.4 + (hrr * 7.8 * vo2Scale);
+    }
+
+    static function researchExerciseMet() {
+        if (profileWeightKg <= 0 || hr == null) {
+            return null;
+        }
+        var kjMin = intermittentKjPerMinute();
+        if (kjMin == null) {
+            kjMin = keytelKjPerMinute();
+        }
+        if (kjMin == null || kjMin <= 0) {
+            return null;
+        }
+        var kcalMin = kjMin / 4.184;
+        var met = kcalMin * 200.0 / (3.5 * profileWeightKg);
+        return clampMet(met, 2.5, 13.0);
+    }
+
+    static function intermittentKjPerMinute() {
+        if (profileVo2Max == null || previousMinuteHr == null) {
+            return null;
+        }
+        if (profileGender == UserProfile.GENDER_MALE) {
+            return -78.7
+                + (0.582 * hr)
+                + (0.183 * profileVo2Max)
+                + (0.532 * profileAge)
+                - (0.160 * previousMinuteHr)
+                + (0.26975 * profileWeightKg)
+                + (0.0029 * profileVo2Max * previousMinuteHr);
+        } else if (profileGender == UserProfile.GENDER_FEMALE) {
+            return -33.6
+                + (0.379 * hr)
+                + (0.066 * profileVo2Max)
+                + (0.046 * profileAge)
+                - (0.066 * previousMinuteHr)
+                + (0.07572 * profileWeightKg)
+                + (0.00216 * profileVo2Max * previousMinuteHr);
+        }
+        return null;
+    }
+
+    static function keytelKjPerMinute() {
+        if (profileGender == UserProfile.GENDER_MALE) {
+            return -55.0969
+                + (0.6309 * hr)
+                + (0.1988 * profileWeightKg)
+                + (0.2017 * profileAge);
+        } else if (profileGender == UserProfile.GENDER_FEMALE) {
+            return -20.4022
+                + (0.4472 * hr)
+                - (0.1263 * profileWeightKg)
+                + (0.074 * profileAge);
+        }
+        return null;
+    }
+
+    static function clampMet(value, minValue, maxValue) {
+        if (value < minValue) {
+            return minValue;
+        } else if (value > maxValue) {
+            return maxValue;
+        }
+        return value;
     }
 
     static function elapsedText() {

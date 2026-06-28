@@ -20,6 +20,7 @@ fun autoVersionCode(): Int {
 val appVersionCode = (findProperty("appVersionCode") as String?)?.toIntOrNull() ?: autoVersionCode()
 val appVersionName = (findProperty("appVersionName") as String?) ?: LocalDateTime.now()
     .format(DateTimeFormatter.ofPattern("yyyy.MM.dd.HHmm"))
+val useDevApplicationIdSuffix = (findProperty("devApplicationIdSuffix") as String?) != "false"
 val keystorePropertiesFile = rootProject.file("keystore.properties")
 val keystoreProperties = Properties().apply {
     if (keystorePropertiesFile.exists()) {
@@ -58,8 +59,10 @@ android {
 
     buildTypes {
         debug {
-            applicationIdSuffix = ".dev"
-            versionNameSuffix = "-dev"
+            if (useDevApplicationIdSuffix) {
+                applicationIdSuffix = ".dev"
+                versionNameSuffix = "-dev"
+            }
         }
         release {
             isMinifyEnabled = false

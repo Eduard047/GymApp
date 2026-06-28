@@ -9,20 +9,30 @@ class GymCommListener extends Comm.ConnectionListener {
     }
 
     function onComplete() {
-        callback.invoke(true);
+        if (callback != null) {
+            callback.invoke(true);
+        }
     }
 
     function onError() {
-        callback.invoke(false);
+        if (callback != null) {
+            callback.invoke(false);
+        }
     }
 }
 
 class GymComm {
+    static var watchVersion = "2026.06.28.1010";
+
     static function send(message, callback) {
         Comm.transmit(message, null, new GymCommListener(callback));
     }
 
     static function requestSync(callback) {
-        send({ "type" => "request_sync" }, callback);
+        send({
+            "type" => "request_sync",
+            "watchVersion" => watchVersion,
+            "status" => GymStore.status
+        }, callback);
     }
 }
