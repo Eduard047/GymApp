@@ -1592,8 +1592,8 @@ function dashboardCard(sessions) {
 function workoutItem(session) {
   const summary = sessionSummary(session);
   return `<article class="workout-item clickable" data-action="open-detail" data-id="${session.id}">
-    <div class="workout-head"><div><h3 class="workout-title">${tx("Workout", "Тренування")} ${fmtDate(session.startedAt)}</h3><span class="muted">${session.note ? `${t("note")}: ${escapeHtml(session.note)}` : tx("No note", "Без нотатки")}</span></div><span class="chip">${tx("Sets", "Підходи")}: ${summary.sets}</span></div>
-    <div class="chip-row"><span class="chip">${tx("Exercises", "Вправи")}: ${summary.exercises}</span><span class="chip">${tx("Volume", "Обсяг")}: ${Math.round(summary.volume)}</span>${exerciseNamesForSession(session).slice(0, 5).map(name => `<span class="chip">${escapeHtml(name)}</span>`).join("")}</div>
+    <div class="workout-head"><div><h3 class="workout-title">${tx("Workout", "Тренування")} ${fmtDate(session.startedAt)}</h3><span class="muted">${session.note ? `${t("note")}: ${escapeHtml(session.note)}` : tx("No note", "Без нотатки")}</span></div><div class="actions"><span class="chip">${tx("Sets", "Підходи")}: ${summary.sets}</span><button class="icon-button" data-action="delete-session" data-id="${session.id}" aria-label="${tx("Delete workout", "Видалити тренування")}">${svg("delete")}</button></div></div>
+    <div class="chip-row"><span class="chip">${tx("Exercises", "Вправи")}: ${summary.exercises}</span><span class="chip">${tx("Sets", "Підходи")}: ${summary.sets}</span><span class="chip">${tx("Volume", "Обсяг")}: ${Math.round(summary.volume)}</span>${exerciseNamesForSession(session).slice(0, 5).map(name => `<span class="chip">${escapeHtml(name)}</span>`).join("")}</div>
   </article>`;
 }
 
@@ -1867,18 +1867,32 @@ function chipSelect(field, options, selected) {
 function draftBlock(block, blockIndex) {
   const lastWeight = lastWeightFor(block.exerciseName);
   const rec = block.exerciseName ? smartRecommendation(block.exerciseName) : null;
-  return `<section class="draft-exercise panel highlighted"><div class="row-head"><h2>${tx("Exercise", "Вправа")} ${blockIndex + 1}</h2><button class="icon-button" data-action="remove-block" data-block="${blockIndex}">${svg("delete")}</button></div>
+  const title = block.exerciseName || `${tx("Exercise", "Вправа")} ${blockIndex + 1}`;
+  return `<section class="draft-exercise panel highlighted"><details open><summary class="detail-summary"><div><h2>${escapeHtml(title)}</h2><p class="muted">${escapeHtml(draftSetSummary(block))}</p></div><button class="icon-button" data-action="remove-block" data-block="${blockIndex}" aria-label="${tx("Remove exercise", "Прибрати вправу")}">${svg("delete")}</button></summary>
     <label>${tx("Exercise", "Вправа")}<input list="exercise-options" data-block="${blockIndex}" data-field="exerciseName" value="${escapeAttr(block.exerciseName)}" placeholder="${tx("Select exercise", "Обери вправу")}"></label>
     <datalist id="exercise-options">${state.exercises.map(ex => `<option value="${escapeAttr(ex.name)}"></option>`).join("")}</datalist>
+    ${block.exerciseName ? muscleContributionPanel(block.exerciseName, false) : ""}
     ${lastWeight != null ? `<div class="row-line"><strong>${tx("Last", "Остання")}: ${lastWeight.toFixed(1)} kg</strong><button class="button ghost mini" data-action="apply-last" data-block="${blockIndex}">${t("useLast")}</button></div>` : ""}
     ${rec ? smartPanel(rec, blockIndex) : ""}
     <div class="actions"><button class="button ghost" data-action="add-set" data-block="${blockIndex}">${t("addSet")}</button><button class="button ghost" data-action="copy-set" data-block="${blockIndex}">${t("copyLast")}</button><button class="button ghost" data-action="plus-set" data-block="${blockIndex}">${t("copyPlus")}</button></div>
     ${block.sets.map((set, setIndex) => `<div class="set-row"><span>${tx("Set", "Підхід")} ${setIndex + 1}</span><input inputmode="decimal" aria-label="${tx("Weight", "Вага")}" data-block="${blockIndex}" data-set="${setIndex}" data-field="weight" value="${escapeAttr(set.weight)}" placeholder="kg"><input inputmode="numeric" aria-label="${tx("Reps", "Повтори")}" data-block="${blockIndex}" data-set="${setIndex}" data-field="reps" value="${escapeAttr(set.reps)}"><button class="icon-button" data-action="remove-set" data-block="${blockIndex}" data-set="${setIndex}">${svg("delete")}</button></div>`).join("")}
-  </section>`;
+  </details></section>`;
 }
 
 function smartPanel(rec, blockIndex) {
-  return `<div class="subpanel smart"><div class="row-head"><div><strong>${t("smartCoach")}</strong><p>${rec.kind}</p></div>${svg("auto", "small-icon")}</div><p>${rec.sets.map(s => `${s.weight == null ? tx("light", "легко") : `${s.weight.toFixed(1)} kg`} x ${s.reps}`).join(" | ")}</p><div class="progress"><span style="width:${rec.confidence * 100}%"></span></div><small>${tx("Confidence", "Впевненість")} ${Math.round(rec.confidence * 100)}%</small>${rec.reasons.map(reason => `<p class="muted">${escapeHtml(reason)}</p>`).join("")}<button class="button full" data-action="apply-smart" data-block="${blockIndex}">${t("applySmart")}</button></div>`;
+  return `<div class="subpanel smart"><div class="row-head"><div><strong>${t("smartCoach")}</strong><p>${rec.kind}</p></div>${svg("auto", "small-icon")}</div><p>${rec.sets.map(s => `${s.weight == null ? tx("light", "легко") : `${s.weight.toFixed(1)} kg`} x ${s.reps}`).join(" | ")}</p><div class="progress"><span style="width:${rec.confidence * 100}%"></span></div><small>${tx("Confidence", "Впевненість")} ${Math.round(rec.confidence * 100)}%</small>${rec.reasons.slice(0, 3).map(reason => `<p class="muted">${escapeHtml(reason)}</p>`).join("")}<button class="button full" data-action="apply-smart" data-block="${blockIndex}">${svg("auto", "small-icon")}${t("applySmart")}</button></div>`;
+}
+
+function draftSetSummary(block) {
+  const setLabel = `${block.sets.length} ${tx("sets", "підходів")}`;
+  const details = block.sets.map(set => `${set.weight === "" ? "—" : formatSetWeight(set.weight)} kg x ${set.reps || "—"}`).join(" · ");
+  return details ? `${setLabel} · ${details}` : setLabel;
+}
+
+function muscleContributionPanel(name, compact = false) {
+  const contributions = contributionFor(name).slice(0, compact ? 3 : 6);
+  if (!contributions.length) return "";
+  return `<div class="chip-row">${contributions.map(item => `<span class="chip">${muscleLabel(item.muscleId)} ${Math.round(item.weight * 100)}%</span>`).join("")}</div>`;
 }
 
 function noteTemplates() {
@@ -2073,7 +2087,7 @@ function lastWeightFor(name) {
   return set ? Number(set.weight) : null;
 }
 
-function detailScreen(id) {
+function legacyDetailScreenOld(id) {
   const session = state.sessions.find(s => s.id === id);
   if (!session) return `<div class="empty">${tx("Workout not found.", "Тренування не знайдено.")}</div>`;
   const grouped = exerciseNamesForSession(session).map(name => ({ name, sets: session.sets.filter(s => s.exerciseName === name) }));
@@ -2087,7 +2101,7 @@ function detailScreen(id) {
     <button class="fab" data-action="finish-workout" data-id="${session.id}">${svg("check", "small-icon")}${t("finishWorkout")}</button>`;
 }
 
-function exerciseDetailCard(session, group) {
+function legacyExerciseDetailCard(session, group) {
   const key = `${session.id}:${group.name}`;
   const remaining = timerRemaining(key);
   return `<section class="panel highlighted"><div class="row-head"><h2>${escapeHtml(group.name)}</h2>${isPr(session, group.name) ? `<span class="pill">${svg("trophy", "small-icon")}${tx("New PR", "Новий PR")}</span>` : ""}</div>
@@ -2103,17 +2117,21 @@ function detailScreen(id) {
   const grouped = exerciseNamesForSession(session).map(name => ({ name, sets: session.sets.filter(s => s.exerciseName === name) }));
   const available = state.exercises.filter(ex => !grouped.some(g => g.name === ex.name));
   const garmin = parseGarminWorkoutMetrics(session.note || "");
-  return `${garmin ? garminWorkoutHeader(session, garmin, grouped) : `<section class="panel"><h2>${fmtDate(session.startedAt)}</h2><p>${session.note || tx("No note", "No note")}</p></section>`}
+  return `${garmin ? garminWorkoutHeader(session, garmin, grouped) : workoutHeader(session)}
     ${garmin ? garminWorkoutMetricsCard(garmin) : ""}
     ${!session.sets.length && grouped.length ? `<section class="panel warning"><h2>${tx("No set data", "No set data")}</h2><p>${tx("This imported workout contains exercise names, but no weights or reps. Export a full Backup JSON from the Android app and import it again.", "This imported workout contains exercise names, but no weights or reps. Export a full Backup JSON from the Android app and import it again.")}</p></section>` : ""}
-    <section class="panel"><div class="section-title"><h2>${tx("Add Exercise to This Workout", "Add Exercise to This Workout")}</h2></div>${available.length ? `<select id="quick-add">${available.map(ex => `<option value="${ex.id}">${escapeHtml(ex.name)}</option>`).join("")}</select><button class="button full" data-action="quick-add-exercise">${tx("Add to Workout", "Add to Workout")}</button>` : `<p class="muted">${tx("All saved exercises are already in this workout.", "All saved exercises are already in this workout.")}</p>`}</section>
+    <section class="panel"><div class="section-title"><div><h2>${tx("Add Exercise to This Workout", "Add Exercise to This Workout")}</h2></div>${svg("add", "small-icon")}</div>${available.length ? `<select id="quick-add">${available.map(ex => `<option value="${ex.id}">${escapeHtml(ex.name)}</option>`).join("")}</select><button class="button full" data-action="quick-add-exercise">${tx("Add to Workout", "Add to Workout")}</button>` : `<p class="muted">${tx("All saved exercises are already in this workout.", "All saved exercises are already in this workout.")}</p>`}</section>
     ${grouped.map(group => exerciseDetailCard(session, group, Boolean(garmin))).join("")}
     <button class="fab" data-action="finish-workout" data-id="${session.id}">${svg("check", "small-icon")}${t("finishWorkout")}</button>`;
 }
 
+function workoutHeader(session) {
+  return `<section class="panel"><div class="row-head"><div><h2>${fmtDate(session.startedAt)}</h2><p>${session.note ? `${t("note")}: ${escapeHtml(session.note)}` : tx("No note", "No note")}</p></div><button class="icon-button" data-action="delete-session" data-id="${session.id}" aria-label="${tx("Delete workout", "Delete workout")}">${svg("delete")}</button></div></section>`;
+}
+
 function garminWorkoutHeader(session, metrics, grouped) {
   const setCount = grouped.reduce((sum, group) => sum + group.sets.length, 0);
-  return `<section class="panel highlighted garmin-header"><div class="row-head"><div><h2>${tx("Garmin strength workout", "Garmin strength workout")}</h2><p class="muted">${fmtDate(session.startedAt)} · ${tx("synced from Fenix 8", "synced from Fenix 8")}</p></div></div>
+  return `<section class="panel highlighted garmin-header"><div class="row-head"><div><h2>${tx("Garmin strength workout", "Garmin strength workout")}</h2><p class="muted">${fmtDate(session.startedAt)} · ${tx("synced from Fenix 8", "synced from Fenix 8")}</p></div><button class="icon-button" data-action="delete-session" data-id="${session.id}" aria-label="${tx("Delete workout", "Delete workout")}">${svg("delete")}</button></div>
     <div class="metric-grid"><div><span>${tx("Duration", "Duration")}</span><strong>${metrics.duration || "—"}</strong><small>${tx("watch session", "watch session")}</small></div><div><span>${tx("Logged", "Logged")}</span><strong>${setCount} ${tx("sets", "sets")}</strong><small>${grouped.length} ${tx("exercises", "exercises")}</small></div></div>
     <p class="muted">${tx("Synced sets are grouped below. Expand an exercise to edit weight, reps, add a missed set, or delete a wrong one.", "Synced sets are grouped below. Expand an exercise to edit weight, reps, add a missed set, or delete a wrong one.")}</p>
   </section>`;
@@ -2139,12 +2157,12 @@ function parseGarminWorkoutMetrics(note) {
     return Number.isFinite(value) ? value : null;
   };
   return {
-    duration: findText(/Duration\s+([0-9]+:[0-9]{2}(?::[0-9]{2})?)/i),
-    gymCalories: findNumber(/Gym kcal\s+([0-9]+)/i),
-    garminCalories: findNumber(/Garmin kcal\s+([0-9]+)/i),
-    avgHeartRate: findNumber(/Avg HR\s+([0-9]+)/i),
-    maxHeartRate: findNumber(/Max HR\s+([0-9]+)/i),
-    heartRateZone: findText(/HR zone\s+(Z[0-9]+)/i)
+    duration: findText(/(?:Duration|Тривалість)\s+([0-9]+:[0-9]{2}(?::[0-9]{2})?)/i),
+    gymCalories: findNumber(/Gym\s+(?:kcal|ккал)\s+([0-9]+)/i),
+    garminCalories: findNumber(/Garmin\s+(?:kcal|ккал)\s+([0-9]+)/i),
+    avgHeartRate: findNumber(/(?:Avg HR|Сер пульс)\s+([0-9]+)/i),
+    maxHeartRate: findNumber(/(?:Max HR|Макс пульс)\s+([0-9]+)/i),
+    heartRateZone: findText(/(?:HR zone|Зона пульсу)\s+(Z[0-9]+)/i)
   };
 }
 
@@ -2152,10 +2170,11 @@ function exerciseDetailCard(session, group, isGarminWorkout = false) {
   const key = `${session.id}:${group.name}`;
   const remaining = timerRemaining(key);
   const setSummary = group.sets.length
-    ? `${group.sets.length} ${tx("sets", "sets")} · ${group.sets.map(set => `${formatSetWeight(set.weight)} kg × ${set.reps}`).join(" · ")}`
+    ? `${group.sets.length} ${tx("sets", "sets")} · ${group.sets.map(set => `${formatSetWeight(set.weight)} kg x ${set.reps}`).join(" · ")}`
     : tx("No sets", "No sets");
   const restTimer = isGarminWorkout ? "" : `<div class="timer-row"><div><strong>${tx("Exercise Rest", "Exercise Rest")}</strong><span>${remaining > 0 ? formatTimer(remaining) : tx("Ready", "Ready")}</span></div><div class="actions"><button class="button ghost mini" data-action="timer" data-key="${key}" data-seconds="60">60s</button><button class="button ghost mini" data-action="timer" data-key="${key}" data-seconds="90">90s</button><button class="button ghost mini" data-action="timer" data-key="${key}" data-seconds="180">180s</button><button class="button ghost mini" data-action="timer-stop" data-key="${key}" ${remaining ? "" : "disabled"}>${tx("Stop", "Stop")}</button></div></div>`;
   return `<section class="panel highlighted workout-exercise-card"><details ${isGarminWorkout ? "" : "open"}><summary class="detail-summary"><div><h2>${escapeHtml(group.name)}</h2><p class="muted">${escapeHtml(setSummary)}</p></div>${isPr(session, group.name) ? `<span class="pill">${svg("trophy", "small-icon")}${tx("New PR", "New PR")}</span>` : ""}</summary>
+    ${!isGarminWorkout ? muscleContributionPanel(group.name) : ""}
     ${group.sets.length ? `${restTimer}<div class="table"><div class="table-head"><span>${tx("Set", "Set")}</span><span>${tx("Weight (kg)", "Weight (kg)")}</span><span>${tx("Reps", "Reps")}</span><span></span></div>${group.sets.map((set, i) => `<div class="table-row"><span>${tx("Set", "Set")} ${i + 1}</span><span>${Number(set.weight).toFixed(1)}</span><span>${set.reps}</span><span><button class="icon-button" data-action="edit-set" data-id="${set.id}">${svg("edit")}</button><button class="icon-button" data-action="delete-set" data-id="${set.id}">${svg("delete")}</button></span></div>`).join("")}</div>` : `<div class="empty">${tx("No sets were imported for this exercise.", "No sets were imported for this exercise.")}</div>`}
     <button class="button ghost full" data-action="detail-add-set" data-session="${session.id}" data-name="${escapeAttr(group.name)}">${t("addSet")}</button>
   </details></section>`;
@@ -2187,13 +2206,40 @@ function summaryScreen(id) {
     return now > prev ? { name, prev, now } : null;
   }).filter(Boolean);
   const mStats = muscleStats([session]).filter(m => m.load > 0).sort((a, b) => b.load - a.load);
+  const rewards = summaryRewards(session, records);
   return `<section class="hero-panel"><h2>${t("workoutComplete")}</h2><p>${fmtDate(session.startedAt)}</p><div class="metric-grid"><div><span>${tx("XP gained", "Отримано XP")}</span><strong>+${xpGain} XP</strong></div><div><span>${tx("Level", "Рівень")}</span><strong>${levelFromXp(xpTotal)}</strong></div></div></section>
     <section class="metric-grid post"><div><span>${tx("Current title", "Поточний ранг")}</span><strong>${rankTitle(xpTotal)}</strong></div><div><span>${tx("Streak", "Серія")}</span><strong>${streakDays()} ${tx("d", "д")}</strong></div><div><span>${tx("Exercises", "Вправи")}</span><strong>${summary.exercises}</strong></div><div><span>${tx("Sets", "Підходи")}</span><strong>${summary.sets}</strong></div><div><span>${tx("Volume", "Обсяг")}</span><strong>${Math.round(summary.volume)}</strong></div></section>
     <section class="panel"><h2>${t("impact")}</h2><p class="muted">${mStats[0] ? `${tx("Most loaded today", "Найбільше навантажено сьогодні")}: ${mStats[0].label}` : tx("Mapped muscle load will appear after sets are saved.", "Навантаження м'язів з'явиться після збереження підходів.")}</p>${mStats.slice(0, 5).map(m => barRow(m.label, m.load, mStats[0]?.load || 1, `${Math.round(m.load)} ${tx("load", "навантаження")} - ${n(m.sets, "set", "sets", "підхід", "підходи", "підходів")}`)).join("")}</section>
     ${records.length ? `<section class="panel highlighted"><h2>${t("personalRecords")}</h2>${records.map(r => `<div class="row-line"><div><strong>${escapeHtml(r.name)}</strong><p>${r.prev ? `${tx("Previous best", "Попередній рекорд")} ${r.prev.toFixed(1)} kg` : tx("First logged best", "Перший зафіксований рекорд")}</p></div><span class="pill">${r.now.toFixed(1)} kg</span></div>`).join("")}</section>` : ""}
     <section class="panel"><h2>${t("levelProgress")}</h2><p>${tx("Level", "Рівень")} ${levelFromXp(xpTotal)} - ${rankTitle(xpTotal)}</p><div class="progress"><span style="width:${progress.progressFraction * 100}%"></span></div><div class="row-line"><span>${progress.currentLevelXp} XP ${tx("into this level", "у цьому рівні")}</span><strong>${progress.xpForNextLevel - progress.currentLevelXp} XP ${tx("to next", "до наступного")}</strong></div></section>
     <section class="panel"><h2>${t("momentum")}</h2><p>${streakDays() > 1 ? `${tx("Streak extended to", "Серію продовжено до")} ${streakDays()} ${tx("days.", "днів.")}` : tx("A fresh streak has started.", "Нова серія почалася.")}</p><div class="chip-row"><span class="chip">${tx("Logged today", "Записано сьогодні")}</span><span class="chip">${tx("Best", "Найкраще")} ${streakDays()} ${tx("d", "д")}</span></div></section>
+    ${summaryRewardsSection(rewards)}
     <div class="actions vertical"><button class="button full" data-action="summary-view" data-id="${session.id}">${tx("View workout", "Переглянути тренування")}</button><button class="button ghost full" data-action="summary-done">${tx("Back to workouts", "Назад до тренувань")}</button></div>`;
+}
+
+function summaryRewards(session, records) {
+  const sessionIndex = state.sessions.filter(item => item.startedAt <= session.startedAt).length;
+  const missionRewards = completedMissions().slice(0, 5).map(mission => ({
+    title: mission.title,
+    supporting: mission.summary,
+    reward: mission.reward,
+    badge: tx("Mission", "Місія")
+  }));
+  const badgeRewards = [
+    sessionIndex === 1 ? { title: tx("First session", "Перша сесія"), supporting: tx("Workout streak started.", "Серію тренувань почато."), reward: 0, badge: tx("Common", "Звичайна") } : null,
+    sessionIndex === 10 ? { title: tx("Ten sessions", "Десять сесій"), supporting: tx("Consistency milestone reached.", "Досягнуто віху стабільності."), reward: 0, badge: tx("Uncommon", "Незвичайна") } : null,
+    records.length ? { title: tx("Personal record", "Особистий рекорд"), supporting: `${records.length} ${tx("new bests", "нових рекордів")}`, reward: 0, badge: tx("Rare", "Рідкісна") } : null
+  ].filter(Boolean);
+  return { missions: missionRewards, badges: badgeRewards };
+}
+
+function summaryRewardsSection(rewards) {
+  const hasRewards = rewards.missions.length || rewards.badges.length;
+  return `<section class="panel highlighted"><h2>${tx("Rewards", "Нагороди")}</h2><p class="muted">${tx("Completed missions and new badges from this finish.", "Завершені місії та нові бейджі після фінішу.")}</p>${hasRewards ? "" : `<div class="empty">${tx("No new unlocks this time. Keep logging to unlock more.", "Цього разу нових відкриттів немає. Продовжуй записувати тренування.")}</div>`}${rewards.missions.map(item => rewardRow(item)).join("")}${rewards.badges.map(item => rewardRow(item)).join("")}</section>`;
+}
+
+function rewardRow(item) {
+  return `<div class="row-line"><div><strong>${escapeHtml(item.title)}</strong><p>${escapeHtml(item.supporting)}</p></div><div class="actions"><span class="chip">${escapeHtml(item.badge)}</span>${item.reward ? `<span class="pill">+${item.reward} XP</span>` : ""}</div></div>`;
 }
 
 function loginAccount(rawName) {
@@ -2349,8 +2395,14 @@ async function refreshLeaderboard(force = false) {
 function leaderboardScreen() {
   const rows = leaderboardState.rows.length ? leaderboardState.rows : [localLeaderboardRow()];
   const loading = leaderboardState.status === "loading";
-  return `<section class="hero-panel"><div class="hero-split"><div><span class="pill hero-pill">${tx("Global", "Загальний")}</span><h2>${tx("Rating", "Рейтинг")}</h2><p>${tx("Top users by XP, level and saved workouts.", "Топ користувачів за XP, рівнем і тренуваннями.")}</p></div><div class="hero-stat"><span>${tx("Your XP", "Твої XP")}</span><strong>${totalXp()}</strong><small>${rankTitle()}</small></div></div></section>
-    <section class="panel"><div class="row-head"><div><h2>${tx("Leaderboard", "Таблиця рейтингу")}</h2><p>${remoteAuthEnabled() ? tx("Synced through Supabase.", "Синхронізовано через Supabase.") : tx("Cloud rating is disabled until Supabase is configured.", "Хмарний рейтинг вимкнений, доки Supabase не налаштований.")}</p></div><button class="button ghost" data-action="refresh-leaderboard">${loading ? tx("Loading", "Завантаження") : tx("Refresh", "Оновити")}</button></div>${leaderboardState.error ? `<div class="empty">${escapeHtml(leaderboardState.error)}</div>` : ""}<div class="leaderboard-list">${rows.map(leaderboardRow).join("")}</div></section>`;
+  const supporting = loading
+    ? tx("Loading the latest cloud standings.", "Завантажуємо останній хмарний рейтинг.")
+    : remoteAuthEnabled()
+      ? tx("Synced through Supabase.", "Синхронізовано через Supabase.")
+      : tx("Cloud rating is disabled until Supabase is configured.", "Хмарний рейтинг вимкнений, доки Supabase не налаштований.");
+  return `<section class="hero-panel"><div class="hero-split"><div><h2>${tx("Rating", "Рейтинг")}</h2><p>${tx("Top users by XP, level and saved workouts.", "Топ користувачів за XP, рівнем і тренуваннями.")}</p></div><div class="hero-stat"><span>${tx("Your XP", "Твої XP")}</span><strong>${totalXp()}</strong><small>${rankTitle()}</small></div></div></section>
+    <section class="panel highlighted"><div class="row-head"><div><h2>${tx("Leaderboard", "Таблиця рейтингу")}</h2><p>${supporting}</p></div><button class="button" data-action="refresh-leaderboard" ${loading ? "disabled" : ""}>${loading ? tx("Loading", "Завантаження") : tx("Refresh", "Оновити")}</button></div>${leaderboardState.error ? `<p class="muted">${escapeHtml(leaderboardState.error)}</p>` : ""}${!rows.length && !loading ? `<div class="empty">${tx("No leaderboard rows yet.", "Рядків рейтингу ще немає.")}</div>` : ""}</section>
+    <section class="leaderboard-list">${rows.map(leaderboardRow).join("")}</section>`;
 }
 
 function leaderboardRow(row, index) {
@@ -2362,52 +2414,90 @@ function leaderboardRow(row, index) {
 }
 
 function exercisesScreen() {
-  return `${accountPanel()}<section class="panel"><div class="field-row"><input id="new-exercise-name" placeholder="e.g. Bench Press"><button class="button" data-action="save-exercise">${t("addExercise")}</button></div></section>
+  const mappingRows = state.exercises;
+  return `${accountPanel()}<section class="panel"><div class="field-row"><input id="new-exercise-name" placeholder="${tx("Exercise name", "Назва вправи")}"><button class="button" data-action="save-exercise">${t("addExercise")}</button></div></section>
     <section class="panel"><h2>${t("backup")}</h2><div class="actions"><button class="button ghost" data-action="export-json">${t("exportJson")}</button><button class="button ghost" data-action="import-json">${t("importJson")}</button><button class="button ghost full" data-action="export-diagnostics">${t("diagnostics")}</button></div></section>
+    ${mappingRows.length ? exerciseMappingsPanel(mappingRows) : ""}
     <section class="exercise-list">${state.exercises.length ? state.exercises.map(exerciseRow).join("") : `<div class="empty">${tx("No exercises yet.", "Вправ ще немає.")}</div>`}</section>`;
+}
+
+function exerciseMappingsPanel(exercises) {
+  return `<section class="panel"><h2>${tx("Exercise mapping", "Мапінг вправ")}</h2>${exercises.map(exercise => {
+    const labels = mappingFor(exercise.name).map(muscleLabel).join(", ") || tx("Not mapped", "Не зіставлено");
+    return `<div class="row-line mapping-row"><span>${escapeHtml(exercise.name)}<small>${escapeHtml(labels)}</small></span><button class="button secondary mini" data-action="map-exercise" data-name="${escapeAttr(exercise.name)}">${tx("Map", "Мапити")}</button></div>`;
+  }).join("")}</section>`;
 }
 
 function exerciseRow(exercise) {
   const stats = groupedExercises().find(g => g.name === exercise.name) || { sets: 0, volume: 0, best: 0, sessions: new Set() };
-  return `<article class="exercise-row clickable" data-action="exercise-history" data-id="${exercise.id}"><div><h3>${escapeHtml(exercise.name)}</h3><span class="muted">${tx("Sessions", "Сесії")}: ${stats.sessions.size} - ${tx("Sets", "Підходи")}: ${stats.sets} - ${tx("Volume", "Обсяг")}: ${Math.round(stats.volume)}</span></div><div class="actions"><button class="icon-button" data-action="rename-exercise" data-id="${exercise.id}">${svg("edit")}</button><button class="icon-button" data-action="delete-exercise" data-id="${exercise.id}">${svg("delete")}</button></div></article>`;
+  const mapped = mappingFor(exercise.name).map(muscleLabel).join(", ") || tx("Not mapped", "Не зіставлено");
+  return `<article class="exercise-row clickable" data-action="exercise-history" data-id="${exercise.id}"><div><h3>${escapeHtml(exercise.name)}</h3><span class="muted">${tx("Sessions", "Сесії")}: ${stats.sessions.size} - ${tx("Sets", "Підходи")}: ${stats.sets} - ${tx("Volume", "Обсяг")}: ${Math.round(stats.volume)}</span><small>${escapeHtml(mapped)}</small></div><div class="actions"><button class="icon-button" data-action="map-exercise" data-name="${escapeAttr(exercise.name)}">${svg("chart")}</button><button class="icon-button" data-action="rename-exercise" data-id="${exercise.id}">${svg("edit")}</button><button class="icon-button" data-action="delete-exercise" data-id="${exercise.id}">${svg("delete")}</button></div></article>`;
 }
 
 function progressScreen() {
-  const selectedId = state.progressExerciseId || state.exercises[0]?.id;
-  const selected = state.exercises.find(ex => ex.id === selectedId);
-  if (!selected) return `<div class="empty">${tx("No exercises yet.", "Вправ ще немає.")}</div>`;
+  const selectedId = Number(state.progressExerciseId || state.exercises[0]?.id || 0);
+  const selected = state.exercises.find(ex => Number(ex.id) === selectedId);
+  if (!selected) return `<section class="panel"><div class="empty">${tx("No exercises yet.", "Вправ ще немає.")}</div></section>`;
   const history = allSets(selectedMonthSessions()).filter(set => set.exerciseName === selected.name).sort((a, b) => b.session.startedAt - a.session.startedAt);
-  const grouped = Object.values(history.reduce((acc, set) => {
-    acc[set.session.id] ||= { session: set.session, sets: [] };
-    acc[set.session.id].sets.push(set);
-    return acc;
-  }, {}));
-  const best = Math.max(0, ...history.map(s => s.weight));
-  const avg = grouped.length ? grouped.reduce((sum, g) => sum + Math.max(...g.sets.map(s => s.weight)), 0) / grouped.length : 0;
-  const vol = history.reduce((sum, s) => sum + s.weight * s.reps, 0);
-  return `${monthSwitcher()}<section class="panel"><label>${tx("Exercise", "Вправа")}<select id="progress-select" data-action="progress-select">${state.exercises.map(ex => `<option value="${ex.id}" ${ex.id === selectedId ? "selected" : ""}>${escapeHtml(ex.name)}</option>`).join("")}</select></label></section>
-    <section class="panel"><h2>${tx("Progress Summary", "Підсумок прогресу")}</h2><p class="muted">${tx("Volume = weight x reps across all completed sets.", "Обсяг = вага x повтори по всіх завершених підходах.")}</p><div class="metric-grid three"><div><span>${tx("Sessions", "Сесії")}</span><strong>${grouped.length}</strong></div><div><span>${tx("Total Sets", "Усього підходів")}</span><strong>${history.length}</strong></div><div><span>${tx("Total Reps", "Усього повторів")}</span><strong>${history.reduce((s, x) => s + x.reps, 0)}</strong></div><div><span>${tx("Best Weight", "Найкраща вага")}</span><strong>${best.toFixed(1)} kg</strong></div><div><span>${tx("Average Max", "Середній максимум")}</span><strong>${avg.toFixed(1)} kg</strong></div><div><span>${tx("Total Volume", "Загальний обсяг")}</span><strong>${Math.round(vol)}</strong></div></div></section>
+  const grouped = progressHistoryGroups(history);
+  const best = Math.max(0, ...history.map(s => Number(s.weight || 0)));
+  const avg = grouped.length ? grouped.reduce((sum, g) => sum + Math.max(...g.sets.map(s => Number(s.weight || 0))), 0) / grouped.length : 0;
+  const vol = history.reduce((sum, s) => sum + Number(s.weight || 0) * Number(s.reps || 0), 0);
+  const reps = history.reduce((sum, x) => sum + Number(x.reps || 0), 0);
+  return `${monthSwitcher()}<section class="panel"><label>${tx("Exercise", "Вправа")}<select id="progress-select" data-action="progress-select">${state.exercises.map(ex => `<option value="${ex.id}" ${Number(ex.id) === selectedId ? "selected" : ""}>${escapeHtml(ex.name)}</option>`).join("")}</select></label></section>
+    <section class="panel"><h2>${tx("Progress Summary", "Підсумок прогресу")}</h2><p class="muted">${tx("Volume = weight x reps across all completed sets.", "Обсяг = вага x повтори по всіх завершених підходах.")}</p><div class="metric-grid three"><div><span>${tx("Sessions", "Сесії")}</span><strong>${grouped.length}</strong></div><div><span>${tx("Total Sets", "Усього підходів")}</span><strong>${history.length}</strong></div><div><span>${tx("Total Reps", "Усього повторів")}</span><strong>${reps}</strong></div><div><span>${tx("Best Weight", "Найкраща вага")}</span><strong>${history.length ? `${best.toFixed(1)} kg` : tx("No data", "Немає даних")}</strong></div><div><span>${tx("Average Max", "Середній максимум")}</span><strong>${history.length ? `${avg.toFixed(1)} kg` : tx("No data", "Немає даних")}</strong></div><div><span>${tx("Total Volume", "Загальний обсяг")}</span><strong>${Math.round(vol)}</strong></div></div></section>
     <section class="panel">${spotlight(selected.name, grouped, best, vol)}</section>
-    <section class="panel"><h2>${tx("Visual Trends", "Візуальні тренди")}</h2><div class="bars">${grouped.length ? grouped.slice().reverse().map(g => barRow(fmtDate(g.session.startedAt, { day: "numeric", month: "short" }), Math.max(...g.sets.map(s => s.weight)), best || 1, `${tx("Vol", "Обсяг")} ${Math.round(g.sets.reduce((sum, s) => sum + s.weight * s.reps, 0))}`)).join("") : `<div class="empty">${tx("Add sets to see chart.", "Додай підходи, щоб побачити графік.")}</div>`}</div></section>
+    <section class="panel"><h2>${tx("Visual Trends", "Візуальні тренди")}</h2><div class="bars">${grouped.length ? grouped.slice().reverse().map(g => barRow(fmtDate(g.session.startedAt, { day: "numeric", month: "short" }), Math.max(...g.sets.map(s => Number(s.weight || 0))), best || 1, `${tx("Vol", "Обсяг")} ${Math.round(g.sets.reduce((sum, s) => sum + Number(s.weight || 0) * Number(s.reps || 0), 0))}`)).join("") : `<div class="empty">${tx("Add sets to see chart.", "Додай підходи, щоб побачити графік.")}</div>`}</div></section>
     <section class="workout-list"><h2>${tx("Workout History", "Історія тренувань")}</h2>${grouped.length ? grouped.map(g => progressHistoryCard(g)).join("") : `<div class="empty">${tx("No history in this month.", "Немає історії за цей місяць.")}</div>`}</section>`;
 }
 
+function progressHistoryGroups(history) {
+  const groups = Object.values(history.reduce((acc, set, index) => {
+    acc[set.session.id] ||= { session: set.session, sets: [] };
+    acc[set.session.id].sets.push({ ...set, orderIndex: set.orderIndex ?? index });
+    return acc;
+  }, {}));
+  return groups.sort((a, b) => b.session.startedAt - a.session.startedAt).map(group => ({
+    ...group,
+    sets: group.sets.sort((a, b) => Number(a.orderIndex || 0) - Number(b.orderIndex || 0))
+  }));
+}
+
+function groupedExerciseHistory(groups) {
+  let lastMonth = "";
+  let lastDay = "";
+  return groups.map(group => {
+    const month = fmtDate(group.session.startedAt, { month: "long", year: "numeric" });
+    const day = fmtDate(group.session.startedAt, { weekday: "long", day: "numeric", month: "long" });
+    const headers = `${month !== lastMonth ? `<h3>${escapeHtml(month)}</h3>` : ""}${day !== lastDay ? `<p class="muted">${escapeHtml(day)}</p>` : ""}`;
+    lastMonth = month;
+    lastDay = day;
+    return `${headers}${progressHistoryCard(group)}`;
+  }).join("");
+}
 function spotlight(name, grouped, best, vol) {
   return `<h2>${escapeHtml(name)}</h2><div class="metric-grid"><div><span>${tx("All-time best", "Найкраще за весь час")}</span><strong>${best.toFixed(1)} kg</strong></div><div><span>${tx("Consistency", "Стабільність")}</span><strong>${n(grouped.length, "session", "sessions", "сесія", "сесії", "сесій")}</strong></div><div><span>${tx("Peak weight", "Пікова вага")}</span><strong>${best.toFixed(1)} kg</strong></div><div><span>${tx("Avg volume", "Сер. обсяг")}</span><strong>${grouped.length ? Math.round(vol / grouped.length) : 0}</strong></div></div>`;
 }
 
 function progressHistoryCard(group) {
-  const volume = group.sets.reduce((sum, s) => sum + s.weight * s.reps, 0);
-  return `<article class="workout-item"><h3>${fmtDate(group.session.startedAt)}</h3><div class="chip-row"><span class="chip">${tx("Sets", "Підходи")}: ${group.sets.length}</span><span class="chip">${tx("Reps", "Повтори")}: ${group.sets.reduce((s, x) => s + x.reps, 0)}</span><span class="chip">${tx("Volume", "Обсяг")}: ${Math.round(volume)}</span></div><div class="table">${group.sets.map((set, i) => `<div class="table-row"><span>${tx("Set", "Підхід")} ${i + 1}</span><span>${set.weight.toFixed(1)}</span><span>${set.reps}</span><button class="icon-button" data-action="delete-set" data-id="${set.id}">${svg("delete")}</button></div>`).join("")}</div></article>`;
+  const volume = group.sets.reduce((sum, s) => sum + Number(s.weight || 0) * Number(s.reps || 0), 0);
+  const reps = group.sets.reduce((sum, x) => sum + Number(x.reps || 0), 0);
+  return `<article class="workout-item"><h3>${fmtDate(group.session.startedAt)}</h3><div class="chip-row"><span class="chip">${tx("Sets", "Підходи")}: ${group.sets.length}</span><span class="chip">${tx("Reps", "Повтори")}: ${reps}</span><span class="chip">${tx("Volume", "Обсяг")}: ${Math.round(volume)}</span></div><div class="table"><div class="table-row"><strong>${tx("Set", "Підхід")}</strong><strong>${tx("Weight", "Вага")}</strong><strong>${tx("Reps", "Повтори")}</strong><span></span></div>${group.sets.map((set, i) => `<div class="table-row"><span>${tx("Set", "Підхід")} ${i + 1}</span><span>${Number(set.weight || 0).toFixed(1)}</span><span>${Number(set.reps || 0)}</span><button class="icon-button" data-action="delete-set" data-id="${set.id}">${svg("delete")}</button></div>`).join("")}</div></article>`;
 }
 
 function missionsScreen() {
   const missions = missionGroups();
   const all = [...missions.daily, ...missions.weekly, ...missions.monthly];
   const done = all.filter(m => m.done);
-  return `<section class="hero-panel"><h2>${t("missions")}</h2><p>${tx("Active daily, weekly, and monthly missions rotate from a huge challenge pool.", "Активні щоденні, тижневі й місячні місії обираються з великого пулу викликів.")}</p><div class="metric-grid"><div><span>${tx("Total", "Усього")}</span><strong>${all.length}</strong></div><div><span>${tx("Completed", "Виконано")}</span><strong>${done.length}</strong></div><div><span>${tx("Open", "Відкрито")}</span><strong>${all.length - done.length}</strong></div><div><span>${tx("Progress", "Прогрес")}</span><strong>${done.length}/${all.length}</strong></div></div><p>${tx("Mission XP from completed goals", "XP місій за виконані цілі")}: ${done.reduce((s, m) => s + m.reward, 0)}</p></section>
+  const dailyDone = missions.daily.filter(m => m.done).length;
+  const weeklyDone = missions.weekly.filter(m => m.done).length;
+  const monthlyDone = missions.monthly.filter(m => m.done).length;
+  const sections = all.length
+    ? `${missionSection(t("daily"), tx("Daily consistency goals reset at midnight.", "Щоденні цілі стабільності оновлюються опівночі."), missions.daily)}${missionSection(t("weekly"), tx("Weekly goals track this training week.", "Тижневі цілі рахують поточний тренувальний тиждень."), missions.weekly)}${missionSection(t("monthly"), tx("Monthly goals measure the whole calendar month.", "Місячні цілі рахують увесь календарний місяць."), missions.monthly)}`
+    : `<section class="panel"><div class="empty"><h2>${tx("No missions yet", "Місій ще немає")}</h2><p>${tx("Add workouts to unlock daily, weekly, and monthly goals.", "Додай тренування, щоб відкрити щоденні, тижневі й місячні цілі.")}</p></div></section>`;
+  return `<section class="hero-panel"><h2>${t("missions")}</h2><p>${tx("Active daily, weekly, and monthly missions rotate from a huge challenge pool.", "Активні щоденні, тижневі й місячні місії обираються з великого пулу викликів.")}</p><div class="metric-grid"><div><span>${tx("Total", "Усього")}</span><strong>${all.length}</strong></div><div><span>${tx("Completed", "Виконано")}</span><strong>${done.length}</strong></div><div><span>${tx("Open", "Відкрито")}</span><strong>${all.length - done.length}</strong></div><div><span>${tx("Progress", "Прогрес")}</span><strong>${done.length}/${all.length}</strong></div></div><p>${tx("Daily", "Щоденні")}: ${dailyDone}/${missions.daily.length} - ${tx("Weekly", "Тижневі")}: ${weeklyDone}/${missions.weekly.length} - ${tx("Monthly", "Місячні")}: ${monthlyDone}/${missions.monthly.length}</p><p>${tx("Mission XP from completed goals", "XP місій за виконані цілі")}: ${done.reduce((s, m) => s + m.reward, 0)}</p></section>
     <section class="panel highlighted clickable" data-action="open-ranks"><div class="section-title"><div><h2>${tx("Rank ladder", "Драбина рангів")}</h2><p>${tx("Open the full rank list and check the next unlocks.", "Відкрий повний список рангів і перевір наступні відкриття.")}</p></div><span class="pill">${t("viewRanks")}</span></div><div class="metric-grid"><div><span>${tx("Current level", "Поточний рівень")}</span><strong>${levelFromXp()}</strong></div><div><span>${tx("Current title", "Поточний ранг")}</span><strong>${rankTitle()}</strong></div></div></section>
-    ${missionSection(t("daily"), missions.daily)}${missionSection(t("weekly"), missions.weekly)}${missionSection(t("monthly"), missions.monthly)}`;
+    ${sections}`;
 }
 
 function missionGroups() {
@@ -2427,10 +2517,14 @@ function mission(template, cadence, stats, history) {
   const target = missionTargetForFamily(cadence, template.family, history);
   const progress = template.progress(stats);
   const reward = missionXpReward(cadence, template.goal, target);
+  const cadenceLabel = cadence === "daily" ? t("daily") : cadence === "weekly" ? t("weekly") : t("monthly");
   return {
     id: template.id,
+    cadence,
+    cadenceLabel,
     title: tx(template.titleEn, template.titleUk),
     summary: `${Math.round(progress)} / ${template.goal} ${tx(template.unitEn, template.unitUk)}`,
+    progressLabel: `${Math.round(progress)} / ${template.goal} ${tx(template.unitEn, template.unitUk)}`,
     progress,
     target: template.goal,
     reward,
@@ -2757,23 +2851,27 @@ function dayNumber(date) {
   return Math.floor(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / 86400000);
 }
 
-function missionSection(title, missions) {
-  return `<section class="mission-list"><div class="section-title panel compact"><div><h2>${title}</h2><p>${tx("Consistency goals for the current period.", "Цілі стабільності на поточний період.")}</p></div><span class="pill">${missions.filter(m => m.done).length}/${missions.length} ${tx("done", "виконано")}</span></div>${missions.map(missionCard).join("")}</section>`;
+function missionSection(title, supporting, missions) {
+  return `<section class="mission-list"><div class="section-title panel highlighted compact"><div><h2>${title}</h2><p>${supporting}</p></div><span class="pill">${missions.filter(m => m.done).length}/${missions.length} ${tx("done", "виконано")}</span></div>${missions.map(missionCard).join("")}</section>`;
 }
 
 function missionCard(m) {
-  return `<article class="mission-row ${m.done ? "highlighted" : ""}"><div class="row-head"><div><h3>${m.title}</h3><p>${m.summary}</p></div><span class="pill">${m.done ? tx("Completed", "Виконано") : tx("In progress", "У процесі")}</span></div><div class="chip-row"><span class="chip">+${m.reward} XP</span><span class="chip">${m.summary}</span></div><div class="progress"><span style="width:${Math.min(100, m.progress / m.target * 100)}%"></span></div></article>`;
+  const status = m.done ? tx("Completed", "Виконано") : tx("In progress", "У процесі");
+  return `<article class="mission-row ${m.done ? "highlighted" : ""}"><div class="row-head"><div><h3>${m.title}</h3><p>${m.summary}</p></div><span class="pill">${status}</span></div><div class="chip-row"><span class="chip">${m.cadenceLabel}</span><span class="chip">+${m.reward} XP</span><span class="muted">${m.progressLabel}</span></div><div class="progress"><span style="width:${Math.min(100, m.progress / Math.max(1, m.target) * 100)}%"></span></div></article>`;
 }
 
 function ranksScreen() {
   const xp = totalXp();
+  const ranks = rankLadder().sort((a, b) => a.xp - b.xp || a.level - b.level);
+  const cards = ranks.length ? ranks.map(rank => {
+    const unlocked = rank.isUnlocked;
+    const current = rank.isCurrent;
+    const status = current ? tx("Current", "Поточний") : unlocked ? tx("Unlocked", "Відкрито") : tx("Locked", "Закрито");
+    const progressValue = unlocked ? 100 : rank.progressFraction * 100;
+    return `<section class="panel ${current ? "highlighted" : ""}"><div class="row-head"><div><h2>${rank.title}</h2><p>${status}</p></div><span class="pill">${status}</span></div><div class="metric-grid"><div><span>${tx("Required level", "Потрібний рівень")}</span><strong>${rank.level}</strong></div><div><span>${tx("Required total XP", "Потрібно XP")}</span><strong>${rank.xp}</strong></div></div><div class="progress"><span style="width:${progressValue}%"></span></div><div class="row-line"><span>${Math.min(xp, rank.xp)} / ${rank.xp} XP</span>${!unlocked ? `<strong>${rank.xpRemaining} XP ${tx("left", "лишилось")}</strong>` : ""}</div></section>`;
+  }).join("") : `<section class="panel"><div class="empty"><h2>${tx("No ranks yet", "Рангів ще немає")}</h2><p>${tx("Earn XP to unlock rank titles.", "Заробляй XP, щоб відкривати ранги.")}</p></div></section>`;
   return `<section class="hero-panel"><h2>${t("ranks")}</h2><p>${tx("See every title, its level gate, and the XP needed to unlock it.", "Переглянь усі ранги, потрібний рівень і XP для відкриття.")}</p><div class="metric-grid"><div><span>${tx("TOTAL XP", "УСЬОГО XP")}</span><strong>${xp}</strong></div><div><span>${tx("Current level", "Поточний рівень")}</span><strong>${levelFromXp(xp)}</strong></div></div><p>${tx("Current title", "Поточний ранг")}: ${rankTitle(xp)}</p></section>
-    ${rankLadder().map(rank => {
-      const unlocked = rank.isUnlocked;
-      const current = rank.isCurrent;
-      const status = current ? tx("Current", "Поточний") : unlocked ? tx("Unlocked", "Відкрито") : tx("Locked", "Закрито");
-      return `<section class="panel ${current ? "highlighted" : ""}"><div class="row-head"><div><h2>${rank.title}</h2><p>${status}</p></div><span class="pill">${status}</span></div><div class="metric-grid"><div><span>${tx("Required level", "Потрібний рівень")}</span><strong>${rank.level}</strong></div><div><span>${tx("Required total XP", "Потрібно XP")}</span><strong>${rank.xp}</strong></div></div><div class="progress"><span style="width:${rank.progressFraction * 100}%"></span></div><div class="row-line"><span>${Math.min(xp, rank.xp)} / ${rank.xp} XP</span>${!unlocked ? `<strong>${rank.xpRemaining} XP ${tx("left", "лишилось")}</strong>` : ""}</div></section>`;
-    }).join("")}`;
+    ${cards}`;
 }
 
 function modalMarkup() {
@@ -2793,12 +2891,9 @@ function bottomSheet(content) {
 
 function exerciseHistoryMarkup(exercise) {
   const history = allSets().filter(set => set.exerciseName === exercise.name).sort((a, b) => b.session.startedAt - a.session.startedAt);
-  const groups = Object.values(history.reduce((acc, set) => {
-    acc[set.session.id] ||= { session: set.session, sets: [] };
-    acc[set.session.id].sets.push(set);
-    return acc;
-  }, {}));
-  return `<h2>${escapeHtml(exercise.name)}</h2><div class="metric-grid three"><div><span>${tx("Sessions", "Сесії")}</span><strong>${groups.length}</strong></div><div><span>${tx("Sets", "Підходи")}</span><strong>${history.length}</strong></div><div><span>${tx("Volume", "Обсяг")}</span><strong>${Math.round(history.reduce((s, x) => s + x.weight * x.reps, 0))}</strong></div></div>${groups.length ? groups.map(progressHistoryCard).join("") : `<div class="empty">${tx("No history for this exercise yet.", "Історії для цієї вправи ще немає.")}</div>`}`;
+  const groups = progressHistoryGroups(history);
+  const total = history.reduce((s, x) => s + Number(x.weight || 0) * Number(x.reps || 0), 0);
+  return `<h2>${escapeHtml(exercise.name)}</h2><div class="metric-grid three"><div><span>${tx("Sessions", "Сесії")}</span><strong>${groups.length}</strong></div><div><span>${tx("Sets", "Підходи")}</span><strong>${history.length}</strong></div><div><span>${tx("Volume", "Обсяг")}</span><strong>${Math.round(total)}</strong></div></div>${groups.length ? groupedExerciseHistory(groups) : `<div class="empty">${tx("No history for this exercise yet.", "Історії для цієї вправи ще немає.")}</div>`}`;
 }
 
 function mappingEditor(name) {
@@ -2843,6 +2938,7 @@ function handleAction(action, el) {
   if (action === "backup") { modal = { type: "backup-json", json: exportPayload(false) }; return render(); }
   if (action === "open-add") return push("add");
   if (action === "open-detail") return push("detail", { id: Number(el.dataset.id) });
+  if (action === "delete-session") return deleteSession(Number(el.dataset.id));
   if (action === "finish-workout") return push("summary", { id: Number(el.dataset.id) });
   if (action === "summary-view") { nav = [{ name: "workouts" }, { name: "detail", id: Number(el.dataset.id) }]; return render(); }
   if (action === "summary-done") return goRoot("workouts");
@@ -3099,6 +3195,18 @@ function deleteSet(id) {
       return render();
     }
   }
+}
+
+function deleteSession(id) {
+  const session = state.sessions.find(s => s.id === id);
+  if (!session) return;
+  if (!window.confirm(tx(`Delete workout from ${fmtDate(session.startedAt)}?`, `Видалити тренування від ${fmtDate(session.startedAt)}?`))) return;
+  state.sessions = state.sessions.filter(item => item.id !== id);
+  saveState();
+  modal = null;
+  if (route().name === "detail" || route().name === "summary") nav = [{ name: "workouts" }];
+  showToast(tx("Workout deleted.", "Тренування видалено."));
+  render();
 }
 
 function findSet(id) {
