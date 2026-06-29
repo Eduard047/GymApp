@@ -22,7 +22,7 @@ class GymCommListener extends Comm.ConnectionListener {
 }
 
 class GymComm {
-    static var watchVersion = "2026.06.28.1010";
+    static var watchVersion = "2026.06.29.1205";
 
     static function send(message, callback) {
         Comm.transmit(message, null, new GymCommListener(callback));

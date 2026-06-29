@@ -25,6 +25,7 @@ class WorkoutView extends Ui.View {
     function onShow() {
         ticker.start(method(:tick), 1000, true);
         if (!GymSession.recording) {
+            GymStore.clearActiveWorkout();
             GymSession.start();
         } else {
             GymSession.startSensors();
@@ -97,7 +98,7 @@ class WorkoutView extends Ui.View {
         }
         var message = GymStore.workoutMessage();
         GymStore.pending.add(message);
-        GymStore.save();
+        GymStore.clearActiveWorkout();
         GymComm.send(message, method(:onWorkoutSent));
         Attention.vibrate([new Attention.VibeProfile(80, 250)]);
     }

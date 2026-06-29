@@ -220,6 +220,12 @@ class GymStore {
         save();
     }
 
+    static function clearActiveWorkout() {
+        sets = [];
+        restEndsAt = 0;
+        save();
+    }
+
     static function restSeconds() {
         if (restEndsAt <= 0) {
             return 0;
@@ -234,6 +240,17 @@ class GymStore {
 
     static function workoutMessage() {
         var requestId = Time.now().value().toString();
+        var setCopies = [];
+        for (var i = 0; i < sets.size(); i += 1) {
+            var setItem = sets[i];
+            if (setItem instanceof Lang.Dictionary) {
+                setCopies.add({
+                    "exerciseName" => setItem.get("exerciseName"),
+                    "weight" => setItem.get("weight"),
+                    "reps" => setItem.get("reps")
+                });
+            }
+        }
         return {
             "type" => "create_workout",
             "requestId" => requestId,
@@ -246,11 +263,16 @@ class GymStore {
             "lastHeartRate" => GymSession.hr,
             "heartRateZone" => GymSession.zone,
             "debug" => GymSession.debugText,
-            "sets" => sets
+            "sets" => setCopies
         };
     }
 
     static function applySync(message) {
+        var shouldResetWorkout = message.get("resetWorkout");
+        if (shouldResetWorkout instanceof Lang.Boolean && shouldResetWorkout) {
+            sets = [];
+            restEndsAt = 0;
+        }
         var syncedLanguage = message.get("language");
         if (syncedLanguage != null) {
             language = syncedLanguage.toString().equals("uk") ? "uk" : "en";

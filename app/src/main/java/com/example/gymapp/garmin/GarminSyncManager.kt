@@ -104,7 +104,7 @@ class GarminSyncManager(
         exerciseCatalog: List<String>
     ): Boolean {
         val syncId = System.currentTimeMillis().toString(36)
-        val payload = syncPayload(exerciseCatalog, sets, syncId)
+        val payload = syncPayload(exerciseCatalog, sets, syncId, resetWorkout = true)
         cachePlan(sets)
         lastPlanSyncStatus = "Waiting for Garmin SDK"
         if (!ensureSdkReady()) {
@@ -195,7 +195,7 @@ class GarminSyncManager(
         val repository = activeRepository()
         val exercises = repository.getExerciseNamesForSync(limit = 200)
         val syncId = "rq" + System.currentTimeMillis().toString(36)
-        val payload = syncPayload(exercises, cachedPlan(), syncId)
+        val payload = syncPayload(exercises, cachedPlan(), syncId, resetWorkout = false)
         Log.i(TAG, "Replying to watch request_sync payload=${payloadSummary(payload)}")
         sendAndConfirmSync(device, payload, syncId)
     }
@@ -237,7 +237,8 @@ class GarminSyncManager(
     private fun syncPayload(
         exercises: List<String>,
         plan: List<NamedWorkoutSetDraft>,
-        syncId: String? = null
+        syncId: String? = null,
+        resetWorkout: Boolean = false
     ): Map<String, Any> {
         val compactPlan = plan.take(MAX_WATCH_PLAN_SETS)
         val planExerciseNames = compactPlan.map { it.exerciseName }
@@ -254,6 +255,7 @@ class GarminSyncManager(
 
         val payload = mutableMapOf<String, Any>(
             "type" to "sync",
+            "resetWorkout" to resetWorkout,
             "language" to application.languageManager.currentLanguage().tag,
             "planNames" to compactPlan.map { it.exerciseName },
             "planWeights" to compactPlan.map { it.weight },
