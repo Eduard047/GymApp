@@ -9,6 +9,7 @@ class WorkoutView extends Ui.View {
     var page = 0;
     var pauseSelected = 0;
     var settingsSelected = 0;
+    var settingsCount = 6;
     var ticker;
     var restWasActive = false;
     var pauseFlashUntil = 0;
@@ -63,6 +64,26 @@ class WorkoutView extends Ui.View {
 
     function onSyncSent(ok) {
         GymStore.status = ok ? "SYNC REQ" : "NO PHONE";
+        Ui.requestUpdate();
+    }
+
+    function requestCloudSyncNow() {
+        GymStore.status = "CLOUD...";
+        GymComm.requestCloudPlan(method(:onCloudPlanFetched));
+        Ui.requestUpdate();
+    }
+
+    function onCloudPlanFetched(ok, status, message) {
+        if (ok && message != null) {
+            try {
+                GymStore.applySync(message);
+                GymStore.status = status;
+            } catch (e) {
+                GymStore.status = "CLOUD FAIL";
+            }
+        } else {
+            GymStore.status = status;
+        }
         Ui.requestUpdate();
     }
 
@@ -345,11 +366,12 @@ class WorkoutView extends Ui.View {
         dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
         drawHeader(dc, w, GymStore.tr("SETTINGS", "НАЛАШТ"));
 
-        drawSettingsRow(dc, 0, 54, GymStore.tr("AUTOSET", "АВТО"), GymStore.onOff(GymStore.autoPromptEnabled));
-        drawSettingsRow(dc, 1, 84, GymStore.tr("DETECT", "ДЕТЕКТ"), fitText(GymStore.sensitivityLabel(), 6));
-        drawSettingsRow(dc, 2, 114, GymStore.tr("KG STEP", "КРОК КГ"), GymStore.weightStep.format("%.1f"));
-        drawSettingsRow(dc, 3, 144, GymStore.tr("REST", "ВІДП"), GymStore.restSecondsDefault.toString() + "s");
-        drawSettingsRow(dc, 4, 174, GymStore.tr("REPS", "ПОВТ"), GymStore.reps.toString());
+        drawSettingsRow(dc, 0, 48, GymStore.tr("AUTOSET", "АВТО"), GymStore.onOff(GymStore.autoPromptEnabled));
+        drawSettingsRow(dc, 1, 74, GymStore.tr("DETECT", "ДЕТЕКТ"), fitText(GymStore.sensitivityLabel(), 6));
+        drawSettingsRow(dc, 2, 100, GymStore.tr("KG STEP", "КРОК КГ"), GymStore.weightStep.format("%.1f"));
+        drawSettingsRow(dc, 3, 126, GymStore.tr("REST", "ВІДП"), GymStore.restSecondsDefault.toString() + "s");
+        drawSettingsRow(dc, 4, 152, GymStore.tr("REPS", "ПОВТ"), GymStore.reps.toString());
+        drawSettingsRow(dc, 5, 178, "CLOUD", "SYNC");
     }
 
     function drawSettingsRow(dc, index, y, label, value) {
@@ -468,7 +490,7 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         } else if (view.page == 1) {
             view.selected = (view.selected + 1) % 4;
         } else if (view.page == 5) {
-            view.settingsSelected = (view.settingsSelected + 1) % 5;
+            view.settingsSelected = (view.settingsSelected + 1) % view.settingsCount;
         } else if (view.page == 0) {
             view.page = 1;
         } else if (view.page == 4) {
@@ -490,7 +512,7 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         } else if (view.page == 4) {
             view.page = 1;
         } else if (view.page == 5) {
-            view.settingsSelected = (view.settingsSelected + 4) % 5;
+            view.settingsSelected = (view.settingsSelected + view.settingsCount - 1) % view.settingsCount;
         } else {
             view.page = 5;
         }
@@ -530,7 +552,7 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         } else if (view.page == 2) {
             view.pauseSelected = (view.pauseSelected + 1) % 3;
         } else if (view.page == 5) {
-            view.settingsSelected = (view.settingsSelected + 1) % 5;
+            view.settingsSelected = (view.settingsSelected + 1) % view.settingsCount;
         } else if (view.page == 4) {
             view.page = 0;
         } else if (view.page == 0) {
@@ -575,9 +597,9 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         } else if (direction == Ui.SWIPE_DOWN && view.page == 1) {
             view.selected = (view.selected + 3) % 4;
         } else if (direction == Ui.SWIPE_UP && view.page == 5) {
-            view.settingsSelected = (view.settingsSelected + 1) % 5;
+            view.settingsSelected = (view.settingsSelected + 1) % view.settingsCount;
         } else if (direction == Ui.SWIPE_DOWN && view.page == 5) {
-            view.settingsSelected = (view.settingsSelected + 4) % 5;
+            view.settingsSelected = (view.settingsSelected + view.settingsCount - 1) % view.settingsCount;
         }
         Ui.requestUpdate();
         return true;
@@ -594,9 +616,9 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         } else if (key == Ui.KEY_DOWN && view.page == 1) {
             view.selected = (view.selected + 1) % 4;
         } else if (key == Ui.KEY_UP && view.page == 5) {
-            view.settingsSelected = (view.settingsSelected + 4) % 5;
+            view.settingsSelected = (view.settingsSelected + view.settingsCount - 1) % view.settingsCount;
         } else if (key == Ui.KEY_DOWN && view.page == 5) {
-            view.settingsSelected = (view.settingsSelected + 1) % 5;
+            view.settingsSelected = (view.settingsSelected + 1) % view.settingsCount;
         } else if (key == Ui.KEY_ENTER) {
             if (view.page == 3) {
                 view.saveAndExit();
@@ -698,6 +720,8 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
                 GymStore.reps = 1;
             }
             GymStore.save();
+        } else if (view.settingsSelected == 5) {
+            view.requestCloudSyncNow();
         }
     }
 

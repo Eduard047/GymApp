@@ -166,4 +166,19 @@ http://127.0.0.1:4173
 
 To install on iPhone, host the `pwa/` folder over HTTPS, open the URL in Safari, then use `Share` -> `Add to Home Screen`.
 
-The PWA stores workouts locally in the browser and supports JSON export/import from the Exercises backup tools. Watch sync is represented as a local-ready action because iPhone Safari cannot talk to the Wear OS Data Layer used by the Android app.
+The PWA stores workouts locally in the browser, syncs through Supabase when cloud login is enabled, and supports JSON export/import from the Exercises backup tools.
+
+### Garmin cloud sync POC
+
+The iPhone/PWA Garmin path uses Supabase as a queue and Garmin Connect Mobile as the watch network bridge:
+
+1. Apply `supabase-schema.sql` in the Supabase SQL editor.
+2. Deploy the Edge Function:
+
+```powershell
+supabase functions deploy garmin-sync --project-ref owrcbsrectdgaotndtxy
+```
+
+3. In the PWA Add Workout screen, tap `Sync Watch`. The first run creates a Garmin device token and copies it.
+4. Paste that token into the GymApp `Cloud Token` setting in Garmin Connect IQ Mobile.
+5. On the watch, open settings and select `CLOUD / SYNC` to download the latest pending plan.
