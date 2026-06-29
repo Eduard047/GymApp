@@ -1,10 +1,11 @@
-const CACHE_NAME = "gym-pwa-v24";
+const CACHE_NAME = "gym-pwa-v25";
 const ASSETS = [
   "./",
   "./index.html",
   "./styles.css",
   "./muscle-regions.js",
   "./supabase-config.js",
+  "./garmin-cloud-sync.js",
   "./app.js",
   "./manifest.webmanifest",
   "./icon.svg"

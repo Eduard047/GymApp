@@ -1174,31 +1174,7 @@ async function saveRemoteState() {
 }
 
 function draftToGarminPlan(draft = modal?.draft) {
-  if (!draft) return null;
-  const exercises = [];
-  draft.blocks.forEach(block => {
-    const name = String(block.exerciseName || "").trim();
-    if (!name) return;
-    const sets = [];
-    block.sets.forEach((set, index) => {
-      const weight = Number(String(set.weight).replace(",", "."));
-      const reps = Number.parseInt(set.reps, 10);
-      if (Number.isFinite(weight) && weight >= 0 && reps > 0) {
-        sets.push({ weight, reps, orderIndex: index });
-      }
-    });
-    if (sets.length) exercises.push({ name, sets });
-  });
-  if (!exercises.length) return null;
-  return {
-    source: "pwa",
-    version: 1,
-    title: tx("Workout plan", "Workout plan"),
-    createdAt: new Date().toISOString(),
-    startedAt: new Date(draft.startedAt || Date.now()).toISOString(),
-    note: draft.note || "",
-    exercises
-  };
+  return window.GymGarminCloud.draftToGarminPlan(draft, { title: tx("Workout plan", "Workout plan") });
 }
 
 async function ensureGarminDeviceToken(session) {
