@@ -158,22 +158,22 @@ class WorkoutView extends Ui.View {
 
     function drawDashboard(dc, w, h) {
         dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, 22, Gfx.FONT_SMALL, GymSession.elapsedText(), Gfx.TEXT_JUSTIFY_CENTER);
+        dc.drawText(w / 2, sy(h, 22), Gfx.FONT_SMALL, GymSession.elapsedText(), Gfx.TEXT_JUSTIFY_CENTER);
 
         var hrText = GymSession.hr == null ? "--" : GymSession.hr.toString();
         var garminKcal = GymSession.garminCalories == null ? "--" : GymSession.garminCalories.toString();
 
         dc.setColor(zoneColor(GymSession.zone), Gfx.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, 48, Gfx.FONT_NUMBER_MEDIUM, hrText, Gfx.TEXT_JUSTIFY_CENTER);
-        drawHeartRateZones(dc, w, 126);
+        dc.drawText(w / 2, sy(h, 48), Gfx.FONT_NUMBER_MEDIUM, hrText, Gfx.TEXT_JUSTIFY_CENTER);
+        drawHeartRateZones(dc, w, h, 126);
 
-        drawCompactValue(dc, 82, 174, "GYM", GymSession.gymCalories.format("%.0f"));
-        drawCompactValue(dc, 178, 174, "GAR", garminKcal);
+        drawCompactValue(dc, w, h, 82, 174, "GYM", GymSession.gymCalories.format("%.0f"));
+        drawCompactValue(dc, w, h, 178, 174, "GAR", garminKcal);
 
         var rest = GymStore.restSeconds();
         var status = GymSession.autoLogPrompt ? GymStore.tr("LOG SET?", "ПІДХІД?") : (rest > 0 ? (GymStore.tr("REST ", "ВІДП ") + rest.toString() + "s") : effortLabel(GymSession.effortState));
         dc.setColor(GymSession.autoLogPrompt ? Gfx.COLOR_GREEN : (rest > 0 ? Gfx.COLOR_YELLOW : stateColor(GymSession.effortState)), Gfx.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, 204, Gfx.FONT_XTINY, status, Gfx.TEXT_JUSTIFY_CENTER);
+        dc.drawText(w / 2, sy(h, 204), Gfx.FONT_XTINY, status, Gfx.TEXT_JUSTIFY_CENTER);
 
         if (GymSession.paused) {
             drawPausedOverlay(dc, w, h);
@@ -193,39 +193,40 @@ class WorkoutView extends Ui.View {
         dc.setColor(Gfx.COLOR_BLACK, Gfx.COLOR_BLACK);
         dc.clear();
         dc.setColor(Gfx.COLOR_GREEN, Gfx.COLOR_TRANSPARENT);
-        dc.drawCircle(w / 2, h / 2, 124);
-        dc.drawText(w / 2, 66, Gfx.FONT_SMALL, GymStore.tr("SET", "ПІДХІД"), Gfx.TEXT_JUSTIFY_CENTER);
-        dc.drawText(w / 2, 98, Gfx.FONT_NUMBER_MEDIUM, savedSetNumber.toString(), Gfx.TEXT_JUSTIFY_CENTER);
+        dc.drawCircle(w / 2, h / 2, sr(w, h, 124));
+        dc.drawText(w / 2, sy(h, 66), Gfx.FONT_SMALL, GymStore.tr("SET", "ПІДХІД"), Gfx.TEXT_JUSTIFY_CENTER);
+        dc.drawText(w / 2, sy(h, 98), Gfx.FONT_NUMBER_MEDIUM, savedSetNumber.toString(), Gfx.TEXT_JUSTIFY_CENTER);
         dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, 176, Gfx.FONT_XTINY, fitText(GymStore.currentExercise(), 12), Gfx.TEXT_JUSTIFY_CENTER);
+        dc.drawText(w / 2, sy(h, 176), Gfx.FONT_XTINY, fitText(GymStore.currentExercise(), 12), Gfx.TEXT_JUSTIFY_CENTER);
     }
 
     function drawPausedOverlay(dc, w, h) {
         dc.setColor(Gfx.COLOR_RED, Gfx.COLOR_TRANSPARENT);
-        dc.drawCircle(w / 2, h / 2, 124);
+        dc.drawCircle(w / 2, h / 2, sr(w, h, 124));
         if (System.getTimer() < pauseFlashUntil) {
-            dc.fillRectangle((w / 2) - 14, 22, 10, 28);
-            dc.fillRectangle((w / 2) + 4, 22, 10, 28);
+            dc.fillRectangle((w / 2) - sr(w, h, 14), sy(h, 22), sr(w, h, 10), sr(w, h, 28));
+            dc.fillRectangle((w / 2) + sr(w, h, 4), sy(h, 22), sr(w, h, 10), sr(w, h, 28));
         }
     }
 
-    function drawCompactValue(dc, x, y, label, value) {
+    function drawCompactValue(dc, w, h, baseX, baseY, label, value) {
         dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(x, y, Gfx.FONT_XTINY, label, Gfx.TEXT_JUSTIFY_CENTER);
+        dc.drawText(sx(w, baseX), sy(h, baseY), Gfx.FONT_XTINY, label, Gfx.TEXT_JUSTIFY_CENTER);
         dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(x, y + 16, Gfx.FONT_XTINY, value, Gfx.TEXT_JUSTIFY_CENTER);
+        dc.drawText(sx(w, baseX), sy(h, baseY + 16), Gfx.FONT_XTINY, value, Gfx.TEXT_JUSTIFY_CENTER);
     }
 
-    function drawHeartRateZones(dc, w, y) {
-        var left = 48;
-        var segmentWidth = 30;
-        var gap = 5;
+    function drawHeartRateZones(dc, w, h, baseY) {
+        var left = sx(w, 48);
+        var y = sy(h, baseY);
+        var segmentWidth = sr(w, h, 30);
+        var gap = sr(w, h, 5);
         for (var i = 1; i <= 5; i += 1) {
             var x = left + ((i - 1) * (segmentWidth + gap));
             dc.setColor(zoneColor(i), Gfx.COLOR_TRANSPARENT);
-            dc.fillRoundedRectangle(x, y, segmentWidth, 12, 4);
+            dc.fillRoundedRectangle(x, y, segmentWidth, sr(w, h, 12), sr(w, h, 4));
             dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
-            dc.drawText(x + (segmentWidth / 2), y + 13, Gfx.FONT_XTINY, "Z" + i.toString(), Gfx.TEXT_JUSTIFY_CENTER);
+            dc.drawText(x + (segmentWidth / 2), sy(h, baseY + 13), Gfx.FONT_XTINY, "Z" + i.toString(), Gfx.TEXT_JUSTIFY_CENTER);
         }
 
         var markerZone = GymSession.zone;
@@ -236,7 +237,7 @@ class WorkoutView extends Ui.View {
         }
         var markerX = left + ((markerZone - 1) * (segmentWidth + gap)) + (segmentWidth / 2);
         dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
-        dc.fillPolygon([[markerX, y - 7], [markerX - 6, y - 1], [markerX + 6, y - 1]]);
+        dc.fillPolygon([[markerX, y - sr(w, h, 7)], [markerX - sr(w, h, 6), y - sr(w, h, 1)], [markerX + sr(w, h, 6), y - sr(w, h, 1)]]);
     }
 
     function zoneColor(zone) {
@@ -296,124 +297,127 @@ class WorkoutView extends Ui.View {
 
     function drawEntry(dc, w, h) {
         dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
-        drawHeader(dc, w, GymStore.tr("SET ENTRY", "ПІДХІД"));
+        drawHeader(dc, w, h, GymStore.tr("SET ENTRY", "ПІДХІД"));
 
         dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, 48, Gfx.FONT_XTINY, fitText(GymStore.currentExercise(), 10), Gfx.TEXT_JUSTIFY_CENTER);
-        dc.drawText(w / 2, 70, Gfx.FONT_XTINY, GymStore.weight.format("%.1f") + "kg x " + GymStore.reps.toString(), Gfx.TEXT_JUSTIFY_CENTER);
+        dc.drawText(w / 2, sy(h, 48), Gfx.FONT_XTINY, fitText(GymStore.currentExercise(), 10), Gfx.TEXT_JUSTIFY_CENTER);
+        dc.drawText(w / 2, sy(h, 70), Gfx.FONT_XTINY, GymStore.weight.format("%.1f") + "kg x " + GymStore.reps.toString(), Gfx.TEXT_JUSTIFY_CENTER);
 
-        drawRow(dc, 0, 100, GymStore.tr("EX", "ВПР"), GymStore.tr("next", "далі"));
-        drawRow(dc, 1, 130, "KG", "+" + GymStore.weightStep.format("%.1f"));
-        drawRow(dc, 2, 160, GymStore.tr("REP", "ПОВТ"), "+1");
-        drawRow(dc, 3, 190, GymStore.tr("SET", "ПІДХ"), GymStore.sets.size().toString());
+        drawRow(dc, w, h, 0, 100, GymStore.tr("EX", "ВПР"), GymStore.tr("next", "далі"));
+        drawRow(dc, w, h, 1, 130, "KG", "+" + GymStore.weightStep.format("%.1f"));
+        drawRow(dc, w, h, 2, 160, GymStore.tr("REP", "ПОВТ"), "+1");
+        drawRow(dc, w, h, 3, 190, GymStore.tr("SET", "ПІДХ"), GymStore.sets.size().toString());
     }
 
     function drawPauseMenu(dc, w, h) {
         dc.setColor(Gfx.COLOR_YELLOW, Gfx.COLOR_TRANSPARENT);
-        drawHeader(dc, w, GymStore.tr("PAUSED", "ПАУЗА"));
+        drawHeader(dc, w, h, GymStore.tr("PAUSED", "ПАУЗА"));
 
         dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, 52, Gfx.FONT_SMALL, GymSession.elapsedText(), Gfx.TEXT_JUSTIFY_CENTER);
+        dc.drawText(w / 2, sy(h, 52), Gfx.FONT_SMALL, GymSession.elapsedText(), Gfx.TEXT_JUSTIFY_CENTER);
 
-        drawMenuRow(dc, 0, 92, GymStore.tr("RESUME", "ДАЛІ"));
-        drawMenuRow(dc, 1, 130, GymStore.tr("SAVE", "ЗБЕРЕГТИ"));
-        drawMenuRow(dc, 2, 168, GymStore.tr("DISCARD", "СКАСУВ"));
+        drawMenuRow(dc, w, h, 0, 92, GymStore.tr("RESUME", "ДАЛІ"));
+        drawMenuRow(dc, w, h, 1, 130, GymStore.tr("SAVE", "ЗБЕРЕГТИ"));
+        drawMenuRow(dc, w, h, 2, 168, GymStore.tr("DISCARD", "СКАСУВ"));
     }
 
     function drawSummary(dc, w, h) {
         dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, 30, Gfx.FONT_XTINY, GymStore.tr("SUMMARY", "ПІДСУМ"), Gfx.TEXT_JUSTIFY_CENTER);
+        dc.drawText(w / 2, sy(h, 30), Gfx.FONT_XTINY, GymStore.tr("SUMMARY", "ПІДСУМ"), Gfx.TEXT_JUSTIFY_CENTER);
 
         dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, 54, Gfx.FONT_XTINY, GymSession.elapsedText(), Gfx.TEXT_JUSTIFY_CENTER);
-        drawSummaryValue(dc, 78, 86, "GYM", GymSession.gymCalories.format("%.0f"));
+        dc.drawText(w / 2, sy(h, 54), Gfx.FONT_XTINY, GymSession.elapsedText(), Gfx.TEXT_JUSTIFY_CENTER);
+        drawSummaryValue(dc, w, h, 78, 86, "GYM", GymSession.gymCalories.format("%.0f"));
         var garminKcal = GymSession.garminCalories == null ? "--" : GymSession.garminCalories.toString();
-        drawSummaryValue(dc, 182, 86, "GAR", garminKcal);
-        drawSummaryValue(dc, 78, 132, GymStore.tr("AVG", "СЕР"), GymSession.avgHr.toString());
-        drawSummaryValue(dc, 182, 132, "MAX", GymSession.maxHr.toString());
-        drawSummaryValue(dc, 130, 174, GymStore.tr("SETS", "ПІДХ"), GymStore.sets.size().toString());
+        drawSummaryValue(dc, w, h, 182, 86, "GAR", garminKcal);
+        drawSummaryValue(dc, w, h, 78, 132, GymStore.tr("AVG", "СЕР"), GymSession.avgHr.toString());
+        drawSummaryValue(dc, w, h, 182, 132, "MAX", GymSession.maxHr.toString());
+        drawSummaryValue(dc, w, h, 130, 174, GymStore.tr("SETS", "ПІДХ"), GymStore.sets.size().toString());
     }
 
-    function drawSummaryValue(dc, x, y, label, value) {
+    function drawSummaryValue(dc, w, h, baseX, baseY, label, value) {
         dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(x, y, Gfx.FONT_XTINY, label, Gfx.TEXT_JUSTIFY_CENTER);
+        dc.drawText(sx(w, baseX), sy(h, baseY), Gfx.FONT_XTINY, label, Gfx.TEXT_JUSTIFY_CENTER);
         dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(x, y + 16, Gfx.FONT_XTINY, value, Gfx.TEXT_JUSTIFY_CENTER);
+        dc.drawText(sx(w, baseX), sy(h, baseY + 16), Gfx.FONT_XTINY, value, Gfx.TEXT_JUSTIFY_CENTER);
     }
 
     function drawDebug(dc, w, h) {
         dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
-        drawHeader(dc, w, GymStore.tr("DEBUG", "ДЕБАГ"));
+        drawHeader(dc, w, h, GymStore.tr("DEBUG", "ДЕБАГ"));
 
-        drawDebugLine(dc, 46, "HR", GymSession.hr == null ? "--" : GymSession.hr.toString());
-        drawDebugLine(dc, 66, "ZN", GymSession.zone.toString());
-        drawDebugLine(dc, 86, "ST", fitText(effortLabel(GymSession.effortState), 7));
-        drawDebugLine(dc, 106, "MET", GymSession.lastMet.format("%.1f"));
-        drawDebugLine(dc, 126, "K/M", GymSession.lastKcalPerMinute.format("%.1f"));
-        drawDebugLine(dc, 146, "AUTO", GymStore.onOff(GymStore.autoPromptEnabled));
-        drawDebugLine(dc, 166, "SENS", fitText(GymStore.sensitivityLabel(), 7));
-        drawDebugLine(dc, 186, "SYNC", fitText(GymStore.status, 7));
+        drawDebugLine(dc, w, h, 46, "HR", GymSession.hr == null ? "--" : GymSession.hr.toString());
+        drawDebugLine(dc, w, h, 66, "ZN", GymSession.zone.toString());
+        drawDebugLine(dc, w, h, 86, "ST", fitText(effortLabel(GymSession.effortState), 7));
+        drawDebugLine(dc, w, h, 106, "MET", GymSession.lastMet.format("%.1f"));
+        drawDebugLine(dc, w, h, 126, "K/M", GymSession.lastKcalPerMinute.format("%.1f"));
+        drawDebugLine(dc, w, h, 146, "AUTO", GymStore.onOff(GymStore.autoPromptEnabled));
+        drawDebugLine(dc, w, h, 166, "SENS", fitText(GymStore.sensitivityLabel(), 7));
+        drawDebugLine(dc, w, h, 186, "SYNC", fitText(GymStore.status, 7));
     }
 
-    function drawDebugLine(dc, y, label, value) {
+    function drawDebugLine(dc, w, h, baseY, label, value) {
         dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(72, y, Gfx.FONT_XTINY, label, Gfx.TEXT_JUSTIFY_LEFT);
+        dc.drawText(sx(w, 72), sy(h, baseY), Gfx.FONT_XTINY, label, Gfx.TEXT_JUSTIFY_LEFT);
         dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(188, y, Gfx.FONT_XTINY, value, Gfx.TEXT_JUSTIFY_RIGHT);
+        dc.drawText(sx(w, 188), sy(h, baseY), Gfx.FONT_XTINY, value, Gfx.TEXT_JUSTIFY_RIGHT);
     }
 
     function drawSettings(dc, w, h) {
         dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
-        drawHeader(dc, w, GymStore.tr("SETTINGS", "НАЛАШТ"));
+        drawHeader(dc, w, h, GymStore.tr("SETTINGS", "НАЛАШТ"));
 
-        drawSettingsRow(dc, 0, 48, GymStore.tr("AUTOSET", "АВТО"), GymStore.onOff(GymStore.autoPromptEnabled));
-        drawSettingsRow(dc, 1, 74, GymStore.tr("DETECT", "ДЕТЕКТ"), fitText(GymStore.sensitivityLabel(), 6));
-        drawSettingsRow(dc, 2, 100, GymStore.tr("KG STEP", "КРОК КГ"), GymStore.weightStep.format("%.1f"));
-        drawSettingsRow(dc, 3, 126, GymStore.tr("REST", "ВІДП"), GymStore.restSecondsDefault.toString() + "s");
-        drawSettingsRow(dc, 4, 152, GymStore.tr("REPS", "ПОВТ"), GymStore.reps.toString());
-        drawSettingsRow(dc, 5, 178, "CLOUD", "SYNC");
+        drawSettingsRow(dc, w, h, 0, 48, GymStore.tr("AUTOSET", "АВТО"), GymStore.onOff(GymStore.autoPromptEnabled));
+        drawSettingsRow(dc, w, h, 1, 74, GymStore.tr("DETECT", "ДЕТЕКТ"), fitText(GymStore.sensitivityLabel(), 6));
+        drawSettingsRow(dc, w, h, 2, 100, GymStore.tr("KG STEP", "КРОК КГ"), GymStore.weightStep.format("%.1f"));
+        drawSettingsRow(dc, w, h, 3, 126, GymStore.tr("REST", "ВІДП"), GymStore.restSecondsDefault.toString() + "s");
+        drawSettingsRow(dc, w, h, 4, 152, GymStore.tr("REPS", "ПОВТ"), GymStore.reps.toString());
+        drawSettingsRow(dc, w, h, 5, 178, "CLOUD", "SYNC");
     }
 
-    function drawSettingsRow(dc, index, y, label, value) {
+    function drawSettingsRow(dc, w, h, index, baseY, label, value) {
         var selectedRow = index == settingsSelected;
+        var y = sy(h, baseY);
         if (selectedRow) {
             dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_BLACK);
-            dc.fillRoundedRectangle(62, y - 2, 136, 28, 7);
+            dc.fillRoundedRectangle(sx(w, 62), y - sr(w, h, 2), sr(w, h, 136), sr(w, h, 28), sr(w, h, 7));
             dc.setColor(Gfx.COLOR_BLACK, Gfx.COLOR_TRANSPARENT);
         } else {
             dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
         }
-        dc.drawText(70, y + 6, Gfx.FONT_XTINY, label, Gfx.TEXT_JUSTIFY_LEFT);
-        dc.drawText(190, y + 6, Gfx.FONT_XTINY, value, Gfx.TEXT_JUSTIFY_RIGHT);
+        dc.drawText(sx(w, 70), sy(h, baseY + 6), Gfx.FONT_XTINY, label, Gfx.TEXT_JUSTIFY_LEFT);
+        dc.drawText(sx(w, 190), sy(h, baseY + 6), Gfx.FONT_XTINY, value, Gfx.TEXT_JUSTIFY_RIGHT);
     }
 
-    function drawMenuRow(dc, index, y, label) {
+    function drawMenuRow(dc, w, h, index, baseY, label) {
+        var y = sy(h, baseY);
         if (index == pauseSelected) {
             dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_BLACK);
-            dc.fillRoundedRectangle(72, y - 2, 116, 28, 7);
+            dc.fillRoundedRectangle(sx(w, 72), y - sr(w, h, 2), sr(w, h, 116), sr(w, h, 28), sr(w, h, 7));
             dc.setColor(Gfx.COLOR_BLACK, Gfx.COLOR_TRANSPARENT);
         } else {
             dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
         }
-        dc.drawText(130, y + 7, Gfx.FONT_XTINY, label, Gfx.TEXT_JUSTIFY_CENTER);
+        dc.drawText(w / 2, sy(h, baseY + 7), Gfx.FONT_XTINY, label, Gfx.TEXT_JUSTIFY_CENTER);
     }
 
-    function drawRow(dc, index, y, label, value) {
+    function drawRow(dc, w, h, index, baseY, label, value) {
         var selectedRow = index == selected;
+        var y = sy(h, baseY);
         if (selectedRow) {
             dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_BLACK);
-            dc.fillRoundedRectangle(70, y - 2, 120, 28, 7);
+            dc.fillRoundedRectangle(sx(w, 70), y - sr(w, h, 2), sr(w, h, 120), sr(w, h, 28), sr(w, h, 7));
             dc.setColor(Gfx.COLOR_BLACK, Gfx.COLOR_TRANSPARENT);
         } else {
             dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
         }
-        dc.drawText(78, y + 6, Gfx.FONT_XTINY, label, Gfx.TEXT_JUSTIFY_LEFT);
-        dc.drawText(182, y + 6, Gfx.FONT_XTINY, value, Gfx.TEXT_JUSTIFY_RIGHT);
+        dc.drawText(sx(w, 78), sy(h, baseY + 6), Gfx.FONT_XTINY, label, Gfx.TEXT_JUSTIFY_LEFT);
+        dc.drawText(sx(w, 182), sy(h, baseY + 6), Gfx.FONT_XTINY, value, Gfx.TEXT_JUSTIFY_RIGHT);
     }
 
-    function drawHeader(dc, w, label) {
+    function drawHeader(dc, w, h, label) {
         dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, 34, Gfx.FONT_XTINY, label, Gfx.TEXT_JUSTIFY_CENTER);
+        dc.drawText(w / 2, sy(h, 34), Gfx.FONT_XTINY, label, Gfx.TEXT_JUSTIFY_CENTER);
     }
 
     function drawPageDots(dc, w, h) {
@@ -432,18 +436,39 @@ class WorkoutView extends Ui.View {
         } else {
             return;
         }
-        var totalWidth = 50;
+        var totalWidth = sr(w, h, 50);
         var startX = (w / 2) - (totalWidth / 2);
-        var y = 224;
+        var y = sy(h, 224);
         for (var i = 0; i < 4; i += 1) {
-            var x = startX + (i * 16);
+            var x = startX + (i * sr(w, h, 16));
             dc.setColor(i == dotPage ? Gfx.COLOR_WHITE : Gfx.COLOR_DK_GRAY, Gfx.COLOR_TRANSPARENT);
             if (i == dotPage) {
-                dc.fillCircle(x, y, 4);
+                dc.fillCircle(x, y, sr(w, h, 4));
             } else {
-                dc.drawCircle(x, y, 3);
+                dc.drawCircle(x, y, sr(w, h, 3));
             }
         }
+    }
+
+    function scale(w, h) {
+        var size = w < h ? w : h;
+        return size.toFloat() / 260.0;
+    }
+
+    function sx(w, baseX) {
+        return ((w / 2) + ((baseX - 130) * (w.toFloat() / 260.0))).toNumber();
+    }
+
+    function sy(h, baseY) {
+        return ((h / 2) + ((baseY - 130) * (h.toFloat() / 260.0))).toNumber();
+    }
+
+    function sr(w, h, value) {
+        var scaled = value * scale(w, h);
+        if (scaled < 1) {
+            return 1;
+        }
+        return scaled.toNumber();
     }
 
     function fitText(text, maxLen) {

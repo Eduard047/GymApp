@@ -1,6 +1,6 @@
-# GymApp for Garmin Fenix 8 Solar 47 mm
+# GymApp for Garmin watches
 
-Connect IQ watch app targeting the `fenix8solar47mm` 260x260 MIP device.
+Connect IQ watch app targeting `fenix8solar47mm` and `venu3`. The UI is drawn from a 260x260 baseline and scales positions/sizes from the active `dc.getWidth()` / `dc.getHeight()` values, so higher-resolution round screens such as Venu 3 do not render the Fenix layout as a tiny fixed-size block.
 
 ## Current controls
 
@@ -39,19 +39,26 @@ When `LOG SET?` appears, tap/select saves the current exercise, weight, and reps
 ## Build prerequisites
 
 1. Install Garmin Connect IQ SDK Manager and a current device SDK.
-2. Generate a developer key through the Connect IQ tooling.
-3. Set `GARMIN_DEVELOPER_KEY` to that key file.
+2. In SDK Manager, install every target device package you want to compile locally, for example `fenix8solar47mm` and `venu3`.
+3. Generate a developer key through the Connect IQ tooling.
+4. Set `GARMIN_DEVELOPER_KEY` to that key file.
 
-Development build:
+Fenix 8 Solar 47 mm development build:
 
 ```powershell
-.\scripts\build-garmin.ps1 -DeveloperKey "C:\path\to\developer_key.der"
+.\scripts\build-garmin.ps1 -DeveloperKey "C:\path\to\developer_key.der" -Device fenix8solar47mm
+```
+
+Venu 3 development build:
+
+```powershell
+.\scripts\build-garmin.ps1 -DeveloperKey "C:\path\to\developer_key.der" -Device venu3
 ```
 
 Store export:
 
 ```powershell
-.\scripts\build-garmin.ps1 -DeveloperKey "C:\path\to\developer_key.der" -Release
+.\scripts\build-garmin.ps1 -DeveloperKey "C:\path\to\developer_key.der" -Device fenix8solar47mm -Release
 ```
 
 Android communication uses Garmin's official `ciq-companion-app-sdk` and requires Garmin Connect to be installed, running, and paired with the watch.

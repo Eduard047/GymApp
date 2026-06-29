@@ -89,7 +89,7 @@ test("non-plan cloud responses do not produce Garmin sync messages", () => {
 });
 
 test("PWA, Supabase, and Garmin code are wired to the same cloud sync contract", async () => {
-  const [appJs, indexHtml, swJs, edgeFunction, schema, gymComm, workoutView, settingsXml] = await Promise.all([
+  const [appJs, indexHtml, swJs, edgeFunction, schema, gymComm, workoutView, settingsXml, manifest, buildScript] = await Promise.all([
     readFile("pwa/app.js", "utf8"),
     readFile("pwa/index.html", "utf8"),
     readFile("pwa/sw.js", "utf8"),
@@ -97,7 +97,9 @@ test("PWA, Supabase, and Garmin code are wired to the same cloud sync contract",
     readFile("supabase-schema.sql", "utf8"),
     readFile("garmin/source/GymComm.mc", "utf8"),
     readFile("garmin/source/WorkoutView.mc", "utf8"),
-    readFile("garmin/resources/settings/settings.xml", "utf8")
+    readFile("garmin/resources/settings/settings.xml", "utf8"),
+    readFile("garmin/manifest.xml", "utf8"),
+    readFile("scripts/build-garmin.ps1", "utf8")
   ]);
 
   assert.match(indexHtml, /garmin-cloud-sync\.js\?v=1/);
@@ -123,4 +125,11 @@ test("PWA, Supabase, and Garmin code are wired to the same cloud sync contract",
   assert.match(gymComm, /\/functions\/v1\/garmin-sync/);
   assert.match(workoutView, /requestCloudSyncNow/);
   assert.match(workoutView, /GymStore\.applySync\(message\)/);
+  assert.match(workoutView, /function sx\(w, baseX\)/);
+  assert.match(workoutView, /function sy\(h, baseY\)/);
+  assert.match(workoutView, /function sr\(w, h, value\)/);
+  assert.match(manifest, /<iq:product id="fenix8solar47mm" \/>/);
+  assert.match(manifest, /<iq:product id="venu3" \/>/);
+  assert.match(buildScript, /\[string\]\$Device = 'fenix8solar47mm'/);
+  assert.match(buildScript, /Connect IQ device '\$Device' is not installed/);
 });
