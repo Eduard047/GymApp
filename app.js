@@ -6,6 +6,7 @@ const AUTH_KEY = "gym-pwa-active-account-v1";
 const ACCOUNT_LIST_KEY = "gym-pwa-account-list-v1";
 const ACCOUNT_PREFIX = "gym-pwa-account:";
 const REMOTE_SESSION_KEY = "gym-pwa-supabase-session-v1";
+const GARMIN_DEVICE_TOKEN_KEY = "gym-pwa-garmin-device-token-v1";
 const AUTH_REDIRECT_URL = "https://eduard047.github.io/GymApp/";
 const app = document.querySelector("#app");
 
@@ -1170,6 +1171,80 @@ async function saveRemoteState() {
       updated_at: new Date().toISOString()
     })
   });
+}
+
+function draftToGarminPlan(draft = modal?.draft) {
+  if (!draft) return null;
+  const exercises = [];
+  draft.blocks.forEach(block => {
+    const name = String(block.exerciseName || "").trim();
+    if (!name) return;
+    const sets = [];
+    block.sets.forEach((set, index) => {
+      const weight = Number(String(set.weight).replace(",", "."));
+      const reps = Number.parseInt(set.reps, 10);
+      if (Number.isFinite(weight) && weight >= 0 && reps > 0) {
+        sets.push({ weight, reps, orderIndex: index });
+      }
+    });
+    if (sets.length) exercises.push({ name, sets });
+  });
+  if (!exercises.length) return null;
+  return {
+    source: "pwa",
+    version: 1,
+    title: tx("Workout plan", "Workout plan"),
+    createdAt: new Date().toISOString(),
+    startedAt: new Date(draft.startedAt || Date.now()).toISOString(),
+    note: draft.note || "",
+    exercises
+  };
+}
+
+async function ensureGarminDeviceToken(session) {
+  const current = localStorage.getItem(GARMIN_DEVICE_TOKEN_KEY);
+  if (current) return current;
+  const response = await supabaseRequest("/functions/v1/garmin-sync", {
+    method: "POST",
+    session,
+    body: JSON.stringify({ action: "createDevice", displayName: "Garmin watch" })
+  });
+  const token = response?.device?.device_token;
+  if (!token) throw new Error("Garmin device token was not created.");
+  localStorage.setItem(GARMIN_DEVICE_TOKEN_KEY, token);
+  try {
+    await navigator.clipboard?.writeText(token);
+  } catch (_) {
+  }
+  return token;
+}
+
+async function queueGarminPlanFromDraft() {
+  if (!remoteAuthEnabled()) return showToast(tx("Cloud login is not configured.", "Cloud login is not configured."));
+  const session = loadRemoteSession();
+  if (!session?.user?.id) return showToast(tx("Log in to cloud first.", "Log in to cloud first."));
+  const plan = draftToGarminPlan();
+  if (!plan) return showToast(tx("Please fill exercises and sets first.", "Please fill exercises and sets first."));
+
+  let tokenWasCreated = false;
+  let token = localStorage.getItem(GARMIN_DEVICE_TOKEN_KEY);
+  if (!token) {
+    token = await ensureGarminDeviceToken(session);
+    tokenWasCreated = true;
+  }
+
+  await supabaseRequest("/rest/v1/garmin_plans", {
+    method: "POST",
+    session,
+    headers: { Prefer: "return=minimal" },
+    body: JSON.stringify({ user_id: session.user.id, status: "pending", plan })
+  });
+
+  if (tokenWasCreated) {
+    showToast(tx("Garmin token copied. Paste it once in Connect IQ settings, then sync on watch.", "Garmin token copied. Paste it once in Connect IQ settings, then sync on watch."));
+  } else {
+    showToast(tx("Plan queued for Garmin. Open the watch app and run Cloud sync.", "Plan queued for Garmin. Open the watch app and run Cloud sync."));
+  }
 }
 
 function loadState() {
@@ -2968,7 +3043,7 @@ function handleAction(action, el) {
   if (action === "remove-set") { modal.draft.blocks[Number(el.dataset.block)].sets.splice(Number(el.dataset.set), 1); return render(); }
   if (action === "apply-last") return applyLast(Number(el.dataset.block));
   if (action === "apply-smart") return applySmart(Number(el.dataset.block));
-  if (action === "sync-watch") return showToast("Plan sync is unavailable on iPhone PWA, but the plan is ready locally.");
+  if (action === "sync-watch") return queueGarminPlanFromDraft().catch(err => showToast(err.message || "Garmin sync failed."));
   if (action === "save-workout") return saveWorkout();
   if (action === "quick-add-exercise") return quickAddExercise();
   if (action === "detail-add-set") return detailAddSet(Number(el.dataset.session), el.dataset.name);
