@@ -1298,7 +1298,10 @@ function goRoot(name) {
 }
 
 function back() {
-  if (modal) modal = null;
+  if (route().name === "add" && nav.length > 1) {
+    modal = null;
+    nav.pop();
+  } else if (modal) modal = null;
   else if (nav.length > 1) nav.pop();
   render();
 }
@@ -1507,7 +1510,7 @@ function isRootRoute(name) {
 
 function titleForRoute(current) {
   return {
-    workouts: t("workouts"), missions: t("missions"), exercises: t("exercises"), progress: t("progress"),
+    workouts: t("workouts"), missions: t("missions"), exercises: t("exercises"), progress: t("progress"), leaderboard: tx("Rating", "Рейтинг"),
     add: t("addWorkout"), detail: tx("Workout Details", "Деталі тренування"), summary: tx("Workout Summary", "Підсумок тренування"), ranks: t("ranks")
   }[current.name] || "Gym Workout Tracker";
 }
