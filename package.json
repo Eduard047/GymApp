@@ -1,0 +1,6 @@
+{
+  "private": true,
+  "scripts": {
+    "test:garmin-cloud": "node --test tests/garmin-cloud-sync.test.mjs"
+  }
+}

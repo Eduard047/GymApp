@@ -182,3 +182,9 @@ supabase functions deploy garmin-sync --project-ref owrcbsrectdgaotndtxy
 3. In the PWA Add Workout screen, tap `Sync Watch`. The first run creates a Garmin device token and copies it.
 4. Paste that token into the GymApp `Cloud Token` setting in Garmin Connect IQ Mobile.
 5. On the watch, open settings and select `CLOUD / SYNC` to download the latest pending plan.
+
+Run the no-device Garmin cloud sync checks:
+
+```powershell
+npm run test:garmin-cloud
+```
