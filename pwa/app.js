@@ -1012,6 +1012,50 @@ function saveRemoteSession(session) {
   localStorage.setItem(REMOTE_SESSION_KEY, JSON.stringify(session));
 }
 
+function accessTokenExpirationSeconds(session) {
+  try {
+    const payload = String(session?.access_token || "").split(".")[1];
+    if (!payload) return null;
+    const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+    const decoded = JSON.parse(atob(padded));
+    return Number(decoded.exp) || null;
+  } catch {
+    return null;
+  }
+}
+
+function remoteSessionNeedsRefresh(session) {
+  const expiresAt = accessTokenExpirationSeconds(session);
+  return Boolean(expiresAt && expiresAt - Math.floor(Date.now() / 1000) <= 60);
+}
+
+async function refreshRemoteSession(session = loadRemoteSession()) {
+  if (!session?.refresh_token) return session;
+  const config = supabaseConfig();
+  const response = await fetch(`${config.url}/auth/v1/token?grant_type=refresh_token`, {
+    method: "POST",
+    headers: {
+      apikey: config.anonKey,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ refresh_token: session.refresh_token })
+  });
+  if (!response.ok) {
+    localStorage.removeItem(REMOTE_SESSION_KEY);
+    throw new Error(await response.text().catch(() => "") || `Session refresh failed: ${response.status}`);
+  }
+  const refreshed = await response.json();
+  const nextSession = {
+    ...session,
+    ...refreshed,
+    user: refreshed.user || session.user,
+    refresh_token: refreshed.refresh_token || session.refresh_token
+  };
+  saveRemoteSession(nextSession);
+  return nextSession;
+}
+
 function remoteHeaders(session = loadRemoteSession()) {
   const config = supabaseConfig();
   return {
@@ -1024,18 +1068,28 @@ function remoteHeaders(session = loadRemoteSession()) {
 async function supabaseRequest(path, options = {}) {
   const config = supabaseConfig();
   const { timeoutMs = 12000, ...fetchOptions } = options;
+  const isAuthRequest = path.startsWith("/auth/v1/");
+  let requestSession = fetchOptions.session || loadRemoteSession();
+  if (!isAuthRequest && requestSession?.access_token && remoteSessionNeedsRefresh(requestSession)) {
+    requestSession = await refreshRemoteSession(requestSession);
+  }
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   if (fetchOptions.signal) {
     fetchOptions.signal.addEventListener("abort", () => controller.abort(), { once: true });
   }
-  let response;
-  try {
-    response = await fetch(`${config.url}${path}`, {
+  const request = () => fetch(`${config.url}${path}`, {
       ...fetchOptions,
       signal: controller.signal,
-      headers: { ...remoteHeaders(fetchOptions.session), ...(fetchOptions.headers || {}) }
+      headers: { ...remoteHeaders(requestSession), ...(fetchOptions.headers || {}) }
     });
+  let response;
+  try {
+    response = await request();
+    if (response.status === 401 && !isAuthRequest && requestSession?.refresh_token) {
+      requestSession = await refreshRemoteSession(requestSession);
+      response = await request();
+    }
   } finally {
     clearTimeout(timeout);
   }
@@ -1097,13 +1151,13 @@ async function saveRemoteState() {
   const session = loadRemoteSession();
   if (!session?.user?.id) return;
   const payload = remoteStatePayload();
-  await supabaseRequest("/rest/v1/user_states", {
+  await supabaseRequest("/rest/v1/user_states?on_conflict=user_id", {
     method: "POST",
     session,
     headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
     body: JSON.stringify({ user_id: session.user.id, state: payload, updated_at: new Date().toISOString() })
   });
-  await supabaseRequest("/rest/v1/profiles", {
+  await supabaseRequest("/rest/v1/profiles?on_conflict=user_id", {
     method: "POST",
     session,
     headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
