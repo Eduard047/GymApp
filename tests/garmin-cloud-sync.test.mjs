@@ -89,12 +89,13 @@ test("non-plan cloud responses do not produce Garmin sync messages", () => {
 });
 
 test("PWA, Supabase, and Garmin code are wired to the same cloud sync contract", async () => {
-  const [appJs, indexHtml, swJs, edgeFunction, schema, gymComm, workoutView, settingsXml, manifest, buildScript] = await Promise.all([
+  const [appJs, indexHtml, swJs, edgeFunction, schema, rpcMigration, gymComm, workoutView, settingsXml, manifest, buildScript] = await Promise.all([
     readFile("pwa/app.js", "utf8"),
     readFile("pwa/index.html", "utf8"),
     readFile("pwa/sw.js", "utf8"),
     readFile("supabase/functions/garmin-sync/index.ts", "utf8"),
     readFile("supabase-schema.sql", "utf8"),
+    readFile("supabase/migrations/20260630000100_garmin_fetch_pending_plan_rpc.sql", "utf8"),
     readFile("garmin/source/GymComm.mc", "utf8"),
     readFile("garmin/source/WorkoutView.mc", "utf8"),
     readFile("garmin/resources/settings/settings.xml", "utf8"),
@@ -115,9 +116,11 @@ test("PWA, Supabase, and Garmin code are wired to the same cloud sync contract",
 
   assert.match(edgeFunction, /action === "createDevice"/);
   assert.match(edgeFunction, /action === "fetchPlan"/);
-  assert.match(edgeFunction, /SUPABASE_SERVICE_ROLE_KEY/);
-  assert.match(edgeFunction, /\.eq\("status", "pending"\)/);
-  assert.match(edgeFunction, /status: "downloaded"/);
+  assert.match(edgeFunction, /SUPABASE_ANON_KEY/);
+  assert.match(edgeFunction, /rpc\("garmin_fetch_pending_plan"/);
+  assert.match(rpcMigration, /security definer/);
+  assert.match(rpcMigration, /status = 'downloaded'/);
+  assert.match(rpcMigration, /grant execute on function public\.garmin_fetch_pending_plan\(text\) to anon, authenticated/);
 
   assert.match(settingsXml, /@Properties\.CloudDeviceToken/);
   assert.match(gymComm, /CloudDeviceToken/);

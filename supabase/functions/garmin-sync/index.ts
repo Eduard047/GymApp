@@ -30,15 +30,12 @@ Deno.serve(async (request) => {
   if (request.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
   const supabaseUrl = requiredEnv("SUPABASE_URL");
-  const serviceKey = requiredEnv("SUPABASE_SERVICE_ROLE_KEY");
+  const anonKey = requiredEnv("SUPABASE_ANON_KEY");
   const body = await request.json().catch(() => ({})) as RequestBody;
-  const service = createClient(supabaseUrl, serviceKey, {
-    auth: { persistSession: false, autoRefreshToken: false }
-  });
 
   if (body.action === "createDevice") {
     const authHeader = request.headers.get("Authorization") || "";
-    const userClient = createClient(supabaseUrl, requiredEnv("SUPABASE_ANON_KEY"), {
+    const userClient = createClient(supabaseUrl, anonKey, {
       global: { headers: { Authorization: authHeader } },
       auth: { persistSession: false, autoRefreshToken: false }
     });
@@ -46,7 +43,7 @@ Deno.serve(async (request) => {
     if (userError || !userData.user) return json({ error: "Unauthorized" }, 401);
 
     const deviceToken = crypto.randomUUID().replaceAll("-", "") + crypto.randomUUID().replaceAll("-", "");
-    const { data, error } = await service
+    const { data, error } = await userClient
       .from("garmin_devices")
       .insert({
         user_id: userData.user.id,
@@ -64,42 +61,16 @@ Deno.serve(async (request) => {
     const deviceToken = String(body.deviceToken || "").trim();
     if (!deviceToken) return json({ error: "Missing deviceToken" }, 400);
 
-    const { data: device, error: deviceError } = await service
-      .from("garmin_devices")
-      .select("id, user_id, revoked_at")
-      .eq("device_token", deviceToken)
-      .maybeSingle();
+    const client = createClient(supabaseUrl, anonKey, {
+      auth: { persistSession: false, autoRefreshToken: false }
+    });
+    const { data, error } = await client.rpc("garmin_fetch_pending_plan", {
+      p_device_token: deviceToken
+    });
 
-    if (deviceError) return json({ error: deviceError.message }, 500);
-    if (!device || device.revoked_at) return json({ error: "Invalid device" }, 401);
-
-    await service
-      .from("garmin_devices")
-      .update({ last_seen_at: new Date().toISOString() })
-      .eq("id", device.id);
-
-    const { data: plan, error: planError } = await service
-      .from("garmin_plans")
-      .select("id, plan")
-      .eq("user_id", device.user_id)
-      .eq("status", "pending")
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (planError) return json({ error: planError.message }, 500);
-    if (!plan) return json({ status: "empty" });
-
-    await service
-      .from("garmin_plans")
-      .update({
-        status: "downloaded",
-        device_id: device.id,
-        downloaded_at: new Date().toISOString()
-      })
-      .eq("id", plan.id);
-
-    return json({ status: "ok", planId: plan.id, plan: plan.plan });
+    if (error) return json({ error: error.message }, 500);
+    if (data?.error) return json({ error: data.error }, 401);
+    return json(data || { status: "empty" });
   }
 
   return json({ error: "Unknown action" }, 400);
