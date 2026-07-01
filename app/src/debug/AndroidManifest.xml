@@ -6,7 +6,7 @@
             android:name=".garmin.GarminDebugReceiver"
             android:exported="true">
             <intent-filter>
-                <action android:name="com.example.gymapp.DEBUG_GARMIN_SYNC" />
+                <action android:name="com.setforge.gymapp.DEBUG_GARMIN_SYNC" />
             </intent-filter>
         </receiver>
     </application>

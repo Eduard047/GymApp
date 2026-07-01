@@ -345,6 +345,17 @@
     <string name="garmin_metric_duration_value">duration %1$s</string>
     <string name="garmin_metric_heart_rate">heart rate</string>
     <string name="garmin_metric_peak">peak</string>
+    <string name="garmin_hr_chart_title">Heart-rate shape</string>
+    <string name="garmin_metric_avg_short">Avg %1$d</string>
+    <string name="garmin_metric_max_short">Max %1$d</string>
+    <string name="garmin_metric_hr_intensity">HR intensity</string>
+    <string name="garmin_metric_from_avg_hr">from avg HR</string>
+    <string name="garmin_metric_kcal_gap">Kcal gap</string>
+    <string name="garmin_metric_gym_vs_garmin">Gym vs Garmin</string>
+    <string name="garmin_intensity_easy">Easy</string>
+    <string name="garmin_intensity_moderate">Moderate</string>
+    <string name="garmin_intensity_solid">Solid</string>
+    <string name="garmin_intensity_high">High</string>
     <string name="garmin_kcal_explainer">Gym kcal is saved from the Garmin app strength formula. Garmin kcal is the system value Garmin Connect uses for daily calories.</string>
 
     <string name="dialog_edit_set_title">Edit Set</string>

@@ -9,6 +9,13 @@ $projectRoot = Split-Path -Parent $PSScriptRoot
 $garminRoot = Join-Path $projectRoot 'garmin'
 $outputRoot = Join-Path $garminRoot 'build'
 
+if (-not $DeveloperKey) {
+    $localDeveloperKey = Join-Path $projectRoot 'garmin-keys\developer_key.der'
+    if (Test-Path $localDeveloperKey) {
+        $DeveloperKey = $localDeveloperKey
+    }
+}
+
 if (-not (Get-Command java -ErrorAction SilentlyContinue)) {
     $androidStudioJbr = 'C:\Program Files\Android\Android Studio\jbr'
     if (Test-Path (Join-Path $androidStudioJbr 'bin\java.exe')) {

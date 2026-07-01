@@ -37,7 +37,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.gymapp"
+        applicationId = "com.setforge.gymapp"
         minSdk = 24
         targetSdk = 36
         versionCode = appVersionCode

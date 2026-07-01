@@ -12,6 +12,7 @@
 /build
 /app/build/
 /wear/build/
+/garmin/build/
 /captures
 .externalNativeBuild
 .cxx
@@ -29,13 +30,18 @@ local.properties
 # APK / AAB artifacts
 *.apk
 *.aab
+*.iq
+*.prg
 /app-debug.apk
 /apk_share/
 
 # Signing / secrets
 *.jks
 *.keystore
+*.der
+*.pem
 keystore.properties
+/garmin-keys/
 
 # Logs / temp
 *.log

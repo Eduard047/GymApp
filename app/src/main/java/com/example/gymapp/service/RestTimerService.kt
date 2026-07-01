@@ -249,9 +249,9 @@ class RestTimerService : Service() {
     }
 
     companion object {
-        private const val ACTION_START = "com.example.gymapp.action.REST_TIMER_START"
-        private const val ACTION_STOP = "com.example.gymapp.action.REST_TIMER_STOP"
-        private const val ACTION_DISMISS_ALERT = "com.example.gymapp.action.REST_TIMER_DISMISS_ALERT"
+        private const val ACTION_START = "com.setforge.gymapp.action.REST_TIMER_START"
+        private const val ACTION_STOP = "com.setforge.gymapp.action.REST_TIMER_STOP"
+        private const val ACTION_DISMISS_ALERT = "com.setforge.gymapp.action.REST_TIMER_DISMISS_ALERT"
         private const val EXTRA_DURATION_SECONDS = "extra_duration_seconds"
 
         private const val CHANNEL_RUNNING_ID = "rest_timer_running"

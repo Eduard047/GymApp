@@ -1,5 +1,7 @@
 ﻿package com.example.gymapp.ui.screens
 
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,6 +14,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -48,6 +51,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -698,8 +706,125 @@ private fun GarminWorkoutMetricsCard(metrics: GarminWorkoutMetrics) {
                     modifier = Modifier.weight(1f)
                 )
             }
+            GarminHeartRateVisual(metrics = metrics)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                GarminMetricCell(
+                    label = stringResource(R.string.garmin_metric_hr_intensity),
+                    value = metrics.intensityLabelRes()?.let { stringResource(it) } ?: "—",
+                    helper = metrics.avgHeartRate?.let {
+                        stringResource(R.string.garmin_metric_from_avg_hr)
+                    } ?: stringResource(R.string.garmin_metric_heart_rate),
+                    modifier = Modifier.weight(1f)
+                )
+                GarminMetricCell(
+                    label = stringResource(R.string.garmin_metric_kcal_gap),
+                    value = metrics.calorieGapLabel(),
+                    helper = stringResource(R.string.garmin_metric_gym_vs_garmin),
+                    modifier = Modifier.weight(1f)
+                )
+            }
             Text(
                 text = stringResource(R.string.garmin_kcal_explainer),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun GarminHeartRateVisual(metrics: GarminWorkoutMetrics) {
+    val avg = metrics.avgHeartRate
+    val max = metrics.maxHeartRate
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.garmin_hr_chart_title),
+                style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier.weight(1f)
+            )
+            Text(
+                text = metrics.heartRateZone ?: stringResource(R.string.garmin_metric_peak),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+        Canvas(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(96.dp)
+                .background(
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.34f),
+                    shape = RoundedCornerShape(8.dp)
+                )
+                .padding(horizontal = 10.dp, vertical = 12.dp)
+        ) {
+            val zoneColors = listOf(
+                Color(0xFF4EA3FF),
+                Color(0xFF3DDC84),
+                Color(0xFFFFD23F),
+                Color(0xFFFF8A34),
+                Color(0xFFFF4D5E)
+            )
+            val segmentWidth = size.width / zoneColors.size
+            zoneColors.forEachIndexed { index, color ->
+                drawLine(
+                    color = color,
+                    start = Offset(index * segmentWidth + 4f, size.height - 8f),
+                    end = Offset((index + 1) * segmentWidth - 4f, size.height - 8f),
+                    strokeWidth = 10f,
+                    cap = StrokeCap.Round
+                )
+            }
+
+            if (avg != null || max != null) {
+                val low = 80f
+                val high = 190f
+                fun yFor(value: Int): Float {
+                    val normalized = ((value - low) / (high - low)).coerceIn(0f, 1f)
+                    return size.height - 22f - normalized * (size.height - 34f)
+                }
+                val avgValue = avg ?: max ?: 110
+                val maxValue = max ?: avgValue
+                val path = Path().apply {
+                    moveTo(8f, yFor((avgValue * 0.92f).toInt()))
+                    cubicTo(
+                        size.width * 0.28f,
+                        yFor(avgValue),
+                        size.width * 0.58f,
+                        yFor(((avgValue + maxValue) / 2f).toInt()),
+                        size.width - 8f,
+                        yFor(maxValue)
+                    )
+                }
+                drawPath(
+                    path = path,
+                    color = Color(0xFFE84A5F),
+                    style = Stroke(width = 6f, cap = StrokeCap.Round)
+                )
+                drawCircle(Color.White, radius = 6f, center = Offset(size.width - 8f, yFor(maxValue)))
+                drawCircle(Color(0xFFE84A5F), radius = 4f, center = Offset(size.width - 8f, yFor(maxValue)))
+            }
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                text = avg?.let { stringResource(R.string.garmin_metric_avg_short, it) } ?: "—",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = max?.let { stringResource(R.string.garmin_metric_max_short, it) } ?: "—",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -938,6 +1063,26 @@ private data class GarminWorkoutMetrics(
     val maxHeartRate: Int?,
     val heartRateZone: String?
 )
+
+private fun GarminWorkoutMetrics.intensityLabelRes(): Int? {
+    val avg = avgHeartRate ?: return null
+    return when {
+        avg >= 155 -> R.string.garmin_intensity_high
+        avg >= 135 -> R.string.garmin_intensity_solid
+        avg >= 115 -> R.string.garmin_intensity_moderate
+        else -> R.string.garmin_intensity_easy
+    }
+}
+
+private fun GarminWorkoutMetrics.calorieGapLabel(): String {
+    val gym = gymCalories ?: return "—"
+    val garmin = garminCalories ?: return "—"
+    val gap = gym - garmin
+    return when {
+        gap > 0 -> "+$gap"
+        else -> gap.toString()
+    }
+}
 
 private fun parseGarminWorkoutMetrics(note: String): GarminWorkoutMetrics? {
     if (!note.contains("Garmin Fenix 8", ignoreCase = true)) return null

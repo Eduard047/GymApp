@@ -345,6 +345,17 @@
     <string name="garmin_metric_duration_value">тривалість %1$s</string>
     <string name="garmin_metric_heart_rate">пульс</string>
     <string name="garmin_metric_peak">пік</string>
+    <string name="garmin_hr_chart_title">Форма пульсу</string>
+    <string name="garmin_metric_avg_short">Сер %1$d</string>
+    <string name="garmin_metric_max_short">Макс %1$d</string>
+    <string name="garmin_metric_hr_intensity">Інтенсивність</string>
+    <string name="garmin_metric_from_avg_hr">за середнім пульсом</string>
+    <string name="garmin_metric_kcal_gap">Різниця ккал</string>
+    <string name="garmin_metric_gym_vs_garmin">Gym проти Garmin</string>
+    <string name="garmin_intensity_easy">Легко</string>
+    <string name="garmin_intensity_moderate">Помірно</string>
+    <string name="garmin_intensity_solid">Активно</string>
+    <string name="garmin_intensity_high">Високо</string>
     <string name="garmin_kcal_explainer">Gym ккал збережені з формули силового тренування GymApp на Garmin. Garmin ккал — це системне значення, яке Garmin Connect враховує в денних калоріях.</string>
 
     <string name="dialog_edit_set_title">Редагувати підхід</string>
