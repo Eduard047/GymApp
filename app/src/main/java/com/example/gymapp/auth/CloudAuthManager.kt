@@ -1,6 +1,7 @@
 package com.example.gymapp.auth
 
 import android.content.Context
+import android.net.Uri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -14,6 +15,7 @@ import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLDecoder
 import java.util.Base64
 
 private const val SUPABASE_URL = "https://owrcbsrectdgaotndtxy.supabase.co"
@@ -115,6 +117,42 @@ class CloudAuthManager(context: Context) {
     fun logout() {
         prefs.edit().clear().apply()
         _authState.value = AuthUiState()
+    }
+
+    suspend fun completeEmailConfirmation(uri: Uri): AccountSession.Cloud = withContext(Dispatchers.IO) {
+        val params = uri.authRedirectParams()
+        val accessToken = params["access_token"].orEmpty()
+        require(accessToken.isNotBlank()) {
+            "Email confirmation link did not include a valid session. Try logging in."
+        }
+
+        val user = JSONObject(
+            request(
+                path = "/auth/v1/user",
+                method = "GET",
+                token = accessToken
+            )
+        )
+        val userId = user.optString("id")
+        require(userId.isNotBlank()) {
+            "Email was confirmed, but the account session could not be loaded. Try logging in."
+        }
+
+        val email = user.optString("email")
+        val displayName = user.optJSONObject("user_metadata")
+            ?.optString("display_name")
+            ?.takeIf { it.isNotBlank() }
+            ?: email.substringBefore("@").ifBlank { "Cloud" }
+        val session = AccountSession.Cloud(
+            userId = userId,
+            email = email,
+            displayName = displayName,
+            accessToken = accessToken,
+            refreshToken = params["refresh_token"]?.takeIf { it.isNotBlank() }
+        )
+        persist(session)
+        _authState.value = AuthUiState(session = session)
+        session
     }
 
     suspend fun freshCloudSession(session: AccountSession.Cloud): AccountSession.Cloud {
@@ -384,6 +422,26 @@ class CloudAuthManager(context: Context) {
             else ->
                 "Cloud request failed. Check your connection and try again."
         }
+    }
+
+    private fun Uri.authRedirectParams(): Map<String, String> {
+        val values = linkedMapOf<String, String>()
+        queryParameterNames.forEach { key ->
+            values[key] = getQueryParameter(key).orEmpty()
+        }
+        fragment.orEmpty()
+            .split("&")
+            .filter { it.isNotBlank() && it.contains("=") }
+            .forEach { pair ->
+                val key = pair.substringBefore("=")
+                val value = pair.substringAfter("=")
+                values[urlDecode(key)] = urlDecode(value)
+            }
+        return values
+    }
+
+    private fun urlDecode(value: String): String {
+        return URLDecoder.decode(value, Charsets.UTF_8.name())
     }
 
     private fun validateAuthInput(email: String, password: String, displayName: String = "") {

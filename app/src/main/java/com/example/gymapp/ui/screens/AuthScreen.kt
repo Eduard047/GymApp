@@ -1,12 +1,17 @@
 package com.example.gymapp.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -22,6 +27,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -50,159 +56,168 @@ fun AuthScreen(
     var signUpPasswordConfirmVisible by remember { mutableStateOf(false) }
     var localMessage by remember { mutableStateOf<String?>(null) }
 
-    Column(
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
-            .padding(horizontal = 16.dp, vertical = 18.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+            .verticalScroll(rememberScrollState())
     ) {
-        HeroPanel {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .fillMaxWidth()
+                .heightIn(min = maxHeight)
+                .widthIn(max = 560.dp)
+                .padding(horizontal = 16.dp, vertical = 18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically)
+        ) {
+            HeroPanel {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        text = "GymApp",
+                        style = MaterialTheme.typography.headlineMedium
+                    )
+                    Text(
+                        text = "Sign in to sync workouts across devices.",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            }
+
+            AppPanel(highlighted = true) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = if (isSignUp) "Create account" else "Cloud account",
+                        style = MaterialTheme.typography.titleLarge
+                    )
+                    OutlinedTextField(
+                        value = if (isSignUp) signUpEmail else email,
+                        onValueChange = {
+                            localMessage = null
+                            if (isSignUp) signUpEmail = it else email = it
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Email") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email)
+                    )
+                    PasswordTextField(
+                        value = if (isSignUp) signUpPassword else password,
+                        onValueChange = {
+                            localMessage = null
+                            if (isSignUp) signUpPassword = it else password = it
+                        },
+                        passwordVisible = if (isSignUp) signUpPasswordVisible else loginPasswordVisible,
+                        onPasswordVisibilityChange = {
+                            if (isSignUp) {
+                                signUpPasswordVisible = it
+                            } else {
+                                loginPasswordVisible = it
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = "Password"
+                    )
+                    if (isSignUp) {
+                        PasswordTextField(
+                            value = signUpPasswordConfirm,
+                            onValueChange = {
+                                localMessage = null
+                                signUpPasswordConfirm = it
+                            },
+                            passwordVisible = signUpPasswordConfirmVisible,
+                            onPasswordVisibilityChange = { signUpPasswordConfirmVisible = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = "Repeat password"
+                        )
+                        OutlinedTextField(
+                            value = displayName,
+                            onValueChange = { value ->
+                                localMessage = null
+                                displayName = value
+                                    .filter { it.isLetterOrDigit() || it == ' ' || it == '.' || it == '-' || it == '_' }
+                                    .replace(Regex("\\s+"), " ")
+                                    .take(32)
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text("Display name") },
+                            singleLine = true
+                        )
+                    }
+                    Text(
+                        text = if (isSignUp) {
+                            "Password must be 8+ characters and include letters and numbers. Display name allows letters, numbers, spaces, dot, dash and underscore."
+                        } else {
+                            "Password must be 8+ characters and include letters and numbers."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                if (isSignUp) {
+                                    val validation = validateSignUpInput(
+                                        email = signUpEmail,
+                                        password = signUpPassword,
+                                        passwordConfirm = signUpPasswordConfirm,
+                                        displayName = displayName
+                                    )
+                                    if (validation == null) {
+                                        onSignUp(signUpEmail, signUpPassword, displayName)
+                                    } else {
+                                        localMessage = validation
+                                    }
+                                } else {
+                                    val validation = validateLoginInput(
+                                        email = email,
+                                        password = password
+                                    )
+                                    if (validation == null) {
+                                        onLogin(email, password)
+                                    } else {
+                                        localMessage = validation
+                                    }
+                                }
+                            },
+                            enabled = !uiState.isLoading,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(if (isSignUp) "Create account" else "Log in")
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                localMessage = null
+                                isSignUp = !isSignUp
+                            },
+                            enabled = !uiState.isLoading,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(if (isSignUp) "Log in instead" else "Create account")
+                        }
+                    }
+                }
+            }
+
+            localMessage?.let { message ->
                 Text(
-                    text = "GymApp",
-                    style = MaterialTheme.typography.headlineMedium
-                )
-                Text(
-                    text = "Sign in to sync workouts across devices.",
+                    text = message,
+                    color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.bodyMedium
                 )
             }
-        }
-
-        AppPanel(highlighted = true) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
+            uiState.message?.let { message ->
                 Text(
-                    text = if (isSignUp) "Create account" else "Cloud account",
-                    style = MaterialTheme.typography.titleLarge
+                    text = message,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodyMedium
                 )
-                OutlinedTextField(
-                    value = if (isSignUp) signUpEmail else email,
-                    onValueChange = {
-                        localMessage = null
-                        if (isSignUp) signUpEmail = it else email = it
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Email") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email)
-                )
-                PasswordTextField(
-                    value = if (isSignUp) signUpPassword else password,
-                    onValueChange = {
-                        localMessage = null
-                        if (isSignUp) signUpPassword = it else password = it
-                    },
-                    passwordVisible = if (isSignUp) signUpPasswordVisible else loginPasswordVisible,
-                    onPasswordVisibilityChange = {
-                        if (isSignUp) {
-                            signUpPasswordVisible = it
-                        } else {
-                            loginPasswordVisible = it
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = "Password"
-                )
-                if (isSignUp) {
-                    PasswordTextField(
-                        value = signUpPasswordConfirm,
-                        onValueChange = {
-                            localMessage = null
-                            signUpPasswordConfirm = it
-                        },
-                        passwordVisible = signUpPasswordConfirmVisible,
-                        onPasswordVisibilityChange = { signUpPasswordConfirmVisible = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = "Repeat password"
-                    )
-                    OutlinedTextField(
-                        value = displayName,
-                        onValueChange = { value ->
-                            localMessage = null
-                            displayName = value
-                                .filter { it.isLetterOrDigit() || it == ' ' || it == '.' || it == '-' || it == '_' }
-                                .replace(Regex("\\s+"), " ")
-                                .take(32)
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text("Display name") },
-                        singleLine = true
-                    )
-                }
-                Text(
-                    text = if (isSignUp) {
-                        "Password must be 8+ characters and include letters and numbers. Display name allows letters, numbers, spaces, dot, dash and underscore."
-                    } else {
-                        "Password must be 8+ characters and include letters and numbers."
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Button(
-                        onClick = {
-                            if (isSignUp) {
-                                val validation = validateSignUpInput(
-                                    email = signUpEmail,
-                                    password = signUpPassword,
-                                    passwordConfirm = signUpPasswordConfirm,
-                                    displayName = displayName
-                                )
-                                if (validation == null) {
-                                    onSignUp(signUpEmail, signUpPassword, displayName)
-                                } else {
-                                    localMessage = validation
-                                }
-                            } else {
-                                val validation = validateLoginInput(
-                                    email = email,
-                                    password = password
-                                )
-                                if (validation == null) {
-                                    onLogin(email, password)
-                                } else {
-                                    localMessage = validation
-                                }
-                            }
-                        },
-                        enabled = !uiState.isLoading,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text(if (isSignUp) "Create account" else "Log in")
-                    }
-                    OutlinedButton(
-                        onClick = {
-                            localMessage = null
-                            isSignUp = !isSignUp
-                        },
-                        enabled = !uiState.isLoading,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text(if (isSignUp) "Log in instead" else "Create account")
-                    }
-                }
             }
-        }
-
-        localMessage?.let { message ->
-            Text(
-                text = message,
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodyMedium
-            )
-        }
-        uiState.message?.let { message ->
-            Text(
-                text = message,
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodyMedium
-            )
         }
     }
 }

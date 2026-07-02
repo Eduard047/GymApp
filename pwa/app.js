@@ -8,6 +8,7 @@ const ACCOUNT_PREFIX = "gym-pwa-account:";
 const REMOTE_SESSION_KEY = "gym-pwa-supabase-session-v1";
 const GARMIN_DEVICE_TOKEN_KEY = "gym-pwa-garmin-device-token-v1";
 const AUTH_REDIRECT_URL = "https://eduard047.github.io/GymApp/";
+const ANDROID_AUTH_CALLBACK_URL = "com.setforge.gymapp://auth/callback";
 const app = document.querySelector("#app");
 
 const icons = {
@@ -32,6 +33,33 @@ const icons = {
   upload: "M12 21V9m0 0 5 5m-5-5-5 5M4 3h16",
   weight: "M6 7h12l2 14H4zM9 7a3 3 0 0 1 6 0"
 };
+
+function handleEmailConfirmationRedirect() {
+  const query = new URLSearchParams(window.location.search);
+  const hash = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+  const hasAuthPayload = query.has("access_token") || query.has("refresh_token") ||
+    hash.has("access_token") || hash.has("refresh_token") ||
+    query.get("type") === "signup" || hash.get("type") === "signup";
+
+  if (!hasAuthPayload) return false;
+
+  const appUrl = `${ANDROID_AUTH_CALLBACK_URL}${window.location.search}${window.location.hash}`;
+  app.innerHTML = `
+    <main class="auth-callback-screen">
+      <section class="auth-callback-panel">
+        <span class="auth-callback-icon">${svg("check")}</span>
+        <h1>Email confirmed</h1>
+        <p>Your GymApp account is ready. Opening the app now.</p>
+        <a class="button" href="${escapeAttr(appUrl)}">Open GymApp</a>
+      </section>
+    </main>
+    <div id="toast" class="toast hidden"></div>`;
+  window.history.replaceState(null, "", window.location.pathname);
+  setTimeout(() => {
+    window.location.href = appUrl;
+  }, 650);
+  return true;
+}
 
 const text = {
   en: {
@@ -3479,9 +3507,11 @@ if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js").catch(() => {}));
 }
 
-render();
-pullRemoteState()
-  .then(updated => {
-    if (updated) render();
-  })
-  .catch(() => showToast(tx("Cloud sync failed.", "Синхронізація не вдалася.")));
+if (!handleEmailConfirmationRedirect()) {
+  render();
+  pullRemoteState()
+    .then(updated => {
+      if (updated) render();
+    })
+    .catch(() => showToast(tx("Cloud sync failed.", "Синхронізація не вдалася.")));
+}
