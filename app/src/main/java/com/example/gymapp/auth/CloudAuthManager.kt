@@ -343,9 +343,47 @@ class CloudAuthManager(context: Context) {
             BufferedReader(InputStreamReader(input)).readText()
         }.orEmpty()
         if (connection.responseCode !in 200..299) {
-            error(text.ifBlank { "Network request failed: ${connection.responseCode}" })
+            error(friendlySupabaseError(connection.responseCode, text))
         }
         return text.ifBlank { "[]" }
+    }
+
+    private fun friendlySupabaseError(responseCode: Int, text: String): String {
+        val parsed = runCatching { JSONObject(text) }.getOrNull()
+        val code = parsed?.optString("error_code")
+            ?.takeIf { it.isNotBlank() }
+            ?: parsed?.optString("code")?.takeIf { it.isNotBlank() }
+        val message = parsed?.optString("msg")
+            ?.takeIf { it.isNotBlank() }
+            ?: parsed?.optString("message")?.takeIf { it.isNotBlank() }
+            ?: parsed?.optString("error_description")?.takeIf { it.isNotBlank() }
+            ?: parsed?.optString("error")?.takeIf { it.isNotBlank() }
+
+        return when {
+            responseCode == 429 || code == "over_email_send_rate_limit" || message?.contains("rate limit", ignoreCase = true) == true ->
+                "Too many confirmation emails were requested. Wait a few minutes, then try again."
+
+            code == "user_already_exists" || message?.contains("already registered", ignoreCase = true) == true ->
+                "An account with this email already exists. Log in instead."
+
+            responseCode == 400 && message?.contains("invalid login", ignoreCase = true) == true ->
+                "Email or password is incorrect."
+
+            responseCode == 401 || message?.contains("invalid login credentials", ignoreCase = true) == true ->
+                "Email or password is incorrect."
+
+            message?.contains("email not confirmed", ignoreCase = true) == true ->
+                "Confirm your email first, then log in."
+
+            responseCode in 500..599 ->
+                "Cloud login is temporarily unavailable. Try again later."
+
+            !message.isNullOrBlank() ->
+                message
+
+            else ->
+                "Cloud request failed. Check your connection and try again."
+        }
     }
 
     private fun validateAuthInput(email: String, password: String, displayName: String = "") {

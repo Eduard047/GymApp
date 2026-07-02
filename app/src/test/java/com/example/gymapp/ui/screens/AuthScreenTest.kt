@@ -6,11 +6,55 @@ import org.junit.Test
 
 class AuthScreenTest {
     @Test
+    fun loginValidationRejectsMissingInput() {
+        assertEquals(
+            "Enter your email.",
+            validateLoginInput(
+                email = "",
+                password = "Password1"
+            )
+        )
+        assertEquals(
+            "Enter a valid email address.",
+            validateLoginInput(
+                email = "not-email",
+                password = "Password1"
+            )
+        )
+        assertEquals(
+            "Enter your password.",
+            validateLoginInput(
+                email = "ed@example.com",
+                password = ""
+            )
+        )
+    }
+
+    @Test
+    fun loginValidationAcceptsNormalInput() {
+        assertNull(
+            validateLoginInput(
+                email = "ed@example.com",
+                password = "Password1"
+            )
+        )
+    }
+
+    @Test
     fun signUpValidationRejectsInvalidInput() {
         assertEquals(
             "Enter your email.",
             validateSignUpInput(
                 email = "",
+                password = "Password1",
+                passwordConfirm = "Password1",
+                displayName = "Ed"
+            )
+        )
+        assertEquals(
+            "Enter a valid email address.",
+            validateSignUpInput(
+                email = "not-email",
                 password = "Password1",
                 passwordConfirm = "Password1",
                 displayName = "Ed"
