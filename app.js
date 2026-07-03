@@ -2370,7 +2370,7 @@ function friendlyAuthError(error) {
   const message = parsed?.msg || parsed?.message || parsed?.error_description || parsed?.error || raw;
   const code = parsed?.error_code || parsed?.code || "";
   if (/rate limit|too many/i.test(message) || code === "over_email_send_rate_limit") {
-    return tx("Too many confirmation emails were requested. Wait a few minutes, then try again.", "Too many confirmation emails were requested. Wait a few minutes, then try again.");
+    return tx("Too many confirmation emails were requested. Supabase may block new emails for up to an hour on the built-in sender. Try again later, or contact support if the email never arrives.", "Too many confirmation emails were requested. Supabase may block new emails for up to an hour on the built-in sender. Try again later, or contact support if the email never arrives.");
   }
   if (/already registered|already exists|user_already_exists/i.test(`${code} ${message}`)) {
     return tx("An account with this email already exists. Log in or resend the confirmation email.", "An account with this email already exists. Log in or resend the confirmation email.");
