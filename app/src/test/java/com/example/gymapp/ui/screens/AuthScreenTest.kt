@@ -46,6 +46,7 @@ class AuthScreenTest {
             "Enter your email.",
             validateSignUpInput(
                 email = "",
+                emailConfirm = "",
                 password = "Password1",
                 passwordConfirm = "Password1",
                 displayName = "Ed"
@@ -55,6 +56,7 @@ class AuthScreenTest {
             "Enter a valid email address.",
             validateSignUpInput(
                 email = "not-email",
+                emailConfirm = "not-email",
                 password = "Password1",
                 passwordConfirm = "Password1",
                 displayName = "Ed"
@@ -64,6 +66,7 @@ class AuthScreenTest {
             "Password must be at least 8 characters.",
             validateSignUpInput(
                 email = "ed@example.com",
+                emailConfirm = "ed@example.com",
                 password = "Pass1",
                 passwordConfirm = "Pass1",
                 displayName = "Ed"
@@ -73,6 +76,7 @@ class AuthScreenTest {
             "Password must include letters and numbers.",
             validateSignUpInput(
                 email = "ed@example.com",
+                emailConfirm = "ed@example.com",
                 password = "Password",
                 passwordConfirm = "Password",
                 displayName = "Ed"
@@ -82,8 +86,19 @@ class AuthScreenTest {
             "Passwords do not match.",
             validateSignUpInput(
                 email = "ed@example.com",
+                emailConfirm = "ed@example.com",
                 password = "Password1",
                 passwordConfirm = "Password2",
+                displayName = "Ed"
+            )
+        )
+        assertEquals(
+            "Email does not match.",
+            validateSignUpInput(
+                email = "ed@example.com",
+                emailConfirm = "other@example.com",
+                password = "Password1",
+                passwordConfirm = "Password1",
                 displayName = "Ed"
             )
         )
@@ -93,11 +108,25 @@ class AuthScreenTest {
     fun signUpValidationAcceptsNormalAccount() {
         assertNull(
             validateSignUpInput(
-                email = "ed@example.com",
+                email = " Ed@Example.COM ",
+                emailConfirm = "ed@example.com",
                 password = "Password1",
                 passwordConfirm = "Password1",
                 displayName = "Ed"
             )
         )
+    }
+
+    @Test
+    fun resendConfirmationValidationRequiresValidEmail() {
+        assertEquals(
+            "Enter your email.",
+            validateConfirmationEmailInput("")
+        )
+        assertEquals(
+            "Enter a valid email address.",
+            validateConfirmationEmailInput("not-email")
+        )
+        assertNull(validateConfirmationEmailInput(" Ed@Example.COM "))
     }
 }

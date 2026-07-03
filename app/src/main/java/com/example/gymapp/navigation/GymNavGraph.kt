@@ -227,6 +227,13 @@ fun GymAppRoot(
                             authManager.setLoading(true)
                             runCatching {
                                 val session = authManager.signUp(email, password, displayName)
+                                if (session == null) {
+                                    authManager.setMessage(
+                                        "Account created. Check your email to confirm the account, then log in.",
+                                        isError = false
+                                    )
+                                    return@runCatching
+                                }
                                 val owner = BackupOwner(
                                     accountId = session.userId,
                                     userId = session.userId,
@@ -246,6 +253,20 @@ fun GymAppRoot(
                                 authManager.setMessage(null)
                             }.onFailure { throwable ->
                                 authManager.setMessage(throwable.message ?: "Sign up failed")
+                            }
+                        }
+                    },
+                    onResendConfirmation = { email ->
+                        coroutineScope.launch {
+                            authManager.setLoading(true)
+                            runCatching {
+                                authManager.resendSignUpConfirmation(email)
+                                authManager.setMessage(
+                                    "Confirmation email sent. Check your inbox and spam folder.",
+                                    isError = false
+                                )
+                            }.onFailure { throwable ->
+                                authManager.setMessage(throwable.message ?: "Could not resend confirmation email")
                             }
                         }
                     },

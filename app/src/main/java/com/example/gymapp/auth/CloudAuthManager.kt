@@ -45,7 +45,8 @@ fun AccountSession.databaseName(): String {
 data class AuthUiState(
     val session: AccountSession? = null,
     val isLoading: Boolean = false,
-    val message: String? = null
+    val message: String? = null,
+    val messageIsError: Boolean = true
 )
 
 data class LeaderboardRow(
@@ -72,27 +73,45 @@ class CloudAuthManager(context: Context) {
     val authState: StateFlow<AuthUiState> = _authState.asStateFlow()
 
     suspend fun login(email: String, password: String): AccountSession.Cloud {
-        validateAuthInput(email = email, password = password)
-        return authenticate(
+        val cleanEmail = normalizeEmail(email)
+        validateAuthInput(email = cleanEmail, password = password)
+        return requireNotNull(
+            authenticate(
             path = "/auth/v1/token?grant_type=password",
             payload = JSONObject()
-                .put("email", email.trim())
+                .put("email", cleanEmail)
                 .put("password", password)
+            )
         )
     }
 
-    suspend fun signUp(email: String, password: String, displayName: String): AccountSession.Cloud {
-        val cleanName = sanitizeDisplayName(displayName.ifBlank { email.substringBefore("@") })
-        validateAuthInput(email = email, password = password, displayName = cleanName)
+    suspend fun signUp(email: String, password: String, displayName: String): AccountSession.Cloud? {
+        val cleanEmail = normalizeEmail(email)
+        val cleanName = sanitizeDisplayName(displayName.ifBlank { cleanEmail.substringBefore("@") })
+        validateAuthInput(email = cleanEmail, password = password, displayName = cleanName)
         return authenticate(
             path = "/auth/v1/signup?redirect_to=${java.net.URLEncoder.encode(AUTH_REDIRECT_URL, "UTF-8")}",
             payload = JSONObject()
-                .put("email", email.trim())
+                .put("email", cleanEmail)
                 .put("password", password)
                 .put(
                     "data",
                     JSONObject().put("display_name", cleanName)
-                )
+                ),
+            allowEmailConfirmationPending = true
+        )
+    }
+
+    suspend fun resendSignUpConfirmation(email: String) = withContext(Dispatchers.IO) {
+        val cleanEmail = normalizeEmail(email)
+        validateEmail(cleanEmail)
+        request(
+            path = "/auth/v1/resend",
+            method = "POST",
+            body = JSONObject()
+                .put("type", "signup")
+                .put("email", cleanEmail)
+                .toString()
         )
     }
 
@@ -110,8 +129,8 @@ class CloudAuthManager(context: Context) {
         _authState.value = _authState.value.copy(isLoading = isLoading, message = null)
     }
 
-    fun setMessage(message: String?) {
-        _authState.value = _authState.value.copy(isLoading = false, message = message)
+    fun setMessage(message: String?, isError: Boolean = true) {
+        _authState.value = _authState.value.copy(isLoading = false, message = message, messageIsError = isError)
     }
 
     fun logout() {
@@ -286,7 +305,11 @@ class CloudAuthManager(context: Context) {
         refreshed
     }
 
-    private suspend fun authenticate(path: String, payload: JSONObject): AccountSession.Cloud = withContext(Dispatchers.IO) {
+    private suspend fun authenticate(
+        path: String,
+        payload: JSONObject,
+        allowEmailConfirmationPending: Boolean = false
+    ): AccountSession.Cloud? = withContext(Dispatchers.IO) {
         val json = JSONObject(
             request(
                 path = path,
@@ -298,6 +321,9 @@ class CloudAuthManager(context: Context) {
         val user = json.optJSONObject("user")
         val userId = user?.optString("id").orEmpty()
         if (accessToken.isBlank() || userId.isBlank()) {
+            if (allowEmailConfirmationPending && userId.isNotBlank()) {
+                return@withContext null
+            }
             error("Email confirmation may be required before login.")
         }
         val email = user?.optString("email").orEmpty()
@@ -445,10 +471,7 @@ class CloudAuthManager(context: Context) {
     }
 
     private fun validateAuthInput(email: String, password: String, displayName: String = "") {
-        val cleanEmail = email.trim()
-        require(Regex("^[^\\s@]+@[^\\s@]+\\.[^\\s@]{2,}$").matches(cleanEmail) && cleanEmail.length <= 254) {
-            "Enter a valid email address."
-        }
+        validateEmail(email)
         require(password.length in 8..72 && password.any { it.isLetter() } && password.any { it.isDigit() }) {
             "Password must be 8-72 characters and include letters and numbers."
         }
@@ -457,6 +480,17 @@ class CloudAuthManager(context: Context) {
                 "Display name can use letters, numbers, spaces, dot, dash and underscore."
             }
         }
+    }
+
+    private fun validateEmail(email: String) {
+        val cleanEmail = normalizeEmail(email)
+        require(Regex("^[^\\s@]+@[^\\s@]+\\.[^\\s@]{2,}$").matches(cleanEmail) && cleanEmail.length <= 254) {
+            "Enter a valid email address."
+        }
+    }
+
+    private fun normalizeEmail(email: String): String {
+        return email.trim().lowercase()
     }
 
     private fun sanitizeDisplayName(value: String): String {

@@ -42,11 +42,13 @@ fun AuthScreen(
     uiState: AuthUiState,
     onLogin: (email: String, password: String) -> Unit,
     onSignUp: (email: String, password: String, displayName: String) -> Unit,
+    onResendConfirmation: (email: String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var signUpEmail by remember { mutableStateOf("") }
+    var signUpEmailConfirm by remember { mutableStateOf("") }
     var signUpPassword by remember { mutableStateOf("") }
     var signUpPasswordConfirm by remember { mutableStateOf("") }
     var displayName by remember { mutableStateOf("") }
@@ -103,24 +105,42 @@ fun AuthScreen(
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email)
                     )
-                    PasswordTextField(
-                        value = if (isSignUp) signUpPassword else password,
-                        onValueChange = {
-                            localMessage = null
-                            if (isSignUp) signUpPassword = it else password = it
-                        },
-                        passwordVisible = if (isSignUp) signUpPasswordVisible else loginPasswordVisible,
-                        onPasswordVisibilityChange = {
-                            if (isSignUp) {
-                                signUpPasswordVisible = it
-                            } else {
-                                loginPasswordVisible = it
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = "Password"
-                    )
+                    if (!isSignUp) {
+                        PasswordTextField(
+                            value = password,
+                            onValueChange = {
+                                localMessage = null
+                                password = it
+                            },
+                            passwordVisible = loginPasswordVisible,
+                            onPasswordVisibilityChange = { loginPasswordVisible = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = "Password"
+                        )
+                    }
                     if (isSignUp) {
+                        OutlinedTextField(
+                            value = signUpEmailConfirm,
+                            onValueChange = {
+                                localMessage = null
+                                signUpEmailConfirm = it
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text("Repeat email") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email)
+                        )
+                        PasswordTextField(
+                            value = signUpPassword,
+                            onValueChange = {
+                                localMessage = null
+                                signUpPassword = it
+                            },
+                            passwordVisible = signUpPasswordVisible,
+                            onPasswordVisibilityChange = { signUpPasswordVisible = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = "Password"
+                        )
                         PasswordTextField(
                             value = signUpPasswordConfirm,
                             onValueChange = {
@@ -164,6 +184,7 @@ fun AuthScreen(
                                 if (isSignUp) {
                                     val validation = validateSignUpInput(
                                         email = signUpEmail,
+                                        emailConfirm = signUpEmailConfirm,
                                         password = signUpPassword,
                                         passwordConfirm = signUpPasswordConfirm,
                                         displayName = displayName
@@ -201,6 +222,23 @@ fun AuthScreen(
                             Text(if (isSignUp) "Log in instead" else "Create account")
                         }
                     }
+                    if (isSignUp) {
+                        OutlinedButton(
+                            onClick = {
+                                val validation = validateConfirmationEmailInput(signUpEmail)
+                                if (validation == null) {
+                                    localMessage = null
+                                    onResendConfirmation(signUpEmail)
+                                } else {
+                                    localMessage = validation
+                                }
+                            },
+                            enabled = !uiState.isLoading,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Resend confirmation email")
+                        }
+                    }
                 }
             }
 
@@ -214,7 +252,11 @@ fun AuthScreen(
             uiState.message?.let { message ->
                 Text(
                     text = message,
-                    color = MaterialTheme.colorScheme.error,
+                    color = if (uiState.messageIsError) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
                     style = MaterialTheme.typography.bodyMedium
                 )
             }
@@ -258,7 +300,7 @@ internal fun validateLoginInput(
     email: String,
     password: String
 ): String? {
-    val cleanEmail = email.trim()
+    val cleanEmail = normalizeAuthEmail(email)
     return when {
         cleanEmail.isBlank() -> "Enter your email."
         !isValidEmail(cleanEmail) -> "Enter a valid email address."
@@ -269,20 +311,37 @@ internal fun validateLoginInput(
 
 internal fun validateSignUpInput(
     email: String,
+    emailConfirm: String,
     password: String,
     passwordConfirm: String,
     displayName: String
 ): String? {
-    val cleanEmail = email.trim()
+    val cleanEmail = normalizeAuthEmail(email)
+    val cleanEmailConfirm = normalizeAuthEmail(emailConfirm)
     return when {
         cleanEmail.isBlank() -> "Enter your email."
         !isValidEmail(cleanEmail) -> "Enter a valid email address."
+        cleanEmailConfirm.isBlank() -> "Repeat your email."
+        cleanEmail != cleanEmailConfirm -> "Email does not match."
         displayName.trim().length !in 2..32 -> "Display name must be 2-32 characters."
         password.length < 8 -> "Password must be at least 8 characters."
         !password.any { it.isLetter() } || !password.any { it.isDigit() } -> "Password must include letters and numbers."
         password != passwordConfirm -> "Passwords do not match."
         else -> null
     }
+}
+
+internal fun validateConfirmationEmailInput(email: String): String? {
+    val cleanEmail = normalizeAuthEmail(email)
+    return when {
+        cleanEmail.isBlank() -> "Enter your email."
+        !isValidEmail(cleanEmail) -> "Enter a valid email address."
+        else -> null
+    }
+}
+
+private fun normalizeAuthEmail(email: String): String {
+    return email.trim().lowercase()
 }
 
 private fun isValidEmail(email: String): Boolean {
