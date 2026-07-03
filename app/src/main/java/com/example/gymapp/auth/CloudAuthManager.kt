@@ -425,7 +425,7 @@ class CloudAuthManager(context: Context) {
 
         return when {
             responseCode == 429 || code == "over_email_send_rate_limit" || message?.contains("rate limit", ignoreCase = true) == true ->
-                "Too many confirmation emails were requested. Wait a few minutes, then try again."
+                "Too many confirmation emails were requested. Supabase may block new emails for up to an hour on the built-in sender. Try again later, or contact support if the email never arrives."
 
             code == "user_already_exists" || message?.contains("already registered", ignoreCase = true) == true ->
                 "An account with this email already exists. Log in instead."
