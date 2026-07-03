@@ -20,7 +20,7 @@ import java.util.Base64
 
 private const val SUPABASE_URL = "https://owrcbsrectdgaotndtxy.supabase.co"
 private const val SUPABASE_KEY = "sb_publishable_vvOMzx6V_sPBpD-b3VZfzg_y14u8kIg"
-private const val AUTH_REDIRECT_URL = "https://eduard047.github.io/GymApp/"
+private const val AUTH_REDIRECT_URL = "https://eduard047.github.io/GymApp/confirmed.html"
 
 sealed class AccountSession {
     data class Cloud(

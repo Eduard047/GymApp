@@ -7,7 +7,7 @@ const ACCOUNT_LIST_KEY = "gym-pwa-account-list-v1";
 const ACCOUNT_PREFIX = "gym-pwa-account:";
 const REMOTE_SESSION_KEY = "gym-pwa-supabase-session-v1";
 const GARMIN_DEVICE_TOKEN_KEY = "gym-pwa-garmin-device-token-v1";
-const AUTH_REDIRECT_URL = "https://eduard047.github.io/GymApp/";
+const AUTH_REDIRECT_URL = "https://eduard047.github.io/GymApp/confirmed.html";
 const ANDROID_AUTH_CALLBACK_URL = "com.setforge.gymapp://auth/callback";
 const app = document.querySelector("#app");
 
@@ -43,21 +43,7 @@ function handleEmailConfirmationRedirect() {
 
   if (!hasAuthPayload) return false;
 
-  const appUrl = `${ANDROID_AUTH_CALLBACK_URL}${window.location.search}${window.location.hash}`;
-  app.innerHTML = `
-    <main class="auth-callback-screen">
-      <section class="auth-callback-panel">
-        <span class="auth-callback-icon">${svg("check")}</span>
-        <h1>Email confirmed</h1>
-        <p>Your GymApp account is ready. Opening the app now.</p>
-        <a class="button" href="${escapeAttr(appUrl)}">Open GymApp</a>
-      </section>
-    </main>
-    <div id="toast" class="toast hidden"></div>`;
-  window.history.replaceState(null, "", window.location.pathname);
-  setTimeout(() => {
-    window.location.href = appUrl;
-  }, 650);
+  window.location.replace(`./confirmed.html${window.location.search}${window.location.hash}`);
   return true;
 }
 
