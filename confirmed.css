@@ -1,0 +1,106 @@
+:root {
+  color-scheme: dark;
+  --bg: #06110d;
+  --panel: #0d1f18;
+  --panel-border: rgba(118, 232, 174, 0.34);
+  --text: #f4fff8;
+  --muted: #b6c9bf;
+  --green: #4ade80;
+  --green-strong: #22c55e;
+  --shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(74, 222, 128, 0.18), transparent 34rem),
+    var(--bg);
+  color: var(--text);
+}
+
+.confirmation-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.confirmation-panel {
+  width: min(460px, 100%);
+  padding: 34px 26px 30px;
+  text-align: center;
+  background: color-mix(in srgb, var(--panel) 92%, black);
+  border: 1px solid var(--panel-border);
+  border-radius: 18px;
+  box-shadow: var(--shadow);
+}
+
+.confirmation-icon {
+  width: 78px;
+  height: 78px;
+  display: inline-grid;
+  place-items: center;
+  margin-bottom: 18px;
+  color: #03210f;
+  background: linear-gradient(135deg, var(--green), var(--green-strong));
+  border-radius: 999px;
+  box-shadow: 0 16px 38px rgba(34, 197, 94, 0.34);
+}
+
+.confirmation-icon svg {
+  width: 44px;
+  height: 44px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.eyebrow {
+  margin: 0 0 8px;
+  color: var(--green);
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+h1 {
+  margin: 0;
+  font-size: clamp(2rem, 8vw, 3.1rem);
+  line-height: 1.03;
+}
+
+.message {
+  margin: 16px auto 24px;
+  max-width: 30ch;
+  color: var(--muted);
+  font-size: 1.05rem;
+  line-height: 1.55;
+}
+
+.button {
+  min-height: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 22px;
+  color: #02140a;
+  background: var(--green);
+  border: 0;
+  border-radius: 8px;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.button:focus-visible {
+  outline: 3px solid rgba(244, 255, 248, 0.7);
+  outline-offset: 3px;
+}

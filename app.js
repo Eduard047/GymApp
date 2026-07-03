@@ -7,7 +7,8 @@ const ACCOUNT_LIST_KEY = "gym-pwa-account-list-v1";
 const ACCOUNT_PREFIX = "gym-pwa-account:";
 const REMOTE_SESSION_KEY = "gym-pwa-supabase-session-v1";
 const GARMIN_DEVICE_TOKEN_KEY = "gym-pwa-garmin-device-token-v1";
-const AUTH_REDIRECT_URL = "https://eduard047.github.io/GymApp/";
+const AUTH_REDIRECT_URL = "https://eduard047.github.io/GymApp/confirmed.html";
+const ANDROID_AUTH_CALLBACK_URL = "com.setforge.gymapp://auth/callback";
 const app = document.querySelector("#app");
 
 const icons = {
@@ -32,6 +33,19 @@ const icons = {
   upload: "M12 21V9m0 0 5 5m-5-5-5 5M4 3h16",
   weight: "M6 7h12l2 14H4zM9 7a3 3 0 0 1 6 0"
 };
+
+function handleEmailConfirmationRedirect() {
+  const query = new URLSearchParams(window.location.search);
+  const hash = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+  const hasAuthPayload = query.has("access_token") || query.has("refresh_token") ||
+    hash.has("access_token") || hash.has("refresh_token") ||
+    query.get("type") === "signup" || hash.get("type") === "signup";
+
+  if (!hasAuthPayload) return false;
+
+  window.location.replace(`./confirmed.html${window.location.search}${window.location.hash}`);
+  return true;
+}
 
 const text = {
   en: {
@@ -1524,7 +1538,7 @@ function loginScreen() {
     <header class="topbar"><span></span><h1>${tx("Login", "Вхід")}</h1><button class="icon-button" data-action="language" aria-label="Language">${svg("lang")}</button></header>
     <main class="screen auth-screen">
       <section class="hero-panel auth-hero"><p class="eyebrow">${tx("Training log", "Журнал тренувань")}</p><h2>GymApp</h2><p>${remoteEnabled ? tx("Sign in to sync workouts across devices.", "Увійди, щоб синхронізувати тренування між пристроями.") : tx("Cloud login is ready after Supabase keys are added.", "Хмарний вхід запрацює після додавання ключів Supabase.")}</p></section>
-      ${remoteEnabled ? `<section class="panel auth-panel"><h2>${tx("Cloud account", "Хмарний акаунт")}</h2><div class="field-stack"><input id="login-email" autocomplete="email" inputmode="email" placeholder="email@example.com"><input id="login-password" autocomplete="current-password" type="password" placeholder="${tx("Password", "Пароль")}"></div><div class="actions login-actions"><button class="button" data-action="remote-login">${tx("Log in", "Увійти")}</button></div><details class="signup-details" open><summary>${tx("Create account", "Створити акаунт")}</summary><div class="field-stack"><input id="signup-name" autocomplete="name" placeholder="${tx("Display name", "Ім'я в рейтингу")}"><input id="signup-email" autocomplete="email" inputmode="email" placeholder="email@example.com"><input id="signup-password" autocomplete="new-password" type="password" placeholder="${tx("Password", "Пароль")}"><input id="signup-password-confirm" autocomplete="new-password" type="password" placeholder="${tx("Repeat password", "Повтори пароль")}"><p class="muted">${tx("Use 8+ characters with letters and numbers.", "Використай 8+ символів з літерами й цифрами.")}</p><button class="button ghost" data-action="remote-signup">${tx("Create account", "Створити акаунт")}</button></div></details></section>` : ""}
+      ${remoteEnabled ? `<section class="panel auth-panel"><h2>${tx("Cloud account", "Хмарний акаунт")}</h2><div class="field-stack"><input id="login-email" autocomplete="email" inputmode="email" placeholder="email@example.com"><input id="login-password" autocomplete="current-password" type="password" placeholder="${tx("Password", "Пароль")}"></div><div class="actions login-actions"><button class="button" data-action="remote-login">${tx("Log in", "Увійти")}</button></div><details class="signup-details" open><summary>${tx("Create account", "Створити акаунт")}</summary><div class="field-stack"><input id="signup-name" autocomplete="name" placeholder="${tx("Display name", "Ім'я в рейтингу")}"><input id="signup-email" autocomplete="email" inputmode="email" placeholder="email@example.com"><input id="signup-email-confirm" autocomplete="email" inputmode="email" placeholder="${tx("Repeat email", "Повтори email")}"><input id="signup-password" autocomplete="new-password" type="password" placeholder="${tx("Password", "Пароль")}"><input id="signup-password-confirm" autocomplete="new-password" type="password" placeholder="${tx("Repeat password", "Повтори пароль")}"><p class="muted">${tx("Use 8+ characters with letters and numbers.", "Використай 8+ символів з літерами й цифрами.")}</p><button class="button ghost" data-action="remote-signup">${tx("Create account", "Створити акаунт")}</button><button class="button ghost" data-action="remote-resend-confirmation">${tx("Resend confirmation email", "Надіслати підтвердження ще раз")}</button></div></details></section>` : ""}
       <section class="panel auth-panel"><h2>${tx("Local account", "Локальний акаунт")}</h2><p class="muted">${remoteEnabled ? tx("Offline fallback for this browser only.", "Запасний режим лише для цього браузера.") : tx("Paste Supabase keys into supabase-config.js to enable real network login.", "Встав ключі Supabase у supabase-config.js, щоб увімкнути справжній мережевий вхід.")}</p><div class="field-row login-row"><input id="local-login-name" autocomplete="username" placeholder="${tx("Name", "Ім'я")}"><button class="button" data-action="login-account">${tx("Enter", "Увійти")}</button></div></section>
       ${accounts.length ? `<section class="panel"><h2>${tx("Saved accounts", "Збережені акаунти")}</h2><div class="chip-row">${accounts.map(account => `<button class="chip buttonlike" data-action="login-account" data-name="${escapeAttr(account.name)}">${escapeHtml(account.name)}</button>`).join("")}</div></section>` : ""}
       <div id="toast" class="toast hidden"></div>
@@ -2317,8 +2331,12 @@ function sanitizeDisplayName(value) {
   return String(value || "").replace(/[^\p{L}\p{N} ._-]/gu, "").replace(/\s+/g, " ").trim().slice(0, 32);
 }
 
+function normalizeAuthEmail(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
 function validateAuthInput(email, password, displayName = "") {
-  const cleanEmail = String(email || "").trim();
+  const cleanEmail = normalizeAuthEmail(email);
   const cleanPassword = String(password || "");
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(cleanEmail) || cleanEmail.length > 254) {
     return tx("Enter a valid email address.", "Enter a valid email address.");
@@ -2332,11 +2350,46 @@ function validateAuthInput(email, password, displayName = "") {
   return "";
 }
 
+function validateConfirmationEmail(email) {
+  const cleanEmail = normalizeAuthEmail(email);
+  if (!cleanEmail) return tx("Enter your email.", "Enter your email.");
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(cleanEmail) || cleanEmail.length > 254) {
+    return tx("Enter a valid email address.", "Enter a valid email address.");
+  }
+  return "";
+}
+
+function friendlyAuthError(error) {
+  const raw = error?.message || "";
+  let parsed = null;
+  try {
+    parsed = raw ? JSON.parse(raw) : null;
+  } catch {
+    parsed = null;
+  }
+  const message = parsed?.msg || parsed?.message || parsed?.error_description || parsed?.error || raw;
+  const code = parsed?.error_code || parsed?.code || "";
+  if (/rate limit|too many/i.test(message) || code === "over_email_send_rate_limit") {
+    return tx("Too many confirmation emails were requested. Wait a few minutes, then try again.", "Too many confirmation emails were requested. Wait a few minutes, then try again.");
+  }
+  if (/already registered|already exists|user_already_exists/i.test(`${code} ${message}`)) {
+    return tx("An account with this email already exists. Log in or resend the confirmation email.", "An account with this email already exists. Log in or resend the confirmation email.");
+  }
+  if (/email not confirmed/i.test(message)) {
+    return tx("Confirm your email first, then log in.", "Confirm your email first, then log in.");
+  }
+  if (/invalid login/i.test(message)) {
+    return tx("Email or password is incorrect.", "Email or password is incorrect.");
+  }
+  return message || tx("Cloud request failed. Check your connection and try again.", "Cloud request failed. Check your connection and try again.");
+}
+
 async function remoteLogin(createAccount) {
   if (!remoteAuthEnabled()) return showToast(tx("Supabase is not configured.", "Supabase is not configured."));
-  const email = createAccount
-    ? document.querySelector("#signup-email")?.value.trim()
-    : document.querySelector("#login-email")?.value.trim();
+  const email = normalizeAuthEmail(createAccount
+    ? document.querySelector("#signup-email")?.value
+    : document.querySelector("#login-email")?.value);
+  const emailConfirm = normalizeAuthEmail(document.querySelector("#signup-email-confirm")?.value);
   const password = createAccount
     ? document.querySelector("#signup-password")?.value
     : document.querySelector("#login-password")?.value;
@@ -2344,6 +2397,9 @@ async function remoteLogin(createAccount) {
   const displayName = sanitizeDisplayName(document.querySelector("#signup-name")?.value.trim() || "");
   const validationError = validateAuthInput(email, password, createAccount ? displayName : "");
   if (validationError) return showToast(validationError);
+  if (createAccount && email !== emailConfirm) {
+    return showToast(tx("Email does not match.", "Email does not match."));
+  }
   if (createAccount && password !== passwordConfirm) {
     return showToast(tx("Passwords do not match.", "Паролі не збігаються."));
   }
@@ -2356,7 +2412,7 @@ async function remoteLogin(createAccount) {
       body: JSON.stringify(createAccount ? { email, password, data: { display_name: displayName || email.split("@")[0] } } : { email, password })
     });
     if (!session?.access_token || !session?.user?.id) {
-      showToast(tx("Check email to confirm account, then log in.", "Check email to confirm account, then log in."));
+      showToast(tx("Account created. Check your email to confirm the account, then log in.", "Account created. Check your email to confirm the account, then log in."));
       return;
     }
     saveRemoteSession(session);
@@ -2372,8 +2428,24 @@ async function remoteLogin(createAccount) {
     modal = null;
     render();
     showToast(tx("Cloud login complete.", "Cloud login complete."));
-  } catch {
-    showToast(tx("Login failed. Check email, password, and email confirmation.", "Login failed. Check email, password, and email confirmation."));
+  } catch (error) {
+    showToast(friendlyAuthError(error));
+  }
+}
+
+async function resendRemoteConfirmation() {
+  if (!remoteAuthEnabled()) return showToast(tx("Supabase is not configured.", "Supabase is not configured."));
+  const email = normalizeAuthEmail(document.querySelector("#signup-email")?.value);
+  const validationError = validateConfirmationEmail(email);
+  if (validationError) return showToast(validationError);
+  try {
+    await supabaseRequest("/auth/v1/resend", {
+      method: "POST",
+      body: JSON.stringify({ type: "signup", email })
+    });
+    showToast(tx("Confirmation email sent. Check your inbox and spam folder.", "Confirmation email sent. Check your inbox and spam folder."));
+  } catch (error) {
+    showToast(friendlyAuthError(error));
   }
 }
 
@@ -2984,6 +3056,7 @@ function bindEvents() {
 function handleAction(action, el) {
   if (action === "remote-login") return remoteLogin(false);
   if (action === "remote-signup") return remoteLogin(true);
+  if (action === "remote-resend-confirmation") return resendRemoteConfirmation();
   if (action === "login-account") return showToast(tx("Local login has been removed.", "Local login has been removed."));
   if (action === "logout-account") return logoutAccount();
   if (action === "refresh-leaderboard") return refreshLeaderboard(true);
@@ -3479,9 +3552,11 @@ if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js").catch(() => {}));
 }
 
-render();
-pullRemoteState()
-  .then(updated => {
-    if (updated) render();
-  })
-  .catch(() => showToast(tx("Cloud sync failed.", "Синхронізація не вдалася.")));
+if (!handleEmailConfirmationRedirect()) {
+  render();
+  pullRemoteState()
+    .then(updated => {
+      if (updated) render();
+    })
+    .catch(() => showToast(tx("Cloud sync failed.", "Синхронізація не вдалася.")));
+}
