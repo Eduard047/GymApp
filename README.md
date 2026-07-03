@@ -60,10 +60,10 @@ Important: PDF is for reading and sharing only. JSON is the source of truth for 
   <a href="https://github.com/Eduard047/GymApp/releases">
     <img alt="Releases" src="https://img.shields.io/badge/Open-Releases-181717?style=for-the-badge&logo=github&logoColor=white">
   </a>
-  <a href="https://github.com/Eduard047/GymApp/releases/download/v2.0.16/GymApp-2.0.16-debug.apk">
+  <a href="https://github.com/Eduard047/GymApp/releases/download/debug-2026.07.03.1057/gymapp-phone-debug.apk">
     <img alt="Download Phone APK" src="https://img.shields.io/badge/Download-Phone%20APK-34A853?style=for-the-badge&logo=android&logoColor=white">
   </a>
-  <a href="https://github.com/Eduard047/GymApp/releases/download/v2.0.16/GymApp-watch-2.0.16-debug.apk">
+  <a href="https://github.com/Eduard047/GymApp/releases/download/debug-2026.07.03.1057/gymapp-watch-debug.apk">
     <img alt="Download Watch APK" src="https://img.shields.io/badge/Download-Watch%20APK-3D7DFF?style=for-the-badge&logo=wearos&logoColor=white">
   </a>
 </p>
@@ -76,9 +76,11 @@ Important: PDF is for reading and sharing only. JSON is the source of truth for 
 
 - Releases page: https://github.com/Eduard047/GymApp/releases
 - Latest release: https://github.com/Eduard047/GymApp/releases/latest
-- Current release tag: https://github.com/Eduard047/GymApp/releases/tag/v2.0.16
-- Current phone debug APK: https://github.com/Eduard047/GymApp/releases/download/v2.0.16/GymApp-2.0.16-debug.apk
-- Current watch debug APK: https://github.com/Eduard047/GymApp/releases/download/v2.0.16/GymApp-watch-2.0.16-debug.apk
+- Current store release tag: https://github.com/Eduard047/GymApp/releases/tag/release-2026.07.03.1057
+- Current Play AAB: https://github.com/Eduard047/GymApp/releases/download/release-2026.07.03.1057/gymapp-play-release.aab
+- Current debug APK release tag: https://github.com/Eduard047/GymApp/releases/tag/debug-2026.07.03.1057
+- Current phone debug APK: https://github.com/Eduard047/GymApp/releases/download/debug-2026.07.03.1057/gymapp-phone-debug.apk
+- Current watch debug APK: https://github.com/Eduard047/GymApp/releases/download/debug-2026.07.03.1057/gymapp-watch-debug.apk
 
 When publishing a new phone build, upload the debug APK asset to the current release:
 
