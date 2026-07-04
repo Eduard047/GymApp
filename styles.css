@@ -301,11 +301,6 @@ button { border: 0; }
   margin-top: 12px;
 }
 
-.auth-panel:has(#local-login-name),
-.panel:has([data-action="login-account"][data-name]) {
-  display: none;
-}
-
 .auth-callback-screen {
   min-height: 100vh;
   display: grid;
@@ -932,6 +927,26 @@ textarea:focus {
   margin: 12px 0;
 }
 
+.exercise-muscle-map {
+  margin: 12px 0;
+}
+
+.exercise-muscle-layout {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.72fr) 1fr;
+  gap: 14px;
+  align-items: center;
+  margin-top: 10px;
+}
+
+.exercise-muscle-layout .body-map-svg-wrap {
+  margin: 0;
+}
+
+.exercise-muscle-layout .body-map-svg {
+  max-height: 245px;
+}
+
 .empty {
   padding: 26px 14px;
   border: 1px dashed var(--outline-variant);
@@ -1058,6 +1073,7 @@ textarea:focus {
   }
 
   .hero-split,
+  .exercise-muscle-layout,
   .timer-row {
     grid-template-columns: 1fr;
   }

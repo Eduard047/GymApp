@@ -1538,7 +1538,7 @@ function loginScreen() {
     <header class="topbar"><span></span><h1>${tx("Login", "Вхід")}</h1><button class="icon-button" data-action="language" aria-label="Language">${svg("lang")}</button></header>
     <main class="screen auth-screen">
       <section class="hero-panel auth-hero"><p class="eyebrow">${tx("Training log", "Журнал тренувань")}</p><h2>GymApp</h2><p>${remoteEnabled ? tx("Sign in to sync workouts across devices.", "Увійди, щоб синхронізувати тренування між пристроями.") : tx("Cloud login is ready after Supabase keys are added.", "Хмарний вхід запрацює після додавання ключів Supabase.")}</p></section>
-      ${remoteEnabled ? `<section class="panel auth-panel"><h2>${tx("Cloud account", "Хмарний акаунт")}</h2><div class="field-stack"><input id="login-email" autocomplete="email" inputmode="email" placeholder="email@example.com"><input id="login-password" autocomplete="current-password" type="password" placeholder="${tx("Password", "Пароль")}"></div><div class="actions login-actions"><button class="button" data-action="remote-login">${tx("Log in", "Увійти")}</button></div><details class="signup-details" open><summary>${tx("Create account", "Створити акаунт")}</summary><div class="field-stack"><input id="signup-name" autocomplete="name" placeholder="${tx("Display name", "Ім'я в рейтингу")}"><input id="signup-email" autocomplete="email" inputmode="email" placeholder="email@example.com"><input id="signup-email-confirm" autocomplete="email" inputmode="email" placeholder="${tx("Repeat email", "Повтори email")}"><input id="signup-password" autocomplete="new-password" type="password" placeholder="${tx("Password", "Пароль")}"><input id="signup-password-confirm" autocomplete="new-password" type="password" placeholder="${tx("Repeat password", "Повтори пароль")}"><p class="muted">${tx("Use 8+ characters with letters and numbers.", "Використай 8+ символів з літерами й цифрами.")}</p><button class="button ghost" data-action="remote-signup">${tx("Create account", "Створити акаунт")}</button><button class="button ghost" data-action="remote-resend-confirmation">${tx("Resend confirmation email", "Надіслати підтвердження ще раз")}</button></div></details></section>` : ""}
+      ${remoteEnabled ? `<section class="panel auth-panel"><h2>${tx("Cloud account", "Хмарний акаунт")}</h2><div class="field-stack"><input id="login-email" autocomplete="email" inputmode="email" placeholder="email@example.com"><input id="login-password" autocomplete="current-password" type="password" placeholder="${tx("Password", "Пароль")}"></div><div class="actions login-actions"><button class="button" data-action="remote-login">${tx("Log in", "Увійти")}</button></div><details class="signup-details"><summary>${tx("Create account", "Створити акаунт")}</summary><div class="field-stack"><input id="signup-name" autocomplete="name" placeholder="${tx("Display name", "Ім'я в рейтингу")}"><input id="signup-email" autocomplete="email" inputmode="email" placeholder="email@example.com"><input id="signup-email-confirm" autocomplete="email" inputmode="email" placeholder="${tx("Repeat email", "Повтори email")}"><input id="signup-password" autocomplete="new-password" type="password" placeholder="${tx("Password", "Пароль")}"><input id="signup-password-confirm" autocomplete="new-password" type="password" placeholder="${tx("Repeat password", "Повтори пароль")}"><p class="muted">${tx("Use 8+ characters with letters and numbers.", "Використай 8+ символів з літерами й цифрами.")}</p><button class="button ghost" data-action="remote-signup">${tx("Create account", "Створити акаунт")}</button><button class="button ghost" data-action="remote-resend-confirmation">${tx("Resend confirmation email", "Надіслати підтвердження ще раз")}</button></div></details></section>` : ""}
       <section class="panel auth-panel"><h2>${tx("Local account", "Локальний акаунт")}</h2><p class="muted">${remoteEnabled ? tx("Offline fallback for this browser only.", "Запасний режим лише для цього браузера.") : tx("Paste Supabase keys into supabase-config.js to enable real network login.", "Встав ключі Supabase у supabase-config.js, щоб увімкнути справжній мережевий вхід.")}</p><div class="field-row login-row"><input id="local-login-name" autocomplete="username" placeholder="${tx("Name", "Ім'я")}"><button class="button" data-action="login-account">${tx("Enter", "Увійти")}</button></div></section>
       ${accounts.length ? `<section class="panel"><h2>${tx("Saved accounts", "Збережені акаунти")}</h2><div class="chip-row">${accounts.map(account => `<button class="chip buttonlike" data-action="login-account" data-name="${escapeAttr(account.name)}">${escapeHtml(account.name)}</button>`).join("")}</div></section>` : ""}
       <div id="toast" class="toast hidden"></div>
@@ -1821,6 +1821,24 @@ function sourceBodyMapSvg(data, maxLoad) {
   </div>`;
 }
 
+function exerciseMuscleMapCard(exerciseName) {
+  const contributions = contributionFor(exerciseName).filter(item => muscles.some(([id]) => id === item.muscleId));
+  const data = muscles.map(([id]) => {
+    const contribution = contributions.find(item => item.muscleId === id);
+    return {
+      id,
+      label: muscleLabel(id),
+      load: contribution ? Math.max(0.08, contribution.weight) : 0,
+      weight: contribution?.weight || 0
+    };
+  });
+  const max = Math.max(1, ...data.map(item => item.load));
+  const active = data.filter(item => item.weight > 0).sort((a, b) => b.weight - a.weight);
+  const label = active.map(item => `${item.label} ${Math.round(item.weight * 100)}%`).join(" - ") || tx("Not mapped", "Не зіставлено");
+  return `<section class="subpanel exercise-muscle-map"><div class="row-head"><div><h3>${t("muscleMap")}</h3><p>${escapeHtml(label)}</p></div><button class="button secondary mini" data-action="map-exercise" data-name="${escapeAttr(exerciseName)}">${tx("Map", "Мапити")}</button></div>
+    <div class="exercise-muscle-layout">${sourceBodyMapSvg(data, max)}<div class="bars">${active.length ? active.map(item => barRow(item.label, item.weight, 1, `${Math.round(item.weight * 100)}% ${tx("target", "ціль")}`)).join("") : `<div class="empty">${tx("Choose muscles for this exercise.", "Вибери м'язи для цієї вправи.")}</div>`}</div></div></section>`;
+}
+
 function muscleIdForSourceRegion(regionId) {
   if (!regionId) return null;
   if (regionId.includes("chest")) return "chest";
@@ -1937,9 +1955,8 @@ function draftBlock(block, blockIndex) {
   const rec = block.exerciseName ? smartRecommendation(block.exerciseName) : null;
   const title = block.exerciseName || `${tx("Exercise", "Вправа")} ${blockIndex + 1}`;
   return `<section class="draft-exercise panel highlighted"><details open><summary class="detail-summary"><div><h2>${escapeHtml(title)}</h2><p class="muted">${escapeHtml(draftSetSummary(block))}</p></div><button class="icon-button" data-action="remove-block" data-block="${blockIndex}" aria-label="${tx("Remove exercise", "Прибрати вправу")}">${svg("delete")}</button></summary>
-    <label>${tx("Exercise", "Вправа")}<input list="exercise-options" data-block="${blockIndex}" data-field="exerciseName" value="${escapeAttr(block.exerciseName)}" placeholder="${tx("Select exercise", "Обери вправу")}"></label>
-    <datalist id="exercise-options">${state.exercises.map(ex => `<option value="${escapeAttr(ex.name)}"></option>`).join("")}</datalist>
-    ${block.exerciseName ? muscleContributionPanel(block.exerciseName, false) : ""}
+    <label>${tx("Exercise", "Вправа")}<select class="exercise-select" data-block="${blockIndex}" data-field="exerciseName"><option value="">${tx("Select exercise", "Обери вправу")}</option>${state.exercises.map(ex => `<option value="${escapeAttr(ex.name)}" ${ex.name === block.exerciseName ? "selected" : ""}>${escapeHtml(ex.name)}</option>`).join("")}</select></label>
+    ${block.exerciseName ? exerciseMuscleMapCard(block.exerciseName) : ""}
     ${lastWeight != null ? `<div class="row-line"><strong>${tx("Last", "Остання")}: ${lastWeight.toFixed(1)} kg</strong><button class="button ghost mini" data-action="apply-last" data-block="${blockIndex}">${t("useLast")}</button></div>` : ""}
     ${rec ? smartPanel(rec, blockIndex) : ""}
     <div class="actions"><button class="button ghost" data-action="add-set" data-block="${blockIndex}">${t("addSet")}</button><button class="button ghost" data-action="copy-set" data-block="${blockIndex}">${t("copyLast")}</button><button class="button ghost" data-action="plus-set" data-block="${blockIndex}">${t("copyPlus")}</button></div>
@@ -2572,7 +2589,7 @@ function progressScreen() {
   const reps = history.reduce((sum, x) => sum + Number(x.reps || 0), 0);
   return `${monthSwitcher()}<section class="panel"><label>${tx("Exercise", "Вправа")}<select id="progress-select" data-action="progress-select">${state.exercises.map(ex => `<option value="${ex.id}" ${Number(ex.id) === selectedId ? "selected" : ""}>${escapeHtml(ex.name)}</option>`).join("")}</select></label></section>
     <section class="panel"><h2>${tx("Progress Summary", "Підсумок прогресу")}</h2><p class="muted">${tx("Volume = weight x reps across all completed sets.", "Обсяг = вага x повтори по всіх завершених підходах.")}</p><div class="metric-grid three"><div><span>${tx("Sessions", "Сесії")}</span><strong>${grouped.length}</strong></div><div><span>${tx("Total Sets", "Усього підходів")}</span><strong>${history.length}</strong></div><div><span>${tx("Total Reps", "Усього повторів")}</span><strong>${reps}</strong></div><div><span>${tx("Best Weight", "Найкраща вага")}</span><strong>${history.length ? `${best.toFixed(1)} kg` : tx("No data", "Немає даних")}</strong></div><div><span>${tx("Average Max", "Середній максимум")}</span><strong>${history.length ? `${avg.toFixed(1)} kg` : tx("No data", "Немає даних")}</strong></div><div><span>${tx("Total Volume", "Загальний обсяг")}</span><strong>${Math.round(vol)}</strong></div></div></section>
-    <section class="panel">${spotlight(selected.name, grouped, best, vol)}</section>
+    <section class="panel">${spotlight(selected.name, grouped, best, vol)}${exerciseMuscleMapCard(selected.name)}</section>
     <section class="panel"><h2>${tx("Visual Trends", "Візуальні тренди")}</h2><div class="bars">${grouped.length ? grouped.slice().reverse().map(g => barRow(fmtDate(g.session.startedAt, { day: "numeric", month: "short" }), Math.max(...g.sets.map(s => Number(s.weight || 0))), best || 1, `${tx("Vol", "Обсяг")} ${Math.round(g.sets.reduce((sum, s) => sum + Number(s.weight || 0) * Number(s.reps || 0), 0))}`)).join("") : `<div class="empty">${tx("Add sets to see chart.", "Додай підходи, щоб побачити графік.")}</div>`}</div></section>
     <section class="workout-list"><h2>${tx("Workout History", "Історія тренувань")}</h2>${grouped.length ? grouped.map(g => progressHistoryCard(g)).join("") : `<div class="empty">${tx("No history in this month.", "Немає історії за цей місяць.")}</div>`}</section>`;
 }
@@ -3019,7 +3036,7 @@ function exerciseHistoryMarkup(exercise) {
   const history = allSets().filter(set => set.exerciseName === exercise.name).sort((a, b) => b.session.startedAt - a.session.startedAt);
   const groups = progressHistoryGroups(history);
   const total = history.reduce((s, x) => s + Number(x.weight || 0) * Number(x.reps || 0), 0);
-  return `<h2>${escapeHtml(exercise.name)}</h2><div class="metric-grid three"><div><span>${tx("Sessions", "Сесії")}</span><strong>${groups.length}</strong></div><div><span>${tx("Sets", "Підходи")}</span><strong>${history.length}</strong></div><div><span>${tx("Volume", "Обсяг")}</span><strong>${Math.round(total)}</strong></div></div>${groups.length ? groupedExerciseHistory(groups) : `<div class="empty">${tx("No history for this exercise yet.", "Історії для цієї вправи ще немає.")}</div>`}`;
+  return `<h2>${escapeHtml(exercise.name)}</h2><div class="metric-grid three"><div><span>${tx("Sessions", "Сесії")}</span><strong>${groups.length}</strong></div><div><span>${tx("Sets", "Підходи")}</span><strong>${history.length}</strong></div><div><span>${tx("Volume", "Обсяг")}</span><strong>${Math.round(total)}</strong></div></div>${exerciseMuscleMapCard(exercise.name)}${groups.length ? groupedExerciseHistory(groups) : `<div class="empty">${tx("No history for this exercise yet.", "Історії для цієї вправи ще немає.")}</div>`}`;
 }
 
 function mappingEditor(name) {
@@ -3041,7 +3058,15 @@ function bindEvents() {
   if (loginPassword) loginPassword.addEventListener("keydown", ev => {
     if (ev.key === "Enter") remoteLogin(false);
   });
-  app.querySelectorAll("[data-block][data-field]").forEach(input => input.addEventListener("input", () => updateDraftInput(input)));
+  app.querySelectorAll("[data-block][data-field]").forEach(input => {
+    input.addEventListener("input", () => updateDraftInput(input));
+    if (input.matches("select")) {
+      input.addEventListener("change", () => {
+        updateDraftInput(input);
+        render();
+      });
+    }
+  });
   app.querySelectorAll("[data-draft]").forEach(input => input.addEventListener("input", () => {
     if (modal?.draft) modal.draft[input.dataset.draft] = input.value;
   }));
@@ -3057,7 +3082,7 @@ function handleAction(action, el) {
   if (action === "remote-login") return remoteLogin(false);
   if (action === "remote-signup") return remoteLogin(true);
   if (action === "remote-resend-confirmation") return resendRemoteConfirmation();
-  if (action === "login-account") return showToast(tx("Local login has been removed.", "Local login has been removed."));
+  if (action === "login-account") return loginAccount(el.dataset.name || app.querySelector("#local-login-name")?.value);
   if (action === "logout-account") return logoutAccount();
   if (action === "refresh-leaderboard") return refreshLeaderboard(true);
   if (action === "back") return back();
