@@ -41,6 +41,14 @@ create table if not exists public.garmin_plans (
 alter table public.garmin_devices enable row level security;
 alter table public.garmin_plans enable row level security;
 
+grant usage on schema public to anon, authenticated;
+
+grant select, insert, update on table public.garmin_devices to authenticated;
+grant select, insert, update on table public.garmin_plans to authenticated;
+
+grant select on table public.garmin_devices to anon;
+grant select, update on table public.garmin_plans to anon;
+
 drop policy if exists "Users can read own state" on public.user_states;
 create policy "Users can read own state"
 on public.user_states for select
