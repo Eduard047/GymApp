@@ -17,11 +17,15 @@ class WorkoutView extends Ui.View {
     var savedSetNumber = 0;
     var lastSyncRequestAt = 0;
     var lastCloudSyncRequestAt = 0;
+    var cloudAutoTimer;
+    var cloudAutoAttempts = 0;
+    var cloudAutoSyncActive = false;
 
     function initialize() {
         View.initialize();
         GymStore.load();
         ticker = new Timer.Timer();
+        cloudAutoTimer = new Timer.Timer();
     }
 
     function onShow() {
@@ -35,11 +39,14 @@ class WorkoutView extends Ui.View {
         getApp().pollMailbox();
         requestSyncNow();
         flushPending();
-        requestCloudSyncOnOpen();
+        cloudAutoAttempts = 0;
+        cloudAutoSyncActive = false;
+        scheduleCloudSyncOnOpen(2500);
     }
 
     function onHide() {
         ticker.stop();
+        cloudAutoTimer.stop();
         GymSession.stopSensors();
         GymStore.save();
     }
@@ -71,9 +78,18 @@ class WorkoutView extends Ui.View {
 
     function requestCloudSyncNow() {
         lastCloudSyncRequestAt = System.getTimer();
+        cloudAutoSyncActive = false;
         GymStore.status = "CLOUD...";
         GymComm.requestCloudPlan(method(:onCloudPlanFetched));
         Ui.requestUpdate();
+    }
+
+    function scheduleCloudSyncOnOpen(delayMs) {
+        if (!GymComm.hasCloudDeviceToken()) {
+            return;
+        }
+        cloudAutoTimer.stop();
+        cloudAutoTimer.start(method(:requestCloudSyncOnOpen), delayMs, false);
     }
 
     function requestCloudSyncOnOpen() {
@@ -81,10 +97,20 @@ class WorkoutView extends Ui.View {
             return;
         }
         var now = System.getTimer();
-        if (lastCloudSyncRequestAt != 0 && (now - lastCloudSyncRequestAt) < 30000) {
+        if (lastCloudSyncRequestAt != 0 && (now - lastCloudSyncRequestAt) < 8000) {
             return;
         }
-        requestCloudSyncNow();
+        if (cloudAutoAttempts >= 4) {
+            return;
+        }
+        cloudAutoAttempts += 1;
+        cloudAutoSyncActive = true;
+        lastCloudSyncRequestAt = now;
+        if (cloudAutoAttempts == 1) {
+            GymStore.status = "CLOUD...";
+            Ui.requestUpdate();
+        }
+        GymComm.requestCloudPlan(method(:onCloudPlanFetched));
     }
 
     function onCloudPlanFetched(ok, status, message) {
@@ -92,11 +118,18 @@ class WorkoutView extends Ui.View {
             try {
                 GymStore.applySync(message);
                 GymStore.status = status;
+                cloudAutoSyncActive = false;
             } catch (e) {
                 GymStore.status = "CLOUD FAIL";
+                cloudAutoSyncActive = false;
             }
         } else {
-            GymStore.status = status;
+            if (cloudAutoSyncActive && cloudAutoAttempts < 4 && !status.equals("NO TOKEN")) {
+                scheduleCloudSyncOnOpen(5000);
+            } else {
+                GymStore.status = status;
+                cloudAutoSyncActive = false;
+            }
         }
         Ui.requestUpdate();
     }
