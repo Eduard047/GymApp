@@ -16,6 +16,7 @@ class WorkoutView extends Ui.View {
     var savedSetFlashUntil = 0;
     var savedSetNumber = 0;
     var lastSyncRequestAt = 0;
+    var lastCloudSyncRequestAt = 0;
 
     function initialize() {
         View.initialize();
@@ -34,6 +35,7 @@ class WorkoutView extends Ui.View {
         getApp().pollMailbox();
         requestSyncNow();
         flushPending();
+        requestCloudSyncOnOpen();
     }
 
     function onHide() {
@@ -68,9 +70,21 @@ class WorkoutView extends Ui.View {
     }
 
     function requestCloudSyncNow() {
+        lastCloudSyncRequestAt = System.getTimer();
         GymStore.status = "CLOUD...";
         GymComm.requestCloudPlan(method(:onCloudPlanFetched));
         Ui.requestUpdate();
+    }
+
+    function requestCloudSyncOnOpen() {
+        if (!GymComm.hasCloudDeviceToken()) {
+            return;
+        }
+        var now = System.getTimer();
+        if (lastCloudSyncRequestAt != 0 && (now - lastCloudSyncRequestAt) < 30000) {
+            return;
+        }
+        requestCloudSyncNow();
     }
 
     function onCloudPlanFetched(ok, status, message) {

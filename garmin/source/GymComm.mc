@@ -103,6 +103,11 @@ class GymComm {
         );
     }
 
+    static function hasCloudDeviceToken() {
+        var token = Properties.getValue("CloudDeviceToken");
+        return token != null && token.toString().length() > 0;
+    }
+
     static function syncMessageFromCloudData(data) {
         var plan = data.get("plan");
         if (!(plan instanceof Lang.Dictionary)) {
