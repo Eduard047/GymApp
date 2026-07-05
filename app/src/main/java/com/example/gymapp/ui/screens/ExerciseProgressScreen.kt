@@ -35,6 +35,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
 import com.example.gymapp.data.entity.ExerciseHistoryEntry
+import com.example.gymapp.data.repository.defaultContributionsForExercise
+import com.example.gymapp.ui.components.ExerciseMuscleBreakdownCard
 import com.example.gymapp.ui.components.ExerciseSpotlightCard
 import com.example.gymapp.ui.components.ExerciseTrendChartsCard
 import com.example.gymapp.ui.viewmodel.ExerciseProgressUiState
@@ -61,6 +63,12 @@ fun ExerciseProgressScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
     val setDeletedMessage = stringResource(R.string.message_set_deleted)
+    val selectedMuscleIntensities = remember(uiState.selectedExerciseName) {
+        uiState.selectedExerciseName
+            ?.let { defaultContributionsForExercise(it) }
+            .orEmpty()
+            .associate { contribution -> contribution.muscleId to contribution.weight.toFloat() }
+    }
 
     val sessionGroups = remember(uiState.history) {
         uiState.history
@@ -103,6 +111,15 @@ fun ExerciseProgressScreen(
                     exercises = uiState.exercises.map { it.id to it.name },
                     onSelectExercise = onSelectExercise
                 )
+            }
+
+            if (selectedMuscleIntensities.isNotEmpty()) {
+                item {
+                    ExerciseMuscleBreakdownCard(
+                        exerciseName = uiState.selectedExerciseName.orEmpty(),
+                        muscleIntensities = selectedMuscleIntensities
+                    )
+                }
             }
 
             item {

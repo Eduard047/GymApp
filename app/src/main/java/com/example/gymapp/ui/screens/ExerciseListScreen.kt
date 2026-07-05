@@ -44,6 +44,8 @@ import androidx.core.content.FileProvider
 import com.example.gymapp.R
 import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.entity.ExerciseHistoryEntry
+import com.example.gymapp.data.repository.defaultContributionsForExercise
+import com.example.gymapp.ui.components.ExerciseMuscleBreakdownCard
 import com.example.gymapp.ui.viewmodel.ExerciseListUiState
 import com.example.gymapp.ui.viewmodel.ExerciseMuscleMappingUiModel
 import com.example.gymapp.ui.viewmodel.MuscleOptionUiModel
@@ -213,7 +215,11 @@ fun ExerciseListScreen(
         ModalBottomSheet(onDismissRequest = onDismissHistory) {
             ExerciseHistoryBottomSheetContent(
                 exerciseName = selectedExerciseName,
-                history = uiState.selectedExerciseHistory
+                history = uiState.selectedExerciseHistory,
+                onEditExerciseMapping = {
+                    onDismissHistory()
+                    onEditExerciseMapping(selectedExerciseName)
+                }
             )
         }
     }
@@ -829,7 +835,8 @@ private fun wrapPdfLine(text: String, maxChars: Int): List<String> {
 @Composable
 private fun ExerciseHistoryBottomSheetContent(
     exerciseName: String,
-    history: List<ExerciseHistoryEntry>
+    history: List<ExerciseHistoryEntry>,
+    onEditExerciseMapping: () -> Unit
 ) {
     val locale = Locale.getDefault()
     val zoneId = ZoneId.systemDefault()
@@ -858,6 +865,10 @@ private fun ExerciseHistoryBottomSheetContent(
     }
 
     val totalVolume = remember(history) { history.sumOf { it.weight * it.reps } }
+    val muscleIntensities = remember(exerciseName) {
+        defaultContributionsForExercise(exerciseName)
+            .associate { contribution -> contribution.muscleId to contribution.weight.toFloat() }
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxWidth(),
@@ -895,6 +906,16 @@ private fun ExerciseHistoryBottomSheetContent(
                         modifier = Modifier.weight(1f)
                     )
                 }
+            }
+        }
+
+        if (muscleIntensities.isNotEmpty()) {
+            item {
+                ExerciseMuscleBreakdownCard(
+                    exerciseName = exerciseName,
+                    muscleIntensities = muscleIntensities,
+                    onEditMapping = onEditExerciseMapping
+                )
             }
         }
 

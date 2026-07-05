@@ -59,6 +59,7 @@ import com.example.gymapp.data.repository.WorkoutRecommendationKind
 import com.example.gymapp.data.repository.WorkoutRecommendationReason
 import com.example.gymapp.data.repository.defaultContributionsForExercise
 import com.example.gymapp.ui.components.AppPanel
+import com.example.gymapp.ui.components.ExerciseMuscleBreakdownCard
 import com.example.gymapp.ui.components.ExerciseMuscleMap
 import com.example.gymapp.ui.components.HeroPanel
 import com.example.gymapp.ui.components.InfoPill
@@ -716,19 +717,11 @@ private fun ExerciseDraftCard(
             )
 
             if (muscleIntensities.isNotEmpty()) {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(
-                        text = stringResource(R.string.exercise_muscles_title),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    ExerciseMuscleMap(
-                        muscleIntensities = muscleIntensities,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(132.dp)
-                    )
-                }
+                ExerciseMuscleBreakdownCard(
+                    exerciseName = selectedExercise?.name.orEmpty(),
+                    muscleIntensities = muscleIntensities,
+                    framed = false
+                )
             }
 
             if (lastWeight != null) {

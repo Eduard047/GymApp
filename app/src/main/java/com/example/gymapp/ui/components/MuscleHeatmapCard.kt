@@ -41,11 +41,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
+import com.example.gymapp.data.repository.MUSCLE_DEFINITIONS
 import com.example.gymapp.ui.viewmodel.ExerciseMappingUiModel
 import com.example.gymapp.ui.viewmodel.MuscleHeatmapUiModel
 import com.example.gymapp.ui.viewmodel.MuscleMapPeriod
 import com.example.gymapp.ui.viewmodel.MuscleOptionUiModel
 import com.example.gymapp.ui.viewmodel.MuscleProgressUiModel
+import java.util.Locale
 import kotlin.math.min
 
 @Composable
@@ -272,6 +274,143 @@ fun ExerciseMuscleMap(
         onMuscleSelected = null,
         modifier = modifier
     )
+}
+
+@Composable
+fun ExerciseMuscleBreakdownCard(
+    exerciseName: String,
+    muscleIntensities: Map<String, Float>,
+    onEditMapping: (() -> Unit)? = null,
+    framed: Boolean = true,
+    modifier: Modifier = Modifier
+) {
+    val locale = Locale.getDefault()
+    val labelById = remember(locale) {
+        MUSCLE_DEFINITIONS.associate { definition ->
+            definition.id to if (locale.language.equals("uk", ignoreCase = true)) {
+                definition.titleUk
+            } else {
+                definition.titleEn
+            }
+        }
+    }
+    val sortedMuscles = remember(muscleIntensities, labelById) {
+        muscleIntensities
+            .filterValues { it > 0f }
+            .toList()
+            .sortedByDescending { it.second }
+    }
+    val summary = remember(sortedMuscles, labelById) {
+        sortedMuscles
+            .take(4)
+            .joinToString(" - ") { (muscleId, intensity) ->
+                "${labelById[muscleId] ?: muscleId} ${(intensity * 100f).toInt()}%"
+            }
+    }
+
+    @Composable
+    fun Content() {
+        Column(
+            modifier = Modifier.padding(if (framed) 14.dp else 0.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.Top
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = stringResource(R.string.muscle_heatmap_title),
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    if (summary.isNotBlank()) {
+                        Text(
+                            text = summary,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        Text(
+                            text = exerciseName,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+                if (onEditMapping != null) {
+                    OutlinedButton(onClick = onEditMapping) {
+                        Text(
+                            text = stringResource(R.string.muscle_heatmap_map_action),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+
+            ExerciseMuscleMap(
+                muscleIntensities = muscleIntensities,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(250.dp)
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                Text(
+                    text = stringResource(R.string.muscle_heatmap_front),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = stringResource(R.string.muscle_heatmap_back),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            sortedMuscles.take(6).forEach { (muscleId, intensity) ->
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = labelById[muscleId] ?: muscleId,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    LinearProgressIndicator(
+                        progress = { intensity.coerceIn(0f, 1f) },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Text(
+                        text = "${(intensity * 100f).toInt()}%",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+    }
+
+    if (framed) {
+        AppPanel(
+            modifier = modifier.fillMaxWidth(),
+            highlighted = true
+        ) {
+            Content()
+        }
+    } else {
+        Box(modifier = modifier.fillMaxWidth()) {
+            Content()
+        }
+    }
 }
 
 @Composable
