@@ -1,6 +1,7 @@
 {
   "private": true,
   "scripts": {
-    "test:garmin-cloud": "node --test tests/garmin-cloud-sync.test.mjs"
+    "test:garmin-cloud": "node --test tests/garmin-cloud-sync.test.mjs",
+    "test:pwa-smart-plan": "node --test tests/pwa-smart-plan.test.mjs"
   }
 }
