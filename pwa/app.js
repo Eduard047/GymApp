@@ -3176,23 +3176,39 @@ function generateSmartWorkout() {
 function buildSmartWorkoutPlan() {
   const focus = chooseWorkoutFocus();
   const targetExerciseCount = focus === "FullBody" ? 6 : 5;
+  const history = allSets();
+  const historyByExercise = new Map();
+  history.forEach(set => {
+    const key = normalizeExerciseName(set.exerciseName);
+    const items = historyByExercise.get(key) || [];
+    items.push(set);
+    historyByExercise.set(key, items);
+  });
+  const recentSessionIds = recentWorkoutSessionIds(history, 3);
+  const targetMuscles = targetMusclesForFocus(focus);
   const candidates = state.exercises.map(exercise => {
-    const exerciseHistory = allSets().filter(set => set.exerciseName === exercise.name);
-    const bodyGroup = classifyExercise(exercise.name);
+    const exerciseHistory = historyByExercise.get(normalizeExerciseName(exercise.name)) || [];
+    const analysis = analyzeSmartExercise(exercise.name);
     const latest = exerciseHistory.reduce((max, set) => Math.max(max, set.session.startedAt), 0);
     const daysSince = latest ? daysBetween(latest, Date.now()) : 90;
     const sessionCount = new Set(exerciseHistory.map(set => set.session.id)).size;
-    const focusScore = focus === "FullBody" ? 24 : isCandidateForFocus(bodyGroup, focus) && bodyGroup !== "FullBody" ? 80 : bodyGroup === "FullBody" ? 34 : -35;
-    const noveltyScore = sessionCount === 0 ? 18 : 0;
-    const dueScore = Math.min(daysSince, 45) * 1.6;
-    const confidenceScore = Math.min(sessionCount, 6) * 3;
-    return { exercise, bodyGroup, score: focusScore + noveltyScore + dueScore + confidenceScore };
-  }).sort((a, b) => b.score - a.score || a.exercise.name.localeCompare(b.exercise.name));
-  const primary = candidates.filter(candidate => isCandidateForFocus(candidate.bodyGroup, focus)).slice(0, targetExerciseCount);
-  const fallback = primary.length >= targetExerciseCount ? [] : candidates.filter(candidate => !primary.some(item => item.exercise.id === candidate.exercise.id)).slice(0, targetExerciseCount - primary.length);
+    const recentExercisePenalty = new Set(exerciseHistory.filter(set => recentSessionIds.has(set.session.id)).map(set => set.session.id)).size * 16;
+    const sameWeekExercisePenalty = exerciseHistory.some(set => daysBetween(set.session.startedAt, Date.now()) <= 6) ? 55 : 0;
+    const focusScore = focus === "FullBody" ? 44 : isCandidateForFocus(analysis, focus) ? 86 : analysis.category === "FullBody" ? 32 : -60;
+    const muscleMatchScore = analysis.muscles.filter(muscle => targetMuscles.has(muscle)).length * 9;
+    const noveltyScore = sessionCount === 0 ? 12 : 0;
+    const dueScore = Math.min(daysSince, 28) * 1.25;
+    const confidenceScore = Math.min(sessionCount, 4) * 2;
+    return {
+      exercise,
+      analysis,
+      score: focusScore + muscleMatchScore + noveltyScore + dueScore + confidenceScore - recentExercisePenalty - sameWeekExercisePenalty
+    };
+  });
+  const selected = selectBalancedSmartExercises(candidates, focus, targetMuscles, targetExerciseCount, history);
   return {
     focus,
-    exercises: [...primary, ...fallback].slice(0, targetExerciseCount).map(candidate => ({
+    exercises: selected.map(candidate => ({
       name: candidate.exercise.name,
       recommendation: smartRecommendation(candidate.exercise.name)
     }))
@@ -3206,19 +3222,23 @@ function chooseWorkoutFocus() {
     if (state.profile.split === "Push Pull Legs") return "Push";
     return "FullBody";
   }
-  const latestSessionId = history.reduce((best, set) => set.session.startedAt > best.date ? { id: set.session.id, date: set.session.startedAt } : best, { id: null, date: 0 }).id;
-  const latest = history.filter(set => set.session.id === latestSessionId);
+  const sessions = sessionGroupsByDate(history);
+  const latest = sessions[0]?.sets || [];
+  const latestFocus = dominantSmartFocus(latest);
   if (state.profile.split === "Upper / Lower") {
-    const lowerCount = latest.filter(set => ["Lower", "Legs"].includes(classifyExercise(set.exerciseName))).length;
-    const upperCount = latest.filter(set => ["Upper", "Push", "Pull"].includes(classifyExercise(set.exerciseName))).length;
-    return lowerCount > upperCount ? "Upper" : "Lower";
+    const thisWeekSessions = sessions.filter(session => daysBetween(session.date, Date.now()) <= 6);
+    const latestWeekFocus = thisWeekSessions[0]?.sets ? dominantSmartFocus(thisWeekSessions[0].sets) : latestFocus;
+    if (isLowerFocus(latestWeekFocus)) return "Upper";
+    if (isUpperFocus(latestWeekFocus)) return "Lower";
+    const upperCount = thisWeekSessions.filter(session => isUpperFocus(dominantSmartFocus(session.sets))).length;
+    const lowerCount = thisWeekSessions.filter(session => isLowerFocus(dominantSmartFocus(session.sets))).length;
+    return lowerCount < upperCount ? "Lower" : "Upper";
   }
   if (state.profile.split === "Push Pull Legs") {
-    const push = latest.filter(set => classifyExercise(set.exerciseName) === "Push").length;
-    const pull = latest.filter(set => classifyExercise(set.exerciseName) === "Pull").length;
-    const legs = latest.filter(set => ["Lower", "Legs"].includes(classifyExercise(set.exerciseName))).length;
-    if (legs >= push && legs >= pull) return "Push";
-    return push >= pull ? "Pull" : "Legs";
+    if (latestFocus === "Push") return "Pull";
+    if (latestFocus === "Pull") return "Legs";
+    if (latestFocus === "Legs" || latestFocus === "Lower") return "Push";
+    return chooseMostNeglectedFocus(history);
   }
   if (state.profile.split === "Custom") return chooseMostNeglectedFocus(history);
   return "FullBody";
@@ -3234,11 +3254,13 @@ function classifyExercise(name) {
   return "FullBody";
 }
 
-function isCandidateForFocus(candidateFocus, workoutFocus) {
-  if (workoutFocus === "Upper") return ["Upper", "Push", "Pull", "FullBody"].includes(candidateFocus);
-  if (workoutFocus === "Lower" || workoutFocus === "Legs") return ["Lower", "Legs", "FullBody"].includes(candidateFocus);
-  if (workoutFocus === "Push") return candidateFocus === "Push" || candidateFocus === "FullBody";
-  if (workoutFocus === "Pull") return candidateFocus === "Pull" || candidateFocus === "FullBody";
+function isCandidateForFocus(candidate, workoutFocus) {
+  const candidateFocus = typeof candidate === "string" ? candidate : candidate.category;
+  const muscles = typeof candidate === "string" ? [] : candidate.muscles;
+  if (workoutFocus === "Upper") return ["Push", "Pull"].includes(candidateFocus);
+  if (workoutFocus === "Lower" || workoutFocus === "Legs") return candidateFocus === "Legs" || muscles.some(muscle => smartCoreMuscles.has(muscle));
+  if (workoutFocus === "Push") return candidateFocus === "Push";
+  if (workoutFocus === "Pull") return candidateFocus === "Pull";
   return true;
 }
 
@@ -3246,10 +3268,176 @@ function chooseMostNeglectedFocus(history) {
   const focuses = ["Push", "Pull", "Legs", "FullBody"];
   const latestByFocus = Object.fromEntries(focuses.map(focus => [focus, 0]));
   history.forEach(set => {
-    const focus = classifyExercise(set.exerciseName);
+    const focus = analyzeSmartExercise(set.exerciseName).category;
     latestByFocus[focus] = Math.max(latestByFocus[focus] || 0, set.session.startedAt);
   });
   return focuses.sort((a, b) => latestByFocus[a] - latestByFocus[b])[0] || "FullBody";
+}
+
+const smartPushMuscles = new Set(["chest", "shoulders", "triceps"]);
+const smartPullMuscles = new Set(["lats", "upperBack", "biceps", "forearms"]);
+const smartLowerMuscles = new Set(["quads", "hamstrings", "glutes", "calves", "adductors", "lowerBack"]);
+const smartCoreMuscles = new Set(["abs", "obliques"]);
+
+function analyzeSmartExercise(name) {
+  const normalized = normalizeExerciseName(name);
+  const has = (...tokens) => tokens.some(token => normalized.includes(token));
+  const muscles = new Set(contributionFor(name).map(item => item.muscleId));
+  const patterns = new Set();
+  const addPattern = (...items) => items.forEach(item => patterns.add(item));
+
+  if (has("жим ног", "жим ногами", "leg press")) addPattern("LegPress");
+  if (has("прис", "присед", "squat", "випади", "выпады", "lunge")) addPattern("Squat");
+  if (has("румун", "станов", "становая", "deadlift", "hip thrust", "місток", "мостик")) addPattern("Hinge");
+  if (has("згинання ніг", "згибання ніг", "сгибание ног", "leg curl")) addPattern("KneeFlexion");
+  if (has("розгинання ніг", "разгибание ног", "leg extension")) addPattern("KneeExtension");
+  if (has("підйом на носки", "подъем на носки", "икры", "calf")) addPattern("Calf");
+  if (has("bench", "жим леж", "віджим", "отжим", "dips")) addPattern("HorizontalPress");
+  if (has("shoulder press", "overhead", "над голов", "плеч")) addPattern("VerticalPress");
+  if (has("row", "тяга") && !has("румун", "станов", "становая", "deadlift", "підборід", "подбород")) addPattern("HorizontalPull");
+  if (has("pull up", "pullup", "pulldown", "підтяг", "подтяг", "верхній блок", "верхний блок")) addPattern("VerticalPull");
+  if (has("прес", "abs", "crunch", "планка", "plank", "leg raise")) addPattern("Core");
+  if (!patterns.size) addPattern("Accessory");
+
+  const fallback = classifyExercise(name);
+  const category = [...muscles].some(muscle => smartLowerMuscles.has(muscle))
+    ? "Legs"
+    : [...muscles].some(muscle => smartPullMuscles.has(muscle)) && ![...muscles].some(muscle => smartPushMuscles.has(muscle))
+      ? "Pull"
+      : [...muscles].some(muscle => smartPushMuscles.has(muscle))
+        ? "Push"
+        : [...muscles].some(muscle => smartCoreMuscles.has(muscle))
+          ? "FullBody"
+          : fallback;
+
+  return { category, muscles: [...muscles], patterns };
+}
+
+function selectBalancedSmartExercises(candidates, focus, targetMuscles, targetExerciseCount, history) {
+  const selected = [];
+  const coveredMuscles = new Set();
+  const lastTrained = lastTrainedBySmartMuscle(history);
+  let remaining = candidates.filter(candidate => isCandidateForFocus(candidate.analysis, focus));
+  if (!remaining.length && focus !== "Lower" && focus !== "Legs") remaining = [...candidates];
+
+  const takeBestPattern = patterns => {
+    const best = remaining
+      .filter(candidate => [...candidate.analysis.patterns].some(pattern => patterns.has(pattern)))
+      .sort((a, b) => (b.score + patternMatchCount(b, patterns) * 35) - (a.score + patternMatchCount(a, patterns) * 35) || a.exercise.name.localeCompare(b.exercise.name))[0];
+    if (!best) return;
+    selected.push(best);
+    best.analysis.muscles.forEach(muscle => coveredMuscles.add(muscle));
+    remaining = remaining.filter(candidate => candidate.exercise.id !== best.exercise.id);
+  };
+
+  if (focus === "Lower" || focus === "Legs") {
+    takeBestPattern(new Set(["Squat", "LegPress"]));
+    if (shouldPrioritizeHeavyLower(history)) takeBestPattern(new Set(["Hinge"]));
+  }
+
+  if (focus === "FullBody") {
+    ["Push", "Pull", "Legs"].forEach(requiredFocus => {
+      const best = remaining
+        .filter(candidate => candidate.analysis.category === requiredFocus)
+        .sort((a, b) => b.score - a.score || a.exercise.name.localeCompare(b.exercise.name))[0];
+      if (!best) return;
+      selected.push(best);
+      best.analysis.muscles.forEach(muscle => coveredMuscles.add(muscle));
+      remaining = remaining.filter(candidate => candidate.exercise.id !== best.exercise.id);
+    });
+  }
+
+  while (selected.length < targetExerciseCount && remaining.length) {
+    const best = remaining
+      .map(candidate => ({
+        candidate,
+        score: balancedSmartScore(candidate, coveredMuscles, targetMuscles, lastTrained)
+      }))
+      .sort((a, b) => b.score - a.score || a.candidate.exercise.name.localeCompare(b.candidate.exercise.name))[0].candidate;
+    selected.push(best);
+    best.analysis.muscles.forEach(muscle => coveredMuscles.add(muscle));
+    remaining = remaining.filter(candidate => candidate.exercise.id !== best.exercise.id);
+  }
+
+  return selected.slice(0, targetExerciseCount);
+}
+
+function patternMatchCount(candidate, patterns) {
+  return [...candidate.analysis.patterns].filter(pattern => patterns.has(pattern)).length;
+}
+
+function balancedSmartScore(candidate, coveredMuscles, targetMuscles, lastTrained) {
+  const newTargetMuscles = candidate.analysis.muscles.filter(muscle => targetMuscles.has(muscle) && !coveredMuscles.has(muscle)).length;
+  const targetOverlap = candidate.analysis.muscles.filter(muscle => targetMuscles.has(muscle)).length;
+  const fatiguePenalty = candidate.analysis.muscles.reduce((sum, muscle) => {
+    const lastDate = lastTrained.get(muscle);
+    if (!lastDate) return sum;
+    const days = daysBetween(lastDate, Date.now());
+    return sum + (days === 0 ? 28 : days === 1 ? 18 : days === 2 ? 8 : 0);
+  }, 0);
+  const duplicateCoveragePenalty = candidate.analysis.muscles.length && candidate.analysis.muscles.every(muscle => coveredMuscles.has(muscle)) ? 10 : 0;
+  return candidate.score + newTargetMuscles * 24 + targetOverlap * 4 - fatiguePenalty - duplicateCoveragePenalty;
+}
+
+function targetMusclesForFocus(focus) {
+  if (focus === "Upper") return new Set([...smartPushMuscles, ...smartPullMuscles]);
+  if (focus === "Lower" || focus === "Legs") return new Set([...smartLowerMuscles, ...smartCoreMuscles]);
+  if (focus === "Push") return smartPushMuscles;
+  if (focus === "Pull") return smartPullMuscles;
+  return new Set([...smartPushMuscles, ...smartPullMuscles, ...smartLowerMuscles, ...smartCoreMuscles]);
+}
+
+function recentWorkoutSessionIds(history, limit) {
+  return new Set(sessionGroupsByDate(history).slice(0, limit).map(session => session.id));
+}
+
+function sessionGroupsByDate(history) {
+  const groups = new Map();
+  history.forEach(set => {
+    const group = groups.get(set.session.id) || { id: set.session.id, date: set.session.startedAt, sets: [] };
+    group.date = Math.max(group.date, set.session.startedAt);
+    group.sets.push(set);
+    groups.set(set.session.id, group);
+  });
+  return [...groups.values()].sort((a, b) => b.date - a.date);
+}
+
+function dominantSmartFocus(sets) {
+  const counts = sets.reduce((acc, set) => {
+    const focus = analyzeSmartExercise(set.exerciseName).category;
+    acc[focus] = (acc[focus] || 0) + 1;
+    return acc;
+  }, {});
+  const lowerCount = (counts.Legs || 0) + (counts.Lower || 0);
+  const upperCount = (counts.Push || 0) + (counts.Pull || 0) + (counts.Upper || 0);
+  if (lowerCount > upperCount) return "Lower";
+  if (upperCount > lowerCount) return (counts.Push || 0) >= (counts.Pull || 0) ? "Push" : "Pull";
+  return "FullBody";
+}
+
+function isUpperFocus(focus) {
+  return ["Upper", "Push", "Pull"].includes(focus);
+}
+
+function isLowerFocus(focus) {
+  return ["Lower", "Legs"].includes(focus);
+}
+
+function lastTrainedBySmartMuscle(history) {
+  const result = new Map();
+  history.forEach(set => {
+    analyzeSmartExercise(set.exerciseName).muscles.forEach(muscle => {
+      result.set(muscle, Math.max(result.get(muscle) || 0, set.session.startedAt));
+    });
+  });
+  return result;
+}
+
+function shouldPrioritizeHeavyLower(history) {
+  const latestLower = sessionGroupsByDate(history).find(session => isLowerFocus(dominantSmartFocus(session.sets)));
+  if (!latestLower) return true;
+  const patterns = new Set(latestLower.sets.flatMap(set => [...analyzeSmartExercise(set.exerciseName).patterns]));
+  return !patterns.has("Squat") && !patterns.has("LegPress") && !patterns.has("Hinge");
 }
 
 function copyDraftSet(blockIndex, plus) {
