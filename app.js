@@ -12,27 +12,36 @@ const ANDROID_AUTH_CALLBACK_URL = "com.setforge.gymapp://auth/callback";
 const app = document.querySelector("#app");
 
 const icons = {
-  add: "M12 5v14M5 12h14",
+  add: "M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z",
   auto: "M12 3l1.7 5.3L19 10l-5.3 1.7L12 17l-1.7-5.3L5 10l5.3-1.7zM19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z",
-  back: "M15 18l-6-6 6-6",
+  back: "M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z",
   chart: "M4 19V5M8 17v-5M13 17V8M18 17v-9M3 19h18",
   check: "M20 6 9 17l-5-5",
+  checkCircle: "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z",
   close: "M18 6 6 18M6 6l12 12",
   copy: "M8 8h11v11H8zM5 16H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h11a1 1 0 0 1 1 1v1",
   delete: "M3 6h18M8 6V4h8v2M6 6l1 15h10l1-15",
   download: "M12 3v12m0 0 5-5m-5 5-5-5M4 21h16",
   edit: "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z",
+  emojiEvents: "M19 5h-2V3H7v2H5C3.9 5 3 5.9 3 7v1c0 2.55 1.92 4.63 4.39 4.94.63 1.5 1.98 2.63 3.61 2.96V19H7v2h10v-2h-4v-3.1c1.63-.33 2.98-1.46 3.61-2.96C19.08 12.63 21 10.55 21 8V7c0-1.1-.9-2-2-2zM5 8V7h2v3.82C5.84 10.4 5 9.3 5 8zm14 0c0 1.3-.84 2.4-2 2.82V7h2v1z",
   fire: "M12 22c4 0 7-3 7-7 0-4-3-7-5-10 0 4-2 5-4 7-1-2-1-4 0-6-3 2-5 5-5 9 0 4 3 6 7 6z",
+  fitness: "M20.57 14.86 22 13.43 20.57 12 17 15.57 8.43 7 12 3.43 10.57 2 9.14 3.43 7.71 2 5.57 4.14 4.14 2.71 2.71 4.14l1.43 1.43L2 7.71l1.43 1.43L2 10.57 3.43 12 7 8.43 15.57 17 12 20.57 13.43 22l1.43-1.43L16.29 22l2.14-2.14 1.43 1.43 1.43-1.43-1.43-1.43L22 16.29z",
   home: "M3 11l9-8 9 8v10H5V11",
-  lang: "M4 5h16M9 3v2m4 0c-1 5-4 8-8 10m3-7c2 3 5 6 9 7m-4 4 3-7 3 7m-5-2h4",
+  lang: "M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zm6.93 6h-2.95c-.32-1.25-.78-2.45-1.38-3.56A8.03 8.03 0 0 1 18.92 8zM12 4.04c.83 1.2 1.48 2.53 1.91 3.96h-3.82A15.7 15.7 0 0 1 12 4.04zM4.26 14A8.1 8.1 0 0 1 4 12c0-.69.1-1.36.26-2h3.38c-.08.66-.14 1.32-.14 2s.06 1.34.14 2H4.26zm.82 2h2.95c.32 1.25.78 2.45 1.38 3.56A8.03 8.03 0 0 1 5.08 16zm2.95-8H5.08a8.03 8.03 0 0 1 4.33-3.56A15.8 15.8 0 0 0 8.03 8zM12 19.96A15.7 15.7 0 0 1 10.09 16h3.82A15.7 15.7 0 0 1 12 19.96zM14.34 14H9.66a15.5 15.5 0 0 1-.16-2c0-.68.07-1.35.16-2h4.68c.09.65.16 1.32.16 2s-.07 1.34-.16 2zm.25 5.56A15.8 15.8 0 0 0 15.97 16h2.95a8.03 8.03 0 0 1-4.33 3.56zM16.36 14c.08-.66.14-1.32.14-2s-.06-1.34-.14-2h3.38c.16.64.26 1.31.26 2s-.1 1.36-.26 2h-3.38z",
   list: "M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01",
+  listFilled: "M4 10.5c-.83 0-1.5.67-1.5 1.5s.67 1.5 1.5 1.5 1.5-.67 1.5-1.5-.67-1.5-1.5-1.5zm0-6C3.17 4.5 2.5 5.17 2.5 6S3.17 7.5 4 7.5 5.5 6.83 5.5 6 4.83 4.5 4 4.5zm0 12c-.83 0-1.5.68-1.5 1.5s.68 1.5 1.5 1.5 1.5-.68 1.5-1.5-.67-1.5-1.5-1.5zM7 19h14v-2H7v2zm0-6h14v-2H7v2zm0-8v2h14V5H7z",
   medal: "M8 21l4-7 4 7M8 3h8l2 5-6 6-6-6z",
   save: "M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2zM7 21v-8h10v8M7 3v5h8",
+  showChart: "M3.5 18.49l6-6.01 4 4L22 6.92l-1.41-1.41-7.09 7.97-4-4L2 16.99z",
   timer: "M10 2h4M12 14l4-4M5 5l2 2m10-2-2 2M12 22a8 8 0 1 0 0-16 8 8 0 0 0 0 16z",
   trophy: "M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0zM5 5H3v2a4 4 0 0 0 4 4M19 5h2v2a4 4 0 0 1-4 4",
   upload: "M12 21V9m0 0 5 5m-5-5-5 5M4 3h16",
   weight: "M6 7h12l2 14H4zM9 7a3 3 0 0 1 6 0"
 };
+
+const filledIcons = new Set([
+  "add", "back", "checkCircle", "emojiEvents", "fitness", "lang", "listFilled", "showChart"
+]);
 
 function handleEmailConfirmationRedirect() {
   const query = new URLSearchParams(window.location.search);
@@ -922,8 +931,9 @@ let activeAccount = loadActiveAccount();
 let state = loadState();
 let nav = [{ name: "workouts" }];
 let modal = null;
+let workoutDraft = null;
 let toastTimer = null;
-let selectedMonthOffset = 0;
+const monthOffsets = { workouts: 0, progress: 0 };
 let overviewMode = "overview";
 let musclePeriod = "month";
 let selectedMuscle = null;
@@ -931,6 +941,19 @@ let leaderboardState = { status: "idle", rows: [], error: "" };
 let leaderboardRequestController = null;
 let leaderboardRequestId = 0;
 let timerInterval = null;
+let languageMenuOpen = false;
+let authMode = "login";
+const authDrafts = {
+  login: { email: "", password: "" },
+  signup: { email: "", emailConfirm: "", password: "", passwordConfirm: "", name: "" }
+};
+const routeScrollPositions = new Map();
+
+function clearAuthDrafts() {
+  authMode = "login";
+  authDrafts.login = { email: "", password: "" };
+  authDrafts.signup = { email: "", emailConfirm: "", password: "", passwordConfirm: "", name: "" };
+}
 
 function t(key) {
   return (text[state.language] || text.en)[key] || text.en[key] || key;
@@ -1187,7 +1210,7 @@ async function saveRemoteState() {
   });
 }
 
-function draftToGarminPlan(draft = modal?.draft) {
+function draftToGarminPlan(draft = workoutDraft) {
   return window.GymGarminCloud.draftToGarminPlan(draft, { title: tx("Workout plan", "Workout plan") });
 }
 
@@ -1350,39 +1373,119 @@ function route() {
   return nav[nav.length - 1];
 }
 
+function routeScrollKey(current = route()) {
+  return `${current.name}:${current.id ?? "root"}`;
+}
+
+function visibleScrollContainer() {
+  const main = app.querySelector("main[data-scroll-key]");
+  return main?.querySelector(".workouts-scroll") || main;
+}
+
+function rememberVisibleScroll() {
+  const main = app.querySelector("main[data-scroll-key]");
+  const scroller = main?.querySelector(".workouts-scroll") || main;
+  if (main?.dataset.scrollKey && scroller) {
+    routeScrollPositions.set(main.dataset.scrollKey, scroller.scrollTop);
+  }
+}
+
+function restoreVisibleScroll() {
+  const main = app.querySelector("main[data-scroll-key]");
+  const scroller = main?.querySelector(".workouts-scroll") || main;
+  if (!main?.dataset.scrollKey || !scroller) return;
+  scroller.scrollTop = routeScrollPositions.get(main.dataset.scrollKey) || 0;
+}
+
+function navigationState() {
+  return { gymAppNav: nav.map(item => ({ name: item.name, ...(Number.isSafeInteger(item.id) ? { id: item.id } : {}) })) };
+}
+
+function replaceNavigationHistory() {
+  history.replaceState(navigationState(), "");
+}
+
+function pushNavigationHistory() {
+  history.pushState(navigationState(), "");
+}
+
+function validatedHistoryNav(value) {
+  const rootNames = new Set(["workouts", "missions", "exercises", "progress", "leaderboard"]);
+  const childNames = new Set(["add", "detail", "summary", "ranks"]);
+  if (!Array.isArray(value) || !value.length || value.length > 4) return null;
+  const result = [];
+  for (const [index, item] of value.entries()) {
+    if (!item || typeof item !== "object" || typeof item.name !== "string") return null;
+    if (index === 0 && !rootNames.has(item.name)) return null;
+    if (index > 0 && !childNames.has(item.name)) return null;
+    const routeItem = { name: item.name };
+    if (item.name === "detail" || item.name === "summary") {
+      const id = Number(item.id);
+      if (!Number.isSafeInteger(id) || id <= 0) return null;
+      routeItem.id = id;
+    }
+    result.push(routeItem);
+  }
+  return result;
+}
+
 function push(name, params = {}) {
+  if (name === "add" && !workoutDraft) {
+    routeScrollPositions.delete("add:root");
+    workoutDraft = createDraft();
+  }
   nav.push({ name, ...params });
+  pushNavigationHistory();
   modal = null;
+  languageMenuOpen = false;
   render();
 }
 
 function goRoot(name) {
+  const leavingAdd = route().name === "add";
+  if (leavingAdd) workoutDraft = null;
   nav = [{ name }];
+  replaceNavigationHistory();
   modal = null;
+  languageMenuOpen = false;
   render();
+  if (leavingAdd) routeScrollPositions.delete("add:root");
 }
 
 function back() {
-  if (route().name === "add" && nav.length > 1) {
+  if (modal) {
     modal = null;
-    nav.pop();
-  } else if (modal) modal = null;
-  else if (nav.length > 1) nav.pop();
+    languageMenuOpen = false;
+    return render();
+  }
+  if (nav.length <= 1) return;
+  if (Array.isArray(history.state?.gymAppNav)) return history.back();
+  const leavingAdd = route().name === "add";
+  if (leavingAdd) workoutDraft = null;
+  nav.pop();
+  replaceNavigationHistory();
+  languageMenuOpen = false;
   render();
+  if (leavingAdd) routeScrollPositions.delete("add:root");
 }
 
 function svg(name, cls = "") {
-  return `<svg class="${cls}" viewBox="0 0 24 24" aria-hidden="true"><path d="${icons[name] || ""}"></path></svg>`;
+  const iconClass = [cls, filledIcons.has(name) ? "filled-icon" : ""].filter(Boolean).join(" ");
+  return `<svg class="${iconClass}" viewBox="0 0 24 24" aria-hidden="true"><path d="${icons[name] || ""}"></path></svg>`;
 }
 
 function fmtDate(value, options = { month: "short", day: "numeric", year: "numeric" }) {
   return new Intl.DateTimeFormat(state.language === "uk" ? "uk-UA" : "en-US", options).format(new Date(value));
 }
 
-function monthDate() {
+function activeMonthScope() {
+  return route().name === "progress" ? "progress" : "workouts";
+}
+
+function monthDate(scope = activeMonthScope()) {
   const d = new Date();
   d.setDate(1);
-  d.setMonth(d.getMonth() + selectedMonthOffset);
+  d.setMonth(d.getMonth() + (monthOffsets[scope] || 0));
   return d;
 }
 
@@ -1534,37 +1637,54 @@ function weeklyStreak() {
 function loginScreen() {
   const accounts = accountList().filter(account => !account.remote);
   const remoteEnabled = remoteAuthEnabled();
+  const isSignUp = authMode === "signup";
   return `<div class="app-shell auth-shell">
-    <header class="topbar"><span></span><h1>${tx("Login", "Вхід")}</h1><button class="icon-button" data-action="language" aria-label="Language">${svg("lang")}</button></header>
-    <main class="screen auth-screen">
-      <section class="hero-panel auth-hero"><p class="eyebrow">${tx("Training log", "Журнал тренувань")}</p><h2>GymApp</h2><p>${remoteEnabled ? tx("Sign in to sync workouts across devices.", "Увійди, щоб синхронізувати тренування між пристроями.") : tx("Cloud login is ready after Supabase keys are added.", "Хмарний вхід запрацює після додавання ключів Supabase.")}</p></section>
-      ${remoteEnabled ? `<section class="panel auth-panel"><h2>${tx("Cloud account", "Хмарний акаунт")}</h2><div class="field-stack"><input id="login-email" autocomplete="email" inputmode="email" placeholder="email@example.com"><input id="login-password" autocomplete="current-password" type="password" placeholder="${tx("Password", "Пароль")}"></div><div class="actions login-actions"><button class="button" data-action="remote-login">${tx("Log in", "Увійти")}</button></div><details class="signup-details"><summary>${tx("Create account", "Створити акаунт")}</summary><div class="field-stack"><input id="signup-name" autocomplete="name" placeholder="${tx("Display name", "Ім'я в рейтингу")}"><input id="signup-email" autocomplete="email" inputmode="email" placeholder="email@example.com"><input id="signup-email-confirm" autocomplete="email" inputmode="email" placeholder="${tx("Repeat email", "Повтори email")}"><input id="signup-password" autocomplete="new-password" type="password" placeholder="${tx("Password", "Пароль")}"><input id="signup-password-confirm" autocomplete="new-password" type="password" placeholder="${tx("Repeat password", "Повтори пароль")}"><p class="muted">${tx("Use 8+ characters with letters and numbers.", "Використай 8+ символів з літерами й цифрами.")}</p><button class="button ghost" data-action="remote-signup">${tx("Create account", "Створити акаунт")}</button><button class="button ghost" data-action="remote-resend-confirmation">${tx("Resend confirmation email", "Надіслати підтвердження ще раз")}</button></div></details></section>` : ""}
-      <section class="panel auth-panel"><h2>${tx("Local account", "Локальний акаунт")}</h2><p class="muted">${remoteEnabled ? tx("Offline fallback for this browser only.", "Запасний режим лише для цього браузера.") : tx("Paste Supabase keys into supabase-config.js to enable real network login.", "Встав ключі Supabase у supabase-config.js, щоб увімкнути справжній мережевий вхід.")}</p><div class="field-row login-row"><input id="local-login-name" autocomplete="username" placeholder="${tx("Name", "Ім'я")}"><button class="button" data-action="login-account">${tx("Enter", "Увійти")}</button></div></section>
-      ${accounts.length ? `<section class="panel"><h2>${tx("Saved accounts", "Збережені акаунти")}</h2><div class="chip-row">${accounts.map(account => `<button class="chip buttonlike" data-action="login-account" data-name="${escapeAttr(account.name)}">${escapeHtml(account.name)}</button>`).join("")}</div></section>` : ""}
-      <div id="toast" class="toast hidden"></div>
+    <main class="screen auth-screen" data-scroll-key="auth">
+      <section class="hero-panel auth-hero"><h2>GymApp</h2><p>${remoteEnabled ? tx("Sign in to sync workouts across devices.", "Увійди, щоб синхронізувати тренування між пристроями.") : tx("Cloud login is ready after Supabase keys are added.", "Хмарний вхід запрацює після додавання ключів Supabase.")}</p></section>
+      ${remoteEnabled ? `<section class="panel highlighted auth-panel"><h2>${isSignUp ? tx("Create account", "Створити акаунт") : tx("Cloud account", "Хмарний акаунт")}</h2><div class="field-stack">
+        ${isSignUp ? `<label>${tx("Email", "Email")}<input id="signup-email" data-auth-mode="signup" data-auth-field="email" autocomplete="email" inputmode="email" placeholder="email@example.com" value="${escapeAttr(authDrafts.signup.email)}"></label><label>${tx("Repeat email", "Повтори email")}<input id="signup-email-confirm" data-auth-mode="signup" data-auth-field="emailConfirm" autocomplete="email" inputmode="email" value="${escapeAttr(authDrafts.signup.emailConfirm)}"></label><label>${tx("Password", "Пароль")}<input id="signup-password" data-auth-mode="signup" data-auth-field="password" autocomplete="new-password" type="password" value="${escapeAttr(authDrafts.signup.password)}"></label><label>${tx("Repeat password", "Повтори пароль")}<input id="signup-password-confirm" data-auth-mode="signup" data-auth-field="passwordConfirm" autocomplete="new-password" type="password" value="${escapeAttr(authDrafts.signup.passwordConfirm)}"></label><label>${tx("Display name", "Ім'я в рейтингу")}<input id="signup-name" data-auth-mode="signup" data-auth-field="name" autocomplete="name" maxlength="32" value="${escapeAttr(authDrafts.signup.name)}"></label>` : `<label>${tx("Email", "Email")}<input id="login-email" data-auth-mode="login" data-auth-field="email" autocomplete="email" inputmode="email" placeholder="email@example.com" value="${escapeAttr(authDrafts.login.email)}"></label><label>${tx("Password", "Пароль")}<input id="login-password" data-auth-mode="login" data-auth-field="password" autocomplete="current-password" type="password" value="${escapeAttr(authDrafts.login.password)}"></label>`}
+      </div><p class="muted">${tx("Password must be 8+ characters and include letters and numbers.", "Пароль має містити щонайменше 8 символів, літери та цифри.")}</p><div class="auth-actions"><button class="button" data-action="${isSignUp ? "remote-signup" : "remote-login"}">${isSignUp ? tx("Create account", "Створити акаунт") : tx("Log in", "Увійти")}</button><button class="button ghost" data-action="auth-mode" data-mode="${isSignUp ? "login" : "signup"}">${isSignUp ? tx("Log in instead", "Увійти натомість") : tx("Create account", "Створити акаунт")}</button></div>${isSignUp ? `<button class="button ghost full" data-action="remote-resend-confirmation">${tx("Resend confirmation email", "Надіслати підтвердження ще раз")}</button>` : ""}</section>` : ""}
+      <details class="local-account-details" ${remoteEnabled ? "" : "open"}><summary>${tx("Offline local account", "Офлайн-акаунт")}</summary><section class="panel auth-panel"><p class="muted">${remoteEnabled ? tx("Fallback for this browser only.", "Запасний режим лише для цього браузера.") : tx("Paste Supabase keys into supabase-config.js to enable real network login.", "Встав ключі Supabase у supabase-config.js, щоб увімкнути справжній мережевий вхід.")}</p><div class="field-row login-row"><input id="local-login-name" autocomplete="username" aria-label="${tx("Name", "Ім'я")}" placeholder="${tx("Name", "Ім'я")}"><button class="button" data-action="login-account">${tx("Enter", "Увійти")}</button></div>${accounts.length ? `<div class="saved-accounts"><span class="field-caption">${tx("Saved accounts", "Збережені акаунти")}</span><div class="chip-row">${accounts.map(account => `<button class="chip buttonlike" data-action="login-account" data-name="${escapeAttr(account.name)}">${escapeHtml(account.name)}</button>`).join("")}</div></div>` : ""}</section></details>
+      <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
     </main>
   </div>`;
 }
 
+function languageSelectorMarkup() {
+  const currentLanguage = state.language === "uk" ? "Українська" : "English";
+  return `<div class="language-selector">
+    <button class="icon-button topbar-action" data-action="language-menu" aria-label="Language" aria-expanded="${languageMenuOpen}">${svg("lang")}</button>
+    ${languageMenuOpen ? `<div class="language-menu" role="menu" aria-label="Language">
+      <button class="language-option ${state.language === "en" ? "selected" : ""}" role="menuitem" data-action="set-language" data-language="en">English</button>
+      <button class="language-option ${state.language === "uk" ? "selected" : ""}" role="menuitem" data-action="set-language" data-language="uk">Українська</button>
+      <span class="sr-only">${currentLanguage}</span>
+    </div>` : ""}
+  </div>`;
+}
+
 function render() {
+  rememberVisibleScroll();
+  document.documentElement.lang = state.language === "uk" ? "uk" : "en";
   if (!activeAccount) {
     app.innerHTML = loginScreen();
     bindEvents();
+    requestAnimationFrame(restoreVisibleScroll);
     return;
   }
   const current = route();
   app.innerHTML = `
     <header class="topbar">
-      ${nav.length > 1 ? `<button class="icon-button" data-action="back" aria-label="Back">${svg("back")}</button>` : `<button class="icon-button" data-action="backup" aria-label="Backup">${svg("download")}</button>`}
+      ${nav.length > 1 ? `<button class="icon-button topbar-action" data-action="back" aria-label="Back">${svg("back")}</button>` : `<span class="topbar-slot" aria-hidden="true"></span>`}
       <h1>${titleForRoute(current)}</h1>
-      <button class="icon-button" data-action="language" aria-label="Language">${svg("lang")}</button>
+      ${languageSelectorMarkup()}
     </header>
-    <main class="screen">${screenMarkup(current)}</main>
+    <main class="screen screen-${escapeAttr(current.name)}" data-scroll-key="${escapeAttr(routeScrollKey(current))}">${screenMarkup(current)}</main>
     ${isRootRoute(current.name) ? bottomNav() : ""}
     ${modal ? modalMarkup() : ""}
-    <div id="toast" class="toast hidden"></div>
+    <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
   `;
   bindEvents();
+  requestAnimationFrame(restoreVisibleScroll);
   startTimerTicker();
   if (current.name === "leaderboard") refreshLeaderboard();
 }
@@ -1581,9 +1701,9 @@ function titleForRoute(current) {
 }
 
 function bottomNav() {
-  const tabs = [["workouts", "list", t("workouts")], ["missions", "medal", t("missions")], ["exercises", "weight", t("exercises")], ["progress", "chart", t("progress")], ["leaderboard", "trophy", tx("Rating", "Рейтинг")]];
+  const tabs = [["workouts", "fitness", t("workouts")], ["missions", "checkCircle", t("missions")], ["exercises", "listFilled", t("exercises")], ["progress", "showChart", t("progress")], ["leaderboard", "emojiEvents", tx("Rating", "Рейтинг")]];
   return `<nav class="bottom-nav">${tabs.map(([id, icon, label]) => `
-    <button class="tab-button ${route().name === id ? "active" : ""}" data-route="${id}">${svg(icon)}<span>${label}</span></button>`).join("")}</nav>`;
+    <button class="tab-button ${route().name === id ? "active" : ""}" data-route="${id}" ${route().name === id ? `aria-current="page"` : ""}><span class="tab-icon">${svg(icon)}</span><span>${label}</span></button>`).join("")}</nav>`;
 }
 
 function screenMarkup(current) {
@@ -1611,14 +1731,21 @@ function workoutsScreen() {
   const sessions = [...selectedMonthSessions()].sort((a, b) => b.startedAt - a.startedAt);
   const savedSessions = n(sessions.length, "saved session", "saved sessions", "збережене тренування", "збережені тренування", "збережених тренувань");
   return `
-    ${monthSwitcher()}
-    <section class="segmented panel compact">
-      <button class="${overviewMode === "overview" ? "selected" : ""}" data-action="overview-mode" data-mode="overview"><strong>${t("overview")}</strong><span>${tx("Progress, goals, achievements", "Прогрес, цілі, досягнення")}</span></button>
-      <button class="${overviewMode === "list" ? "selected" : ""}" data-action="overview-mode" data-mode="list"><strong>${t("workoutList")}</strong><span>${savedSessions}</span></button>
-    </section>
-    ${overviewMode === "overview" ? overviewCards(sessions) : ""}
-    <div class="section-title"><div><h2>${t("workoutList")}</h2><p>${sessions.length ? savedSessions : tx("New sessions will appear here as soon as you log them.", "Нові тренування з'являться тут одразу після збереження.")}</p></div><button class="button" data-action="open-add">${svg("add", "small-icon")}${t("addWorkout")}</button></div>
-    <section class="workout-list">${sessions.length ? sessions.map(workoutItem).join("") : `<div class="empty">${t("noWorkouts")}</div>`}</section>
+    <div class="workouts-controls">
+      ${monthSwitcher()}
+      <section class="segmented panel compact" aria-label="${tx("Workout sections", "Розділи тренувань")}">
+        <button class="${overviewMode === "overview" ? "selected" : ""}" data-action="overview-mode" data-mode="overview" aria-pressed="${overviewMode === "overview"}"><strong>${t("overview")}</strong><span>${tx("Progress, goals, achievements", "Прогрес, цілі, досягнення")}</span></button>
+        <button class="${overviewMode === "list" ? "selected" : ""}" data-action="overview-mode" data-mode="list" aria-pressed="${overviewMode === "list"}"><strong>${t("workoutList")}</strong><span>${savedSessions}</span></button>
+      </section>
+    </div>
+    <div class="workouts-scroll">
+      ${overviewCards(sessions)}
+      <section id="workout-list-section" class="panel highlighted workout-section-header">
+        <div><h2>${t("workoutList")}</h2><p>${sessions.length ? tx("Tap a workout to open its details.", "Натисни тренування, щоб відкрити деталі.") : tx("New sessions will appear here as soon as you log them.", "Нові тренування з'являться тут одразу після збереження.")}</p></div>
+        <span class="pill">${savedSessions}</span>
+      </section>
+      <section class="workout-list">${sessions.length ? sessions.map(workoutItem).join("") : `<section class="panel highlighted empty-state-panel"><h3>${t("noWorkouts")}</h3><p>${tx("Track consistency, output and intensity at a glance.", "Відстежуй стабільність, обсяг і інтенсивність одним поглядом.")}</p></section>`}</section>
+    </div>
     <button class="fab" data-action="open-add">${svg("add", "small-icon")}${t("addWorkout")}</button>
   `;
 }
@@ -1640,7 +1767,7 @@ function soloProgressHero() {
   const level = progress.level;
   const next = rankDefinitions.find(rank => level < rank.level);
   const nextTitle = next ? (state.language === "uk" ? next.titleUk : next.titleEn) : rankTitle(xp);
-  return `<section class="hero-panel">
+  return `<section class="hero-panel solo-progress-hero">
     <div class="eyebrow">${t("soloProgress")}</div>
     <div class="hero-split"><div><span class="pill hero-pill">${tx("LEVEL", "РІВЕНЬ")} ${level}</span><h2>${rankTitle(xp)}</h2><p>${progress.currentLevelXp} / ${progress.xpForNextLevel} XP ${tx("to next level", "до наступного рівня")}</p></div><div class="hero-stat"><span>${tx("TOTAL XP", "УСЬОГО XP")}</span><strong>${xp}</strong><small>${tx("earned", "зароблено")}</small></div></div>
     <div class="progress"><span style="width:${progress.progressFraction * 100}%"></span></div>
@@ -1661,7 +1788,7 @@ function workoutItem(session) {
   const summary = sessionSummary(session);
   return `<article class="workout-item clickable" data-action="open-detail" data-id="${session.id}">
     <div class="workout-head"><div><h3 class="workout-title">${tx("Workout", "Тренування")} ${fmtDate(session.startedAt)}</h3><span class="muted">${session.note ? `${t("note")}: ${escapeHtml(session.note)}` : tx("No note", "Без нотатки")}</span></div><div class="actions"><span class="chip">${tx("Sets", "Підходи")}: ${summary.sets}</span><button class="icon-button" data-action="delete-session" data-id="${session.id}" aria-label="${tx("Delete workout", "Видалити тренування")}">${svg("delete")}</button></div></div>
-    <div class="chip-row"><span class="chip">${tx("Exercises", "Вправи")}: ${summary.exercises}</span><span class="chip">${tx("Sets", "Підходи")}: ${summary.sets}</span><span class="chip">${tx("Volume", "Обсяг")}: ${Math.round(summary.volume)}</span>${exerciseNamesForSession(session).slice(0, 5).map(name => `<span class="chip">${escapeHtml(name)}</span>`).join("")}</div>
+    <div class="workout-stats"><span>${tx("Exercises", "Вправи")}: ${summary.exercises}</span><span>${tx("Sets", "Підходи")}: ${summary.sets}</span><span>${tx("Volume", "Обсяг")}: ${Math.round(summary.volume)}</span></div>
   </article>`;
 }
 
@@ -1802,7 +1929,7 @@ function muscleStats(sessions = periodSessions()) {
   return [...map.values()];
 }
 
-function sourceBodyMapSvg(data, maxLoad) {
+function sourceBodyMapSvg(data, maxLoad, { interactive = true, showLabels = true } = {}) {
   const byId = new Map(data.map(item => [item.id, item]));
   const front = window.SOURCE_FRONT_MUSCLE_REGIONS || [];
   const back = window.SOURCE_BACK_MUSCLE_REGIONS || [];
@@ -1810,18 +1937,19 @@ function sourceBodyMapSvg(data, maxLoad) {
     const muscleId = muscleIdForSourceRegion(region.id);
     const item = muscleId ? byId.get(muscleId) : null;
     const intensity = item && maxLoad > 0 ? Math.min(1, item.load / maxLoad) : 0;
-    const selected = muscleId && selectedMuscle === muscleId;
-    return `<path class="body-region ${selected ? "selected" : ""}" d="${escapeAttr(region.pathData)}" fill="${heatColor(intensity)}" data-action="${muscleId ? "select-muscle" : ""}" data-id="${muscleId || ""}"><title>${escapeHtml(region.name)}${item ? ` - ${Math.round(item.load)} ${tx("load", "навантаження")}` : ""}</title></path>`;
+    const selected = interactive && muscleId && selectedMuscle === muscleId;
+    const interactionAttrs = interactive && muscleId ? ` data-action="select-muscle" data-id="${muscleId}"` : "";
+    return `<path class="body-region ${selected ? "selected" : ""}" d="${escapeAttr(region.pathData)}" fill="${heatColor(intensity)}"${interactionAttrs}><title>${escapeHtml(region.name)}${item ? ` - ${Math.round(item.load)} ${tx("load", "навантаження")}` : ""}</title></path>`;
   }).join("");
   return `<div class="body-map-svg-wrap">
     <svg class="body-map-svg" viewBox="0 0 72 93" role="img" aria-label="${tx("Muscle load map", "Карта навантаження м'язів")}">
       ${regionMarkup}
     </svg>
-    <div class="body-labels"><span>${tx("Front", "Спереду")}</span><span>${tx("Back", "Ззаду")}</span></div>
+    ${showLabels ? `<div class="body-labels"><span>${tx("Front", "Спереду")}</span><span>${tx("Back", "Ззаду")}</span></div>` : ""}
   </div>`;
 }
 
-function exerciseMuscleMapCard(exerciseName) {
+function exerciseMuscleMapCard(exerciseName, framed = false) {
   const contributions = contributionFor(exerciseName).filter(item => muscles.some(([id]) => id === item.muscleId));
   const data = muscles.map(([id]) => {
     const contribution = contributions.find(item => item.muscleId === id);
@@ -1835,7 +1963,7 @@ function exerciseMuscleMapCard(exerciseName) {
   const max = Math.max(1, ...data.map(item => item.load));
   const active = data.filter(item => item.weight > 0).sort((a, b) => b.weight - a.weight);
   const label = active.map(item => `${item.label} ${Math.round(item.weight * 100)}%`).join(" - ") || tx("Not mapped", "Не зіставлено");
-  return `<section class="subpanel exercise-muscle-map"><div class="row-head"><div><h3>${t("muscleMap")}</h3><p>${escapeHtml(label)}</p></div><button class="button secondary mini" data-action="map-exercise" data-name="${escapeAttr(exerciseName)}">${tx("Map", "Мапити")}</button></div>
+  return `<section class="${framed ? "panel highlighted" : "subpanel"} exercise-muscle-map"><div class="row-head"><div><h3>${t("muscleMap")}</h3><p>${escapeHtml(label)}</p></div><button class="button secondary mini" data-action="map-exercise" data-name="${escapeAttr(exerciseName)}">${tx("Map", "Мапити")}</button></div>
     <div class="exercise-muscle-layout">${sourceBodyMapSvg(data, max)}<div class="bars">${active.length ? active.map(item => barRow(item.label, item.weight, 1, `${Math.round(item.weight * 100)}% ${tx("target", "ціль")}`)).join("") : `<div class="empty">${tx("Choose muscles for this exercise.", "Вибери м'язи для цієї вправи.")}</div>`}</div></div></section>`;
 }
 
@@ -1918,17 +2046,18 @@ function achievement(title, description, progress, target) {
 }
 
 function addWorkoutScreen() {
-  if (!modal?.draft) modal = { type: "draft", draft: createDraft() };
-  const draft = modal.draft;
+  if (!workoutDraft) workoutDraft = createDraft();
+  const draft = workoutDraft;
   const selectedCount = draft.blocks.filter(b => b.exerciseName).length;
   const setCount = draft.blocks.reduce((sum, block) => sum + block.sets.length, 0);
-  return `<section class="hero-panel">
+  return `<section class="hero-panel add-workout-hero">
       <h2>${tx("Build today's session", "Збери сьогоднішнє тренування")}</h2><p>${tx("Log your plan fast and keep momentum with smart set shortcuts.", "Швидко запиши план і тримай темп розумними діями для підходів.")}</p>
-      <div class="metric-grid"><div><span>${tx("Date", "Дата")}</span><strong>${fmtDate(draft.startedAt)}</strong></div><div><span>${tx("Exercises", "Вправи")}</span><strong>${selectedCount}</strong></div><div><span>${tx("Sets", "Підходи")}</span><strong>${setCount}</strong></div></div>
-      <button class="button hero-button" data-action="repeat-latest" ${state.sessions.length ? "" : "disabled"}>${svg("copy", "small-icon")}${t("repeatLast")}</button>
-      <button class="button ghost hero-button" data-action="template-picker" ${state.sessions.length ? "" : "disabled"}>${svg("copy", "small-icon")}${t("copyWorkout")}</button>
+      <div class="hero-info-row date-row"><span class="hero-info-pill">${tx("Workout date", "Дата тренування")}</span><span class="hero-info-pill">${fmtDate(draft.startedAt)}</span></div>
+      <div class="hero-info-row"><span class="hero-info-pill">${tx("Exercises", "Вправи")}: ${selectedCount}</span><span class="hero-info-pill">${tx("Sets", "Підходи")}: ${setCount}</span></div>
+      <button class="button hero-outline hero-button" data-action="repeat-latest" ${state.sessions.length ? "" : "disabled"}>${svg("copy", "small-icon")}${t("repeatLast")}</button>
+      <button class="button hero-outline hero-button" data-action="template-picker" ${state.sessions.length ? "" : "disabled"}>${svg("copy", "small-icon")}${t("copyWorkout")}</button>
     </section>
-    <section class="panel"><h2>${t("note")}</h2><textarea data-draft="note" placeholder="${tx("Push day, pull day, deload...", "Push день, pull день, делoad...")}">${escapeHtml(draft.note)}</textarea><div class="chip-row">${noteTemplates().map(note => `<button class="chip buttonlike" data-action="note-template" data-note="${note.value}">${note.label}</button>`).join("")}</div></section>
+    <section class="panel highlighted note-panel"><h2>${t("note")}</h2><textarea data-draft="note" maxlength="2000" aria-label="${t("note")}" placeholder="${tx("Push day, pull day, deload...", "Push день, pull день, делoad...")}">${escapeHtml(draft.note)}</textarea><span class="field-caption">${tx("Plan templates", "Шаблони плану")}</span><div class="chip-row">${noteTemplates().map(note => `<button class="chip buttonlike" data-action="note-template" data-note="${note.value}">${note.label}</button>`).join("")}</div></section>
     ${trainingProfilePanel()}
     <section class="draft-list">${draft.blocks.map((block, index) => draftBlock(block, index)).join("")}</section>
     <button class="button secondary full" data-action="add-block">${svg("add", "small-icon")}${t("addExercise")}</button>
@@ -1938,9 +2067,13 @@ function addWorkoutScreen() {
 function trainingProfilePanel() {
   const p = state.profile;
   return `<section class="panel highlighted"><div class="section-title"><div><h2>${t("trainingProfile")}</h2><p>${tx("Smart Coach uses this to match your plan, goal and recovery.", "Розумний коуч використовує це, щоб підібрати план, ціль і відновлення.")}</p></div>${svg("auto", "small-icon")}</div>
+    <span class="field-caption">${tx("Training split", "Спліт тренувань")}</span>
     ${chipSelect("split", ["Upper / Lower", "Full Body", "Push Pull Legs", "Custom"], p.split)}
+    <span class="field-caption">${tx("Workouts per week", "Тренувань на тиждень")}</span>
     ${chipSelect("days", [2, 3, 4, 5, 6].map(v => `${v} / week`), `${p.days} / week`)}
+    <span class="field-caption">${tx("Training goal", "Ціль тренувань")}</span>
     ${chipSelect("goal", ["Aesthetic Cut", "Muscle Gain", "Strength", "Balanced"], p.goal)}
+    <span class="field-caption">${tx("Calorie mode", "Режим калорій")}</span>
     ${chipSelect("calories", ["Deficit", "Maintenance", "Surplus"], p.calories)}
     <button class="button full" data-action="generate-smart">${svg("auto", "small-icon")}${t("generateSmart")}</button>
   </section>`;
@@ -1959,8 +2092,8 @@ function draftBlock(block, blockIndex) {
     ${block.exerciseName ? exerciseMuscleMapCard(block.exerciseName) : ""}
     ${lastWeight != null ? `<div class="row-line"><strong>${tx("Last", "Остання")}: ${lastWeight.toFixed(1)} kg</strong><button class="button ghost mini" data-action="apply-last" data-block="${blockIndex}">${t("useLast")}</button></div>` : ""}
     ${rec ? smartPanel(rec, blockIndex) : ""}
-    <div class="actions"><button class="button ghost" data-action="add-set" data-block="${blockIndex}">${t("addSet")}</button><button class="button ghost" data-action="copy-set" data-block="${blockIndex}">${t("copyLast")}</button><button class="button ghost" data-action="plus-set" data-block="${blockIndex}">${t("copyPlus")}</button></div>
-    ${block.sets.map((set, setIndex) => `<div class="set-row"><span>${tx("Set", "Підхід")} ${setIndex + 1}</span><input inputmode="decimal" aria-label="${tx("Weight", "Вага")}" data-block="${blockIndex}" data-set="${setIndex}" data-field="weight" value="${escapeAttr(set.weight)}" placeholder="kg"><input inputmode="numeric" aria-label="${tx("Reps", "Повтори")}" data-block="${blockIndex}" data-set="${setIndex}" data-field="reps" value="${escapeAttr(set.reps)}"><button class="icon-button" data-action="remove-set" data-block="${blockIndex}" data-set="${setIndex}">${svg("delete")}</button></div>`).join("")}
+    <div class="set-shortcuts"><button class="button ghost" data-action="add-set" data-block="${blockIndex}">${t("addSet")}</button><button class="button ghost" data-action="copy-set" data-block="${blockIndex}">${t("copyLast")}</button><button class="button ghost full" data-action="plus-set" data-block="${blockIndex}">${t("copyPlus")}</button></div>
+    ${block.sets.map((set, setIndex) => `<div class="set-entry"><span>${tx("Set", "Підхід")} ${setIndex + 1}</span><div class="set-row"><input inputmode="decimal" aria-label="${tx("Weight", "Вага")}" data-block="${blockIndex}" data-set="${setIndex}" data-field="weight" value="${escapeAttr(set.weight)}" placeholder="kg"><input inputmode="numeric" aria-label="${tx("Reps", "Повтори")}" data-block="${blockIndex}" data-set="${setIndex}" data-field="reps" value="${escapeAttr(set.reps)}" placeholder="${tx("Reps", "Повтори")}"><button class="icon-button" data-action="remove-set" data-block="${blockIndex}" data-set="${setIndex}" aria-label="${tx("Remove set", "Видалити підхід")}">${svg("delete")}</button></div></div>`).join("")}
   </details></section>`;
 }
 
@@ -1978,6 +2111,18 @@ function muscleContributionPanel(name, compact = false) {
   const contributions = contributionFor(name).slice(0, compact ? 3 : 6);
   if (!contributions.length) return "";
   return `<div class="chip-row">${contributions.map(item => `<span class="chip">${muscleLabel(item.muscleId)} ${Math.round(item.weight * 100)}%</span>`).join("")}</div>`;
+}
+
+function exerciseDetailBodyMap(name, mode) {
+  const contributions = contributionFor(name).filter(item => muscles.some(([id]) => id === item.muscleId));
+  if (!contributions.length) return "";
+  const data = muscles.map(([id]) => {
+    const contribution = contributions.find(item => item.muscleId === id);
+    return { id, load: contribution?.weight || 0 };
+  });
+  const maxLoad = Math.max(1, ...data.map(item => item.load));
+  const expanded = mode === "expanded";
+  return `<div class="detail-muscle-map detail-${expanded ? "expanded" : "collapsed"}-map">${expanded ? `<span class="field-caption">${tx("Target muscles", "Цільові м'язи")}</span>` : ""}${sourceBodyMapSvg(data, maxLoad, { interactive: false, showLabels: false })}</div>`;
 }
 
 function noteTemplates() {
@@ -2013,7 +2158,7 @@ function profileValueLabel(value) {
 }
 
 function createDraft(source) {
-  const blocks = source ? [...new Set(source.sets.map(s => s.exerciseName))].map(name => ({ exerciseName: name, sets: source.sets.filter(s => s.exerciseName === name).map(s => ({ weight: s.weight, reps: s.reps })) })) : [{ exerciseName: "", sets: [{ weight: "", reps: 8 }] }];
+  const blocks = source ? [...new Set(source.sets.map(s => s.exerciseName))].map(name => ({ exerciseName: name, sets: source.sets.filter(s => s.exerciseName === name).map(s => ({ weight: s.weight, reps: s.reps })) })) : [{ exerciseName: "", sets: [{ weight: "", reps: "" }] }];
   return { startedAt: Date.now(), note: source?.note || "", blocks };
 }
 
@@ -2183,14 +2328,14 @@ function legacyDetailScreenOld(id) {
     <section class="panel"><div class="section-title"><h2>${tx("Add Exercise to This Workout", "Додати вправу в це тренування")}</h2></div>${available.length ? `<select id="quick-add">${available.map(ex => `<option value="${ex.id}">${escapeHtml(ex.name)}</option>`).join("")}</select><button class="button full" data-action="quick-add-exercise">${tx("Add to Workout", "Додати до тренування")}</button>` : `<p class="muted">${tx("All saved exercises are already in this workout.", "Усі збережені вправи вже є в цьому тренуванні.")}</p>`}</section>
     ${garmin ? garminWorkoutMetricsCard(session, garmin, grouped) : ""}
     ${grouped.map(group => exerciseDetailCard(session, group, Boolean(garmin))).join("")}
-    <button class="fab" data-action="finish-workout" data-id="${session.id}">${svg("check", "small-icon")}${t("finishWorkout")}</button>`;
+    <button class="fab finish-fab" data-action="finish-workout" data-id="${session.id}">${svg("check", "small-icon")}${t("finishWorkout")}</button>`;
 }
 
 function legacyExerciseDetailCard(session, group) {
   const key = `${session.id}:${group.name}`;
   const remaining = timerRemaining(key);
   return `<section class="panel highlighted"><div class="row-head"><h2>${escapeHtml(group.name)}</h2>${isPr(session, group.name) ? `<span class="pill">${svg("trophy", "small-icon")}${tx("New PR", "Новий PR")}</span>` : ""}</div>
-    ${group.sets.length ? `<div class="timer-row"><div><strong>${tx("Exercise Rest", "Відпочинок")}</strong><span>${remaining > 0 ? formatTimer(remaining) : tx("Ready", "Готово")}</span></div><div class="actions"><button class="button ghost mini" data-action="timer" data-key="${key}" data-seconds="60">60s</button><button class="button ghost mini" data-action="timer" data-key="${key}" data-seconds="90">90s</button><button class="button ghost mini" data-action="timer" data-key="${key}" data-seconds="180">180s</button><button class="button ghost mini" data-action="timer-stop" data-key="${key}" ${remaining ? "" : "disabled"}>${tx("Stop", "Стоп")}</button></div></div>
+    ${group.sets.length ? `<div class="timer-row"><div><strong>${tx("Exercise Rest", "Відпочинок")}</strong><span data-timer-display="${escapeAttr(key)}" aria-live="polite">${remaining > 0 ? formatTimer(remaining) : tx("Ready", "Готово")}</span></div><div class="actions"><button class="button ghost mini" data-action="timer" data-key="${escapeAttr(key)}" data-seconds="60">60s</button><button class="button ghost mini" data-action="timer" data-key="${escapeAttr(key)}" data-seconds="90">90s</button><button class="button ghost mini" data-action="timer" data-key="${escapeAttr(key)}" data-seconds="180">180s</button><button class="button ghost mini" data-action="timer-stop" data-timer-stop="${escapeAttr(key)}" data-key="${escapeAttr(key)}" ${remaining ? "" : "disabled"}>${tx("Stop", "Стоп")}</button></div></div>
     <div class="table"><div class="table-head"><span>${tx("Set", "Підхід")}</span><span>${tx("Weight (kg)", "Вага (кг)")}</span><span>${tx("Reps", "Повтори")}</span><span></span></div>${group.sets.map((set, i) => `<div class="table-row"><span>${tx("Set", "Підхід")} ${i + 1}</span><span>${Number(set.weight).toFixed(1)}</span><span>${set.reps}</span><span><button class="icon-button" data-action="edit-set" data-id="${set.id}">${svg("edit")}</button><button class="icon-button" data-action="delete-set" data-id="${set.id}">${svg("delete")}</button></span></div>`).join("")}</div>` : `<div class="empty">${tx("No sets were imported for this exercise.", "Для цієї вправи не імпортовано підходи.")}</div>`}
     <button class="button ghost full" data-action="detail-add-set" data-session="${session.id}" data-name="${escapeAttr(group.name)}">${t("addSet")}</button>
   </section>`;
@@ -2207,7 +2352,7 @@ function detailScreen(id) {
     ${!session.sets.length && grouped.length ? `<section class="panel warning"><h2>${tx("No set data", "No set data")}</h2><p>${tx("This imported workout contains exercise names, but no weights or reps. Export a full Backup JSON from the Android app and import it again.", "This imported workout contains exercise names, but no weights or reps. Export a full Backup JSON from the Android app and import it again.")}</p></section>` : ""}
     <section class="panel"><div class="section-title"><div><h2>${tx("Add Exercise to This Workout", "Add Exercise to This Workout")}</h2></div>${svg("add", "small-icon")}</div>${available.length ? `<select id="quick-add">${available.map(ex => `<option value="${ex.id}">${escapeHtml(ex.name)}</option>`).join("")}</select><button class="button full" data-action="quick-add-exercise">${tx("Add to Workout", "Add to Workout")}</button>` : `<p class="muted">${tx("All saved exercises are already in this workout.", "All saved exercises are already in this workout.")}</p>`}</section>
     ${grouped.map(group => exerciseDetailCard(session, group, Boolean(garmin))).join("")}
-    <button class="fab" data-action="finish-workout" data-id="${session.id}">${svg("check", "small-icon")}${t("finishWorkout")}</button>`;
+    <button class="fab finish-fab" data-action="finish-workout" data-id="${session.id}">${svg("check", "small-icon")}${t("finishWorkout")}</button>`;
 }
 
 function workoutHeader(session) {
@@ -2257,9 +2402,10 @@ function exerciseDetailCard(session, group, isGarminWorkout = false) {
   const setSummary = group.sets.length
     ? `${group.sets.length} ${tx("sets", "sets")} · ${group.sets.map(set => `${formatSetWeight(set.weight)} kg x ${set.reps}`).join(" · ")}`
     : tx("No sets", "No sets");
-  const restTimer = isGarminWorkout ? "" : `<div class="timer-row"><div><strong>${tx("Exercise Rest", "Exercise Rest")}</strong><span>${remaining > 0 ? formatTimer(remaining) : tx("Ready", "Ready")}</span></div><div class="actions"><button class="button ghost mini" data-action="timer" data-key="${key}" data-seconds="60">60s</button><button class="button ghost mini" data-action="timer" data-key="${key}" data-seconds="90">90s</button><button class="button ghost mini" data-action="timer" data-key="${key}" data-seconds="180">180s</button><button class="button ghost mini" data-action="timer-stop" data-key="${key}" ${remaining ? "" : "disabled"}>${tx("Stop", "Stop")}</button></div></div>`;
+  const restTimer = isGarminWorkout ? "" : `<div class="timer-row"><div><strong>${tx("Exercise Rest", "Відпочинок")}</strong><span data-timer-display="${escapeAttr(key)}" aria-live="polite">${remaining > 0 ? formatTimer(remaining) : tx("Ready", "Готово")}</span></div><div class="actions"><button class="button ghost mini" data-action="timer" data-key="${escapeAttr(key)}" data-seconds="60">60s</button><button class="button ghost mini" data-action="timer" data-key="${escapeAttr(key)}" data-seconds="90">90s</button><button class="button ghost mini" data-action="timer" data-key="${escapeAttr(key)}" data-seconds="180">180s</button><button class="button ghost mini" data-action="timer-stop" data-timer-stop="${escapeAttr(key)}" data-key="${escapeAttr(key)}" ${remaining ? "" : "disabled"}>${tx("Stop", "Стоп")}</button></div></div>`;
   return `<section class="panel highlighted workout-exercise-card"><details ${isGarminWorkout ? "" : "open"}><summary class="detail-summary"><div><h2>${escapeHtml(group.name)}</h2><p class="muted">${escapeHtml(setSummary)}</p></div>${isPr(session, group.name) ? `<span class="pill">${svg("trophy", "small-icon")}${tx("New PR", "New PR")}</span>` : ""}</summary>
-    ${!isGarminWorkout ? muscleContributionPanel(group.name) : ""}
+    ${exerciseDetailBodyMap(group.name, "collapsed")}
+    ${!isGarminWorkout ? exerciseDetailBodyMap(group.name, "expanded") : ""}
     ${group.sets.length ? `${restTimer}<div class="table"><div class="table-head"><span>${tx("Set", "Set")}</span><span>${tx("Weight (kg)", "Weight (kg)")}</span><span>${tx("Reps", "Reps")}</span><span></span></div>${group.sets.map((set, i) => `<div class="table-row"><span>${tx("Set", "Set")} ${i + 1}</span><span>${Number(set.weight).toFixed(1)}</span><span>${set.reps}</span><span><button class="icon-button" data-action="edit-set" data-id="${set.id}">${svg("edit")}</button><button class="icon-button" data-action="delete-set" data-id="${set.id}">${svg("delete")}</button></span></div>`).join("")}</div>` : `<div class="empty">${tx("No sets were imported for this exercise.", "No sets were imported for this exercise.")}</div>`}
     <button class="button ghost full" data-action="detail-add-set" data-session="${session.id}" data-name="${escapeAttr(group.name)}">${t("addSet")}</button>
   </details></section>`;
@@ -2292,9 +2438,9 @@ function summaryScreen(id) {
   }).filter(Boolean);
   const mStats = muscleStats([session]).filter(m => m.load > 0).sort((a, b) => b.load - a.load);
   const rewards = summaryRewards(session, records);
-  return `<section class="hero-panel"><h2>${t("workoutComplete")}</h2><p>${fmtDate(session.startedAt)}</p><div class="metric-grid"><div><span>${tx("XP gained", "Отримано XP")}</span><strong>+${xpGain} XP</strong></div><div><span>${tx("Level", "Рівень")}</span><strong>${levelFromXp(xpTotal)}</strong></div></div></section>
-    <section class="metric-grid post"><div><span>${tx("Current title", "Поточний ранг")}</span><strong>${rankTitle(xpTotal)}</strong></div><div><span>${tx("Streak", "Серія")}</span><strong>${streakDays()} ${tx("d", "д")}</strong></div><div><span>${tx("Exercises", "Вправи")}</span><strong>${summary.exercises}</strong></div><div><span>${tx("Sets", "Підходи")}</span><strong>${summary.sets}</strong></div><div><span>${tx("Volume", "Обсяг")}</span><strong>${Math.round(summary.volume)}</strong></div></section>
-    <section class="panel"><h2>${t("impact")}</h2><p class="muted">${mStats[0] ? `${tx("Most loaded today", "Найбільше навантажено сьогодні")}: ${mStats[0].label}` : tx("Mapped muscle load will appear after sets are saved.", "Навантаження м'язів з'явиться після збереження підходів.")}</p>${mStats.slice(0, 5).map(m => barRow(m.label, m.load, mStats[0]?.load || 1, `${Math.round(m.load)} ${tx("load", "навантаження")} - ${n(m.sets, "set", "sets", "підхід", "підходи", "підходів")}`)).join("")}</section>
+  return `<section class="hero-panel summary-hero"><h2>${t("workoutComplete")}</h2><p>${fmtDate(session.startedAt)}</p><div class="hero-info-row"><span class="hero-info-pill">+${xpGain} XP</span><span class="hero-info-pill">${tx("Level", "Рівень")} ${levelFromXp(xpTotal)}</span></div></section>
+    <section class="metric-grid post summary-metrics"><div><span>${tx("XP gained", "Отримано XP")}</span><strong>+${xpGain} XP</strong></div><div><span>${tx("Current title", "Поточний ранг")}</span><strong>${rankTitle(xpTotal)}</strong></div><div><span>${tx("Streak", "Серія")}</span><strong>${streakDays()} ${tx("d", "д")}</strong></div><div><span>${tx("Exercises", "Вправи")}</span><strong>${summary.exercises}</strong></div><div><span>${tx("Sets", "Підходи")}</span><strong>${summary.sets}</strong></div><div><span>${tx("Volume", "Обсяг")}</span><strong>${Math.round(summary.volume)}</strong></div></section>
+    <section class="panel ${mStats.length ? "highlighted" : ""}"><h2>${t("impact")}</h2><p class="muted">${mStats[0] ? `${tx("Most loaded today", "Найбільше навантажено сьогодні")}: ${mStats[0].label}` : tx("Mapped muscle load will appear after sets are saved.", "Навантаження м'язів з'явиться після збереження підходів.")}</p>${mStats.slice(0, 5).map(m => barRow(m.label, m.load, mStats[0]?.load || 1, `${Math.round(m.load)} ${tx("load", "навантаження")} - ${n(m.sets, "set", "sets", "підхід", "підходи", "підходів")}`)).join("")}</section>
     ${records.length ? `<section class="panel highlighted"><h2>${t("personalRecords")}</h2>${records.map(r => `<div class="row-line"><div><strong>${escapeHtml(r.name)}</strong><p>${r.prev ? `${tx("Previous best", "Попередній рекорд")} ${r.prev.toFixed(1)} kg` : tx("First logged best", "Перший зафіксований рекорд")}</p></div><span class="pill">${r.now.toFixed(1)} kg</span></div>`).join("")}</section>` : ""}
     <section class="panel"><h2>${t("levelProgress")}</h2><p>${tx("Level", "Рівень")} ${levelFromXp(xpTotal)} - ${rankTitle(xpTotal)}</p><div class="progress"><span style="width:${progress.progressFraction * 100}%"></span></div><div class="row-line"><span>${progress.currentLevelXp} XP ${tx("into this level", "у цьому рівні")}</span><strong>${progress.xpForNextLevel - progress.currentLevelXp} XP ${tx("to next", "до наступного")}</strong></div></section>
     <section class="panel"><h2>${t("momentum")}</h2><p>${streakDays() > 1 ? `${tx("Streak extended to", "Серію продовжено до")} ${streakDays()} ${tx("days.", "днів.")}` : tx("A fresh streak has started.", "Нова серія почалася.")}</p><div class="chip-row"><span class="chip">${tx("Logged today", "Записано сьогодні")}</span><span class="chip">${tx("Best", "Найкраще")} ${streakDays()} ${tx("d", "д")}</span></div></section>
@@ -2320,7 +2466,7 @@ function summaryRewards(session, records) {
 
 function summaryRewardsSection(rewards) {
   const hasRewards = rewards.missions.length || rewards.badges.length;
-  return `<section class="panel highlighted"><h2>${tx("Rewards", "Нагороди")}</h2><p class="muted">${tx("Completed missions and new badges from this finish.", "Завершені місії та нові бейджі після фінішу.")}</p>${hasRewards ? "" : `<div class="empty">${tx("No new unlocks this time. Keep logging to unlock more.", "Цього разу нових відкриттів немає. Продовжуй записувати тренування.")}</div>`}${rewards.missions.map(item => rewardRow(item)).join("")}${rewards.badges.map(item => rewardRow(item)).join("")}</section>`;
+  return `<section class="summary-rewards-heading"><span class="eyebrow">${tx("Rewards", "Нагороди")}</span><h2>${tx("What you unlocked", "Що відкрито")}</h2><p>${tx("Completed missions and new badges from this finish.", "Завершені місії та нові бейджі після фінішу.")}</p></section>${hasRewards ? [...rewards.missions, ...rewards.badges].map(item => `<section class="panel highlighted reward-card">${rewardRow(item)}</section>`).join("") : `<section class="panel highlighted empty-state-panel"><h3>${tx("No new unlocks", "Нових відкриттів немає")}</h3><p>${tx("Keep logging to unlock more.", "Продовжуй записувати тренування, щоб відкрити більше.")}</p></section>`}`;
 }
 
 function rewardRow(item) {
@@ -2338,8 +2484,10 @@ function loginAccount(rawName) {
   localStorage.setItem(AUTH_KEY, JSON.stringify(account));
   if (!localStorage.getItem(key)) localStorage.setItem(key, JSON.stringify(state));
   activeAccount = account;
+  clearAuthDrafts();
   state = loadState();
   nav = [{ name: "workouts" }];
+  replaceNavigationHistory();
   modal = null;
   render();
 }
@@ -2438,10 +2586,12 @@ async function remoteLogin(createAccount) {
     localStorage.setItem(AUTH_KEY, JSON.stringify(account));
     saveAccountList([...accountList().filter(item => item.id !== account.id), account]);
     activeAccount = account;
+    clearAuthDrafts();
     const cloudState = await loadRemoteState(session);
     state = cloudState ? normalizeImportedState(cloudState, defaultAppState()) : defaultAppState();
     saveState();
     nav = [{ name: "workouts" }];
+    replaceNavigationHistory();
     modal = null;
     render();
     showToast(tx("Cloud login complete.", "Cloud login complete."));
@@ -2468,18 +2618,20 @@ async function resendRemoteConfirmation() {
 
 function logoutAccount() {
   saveState();
+  clearAuthDrafts();
   localStorage.removeItem(AUTH_KEY);
   localStorage.removeItem(REMOTE_SESSION_KEY);
   activeAccount = null;
   state = loadState();
   nav = [{ name: "workouts" }];
+  replaceNavigationHistory();
   modal = null;
   render();
 }
 
 function accountPanel() {
   const label = activeAccount?.name || tx("Local", "Локальний");
-  return `<section class="panel"><div class="row-head"><div><h2>${tx("Account", "Акаунт")}</h2><p>${escapeHtml(label)}</p></div><button class="button ghost" data-action="logout-account">${tx("Switch", "Змінити")}</button></div></section>`;
+  return `<section class="material-card account-card"><div class="row-head"><div><h2>${tx("Account", "Акаунт")}</h2><p>${escapeHtml(label)}</p></div><button class="button ghost" data-action="logout-account">${tx("Switch", "Змінити")}</button></div></section>`;
 }
 
 function localLeaderboardRow() {
@@ -2558,39 +2710,44 @@ function leaderboardRow(row, index) {
 
 function exercisesScreen() {
   const mappingRows = state.exercises;
-  return `${accountPanel()}<section class="panel"><div class="field-row"><input id="new-exercise-name" placeholder="${tx("Exercise name", "Назва вправи")}"><button class="button" data-action="save-exercise">${t("addExercise")}</button></div></section>
-    <section class="panel"><h2>${t("backup")}</h2><div class="actions"><button class="button ghost" data-action="export-json">${t("exportJson")}</button><button class="button ghost" data-action="import-json">${t("importJson")}</button><button class="button ghost full" data-action="export-diagnostics">${t("diagnostics")}</button></div></section>
+  return `${accountPanel()}<div class="field-row exercise-add-row"><label for="new-exercise-name" class="sr-only">${tx("Exercise name", "Назва вправи")}</label><input id="new-exercise-name" maxlength="120" aria-label="${tx("Exercise name", "Назва вправи")}" placeholder="${tx("Exercise name", "Назва вправи")}"><button class="button ghost" data-action="save-exercise">${t("addExercise")}</button></div>
+    <section class="material-card backup-card"><h2>${t("backup")}</h2><div class="actions"><button class="button ghost" data-action="export-json">${t("exportJson")}</button><button class="button ghost" data-action="import-json">${t("importJson")}</button><button class="button ghost full" data-action="export-diagnostics">${t("diagnostics")}</button></div></section>
     ${mappingRows.length ? exerciseMappingsPanel(mappingRows) : ""}
     <section class="exercise-list">${state.exercises.length ? state.exercises.map(exerciseRow).join("") : `<div class="empty">${tx("No exercises yet.", "Вправ ще немає.")}</div>`}</section>`;
 }
 
 function exerciseMappingsPanel(exercises) {
-  return `<section class="panel"><h2>${tx("Exercise mapping", "Мапінг вправ")}</h2>${exercises.map(exercise => {
+  return `<section class="material-card mappings-card"><h2>${tx("Exercise mapping", "Мапінг вправ")}</h2>${exercises.map(exercise => {
     const labels = mappingFor(exercise.name).map(muscleLabel).join(", ") || tx("Not mapped", "Не зіставлено");
     return `<div class="row-line mapping-row"><span>${escapeHtml(exercise.name)}<small>${escapeHtml(labels)}</small></span><button class="button secondary mini" data-action="map-exercise" data-name="${escapeAttr(exercise.name)}">${tx("Map", "Мапити")}</button></div>`;
   }).join("")}</section>`;
 }
 
 function exerciseRow(exercise) {
-  const stats = groupedExercises().find(g => g.name === exercise.name) || { sets: 0, volume: 0, best: 0, sessions: new Set() };
-  const mapped = mappingFor(exercise.name).map(muscleLabel).join(", ") || tx("Not mapped", "Не зіставлено");
-  return `<article class="exercise-row clickable" data-action="exercise-history" data-id="${exercise.id}"><div><h3>${escapeHtml(exercise.name)}</h3><span class="muted">${tx("Sessions", "Сесії")}: ${stats.sessions.size} - ${tx("Sets", "Підходи")}: ${stats.sets} - ${tx("Volume", "Обсяг")}: ${Math.round(stats.volume)}</span><small>${escapeHtml(mapped)}</small></div><div class="actions"><button class="icon-button" data-action="map-exercise" data-name="${escapeAttr(exercise.name)}">${svg("chart")}</button><button class="icon-button" data-action="rename-exercise" data-id="${exercise.id}">${svg("edit")}</button><button class="icon-button" data-action="delete-exercise" data-id="${exercise.id}">${svg("delete")}</button></div></article>`;
+  return `<article class="exercise-row clickable" data-action="exercise-history" data-id="${exercise.id}"><span class="exercise-name">${escapeHtml(exercise.name)}</span><div class="actions"><button class="icon-button" data-action="rename-exercise" data-id="${exercise.id}" aria-label="${tx("Rename exercise", "Перейменувати вправу")}">${svg("edit")}</button><button class="icon-button" data-action="delete-exercise" data-id="${exercise.id}" aria-label="${tx("Delete exercise", "Видалити вправу")}">${svg("delete")}</button></div></article>`;
 }
 
 function progressScreen() {
   const selectedId = Number(state.progressExerciseId || state.exercises[0]?.id || 0);
   const selected = state.exercises.find(ex => Number(ex.id) === selectedId);
-  if (!selected) return `<section class="panel"><div class="empty">${tx("No exercises yet.", "Вправ ще немає.")}</div></section>`;
+  if (!selected) return `${monthSwitcher()}<div class="progress-selector"><label>${tx("Exercise", "Вправа")}</label><button class="button ghost full" type="button">${tx("Select exercise", "Обери вправу")}</button></div>
+    <section class="material-card progress-summary"><h2>${tx("Progress Summary", "Підсумок прогресу")}</h2><p class="muted">${tx("Volume = weight x reps across all completed sets.", "Обсяг = вага x повтори по всіх завершених підходах.")}</p><div class="metric-grid three"><div><span>${tx("Sessions", "Сесії")}</span><strong>0</strong></div><div><span>${tx("Total Sets", "Усього підходів")}</span><strong>0</strong></div><div><span>${tx("Total Reps", "Усього повторів")}</span><strong>0</strong></div><div><span>${tx("Best Weight", "Найкраща вага")}</span><strong>${tx("No data", "Немає даних")}</strong></div><div><span>${tx("Average Max", "Середній максимум")}</span><strong>${tx("No data", "Немає даних")}</strong></div><div><span>${tx("Total Volume", "Загальний обсяг")}</span><strong>0</strong></div></div></section>
+    <section class="hero-panel progress-spotlight"><h2>${tx("No exercise data yet", "Ще немає даних вправи")}</h2><p>${tx("Pick an exercise to see solo progress.", "Обери вправу, щоб побачити свій прогрес.")}</p></section>
+    <section class="panel highlighted trend-panel"><h2>${tx("Visual Trends", "Візуальні тренди")}</h2><p class="muted">${tx("Maximum weight and session volume over time.", "Максимальна вага та обсяг тренування з часом.")}</p><div class="empty">${tx("Add sets to see chart.", "Додай підходи, щоб побачити графік.")}</div></section>
+    <section class="material-card"><div class="empty">${tx("No exercises yet.", "Вправ ще немає.")}</div></section>`;
   const history = allSets(selectedMonthSessions()).filter(set => set.exerciseName === selected.name).sort((a, b) => b.session.startedAt - a.session.startedAt);
   const grouped = progressHistoryGroups(history);
-  const best = Math.max(0, ...history.map(s => Number(s.weight || 0)));
-  const avg = grouped.length ? grouped.reduce((sum, g) => sum + Math.max(...g.sets.map(s => Number(s.weight || 0))), 0) / grouped.length : 0;
-  const vol = history.reduce((sum, s) => sum + Number(s.weight || 0) * Number(s.reps || 0), 0);
-  const reps = history.reduce((sum, x) => sum + Number(x.reps || 0), 0);
-  return `${monthSwitcher()}<section class="panel"><label>${tx("Exercise", "Вправа")}<select id="progress-select" data-action="progress-select">${state.exercises.map(ex => `<option value="${ex.id}" ${Number(ex.id) === selectedId ? "selected" : ""}>${escapeHtml(ex.name)}</option>`).join("")}</select></label></section>
-    <section class="panel"><h2>${tx("Progress Summary", "Підсумок прогресу")}</h2><p class="muted">${tx("Volume = weight x reps across all completed sets.", "Обсяг = вага x повтори по всіх завершених підходах.")}</p><div class="metric-grid three"><div><span>${tx("Sessions", "Сесії")}</span><strong>${grouped.length}</strong></div><div><span>${tx("Total Sets", "Усього підходів")}</span><strong>${history.length}</strong></div><div><span>${tx("Total Reps", "Усього повторів")}</span><strong>${reps}</strong></div><div><span>${tx("Best Weight", "Найкраща вага")}</span><strong>${history.length ? `${best.toFixed(1)} kg` : tx("No data", "Немає даних")}</strong></div><div><span>${tx("Average Max", "Середній максимум")}</span><strong>${history.length ? `${avg.toFixed(1)} kg` : tx("No data", "Немає даних")}</strong></div><div><span>${tx("Total Volume", "Загальний обсяг")}</span><strong>${Math.round(vol)}</strong></div></div></section>
-    <section class="panel">${spotlight(selected.name, grouped, best, vol)}${exerciseMuscleMapCard(selected.name)}</section>
-    <section class="panel"><h2>${tx("Visual Trends", "Візуальні тренди")}</h2><div class="bars">${grouped.length ? grouped.slice().reverse().map(g => barRow(fmtDate(g.session.startedAt, { day: "numeric", month: "short" }), Math.max(...g.sets.map(s => Number(s.weight || 0))), best || 1, `${tx("Vol", "Обсяг")} ${Math.round(g.sets.reduce((sum, s) => sum + Number(s.weight || 0) * Number(s.reps || 0), 0))}`)).join("") : `<div class="empty">${tx("Add sets to see chart.", "Додай підходи, щоб побачити графік.")}</div>`}</div></section>
+  const best = Math.max(0, ...history.map(s => safeChartValue(s.weight)));
+  const allTimeBest = Math.max(0, ...allSets().filter(set => set.exerciseName === selected.name).map(set => safeChartValue(set.weight)));
+  const avg = grouped.length ? grouped.reduce((sum, g) => sum + Math.max(0, ...g.sets.map(s => safeChartValue(s.weight))), 0) / grouped.length : 0;
+  const vol = history.reduce((sum, s) => sum + safeChartValue(s.weight) * safeChartValue(s.reps), 0);
+  const reps = history.reduce((sum, x) => sum + safeChartValue(x.reps), 0);
+  const hasMuscleMapping = contributionFor(selected.name).some(item => muscles.some(([id]) => id === item.muscleId));
+  return `${monthSwitcher()}<div class="progress-selector"><label for="progress-select">${tx("Exercise", "Вправа")}</label><select id="progress-select" data-action="progress-select">${state.exercises.map(ex => `<option value="${ex.id}" ${Number(ex.id) === selectedId ? "selected" : ""}>${escapeHtml(ex.name)}</option>`).join("")}</select></div>
+    ${hasMuscleMapping ? exerciseMuscleMapCard(selected.name, true) : ""}
+    <section class="material-card progress-summary"><h2>${tx("Progress Summary", "Підсумок прогресу")}</h2><p class="muted">${tx("Volume = weight x reps across all completed sets.", "Обсяг = вага x повтори по всіх завершених підходах.")}</p><div class="metric-grid three"><div><span>${tx("Sessions", "Сесії")}</span><strong>${grouped.length}</strong></div><div><span>${tx("Total Sets", "Усього підходів")}</span><strong>${history.length}</strong></div><div><span>${tx("Total Reps", "Усього повторів")}</span><strong>${reps}</strong></div><div><span>${tx("Best Weight", "Найкраща вага")}</span><strong>${history.length ? `${best.toFixed(1)} kg` : tx("No data", "Немає даних")}</strong></div><div><span>${tx("Average Max", "Середній максимум")}</span><strong>${history.length ? `${avg.toFixed(1)} kg` : tx("No data", "Немає даних")}</strong></div><div><span>${tx("Total Volume", "Загальний обсяг")}</span><strong>${Math.round(vol)}</strong></div></div></section>
+    <section class="hero-panel progress-spotlight">${spotlight(selected.name, grouped, allTimeBest)}</section>
+    ${exerciseTrendCharts(grouped, best)}
     <section class="workout-list"><h2>${tx("Workout History", "Історія тренувань")}</h2>${grouped.length ? grouped.map(g => progressHistoryCard(g)).join("") : `<div class="empty">${tx("No history in this month.", "Немає історії за цей місяць.")}</div>`}</section>`;
 }
 
@@ -2618,8 +2775,70 @@ function groupedExerciseHistory(groups) {
     return `${headers}${progressHistoryCard(group)}`;
   }).join("");
 }
-function spotlight(name, grouped, best, vol) {
-  return `<h2>${escapeHtml(name)}</h2><div class="metric-grid"><div><span>${tx("All-time best", "Найкраще за весь час")}</span><strong>${best.toFixed(1)} kg</strong></div><div><span>${tx("Consistency", "Стабільність")}</span><strong>${n(grouped.length, "session", "sessions", "сесія", "сесії", "сесій")}</strong></div><div><span>${tx("Peak weight", "Пікова вага")}</span><strong>${best.toFixed(1)} kg</strong></div><div><span>${tx("Avg volume", "Сер. обсяг")}</span><strong>${grouped.length ? Math.round(vol / grouped.length) : 0}</strong></div></div>`;
+function spotlight(name, grouped, allTimeBest) {
+  const points = progressChartPoints(grouped);
+  if (!points.length) {
+    return `<h2>${escapeHtml(name)}</h2><p>${escapeHtml(tx(`Log sets for ${name} to unlock trends.`, `Додай підходи для ${name}, щоб відкрити тренди.`))}</p>`;
+  }
+  const latest = points.at(-1) || { maxWeight: 0, volume: 0 };
+  const previous = points.at(-2);
+  const weightDelta = progressDeltaLabel(latest.maxWeight, previous?.maxWeight, tx("kg", "кг"));
+  const volumeDelta = progressDeltaLabel(latest.volume, previous?.volume, tx("volume", "обсягу"));
+  return `<h2>${escapeHtml(name)}</h2><p>${tx("Your latest result and the direction of recent sessions.", "Останній результат і напрямок недавніх тренувань.")}</p>
+    <div class="metric-grid"><div><span>${tx("Latest max", "Останній макс")}</span><strong>${formatSetWeight(latest.maxWeight)} kg</strong></div><div><span>${tx("Latest volume", "Останній обсяг")}</span><strong>${Math.round(latest.volume)}</strong></div></div>
+    <div class="spotlight-deltas"><span class="hero-info-pill">${escapeHtml(weightDelta)}</span>${volumeDelta !== weightDelta ? `<span class="hero-info-pill">${escapeHtml(volumeDelta)}</span>` : ""}</div>
+    <div class="metric-grid"><div><span>${tx("All-time best", "Найкраще за весь час")}</span><strong>PR ${formatSetWeight(allTimeBest)} kg</strong></div><div><span>${tx("Consistency", "Стабільність")}</span><strong>${grouped.length} ${tx("this month", "цього місяця")}</strong></div></div>`;
+}
+
+function progressChartPoints(grouped) {
+  return grouped.slice().reverse().slice(-8).map((group, index, visible) => {
+    const values = group.sets.map(set => ({
+      weight: safeChartValue(set.weight),
+      reps: safeChartValue(set.reps)
+    }));
+    return {
+      label: String(new Date(group.session.startedAt).getDate()),
+      maxWeight: Math.max(0, ...values.map(value => value.weight)),
+      volume: values.reduce((sum, value) => sum + value.weight * value.reps, 0),
+      latest: index === visible.length - 1
+    };
+  });
+}
+
+function exerciseTrendCharts(grouped, monthPeak) {
+  const points = progressChartPoints(grouped);
+  if (!points.length) {
+    return `<section class="panel highlighted trend-panel"><h2>${tx("Visual Trends", "Візуальні тренди")}</h2><p class="muted">${tx("Maximum weight and session volume over time.", "Максимальна вага та обсяг тренування з часом.")}</p><div class="empty">${tx("Add sets to see chart.", "Додай підходи, щоб побачити графік.")}</div></section>`;
+  }
+
+  const maxWeight = Math.max(1, ...points.map(point => point.maxWeight));
+  const maxVolume = Math.max(1, ...points.map(point => point.volume));
+  const x = index => points.length === 1 ? 0 : index / (points.length - 1) * 100;
+  const y = point => 152 - point.maxWeight / maxWeight * 140;
+  const linePath = points.map((point, index) => `${index ? "L" : "M"}${x(index).toFixed(3)} ${y(point).toFixed(3)}`).join(" ");
+  const fillPath = `M0 152 ${points.map((point, index) => `L${x(index).toFixed(3)} ${y(point).toFixed(3)}`).join(" ")} L100 152 Z`;
+  const labels = `<div class="chart-labels">${points.map(point => `<span>${escapeHtml(point.label)}</span>`).join("")}</div>`;
+  const first = points[0];
+  const latest = points.at(-1);
+  const averageVolume = points.reduce((sum, point) => sum + point.volume, 0) / points.length;
+
+  return `<section class="panel highlighted trend-panel"><h2>${tx("Visual Trends", "Візуальні тренди")}</h2><p class="muted">${tx(`${points.length} recent sessions`, `${points.length} останніх тренувань`)}</p>
+    <div class="chart-section"><h3>${tx("Maximum weight", "Максимальна вага")}</h3><p class="muted">${escapeHtml(progressDeltaLabel(latest.maxWeight, first.maxWeight, tx("kg vs first session", "кг відносно першої сесії")))}</p><div class="trend-chart-plot"><svg viewBox="0 0 100 180" preserveAspectRatio="none" aria-hidden="true"><path class="chart-guide" d="M0 0 H100 M0 76 H100 M0 152 H100"/><path class="chart-line-fill" d="${fillPath}"/><path class="chart-line" d="${linePath}"/></svg>${points.map((point, index) => `<i class="chart-dot ${point.latest ? "latest" : ""}" style="--chart-x:${x(index).toFixed(3)}%;--chart-y:${y(point).toFixed(3)}px"></i>`).join("")}</div>${labels}</div>
+    <div class="chart-section"><h3>${tx("Session volume", "Обсяг тренування")}</h3><p class="muted">${escapeHtml(progressDeltaLabel(latest.volume, first.volume, tx("volume vs first session", "обсягу відносно першої сесії")))}</p><div class="trend-chart-plot"><svg viewBox="0 0 100 180" preserveAspectRatio="none" aria-hidden="true"><path class="chart-guide" d="M0 0 H100 M0 76 H100 M0 152 H100"/></svg><div class="chart-bars" style="--chart-count:${points.length}">${points.map(point => `<i class="chart-bar ${point.latest ? "latest" : ""}" style="--chart-ratio:${clamp(point.volume / maxVolume, 0, 1).toFixed(4)}"></i>`).join("")}</div></div>${labels}</div>
+    <div class="metric-grid"><div><span>${tx("Peak weight", "Пікова вага")}</span><strong>${formatSetWeight(monthPeak)} kg</strong></div><div><span>${tx("Average volume", "Середній обсяг")}</span><strong>${Math.round(averageVolume)}</strong></div></div></section>`;
+}
+
+function progressDeltaLabel(latest, previous, unit) {
+  if (previous == null) return tx("First tracked session", "Перше відстежене тренування");
+  const delta = safeChartValue(latest) - safeChartValue(previous);
+  if (Math.abs(delta) < 0.05) return tx("Holding steady", "Стабільно");
+  const value = Math.abs(delta) < 10 ? Math.abs(delta).toFixed(1).replace(/\.0$/, "") : Math.round(Math.abs(delta));
+  return `${delta > 0 ? "+" : "-"}${value} ${unit}`;
+}
+
+function safeChartValue(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : 0;
 }
 
 function progressHistoryCard(group) {
@@ -3021,7 +3240,7 @@ function modalMarkup() {
   if (modal.type === "template") return bottomSheet(`<h2>${t("templatePicker")}</h2>${state.sessions.length ? [...state.sessions].sort((a, b) => b.startedAt - a.startedAt).map(session => `<article class="workout-item"><h3>${fmtDate(session.startedAt)}</h3><p>${sessionSummary(session).exercises} ${tx("exercises", "вправ")} - ${sessionSummary(session).sets} ${tx("sets", "підходів")} - ${Math.round(sessionSummary(session).volume)} ${tx("volume", "обсяг")}</p><button class="button full" data-action="copy-template" data-id="${session.id}">${t("copyWorkout")}</button></article>`).join("") : `<p>${tx("No previous workouts yet.", "Попередніх тренувань ще немає.")}</p>`}`);
   if (modal.type === "import") return bottomSheet(`<h2>${tx("Import backup", "Імпорт бекапу")}</h2><textarea id="import-json" placeholder="${tx("Paste exported GymApp JSON here", "Встав сюди експортований JSON GymApp")}"></textarea><button class="button full" data-action="apply-import">${tx("Import", "Імпорт")}</button>`);
   if (modal.type === "backup-json") return bottomSheet(`<h2>${tx("Backup JSON ready", "JSON бекапу готовий")}</h2><textarea readonly>${escapeHtml(modal.json)}</textarea><div class="actions"><button class="button" data-action="copy-json">${tx("Copy JSON", "Копіювати JSON")}</button><button class="button ghost" data-action="download-json">${tx("Download", "Завантажити")}</button></div><button class="button ghost full" data-action="pdf-report">${t("sharePdf")}</button>`);
-  if (modal.type === "rename") return bottomSheet(`<h2>${t("rename")}</h2><input id="rename-name" value="${escapeAttr(modal.exercise.name)}"><button class="button full" data-action="apply-rename" data-id="${modal.exercise.id}">${tx("Save", "Зберегти")}</button>`);
+  if (modal.type === "rename") return bottomSheet(`<h2>${t("rename")}</h2><input id="rename-name" maxlength="120" value="${escapeAttr(modal.exercise.name)}"><button class="button full" data-action="apply-rename" data-id="${modal.exercise.id}">${tx("Save", "Зберегти")}</button>`);
   if (modal.type === "history") return bottomSheet(exerciseHistoryMarkup(modal.exercise));
   if (modal.type === "map") return bottomSheet(mappingEditor(modal.name));
   if (modal.type === "edit-set") return bottomSheet(`<h2>${tx("Edit Set", "Редагувати підхід")}</h2><label>${tx("Weight (kg)", "Вага (кг)")}<input id="edit-weight" value="${modal.set.weight || ""}" inputmode="decimal"></label><label>${tx("Reps", "Повтори")}<input id="edit-reps" value="${modal.set.reps || ""}" inputmode="numeric"></label><button class="button full" data-action="apply-edit-set" data-id="${modal.set.id}">${tx("Save", "Зберегти")}</button>`);
@@ -3029,7 +3248,7 @@ function modalMarkup() {
 }
 
 function bottomSheet(content) {
-  return `<div class="modal" role="dialog" aria-modal="true"><section class="modal-panel"><div class="sheet-handle"></div><button class="icon-button sheet-close" data-action="close-modal">${svg("close")}</button>${content}</section></div>`;
+  return `<div class="modal" role="dialog" aria-modal="true" aria-label="${tx("Dialog", "Діалог")}"><section class="modal-panel"><div class="sheet-handle"></div><button class="icon-button sheet-close" data-action="close-modal" aria-label="${tx("Close dialog", "Закрити діалог")}">${svg("close")}</button>${content}</section></div>`;
 }
 
 function exerciseHistoryMarkup(exercise) {
@@ -3058,6 +3277,13 @@ function bindEvents() {
   if (loginPassword) loginPassword.addEventListener("keydown", ev => {
     if (ev.key === "Enter") remoteLogin(false);
   });
+  app.querySelectorAll("[data-auth-mode][data-auth-field]").forEach(input => {
+    input.addEventListener("input", () => {
+      const mode = input.dataset.authMode;
+      const field = input.dataset.authField;
+      if (authDrafts[mode] && Object.hasOwn(authDrafts[mode], field)) authDrafts[mode][field] = input.value;
+    });
+  });
   app.querySelectorAll("[data-block][data-field]").forEach(input => {
     input.addEventListener("input", () => updateDraftInput(input));
     if (input.matches("select")) {
@@ -3068,7 +3294,7 @@ function bindEvents() {
     }
   });
   app.querySelectorAll("[data-draft]").forEach(input => input.addEventListener("input", () => {
-    if (modal?.draft) modal.draft[input.dataset.draft] = input.value;
+    if (workoutDraft) workoutDraft[input.dataset.draft] = input.value;
   }));
   const progressSelect = app.querySelector("#progress-select");
   if (progressSelect) progressSelect.addEventListener("change", () => {
@@ -3079,6 +3305,7 @@ function bindEvents() {
 }
 
 function handleAction(action, el) {
+  if (action === "auth-mode") { authMode = el.dataset.mode === "signup" ? "signup" : "login"; return render(); }
   if (action === "remote-login") return remoteLogin(false);
   if (action === "remote-signup") return remoteLogin(true);
   if (action === "remote-resend-confirmation") return resendRemoteConfirmation();
@@ -3086,19 +3313,39 @@ function handleAction(action, el) {
   if (action === "logout-account") return logoutAccount();
   if (action === "refresh-leaderboard") return refreshLeaderboard(true);
   if (action === "back") return back();
-  if (action === "language") { state.language = state.language === "en" ? "uk" : "en"; saveState(); return render(); }
+  if (action === "language-menu") { languageMenuOpen = !languageMenuOpen; return render(); }
+  if (action === "set-language") {
+    const language = el.dataset.language;
+    if (language !== "en" && language !== "uk") return;
+    state.language = language;
+    languageMenuOpen = false;
+    saveState();
+    return render();
+  }
   if (action === "backup") { modal = { type: "backup-json", json: exportPayload(false) }; return render(); }
   if (action === "open-add") return push("add");
   if (action === "open-detail") return push("detail", { id: Number(el.dataset.id) });
   if (action === "delete-session") return deleteSession(Number(el.dataset.id));
   if (action === "finish-workout") return push("summary", { id: Number(el.dataset.id) });
-  if (action === "summary-view") { nav = [{ name: "workouts" }, { name: "detail", id: Number(el.dataset.id) }]; return render(); }
+  if (action === "summary-view") { nav = [{ name: "workouts" }, { name: "detail", id: Number(el.dataset.id) }]; replaceNavigationHistory(); return render(); }
   if (action === "summary-done") return goRoot("workouts");
   if (action === "open-ranks") return push("ranks");
-  if (action === "month-prev") { selectedMonthOffset--; return render(); }
-  if (action === "month-next") { selectedMonthOffset++; return render(); }
-  if (action === "month-current") { selectedMonthOffset = 0; return render(); }
-  if (action === "overview-mode") { overviewMode = el.dataset.mode; return render(); }
+  if (action === "month-prev") { monthOffsets[activeMonthScope()]--; return render(); }
+  if (action === "month-next") { monthOffsets[activeMonthScope()]++; return render(); }
+  if (action === "month-current") { monthOffsets[activeMonthScope()] = 0; return render(); }
+  if (action === "overview-mode") {
+    overviewMode = el.dataset.mode === "list" ? "list" : "overview";
+    render();
+    requestAnimationFrame(() => {
+      const scroller = visibleScrollContainer();
+      const target = overviewMode === "list" ? document.querySelector("#workout-list-section") : document.querySelector(".solo-progress-hero");
+      if (scroller && target) {
+        const top = target.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop - 10;
+        scroller.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+      }
+    });
+    return;
+  }
   if (action === "muscle-period") { musclePeriod = el.dataset.period; return render(); }
   if (action === "select-muscle") { selectedMuscle = el.dataset.id; return render(); }
   if (action === "map-exercise") { modal = { type: "map", name: el.dataset.name }; return render(); }
@@ -3107,14 +3354,25 @@ function handleAction(action, el) {
   if (action === "profile") return updateProfile(el);
   if (action === "note-template") return applyNoteTemplate(el.dataset.note);
   if (action === "generate-smart") return generateSmartWorkout();
-  if (action === "repeat-latest") { modal.draft = createDraft([...state.sessions].sort((a, b) => b.startedAt - a.startedAt)[0]); return render(); }
+  if (action === "repeat-latest") { workoutDraft = createDraft([...state.sessions].sort((a, b) => b.startedAt - a.startedAt)[0]); return render(); }
   if (action === "template-picker") { modal = { type: "template" }; return render(); }
-  if (action === "copy-template") { modal = { type: "draft", draft: createDraft(state.sessions.find(s => s.id === Number(el.dataset.id))) }; nav = [{ name: "workouts" }, { name: "add" }]; return render(); }
-  if (action === "add-block") { modal.draft.blocks.push({ exerciseName: "", sets: [{ weight: "", reps: 8 }] }); return render(); }
-  if (action === "remove-block") { modal.draft.blocks.splice(Number(el.dataset.block), 1); return render(); }
-  if (action === "add-set") { modal.draft.blocks[Number(el.dataset.block)].sets.push({ weight: "", reps: 8 }); return render(); }
+  if (action === "copy-template") { workoutDraft = createDraft(state.sessions.find(s => s.id === Number(el.dataset.id))); modal = null; nav = [{ name: "workouts" }, { name: "add" }]; replaceNavigationHistory(); return render(); }
+  if (action === "add-block") { workoutDraft?.blocks.push({ exerciseName: "", sets: [{ weight: "", reps: "" }] }); return render(); }
+  if (action === "remove-block") {
+    if (!workoutDraft) return;
+    if (workoutDraft.blocks.length > 1) workoutDraft.blocks.splice(Number(el.dataset.block), 1);
+    else workoutDraft.blocks[0] = { exerciseName: "", sets: [{ weight: "", reps: "" }] };
+    return render();
+  }
+  if (action === "add-set") { workoutDraft?.blocks[Number(el.dataset.block)]?.sets.push({ weight: "", reps: "" }); return render(); }
   if (action === "copy-set" || action === "plus-set") { copyDraftSet(Number(el.dataset.block), action === "plus-set"); return render(); }
-  if (action === "remove-set") { modal.draft.blocks[Number(el.dataset.block)].sets.splice(Number(el.dataset.set), 1); return render(); }
+  if (action === "remove-set") {
+    const sets = workoutDraft?.blocks[Number(el.dataset.block)]?.sets;
+    if (!sets) return;
+    if (sets.length > 1) sets.splice(Number(el.dataset.set), 1);
+    else sets[0] = { weight: "", reps: "" };
+    return render();
+  }
   if (action === "apply-last") return applyLast(Number(el.dataset.block));
   if (action === "apply-smart") return applySmart(Number(el.dataset.block));
   if (action === "sync-watch") return queueGarminPlanFromDraft().catch(err => showToast(err.message || "Garmin sync failed."));
@@ -3142,7 +3400,7 @@ function handleAction(action, el) {
 }
 
 function updateDraftInput(input) {
-  const block = modal?.draft?.blocks[Number(input.dataset.block)];
+  const block = workoutDraft?.blocks[Number(input.dataset.block)];
   if (!block) return;
   if (input.dataset.set === undefined) block[input.dataset.field] = input.value;
   else block.sets[Number(input.dataset.set)][input.dataset.field] = input.value;
@@ -3158,14 +3416,16 @@ function updateProfile(el) {
 }
 
 function applyNoteTemplate(note) {
-  const current = modal.draft.note.trim();
-  modal.draft.note = current ? current.includes(note) ? current : `${current} | ${note}` : note;
+  if (!workoutDraft) return;
+  const current = workoutDraft.note.trim();
+  workoutDraft.note = current ? current.includes(note) ? current : `${current} | ${note}` : note;
   render();
 }
 
 function generateSmartWorkout() {
   const plan = buildSmartWorkoutPlan();
-  modal.draft.blocks = plan.exercises.map(({ name, recommendation }) => ({
+  if (!workoutDraft) return;
+  workoutDraft.blocks = plan.exercises.map(({ name, recommendation }) => ({
     exerciseName: name,
     sets: recommendation.sets.map(set => ({ weight: set.weight ?? "", reps: set.reps }))
   }));
@@ -3176,23 +3436,39 @@ function generateSmartWorkout() {
 function buildSmartWorkoutPlan() {
   const focus = chooseWorkoutFocus();
   const targetExerciseCount = focus === "FullBody" ? 6 : 5;
+  const history = allSets();
+  const historyByExercise = new Map();
+  history.forEach(set => {
+    const key = normalizeExerciseName(set.exerciseName);
+    const items = historyByExercise.get(key) || [];
+    items.push(set);
+    historyByExercise.set(key, items);
+  });
+  const recentSessionIds = recentWorkoutSessionIds(history, 3);
+  const targetMuscles = targetMusclesForFocus(focus);
   const candidates = state.exercises.map(exercise => {
-    const exerciseHistory = allSets().filter(set => set.exerciseName === exercise.name);
-    const bodyGroup = classifyExercise(exercise.name);
+    const exerciseHistory = historyByExercise.get(normalizeExerciseName(exercise.name)) || [];
+    const analysis = analyzeSmartExercise(exercise.name);
     const latest = exerciseHistory.reduce((max, set) => Math.max(max, set.session.startedAt), 0);
     const daysSince = latest ? daysBetween(latest, Date.now()) : 90;
     const sessionCount = new Set(exerciseHistory.map(set => set.session.id)).size;
-    const focusScore = focus === "FullBody" ? 24 : isCandidateForFocus(bodyGroup, focus) && bodyGroup !== "FullBody" ? 80 : bodyGroup === "FullBody" ? 34 : -35;
-    const noveltyScore = sessionCount === 0 ? 18 : 0;
-    const dueScore = Math.min(daysSince, 45) * 1.6;
-    const confidenceScore = Math.min(sessionCount, 6) * 3;
-    return { exercise, bodyGroup, score: focusScore + noveltyScore + dueScore + confidenceScore };
-  }).sort((a, b) => b.score - a.score || a.exercise.name.localeCompare(b.exercise.name));
-  const primary = candidates.filter(candidate => isCandidateForFocus(candidate.bodyGroup, focus)).slice(0, targetExerciseCount);
-  const fallback = primary.length >= targetExerciseCount ? [] : candidates.filter(candidate => !primary.some(item => item.exercise.id === candidate.exercise.id)).slice(0, targetExerciseCount - primary.length);
+    const recentExercisePenalty = new Set(exerciseHistory.filter(set => recentSessionIds.has(set.session.id)).map(set => set.session.id)).size * 16;
+    const sameWeekExercisePenalty = exerciseHistory.some(set => daysBetween(set.session.startedAt, Date.now()) <= 6) ? 55 : 0;
+    const focusScore = focus === "FullBody" ? 44 : isCandidateForFocus(analysis, focus) ? 86 : analysis.category === "FullBody" ? 32 : -60;
+    const muscleMatchScore = analysis.muscles.filter(muscle => targetMuscles.has(muscle)).length * 9;
+    const noveltyScore = sessionCount === 0 ? 12 : 0;
+    const dueScore = Math.min(daysSince, 28) * 1.25;
+    const confidenceScore = Math.min(sessionCount, 4) * 2;
+    return {
+      exercise,
+      analysis,
+      score: focusScore + muscleMatchScore + noveltyScore + dueScore + confidenceScore - recentExercisePenalty - sameWeekExercisePenalty
+    };
+  });
+  const selected = selectBalancedSmartExercises(candidates, focus, targetMuscles, targetExerciseCount, history);
   return {
     focus,
-    exercises: [...primary, ...fallback].slice(0, targetExerciseCount).map(candidate => ({
+    exercises: selected.map(candidate => ({
       name: candidate.exercise.name,
       recommendation: smartRecommendation(candidate.exercise.name)
     }))
@@ -3206,19 +3482,23 @@ function chooseWorkoutFocus() {
     if (state.profile.split === "Push Pull Legs") return "Push";
     return "FullBody";
   }
-  const latestSessionId = history.reduce((best, set) => set.session.startedAt > best.date ? { id: set.session.id, date: set.session.startedAt } : best, { id: null, date: 0 }).id;
-  const latest = history.filter(set => set.session.id === latestSessionId);
+  const sessions = sessionGroupsByDate(history);
+  const latest = sessions[0]?.sets || [];
+  const latestFocus = dominantSmartFocus(latest);
   if (state.profile.split === "Upper / Lower") {
-    const lowerCount = latest.filter(set => ["Lower", "Legs"].includes(classifyExercise(set.exerciseName))).length;
-    const upperCount = latest.filter(set => ["Upper", "Push", "Pull"].includes(classifyExercise(set.exerciseName))).length;
-    return lowerCount > upperCount ? "Upper" : "Lower";
+    const thisWeekSessions = sessions.filter(session => daysBetween(session.date, Date.now()) <= 6);
+    const latestWeekFocus = thisWeekSessions[0]?.sets ? dominantSmartFocus(thisWeekSessions[0].sets) : latestFocus;
+    if (isLowerFocus(latestWeekFocus)) return "Upper";
+    if (isUpperFocus(latestWeekFocus)) return "Lower";
+    const upperCount = thisWeekSessions.filter(session => isUpperFocus(dominantSmartFocus(session.sets))).length;
+    const lowerCount = thisWeekSessions.filter(session => isLowerFocus(dominantSmartFocus(session.sets))).length;
+    return lowerCount < upperCount ? "Lower" : "Upper";
   }
   if (state.profile.split === "Push Pull Legs") {
-    const push = latest.filter(set => classifyExercise(set.exerciseName) === "Push").length;
-    const pull = latest.filter(set => classifyExercise(set.exerciseName) === "Pull").length;
-    const legs = latest.filter(set => ["Lower", "Legs"].includes(classifyExercise(set.exerciseName))).length;
-    if (legs >= push && legs >= pull) return "Push";
-    return push >= pull ? "Pull" : "Legs";
+    if (latestFocus === "Push") return "Pull";
+    if (latestFocus === "Pull") return "Legs";
+    if (latestFocus === "Legs" || latestFocus === "Lower") return "Push";
+    return chooseMostNeglectedFocus(history);
   }
   if (state.profile.split === "Custom") return chooseMostNeglectedFocus(history);
   return "FullBody";
@@ -3234,11 +3514,13 @@ function classifyExercise(name) {
   return "FullBody";
 }
 
-function isCandidateForFocus(candidateFocus, workoutFocus) {
-  if (workoutFocus === "Upper") return ["Upper", "Push", "Pull", "FullBody"].includes(candidateFocus);
-  if (workoutFocus === "Lower" || workoutFocus === "Legs") return ["Lower", "Legs", "FullBody"].includes(candidateFocus);
-  if (workoutFocus === "Push") return candidateFocus === "Push" || candidateFocus === "FullBody";
-  if (workoutFocus === "Pull") return candidateFocus === "Pull" || candidateFocus === "FullBody";
+function isCandidateForFocus(candidate, workoutFocus) {
+  const candidateFocus = typeof candidate === "string" ? candidate : candidate.category;
+  const muscles = typeof candidate === "string" ? [] : candidate.muscles;
+  if (workoutFocus === "Upper") return ["Push", "Pull"].includes(candidateFocus);
+  if (workoutFocus === "Lower" || workoutFocus === "Legs") return candidateFocus === "Legs" || muscles.some(muscle => smartCoreMuscles.has(muscle));
+  if (workoutFocus === "Push") return candidateFocus === "Push";
+  if (workoutFocus === "Pull") return candidateFocus === "Pull";
   return true;
 }
 
@@ -3246,21 +3528,189 @@ function chooseMostNeglectedFocus(history) {
   const focuses = ["Push", "Pull", "Legs", "FullBody"];
   const latestByFocus = Object.fromEntries(focuses.map(focus => [focus, 0]));
   history.forEach(set => {
-    const focus = classifyExercise(set.exerciseName);
+    const focus = analyzeSmartExercise(set.exerciseName).category;
     latestByFocus[focus] = Math.max(latestByFocus[focus] || 0, set.session.startedAt);
   });
   return focuses.sort((a, b) => latestByFocus[a] - latestByFocus[b])[0] || "FullBody";
 }
 
+const smartPushMuscles = new Set(["chest", "shoulders", "triceps"]);
+const smartPullMuscles = new Set(["lats", "upperBack", "biceps", "forearms"]);
+const smartLowerMuscles = new Set(["quads", "hamstrings", "glutes", "calves", "adductors", "lowerBack"]);
+const smartCoreMuscles = new Set(["abs", "obliques"]);
+
+function analyzeSmartExercise(name) {
+  const normalized = normalizeExerciseName(name);
+  const has = (...tokens) => tokens.some(token => normalized.includes(token));
+  const muscles = new Set(contributionFor(name).map(item => item.muscleId));
+  const patterns = new Set();
+  const addPattern = (...items) => items.forEach(item => patterns.add(item));
+
+  if (has("жим ног", "жим ногами", "leg press")) addPattern("LegPress");
+  if (has("прис", "присед", "squat", "випади", "выпады", "lunge")) addPattern("Squat");
+  if (has("румун", "станов", "становая", "deadlift", "hip thrust", "місток", "мостик")) addPattern("Hinge");
+  if (has("згинання ніг", "згибання ніг", "сгибание ног", "leg curl")) addPattern("KneeFlexion");
+  if (has("розгинання ніг", "разгибание ног", "leg extension")) addPattern("KneeExtension");
+  if (has("підйом на носки", "подъем на носки", "икры", "calf")) addPattern("Calf");
+  if (has("bench", "жим леж", "віджим", "отжим", "dips")) addPattern("HorizontalPress");
+  if (has("shoulder press", "overhead", "над голов", "плеч")) addPattern("VerticalPress");
+  if (has("row", "тяга") && !has("румун", "станов", "становая", "deadlift", "підборід", "подбород")) addPattern("HorizontalPull");
+  if (has("pull up", "pullup", "pulldown", "підтяг", "подтяг", "верхній блок", "верхний блок")) addPattern("VerticalPull");
+  if (has("прес", "abs", "crunch", "планка", "plank", "leg raise")) addPattern("Core");
+  if (!patterns.size) addPattern("Accessory");
+
+  const fallback = classifyExercise(name);
+  const category = [...muscles].some(muscle => smartLowerMuscles.has(muscle))
+    ? "Legs"
+    : [...muscles].some(muscle => smartPullMuscles.has(muscle)) && ![...muscles].some(muscle => smartPushMuscles.has(muscle))
+      ? "Pull"
+      : [...muscles].some(muscle => smartPushMuscles.has(muscle))
+        ? "Push"
+        : [...muscles].some(muscle => smartCoreMuscles.has(muscle))
+          ? "FullBody"
+          : fallback;
+
+  return { category, muscles: [...muscles], patterns };
+}
+
+function selectBalancedSmartExercises(candidates, focus, targetMuscles, targetExerciseCount, history) {
+  const selected = [];
+  const coveredMuscles = new Set();
+  const lastTrained = lastTrainedBySmartMuscle(history);
+  let remaining = candidates.filter(candidate => isCandidateForFocus(candidate.analysis, focus));
+  if (!remaining.length && focus !== "Lower" && focus !== "Legs") remaining = [...candidates];
+
+  const takeBestPattern = patterns => {
+    const best = remaining
+      .filter(candidate => [...candidate.analysis.patterns].some(pattern => patterns.has(pattern)))
+      .sort((a, b) => (b.score + patternMatchCount(b, patterns) * 35) - (a.score + patternMatchCount(a, patterns) * 35) || a.exercise.name.localeCompare(b.exercise.name))[0];
+    if (!best) return;
+    selected.push(best);
+    best.analysis.muscles.forEach(muscle => coveredMuscles.add(muscle));
+    remaining = remaining.filter(candidate => candidate.exercise.id !== best.exercise.id);
+  };
+
+  if (focus === "Lower" || focus === "Legs") {
+    takeBestPattern(new Set(["Squat", "LegPress"]));
+    if (shouldPrioritizeHeavyLower(history)) takeBestPattern(new Set(["Hinge"]));
+  }
+
+  if (focus === "FullBody") {
+    ["Push", "Pull", "Legs"].forEach(requiredFocus => {
+      const best = remaining
+        .filter(candidate => candidate.analysis.category === requiredFocus)
+        .sort((a, b) => b.score - a.score || a.exercise.name.localeCompare(b.exercise.name))[0];
+      if (!best) return;
+      selected.push(best);
+      best.analysis.muscles.forEach(muscle => coveredMuscles.add(muscle));
+      remaining = remaining.filter(candidate => candidate.exercise.id !== best.exercise.id);
+    });
+  }
+
+  while (selected.length < targetExerciseCount && remaining.length) {
+    const best = remaining
+      .map(candidate => ({
+        candidate,
+        score: balancedSmartScore(candidate, coveredMuscles, targetMuscles, lastTrained)
+      }))
+      .sort((a, b) => b.score - a.score || a.candidate.exercise.name.localeCompare(b.candidate.exercise.name))[0].candidate;
+    selected.push(best);
+    best.analysis.muscles.forEach(muscle => coveredMuscles.add(muscle));
+    remaining = remaining.filter(candidate => candidate.exercise.id !== best.exercise.id);
+  }
+
+  return selected.slice(0, targetExerciseCount);
+}
+
+function patternMatchCount(candidate, patterns) {
+  return [...candidate.analysis.patterns].filter(pattern => patterns.has(pattern)).length;
+}
+
+function balancedSmartScore(candidate, coveredMuscles, targetMuscles, lastTrained) {
+  const newTargetMuscles = candidate.analysis.muscles.filter(muscle => targetMuscles.has(muscle) && !coveredMuscles.has(muscle)).length;
+  const targetOverlap = candidate.analysis.muscles.filter(muscle => targetMuscles.has(muscle)).length;
+  const fatiguePenalty = candidate.analysis.muscles.reduce((sum, muscle) => {
+    const lastDate = lastTrained.get(muscle);
+    if (!lastDate) return sum;
+    const days = daysBetween(lastDate, Date.now());
+    return sum + (days === 0 ? 28 : days === 1 ? 18 : days === 2 ? 8 : 0);
+  }, 0);
+  const duplicateCoveragePenalty = candidate.analysis.muscles.length && candidate.analysis.muscles.every(muscle => coveredMuscles.has(muscle)) ? 10 : 0;
+  return candidate.score + newTargetMuscles * 24 + targetOverlap * 4 - fatiguePenalty - duplicateCoveragePenalty;
+}
+
+function targetMusclesForFocus(focus) {
+  if (focus === "Upper") return new Set([...smartPushMuscles, ...smartPullMuscles]);
+  if (focus === "Lower" || focus === "Legs") return new Set([...smartLowerMuscles, ...smartCoreMuscles]);
+  if (focus === "Push") return smartPushMuscles;
+  if (focus === "Pull") return smartPullMuscles;
+  return new Set([...smartPushMuscles, ...smartPullMuscles, ...smartLowerMuscles, ...smartCoreMuscles]);
+}
+
+function recentWorkoutSessionIds(history, limit) {
+  return new Set(sessionGroupsByDate(history).slice(0, limit).map(session => session.id));
+}
+
+function sessionGroupsByDate(history) {
+  const groups = new Map();
+  history.forEach(set => {
+    const group = groups.get(set.session.id) || { id: set.session.id, date: set.session.startedAt, sets: [] };
+    group.date = Math.max(group.date, set.session.startedAt);
+    group.sets.push(set);
+    groups.set(set.session.id, group);
+  });
+  return [...groups.values()].sort((a, b) => b.date - a.date);
+}
+
+function dominantSmartFocus(sets) {
+  const counts = sets.reduce((acc, set) => {
+    const focus = analyzeSmartExercise(set.exerciseName).category;
+    acc[focus] = (acc[focus] || 0) + 1;
+    return acc;
+  }, {});
+  const lowerCount = (counts.Legs || 0) + (counts.Lower || 0);
+  const upperCount = (counts.Push || 0) + (counts.Pull || 0) + (counts.Upper || 0);
+  if (lowerCount > upperCount) return "Lower";
+  if (upperCount > lowerCount) return (counts.Push || 0) >= (counts.Pull || 0) ? "Push" : "Pull";
+  return "FullBody";
+}
+
+function isUpperFocus(focus) {
+  return ["Upper", "Push", "Pull"].includes(focus);
+}
+
+function isLowerFocus(focus) {
+  return ["Lower", "Legs"].includes(focus);
+}
+
+function lastTrainedBySmartMuscle(history) {
+  const result = new Map();
+  history.forEach(set => {
+    analyzeSmartExercise(set.exerciseName).muscles.forEach(muscle => {
+      result.set(muscle, Math.max(result.get(muscle) || 0, set.session.startedAt));
+    });
+  });
+  return result;
+}
+
+function shouldPrioritizeHeavyLower(history) {
+  const latestLower = sessionGroupsByDate(history).find(session => isLowerFocus(dominantSmartFocus(session.sets)));
+  if (!latestLower) return true;
+  const patterns = new Set(latestLower.sets.flatMap(set => [...analyzeSmartExercise(set.exerciseName).patterns]));
+  return !patterns.has("Squat") && !patterns.has("LegPress") && !patterns.has("Hinge");
+}
+
 function copyDraftSet(blockIndex, plus) {
-  const block = modal.draft.blocks[blockIndex];
-  const last = block.sets.at(-1) || { weight: "", reps: 8 };
+  const block = workoutDraft?.blocks[blockIndex];
+  if (!block) return;
+  const last = block.sets.at(-1) || { weight: "", reps: "" };
   const weight = Number(String(last.weight).replace(",", "."));
   block.sets.push({ weight: Number.isFinite(weight) ? weight + (plus ? 2.5 : 0) : last.weight, reps: last.reps });
 }
 
 function applyLast(blockIndex) {
-  const block = modal.draft.blocks[blockIndex];
+  const block = workoutDraft?.blocks[blockIndex];
+  if (!block) return;
   const weight = lastWeightFor(block.exerciseName);
   if (weight == null) return;
   block.sets = block.sets.map(set => ({ ...set, weight }));
@@ -3268,13 +3718,14 @@ function applyLast(blockIndex) {
 }
 
 function applySmart(blockIndex) {
-  const block = modal.draft.blocks[blockIndex];
+  const block = workoutDraft?.blocks[blockIndex];
+  if (!block) return;
   block.sets = smartRecommendation(block.exerciseName).sets.map(set => ({ weight: set.weight ?? "", reps: set.reps }));
   render();
 }
 
 function saveWorkout() {
-  const draft = modal?.draft;
+  const draft = workoutDraft;
   if (!draft) return;
   const sets = [];
   draft.blocks.forEach(block => {
@@ -3289,11 +3740,14 @@ function saveWorkout() {
   });
   if (!sets.length) return showToast(tx("Please fill all selected exercises and sets.", "Заповни всі вибрані вправи й підходи."));
   const id = uid();
-  state.sessions.push({ id, startedAt: draft.startedAt || Date.now(), note: draft.note || "", sets });
+  state.sessions.push({ id, startedAt: draft.startedAt || Date.now(), note: String(draft.note || "").slice(0, 2000), sets });
   saveState();
+  workoutDraft = null;
   modal = null;
   nav = [{ name: "workouts" }, { name: "summary", id }];
+  replaceNavigationHistory();
   render();
+  routeScrollPositions.delete("add:root");
 }
 
 function quickAddExercise() {
@@ -3356,7 +3810,10 @@ function deleteSession(id) {
   state.sessions = state.sessions.filter(item => item.id !== id);
   saveState();
   modal = null;
-  if (route().name === "detail" || route().name === "summary") nav = [{ name: "workouts" }];
+  if (route().name === "detail" || route().name === "summary") {
+    nav = [{ name: "workouts" }];
+    replaceNavigationHistory();
+  }
   showToast(tx("Workout deleted.", "Тренування видалено."));
   render();
 }
@@ -3368,6 +3825,7 @@ function findSet(id) {
 function saveExercise() {
   const name = document.querySelector("#new-exercise-name")?.value.trim();
   if (!name) return showToast(tx("Enter exercise name.", "Введи назву вправи."));
+  if (name.length > 120) return showToast(tx("Exercise name is too long.", "Назва вправи надто довга."));
   ensureExercise(name);
   saveState();
   render();
@@ -3384,6 +3842,7 @@ function applyRename(id) {
   const exercise = state.exercises.find(ex => ex.id === id);
   const next = document.querySelector("#rename-name")?.value.trim();
   if (!exercise || !next) return;
+  if (next.length > 120) return showToast(tx("Exercise name is too long.", "Назва вправи надто довга."));
   const old = exercise.name;
   exercise.name = next;
   state.sessions.forEach(session => session.sets.forEach(set => { if (set.exerciseName === old) set.exerciseName = next; }));
@@ -3538,8 +3997,21 @@ function timerRemaining(key) {
 function startTimerTicker() {
   clearInterval(timerInterval);
   if (Object.values(state.timers || {}).some(target => target > Date.now())) {
-    timerInterval = setInterval(render, 1000);
+    timerInterval = setInterval(updateTimerDisplays, 1000);
   }
+}
+
+function updateTimerDisplays() {
+  let hasActiveTimer = false;
+  document.querySelectorAll("[data-timer-display]").forEach(display => {
+    const key = display.dataset.timerDisplay;
+    const remaining = timerRemaining(key);
+    hasActiveTimer ||= remaining > 0;
+    display.textContent = remaining > 0 ? formatTimer(remaining) : tx("Ready", "Готово");
+    const stopButton = document.querySelector(`[data-timer-stop="${CSS.escape(key)}"]`);
+    if (stopButton) stopButton.disabled = remaining <= 0;
+  });
+  if (!hasActiveTimer) clearInterval(timerInterval);
 }
 
 function formatTimer(seconds) {
@@ -3577,7 +4049,20 @@ if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js").catch(() => {}));
 }
 
+window.addEventListener("popstate", event => {
+  const restoredNav = validatedHistoryNav(event.state?.gymAppNav);
+  if (!restoredNav) return;
+  const leavingAdd = route().name === "add" && restoredNav.at(-1)?.name !== "add";
+  if (leavingAdd) workoutDraft = null;
+  nav = restoredNav;
+  modal = null;
+  languageMenuOpen = false;
+  render();
+  if (leavingAdd) routeScrollPositions.delete("add:root");
+});
+
 if (!handleEmailConfirmationRedirect()) {
+  replaceNavigationHistory();
   render();
   pullRemoteState()
     .then(updated => {

@@ -1,4 +1,5 @@
-const CACHE_NAME = "gym-pwa-v30";
+const CACHE_PREFIX = "gym-pwa-";
+const CACHE_NAME = `${CACHE_PREFIX}v35`;
 const ASSETS = [
   "./",
   "./index.html",
@@ -13,6 +14,29 @@ const ASSETS = [
   "./manifest.webmanifest",
   "./icon.svg"
 ];
+const STATIC_PATHS = new Set(
+  ASSETS.map(asset => new URL(asset, self.registration.scope).pathname)
+);
+const SENSITIVE_QUERY_KEYS = new Set([
+  "access_token",
+  "refresh_token",
+  "token",
+  "code",
+  "apikey",
+  "api_key"
+]);
+
+function isCacheableStaticRequest(request) {
+  if (request.method !== "GET") return false;
+
+  const url = new URL(request.url);
+  if (url.origin !== self.location.origin) return false;
+  if (url.username || url.password) return false;
+  if (request.headers.has("authorization") || request.headers.has("apikey")) return false;
+  if ([...url.searchParams.keys()].some(key => SENSITIVE_QUERY_KEYS.has(key.toLowerCase()))) return false;
+
+  return STATIC_PATHS.has(url.pathname);
+}
 
 self.addEventListener("install", event => {
   event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(ASSETS)));
@@ -22,21 +46,23 @@ self.addEventListener("install", event => {
 self.addEventListener("activate", event => {
   event.waitUntil(
     caches.keys().then(keys =>
-      Promise.all(keys.filter(key => key !== CACHE_NAME).map(key => caches.delete(key)))
+      Promise.all(
+        keys
+          .filter(key => key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME)
+          .map(key => caches.delete(key))
+      )
     )
   );
   self.clients.claim();
 });
 
 self.addEventListener("fetch", event => {
-  if (event.request.method !== "GET") return;
+  if (!isCacheableStaticRequest(event.request)) return;
   event.respondWith(
-    caches.match(event.request).then(cached =>
-      cached || fetch(event.request).then(response => {
-        const copy = response.clone();
-        caches.open(CACHE_NAME).then(cache => cache.put(event.request, copy));
-        return response;
-      }).catch(() => caches.match("./index.html"))
+    caches.open(CACHE_NAME).then(cache =>
+      cache.match(event.request, { ignoreSearch: true }).then(cached =>
+        cached || fetch(event.request)
+      )
     )
   );
 });
