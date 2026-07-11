@@ -124,3 +124,21 @@ h1 {
   outline: 3px solid color-mix(in srgb, var(--primary) 72%, transparent);
   outline-offset: 3px;
 }
+
+.confirmation-links {
+  display: flex;
+  gap: 18px;
+  justify-content: center;
+}
+
+.confirmation-links a {
+  color: var(--primary);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 18px;
+}
+
+.confirmation-links a:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--primary) 72%, transparent);
+  outline-offset: 3px;
+}

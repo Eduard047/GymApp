@@ -753,6 +753,21 @@ svg.filled-icon.small-icon {
 
 .auth-shell { overflow-y: auto; }
 
+.auth-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px 16px;
+  padding: 4px 12px 16px;
+}
+
+.auth-links a {
+  color: var(--sage);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 18px;
+}
+
 .auth-hero {
   display: grid;
   gap: 6px;
