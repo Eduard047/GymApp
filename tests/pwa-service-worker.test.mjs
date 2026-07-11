@@ -19,7 +19,7 @@ function loadWorker(scope = "https://example.test/GymApp/") {
     }
   };
   const caches = {
-    async keys() { return ["gym-pwa-v34", "gym-pwa-v35", "another-app-v4"]; },
+    async keys() { return ["gym-pwa-v35", "gym-pwa-v36", "another-app-v4"]; },
     async open(name) {
       openedCaches.push(name);
       return {
@@ -62,7 +62,7 @@ function isIntercepted(handler, url, options = {}) {
 test("service worker intercepts only allowlisted same-origin static assets", () => {
   const handler = loadWorker().listeners.get("fetch");
 
-  assert.equal(isIntercepted(handler, "https://example.test/GymApp/styles.css?v=26"), true);
+  assert.equal(isIntercepted(handler, "https://example.test/GymApp/app.js?v=27"), true);
   assert.equal(isIntercepted(handler, "https://example.test/GymApp/"), true);
   assert.equal(isIntercepted(handler, "https://example.test/GymApp/rest/v1/user_states"), false);
   assert.equal(isIntercepted(handler, "https://project.supabase.co/rest/v1/user_states"), false);
@@ -84,12 +84,12 @@ test("service worker reads only the current app cache", async () => {
   let responsePromise = null;
 
   handler({
-    request: new Request("https://example.test/GymApp/styles.css?v=26"),
+    request: new Request("https://example.test/GymApp/app.js?v=27"),
     respondWith(value) { responsePromise = value; }
   });
 
   assert.equal(await (await responsePromise).text(), "cached");
-  assert.deepEqual(worker.openedCaches, ["gym-pwa-v35"]);
+  assert.deepEqual(worker.openedCaches, ["gym-pwa-v36"]);
 });
 
 test("service worker activation deletes only its own stale caches", async () => {
@@ -102,5 +102,5 @@ test("service worker activation deletes only its own stale caches", async () => 
   });
   await activationPromise;
 
-  assert.deepEqual(worker.deletedCaches, ["gym-pwa-v34"]);
+  assert.deepEqual(worker.deletedCaches, ["gym-pwa-v35"]);
 });

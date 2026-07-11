@@ -689,7 +689,6 @@ fun GymAppRoot(
                                             workouts = localStats.workouts
                                         )
                                         LeaderboardRow(
-                                            userId = session.userId,
                                             displayName = remoteProfile?.displayName ?: session.displayName,
                                             xp = localStats.xp,
                                             level = localStats.level,
@@ -698,7 +697,6 @@ fun GymAppRoot(
                                         )
                                     }.getOrElse {
                                         LeaderboardRow(
-                                            userId = session.userId,
                                             displayName = session.displayName,
                                             xp = uiState.soloProgress.totalXp,
                                             level = uiState.soloProgress.level,
@@ -709,7 +707,7 @@ fun GymAppRoot(
 
                                     runCatching {
                                         val loadedRows = authManager.loadLeaderboard(session)
-                                        if (loadedRows.any { it.displayName == session.displayName }) {
+                                        if (loadedRows.any { it.isCurrentUser }) {
                                             loadedRows
                                         } else {
                                             listOf(localRows) + loadedRows

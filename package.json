@@ -1,7 +1,9 @@
 {
   "private": true,
   "scripts": {
+    "test": "node --test tests/*.test.mjs",
     "test:garmin-cloud": "node --test tests/garmin-cloud-sync.test.mjs",
+    "test:leaderboard-privacy": "node --test tests/leaderboard-privacy.test.mjs",
     "test:pwa-smart-plan": "node --test tests/pwa-smart-plan.test.mjs",
     "test:pwa-security": "node --test tests/pwa-service-worker.test.mjs"
   }

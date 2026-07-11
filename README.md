@@ -176,7 +176,9 @@ The PWA stores workouts locally in the browser, syncs through Supabase when clou
 
 The iPhone/PWA Garmin path uses Supabase as a queue and Garmin Connect Mobile as the watch network bridge:
 
-1. Apply `supabase-schema.sql` in the Supabase SQL editor.
+1. Apply every ordered SQL file in `supabase/migrations/` through the normal
+   Supabase migration workflow. The root `supabase-schema.sql` is a retired,
+   fail-closed stub and must not be used.
 2. Deploy the Edge Function:
 
 ```powershell
@@ -192,3 +194,19 @@ Run the no-device Garmin cloud sync checks:
 ```powershell
 npm run test:garmin-cloud
 ```
+
+### Supabase migration safety
+
+Production is migration-managed. The exact privacy-hardening versions recorded in
+production history are:
+
+- `20260711084556_create_leaderboard_public.sql`
+- `20260711084559_harden_gymapp_production_access.sql`
+- `20260711090358_fix_user_state_revision_trigger.sql`
+
+All three must remain ordered after the existing Garmin migrations. The first
+adds the sanitized authenticated leaderboard and moderation tables; the second
+removes cross-user direct `profiles` reads and anonymous table grants; the third
+fixes the server-owned cloud-state revision trigger. Do not restore a
+`Leaderboard is public` policy on `profiles`, the old `public.leaderboard`
+view, or direct anonymous Garmin table access.

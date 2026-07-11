@@ -50,7 +50,7 @@ data class AuthUiState(
 )
 
 data class LeaderboardRow(
-    val userId: String? = null,
+    val profileId: String? = null,
     val displayName: String,
     val xp: Int,
     val level: Int,
@@ -265,22 +265,22 @@ class CloudAuthManager(context: Context) {
     suspend fun loadLeaderboard(session: AccountSession.Cloud, limit: Int = 50): List<LeaderboardRow> =
         withContext(Dispatchers.IO) {
             val freshSession = freshCloudSession(session)
+            val safeLimit = limit.coerceIn(1, 100)
             val response = request(
-                path = "/rest/v1/profiles?select=user_id,display_name,xp,level,workouts,updated_at&order=xp.desc,workouts.desc,updated_at.asc&limit=$limit",
+                path = "/rest/v1/leaderboard_public?select=profile_id,display_name,xp,level,workouts,is_current_user&order=xp.desc,workouts.desc,profile_id.asc&limit=$safeLimit",
                 method = "GET",
                 token = freshSession.accessToken
             )
             val rows = JSONArray(response)
             List(rows.length()) { index ->
                 val row = rows.optJSONObject(index) ?: JSONObject()
-                val userId = row.optString("user_id")
                 LeaderboardRow(
-                    userId = userId,
+                    profileId = row.optString("profile_id").takeIf { it.isNotBlank() },
                     displayName = row.optString("display_name").ifBlank { "GymApp user" },
                     xp = row.optInt("xp"),
                     level = row.optInt("level", 1),
                     workouts = row.optInt("workouts"),
-                    isCurrentUser = userId == session.userId
+                    isCurrentUser = row.optBoolean("is_current_user")
                 )
             }
         }
