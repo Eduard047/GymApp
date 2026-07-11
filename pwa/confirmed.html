@@ -3,10 +3,13 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="referrer" content="no-referrer">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'">
     <meta name="theme-color" content="#eaf1f5" media="(prefers-color-scheme: light)">
     <meta name="theme-color" content="#04070c" media="(prefers-color-scheme: dark)">
     <title>Email confirmed - GymApp</title>
-    <link rel="stylesheet" href="./confirmed.css?v=2">
+    <link rel="canonical" href="https://gymapptracker.com/confirmed.html">
+    <link rel="stylesheet" href="./confirmed.css?v=3">
   </head>
   <body>
     <main class="confirmation-page">
@@ -18,10 +21,14 @@
         </span>
         <p class="eyebrow">GymApp</p>
         <h1 id="confirmation-title">Email confirmed</h1>
-        <p class="message">Your account is ready. You can return to GymApp and log in.</p>
-        <a id="open-app" class="button" href="com.setforge.gymapp://auth/callback">Open GymApp</a>
+        <p id="confirmation-message" class="message">Your account is ready. Return to GymApp to continue.</p>
+        <a id="open-app" class="button" href="https://gymapptracker.com/">Return to GymApp</a>
+        <nav class="confirmation-links" aria-label="GymApp links">
+          <a href="https://gymapptracker.com/support.html">Support</a>
+          <a href="https://gymapptracker.com/privacy-policy.html">Privacy</a>
+        </nav>
       </section>
     </main>
-    <script src="./confirmed.js?v=1" defer></script>
+    <script src="./confirmed.js?v=2" defer></script>
   </body>
 </html>

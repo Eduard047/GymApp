@@ -19,7 +19,7 @@ function loadWorker(scope = "https://example.test/GymApp/") {
     }
   };
   const caches = {
-    async keys() { return ["gym-pwa-v35", "gym-pwa-v36", "another-app-v4"]; },
+    async keys() { return ["gym-pwa-v36", "gym-pwa-v37", "another-app-v4"]; },
     async open(name) {
       openedCaches.push(name);
       return {
@@ -59,13 +59,15 @@ function isIntercepted(handler, url, options = {}) {
   return responsePromise !== null;
 }
 
-test("service worker intercepts only allowlisted same-origin static assets", () => {
-  const handler = loadWorker().listeners.get("fetch");
+test("service worker intercepts only allowlisted same-origin static assets at canonical and legacy scopes", () => {
+  for (const scope of ["https://example.test/", "https://example.test/GymApp/"]) {
+    const handler = loadWorker(scope).listeners.get("fetch");
 
-  assert.equal(isIntercepted(handler, "https://example.test/GymApp/app.js?v=27"), true);
-  assert.equal(isIntercepted(handler, "https://example.test/GymApp/"), true);
-  assert.equal(isIntercepted(handler, "https://example.test/GymApp/rest/v1/user_states"), false);
-  assert.equal(isIntercepted(handler, "https://project.supabase.co/rest/v1/user_states"), false);
+    assert.equal(isIntercepted(handler, new URL("./app.js?v=28", scope)), true);
+    assert.equal(isIntercepted(handler, scope), true);
+    assert.equal(isIntercepted(handler, new URL("./rest/v1/user_states", scope)), false);
+    assert.equal(isIntercepted(handler, "https://project.supabase.co/rest/v1/user_states"), false);
+  }
 });
 
 test("service worker ignores credential-bearing and non-GET requests", () => {
@@ -78,18 +80,33 @@ test("service worker ignores credential-bearing and non-GET requests", () => {
   assert.equal(isIntercepted(handler, "https://example.test/GymApp/app.js", { method: "POST" }), false);
 });
 
+test("service worker never serves searched auth callbacks or token-like queries from cache", () => {
+  const state = "A".repeat(32);
+  for (const scope of ["https://example.test/", "https://example.test/GymApp/"]) {
+    const handler = loadWorker(scope).listeners.get("fetch");
+    const callback = new URL("./confirmed.html", scope);
+
+    callback.search = `?platform=ios&state=${state}&code=pkce-code`;
+    assert.equal(isIntercepted(handler, callback), false);
+    callback.search = `?platform=ios&state=${state}&error=access_denied`;
+    assert.equal(isIntercepted(handler, callback), false);
+    callback.search = "?provider_token=secret";
+    assert.equal(isIntercepted(handler, callback), false);
+  }
+});
+
 test("service worker reads only the current app cache", async () => {
   const worker = loadWorker();
   const handler = worker.listeners.get("fetch");
   let responsePromise = null;
 
   handler({
-    request: new Request("https://example.test/GymApp/app.js?v=27"),
+    request: new Request("https://example.test/GymApp/app.js?v=28"),
     respondWith(value) { responsePromise = value; }
   });
 
   assert.equal(await (await responsePromise).text(), "cached");
-  assert.deepEqual(worker.openedCaches, ["gym-pwa-v36"]);
+  assert.deepEqual(worker.openedCaches, ["gym-pwa-v37"]);
 });
 
 test("service worker activation deletes only its own stale caches", async () => {
@@ -102,5 +119,5 @@ test("service worker activation deletes only its own stale caches", async () => 
   });
   await activationPromise;
 
-  assert.deepEqual(worker.deletedCaches, ["gym-pwa-v35"]);
+  assert.deepEqual(worker.deletedCaches, ["gym-pwa-v36"]);
 });

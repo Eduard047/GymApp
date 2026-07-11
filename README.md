@@ -2,6 +2,15 @@
 
 Android Gym Workout Tracker built with Kotlin, Jetpack Compose, MVVM, Room, Coroutines/Flow, and Navigation Compose.
 
+## Public URLs
+
+- Marketing site and PWA: https://gymapptracker.com/
+- Support: https://gymapptracker.com/support.html
+- Privacy policy: https://gymapptracker.com/privacy-policy.html
+
+GitHub Releases remain the distribution source for downloadable Android and
+Garmin artifacts.
+
 ## Current Feature Set
 
 ### Phone app
@@ -171,6 +180,30 @@ http://127.0.0.1:4173
 To install on iPhone, host the `pwa/` folder over HTTPS, open the URL in Safari, then use `Share` -> `Add to Home Screen`.
 
 The PWA stores workouts locally in the browser, syncs through Supabase when cloud login is enabled, and supports JSON export/import from the Exercises backup tools.
+
+### Public-site and Auth cutover
+
+The `pwa/CNAME` file prepares GitHub Pages for `gymapptracker.com`. Before
+publishing it or changing Supabase Auth, verify that the apex domain serves the
+first-party GymApp pages directly over HTTPS and does not redirect to a registrar
+parking page. Do not send authentication callbacks to the custom domain until
+that check passes.
+
+After the DNS/Pages cutover, configure Supabase Auth with:
+
+- Site URL: `https://gymapptracker.com/`
+- Android redirect: `https://gymapptracker.com/confirmed.html?platform=android`
+- Web redirect: `https://gymapptracker.com/confirmed.html?platform=web`
+- iOS PKCE redirect allow-list pattern:
+  `https://gymapptracker.com/confirmed.html?platform=ios&state=*`
+
+Keep `https://eduard047.github.io/GymApp/confirmed.html` in the redirect allow
+list and keep the legacy GitHub Pages callback functional while released Android
+builds or already-sent confirmation emails can still use it. The legacy callback
+forwards the existing Android implicit-flow fragment. The iOS route is separate:
+it requires `platform=ios`, one 32-character base64url `state`, and forwards only
+the PKCE `code` or bounded `error` fields after a user taps the bridge button.
+It never accepts an implicit token fragment.
 
 ### Garmin cloud sync POC
 

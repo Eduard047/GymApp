@@ -1,5 +1,5 @@
 const CACHE_PREFIX = "gym-pwa-";
-const CACHE_NAME = `${CACHE_PREFIX}v36`;
+const CACHE_NAME = `${CACHE_PREFIX}v37`;
 const ASSETS = [
   "./",
   "./index.html",
@@ -17,6 +17,7 @@ const ASSETS = [
 const STATIC_PATHS = new Set(
   ASSETS.map(asset => new URL(asset, self.registration.scope).pathname)
 );
+const CONFIRMATION_PATH = new URL("./confirmed.html", self.registration.scope).pathname;
 const SENSITIVE_QUERY_KEYS = new Set([
   "access_token",
   "refresh_token",
@@ -33,7 +34,11 @@ function isCacheableStaticRequest(request) {
   if (url.origin !== self.location.origin) return false;
   if (url.username || url.password) return false;
   if (request.headers.has("authorization") || request.headers.has("apikey")) return false;
-  if ([...url.searchParams.keys()].some(key => SENSITIVE_QUERY_KEYS.has(key.toLowerCase()))) return false;
+  if (url.pathname === CONFIRMATION_PATH && url.search) return false;
+  if ([...url.searchParams.keys()].some(key => {
+    const normalized = key.toLowerCase();
+    return SENSITIVE_QUERY_KEYS.has(normalized) || normalized.includes("token");
+  })) return false;
 
   return STATIC_PATHS.has(url.pathname);
 }

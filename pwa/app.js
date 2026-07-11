@@ -7,8 +7,10 @@ const ACCOUNT_LIST_KEY = "gym-pwa-account-list-v1";
 const ACCOUNT_PREFIX = "gym-pwa-account:";
 const REMOTE_SESSION_KEY = "gym-pwa-supabase-session-v1";
 const GARMIN_DEVICE_TOKEN_KEY = "gym-pwa-garmin-device-token-v1";
-const AUTH_REDIRECT_URL = "https://eduard047.github.io/GymApp/confirmed.html";
-const ANDROID_AUTH_CALLBACK_URL = "com.setforge.gymapp://auth/callback";
+const PUBLIC_SITE_URL = "https://gymapptracker.com/";
+const SUPPORT_URL = "https://gymapptracker.com/support.html";
+const PRIVACY_URL = "https://gymapptracker.com/privacy-policy.html";
+const AUTH_REDIRECT_URL = "https://gymapptracker.com/confirmed.html?platform=web";
 const app = document.querySelector("#app");
 
 const icons = {
@@ -52,7 +54,9 @@ function handleEmailConfirmationRedirect() {
 
   if (!hasAuthPayload) return false;
 
-  window.location.replace(`./confirmed.html${window.location.search}${window.location.hash}`);
+  if (!query.has("platform")) query.set("platform", "web");
+  const targetSearch = query.toString();
+  window.location.replace(`./confirmed.html${targetSearch ? `?${targetSearch}` : ""}${window.location.hash}`);
   return true;
 }
 
@@ -1645,6 +1649,7 @@ function loginScreen() {
         ${isSignUp ? `<label>${tx("Email", "Email")}<input id="signup-email" data-auth-mode="signup" data-auth-field="email" autocomplete="email" inputmode="email" placeholder="email@example.com" value="${escapeAttr(authDrafts.signup.email)}"></label><label>${tx("Repeat email", "Повтори email")}<input id="signup-email-confirm" data-auth-mode="signup" data-auth-field="emailConfirm" autocomplete="email" inputmode="email" value="${escapeAttr(authDrafts.signup.emailConfirm)}"></label><label>${tx("Password", "Пароль")}<input id="signup-password" data-auth-mode="signup" data-auth-field="password" autocomplete="new-password" type="password" value="${escapeAttr(authDrafts.signup.password)}"></label><label>${tx("Repeat password", "Повтори пароль")}<input id="signup-password-confirm" data-auth-mode="signup" data-auth-field="passwordConfirm" autocomplete="new-password" type="password" value="${escapeAttr(authDrafts.signup.passwordConfirm)}"></label><label>${tx("Display name", "Ім'я в рейтингу")}<input id="signup-name" data-auth-mode="signup" data-auth-field="name" autocomplete="name" maxlength="32" value="${escapeAttr(authDrafts.signup.name)}"></label>` : `<label>${tx("Email", "Email")}<input id="login-email" data-auth-mode="login" data-auth-field="email" autocomplete="email" inputmode="email" placeholder="email@example.com" value="${escapeAttr(authDrafts.login.email)}"></label><label>${tx("Password", "Пароль")}<input id="login-password" data-auth-mode="login" data-auth-field="password" autocomplete="current-password" type="password" value="${escapeAttr(authDrafts.login.password)}"></label>`}
       </div><p class="muted">${tx("Password must be 8+ characters and include letters and numbers.", "Пароль має містити щонайменше 8 символів, літери та цифри.")}</p><div class="auth-actions"><button class="button" data-action="${isSignUp ? "remote-signup" : "remote-login"}">${isSignUp ? tx("Create account", "Створити акаунт") : tx("Log in", "Увійти")}</button><button class="button ghost" data-action="auth-mode" data-mode="${isSignUp ? "login" : "signup"}">${isSignUp ? tx("Log in instead", "Увійти натомість") : tx("Create account", "Створити акаунт")}</button></div>${isSignUp ? `<button class="button ghost full" data-action="remote-resend-confirmation">${tx("Resend confirmation email", "Надіслати підтвердження ще раз")}</button>` : ""}</section>` : ""}
       <details class="local-account-details" ${remoteEnabled ? "" : "open"}><summary>${tx("Offline local account", "Офлайн-акаунт")}</summary><section class="panel auth-panel"><p class="muted">${remoteEnabled ? tx("Fallback for this browser only.", "Запасний режим лише для цього браузера.") : tx("Paste Supabase keys into supabase-config.js to enable real network login.", "Встав ключі Supabase у supabase-config.js, щоб увімкнути справжній мережевий вхід.")}</p><div class="field-row login-row"><input id="local-login-name" autocomplete="username" aria-label="${tx("Name", "Ім'я")}" placeholder="${tx("Name", "Ім'я")}"><button class="button" data-action="login-account">${tx("Enter", "Увійти")}</button></div>${accounts.length ? `<div class="saved-accounts"><span class="field-caption">${tx("Saved accounts", "Збережені акаунти")}</span><div class="chip-row">${accounts.map(account => `<button class="chip buttonlike" data-action="login-account" data-name="${escapeAttr(account.name)}">${escapeHtml(account.name)}</button>`).join("")}</div></div>` : ""}</section></details>
+      <nav class="auth-links" aria-label="${tx("GymApp links", "Посилання GymApp")}"><a href="${PUBLIC_SITE_URL}" target="_blank" rel="noopener noreferrer">${tx("Website", "Сайт")}</a><a href="${SUPPORT_URL}" target="_blank" rel="noopener noreferrer">${tx("Support", "Підтримка")}</a><a href="${PRIVACY_URL}" target="_blank" rel="noopener noreferrer">${tx("Privacy", "Конфіденційність")}</a></nav>
       <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
     </main>
   </div>`;
@@ -2606,7 +2611,7 @@ async function resendRemoteConfirmation() {
   const validationError = validateConfirmationEmail(email);
   if (validationError) return showToast(validationError);
   try {
-    await supabaseRequest("/auth/v1/resend", {
+    await supabaseRequest(`/auth/v1/resend?redirect_to=${encodeURIComponent(AUTH_REDIRECT_URL)}`, {
       method: "POST",
       body: JSON.stringify({ type: "signup", email })
     });

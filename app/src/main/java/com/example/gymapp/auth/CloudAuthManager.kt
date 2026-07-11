@@ -20,7 +20,7 @@ import java.util.Base64
 
 private const val SUPABASE_URL = "https://owrcbsrectdgaotndtxy.supabase.co"
 private const val SUPABASE_KEY = "sb_publishable_vvOMzx6V_sPBpD-b3VZfzg_y14u8kIg"
-private const val AUTH_REDIRECT_URL = "https://eduard047.github.io/GymApp/confirmed.html"
+private const val AUTH_REDIRECT_URL = "https://gymapptracker.com/confirmed.html?platform=android"
 
 sealed class AccountSession {
     data class Cloud(
@@ -106,7 +106,7 @@ class CloudAuthManager(context: Context) {
         val cleanEmail = normalizeEmail(email)
         validateEmail(cleanEmail)
         request(
-            path = "/auth/v1/resend",
+            path = "/auth/v1/resend?redirect_to=${java.net.URLEncoder.encode(AUTH_REDIRECT_URL, "UTF-8")}",
             method = "POST",
             body = JSONObject()
                 .put("type", "signup")
