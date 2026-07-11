@@ -3,122 +3,210 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>GymApp Privacy Policy</title>
+  <meta name="color-scheme" content="light dark">
+  <title>GymApp Privacy Policy / Політика конфіденційності GymApp</title>
   <style>
-    body {
-      margin: 0;
-      font-family: Arial, sans-serif;
-      line-height: 1.6;
-      color: #17202a;
-      background: #f6f8fb;
-    }
-    main {
-      max-width: 860px;
-      margin: 0 auto;
-      padding: 40px 20px 64px;
-      background: #ffffff;
-    }
-    h1, h2 {
-      line-height: 1.25;
-      color: #0b1220;
-    }
-    h1 {
-      margin-top: 0;
-      font-size: 34px;
-    }
-    h2 {
-      margin-top: 32px;
-      font-size: 22px;
-    }
-    p, li {
-      font-size: 16px;
-    }
-    .updated {
-      color: #5d6b7a;
-      margin-bottom: 28px;
-    }
-    a {
-      color: #0b65d8;
-    }
+    :root { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.55; color-scheme: light dark; }
+    body { margin: 0; background: Canvas; color: CanvasText; }
+    main { width: min(900px, calc(100% - 32px)); margin: 0 auto; padding: 32px 0 64px; }
+    header, section { margin-bottom: 32px; }
+    h1 { line-height: 1.15; margin-bottom: 8px; }
+    h2 { margin-top: 32px; line-height: 1.25; }
+    h3 { margin-top: 24px; }
+    nav { display: flex; gap: 12px; flex-wrap: wrap; margin: 20px 0; }
+    a { color: LinkText; }
+    .summary, .notice { border: 1px solid color-mix(in srgb, CanvasText 22%, transparent); border-radius: 14px; padding: 16px 18px; }
+    .summary { background: color-mix(in srgb, #2f80ed 10%, Canvas); }
+    .notice { background: color-mix(in srgb, #f2c94c 12%, Canvas); }
+    .meta { color: color-mix(in srgb, CanvasText 70%, transparent); }
+    table { width: 100%; border-collapse: collapse; display: block; overflow-x: auto; }
+    th, td { border: 1px solid color-mix(in srgb, CanvasText 20%, transparent); padding: 10px; text-align: left; vertical-align: top; }
+    th { background: color-mix(in srgb, CanvasText 6%, Canvas); }
+    footer { border-top: 1px solid color-mix(in srgb, CanvasText 20%, transparent); padding-top: 24px; }
   </style>
 </head>
 <body>
-  <main>
+<main>
+  <header>
     <h1>GymApp Privacy Policy</h1>
-    <p class="updated">Last updated: July 1, 2026</p>
+    <p class="meta">Effective date: July 11, 2026 · Дата набрання чинності: 11 липня 2026 року</p>
+    <nav aria-label="Language navigation">
+      <a href="#english">English</a>
+      <a href="#ukrainian" lang="uk">Українська</a>
+      <a href="https://eduard047.github.io/GymApp/support.html">Support / Підтримка</a>
+    </nav>
+    <div class="summary">
+      <strong>Short version:</strong> GymApp uses account and workout data to provide cloud sync, progress, recommendations, leaderboard, and optional Garmin features. We do not sell data, show ads, use advertising identifiers, or track you across other companies’ apps or websites.
+    </div>
+  </header>
 
-    <p>
-      GymApp is a strength training tracker for Android, Wear OS, and Garmin Connect IQ devices.
-      This policy explains what data the app uses and how it is handled.
-    </p>
+  <article id="english" lang="en" aria-labelledby="english-title">
+    <h2 id="english-title">English</h2>
 
-    <h2>Information We Collect</h2>
-    <p>GymApp may store workout information that you enter or generate while using the app, including:</p>
-    <ul>
-      <li>workout dates, exercises, sets, reps, and weights;</li>
-      <li>training notes, progress statistics, missions, ranks, and achievements;</li>
-      <li>Garmin workout summaries such as duration, heart rate, calories, heart-rate zones, and set count;</li>
-      <li>sync status and diagnostic information needed to transfer workouts between your phone and watch.</li>
-    </ul>
+    <section>
+      <h3>1. Who controls your data</h3>
+      <p>GymApp is provided by <strong>Martynenko Eduard</strong> (“GymApp,” “we,” “us”). For privacy or support questions, email <a href="mailto:martynenkoeduard1@gmail.com">martynenkoeduard1@gmail.com</a> or use <a href="https://eduard047.github.io/GymApp/support.html">our support page</a>.</p>
+      <p>This policy covers the GymApp iOS and Android apps, the browser/PWA version, and optional Wear OS and Garmin Connect IQ companion features. A feature or permission mentioned below applies only when it exists on the platform you use.</p>
+    </section>
 
-    <h2>Account and Cloud Sync</h2>
-    <p>
-      If you use cloud sync or leaderboard features, GymApp may use account and workout-related data to sync your
-      training history between devices and show app features such as rankings or progress. Cloud features are used
-      only to provide the app functionality you choose to use.
-    </p>
+    <section>
+      <h3>2. Data we process</h3>
+      <table>
+        <thead><tr><th>Data</th><th>Examples and source</th><th>Why</th></tr></thead>
+        <tbody>
+          <tr><td>Account and contact data</td><td>Email address, Supabase user UUID, and display name that you provide when creating or using an account. Supabase handles credentials; GymApp does not store your plaintext password.</td><td>Account creation, confirmation, authentication, security, cloud sync, support, and deletion.</td></tr>
+          <tr><td>Workout and fitness data</td><td>Workout dates, exercise names, sets, weights, repetitions, plans, completed sessions, volume, personal records, and derived XP, level, missions, achievements, and workout count.</td><td>Workout logging, sync, progress, Smart Coach guidance, muscle-load views, and gamification.</td></tr>
+          <tr><td>User content</td><td>Free-form workout notes you enter.</td><td>Save and display your workout history.</td></tr>
+          <tr><td>Public leaderboard profile</td><td>Random public profile ID, display name, XP, level, and workout count.</td><td>Show the GymApp leaderboard to signed-in users. Email, Supabase Auth UUID, detailed workouts, and notes are not public.</td></tr>
+          <tr><td>Leaderboard safety reports</td><td>Reporter account UUID, reported public profile ID, time, and the fixed <code>inappropriate_name</code> category. GymApp does not accept free-form report text.</td><td>Review objectionable display names, prevent abuse, and enforce the community safety rules.</td></tr>
+          <tr><td>Optional Garmin data</td><td>Opaque paired-device token, workout plans, sync status, and imported duration, calories, or heart-rate details when present.</td><td>Pair a Garmin device, deliver plans, and import completed workout details.</td></tr>
+        </tbody>
+      </table>
+    </section>
 
-    <h2>Garmin and Companion App Sync</h2>
-    <p>
-      The Garmin Connect IQ app can send completed workout summaries to the Android companion app. This may include
-      workout duration, estimated GymApp calories, Garmin calories, average and maximum heart rate, heart-rate zones,
-      exercise names, weight, reps, and set count.
-    </p>
+    <section>
+      <h3>3. Data that stays on your device</h3>
+      <p>Depending on platform, your Training Profile — training split, 2–6 training days per week, goal, and energy balance — and the list of public profiles you block from your leaderboard are stored in first-party app preferences and are not uploaded. Local database/cache data, language/theme preferences, and local rest-timer notification scheduling also remain on the relevant device unless a workout field is included in the cloud state described above.</p>
+      <p>The phone apps do not ask for body weight, height, sex, location, contacts, camera, microphone, Photos, Motion &amp; Fitness, or HealthKit access. Rest-timer alerts are optional local notifications; GymApp does not collect a remote push token. Garmin sensor/workout information is processed only when you use the optional Garmin feature and is also subject to Garmin’s permissions and policy.</p>
+    </section>
 
-    <h2>How We Use Information</h2>
-    <p>We use app data to:</p>
-    <ul>
-      <li>save and display your workout history;</li>
-      <li>calculate progress, volume, personal records, recommendations, missions, and achievements;</li>
-      <li>sync workouts between supported Android, Wear OS, Garmin, and cloud components;</li>
-      <li>diagnose sync or app issues when you choose to share diagnostic information.</li>
-    </ul>
+    <section>
+      <h3>4. How we use data</h3>
+      <ul>
+        <li>provide, secure, troubleshoot, and maintain account and sync functions;</li>
+        <li>display workout history, progress, charts, muscle load, missions, achievements, ranks, and personalized training suggestions;</li>
+        <li>operate the limited public leaderboard;</li>
+        <li>provide Garmin pairing and workout transfer when you choose to use it;</li>
+        <li>respond to support, privacy, and account-deletion requests; and</li>
+        <li>meet legal obligations and protect users and the service from abuse.</li>
+      </ul>
+      <p>Where applicable, processing is necessary to provide the service you request, based on your choice to use optional Garmin/notification features, or necessary for security and legal compliance.</p>
+    </section>
 
-    <h2>Data Sharing</h2>
-    <p>
-      We do not sell your personal data. Data is shared only with services needed to operate app features, such as
-      cloud sync infrastructure, or when required by law. Garmin data is handled through Garmin Connect IQ and the
-      companion app communication flow.
-    </p>
+    <section>
+      <h3>5. No tracking, advertising, or sale</h3>
+      <p>GymApp has no advertising or third-party analytics SDK, does not access IDFA, and does not link GymApp data with data from other companies’ apps or websites for advertising or measurement. We do not sell personal data or share it with data brokers.</p>
+    </section>
 
-    <h2>Data Storage and Security</h2>
-    <p>
-      Workout data may be stored locally on your device and, if cloud sync is enabled, in the app's cloud backend.
-      We use reasonable technical measures to protect stored and transmitted data, but no method of transmission or
-      storage is completely secure.
-    </p>
+    <section>
+      <h3>6. Service providers and optional integrations</h3>
+      <p>We use <a href="https://supabase.com/privacy">Supabase</a> to provide authentication, database, and Edge Function infrastructure. Supabase processes data for us under its contractual and security terms. If you connect Garmin, information needed to pair and exchange workout data is also processed through the Garmin ecosystem under <a href="https://www.garmin.com/privacy/">Garmin’s privacy policy</a>.</p>
+      <p>We may disclose information when required by law, to protect rights or safety, or as part of a lawful business transfer with appropriate notice and safeguards. We do not permit providers to use GymApp data for their own targeted advertising.</p>
+    </section>
 
-    <h2>Your Choices</h2>
-    <p>
-      You can stop using cloud sync, delete local app data, uninstall the app, or contact us to request help with
-      account-related data. Some Garmin data can also be managed through Garmin's own apps and services.
-    </p>
+    <section>
+      <h3>7. Retention and account deletion</h3>
+      <p>We retain active account and cloud data while your account exists so GymApp can sync and provide its features. Pending safety reports remain until review; resolved reports are normally removed within 90 days, and reports are also deleted when the reporter or reported profile is deleted. On iOS, permanently delete your account through <strong>Exercises → Account → Delete Account</strong> and confirm the irreversible request. In another GymApp version without that control, contact support for deletion. A successful request deletes the Supabase Auth user and associated active cloud records, including user state, profile, reports, and Garmin cloud records. The app then clears the local account session and account data on that device.</p>
+      <p>Deleting the app from a device does not by itself delete the cloud account. Operational backups and security records may remain isolated until the service provider’s limited backup cycle expires, and information that law requires us to retain may be kept only for that required period. Such records are not restored as an active account or used for product personalization.</p>
+      <p>If in-app deletion cannot complete or you no longer have access to the account, contact <a href="mailto:martynenkoeduard1@gmail.com">martynenkoeduard1@gmail.com</a>.</p>
+    </section>
 
-    <h2>Children</h2>
-    <p>
-      GymApp is not designed for children and is not intended to knowingly collect personal data from children.
-    </p>
+    <section>
+      <h3>8. Your choices and rights</h3>
+      <p>You can edit or delete workouts, decline local notifications, choose not to connect Garmin, export a workout backup, report an offensive leaderboard name, block or unblock leaderboard profiles locally, sign out, and delete your account. Depending on your location, you may also have rights to access, correct, erase, restrict, object to, or receive a portable copy of personal data, and to complain to a data protection authority. Contact us to exercise a right; we may need to verify the account before acting.</p>
+    </section>
 
-    <h2>Changes to This Policy</h2>
-    <p>
-      We may update this privacy policy when app features or legal requirements change. The updated date at the top
-      of this page will reflect the latest version.
-    </p>
+    <section>
+      <h3>9. Security and international processing</h3>
+      <p>GymApp uses HTTPS, access controls, Supabase Row Level Security, and protected platform storage where supported; the iOS app stores session secrets in iOS Keychain. No system is perfectly secure, so keep your credentials private and contact us if you suspect misuse. Providers may process data in countries other than yours; where required, we use contractual or other lawful transfer safeguards.</p>
+    </section>
 
-    <h2>Contact</h2>
-    <p>
-      For privacy questions, contact: <a href="mailto:martynenkoeduard1@gmail.com">martynenkoeduard1@gmail.com</a>
-    </p>
-  </main>
+    <section>
+      <h3>10. Children</h3>
+      <p>GymApp is a general fitness log and is not directed to children under 13 or the higher minimum age required in their country. We do not knowingly collect a child’s data without the authorization required by law. Contact us if you believe a child has provided data improperly.</p>
+    </section>
+
+    <section>
+      <h3>11. Changes</h3>
+      <p>We may update this policy when GymApp’s features, providers, or legal obligations change. We will update the effective date and provide additional notice in the app when a change materially affects your choices.</p>
+    </section>
+  </article>
+
+  <article id="ukrainian" lang="uk" aria-labelledby="ukrainian-title">
+    <h2 id="ukrainian-title">Українська</h2>
+
+    <section>
+      <h3>1. Хто контролює ваші дані</h3>
+      <p>GymApp надає <strong>Martynenko Eduard</strong> («GymApp», «ми»). Із питань конфіденційності чи підтримки напишіть на <a href="mailto:martynenkoeduard1@gmail.com">martynenkoeduard1@gmail.com</a> або скористайтеся <a href="https://eduard047.github.io/GymApp/support.html">сторінкою підтримки</a>.</p>
+      <p>Ця політика поширюється на GymApp для iOS та Android, браузерну/PWA-версію, а також необов’язкові компоненти Wear OS і Garmin Connect IQ. Описана нижче функція чи дозвіл застосовується лише тоді, коли він є на платформі, якою ви користуєтеся.</p>
+    </section>
+
+    <section>
+      <h3>2. Які дані ми обробляємо</h3>
+      <table>
+        <thead><tr><th>Дані</th><th>Приклади та джерело</th><th>Мета</th></tr></thead>
+        <tbody>
+          <tr><td>Облікові та контактні дані</td><td>Email, UUID користувача Supabase та відображуване ім’я, які ви надаєте для облікового запису. Облікові дані обробляє Supabase; GymApp не зберігає пароль у відкритому вигляді.</td><td>Реєстрація, підтвердження, вхід, безпека, хмарна синхронізація, підтримка й видалення.</td></tr>
+          <tr><td>Дані тренувань і фітнесу</td><td>Дати, назви вправ, підходи, вага, повтори, плани, завершені сесії, обсяг, особисті рекорди та похідні XP, рівень, місії, досягнення й кількість тренувань.</td><td>Щоденник, синхронізація, прогрес, Smart Coach, навантаження м’язів і гейміфікація.</td></tr>
+          <tr><td>Користувацький вміст</td><td>Довільні нотатки до тренувань.</td><td>Збереження та показ історії тренувань.</td></tr>
+          <tr><td>Публічний профіль рейтингу</td><td>Випадковий публічний ID профілю, відображуване ім’я, XP, рівень і кількість тренувань.</td><td>Показ рейтингу GymApp авторизованим користувачам. Email, UUID Supabase Auth, докладні тренування та нотатки не є публічними.</td></tr>
+          <tr><td>Скарги щодо безпеки рейтингу</td><td>UUID акаунта заявника, публічний ID профілю, на який скаржаться, час і фіксована категорія <code>inappropriate_name</code>. Довільний текст не приймається.</td><td>Перевірка неприйнятних імен, запобігання зловживанням і виконання правил безпеки спільноти.</td></tr>
+          <tr><td>Необов’язкові дані Garmin</td><td>Непрозорий токен під’єднаного пристрою, плани, статус синхронізації та імпортовані тривалість, калорії або дані пульсу, якщо вони є.</td><td>Під’єднання Garmin, передавання планів та імпорт завершених тренувань.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h3>3. Дані, що залишаються на пристрої</h3>
+      <p>Залежно від платформи, Training Profile — програма, 2–6 тренувальних днів на тиждень, ціль та енергетичний баланс — і список публічних профілів, заблокованих у вашому рейтингу, зберігаються у власних налаштуваннях застосунку й не завантажуються на сервер. Локальна база/кеш, мова, тема й налаштування локальних сповіщень таймера також залишаються на відповідному пристрої, крім полів тренувань, що входять до описаного вище хмарного стану.</p>
+      <p>Телефонні застосунки GymApp не запитують вагу тіла, зріст, стать, геолокацію, контакти, камеру, мікрофон, Фото, Motion &amp; Fitness або HealthKit. Сигнали таймера відпочинку — це необов’язкові локальні сповіщення; GymApp не збирає токен віддалених push-сповіщень. Дані сенсорів і тренувань Garmin обробляються лише за використання необов’язкової Garmin-функції та також регулюються дозволами й політикою Garmin.</p>
+    </section>
+
+    <section>
+      <h3>4. Як ми використовуємо дані</h3>
+      <ul>
+        <li>надаємо, захищаємо, діагностуємо й підтримуємо обліковий запис і синхронізацію;</li>
+        <li>показуємо історію, прогрес, графіки, навантаження м’язів, місії, досягнення, ранги та персоналізовані тренувальні рекомендації;</li>
+        <li>підтримуємо обмежений публічний рейтинг;</li>
+        <li>забезпечуємо Garmin-синхронізацію, якщо ви її обрали;</li>
+        <li>відповідаємо на запити підтримки, конфіденційності й видалення; та</li>
+        <li>виконуємо вимоги закону й захищаємо користувачів і сервіс від зловживань.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h3>5. Без відстеження, реклами та продажу</h3>
+      <p>GymApp не має рекламних або сторонніх аналітичних SDK, не використовує IDFA й не поєднує дані GymApp із даними інших компаній для реклами або вимірювання. Ми не продаємо персональні дані та не передаємо їх брокерам даних.</p>
+    </section>
+
+    <section>
+      <h3>6. Постачальники послуг та інтеграції</h3>
+      <p>Ми використовуємо <a href="https://supabase.com/privacy">Supabase</a> для автентифікації, бази даних та Edge Functions. Supabase обробляє дані від нашого імені за своїми договірними умовами й вимогами безпеки. Якщо ви під’єднаєте Garmin, потрібні для синхронізації дані також обробляються в екосистемі Garmin відповідно до <a href="https://www.garmin.com/privacy/">політики Garmin</a>.</p>
+      <p>Ми можемо розкрити інформацію, якщо цього вимагає закон, для захисту прав чи безпеки або під час законної передачі бізнесу з належним повідомленням і гарантіями. Постачальники не мають права використовувати дані GymApp для власної таргетованої реклами.</p>
+    </section>
+
+    <section>
+      <h3>7. Зберігання та видалення облікового запису</h3>
+      <p>Ми зберігаємо активні облікові й хмарні дані, поки існує обліковий запис. Скарги зі статусом очікування зберігаються до перевірки; закриті скарги зазвичай видаляються впродовж 90 днів, а також видаляються разом із заявником або профілем, на який поскаржилися. На iOS для остаточного видалення відкрийте <strong>Вправи → Обліковий запис → Видалити обліковий запис</strong> і підтвердьте незворотний запит. В іншій версії GymApp без такого елемента зверніться до підтримки. Успішний запит видаляє користувача Supabase Auth і пов’язані активні хмарні записи, зокрема стан, профіль, скарги й Garmin-дані. Після цього застосунок очищає локальну сесію та дані облікового запису на відповідному пристрої.</p>
+      <p>Саме видалення застосунку не видаляє хмарний обліковий запис. Операційні резервні копії та записи безпеки можуть залишатися ізольованими до завершення обмеженого циклу резервного зберігання постачальника, а дані, які необхідно зберігати за законом, — лише протягом обов’язкового строку. Їх не відновлюють як активний обліковий запис і не використовують для персоналізації.</p>
+      <p>Якщо видалення в застосунку не завершується або ви втратили доступ, напишіть на <a href="mailto:martynenkoeduard1@gmail.com">martynenkoeduard1@gmail.com</a>.</p>
+    </section>
+
+    <section>
+      <h3>8. Ваш вибір і права</h3>
+      <p>Ви можете редагувати або видаляти тренування, відмовитися від локальних сповіщень, не під’єднувати Garmin, експортувати резервну копію, поскаржитися на неприйнятне ім’я, локально блокувати або розблоковувати профілі рейтингу, вийти й видалити обліковий запис. Залежно від країни ви також можете мати право на доступ, виправлення, видалення, обмеження, заперечення, перенесення даних і скаргу до органу захисту даних. Для виконання запиту нам може знадобитися підтвердження облікового запису.</p>
+    </section>
+
+    <section>
+      <h3>9. Безпека та міжнародна обробка</h3>
+      <p>GymApp використовує HTTPS, контроль доступу, Supabase Row Level Security і захищене платформне сховище там, де воно підтримується; застосунок iOS зберігає секрети сесії в iOS Keychain. Жодна система не є абсолютно безпечною, тому не передавайте свої облікові дані й повідомте нас про підозру на зловживання. Постачальники можуть обробляти дані за межами вашої країни; де потрібно, застосовуються договірні або інші законні гарантії передавання.</p>
+    </section>
+
+    <section>
+      <h3>10. Діти</h3>
+      <p>GymApp — загальний фітнес-щоденник, не призначений для дітей молодше 13 років або вищого мінімального віку у відповідній країні. Ми свідомо не збираємо дані дитини без дозволу, передбаченого законом. Повідомте нас, якщо вважаєте, що дитина неправомірно надала дані.</p>
+    </section>
+
+    <section>
+      <h3>11. Зміни</h3>
+      <p>Ми можемо оновлювати політику через зміни функцій, постачальників або вимог закону. Ми змінимо дату набрання чинності й додатково повідомимо в застосунку, якщо зміна істотно впливає на ваш вибір.</p>
+    </section>
+  </article>
+
+  <footer>
+    <p><strong>Contact / Контакт:</strong> <a href="mailto:martynenkoeduard1@gmail.com">martynenkoeduard1@gmail.com</a> · <a href="https://eduard047.github.io/GymApp/support.html">https://eduard047.github.io/GymApp/support.html</a></p>
+    <p class="meta">Data controller / Контролер даних: Martynenko Eduard</p>
+  </footer>
+</main>
 </body>
 </html>
