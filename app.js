@@ -937,7 +937,7 @@ const monthOffsets = { workouts: 0, progress: 0 };
 let overviewMode = "overview";
 let musclePeriod = "month";
 let selectedMuscle = null;
-let leaderboardState = { status: "idle", rows: [], error: "" };
+let leaderboardState = { status: "idle", source: null, rows: [], error: "" };
 let leaderboardRequestController = null;
 let leaderboardRequestId = 0;
 let timerInterval = null;
@@ -1193,7 +1193,7 @@ async function saveRemoteState() {
     method: "POST",
     session,
     headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
-    body: JSON.stringify({ user_id: session.user.id, state: payload, updated_at: new Date().toISOString() })
+    body: JSON.stringify({ user_id: session.user.id, state: payload })
   });
   await supabaseRequest("/rest/v1/profiles?on_conflict=user_id", {
     method: "POST",
@@ -2640,44 +2640,48 @@ function localLeaderboardRow() {
     xp: totalXp(),
     level: levelFromXp(),
     workouts: state.sessions.length,
-    updated_at: new Date().toISOString(),
     isCurrent: true
   };
 }
 
 async function refreshLeaderboard(force = false) {
+  const session = loadRemoteSession();
+  const cloudMode = Boolean(remoteAuthEnabled() && activeAccount?.remote && session?.user?.id);
+  const source = cloudMode ? "cloud" : "local";
   if (leaderboardState.status === "loading" && !force) return;
   if (leaderboardState.status === "loading" && force) {
     leaderboardRequestController?.abort();
   }
-  if (!force && leaderboardState.status === "loaded") return;
-  if (!remoteAuthEnabled()) {
-    leaderboardState = { status: "loaded", rows: [localLeaderboardRow()], error: "" };
+  if (!force && leaderboardState.status === "loaded" && leaderboardState.source === source) return;
+  if (!cloudMode) {
+    leaderboardRequestId += 1;
+    leaderboardRequestController?.abort();
+    leaderboardRequestController = null;
+    leaderboardState = { status: "loaded", source: "local", rows: [localLeaderboardRow()], error: "" };
     return render();
   }
   const requestId = ++leaderboardRequestId;
   leaderboardRequestController = new AbortController();
-  leaderboardState = { ...leaderboardState, status: "loading", error: "" };
+  leaderboardState = { ...leaderboardState, status: "loading", source: "cloud", error: "" };
   render();
   try {
-    const session = loadRemoteSession();
-    if (session?.user?.id && activeAccount?.remote) {
-      saveRemoteState().catch(() => {});
-    }
+    saveRemoteState().catch(() => {});
     const rows = await supabaseRequest(
-      "/rest/v1/profiles?select=user_id,display_name,xp,level,workouts,updated_at&order=xp.desc,workouts.desc,updated_at.asc&limit=50",
-      { session: null, signal: leaderboardRequestController.signal, timeoutMs: 10000 }
+      "/rest/v1/leaderboard_public?select=profile_id,display_name,xp,level,workouts,is_current_user&order=xp.desc,workouts.desc,profile_id.asc&limit=50",
+      { session, signal: leaderboardRequestController.signal, timeoutMs: 10000 }
     );
     if (requestId !== leaderboardRequestId) return;
     leaderboardState = {
       status: "loaded",
-      rows: (Array.isArray(rows) ? rows : []).map(row => ({ ...row, isCurrent: session?.user?.id && row.user_id === session.user.id })),
+      source: "cloud",
+      rows: (Array.isArray(rows) ? rows : []).map(row => ({ ...row, isCurrent: Boolean(row.is_current_user) })),
       error: ""
     };
   } catch (error) {
     if (requestId !== leaderboardRequestId) return;
     leaderboardState = {
       status: "error",
+      source: "cloud",
       rows: [localLeaderboardRow()],
       error: tx("Could not load cloud rating. Try refresh again.", "Не вдалося завантажити хмарний рейтинг. Спробуй оновити ще раз.")
     };
@@ -2690,11 +2694,16 @@ async function refreshLeaderboard(force = false) {
 function leaderboardScreen() {
   const rows = leaderboardState.rows.length ? leaderboardState.rows : [localLeaderboardRow()];
   const loading = leaderboardState.status === "loading";
+  const cloudMode = Boolean(remoteAuthEnabled() && activeAccount?.remote && loadRemoteSession()?.user?.id);
   const supporting = loading
     ? tx("Loading the latest cloud standings.", "Завантажуємо останній хмарний рейтинг.")
-    : remoteAuthEnabled()
+    : leaderboardState.status === "error"
+      ? tx("Showing local stats while the cloud rating is unavailable.", "Показуємо локальні дані, поки хмарний рейтинг недоступний.")
+      : cloudMode
       ? tx("Synced through Supabase.", "Синхронізовано через Supabase.")
-      : tx("Cloud rating is disabled until Supabase is configured.", "Хмарний рейтинг вимкнений, доки Supabase не налаштований.");
+      : remoteAuthEnabled()
+        ? tx("Local mode. Sign in to a cloud account to join the rating.", "Локальний режим. Увійди в хмарний акаунт, щоб долучитися до рейтингу.")
+        : tx("Cloud rating is disabled until Supabase is configured.", "Хмарний рейтинг вимкнений, доки Supabase не налаштований.");
   return `<section class="hero-panel"><div class="hero-split"><div><h2>${tx("Rating", "Рейтинг")}</h2><p>${tx("Top users by XP, level and saved workouts.", "Топ користувачів за XP, рівнем і тренуваннями.")}</p></div><div class="hero-stat"><span>${tx("Your XP", "Твої XP")}</span><strong>${totalXp()}</strong><small>${rankTitle()}</small></div></div></section>
     <section class="panel highlighted"><div class="row-head"><div><h2>${tx("Leaderboard", "Таблиця рейтингу")}</h2><p>${supporting}</p></div><button class="button" data-action="refresh-leaderboard" ${loading ? "disabled" : ""}>${loading ? tx("Loading", "Завантаження") : tx("Refresh", "Оновити")}</button></div>${leaderboardState.error ? `<p class="muted">${escapeHtml(leaderboardState.error)}</p>` : ""}${!rows.length && !loading ? `<div class="empty">${tx("No leaderboard rows yet.", "Рядків рейтингу ще немає.")}</div>` : ""}</section>
     <section class="leaderboard-list">${rows.map(leaderboardRow).join("")}</section>`;
