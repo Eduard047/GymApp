@@ -19,7 +19,7 @@ function loadWorker(scope = "https://example.test/GymApp/") {
     }
   };
   const caches = {
-    async keys() { return ["gym-pwa-v36", "gym-pwa-v37", "another-app-v4"]; },
+    async keys() { return ["gym-pwa-v38", "gym-pwa-v39", "another-app-v4"]; },
     async open(name) {
       openedCaches.push(name);
       return {
@@ -86,9 +86,11 @@ test("service worker never serves searched auth callbacks or token-like queries 
     const handler = loadWorker(scope).listeners.get("fetch");
     const callback = new URL("./confirmed.html", scope);
 
-    callback.search = `?platform=ios&state=${state}&code=pkce-code`;
+    callback.search = `?platform=ios&state=${state}&purpose=recovery&code=pkce-code`;
     assert.equal(isIntercepted(handler, callback), false);
     callback.search = `?platform=ios&state=${state}&error=access_denied`;
+    assert.equal(isIntercepted(handler, callback), false);
+    callback.search = `?platform=android&state=${state}&purpose=recovery&code=pkce-code`;
     assert.equal(isIntercepted(handler, callback), false);
     callback.search = "?provider_token=secret";
     assert.equal(isIntercepted(handler, callback), false);
@@ -106,7 +108,7 @@ test("service worker reads only the current app cache", async () => {
   });
 
   assert.equal(await (await responsePromise).text(), "cached");
-  assert.deepEqual(worker.openedCaches, ["gym-pwa-v37"]);
+  assert.deepEqual(worker.openedCaches, ["gym-pwa-v40"]);
 });
 
 test("service worker activation deletes only its own stale caches", async () => {
@@ -119,5 +121,5 @@ test("service worker activation deletes only its own stale caches", async () => 
   });
   await activationPromise;
 
-  assert.deepEqual(worker.deletedCaches, ["gym-pwa-v36"]);
+  assert.deepEqual(worker.deletedCaches, ["gym-pwa-v38", "gym-pwa-v39"]);
 });

@@ -21,10 +21,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
 import com.example.gymapp.ui.viewmodel.AchievementPreviewUiModel
@@ -132,22 +138,9 @@ fun SoloProgressHero(
             ) {
                 SoloHeroStat(
                     label = stringResource(R.string.solo_month_xp_label),
-                    value = if (progress.missionXp > 0) {
-                        stringResource(
-                            R.string.solo_month_xp_with_missions,
-                            progress.monthXp,
-                            progress.missionXp
-                        )
-                    } else {
-                        "${progress.monthXp} XP"
-                    },
+                    value = stringResource(R.string.solo_month_xp_value, progress.monthXp),
                     modifier = Modifier.weight(1f),
                     emphasized = true
-                )
-                SoloHeroStat(
-                    label = stringResource(R.string.solo_next_title_label),
-                    value = progress.nextTitle,
-                    modifier = Modifier.weight(1f)
                 )
                 SoloHeroStat(
                     label = stringResource(R.string.solo_streak_label),
@@ -155,6 +148,11 @@ fun SoloProgressHero(
                         R.string.solo_streak_weekly_value,
                         progress.weeklyStreakWeeks
                     ),
+                    modifier = Modifier.weight(1f)
+                )
+                SoloHeroStat(
+                    label = stringResource(R.string.solo_next_title_label),
+                    value = progress.nextTitle,
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -232,6 +230,24 @@ fun ActivityHeatmapCard(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                stringArrayResource(R.array.activity_heatmap_weekdays).forEach { weekday ->
+                    Text(
+                        text = weekday,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .weight(1f)
+                            .clearAndSetSemantics { }
+                    )
+                }
+            }
 
             heatmap.weeks.forEach { week ->
                 Row(
@@ -524,27 +540,49 @@ private fun HeatmapDayCell(
     day: ActivityHeatmapDayUiModel,
     modifier: Modifier = Modifier
 ) {
+    val cellShape = RoundedCornerShape(7.dp)
     val backgroundColor = heatmapColor(
         intensity = day.intensity,
         isCurrentMonth = day.isCurrentMonth,
         isToday = day.isToday
     )
+    val accessibilityDescription = if (day.isCurrentMonth) {
+        stringResource(
+            R.string.activity_heatmap_day_a11y,
+            day.dayLabel,
+            day.sessionCount,
+            day.totalVolume.toInt()
+        )
+    } else {
+        ""
+    }
+
+    val accessibilityModifier = if (day.isCurrentMonth) {
+        Modifier.semantics {
+            contentDescription = accessibilityDescription
+        }
+    } else {
+        Modifier.clearAndSetSemantics { }
+    }
 
     Box(
         modifier = modifier
-            .height(34.dp)
-            .clip(MaterialTheme.shapes.small)
+            .height(38.dp)
+            .then(accessibilityModifier)
+            .clip(cellShape)
             .background(backgroundColor)
             .border(
-                width = if (day.isToday) 1.5.dp else 0.dp,
+                width = if (day.isToday) 2.dp else 0.dp,
                 color = if (day.isToday) MaterialTheme.colorScheme.primary else Color.Transparent,
-                shape = MaterialTheme.shapes.small
+                shape = cellShape
             ),
         contentAlignment = Alignment.Center
     ) {
         Text(
             text = day.dayNumber?.toString().orEmpty(),
             style = MaterialTheme.typography.labelMedium,
+            fontFamily = FontFamily.Monospace,
+            fontWeight = FontWeight.SemiBold,
             color = if (day.isCurrentMonth && day.intensity > 0.55f) {
                 MaterialTheme.colorScheme.onPrimary
             } else {

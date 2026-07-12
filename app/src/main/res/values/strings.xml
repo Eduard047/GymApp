@@ -8,6 +8,7 @@
     <string name="tab_rating">Rating</string>
 
     <string name="title_workouts">Workouts</string>
+    <string name="workouts_screen_subtitle">Your training history and next best move.</string>
     <string name="title_missions">Missions</string>
     <string name="title_add_workout">Add Workout</string>
     <string name="title_workout_detail">Workout Details</string>
@@ -40,7 +41,7 @@
     <string name="action_cancel">Cancel</string>
     <string name="action_save">Save</string>
     <string name="action_close">Close</string>
-    <string name="action_current_month">Current</string>
+    <string name="action_current_month">Current month</string>
     <string name="action_repeat_last_workout">Repeat Last Workout</string>
     <string name="action_copy_workout_day">Copy Previous Workout</string>
     <string name="action_sync_plan_to_watch">Sync Plan to Watch</string>
@@ -57,6 +58,41 @@
     <string name="action_timer_stop">Stop</string>
     <string name="action_stop_timer">Stop timer</string>
     <string name="auth_switch_account">Switch</string>
+    <string name="auth_sync_supporting">Sign in to sync workouts across devices.</string>
+    <string name="auth_cloud_account">Cloud account</string>
+    <string name="auth_create_account">Create account</string>
+    <string name="auth_log_in">Log in</string>
+    <string name="auth_log_in_instead">Log in instead</string>
+    <string name="auth_email">Email</string>
+    <string name="auth_repeat_email">Repeat email</string>
+    <string name="auth_password">Password</string>
+    <string name="auth_repeat_password">Repeat password</string>
+    <string name="auth_display_name">Display name</string>
+    <string name="auth_password_requirements">Password must be 8+ characters and include letters and numbers.</string>
+    <string name="auth_signup_requirements">Password must be 8+ characters and include letters and numbers. Display name allows letters, numbers, spaces, dot, dash and underscore.</string>
+    <string name="auth_resend_confirmation">Resend confirmation email</string>
+    <string name="auth_forgot_password">Forgot password?</string>
+    <string name="auth_choose_new_password">Choose a new password</string>
+    <string name="auth_recovery_verified">Your recovery link was verified. Update the password to continue.</string>
+    <string name="auth_new_password">New password</string>
+    <string name="auth_new_password_requirements">Use 8-72 characters with at least one letter and one number.</string>
+    <string name="auth_update_password">Update password</string>
+    <string name="auth_updating_password">Updating…</string>
+    <string name="auth_cancel_recovery">Cancel and return to login</string>
+    <string name="auth_show_password">Show password</string>
+    <string name="auth_hide_password">Hide password</string>
+    <string name="auth_error_email_required">Enter your email.</string>
+    <string name="auth_error_email_invalid">Enter a valid email address.</string>
+    <string name="auth_error_password_required">Enter your password.</string>
+    <string name="auth_error_repeat_email">Repeat your email.</string>
+    <string name="auth_error_email_mismatch">Email does not match.</string>
+    <string name="auth_error_display_name_length">Display name must be 2-32 characters.</string>
+    <string name="auth_error_password_minimum">Password must be at least 8 characters.</string>
+    <string name="auth_error_password_complexity">Password must include letters and numbers.</string>
+    <string name="auth_error_password_mismatch">Passwords do not match.</string>
+    <string name="auth_error_new_password_required">Enter a new password.</string>
+    <string name="auth_error_new_password_length">Password must be 8-72 characters.</string>
+    <string name="auth_password_update_failed">Password could not be updated. Request a new reset email.</string>
 
     <string name="label_note">Note</string>
     <string name="hint_note">Session note</string>
@@ -69,7 +105,7 @@
     <string name="label_weight_kg">Weight (kg)</string>
     <string name="hint_optional">Optional</string>
     <string name="label_reps">Reps</string>
-    <string name="add_workout_intro_title">Build todays session</string>
+    <string name="add_workout_intro_title">Build today’s session</string>
     <string name="add_workout_intro_supporting">Log your plan fast and keep momentum with smart set shortcuts.</string>
     <string name="add_workout_active_exercises">Exercises: %1$d</string>
     <string name="add_workout_total_sets">Sets: %1$d</string>
@@ -158,10 +194,7 @@
     <string name="kpi_avg_intensity">Avg / Set</string>
     <string name="kpi_avg_intensity_value">%1$.1f</string>
     <string name="workout_switch_overview_title">Overview</string>
-    <string name="workout_switch_overview_supporting">Progress, goals, achievements</string>
-    <string name="workout_switch_list_title">Workout list</string>
-    <string name="workout_switch_list_supporting_one">1 saved session</string>
-    <string name="workout_switch_list_supporting_many">%1$d saved sessions</string>
+    <string name="workout_switch_list_title">List (%1$d)</string>
     <string name="workout_section_header_title">Workout list</string>
     <string name="workout_section_header_empty">New sessions will appear here as soon as you log them.</string>
     <string name="workout_section_header_hint">Jump straight into your logged sessions without scrolling past the full overview.</string>
@@ -183,8 +216,8 @@
     <string name="missions_progress_label">Progress</string>
     <string name="missions_progress_value">%1$d / %2$d</string>
     <string name="missions_overall_progress">Daily %1$d/%2$d finished. Weekly %3$d/%4$d finished. Monthly %5$d/%6$d finished.</string>
-    <string name="missions_xp_progress">Mission XP from completed goals: %1$d</string>
-    <string name="missions_xp_reward">+%1$d XP</string>
+    <string name="missions_xp_progress">Mission points from completed goals: %1$d</string>
+    <string name="missions_xp_reward">+%1$d points</string>
     <string name="missions_section_progress">%1$d / %2$d done</string>
     <string name="missions_status_completed">Completed</string>
     <string name="missions_status_in_progress">In progress</string>
@@ -195,7 +228,7 @@
     <string name="solo_total_xp">TOTAL XP</string>
     <string name="solo_total_xp_earned">earned</string>
     <string name="solo_month_xp_label">Month XP</string>
-    <string name="solo_month_xp_with_missions">%1$d XP (+%2$d missions)</string>
+    <string name="solo_month_xp_value">%1$d XP</string>
     <string name="solo_next_title_label">Next title</string>
     <string name="solo_streak_label">Week streak</string>
     <string name="solo_streak_weekly_value">%1$d wk</string>
@@ -219,6 +252,16 @@
     <string name="activity_heatmap_legend">Color shows daily training volume in this month: weight x reps, darker is less, orange is more.</string>
     <string name="activity_heatmap_less">Less</string>
     <string name="activity_heatmap_more">More</string>
+    <string name="activity_heatmap_day_a11y">%1$s. %2$d sessions. Volume %3$d.</string>
+    <string-array name="activity_heatmap_weekdays">
+        <item>M</item>
+        <item>T</item>
+        <item>W</item>
+        <item>T</item>
+        <item>F</item>
+        <item>S</item>
+        <item>S</item>
+    </string-array>
     <string name="achievements_title">Achievements</string>
     <string name="achievements_supporting">Recent unlocks and the next solo milestones.</string>
     <string name="muscle_heatmap_title">Muscle Map</string>
@@ -372,6 +415,7 @@
     <string name="post_workout_back_to_workouts">Back to workouts</string>
     <string name="post_workout_complete_title">Workout complete</string>
     <string name="post_workout_xp_gain">+%1$d XP</string>
+    <string name="post_workout_reward_points">+%1$d points</string>
     <string name="post_workout_level">Level %1$d</string>
     <string name="post_workout_level_up">Level up! %1$d -&gt; %2$d</string>
     <string name="post_workout_metric_xp_gained">XP gained</string>
@@ -397,7 +441,7 @@
     <string name="post_workout_logged_today">Logged today</string>
     <string name="post_workout_logged_recently">Logged recently</string>
     <string name="post_workout_best_streak">Best %1$d d</string>
-    <string name="post_workout_comeback">Comeback active after %1$d days away. x%2$s reward multiplier and +%3$d XP.</string>
+    <string name="post_workout_comeback">Comeback active after %1$d days away. Workout XP still follows the standard formula.</string>
     <string name="post_workout_streak_extended">Streak extended to %1$d days.</string>
     <string name="post_workout_streak_fresh">A fresh streak has started.</string>
     <string name="post_workout_streak_current">Current streak: %1$d days.</string>

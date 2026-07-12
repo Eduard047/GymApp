@@ -84,7 +84,9 @@ class GarminSyncManager(
         val startSdk = {
             Log.i(TAG, "Initializing Connect IQ SDK")
             runCatching {
-                connectIQ.initialize(application, true, listener)
+                // Never interrupt app launch with the Garmin SDK's install UI.
+                // Missing Garmin Connect is surfaced only when Garmin sync is used.
+                connectIQ.initialize(application, false, listener)
             }.onFailure { error ->
                 sdkInitializationRequested = false
                 Log.i(TAG, "Connect IQ initialization skipped", error)

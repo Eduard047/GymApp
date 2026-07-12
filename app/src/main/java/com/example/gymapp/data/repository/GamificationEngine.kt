@@ -44,7 +44,11 @@ object GamificationEngine {
             zoneId = zoneId
         )
         val baseXp = dayAggregates.values.sumOf { it.xp }
-        val bonusXp = streak.currentDays * 8 + comeback.bonusXp + achievements.filter { it.unlocked }.sumOf { it.rewardXp }
+        // Permanent progression is derived only from saved workout sessions.
+        // Streaks, comeback status, missions, and achievements remain useful UI
+        // signals, but recomputing them into total XP would make XP decrease or
+        // change when a calendar period rolls over.
+        val bonusXp = 0
         val totalXp = baseXp + bonusXp
         val progression = buildProgression(baseXp, bonusXp, totalXp)
         val missions = buildMissionBoard(dayAggregates, today)
@@ -125,7 +129,7 @@ object GamificationEngine {
             xpToNextLevel = xpToNextLevel,
             levelProgress = progress.coerceIn(0.0, 1.0),
             title = titleForLevel(level),
-            nextTitle = titleForLevel(level + 1)
+            nextTitle = nextTitleAfter(level)
         )
     }
 
@@ -599,12 +603,12 @@ object GamificationEngine {
         )
     }
 
-    private fun xpForSession(session: WorkoutSessionSummary): Int {
-        val volumeBonus = (session.totalVolume / 120.0).roundToInt()
-        return (40 + session.exerciseCount * 12 + session.setCount * 5 + volumeBonus).coerceAtLeast(0)
+    fun xpForSession(session: WorkoutSessionSummary): Int {
+        val volumeBonus = (session.totalVolume / 80.0).roundToInt()
+        return (90 + session.exerciseCount * 16 + session.setCount * 8 + volumeBonus).coerceAtLeast(0)
     }
 
-    private fun levelForXp(totalXp: Int): Int {
+    fun levelForXp(totalXp: Int): Int {
         var level = 1
         while (totalXp >= xpForLevelStart(level + 1)) {
             level += 1
@@ -612,7 +616,7 @@ object GamificationEngine {
         return level
     }
 
-    private fun xpForLevelStart(level: Int): Int {
+    fun xpForLevelStart(level: Int): Int {
         if (level <= 1) {
             return 0
         }
@@ -624,18 +628,34 @@ object GamificationEngine {
         return total
     }
 
-    private fun xpForNextLevel(level: Int): Int {
-        return 100 + (level - 1) * 40
+    fun xpForNextLevel(level: Int): Int {
+        val stage = (level - 1).coerceAtLeast(0)
+        return 200 + (stage * 85) + ((stage * stage) * 8)
     }
 
     private fun titleForLevel(level: Int): GamificationTitle {
+        return GamificationTitle(
+            name = rankDefinitionForLevel(level).titleEn,
+            tier = titleTierForLevel(level)
+        )
+    }
+
+    private fun nextTitleAfter(level: Int): GamificationTitle? {
+        val next = nextRankDefinitionAfter(level) ?: return null
+        return GamificationTitle(
+            name = next.titleEn,
+            tier = titleTierForLevel(next.levelRequirement)
+        )
+    }
+
+    private fun titleTierForLevel(level: Int): TitleTier {
         return when {
-            level >= 50 -> GamificationTitle("Legend", TitleTier.LEGEND)
-            level >= 35 -> GamificationTitle("Elite", TitleTier.ELITE)
-            level >= 20 -> GamificationTitle("Athlete", TitleTier.ATHLETE)
-            level >= 10 -> GamificationTitle("Consistent", TitleTier.CONSISTENT)
-            level >= 5 -> GamificationTitle("Builder", TitleTier.BUILDER)
-            else -> GamificationTitle("Rookie", TitleTier.NOVICE)
+            level >= 50 -> TitleTier.LEGEND
+            level >= 35 -> TitleTier.ELITE
+            level >= 20 -> TitleTier.ATHLETE
+            level >= 10 -> TitleTier.CONSISTENT
+            level >= 5 -> TitleTier.BUILDER
+            else -> TitleTier.NOVICE
         }
     }
 

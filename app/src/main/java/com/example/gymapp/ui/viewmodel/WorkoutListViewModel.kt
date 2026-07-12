@@ -10,8 +10,10 @@ import com.example.gymapp.data.entity.ExerciseHistoryEntry
 import com.example.gymapp.data.entity.ExerciseMuscleMappingEntity
 import com.example.gymapp.data.entity.WorkoutSessionSummary
 import com.example.gymapp.data.repository.DashboardStats
+import com.example.gymapp.data.repository.GamificationEngine
 import com.example.gymapp.data.repository.GymRepository
 import com.example.gymapp.data.repository.MUSCLE_DEFINITIONS
+import com.example.gymapp.data.repository.RANK_DEFINITIONS
 import com.example.gymapp.data.repository.MuscleContribution
 import com.example.gymapp.data.repository.estimatedLoad
 import com.example.gymapp.data.repository.muscleContributionsForExercise
@@ -31,7 +33,8 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.ZoneId
-import java.time.format.TextStyle
+import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
 import java.time.temporal.TemporalAdjusters
 import java.util.Locale
 import kotlin.math.abs
@@ -45,7 +48,7 @@ data class SoloProgressUiModel(
     val level: Int = 1,
     val title: String = "--",
     val currentLevelXp: Int = 0,
-    val xpForNextLevel: Int = 180,
+    val xpForNextLevel: Int = 200,
     val progressFraction: Float = 0f,
     val streakDays: Int = 0,
     val weeklyStreakWeeks: Int = 0,
@@ -358,8 +361,8 @@ class WorkoutListViewModel(
     ): SoloProgressUiModel {
         val workoutXp = allSessions.sumOf(::sessionXp)
         val monthWorkoutXp = monthSessions.sumOf(::sessionXp)
-        val totalXp = workoutXp + missionXpBonus
-        val monthXp = monthWorkoutXp + if (includeMissionXpInMonth) missionXpBonus else 0
+        val totalXp = workoutXp
+        val monthXp = monthWorkoutXp
         val levelInfo = calculateLevelProgress(totalXp)
         val currentTitle = titleForLevel(levelInfo.level)
         val nextTitle = nextTitleAfter(levelInfo.level)
@@ -373,9 +376,9 @@ class WorkoutListViewModel(
             } else {
                 "$weeklyStreakWeeks successful week${if (weeklyStreakWeeks == 1) "" else "s"} in a row."
             }
-            monthXp > 0 && missionXpBonus > 0 -> t(
-                en = "$monthXp XP earned this month ($missionXpBonus from missions).",
-                uk = "За цей місяць зароблено $monthXp XP ($missionXpBonus з місій)."
+            monthXp > 0 && missionXpBonus > 0 && includeMissionXpInMonth -> t(
+                en = "$monthXp workout XP this month. Mission rewards are tracked separately.",
+                uk = "$monthXp XP за тренування цього місяця. Нагороди місій рахуються окремо."
             )
             monthXp > 0 -> t(
                 en = "$monthXp XP earned this month.",
@@ -441,7 +444,9 @@ class WorkoutListViewModel(
             cells += ActivityHeatmapDayUiModel(
                 id = cursor.toString(),
                 dayNumber = cursor.dayOfMonth,
-                dayLabel = cursor.dayOfWeek.getDisplayName(TextStyle.SHORT, locale),
+                dayLabel = cursor.format(
+                    DateTimeFormatter.ofLocalizedDate(FormatStyle.LONG).withLocale(locale)
+                ),
                 sessionCount = sessionCount,
                 totalVolume = totalVolume,
                 intensity = intensity,
@@ -451,7 +456,7 @@ class WorkoutListViewModel(
             cursor = cursor.plusDays(1)
         }
 
-        while (cells.size % 7 != 0) {
+        while (cells.size < 35 || cells.size % 7 != 0) {
             cells += ActivityHeatmapDayUiModel(id = "trailing-${cells.size}")
         }
 
@@ -1905,22 +1910,13 @@ class WorkoutListViewModel(
     }
 
     private fun sessionXp(session: WorkoutSessionSummary): Int {
-        return 90 +
-            session.exerciseCount * 16 +
-            session.setCount * 8 +
-            (session.totalVolume / 80.0).roundToInt()
+        return GamificationEngine.xpForSession(session)
     }
 
     private fun calculateLevelProgress(totalXp: Int): LevelProgress {
-        var level = 1
-        var remainingXp = totalXp
-        var xpForNextLevel = xpRequirementForLevel(level)
-
-        while (remainingXp >= xpForNextLevel) {
-            remainingXp -= xpForNextLevel
-            level += 1
-            xpForNextLevel = xpRequirementForLevel(level)
-        }
+        val level = GamificationEngine.levelForXp(totalXp)
+        val remainingXp = totalXp - GamificationEngine.xpForLevelStart(level)
+        val xpForNextLevel = GamificationEngine.xpForNextLevel(level)
 
         return LevelProgress(
             level = level,
@@ -1931,8 +1927,7 @@ class WorkoutListViewModel(
     }
 
     private fun xpRequirementForLevel(level: Int): Int {
-        val stage = (level - 1).coerceAtLeast(0)
-        return 200 + (stage * 85) + ((stage * stage) * 8)
+        return GamificationEngine.xpForNextLevel(level)
     }
 
     private fun titleForLevel(level: Int): String {
@@ -1946,12 +1941,7 @@ class WorkoutListViewModel(
     }
 
     private fun cumulativeXpForLevel(level: Int): Int {
-        if (level <= 1) return 0
-        var total = 0
-        for (current in 1 until level) {
-            total += xpRequirementForLevel(current)
-        }
-        return total
+        return GamificationEngine.xpForLevelStart(level)
     }
 
     private fun buildRankLadder(totalXp: Int): List<RankProgressUiModel> {
@@ -2202,49 +2192,3 @@ private data class MutableExerciseMapping(
     val setIds: MutableSet<Long> = linkedSetOf(),
     val sessionIds: MutableSet<Long> = linkedSetOf()
 )
-
-private data class RankDefinition(
-    val id: String,
-    val levelRequirement: Int,
-    val titleEn: String,
-    val titleUk: String
-)
-
-private val RANK_DEFINITIONS = listOf(
-    RankDefinition("rookie", 1, "Rookie", "Новачок"),
-    RankDefinition("starter", 3, "Starter", "Стартовий"),
-    RankDefinition("steady", 5, "Steady", "Стабільний"),
-    RankDefinition("driven", 7, "Driven", "Вмотивований"),
-    RankDefinition("striker", 9, "Striker", "Ударний"),
-    RankDefinition("ironclad", 11, "Ironclad", "Незламний"),
-    RankDefinition("vanguard", 13, "Vanguard", "Авангард"),
-    RankDefinition("challenger", 15, "Challenger", "Претендент"),
-    RankDefinition("dominator", 17, "Dominator", "Домінатор"),
-    RankDefinition("elite", 19, "Elite", "Еліта"),
-    RankDefinition("titan", 21, "Titan", "Титан"),
-    RankDefinition("colossus", 23, "Colossus", "Колос"),
-    RankDefinition("warborn", 25, "Warborn", "Воїн"),
-    RankDefinition("apex", 27, "Apex", "Апекс"),
-    RankDefinition("mythic", 29, "Mythic", "Міфічний"),
-    RankDefinition("legend", 31, "Legend", "Легенда"),
-    RankDefinition("eternal", 33, "Eternal", "Вічний"),
-    RankDefinition("immortal", 35, "Immortal", "Безсмертний"),
-    RankDefinition("paragon", 37, "Paragon", "Парагон"),
-    RankDefinition("overlord", 39, "Overlord", "Володар"),
-    RankDefinition("ascendant", 41, "Ascendant", "Вознесений"),
-    RankDefinition("conqueror", 43, "Conqueror", "Завойовник"),
-    RankDefinition("sovereign", 45, "Sovereign", "Суверен"),
-    RankDefinition("prime", 47, "Prime", "Прайм"),
-    RankDefinition("omni", 49, "Omni", "Омні"),
-    RankDefinition("galactic", 51, "Galactic", "Галактичний"),
-    RankDefinition("nova", 53, "Nova", "Нова"),
-    RankDefinition("singularity", 55, "Singularity", "Сингулярність"),
-    RankDefinition("omega", 57, "Omega", "Омега"),
-    RankDefinition("transcendent", 60, "Transcendent", "Трансцендентний"),
-    RankDefinition("celestial", 64, "Celestial", "Небесний"),
-    RankDefinition("empyrean", 68, "Empyrean", "Емпірей"),
-    RankDefinition("infinite", 72, "Infinite", "Нескінченний"),
-    RankDefinition("beyond", 76, "Beyond", "Понадмежний"),
-    RankDefinition("cosmic-warlord", 80, "Cosmic Warlord", "Космічний воєвода")
-)
-

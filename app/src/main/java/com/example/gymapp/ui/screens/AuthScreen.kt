@@ -1,5 +1,6 @@
 package com.example.gymapp.ui.screens
 
+import android.content.Context
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -29,10 +30,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import com.example.gymapp.R
 import com.example.gymapp.auth.AuthUiState
 import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.HeroPanel
@@ -43,8 +47,10 @@ fun AuthScreen(
     onLogin: (email: String, password: String) -> Unit,
     onSignUp: (email: String, password: String, displayName: String) -> Unit,
     onResendConfirmation: (email: String) -> Unit,
+    onPasswordReset: (email: String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var signUpEmail by remember { mutableStateOf("") }
@@ -79,7 +85,7 @@ fun AuthScreen(
                         style = MaterialTheme.typography.headlineMedium
                     )
                     Text(
-                        text = "Sign in to sync workouts across devices.",
+                        text = stringResource(R.string.auth_sync_supporting),
                         style = MaterialTheme.typography.bodyMedium
                     )
                 }
@@ -91,7 +97,9 @@ fun AuthScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Text(
-                        text = if (isSignUp) "Create account" else "Cloud account",
+                        text = stringResource(
+                            if (isSignUp) R.string.auth_create_account else R.string.auth_cloud_account
+                        ),
                         style = MaterialTheme.typography.titleLarge
                     )
                     OutlinedTextField(
@@ -101,7 +109,7 @@ fun AuthScreen(
                             if (isSignUp) signUpEmail = it else email = it
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        label = { Text("Email") },
+                        label = { Text(stringResource(R.string.auth_email)) },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email)
                     )
@@ -115,7 +123,7 @@ fun AuthScreen(
                             passwordVisible = loginPasswordVisible,
                             onPasswordVisibilityChange = { loginPasswordVisible = it },
                             modifier = Modifier.fillMaxWidth(),
-                            label = "Password"
+                            label = stringResource(R.string.auth_password)
                         )
                     }
                     if (isSignUp) {
@@ -126,7 +134,7 @@ fun AuthScreen(
                                 signUpEmailConfirm = it
                             },
                             modifier = Modifier.fillMaxWidth(),
-                            label = { Text("Repeat email") },
+                            label = { Text(stringResource(R.string.auth_repeat_email)) },
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email)
                         )
@@ -139,7 +147,7 @@ fun AuthScreen(
                             passwordVisible = signUpPasswordVisible,
                             onPasswordVisibilityChange = { signUpPasswordVisible = it },
                             modifier = Modifier.fillMaxWidth(),
-                            label = "Password"
+                            label = stringResource(R.string.auth_password)
                         )
                         PasswordTextField(
                             value = signUpPasswordConfirm,
@@ -150,7 +158,7 @@ fun AuthScreen(
                             passwordVisible = signUpPasswordConfirmVisible,
                             onPasswordVisibilityChange = { signUpPasswordConfirmVisible = it },
                             modifier = Modifier.fillMaxWidth(),
-                            label = "Repeat password"
+                            label = stringResource(R.string.auth_repeat_password)
                         )
                         OutlinedTextField(
                             value = displayName,
@@ -162,16 +170,14 @@ fun AuthScreen(
                                     .take(32)
                             },
                             modifier = Modifier.fillMaxWidth(),
-                            label = { Text("Display name") },
+                            label = { Text(stringResource(R.string.auth_display_name)) },
                             singleLine = true
                         )
                     }
                     Text(
-                        text = if (isSignUp) {
-                            "Password must be 8+ characters and include letters and numbers. Display name allows letters, numbers, spaces, dot, dash and underscore."
-                        } else {
-                            "Password must be 8+ characters and include letters and numbers."
-                        },
+                        text = stringResource(
+                            if (isSignUp) R.string.auth_signup_requirements else R.string.auth_password_requirements
+                        ),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -192,7 +198,7 @@ fun AuthScreen(
                                     if (validation == null) {
                                         onSignUp(signUpEmail, signUpPassword, displayName)
                                     } else {
-                                        localMessage = validation
+                                        localMessage = localizedAuthValidationMessage(context, validation)
                                     }
                                 } else {
                                     val validation = validateLoginInput(
@@ -202,14 +208,18 @@ fun AuthScreen(
                                     if (validation == null) {
                                         onLogin(email, password)
                                     } else {
-                                        localMessage = validation
+                                        localMessage = localizedAuthValidationMessage(context, validation)
                                     }
                                 }
                             },
                             enabled = !uiState.isLoading,
                             modifier = Modifier.weight(1f)
                         ) {
-                            Text(if (isSignUp) "Create account" else "Log in")
+                            Text(
+                                stringResource(
+                                    if (isSignUp) R.string.auth_create_account else R.string.auth_log_in
+                                )
+                            )
                         }
                         OutlinedButton(
                             onClick = {
@@ -219,7 +229,11 @@ fun AuthScreen(
                             enabled = !uiState.isLoading,
                             modifier = Modifier.weight(1f)
                         ) {
-                            Text(if (isSignUp) "Log in instead" else "Create account")
+                            Text(
+                                stringResource(
+                                    if (isSignUp) R.string.auth_log_in_instead else R.string.auth_create_account
+                                )
+                            )
                         }
                     }
                     if (isSignUp) {
@@ -230,13 +244,29 @@ fun AuthScreen(
                                     localMessage = null
                                     onResendConfirmation(signUpEmail)
                                 } else {
-                                    localMessage = validation
+                                    localMessage = localizedAuthValidationMessage(context, validation)
                                 }
                             },
                             enabled = !uiState.isLoading,
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("Resend confirmation email")
+                            Text(stringResource(R.string.auth_resend_confirmation))
+                        }
+                    } else {
+                        OutlinedButton(
+                            onClick = {
+                                val validation = validateRecoveryEmailInput(email)
+                                if (validation == null) {
+                                    localMessage = null
+                                    onPasswordReset(email)
+                                } else {
+                                    localMessage = localizedAuthValidationMessage(context, validation)
+                                }
+                            },
+                            enabled = !uiState.isLoading,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(stringResource(R.string.auth_forgot_password))
                         }
                     }
                 }
@@ -259,6 +289,129 @@ fun AuthScreen(
                     },
                     style = MaterialTheme.typography.bodyMedium
                 )
+            }
+        }
+    }
+}
+
+@Composable
+fun PasswordUpdateScreen(
+    uiState: AuthUiState,
+    onUpdatePassword: (password: String) -> Unit,
+    onCancel: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    var password by remember { mutableStateOf("") }
+    var passwordConfirm by remember { mutableStateOf("") }
+    var passwordVisible by remember { mutableStateOf(false) }
+    var passwordConfirmVisible by remember { mutableStateOf(false) }
+    var localMessage by remember { mutableStateOf<String?>(null) }
+
+    BoxWithConstraints(
+        modifier = modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+    ) {
+        Column(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .fillMaxWidth()
+                .heightIn(min = maxHeight)
+                .widthIn(max = 560.dp)
+                .padding(horizontal = 16.dp, vertical = 18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically)
+        ) {
+            HeroPanel {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        text = stringResource(R.string.auth_choose_new_password),
+                        style = MaterialTheme.typography.headlineMedium
+                    )
+                    Text(
+                        text = stringResource(R.string.auth_recovery_verified),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            }
+
+            AppPanel(highlighted = true) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    PasswordTextField(
+                        value = password,
+                        onValueChange = {
+                            localMessage = null
+                            password = it
+                        },
+                        passwordVisible = passwordVisible,
+                        onPasswordVisibilityChange = { passwordVisible = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = stringResource(R.string.auth_new_password)
+                    )
+                    PasswordTextField(
+                        value = passwordConfirm,
+                        onValueChange = {
+                            localMessage = null
+                            passwordConfirm = it
+                        },
+                        passwordVisible = passwordConfirmVisible,
+                        onPasswordVisibilityChange = { passwordConfirmVisible = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = stringResource(R.string.auth_repeat_password)
+                    )
+                    Text(
+                        text = stringResource(R.string.auth_new_password_requirements),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    localMessage?.let { message ->
+                        Text(
+                            text = message,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                    uiState.message?.let { message ->
+                        Text(
+                            text = message,
+                            color = if (uiState.messageIsError) {
+                                MaterialTheme.colorScheme.error
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                    Button(
+                        onClick = {
+                            val validation = validatePasswordUpdateInput(password, passwordConfirm)
+                            if (validation == null) {
+                                localMessage = null
+                                onUpdatePassword(password)
+                            } else {
+                                localMessage = localizedAuthValidationMessage(context, validation)
+                            }
+                        },
+                        enabled = !uiState.isLoading,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            stringResource(
+                                if (uiState.isLoading) R.string.auth_updating_password else R.string.auth_update_password
+                            )
+                        )
+                    }
+                    OutlinedButton(
+                        onClick = onCancel,
+                        enabled = !uiState.isLoading,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(stringResource(R.string.auth_cancel_recovery))
+                    }
+                }
             }
         }
     }
@@ -289,11 +442,31 @@ private fun PasswordTextField(
             IconButton(onClick = { onPasswordVisibilityChange(!passwordVisible) }) {
                 Icon(
                     imageVector = if (passwordVisible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
-                    contentDescription = if (passwordVisible) "Hide password" else "Show password"
+                    contentDescription = stringResource(
+                        if (passwordVisible) R.string.auth_hide_password else R.string.auth_show_password
+                    )
                 )
             }
         }
     )
+}
+
+private fun localizedAuthValidationMessage(context: Context, message: String): String {
+    val resource = when (message) {
+        "Enter your email." -> R.string.auth_error_email_required
+        "Enter a valid email address." -> R.string.auth_error_email_invalid
+        "Enter your password." -> R.string.auth_error_password_required
+        "Repeat your email." -> R.string.auth_error_repeat_email
+        "Email does not match." -> R.string.auth_error_email_mismatch
+        "Display name must be 2-32 characters." -> R.string.auth_error_display_name_length
+        "Password must be at least 8 characters." -> R.string.auth_error_password_minimum
+        "Password must include letters and numbers." -> R.string.auth_error_password_complexity
+        "Passwords do not match." -> R.string.auth_error_password_mismatch
+        "Enter a new password." -> R.string.auth_error_new_password_required
+        "Password must be 8-72 characters." -> R.string.auth_error_new_password_length
+        else -> return message
+    }
+    return context.getString(resource)
 }
 
 internal fun validateLoginInput(
@@ -336,6 +509,24 @@ internal fun validateConfirmationEmailInput(email: String): String? {
     return when {
         cleanEmail.isBlank() -> "Enter your email."
         !isValidEmail(cleanEmail) -> "Enter a valid email address."
+        else -> null
+    }
+}
+
+internal fun validateRecoveryEmailInput(email: String): String? {
+    return validateConfirmationEmailInput(email)
+}
+
+internal fun validatePasswordUpdateInput(
+    password: String,
+    passwordConfirm: String
+): String? {
+    return when {
+        password.isBlank() -> "Enter a new password."
+        password.length !in 8..72 -> "Password must be 8-72 characters."
+        !password.any { it.isLetter() } || !password.any { it.isDigit() } ->
+            "Password must include letters and numbers."
+        password != passwordConfirm -> "Passwords do not match."
         else -> null
     }
 }
