@@ -55,9 +55,6 @@ fun MuscleHeatmapCard(
     heatmap: MuscleHeatmapUiModel,
     onPeriodSelected: (MuscleMapPeriod) -> Unit,
     onMuscleSelected: (String) -> Unit,
-    onEditExerciseMapping: (String) -> Unit,
-    onSaveExerciseMapping: (String, List<String>) -> Unit,
-    onCloseExerciseMapping: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     AppPanel(
@@ -110,15 +107,6 @@ fun MuscleHeatmapCard(
                     modifier = Modifier.weight(1f),
                     emphasized = true
                 )
-                MetricTile(
-                    label = stringResource(R.string.muscle_heatmap_mapped),
-                    value = stringResource(
-                        R.string.muscle_heatmap_mapped_value,
-                        heatmap.mappedExerciseCount,
-                        heatmap.totalExerciseCount
-                    ),
-                    modifier = Modifier.weight(1f)
-                )
             }
 
             MuscleBodyMap(
@@ -148,33 +136,7 @@ fun MuscleHeatmapCard(
 
             if (heatmap.selectedMuscleLabel != null) {
                 SelectedMuscleHighlight(heatmap = heatmap)
-                SelectedMuscleExercises(
-                    heatmap = heatmap,
-                    onEditExerciseMapping = onEditExerciseMapping
-                )
-            }
-
-            if (heatmap.unmappedExercises.isNotEmpty()) {
-                UnmappedExercises(
-                    heatmap = heatmap,
-                    onEditExerciseMapping = onEditExerciseMapping
-                )
-            }
-
-            if (heatmap.exerciseMappings.isNotEmpty()) {
-                ExerciseMappings(
-                    heatmap = heatmap,
-                    onEditExerciseMapping = onEditExerciseMapping
-                )
-            }
-
-            if (heatmap.manualEditorExerciseName != null) {
-                ManualMappingEditor(
-                    exerciseName = heatmap.manualEditorExerciseName,
-                    muscles = heatmap.manualMuscles,
-                    onClose = onCloseExerciseMapping,
-                    onSave = onSaveExerciseMapping
-                )
+                SelectedMuscleExercises(heatmap = heatmap)
             }
 
             if (heatmap.topMuscles.isEmpty()) {
@@ -575,8 +537,7 @@ private fun SelectedMuscleHighlight(
 
 @Composable
 private fun SelectedMuscleExercises(
-    heatmap: MuscleHeatmapUiModel,
-    onEditExerciseMapping: (String) -> Unit
+    heatmap: MuscleHeatmapUiModel
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
@@ -628,13 +589,6 @@ private fun SelectedMuscleExercises(
                                 ),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                        OutlinedButton(onClick = { onEditExerciseMapping(exercise.exerciseName) }) {
-                            Text(
-                                text = stringResource(R.string.muscle_heatmap_map_action),
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
