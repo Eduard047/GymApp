@@ -77,10 +77,10 @@ Important: PDF is for reading and sharing only. JSON is the source of truth for 
   <a href="https://github.com/Eduard047/GymApp/releases">
     <img alt="Releases" src="https://img.shields.io/badge/Open-Releases-181717?style=for-the-badge&logo=github&logoColor=white">
   </a>
-  <a href="https://github.com/Eduard047/GymApp/releases/download/debug-2026.07.12.0901/gymapp-phone-debug.apk">
+  <a href="https://github.com/Eduard047/GymApp/releases/download/debug-2026.07.12.1819/gymapp-phone-debug.apk">
     <img alt="Download Phone APK" src="https://img.shields.io/badge/Download-Phone%20APK-34A853?style=for-the-badge&logo=android&logoColor=white">
   </a>
-  <a href="https://github.com/Eduard047/GymApp/releases/download/debug-2026.07.12.0901/GymApp-iOS-1.0.0-build1-Simulator-universal.app.zip">
+  <a href="https://github.com/Eduard047/GymApp/releases/download/debug-2026.07.12.1819/GymApp-iOS-1.0.0-build1-Simulator-universal.app.zip">
     <img alt="Download iOS Simulator Build" src="https://img.shields.io/badge/Download-iOS%20Simulator-000000?style=for-the-badge&logo=apple&logoColor=white">
   </a>
 </p>
@@ -95,10 +95,10 @@ Important: PDF is for reading and sharing only. JSON is the source of truth for 
 - Latest release: https://github.com/Eduard047/GymApp/releases/latest
 - Current store release tag: https://github.com/Eduard047/GymApp/releases/tag/release-2026.07.05.1238
 - Current Play AAB: https://github.com/Eduard047/GymApp/releases/download/release-2026.07.05.1238/gymapp-play-release.aab
-- Current cross-platform prerelease: https://github.com/Eduard047/GymApp/releases/tag/debug-2026.07.12.0901
-- Current phone debug APK: https://github.com/Eduard047/GymApp/releases/download/debug-2026.07.12.0901/gymapp-phone-debug.apk
-- Current iOS Simulator build: https://github.com/Eduard047/GymApp/releases/download/debug-2026.07.12.0901/GymApp-iOS-1.0.0-build1-Simulator-universal.app.zip
-- Current Garmin IQ package: https://github.com/Eduard047/GymApp/releases/download/debug-2026.07.12.0901/gymapp-fenix8solar47mm.iq
+- Current cross-platform prerelease: https://github.com/Eduard047/GymApp/releases/tag/debug-2026.07.12.1819
+- Current phone debug APK: https://github.com/Eduard047/GymApp/releases/download/debug-2026.07.12.1819/gymapp-phone-debug.apk
+- Current iOS Simulator build: https://github.com/Eduard047/GymApp/releases/download/debug-2026.07.12.1819/GymApp-iOS-1.0.0-build1-Simulator-universal.app.zip
+- Current Garmin IQ package: https://github.com/Eduard047/GymApp/releases/download/debug-2026.07.12.1819/gymapp-fenix8solar47mm.iq
 
 When publishing a new phone build, upload the debug APK asset to the current release:
 

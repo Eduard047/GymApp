@@ -4,7 +4,7 @@
     <application>
         <receiver
             android:name=".garmin.GarminDebugReceiver"
-            android:exported="true">
+            android:exported="false">
             <intent-filter>
                 <action android:name="com.setforge.gymapp.DEBUG_GARMIN_SYNC" />
             </intent-filter>
