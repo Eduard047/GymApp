@@ -98,14 +98,34 @@ const muscles = [
   ["hamstrings", "Hamstrings", "Біцепс стегна"], ["adductors", "Adductors", "Привідні"], ["calves", "Calves", "Ікри"]
 ];
 
-const defaultMappings = {
-  "bench press": ["chest", "triceps", "shoulders"], "incline dumbbell press": ["chest", "shoulders", "triceps"],
-  "pull up": ["lats", "biceps", "upperBack"], "lat pulldown": ["lats", "biceps"], "barbell row": ["upperBack", "lats", "biceps"],
-  "squat": ["quads", "glutes", "adductors"], "leg press": ["quads", "glutes"], "romanian deadlift": ["hamstrings", "glutes", "lowerBack"],
-  "deadlift": ["hamstrings", "glutes", "lowerBack", "upperBack"], "shoulder press": ["shoulders", "triceps"],
-  "lateral raise": ["shoulders"], "biceps curl": ["biceps", "forearms"], "triceps pushdown": ["triceps"],
-  "calf raise": ["calves"], "plank": ["abs", "obliques"]
-};
+const builtInExerciseCatalog = [
+  { key: "bench_press", names: { en: "Bench Press", uk: "Жим штанги лежачи" }, aliases: ["жим лежачи"], muscleIds: ["chest", "triceps", "shoulders"] },
+  { key: "incline_dumbbell_press", names: { en: "Incline Dumbbell Press", uk: "Жим гантелей на похилій лаві" }, aliases: [], muscleIds: ["chest", "shoulders", "triceps"] },
+  { key: "pull_up", names: { en: "Pull Up", uk: "Підтягування" }, aliases: ["Pull-Up"], muscleIds: ["lats", "biceps", "upperBack"] },
+  { key: "lat_pulldown", names: { en: "Lat Pulldown", uk: "Тяга верхнього блока" }, aliases: ["Тяга верхнього блока до грудей", "Фронтальна тяга"], muscleIds: ["lats", "biceps"] },
+  { key: "barbell_row", names: { en: "Barbell Row", uk: "Тяга штанги в нахилі" }, aliases: [], muscleIds: ["upperBack", "lats", "biceps"] },
+  { key: "squat", names: { en: "Squat", uk: "Присідання зі штангою" }, aliases: ["Barbell Squat", "Присід зі штангою"], muscleIds: ["quads", "glutes", "adductors"] },
+  { key: "leg_press", names: { en: "Leg Press", uk: "Жим ногами у тренажері" }, aliases: ["Жим ногами"], muscleIds: ["quads", "glutes"] },
+  { key: "romanian_deadlift", names: { en: "Romanian Deadlift", uk: "Румунська тяга" }, aliases: [], muscleIds: ["hamstrings", "glutes", "lowerBack"] },
+  { key: "deadlift", names: { en: "Deadlift", uk: "Станова тяга" }, aliases: [], muscleIds: ["hamstrings", "glutes", "lowerBack", "upperBack"] },
+  { key: "shoulder_press", names: { en: "Shoulder Press", uk: "Жим над головою" }, aliases: ["Overhead Press", "Жим сидячи над головою", "Жим сидячи"], muscleIds: ["shoulders", "triceps"] },
+  { key: "lateral_raise", names: { en: "Lateral Raise", uk: "Підйоми гантелей через сторони" }, aliases: ["Махи в сторони"], muscleIds: ["shoulders"] },
+  { key: "biceps_curl", names: { en: "Biceps Curl", uk: "Згинання рук на біцепс" }, aliases: [], muscleIds: ["biceps", "forearms"] },
+  { key: "triceps_pushdown", names: { en: "Triceps Pushdown", uk: "Розгинання рук на блоці" }, aliases: [], muscleIds: ["triceps"] },
+  { key: "calf_raise", names: { en: "Calf Raise", uk: "Підйом на носки" }, aliases: ["Підйом на носки стоячи"], muscleIds: ["calves"] },
+  { key: "plank", names: { en: "Plank", uk: "Планка" }, aliases: [], muscleIds: ["abs", "obliques"] }
+];
+
+const builtInExerciseByKey = new Map(builtInExerciseCatalog.map(exercise => [exercise.key, exercise]));
+const builtInExerciseKeyByAlias = new Map(
+  builtInExerciseCatalog.flatMap(exercise =>
+    [...new Set([exercise.names.en, exercise.names.uk, ...exercise.aliases])]
+      .map(alias => [normalizeExerciseKey(alias), exercise.key])
+  )
+);
+const defaultMappings = Object.fromEntries(
+  builtInExerciseCatalog.map(exercise => [normalizeExerciseKey(exercise.names.en), exercise.muscleIds])
+);
 
 function weightedMuscles(values) {
   return values.map(([muscleId, weight]) => ({ muscleId, weight }));
@@ -908,8 +928,6 @@ const exactMuscleMap = Object.fromEntries(Object.entries({
   ]
 }).map(([name, entries]) => [normalizeExerciseKey(name), weightedMuscles(entries)]));
 
-const defaultExercises = Object.keys(defaultMappings).map(name => titleCase(name));
-
 const rankDefinitions = [
   ["rookie", 1, "Rookie", "Новачок"], ["starter", 3, "Starter", "Стартовий"],
   ["steady", 5, "Steady", "Стабільний"], ["driven", 7, "Driven", "Вмотивований"],
@@ -976,6 +994,77 @@ function normalizeExerciseKey(name) {
   return String(name || "").toLowerCase().replace(/[\u02bc\u2019]/g, "'").replace(/\s+/g, " ").trim();
 }
 
+function exerciseRawName(value) {
+  const rawName = typeof value === "string"
+    ? value
+    : value?.name || value?.exerciseName || value?.title || "";
+  return String(rawName).trim();
+}
+
+function catalogKeyRecognizedFromName(value) {
+  return builtInExerciseKeyByAlias.get(normalizeExerciseKey(exerciseRawName(value))) || null;
+}
+
+function explicitCatalogKey(value) {
+  if (!value || typeof value !== "object") return null;
+  const key = String(value.catalogKey || "").trim();
+  return builtInExerciseByKey.has(key) ? key : null;
+}
+
+function resolvedExerciseCatalogKey(value) {
+  // A recognized raw name is stronger evidence than untrusted imported metadata.
+  // A valid explicit key is used only when the raw name is unknown or agrees.
+  return catalogKeyRecognizedFromName(value) || explicitCatalogKey(value);
+}
+
+function persistedExerciseCatalogKey(value) {
+  // Do not turn legacy/user-created names into stable identities merely because
+  // they happen to match an alias. Only an allowlisted explicit key opts in.
+  const explicitKey = explicitCatalogKey(value);
+  return explicitKey ? (catalogKeyRecognizedFromName(value) || explicitKey) : null;
+}
+
+function builtInExerciseFor(value) {
+  const key = resolvedExerciseCatalogKey(value);
+  return key ? builtInExerciseByKey.get(key) : null;
+}
+
+function exerciseCatalogKey(value) {
+  return resolvedExerciseCatalogKey(value);
+}
+
+function canonicalExerciseName(value) {
+  return builtInExerciseFor(value)?.names.en || exerciseRawName(value);
+}
+
+function exerciseDisplayName(value, language = state.language) {
+  const builtIn = builtInExerciseFor(value);
+  if (!builtIn) return exerciseRawName(value);
+  return language === "uk" ? builtIn.names.uk : builtIn.names.en;
+}
+
+function exerciseSearchText(value, language = state.language) {
+  const builtIn = builtInExerciseFor(value);
+  if (!builtIn) return normalizeExerciseKey(exerciseRawName(value));
+  const localizedName = language === "uk" ? builtIn.names.uk : builtIn.names.en;
+  return [...new Set([localizedName, builtIn.names.en, builtIn.names.uk, ...builtIn.aliases])]
+    .map(normalizeExerciseKey)
+    .join(" ");
+}
+
+function exerciseMatchesSearch(value, query, language = state.language) {
+  return exerciseSearchText(value, language).includes(normalizeExerciseKey(query));
+}
+
+function exerciseMatchKey(value) {
+  const catalogKey = persistedExerciseCatalogKey(value);
+  return catalogKey ? `catalog:${catalogKey}` : `custom:${normalizeExerciseKey(exerciseRawName(value))}`;
+}
+
+function exercisesMatch(left, right) {
+  return exerciseMatchKey(left) === exerciseMatchKey(right);
+}
+
 function n(count, enOne, enMany, ukOne, ukFew, ukMany) {
   if (state.language !== "uk") return `${count} ${count === 1 ? enOne : enMany}`;
   const mod10 = count % 10;
@@ -987,7 +1076,11 @@ function n(count, enOne, enMany, ukOne, ukFew, ukMany) {
 function defaultAppState() {
   return {
     language: "en",
-    exercises: defaultExercises.map((name, index) => ({ id: index + 1, name })),
+    exercises: builtInExerciseCatalog.map((exercise, index) => ({
+      id: index + 1,
+      name: exercise.names.en,
+      catalogKey: exercise.key
+    })),
     sessions: [],
     mappings: { ...defaultMappings },
     profile: { split: "Push Pull Legs", days: 4, goal: "Balanced", calories: "Maintenance" }
@@ -1167,7 +1260,7 @@ async function pullRemoteState() {
   const cloudState = await loadRemoteState(session);
   if (!cloudState) return false;
   state = normalizeImportedState(cloudState, defaultAppState());
-  saveState();
+  saveState({ queueRemote: false });
   return true;
 }
 
@@ -1278,9 +1371,9 @@ function loadState() {
     return {
       ...fallback,
       ...parsed,
-      exercises: normalizeExerciseCatalog(parsed.exercises || parsed.exerciseCatalog, fallback.exercises),
+      exercises: normalizeExerciseCatalog(exerciseCatalogInput(parsed), fallback.exercises),
       sessions,
-      mappings: { ...fallback.mappings, ...(parsed.mappings || {}) },
+      mappings: normalizeExerciseMappings(parsed.mappings, fallback.mappings),
       profile: { ...fallback.profile, ...(parsed.profile || {}) }
     };
   } catch {
@@ -1293,37 +1386,69 @@ function normalizeImportedState(parsed, fallback = defaultAppState()) {
   return {
     ...fallback,
     ...parsed,
-    exercises: normalizeExerciseCatalog(parsed.exercises || parsed.exerciseCatalog, fallback.exercises),
+    exercises: normalizeExerciseCatalog(exerciseCatalogInput(parsed), fallback.exercises),
     sessions: normalizedSessions,
-    mappings: { ...fallback.mappings, ...(parsed.mappings || {}) },
+    mappings: normalizeExerciseMappings(parsed.mappings, fallback.mappings),
     profile: { ...fallback.profile, ...(parsed.profile || {}) }
   };
 }
 
+function exerciseCatalogInput(value) {
+  if (Array.isArray(value?.exercises)) return value.exercises;
+  if (Array.isArray(value?.exerciseCatalog)) return value.exerciseCatalog;
+  return undefined;
+}
+
+function normalizeExerciseMappings(input, fallback = {}) {
+  const normalized = { ...(fallback || {}) };
+  Object.entries(input || {}).forEach(([rawName, muscleIds]) => {
+    if (!Array.isArray(muscleIds)) return;
+    normalized[normalizeExerciseName(rawName)] = muscleIds
+      .map(String)
+      .filter(muscleId => muscles.some(([id]) => id === muscleId));
+  });
+  return normalized;
+}
+
 function normalizeSessions(sessions) {
-  return sessions.map(session => ({
-    id: Number(session.id || uid()),
-    startedAt: Number(session.startedAt || session.date || Date.now()),
-    note: session.note || "",
-    exerciseNames: normalizeSessionExerciseNames(session),
-    sets: normalizeSessionSets(session)
-  }));
+  if (!Array.isArray(sessions)) return [];
+  return sessions.flatMap(session => {
+    if (!session || typeof session !== "object") return [];
+    return [{
+      id: Number(session.id || uid()),
+      startedAt: Number(session.startedAt || session.date || Date.now()),
+      note: session.note || "",
+      exerciseNames: normalizeSessionExerciseNames(session),
+      sets: normalizeSessionSets(session)
+    }];
+  });
 }
 
 function normalizeSessionSets(session) {
   const flatSets = Array.isArray(session.sets) ? session.sets : [];
   const sessionExercises = nestedSessionExercises(session);
   const nestedSets = sessionExercises
-    .flatMap(exercise => nestedExerciseSets(exercise).map(set => ({
-      ...set,
-      exerciseName: set.exerciseName || exerciseNameFromImport(exercise)
-    })));
-  return [...flatSets, ...nestedSets].flatMap((set, index) => {
+    .flatMap(exercise => nestedExerciseSets(exercise).flatMap(set => {
+      if (!set || typeof set !== "object") return [];
+      const inheritedCatalogKey = persistedExerciseCatalogKey(exercise.exercise && typeof exercise.exercise === "object" ? exercise.exercise : exercise);
+      return [{
+        ...set,
+        exerciseName: set.exerciseName || exerciseNameFromImport(exercise),
+        ...(explicitCatalogKey(set) ? {} : inheritedCatalogKey ? { catalogKey: inheritedCatalogKey } : {})
+      }];
+    }));
+  // Our schema-v2 export contains both a flat list and nested presentation
+  // blocks. Prefer the flat list so importing our own backup cannot duplicate history.
+  const sourceSets = flatSets.length ? flatSets : nestedSets;
+  return sourceSets.flatMap((set, index) => {
+    if (!set || typeof set !== "object") return [];
     const exerciseName = set.exerciseName || set.name || set.exercise || set.title;
     if (!exerciseName) return [];
+    const catalogKey = persistedExerciseCatalogKey(set);
     return [{
       id: Number(set.id || uid() + index),
-      exerciseName: String(exerciseName),
+      exerciseName: String(exerciseName).trim(),
+      ...(catalogKey ? { catalogKey } : {}),
       weight: Number(set.weight ?? set.weightKg ?? set.kg ?? 0),
       reps: Number(set.reps ?? set.repeatCount ?? set.count ?? 0),
       orderIndex: set.orderIndex ?? set.index ?? index
@@ -1333,8 +1458,9 @@ function normalizeSessionSets(session) {
 
 function normalizeSessionExerciseNames(session) {
   const names = [
+    ...(Array.isArray(session.exerciseNames) ? session.exerciseNames.map(exerciseNameFromImport) : []),
     ...nestedSessionExercises(session).map(exerciseNameFromImport),
-    ...(Array.isArray(session.sets) ? session.sets.map(set => set.exerciseName || set.name || set.exercise || set.title) : [])
+    ...(Array.isArray(session.sets) ? session.sets.map(exerciseNameFromImport) : [])
   ].map(name => String(name || "").trim()).filter(Boolean);
   return [...new Set(names)];
 }
@@ -1345,28 +1471,36 @@ function nestedSessionExercises(session) {
 }
 
 function nestedExerciseSets(exercise) {
+  if (!exercise || typeof exercise !== "object") return [];
   return [exercise.sets, exercise.setEntries, exercise.entries, exercise.history]
     .find(Array.isArray) || [];
 }
 
 function exerciseNameFromImport(exercise) {
   if (typeof exercise === "string") return exercise;
+  if (!exercise || typeof exercise !== "object") return "";
   if (exercise.exercise && typeof exercise.exercise === "object") return exercise.exercise.name || exercise.exercise.title;
   return exercise.name || exercise.exerciseName || exercise.title;
 }
 
 function normalizeExerciseCatalog(input, fallback = []) {
-  const items = Array.isArray(input) ? input : [];
-  const normalized = items.map((item, index) => ({
-    id: Number(item?.id || index + 1),
-    name: String(typeof item === "string" ? item : item?.name || item?.exerciseName || item?.title || "").trim()
-  })).filter(item => item.name);
-  return normalized.length ? normalized : fallback;
+  const items = Array.isArray(input) ? input : Array.isArray(fallback) ? fallback : [];
+  const normalized = items.flatMap((item, index) => {
+    const rawName = exerciseRawName(item);
+    const catalogKey = persistedExerciseCatalogKey(item);
+    if (!rawName) return [];
+    return [{
+      id: Number(typeof item === "object" && item?.id || index + 1),
+      name: rawName,
+      ...(catalogKey ? { catalogKey } : {})
+    }];
+  });
+  return normalized;
 }
 
-function saveState() {
+function saveState({ queueRemote = true } = {}) {
   localStorage.setItem(activeStorageKey(), JSON.stringify(state));
-  queueRemoteSave();
+  if (queueRemote) queueRemoteSave();
 }
 
 function uid() {
@@ -1529,19 +1663,21 @@ function trainingLoad(sessions = state.sessions) {
 function groupedExercises(sets = allSets()) {
   const map = new Map();
   sets.forEach(set => {
-    const item = map.get(set.exerciseName) || { name: set.exerciseName, sets: 0, reps: 0, volume: 0, best: 0, sessions: new Set() };
+    const identity = exerciseMatchKey(set);
+    const catalogKey = persistedExerciseCatalogKey(set);
+    const item = map.get(identity) || { name: set.exerciseName, ...(catalogKey ? { catalogKey } : {}), sets: 0, reps: 0, volume: 0, best: 0, sessions: new Set() };
     item.sets += 1;
     item.reps += Number(set.reps || 0);
     item.volume += Number(set.weight || 0) * Number(set.reps || 0);
     item.best = Math.max(item.best, Number(set.weight || 0));
     item.sessions.add(set.session.id);
-    map.set(set.exerciseName, item);
+    map.set(identity, item);
   });
   return [...map.values()].sort((a, b) => b.volume - a.volume);
 }
 
 function sessionSummary(session) {
-  const names = exerciseNamesForSession(session);
+  const names = exerciseReferencesForSession(session);
   return {
     exercises: names.length,
     sets: session.sets.length,
@@ -1549,8 +1685,32 @@ function sessionSummary(session) {
   };
 }
 
+function exerciseReferencesForSession(session) {
+  const references = [];
+  const identities = new Set();
+  const rawNamesWithSets = new Set();
+  (session.sets || []).forEach(set => {
+    const name = exerciseRawName(set);
+    if (!name) return;
+    const identity = exerciseMatchKey(set);
+    rawNamesWithSets.add(normalizeExerciseKey(name));
+    if (identities.has(identity)) return;
+    const catalogKey = persistedExerciseCatalogKey(set);
+    references.push({ name, ...(catalogKey ? { catalogKey } : {}) });
+    identities.add(identity);
+  });
+  (session.exerciseNames || []).forEach(rawName => {
+    const name = exerciseRawName(rawName);
+    const identity = exerciseMatchKey(name);
+    if (!name || rawNamesWithSets.has(normalizeExerciseKey(name)) || identities.has(identity)) return;
+    references.push({ name });
+    identities.add(identity);
+  });
+  return references;
+}
+
 function exerciseNamesForSession(session) {
-  return [...new Set([...(session.exerciseNames || []), ...((session.sets || []).map(set => set.exerciseName))].filter(Boolean))];
+  return exerciseReferencesForSession(session).map(exercise => exercise.name);
 }
 
 function xpForSessions(sessions) {
@@ -1558,7 +1718,7 @@ function xpForSessions(sessions) {
 }
 
 function totalXp() {
-  return xpForSessions(state.sessions) + completedMissions().reduce((sum, mission) => sum + mission.reward, 0);
+  return xpForSessions(state.sessions);
 }
 
 function levelFromXp(value = totalXp()) {
@@ -1593,30 +1753,19 @@ function rankLadder() {
 
 function sessionXp(session) {
   const summary = sessionSummary(session);
-  return 90 + summary.exercises * 16 + summary.sets * 8 + Math.round(summary.volume / 80);
+  return window.GymProgressionRules.sessionXP(summary);
 }
 
 function xpRequirementForLevel(level) {
-  const stage = Math.max(0, level - 1);
-  return 200 + stage * 85 + stage * stage * 8;
+  return window.GymProgressionRules.requirementForLevel(level);
 }
 
 function cumulativeXpForLevel(level) {
-  let total = 0;
-  for (let current = 1; current < level; current++) total += xpRequirementForLevel(current);
-  return total;
+  return window.GymProgressionRules.cumulativeXPForLevel(level);
 }
 
 function levelProgress(value = totalXp()) {
-  let level = 1;
-  let remaining = value;
-  let next = xpRequirementForLevel(level);
-  while (remaining >= next) {
-    remaining -= next;
-    level += 1;
-    next = xpRequirementForLevel(level);
-  }
-  return { level, currentLevelXp: remaining, xpForNextLevel: next, progressFraction: Math.min(1, remaining / next) };
+  return window.GymProgressionRules.levelProgress(value);
 }
 
 function streakDays() {
@@ -1819,11 +1968,11 @@ function activityHeatmapCard() {
 }
 
 function mappingOverviewCard() {
-  const rows = groupedExercises().sort((a, b) => Number(!mappingFor(a.name).length) - Number(!mappingFor(b.name).length) || a.name.localeCompare(b.name));
+  const rows = groupedExercises().sort((a, b) => Number(!mappingFor(a).length) - Number(!mappingFor(b).length) || a.name.localeCompare(b.name));
   return `<div class="subpanel"><div class="row-head"><div><h3>${tx("Exercise mapping", "Мапінг вправ")}</h3><p>${tx("Auto mapping works first, manual choices override it.", "Автомапінг працює базово, ручний вибір перекриває його.")}</p></div><span class="pill">${mappedCount()}/${state.exercises.length}</span></div>${rows.length ? rows.map(ex => {
-    const ids = mappingFor(ex.name);
+    const ids = mappingFor(ex);
     const labels = ids.length ? ids.map(muscleLabel).join(", ") : tx("Not mapped", "Не зіставлено");
-    return `<div class="row-line mapping-row"><span>${escapeHtml(ex.name)}<small>${escapeHtml(labels)}</small></span><button class="button secondary mini" data-action="map-exercise" data-name="${escapeAttr(ex.name)}">${tx("Map", "Мапити")}</button></div>`;
+    return `<div class="row-line mapping-row"><span>${escapeHtml(exerciseDisplayName(ex))}<small>${escapeHtml(labels)}</small></span><button class="button secondary mini" data-action="map-exercise" data-name="${escapeAttr(ex.name)}">${tx("Map", "Мапити")}</button></div>`;
   }).join("") : `<div class="empty">${tx("No exercises yet.", "Вправ ще немає.")}</div>`}</div>`;
 }
 
@@ -1838,7 +1987,7 @@ function muscleMapCard() {
     <div class="period-tabs">${["all", "month", "week"].map(period => `<button class="${musclePeriod === period ? "selected" : ""}" data-action="muscle-period" data-period="${period}">${musclePeriodLabel(period)}</button>`).join("")}</div>
     <div class="metric-grid three"><div><span>${tx("Sets", "Підходи")}</span><strong>${allSets(periodSessions()).length}</strong></div><div><span>${tx("Load", "Навантаження")}</span><strong>${Math.round(trainingLoad(periodSessions()))}</strong></div><div><span>${tx("Mapped", "Зіставлено")}</span><strong>${mappedCount()}/${state.exercises.length}</strong></div></div>
     ${sourceBodyMapSvg(data, max)}
-    ${selected ? `<div class="subpanel"><h3>${tx("Exercises for", "Вправи для")}: ${selected.label}</h3>${selectedExercises.length ? selectedExercises.map(ex => `<div class="row-line"><span>${escapeHtml(ex.name)}</span><span class="muted">${n(ex.sets, "set", "sets", "підхід", "підходи", "підходів")} - ${n(ex.sessions.size, "session", "sessions", "сесія", "сесії", "сесій")} - ${Math.round(ex.load)} ${tx("load", "навантаження")}</span><button class="button ghost mini" data-action="map-exercise" data-name="${escapeAttr(ex.name)}">${tx("Map", "Мапити")}</button></div>`).join("") : `<div class="empty">${tx("No logged exercises for this muscle in the selected period.", "У вибраному періоді для цієї групи ще немає вправ.")}</div>`}</div>` : ""}
+    ${selected ? `<div class="subpanel"><h3>${tx("Exercises for", "Вправи для")}: ${selected.label}</h3>${selectedExercises.length ? selectedExercises.map(ex => `<div class="row-line"><span>${escapeHtml(exerciseDisplayName(ex))}</span><span class="muted">${n(ex.sets, "set", "sets", "підхід", "підходи", "підходів")} - ${n(ex.sessions.size, "session", "sessions", "сесія", "сесії", "сесій")} - ${Math.round(ex.load)} ${tx("load", "навантаження")}</span><button class="button ghost mini" data-action="map-exercise" data-name="${escapeAttr(ex.name)}">${tx("Map", "Мапити")}</button></div>`).join("") : `<div class="empty">${tx("No logged exercises for this muscle in the selected period.", "У вибраному періоді для цієї групи ще немає вправ.")}</div>`}</div>` : ""}
     ${mappingOverviewCard()}
     <h3>${tx("Top muscle groups", "Топ груп м'язів")}</h3><div class="bars">${top.length ? top.slice(0, 8).map(item => barRow(item.label, item.load, max, `${n(item.sets, "set", "sets", "підхід", "підходи", "підходів")} - ${n(item.sessions.size, "session", "sessions", "сесія", "сесії", "сесій")}`)).join("") : `<div class="empty">${tx("Log sets to light up the body map.", "Запиши підходи, щоб підсвітити карту тіла.")}</div>`}</div>
   </section>`;
@@ -1860,33 +2009,35 @@ function periodSessions() {
 }
 
 function mappedCount() {
-  return state.exercises.filter(ex => contributionFor(ex.name).length).length;
+  return state.exercises.filter(ex => contributionFor(ex).length).length;
 }
 
-function mappingFor(name) {
-  const manual = state.mappings[normalizeExerciseName(name)];
+function mappingFor(exercise) {
+  const rawName = exerciseRawName(exercise);
+  const manual = state.mappings[normalizeExerciseName(rawName)];
   if (manual?.length) return manual;
-  return contributionFor(name).map(item => item.muscleId);
+  return contributionFor(exercise).map(item => item.muscleId);
 }
 
-function contributionFor(name) {
-  const normalized = normalizeExerciseName(name);
+function contributionFor(exercise) {
+  const rawName = exerciseRawName(exercise);
+  const normalized = normalizeExerciseName(rawName);
   const manual = state.mappings[normalized];
   if (manual?.length) return manual.map(muscleId => ({ muscleId, weight: 1 }));
   if (exactMuscleMap[normalized]?.length) return exactMuscleMap[normalized];
-  return inferMuscleContributions(name);
+  return inferMuscleContributions(exercise);
 }
 
 function normalizeExerciseName(name) {
   return normalizeExerciseKey(name);
 }
 
-function inferMuscleContributions(name) {
-  const normalized = normalizeExerciseName(name);
+function inferMuscleContributions(exercise) {
+  const normalized = normalizeExerciseName(exerciseRawName(exercise));
   const inferred = new Map();
   const add = (muscleId, weight) => inferred.set(muscleId, Math.max(inferred.get(muscleId) || 0, clamp(weight, 0, 1)));
   const has = (...tokens) => tokens.some(token => normalized.includes(token));
-  (defaultMappings[normalized] || []).forEach(id => add(id, 1));
+  (builtInExerciseFor(exercise)?.muscleIds || defaultMappings[normalized] || []).forEach(id => add(id, 1));
   if (has("біцепс", "бицепс", "bicep", "curl", "сгибание рук", "згинання рук")) { add("biceps", 1); add("forearms", 0.25); }
   if (has("трицепс", "tricep", "француз", "розгинання рук", "разгибание рук", "pushdown")) add("triceps", 1);
   if (has("жим ног", "жим ногами", "leg press")) { add("quads", 1); add("glutes", 0.55); add("hamstrings", 0.35); }
@@ -1911,7 +2062,7 @@ function inferMuscleContributions(name) {
 function muscleStats(sessions = periodSessions()) {
   const map = new Map(muscles.map(([id]) => [id, { id, label: muscleLabel(id), load: 0, sets: 0, sessions: new Set(), exercises: [] }]));
   allSets(sessions).forEach(set => {
-    const contributions = contributionFor(set.exerciseName);
+    const contributions = contributionFor(set);
     contributions.forEach(contribution => {
       const item = map.get(contribution.muscleId);
       if (!item) return;
@@ -1921,9 +2072,11 @@ function muscleStats(sessions = periodSessions()) {
       item.load += weightedLoad;
       item.sets += 1;
       item.sessions.add(set.session.id);
-      let exercise = item.exercises.find(ex => ex.name === set.exerciseName);
+      const identity = exerciseMatchKey(set);
+      let exercise = item.exercises.find(ex => exerciseMatchKey(ex) === identity);
       if (!exercise) {
-        exercise = { name: set.exerciseName, load: 0, sets: 0, sessions: new Set() };
+        const catalogKey = persistedExerciseCatalogKey(set);
+        exercise = { name: set.exerciseName, ...(catalogKey ? { catalogKey } : {}), load: 0, sets: 0, sessions: new Set() };
         item.exercises.push(exercise);
       }
       exercise.load += weightedLoad;
@@ -1954,8 +2107,9 @@ function sourceBodyMapSvg(data, maxLoad, { interactive = true, showLabels = true
   </div>`;
 }
 
-function exerciseMuscleMapCard(exerciseName, framed = false) {
-  const contributions = contributionFor(exerciseName).filter(item => muscles.some(([id]) => id === item.muscleId));
+function exerciseMuscleMapCard(exercise, framed = false) {
+  const exerciseName = exerciseRawName(exercise);
+  const contributions = contributionFor(exercise).filter(item => muscles.some(([id]) => id === item.muscleId));
   const data = muscles.map(([id]) => {
     const contribution = contributions.find(item => item.muscleId === id);
     return {
@@ -2091,10 +2245,10 @@ function chipSelect(field, options, selected) {
 function draftBlock(block, blockIndex) {
   const lastWeight = lastWeightFor(block.exerciseName);
   const rec = block.exerciseName ? smartRecommendation(block.exerciseName) : null;
-  const title = block.exerciseName || `${tx("Exercise", "Вправа")} ${blockIndex + 1}`;
+  const title = block.exerciseName ? exerciseDisplayName(block) : `${tx("Exercise", "Вправа")} ${blockIndex + 1}`;
   return `<section class="draft-exercise panel highlighted"><details open><summary class="detail-summary"><div><h2>${escapeHtml(title)}</h2><p class="muted">${escapeHtml(draftSetSummary(block))}</p></div><button class="icon-button" data-action="remove-block" data-block="${blockIndex}" aria-label="${tx("Remove exercise", "Прибрати вправу")}">${svg("delete")}</button></summary>
-    <label>${tx("Exercise", "Вправа")}<select class="exercise-select" data-block="${blockIndex}" data-field="exerciseName"><option value="">${tx("Select exercise", "Обери вправу")}</option>${state.exercises.map(ex => `<option value="${escapeAttr(ex.name)}" ${ex.name === block.exerciseName ? "selected" : ""}>${escapeHtml(ex.name)}</option>`).join("")}</select></label>
-    ${block.exerciseName ? exerciseMuscleMapCard(block.exerciseName) : ""}
+    <label>${tx("Exercise", "Вправа")}<select class="exercise-select" data-block="${blockIndex}" data-field="exerciseName"><option value="">${tx("Select exercise", "Обери вправу")}</option>${state.exercises.map(ex => `<option value="${escapeAttr(ex.name)}" ${ex.name === block.exerciseName ? "selected" : ""}>${escapeHtml(exerciseDisplayName(ex))}</option>`).join("")}</select></label>
+    ${block.exerciseName ? exerciseMuscleMapCard(block) : ""}
     ${lastWeight != null ? `<div class="row-line"><strong>${tx("Last", "Остання")}: ${lastWeight.toFixed(1)} kg</strong><button class="button ghost mini" data-action="apply-last" data-block="${blockIndex}">${t("useLast")}</button></div>` : ""}
     ${rec ? smartPanel(rec, blockIndex) : ""}
     <div class="set-shortcuts"><button class="button ghost" data-action="add-set" data-block="${blockIndex}">${t("addSet")}</button><button class="button ghost" data-action="copy-set" data-block="${blockIndex}">${t("copyLast")}</button><button class="button ghost full" data-action="plus-set" data-block="${blockIndex}">${t("copyPlus")}</button></div>
@@ -2112,14 +2266,14 @@ function draftSetSummary(block) {
   return details ? `${setLabel} · ${details}` : setLabel;
 }
 
-function muscleContributionPanel(name, compact = false) {
-  const contributions = contributionFor(name).slice(0, compact ? 3 : 6);
+function muscleContributionPanel(exercise, compact = false) {
+  const contributions = contributionFor(exercise).slice(0, compact ? 3 : 6);
   if (!contributions.length) return "";
   return `<div class="chip-row">${contributions.map(item => `<span class="chip">${muscleLabel(item.muscleId)} ${Math.round(item.weight * 100)}%</span>`).join("")}</div>`;
 }
 
-function exerciseDetailBodyMap(name, mode) {
-  const contributions = contributionFor(name).filter(item => muscles.some(([id]) => id === item.muscleId));
+function exerciseDetailBodyMap(exercise, mode) {
+  const contributions = contributionFor(exercise).filter(item => muscles.some(([id]) => id === item.muscleId));
   if (!contributions.length) return "";
   const data = muscles.map(([id]) => {
     const contribution = contributions.find(item => item.muscleId === id);
@@ -2163,7 +2317,11 @@ function profileValueLabel(value) {
 }
 
 function createDraft(source) {
-  const blocks = source ? [...new Set(source.sets.map(s => s.exerciseName))].map(name => ({ exerciseName: name, sets: source.sets.filter(s => s.exerciseName === name).map(s => ({ weight: s.weight, reps: s.reps })) })) : [{ exerciseName: "", sets: [{ weight: "", reps: "" }] }];
+  const blocks = source ? exerciseReferencesForSession(source).map(exercise => ({
+    exerciseName: exercise.name,
+    ...(persistedExerciseCatalogKey(exercise) ? { catalogKey: persistedExerciseCatalogKey(exercise) } : {}),
+    sets: source.sets.filter(set => exercisesMatch(set, exercise)).map(set => ({ weight: set.weight, reps: set.reps }))
+  })) : [{ exerciseName: "", sets: [{ weight: "", reps: "" }] }];
   return { startedAt: Date.now(), note: source?.note || "", blocks };
 }
 
@@ -2325,12 +2483,12 @@ function lastWeightFor(name) {
 function legacyDetailScreenOld(id) {
   const session = state.sessions.find(s => s.id === id);
   if (!session) return `<div class="empty">${tx("Workout not found.", "Тренування не знайдено.")}</div>`;
-  const grouped = exerciseNamesForSession(session).map(name => ({ name, sets: session.sets.filter(s => s.exerciseName === name) }));
-  const available = state.exercises.filter(ex => !grouped.some(g => g.name === ex.name));
+  const grouped = exerciseReferencesForSession(session).map(exercise => ({ ...exercise, sets: session.sets.filter(set => exercisesMatch(set, exercise)) }));
+  const available = state.exercises.filter(exercise => !grouped.some(group => exercisesMatch(group, exercise)));
   const garmin = parseGarminWorkoutMetrics(session.note || "");
   return `<section class="panel"><h2>${fmtDate(session.startedAt)}</h2><p>${session.note || tx("No note", "Без нотатки")}</p></section>
     ${!session.sets.length && grouped.length ? `<section class="panel warning"><h2>${tx("No set data", "Немає даних підходів")}</h2><p>${tx("This imported workout contains exercise names, but no weights or reps. Export a full Backup JSON from the Android app and import it again.", "У цьому імпортованому тренуванні є назви вправ, але немає ваги й повторів. Експортуй повний Backup JSON з Android-додатка й імпортуй ще раз.")}</p></section>` : ""}
-    <section class="panel"><div class="section-title"><h2>${tx("Add Exercise to This Workout", "Додати вправу в це тренування")}</h2></div>${available.length ? `<select id="quick-add">${available.map(ex => `<option value="${ex.id}">${escapeHtml(ex.name)}</option>`).join("")}</select><button class="button full" data-action="quick-add-exercise">${tx("Add to Workout", "Додати до тренування")}</button>` : `<p class="muted">${tx("All saved exercises are already in this workout.", "Усі збережені вправи вже є в цьому тренуванні.")}</p>`}</section>
+    <section class="panel"><div class="section-title"><h2>${tx("Add Exercise to This Workout", "Додати вправу в це тренування")}</h2></div>${available.length ? `<select id="quick-add">${available.map(ex => `<option value="${ex.id}">${escapeHtml(exerciseDisplayName(ex))}</option>`).join("")}</select><button class="button full" data-action="quick-add-exercise">${tx("Add to Workout", "Додати до тренування")}</button>` : `<p class="muted">${tx("All saved exercises are already in this workout.", "Усі збережені вправи вже є в цьому тренуванні.")}</p>`}</section>
     ${garmin ? garminWorkoutMetricsCard(session, garmin, grouped) : ""}
     ${grouped.map(group => exerciseDetailCard(session, group, Boolean(garmin))).join("")}
     <button class="fab finish-fab" data-action="finish-workout" data-id="${session.id}">${svg("check", "small-icon")}${t("finishWorkout")}</button>`;
@@ -2339,7 +2497,7 @@ function legacyDetailScreenOld(id) {
 function legacyExerciseDetailCard(session, group) {
   const key = `${session.id}:${group.name}`;
   const remaining = timerRemaining(key);
-  return `<section class="panel highlighted"><div class="row-head"><h2>${escapeHtml(group.name)}</h2>${isPr(session, group.name) ? `<span class="pill">${svg("trophy", "small-icon")}${tx("New PR", "Новий PR")}</span>` : ""}</div>
+  return `<section class="panel highlighted"><div class="row-head"><h2>${escapeHtml(exerciseDisplayName(group))}</h2>${isPr(session, group) ? `<span class="pill">${svg("trophy", "small-icon")}${tx("New PR", "Новий PR")}</span>` : ""}</div>
     ${group.sets.length ? `<div class="timer-row"><div><strong>${tx("Exercise Rest", "Відпочинок")}</strong><span data-timer-display="${escapeAttr(key)}" aria-live="polite">${remaining > 0 ? formatTimer(remaining) : tx("Ready", "Готово")}</span></div><div class="actions"><button class="button ghost mini" data-action="timer" data-key="${escapeAttr(key)}" data-seconds="60">60s</button><button class="button ghost mini" data-action="timer" data-key="${escapeAttr(key)}" data-seconds="90">90s</button><button class="button ghost mini" data-action="timer" data-key="${escapeAttr(key)}" data-seconds="180">180s</button><button class="button ghost mini" data-action="timer-stop" data-timer-stop="${escapeAttr(key)}" data-key="${escapeAttr(key)}" ${remaining ? "" : "disabled"}>${tx("Stop", "Стоп")}</button></div></div>
     <div class="table"><div class="table-head"><span>${tx("Set", "Підхід")}</span><span>${tx("Weight (kg)", "Вага (кг)")}</span><span>${tx("Reps", "Повтори")}</span><span></span></div>${group.sets.map((set, i) => `<div class="table-row"><span>${tx("Set", "Підхід")} ${i + 1}</span><span>${Number(set.weight).toFixed(1)}</span><span>${set.reps}</span><span><button class="icon-button" data-action="edit-set" data-id="${set.id}">${svg("edit")}</button><button class="icon-button" data-action="delete-set" data-id="${set.id}">${svg("delete")}</button></span></div>`).join("")}</div>` : `<div class="empty">${tx("No sets were imported for this exercise.", "Для цієї вправи не імпортовано підходи.")}</div>`}
     <button class="button ghost full" data-action="detail-add-set" data-session="${session.id}" data-name="${escapeAttr(group.name)}">${t("addSet")}</button>
@@ -2349,13 +2507,13 @@ function legacyExerciseDetailCard(session, group) {
 function detailScreen(id) {
   const session = state.sessions.find(s => s.id === id);
   if (!session) return `<div class="empty">${tx("Workout not found.", "Workout not found.")}</div>`;
-  const grouped = exerciseNamesForSession(session).map(name => ({ name, sets: session.sets.filter(s => s.exerciseName === name) }));
-  const available = state.exercises.filter(ex => !grouped.some(g => g.name === ex.name));
+  const grouped = exerciseReferencesForSession(session).map(exercise => ({ ...exercise, sets: session.sets.filter(set => exercisesMatch(set, exercise)) }));
+  const available = state.exercises.filter(exercise => !grouped.some(group => exercisesMatch(group, exercise)));
   const garmin = parseGarminWorkoutMetrics(session.note || "");
   return `${garmin ? garminWorkoutHeader(session, garmin, grouped) : workoutHeader(session)}
     ${garmin ? garminWorkoutMetricsCard(garmin) : ""}
     ${!session.sets.length && grouped.length ? `<section class="panel warning"><h2>${tx("No set data", "No set data")}</h2><p>${tx("This imported workout contains exercise names, but no weights or reps. Export a full Backup JSON from the Android app and import it again.", "This imported workout contains exercise names, but no weights or reps. Export a full Backup JSON from the Android app and import it again.")}</p></section>` : ""}
-    <section class="panel"><div class="section-title"><div><h2>${tx("Add Exercise to This Workout", "Add Exercise to This Workout")}</h2></div>${svg("add", "small-icon")}</div>${available.length ? `<select id="quick-add">${available.map(ex => `<option value="${ex.id}">${escapeHtml(ex.name)}</option>`).join("")}</select><button class="button full" data-action="quick-add-exercise">${tx("Add to Workout", "Add to Workout")}</button>` : `<p class="muted">${tx("All saved exercises are already in this workout.", "All saved exercises are already in this workout.")}</p>`}</section>
+    <section class="panel"><div class="section-title"><div><h2>${tx("Add Exercise to This Workout", "Add Exercise to This Workout")}</h2></div>${svg("add", "small-icon")}</div>${available.length ? `<select id="quick-add">${available.map(ex => `<option value="${ex.id}">${escapeHtml(exerciseDisplayName(ex))}</option>`).join("")}</select><button class="button full" data-action="quick-add-exercise">${tx("Add to Workout", "Add to Workout")}</button>` : `<p class="muted">${tx("All saved exercises are already in this workout.", "All saved exercises are already in this workout.")}</p>`}</section>
     ${grouped.map(group => exerciseDetailCard(session, group, Boolean(garmin))).join("")}
     <button class="fab finish-fab" data-action="finish-workout" data-id="${session.id}">${svg("check", "small-icon")}${t("finishWorkout")}</button>`;
 }
@@ -2408,9 +2566,9 @@ function exerciseDetailCard(session, group, isGarminWorkout = false) {
     ? `${group.sets.length} ${tx("sets", "sets")} · ${group.sets.map(set => `${formatSetWeight(set.weight)} kg x ${set.reps}`).join(" · ")}`
     : tx("No sets", "No sets");
   const restTimer = isGarminWorkout ? "" : `<div class="timer-row"><div><strong>${tx("Exercise Rest", "Відпочинок")}</strong><span data-timer-display="${escapeAttr(key)}" aria-live="polite">${remaining > 0 ? formatTimer(remaining) : tx("Ready", "Готово")}</span></div><div class="actions"><button class="button ghost mini" data-action="timer" data-key="${escapeAttr(key)}" data-seconds="60">60s</button><button class="button ghost mini" data-action="timer" data-key="${escapeAttr(key)}" data-seconds="90">90s</button><button class="button ghost mini" data-action="timer" data-key="${escapeAttr(key)}" data-seconds="180">180s</button><button class="button ghost mini" data-action="timer-stop" data-timer-stop="${escapeAttr(key)}" data-key="${escapeAttr(key)}" ${remaining ? "" : "disabled"}>${tx("Stop", "Стоп")}</button></div></div>`;
-  return `<section class="panel highlighted workout-exercise-card"><details ${isGarminWorkout ? "" : "open"}><summary class="detail-summary"><div><h2>${escapeHtml(group.name)}</h2><p class="muted">${escapeHtml(setSummary)}</p></div>${isPr(session, group.name) ? `<span class="pill">${svg("trophy", "small-icon")}${tx("New PR", "New PR")}</span>` : ""}</summary>
-    ${exerciseDetailBodyMap(group.name, "collapsed")}
-    ${!isGarminWorkout ? exerciseDetailBodyMap(group.name, "expanded") : ""}
+  return `<section class="panel highlighted workout-exercise-card"><details ${isGarminWorkout ? "" : "open"}><summary class="detail-summary"><div><h2>${escapeHtml(exerciseDisplayName(group))}</h2><p class="muted">${escapeHtml(setSummary)}</p></div>${isPr(session, group) ? `<span class="pill">${svg("trophy", "small-icon")}${tx("New PR", "New PR")}</span>` : ""}</summary>
+    ${exerciseDetailBodyMap(group, "collapsed")}
+    ${!isGarminWorkout ? exerciseDetailBodyMap(group, "expanded") : ""}
     ${group.sets.length ? `${restTimer}<div class="table"><div class="table-head"><span>${tx("Set", "Set")}</span><span>${tx("Weight (kg)", "Weight (kg)")}</span><span>${tx("Reps", "Reps")}</span><span></span></div>${group.sets.map((set, i) => `<div class="table-row"><span>${tx("Set", "Set")} ${i + 1}</span><span>${Number(set.weight).toFixed(1)}</span><span>${set.reps}</span><span><button class="icon-button" data-action="edit-set" data-id="${set.id}">${svg("edit")}</button><button class="icon-button" data-action="delete-set" data-id="${set.id}">${svg("delete")}</button></span></div>`).join("")}</div>` : `<div class="empty">${tx("No sets were imported for this exercise.", "No sets were imported for this exercise.")}</div>`}
     <button class="button ghost full" data-action="detail-add-set" data-session="${session.id}" data-name="${escapeAttr(group.name)}">${t("addSet")}</button>
   </details></section>`;
@@ -2422,9 +2580,9 @@ function formatSetWeight(weight) {
   return value % 1 === 0 ? String(value.toFixed(0)) : value.toFixed(1);
 }
 
-function isPr(session, name) {
-  const previous = allSets(state.sessions.filter(s => s.startedAt < session.startedAt)).filter(s => s.exerciseName === name).map(s => s.weight);
-  const current = session.sets.filter(s => s.exerciseName === name).map(s => s.weight);
+function isPr(session, exercise) {
+  const previous = allSets(state.sessions.filter(s => s.startedAt < session.startedAt)).filter(set => exercisesMatch(set, exercise)).map(set => set.weight);
+  const current = session.sets.filter(set => exercisesMatch(set, exercise)).map(set => set.weight);
   return current.length && Math.max(...current) > Math.max(0, ...previous);
 }
 
@@ -2436,17 +2594,17 @@ function summaryScreen(id) {
   const xpGain = xpForSessions([session]);
   const xpTotal = totalXp();
   const progress = levelProgress(xpTotal);
-  const records = [...new Set(session.sets.map(s => s.exerciseName))].map(name => {
-    const prev = Math.max(0, ...allSets(before).filter(s => s.exerciseName === name).map(s => s.weight));
-    const now = Math.max(0, ...session.sets.filter(s => s.exerciseName === name).map(s => s.weight));
-    return now > prev ? { name, prev, now } : null;
+  const records = exerciseReferencesForSession(session).map(exercise => {
+    const prev = Math.max(0, ...allSets(before).filter(set => exercisesMatch(set, exercise)).map(set => set.weight));
+    const now = Math.max(0, ...session.sets.filter(set => exercisesMatch(set, exercise)).map(set => set.weight));
+    return now > prev ? { ...exercise, prev, now } : null;
   }).filter(Boolean);
   const mStats = muscleStats([session]).filter(m => m.load > 0).sort((a, b) => b.load - a.load);
   const rewards = summaryRewards(session, records);
   return `<section class="hero-panel summary-hero"><h2>${t("workoutComplete")}</h2><p>${fmtDate(session.startedAt)}</p><div class="hero-info-row"><span class="hero-info-pill">+${xpGain} XP</span><span class="hero-info-pill">${tx("Level", "Рівень")} ${levelFromXp(xpTotal)}</span></div></section>
     <section class="metric-grid post summary-metrics"><div><span>${tx("XP gained", "Отримано XP")}</span><strong>+${xpGain} XP</strong></div><div><span>${tx("Current title", "Поточний ранг")}</span><strong>${rankTitle(xpTotal)}</strong></div><div><span>${tx("Streak", "Серія")}</span><strong>${streakDays()} ${tx("d", "д")}</strong></div><div><span>${tx("Exercises", "Вправи")}</span><strong>${summary.exercises}</strong></div><div><span>${tx("Sets", "Підходи")}</span><strong>${summary.sets}</strong></div><div><span>${tx("Volume", "Обсяг")}</span><strong>${Math.round(summary.volume)}</strong></div></section>
     <section class="panel ${mStats.length ? "highlighted" : ""}"><h2>${t("impact")}</h2><p class="muted">${mStats[0] ? `${tx("Most loaded today", "Найбільше навантажено сьогодні")}: ${mStats[0].label}` : tx("Mapped muscle load will appear after sets are saved.", "Навантаження м'язів з'явиться після збереження підходів.")}</p>${mStats.slice(0, 5).map(m => barRow(m.label, m.load, mStats[0]?.load || 1, `${Math.round(m.load)} ${tx("load", "навантаження")} - ${n(m.sets, "set", "sets", "підхід", "підходи", "підходів")}`)).join("")}</section>
-    ${records.length ? `<section class="panel highlighted"><h2>${t("personalRecords")}</h2>${records.map(r => `<div class="row-line"><div><strong>${escapeHtml(r.name)}</strong><p>${r.prev ? `${tx("Previous best", "Попередній рекорд")} ${r.prev.toFixed(1)} kg` : tx("First logged best", "Перший зафіксований рекорд")}</p></div><span class="pill">${r.now.toFixed(1)} kg</span></div>`).join("")}</section>` : ""}
+    ${records.length ? `<section class="panel highlighted"><h2>${t("personalRecords")}</h2>${records.map(r => `<div class="row-line"><div><strong>${escapeHtml(exerciseDisplayName(r))}</strong><p>${r.prev ? `${tx("Previous best", "Попередній рекорд")} ${r.prev.toFixed(1)} kg` : tx("First logged best", "Перший зафіксований рекорд")}</p></div><span class="pill">${r.now.toFixed(1)} kg</span></div>`).join("")}</section>` : ""}
     <section class="panel"><h2>${t("levelProgress")}</h2><p>${tx("Level", "Рівень")} ${levelFromXp(xpTotal)} - ${rankTitle(xpTotal)}</p><div class="progress"><span style="width:${progress.progressFraction * 100}%"></span></div><div class="row-line"><span>${progress.currentLevelXp} XP ${tx("into this level", "у цьому рівні")}</span><strong>${progress.xpForNextLevel - progress.currentLevelXp} XP ${tx("to next", "до наступного")}</strong></div></section>
     <section class="panel"><h2>${t("momentum")}</h2><p>${streakDays() > 1 ? `${tx("Streak extended to", "Серію продовжено до")} ${streakDays()} ${tx("days.", "днів.")}` : tx("A fresh streak has started.", "Нова серія почалася.")}</p><div class="chip-row"><span class="chip">${tx("Logged today", "Записано сьогодні")}</span><span class="chip">${tx("Best", "Найкраще")} ${streakDays()} ${tx("d", "д")}</span></div></section>
     ${summaryRewardsSection(rewards)}
@@ -2594,7 +2752,7 @@ async function remoteLogin(createAccount) {
     clearAuthDrafts();
     const cloudState = await loadRemoteState(session);
     state = cloudState ? normalizeImportedState(cloudState, defaultAppState()) : defaultAppState();
-    saveState();
+    saveState({ queueRemote: !cloudState });
     nav = [{ name: "workouts" }];
     replaceNavigationHistory();
     modal = null;
@@ -2733,12 +2891,12 @@ function exercisesScreen() {
 function exerciseMappingsPanel(exercises) {
   return `<section class="material-card mappings-card"><h2>${tx("Exercise mapping", "Мапінг вправ")}</h2>${exercises.map(exercise => {
     const labels = mappingFor(exercise.name).map(muscleLabel).join(", ") || tx("Not mapped", "Не зіставлено");
-    return `<div class="row-line mapping-row"><span>${escapeHtml(exercise.name)}<small>${escapeHtml(labels)}</small></span><button class="button secondary mini" data-action="map-exercise" data-name="${escapeAttr(exercise.name)}">${tx("Map", "Мапити")}</button></div>`;
+    return `<div class="row-line mapping-row"><span>${escapeHtml(exerciseDisplayName(exercise))}<small>${escapeHtml(labels)}</small></span><button class="button secondary mini" data-action="map-exercise" data-name="${escapeAttr(exercise.name)}">${tx("Map", "Мапити")}</button></div>`;
   }).join("")}</section>`;
 }
 
 function exerciseRow(exercise) {
-  return `<article class="exercise-row clickable" data-action="exercise-history" data-id="${exercise.id}"><span class="exercise-name">${escapeHtml(exercise.name)}</span><div class="actions"><button class="icon-button" data-action="rename-exercise" data-id="${exercise.id}" aria-label="${tx("Rename exercise", "Перейменувати вправу")}">${svg("edit")}</button><button class="icon-button" data-action="delete-exercise" data-id="${exercise.id}" aria-label="${tx("Delete exercise", "Видалити вправу")}">${svg("delete")}</button></div></article>`;
+  return `<article class="exercise-row clickable" data-action="exercise-history" data-id="${exercise.id}"><span class="exercise-name">${escapeHtml(exerciseDisplayName(exercise))}</span><div class="actions"><button class="icon-button" data-action="rename-exercise" data-id="${exercise.id}" aria-label="${tx("Rename exercise", "Перейменувати вправу")}">${svg("edit")}</button><button class="icon-button" data-action="delete-exercise" data-id="${exercise.id}" aria-label="${tx("Delete exercise", "Видалити вправу")}">${svg("delete")}</button></div></article>`;
 }
 
 function progressScreen() {
@@ -2749,18 +2907,18 @@ function progressScreen() {
     <section class="hero-panel progress-spotlight"><h2>${tx("No exercise data yet", "Ще немає даних вправи")}</h2><p>${tx("Pick an exercise to see solo progress.", "Обери вправу, щоб побачити свій прогрес.")}</p></section>
     <section class="panel highlighted trend-panel"><h2>${tx("Visual Trends", "Візуальні тренди")}</h2><p class="muted">${tx("Maximum weight and session volume over time.", "Максимальна вага та обсяг тренування з часом.")}</p><div class="empty">${tx("Add sets to see chart.", "Додай підходи, щоб побачити графік.")}</div></section>
     <section class="material-card"><div class="empty">${tx("No exercises yet.", "Вправ ще немає.")}</div></section>`;
-  const history = allSets(selectedMonthSessions()).filter(set => set.exerciseName === selected.name).sort((a, b) => b.session.startedAt - a.session.startedAt);
+  const history = allSets(selectedMonthSessions()).filter(set => exercisesMatch(set, selected)).sort((a, b) => b.session.startedAt - a.session.startedAt);
   const grouped = progressHistoryGroups(history);
   const best = Math.max(0, ...history.map(s => safeChartValue(s.weight)));
-  const allTimeBest = Math.max(0, ...allSets().filter(set => set.exerciseName === selected.name).map(set => safeChartValue(set.weight)));
+  const allTimeBest = Math.max(0, ...allSets().filter(set => exercisesMatch(set, selected)).map(set => safeChartValue(set.weight)));
   const avg = grouped.length ? grouped.reduce((sum, g) => sum + Math.max(0, ...g.sets.map(s => safeChartValue(s.weight))), 0) / grouped.length : 0;
   const vol = history.reduce((sum, s) => sum + safeChartValue(s.weight) * safeChartValue(s.reps), 0);
   const reps = history.reduce((sum, x) => sum + safeChartValue(x.reps), 0);
-  const hasMuscleMapping = contributionFor(selected.name).some(item => muscles.some(([id]) => id === item.muscleId));
-  return `${monthSwitcher()}<div class="progress-selector"><label for="progress-select">${tx("Exercise", "Вправа")}</label><select id="progress-select" data-action="progress-select">${state.exercises.map(ex => `<option value="${ex.id}" ${Number(ex.id) === selectedId ? "selected" : ""}>${escapeHtml(ex.name)}</option>`).join("")}</select></div>
-    ${hasMuscleMapping ? exerciseMuscleMapCard(selected.name, true) : ""}
+  const hasMuscleMapping = contributionFor(selected).some(item => muscles.some(([id]) => id === item.muscleId));
+  return `${monthSwitcher()}<div class="progress-selector"><label for="progress-select">${tx("Exercise", "Вправа")}</label><select id="progress-select" data-action="progress-select">${state.exercises.map(ex => `<option value="${ex.id}" ${Number(ex.id) === selectedId ? "selected" : ""}>${escapeHtml(exerciseDisplayName(ex))}</option>`).join("")}</select></div>
+    ${hasMuscleMapping ? exerciseMuscleMapCard(selected, true) : ""}
     <section class="material-card progress-summary"><h2>${tx("Progress Summary", "Підсумок прогресу")}</h2><p class="muted">${tx("Volume = weight x reps across all completed sets.", "Обсяг = вага x повтори по всіх завершених підходах.")}</p><div class="metric-grid three"><div><span>${tx("Sessions", "Сесії")}</span><strong>${grouped.length}</strong></div><div><span>${tx("Total Sets", "Усього підходів")}</span><strong>${history.length}</strong></div><div><span>${tx("Total Reps", "Усього повторів")}</span><strong>${reps}</strong></div><div><span>${tx("Best Weight", "Найкраща вага")}</span><strong>${history.length ? `${best.toFixed(1)} kg` : tx("No data", "Немає даних")}</strong></div><div><span>${tx("Average Max", "Середній максимум")}</span><strong>${history.length ? `${avg.toFixed(1)} kg` : tx("No data", "Немає даних")}</strong></div><div><span>${tx("Total Volume", "Загальний обсяг")}</span><strong>${Math.round(vol)}</strong></div></div></section>
-    <section class="hero-panel progress-spotlight">${spotlight(selected.name, grouped, allTimeBest)}</section>
+    <section class="hero-panel progress-spotlight">${spotlight(selected, grouped, allTimeBest)}</section>
     ${exerciseTrendCharts(grouped, best)}
     <section class="workout-list"><h2>${tx("Workout History", "Історія тренувань")}</h2>${grouped.length ? grouped.map(g => progressHistoryCard(g)).join("") : `<div class="empty">${tx("No history in this month.", "Немає історії за цей місяць.")}</div>`}</section>`;
 }
@@ -2789,16 +2947,17 @@ function groupedExerciseHistory(groups) {
     return `${headers}${progressHistoryCard(group)}`;
   }).join("");
 }
-function spotlight(name, grouped, allTimeBest) {
+function spotlight(exercise, grouped, allTimeBest) {
+  const displayName = exerciseDisplayName(exercise);
   const points = progressChartPoints(grouped);
   if (!points.length) {
-    return `<h2>${escapeHtml(name)}</h2><p>${escapeHtml(tx(`Log sets for ${name} to unlock trends.`, `Додай підходи для ${name}, щоб відкрити тренди.`))}</p>`;
+    return `<h2>${escapeHtml(displayName)}</h2><p>${escapeHtml(tx(`Log sets for ${displayName} to unlock trends.`, `Додай підходи для ${displayName}, щоб відкрити тренди.`))}</p>`;
   }
   const latest = points.at(-1) || { maxWeight: 0, volume: 0 };
   const previous = points.at(-2);
   const weightDelta = progressDeltaLabel(latest.maxWeight, previous?.maxWeight, tx("kg", "кг"));
   const volumeDelta = progressDeltaLabel(latest.volume, previous?.volume, tx("volume", "обсягу"));
-  return `<h2>${escapeHtml(name)}</h2><p>${tx("Your latest result and the direction of recent sessions.", "Останній результат і напрямок недавніх тренувань.")}</p>
+  return `<h2>${escapeHtml(displayName)}</h2><p>${tx("Your latest result and the direction of recent sessions.", "Останній результат і напрямок недавніх тренувань.")}</p>
     <div class="metric-grid"><div><span>${tx("Latest max", "Останній макс")}</span><strong>${formatSetWeight(latest.maxWeight)} kg</strong></div><div><span>${tx("Latest volume", "Останній обсяг")}</span><strong>${Math.round(latest.volume)}</strong></div></div>
     <div class="spotlight-deltas"><span class="hero-info-pill">${escapeHtml(weightDelta)}</span>${volumeDelta !== weightDelta ? `<span class="hero-info-pill">${escapeHtml(volumeDelta)}</span>` : ""}</div>
     <div class="metric-grid"><div><span>${tx("All-time best", "Найкраще за весь час")}</span><strong>PR ${formatSetWeight(allTimeBest)} kg</strong></div><div><span>${tx("Consistency", "Стабільність")}</span><strong>${grouped.length} ${tx("this month", "цього місяця")}</strong></div></div>`;
@@ -3254,7 +3413,7 @@ function modalMarkup() {
   if (modal.type === "template") return bottomSheet(`<h2>${t("templatePicker")}</h2>${state.sessions.length ? [...state.sessions].sort((a, b) => b.startedAt - a.startedAt).map(session => `<article class="workout-item"><h3>${fmtDate(session.startedAt)}</h3><p>${sessionSummary(session).exercises} ${tx("exercises", "вправ")} - ${sessionSummary(session).sets} ${tx("sets", "підходів")} - ${Math.round(sessionSummary(session).volume)} ${tx("volume", "обсяг")}</p><button class="button full" data-action="copy-template" data-id="${session.id}">${t("copyWorkout")}</button></article>`).join("") : `<p>${tx("No previous workouts yet.", "Попередніх тренувань ще немає.")}</p>`}`);
   if (modal.type === "import") return bottomSheet(`<h2>${tx("Import backup", "Імпорт бекапу")}</h2><textarea id="import-json" placeholder="${tx("Paste exported GymApp JSON here", "Встав сюди експортований JSON GymApp")}"></textarea><button class="button full" data-action="apply-import">${tx("Import", "Імпорт")}</button>`);
   if (modal.type === "backup-json") return bottomSheet(`<h2>${tx("Backup JSON ready", "JSON бекапу готовий")}</h2><textarea readonly>${escapeHtml(modal.json)}</textarea><div class="actions"><button class="button" data-action="copy-json">${tx("Copy JSON", "Копіювати JSON")}</button><button class="button ghost" data-action="download-json">${tx("Download", "Завантажити")}</button></div><button class="button ghost full" data-action="pdf-report">${t("sharePdf")}</button>`);
-  if (modal.type === "rename") return bottomSheet(`<h2>${t("rename")}</h2><input id="rename-name" maxlength="120" value="${escapeAttr(modal.exercise.name)}"><button class="button full" data-action="apply-rename" data-id="${modal.exercise.id}">${tx("Save", "Зберегти")}</button>`);
+  if (modal.type === "rename") return bottomSheet(`<h2>${t("rename")}</h2><input id="rename-name" maxlength="120" value="${escapeAttr(exerciseDisplayName(modal.exercise))}"><button class="button full" data-action="apply-rename" data-id="${modal.exercise.id}">${tx("Save", "Зберегти")}</button>`);
   if (modal.type === "history") return bottomSheet(exerciseHistoryMarkup(modal.exercise));
   if (modal.type === "map") return bottomSheet(mappingEditor(modal.name));
   if (modal.type === "edit-set") return bottomSheet(`<h2>${tx("Edit Set", "Редагувати підхід")}</h2><label>${tx("Weight (kg)", "Вага (кг)")}<input id="edit-weight" value="${modal.set.weight || ""}" inputmode="decimal"></label><label>${tx("Reps", "Повтори")}<input id="edit-reps" value="${modal.set.reps || ""}" inputmode="numeric"></label><button class="button full" data-action="apply-edit-set" data-id="${modal.set.id}">${tx("Save", "Зберегти")}</button>`);
@@ -3266,15 +3425,15 @@ function bottomSheet(content) {
 }
 
 function exerciseHistoryMarkup(exercise) {
-  const history = allSets().filter(set => set.exerciseName === exercise.name).sort((a, b) => b.session.startedAt - a.session.startedAt);
+  const history = allSets().filter(set => exercisesMatch(set, exercise)).sort((a, b) => b.session.startedAt - a.session.startedAt);
   const groups = progressHistoryGroups(history);
   const total = history.reduce((s, x) => s + Number(x.weight || 0) * Number(x.reps || 0), 0);
-  return `<h2>${escapeHtml(exercise.name)}</h2><div class="metric-grid three"><div><span>${tx("Sessions", "Сесії")}</span><strong>${groups.length}</strong></div><div><span>${tx("Sets", "Підходи")}</span><strong>${history.length}</strong></div><div><span>${tx("Volume", "Обсяг")}</span><strong>${Math.round(total)}</strong></div></div>${exerciseMuscleMapCard(exercise.name)}${groups.length ? groupedExerciseHistory(groups) : `<div class="empty">${tx("No history for this exercise yet.", "Історії для цієї вправи ще немає.")}</div>`}`;
+  return `<h2>${escapeHtml(exerciseDisplayName(exercise))}</h2><div class="metric-grid three"><div><span>${tx("Sessions", "Сесії")}</span><strong>${groups.length}</strong></div><div><span>${tx("Sets", "Підходи")}</span><strong>${history.length}</strong></div><div><span>${tx("Volume", "Обсяг")}</span><strong>${Math.round(total)}</strong></div></div>${exerciseMuscleMapCard(exercise)}${groups.length ? groupedExerciseHistory(groups) : `<div class="empty">${tx("No history for this exercise yet.", "Історії для цієї вправи ще немає.")}</div>`}`;
 }
 
 function mappingEditor(name) {
   const current = new Set(mappingFor(name));
-  return `<h2>${tx("Map", "Мапінг")} "${escapeHtml(name)}"</h2><div class="mapping-grid">${muscles.map(([id]) => `<button class="chip buttonlike ${current.has(id) ? "selected" : ""}" data-action="toggle-map" data-id="${id}">${muscleLabel(id)}</button>`).join("")}</div><button class="button full" data-action="save-map" data-name="${escapeAttr(name)}">${tx("Save", "Зберегти")}</button>`;
+  return `<h2>${tx("Map", "Мапінг")} "${escapeHtml(exerciseDisplayName(name))}"</h2><div class="mapping-grid">${muscles.map(([id]) => `<button class="chip buttonlike ${current.has(id) ? "selected" : ""}" data-action="toggle-map" data-id="${id}">${muscleLabel(id)}</button>`).join("")}</div><button class="button full" data-action="save-map" data-name="${escapeAttr(name)}">${tx("Save", "Зберегти")}</button>`;
 }
 
 function bindEvents() {
@@ -3416,8 +3575,15 @@ function handleAction(action, el) {
 function updateDraftInput(input) {
   const block = workoutDraft?.blocks[Number(input.dataset.block)];
   if (!block) return;
-  if (input.dataset.set === undefined) block[input.dataset.field] = input.value;
-  else block.sets[Number(input.dataset.set)][input.dataset.field] = input.value;
+  if (input.dataset.set === undefined) {
+    block[input.dataset.field] = input.value;
+    if (input.dataset.field === "exerciseName") {
+      const selected = state.exercises.find(exercise => exercise.name === input.value);
+      const catalogKey = persistedExerciseCatalogKey(selected);
+      if (catalogKey) block.catalogKey = catalogKey;
+      else delete block.catalogKey;
+    }
+  } else block.sets[Number(input.dataset.set)][input.dataset.field] = input.value;
 }
 
 function updateProfile(el) {
@@ -3745,11 +3911,21 @@ function saveWorkout() {
   draft.blocks.forEach(block => {
     const exerciseName = block.exerciseName.trim();
     if (!exerciseName) return;
-    ensureExercise(exerciseName);
+    const requestedExercise = { name: exerciseName, ...(persistedExerciseCatalogKey(block) ? { catalogKey: persistedExerciseCatalogKey(block) } : {}) };
+    const storedExercise = ensureExercise(requestedExercise);
+    const storedName = storedExercise?.name || canonicalExerciseName(exerciseName);
+    const catalogKey = persistedExerciseCatalogKey(storedExercise);
     block.sets.forEach((set, index) => {
       const weight = Number(String(set.weight).replace(",", "."));
       const reps = Number.parseInt(set.reps, 10);
-      if (Number.isFinite(weight) && weight >= 0 && reps > 0) sets.push({ id: uid(), exerciseName, weight, reps, orderIndex: index });
+      if (Number.isFinite(weight) && weight >= 0 && reps > 0) sets.push({
+        id: uid(),
+        exerciseName: storedName,
+        ...(catalogKey ? { catalogKey } : {}),
+        weight,
+        reps,
+        orderIndex: index
+      });
     });
   });
   if (!sets.length) return showToast(tx("Please fill all selected exercises and sets.", "Заповни всі вибрані вправи й підходи."));
@@ -3768,7 +3944,8 @@ function quickAddExercise() {
   const session = state.sessions.find(s => s.id === route().id);
   const ex = state.exercises.find(e => e.id === Number(document.querySelector("#quick-add")?.value));
   if (!session || !ex) return;
-  session.sets.push({ id: uid(), exerciseName: ex.name, weight: 0, reps: 8, orderIndex: 0 });
+  const catalogKey = persistedExerciseCatalogKey(ex);
+  session.sets.push({ id: uid(), exerciseName: ex.name, ...(catalogKey ? { catalogKey } : {}), weight: 0, reps: 8, orderIndex: 0 });
   saveState();
   render();
 }
@@ -3777,7 +3954,9 @@ function detailAddSet(sessionId, name) {
   const session = state.sessions.find(s => s.id === sessionId);
   if (!session) return;
   const last = session.sets.filter(s => s.exerciseName === name).at(-1) || allSets().filter(s => s.exerciseName === name).at(-1);
-  session.sets.push({ id: uid(), exerciseName: name, weight: last?.weight || 0, reps: last?.reps || 8, orderIndex: session.sets.filter(s => s.exerciseName === name).length });
+  const exercise = last || state.exercises.find(item => item.name === name);
+  const catalogKey = persistedExerciseCatalogKey(exercise);
+  session.sets.push({ id: uid(), exerciseName: name, ...(catalogKey ? { catalogKey } : {}), weight: last?.weight || 0, reps: last?.reps || 8, orderIndex: session.sets.filter(s => s.exerciseName === name).length });
   state.timers ||= {};
   state.timers[`${sessionId}:${name}`] = Date.now() + 90000;
   saveState();
@@ -3846,22 +4025,62 @@ function saveExercise() {
 }
 
 function ensureExercise(name) {
-  if (!state.exercises.some(e => e.name.toLowerCase() === name.toLowerCase())) {
-    state.exercises.push({ id: uid(), name });
-    state.exercises.sort((a, b) => a.name.localeCompare(b.name));
+  const rawName = exerciseRawName(name);
+  const requestedCatalogKey = persistedExerciseCatalogKey(name);
+  const keyedMatch = requestedCatalogKey ? state.exercises.find(exercise => exercisesMatch(exercise, name)) : null;
+  if (keyedMatch) return keyedMatch;
+  const exact = state.exercises.find(exercise => normalizeExerciseKey(exercise.name) === normalizeExerciseKey(rawName));
+  if (exact) return exact;
+  const catalogKey = requestedCatalogKey || exerciseCatalogKey(rawName);
+  if (catalogKey) {
+    const catalogMatch = state.exercises.find(exercise => exerciseCatalogKey(exercise) === catalogKey);
+    if (catalogMatch) return catalogMatch;
   }
+  const canonicalName = requestedCatalogKey ? rawName : catalogKey ? builtInExerciseByKey.get(catalogKey).names.en : rawName;
+  const candidate = { name: canonicalName, ...(catalogKey ? { catalogKey } : {}) };
+  const existing = state.exercises.find(exercise => exercisesMatch(exercise, candidate));
+  if (existing) return existing;
+  const created = { id: uid(), ...candidate };
+  state.exercises.push(created);
+  state.exercises.sort((left, right) => exerciseDisplayName(left).localeCompare(exerciseDisplayName(right), state.language));
+  return created;
 }
 
 function applyRename(id) {
   const exercise = state.exercises.find(ex => ex.id === id);
-  const next = document.querySelector("#rename-name")?.value.trim();
-  if (!exercise || !next) return;
-  if (next.length > 120) return showToast(tx("Exercise name is too long.", "Назва вправи надто довга."));
+  const submittedName = document.querySelector("#rename-name")?.value.trim();
+  if (!exercise || !submittedName) return;
+  if (submittedName.length > 120) return showToast(tx("Exercise name is too long.", "Назва вправи надто довга."));
   const old = exercise.name;
-  exercise.name = next;
-  state.sessions.forEach(session => session.sets.forEach(set => { if (set.exerciseName === old) set.exerciseName = next; }));
-  state.mappings[next.toLowerCase()] = state.mappings[old.toLowerCase()] || [];
-  delete state.mappings[old.toLowerCase()];
+  const oldReference = { name: old, ...(persistedExerciseCatalogKey(exercise) ? { catalogKey: persistedExerciseCatalogKey(exercise) } : {}) };
+  const unchangedLocalizedValue = submittedName === exerciseDisplayName(exercise);
+  if (unchangedLocalizedValue) {
+    modal = null;
+    render();
+    return;
+  }
+  const nextCatalogKey = exerciseCatalogKey(submittedName);
+  const nextName = nextCatalogKey ? builtInExerciseByKey.get(nextCatalogKey).names.en : submittedName;
+  const candidate = { name: nextName, ...(nextCatalogKey ? { catalogKey: nextCatalogKey } : {}) };
+  const duplicate = state.exercises.some(item => item.id !== id && (
+    exercisesMatch(item, candidate) ||
+    normalizeExerciseKey(item.name) === normalizeExerciseKey(nextName) ||
+    (nextCatalogKey && exerciseCatalogKey(item) === nextCatalogKey)
+  ));
+  if (duplicate) return showToast(tx("An exercise with this name already exists.", "Вправа з такою назвою вже існує."));
+  exercise.name = nextName;
+  if (nextCatalogKey) exercise.catalogKey = nextCatalogKey;
+  else delete exercise.catalogKey;
+  state.sessions.forEach(session => session.sets.forEach(set => {
+    if (!exercisesMatch(set, oldReference)) return;
+    set.exerciseName = nextName;
+    if (nextCatalogKey) set.catalogKey = nextCatalogKey;
+    else delete set.catalogKey;
+  }));
+  const oldMappingKey = normalizeExerciseName(old);
+  const nextMappingKey = normalizeExerciseName(nextName);
+  state.mappings[nextMappingKey] = state.mappings[oldMappingKey] || state.mappings[nextMappingKey] || [];
+  if (oldMappingKey !== nextMappingKey) delete state.mappings[oldMappingKey];
   saveState();
   modal = null;
   render();
@@ -3870,7 +4089,7 @@ function applyRename(id) {
 function deleteExercise(id) {
   const exercise = state.exercises.find(ex => ex.id === id);
   if (!exercise) return;
-  if (state.sessions.some(session => session.sets.some(set => set.exerciseName === exercise.name))) return showToast("Exercise is used in workouts.");
+  if (state.sessions.some(session => session.sets.some(set => exercisesMatch(set, exercise)))) return showToast("Exercise is used in workouts.");
   state.exercises = state.exercises.filter(ex => ex.id !== id);
   saveState();
   render();
@@ -3882,6 +4101,35 @@ function saveMapping(name) {
   saveState();
   modal = null;
   render();
+}
+
+function exportSessionExercises(session) {
+  const groups = [];
+  const byIdentity = new Map();
+  const rawNamesWithSets = new Set();
+  (session.sets || []).forEach(set => {
+    const name = exerciseRawName(set);
+    if (!name) return;
+    rawNamesWithSets.add(normalizeExerciseKey(name));
+    const identity = exerciseMatchKey(set);
+    let group = byIdentity.get(identity);
+    if (!group) {
+      const catalogKey = persistedExerciseCatalogKey(set);
+      group = { name, ...(catalogKey ? { catalogKey } : {}), sets: [] };
+      byIdentity.set(identity, group);
+      groups.push(group);
+    }
+    group.sets.push(set);
+  });
+  (session.exerciseNames || []).forEach(rawName => {
+    const name = exerciseRawName(rawName);
+    const identity = exerciseMatchKey(name);
+    if (!name || rawNamesWithSets.has(normalizeExerciseKey(name)) || byIdentity.has(identity)) return;
+    const group = { name, sets: [] };
+    byIdentity.set(identity, group);
+    groups.push(group);
+  });
+  return groups;
 }
 
 function exportPayload(diagnostics) {
@@ -3901,7 +4149,7 @@ function exportPayload(diagnostics) {
       date: session.startedAt,
       startedAt: session.startedAt,
       note: session.note,
-      exercises: [...new Set(session.sets.map(s => s.exerciseName))].map(name => ({ name, sets: session.sets.filter(s => s.exerciseName === name) })),
+      exercises: exportSessionExercises(session),
       sets: session.sets
     })),
     exerciseCatalog: state.exercises.map(ex => ex.name),

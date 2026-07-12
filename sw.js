@@ -1,5 +1,5 @@
 const CACHE_PREFIX = "gym-pwa-";
-const CACHE_NAME = `${CACHE_PREFIX}v37`;
+const CACHE_NAME = `${CACHE_PREFIX}v41`;
 const ASSETS = [
   "./",
   "./index.html",
@@ -10,6 +10,7 @@ const ASSETS = [
   "./muscle-regions.js",
   "./supabase-config.js",
   "./garmin-cloud-sync.js",
+  "./progression-rules.js",
   "./app.js",
   "./manifest.webmanifest",
   "./icon.svg"
