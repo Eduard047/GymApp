@@ -1,6 +1,7 @@
 ﻿# Gym Workout Tracker
 
-Android Gym Workout Tracker built with Kotlin, Jetpack Compose, MVVM, Room, Coroutines/Flow, and Navigation Compose.
+Cross-platform Gym Workout Tracker with native Android and iOS applications,
+plus Garmin, Wear OS, and browser companions.
 
 ## Public URLs
 
@@ -8,8 +9,8 @@ Android Gym Workout Tracker built with Kotlin, Jetpack Compose, MVVM, Room, Coro
 - Support: https://gymapptracker.com/support.html
 - Privacy policy: https://gymapptracker.com/privacy-policy.html
 
-GitHub Releases remain the distribution source for downloadable Android and
-Garmin artifacts.
+GitHub Releases remain the distribution source for downloadable Android, iOS
+Simulator, and Garmin test artifacts.
 
 ## Current Feature Set
 
@@ -20,6 +21,13 @@ Garmin artifacts.
 - Repeat the latest workout as a quick template.
 - Post-workout summary with XP gained, level progress, loaded muscle groups, top muscle of the day, and new PRs.
 - Activity heatmap, rank/achievement progression, missions, and recent workout history.
+
+### Native iOS app
+
+- SwiftUI application in `ios/GymApp-iOS` with the same Supabase account and workout data.
+- Password recovery, cloud sync, canonical XP/rank rules, muscle maps, activity heatmap, missions, and leaderboards.
+- App Store privacy manifest, localized metadata, support/privacy pages, release validation, and archive scripts.
+- Current public binary is a universal iOS Simulator build; a signed App Store IPA still requires Apple Distribution signing.
 
 ### Muscle Map
 
@@ -69,11 +77,11 @@ Important: PDF is for reading and sharing only. JSON is the source of truth for 
   <a href="https://github.com/Eduard047/GymApp/releases">
     <img alt="Releases" src="https://img.shields.io/badge/Open-Releases-181717?style=for-the-badge&logo=github&logoColor=white">
   </a>
-  <a href="https://github.com/Eduard047/GymApp/releases/download/debug-2026.07.05.1225/gymapp-phone-debug.apk">
+  <a href="https://github.com/Eduard047/GymApp/releases/download/debug-2026.07.12.0901/gymapp-phone-debug.apk">
     <img alt="Download Phone APK" src="https://img.shields.io/badge/Download-Phone%20APK-34A853?style=for-the-badge&logo=android&logoColor=white">
   </a>
-  <a href="https://github.com/Eduard047/GymApp/releases/download/debug-2026.07.05.1225/gymapp-watch-debug.apk">
-    <img alt="Download Watch APK" src="https://img.shields.io/badge/Download-Watch%20APK-3D7DFF?style=for-the-badge&logo=wearos&logoColor=white">
+  <a href="https://github.com/Eduard047/GymApp/releases/download/debug-2026.07.12.0901/GymApp-iOS-1.0.0-build1-Simulator-universal.app.zip">
+    <img alt="Download iOS Simulator Build" src="https://img.shields.io/badge/Download-iOS%20Simulator-000000?style=for-the-badge&logo=apple&logoColor=white">
   </a>
 </p>
 
@@ -85,13 +93,12 @@ Important: PDF is for reading and sharing only. JSON is the source of truth for 
 
 - Releases page: https://github.com/Eduard047/GymApp/releases
 - Latest release: https://github.com/Eduard047/GymApp/releases/latest
-- Current store release tag: https://github.com/Eduard047/GymApp/releases/tag/release-2026.07.05.1225
-- Current Play AAB: https://github.com/Eduard047/GymApp/releases/download/release-2026.07.05.1225/gymapp-play-release.aab
-- Current Garmin IQ package: https://github.com/Eduard047/GymApp/releases/download/release-2026.07.05.1225/gymapp-fenix8solar47mm.iq
-- Current debug APK release tag: https://github.com/Eduard047/GymApp/releases/tag/debug-2026.07.05.1225
-- Current phone debug APK: https://github.com/Eduard047/GymApp/releases/download/debug-2026.07.05.1225/gymapp-phone-debug.apk
-- Current watch debug APK: https://github.com/Eduard047/GymApp/releases/download/debug-2026.07.05.1225/gymapp-watch-debug.apk
-- Current Garmin PRG: https://github.com/Eduard047/GymApp/releases/download/debug-2026.07.05.1225/gymapp-fenix8solar47mm.prg
+- Current store release tag: https://github.com/Eduard047/GymApp/releases/tag/release-2026.07.05.1238
+- Current Play AAB: https://github.com/Eduard047/GymApp/releases/download/release-2026.07.05.1238/gymapp-play-release.aab
+- Current cross-platform prerelease: https://github.com/Eduard047/GymApp/releases/tag/debug-2026.07.12.0901
+- Current phone debug APK: https://github.com/Eduard047/GymApp/releases/download/debug-2026.07.12.0901/gymapp-phone-debug.apk
+- Current iOS Simulator build: https://github.com/Eduard047/GymApp/releases/download/debug-2026.07.12.0901/GymApp-iOS-1.0.0-build1-Simulator-universal.app.zip
+- Current Garmin IQ package: https://github.com/Eduard047/GymApp/releases/download/debug-2026.07.12.0901/gymapp-fenix8solar47mm.iq
 
 When publishing a new phone build, upload the debug APK asset to the current release:
 
@@ -99,11 +106,15 @@ When publishing a new phone build, upload the debug APK asset to the current rel
 app/build/outputs/apk/debug/app-debug.apk
 ```
 
-When publishing a new watch build, upload the watch debug APK asset to the current release:
+For the native iOS source, open:
 
-```text
-wear/build/outputs/apk/debug/wear-debug.apk
+```sh
+open ios/GymApp-iOS/GymApp.xcodeproj
 ```
+
+The Garmin IQ attached to the cross-platform prerelease is byte-identical to
+the verified `release-2026.07.05.1238` asset because Garmin source did not
+change in this update.
 
 ## Build Update APK (preserve app data)
 
