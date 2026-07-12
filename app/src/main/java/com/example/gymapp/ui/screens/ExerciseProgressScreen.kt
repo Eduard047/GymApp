@@ -98,6 +98,7 @@ fun ExerciseProgressScreen(
             item {
                 MonthSwitcher(
                     monthLabel = uiState.monthLabel,
+                    isCurrentMonth = uiState.monthOffset == 0,
                     onPreviousMonth = onPreviousMonth,
                     onCurrentMonth = onCurrentMonth,
                     onNextMonth = onNextMonth,

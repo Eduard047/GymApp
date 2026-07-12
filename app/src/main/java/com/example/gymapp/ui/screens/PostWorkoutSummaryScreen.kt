@@ -469,9 +469,7 @@ private fun MomentumCard(uiState: PostWorkoutSummaryUiState) {
                 Text(
                     text = stringResource(
                         R.string.post_workout_comeback,
-                        uiState.comebackGapDays ?: 0,
-                        String.format(Locale.getDefault(), "%.2f", uiState.comebackMultiplier),
-                        uiState.comebackBonusXp
+                        uiState.comebackGapDays ?: 0
                     ),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.primary
@@ -517,7 +515,7 @@ private fun MissionCard(mission: CompletedMissionUiState) {
                 ) {
                     InfoPill(text = mission.cadence)
                     Text(
-                        text = stringResource(R.string.post_workout_xp_gain, mission.rewardXp),
+                        text = stringResource(R.string.post_workout_reward_points, mission.rewardXp),
                         style = MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.primary,
                         fontWeight = FontWeight.Bold
@@ -570,7 +568,7 @@ private fun BadgeCard(badge: NewBadgeUiState) {
                         accent = badge.rarity.color()
                     )
                     Text(
-                        text = stringResource(R.string.post_workout_xp_gain, badge.rewardXp),
+                        text = stringResource(R.string.post_workout_reward_points, badge.rewardXp),
                         style = MaterialTheme.typography.titleSmall,
                         color = badge.rarity.color(),
                         fontWeight = FontWeight.Bold

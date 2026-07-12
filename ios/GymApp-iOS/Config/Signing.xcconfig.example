@@ -1,0 +1,4 @@
+// Copy to Signing.xcconfig locally if you prefer xcconfig-based signing.
+// Never commit certificates, private keys, provisioning profiles, or API private keys.
+DEVELOPMENT_TEAM = YOUR_TEAM_ID
+PRODUCT_BUNDLE_IDENTIFIER = com.setforge.gymapp.ios

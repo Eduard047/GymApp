@@ -7,19 +7,30 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 
 @Composable
 fun AppPanel(
@@ -29,7 +40,7 @@ fun AppPanel(
     highlighted: Boolean = false,
     content: @Composable () -> Unit
 ) {
-    val shape = MaterialTheme.shapes.large
+    val shape = RoundedCornerShape(28.dp)
     val panelColor = if (highlighted) {
         containerColor.copy(alpha = 0.82f)
     } else {
@@ -43,6 +54,13 @@ fun AppPanel(
 
     Box(
         modifier = modifier
+            .shadow(
+                elevation = if (highlighted) 11.dp else 7.dp,
+                shape = shape,
+                clip = false,
+                ambientColor = Color.Black.copy(alpha = 0.13f),
+                spotColor = Color.Black.copy(alpha = 0.13f)
+            )
             .clip(shape)
             .background(panelColor, shape)
             .border(BorderStroke(1.dp, strokeColor), shape)
@@ -58,20 +76,39 @@ fun HeroPanel(
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit
 ) {
-    val shape = MaterialTheme.shapes.extraLarge
+    val darkTheme = isSystemInDarkTheme()
+    val shape = RoundedCornerShape(28.dp)
+    val leading = if (darkTheme) Color(0xFF132636) else Color(0xFF102A42)
+    val trailing = if (darkTheme) Color(0xFF214C40) else Color(0xFF35627E)
     Box(
         modifier = modifier
+            .shadow(
+                elevation = 12.dp,
+                shape = shape,
+                clip = false,
+                ambientColor = leading.copy(alpha = 0.24f),
+                spotColor = leading.copy(alpha = 0.24f)
+            )
             .clip(shape)
             .background(
-                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.72f),
+                brush = Brush.linearGradient(listOf(leading, trailing)),
                 shape = shape
             )
             .border(
-                BorderStroke(1.dp, MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.2f)),
+                BorderStroke(1.dp, Color.White.copy(alpha = 0.18f)),
                 shape
             )
     ) {
-        CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onPrimary) {
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .offset(x = 52.dp, y = (-70).dp)
+                .size(150.dp)
+                .blur(2.dp)
+                .background(Color.White.copy(alpha = 0.10f), CircleShape)
+        )
+
+        CompositionLocalProvider(LocalContentColor provides Color.White) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -122,49 +159,54 @@ fun MetricTile(
     emphasized: Boolean = false,
     onHero: Boolean = false
 ) {
-    val tileContainerColor = when {
-        onHero && emphasized -> MaterialTheme.colorScheme.primary
-        onHero -> MaterialTheme.colorScheme.primary
-        emphasized -> MaterialTheme.colorScheme.surfaceVariant
-        else -> MaterialTheme.colorScheme.surface
+    val shape = RoundedCornerShape(18.dp)
+    val tileContainerColor = if (onHero) {
+        Color.White.copy(alpha = 0.11f)
+    } else {
+        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (emphasized) 0.72f else 0.55f)
     }
     val tileContentColor = if (onHero) {
-        MaterialTheme.colorScheme.onPrimary
+        Color.White
     } else {
         MaterialTheme.colorScheme.onSurface
     }
     val labelColor = if (onHero) {
-        MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.78f)
+        Color.White.copy(alpha = 0.76f)
     } else {
         MaterialTheme.colorScheme.onSurfaceVariant
     }
+    val borderColor = if (onHero) {
+        Color.White.copy(alpha = 0.14f)
+    } else {
+        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
+    }
 
-    AppPanel(
-        modifier = modifier,
-        containerColor = tileContainerColor,
-        contentColor = tileContentColor,
-        highlighted = emphasized
+    Column(
+        modifier = modifier
+            .heightIn(min = 78.dp)
+            .clip(shape)
+            .background(tileContainerColor, shape)
+            .border(BorderStroke(1.dp, borderColor), shape)
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(5.dp)
     ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelLarge,
-                color = labelColor,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = value,
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                color = tileContentColor,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
+        Text(
+            text = label.uppercase(),
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 0.35.sp,
+            color = labelColor,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Text(
+            text = value,
+            style = if (emphasized) MaterialTheme.typography.titleLarge else MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = tileContentColor,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
@@ -176,16 +218,17 @@ fun InfoPill(
 ) {
     Surface(
         modifier = modifier,
-        color = accent.copy(alpha = 0.1f),
+        color = accent.copy(alpha = 0.12f),
         contentColor = accent,
-        shape = MaterialTheme.shapes.small,
-        border = BorderStroke(1.dp, accent.copy(alpha = 0.16f))
+        shape = CircleShape,
+        border = BorderStroke(1.dp, accent.copy(alpha = 0.22f))
     ) {
         Text(
             text = text,
-            style = MaterialTheme.typography.labelLarge,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-            maxLines = 1,
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp),
+            maxLines = 2,
             overflow = TextOverflow.Ellipsis
         )
     }

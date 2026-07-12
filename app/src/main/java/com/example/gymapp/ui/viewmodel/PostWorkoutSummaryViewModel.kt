@@ -69,7 +69,7 @@ data class PostWorkoutSummaryUiState(
     val levelTitle: String = "Rookie",
     val nextTitle: String? = null,
     val xpIntoLevel: Int = 0,
-    val xpToNextLevel: Int = 100,
+    val xpToNextLevel: Int = 200,
     val levelProgress: Float = 0f,
     val leveledUp: Boolean = false,
     val streakDays: Int = 0,

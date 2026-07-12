@@ -1558,7 +1558,7 @@ function xpForSessions(sessions) {
 }
 
 function totalXp() {
-  return xpForSessions(state.sessions) + completedMissions().reduce((sum, mission) => sum + mission.reward, 0);
+  return xpForSessions(state.sessions);
 }
 
 function levelFromXp(value = totalXp()) {
@@ -1593,30 +1593,19 @@ function rankLadder() {
 
 function sessionXp(session) {
   const summary = sessionSummary(session);
-  return 90 + summary.exercises * 16 + summary.sets * 8 + Math.round(summary.volume / 80);
+  return window.GymProgressionRules.sessionXP(summary);
 }
 
 function xpRequirementForLevel(level) {
-  const stage = Math.max(0, level - 1);
-  return 200 + stage * 85 + stage * stage * 8;
+  return window.GymProgressionRules.requirementForLevel(level);
 }
 
 function cumulativeXpForLevel(level) {
-  let total = 0;
-  for (let current = 1; current < level; current++) total += xpRequirementForLevel(current);
-  return total;
+  return window.GymProgressionRules.cumulativeXPForLevel(level);
 }
 
 function levelProgress(value = totalXp()) {
-  let level = 1;
-  let remaining = value;
-  let next = xpRequirementForLevel(level);
-  while (remaining >= next) {
-    remaining -= next;
-    level += 1;
-    next = xpRequirementForLevel(level);
-  }
-  return { level, currentLevelXp: remaining, xpForNextLevel: next, progressFraction: Math.min(1, remaining / next) };
+  return window.GymProgressionRules.levelProgress(value);
 }
 
 function streakDays() {

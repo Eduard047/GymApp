@@ -27,6 +27,7 @@ function runCallback(url) {
     ["#confirmation-message", element()]
   ]);
   const scrubbed = [];
+  const assigned = [];
   const context = {
     URL,
     URLSearchParams,
@@ -39,7 +40,10 @@ function runCallback(url) {
       location: {
         search: parsed.search,
         hash: parsed.hash,
-        pathname: parsed.pathname
+        pathname: parsed.pathname,
+        assign(nextUrl) {
+          assigned.push(String(nextUrl));
+        }
       },
       history: {
         replaceState(_state, _title, nextUrl) {
@@ -54,25 +58,98 @@ function runCallback(url) {
     button: nodes.get("#open-app"),
     title: nodes.get("#confirmation-title"),
     message: nodes.get("#confirmation-message"),
-    scrubbed
+    scrubbed,
+    assigned
   };
 }
 
-test("legacy and explicit Android confirmation links keep the implicit fragment contract", () => {
+test("Android rejects legacy implicit bearer signup callbacks", () => {
   const fragment = "#access_token=android-access&refresh_token=android-refresh&type=signup";
   const legacy = runCallback(`https://eduard047.github.io/GymApp/confirmed.html${fragment}`);
-  assert.equal(
-    legacy.button.getAttribute("href"),
-    `com.setforge.gymapp://auth/callback${fragment}`
-  );
+  assert.equal(legacy.button.getAttribute("href"), "https://gymapptracker.com/");
+  assert.doesNotMatch(legacy.button.getAttribute("href"), /token|auth\/callback/i);
+  assert.match(legacy.title.textContent, /unavailable/i);
   assert.deepEqual(legacy.scrubbed, ["/GymApp/confirmed.html"]);
+  assert.deepEqual(legacy.assigned, []);
 
   const explicit = runCallback(`https://gymapptracker.com/confirmed.html?platform=android${fragment}`);
-  assert.equal(
-    explicit.button.getAttribute("href"),
-    `com.setforge.gymapp://auth/callback?platform=android${fragment}`
-  );
+  assert.equal(explicit.button.getAttribute("href"), "https://gymapptracker.com/");
+  assert.doesNotMatch(explicit.button.getAttribute("href"), /token|auth\/callback/i);
+  assert.match(explicit.title.textContent, /unavailable/i);
   assert.deepEqual(explicit.scrubbed, ["/confirmed.html"]);
+  assert.deepEqual(explicit.assigned, []);
+});
+
+test("Android signup forwards only a state-bound PKCE code after user action", () => {
+  const state = "S".repeat(32);
+  const code = "34e770dd-9ff9-416c-87fa-43b31d7ef225";
+  const url = `https://gymapptracker.com/confirmed.html?platform=android&state=${state}&purpose=signup&code=${code}`;
+  const result = runCallback(url);
+  const expected = `com.setforge.gymapp://auth/callback?state=${state}&purpose=signup&code=${code}`;
+
+  assert.equal(result.button.getAttribute("href"), expected);
+  assert.doesNotMatch(result.button.getAttribute("href"), /access_token|refresh_token/i);
+  assert.equal(result.button.textContent, "Open GymApp");
+  assert.match(result.title.textContent, /email confirmed/i);
+  assert.match(result.message.textContent, /where registration started/i);
+  assert.deepEqual(result.assigned, []);
+  assert.deepEqual(result.scrubbed, []);
+});
+
+test("Android recovery rejects legacy implicit tokens instead of forwarding them", () => {
+  const fragment = "#access_token=android-access&refresh_token=android-refresh&type=recovery";
+  const result = runCallback(
+    `https://gymapptracker.com/confirmed.html?platform=android${fragment}`
+  );
+
+  assert.equal(result.button.getAttribute("href"), "https://gymapptracker.com/");
+  assert.doesNotMatch(result.button.getAttribute("href"), /token|auth\/callback/i);
+  assert.match(result.title.textContent, /unavailable/i);
+  assert.deepEqual(result.scrubbed, ["/confirmed.html"]);
+  assert.deepEqual(result.assigned, []);
+});
+
+test("Android recovery forwards only a state-bound PKCE code and retains the fallback", () => {
+  const state = "A".repeat(32);
+  const code = "4be36bc9-5ee4-40f3-a674-5ebf01b53ac8";
+  const url = `https://gymapptracker.com/confirmed.html?platform=android&state=${state}&purpose=recovery&code=${code}`;
+  const result = runCallback(url);
+  const restored = runCallback(url);
+  const expected = `com.setforge.gymapp://auth/callback?state=${state}&purpose=recovery&code=${code}`;
+
+  assert.equal(result.button.getAttribute("href"), expected);
+  assert.doesNotMatch(result.button.getAttribute("href"), /access_token|refresh_token/i);
+  assert.equal(result.button.textContent, "Open GymApp to reset password");
+  assert.match(result.title.textContent, /password reset verified/i);
+  assert.deepEqual(result.assigned, []);
+  assert.deepEqual(result.scrubbed, []);
+  assert.equal(restored.button.getAttribute("href"), expected);
+  assert.deepEqual(restored.assigned, []);
+});
+
+test("Android PKCE recovery fails closed for state mismatch shapes and token injection", () => {
+  const state = "B".repeat(32);
+  const validCode = "8cb8764c-cb11-44e5-81e6-7ed02ac25101";
+  const secondCode = "7e69412b-f558-40a6-9de8-63a324783d24";
+  const cases = [
+    `?platform=android&state=short&purpose=recovery&code=${validCode}`,
+    `?platform=android&state=${state}&state=${state}&purpose=recovery&code=${validCode}`,
+    `?platform=android&state=${state}&purpose=recovery&purpose=signup&code=${validCode}`,
+    `?platform=android&state=${state}&purpose=recovery&code=${validCode}&code=${secondCode}`,
+    `?platform=android&state=${state}&purpose=signup&purpose=recovery&code=${validCode}`,
+    `?platform=android&state=${state}&purpose=unknown&code=${validCode}`,
+    `?platform=android&state=${state}&purpose=recovery&code=${validCode}&access_token=unsafe`,
+    `?platform=android&state=${state}&purpose=recovery&code=${validCode}#refresh_token=unsafe`,
+    `?platform=android&state=${state}&purpose=recovery&code=eyJhbGciOiJIUzI1NiJ9.payload.signature`
+  ];
+
+  for (const suffix of cases) {
+    const result = runCallback(`https://gymapptracker.com/confirmed.html${suffix}`);
+    assert.equal(result.button.getAttribute("href"), "https://gymapptracker.com/", suffix);
+    assert.doesNotMatch(result.button.getAttribute("href"), /unsafe|auth\/callback/i, suffix);
+    assert.deepEqual(result.assigned, [], suffix);
+    assert.deepEqual(result.scrubbed, ["/confirmed.html"], suffix);
+  }
 });
 
 test("web confirmation discards implicit credentials and returns to the canonical site", () => {
@@ -82,6 +159,7 @@ test("web confirmation discards implicit credentials and returns to the canonica
 
   assert.equal(result.button.getAttribute("href"), "https://gymapptracker.com/");
   assert.doesNotMatch(result.button.getAttribute("href"), /secret|token/i);
+  assert.match(result.message.textContent, /log in with your password/i);
   assert.deepEqual(result.scrubbed, ["/confirmed.html"]);
 });
 
@@ -97,7 +175,28 @@ test("iOS bridge forwards only one PKCE code under the exact state-bound callbac
     `com.setforge.gymapp.ios://auth/callback/${state}?code=${code}`
   );
   assert.equal(result.button.textContent, "Open GymApp for iOS");
-  assert.deepEqual(result.scrubbed, ["/confirmed.html"]);
+  assert.deepEqual(result.assigned, [result.button.getAttribute("href")]);
+  assert.deepEqual(result.scrubbed, []);
+});
+
+test("iOS recovery bridge launches the app, keeps a reload fallback, and uses recovery copy", () => {
+  const state = "R".repeat(32);
+  const code = "single-use-pkce-code";
+  const url = `https://gymapptracker.com/confirmed.html?platform=ios&state=${state}&purpose=recovery&code=${code}`;
+  const first = runCallback(url);
+  const restored = runCallback(url);
+  const expected = `com.setforge.gymapp.ios://auth/callback/${state}?code=${code}`;
+
+  assert.equal(first.button.getAttribute("href"), expected);
+  assert.equal(first.button.textContent, "Open GymApp to reset password");
+  assert.match(first.title.textContent, /password reset verified/i);
+  assert.match(first.message.textContent, /choose a new password/i);
+  assert.deepEqual(first.assigned, [expected]);
+  assert.deepEqual(first.scrubbed, []);
+
+  assert.equal(restored.button.getAttribute("href"), expected);
+  assert.deepEqual(restored.assigned, [expected]);
+  assert.deepEqual(restored.scrubbed, []);
 });
 
 test("iOS bridge forwards only bounded error fields", () => {
@@ -111,6 +210,8 @@ test("iOS bridge forwards only bounded error fields", () => {
     `com.setforge.gymapp.ios://auth/callback/${state}?error=access_denied&error_description=User+cancelled`
   );
   assert.doesNotMatch(result.button.getAttribute("href"), /type=signup/);
+  assert.deepEqual(result.assigned, [result.button.getAttribute("href")]);
+  assert.deepEqual(result.scrubbed, []);
 });
 
 test("iOS bridge fails closed for implicit tokens, fragments, duplicates, and invalid state", () => {
@@ -124,6 +225,8 @@ test("iOS bridge fails closed for implicit tokens, fragments, duplicates, and in
     `?platform=ios&state=${state}&state=${state}&code=valid`,
     `?platform=ios&platform=web&state=${state}&code=valid`,
     `?platform=ios&state=${state}&code=one&code=two`,
+    `?platform=ios&state=${state}&purpose=recovery&purpose=signup&code=valid`,
+    `?platform=ios&state=${state}&purpose=unknown&code=valid`,
     `?platform=ios&state=too-short&code=valid`,
     `?platform=ios&state=${state}&code=valid&error=access_denied`,
     `?platform=ios&state=${state}&error_description=missing-error`
@@ -134,6 +237,8 @@ test("iOS bridge fails closed for implicit tokens, fragments, duplicates, and in
     assert.equal(result.button.getAttribute("href"), "https://gymapptracker.com/", suffix);
     assert.doesNotMatch(result.button.getAttribute("href"), /secret|auth\/callback/i, suffix);
     assert.match(result.title.textContent, /unavailable/i, suffix);
+    assert.deepEqual(result.assigned, [], suffix);
+    assert.deepEqual(result.scrubbed, ["/confirmed.html"], suffix);
   }
 });
 
@@ -155,9 +260,23 @@ test("client auth, public metadata, and compatibility docs use the intended doma
     readFile("pwa/CNAME", "utf8"),
     readFile("README.md", "utf8")
   ]);
+  const signUpSource = android.slice(
+    android.indexOf("suspend fun signUp"),
+    android.indexOf("suspend fun resendSignUpConfirmation")
+  );
+  const resendSource = android.slice(
+    android.indexOf("suspend fun resendSignUpConfirmation"),
+    android.indexOf("suspend fun requestPasswordReset")
+  );
 
   assert.match(android, /https:\/\/gymapptracker\.com\/confirmed\.html\?platform=android/);
   assert.match(android, /\/auth\/v1\/resend\?redirect_to=/);
+  assert.match(signUpSource, /purpose=signup/);
+  assert.match(signUpSource, /\.put\("code_challenge", codeChallenge\(transaction\.codeVerifier\)\)/);
+  assert.match(signUpSource, /\.put\("code_challenge_method", "s256"\)/);
+  assert.match(resendSource, /WEB_AUTH_REDIRECT_URL/);
+  assert.match(resendSource, /clearPendingAuthTransaction\(PENDING_SIGNUP_KEY\)/);
+  assert.doesNotMatch(resendSource, /code_challenge|beginAuthTransaction|purpose=signup/);
   assert.match(pwa, /https:\/\/gymapptracker\.com\/confirmed\.html\?platform=web/);
   assert.match(pwa, /\/auth\/v1\/resend\?redirect_to=/);
   assert.match(pwa, /if \(!query\.has\("platform"\)\) query\.set\("platform", "web"\)/);

@@ -8,6 +8,7 @@
     <string name="tab_rating">Рейтинг</string>
 
     <string name="title_workouts">Тренування</string>
+    <string name="workouts_screen_subtitle">Твоя історія тренувань і наступний найкращий крок.</string>
     <string name="title_missions">Завдання</string>
     <string name="title_add_workout">Нове тренування</string>
     <string name="title_workout_detail">Деталі тренування</string>
@@ -40,7 +41,7 @@
     <string name="action_cancel">Скасувати</string>
     <string name="action_save">Зберегти</string>
     <string name="action_close">Закрити</string>
-    <string name="action_current_month">Поточний</string>
+    <string name="action_current_month">Поточний місяць</string>
     <string name="action_repeat_last_workout">Повторити попереднє тренування</string>
     <string name="action_copy_workout_day">Скопіювати минуле тренування</string>
     <string name="action_sync_plan_to_watch">Синхронізувати план на годинник</string>
@@ -57,6 +58,41 @@
     <string name="action_timer_stop">Стоп</string>
     <string name="action_stop_timer">Зупинити таймер</string>
     <string name="auth_switch_account">Перемкнути</string>
+    <string name="auth_sync_supporting">Увійди, щоб синхронізувати тренування між пристроями.</string>
+    <string name="auth_cloud_account">Хмарний обліковий запис</string>
+    <string name="auth_create_account">Створити обліковий запис</string>
+    <string name="auth_log_in">Увійти</string>
+    <string name="auth_log_in_instead">Увійти натомість</string>
+    <string name="auth_email">Електронна пошта</string>
+    <string name="auth_repeat_email">Повтори електронну пошту</string>
+    <string name="auth_password">Пароль</string>
+    <string name="auth_repeat_password">Повтори пароль</string>
+    <string name="auth_display_name">Імʼя користувача</string>
+    <string name="auth_password_requirements">Пароль має містити щонайменше 8 символів, літери й цифри.</string>
+    <string name="auth_signup_requirements">Пароль має містити щонайменше 8 символів, літери й цифри. В імені дозволені літери, цифри, пробіли, крапка, дефіс і підкреслення.</string>
+    <string name="auth_resend_confirmation">Надіслати підтвердження ще раз</string>
+    <string name="auth_forgot_password">Забули пароль?</string>
+    <string name="auth_choose_new_password">Створи новий пароль</string>
+    <string name="auth_recovery_verified">Посилання для відновлення підтверджено. Онови пароль, щоб продовжити.</string>
+    <string name="auth_new_password">Новий пароль</string>
+    <string name="auth_new_password_requirements">Використай 8–72 символи, щонайменше одну літеру й одну цифру.</string>
+    <string name="auth_update_password">Оновити пароль</string>
+    <string name="auth_updating_password">Оновлення…</string>
+    <string name="auth_cancel_recovery">Скасувати й повернутися до входу</string>
+    <string name="auth_show_password">Показати пароль</string>
+    <string name="auth_hide_password">Сховати пароль</string>
+    <string name="auth_error_email_required">Введи електронну пошту.</string>
+    <string name="auth_error_email_invalid">Введи коректну адресу електронної пошти.</string>
+    <string name="auth_error_password_required">Введи пароль.</string>
+    <string name="auth_error_repeat_email">Повтори електронну пошту.</string>
+    <string name="auth_error_email_mismatch">Адреси електронної пошти не збігаються.</string>
+    <string name="auth_error_display_name_length">Імʼя має містити 2–32 символи.</string>
+    <string name="auth_error_password_minimum">Пароль має містити щонайменше 8 символів.</string>
+    <string name="auth_error_password_complexity">Пароль має містити літери й цифри.</string>
+    <string name="auth_error_password_mismatch">Паролі не збігаються.</string>
+    <string name="auth_error_new_password_required">Введи новий пароль.</string>
+    <string name="auth_error_new_password_length">Пароль має містити 8–72 символи.</string>
+    <string name="auth_password_update_failed">Не вдалося оновити пароль. Запроси новий лист для відновлення.</string>
 
     <string name="label_note">Нотатка</string>
     <string name="hint_note">Нотатка до сесії</string>
@@ -158,10 +194,7 @@
     <string name="kpi_avg_intensity">Середнє / підхід</string>
     <string name="kpi_avg_intensity_value">%1$.1f</string>
     <string name="workout_switch_overview_title">Огляд</string>
-    <string name="workout_switch_overview_supporting">Прогрес, цілі, досягнення</string>
-    <string name="workout_switch_list_title">Список тренувань</string>
-    <string name="workout_switch_list_supporting_one">1 збережена сесія</string>
-    <string name="workout_switch_list_supporting_many">%1$d збережених сесій</string>
+    <string name="workout_switch_list_title">Список (%1$d)</string>
     <string name="workout_section_header_title">Список тренувань</string>
     <string name="workout_section_header_empty">Нові сесії зʼявляться тут, щойно ти їх запишеш.</string>
     <string name="workout_section_header_hint">Швидкий перехід до записаних сесій без прокрутки всього огляду.</string>
@@ -183,8 +216,8 @@
     <string name="missions_progress_label">Прогрес</string>
     <string name="missions_progress_value">%1$d / %2$d</string>
     <string name="missions_overall_progress">Щоденних завершено %1$d/%2$d. Тижневих завершено %3$d/%4$d. Місячних завершено %5$d/%6$d.</string>
-    <string name="missions_xp_progress">XP місій за виконані цілі: %1$d</string>
-    <string name="missions_xp_reward">+%1$d XP</string>
+    <string name="missions_xp_progress">Бали місій за виконані цілі: %1$d</string>
+    <string name="missions_xp_reward">+%1$d балів</string>
     <string name="missions_section_progress">%1$d / %2$d виконано</string>
     <string name="missions_status_completed">Виконано</string>
     <string name="missions_status_in_progress">У процесі</string>
@@ -195,7 +228,7 @@
     <string name="solo_total_xp">ЗАГАЛЬНИЙ XP</string>
     <string name="solo_total_xp_earned">зароблено</string>
     <string name="solo_month_xp_label">XP за місяць</string>
-    <string name="solo_month_xp_with_missions">%1$d XP (+%2$d з місій)</string>
+    <string name="solo_month_xp_value">%1$d XP</string>
     <string name="solo_next_title_label">Наступний титул</string>
     <string name="solo_streak_label">Серія тижнів</string>
     <string name="solo_streak_weekly_value">%1$d тиж</string>
@@ -219,6 +252,16 @@
     <string name="activity_heatmap_legend">Колір показує денний обсяг у цьому місяці: вага × повтори. Темніше — менше, оранжеве — більше.</string>
     <string name="activity_heatmap_less">Менше</string>
     <string name="activity_heatmap_more">Більше</string>
+    <string name="activity_heatmap_day_a11y">%1$s. Сесій: %2$d. Обсяг: %3$d.</string>
+    <string-array name="activity_heatmap_weekdays">
+        <item>П</item>
+        <item>В</item>
+        <item>С</item>
+        <item>Ч</item>
+        <item>П</item>
+        <item>С</item>
+        <item>Н</item>
+    </string-array>
     <string name="achievements_title">Досягнення</string>
     <string name="achievements_supporting">Останні відкриття та найближчі соло-цілі.</string>
     <string name="muscle_heatmap_title">Карта мʼязів</string>
@@ -372,6 +415,7 @@
     <string name="post_workout_back_to_workouts">Назад до тренувань</string>
     <string name="post_workout_complete_title">Тренування завершено</string>
     <string name="post_workout_xp_gain">+%1$d XP</string>
+    <string name="post_workout_reward_points">+%1$d балів</string>
     <string name="post_workout_level">Рівень %1$d</string>
     <string name="post_workout_level_up">Новий рівень! %1$d -&gt; %2$d</string>
     <string name="post_workout_metric_xp_gained">Отримано XP</string>
@@ -397,7 +441,7 @@
     <string name="post_workout_logged_today">Занесено сьогодні</string>
     <string name="post_workout_logged_recently">Занесено нещодавно</string>
     <string name="post_workout_best_streak">Рекорд %1$d дн</string>
-    <string name="post_workout_comeback">Повернення активне після %1$d днів паузи. Множник нагороди x%2$s і +%3$d XP.</string>
+    <string name="post_workout_comeback">Повернення активне після %1$d днів паузи. XP тренування й надалі рахується за стандартною формулою.</string>
     <string name="post_workout_streak_extended">Серію продовжено до %1$d днів.</string>
     <string name="post_workout_streak_fresh">Нова серія розпочалася.</string>
     <string name="post_workout_streak_current">Поточна серія: %1$d днів.</string>

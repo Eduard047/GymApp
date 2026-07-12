@@ -9,13 +9,16 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -64,6 +67,7 @@ fun WorkoutListScreen(
     onSaveExerciseMapping: (String, List<String>) -> Unit,
     onCloseExerciseMapping: () -> Unit,
     onDeleteSession: (Long) -> Unit,
+    onAddWorkout: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val listState = rememberLazyListState()
@@ -77,8 +81,35 @@ fun WorkoutListScreen(
         modifier = modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
+        Text(
+            text = stringResource(R.string.workouts_screen_subtitle),
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 12.dp)
+        )
+
+        Button(
+            onClick = onAddWorkout,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp)
+                .heightIn(min = 56.dp),
+            shape = MaterialTheme.shapes.extraLarge
+        ) {
+            Icon(
+                imageVector = Icons.Default.Add,
+                contentDescription = null
+            )
+            Text(
+                text = stringResource(R.string.action_add_workout),
+                modifier = Modifier.padding(start = 8.dp),
+                style = MaterialTheme.typography.titleMedium
+            )
+        }
+
         MonthSwitcher(
             monthLabel = uiState.monthLabel,
+            isCurrentMonth = uiState.monthOffset == 0,
             onPreviousMonth = onPreviousMonth,
             onCurrentMonth = onCurrentMonth,
             onNextMonth = onNextMonth
@@ -289,18 +320,12 @@ private fun WorkoutSectionSwitcher(
         ) {
             WorkoutSectionChip(
                 title = stringResource(R.string.workout_switch_overview_title),
-                supporting = stringResource(R.string.workout_switch_overview_supporting),
                 selected = !workoutsSelected,
                 onClick = onOverviewClick,
                 modifier = Modifier.weight(1f)
             )
             WorkoutSectionChip(
-                title = stringResource(R.string.workout_switch_list_title),
-                supporting = if (sessionCount == 1) {
-                    stringResource(R.string.workout_switch_list_supporting_one)
-                } else {
-                    stringResource(R.string.workout_switch_list_supporting_many, sessionCount)
-                },
+                title = stringResource(R.string.workout_switch_list_title, sessionCount),
                 selected = workoutsSelected,
                 onClick = onWorkoutListClick,
                 modifier = Modifier.weight(1f)
@@ -312,7 +337,6 @@ private fun WorkoutSectionSwitcher(
 @Composable
 private fun WorkoutSectionChip(
     title: String,
-    supporting: String,
     selected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
@@ -335,24 +359,21 @@ private fun WorkoutSectionChip(
         )
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
                 text = title,
                 style = MaterialTheme.typography.titleSmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
                 color = if (selected) {
                     MaterialTheme.colorScheme.primary
                 } else {
                     MaterialTheme.colorScheme.onSurface
                 }
-            )
-            Text(
-                text = supporting,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
             )
         }
     }

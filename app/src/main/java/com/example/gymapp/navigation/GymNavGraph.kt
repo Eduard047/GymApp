@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material3.CenterAlignedTopAppBar
@@ -32,6 +31,7 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -75,6 +75,7 @@ import com.example.gymapp.ui.screens.LeaderboardScreen
 import com.example.gymapp.ui.screens.MissionsScreen
 import com.example.gymapp.ui.screens.RanksScreen
 import com.example.gymapp.ui.screens.PostWorkoutSummaryScreen
+import com.example.gymapp.ui.screens.PasswordUpdateScreen
 import com.example.gymapp.ui.screens.WorkoutDetailScreen
 import com.example.gymapp.ui.screens.WorkoutListScreen
 import com.example.gymapp.ui.viewmodel.AddWorkoutViewModel
@@ -118,7 +119,8 @@ fun GymAppRoot(
     }
 
     val isBottomTabRoute = AppDestination.bottomTabs.any { it.route == currentRoute }
-    val cloudSession = authState.session as? AccountSession.Cloud
+    val cloudSession = (authState.session as? AccountSession.Cloud)
+        ?.takeUnless { authState.needsPasswordUpdate }
 
     LaunchedEffect(cloudSession?.userId) {
         val session = cloudSession ?: return@LaunchedEffect
@@ -179,9 +181,31 @@ fun GymAppRoot(
         currentRoute?.startsWith("post_workout_summary/") == true -> R.string.title_post_workout_summary
         else -> R.string.app_name
     }
+    val passwordUpdateFailedMessage = stringResource(R.string.auth_password_update_failed)
 
     GymBackground {
         Box(modifier = Modifier.fillMaxSize()) {
+            if (authState.needsPasswordUpdate) {
+                PasswordUpdateScreen(
+                    uiState = authState,
+                    onUpdatePassword = { password ->
+                        coroutineScope.launch {
+                            authManager.setLoading(true)
+                            runCatching {
+                                authManager.updatePassword(password)
+                            }.onFailure { throwable ->
+                                authManager.setMessage(
+                                    throwable.message ?: passwordUpdateFailedMessage
+                                )
+                            }
+                        }
+                    },
+                    onCancel = authManager::logout,
+                    modifier = Modifier.fillMaxSize()
+                )
+                return@Box
+            }
+
             if (authState.session == null) {
                 AuthScreen(
                     uiState = authState,
@@ -262,11 +286,27 @@ fun GymAppRoot(
                             runCatching {
                                 authManager.resendSignUpConfirmation(email)
                                 authManager.setMessage(
-                                    "Confirmation email sent. Check your inbox and spam folder.",
+                                    "Confirmation email sent. Confirm it, then return here and log in with your password.",
                                     isError = false
                                 )
                             }.onFailure { throwable ->
                                 authManager.setMessage(throwable.message ?: "Could not resend confirmation email")
+                            }
+                        }
+                    },
+                    onPasswordReset = { email ->
+                        coroutineScope.launch {
+                            authManager.setLoading(true)
+                            runCatching {
+                                authManager.requestPasswordReset(email)
+                                authManager.setMessage(
+                                    "Password reset email sent. Open the newest email on this phone, then tap Open GymApp.",
+                                    isError = false
+                                )
+                            }.onFailure { throwable ->
+                                authManager.setMessage(
+                                    throwable.message ?: "Could not send the password reset email."
+                                )
                             }
                         }
                     },
@@ -371,22 +411,6 @@ fun GymAppRoot(
                 },
                 floatingActionButton = {
                     when {
-                        currentRoute == AppDestination.Workouts.route -> {
-                            ExtendedFloatingActionButton(
-                                onClick = { navController.navigate(AppDestination.AddWorkout.route) },
-                                containerColor = MaterialTheme.colorScheme.primary,
-                                contentColor = MaterialTheme.colorScheme.onPrimary,
-                                expanded = true,
-                                text = { Text(text = stringResource(R.string.action_add_workout)) },
-                                icon = {
-                                    Icon(
-                                        imageVector = Icons.Default.Add,
-                                        contentDescription = stringResource(R.string.cd_add_workout)
-                                    )
-                                }
-                            )
-                        }
-
                         currentRoute?.startsWith("workout_detail/") == true -> {
                             val sessionId = navBackStackEntry?.arguments?.getLong("sessionId")
                             if (sessionId != null) {
@@ -443,6 +467,9 @@ fun GymAppRoot(
                                 onSaveExerciseMapping = viewModel::saveManualMuscleMapping,
                                 onCloseExerciseMapping = viewModel::closeManualMuscleMapping,
                                 onDeleteSession = viewModel::deleteSession,
+                                onAddWorkout = {
+                                    navController.navigate(AppDestination.AddWorkout.route)
+                                },
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
@@ -760,19 +787,38 @@ private fun AppTopBar(
     onBack: () -> Unit,
     onLanguageSelected: (AppLanguage) -> Unit
 ) {
-    CenterAlignedTopAppBar(
-        colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-            containerColor = Color.Transparent,
-            titleContentColor = MaterialTheme.colorScheme.onBackground
-        ),
-        title = {
-            Text(
-                text = stringResource(titleRes),
-                style = MaterialTheme.typography.titleLarge
-            )
-        },
-        navigationIcon = {
-            if (!isRootDestination) {
+    if (isRootDestination) {
+        TopAppBar(
+            colors = TopAppBarDefaults.topAppBarColors(
+                containerColor = Color.Transparent,
+                titleContentColor = MaterialTheme.colorScheme.onBackground
+            ),
+            title = {
+                Text(
+                    text = stringResource(titleRes),
+                    style = MaterialTheme.typography.headlineLarge
+                )
+            },
+            actions = {
+                LanguageSelector(
+                    selectedLanguage = selectedLanguage,
+                    onLanguageSelected = onLanguageSelected
+                )
+            }
+        )
+    } else {
+        CenterAlignedTopAppBar(
+            colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                containerColor = Color.Transparent,
+                titleContentColor = MaterialTheme.colorScheme.onBackground
+            ),
+            title = {
+                Text(
+                    text = stringResource(titleRes),
+                    style = MaterialTheme.typography.titleLarge
+                )
+            },
+            navigationIcon = {
                 Surface(
                     modifier = Modifier.padding(start = 12.dp),
                     color = MaterialTheme.colorScheme.surface.copy(alpha = 0.84f),
@@ -789,15 +835,15 @@ private fun AppTopBar(
                         )
                     }
                 }
+            },
+            actions = {
+                LanguageSelector(
+                    selectedLanguage = selectedLanguage,
+                    onLanguageSelected = onLanguageSelected
+                )
             }
-        },
-        actions = {
-            LanguageSelector(
-                selectedLanguage = selectedLanguage,
-                onLanguageSelected = onLanguageSelected
-            )
-        }
-    )
+        )
+    }
 }
 
 @Composable

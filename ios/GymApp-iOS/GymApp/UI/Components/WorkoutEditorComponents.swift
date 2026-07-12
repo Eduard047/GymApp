@@ -1,0 +1,520 @@
+import SwiftUI
+
+struct WorkoutEditorSetDraft: Identifiable, Hashable {
+    let id: UUID
+    var weight: Double
+    var reps: Int
+
+    init(id: UUID = UUID(), weight: Double = 0, reps: Int = 10) {
+        self.id = id
+        self.weight = weight
+        self.reps = reps
+    }
+
+    var storeDraft: WorkoutSetDraft {
+        WorkoutSetDraft(weight: weight, reps: reps)
+    }
+}
+
+struct WorkoutEditorExerciseDraft: Identifiable, Hashable {
+    let id: UUID
+    let exerciseID: UUID
+    var sets: [WorkoutEditorSetDraft]
+
+    init(
+        id: UUID = UUID(),
+        exerciseID: UUID,
+        sets: [WorkoutEditorSetDraft] = [WorkoutEditorSetDraft()]
+    ) {
+        self.id = id
+        self.exerciseID = exerciseID
+        self.sets = sets
+    }
+
+    var storeDraft: WorkoutExerciseDraft {
+        WorkoutExerciseDraft(exerciseID: exerciseID, sets: sets.map(\.storeDraft))
+    }
+}
+
+enum WorkoutTemplatePreset: String, CaseIterable, Identifiable {
+    case push
+    case pull
+    case legs
+    case upper
+    case lower
+    case deload
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .push: gymLocalized("Push")
+        case .pull: gymLocalized("Pull")
+        case .legs: gymLocalized("Legs")
+        case .upper: gymLocalized("Upper")
+        case .lower: gymLocalized("Lower")
+        case .deload: gymLocalized("Deload")
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .push: "arrow.up.forward"
+        case .pull: "arrow.down.backward"
+        case .legs: "figure.strengthtraining.traditional"
+        case .upper: "figure.arms.open"
+        case .lower: "figure.walk"
+        case .deload: "arrow.down.right.circle"
+        }
+    }
+
+    var targetMuscles: Set<String> {
+        switch self {
+        case .push: ["chest", "shoulders", "triceps"]
+        case .pull: ["lats", "upperBack", "biceps", "forearms"]
+        case .legs, .lower: ["quads", "hamstrings", "glutes", "calves", "adductors", "lowerBack", "abs"]
+        case .upper: ["chest", "shoulders", "triceps", "lats", "upperBack", "biceps", "forearms"]
+        case .deload: []
+        }
+    }
+}
+
+struct WorkoutSetDraftRow: View {
+    @Binding var set: WorkoutEditorSetDraft
+
+    let position: Int
+    let lastWeight: Double?
+    let canCopyPrevious: Bool
+    let onCopyPrevious: () -> Void
+    let onDuplicate: () -> Void
+    let onDelete: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text(
+                    gymText(
+                        "Set \(position + 1)",
+                        "Підхід \(position + 1)",
+                        languageCode: gymCurrentLanguageCode()
+                    )
+                )
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(GymTheme.textPrimary)
+                Spacer(minLength: 8)
+                Button(role: .destructive, action: onDelete) {
+                    Label("Delete", systemImage: "trash")
+                        .labelStyle(.iconOnly)
+                        .frame(width: 44, height: 44)
+                }
+                .accessibilityLabel(
+                    gymText(
+                        "Delete set \(position + 1)",
+                        "Видалити підхід \(position + 1)",
+                        languageCode: gymCurrentLanguageCode()
+                    )
+                )
+            }
+
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 10) { editors }
+                VStack(spacing: 10) { editors }
+            }
+
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) { quickActions }
+                VStack(alignment: .leading, spacing: 8) { quickActions }
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+        }
+        .padding(12)
+        .background(GymTheme.surfaceVariant.opacity(0.48), in: RoundedRectangle(cornerRadius: 16))
+        .accessibilityElement(children: .contain)
+    }
+
+    @ViewBuilder
+    private var editors: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text("Weight")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(GymTheme.textSecondary)
+            TextField(
+                "0",
+                value: $set.weight,
+                format: .number.precision(.fractionLength(0 ... 2))
+            )
+            .keyboardType(.decimalPad)
+            .gymTextFieldChrome()
+            .accessibilityLabel(
+                gymText(
+                    "Weight for set \(position + 1)",
+                    "Вага для підходу \(position + 1)",
+                    languageCode: gymCurrentLanguageCode()
+                )
+            )
+        }
+        .frame(maxWidth: .infinity)
+
+        VStack(alignment: .leading, spacing: 5) {
+            Text("Repetitions")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(GymTheme.textSecondary)
+            Stepper(value: $set.reps, in: 1 ... 10_000) {
+                Text(set.reps.formatted())
+                    .font(.body.monospacedDigit().weight(.semibold))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .background(GymTheme.surface.opacity(0.7), in: RoundedRectangle(cornerRadius: 14))
+            .accessibilityLabel(
+                gymText(
+                    "Repetitions for set \(position + 1)",
+                    "Повторення для підходу \(position + 1)",
+                    languageCode: gymCurrentLanguageCode()
+                )
+            )
+            .accessibilityValue(set.reps.formatted())
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    @ViewBuilder
+    private var quickActions: some View {
+        Button {
+            if let lastWeight { set.weight = lastWeight }
+        } label: {
+            Label("Last", systemImage: "clock.arrow.circlepath")
+        }
+        .disabled(lastWeight == nil)
+        .accessibilityHint(
+            lastWeight.map {
+                gymText(
+                    "Uses the last logged weight, \($0.formatted())",
+                    "Використовує останню записану вагу: \($0.formatted())",
+                    languageCode: gymCurrentLanguageCode()
+                )
+            } ?? gymLocalized("No prior weight")
+        )
+
+        Button(action: onCopyPrevious) {
+            Label("Previous", systemImage: "arrow.up.doc")
+        }
+        .disabled(!canCopyPrevious)
+
+        Button {
+            set.weight += 2.5
+        } label: {
+            Label("+2.5", systemImage: "plus")
+        }
+
+        Button(action: onDuplicate) {
+            Label("Copy set", systemImage: "doc.on.doc")
+        }
+    }
+}
+
+@MainActor
+struct WorkoutDraftExerciseCard: View {
+    @Binding var draft: WorkoutEditorExerciseDraft
+    @ObservedObject var restTimers: RestTimerManager
+
+    let exerciseName: String
+    let lastWeight: Double?
+    let onDeleteExercise: () -> Void
+
+    private var timerID: String { "draft-exercise-\(draft.id.uuidString)" }
+
+    var body: some View {
+        GymPanel(highlighted: true) {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .center, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(exerciseName)
+                            .font(.headline)
+                            .accessibilityAddTraits(.isHeader)
+                        if let lastWeight {
+                            Text(
+                                gymText(
+                                    "Last logged: \(lastWeight.formatted(.number.precision(.fractionLength(0 ... 2))))",
+                                    "Остання вага: \(lastWeight.formatted(.number.precision(.fractionLength(0 ... 2))))",
+                                    languageCode: gymCurrentLanguageCode()
+                                )
+                            )
+                                .font(.caption)
+                                .foregroundStyle(GymTheme.textSecondary)
+                        } else {
+                            Text("No history yet")
+                                .font(.caption)
+                                .foregroundStyle(GymTheme.textSecondary)
+                        }
+                    }
+                    Spacer(minLength: 8)
+                    Button(role: .destructive, action: onDeleteExercise) {
+                        Image(systemName: "trash")
+                            .frame(width: 44, height: 44)
+                    }
+                    .accessibilityLabel(
+                        gymText(
+                            "Remove \(exerciseName)",
+                            "Видалити «\(exerciseName)»",
+                            languageCode: gymCurrentLanguageCode()
+                        )
+                    )
+                }
+
+                WorkoutRestTimerControls(
+                    manager: restTimers,
+                    timerID: timerID,
+                    exerciseName: exerciseName
+                )
+
+                ForEach(Array(draft.sets.enumerated()), id: \.element.id) { index, item in
+                    WorkoutSetDraftRow(
+                        set: binding(for: item.id),
+                        position: index,
+                        lastWeight: lastWeight,
+                        canCopyPrevious: index > 0,
+                        onCopyPrevious: { copyPrevious(into: item.id) },
+                        onDuplicate: { duplicate(item.id) },
+                        onDelete: { delete(item.id) }
+                    )
+                }
+
+                Button {
+                    let source = draft.sets.last
+                    draft.sets.append(
+                        WorkoutEditorSetDraft(
+                            weight: source?.weight ?? lastWeight ?? 0,
+                            reps: source?.reps ?? 10
+                        )
+                    )
+                    Task {
+                        await restTimers.start(id: timerID, seconds: 90, title: exerciseName)
+                    }
+                } label: {
+                    Label("Add set · start 90 sec rest", systemImage: "plus.circle.fill")
+                }
+                .buttonStyle(GymSecondaryButtonStyle())
+                .accessibilityHint("Copies the latest values and starts a ninety second rest timer")
+            }
+        }
+    }
+
+    private func binding(for id: UUID) -> Binding<WorkoutEditorSetDraft> {
+        Binding(
+            get: { draft.sets.first(where: { $0.id == id }) ?? WorkoutEditorSetDraft() },
+            set: { value in
+                guard let index = draft.sets.firstIndex(where: { $0.id == id }) else { return }
+                draft.sets[index] = value
+            }
+        )
+    }
+
+    private func copyPrevious(into id: UUID) {
+        guard let index = draft.sets.firstIndex(where: { $0.id == id }), index > 0 else { return }
+        draft.sets[index].weight = draft.sets[index - 1].weight
+        draft.sets[index].reps = draft.sets[index - 1].reps
+    }
+
+    private func duplicate(_ id: UUID) {
+        guard let index = draft.sets.firstIndex(where: { $0.id == id }) else { return }
+        let source = draft.sets[index]
+        draft.sets.insert(
+            WorkoutEditorSetDraft(weight: source.weight, reps: source.reps),
+            at: index + 1
+        )
+    }
+
+    private func delete(_ id: UUID) {
+        draft.sets.removeAll { $0.id == id }
+    }
+}
+
+@MainActor
+struct WorkoutRestTimerControls: View {
+    @ObservedObject var manager: RestTimerManager
+    let timerID: String
+    let exerciseName: String
+
+    private var remaining: Int { manager.remaining(for: timerID) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Label("Rest timer", systemImage: "timer")
+                    .font(.subheadline.weight(.semibold))
+                Spacer(minLength: 6)
+                if remaining > 0 {
+                    Text(Self.clock(remaining))
+                        .font(.headline.monospacedDigit())
+                        .foregroundStyle(GymTheme.primary)
+                        .accessibilityLabel(
+                            gymText(
+                                "\(remaining) seconds remaining",
+                                "Залишилося \(remaining) с",
+                                languageCode: gymCurrentLanguageCode()
+                            )
+                        )
+                }
+            }
+
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) { timerButtons }
+                VStack(alignment: .leading, spacing: 8) { timerButtons }
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+        }
+        .padding(11)
+        .background(GymTheme.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 15))
+    }
+
+    @ViewBuilder
+    private var timerButtons: some View {
+        ForEach([60, 90, 180], id: \.self) { seconds in
+            Button(gymText("\(seconds)s", "\(seconds) с", languageCode: gymCurrentLanguageCode())) {
+                Task { await manager.start(id: timerID, seconds: seconds, title: exerciseName) }
+            }
+            .accessibilityLabel(
+                gymText(
+                    "Start \(seconds) second rest timer for \(exerciseName)",
+                    "Запустити таймер відпочинку на \(seconds) с для «\(exerciseName)»",
+                    languageCode: gymCurrentLanguageCode()
+                )
+            )
+        }
+        if remaining > 0 {
+            Button(role: .destructive) {
+                manager.cancel(id: timerID)
+            } label: {
+                Label("Stop", systemImage: "stop.fill")
+            }
+        }
+    }
+
+    private static func clock(_ seconds: Int) -> String {
+        String(format: "%d:%02d", seconds / 60, seconds % 60)
+    }
+}
+
+struct ExercisePickerSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var search = ""
+    @State private var newExerciseName = ""
+    @State private var errorMessage: String?
+
+    let exercises: [Exercise]
+    let selectedExerciseIDs: Set<UUID>
+    let onSelect: (Exercise) -> Void
+    let onCreate: (String) throws -> Exercise
+
+    private var filteredExercises: [Exercise] {
+        let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return exercises }
+        return exercises.filter { $0.name.localizedCaseInsensitiveContains(query) }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("Create exercise") {
+                    TextField("Exercise name", text: $newExerciseName)
+                        .textInputAutocapitalization(.words)
+                        .accessibilityLabel("New exercise name")
+                    Button {
+                        do {
+                            let exercise = try onCreate(newExerciseName)
+                            onSelect(exercise)
+                            dismiss()
+                        } catch {
+                            errorMessage = gymErrorMessage(error)
+                        }
+                    } label: {
+                        Label("Create and add", systemImage: "plus.circle")
+                    }
+                    .disabled(newExerciseName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+
+                Section("Exercises") {
+                    if filteredExercises.isEmpty {
+                        ContentUnavailableView.search(text: search)
+                    } else {
+                        ForEach(filteredExercises) { exercise in
+                            Button {
+                                onSelect(exercise)
+                                dismiss()
+                            } label: {
+                                HStack {
+                                    Text(exercise.name)
+                                    Spacer()
+                                    if selectedExerciseIDs.contains(exercise.id) {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .foregroundStyle(GymTheme.primary)
+                                    }
+                                }
+                            }
+                            .disabled(selectedExerciseIDs.contains(exercise.id))
+                            .accessibilityHint(
+                                gymLocalized(
+                                    selectedExerciseIDs.contains(exercise.id)
+                                        ? "Already in this workout"
+                                        : "Adds exercise to the workout"
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+            .searchable(text: $search, prompt: "Search exercises")
+            .navigationTitle("Add exercise")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+            .alert("Could not add exercise", isPresented: Binding(
+                get: { errorMessage != nil },
+                set: { if !$0 { errorMessage = nil } }
+            )) {
+                Button("OK", role: .cancel) { errorMessage = nil }
+            } message: {
+                Text(gymLocalized(errorMessage ?? "Unknown error"))
+            }
+        }
+    }
+}
+
+extension TrainingSplit {
+    var displayName: String {
+        switch self {
+        case .upperLower: gymLocalized("Upper / Lower")
+        case .fullBody: gymLocalized("Full body")
+        case .pushPullLegs: gymLocalized("Push / Pull / Legs")
+        case .custom: gymLocalized("Custom")
+        }
+    }
+}
+
+extension TrainingGoal {
+    var displayName: String {
+        switch self {
+        case .aestheticFatLoss: gymLocalized("Aesthetic fat loss")
+        case .muscleGain: gymLocalized("Muscle gain")
+        case .strength: gymLocalized("Strength")
+        case .balanced: gymLocalized("Balanced")
+        }
+    }
+}
+
+extension CalorieMode {
+    var displayName: String {
+        switch self {
+        case .deficit: gymLocalized("Deficit")
+        case .maintenance: gymLocalized("Maintenance")
+        case .surplus: gymLocalized("Surplus")
+        }
+    }
+}

@@ -1,0 +1,15 @@
+DerivedData/
+build/
+*.xcuserstate
+xcuserdata/
+.DS_Store
+*.ipa
+*.xcarchive
+*.mobileprovision
+*.p12
+*.cer
+*.key
+*.env
+AppStore/Screenshots/
+AppStore/screenshots/
+AppStore/REVIEW_CREDENTIALS.private.md

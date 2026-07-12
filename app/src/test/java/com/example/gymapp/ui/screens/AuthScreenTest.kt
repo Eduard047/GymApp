@@ -129,4 +129,32 @@ class AuthScreenTest {
         )
         assertNull(validateConfirmationEmailInput(" Ed@Example.COM "))
     }
+
+    @Test
+    fun recoveryValidationRequiresValidEmail() {
+        assertEquals("Enter your email.", validateRecoveryEmailInput(""))
+        assertEquals("Enter a valid email address.", validateRecoveryEmailInput("not-email"))
+        assertNull(validateRecoveryEmailInput(" Ed@Example.COM "))
+    }
+
+    @Test
+    fun passwordUpdateValidationRequiresMatchingStrongPasswords() {
+        assertEquals(
+            "Enter a new password.",
+            validatePasswordUpdateInput("", "")
+        )
+        assertEquals(
+            "Password must be 8-72 characters.",
+            validatePasswordUpdateInput("Pass1", "Pass1")
+        )
+        assertEquals(
+            "Password must include letters and numbers.",
+            validatePasswordUpdateInput("Password", "Password")
+        )
+        assertEquals(
+            "Passwords do not match.",
+            validatePasswordUpdateInput("Password1", "Password2")
+        )
+        assertNull(validatePasswordUpdateInput("Password1", "Password1"))
+    }
 }
