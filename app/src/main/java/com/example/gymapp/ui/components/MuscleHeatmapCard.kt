@@ -42,12 +42,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
 import com.example.gymapp.data.repository.MUSCLE_DEFINITIONS
+import com.example.gymapp.ui.util.currentAppLanguageTag
+import com.example.gymapp.ui.util.localizedExerciseName
+import com.example.gymapp.ui.util.localizedMuscleName
 import com.example.gymapp.ui.viewmodel.ExerciseMappingUiModel
 import com.example.gymapp.ui.viewmodel.MuscleHeatmapUiModel
 import com.example.gymapp.ui.viewmodel.MuscleMapPeriod
 import com.example.gymapp.ui.viewmodel.MuscleOptionUiModel
 import com.example.gymapp.ui.viewmodel.MuscleProgressUiModel
-import java.util.Locale
 import kotlin.math.min
 
 @Composable
@@ -246,14 +248,10 @@ fun ExerciseMuscleBreakdownCard(
     framed: Boolean = true,
     modifier: Modifier = Modifier
 ) {
-    val locale = Locale.getDefault()
-    val labelById = remember(locale) {
+    val languageTag = currentAppLanguageTag()
+    val labelById = remember(languageTag) {
         MUSCLE_DEFINITIONS.associate { definition ->
-            definition.id to if (locale.language.equals("uk", ignoreCase = true)) {
-                definition.titleUk
-            } else {
-                definition.titleEn
-            }
+            definition.id to localizedMuscleName(definition.id, languageTag)
         }
     }
     val sortedMuscles = remember(muscleIntensities, labelById) {
@@ -297,7 +295,7 @@ fun ExerciseMuscleBreakdownCard(
                         )
                     } else {
                         Text(
-                            text = exerciseName,
+                            text = localizedExerciseName(exerciseName),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
@@ -574,7 +572,7 @@ private fun SelectedMuscleExercises(
                             verticalArrangement = Arrangement.spacedBy(2.dp)
                         ) {
                             Text(
-                                text = exercise.exerciseName,
+                                text = localizedExerciseName(exercise.exerciseName),
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.SemiBold,
                                 maxLines = 1,
@@ -621,7 +619,7 @@ private fun UnmappedExercises(
                     verticalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
                     Text(
-                        text = exercise.exerciseName,
+                        text = localizedExerciseName(exercise.exerciseName),
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
@@ -694,7 +692,7 @@ private fun ExerciseMappingRow(
                 verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
                 Text(
-                    text = exercise.exerciseName,
+                    text = localizedExerciseName(exercise.exerciseName),
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
@@ -757,7 +755,10 @@ private fun ManualMappingEditor(
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Text(
-                text = stringResource(R.string.muscle_heatmap_manual_title, exerciseName),
+                text = stringResource(
+                    R.string.muscle_heatmap_manual_title,
+                    localizedExerciseName(exerciseName)
+                ),
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold
             )

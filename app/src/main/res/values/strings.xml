@@ -322,6 +322,7 @@
     <string name="progress_history_title">Workout History</string>
     <string name="progress_recent_sessions_title">Recent Sessions</string>
     <string name="progress_recent_sessions_subtitle">This list changes with the selected month and exercise.</string>
+    <string name="progress_log_sets_hint">Log sets for %1$s to unlock trends.</string>
     <string name="progress_chart_max_weight">Max Weight Trend</string>
     <string name="progress_chart_volume">Volume by Session</string>
     <string name="progress_visual_trends_title">Visual Trends</string>

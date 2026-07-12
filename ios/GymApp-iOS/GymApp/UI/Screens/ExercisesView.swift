@@ -315,11 +315,12 @@ struct ExercisesView: View {
     private func exerciseCard(_ exercise: Exercise) -> some View {
         let stats = store.progressStats(exerciseID: exercise.id)
         let mappingCount = manualMuscleIDs(for: exercise).count
+        let displayName = gymExerciseName(exercise)
 
         return GymPanel {
             VStack(alignment: .leading, spacing: 13) {
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    Text(exercise.name)
+                    Text(displayName)
                         .font(.headline)
                         .foregroundStyle(GymTheme.textPrimary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -346,8 +347,8 @@ struct ExercisesView: View {
                     }
                     .accessibilityLabel(
                         gymText(
-                            "More actions for \(exercise.name)",
-                            "Більше дій для «\(exercise.name)»",
+                            "More actions for \(displayName)",
+                            "Більше дій для «\(displayName)»",
                             languageCode: gymCurrentLanguageCode()
                         )
                     )
@@ -393,7 +394,8 @@ struct ExercisesView: View {
     }
 
     private func historyButton(_ exercise: Exercise) -> some View {
-        Button {
+        let displayName = gymExerciseName(exercise)
+        return Button {
             presentedSheet = .history(exercise)
         } label: {
             Label("History", systemImage: "clock.arrow.circlepath")
@@ -402,15 +404,16 @@ struct ExercisesView: View {
         .buttonStyle(GymSecondaryButtonStyle())
         .accessibilityHint(
             gymText(
-                "Shows every saved set for \(exercise.name)",
-                "Показує всі збережені підходи для «\(exercise.name)»",
+                "Shows every saved set for \(displayName)",
+                "Показує всі збережені підходи для «\(displayName)»",
                 languageCode: gymCurrentLanguageCode()
             )
         )
     }
 
     private func mappingButton(_ exercise: Exercise) -> some View {
-        Button {
+        let displayName = gymExerciseName(exercise)
+        return Button {
             presentedSheet = .muscles(exercise)
         } label: {
             Label("Muscle groups", systemImage: "figure.strengthtraining.traditional")
@@ -419,8 +422,8 @@ struct ExercisesView: View {
         .buttonStyle(GymSecondaryButtonStyle())
         .accessibilityHint(
             gymText(
-                "Manually maps \(exercise.name) to muscle groups",
-                "Дає змогу вручну зіставити «\(exercise.name)» із групами м’язів",
+                "Manually maps \(displayName) to muscle groups",
+                "Дає змогу вручну зіставити «\(displayName)» із групами м’язів",
                 languageCode: gymCurrentLanguageCode()
             )
         )
@@ -428,11 +431,14 @@ struct ExercisesView: View {
 
     private var filteredExercises: [Exercise] {
         let sorted = store.exercises.sorted {
-            $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+            gymExerciseName($0).localizedCaseInsensitiveCompare(gymExerciseName($1)) == .orderedAscending
         }
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return sorted }
-        return sorted.filter { $0.name.localizedCaseInsensitiveContains(query) }
+        return sorted.filter { exercise in
+            exercise.name.localizedCaseInsensitiveContains(query) ||
+                gymExerciseName(exercise).localizedCaseInsensitiveContains(query)
+        }
     }
 
     private func manualMuscleIDs(for exercise: Exercise) -> [String] {
@@ -455,8 +461,12 @@ struct ExercisesView: View {
 
         case let .editExercise(exercise):
             NavigationStack {
-                ExerciseEditorSheet(title: "Rename exercise", initialName: exercise.name) { name in
-                    try store.renameExercise(id: exercise.id, to: name)
+                let displayName = gymExerciseName(exercise)
+                ExerciseEditorSheet(title: "Rename exercise", initialName: displayName) { name in
+                    let persistedName = name.gymTrimmed == displayName.gymTrimmed
+                        ? exercise.name
+                        : name
+                    try store.renameExercise(id: exercise.id, to: persistedName)
                     resultMessage = "Exercise renamed."
                 }
             }
@@ -491,11 +501,12 @@ struct ExercisesView: View {
     private func makeAlert(_ alert: ActiveAlert) -> Alert {
         switch alert {
         case let .delete(exercise):
+            let displayName = gymExerciseName(exercise)
             return Alert(
                 title: Text(
                     gymText(
-                        "Delete \(exercise.name)?",
-                        "Видалити «\(exercise.name)»?",
+                        "Delete \(displayName)?",
+                        "Видалити «\(displayName)»?",
                         languageCode: gymCurrentLanguageCode()
                     )
                 ),
@@ -787,7 +798,7 @@ private struct ExerciseHistorySheet: View {
                 LazyVStack(alignment: .leading, spacing: 14) {
                     GymSectionTitle(
                         eyebrow: "Exercise history",
-                        title: exercise.name,
+                        title: gymExerciseName(exercise),
                         supporting: history.isEmpty
                             ? "No completed sets yet."
                             : "Every completed set, newest first."
@@ -916,7 +927,7 @@ private struct ExerciseMuscleMappingSheet: View {
                 LazyVStack(alignment: .leading, spacing: 12) {
                     GymSectionTitle(
                         eyebrow: "Manual mapping",
-                        title: exercise.name,
+                        title: gymExerciseName(exercise),
                         supporting: "Select every muscle group this movement trains. An empty selection uses GymApp’s automatic name-based mapping."
                     )
 

@@ -5,10 +5,35 @@ import Foundation
 public struct Exercise: Codable, Identifiable, Hashable, Sendable {
     public let id: UUID
     public var name: String
+    public var catalogKey: String?
 
-    public init(id: UUID = UUID(), name: String) {
+    public init(id: UUID = UUID(), name: String, catalogKey: String? = nil) {
         self.id = id
         self.name = name
+        self.catalogKey = BuiltInExerciseCatalog.resolvedKey(catalogKey: catalogKey, name: name)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case catalogKey
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        catalogKey = BuiltInExerciseCatalog.resolvedKey(
+            catalogKey: try container.decodeIfPresent(String.self, forKey: .catalogKey),
+            name: name
+        )
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encodeIfPresent(catalogKey, forKey: .catalogKey)
     }
 }
 
@@ -155,6 +180,7 @@ public struct ExerciseHistoryEntry: Codable, Identifiable, Hashable, Sendable {
     public let sessionDate: Date
     public let exerciseID: UUID
     public let exerciseName: String
+    public let exerciseCatalogKey: String?
     public let weight: Double
     public let reps: Int
     public let setOrderIndex: Int
@@ -165,6 +191,7 @@ public struct ExerciseHistoryEntry: Codable, Identifiable, Hashable, Sendable {
         sessionDate: Date,
         exerciseID: UUID,
         exerciseName: String,
+        exerciseCatalogKey: String? = nil,
         weight: Double,
         reps: Int,
         setOrderIndex: Int
@@ -174,6 +201,10 @@ public struct ExerciseHistoryEntry: Codable, Identifiable, Hashable, Sendable {
         self.sessionDate = sessionDate
         self.exerciseID = exerciseID
         self.exerciseName = exerciseName
+        self.exerciseCatalogKey = BuiltInExerciseCatalog.resolvedKey(
+            catalogKey: exerciseCatalogKey,
+            name: exerciseName
+        )
         self.weight = weight
         self.reps = reps
         self.setOrderIndex = setOrderIndex
@@ -377,9 +408,11 @@ public struct BackupOwner: Codable, Hashable, Sendable {
 
 public struct BackupExercise: Codable, Hashable, Sendable {
     public var name: String
+    public var catalogKey: String?
 
-    public init(name: String) {
+    public init(name: String, catalogKey: String? = nil) {
         self.name = name
+        self.catalogKey = BuiltInExerciseCatalog.resolvedKey(catalogKey: catalogKey, name: name)
     }
 }
 
@@ -395,10 +428,12 @@ public struct BackupSet: Codable, Hashable, Sendable {
 
 public struct BackupWorkoutExercise: Codable, Hashable, Sendable {
     public var name: String
+    public var catalogKey: String?
     public var sets: [BackupSet]
 
-    public init(name: String, sets: [BackupSet]) {
+    public init(name: String, catalogKey: String? = nil, sets: [BackupSet]) {
         self.name = name
+        self.catalogKey = BuiltInExerciseCatalog.resolvedKey(catalogKey: catalogKey, name: name)
         self.sets = sets
     }
 }

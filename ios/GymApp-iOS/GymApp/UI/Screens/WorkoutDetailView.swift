@@ -204,7 +204,7 @@ struct WorkoutDetailView: View {
         block: WorkoutExercise
     ) -> some View {
         let exercise = store.exercise(id: block.exerciseID)
-        let name = exercise?.name ?? "Deleted exercise"
+        let name = exercise.map { gymExerciseName($0) } ?? gymLocalized("Deleted exercise")
         let priorHistory = store.exerciseHistory(exerciseID: block.exerciseID)
             .filter { $0.workoutID != workout.id }
         let priorMaxWeight = priorHistory.map(\.weight).max()

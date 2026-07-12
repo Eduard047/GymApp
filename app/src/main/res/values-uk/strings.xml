@@ -322,6 +322,7 @@
     <string name="progress_history_title">Історія тренувань</string>
     <string name="progress_recent_sessions_title">Останні сесії</string>
     <string name="progress_recent_sessions_subtitle">Список оновлюється для вибраного місяця і вправи.</string>
+    <string name="progress_log_sets_hint">Додай підходи для %1$s, щоб відкрити тренди.</string>
     <string name="progress_chart_max_weight">Тренд максимальної ваги</string>
     <string name="progress_chart_volume">Обсяг по сесіях</string>
     <string name="progress_visual_trends_title">Візуальні тренди</string>

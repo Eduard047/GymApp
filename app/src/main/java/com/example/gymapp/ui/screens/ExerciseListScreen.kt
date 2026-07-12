@@ -46,9 +46,12 @@ import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.entity.ExerciseHistoryEntry
 import com.example.gymapp.data.repository.defaultContributionsForExercise
 import com.example.gymapp.ui.components.ExerciseMuscleBreakdownCard
+import com.example.gymapp.ui.util.currentAppLanguageTag
+import com.example.gymapp.ui.util.localizedExerciseName
+import com.example.gymapp.ui.util.localizedMuscleName
 import com.example.gymapp.ui.viewmodel.ExerciseListUiState
 import com.example.gymapp.ui.viewmodel.ExerciseMuscleMappingUiModel
-import com.example.gymapp.ui.viewmodel.MuscleOptionUiModel
+import com.example.gymapp.ui.viewmodel.ExerciseMuscleOptionUiModel
 import java.time.Instant
 import java.time.YearMonth
 import java.time.ZoneId
@@ -173,7 +176,7 @@ fun ExerciseListScreen(
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Text(
-                                text = exercise.name,
+                                text = localizedExerciseName(exercise.name),
                                 modifier = Modifier.weight(1f),
                                 style = MaterialTheme.typography.bodyLarge
                             )
@@ -201,6 +204,7 @@ fun ExerciseListScreen(
         ModalBottomSheet(onDismissRequest = onDismissRenameExercise) {
             RenameExerciseBottomSheetContent(
                 exerciseName = uiState.editingExerciseName,
+                rawExerciseName = editingExercise.name,
                 hasInputError = uiState.hasInputError,
                 onExerciseNameChange = onRenameExerciseNameChange,
                 onSave = onSaveRenameExercise,
@@ -265,6 +269,7 @@ private fun ExerciseMuscleMappingsCard(
     mappings: List<ExerciseMuscleMappingUiModel>,
     onEditExerciseMapping: (String) -> Unit
 ) {
+    val languageTag = currentAppLanguageTag()
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(12.dp),
@@ -282,14 +287,16 @@ private fun ExerciseMuscleMappingsCard(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = mapping.exerciseName,
+                            text = localizedExerciseName(mapping.exerciseName),
                             style = MaterialTheme.typography.bodyMedium,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
                         Text(
                             text = if (mapping.isMapped) {
-                                mapping.muscleLabels
+                                mapping.muscleIds.joinToString(", ") { muscleId ->
+                                    localizedMuscleName(muscleId, languageTag)
+                                }
                             } else {
                                 stringResource(R.string.exercise_mappings_unmapped)
                             },
@@ -311,11 +318,12 @@ private fun ExerciseMuscleMappingsCard(
 @Composable
 private fun ExerciseMappingBottomSheetContent(
     exerciseName: String,
-    muscles: List<MuscleOptionUiModel>,
+    muscles: List<ExerciseMuscleOptionUiModel>,
     onToggleMuscle: (String) -> Unit,
     onSave: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val languageTag = currentAppLanguageTag()
     LazyColumn(
         modifier = Modifier.fillMaxWidth(),
         contentPadding = PaddingValues(start = 16.dp, top = 4.dp, end = 16.dp, bottom = 28.dp),
@@ -323,7 +331,10 @@ private fun ExerciseMappingBottomSheetContent(
     ) {
         item {
             Text(
-                text = stringResource(R.string.exercise_mappings_editor_title, exerciseName),
+                text = stringResource(
+                    R.string.exercise_mappings_editor_title,
+                    localizedExerciseName(exerciseName)
+                ),
                 style = MaterialTheme.typography.headlineSmall
             )
         }
@@ -344,7 +355,7 @@ private fun ExerciseMappingBottomSheetContent(
                     onCheckedChange = { onToggleMuscle(muscle.id) }
                 )
                 Text(
-                    text = muscle.label,
+                    text = localizedMuscleName(muscle.id, languageTag),
                     style = MaterialTheme.typography.bodyLarge
                 )
             }
@@ -411,11 +422,18 @@ private fun AccountStatusCard(
 @Composable
 private fun RenameExerciseBottomSheetContent(
     exerciseName: String,
+    rawExerciseName: String,
     hasInputError: Boolean,
     onExerciseNameChange: (String) -> Unit,
     onSave: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val displayedExerciseName = if (exerciseName == rawExerciseName) {
+        localizedExerciseName(rawExerciseName)
+    } else {
+        exerciseName
+    }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -427,7 +445,7 @@ private fun RenameExerciseBottomSheetContent(
             style = MaterialTheme.typography.headlineSmall
         )
         OutlinedTextField(
-            value = exerciseName,
+            value = displayedExerciseName,
             onValueChange = onExerciseNameChange,
             modifier = Modifier.fillMaxWidth(),
             label = { Text(stringResource(R.string.label_exercise_name)) },
@@ -877,7 +895,7 @@ private fun ExerciseHistoryBottomSheetContent(
     ) {
         item {
             Text(
-                text = exerciseName,
+                text = localizedExerciseName(exerciseName),
                 style = MaterialTheme.typography.headlineSmall
             )
         }

@@ -39,6 +39,7 @@ import com.example.gymapp.data.repository.defaultContributionsForExercise
 import com.example.gymapp.ui.components.ExerciseMuscleBreakdownCard
 import com.example.gymapp.ui.components.ExerciseSpotlightCard
 import com.example.gymapp.ui.components.ExerciseTrendChartsCard
+import com.example.gymapp.ui.util.localizedExerciseName
 import com.example.gymapp.ui.viewmodel.ExerciseProgressUiState
 import com.example.gymapp.util.DateTimeUtils
 import kotlinx.coroutines.launch
@@ -63,6 +64,20 @@ fun ExerciseProgressScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
     val setDeletedMessage = stringResource(R.string.message_set_deleted)
+    val selectedRawExerciseName = uiState.selectedExerciseName
+    val selectedDisplayExerciseName = if (selectedRawExerciseName != null) {
+        localizedExerciseName(selectedRawExerciseName)
+    } else {
+        null
+    }
+    val localizedSpotlight = uiState.spotlight.copy(
+        title = selectedDisplayExerciseName ?: uiState.spotlight.title,
+        subtitle = if (selectedDisplayExerciseName != null && uiState.progressPoints.isEmpty()) {
+            stringResource(R.string.progress_log_sets_hint, selectedDisplayExerciseName)
+        } else {
+            uiState.spotlight.subtitle
+        }
+    )
     val selectedMuscleIntensities = remember(uiState.selectedExerciseName) {
         uiState.selectedExerciseName
             ?.let { defaultContributionsForExercise(it) }
@@ -133,7 +148,7 @@ fun ExerciseProgressScreen(
             }
 
             item {
-                ExerciseSpotlightCard(spotlight = uiState.spotlight)
+                ExerciseSpotlightCard(spotlight = localizedSpotlight)
             }
 
             item {
@@ -193,7 +208,8 @@ private fun ExerciseProgressSelector(
     onSelectExercise: (Long) -> Unit
 ) {
     var expanded by remember(selectedExerciseId, exercises) { mutableStateOf(false) }
-    val selectedName = exercises.firstOrNull { it.first == selectedExerciseId }?.second
+    val selectedRawName = exercises.firstOrNull { it.first == selectedExerciseId }?.second
+    val selectedName = selectedRawName?.let { localizedExerciseName(it) }
         ?: stringResource(R.string.label_select_exercise)
 
     Column(
@@ -221,7 +237,7 @@ private fun ExerciseProgressSelector(
             ) {
                 exercises.forEach { exercise ->
                     DropdownMenuItem(
-                        text = { Text(exercise.second) },
+                        text = { Text(localizedExerciseName(exercise.second)) },
                         onClick = {
                             onSelectExercise(exercise.first)
                             expanded = false

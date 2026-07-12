@@ -269,7 +269,9 @@ public final class WorkoutStore: ObservableObject {
         let cleaned = try Self.validatedExerciseName(name)
         var created: Exercise?
         try mutate { state in
-            guard !state.exercises.contains(where: { Self.namesEqual($0.name, cleaned) }) else {
+            guard !state.exercises.contains(where: {
+                Self.exerciseIdentityConflicts($0, candidateName: cleaned)
+            }) else {
                 throw WorkoutStoreError.duplicateExerciseName
             }
             let exercise = Exercise(name: cleaned)
@@ -286,7 +288,7 @@ public final class WorkoutStore: ObservableObject {
                 throw WorkoutStoreError.exerciseNotFound
             }
             guard !state.exercises.contains(where: {
-                $0.id != id && Self.namesEqual($0.name, cleaned)
+                $0.id != id && Self.exerciseIdentityConflicts($0, candidateName: cleaned)
             }) else {
                 throw WorkoutStoreError.duplicateExerciseName
             }
@@ -295,6 +297,7 @@ public final class WorkoutStore: ObservableObject {
             let oldKey = MuscleMappingEngine.normalizeExerciseName(oldName)
             let newKey = MuscleMappingEngine.normalizeExerciseName(cleaned)
             state.exercises[index].name = cleaned
+            state.exercises[index].catalogKey = BuiltInExerciseCatalog.canonicalKey(forName: cleaned)
 
             var merged: [String: ExerciseMuscleMapping] = [:]
             for mapping in state.muscleMappings {
@@ -825,10 +828,10 @@ public final class WorkoutStore: ObservableObject {
         owner: BackupOwner? = nil,
         exportedAt: Date = Date()
     ) -> GymBackup {
-        let nameByID = Dictionary(uniqueKeysWithValues: exercises.map { ($0.id, $0.name) })
+        let exerciseByID = Dictionary(uniqueKeysWithValues: exercises.map { ($0.id, $0) })
         let backupExercises = exercises
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-            .map { BackupExercise(name: $0.name) }
+            .map { BackupExercise(name: $0.name, catalogKey: $0.catalogKey) }
         let backupSessions = workouts
             .filter { $0.setCount > 0 }
             .sorted { $0.date < $1.date }
@@ -837,11 +840,12 @@ public final class WorkoutStore: ObservableObject {
                     date: workout.date.gymEpochMilliseconds,
                     note: workout.note,
                     exercises: workout.exercises.compactMap { block in
-                        guard let name = nameByID[block.exerciseID], !block.sets.isEmpty else {
+                        guard let exercise = exerciseByID[block.exerciseID], !block.sets.isEmpty else {
                             return nil
                         }
                         return BackupWorkoutExercise(
-                            name: name,
+                            name: exercise.name,
+                            catalogKey: exercise.catalogKey,
                             sets: block.sets.map { BackupSet(weight: $0.weight, reps: $0.reps) }
                         )
                     }
@@ -990,32 +994,58 @@ public final class WorkoutStore: ObservableObject {
         var exerciseIDByKey = Dictionary(
             uniqueKeysWithValues: next.exercises.map { (Self.nameKey($0.name), $0.id) }
         )
+        var exerciseIDByCatalogKey: [String: UUID] = [:]
+        for exercise in next.exercises {
+            if let catalogKey = BuiltInExerciseCatalog.resolvedKey(
+                catalogKey: exercise.catalogKey,
+                name: exercise.name
+            ) {
+                exerciseIDByCatalogKey[catalogKey] = exerciseIDByCatalogKey[catalogKey] ?? exercise.id
+            }
+        }
         var addedExercises = 0
         var importedSessions = 0
         var skippedDuplicates = 0
         var ignoredInvalidSets = 0
         var encounteredSets = 0
 
-        func resolveExercise(_ rawName: String) throws -> UUID? {
+        func resolveExercise(_ rawName: String, catalogKey: String? = nil) throws -> UUID? {
             let name = rawName.gymTrimmed
             guard !name.isEmpty else { return nil }
             guard name.count <= limits.maximumExerciseNameLength else {
                 throw WorkoutStoreError.importLimitExceeded("exercise name length")
             }
             let key = Self.nameKey(name)
-            if let id = exerciseIDByKey[key] { return id }
+            let resolvedCatalogKey = BuiltInExerciseCatalog.resolvedKey(
+                catalogKey: catalogKey,
+                name: name
+            )
+            if let id = exerciseIDByKey[key] {
+                if let index = next.exercises.firstIndex(where: { $0.id == id }),
+                   next.exercises[index].catalogKey == nil {
+                    next.exercises[index].catalogKey = resolvedCatalogKey
+                }
+                return id
+            }
+            if let resolvedCatalogKey,
+               let id = exerciseIDByCatalogKey[resolvedCatalogKey] {
+                return id
+            }
             guard next.exercises.count < limits.maximumExercises else {
                 throw WorkoutStoreError.importLimitExceeded("exercise count")
             }
-            let exercise = Exercise(name: name)
+            let exercise = Exercise(name: name, catalogKey: resolvedCatalogKey)
             next.exercises.append(exercise)
             exerciseIDByKey[key] = exercise.id
+            if let resolvedCatalogKey {
+                exerciseIDByCatalogKey[resolvedCatalogKey] = exercise.id
+            }
             addedExercises += 1
             return exercise.id
         }
 
         for item in backup.exercises {
-            _ = try resolveExercise(item.name)
+            _ = try resolveExercise(item.name, catalogKey: item.catalogKey)
         }
 
         var existingSignatures = Set(next.workouts.map(Self.importSignature))
@@ -1025,7 +1055,19 @@ public final class WorkoutStore: ObservableObject {
                 throw WorkoutStoreError.importLimitExceeded("note length")
             }
             let note = rawNote?.isEmpty == false ? rawNote : nil
-            var drafts: [WorkoutExerciseDraft] = []
+            var orderedExerciseIDs: [UUID] = []
+            var setsByExerciseID: [UUID: [WorkoutSetDraft]] = [:]
+
+            func appendSets(_ sets: [WorkoutSetDraft], exerciseID: UUID) throws {
+                guard !sets.isEmpty else { return }
+                if setsByExerciseID[exerciseID] == nil {
+                    orderedExerciseIDs.append(exerciseID)
+                }
+                setsByExerciseID[exerciseID, default: []].append(contentsOf: sets)
+                guard setsByExerciseID[exerciseID, default: []].count <= limits.maximumSetsPerExercise else {
+                    throw WorkoutStoreError.importLimitExceeded("sets per exercise")
+                }
+            }
 
             if let blocks = session.exercises {
                 guard blocks.count <= limits.maximumExercisesPerSession else {
@@ -1035,7 +1077,10 @@ public final class WorkoutStore: ObservableObject {
                     guard block.sets.count <= limits.maximumSetsPerExercise else {
                         throw WorkoutStoreError.importLimitExceeded("sets per exercise")
                     }
-                    guard let exerciseID = try resolveExercise(block.name) else { continue }
+                    guard let exerciseID = try resolveExercise(
+                        block.name,
+                        catalogKey: block.catalogKey
+                    ) else { continue }
                     var sets: [WorkoutSetDraft] = []
                     for set in block.sets {
                         encounteredSets += 1
@@ -1055,15 +1100,13 @@ public final class WorkoutStore: ObservableObject {
                         sets.append(WorkoutSetDraft(weight: weight, reps: set.reps))
                     }
                     if !sets.isEmpty {
-                        drafts.append(WorkoutExerciseDraft(exerciseID: exerciseID, sets: sets))
+                        try appendSets(sets, exerciseID: exerciseID)
                     }
                 }
             } else if let flatSets = session.sets {
                 guard flatSets.count <= limits.maximumTotalSets else {
                     throw WorkoutStoreError.importLimitExceeded("total set count")
                 }
-                var orderedNames: [String] = []
-                var grouped: [String: [WorkoutSetDraft]] = [:]
                 for set in flatSets {
                     encounteredSets += 1
                     guard encounteredSets <= limits.maximumTotalSets else {
@@ -1082,24 +1125,21 @@ public final class WorkoutStore: ObservableObject {
                         ignoredInvalidSets += 1
                         continue
                     }
-                    if grouped[name] == nil { orderedNames.append(name) }
-                    grouped[name, default: []].append(
-                        WorkoutSetDraft(weight: weight, reps: set.reps)
+                    guard let exerciseID = try resolveExercise(name) else { continue }
+                    try appendSets(
+                        [WorkoutSetDraft(weight: weight, reps: set.reps)],
+                        exerciseID: exerciseID
                     )
-                }
-                guard orderedNames.count <= limits.maximumExercisesPerSession else {
-                    throw WorkoutStoreError.importLimitExceeded("exercises per session")
-                }
-                for name in orderedNames {
-                    guard let exerciseID = try resolveExercise(name),
-                          let sets = grouped[name], !sets.isEmpty else { continue }
-                    guard sets.count <= limits.maximumSetsPerExercise else {
-                        throw WorkoutStoreError.importLimitExceeded("sets per exercise")
-                    }
-                    drafts.append(WorkoutExerciseDraft(exerciseID: exerciseID, sets: sets))
                 }
             }
 
+            guard orderedExerciseIDs.count <= limits.maximumExercisesPerSession else {
+                throw WorkoutStoreError.importLimitExceeded("exercises per session")
+            }
+            let drafts = orderedExerciseIDs.compactMap { exerciseID -> WorkoutExerciseDraft? in
+                guard let sets = setsByExerciseID[exerciseID], !sets.isEmpty else { return nil }
+                return WorkoutExerciseDraft(exerciseID: exerciseID, sets: sets)
+            }
             guard !drafts.isEmpty else { continue }
             let timestamp = session.date ?? session.startedAt ?? Date().gymEpochMilliseconds
             let signature = Self.importSignature(
@@ -1451,6 +1491,20 @@ public final class WorkoutStore: ObservableObject {
         nameKey(lhs) == nameKey(rhs)
     }
 
+    private static func exerciseIdentityConflicts(
+        _ existing: Exercise,
+        candidateName: String
+    ) -> Bool {
+        if namesEqual(existing.name, candidateName) { return true }
+        guard let candidateKey = BuiltInExerciseCatalog.canonicalKey(forName: candidateName) else {
+            return false
+        }
+        return BuiltInExerciseCatalog.resolvedKey(
+            catalogKey: existing.catalogKey,
+            name: existing.name
+        ) == candidateKey
+    }
+
     private static func nameKey(_ value: String) -> String {
         value.gymTrimmed.lowercased()
     }
@@ -1471,14 +1525,14 @@ public final class WorkoutStore: ObservableObject {
         from startDate: Date?,
         through endDate: Date?
     ) -> [ExerciseHistoryEntry] {
-        let names = Dictionary(uniqueKeysWithValues: exercises.map { ($0.id, $0.name) })
+        let exercisesByID = Dictionary(uniqueKeysWithValues: exercises.map { ($0.id, $0) })
         var result: [ExerciseHistoryEntry] = []
         for workout in workouts {
             guard (startDate == nil || workout.date >= startDate!),
                   (endDate == nil || workout.date <= endDate!) else { continue }
             for block in workout.exercises {
                 guard exerciseID == nil || block.exerciseID == exerciseID,
-                      let name = names[block.exerciseID] else { continue }
+                      let exercise = exercisesByID[block.exerciseID] else { continue }
                 for (index, set) in block.sets.enumerated() {
                     result.append(
                         ExerciseHistoryEntry(
@@ -1486,7 +1540,8 @@ public final class WorkoutStore: ObservableObject {
                             workoutID: workout.id,
                             sessionDate: workout.date,
                             exerciseID: block.exerciseID,
-                            exerciseName: name,
+                            exerciseName: exercise.name,
+                            exerciseCatalogKey: exercise.catalogKey,
                             weight: set.weight,
                             reps: set.reps,
                             setOrderIndex: index

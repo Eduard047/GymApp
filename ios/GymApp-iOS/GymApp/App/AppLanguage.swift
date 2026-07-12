@@ -19,6 +19,29 @@ func gymText(_ english: String, _ ukrainian: String, languageCode: String) -> St
     languageCode == AppLanguage.ukrainian.rawValue ? ukrainian : english
 }
 
+func gymExerciseName(
+    _ exercise: Exercise,
+    languageCode: String = gymCurrentLanguageCode()
+) -> String {
+    BuiltInExerciseCatalog.displayName(
+        catalogKey: exercise.catalogKey,
+        rawName: exercise.name,
+        languageCode: languageCode
+    )
+}
+
+func gymExerciseName(
+    _ rawName: String,
+    catalogKey: String? = nil,
+    languageCode: String = gymCurrentLanguageCode()
+) -> String {
+    BuiltInExerciseCatalog.displayName(
+        catalogKey: catalogKey,
+        rawName: rawName,
+        languageCode: languageCode
+    )
+}
+
 /// Resolves an English source string through the app's String Catalog while
 /// respecting GymApp's in-app language setting rather than the device language.
 /// Missing catalog entries safely fall back to the supplied English text.

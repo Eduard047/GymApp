@@ -1,5 +1,5 @@
 const CACHE_PREFIX = "gym-pwa-";
-const CACHE_NAME = `${CACHE_PREFIX}v40`;
+const CACHE_NAME = `${CACHE_PREFIX}v41`;
 const ASSETS = [
   "./",
   "./index.html",

@@ -67,6 +67,7 @@ import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.entity.SetEntryEntity
 import com.example.gymapp.data.repository.defaultContributionsForExercise
 import com.example.gymapp.ui.components.ExerciseMuscleMap
+import com.example.gymapp.ui.util.localizedExerciseName
 import com.example.gymapp.ui.viewmodel.WorkoutDetailEvent
 import com.example.gymapp.ui.viewmodel.WorkoutDetailUiState
 import com.example.gymapp.util.DateTimeUtils
@@ -252,7 +253,7 @@ fun WorkoutDetailScreen(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 Text(
-                                    text = exerciseDetails.exercise.name,
+                                    text = localizedExerciseName(exerciseDetails.exercise.name),
                                     style = MaterialTheme.typography.titleMedium,
                                     modifier = Modifier.weight(1f),
                                     maxLines = 1,
@@ -880,7 +881,7 @@ private fun WorkoutExerciseQuickAddCard(
     }
     val selectedExerciseName = availableExercises
         .firstOrNull { it.id == selectedExerciseId }
-        ?.name
+        ?.let { localizedExerciseName(it.name) }
         ?: stringResource(R.string.label_select_exercise)
 
     Card(modifier = Modifier.fillMaxWidth()) {
@@ -929,7 +930,7 @@ private fun WorkoutExerciseQuickAddCard(
                     ) {
                         availableExercises.forEach { exercise ->
                             DropdownMenuItem(
-                                text = { Text(exercise.name) },
+                                text = { Text(localizedExerciseName(exercise.name)) },
                                 onClick = {
                                     selectedExerciseId = exercise.id
                                     expanded = false

@@ -29,7 +29,7 @@ data class ExerciseListUiState(
     val exercises: List<ExerciseEntity> = emptyList(),
     val muscleMappings: List<ExerciseMuscleMappingUiModel> = emptyList(),
     val mappingEditorExerciseName: String? = null,
-    val mappingEditorMuscles: List<MuscleOptionUiModel> = emptyList(),
+    val mappingEditorMuscles: List<ExerciseMuscleOptionUiModel> = emptyList(),
     val newExerciseName: String = "",
     val hasInputError: Boolean = false,
     val editingExercise: ExerciseEntity? = null,
@@ -49,8 +49,13 @@ data class ExerciseListUiState(
 
 data class ExerciseMuscleMappingUiModel(
     val exerciseName: String,
-    val muscleLabels: String,
+    val muscleIds: List<String>,
     val isMapped: Boolean
+)
+
+data class ExerciseMuscleOptionUiModel(
+    val id: String,
+    val isSelected: Boolean
 )
 
 private data class ExerciseListBaseState(
@@ -77,7 +82,7 @@ private data class ExerciseBackupState(
 private data class ExerciseMappingState(
     val mappings: List<ExerciseMuscleMappingUiModel>,
     val editorExerciseName: String?,
-    val editorMuscles: List<MuscleOptionUiModel>
+    val editorMuscles: List<ExerciseMuscleOptionUiModel>
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -153,19 +158,16 @@ class ExerciseListViewModel(
         mappingEditorExerciseName
     ) { exercises, muscleMappings, editorExerciseName ->
         val manualMap = muscleMappings.toManualContributionMap()
-        val muscleLabelById = MUSCLE_DEFINITIONS.associate { definition ->
-            definition.id to definition.titleUk
-        }
         val mappingRows = exercises.map { exercise ->
             val contributions = manualMap[exercise.name.normalizedExerciseName()]
                 ?: defaultContributionsForExercise(exercise.name)
-            val labels = contributions
-                .mapNotNull { muscleLabelById[it.muscleId] }
+            val muscleIds = contributions
+                .map { it.muscleId }
                 .distinct()
             ExerciseMuscleMappingUiModel(
                 exerciseName = exercise.name,
-                muscleLabels = labels.joinToString(", "),
-                isMapped = labels.isNotEmpty()
+                muscleIds = muscleIds,
+                isMapped = muscleIds.isNotEmpty()
             )
         }.sortedWith(
             compareBy<ExerciseMuscleMappingUiModel> { it.isMapped }
@@ -183,9 +185,8 @@ class ExerciseListViewModel(
             mappings = mappingRows,
             editorExerciseName = editorExerciseName,
             editorMuscles = MUSCLE_DEFINITIONS.map { definition ->
-                MuscleOptionUiModel(
+                ExerciseMuscleOptionUiModel(
                     id = definition.id,
-                    label = definition.titleUk,
                     isSelected = definition.id in editorSelectedIds
                 )
             }
@@ -464,4 +465,3 @@ class ExerciseListViewModel(
         }
     }
 }
-

@@ -32,6 +32,7 @@ import com.example.gymapp.ui.components.HeroPanel
 import com.example.gymapp.ui.components.InfoPill
 import com.example.gymapp.ui.components.MetricTile
 import com.example.gymapp.ui.components.SectionTitle
+import com.example.gymapp.ui.util.localizedExerciseName
 import com.example.gymapp.ui.viewmodel.CompletedMissionUiState
 import com.example.gymapp.ui.viewmodel.NewBadgeUiState
 import com.example.gymapp.ui.viewmodel.PostWorkoutMuscleUiState
@@ -340,7 +341,7 @@ private fun PersonalRecordsCard(records: List<PostWorkoutPrUiState>) {
                         verticalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
                         Text(
-                            text = record.exerciseName,
+                            text = localizedExerciseName(record.exerciseName),
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.SemiBold,
                             maxLines = 1
