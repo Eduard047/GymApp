@@ -1,6 +1,7 @@
 ﻿package com.example.gymapp.data.repository
 
 import androidx.room.withTransaction
+import com.example.gymapp.data.catalog.BuiltInExerciseCatalog
 import com.example.gymapp.data.database.GymDatabase
 import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.entity.ExerciseHistoryEntry
@@ -74,7 +75,14 @@ class GymRepository(
         .catch { emit(emptyList()) }
 
     suspend fun addExercise(name: String): Long {
-        return exerciseDao.insert(ExerciseEntity(name = name.trim()))
+        val cleanedName = name.trim()
+        require(cleanedName.isNotBlank())
+        require(
+            exerciseDao.getExercisesSnapshot().none { existing ->
+                exerciseNamesConflict(existing.name, cleanedName)
+            }
+        )
+        return exerciseDao.insert(ExerciseEntity(name = cleanedName))
     }
 
     suspend fun updateExercise(exercise: ExerciseEntity) {
@@ -85,8 +93,11 @@ class GymRepository(
         val cleanedName = newName.trim()
         require(cleanedName.isNotBlank())
 
-        val existing = exerciseDao.getByName(cleanedName)
-        require(existing == null || existing.id == exercise.id)
+        require(
+            exerciseDao.getExercisesSnapshot().none { existing ->
+                existing.id != exercise.id && exerciseNamesConflict(existing.name, cleanedName)
+            }
+        )
 
         val oldKey = exercise.name.toExerciseMappingKey()
         val newKey = cleanedName.toExerciseMappingKey()
@@ -296,10 +307,7 @@ class GymRepository(
             })
             .put("exercises", JSONArray().apply {
                 exercises.forEach { exercise ->
-                    put(
-                        JSONObject()
-                            .put("name", exercise.name)
-                    )
+                    put(exerciseBackupJson(exercise.name))
                 }
             })
             .put("sessions", JSONArray().apply {
@@ -311,8 +319,7 @@ class GymRepository(
                             .put("exercises", JSONArray().apply {
                                 sessionDetails.workoutExercises.forEach { workoutExercise ->
                                     put(
-                                        JSONObject()
-                                            .put("name", workoutExercise.exercise.name)
+                                        exerciseBackupJson(workoutExercise.exercise.name)
                                             .put("sets", JSONArray().apply {
                                                 workoutExercise.sets.forEach { set ->
                                                     put(
@@ -393,18 +400,49 @@ class GymRepository(
         var importedSessions = 0
 
         database.withTransaction {
+            val existingExercises = exerciseDao.getExercisesSnapshot()
+            val exerciseIdByNameKey = existingExercises
+                .associate { exercise -> exercise.name.normalizedExerciseName() to exercise.id }
+                .toMutableMap()
+            val exerciseIdByCatalogKey = linkedMapOf<String, Long>().apply {
+                existingExercises.forEach { exercise ->
+                    BuiltInExerciseCatalog.inferKey(exercise.name)?.let { catalogKey ->
+                        putIfAbsent(catalogKey, exercise.id)
+                    }
+                }
+            }
+
+            suspend fun resolveImportedExercise(exerciseJson: JSONObject, vararg nameFields: String): Long? {
+                val rawName = exerciseJson.backupExerciseName(*nameFields)
+                if (rawName.isBlank()) return null
+
+                val nameKey = rawName.normalizedExerciseName()
+                exerciseIdByNameKey[nameKey]?.let { return it }
+
+                val catalogKey = BuiltInExerciseCatalog.resolvedKey(
+                    catalogKey = exerciseJson.optString("catalogKey", ""),
+                    rawName = rawName
+                )
+                if (catalogKey != null) {
+                    exerciseIdByCatalogKey[catalogKey]?.let { return it }
+                }
+
+                val exerciseId = exerciseDao.insert(ExerciseEntity(name = rawName))
+                exerciseIdByNameKey[nameKey] = exerciseId
+                if (catalogKey != null) {
+                    exerciseIdByCatalogKey.putIfAbsent(catalogKey, exerciseId)
+                }
+                return exerciseId
+            }
+
             val existingSignatures = workoutDao.getAllSessionDetailsForBackup()
                 .map(::sortSessionDetails)
                 .map(::sessionImportSignature)
                 .toMutableSet()
 
             repeat(exercises.length()) { index ->
-                val name = exercises.optJSONObject(index)
-                    ?.optString("name")
-                    ?.trim()
-                    .orEmpty()
-                if (name.isNotBlank() && exerciseDao.getByName(name) == null) {
-                    exerciseDao.insert(ExerciseEntity(name = name))
+                exercises.optJSONObject(index)?.let { exerciseJson ->
+                    resolveImportedExercise(exerciseJson, "name")
                 }
             }
 
@@ -412,16 +450,12 @@ class GymRepository(
                 val sessionJson = sessions.optJSONObject(sessionIndex) ?: return@repeat
                 val exerciseJsonArray = sessionJson.optJSONArray("exercises")
                 val flatSetJsonArray = sessionJson.optJSONArray("sets")
-                val drafts = mutableListOf<WorkoutExerciseDraft>()
+                val setsByExerciseId = linkedMapOf<Long, MutableList<WorkoutSetDraft>>()
 
                 if (exerciseJsonArray != null) {
                     repeat(exerciseJsonArray.length()) { exerciseIndex ->
                         val exerciseJson = exerciseJsonArray.optJSONObject(exerciseIndex) ?: return@repeat
-                        val exerciseName = exerciseJson.optString("name").trim()
-                        if (exerciseName.isBlank()) return@repeat
-
-                        val exerciseId = exerciseDao.getByName(exerciseName)?.id
-                            ?: exerciseDao.insert(ExerciseEntity(name = exerciseName))
+                        val exerciseId = resolveImportedExercise(exerciseJson, "name") ?: return@repeat
                         val setJsonArray = exerciseJson.optJSONArray("sets") ?: JSONArray()
                         val sets = mutableListOf<WorkoutSetDraft>()
                         repeat(setJsonArray.length()) { setIndex ->
@@ -433,31 +467,29 @@ class GymRepository(
                             }
                         }
                         if (sets.isNotEmpty()) {
-                            drafts += WorkoutExerciseDraft(
-                                exerciseId = exerciseId,
-                                sets = sets
-                            )
+                            setsByExerciseId.getOrPut(exerciseId) { mutableListOf() }.addAll(sets)
                         }
                     }
                 } else if (flatSetJsonArray != null) {
-                    val grouped = linkedMapOf<String, MutableList<WorkoutSetDraft>>()
                     repeat(flatSetJsonArray.length()) { setIndex ->
                         val setJson = flatSetJsonArray.optJSONObject(setIndex) ?: return@repeat
-                        val exerciseName = setJson.optString("exerciseName").trim()
-                            .ifBlank { setJson.optString("name").trim() }
+                        val exerciseId = resolveImportedExercise(
+                            setJson,
+                            "exerciseName",
+                            "name"
+                        ) ?: return@repeat
                         val reps = setJson.optInt("reps", 0).coerceAtLeast(0)
-                        if (exerciseName.isNotBlank() && reps > 0) {
-                            grouped.getOrPut(exerciseName) { mutableListOf() } += WorkoutSetDraft(
+                        if (reps > 0) {
+                            setsByExerciseId.getOrPut(exerciseId) { mutableListOf() } += WorkoutSetDraft(
                                 weight = setJson.optDouble("weight", 0.0).coerceAtLeast(0.0),
                                 reps = reps
                             )
                         }
                     }
-                    grouped.forEach { (exerciseName, sets) ->
-                        val exerciseId = exerciseDao.getByName(exerciseName)?.id
-                            ?: exerciseDao.insert(ExerciseEntity(name = exerciseName))
-                        drafts += WorkoutExerciseDraft(exerciseId = exerciseId, sets = sets)
-                    }
+                }
+
+                val drafts = setsByExerciseId.map { (exerciseId, sets) ->
+                    WorkoutExerciseDraft(exerciseId = exerciseId, sets = sets)
                 }
 
                 if (drafts.isNotEmpty()) {
@@ -849,4 +881,36 @@ class GymRepository(
 
 private fun String.toExerciseMappingKey(): String {
     return normalizedExerciseName()
+}
+
+private fun exerciseNamesConflict(existingName: String, candidateName: String): Boolean {
+    if (existingName.normalizedExerciseName() == candidateName.normalizedExerciseName()) {
+        return true
+    }
+    val candidateCatalogKey = BuiltInExerciseCatalog.inferKey(candidateName) ?: return false
+    return BuiltInExerciseCatalog.inferKey(existingName) == candidateCatalogKey
+}
+
+private fun exerciseBackupJson(rawName: String): JSONObject {
+    return JSONObject()
+        .put("name", rawName)
+        .apply {
+            BuiltInExerciseCatalog.inferKey(rawName)?.let { key ->
+                put("catalogKey", key)
+            }
+        }
+}
+
+private fun JSONObject.backupExerciseName(vararg nameFields: String): String {
+    nameFields.forEach { field ->
+        val rawName = optString(field, "").trim()
+        if (rawName.isNotBlank() && rawName != "null") {
+            // The raw name remains authoritative to preserve existing history identity.
+            return rawName
+        }
+    }
+
+    // A catalog key lets newer backups recover a missing display name while old schema-v2
+    // backups, which only have `name`, continue through the path above unchanged.
+    return BuiltInExerciseCatalog.canonicalNameForKey(optString("catalogKey", "").trim()).orEmpty()
 }

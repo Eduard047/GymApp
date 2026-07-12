@@ -19,7 +19,7 @@ function loadWorker(scope = "https://example.test/GymApp/") {
     }
   };
   const caches = {
-    async keys() { return ["gym-pwa-v38", "gym-pwa-v39", "another-app-v4"]; },
+    async keys() { return ["gym-pwa-v39", "gym-pwa-v40", "another-app-v4"]; },
     async open(name) {
       openedCaches.push(name);
       return {
@@ -108,7 +108,7 @@ test("service worker reads only the current app cache", async () => {
   });
 
   assert.equal(await (await responsePromise).text(), "cached");
-  assert.deepEqual(worker.openedCaches, ["gym-pwa-v40"]);
+  assert.deepEqual(worker.openedCaches, ["gym-pwa-v41"]);
 });
 
 test("service worker activation deletes only its own stale caches", async () => {
@@ -121,5 +121,5 @@ test("service worker activation deletes only its own stale caches", async () => 
   });
   await activationPromise;
 
-  assert.deepEqual(worker.deletedCaches, ["gym-pwa-v38", "gym-pwa-v39"]);
+  assert.deepEqual(worker.deletedCaches, ["gym-pwa-v39", "gym-pwa-v40"]);
 });

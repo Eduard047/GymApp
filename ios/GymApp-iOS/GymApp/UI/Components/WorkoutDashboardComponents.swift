@@ -31,6 +31,7 @@ struct WorkoutExerciseContribution: Identifiable, Hashable {
     var id: String { exerciseName }
 
     let exerciseName: String
+    let catalogKey: String?
     let load: Double
     let setCount: Int
     let sessionCount: Int
@@ -62,6 +63,7 @@ enum WorkoutDashboardDataBuilder {
     }
 
     private struct ExerciseAccumulator {
+        var catalogKey: String?
         var load = 0.0
         var setIDs: Set<UUID> = []
         var sessionIDs: Set<UUID> = []
@@ -138,6 +140,7 @@ enum WorkoutDashboardDataBuilder {
                         entry.exerciseName,
                         default: ExerciseAccumulator()
                     ]
+                    exercise.catalogKey = exercise.catalogKey ?? entry.exerciseCatalogKey
                     exercise.load += weightedLoad
                     exercise.setIDs.insert(entry.setID)
                     exercise.sessionIDs.insert(entry.workoutID)
@@ -164,6 +167,7 @@ enum WorkoutDashboardDataBuilder {
         var selectedContributions = selectedExerciseStats.map { element in
             WorkoutExerciseContribution(
                 exerciseName: element.key,
+                catalogKey: element.value.catalogKey,
                 load: element.value.load,
                 setCount: element.value.setIDs.count,
                 sessionCount: element.value.sessionIDs.count
@@ -171,7 +175,9 @@ enum WorkoutDashboardDataBuilder {
         }
         selectedContributions.sort { lhs, rhs in
             if lhs.load != rhs.load { return lhs.load > rhs.load }
-            return lhs.exerciseName.localizedCaseInsensitiveCompare(rhs.exerciseName) == .orderedAscending
+            let lhsName = gymExerciseName(lhs.exerciseName, catalogKey: lhs.catalogKey)
+            let rhsName = gymExerciseName(rhs.exerciseName, catalogKey: rhs.catalogKey)
+            return lhsName.localizedCaseInsensitiveCompare(rhsName) == .orderedAscending
         }
 
         return WorkoutMuscleDashboardData(
@@ -981,7 +987,12 @@ struct WorkoutMuscleLoadCard: View {
             } else {
                 ForEach(data.selectedContributions) { contribution in
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(contribution.exerciseName)
+                        Text(
+                            gymExerciseName(
+                                contribution.exerciseName,
+                                catalogKey: contribution.catalogKey
+                            )
+                        )
                             .font(.subheadline.weight(.medium))
                         Text(contributionDetail(contribution))
                         .font(.caption)

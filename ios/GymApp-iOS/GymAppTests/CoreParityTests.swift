@@ -192,6 +192,201 @@ final class CoreParityTests: XCTestCase {
         XCTAssertEqual(target.workouts.first?.exercises.first?.sets.count, 2)
     }
 
+    func testBuiltInExerciseCatalogUsesStableKeysAndExactAliases() throws {
+        XCTAssertEqual(BuiltInExerciseCatalog.definitions.count, 15)
+        XCTAssertEqual(Set(BuiltInExerciseCatalog.definitions.map(\.key)).count, 15)
+        XCTAssertEqual(BuiltInExerciseCatalog.canonicalKey(forName: "Bench Press"), "bench_press")
+        XCTAssertEqual(BuiltInExerciseCatalog.canonicalKey(forName: "Жим штанги лежачи"), "bench_press")
+        XCTAssertEqual(BuiltInExerciseCatalog.canonicalKey(forName: "Barbell Squat"), "squat")
+        XCTAssertEqual(BuiltInExerciseCatalog.canonicalKey(forName: "Присід зі штангою"), "squat")
+        XCTAssertEqual(BuiltInExerciseCatalog.canonicalKey(forName: "жим лежачи"), "bench_press")
+        XCTAssertEqual(BuiltInExerciseCatalog.canonicalKey(forName: "Жим сидячи над головою"), "shoulder_press")
+        XCTAssertNil(BuiltInExerciseCatalog.canonicalKey(forName: "My Bench Press Variation"))
+
+        let legacy = Exercise(name: "Barbell Squat")
+        XCTAssertEqual(legacy.name, "Barbell Squat")
+        XCTAssertEqual(legacy.catalogKey, "squat")
+        XCTAssertEqual(gymExerciseName(legacy, languageCode: "en"), "Squat")
+        XCTAssertEqual(gymExerciseName(legacy, languageCode: "uk"), "Присідання зі штангою")
+
+        let custom = Exercise(name: "Eduard Special Press")
+        XCTAssertNil(custom.catalogKey)
+        XCTAssertEqual(gymExerciseName(custom, languageCode: "uk"), custom.name)
+    }
+
+    func testLegacyExerciseJSONInfersCatalogKeyWithoutChangingRawName() throws {
+        let id = UUID()
+        let legacyJSON = #"{"id":"\#(id.uuidString)","name":"Станова тяга"}"#.data(using: .utf8)!
+
+        let exercise = try JSONDecoder().decode(Exercise.self, from: legacyJSON)
+
+        XCTAssertEqual(exercise.id, id)
+        XCTAssertEqual(exercise.name, "Станова тяга")
+        XCTAssertEqual(exercise.catalogKey, "deadlift")
+        let encoded = try JSONSerialization.jsonObject(with: JSONEncoder().encode(exercise)) as? [String: Any]
+        XCTAssertEqual(encoded?["catalogKey"] as? String, "deadlift")
+    }
+
+    func testBackupCarriesCatalogKeyAndLegacyBackupInfersIt() throws {
+        let source = try WorkoutStore(
+            accountStorageKey: "catalog-source",
+            directoryURL: try temporaryDirectory(named: "catalog-source")
+        )
+        let squat = try source.addExercise(name: "Присідання зі штангою")
+        _ = try source.createWorkout(
+            date: Date(timeIntervalSince1970: 1_750_000_000),
+            exercises: [
+                WorkoutExerciseDraft(
+                    exerciseID: squat.id,
+                    sets: [.init(weight: 80, reps: 8)]
+                )
+            ]
+        )
+        let owner = BackupOwner(accountID: "catalog-source", remote: false)
+        let data = try source.exportBackupData(owner: owner)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let exercises = try XCTUnwrap(object["exercises"] as? [[String: Any]])
+        XCTAssertEqual(exercises.first?["catalogKey"] as? String, "squat")
+        let sessions = try XCTUnwrap(object["sessions"] as? [[String: Any]])
+        let workoutExercises = try XCTUnwrap(sessions.first?["exercises"] as? [[String: Any]])
+        XCTAssertEqual(workoutExercises.first?["catalogKey"] as? String, "squat")
+
+        object["exercises"] = exercises.map { item in
+            var legacy = item
+            legacy.removeValue(forKey: "catalogKey")
+            return legacy
+        }
+        object["sessions"] = sessions.map { session in
+            var legacySession = session
+            if let blocks = session["exercises"] as? [[String: Any]] {
+                legacySession["exercises"] = blocks.map { block in
+                    var legacyBlock = block
+                    legacyBlock.removeValue(forKey: "catalogKey")
+                    return legacyBlock
+                }
+            }
+            return legacySession
+        }
+        let legacyData = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+        let target = try WorkoutStore(
+            accountStorageKey: "catalog-target",
+            directoryURL: try temporaryDirectory(named: "catalog-target")
+        )
+        let result = try target.importBackup(
+            data: legacyData,
+            activeOwner: BackupOwner(accountID: "catalog-target", remote: false)
+        )
+
+        XCTAssertEqual(result.addedExercises, 1)
+        XCTAssertEqual(target.exercises.first?.name, "Присідання зі штангою")
+        XCTAssertEqual(target.exercises.first?.catalogKey, "squat")
+        XCTAssertEqual(target.exercises.first.map { gymExerciseName($0, languageCode: "en") }, "Squat")
+    }
+
+    func testImportReusesExistingBuiltInAcrossLanguages() throws {
+        let target = try WorkoutStore(
+            accountStorageKey: "catalog-bilingual-target",
+            directoryURL: try temporaryDirectory(named: "catalog-bilingual-target")
+        )
+        let existing = try target.addExercise(name: "Присідання зі штангою")
+        let owner = BackupOwner(accountID: "catalog-bilingual-target", remote: false)
+        let backup = GymBackup(
+            exportedAt: 1_750_000_000_000,
+            diagnostics: false,
+            owner: owner,
+            exercises: [BackupExercise(name: "Squat", catalogKey: "squat")],
+            sessions: [
+                BackupSession(
+                    date: 1_750_000_000_000,
+                    exercises: [
+                        BackupWorkoutExercise(
+                            name: "Squat",
+                            catalogKey: "squat",
+                            sets: [BackupSet(weight: 80, reps: 8)]
+                        )
+                    ]
+                )
+            ],
+            summary: nil
+        )
+
+        let result = try target.importBackup(
+            data: JSONEncoder().encode(backup),
+            activeOwner: owner
+        )
+
+        XCTAssertEqual(result.addedExercises, 0)
+        XCTAssertEqual(target.exercises.count, 1)
+        XCTAssertEqual(target.exercises.first?.id, existing.id)
+        XCTAssertEqual(target.exercises.first?.name, "Присідання зі штангою")
+        XCTAssertEqual(target.workouts.first?.exercises.first?.exerciseID, existing.id)
+    }
+
+    func testExerciseCrudRejectsBuiltInAliasesAsDuplicates() throws {
+        let store = try WorkoutStore(
+            accountStorageKey: "catalog-duplicate-target",
+            directoryURL: try temporaryDirectory(named: "catalog-duplicate-target")
+        )
+        let squat = try store.addExercise(name: "Присідання зі штангою")
+
+        XCTAssertThrowsError(try store.addExercise(name: "Squat")) { error in
+            XCTAssertEqual(error as? WorkoutStoreError, .duplicateExerciseName)
+        }
+        let custom = try store.addExercise(name: "My custom movement")
+        XCTAssertThrowsError(try store.renameExercise(id: custom.id, to: "Barbell Squat")) { error in
+            XCTAssertEqual(error as? WorkoutStoreError, .duplicateExerciseName)
+        }
+        XCTAssertEqual(store.exercises.map(\.id).sorted { $0.uuidString < $1.uuidString }, [squat.id, custom.id].sorted { $0.uuidString < $1.uuidString })
+    }
+
+    func testImportDoesNotRedirectRecognizedNamesWithHostileCatalogKeys() throws {
+        let target = try WorkoutStore(
+            accountStorageKey: "catalog-conflict-target",
+            directoryURL: try temporaryDirectory(named: "catalog-conflict-target")
+        )
+        let bench = try target.addExercise(name: "Bench Press")
+        let squat = try target.addExercise(name: "Присідання зі штангою")
+        let owner = BackupOwner(accountID: "catalog-conflict-target", remote: false)
+        let hostileBackup: [String: Any] = [
+            "schemaVersion": GymBackup.currentSchemaVersion,
+            "exportedAt": 1_750_000_000_000 as Int64,
+            "app": "GymApp",
+            "diagnostics": false,
+            "owner": [
+                "accountId": "catalog-conflict-target",
+                "remote": false
+            ],
+            "exercises": [],
+            "sessions": [[
+                "date": 1_750_000_000_000 as Int64,
+                "exercises": [
+                    [
+                        "name": "Squat",
+                        "catalogKey": "bench_press",
+                        "sets": [["weight": 80.0, "reps": 8]]
+                    ],
+                    [
+                        "name": "Barbell Squat",
+                        "catalogKey": "not-a-real-catalog-key",
+                        "sets": [["weight": 82.5, "reps": 6]]
+                    ]
+                ]
+            ]]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: hostileBackup, options: [.sortedKeys])
+
+        let result = try target.importBackup(data: data, activeOwner: owner)
+
+        XCTAssertEqual(result.addedExercises, 0)
+        XCTAssertEqual(result.importedSessions, 1)
+        XCTAssertEqual(target.exercises.count, 2)
+        let importedWorkout = try XCTUnwrap(target.workouts.first)
+        XCTAssertEqual(importedWorkout.exercises.count, 1)
+        XCTAssertEqual(importedWorkout.exercises.first?.exerciseID, squat.id)
+        XCTAssertEqual(importedWorkout.exercises.first?.sets.count, 2)
+        XCTAssertFalse(importedWorkout.exercises.contains { $0.exerciseID == bench.id })
+    }
+
     func testRemoteBackupCannotCrossAccounts() throws {
         let source = try WorkoutStore(accountStorageKey: "cloud_a", directoryURL: try temporaryDirectory(named: "cloud-a"))
         let exercise = try source.addExercise(name: "Squat")

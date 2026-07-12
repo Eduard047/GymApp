@@ -63,6 +63,7 @@ import com.example.gymapp.ui.components.ExerciseMuscleBreakdownCard
 import com.example.gymapp.ui.components.ExerciseMuscleMap
 import com.example.gymapp.ui.components.HeroPanel
 import com.example.gymapp.ui.components.InfoPill
+import com.example.gymapp.ui.util.localizedExerciseName
 import com.example.gymapp.ui.viewmodel.AddWorkoutUiState
 import com.example.gymapp.ui.viewmodel.ExerciseInputState
 import com.example.gymapp.ui.viewmodel.WorkoutTemplatePreviewUiModel
@@ -662,7 +663,7 @@ private fun ExerciseDraftCard(
             ) {
                 Text(
                     text = if (!isExpanded && selectedExercise != null) {
-                        selectedExercise.name
+                        localizedExerciseName(selectedExercise.name)
                     } else {
                         stringResource(R.string.exercise_block_title, index + 1)
                     },
@@ -945,7 +946,7 @@ private fun ExerciseSelector(
     var expanded by remember(selectedExerciseId, exercises) { mutableStateOf(false) }
     val selectedLabel = exercises
         .firstOrNull { it.id == selectedExerciseId }
-        ?.name
+        ?.let { localizedExerciseName(it.name) }
         ?: stringResource(R.string.label_select_exercise)
 
     Box(modifier = modifier) {
@@ -966,7 +967,7 @@ private fun ExerciseSelector(
         ) {
             exercises.forEach { exercise ->
                 DropdownMenuItem(
-                    text = { Text(exercise.name) },
+                    text = { Text(localizedExerciseName(exercise.name)) },
                     onClick = {
                         onExerciseSelected(exercise.id)
                         expanded = false

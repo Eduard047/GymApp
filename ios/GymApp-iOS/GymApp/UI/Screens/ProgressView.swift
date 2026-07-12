@@ -83,7 +83,7 @@ struct ExerciseProgressView: View {
                 } else {
                     Picker(t("Exercise", "Вправа"), selection: $selectedExerciseID) {
                         ForEach(sortedExercises) { exercise in
-                            Text(exercise.name).tag(Optional(exercise.id))
+                            Text(gymExerciseName(exercise)).tag(Optional(exercise.id))
                         }
                     }
                     .pickerStyle(.menu)
@@ -113,7 +113,7 @@ struct ExerciseProgressView: View {
                         Text(t("Muscle Breakdown", "Розподіл по м’язах"))
                             .font(.headline)
                             .accessibilityAddTraits(.isHeader)
-                        Text(exercise.name)
+                        Text(gymExerciseName(exercise))
                             .font(.subheadline)
                             .foregroundStyle(GymTheme.textSecondary)
                     }
@@ -207,7 +207,7 @@ struct ExerciseProgressView: View {
     private func spotlightCard(for exercise: Exercise) -> some View {
         GymHeroPanel {
             VStack(alignment: .leading, spacing: 14) {
-                Text(exercise.name)
+                Text(gymExerciseName(exercise))
                     .font(.title.bold())
                     .accessibilityAddTraits(.isHeader)
                 Text(spotlightSubtitle)
@@ -383,7 +383,7 @@ struct ExerciseProgressView: View {
 
     private var sortedExercises: [Exercise] {
         store.exercises.sorted {
-            $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+            gymExerciseName($0).localizedCaseInsensitiveCompare(gymExerciseName($1)) == .orderedAscending
         }
     }
 

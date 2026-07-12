@@ -63,9 +63,6 @@ fun WorkoutListScreen(
     onNextMonth: () -> Unit,
     onMuscleMapPeriodSelected: (MuscleMapPeriod) -> Unit,
     onMuscleSelected: (String) -> Unit,
-    onEditExerciseMapping: (String) -> Unit,
-    onSaveExerciseMapping: (String, List<String>) -> Unit,
-    onCloseExerciseMapping: () -> Unit,
     onDeleteSession: (Long) -> Unit,
     onAddWorkout: () -> Unit,
     modifier: Modifier = Modifier
@@ -154,10 +151,7 @@ fun WorkoutListScreen(
                 MuscleHeatmapCard(
                     heatmap = uiState.muscleHeatmap,
                     onPeriodSelected = onMuscleMapPeriodSelected,
-                    onMuscleSelected = onMuscleSelected,
-                    onEditExerciseMapping = onEditExerciseMapping,
-                    onSaveExerciseMapping = onSaveExerciseMapping,
-                    onCloseExerciseMapping = onCloseExerciseMapping
+                    onMuscleSelected = onMuscleSelected
                 )
             }
 

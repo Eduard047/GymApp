@@ -412,8 +412,15 @@ struct ExercisePickerSheet: View {
 
     private var filteredExercises: [Exercise] {
         let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return exercises }
-        return exercises.filter { $0.name.localizedCaseInsensitiveContains(query) }
+        return exercises
+            .filter { exercise in
+                query.isEmpty ||
+                    exercise.name.localizedCaseInsensitiveContains(query) ||
+                    gymExerciseName(exercise).localizedCaseInsensitiveContains(query)
+            }
+            .sorted {
+                gymExerciseName($0).localizedCaseInsensitiveCompare(gymExerciseName($1)) == .orderedAscending
+            }
     }
 
     var body: some View {
@@ -447,7 +454,7 @@ struct ExercisePickerSheet: View {
                                 dismiss()
                             } label: {
                                 HStack {
-                                    Text(exercise.name)
+                                    Text(gymExerciseName(exercise))
                                     Spacer()
                                     if selectedExerciseIDs.contains(exercise.id) {
                                         Image(systemName: "checkmark.circle.fill")

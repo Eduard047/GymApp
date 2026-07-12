@@ -348,7 +348,7 @@ struct AddWorkoutView: View {
                     WorkoutDraftExerciseCard(
                         draft: binding(for: item.id),
                         restTimers: restTimers,
-                        exerciseName: exercise.name,
+                        exerciseName: gymExerciseName(exercise),
                         lastWeight: store.lastWeight(exerciseID: exercise.id),
                         onDeleteExercise: { drafts.removeAll { $0.id == item.id } }
                     )
@@ -408,7 +408,7 @@ struct AddWorkoutView: View {
     }
 
     private func exerciseName(_ exerciseID: UUID) -> String {
-        store.exercise(id: exerciseID)?.name ?? gymLocalized("Deleted exercise")
+        store.exercise(id: exerciseID).map { gymExerciseName($0) } ?? gymLocalized("Deleted exercise")
     }
 
     private func addExercise(_ exercise: Exercise) {
@@ -474,7 +474,7 @@ struct AddWorkoutView: View {
             .sorted {
                 if $0.1 != $1.1 { return $0.1 > $1.1 }
                 if $0.2 != $1.2 { return $0.2 < $1.2 }
-                return $0.0.name.localizedCaseInsensitiveCompare($1.0.name) == .orderedAscending
+                return gymExerciseName($0.0).localizedCaseInsensitiveCompare(gymExerciseName($1.0)) == .orderedAscending
             }
             .prefix(preset == .upper ? 6 : 5)
 

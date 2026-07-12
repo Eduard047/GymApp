@@ -463,9 +463,6 @@ fun GymAppRoot(
                                 onNextMonth = viewModel::nextMonth,
                                 onMuscleMapPeriodSelected = viewModel::selectMuscleMapPeriod,
                                 onMuscleSelected = viewModel::selectMuscle,
-                                onEditExerciseMapping = viewModel::openManualMuscleMapping,
-                                onSaveExerciseMapping = viewModel::saveManualMuscleMapping,
-                                onCloseExerciseMapping = viewModel::closeManualMuscleMapping,
                                 onDeleteSession = viewModel::deleteSession,
                                 onAddWorkout = {
                                     navController.navigate(AppDestination.AddWorkout.route)

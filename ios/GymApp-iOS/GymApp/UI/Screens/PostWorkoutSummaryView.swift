@@ -102,7 +102,7 @@ struct PostWorkoutSummaryView: View {
                 values.append(
                     SummaryPersonalRecord(
                         exerciseID: exercise.id,
-                        title: exercise.name,
+                        title: gymExerciseName(exercise),
                         detail: gymText(
                             "New weight best · \(bestWeight.weight.formatted(.number.precision(.fractionLength(0 ... 2))))",
                             "Новий рекорд ваги · \(bestWeight.weight.formatted(.number.precision(.fractionLength(0 ... 2))))",
@@ -118,7 +118,7 @@ struct PostWorkoutSummaryView: View {
                 values.append(
                     SummaryPersonalRecord(
                         exerciseID: exercise.id,
-                        title: exercise.name,
+                        title: gymExerciseName(exercise),
                         detail: gymText(
                             "Estimated 1RM · \(bestEstimated.estimatedOneRepMax.formatted(.number.precision(.fractionLength(0 ... 1))))",
                             "Розрахунковий 1ПМ · \(bestEstimated.estimatedOneRepMax.formatted(.number.precision(.fractionLength(0 ... 1))))",
