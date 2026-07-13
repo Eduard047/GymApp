@@ -31,7 +31,7 @@ private val DarkColorScheme = darkColorScheme(
     onSurface = Frost,
     onBackground = Frost,
     outline = Color(0xFF4E6A7A),
-    outlineVariant = GlassStroke
+    outlineVariant = Color(0xFF304354)
 )
 
 private val LightColorScheme = lightColorScheme(
@@ -54,7 +54,7 @@ private val LightColorScheme = lightColorScheme(
     onSurface = Ink,
     onBackground = Ink,
     outline = Color(0xFFB3C2CB),
-    outlineVariant = Color(0xCCFFFFFF)
+    outlineVariant = Color.White
 )
 
 @Composable

@@ -119,6 +119,8 @@ fun GymAppRoot(
     }
 
     val isBottomTabRoute = AppDestination.bottomTabs.any { it.route == currentRoute }
+    val hasInContentRootHeader = currentRoute == AppDestination.Workouts.route ||
+        currentRoute == AppDestination.Exercises.route
     val cloudSession = (authState.session as? AccountSession.Cloud)
         ?.takeUnless { authState.needsPasswordUpdate }
 
@@ -330,6 +332,7 @@ fun GymAppRoot(
                     AppTopBar(
                         titleRes = titleRes,
                         isRootDestination = isBottomTabRoute,
+                        showRootTitle = !hasInContentRootHeader,
                         selectedLanguage = selectedLanguage,
                         onBack = { navController.navigateUp() },
                         onLanguageSelected = { languageManager.setLanguage(it) }
@@ -341,7 +344,7 @@ fun GymAppRoot(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .navigationBarsPadding()
-                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
                             contentAlignment = Alignment.BottomCenter
                         ) {
                             Surface(
@@ -351,7 +354,9 @@ fun GymAppRoot(
                                 shadowElevation = 18.dp,
                                 border = BorderStroke(
                                     1.dp,
-                                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.92f)
+                                    MaterialTheme.colorScheme.outlineVariant.copy(
+                                        alpha = MaterialTheme.colorScheme.outlineVariant.alpha * 0.92f
+                                    )
                                 )
                             ) {
                                 NavigationBar(
@@ -780,6 +785,7 @@ fun GymAppRoot(
 private fun AppTopBar(
     titleRes: Int,
     isRootDestination: Boolean,
+    showRootTitle: Boolean,
     selectedLanguage: AppLanguage,
     onBack: () -> Unit,
     onLanguageSelected: (AppLanguage) -> Unit
@@ -791,10 +797,12 @@ private fun AppTopBar(
                 titleContentColor = MaterialTheme.colorScheme.onBackground
             ),
             title = {
-                Text(
-                    text = stringResource(titleRes),
-                    style = MaterialTheme.typography.headlineLarge
-                )
+                if (showRootTitle) {
+                    Text(
+                        text = stringResource(titleRes),
+                        style = MaterialTheme.typography.headlineLarge
+                    )
+                }
             },
             actions = {
                 LanguageSelector(

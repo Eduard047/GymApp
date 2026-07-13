@@ -2,6 +2,7 @@
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,19 +15,15 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalButton
@@ -51,6 +48,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -66,7 +64,13 @@ import com.example.gymapp.R
 import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.entity.SetEntryEntity
 import com.example.gymapp.data.repository.defaultContributionsForExercise
+import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.ExerciseMuscleMap
+import com.example.gymapp.ui.components.HeroPanel
+import com.example.gymapp.ui.components.InfoPill
+import com.example.gymapp.ui.components.MetricTile
+import com.example.gymapp.ui.theme.GymCompactShape
+import com.example.gymapp.ui.theme.GymControlShape
 import com.example.gymapp.ui.util.localizedExerciseName
 import com.example.gymapp.ui.viewmodel.WorkoutDetailEvent
 import com.example.gymapp.ui.viewmodel.WorkoutDetailUiState
@@ -168,10 +172,18 @@ fun WorkoutDetailScreen(
     ) {
         val details = uiState.sessionDetails
         if (details == null) {
-            Text(
-                text = stringResource(R.string.empty_detail),
-                modifier = Modifier.padding(16.dp)
-            )
+            AppPanel(
+                modifier = Modifier
+                    .padding(14.dp)
+                    .fillMaxWidth(),
+                highlighted = true
+            ) {
+                Text(
+                    text = stringResource(R.string.empty_detail),
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(20.dp)
+                )
+            }
         } else {
             val garminMetrics = remember(details.session.note) {
                 parseGarminWorkoutMetrics(details.session.note.orEmpty())
@@ -180,10 +192,12 @@ fun WorkoutDetailScreen(
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                    horizontal = 12.dp,
-                    vertical = 10.dp
+                    start = 14.dp,
+                    top = 12.dp,
+                    end = 14.dp,
+                    bottom = 32.dp
                 ),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 item {
                     if (garminMetrics != null) {
@@ -198,6 +212,11 @@ fun WorkoutDetailScreen(
                         WorkoutHeaderCard(
                             date = DateTimeUtils.formatDate(details.session.date),
                             note = details.session.note,
+                            exerciseCount = details.workoutExercises.size,
+                            setCount = details.workoutExercises.sumOf { it.sets.size },
+                            volume = details.workoutExercises.sumOf { exercise ->
+                                exercise.sets.sumOf { set -> set.weight * set.reps }
+                            },
                             onDelete = { confirmDeleteSession = true }
                         )
                     }
@@ -242,10 +261,13 @@ fun WorkoutDetailScreen(
                         if (detailsText.isBlank()) setCountLabel else "$setCountLabel · $detailsText"
                     }
 
-                    Card(modifier = Modifier.fillMaxWidth()) {
+                    AppPanel(
+                        modifier = Modifier.fillMaxWidth(),
+                        highlighted = true
+                    ) {
                         Column(
-                            modifier = Modifier.padding(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -259,31 +281,6 @@ fun WorkoutDetailScreen(
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
-                                if (localRestSecondsRemaining > 0) {
-                                    AssistChip(
-                                        onClick = { },
-                                        label = {
-                                            Text(
-                                                text = stringResource(
-                                                    R.string.label_exercise_rest_remaining,
-                                                    formatTimerLabel(localRestSecondsRemaining)
-                                                )
-                                            )
-                                        }
-                                    )
-                                }
-                                if (uiState.personalRecordFlags[workoutExerciseId] == true) {
-                                    AssistChip(
-                                        onClick = { },
-                                        label = { Text(stringResource(R.string.label_personal_record)) },
-                                        leadingIcon = {
-                                            Icon(
-                                                imageVector = Icons.Default.EmojiEvents,
-                                                contentDescription = null
-                                            )
-                                        }
-                                    )
-                                }
                                 IconButton(onClick = { isExpanded = !isExpanded }) {
                                     Icon(
                                         imageVector = if (isExpanded) {
@@ -299,6 +296,32 @@ fun WorkoutDetailScreen(
                                             }
                                         )
                                     )
+                                }
+                            }
+
+                            if (
+                                localRestSecondsRemaining > 0 ||
+                                uiState.personalRecordFlags[workoutExerciseId] == true
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    if (localRestSecondsRemaining > 0) {
+                                        InfoPill(
+                                            text = stringResource(
+                                                R.string.label_exercise_rest_remaining,
+                                                formatTimerLabel(localRestSecondsRemaining)
+                                            )
+                                        )
+                                    }
+                                    if (uiState.personalRecordFlags[workoutExerciseId] == true) {
+                                        InfoPill(
+                                            text = stringResource(R.string.label_personal_record),
+                                            accent = MaterialTheme.colorScheme.tertiary
+                                        )
+                                    }
                                 }
                             }
 
@@ -385,7 +408,13 @@ fun WorkoutDetailScreen(
 
                             exerciseDetails.sets.forEachIndexed { setIndex, setEntry ->
                                 Row(
-                                    modifier = Modifier.fillMaxWidth(),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(GymControlShape)
+                                        .background(
+                                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f)
+                                        )
+                                        .padding(vertical = 3.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
@@ -438,7 +467,8 @@ fun WorkoutDetailScreen(
                                             IconButton(onClick = { onDeleteSet(setEntry) }) {
                                                 Icon(
                                                     imageVector = Icons.Default.Delete,
-                                                    contentDescription = stringResource(R.string.cd_delete)
+                                                    contentDescription = stringResource(R.string.cd_delete),
+                                                    tint = MaterialTheme.colorScheme.error
                                                 )
                                             }
                                         }
@@ -562,12 +592,14 @@ fun WorkoutDetailScreen(
 private fun WorkoutHeaderCard(
     date: String,
     note: String?,
+    exerciseCount: Int,
+    setCount: Int,
+    volume: Double,
     onDelete: () -> Unit
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+    HeroPanel(modifier = Modifier.fillMaxWidth()) {
         Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -576,7 +608,8 @@ private fun WorkoutHeaderCard(
             ) {
                 Text(
                     text = date,
-                    style = MaterialTheme.typography.titleMedium,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f)
                 )
                 IconButton(onClick = onDelete) {
@@ -591,8 +624,32 @@ private fun WorkoutHeaderCard(
                     ?.takeIf { it.isNotBlank() }
                     ?.let { stringResource(R.string.details_note, it) }
                     ?: stringResource(R.string.details_no_note),
-                style = MaterialTheme.typography.bodyLarge
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color.White.copy(alpha = 0.84f)
             )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                MetricTile(
+                    label = stringResource(R.string.post_workout_metric_exercises),
+                    value = exerciseCount.toString(),
+                    modifier = Modifier.weight(1f),
+                    onHero = true
+                )
+                MetricTile(
+                    label = stringResource(R.string.post_workout_metric_sets),
+                    value = setCount.toString(),
+                    modifier = Modifier.weight(1f),
+                    onHero = true
+                )
+                MetricTile(
+                    label = stringResource(R.string.post_workout_metric_volume),
+                    value = formatCompactWeight(volume),
+                    modifier = Modifier.weight(1f),
+                    onHero = true
+                )
+            }
         }
     }
 }
@@ -605,10 +662,9 @@ private fun GarminWorkoutHeaderCard(
     setCount: Int,
     onDelete: () -> Unit
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+    HeroPanel(modifier = Modifier.fillMaxWidth()) {
         Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -618,12 +674,13 @@ private fun GarminWorkoutHeaderCard(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = stringResource(R.string.garmin_workout_title),
-                        style = MaterialTheme.typography.titleMedium
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold
                     )
                     Text(
                         text = stringResource(R.string.garmin_workout_synced_from, date),
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = Color.White.copy(alpha = 0.78f),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -639,23 +696,24 @@ private fun GarminWorkoutHeaderCard(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                GarminMetricCell(
+                MetricTile(
                     label = stringResource(R.string.garmin_metric_duration),
                     value = metrics.duration ?: "—",
-                    helper = stringResource(R.string.garmin_metric_watch_session),
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
+                    onHero = true
                 )
-                GarminMetricCell(
+                MetricTile(
                     label = stringResource(R.string.garmin_metric_logged),
                     value = stringResource(R.string.garmin_metric_sets_value, setCount),
-                    helper = stringResource(R.string.garmin_metric_exercises_value, exerciseCount),
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
+                    onHero = true
                 )
             }
             Text(
-                text = stringResource(R.string.garmin_synced_sets_hint),
+                text = stringResource(R.string.garmin_metric_exercises_value, exerciseCount) +
+                    " · " + stringResource(R.string.garmin_synced_sets_hint),
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = Color.White.copy(alpha = 0.78f)
             )
         }
     }
@@ -663,14 +721,15 @@ private fun GarminWorkoutHeaderCard(
 
 @Composable
 private fun GarminWorkoutMetricsCard(metrics: GarminWorkoutMetrics) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+    AppPanel(modifier = Modifier.fillMaxWidth()) {
         Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text(
                 text = stringResource(R.string.garmin_metrics_title),
-                style = MaterialTheme.typography.titleMedium
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
             )
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -762,9 +821,10 @@ private fun GarminHeartRateVisual(metrics: GarminWorkoutMetrics) {
             modifier = Modifier
                 .fillMaxWidth()
                 .height(96.dp)
+                .clip(GymCompactShape)
                 .background(
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.34f),
-                    shape = RoundedCornerShape(8.dp)
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
+                    shape = GymCompactShape
                 )
                 .padding(horizontal = 10.dp, vertical = 12.dp)
         ) {
@@ -840,33 +900,44 @@ private fun GarminMetricCell(
     helper: String,
     modifier: Modifier = Modifier
 ) {
-    Card(modifier = modifier) {
-        Column(
-            modifier = Modifier.padding(10.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp)
-        ) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+    val outline = MaterialTheme.colorScheme.outlineVariant
+    Column(
+        modifier = modifier
+            .clip(GymCompactShape)
+            .background(
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                GymCompactShape
             )
-            Text(
-                text = value,
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+            .border(
+                width = 1.dp,
+                color = outline.copy(alpha = outline.alpha * 0.55f),
+                shape = GymCompactShape
             )
-            Text(
-                text = helper,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(3.dp)
+    ) {
+        Text(
+            text = label.uppercase(Locale.getDefault()),
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Text(
+            text = helper,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
@@ -884,10 +955,10 @@ private fun WorkoutExerciseQuickAddCard(
         ?.let { localizedExerciseName(it.name) }
         ?: stringResource(R.string.label_select_exercise)
 
-    Card(modifier = Modifier.fillMaxWidth()) {
+    AppPanel(modifier = Modifier.fillMaxWidth()) {
         Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -901,7 +972,8 @@ private fun WorkoutExerciseQuickAddCard(
                 )
                 Text(
                     text = stringResource(R.string.title_add_exercise_to_workout_section),
-                    style = MaterialTheme.typography.titleSmall
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
                 )
             }
 
@@ -940,9 +1012,9 @@ private fun WorkoutExerciseQuickAddCard(
                     }
                 }
 
-                OutlinedButton(
+                FilledTonalButton(
                     onClick = {
-                        val selectedId = selectedExerciseId ?: return@OutlinedButton
+                        val selectedId = selectedExerciseId ?: return@FilledTonalButton
                         onAddExerciseToWorkout(selectedId)
                     },
                     modifier = Modifier.fillMaxWidth()
@@ -1028,7 +1100,7 @@ private fun TimerPresetButton(
     FilledTonalButton(
         onClick = onClick,
         modifier = modifier,
-        shape = ButtonDefaults.filledTonalShape,
+        shape = GymControlShape,
         contentPadding = ButtonDefaults.ButtonWithIconContentPadding
     ) {
         Text(
@@ -1049,8 +1121,9 @@ private fun formatTimerLabel(totalSeconds: Int): String {
 }
 
 private fun formatCompactWeight(weight: Double): String {
+    if (!weight.isFinite()) return "—"
     return if (weight % 1.0 == 0.0) {
-        weight.toInt().toString()
+        String.format(Locale.getDefault(), "%.0f", weight)
     } else {
         String.format(Locale.getDefault(), "%.1f", weight)
     }

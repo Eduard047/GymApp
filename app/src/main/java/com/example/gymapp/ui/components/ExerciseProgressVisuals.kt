@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -35,12 +36,12 @@ fun ExerciseSpotlightCard(
             Text(
                 text = spotlight.title,
                 style = MaterialTheme.typography.headlineMedium,
-                color = MaterialTheme.colorScheme.onPrimary
+                color = Color.White
             )
             Text(
                 text = spotlight.subtitle,
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.88f)
+                color = Color.White.copy(alpha = 0.88f)
             )
 
             Row(
@@ -65,7 +66,7 @@ fun ExerciseSpotlightCard(
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 InfoPill(
                     text = spotlight.weightDeltaLabel,
-                    accent = MaterialTheme.colorScheme.onPrimary
+                    accent = Color.White
                 )
                 if (
                     spotlight.volumeDeltaLabel.isNotBlank() &&
@@ -73,7 +74,7 @@ fun ExerciseSpotlightCard(
                 ) {
                     InfoPill(
                         text = spotlight.volumeDeltaLabel,
-                        accent = MaterialTheme.colorScheme.onPrimary
+                        accent = Color.White
                     )
                 }
             }

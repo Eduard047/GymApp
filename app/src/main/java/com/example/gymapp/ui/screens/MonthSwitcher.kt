@@ -34,8 +34,7 @@ fun MonthSwitcher(
 ) {
     AppPanel(
         modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            .fillMaxWidth(),
         highlighted = false
     ) {
         Row(
@@ -69,11 +68,17 @@ fun MonthSwitcher(
                     maxLines = 1
                 )
                 Text(
-                    text = stringResource(R.string.action_current_month),
+                    text = stringResource(
+                        if (isCurrentMonth) {
+                            R.string.action_current_month
+                        } else {
+                            R.string.action_return_to_current_month
+                        }
+                    ),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
-                    maxLines = 1
+                    maxLines = 2
                 )
             }
             IconButton(

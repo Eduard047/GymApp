@@ -1,7 +1,6 @@
 ﻿package com.example.gymapp.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -24,7 +23,6 @@ import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -39,6 +37,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SuggestionChip
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -48,6 +47,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
@@ -59,14 +59,17 @@ import com.example.gymapp.data.repository.WorkoutRecommendationKind
 import com.example.gymapp.data.repository.WorkoutRecommendationReason
 import com.example.gymapp.data.repository.defaultContributionsForExercise
 import com.example.gymapp.ui.components.AppPanel
+import com.example.gymapp.ui.components.EmptyStatePanel
 import com.example.gymapp.ui.components.ExerciseMuscleBreakdownCard
 import com.example.gymapp.ui.components.ExerciseMuscleMap
 import com.example.gymapp.ui.components.HeroPanel
 import com.example.gymapp.ui.components.InfoPill
+import com.example.gymapp.ui.components.SectionTitle
 import com.example.gymapp.ui.util.localizedExerciseName
 import com.example.gymapp.ui.viewmodel.AddWorkoutUiState
 import com.example.gymapp.ui.viewmodel.ExerciseInputState
 import com.example.gymapp.ui.viewmodel.WorkoutTemplatePreviewUiModel
+import com.example.gymapp.ui.theme.GymControlShape
 import com.example.gymapp.util.CalorieMode
 import com.example.gymapp.util.DateTimeUtils
 import com.example.gymapp.util.TrainingGoal
@@ -115,92 +118,35 @@ fun AddWorkoutScreen(
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        contentPadding = PaddingValues(start = 14.dp, top = 12.dp, end = 14.dp, bottom = 30.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         item {
             HeroPanel(modifier = Modifier.fillMaxWidth()) {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(
                         text = stringResource(R.string.add_workout_intro_title),
-                        style = MaterialTheme.typography.titleLarge,
-                        color = MaterialTheme.colorScheme.onPrimary
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = Color.White
                     )
                     Text(
                         text = stringResource(R.string.add_workout_intro_supporting),
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.9f)
+                        color = Color.White.copy(alpha = 0.9f)
                     )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        InfoPill(
-                            text = stringResource(R.string.label_workout_date),
-                            accent = MaterialTheme.colorScheme.onPrimary,
-                            modifier = Modifier.weight(1f)
-                        )
-                        InfoPill(
-                            text = DateTimeUtils.formatDate(uiState.workoutDate),
-                            accent = MaterialTheme.colorScheme.onPrimary,
-                            modifier = Modifier.weight(2f)
-                        )
-                    }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         InfoPill(
                             text = stringResource(R.string.add_workout_active_exercises, selectedExerciseCount),
-                            accent = MaterialTheme.colorScheme.onPrimary,
+                            accent = Color.White,
                             modifier = Modifier.weight(1f)
                         )
                         InfoPill(
                             text = stringResource(R.string.add_workout_total_sets, totalSetCount),
-                            accent = MaterialTheme.colorScheme.onPrimary,
+                            accent = Color.White,
                             modifier = Modifier.weight(1f)
-                        )
-                    }
-                    OutlinedButton(
-                        onClick = onRepeatLastWorkout,
-                        enabled = uiState.canRepeatFromLast && !uiState.isTemplateLoading,
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = MaterialTheme.colorScheme.onPrimary,
-                            disabledContentColor = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.55f)
-                        ),
-                        border = BorderStroke(
-                            1.dp,
-                            MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.64f)
-                        )
-                    ) {
-                        Icon(imageVector = Icons.Default.Replay, contentDescription = null)
-                        Text(
-                            text = stringResource(R.string.action_repeat_last_workout),
-                            modifier = Modifier.padding(start = 8.dp),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                    OutlinedButton(
-                        onClick = onOpenTemplatePicker,
-                        enabled = uiState.workoutTemplates.isNotEmpty() && !uiState.isTemplateLoading,
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = MaterialTheme.colorScheme.onPrimary,
-                            disabledContentColor = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.55f)
-                        ),
-                        border = BorderStroke(
-                            1.dp,
-                            MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.64f)
-                        )
-                    ) {
-                        Icon(imageVector = Icons.Default.Replay, contentDescription = null)
-                        Text(
-                            text = stringResource(R.string.action_copy_workout_day),
-                            modifier = Modifier.padding(start = 8.dp),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
@@ -208,14 +154,18 @@ fun AddWorkoutScreen(
         }
 
         item {
-            AppPanel(modifier = Modifier.fillMaxWidth(), highlighted = true) {
+            AppPanel(modifier = Modifier.fillMaxWidth()) {
                 Column(
-                    modifier = Modifier.padding(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    Text(
-                        text = stringResource(R.string.label_note),
-                        style = MaterialTheme.typography.titleSmall
+                    SectionTitle(
+                        eyebrow = stringResource(R.string.label_workout_date),
+                        title = stringResource(R.string.label_note)
+                    )
+                    InfoPill(
+                        text = DateTimeUtils.formatDate(uiState.workoutDate),
+                        accent = MaterialTheme.colorScheme.secondary
                     )
                     OutlinedTextField(
                         value = uiState.note,
@@ -251,23 +201,100 @@ fun AddWorkoutScreen(
         }
 
         item {
+            AppPanel(modifier = Modifier.fillMaxWidth(), highlighted = true) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    SectionTitle(
+                        eyebrow = stringResource(R.string.add_workout_plan_templates),
+                        title = stringResource(R.string.template_picker_title)
+                    )
+                    OutlinedButton(
+                        onClick = onRepeatLastWorkout,
+                        enabled = uiState.canRepeatFromLast && !uiState.isTemplateLoading,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(imageVector = Icons.Default.Replay, contentDescription = null)
+                        Text(
+                            text = stringResource(R.string.action_repeat_last_workout),
+                            modifier = Modifier.padding(start = 8.dp),
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    OutlinedButton(
+                        onClick = onOpenTemplatePicker,
+                        enabled = uiState.workoutTemplates.isNotEmpty() && !uiState.isTemplateLoading,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(imageVector = Icons.Default.Replay, contentDescription = null)
+                        Text(
+                            text = stringResource(R.string.action_copy_workout_day),
+                            modifier = Modifier.padding(start = 8.dp),
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+        }
+
+        item {
             TrainingProfilePanel(
                 profile = uiState.trainingProfile,
                 onTrainingSplitSelected = onTrainingSplitSelected,
                 onWorkoutsPerWeekSelected = onWorkoutsPerWeekSelected,
                 onTrainingGoalSelected = onTrainingGoalSelected,
-                onCalorieModeSelected = onCalorieModeSelected,
-                onGenerateSmartWorkout = onGenerateSmartWorkout
+                onCalorieModeSelected = onCalorieModeSelected
             )
+        }
+
+        item {
+            SmartCoachPanel(onGenerateSmartWorkout = onGenerateSmartWorkout)
         }
 
         if (uiState.hasValidationError) {
             item {
-                Text(
-                    text = stringResource(R.string.message_validation_error),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.error
+                AppPanel(
+                    modifier = Modifier.fillMaxWidth(),
+                    containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.20f),
+                    highlighted = true
+                ) {
+                    Text(
+                        text = stringResource(R.string.message_validation_error),
+                        modifier = Modifier.padding(14.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+        }
+
+        item {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                SectionTitle(
+                    eyebrow = stringResource(R.string.title_add_workout),
+                    title = stringResource(R.string.title_add_exercise_to_workout_section),
+                    supporting = if (uiState.hasValidationError) {
+                        stringResource(R.string.message_validation_error)
+                    } else {
+                        stringResource(R.string.add_workout_intro_supporting)
+                    },
+                    modifier = Modifier.weight(1f)
                 )
+                Button(onClick = onAddExerciseDraft) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = stringResource(R.string.action_add_exercise)
+                    )
+                }
             }
         }
 
@@ -301,15 +328,12 @@ fun AddWorkoutScreen(
             )
         }
 
-        item {
-            OutlinedButton(
-                onClick = onAddExerciseDraft,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(imageVector = Icons.Default.Add, contentDescription = null)
-                Text(
-                    text = stringResource(R.string.action_add_exercise),
-                    modifier = Modifier.padding(start = 8.dp)
+        if (uiState.exerciseDrafts.isEmpty()) {
+            item {
+                EmptyStatePanel(
+                    title = stringResource(R.string.action_add_exercise),
+                    supporting = stringResource(R.string.add_workout_intro_supporting),
+                    modifier = Modifier.fillMaxWidth()
                 )
             }
         }
@@ -317,13 +341,13 @@ fun AddWorkoutScreen(
         item {
             AppPanel(modifier = Modifier.fillMaxWidth()) {
                 Column(
-                    modifier = Modifier.padding(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Text(
-                        text = stringResource(R.string.add_workout_save_hint),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    SectionTitle(
+                        eyebrow = stringResource(R.string.title_add_workout),
+                        title = stringResource(R.string.action_sync_plan_to_watch),
+                        supporting = stringResource(R.string.add_workout_save_hint)
                     )
                     OutlinedButton(
                         onClick = onSyncPlanToWatch,
@@ -360,20 +384,36 @@ fun AddWorkoutScreen(
                         )
                         null -> Unit
                     }
-                    Button(
-                        onClick = onSaveWorkout,
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = !uiState.isSaving
-                    ) {
-                        Text(text = stringResource(R.string.action_save_workout))
-                    }
                 }
+            }
+        }
+
+        item {
+            Button(
+                onClick = onSaveWorkout,
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !uiState.isSaving
+            ) {
+                if (uiState.isSaving) {
+                    CircularProgressIndicator(
+                        modifier = Modifier
+                            .padding(end = 8.dp)
+                            .size(18.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                }
+                Text(text = stringResource(R.string.action_save_workout))
             }
         }
     }
 
     if (uiState.isTemplatePickerOpen) {
-        ModalBottomSheet(onDismissRequest = onCloseTemplatePicker) {
+        ModalBottomSheet(
+            onDismissRequest = onCloseTemplatePicker,
+            containerColor = MaterialTheme.colorScheme.background,
+            contentColor = MaterialTheme.colorScheme.onBackground
+        ) {
             WorkoutTemplatePickerContent(
                 templates = uiState.workoutTemplates,
                 onCopyWorkoutTemplate = onCopyWorkoutTemplate,
@@ -389,36 +429,18 @@ private fun TrainingProfilePanel(
     onTrainingSplitSelected: (TrainingSplit) -> Unit,
     onWorkoutsPerWeekSelected: (Int) -> Unit,
     onTrainingGoalSelected: (TrainingGoal) -> Unit,
-    onCalorieModeSelected: (CalorieMode) -> Unit,
-    onGenerateSmartWorkout: () -> Unit
+    onCalorieModeSelected: (CalorieMode) -> Unit
 ) {
-    AppPanel(modifier = Modifier.fillMaxWidth(), highlighted = true) {
+    AppPanel(modifier = Modifier.fillMaxWidth()) {
         Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.AutoAwesome,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary
-                )
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = stringResource(R.string.training_profile_title),
-                        style = MaterialTheme.typography.titleSmall
-                    )
-                    Text(
-                        text = stringResource(R.string.training_profile_supporting),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
+            SectionTitle(
+                eyebrow = stringResource(R.string.title_add_workout),
+                title = stringResource(R.string.training_profile_title),
+                supporting = stringResource(R.string.training_profile_supporting)
+            )
 
             Text(
                 text = stringResource(R.string.training_profile_split),
@@ -476,6 +498,34 @@ private fun TrainingProfilePanel(
                 }
             }
 
+        }
+    }
+}
+
+@Composable
+private fun SmartCoachPanel(onGenerateSmartWorkout: () -> Unit) {
+    AppPanel(modifier = Modifier.fillMaxWidth(), highlighted = true) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.AutoAwesome,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                SectionTitle(
+                    eyebrow = stringResource(R.string.smart_coach_title),
+                    title = stringResource(R.string.action_generate_smart_workout),
+                    supporting = stringResource(R.string.training_profile_supporting),
+                    modifier = Modifier.weight(1f)
+                )
+            }
             Button(
                 onClick = onGenerateSmartWorkout,
                 modifier = Modifier.fillMaxWidth()
@@ -653,23 +703,31 @@ private fun ExerciseDraftCard(
         highlighted = true
     ) {
         Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text(
-                    text = if (!isExpanded && selectedExercise != null) {
-                        localizedExerciseName(selectedExercise.name)
-                    } else {
-                        stringResource(R.string.exercise_block_title, index + 1)
-                    },
-                    style = MaterialTheme.typography.titleSmall,
-                    modifier = Modifier.weight(1f)
-                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = selectedExercise?.let { localizedExerciseName(it.name) }
+                            ?: stringResource(R.string.exercise_block_title, index + 1),
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = lastWeight?.let { stringResource(R.string.label_last_weight, it) }
+                            ?: setCountLabel,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
                 IconButton(onClick = { isExpanded = !isExpanded }) {
                     Icon(
                         imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
@@ -681,7 +739,8 @@ private fun ExerciseDraftCard(
                 IconButton(onClick = onRemoveExerciseDraft) {
                     Icon(
                         imageVector = Icons.Default.Delete,
-                        contentDescription = stringResource(R.string.cd_remove_exercise)
+                        contentDescription = stringResource(R.string.cd_remove_exercise),
+                        tint = MaterialTheme.colorScheme.error
                     )
                 }
             }
@@ -778,37 +837,55 @@ private fun ExerciseDraftCard(
             }
 
             draft.sets.forEachIndexed { setIndex, set ->
-                Text(
-                    text = stringResource(R.string.label_set, setIndex + 1),
-                    style = MaterialTheme.typography.labelLarge
-                )
-                Row(
+                Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    shape = GymControlShape,
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.48f)
                 ) {
-                    OutlinedTextField(
-                        value = set.weight,
-                        onValueChange = { onWeightChanged(setIndex, it) },
-                        modifier = Modifier.weight(1f),
-                        label = { Text(stringResource(R.string.label_weight_kg)) },
-                        placeholder = { Text(stringResource(R.string.hint_optional)) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        singleLine = true
-                    )
-                    OutlinedTextField(
-                        value = set.reps,
-                        onValueChange = { onRepsChanged(setIndex, it) },
-                        modifier = Modifier.weight(1f),
-                        label = { Text(stringResource(R.string.label_reps)) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        singleLine = true
-                    )
-                    IconButton(onClick = { onRemoveSet(setIndex) }) {
-                        Icon(
-                            imageVector = Icons.Default.Delete,
-                            contentDescription = stringResource(R.string.cd_remove_set)
-                        )
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = stringResource(R.string.label_set, setIndex + 1),
+                                style = MaterialTheme.typography.labelLarge,
+                                modifier = Modifier.weight(1f)
+                            )
+                            IconButton(onClick = { onRemoveSet(setIndex) }) {
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription = stringResource(R.string.cd_remove_set),
+                                    tint = MaterialTheme.colorScheme.error
+                                )
+                            }
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedTextField(
+                                value = set.weight,
+                                onValueChange = { onWeightChanged(setIndex, it) },
+                                modifier = Modifier.weight(1f),
+                                label = { Text(stringResource(R.string.label_weight_kg)) },
+                                placeholder = { Text(stringResource(R.string.hint_optional)) },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                singleLine = true
+                            )
+                            OutlinedTextField(
+                                value = set.reps,
+                                onValueChange = { onRepsChanged(setIndex, it) },
+                                modifier = Modifier.weight(1f),
+                                label = { Text(stringResource(R.string.label_reps)) },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                singleLine = true
+                            )
+                        }
                     }
                 }
             }

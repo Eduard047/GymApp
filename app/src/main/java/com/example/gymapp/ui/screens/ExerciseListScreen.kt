@@ -12,14 +12,15 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -31,7 +32,12 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -45,7 +51,11 @@ import com.example.gymapp.R
 import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.entity.ExerciseHistoryEntry
 import com.example.gymapp.data.repository.defaultContributionsForExercise
+import com.example.gymapp.ui.components.AppPanel
+import com.example.gymapp.ui.components.EmptyStatePanel
 import com.example.gymapp.ui.components.ExerciseMuscleBreakdownCard
+import com.example.gymapp.ui.components.InfoPill
+import com.example.gymapp.ui.components.SectionTitle
 import com.example.gymapp.ui.util.currentAppLanguageTag
 import com.example.gymapp.ui.util.localizedExerciseName
 import com.example.gymapp.ui.util.localizedMuscleName
@@ -95,103 +105,164 @@ fun ExerciseListScreen(
     onLogout: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        AccountStatusCard(
-            label = uiState.accountLabel,
-            supporting = uiState.accountSupporting,
-            canLogout = uiState.canLogout,
-            onLogout = onLogout
-        )
+    var isAddExerciseOpen by rememberSaveable { mutableStateOf(false) }
+    var pendingAddedName by rememberSaveable { mutableStateOf<String?>(null) }
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+    LaunchedEffect(uiState.newExerciseName, uiState.hasInputError, pendingAddedName) {
+        if (
+            pendingAddedName != null &&
+            uiState.newExerciseName.isBlank() &&
+            !uiState.hasInputError
         ) {
-            OutlinedTextField(
-                value = uiState.newExerciseName,
-                onValueChange = onNameChange,
-                modifier = Modifier.weight(1f),
-                label = { Text(stringResource(R.string.label_exercise_name)) },
-                placeholder = { Text(stringResource(R.string.hint_exercise_name)) },
-                singleLine = true
-            )
-            OutlinedButton(onClick = onAddExercise) {
-                Text(text = stringResource(R.string.action_add_exercise))
+            isAddExerciseOpen = false
+            pendingAddedName = null
+        } else if (uiState.hasInputError) {
+            pendingAddedName = null
+        }
+    }
+
+    LazyColumn(
+        modifier = modifier
+            .fillMaxSize(),
+        contentPadding = PaddingValues(
+            start = 14.dp,
+            top = 10.dp,
+            end = 14.dp,
+            bottom = 28.dp
+        ),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = stringResource(R.string.title_exercises),
+                    style = MaterialTheme.typography.headlineLarge,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = stringResource(R.string.exercises_screen_subtitle),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
 
-        if (uiState.hasInputError) {
-            Text(
-                text = stringResource(R.string.message_exercise_error),
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodyMedium
+        item {
+            Button(
+                onClick = { isAddExerciseOpen = true },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 52.dp),
+                shape = MaterialTheme.shapes.small
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Add,
+                    contentDescription = null
+                )
+                Text(
+                    text = stringResource(R.string.action_add_exercise),
+                    modifier = Modifier.padding(start = 8.dp),
+                    maxLines = 1
+                )
+            }
+        }
+
+        item {
+            AccountStatusCard(
+                label = uiState.accountLabel,
+                supporting = uiState.accountSupporting,
+                canLogout = uiState.canLogout,
+                onLogout = onLogout
             )
         }
 
-        BackupToolsCard(
-            message = uiState.backupMessage,
-            onExportBackup = onExportBackup,
-            onExportDiagnostics = onExportDiagnostics,
-            onOpenImport = onOpenImport
-        )
+        item {
+            BackupToolsCard(
+                message = uiState.backupMessage,
+                onExportBackup = onExportBackup,
+                onExportDiagnostics = onExportDiagnostics,
+                onOpenImport = onOpenImport
+            )
+        }
+
+        item {
+            AppPanel(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    SectionTitle(
+                        eyebrow = stringResource(R.string.exercise_library_eyebrow),
+                        title = stringResource(R.string.exercise_library_title),
+                        supporting = stringResource(R.string.exercise_library_supporting)
+                    )
+                }
+            }
+        }
+
+        if (uiState.muscleMappings.isNotEmpty()) {
+            item {
+                ExerciseMuscleMappingsCard(
+                    mappings = uiState.muscleMappings,
+                    onEditExerciseMapping = onEditExerciseMapping
+                )
+            }
+        }
 
         if (uiState.exercises.isEmpty()) {
-            Text(
-                text = stringResource(R.string.empty_exercises),
-                style = MaterialTheme.typography.bodyLarge
-            )
+            item {
+                EmptyStatePanel(
+                    title = stringResource(R.string.empty_exercises),
+                    supporting = stringResource(R.string.exercise_library_empty_supporting)
+                )
+            }
         } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                if (uiState.muscleMappings.isNotEmpty()) {
-                    item {
-                        ExerciseMuscleMappingsCard(
-                            mappings = uiState.muscleMappings,
-                            onEditExerciseMapping = onEditExerciseMapping
-                        )
-                    }
-                }
-                items(
-                    items = uiState.exercises,
-                    key = { it.id }
-                ) { exercise ->
-                    Card(
+            items(
+                items = uiState.exercises,
+                key = { it.id }
+            ) { exercise ->
+                AppPanel(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onExerciseClick(exercise.id) },
+                    highlighted = true
+                ) {
+                    Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { onExerciseClick(exercise.id) }
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             Text(
                                 text = localizedExerciseName(exercise.name),
-                                modifier = Modifier.weight(1f),
-                                style = MaterialTheme.typography.bodyLarge
+                                style = MaterialTheme.typography.titleMedium,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
                             )
-                            IconButton(onClick = { onStartRenameExercise(exercise) }) {
-                                Icon(
-                                    imageVector = Icons.Default.Edit,
-                                    contentDescription = stringResource(R.string.cd_edit)
-                                )
-                            }
-                            IconButton(onClick = { onDeleteExercise(exercise) }) {
-                                Icon(
-                                    imageVector = Icons.Default.Delete,
-                                    contentDescription = stringResource(R.string.cd_delete)
-                                )
-                            }
+                            Text(
+                                text = stringResource(R.string.exercise_card_supporting),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        InfoPill(text = stringResource(R.string.exercise_card_history))
+                        IconButton(onClick = { onStartRenameExercise(exercise) }) {
+                            Icon(
+                                imageVector = Icons.Default.Edit,
+                                contentDescription = stringResource(R.string.cd_edit)
+                            )
+                        }
+                        IconButton(onClick = { onDeleteExercise(exercise) }) {
+                            Icon(
+                                imageVector = Icons.Default.Delete,
+                                contentDescription = stringResource(R.string.cd_delete),
+                                tint = MaterialTheme.colorScheme.error
+                            )
                         }
                     }
                 }
@@ -199,9 +270,34 @@ fun ExerciseListScreen(
         }
     }
 
+    if (isAddExerciseOpen) {
+        ModalBottomSheet(
+            onDismissRequest = {
+                isAddExerciseOpen = false
+                pendingAddedName = null
+            },
+            containerColor = MaterialTheme.colorScheme.background,
+            contentColor = MaterialTheme.colorScheme.onBackground
+        ) {
+            AddExerciseBottomSheetContent(
+                exerciseName = uiState.newExerciseName,
+                hasInputError = uiState.hasInputError,
+                onExerciseNameChange = onNameChange,
+                onAdd = {
+                    pendingAddedName = uiState.newExerciseName.trim().takeIf { it.isNotEmpty() }
+                    onAddExercise()
+                }
+            )
+        }
+    }
+
     val editingExercise = uiState.editingExercise
     if (editingExercise != null) {
-        ModalBottomSheet(onDismissRequest = onDismissRenameExercise) {
+        ModalBottomSheet(
+            onDismissRequest = onDismissRenameExercise,
+            containerColor = MaterialTheme.colorScheme.background,
+            contentColor = MaterialTheme.colorScheme.onBackground
+        ) {
             RenameExerciseBottomSheetContent(
                 exerciseName = uiState.editingExerciseName,
                 rawExerciseName = editingExercise.name,
@@ -216,7 +312,11 @@ fun ExerciseListScreen(
     val selectedExerciseId = uiState.selectedExerciseId
     val selectedExerciseName = uiState.selectedExerciseName
     if (selectedExerciseId != null && selectedExerciseName != null) {
-        ModalBottomSheet(onDismissRequest = onDismissHistory) {
+        ModalBottomSheet(
+            onDismissRequest = onDismissHistory,
+            containerColor = MaterialTheme.colorScheme.background,
+            contentColor = MaterialTheme.colorScheme.onBackground
+        ) {
             ExerciseHistoryBottomSheetContent(
                 exerciseName = selectedExerciseName,
                 history = uiState.selectedExerciseHistory,
@@ -230,7 +330,11 @@ fun ExerciseListScreen(
 
     val mappingExerciseName = uiState.mappingEditorExerciseName
     if (mappingExerciseName != null) {
-        ModalBottomSheet(onDismissRequest = onDismissExerciseMapping) {
+        ModalBottomSheet(
+            onDismissRequest = onDismissExerciseMapping,
+            containerColor = MaterialTheme.colorScheme.background,
+            contentColor = MaterialTheme.colorScheme.onBackground
+        ) {
             ExerciseMappingBottomSheetContent(
                 exerciseName = mappingExerciseName,
                 muscles = uiState.mappingEditorMuscles,
@@ -243,7 +347,11 @@ fun ExerciseListScreen(
 
     val backupJson = uiState.backupJson
     if (backupJson != null) {
-        ModalBottomSheet(onDismissRequest = onClearBackup) {
+        ModalBottomSheet(
+            onDismissRequest = onClearBackup,
+            containerColor = MaterialTheme.colorScheme.background,
+            contentColor = MaterialTheme.colorScheme.onBackground
+        ) {
             BackupJsonBottomSheetContent(
                 json = backupJson,
                 onDismiss = onClearBackup
@@ -252,7 +360,11 @@ fun ExerciseListScreen(
     }
 
     if (uiState.isImportOpen) {
-        ModalBottomSheet(onDismissRequest = onCloseImport) {
+        ModalBottomSheet(
+            onDismissRequest = onCloseImport,
+            containerColor = MaterialTheme.colorScheme.background,
+            contentColor = MaterialTheme.colorScheme.onBackground
+        ) {
             ImportBackupBottomSheetContent(
                 importJson = uiState.importJson,
                 importMessage = uiState.importMessage,
@@ -265,19 +377,72 @@ fun ExerciseListScreen(
 }
 
 @Composable
+private fun AddExerciseBottomSheetContent(
+    exerciseName: String,
+    hasInputError: Boolean,
+    onExerciseNameChange: (String) -> Unit,
+    onAdd: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, top = 4.dp, end = 16.dp, bottom = 28.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        SectionTitle(
+            eyebrow = stringResource(R.string.exercise_library_eyebrow),
+            title = stringResource(R.string.action_add_exercise),
+            supporting = stringResource(R.string.exercise_library_supporting)
+        )
+        OutlinedTextField(
+            value = exerciseName,
+            onValueChange = onExerciseNameChange,
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text(stringResource(R.string.label_exercise_name)) },
+            placeholder = { Text(stringResource(R.string.hint_exercise_name)) },
+            singleLine = true
+        )
+        if (hasInputError) {
+            Text(
+                text = stringResource(R.string.message_exercise_error),
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodyMedium
+            )
+        }
+        Button(
+            onClick = onAdd,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 52.dp),
+            shape = MaterialTheme.shapes.small
+        ) {
+            Icon(
+                imageVector = Icons.Default.Add,
+                contentDescription = null
+            )
+            Text(
+                text = stringResource(R.string.action_add_exercise),
+                modifier = Modifier.padding(start = 8.dp)
+            )
+        }
+    }
+}
+
+@Composable
 private fun ExerciseMuscleMappingsCard(
     mappings: List<ExerciseMuscleMappingUiModel>,
     onEditExerciseMapping: (String) -> Unit
 ) {
     val languageTag = currentAppLanguageTag()
-    Card(modifier = Modifier.fillMaxWidth()) {
+    AppPanel(modifier = Modifier.fillMaxWidth()) {
         Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text(
-                text = stringResource(R.string.exercise_mappings_title),
-                style = MaterialTheme.typography.titleSmall
+            SectionTitle(
+                eyebrow = stringResource(R.string.exercise_mappings_eyebrow),
+                title = stringResource(R.string.exercise_mappings_title),
+                supporting = stringResource(R.string.exercise_mappings_supporting)
             )
             mappings.forEach { mapping ->
                 Row(
@@ -389,29 +554,51 @@ private fun AccountStatusCard(
     canLogout: Boolean,
     onLogout: () -> Unit
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
+    AppPanel(
+        modifier = Modifier.fillMaxWidth(),
+        highlighted = true
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = label,
-                    style = MaterialTheme.typography.titleSmall
-                )
-                Text(
-                    text = supporting,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Text(
+                        text = supporting,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                InfoPill(
+                    text = stringResource(
+                        if (supporting.contains('@')) {
+                            R.string.account_mode_cloud
+                        } else {
+                            R.string.account_mode_local
+                        }
+                    )
                 )
             }
             if (canLogout) {
-                OutlinedButton(onClick = onLogout) {
+                OutlinedButton(
+                    onClick = onLogout,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.small
+                ) {
                     Text(stringResource(R.string.auth_switch_account))
                 }
             }
@@ -485,14 +672,15 @@ private fun BackupToolsCard(
     onExportDiagnostics: () -> Unit,
     onOpenImport: () -> Unit
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+    AppPanel(modifier = Modifier.fillMaxWidth()) {
         Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text(
-                text = stringResource(R.string.backup_tools_title),
-                style = MaterialTheme.typography.titleSmall
+            SectionTitle(
+                eyebrow = stringResource(R.string.backup_tools_eyebrow),
+                title = stringResource(R.string.backup_tools_title),
+                supporting = stringResource(R.string.backup_tools_supporting)
             )
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -901,7 +1089,7 @@ private fun ExerciseHistoryBottomSheetContent(
         }
 
         item {
-            Card(modifier = Modifier.fillMaxWidth()) {
+            AppPanel(modifier = Modifier.fillMaxWidth()) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -939,13 +1127,10 @@ private fun ExerciseHistoryBottomSheetContent(
 
         if (history.isEmpty()) {
             item {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Text(
-                        text = stringResource(R.string.exercise_history_empty),
-                        modifier = Modifier.padding(14.dp),
-                        style = MaterialTheme.typography.bodyLarge
-                    )
-                }
+                EmptyStatePanel(
+                    title = stringResource(R.string.exercise_history_empty),
+                    supporting = stringResource(R.string.exercise_library_empty_supporting)
+                )
             }
             return@LazyColumn
         }
@@ -1029,7 +1214,10 @@ private fun ExerciseHistorySessionCard(
     val totalVolume = sessionGroup.sets.sumOf { it.weight * it.reps }
     val maxWeight = sessionGroup.sets.maxOfOrNull { it.weight } ?: 0.0
 
-    Card(modifier = Modifier.fillMaxWidth()) {
+    AppPanel(
+        modifier = Modifier.fillMaxWidth(),
+        highlighted = true
+    ) {
         Column(
             modifier = Modifier.padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)

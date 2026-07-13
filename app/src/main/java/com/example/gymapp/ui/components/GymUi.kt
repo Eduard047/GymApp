@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.Surface
@@ -22,15 +21,19 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.gymapp.ui.theme.GymCompactShape
+import com.example.gymapp.ui.theme.GymPanelShape
 
 @Composable
 fun AppPanel(
@@ -40,22 +43,24 @@ fun AppPanel(
     highlighted: Boolean = false,
     content: @Composable () -> Unit
 ) {
-    val shape = RoundedCornerShape(28.dp)
+    val darkTheme = isSystemInDarkTheme()
+    val shape = GymPanelShape
     val panelColor = if (highlighted) {
-        containerColor.copy(alpha = 0.82f)
+        containerColor.withMultipliedAlpha(0.82f)
     } else {
-        containerColor.copy(alpha = 0.68f)
+        containerColor.withMultipliedAlpha(0.68f)
     }
+    val softOutline = if (darkTheme) Color(0xFF304354) else Color.White
     val strokeColor = if (highlighted) {
-        MaterialTheme.colorScheme.primary.copy(alpha = 0.38f)
+        MaterialTheme.colorScheme.primary.withMultipliedAlpha(0.34f)
     } else {
-        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.74f)
+        softOutline.withMultipliedAlpha(0.62f)
     }
 
     Box(
         modifier = modifier
             .shadow(
-                elevation = if (highlighted) 11.dp else 7.dp,
+                elevation = if (highlighted) 20.dp else 13.dp,
                 shape = shape,
                 clip = false,
                 ambientColor = Color.Black.copy(alpha = 0.13f),
@@ -77,13 +82,13 @@ fun HeroPanel(
     content: @Composable () -> Unit
 ) {
     val darkTheme = isSystemInDarkTheme()
-    val shape = RoundedCornerShape(28.dp)
+    val shape = GymPanelShape
     val leading = if (darkTheme) Color(0xFF132636) else Color(0xFF102A42)
     val trailing = if (darkTheme) Color(0xFF214C40) else Color(0xFF35627E)
     Box(
         modifier = modifier
             .shadow(
-                elevation = 12.dp,
+                elevation = 20.dp,
                 shape = shape,
                 clip = false,
                 ambientColor = leading.copy(alpha = 0.24f),
@@ -91,7 +96,11 @@ fun HeroPanel(
             )
             .clip(shape)
             .background(
-                brush = Brush.linearGradient(listOf(leading, trailing)),
+                brush = Brush.linearGradient(
+                    colors = listOf(leading, trailing),
+                    start = Offset.Zero,
+                    end = Offset.Infinite
+                ),
                 shape = shape
             )
             .border(
@@ -104,7 +113,7 @@ fun HeroPanel(
                 .align(Alignment.TopEnd)
                 .offset(x = 52.dp, y = (-70).dp)
                 .size(150.dp)
-                .blur(2.dp)
+                .blur(2.dp, edgeTreatment = BlurredEdgeTreatment.Unbounded)
                 .background(Color.White.copy(alpha = 0.10f), CircleShape)
         )
 
@@ -159,11 +168,13 @@ fun MetricTile(
     emphasized: Boolean = false,
     onHero: Boolean = false
 ) {
-    val shape = RoundedCornerShape(18.dp)
+    val darkTheme = isSystemInDarkTheme()
+    val shape = GymCompactShape
     val tileContainerColor = if (onHero) {
         Color.White.copy(alpha = 0.11f)
     } else {
-        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (emphasized) 0.72f else 0.55f)
+        val surfaceVariant = if (darkTheme) Color(0xFF182534) else Color(0xFFDDE7EB)
+        surfaceVariant.withMultipliedAlpha(0.55f)
     }
     val tileContentColor = if (onHero) {
         Color.White
@@ -178,7 +189,8 @@ fun MetricTile(
     val borderColor = if (onHero) {
         Color.White.copy(alpha = 0.14f)
     } else {
-        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
+        val softOutline = if (darkTheme) Color(0xFF304354) else Color.White
+        softOutline.withMultipliedAlpha(0.55f)
     }
 
     Column(
@@ -209,6 +221,9 @@ fun MetricTile(
         )
     }
 }
+
+private fun Color.withMultipliedAlpha(multiplier: Float): Color =
+    copy(alpha = alpha * multiplier.coerceIn(0f, 1f))
 
 @Composable
 fun InfoPill(

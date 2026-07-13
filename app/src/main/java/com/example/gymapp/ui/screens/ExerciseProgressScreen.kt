@@ -12,11 +12,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SnackbarHost
@@ -36,10 +37,16 @@ import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
 import com.example.gymapp.data.entity.ExerciseHistoryEntry
 import com.example.gymapp.data.repository.defaultContributionsForExercise
-import com.example.gymapp.ui.components.ExerciseMuscleBreakdownCard
+import com.example.gymapp.ui.components.AppPanel
+import com.example.gymapp.ui.components.EmptyStatePanel
 import com.example.gymapp.ui.components.ExerciseSpotlightCard
 import com.example.gymapp.ui.components.ExerciseTrendChartsCard
+import com.example.gymapp.ui.components.InfoPill
+import com.example.gymapp.ui.components.MetricTile
+import com.example.gymapp.ui.components.SectionTitle
+import com.example.gymapp.ui.util.currentAppLanguageTag
 import com.example.gymapp.ui.util.localizedExerciseName
+import com.example.gymapp.ui.util.localizedMuscleName
 import com.example.gymapp.ui.viewmodel.ExerciseProgressUiState
 import com.example.gymapp.util.DateTimeUtils
 import kotlinx.coroutines.launch
@@ -49,6 +56,12 @@ private data class ProgressSessionHistoryGroup(
     val sessionId: Long,
     val sessionDate: Long,
     val sets: List<ExerciseHistoryEntry>
+)
+
+private data class ProgressMetricUi(
+    val label: String,
+    val value: String,
+    val emphasized: Boolean = false
 )
 
 @Composable
@@ -129,65 +142,76 @@ fun ExerciseProgressScreen(
                 )
             }
 
-            if (selectedMuscleIntensities.isNotEmpty()) {
+            if (selectedDisplayExerciseName == null) {
                 item {
-                    ExerciseMuscleBreakdownCard(
-                        exerciseName = uiState.selectedExerciseName.orEmpty(),
-                        muscleIntensities = selectedMuscleIntensities
+                    EmptyStatePanel(
+                        title = stringResource(R.string.empty_exercises),
+                        supporting = stringResource(R.string.chart_no_data),
+                        modifier = Modifier.fillMaxWidth()
                     )
                 }
-            }
-
-            item {
-                ProgressSummaryCard(
-                    uiState = uiState,
-                    sessionCount = sessionGroups.size,
-                    setCount = uiState.history.size,
-                    totalVolume = uiState.history.sumOf { it.weight * it.reps }
-                )
-            }
-
-            item {
-                ExerciseSpotlightCard(spotlight = localizedSpotlight)
-            }
-
-            item {
-                ExerciseTrendChartsCard(chart = uiState.trendChart)
-            }
-
-            if (sessionGroups.isEmpty()) {
-                item {
-                    Card(modifier = Modifier.fillMaxWidth()) {
-                        Text(
-                            text = stringResource(R.string.empty_progress),
-                            style = MaterialTheme.typography.bodyLarge,
-                            modifier = Modifier.padding(14.dp)
+            } else {
+                if (selectedMuscleIntensities.isNotEmpty()) {
+                    item {
+                        ProgressMuscleBreakdownCard(
+                            exerciseName = uiState.selectedExerciseName.orEmpty(),
+                            muscleIntensities = selectedMuscleIntensities
                         )
                     }
                 }
-            } else {
+
                 item {
-                    Text(
-                        text = stringResource(R.string.progress_history_title),
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(top = 2.dp)
+                    ProgressSummaryCard(
+                        uiState = uiState,
+                        sessionCount = sessionGroups.size,
+                        setCount = uiState.history.size,
+                        totalVolume = uiState.history.sumOf { it.weight * it.reps }
                     )
                 }
 
-                items(
-                    items = sessionGroups,
-                    key = { it.sessionId }
-                ) { sessionGroup ->
-                    ProgressSessionHistoryCard(
-                        sessionGroup = sessionGroup,
-                        onDeleteHistoryEntry = { setId ->
-                            onDeleteHistoryEntry(setId)
-                            coroutineScope.launch {
-                                snackbarHostState.showSnackbar(message = setDeletedMessage)
+                item {
+                    ExerciseSpotlightCard(spotlight = localizedSpotlight)
+                }
+
+                item {
+                    ExerciseTrendChartsCard(chart = uiState.trendChart)
+                }
+
+                if (sessionGroups.isEmpty()) {
+                    item {
+                        EmptyStatePanel(
+                            title = stringResource(R.string.empty_progress),
+                            supporting = stringResource(
+                                R.string.progress_log_sets_hint,
+                                selectedDisplayExerciseName
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                } else {
+                    item {
+                        SectionTitle(
+                            eyebrow = stringResource(R.string.progress_recent_sessions_title),
+                            title = stringResource(R.string.progress_history_title),
+                            supporting = stringResource(R.string.progress_recent_sessions_subtitle),
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                        )
+                    }
+
+                    items(
+                        items = sessionGroups,
+                        key = { it.sessionId }
+                    ) { sessionGroup ->
+                        ProgressSessionHistoryCard(
+                            sessionGroup = sessionGroup,
+                            onDeleteHistoryEntry = { setId ->
+                                onDeleteHistoryEntry(setId)
+                                coroutineScope.launch {
+                                    snackbarHostState.showSnackbar(message = setDeletedMessage)
+                                }
                             }
-                        }
-                    )
+                        )
+                    }
                 }
             }
         }
@@ -212,35 +236,116 @@ private fun ExerciseProgressSelector(
     val selectedName = selectedRawName?.let { localizedExerciseName(it) }
         ?: stringResource(R.string.label_select_exercise)
 
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
-        Text(
-            text = stringResource(R.string.label_exercise),
-            style = MaterialTheme.typography.labelLarge
-        )
-        Row(modifier = Modifier.fillMaxWidth()) {
-            OutlinedButton(
-                onClick = { expanded = true },
-                modifier = Modifier.fillMaxWidth()
-            ) {
+    AppPanel(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.label_exercise),
+                style = MaterialTheme.typography.titleMedium
+            )
+            if (exercises.isEmpty()) {
                 Text(
-                    text = selectedName,
+                    text = stringResource(R.string.empty_exercises),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    OutlinedButton(
+                        onClick = { expanded = true },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = selectedName,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = expanded,
+                        onDismissRequest = { expanded = false }
+                    ) {
+                        exercises.forEach { exercise ->
+                            DropdownMenuItem(
+                                text = { Text(localizedExerciseName(exercise.second)) },
+                                onClick = {
+                                    onSelectExercise(exercise.first)
+                                    expanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProgressMuscleBreakdownCard(
+    exerciseName: String,
+    muscleIntensities: Map<String, Float>,
+    modifier: Modifier = Modifier
+) {
+    val languageTag = currentAppLanguageTag()
+    val sortedMuscles = remember(muscleIntensities, languageTag) {
+        muscleIntensities
+            .filterValues { it > 0f }
+            .toList()
+            .sortedByDescending { it.second }
+    }
+
+    AppPanel(
+        modifier = modifier.fillMaxWidth(),
+        highlighted = true
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(
+                    text = stringResource(R.string.muscle_heatmap_top_title),
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Text(
+                    text = localizedExerciseName(exerciseName),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            DropdownMenu(
-                expanded = expanded,
-                onDismissRequest = { expanded = false }
-            ) {
-                exercises.forEach { exercise ->
-                    DropdownMenuItem(
-                        text = { Text(localizedExerciseName(exercise.second)) },
-                        onClick = {
-                            onSelectExercise(exercise.first)
-                            expanded = false
+
+            sortedMuscles.forEach { (muscleId, intensity) ->
+                val normalizedIntensity = intensity.coerceIn(0f, 1f)
+                Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = localizedMuscleName(muscleId, languageTag),
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.weight(1f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = "${(normalizedIntensity * 100f).toInt()}%",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    LinearProgressIndicator(
+                        progress = { normalizedIntensity },
+                        modifier = Modifier.fillMaxWidth(),
+                        color = if (normalizedIntensity >= 0.75f) {
+                            MaterialTheme.colorScheme.tertiary
+                        } else {
+                            MaterialTheme.colorScheme.primary
                         }
                     )
                 }
@@ -257,15 +362,46 @@ private fun ProgressSummaryCard(
     totalVolume: Double
 ) {
     val totalReps = uiState.progressPoints.sumOf { it.totalReps }
+    val metrics = listOf(
+        ProgressMetricUi(
+            label = stringResource(R.string.progress_stat_sessions),
+            value = sessionCount.toString()
+        ),
+        ProgressMetricUi(
+            label = stringResource(R.string.progress_stat_total_sets),
+            value = setCount.toString()
+        ),
+        ProgressMetricUi(
+            label = stringResource(R.string.progress_stat_total_reps),
+            value = totalReps.toString()
+        ),
+        ProgressMetricUi(
+            label = stringResource(R.string.progress_stat_best_weight),
+            value = uiState.bestWeight?.let {
+                stringResource(R.string.progress_weight_value, it)
+            } ?: stringResource(R.string.chart_no_data),
+            emphasized = true
+        ),
+        ProgressMetricUi(
+            label = stringResource(R.string.progress_stat_avg_weight),
+            value = uiState.averageWeight?.let {
+                stringResource(R.string.progress_weight_value, it)
+            } ?: stringResource(R.string.chart_no_data)
+        ),
+        ProgressMetricUi(
+            label = stringResource(R.string.progress_stat_total_volume),
+            value = String.format(Locale.getDefault(), "%.0f", totalVolume)
+        )
+    )
 
-    Card(modifier = Modifier.fillMaxWidth()) {
+    AppPanel(modifier = Modifier.fillMaxWidth()) {
         Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text(
                 text = stringResource(R.string.progress_summary_title),
-                style = MaterialTheme.typography.titleSmall
+                style = MaterialTheme.typography.titleMedium
             )
             Text(
                 text = stringResource(R.string.progress_summary_subtitle),
@@ -273,77 +409,22 @@ private fun ProgressSummaryCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                ProgressMetric(
-                    label = stringResource(R.string.progress_stat_sessions),
-                    value = sessionCount.toString(),
-                    modifier = Modifier.weight(1f)
-                )
-                ProgressMetric(
-                    label = stringResource(R.string.progress_stat_total_sets),
-                    value = setCount.toString(),
-                    modifier = Modifier.weight(1f)
-                )
-                ProgressMetric(
-                    label = stringResource(R.string.progress_stat_total_reps),
-                    value = totalReps.toString(),
-                    modifier = Modifier.weight(1f)
-                )
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                ProgressMetric(
-                    label = stringResource(R.string.progress_stat_best_weight),
-                    value = uiState.bestWeight?.let {
-                        stringResource(R.string.progress_weight_value, it)
-                    } ?: stringResource(R.string.chart_no_data),
-                    modifier = Modifier.weight(1f)
-                )
-                ProgressMetric(
-                    label = stringResource(R.string.progress_stat_avg_weight),
-                    value = uiState.averageWeight?.let {
-                        stringResource(R.string.progress_weight_value, it)
-                    } ?: stringResource(R.string.chart_no_data),
-                    modifier = Modifier.weight(1f)
-                )
-                ProgressMetric(
-                    label = stringResource(R.string.progress_stat_total_volume),
-                    value = String.format(Locale.getDefault(), "%.0f", totalVolume),
-                    modifier = Modifier.weight(1f)
-                )
+            metrics.chunked(2).forEach { rowMetrics ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    rowMetrics.forEach { metric ->
+                        MetricTile(
+                            label = metric.label,
+                            value = metric.value,
+                            modifier = Modifier.weight(1f),
+                            emphasized = metric.emphasized
+                        )
+                    }
+                }
             }
         }
-    }
-}
-
-@Composable
-private fun ProgressMetric(
-    label: String,
-    value: String,
-    modifier: Modifier = Modifier
-) {
-    Column(
-        modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelLarge,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-        Text(
-            text = value,
-            style = MaterialTheme.typography.titleSmall,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
     }
 }
 
@@ -355,39 +436,34 @@ private fun ProgressSessionHistoryCard(
     val totalVolume = sessionGroup.sets.sumOf { it.weight * it.reps }
     val totalReps = sessionGroup.sets.sumOf { it.reps }
 
-    Card(modifier = Modifier.fillMaxWidth()) {
+    AppPanel(modifier = Modifier.fillMaxWidth()) {
         Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Text(
-                text = DateTimeUtils.formatDate(sessionGroup.sessionDate),
-                style = MaterialTheme.typography.titleSmall
-            )
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = stringResource(R.string.stats_sets, sessionGroup.sets.size),
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.weight(1f)
-                )
-                Text(
-                    text = stringResource(R.string.progress_reps_value, totalReps),
-                    style = MaterialTheme.typography.bodySmall,
+                    text = DateTimeUtils.formatDate(sessionGroup.sessionDate),
+                    style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.weight(1f),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                Text(
-                    text = stringResource(R.string.stats_volume, totalVolume),
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.weight(1f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                InfoPill(text = stringResource(R.string.stats_sets, sessionGroup.sets.size))
             }
+
+            Text(
+                text = "${stringResource(R.string.progress_reps_value, totalReps)} • " +
+                    stringResource(R.string.stats_volume, totalVolume),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -441,9 +517,15 @@ private fun ProgressSessionHistoryCard(
                     ) {
                         Icon(
                             imageVector = Icons.Default.Delete,
-                            contentDescription = stringResource(R.string.cd_delete)
+                            contentDescription = stringResource(R.string.cd_delete),
+                            tint = MaterialTheme.colorScheme.error
                         )
                     }
+                }
+                if (setIndex < sessionGroup.sets.lastIndex) {
+                    HorizontalDivider(
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
+                    )
                 }
             }
         }
