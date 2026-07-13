@@ -4,9 +4,9 @@ import androidx.annotation.StringRes
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
 import androidx.compose.material.icons.automirrored.filled.ShowChart
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.FitnessCenter
+import androidx.compose.material.icons.filled.TrackChanges
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.example.gymapp.R
 
@@ -24,7 +24,7 @@ sealed class AppDestination(
     data object Missions : AppDestination(
         route = "missions",
         labelRes = R.string.tab_missions,
-        icon = Icons.Default.CheckCircle
+        icon = Icons.Default.TrackChanges
     )
 
     data object Exercises : AppDestination(
@@ -81,4 +81,3 @@ sealed class AppDestination(
         }
     }
 }
-

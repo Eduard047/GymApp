@@ -2,6 +2,7 @@ package com.example.gymapp.ui.screens
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.Alignment
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -33,6 +34,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -78,30 +80,46 @@ fun WorkoutListScreen(
         modifier = modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Text(
-            text = stringResource(R.string.workouts_screen_subtitle),
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 12.dp)
-        )
-
-        Button(
-            onClick = onAddWorkout,
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp)
-                .heightIn(min = 56.dp),
-            shape = MaterialTheme.shapes.extraLarge
+                .padding(horizontal = 16.dp)
+                .padding(top = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Icon(
-                imageVector = Icons.Default.Add,
-                contentDescription = null
-            )
-            Text(
-                text = stringResource(R.string.action_add_workout),
-                modifier = Modifier.padding(start = 8.dp),
-                style = MaterialTheme.typography.titleMedium
-            )
+            Column(
+                verticalArrangement = Arrangement.spacedBy(3.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.title_workouts),
+                    style = MaterialTheme.typography.headlineLarge,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = stringResource(R.string.workouts_screen_subtitle),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            Button(
+                onClick = onAddWorkout,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 52.dp),
+                shape = MaterialTheme.shapes.small
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Add,
+                    contentDescription = null
+                )
+                Text(
+                    text = stringResource(R.string.action_add_workout),
+                    modifier = Modifier.padding(start = 8.dp),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
         }
 
         MonthSwitcher(
@@ -109,7 +127,8 @@ fun WorkoutListScreen(
             isCurrentMonth = uiState.monthOffset == 0,
             onPreviousMonth = onPreviousMonth,
             onCurrentMonth = onCurrentMonth,
-            onNextMonth = onNextMonth
+            onNextMonth = onNextMonth,
+            modifier = Modifier.padding(horizontal = 12.dp)
         )
 
         WorkoutSectionSwitcher(
@@ -130,10 +149,12 @@ fun WorkoutListScreen(
             state = listState,
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(
-                horizontal = 12.dp,
-                vertical = 10.dp
+                start = 12.dp,
+                top = 8.dp,
+                end = 12.dp,
+                bottom = 16.dp
             ),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item {
                 SoloProgressHero(progress = uiState.soloProgress)
@@ -335,20 +356,23 @@ private fun WorkoutSectionChip(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val darkTheme = isSystemInDarkTheme()
     Surface(
         modifier = modifier.clickable(onClick = onClick),
         color = if (selected) {
-            MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+            if (darkTheme) Color.White.copy(alpha = 0.32f) else MaterialTheme.colorScheme.surface
         } else {
-            MaterialTheme.colorScheme.surface.copy(alpha = 0.86f)
+            Color.Transparent
         },
         shape = MaterialTheme.shapes.large,
         border = BorderStroke(
             width = 1.dp,
             color = if (selected) {
-                MaterialTheme.colorScheme.primary.copy(alpha = 0.24f)
+                if (darkTheme) Color.White.copy(alpha = 0.16f) else {
+                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f)
+                }
             } else {
-                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f)
+                Color.Transparent
             }
         )
     ) {
@@ -364,9 +388,9 @@ private fun WorkoutSectionChip(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 color = if (selected) {
-                    MaterialTheme.colorScheme.primary
+                    if (darkTheme) Color.White else MaterialTheme.colorScheme.onSurface
                 } else {
-                    MaterialTheme.colorScheme.onSurface
+                    MaterialTheme.colorScheme.onSurfaceVariant
                 }
             )
         }
@@ -489,12 +513,12 @@ private fun DashboardCard(
             Text(
                 text = stringResource(R.string.dashboard_title),
                 style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onPrimary
+                color = Color.White
             )
             Text(
                 text = stringResource(R.string.dashboard_subtitle),
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.9f)
+                color = Color.White.copy(alpha = 0.9f)
             )
 
             Row(

@@ -49,7 +49,7 @@ fun SoloProgressHero(
             Text(
                 text = stringResource(R.string.solo_progress_eyebrow),
                 style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.84f)
+                color = Color.White.copy(alpha = 0.84f)
             )
 
             Row(
@@ -62,12 +62,12 @@ fun SoloProgressHero(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Surface(
-                        color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.12f),
-                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                        color = Color.White.copy(alpha = 0.12f),
+                        contentColor = Color.White,
                         shape = MaterialTheme.shapes.large,
                         border = BorderStroke(
                             width = 1.dp,
-                            color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.14f)
+                            color = Color.White.copy(alpha = 0.14f)
                         )
                     ) {
                         Text(
@@ -80,22 +80,22 @@ fun SoloProgressHero(
                     Text(
                         text = progress.title,
                         style = MaterialTheme.typography.headlineMedium,
-                        color = MaterialTheme.colorScheme.onPrimary
+                        color = Color.White
                     )
                     Text(
                         text = progress.summary,
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.88f)
+                        color = Color.White.copy(alpha = 0.88f)
                     )
                 }
 
                 Surface(
-                    color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.12f),
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    color = Color.White.copy(alpha = 0.12f),
+                    contentColor = Color.White,
                     shape = MaterialTheme.shapes.large,
                     border = BorderStroke(
                         width = 1.dp,
-                        color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.14f)
+                        color = Color.White.copy(alpha = 0.14f)
                     )
                 ) {
                     Column(
@@ -106,7 +106,7 @@ fun SoloProgressHero(
                         Text(
                             text = stringResource(R.string.solo_total_xp),
                             style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.74f)
+                            color = Color.White.copy(alpha = 0.74f)
                         )
                         Text(
                             text = progress.totalXp.toString(),
@@ -116,7 +116,7 @@ fun SoloProgressHero(
                         Text(
                             text = stringResource(R.string.solo_total_xp_earned),
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.76f)
+                            color = Color.White.copy(alpha = 0.76f)
                         )
                     }
                 }
@@ -128,8 +128,8 @@ fun SoloProgressHero(
                     .fillMaxWidth()
                     .height(10.dp)
                     .clip(MaterialTheme.shapes.small),
-                color = MaterialTheme.colorScheme.onPrimary,
-                trackColor = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.2f)
+                color = Color.White,
+                trackColor = Color.White.copy(alpha = 0.2f)
             )
 
             Row(
@@ -164,7 +164,7 @@ fun SoloProgressHero(
                     progress.xpForNextLevel
                 ),
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f)
+                color = Color.White.copy(alpha = 0.8f)
             )
         }
     }
@@ -505,12 +505,12 @@ private fun SoloHeroStat(
 ) {
     Surface(
         modifier = modifier,
-        color = MaterialTheme.colorScheme.onPrimary.copy(alpha = if (emphasized) 0.18f else 0.1f),
-        contentColor = MaterialTheme.colorScheme.onPrimary,
+        color = Color.White.copy(alpha = if (emphasized) 0.18f else 0.1f),
+        contentColor = Color.White,
         shape = MaterialTheme.shapes.large,
         border = BorderStroke(
             width = 1.dp,
-            color = MaterialTheme.colorScheme.onPrimary.copy(alpha = if (emphasized) 0.2f else 0.12f)
+            color = Color.White.copy(alpha = if (emphasized) 0.2f else 0.12f)
         )
     ) {
         Column(
@@ -520,7 +520,7 @@ private fun SoloHeroStat(
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.72f),
+                color = Color.White.copy(alpha = 0.72f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )

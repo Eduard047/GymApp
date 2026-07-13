@@ -15,6 +15,7 @@
     <string name="title_post_workout_summary">Підсумок тренування</string>
     <string name="title_ranks">Титули</string>
     <string name="title_exercises">Вправи</string>
+    <string name="exercises_screen_subtitle">Керуй бібліотекою, історією, групами м’язів і резервними копіями.</string>
     <string name="title_progress">Прогрес</string>
     <string name="title_rating">Рейтинг</string>
     <string name="leaderboard_hero_title">Рейтинг</string>
@@ -42,6 +43,7 @@
     <string name="action_save">Зберегти</string>
     <string name="action_close">Закрити</string>
     <string name="action_current_month">Поточний місяць</string>
+    <string name="action_return_to_current_month">Повернутися до поточного місяця</string>
     <string name="action_repeat_last_workout">Повторити попереднє тренування</string>
     <string name="action_copy_workout_day">Скопіювати минуле тренування</string>
     <string name="action_sync_plan_to_watch">Синхронізувати план на годинник</string>
@@ -60,6 +62,10 @@
     <string name="auth_switch_account">Перемкнути</string>
     <string name="auth_sync_supporting">Увійди, щоб синхронізувати тренування між пристроями.</string>
     <string name="auth_cloud_account">Хмарний обліковий запис</string>
+    <string name="auth_secure_account">Безпечний обліковий запис</string>
+    <string name="auth_welcome_back">З поверненням</string>
+    <string name="auth_sign_in_supporting">Увійди, щоб тренування синхронізувалися між твоїми пристроями.</string>
+    <string name="auth_create_account_supporting">Створи хмарний обліковий запис, а потім підтвердь email, щоб почати синхронізацію.</string>
     <string name="auth_create_account">Створити обліковий запис</string>
     <string name="auth_log_in">Увійти</string>
     <string name="auth_log_in_instead">Увійти натомість</string>
@@ -169,6 +175,7 @@
 
     <string name="empty_workouts">У цьому місяці тренувань немає.</string>
     <string name="empty_exercises">Вправ поки немає.</string>
+    <string name="exercise_library_empty_supporting">Додай власну вправу, щоб почати формувати бібліотеку.</string>
     <string name="empty_progress">У цьому місяці історії немає.</string>
     <string name="empty_detail">Тренування не знайдено.</string>
 
@@ -201,10 +208,13 @@
     <string name="workout_section_header_count_one">1 сесія</string>
     <string name="workout_section_header_count_many">%1$d сесій</string>
     <string name="missions_daily_title">Щоденні місії</string>
+    <string name="missions_daily_short">Щоденні</string>
     <string name="missions_daily_supporting">Малі перемоги на сьогодні.</string>
     <string name="missions_weekly_title">Тижневі місії</string>
+    <string name="missions_weekly_short">Тижневі</string>
     <string name="missions_weekly_supporting">Цілі на стабільність упродовж тижня.</string>
     <string name="missions_monthly_title">Місячні місії</string>
+    <string name="missions_monthly_short">Місячні</string>
     <string name="missions_monthly_supporting">Довгі цілі на поточний місяць.</string>
     <string name="missions_board_supporting">Активні щоденні, тижневі та місячні місії ротуються з великої бази челенджів.</string>
     <string name="missions_ranks_card_title">Шкала титулів</string>
@@ -351,7 +361,18 @@
     <string name="exercise_history_empty">Для цієї вправи ще немає історії.</string>
     <string name="exercise_history_sets_inline">Підходів: %1$d</string>
     <string name="exercise_history_volume_inline">Обсяг: %1$s</string>
+    <string name="exercise_library_eyebrow">Твої тренування</string>
+    <string name="exercise_library_title">Бібліотека вправ</string>
+    <string name="exercise_library_supporting">Додай власний рух або відкрий збережену вправу, щоб переглянути історію.</string>
+    <string name="exercise_card_supporting">Торкнися, щоб відкрити історію та деталі тренувань.</string>
+    <string name="exercise_card_history">Історія</string>
+    <string name="exercise_mappings_eyebrow">Групи м’язів</string>
+    <string name="exercise_mappings_supporting">Перевір групи м’язів, що використовуються для аналізу прогресу й навантаження.</string>
+    <string name="account_mode_cloud">Хмара</string>
+    <string name="account_mode_local">Локально</string>
+    <string name="backup_tools_eyebrow">Твої дані</string>
     <string name="backup_tools_title">Бекап і діагностика</string>
+    <string name="backup_tools_supporting">Резервні копії об’єднуються з поточним профілем і пропускають дублікати сесій.</string>
     <string name="backup_export_json">Експорт JSON</string>
     <string name="backup_import_json">Імпорт JSON</string>
     <string name="backup_export_diagnostics">Надіслати diagnostics / знімок БД</string>
