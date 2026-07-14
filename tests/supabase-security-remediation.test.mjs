@@ -33,7 +33,10 @@ test("Garmin migration binds, validates, quarantines, and grants each RPC to the
     "public.garmin_ack_plan(text, uuid, bigint)",
     "public.garmin_quarantine_pending_plan(text, uuid, bigint, text)"
   ]) {
-    assert.match(sql, new RegExp(`revoke all on function ${signature.replace(/[().]/g, "\\$&")}`));
+    assert.ok(
+      sql.includes(`revoke all on function ${signature} from public, anon, authenticated;`),
+      `Missing least-privilege revoke for ${signature}`
+    );
   }
   assert.match(sql, /grant execute on function public\.garmin_revoke_device\(uuid\) to authenticated/);
   assert.match(sql, /grant execute on function public\.garmin_create_device\(text\) to authenticated/);

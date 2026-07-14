@@ -309,7 +309,7 @@ test("client auth, public metadata, and compatibility docs use the intended doma
     android.indexOf("suspend fun requestPasswordReset")
   );
 
-  assert.match(android, /https:\/\/gymapptracker\.com\/confirmed\.html\?platform=android/);
+  assert.ok(android.includes("https://gymapptracker.com/confirmed.html?platform=android"));
   assert.match(android, /AUTH_BRIDGE_VARIANT_QUERY/);
   assert.match(android, /\/auth\/v1\/resend\?redirect_to=/);
   assert.match(signUpSource, /purpose=signup/);
@@ -318,15 +318,15 @@ test("client auth, public metadata, and compatibility docs use the intended doma
   assert.match(resendSource, /WEB_AUTH_REDIRECT_URL/);
   assert.match(resendSource, /clearPendingAuthTransaction\(PENDING_SIGNUP_KEY\)/);
   assert.doesNotMatch(resendSource, /code_challenge|beginAuthTransaction|purpose=signup/);
-  assert.match(pwa, /https:\/\/gymapptracker\.com\/confirmed\.html\?platform=web/);
+  assert.ok(pwa.includes("https://gymapptracker.com/confirmed.html?platform=web"));
   assert.match(pwa, /\/auth\/v1\/resend\?redirect_to=/);
   assert.match(pwa, /if \(!query\.has\("platform"\)\) query\.set\("platform", "web"\)/);
-  assert.match(pwa, /https:\/\/gymapptracker\.com\/support\.html/);
-  assert.match(pwa, /https:\/\/gymapptracker\.com\/privacy-policy\.html/);
-  assert.match(index, /rel="canonical" href="https:\/\/gymapptracker\.com\/"/);
+  assert.ok(pwa.includes("https://gymapptracker.com/support.html"));
+  assert.ok(pwa.includes("https://gymapptracker.com/privacy-policy.html"));
+  assert.ok(index.includes('rel="canonical" href="https://gymapptracker.com/"'));
   assert.match(confirmation, /Content-Security-Policy/);
   assert.match(confirmation, /name="referrer" content="no-referrer"/);
   assert.doesNotMatch(confirmation, /<script[^>]+src="https?:\/\//i);
   assert.equal(cname, "gymapptracker.com\n");
-  assert.match(readme, /https:\/\/eduard047\.github\.io\/GymApp\/confirmed\.html/);
+  assert.ok(readme.includes("https://eduard047.github.io/GymApp/confirmed.html"));
 });

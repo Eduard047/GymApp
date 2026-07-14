@@ -629,7 +629,7 @@ final class AuthService: ObservableObject {
 
     private func validatedEmail(_ email: String) throws -> String {
         let value = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let pattern = #"^[^\s@]+@[^\s@]+\.[^\s@]{2,}$"#
+        let pattern = "^[^\\s@]+@[^\\s@]+\\.[^\\s@]{2,}$"
         guard value.count <= 254, value.range(of: pattern, options: .regularExpression) != nil else {
             throw AuthServiceError.invalidEmail
         }
@@ -645,9 +645,13 @@ final class AuthService: ObservableObject {
     }
 
     private func validatedDisplayName(_ value: String, fallbackEmail: String) throws -> String {
-        let candidate = value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            ? String(fallbackEmail.split(separator: "@").first ?? "Athlete")
-            : value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let candidate: String
+        if trimmed.isEmpty {
+            candidate = String(fallbackEmail.split(separator: "@").first ?? "Athlete")
+        } else {
+            candidate = trimmed
+        }
         let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: " .-_") )
         guard (2...32).contains(candidate.count),
               candidate.unicodeScalars.allSatisfy({ allowed.contains($0) }) else {
