@@ -59,11 +59,39 @@ def _security_severity(rule_id: str, rule: dict[str, Any]) -> tuple[bool, float]
     return True, score
 
 
-def evaluate_documents(documents: Iterable[dict[str, Any]]) -> tuple[int, list[tuple[str, float, str]]]:
+def _result_location(result: dict[str, Any]) -> str:
+    locations = result.get("locations")
+    if not isinstance(locations, list) or not locations or not isinstance(locations[0], dict):
+        return "<unknown>"
+
+    physical = locations[0].get("physicalLocation")
+    if not isinstance(physical, dict):
+        return "<unknown>"
+    artifact = physical.get("artifactLocation")
+    if not isinstance(artifact, dict):
+        return "<unknown>"
+    uri = artifact.get("uri")
+    if not isinstance(uri, str) or not uri:
+        return "<unknown>"
+    safe_uri = "".join(char if char.isprintable() else "?" for char in uri)
+    safe_uri = " ".join(safe_uri.split())[:500]
+    if not safe_uri:
+        return "<unknown>"
+
+    region = physical.get("region")
+    start_line = region.get("startLine") if isinstance(region, dict) else None
+    if isinstance(start_line, int) and not isinstance(start_line, bool) and start_line > 0:
+        return f"{safe_uri}:{start_line}"
+    return safe_uri
+
+
+def evaluate_documents(
+    documents: Iterable[dict[str, Any]],
+) -> tuple[int, list[tuple[str, float, str, str]]]:
     rule_count = 0
     high_capable_rule_count = 0
     run_count = 0
-    failures: list[tuple[str, float, str]] = []
+    failures: list[tuple[str, float, str, str]] = []
 
     for document_index, raw_document in enumerate(documents):
         document = _mapping(raw_document, f"document[{document_index}]")
@@ -128,7 +156,14 @@ def evaluate_documents(documents: Iterable[dict[str, Any]]) -> tuple[int, list[t
                         f"{result_context}.message",
                     )
                     text = message.get("text") or message.get("markdown") or "CodeQL finding"
-                    failures.append((rule_id, score, " ".join(str(text).split())[:500]))
+                    failures.append(
+                        (
+                            rule_id,
+                            score,
+                            _result_location(result),
+                            " ".join(str(text).split())[:500],
+                        )
+                    )
 
     if run_count == 0:
         raise SarifGateError("CodeQL SARIF contains no analysis runs")
@@ -139,7 +174,7 @@ def evaluate_documents(documents: Iterable[dict[str, Any]]) -> tuple[int, list[t
     return rule_count, failures
 
 
-def evaluate_directory(directory: Path) -> tuple[int, list[tuple[str, float, str]]]:
+def evaluate_directory(directory: Path) -> tuple[int, list[tuple[str, float, str, str]]]:
     paths = sorted(directory.rglob("*.sarif"))
     if not paths:
         raise SarifGateError("CodeQL did not produce a SARIF report")
@@ -189,12 +224,38 @@ def self_test() -> None:
             _fixture(
                 high_rule,
                 extension=True,
-                results=[{"ruleId": "js/high", "message": {"text": "high finding"}}],
+                results=[
+                    {
+                        "ruleId": "js/high",
+                        "message": {"text": "high finding"},
+                        "locations": [
+                            {
+                                "physicalLocation": {
+                                    "artifactLocation": {"uri": "tests/example.js"},
+                                    "region": {"startLine": 42},
+                                }
+                            }
+                        ],
+                    }
+                ],
             )
         ]
     )
-    if failures != [("js/high", 7.0, "high finding")]:
+    if failures != [("js/high", 7.0, "tests/example.js:42", "high finding")]:
         raise SarifGateError("high-severity fixture was not rejected")
+
+    unsafe_location = {
+        "locations": [
+            {
+                "physicalLocation": {
+                    "artifactLocation": {"uri": "tests/\n::error::example.js"},
+                    "region": {"startLine": 7},
+                }
+            }
+        ]
+    }
+    if _result_location(unsafe_location) != "tests/?::error::example.js:7":
+        raise SarifGateError("result location was not safely normalized")
 
     error_fixtures = [
         _fixture(
@@ -245,8 +306,8 @@ def main(argv: list[str]) -> int:
 
         rule_count, failures = evaluate_directory(Path(argv[0]))
         if failures:
-            for rule_id, score, message in failures:
-                print(f"CodeQL {rule_id} ({score}): {message}")
+            for rule_id, score, location, message in failures:
+                print(f"CodeQL {rule_id} ({score}) at {location}: {message}")
             raise SarifGateError(
                 f"CodeQL found {len(failures)} high or critical result(s)"
             )
