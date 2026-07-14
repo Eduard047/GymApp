@@ -5,6 +5,7 @@ struct LeaderboardView: View {
     @AppStorage("app-language") private var languageCode = AppLanguage.english.rawValue
     @AppStorage("leaderboard-hidden-profile-ids") private var hiddenProfileIDsJSON = "[]"
     @ObservedObject private var store: WorkoutStore
+    @ObservedObject private var appState: AppState
     @ObservedObject private var cloudSync: CloudSyncService
     @ObservedObject private var auth: AuthService
 
@@ -16,9 +17,10 @@ struct LeaderboardView: View {
     @State private var safetyMessage: String?
     @State private var safetyMessageIsError = false
 
-    init(store: WorkoutStore, cloudSync: CloudSyncService, auth: AuthService) {
+    init(store: WorkoutStore, appState: AppState, auth: AuthService) {
         self.store = store
-        self.cloudSync = cloudSync
+        self.appState = appState
+        self.cloudSync = appState.cloudSync
         self.auth = auth
     }
 
@@ -430,23 +432,7 @@ struct LeaderboardView: View {
 
         errorMessage = nil
         do {
-            let loaded = try await cloudSync.withSyncIndicator {
-                let stats = store.syncProfileStats()
-                let owner = BackupOwner(
-                    accountID: auth.session?.storageKey,
-                    userID: cloudAccount.userID,
-                    email: cloudAccount.email,
-                    remote: true
-                )
-                let backup = try store.exportBackupData(owner: owner, prettyPrinted: false)
-                try await cloudSync.saveRemoteState(
-                    backupData: backup,
-                    xp: stats.xp,
-                    level: stats.level,
-                    workouts: stats.workouts
-                )
-                return try await cloudSync.leaderboard()
-            }
+            let loaded = try await appState.refreshCloudLeaderboard()
 
             var merged = loaded
             if !merged.contains(where: { $0.userID == cloudAccount.userID }) {

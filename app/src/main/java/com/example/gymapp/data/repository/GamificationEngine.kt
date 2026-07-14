@@ -11,6 +11,7 @@ import kotlin.math.max
 import kotlin.math.roundToInt
 
 object GamificationEngine {
+    internal const val MAX_SESSION_XP = 5_000
     private const val DAILY_HEATMAP_DAYS = 365
     private const val TREND_WINDOW_DAYS = 30
     private const val DAILY_WORKOUT_TARGET = 1.0
@@ -43,13 +44,15 @@ object GamificationEngine {
             comeback = comeback,
             zoneId = zoneId
         )
-        val baseXp = dayAggregates.values.sumOf { it.xp }
+        val baseXp = dayAggregates.values.fold(0) { total, aggregate ->
+            saturatedXpAdd(total, aggregate.xp)
+        }
         // Permanent progression is derived only from saved workout sessions.
         // Streaks, comeback status, missions, and achievements remain useful UI
         // signals, but recomputing them into total XP would make XP decrease or
         // change when a calendar period rolls over.
         val bonusXp = 0
-        val totalXp = baseXp + bonusXp
+        val totalXp = saturatedXpAdd(baseXp, bonusXp)
         val progression = buildProgression(baseXp, bonusXp, totalXp)
         val missions = buildMissionBoard(dayAggregates, today)
 
@@ -89,7 +92,7 @@ object GamificationEngine {
                 exerciseCount = current.exerciseCount + session.exerciseCount,
                 setCount = current.setCount + session.setCount,
                 volume = current.volume + session.totalVolume,
-                xp = current.xp + xpForSession(session)
+                xp = saturatedXpAdd(current.xp, xpForSession(session))
             )
         }
 
@@ -604,34 +607,72 @@ object GamificationEngine {
     }
 
     fun xpForSession(session: WorkoutSessionSummary): Int {
-        val volumeBonus = (session.totalVolume / 80.0).roundToInt()
-        return (90 + session.exerciseCount * 16 + session.setCount * 8 + volumeBonus).coerceAtLeast(0)
+        if (session.setCount <= 0) return 0
+        val safeVolume = session.totalVolume.takeIf { it.isFinite() && it >= 0.0 } ?: 0.0
+        val volumeBonus = (safeVolume / 80.0)
+            .coerceAtMost(Int.MAX_VALUE.toDouble())
+            .roundToInt()
+            .toLong()
+        val total = 90L +
+            session.exerciseCount.coerceAtLeast(0).toLong() * 16L +
+            session.setCount.coerceAtLeast(0).toLong() * 8L +
+            volumeBonus
+        return total.coerceIn(0L, MAX_SESSION_XP.toLong()).toInt()
     }
 
     fun levelForXp(totalXp: Int): Int {
-        var level = 1
-        while (totalXp >= xpForLevelStart(level + 1)) {
-            level += 1
+        val safeXp = totalXp.coerceAtLeast(0).toLong()
+        var lower = 1
+        var upper = MAX_LEVEL_FOR_INT_XP
+
+        // Fixed-cost binary search: unlike the old XP-controlled loop this
+        // always completes in twelve comparisons for the complete Int range.
+        repeat(LEVEL_SEARCH_STEPS) {
+            if (lower < upper) {
+                val candidate = (lower + upper + 1) / 2
+                if (exactXpForLevelStart(candidate) <= safeXp) {
+                    lower = candidate
+                } else {
+                    upper = candidate - 1
+                }
+            }
         }
-        return level
+        return lower
     }
 
     fun xpForLevelStart(level: Int): Int {
         if (level <= 1) {
             return 0
         }
-
-        var total = 0
-        for (currentLevel in 1 until level) {
-            total += xpForNextLevel(currentLevel)
-        }
-        return total
+        if (level > MAX_LEVEL_FOR_INT_XP) return Int.MAX_VALUE
+        return exactXpForLevelStart(level).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
     }
 
     fun xpForNextLevel(level: Int): Int {
-        val stage = (level - 1).coerceAtLeast(0)
-        return 200 + (stage * 85) + ((stage * stage) * 8)
+        val stage = (level.toLong() - 1L).coerceAtLeast(0L)
+        val square = stage * stage
+        if (square > (Long.MAX_VALUE - 200L - stage * 85L) / 8L) {
+            return Int.MAX_VALUE
+        }
+        return (200L + stage * 85L + square * 8L)
+            .coerceAtMost(Int.MAX_VALUE.toLong())
+            .toInt()
     }
+
+    private fun exactXpForLevelStart(level: Int): Long {
+        val completedLevels = (level - 1).coerceAtLeast(0).toLong()
+        val linear = 200L * completedLevels
+        val arithmetic = 85L * completedLevels * (completedLevels - 1L) / 2L
+        val quadratic = 8L * completedLevels * (completedLevels - 1L) *
+            (2L * completedLevels - 1L) / 6L
+        return linear + arithmetic + quadratic
+    }
+
+    private fun saturatedXpAdd(left: Int, right: Int): Int =
+        (left.toLong() + right.toLong()).coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
+
+    private const val MAX_LEVEL_FOR_INT_XP = 4_096
+    private const val LEVEL_SEARCH_STEPS = 12
 
     private fun titleForLevel(level: Int): GamificationTitle {
         return GamificationTitle(

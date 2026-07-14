@@ -1,14 +1,16 @@
 const CACHE_PREFIX = "gym-pwa-";
-const CACHE_NAME = `${CACHE_PREFIX}v41`;
+const CACHE_NAME = `${CACHE_PREFIX}v44`;
 const ASSETS = [
   "./",
   "./index.html",
   "./confirmed.html",
   "./confirmed.css",
   "./confirmed.js",
+  "./frame-guard.js",
   "./styles.css",
   "./muscle-regions.js",
   "./supabase-config.js",
+  "./state-contract.js",
   "./garmin-cloud-sync.js",
   "./progression-rules.js",
   "./app.js",

@@ -28,6 +28,93 @@ struct GarminDevice: Codable, Equatable, Sendable {
     let createdAt: String?
 }
 
+enum GarminPlanValidator {
+    static let maximumExercises = 60
+    static let maximumTotalSets = 60
+    static let maximumPlanBytes = 64 * 1_024
+    static let maximumTitleCharacters = 120
+    static let maximumTitleBytes = 480
+    static let maximumNameCharacters = 160
+    static let maximumNameBytes = 640
+    static let maximumFlattenedPlanNameBytes = 12_000
+    static let maximumNoteCharacters = 2_000
+    static let maximumNoteBytes = 8_000
+    static let maximumTimestampBytes = 40
+    static let maximumWeight = 1_000_000.0
+    static let maximumReps = 10_000
+
+    static func validate(_ plan: GarminWorkoutPlan) throws -> Data {
+        guard plan.source == "gymapp-ios",
+              plan.version == 1,
+              bounded(
+                plan.title,
+                characters: maximumTitleCharacters,
+                bytes: maximumTitleBytes
+              ),
+              !plan.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              bounded(plan.note, characters: maximumNoteCharacters, bytes: maximumNoteBytes),
+              validTimestamp(plan.createdAt),
+              validTimestamp(plan.startedAt),
+              (1 ... maximumExercises).contains(plan.exercises.count) else {
+            throw GarminCloudError.invalidPlan
+        }
+
+        var totalSets = 0
+        var flattenedPlanNameBytes = 0
+        for exercise in plan.exercises {
+            guard bounded(
+                    exercise.name,
+                    characters: maximumNameCharacters,
+                    bytes: maximumNameBytes
+                  ),
+                  !exercise.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  !exercise.sets.isEmpty else {
+                throw GarminCloudError.invalidPlan
+            }
+            guard exercise.sets.count <= maximumTotalSets - totalSets else {
+                throw GarminCloudError.invalidPlan
+            }
+            let repeatedNameBytes = exercise.name.utf8.count * exercise.sets.count
+            guard repeatedNameBytes <= maximumFlattenedPlanNameBytes - flattenedPlanNameBytes else {
+                throw GarminCloudError.invalidPlan
+            }
+            totalSets += exercise.sets.count
+            flattenedPlanNameBytes += repeatedNameBytes
+            for (index, set) in exercise.sets.enumerated() {
+                guard set.orderIndex == index,
+                      set.weight.isFinite,
+                      (0 ... maximumWeight).contains(set.weight),
+                      (1 ... maximumReps).contains(set.reps) else {
+                    throw GarminCloudError.invalidPlan
+                }
+            }
+        }
+        guard totalSets > 0 else { throw GarminCloudError.invalidPlan }
+
+        let data = try JSONEncoder().encode(plan)
+        guard data.count <= maximumPlanBytes else { throw GarminCloudError.invalidPlan }
+        return data
+    }
+
+    private static func bounded(_ value: String, characters: Int, bytes: Int) -> Bool {
+        guard value.utf8.prefix(bytes + 1).count <= bytes else { return false }
+        return value.utf16.prefix(characters + 1).count <= characters &&
+            !value.unicodeScalars.contains {
+            CharacterSet.controlCharacters.contains($0)
+        }
+    }
+
+    private static func validTimestamp(_ value: String) -> Bool {
+        guard value.utf8.prefix(maximumTimestampBytes + 1).count <= maximumTimestampBytes else {
+            return false
+        }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        guard let date = formatter.date(from: value) else { return false }
+        return date >= .distantPast && date <= .distantFuture
+    }
+}
+
 enum GarminCloudError: LocalizedError {
     case invalidPlan
     case invalidResponse
@@ -81,14 +168,10 @@ final class GarminCloudService: ObservableObject {
     }
 
     func submit(plan: GarminWorkoutPlan) async throws {
-        guard !plan.exercises.isEmpty,
-              plan.exercises.contains(where: { !$0.sets.isEmpty }) else {
-            throw GarminCloudError.invalidPlan
-        }
+        let planData = try GarminPlanValidator.validate(plan)
         isWorking = true
         defer { isWorking = false }
         let session = try await auth.validCloudSession()
-        let planData = try JSONEncoder().encode(plan)
         guard let planObject = try JSONSerialization.jsonObject(with: planData) as? [String: Any] else {
             throw GarminCloudError.invalidPlan
         }

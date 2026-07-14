@@ -23,6 +23,13 @@ public struct Exercise: Codable, Identifiable, Hashable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(UUID.self, forKey: .id)
         name = try container.decode(String.self, forKey: .name)
+        guard name.utf8.prefix(641).count <= 640 else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .name,
+                in: container,
+                debugDescription: "Exercise name exceeds the supported byte length."
+            )
+        }
         catalogKey = BuiltInExerciseCatalog.resolvedKey(
             catalogKey: try container.decodeIfPresent(String.self, forKey: .catalogKey),
             name: name
@@ -399,9 +406,22 @@ public struct BackupOwner: Codable, Hashable, Sendable {
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        accountID = try container.decodeIfPresent(String.self, forKey: .accountID)?.nilIfJSONNull
-        userID = try container.decodeIfPresent(String.self, forKey: .userID)?.nilIfJSONNull
-        email = try container.decodeIfPresent(String.self, forKey: .email)?.nilIfJSONNull
+        func bounded(_ key: CodingKeys) throws -> String? {
+            guard let value = try container.decodeIfPresent(String.self, forKey: key) else {
+                return nil
+            }
+            guard value.utf8.prefix(513).count <= 512 else {
+                throw DecodingError.dataCorruptedError(
+                    forKey: key,
+                    in: container,
+                    debugDescription: "Backup owner field exceeds the supported byte length."
+                )
+            }
+            return value.nilIfJSONNull
+        }
+        accountID = try bounded(.accountID)
+        userID = try bounded(.userID)
+        email = try bounded(.email)
         remote = try container.decodeIfPresent(Bool.self, forKey: .remote) ?? false
     }
 }
@@ -534,7 +554,18 @@ public struct GymBackup: Codable, Hashable, Sendable {
         if let integer = try? container.decode(Int64.self, forKey: .exportedAt) {
             exportedAt = integer
         } else {
-            exportedAt = Int64(try container.decode(Double.self, forKey: .exportedAt).rounded())
+            let value = try container.decode(Double.self, forKey: .exportedAt)
+            let rounded = value.rounded()
+            guard value.isFinite,
+                  rounded >= Double(Int64.min),
+                  rounded < Double(Int64.max) else {
+                throw DecodingError.dataCorruptedError(
+                    forKey: .exportedAt,
+                    in: container,
+                    debugDescription: "exportedAt is outside the supported integer range."
+                )
+            }
+            exportedAt = Int64(rounded)
         }
         app = try container.decodeIfPresent(String.self, forKey: .app) ?? "GymApp"
         diagnostics = try container.decodeIfPresent(Bool.self, forKey: .diagnostics) ?? false
@@ -556,6 +587,10 @@ public struct BackupImportLimits: Codable, Hashable, Sendable {
     public var maximumTotalSets: Int
     public var maximumExerciseNameLength: Int
     public var maximumNoteLength: Int
+    public var maximumExerciseNameBytes: Int
+    public var maximumNoteBytes: Int
+    public var maximumJSONStringBytes: Int
+    public var maximumJSONNestingDepth: Int
 
     public init(
         maximumFileBytes: Int = 8 * 1_024 * 1_024,
@@ -565,7 +600,11 @@ public struct BackupImportLimits: Codable, Hashable, Sendable {
         maximumSetsPerExercise: Int = 100,
         maximumTotalSets: Int = 100_000,
         maximumExerciseNameLength: Int = 160,
-        maximumNoteLength: Int = 4_000
+        maximumNoteLength: Int = 4_000,
+        maximumExerciseNameBytes: Int = 640,
+        maximumNoteBytes: Int = 16_000,
+        maximumJSONStringBytes: Int = 64 * 1_024,
+        maximumJSONNestingDepth: Int = 32
     ) {
         self.maximumFileBytes = maximumFileBytes
         self.maximumExercises = maximumExercises
@@ -575,6 +614,66 @@ public struct BackupImportLimits: Codable, Hashable, Sendable {
         self.maximumTotalSets = maximumTotalSets
         self.maximumExerciseNameLength = maximumExerciseNameLength
         self.maximumNoteLength = maximumNoteLength
+        self.maximumExerciseNameBytes = maximumExerciseNameBytes
+        self.maximumNoteBytes = maximumNoteBytes
+        self.maximumJSONStringBytes = maximumJSONStringBytes
+        self.maximumJSONNestingDepth = maximumJSONNestingDepth
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case maximumFileBytes
+        case maximumExercises
+        case maximumSessions
+        case maximumExercisesPerSession
+        case maximumSetsPerExercise
+        case maximumTotalSets
+        case maximumExerciseNameLength
+        case maximumNoteLength
+        case maximumExerciseNameBytes
+        case maximumNoteBytes
+        case maximumJSONStringBytes
+        case maximumJSONNestingDepth
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let defaults = Self.standard
+        maximumFileBytes = try container.decodeIfPresent(Int.self, forKey: .maximumFileBytes)
+            ?? defaults.maximumFileBytes
+        maximumExercises = try container.decodeIfPresent(Int.self, forKey: .maximumExercises)
+            ?? defaults.maximumExercises
+        maximumSessions = try container.decodeIfPresent(Int.self, forKey: .maximumSessions)
+            ?? defaults.maximumSessions
+        maximumExercisesPerSession = try container.decodeIfPresent(
+            Int.self,
+            forKey: .maximumExercisesPerSession
+        ) ?? defaults.maximumExercisesPerSession
+        maximumSetsPerExercise = try container.decodeIfPresent(
+            Int.self,
+            forKey: .maximumSetsPerExercise
+        ) ?? defaults.maximumSetsPerExercise
+        maximumTotalSets = try container.decodeIfPresent(Int.self, forKey: .maximumTotalSets)
+            ?? defaults.maximumTotalSets
+        maximumExerciseNameLength = try container.decodeIfPresent(
+            Int.self,
+            forKey: .maximumExerciseNameLength
+        ) ?? defaults.maximumExerciseNameLength
+        maximumNoteLength = try container.decodeIfPresent(Int.self, forKey: .maximumNoteLength)
+            ?? defaults.maximumNoteLength
+        maximumExerciseNameBytes = try container.decodeIfPresent(
+            Int.self,
+            forKey: .maximumExerciseNameBytes
+        ) ?? defaults.maximumExerciseNameBytes
+        maximumNoteBytes = try container.decodeIfPresent(Int.self, forKey: .maximumNoteBytes)
+            ?? defaults.maximumNoteBytes
+        maximumJSONStringBytes = try container.decodeIfPresent(
+            Int.self,
+            forKey: .maximumJSONStringBytes
+        ) ?? defaults.maximumJSONStringBytes
+        maximumJSONNestingDepth = try container.decodeIfPresent(
+            Int.self,
+            forKey: .maximumJSONNestingDepth
+        ) ?? defaults.maximumJSONNestingDepth
     }
 }
 
@@ -601,7 +700,11 @@ public struct BackupImportResult: Codable, Hashable, Sendable {
 
 extension Date {
     var gymEpochMilliseconds: Int64 {
-        Int64((timeIntervalSince1970 * 1_000).rounded())
+        let milliseconds = (timeIntervalSince1970 * 1_000).rounded()
+        guard milliseconds.isFinite else { return 0 }
+        if milliseconds >= Double(Int64.max) { return Int64.max }
+        if milliseconds <= Double(Int64.min) { return Int64.min }
+        return Int64(milliseconds)
     }
 
     init(gymEpochMilliseconds: Int64) {

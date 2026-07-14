@@ -1,5 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <full-backup-content>
-    <!-- Auth sessions and PKCE verifiers are device-bound and must never enter backups. -->
+    <!-- Workout databases contain private account-scoped data and are restored in-app instead. -->
+    <exclude domain="database" path="." />
+    <!-- Auth sessions, PKCE verifiers, and Garmin credentials are device-bound. -->
     <exclude domain="sharedpref" path="gym_cloud_auth.xml" />
+    <exclude domain="sharedpref" path="gym_cloud_auth.xml.bak" />
+    <exclude domain="sharedpref" path="gym_local_database_bindings.xml" />
+    <exclude domain="sharedpref" path="gym_local_database_bindings.xml.bak" />
+    <exclude domain="sharedpref" path="garmin_sync.xml" />
+    <exclude domain="sharedpref" path="garmin_sync.xml.bak" />
+    <exclude domain="sharedpref" path="phone_wear_sync.xml" />
+    <exclude domain="sharedpref" path="phone_wear_sync.xml.bak" />
+    <exclude domain="sharedpref" path="gym_training_profile.xml" />
+    <exclude domain="sharedpref" path="gym_training_profile.xml.bak" />
+    <exclude domain="sharedpref" path="gym_training_profiles.xml" />
+    <exclude domain="sharedpref" path="gym_training_profiles.xml.bak" />
+    <exclude domain="sharedpref" path="gym_cloud_sync_baselines.xml" />
+    <exclude domain="sharedpref" path="gym_cloud_sync_baselines.xml.bak" />
 </full-backup-content>

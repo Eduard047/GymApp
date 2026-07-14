@@ -74,42 +74,70 @@ final class CloudSyncService: ObservableObject {
     private let auth: AuthService
     private let urlSession: URLSession
     private var stateRevision: StateRevision = .unknown
+    private var operationRevision: UInt64 = 0
 
     init(auth: AuthService, urlSession: URLSession = .shared) {
         self.auth = auth
         self.urlSession = urlSession
     }
 
-    func loadRemoteState() async throws -> Data? {
-        let session = try await auth.validCloudSession()
+    func resetForAccountTransition() {
+        operationRevision &+= 1
         stateRevision = .unknown
-        let path = "/rest/v1/user_states?select=state,updated_at&user_id=eq.\(Self.queryValue(session.userID))&limit=1"
+        lastSyncedAt = nil
+        lastError = nil
+    }
+
+    func loadRemoteState(expectedUserID: String? = nil) async throws -> Data? {
+        operationRevision &+= 1
+        let expectedOperation = operationRevision
+        let session = try await auth.validCloudSession(expectedUserID: expectedUserID)
+        let userID = expectedUserID ?? session.userID
+        guard session.userID == userID else { throw AuthServiceError.sessionChanged }
+        stateRevision = .unknown
+        let path = "/rest/v1/user_states?select=state,updated_at&user_id=eq.\(Self.queryValue(userID))&limit=1"
         let data = try await request(path: path, method: "GET", token: session.accessToken)
+        guard operationRevision == expectedOperation,
+              auth.session?.cloud?.userID == userID else {
+            throw AuthServiceError.sessionChanged
+        }
         guard let rows = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
             throw CloudSyncError.invalidResponse
         }
         guard let row = rows.first else {
-            stateRevision = .missing(userID: session.userID)
+            stateRevision = .missing(userID: userID)
             return nil
         }
         guard let state = row["state"],
               let updatedAt = (row["updated_at"] as? String)?.nonEmpty else {
             throw CloudSyncError.invalidResponse
         }
-        stateRevision = .loaded(userID: session.userID, updatedAt: updatedAt)
+        stateRevision = .loaded(userID: userID, updatedAt: updatedAt)
         return try JSONSerialization.data(withJSONObject: state, options: [.sortedKeys])
     }
 
-    func saveRemoteState(backupData: Data, xp: Int, level: Int, workouts: Int) async throws {
+    func saveRemoteState(
+        backupData: Data,
+        xp: Int,
+        level: Int,
+        workouts: Int,
+        expectedUserID: String? = nil
+    ) async throws {
         guard let state = try JSONSerialization.jsonObject(with: backupData) as? [String: Any] else {
             throw CloudSyncError.invalidPayload
         }
-        let session = try await auth.validCloudSession()
+        let expectedOperation = operationRevision
+        let session = try await auth.validCloudSession(expectedUserID: expectedUserID)
+        let userID = expectedUserID ?? session.userID
+        guard session.userID == userID,
+              auth.session?.cloud?.userID == userID else {
+            throw AuthServiceError.sessionChanged
+        }
         let priorRevision: String?
         switch stateRevision {
-        case .loaded(let revisionUserID, let updatedAt) where revisionUserID == session.userID:
+        case .loaded(let revisionUserID, let updatedAt) where revisionUserID == userID:
             priorRevision = updatedAt
-        case .missing(let revisionUserID) where revisionUserID == session.userID:
+        case .missing(let revisionUserID) where revisionUserID == userID:
             priorRevision = nil
         default:
             throw CloudSyncError.staleRemoteState
@@ -119,7 +147,7 @@ final class CloudSyncService: ObservableObject {
         let revisionData: Data
         if let priorRevision {
             revisionData = try await request(
-                path: "/rest/v1/user_states?user_id=eq.\(Self.queryValue(session.userID))&updated_at=eq.\(Self.queryValue(priorRevision))&select=updated_at",
+                path: "/rest/v1/user_states?user_id=eq.\(Self.queryValue(userID))&updated_at=eq.\(Self.queryValue(priorRevision))&select=updated_at",
                 method: "PATCH",
                 token: session.accessToken,
                 prefer: "return=representation",
@@ -133,7 +161,7 @@ final class CloudSyncService: ObservableObject {
                 prefer: "return=representation",
                 conflictMeansStaleState: true,
                 body: [[
-                    "user_id": session.userID,
+                    "user_id": userID,
                     "state": state,
                     "updated_at": timestamp
                 ]]
@@ -143,10 +171,14 @@ final class CloudSyncService: ObservableObject {
         guard let storedRevision = Self.singleUpdatedAt(in: revisionData) else {
             throw CloudSyncError.staleRemoteState
         }
-        stateRevision = .loaded(userID: session.userID, updatedAt: storedRevision)
+        guard operationRevision == expectedOperation,
+              auth.session?.cloud?.userID == userID else {
+            throw AuthServiceError.sessionChanged
+        }
+        stateRevision = .loaded(userID: userID, updatedAt: storedRevision)
 
         let profileBody: [[String: Any]] = [[
-            "user_id": session.userID,
+            "user_id": userID,
             "display_name": session.displayName,
             "xp": max(0, xp),
             "level": max(1, level),
@@ -160,18 +192,30 @@ final class CloudSyncService: ObservableObject {
             prefer: "resolution=merge-duplicates,return=minimal",
             body: profileBody
         )
+        guard operationRevision == expectedOperation,
+              auth.session?.cloud?.userID == userID else {
+            throw AuthServiceError.sessionChanged
+        }
         lastSyncedAt = Date()
         lastError = nil
     }
 
-    func leaderboard(limit: Int = 50) async throws -> [LeaderboardEntry] {
-        let session = try await auth.validCloudSession()
+    func leaderboard(
+        limit: Int = 50,
+        expectedUserID: String? = nil
+    ) async throws -> [LeaderboardEntry] {
+        let session = try await auth.validCloudSession(expectedUserID: expectedUserID)
+        let userID = expectedUserID ?? session.userID
+        guard session.userID == userID else { throw AuthServiceError.sessionChanged }
         let safeLimit = min(max(limit, 1), 100)
         let data = try await request(
             path: "/rest/v1/leaderboard_public?select=profile_id,display_name,xp,level,workouts,is_current_user&order=xp.desc,workouts.desc,display_name.asc&limit=\(safeLimit)",
             method: "GET",
             token: session.accessToken
         )
+        guard auth.session?.cloud?.userID == userID else {
+            throw AuthServiceError.sessionChanged
+        }
         guard let rows = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
             throw CloudSyncError.invalidResponse
         }

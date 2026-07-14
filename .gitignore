@@ -40,17 +40,35 @@ local.properties
 *.keystore
 *.der
 *.pem
+*.key
+*.p12
+*.pfx
+*.mobileprovision
 keystore.properties
 /garmin-keys/
+.env
+.env.*
+!.env.example
+cookies.txt
+*.har
 
 # Logs / temp
 *.log
 *.tmp
 *.temp
+*.bak
+*.dump
+*.dmp
+*.zip
 /tmp/
 
 # Local helper files
 /CON
+/AGENTS.md
+/design-qa.md
+/release-readiness.md
+/security-reports/
+/screenshots/
 
 # Local database backups
 /db-backup/

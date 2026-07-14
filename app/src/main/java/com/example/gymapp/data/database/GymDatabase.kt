@@ -7,12 +7,16 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.example.gymapp.data.dao.ExerciseDao
+import com.example.gymapp.data.dao.GarminWorkoutReceiptDao
 import com.example.gymapp.data.dao.MuscleMappingDao
 import com.example.gymapp.data.dao.SetDao
+import com.example.gymapp.data.dao.WearMutationDao
 import com.example.gymapp.data.dao.WorkoutDao
 import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.entity.ExerciseMuscleMappingEntity
+import com.example.gymapp.data.entity.GarminWorkoutReceiptEntity
 import com.example.gymapp.data.entity.SetEntryEntity
+import com.example.gymapp.data.entity.WearMutationReceiptEntity
 import com.example.gymapp.data.entity.WorkoutExerciseEntity
 import com.example.gymapp.data.entity.WorkoutSessionEntity
 import java.util.concurrent.ConcurrentHashMap
@@ -23,9 +27,11 @@ import java.util.concurrent.ConcurrentHashMap
         WorkoutSessionEntity::class,
         WorkoutExerciseEntity::class,
         SetEntryEntity::class,
-        ExerciseMuscleMappingEntity::class
+        ExerciseMuscleMappingEntity::class,
+        WearMutationReceiptEntity::class,
+        GarminWorkoutReceiptEntity::class
     ],
-    version = 4,
+    version = 6,
     exportSchema = false
 )
 abstract class GymDatabase : RoomDatabase() {
@@ -33,6 +39,8 @@ abstract class GymDatabase : RoomDatabase() {
     abstract fun workoutDao(): WorkoutDao
     abstract fun setDao(): SetDao
     abstract fun muscleMappingDao(): MuscleMappingDao
+    abstract fun wearMutationDao(): WearMutationDao
+    abstract fun garminWorkoutReceiptDao(): GarminWorkoutReceiptDao
 
     companion object {
         private val INSTANCES = ConcurrentHashMap<String, GymDatabase>()
@@ -96,9 +104,11 @@ abstract class GymDatabase : RoomDatabase() {
             "Нахили в сторони на гіперекстензії" to "Бокові нахили на гіперекстензії"
         )
 
-        private val MIGRATION_2_3 = object : Migration(2, 3) {
+        internal val MIGRATION_2_3 = object : Migration(2, 3) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 EXERCISE_RENAMES.forEach { (oldName, newName) ->
+                    val oldKey = oldName.toExerciseMappingKey()
+                    val newKey = newName.toExerciseMappingKey()
                     db.execSQL(
                         """
                         UPDATE exercises
@@ -111,34 +121,51 @@ abstract class GymDatabase : RoomDatabase() {
                             )
                         """.trimIndent()
                     )
-                    db.execSQL(
-                        """
-                        UPDATE exercise_muscle_mappings
-                        SET exerciseNameKey = '${newName.toExerciseMappingKey().sqlEscaped()}',
-                            exerciseName = '${newName.sqlEscaped()}',
-                            updatedAt = strftime('%s', 'now') * 1000
-                        WHERE exerciseNameKey = '${oldName.toExerciseMappingKey().sqlEscaped()}'
-                            AND NOT EXISTS (
-                                SELECT 1
-                                FROM exercise_muscle_mappings existing
-                                WHERE existing.exerciseNameKey = '${newName.toExerciseMappingKey().sqlEscaped()}'
-                                    AND existing.muscleId = exercise_muscle_mappings.muscleId
-                            )
-                        """.trimIndent()
-                    )
-                    db.execSQL(
-                        """
-                        DELETE FROM exercise_muscle_mappings
-                        WHERE exerciseNameKey = '${oldName.toExerciseMappingKey().sqlEscaped()}'
-                        """.trimIndent()
-                    )
+                    val exerciseWasRenamed = db.query("SELECT changes()").use { cursor ->
+                        cursor.moveToFirst() && cursor.getInt(0) > 0
+                    }
+                    if (!exerciseWasRenamed) return@forEach
+                    if (oldKey == newKey) {
+                        db.execSQL(
+                            """
+                            UPDATE exercise_muscle_mappings
+                            SET exerciseName = '${newName.sqlEscaped()}',
+                                updatedAt = strftime('%s', 'now') * 1000
+                            WHERE exerciseNameKey = '${oldKey.sqlEscaped()}'
+                            """.trimIndent()
+                        )
+                    } else {
+                        db.execSQL(
+                            """
+                            UPDATE exercise_muscle_mappings
+                            SET exerciseNameKey = '${newKey.sqlEscaped()}',
+                                exerciseName = '${newName.sqlEscaped()}',
+                                updatedAt = strftime('%s', 'now') * 1000
+                            WHERE exerciseNameKey = '${oldKey.sqlEscaped()}'
+                                AND NOT EXISTS (
+                                    SELECT 1
+                                    FROM exercise_muscle_mappings existing
+                                    WHERE existing.exerciseNameKey = '${newKey.sqlEscaped()}'
+                                        AND existing.muscleId = exercise_muscle_mappings.muscleId
+                                )
+                            """.trimIndent()
+                        )
+                        db.execSQL(
+                            """
+                            DELETE FROM exercise_muscle_mappings
+                            WHERE exerciseNameKey = '${oldKey.sqlEscaped()}'
+                            """.trimIndent()
+                        )
+                    }
                 }
             }
         }
 
-        private val MIGRATION_3_4 = object : Migration(3, 4) {
+        internal val MIGRATION_3_4 = object : Migration(3, 4) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 EXERCISE_RENAMES.forEach { (oldName, newName) ->
+                    val oldKey = oldName.toExerciseMappingKey()
+                    val newKey = newName.toExerciseMappingKey()
                     db.execSQL(
                         """
                         UPDATE exercises
@@ -151,28 +178,86 @@ abstract class GymDatabase : RoomDatabase() {
                             )
                         """.trimIndent()
                     )
-                    db.execSQL(
-                        """
-                        UPDATE exercise_muscle_mappings
-                        SET exerciseNameKey = '${oldName.toExerciseMappingKey().sqlEscaped()}',
-                            exerciseName = '${oldName.sqlEscaped()}',
-                            updatedAt = strftime('%s', 'now') * 1000
-                        WHERE exerciseNameKey = '${newName.toExerciseMappingKey().sqlEscaped()}'
-                            AND NOT EXISTS (
-                                SELECT 1
-                                FROM exercise_muscle_mappings existing
-                                WHERE existing.exerciseNameKey = '${oldName.toExerciseMappingKey().sqlEscaped()}'
-                                    AND existing.muscleId = exercise_muscle_mappings.muscleId
-                            )
-                        """.trimIndent()
-                    )
-                    db.execSQL(
-                        """
-                        DELETE FROM exercise_muscle_mappings
-                        WHERE exerciseNameKey = '${newName.toExerciseMappingKey().sqlEscaped()}'
-                        """.trimIndent()
-                    )
+                    val exerciseWasRenamed = db.query("SELECT changes()").use { cursor ->
+                        cursor.moveToFirst() && cursor.getInt(0) > 0
+                    }
+                    if (!exerciseWasRenamed) return@forEach
+                    if (oldKey == newKey) {
+                        db.execSQL(
+                            """
+                            UPDATE exercise_muscle_mappings
+                            SET exerciseName = '${oldName.sqlEscaped()}',
+                                updatedAt = strftime('%s', 'now') * 1000
+                            WHERE exerciseNameKey = '${newKey.sqlEscaped()}'
+                            """.trimIndent()
+                        )
+                    } else {
+                        db.execSQL(
+                            """
+                            UPDATE exercise_muscle_mappings
+                            SET exerciseNameKey = '${oldKey.sqlEscaped()}',
+                                exerciseName = '${oldName.sqlEscaped()}',
+                                updatedAt = strftime('%s', 'now') * 1000
+                            WHERE exerciseNameKey = '${newKey.sqlEscaped()}'
+                                AND NOT EXISTS (
+                                    SELECT 1
+                                    FROM exercise_muscle_mappings existing
+                                    WHERE existing.exerciseNameKey = '${oldKey.sqlEscaped()}'
+                                        AND existing.muscleId = exercise_muscle_mappings.muscleId
+                                )
+                            """.trimIndent()
+                        )
+                        db.execSQL(
+                            """
+                            DELETE FROM exercise_muscle_mappings
+                            WHERE exerciseNameKey = '${newKey.sqlEscaped()}'
+                            """.trimIndent()
+                        )
+                    }
                 }
+            }
+        }
+
+        internal val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS wear_mutation_receipts (
+                        ownerId TEXT NOT NULL,
+                        accountGeneration INTEGER NOT NULL,
+                        operationId TEXT NOT NULL,
+                        sourceNodeId TEXT NOT NULL,
+                        mutationType TEXT NOT NULL,
+                        payloadDigest TEXT NOT NULL,
+                        createdAt INTEGER NOT NULL,
+                        PRIMARY KEY(ownerId, accountGeneration, operationId)
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE INDEX IF NOT EXISTS index_wear_mutation_receipts_createdAt
+                    ON wear_mutation_receipts(createdAt)
+                    """.trimIndent()
+                )
+            }
+        }
+
+        internal val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS garmin_workout_receipts (
+                        ownerBinding TEXT NOT NULL,
+                        deviceBinding TEXT NOT NULL,
+                        requestId TEXT NOT NULL,
+                        payloadDigest TEXT NOT NULL,
+                        workoutSessionId INTEGER NOT NULL,
+                        createdAt INTEGER NOT NULL,
+                        PRIMARY KEY(ownerBinding, deviceBinding, requestId)
+                    )
+                    """.trimIndent()
+                )
             }
         }
 
@@ -186,7 +271,13 @@ abstract class GymDatabase : RoomDatabase() {
                     GymDatabase::class.java,
                     safeName
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                    .addMigrations(
+                        MIGRATION_1_2,
+                        MIGRATION_2_3,
+                        MIGRATION_3_4,
+                        MIGRATION_4_5,
+                        MIGRATION_5_6
+                    )
                     .build()
             }
         }
@@ -203,4 +294,3 @@ abstract class GymDatabase : RoomDatabase() {
         private fun String.sqlEscaped(): String = replace("'", "''")
     }
 }
-

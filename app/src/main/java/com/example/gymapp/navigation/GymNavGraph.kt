@@ -37,6 +37,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -61,8 +62,10 @@ import androidx.navigation.navArgument
 import com.example.gymapp.R
 import com.example.gymapp.auth.AccountSession
 import com.example.gymapp.auth.CloudAuthManager
+import com.example.gymapp.auth.databaseName
 import com.example.gymapp.auth.LeaderboardRow
 import com.example.gymapp.data.repository.BackupOwner
+import com.example.gymapp.data.repository.canonicalWorkoutPayloadDigest
 import com.example.gymapp.gymApplication
 import com.example.gymapp.data.repository.GymRepository
 import com.example.gymapp.ui.screens.AddWorkoutScreen
@@ -85,15 +88,125 @@ import com.example.gymapp.ui.viewmodel.PostWorkoutSummaryViewModel
 import com.example.gymapp.ui.viewmodel.WorkoutDetailViewModel
 import com.example.gymapp.ui.viewmodel.WorkoutListViewModel
 import com.example.gymapp.sync.PhoneSyncClient
+import com.example.gymapp.sync.CloudSnapshotApplyDecision
+import com.example.gymapp.sync.CloudSyncBaselineStore
+import com.example.gymapp.sync.cloudSnapshotApplyDecision
 import com.example.gymapp.util.AppLanguage
 import com.example.gymapp.util.LanguageManager
 import com.example.gymapp.util.RestTimerController
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
-import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
+import java.security.MessageDigest
+
+internal fun shouldEnableCloudAutosave(
+    pullSucceeded: Boolean,
+    canonicalRoundTripSafe: Boolean,
+    pulledSession: AccountSession.Cloud,
+    activeSession: AccountSession?
+): Boolean = pullSucceeded &&
+    canonicalRoundTripSafe &&
+    isSameCloudSessionGeneration(pulledSession, activeSession)
+
+internal fun isSameCloudSessionGeneration(
+    expected: AccountSession.Cloud,
+    active: AccountSession?
+): Boolean = active is AccountSession.Cloud &&
+    active.userId == expected.userId &&
+    active.sessionGeneration == expected.sessionGeneration
+
+internal fun shouldInitializeMissingRemoteState(localProjectionEmpty: Boolean): Boolean =
+    localProjectionEmpty
+
+internal fun accountUiIsolationKey(
+    session: AccountSession?,
+    needsPasswordUpdate: Boolean
+): String {
+    val identity = when (session) {
+        null -> "signed-out"
+        is AccountSession.Cloud -> "cloud:${session.userId}:${session.sessionGeneration}"
+        is AccountSession.Local -> "local:${session.databaseName()}"
+    } + ":password-update=$needsPasswordUpdate"
+    return MessageDigest.getInstance("SHA-256")
+        .digest(identity.toByteArray(Charsets.UTF_8))
+        .joinToString(separator = "") { byte -> "%02x".format(byte) }
+}
+
+internal fun isCanonicalAndroidCloudEnvelope(root: JSONObject, activeUserId: String): Boolean =
+    runCatching {
+        require(root.keySet() == setOf(
+            "schemaVersion",
+            "exportedAt",
+            "app",
+            "diagnostics",
+            "owner",
+            "exercises",
+            "sessions",
+            "summary"
+        ))
+        require(root.exactIntegralNumber("schemaVersion") == 2L)
+        require(root.exactIntegralNumber("exportedAt") != null)
+        require(root.opt("app") == "GymApp")
+        require(root.opt("diagnostics") is Boolean)
+
+        val owner = root.optJSONObject("owner") ?: error("Missing owner")
+        require(owner.keySet().all { it in setOf("accountId", "userId", "email", "remote") })
+        require(owner.opt("accountId") == activeUserId)
+        require(owner.opt("userId") == activeUserId)
+        require(owner.opt("remote") == true)
+
+        val exercises = root.optJSONArray("exercises") ?: error("Missing exercises")
+        require(exercises.allObjectsMatch(setOf("name", "catalogKey"), setOf("name")))
+
+        val sessions = root.optJSONArray("sessions") ?: error("Missing sessions")
+        repeat(sessions.length()) { sessionIndex ->
+            val session = sessions.optJSONObject(sessionIndex) ?: error("Invalid session")
+            require(session.keySet().all { it in setOf("date", "note", "exercises") })
+            require(session.keySet().containsAll(setOf("date", "exercises")))
+            val blocks = session.optJSONArray("exercises") ?: error("Invalid session exercises")
+            repeat(blocks.length()) { blockIndex ->
+                val block = blocks.optJSONObject(blockIndex) ?: error("Invalid exercise block")
+                require(block.keySet().all { it in setOf("name", "catalogKey", "sets") })
+                require(block.keySet().containsAll(setOf("name", "sets")))
+                val sets = block.optJSONArray("sets") ?: error("Invalid exercise sets")
+                require(sets.allObjectsMatch(setOf("weight", "reps"), setOf("weight", "reps")))
+            }
+        }
+
+        val summary = root.optJSONObject("summary") ?: error("Missing summary")
+        require(summary.keySet() == setOf("exerciseCount", "sessionCount", "setCount", "totalVolume"))
+        true
+    }.getOrDefault(false)
+
+private fun JSONObject.keySet(): Set<String> = buildSet {
+    val iterator = keys()
+    while (iterator.hasNext()) add(iterator.next())
+}
+
+private fun JSONObject.exactIntegralNumber(key: String): Long? {
+    val value = opt(key) as? Number ?: return null
+    val number = value.toDouble()
+    if (!number.isFinite() || number % 1.0 != 0.0) return null
+    val longValue = value.toLong()
+    return longValue.takeIf { it.toDouble() == number }
+}
+
+private fun JSONArray.allObjectsMatch(allowed: Set<String>, required: Set<String>): Boolean {
+    repeat(length()) { index ->
+        val item = optJSONObject(index) ?: return false
+        val keys = item.keySet()
+        if (!keys.all { it in allowed } || !keys.containsAll(required)) return false
+    }
+    return true
+}
 
 @OptIn(ExperimentalMaterial3Api::class, FlowPreview::class)
 @Composable
@@ -103,15 +216,27 @@ fun GymAppRoot(
     languageManager: LanguageManager,
     restTimerController: RestTimerController
 ) {
-    val navController = rememberNavController()
+    val authState by authManager.authState.collectAsState()
+    val uiIsolationKey = accountUiIsolationKey(
+        session = authState.session,
+        needsPasswordUpdate = authState.needsPasswordUpdate
+    )
+    // A new account generation gets a new controller and graph identity. Navigation Compose can
+    // otherwise retain equal-route back-stack entries and their repository-bound ViewModelStores.
+    val navController = key(uiIsolationKey) { rememberNavController() }
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
     val selectedLanguage by languageManager.selectedLanguage.collectAsState()
-    val authState by authManager.authState.collectAsState()
-    val repository = remember(authState.session) { repositoryProvider(authState.session) }
-    val coroutineScope = rememberCoroutineScope()
+    val repository = remember(uiIsolationKey) { repositoryProvider(authState.session) }
+    val coroutineScope = key(uiIsolationKey) { rememberCoroutineScope() }
+    val applicationContext = LocalContext.current.applicationContext
+    val cloudSyncBaselineStore = remember(applicationContext) {
+        CloudSyncBaselineStore(applicationContext)
+    }
     var showIntro by rememberSaveable { mutableStateOf(true) }
-    var cloudPullUserId by remember { mutableStateOf<String?>(null) }
+    var cloudPullGeneration by key(uiIsolationKey) {
+        remember { mutableStateOf<String?>(null) }
+    }
 
     LaunchedEffect(Unit) {
         delay(1400)
@@ -124,25 +249,114 @@ fun GymAppRoot(
     val cloudSession = (authState.session as? AccountSession.Cloud)
         ?.takeUnless { authState.needsPasswordUpdate }
 
-    LaunchedEffect(cloudSession?.userId) {
+    LaunchedEffect(cloudSession?.sessionGeneration) {
         val session = cloudSession ?: return@LaunchedEffect
-        cloudPullUserId = null
-        runCatching {
+        cloudPullGeneration = null
+        val pullResult = runCatching {
             val remoteState = authManager.loadRemoteState(session)
             if (remoteState != null && remoteState.length() > 0) {
-                repository.importBackupJsonObject(
-                    remoteState,
-                    activeUserId = session.userId,
-                    activeRemote = true
+                val isAuthoritativeCanonical = withContext(Dispatchers.Default) {
+                    isCanonicalAndroidCloudEnvelope(remoteState, session.userId)
+                }
+                if (!isAuthoritativeCanonical) {
+                    // Legacy cross-client rows remain readable, but they are never allowed to
+                    // delete local data or arm an automatic write-back.
+                    repository.importBackupJsonObject(
+                        remoteState,
+                        activeUserId = session.userId,
+                        activeRemote = true
+                    )
+                    false
+                } else {
+                    val remoteDigest = withContext(Dispatchers.Default) {
+                        canonicalWorkoutPayloadDigest(remoteState)
+                    }
+                    val localState = repository.getCloudWorkoutProjectionState()
+                    when (cloudSnapshotApplyDecision(
+                        localDigest = localState.digest,
+                        remoteDigest = remoteDigest,
+                        lastSyncedDigest = cloudSyncBaselineStore.read(session.userId),
+                        localProjectionEmpty = localState.isEmpty
+                    )) {
+                        CloudSnapshotApplyDecision.Conflict -> false
+
+                        CloudSnapshotApplyDecision.AlreadyCurrent -> {
+                            check(isSameCloudSessionGeneration(
+                                session,
+                                authManager.authState.value.session
+                            )) { "Cloud account changed while confirming the sync baseline." }
+                            check(cloudSyncBaselineStore.write(session.userId, checkNotNull(remoteDigest))) {
+                                "Could not persist the cloud sync baseline. Automatic upload is paused."
+                            }
+                            check(isSameCloudSessionGeneration(
+                                session,
+                                authManager.authState.value.session
+                            )) { "Cloud account changed while confirming the sync baseline." }
+                            true
+                        }
+
+                        CloudSnapshotApplyDecision.ReplaceAuthoritatively -> {
+                            repository.replaceWithBackupJsonObject(
+                                root = remoteState,
+                                expectedLocalState = localState,
+                                activeUserId = session.userId,
+                                activeRemote = true
+                            )
+                            val replacedState = repository.getCloudWorkoutProjectionState()
+                            check(replacedState.digest == remoteDigest) {
+                                "Cloud state did not round-trip safely. Automatic upload is paused."
+                            }
+                            check(isSameCloudSessionGeneration(
+                                session,
+                                authManager.authState.value.session
+                            )) { "Cloud account changed while confirming the sync baseline." }
+                            check(cloudSyncBaselineStore.write(session.userId, replacedState.digest)) {
+                                "Could not persist the cloud sync baseline. Automatic upload is paused."
+                            }
+                            check(isSameCloudSessionGeneration(
+                                session,
+                                authManager.authState.value.session
+                            )) { "Cloud account changed while confirming the sync baseline." }
+                            true
+                        }
+                    }
+                }
+            } else {
+                // Missing remote state may initialize only a genuinely empty account database.
+                // A non-empty projection could be stale data from a deleted remote row.
+                shouldInitializeMissingRemoteState(
+                    repository.getCloudWorkoutProjectionState().isEmpty
                 )
             }
         }
-        cloudPullUserId = session.userId
+        pullResult.onFailure { throwable ->
+            if (throwable is CancellationException) throw throwable
+            authManager.setMessage(
+                throwable.message ?: "Cloud data could not be loaded safely. Automatic upload is paused."
+            )
+        }
+        pullResult.onSuccess { canonicalRoundTripSafe ->
+            if (!canonicalRoundTripSafe) {
+                authManager.setMessage(
+                    "Cloud data conflicts with unsynced local changes. Automatic upload is paused."
+                )
+            }
+        }
+        val activeSession = authManager.authState.value.session as? AccountSession.Cloud
+        if (shouldEnableCloudAutosave(
+                pullSucceeded = pullResult.isSuccess,
+                canonicalRoundTripSafe = pullResult.getOrDefault(false),
+                pulledSession = session,
+                activeSession = activeSession
+            )
+        ) {
+            cloudPullGeneration = session.sessionGeneration
+        }
     }
 
-    LaunchedEffect(cloudSession?.userId, cloudPullUserId) {
+    LaunchedEffect(cloudSession?.sessionGeneration, cloudPullGeneration) {
         val session = cloudSession ?: return@LaunchedEffect
-        if (cloudPullUserId != session.userId) return@LaunchedEffect
+        if (cloudPullGeneration != session.sessionGeneration) return@LaunchedEffect
         combine(
             repository.observeSessions(),
             repository.observeExercises(),
@@ -151,8 +365,8 @@ fun GymAppRoot(
             Triple(sessions.size, exercises.size, mappings.size)
         }
             .debounce(1_500)
-            .collectLatest {
-                if (authManager.authState.value.isLoading) return@collectLatest
+            .collect {
+                if (authManager.authState.value.isLoading) return@collect
                 runCatching {
                     val owner = BackupOwner(
                         accountId = session.userId,
@@ -160,13 +374,34 @@ fun GymAppRoot(
                         email = session.email,
                         remote = true
                     )
+                    val state = repository.buildBackupJson(owner = owner)
+                    val stateDigest = withContext(Dispatchers.Default) {
+                        checkNotNull(canonicalWorkoutPayloadDigest(state))
+                    }
                     val stats = repository.getSyncProfileStats()
                     authManager.saveRemoteState(
                         session = session,
-                        state = repository.buildBackupJson(owner = owner),
+                        state = state,
                         xp = stats.xp,
                         level = stats.level,
                         workouts = stats.workouts
+                    )
+                    check(isSameCloudSessionGeneration(
+                        session,
+                        authManager.authState.value.session
+                    )) { "Cloud account changed while confirming the sync baseline." }
+                    check(cloudSyncBaselineStore.write(session.userId, stateDigest)) {
+                        "Could not persist the cloud sync baseline. Automatic upload is paused."
+                    }
+                    check(isSameCloudSessionGeneration(
+                        session,
+                        authManager.authState.value.session
+                    )) { "Cloud account changed while confirming the sync baseline." }
+                }.onFailure { throwable ->
+                    if (throwable is CancellationException) throw throwable
+                    cloudPullGeneration = null
+                    authManager.setMessage(
+                        throwable.message ?: "Cloud changes could not be saved safely."
                     )
                 }
             }
@@ -185,8 +420,9 @@ fun GymAppRoot(
     }
     val passwordUpdateFailedMessage = stringResource(R.string.auth_password_update_failed)
 
-    GymBackground {
-        Box(modifier = Modifier.fillMaxSize()) {
+    key(uiIsolationKey) {
+        GymBackground {
+            Box(modifier = Modifier.fillMaxSize()) {
             if (authState.needsPasswordUpdate) {
                 PasswordUpdateScreen(
                     uiState = authState,
@@ -215,33 +451,7 @@ fun GymAppRoot(
                         coroutineScope.launch {
                             authManager.setLoading(true)
                             runCatching {
-                                val session = authManager.login(email, password)
-                                val remoteState = authManager.loadRemoteState(session)
-                                if (remoteState != null && remoteState.length() > 0) {
-                                    val accountRepository = repositoryProvider(session)
-                                    accountRepository.importBackupJsonObject(
-                                        remoteState,
-                                        activeUserId = session.userId,
-                                        activeRemote = true
-                                    )
-                                } else {
-                                    val owner = BackupOwner(
-                                        accountId = session.userId,
-                                        userId = session.userId,
-                                        email = session.email,
-                                        remote = true
-                                    )
-                                    val accountRepository = repositoryProvider(session)
-                                    val uploadState = accountRepository.buildBackupJson(owner = owner)
-                                    val stats = accountRepository.getSyncProfileStats()
-                                    authManager.saveRemoteState(
-                                        session = session,
-                                        state = uploadState,
-                                        xp = stats.xp,
-                                        level = stats.level,
-                                        workouts = stats.workouts
-                                    )
-                                }
+                                authManager.login(email, password)
                                 authManager.setMessage(null)
                             }.onFailure { throwable ->
                                 authManager.setMessage(throwable.message ?: "Login failed")
@@ -260,22 +470,6 @@ fun GymAppRoot(
                                     )
                                     return@runCatching
                                 }
-                                val owner = BackupOwner(
-                                    accountId = session.userId,
-                                    userId = session.userId,
-                                    email = session.email,
-                                    remote = true
-                                )
-                                val accountRepository = repositoryProvider(session)
-                                val stats = accountRepository.getSyncProfileStats()
-                                val uploadState = accountRepository.buildBackupJson(owner = owner)
-                                authManager.saveRemoteState(
-                                    session = session,
-                                    state = uploadState,
-                                    xp = stats.xp,
-                                    level = stats.level,
-                                    workouts = stats.workouts
-                                )
                                 authManager.setMessage(null)
                             }.onFailure { throwable ->
                                 authManager.setMessage(throwable.message ?: "Sign up failed")
@@ -450,6 +644,7 @@ fun GymAppRoot(
                     NavHost(
                         navController = navController,
                         startDestination = AppDestination.Workouts.route,
+                        route = "gym-root-$uiIsolationKey",
                         modifier = Modifier.fillMaxSize()
                     ) {
                         composable(route = AppDestination.Workouts.route) {
@@ -702,21 +897,8 @@ fun GymAppRoot(
                                     isLoading = true
                                     error = null
                                     val localRows = runCatching {
-                                        val owner = BackupOwner(
-                                            accountId = session.userId,
-                                            userId = session.userId,
-                                            email = session.email,
-                                            remote = true
-                                        )
                                         val remoteProfile = authManager.loadOwnProfile(session)
                                         val localStats = repository.getSyncProfileStats()
-                                        authManager.saveRemoteState(
-                                            session = session,
-                                            state = repository.buildBackupJson(owner = owner),
-                                            xp = localStats.xp,
-                                            level = localStats.level,
-                                            workouts = localStats.workouts
-                                        )
                                         LeaderboardRow(
                                             displayName = remoteProfile?.displayName ?: session.displayName,
                                             xp = localStats.xp,
@@ -775,6 +957,7 @@ fun GymAppRoot(
                 exit = fadeOut() + scaleOut(targetScale = 1.03f)
             ) {
                 AppIntroSplash()
+            }
             }
         }
     }

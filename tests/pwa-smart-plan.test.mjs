@@ -4,6 +4,7 @@ import vm from "node:vm";
 import test from "node:test";
 
 const appSource = await readFile("pwa/app.js", "utf8");
+const stateContractSource = await readFile("pwa/state-contract.js", "utf8");
 
 function createStorage() {
   const values = new Map();
@@ -20,6 +21,7 @@ function loadPwaContext() {
     Date,
     Map,
     Set,
+    TextEncoder,
     URLSearchParams,
     window: {
       location: {
@@ -50,7 +52,12 @@ function loadPwaContext() {
   context.window.document = context.document;
   context.window.navigator = context.navigator;
   context.window.localStorage = context.localStorage;
+  context.window.self = context.window;
+  context.window.top = context.window;
+  context.window.__GYMAPP_TOP_LEVEL__ = true;
   vm.createContext(context);
+  vm.runInContext(stateContractSource, context);
+  context.window.GymStateContract = context.GymStateContract;
   vm.runInContext(appSource, context);
   return context;
 }

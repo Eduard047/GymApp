@@ -1,0 +1,6 @@
+project_id = "gymapp"
+
+# Garmin fetch/ack uses a high-entropy device capability instead of a Supabase
+# user JWT. createDevice/revokeDevice still authenticate explicitly in code.
+[functions.garmin-sync]
+verify_jwt = false
