@@ -48,7 +48,7 @@ test("PWA permanent total excludes rotating mission rewards", () => {
   assert.match(source, /window\.GymProgressionRules\.sessionXP\(summary\)/);
 
   const index = fs.readFileSync(path.join(root, "pwa", "index.html"), "utf8");
-  assert.ok(index.indexOf("progression-rules.js") < index.indexOf("app.js"));
+  assert.ok(index.indexOf("progression-rules.v45.js") < index.indexOf("app.v45.js"));
 });
 
 test("empty workouts earn no progression and extreme XP is bounded without a linear loop", () => {

@@ -100,6 +100,42 @@ test("Android signup forwards only a state-bound PKCE code after user action", (
   assert.deepEqual(result.scrubbed, []);
 });
 
+test("Android QA callbacks use only the non-production package scheme", () => {
+  const state = "T".repeat(32);
+  const code = "dd8af18b-ffb8-4f1e-8552-972ccf840d9f";
+  const result = runCallback(
+    `https://gymapptracker.com/confirmed.html?platform=android&variant=qa&state=${state}&purpose=signup&code=${code}`
+  );
+
+  assert.equal(
+    result.button.getAttribute("href"),
+    `com.setforge.gymapp.dev://auth/callback?state=${state}&purpose=signup&code=${code}`
+  );
+  assert.doesNotMatch(result.button.getAttribute("href"), /(?:\?|&)variant=/);
+  assert.deepEqual(result.assigned, []);
+  assert.deepEqual(result.scrubbed, []);
+});
+
+test("authentication bridge rejects duplicate, unknown, and cross-platform variants", () => {
+  const state = "V".repeat(32);
+  const code = "096032d9-91e5-4ff4-b69a-4c9922fab290";
+  const cases = [
+    `?platform=android&variant=debug&state=${state}&purpose=signup&code=${code}`,
+    `?platform=android&variant=qa&variant=qa&state=${state}&purpose=signup&code=${code}`,
+    `?platform=ios&variant=qa&state=${state}&purpose=signup&code=${code}`,
+    "?platform=web&variant=qa"
+  ];
+
+  for (const suffix of cases) {
+    const result = runCallback(`https://gymapptracker.com/confirmed.html${suffix}`);
+    assert.equal(result.button.getAttribute("href"), "https://gymapptracker.com/", suffix);
+    assert.doesNotMatch(result.button.getAttribute("href"), /auth\/callback/i, suffix);
+    assert.match(result.title.textContent, /unavailable/i, suffix);
+    assert.deepEqual(result.assigned, [], suffix);
+    assert.deepEqual(result.scrubbed, ["/confirmed.html"], suffix);
+  }
+});
+
 test("Android recovery rejects legacy implicit tokens instead of forwarding them", () => {
   const fragment = "#access_token=android-access&refresh_token=android-refresh&type=recovery";
   const result = runCallback(
@@ -274,6 +310,7 @@ test("client auth, public metadata, and compatibility docs use the intended doma
   );
 
   assert.match(android, /https:\/\/gymapptracker\.com\/confirmed\.html\?platform=android/);
+  assert.match(android, /AUTH_BRIDGE_VARIANT_QUERY/);
   assert.match(android, /\/auth\/v1\/resend\?redirect_to=/);
   assert.match(signUpSource, /purpose=signup/);
   assert.match(signUpSource, /\.put\("code_challenge", codeChallenge\(transaction\.codeVerifier\)\)/);

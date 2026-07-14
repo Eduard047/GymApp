@@ -58,7 +58,7 @@ function guardContext({ framed }) {
 test("frame guard is the earliest script and both documents start fail-closed", () => {
   for (const html of [indexHtml, confirmedHtml]) {
     assert.match(html, /<html[^>]+class="frame-pending"/);
-    const guardIndex = html.indexOf('<script src="./frame-guard.js?v=44"></script>');
+    const guardIndex = html.indexOf('<script src="./frame-guard.v45.js"></script>');
     assert.equal(html.indexOf("<script"), guardIndex);
     const nextScriptIndex = html.indexOf("<script", guardIndex + 1);
     assert.ok(guardIndex > 0 && (nextScriptIndex === -1 || guardIndex < nextScriptIndex));
@@ -68,6 +68,14 @@ test("frame guard is the earliest script and both documents start fail-closed", 
   assert.match(confirmedStyles, /html\.frame-pending body \{ visibility: hidden !important; \}/);
   assert.match(appSource.slice(0, 350), /__GYMAPP_TOP_LEVEL__ !== true[\s\S]*window\.top !== window\.self/);
   assert.match(confirmedSource.slice(0, 350), /__GYMAPP_TOP_LEVEL__ !== true[\s\S]*window\.top !== window\.self/);
+});
+
+test("main CSP blocks inline code and limits cloud connections to the configured project", () => {
+  assert.match(indexHtml, /style-src 'self'/);
+  assert.doesNotMatch(indexHtml, /unsafe-inline|https:\/\/\*\.supabase\.co|img-src[^;]*blob:/);
+  assert.match(indexHtml, /connect-src 'self' https:\/\/owrcbsrectdgaotndtxy\.supabase\.co/);
+  assert.match(indexHtml, /form-action 'none'/);
+  assert.doesNotMatch(appSource, /\sstyle\s*=/i);
 });
 
 test("top-level guard unhides the document without reading application state", () => {

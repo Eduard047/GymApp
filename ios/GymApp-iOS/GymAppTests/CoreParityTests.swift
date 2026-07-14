@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 import CryptoKit
 import Foundation
@@ -1089,6 +1090,792 @@ final class CoreParityTests: XCTestCase {
         XCTAssertThrowsError(try GarminPlanValidator.validate(oversizedMetadata))
     }
 
+    func testGarminSubmitRequiresAndUsesPersistedAccountDeviceBinding() async throws {
+        let userID = "00000000-0000-4000-8000-0000000000a1"
+        let deviceID = "00000000-0000-4000-8000-0000000000d1"
+        let requestID = try XCTUnwrap(UUID(uuidString: "10000000-0000-4000-8000-000000000001"))
+        let rawToken = String(repeating: "ab", count: 32)
+        let recorder = AuthRequestRecorder()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        let auth = AuthService(
+            keychain: InMemoryKeychainStore(),
+            urlSession: urlSession,
+            defaults: temporaryDefaults(named: "garmin-submit")
+        )
+        let bindingKeychain = InMemoryKeychainStore()
+        let garmin = GarminCloudService(
+            auth: auth,
+            urlSession: urlSession,
+            bindingStore: GarminDeviceBindingStore(keychain: bindingKeychain)
+        )
+        try auth.installSessionForTesting(.cloud(cloudSession(userID: userID)))
+
+        AuthURLProtocolStub.handler = { request in
+            recorder.append(request)
+            if request.url?.path == "/functions/v1/garmin-sync" {
+                let body = try XCTUnwrap(
+                    JSONSerialization.jsonObject(with: try XCTUnwrap(request.httpBody)) as? [String: Any]
+                )
+                XCTAssertEqual(body["action"] as? String, "createDevice")
+                XCTAssertEqual(body["displayName"] as? String, "Gym Watch")
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    json: """
+                    {"device":{"id":"\(deviceID)","device_token":"\(rawToken)","display_name":"Gym Watch","created_at":"2026-07-14T01:00:00Z","last_seen_at":null,"binding_version":2,"token_revision":1}}
+                    """
+                )
+            }
+            XCTAssertEqual(request.url?.path, "/rest/v1/rpc/garmin_enqueue_plan")
+            return try AuthURLProtocolStub.response(
+                for: request,
+                json: #"{"status":"queued","planId":"20000000-0000-4000-8000-000000000001","planRevision":1,"planStatus":"pending"}"#
+            )
+        }
+        defer {
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+        }
+
+        do {
+            try await garmin.submit(
+                plan: garminPlan(setCount: 1),
+                clientRequestID: requestID
+            )
+            XCTFail("A plan without an account-scoped Garmin binding must not be sent.")
+        } catch GarminCloudError.pairingRequired {
+            // Expected.
+        } catch {
+            XCTFail("Unexpected pre-pairing error: \(error)")
+        }
+        XCTAssertTrue(recorder.requests.isEmpty)
+
+        let credential = try await garmin.createDevice(displayName: "Gym Watch")
+        XCTAssertEqual(credential.id, deviceID)
+        XCTAssertEqual(credential.deviceToken, rawToken)
+        XCTAssertEqual(garmin.selectedDevice?.userID, userID)
+        XCTAssertEqual(garmin.selectedDevice?.deviceID, deviceID)
+        XCTAssertFalse(bindingKeychain.allData.contains {
+            String(decoding: $0, as: UTF8.self).contains(rawToken)
+        })
+
+        try await garmin.submit(
+            plan: garminPlan(setCount: 1),
+            clientRequestID: requestID
+        )
+
+        let planRequest = try XCTUnwrap(
+            recorder.requests.first(where: {
+                $0.url?.path == "/rest/v1/rpc/garmin_enqueue_plan"
+            })
+        )
+        XCTAssertEqual(planRequest.value(forHTTPHeaderField: "Authorization"), "Bearer access-\(userID)")
+        XCTAssertNil(planRequest.value(forHTTPHeaderField: "Prefer"))
+        let row = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: try XCTUnwrap(planRequest.httpBody)) as? [String: Any]
+        )
+        XCTAssertEqual(row["p_device_id"] as? String, deviceID)
+        XCTAssertEqual(row["p_client_request_id"] as? String, requestID.uuidString.lowercased())
+        XCTAssertNotNil(row["p_plan"] as? [String: Any])
+        XCTAssertNil(row["user_id"])
+        XCTAssertNil(row["status"])
+    }
+
+    func testGarminEnqueueRetriesLostResponseWithSameDurableWorkoutID() async throws {
+        let userID = "00000000-0000-4000-8000-0000000000a1"
+        let deviceID = "00000000-0000-4000-8000-0000000000d1"
+        let requestID = try XCTUnwrap(UUID(uuidString: "10000000-0000-4000-8000-000000000001"))
+        let recorder = AuthRequestRecorder()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        let auth = AuthService(
+            keychain: InMemoryKeychainStore(),
+            urlSession: urlSession,
+            defaults: temporaryDefaults(named: "garmin-enqueue-retry")
+        )
+        try auth.installSessionForTesting(.cloud(cloudSession(userID: userID)))
+        let bindingStore = GarminDeviceBindingStore(keychain: InMemoryKeychainStore())
+        try bindingStore.save(
+            binding: GarminDeviceBinding(
+                version: GarminDeviceBinding.currentVersion,
+                userID: userID,
+                deviceID: deviceID
+            )
+        )
+        let garmin = GarminCloudService(
+            auth: auth,
+            urlSession: urlSession,
+            bindingStore: bindingStore
+        )
+
+        AuthURLProtocolStub.handler = { request in
+            recorder.append(request)
+            XCTAssertEqual(request.url?.path, "/rest/v1/rpc/garmin_enqueue_plan")
+            if recorder.requests.count == 1 {
+                throw URLError(.networkConnectionLost)
+            }
+            return try AuthURLProtocolStub.response(
+                for: request,
+                json: #"{"status":"already_queued","planId":"20000000-0000-4000-8000-000000000001","planRevision":1,"planStatus":"downloaded"}"#
+            )
+        }
+        defer {
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+        }
+
+        try await garmin.submit(
+            plan: garminPlan(setCount: 1),
+            clientRequestID: requestID
+        )
+
+        XCTAssertEqual(recorder.requests.count, 2)
+        let bodies = try recorder.requests.map { request in
+            try XCTUnwrap(
+                JSONSerialization.jsonObject(with: try XCTUnwrap(request.httpBody)) as? [String: Any]
+            )
+        }
+        for body in bodies {
+            XCTAssertEqual(body["p_device_id"] as? String, deviceID)
+            XCTAssertEqual(body["p_client_request_id"] as? String, requestID.uuidString.lowercased())
+            XCTAssertNotNil(body["p_plan"] as? [String: Any])
+            XCTAssertNil(body["user_id"])
+            XCTAssertNil(body["status"])
+        }
+        XCTAssertEqual(
+            try JSONSerialization.data(withJSONObject: bodies[0], options: [.sortedKeys]),
+            try JSONSerialization.data(withJSONObject: bodies[1], options: [.sortedKeys])
+        )
+        XCTAssertEqual(
+            garmin.lastMessage,
+            "This workout was already submitted to the selected Garmin watch."
+        )
+    }
+
+    func testGarminEnqueueRejectsNonV4IDAndDoesNotDuplicateConflict() async throws {
+        let userID = "00000000-0000-4000-8000-0000000000a1"
+        let deviceID = "00000000-0000-4000-8000-0000000000d1"
+        let validRequestID = try XCTUnwrap(
+            UUID(uuidString: "10000000-0000-4000-8000-000000000001")
+        )
+        let nonV4RequestID = try XCTUnwrap(
+            UUID(uuidString: "10000000-0000-3000-8000-000000000001")
+        )
+        let recorder = AuthRequestRecorder()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        let auth = AuthService(
+            keychain: InMemoryKeychainStore(),
+            urlSession: urlSession,
+            defaults: temporaryDefaults(named: "garmin-enqueue-conflict")
+        )
+        try auth.installSessionForTesting(.cloud(cloudSession(userID: userID)))
+        let bindingStore = GarminDeviceBindingStore(keychain: InMemoryKeychainStore())
+        try bindingStore.save(
+            binding: GarminDeviceBinding(
+                version: GarminDeviceBinding.currentVersion,
+                userID: userID,
+                deviceID: deviceID
+            )
+        )
+        let garmin = GarminCloudService(
+            auth: auth,
+            urlSession: urlSession,
+            bindingStore: bindingStore
+        )
+
+        AuthURLProtocolStub.handler = { request in
+            recorder.append(request)
+            return try AuthURLProtocolStub.response(
+                for: request,
+                json: #"{"status":"conflict"}"#
+            )
+        }
+        defer {
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+        }
+
+        do {
+            try await garmin.submit(
+                plan: garminPlan(setCount: 1),
+                clientRequestID: nonV4RequestID
+            )
+            XCTFail("A non-v4 idempotency key must be rejected locally.")
+        } catch GarminCloudError.invalidRequest {
+            // Expected.
+        } catch {
+            XCTFail("Unexpected non-v4 request-ID error: \(error)")
+        }
+        XCTAssertTrue(recorder.requests.isEmpty)
+
+        do {
+            try await garmin.submit(
+                plan: garminPlan(setCount: 1),
+                clientRequestID: validRequestID
+            )
+            XCTFail("A definitive enqueue conflict must not be retried with a new ID.")
+        } catch GarminCloudError.enqueueConflict {
+            // Expected.
+        } catch {
+            XCTFail("Unexpected enqueue-conflict error: \(error)")
+        }
+        XCTAssertEqual(recorder.requests.count, 1)
+        let body = try XCTUnwrap(
+            JSONSerialization.jsonObject(
+                with: try XCTUnwrap(recorder.requests.first?.httpBody)
+            ) as? [String: Any]
+        )
+        XCTAssertEqual(
+            body["p_client_request_id"] as? String,
+            validRequestID.uuidString.lowercased()
+        )
+    }
+
+    func testGarminExistingDeviceSelectionIsIsolatedAcrossAccountSwitches() async throws {
+        let userA = "00000000-0000-4000-8000-0000000000a1"
+        let userB = "00000000-0000-4000-8000-0000000000b2"
+        let deviceA = "00000000-0000-4000-8000-0000000000d1"
+        let deviceB = "00000000-0000-4000-8000-0000000000d2"
+        let requestA = try XCTUnwrap(UUID(uuidString: "10000000-0000-4000-8000-000000000001"))
+        let requestB = try XCTUnwrap(UUID(uuidString: "10000000-0000-4000-8000-000000000002"))
+        let recorder = AuthRequestRecorder()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        let auth = AuthService(
+            keychain: InMemoryKeychainStore(),
+            urlSession: urlSession,
+            defaults: temporaryDefaults(named: "garmin-account-isolation")
+        )
+        let garmin = GarminCloudService(
+            auth: auth,
+            urlSession: urlSession,
+            bindingStore: GarminDeviceBindingStore(keychain: InMemoryKeychainStore())
+        )
+        try auth.installSessionForTesting(.cloud(cloudSession(userID: userA)))
+
+        AuthURLProtocolStub.handler = { request in
+            recorder.append(request)
+            if request.url?.path == "/rest/v1/rpc/garmin_enqueue_plan" {
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    json: #"{"status":"queued","planId":"20000000-0000-4000-8000-000000000001","planRevision":1,"planStatus":"pending"}"#
+                )
+            }
+            let authorization = request.value(forHTTPHeaderField: "Authorization")
+            let device = authorization == "Bearer access-\(userA)" ? deviceA : deviceB
+            let name = device == deviceA ? "Watch A" : "Watch B"
+            return try AuthURLProtocolStub.response(
+                for: request,
+                json: """
+                {"devices":[{"id":"\(device)","display_name":"\(name)","created_at":"2026-07-14T01:00:00Z","last_seen_at":null,"binding_version":2,"token_revision":1}]}
+                """
+            )
+        }
+        defer {
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+        }
+
+        try await garmin.refreshDevices()
+        try garmin.selectDevice(try XCTUnwrap(garmin.availableDevices.first))
+        XCTAssertEqual(garmin.selectedDevice?.deviceID, deviceA)
+
+        try auth.installSessionForTesting(.cloud(cloudSession(userID: userB)))
+        let clearedAfterAccountSwitch = await waitUntil { garmin.selectedDevice == nil }
+        XCTAssertTrue(clearedAfterAccountSwitch)
+        let requestCountBeforeBlockedSubmit = recorder.requests.count
+        do {
+            try await garmin.submit(
+                plan: garminPlan(setCount: 1),
+                clientRequestID: requestB
+            )
+            XCTFail("Account B must not reuse account A's selected device.")
+        } catch GarminCloudError.pairingRequired {
+            // Expected.
+        } catch {
+            XCTFail("Unexpected account-isolation error: \(error)")
+        }
+        XCTAssertEqual(recorder.requests.count, requestCountBeforeBlockedSubmit)
+
+        try await garmin.refreshDevices()
+        try garmin.selectDevice(try XCTUnwrap(garmin.availableDevices.first))
+        try await garmin.submit(
+            plan: garminPlan(setCount: 1),
+            clientRequestID: requestB
+        )
+        XCTAssertEqual(garmin.selectedDevice?.deviceID, deviceB)
+
+        try auth.installSessionForTesting(.cloud(cloudSession(userID: userA)))
+        let restoredAccountABinding = await waitUntil {
+            garmin.selectedDevice?.deviceID == deviceA
+        }
+        XCTAssertTrue(restoredAccountABinding)
+        try await garmin.submit(
+            plan: garminPlan(setCount: 1),
+            clientRequestID: requestA
+        )
+
+        let planRequests = recorder.requests.filter {
+            $0.url?.path == "/rest/v1/rpc/garmin_enqueue_plan"
+        }
+        XCTAssertEqual(planRequests.count, 2)
+        let planRows = try planRequests.map { request in
+            try XCTUnwrap(
+                JSONSerialization.jsonObject(with: try XCTUnwrap(request.httpBody)) as? [String: Any]
+            )
+        }
+        XCTAssertEqual(planRequests[0].value(forHTTPHeaderField: "Authorization"), "Bearer access-\(userB)")
+        XCTAssertEqual(planRows[0]["p_device_id"] as? String, deviceB)
+        XCTAssertEqual(planRows[0]["p_client_request_id"] as? String, requestB.uuidString.lowercased())
+        XCTAssertEqual(planRequests[1].value(forHTTPHeaderField: "Authorization"), "Bearer access-\(userA)")
+        XCTAssertEqual(planRows[1]["p_device_id"] as? String, deviceA)
+        XCTAssertEqual(planRows[1]["p_client_request_id"] as? String, requestA.uuidString.lowercased())
+    }
+
+    func testLateGarminCreateRevokesWithOriginalAccountAndCannotBindReplacement() async throws {
+        let userA = "00000000-0000-4000-8000-0000000000a1"
+        let userB = "00000000-0000-4000-8000-0000000000b2"
+        let deviceA = "00000000-0000-4000-8000-0000000000d1"
+        let rawToken = String(repeating: "cd", count: 32)
+        let recorder = AuthRequestRecorder()
+        let started = expectation(description: "Garmin create started")
+        let release = DispatchSemaphore(value: 0)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        let auth = AuthService(
+            keychain: InMemoryKeychainStore(),
+            urlSession: urlSession,
+            defaults: temporaryDefaults(named: "garmin-stale-create")
+        )
+        let bindingKeychain = InMemoryKeychainStore()
+        let bindingStore = GarminDeviceBindingStore(keychain: bindingKeychain)
+        let garmin = GarminCloudService(
+            auth: auth,
+            urlSession: urlSession,
+            bindingStore: bindingStore
+        )
+        try auth.installSessionForTesting(.cloud(cloudSession(userID: userA)))
+
+        AuthURLProtocolStub.handler = { request in
+            recorder.append(request)
+            let body = try XCTUnwrap(
+                JSONSerialization.jsonObject(with: try XCTUnwrap(request.httpBody)) as? [String: Any]
+            )
+            if body["action"] as? String == "createDevice" {
+                started.fulfill()
+                _ = release.wait(timeout: .now() + 5)
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    json: """
+                    {"device":{"id":"\(deviceA)","device_token":"\(rawToken)","display_name":"Watch A","created_at":"2026-07-14T01:00:00Z","last_seen_at":null,"binding_version":2,"token_revision":1}}
+                    """
+                )
+            }
+            XCTAssertEqual(body["action"] as? String, "revokeDevice")
+            XCTAssertEqual(body["deviceId"] as? String, deviceA)
+            return try AuthURLProtocolStub.response(for: request, json: #"{"status":"revoked"}"#)
+        }
+        defer {
+            release.signal()
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+        }
+
+        let pending = Task { try await garmin.createDevice(displayName: "Watch A") }
+        await fulfillment(of: [started], timeout: 2)
+        try auth.installSessionForTesting(.cloud(cloudSession(userID: userB)))
+        release.signal()
+
+        do {
+            _ = try await pending.value
+            XCTFail("A late create response must not bind a replacement account.")
+        } catch AuthServiceError.sessionChanged {
+            // Expected.
+        } catch {
+            XCTFail("Unexpected stale-create error: \(error)")
+        }
+
+        XCTAssertNil(garmin.selectedDevice)
+        XCTAssertNil(try bindingStore.binding(for: userA))
+        XCTAssertNil(try bindingStore.binding(for: userB))
+        XCTAssertNil(try bindingStore.pendingRevocation(for: userA))
+        XCTAssertFalse(bindingKeychain.allData.contains {
+            String(decoding: $0, as: UTF8.self).contains(rawToken)
+        })
+        let revokeRequest = try XCTUnwrap(recorder.requests.last)
+        XCTAssertEqual(revokeRequest.value(forHTTPHeaderField: "Authorization"), "Bearer access-\(userA)")
+    }
+
+    func testGarminBindingSaveFailureRevokesUnseenTokenAndClearsPendingRecovery() async throws {
+        let userID = "00000000-0000-4000-8000-0000000000a1"
+        let deviceID = "00000000-0000-4000-8000-0000000000d1"
+        let rawToken = String(repeating: "ef", count: 32)
+        let recorder = AuthRequestRecorder()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        let auth = AuthService(
+            keychain: InMemoryKeychainStore(),
+            urlSession: urlSession,
+            defaults: temporaryDefaults(named: "garmin-binding-failure")
+        )
+        let bindingKeychain = InMemoryKeychainStore()
+        bindingKeychain.accountsThatFailSave = ["selected-device-v2.\(userID)"]
+        let bindingStore = GarminDeviceBindingStore(keychain: bindingKeychain)
+        let garmin = GarminCloudService(
+            auth: auth,
+            urlSession: urlSession,
+            bindingStore: bindingStore
+        )
+        try auth.installSessionForTesting(.cloud(cloudSession(userID: userID)))
+
+        AuthURLProtocolStub.handler = { request in
+            recorder.append(request)
+            let body = try XCTUnwrap(
+                JSONSerialization.jsonObject(with: try XCTUnwrap(request.httpBody)) as? [String: Any]
+            )
+            if body["action"] as? String == "createDevice" {
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    json: """
+                    {"device":{"id":"\(deviceID)","device_token":"\(rawToken)","display_name":"Watch","created_at":"2026-07-14T01:00:00Z","last_seen_at":null,"binding_version":2,"token_revision":1}}
+                    """
+                )
+            }
+            XCTAssertEqual(body["action"] as? String, "revokeDevice")
+            XCTAssertEqual(body["deviceId"] as? String, deviceID)
+            return try AuthURLProtocolStub.response(for: request, json: #"{"status":"revoked"}"#)
+        }
+        defer {
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+        }
+
+        do {
+            _ = try await garmin.createDevice(displayName: "Watch")
+            XCTFail("The raw token must not be exposed when durable binding storage fails.")
+        } catch GarminCloudError.bindingPersistenceFailed {
+            // Expected.
+        } catch {
+            XCTFail("Unexpected binding-persistence error: \(error)")
+        }
+
+        XCTAssertNil(garmin.selectedDevice)
+        XCTAssertNil(try bindingStore.binding(for: userID))
+        XCTAssertNil(try bindingStore.pendingRevocation(for: userID))
+        XCTAssertEqual(recorder.requests.count, 2)
+        XCTAssertFalse(bindingKeychain.allData.contains {
+            String(decoding: $0, as: UTF8.self).contains(rawToken)
+        })
+    }
+
+    func testGarminTokenRotationRetriesNonObject5xxWithSameEphemeralCSPRNGToken() async throws {
+        let userID = "00000000-0000-4000-8000-0000000000a1"
+        let deviceID = "00000000-0000-4000-8000-0000000000d1"
+        let recorder = AuthRequestRecorder()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        let auth = AuthService(
+            keychain: InMemoryKeychainStore(),
+            urlSession: urlSession,
+            defaults: temporaryDefaults(named: "garmin-rotation-retry")
+        )
+        let bindingKeychain = InMemoryKeychainStore()
+        let garmin = GarminCloudService(
+            auth: auth,
+            urlSession: urlSession,
+            bindingStore: GarminDeviceBindingStore(keychain: bindingKeychain)
+        )
+        try auth.installSessionForTesting(.cloud(cloudSession(userID: userID)))
+
+        AuthURLProtocolStub.handler = { request in
+            recorder.append(request)
+            let body = try XCTUnwrap(
+                JSONSerialization.jsonObject(with: try XCTUnwrap(request.httpBody)) as? [String: Any]
+            )
+            if body["action"] as? String == "listDevices" {
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    json: """
+                    {"devices":[{"id":"\(deviceID)","display_name":"Watch","created_at":"2026-07-14T01:00:00Z","last_seen_at":null,"binding_version":2,"token_revision":7}]}
+                    """
+                )
+            }
+
+            XCTAssertEqual(body["action"] as? String, "rotateDeviceToken")
+            XCTAssertEqual(body["deviceId"] as? String, deviceID)
+            XCTAssertEqual(body["expectedTokenRevision"] as? Int, 7)
+            let replacement = try XCTUnwrap(body["replacementToken"] as? String)
+            let rotationCount = recorder.requests.filter { request in
+                guard let data = request.httpBody,
+                      let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+                else { return false }
+                return object["action"] as? String == "rotateDeviceToken"
+            }.count
+            if rotationCount == 1 {
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    statusCode: 500,
+                    json: #"["Temporary gateway failure"]"#
+                )
+            }
+            return try AuthURLProtocolStub.response(
+                for: request,
+                json: """
+                {"status":"already_rotated","device":{"id":"\(deviceID)","device_token":"\(replacement)","display_name":"Watch","created_at":"2026-07-14T01:00:00Z","last_seen_at":null,"binding_version":2,"token_revision":8}}
+                """
+            )
+        }
+        defer {
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+        }
+
+        try await garmin.refreshDevices()
+        try garmin.selectDevice(try XCTUnwrap(garmin.availableDevices.first))
+        let credential = try await garmin.rotateSelectedDeviceToken()
+
+        XCTAssertEqual(credential.id, deviceID)
+        XCTAssertEqual(credential.deviceToken.utf8.count, 64)
+        XCTAssertNotNil(
+            credential.deviceToken.range(
+                of: #"^[0-9a-f]{64}$"#,
+                options: .regularExpression
+            )
+        )
+        let rotationBodies = try recorder.requests.compactMap { request -> [String: Any]? in
+            guard let data = request.httpBody,
+                  let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  object["action"] as? String == "rotateDeviceToken" else {
+                return nil
+            }
+            return object
+        }
+        XCTAssertEqual(rotationBodies.count, 2)
+        XCTAssertEqual(
+            rotationBodies[0]["replacementToken"] as? String,
+            rotationBodies[1]["replacementToken"] as? String
+        )
+        XCTAssertEqual(garmin.availableDevices.first?.tokenRevision, 8)
+        XCTAssertFalse(bindingKeychain.allData.contains {
+            String(decoding: $0, as: UTF8.self).contains(credential.deviceToken)
+        })
+    }
+
+    func testGarminRotationConflictRefreshesRevisionWithoutExposingReplacementToken() async throws {
+        let userID = "00000000-0000-4000-8000-0000000000a1"
+        let deviceID = "00000000-0000-4000-8000-0000000000d1"
+        let recorder = AuthRequestRecorder()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        let auth = AuthService(
+            keychain: InMemoryKeychainStore(),
+            urlSession: urlSession,
+            defaults: temporaryDefaults(named: "garmin-rotation-conflict")
+        )
+        let bindingKeychain = InMemoryKeychainStore()
+        let garmin = GarminCloudService(
+            auth: auth,
+            urlSession: urlSession,
+            bindingStore: GarminDeviceBindingStore(keychain: bindingKeychain)
+        )
+        try auth.installSessionForTesting(.cloud(cloudSession(userID: userID)))
+
+        AuthURLProtocolStub.handler = { request in
+            recorder.append(request)
+            let body = try XCTUnwrap(
+                JSONSerialization.jsonObject(with: try XCTUnwrap(request.httpBody)) as? [String: Any]
+            )
+            if body["action"] as? String == "rotateDeviceToken" {
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    statusCode: 409,
+                    json: #"{"error":"Device token rotation conflict","status":"conflict","tokenRevision":8}"#
+                )
+            }
+            let listCount = recorder.requests.filter { request in
+                guard let data = request.httpBody,
+                      let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+                else { return false }
+                return object["action"] as? String == "listDevices"
+            }.count
+            let revision = listCount == 1 ? 7 : 8
+            return try AuthURLProtocolStub.response(
+                for: request,
+                json: """
+                {"devices":[{"id":"\(deviceID)","display_name":"Watch","created_at":"2026-07-14T01:00:00Z","last_seen_at":null,"binding_version":2,"token_revision":\(revision)}]}
+                """
+            )
+        }
+        defer {
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+        }
+
+        try await garmin.refreshDevices()
+        try garmin.selectDevice(try XCTUnwrap(garmin.availableDevices.first))
+        do {
+            _ = try await garmin.rotateSelectedDeviceToken()
+            XCTFail("A stale token revision must not return a replacement token.")
+        } catch GarminCloudError.rotationConflict {
+            // Expected.
+        } catch {
+            XCTFail("Unexpected rotation-conflict error: \(error)")
+        }
+
+        XCTAssertEqual(garmin.availableDevices.first?.tokenRevision, 8)
+        XCTAssertEqual(garmin.selectedDevice?.deviceID, deviceID)
+        let attemptedToken = try XCTUnwrap(
+            recorder.requests.compactMap { request -> String? in
+                guard let data = request.httpBody,
+                      let body = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      body["action"] as? String == "rotateDeviceToken" else {
+                    return nil
+                }
+                return body["replacementToken"] as? String
+            }.first
+        )
+        XCTAssertFalse(bindingKeychain.allData.contains {
+            String(decoding: $0, as: UTF8.self).contains(attemptedToken)
+        })
+    }
+
+    func testLateGarminRotationConflictDoesNotRepublishDeviceListAfterAccountSwitch() async throws {
+        let userA = "00000000-0000-4000-8000-0000000000a1"
+        let userB = "00000000-0000-4000-8000-0000000000b2"
+        let deviceA = "00000000-0000-4000-8000-0000000000d1"
+        let rotationStarted = expectation(description: "Garmin rotation started")
+        let releaseRotation = DispatchSemaphore(value: 0)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        let auth = AuthService(
+            keychain: InMemoryKeychainStore(),
+            urlSession: urlSession,
+            defaults: temporaryDefaults(named: "garmin-late-rotation-conflict")
+        )
+        let garmin = GarminCloudService(
+            auth: auth,
+            urlSession: urlSession,
+            bindingStore: GarminDeviceBindingStore(keychain: InMemoryKeychainStore())
+        )
+        try auth.installSessionForTesting(.cloud(cloudSession(userID: userA)))
+
+        AuthURLProtocolStub.handler = { request in
+            let body = try XCTUnwrap(
+                JSONSerialization.jsonObject(with: try XCTUnwrap(request.httpBody)) as? [String: Any]
+            )
+            if body["action"] as? String == "listDevices" {
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    json: """
+                    {"devices":[{"id":"\(deviceA)","display_name":"Watch A","created_at":"2026-07-14T01:00:00Z","last_seen_at":null,"binding_version":2,"token_revision":7}]}
+                    """
+                )
+            }
+
+            XCTAssertEqual(body["action"] as? String, "rotateDeviceToken")
+            XCTAssertEqual(body["deviceId"] as? String, deviceA)
+            rotationStarted.fulfill()
+            _ = releaseRotation.wait(timeout: .now() + 5)
+            return try AuthURLProtocolStub.response(
+                for: request,
+                statusCode: 409,
+                json: #"{"error":"Device token rotation conflict","status":"conflict","tokenRevision":8}"#
+            )
+        }
+        defer {
+            releaseRotation.signal()
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+        }
+
+        try await garmin.refreshDevices()
+        try garmin.selectDevice(try XCTUnwrap(garmin.availableDevices.first))
+
+        var deviceListEmissions = [[GarminDeviceSummary]]()
+        let deviceListSubscription = garmin.$availableDevices
+            .dropFirst()
+            .sink { deviceListEmissions.append($0) }
+
+        let pendingRotation = Task {
+            try await garmin.rotateSelectedDeviceToken()
+        }
+        await fulfillment(of: [rotationStarted], timeout: 2)
+
+        try auth.installSessionForTesting(.cloud(cloudSession(userID: userB)))
+        XCTAssertEqual(deviceListEmissions.count, 1)
+        XCTAssertTrue(try XCTUnwrap(deviceListEmissions.first).isEmpty)
+        releaseRotation.signal()
+
+        do {
+            _ = try await pendingRotation.value
+            XCTFail("A late rotation conflict must not succeed after an account switch.")
+        } catch GarminCloudError.rotationConflict {
+            // Expected. The stale account's refresh must not publish any device list.
+        } catch {
+            XCTFail("Unexpected late rotation-conflict error: \(error)")
+        }
+
+        XCTAssertEqual(deviceListEmissions.count, 1)
+        XCTAssertTrue(try XCTUnwrap(deviceListEmissions.first).isEmpty)
+        withExtendedLifetime(deviceListSubscription) {}
+    }
+
+    func testGarminStreamingTransportRejectsResponseAbove256KiB() async throws {
+        let userID = "00000000-0000-4000-8000-0000000000a1"
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        let auth = AuthService(
+            keychain: InMemoryKeychainStore(),
+            urlSession: urlSession,
+            defaults: temporaryDefaults(named: "garmin-response-limit")
+        )
+        let garmin = GarminCloudService(
+            auth: auth,
+            urlSession: urlSession,
+            bindingStore: GarminDeviceBindingStore(keychain: InMemoryKeychainStore())
+        )
+        try auth.installSessionForTesting(.cloud(cloudSession(userID: userID)))
+
+        AuthURLProtocolStub.handler = { request in
+            let url = try XCTUnwrap(request.url)
+            let response = try XCTUnwrap(
+                HTTPURLResponse(
+                    url: url,
+                    statusCode: 200,
+                    httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "application/json"]
+                )
+            )
+            return (response, Data(repeating: 0x61, count: 256 * 1_024 + 1))
+        }
+        defer {
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+        }
+
+        do {
+            try await garmin.refreshDevices()
+            XCTFail("An oversized response must be cancelled before JSON parsing.")
+        } catch GarminCloudError.invalidResponse {
+            // Expected.
+        } catch {
+            XCTFail("Unexpected response-limit error: \(error)")
+        }
+        XCTAssertFalse(garmin.isWorking)
+        XCTAssertTrue(garmin.availableDevices.isEmpty)
+    }
+
     func testFailedKeychainDeletionCannotResurrectSessionAfterRelaunch() throws {
         let keychain = InMemoryKeychainStore()
         let defaults = temporaryDefaults(named: "keychain-delete")
@@ -1196,8 +1983,22 @@ final class CoreParityTests: XCTestCase {
     func testPendingDeletionCleanupDoesNotClearAReplacementAccount() async throws {
         let directory = try temporaryDirectory(named: "pending-delete-replacement")
         let defaults = temporaryDefaults(named: "pending-delete-replacement")
-        let deletedSession = AppAccountSession.local(id: "deleted", displayName: "Deleted")
+        let deletedGarminUserID = "00000000-0000-4000-8000-0000000000a1"
+        let deletedGarminDeviceID = "00000000-0000-4000-8000-0000000000d1"
+        let deletedSession = AppAccountSession.cloud(cloudSession(userID: deletedGarminUserID))
         let replacementSession = AppAccountSession.local(id: "replacement", displayName: "Replacement")
+        let garminBindingStore = GarminDeviceBindingStore(keychain: InMemoryKeychainStore())
+        try garminBindingStore.save(
+            binding: GarminDeviceBinding(
+                version: GarminDeviceBinding.currentVersion,
+                userID: deletedGarminUserID,
+                deviceID: deletedGarminDeviceID
+            )
+        )
+        try garminBindingStore.savePendingRevocation(
+            userID: deletedGarminUserID,
+            deviceID: deletedGarminDeviceID
+        )
         let deletedStore = try WorkoutStore(
             accountStorageKey: deletedSession.storageKey,
             directoryURL: directory
@@ -1216,15 +2017,49 @@ final class CoreParityTests: XCTestCase {
         let appState = try AppState(
             auth: auth,
             defaults: defaults,
-            workoutDirectoryURL: directory
+            workoutDirectoryURL: directory,
+            garminBindingStore: garminBindingStore
         )
 
         XCTAssertEqual(auth.session?.storageKey, replacementSession.storageKey)
         XCTAssertFalse(FileManager.default.fileExists(atPath: deletedStore.storageURL.path))
         XCTAssertNil(defaults.string(forKey: "gymapp.pending-account-deletion-storage-key"))
+        XCTAssertNil(defaults.string(forKey: "gymapp.pending-account-deletion-garmin-user-id"))
+        XCTAssertNil(try garminBindingStore.binding(for: deletedGarminUserID))
+        XCTAssertNil(try garminBindingStore.pendingRevocation(for: deletedGarminUserID))
         let replacementReady = await waitUntil { appState.isAccountReady }
         XCTAssertTrue(replacementReady)
         XCTAssertEqual(appState.workoutStore.accountStorageKey, replacementSession.storageKey)
+    }
+
+    func testOrphanLegacyGarminDeletionMarkerCannotDeleteAWorkingBinding() async throws {
+        let directory = try temporaryDirectory(named: "orphan-garmin-delete-marker")
+        let defaults = temporaryDefaults(named: "orphan-garmin-delete-marker")
+        let userID = "00000000-0000-4000-8000-0000000000a1"
+        let deviceID = "00000000-0000-4000-8000-0000000000d1"
+        let bindingStore = GarminDeviceBindingStore(keychain: InMemoryKeychainStore())
+        try bindingStore.save(
+            binding: GarminDeviceBinding(
+                version: GarminDeviceBinding.currentVersion,
+                userID: userID,
+                deviceID: deviceID
+            )
+        )
+        defaults.set(userID, forKey: "gymapp.pending-account-deletion-garmin-user-id")
+
+        let auth = AuthService(keychain: InMemoryKeychainStore(), defaults: defaults)
+        try auth.installSessionForTesting(.cloud(cloudSession(userID: userID)))
+        let appState = try AppState(
+            auth: auth,
+            defaults: defaults,
+            workoutDirectoryURL: directory,
+            garminBindingStore: bindingStore
+        )
+
+        XCTAssertNil(defaults.string(forKey: "gymapp.pending-account-deletion-garmin-user-id"))
+        XCTAssertEqual(try bindingStore.binding(for: userID)?.deviceID, deviceID)
+        let accountReady = await waitUntil { appState.isAccountReady }
+        XCTAssertTrue(accountReady)
     }
 
     func testPWACloudActivationPausesAutomaticAndManualNativeWrites() async throws {
@@ -1635,10 +2470,20 @@ private struct ProgressionGoldenRow {
 private final class InMemoryKeychainStore: KeychainStoring {
     private let lock = NSLock()
     private var values: [String: Data] = [:]
+    var accountsThatFailSave = Set<String>()
     var accountsThatFailDeletion = Set<String>()
 
+    var allData: [Data] {
+        lock.withLock { Array(values.values) }
+    }
+
     func save(_ data: Data, account: String) throws {
-        lock.withLock { values[account] = data }
+        try lock.withLock {
+            if accountsThatFailSave.contains(account) {
+                throw NSError(domain: "GymAppTests.KeychainSave", code: 1)
+            }
+            values[account] = data
+        }
     }
 
     func read(account: String) throws -> Data? {

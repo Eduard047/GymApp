@@ -1,0 +1,24 @@
+title = "GymApp Gitleaks configuration"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Supabase publishable client keys are intentionally public and are constrained by RLS"
+targetRules = ["generic-api-key"]
+regexTarget = "secret"
+regexes = [
+  '''^sb_publishable_[A-Za-z0-9_-]{20,}$''',
+]
+
+[[allowlists]]
+description = "Synthetic UUID-shaped authorization codes in the CloudAuthManager unit tests"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "secret"
+paths = [
+  '''(^|/)app/src/test/java/com/example/gymapp/auth/CloudAuthManagerTest\.kt$''',
+]
+regexes = [
+  '''(?i)^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$''',
+]

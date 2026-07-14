@@ -1,4 +1,6 @@
+import Combine
 import Foundation
+import Security
 
 struct GarminPlanSet: Codable, Equatable, Sendable {
     let weight: Double
@@ -21,11 +23,161 @@ struct GarminWorkoutPlan: Codable, Equatable, Sendable {
     let exercises: [GarminPlanExercise]
 }
 
-struct GarminDevice: Codable, Equatable, Sendable {
+struct GarminDeviceSummary: Equatable, Identifiable, Sendable {
+    let id: String
+    let displayName: String
+    let createdAt: String?
+    let lastSeenAt: String?
+    let bindingVersion: Int
+    let tokenRevision: Int
+}
+
+/// Ephemeral one-time credential. Deliberately not Codable: only the nonsecret
+/// selected-device UUID is persisted, never the raw Garmin bearer token.
+struct GarminPairingCredential: Equatable, Identifiable, Sendable {
     let id: String
     let deviceToken: String
     let displayName: String
-    let createdAt: String?
+}
+
+struct GarminDeviceBinding: Codable, Equatable, Sendable {
+    static let currentVersion = 2
+
+    let version: Int
+    let userID: String
+    let deviceID: String
+}
+
+struct GarminPendingRevocation: Codable, Equatable, Sendable {
+    let version: Int
+    let userID: String
+    let deviceID: String
+}
+
+struct GarminDeviceBindingStore {
+    private static let bindingAccountPrefix = "selected-device-v2."
+    private static let pendingRevocationAccountPrefix = "pending-revocation-v2."
+    private static let maximumRecordBytes = 1_024
+
+    private let keychain: any KeychainStoring
+    private let encoder = JSONEncoder()
+    private let decoder = JSONDecoder()
+
+    init(
+        keychain: any KeychainStoring = KeychainStore(
+            service: "com.setforge.gymapp.ios.garmin-binding"
+        )
+    ) {
+        self.keychain = keychain
+    }
+
+    func binding(for userID: String) throws -> GarminDeviceBinding? {
+        let userID = try canonicalUserID(userID)
+        guard let data = try keychain.read(account: bindingAccount(for: userID)) else {
+            return nil
+        }
+        guard data.count <= Self.maximumRecordBytes,
+              let binding = try? decoder.decode(GarminDeviceBinding.self, from: data),
+              binding.version == GarminDeviceBinding.currentVersion,
+              binding.userID == userID,
+              canonicalUUID(binding.deviceID) == binding.deviceID else {
+            throw GarminCloudError.invalidBinding
+        }
+        return binding
+    }
+
+    func save(binding: GarminDeviceBinding) throws {
+        let userID = try canonicalUserID(binding.userID)
+        guard binding.version == GarminDeviceBinding.currentVersion,
+              binding.userID == userID,
+              canonicalUUID(binding.deviceID) == binding.deviceID else {
+            throw GarminCloudError.invalidBinding
+        }
+        let data = try encoder.encode(binding)
+        guard data.count <= Self.maximumRecordBytes else {
+            throw GarminCloudError.invalidBinding
+        }
+        try keychain.save(data, account: bindingAccount(for: userID))
+    }
+
+    func deleteBinding(for userID: String) throws {
+        let userID = try canonicalUserID(userID)
+        try keychain.delete(account: bindingAccount(for: userID))
+    }
+
+    func pendingRevocation(for userID: String) throws -> GarminPendingRevocation? {
+        let userID = try canonicalUserID(userID)
+        guard let data = try keychain.read(account: pendingAccount(for: userID)) else {
+            return nil
+        }
+        guard data.count <= Self.maximumRecordBytes,
+              let value = try? decoder.decode(GarminPendingRevocation.self, from: data),
+              value.version == GarminDeviceBinding.currentVersion,
+              value.userID == userID,
+              canonicalUUID(value.deviceID) == value.deviceID else {
+            throw GarminCloudError.invalidBinding
+        }
+        return value
+    }
+
+    func savePendingRevocation(userID: String, deviceID: String) throws {
+        let userID = try canonicalUserID(userID)
+        guard canonicalUUID(deviceID) == deviceID else {
+            throw GarminCloudError.invalidBinding
+        }
+        let data = try encoder.encode(
+            GarminPendingRevocation(
+                version: GarminDeviceBinding.currentVersion,
+                userID: userID,
+                deviceID: deviceID
+            )
+        )
+        guard data.count <= Self.maximumRecordBytes else {
+            throw GarminCloudError.invalidBinding
+        }
+        try keychain.save(data, account: pendingAccount(for: userID))
+    }
+
+    func clearPendingRevocation(for userID: String) throws {
+        let userID = try canonicalUserID(userID)
+        try keychain.delete(account: pendingAccount(for: userID))
+    }
+
+    func deleteAll(for userID: String) throws {
+        let userID = try canonicalUserID(userID)
+        var firstError: Error?
+        do {
+            try keychain.delete(account: bindingAccount(for: userID))
+        } catch {
+            firstError = error
+        }
+        do {
+            try keychain.delete(account: pendingAccount(for: userID))
+        } catch {
+            firstError = firstError ?? error
+        }
+        if let firstError { throw firstError }
+    }
+
+    private func canonicalUserID(_ value: String) throws -> String {
+        guard let canonical = canonicalUUID(value) else {
+            throw GarminCloudError.invalidBinding
+        }
+        return canonical
+    }
+
+    private func bindingAccount(for userID: String) -> String {
+        Self.bindingAccountPrefix + userID
+    }
+
+    private func pendingAccount(for userID: String) -> String {
+        Self.pendingRevocationAccountPrefix + userID
+    }
+}
+
+private func canonicalUUID(_ value: String) -> String? {
+    guard value.utf8.count == 36, let uuid = UUID(uuidString: value) else { return nil }
+    return uuid.uuidString.lowercased()
 }
 
 enum GarminPlanValidator {
@@ -117,72 +269,618 @@ enum GarminPlanValidator {
 
 enum GarminCloudError: LocalizedError {
     case invalidPlan
+    case invalidRequest
     case invalidResponse
-    case requestFailed(String)
+    case invalidBinding
+    case pairingRequired
+    case busy
+    case pendingRevocation
+    case bindingPersistenceFailed
+    case deviceRefreshRequired
+    case rotationConflict
+    case enqueueConflict
+    case requestFailed(statusCode: Int, message: String)
 
     var errorDescription: String? {
         switch self {
         case .invalidPlan: return "Add at least one valid exercise set before syncing."
+        case .invalidRequest: return "The Garmin sync request is too large or malformed."
         case .invalidResponse: return "Garmin cloud sync returned an invalid response."
-        case .requestFailed(let value): return value
+        case .invalidBinding: return "The selected Garmin watch binding is invalid. Select or pair the watch again."
+        case .pairingRequired: return "Select or pair a Garmin watch in Account settings before queueing a plan."
+        case .busy: return "Another Garmin operation is already in progress. Try again."
+        case .pendingRevocation: return "A previous Garmin pairing is still awaiting secure revocation. Keep the app open and retry."
+        case .bindingPersistenceFailed: return "The Garmin watch selection could not be stored securely, so its one-time token was not shown."
+        case .deviceRefreshRequired: return "Refresh the Garmin watch list before rotating its token."
+        case .rotationConflict: return "This watch changed elsewhere. Its details were refreshed; review the selection and retry token rotation."
+        case .enqueueConflict: return "This workout queue request conflicts with an earlier submission and was not duplicated."
+        case .requestFailed(_, let value): return value
         }
     }
 }
 
 @MainActor
 final class GarminCloudService: ObservableObject {
+    private static let maximumAccessTokenBytes = 16 * 1_024
+    private static let maximumRequestBodyBytes = 96 * 1_024
+    private static let maximumResponseBodyBytes = 256 * 1_024
+    private static let maximumErrorResponseBodyBytes = 16 * 1_024
+    private static let maximumServerErrorBytes = 512
+
     @Published private(set) var isWorking = false
     @Published private(set) var lastMessage: String?
+    @Published private(set) var selectedDevice: GarminDeviceBinding?
+    @Published private(set) var availableDevices: [GarminDeviceSummary] = []
 
     private let auth: AuthService
     private let urlSession: URLSession
+    private let bindingStore: GarminDeviceBindingStore
+    private var sessionSubscription: AnyCancellable?
+    private var availableDevicesUserID: String?
 
-    init(auth: AuthService, urlSession: URLSession = .shared) {
+    init(
+        auth: AuthService,
+        urlSession: URLSession = .shared,
+        bindingStore: GarminDeviceBindingStore = GarminDeviceBindingStore()
+    ) {
         self.auth = auth
         self.urlSession = urlSession
+        self.bindingStore = bindingStore
+        reloadPublishedBinding(for: auth.session)
+        sessionSubscription = auth.$session
+            .removeDuplicates(by: { $0?.storageKey == $1?.storageKey })
+            .sink { [weak self] session in
+                MainActor.assumeIsolated {
+                    self?.availableDevices = []
+                    self?.availableDevicesUserID = nil
+                    self?.lastMessage = nil
+                    self?.reloadPublishedBinding(for: session)
+                }
+            }
     }
 
-    func createDevice(displayName: String = "Garmin watch") async throws -> GarminDevice {
-        isWorking = true
+    func refreshDevices() async throws {
+        try beginOperation()
         defer { isWorking = false }
-        let session = try await auth.validCloudSession()
+
+        let identity = try activeIdentity()
+        let session = try await auth.validCloudSession(expectedUserID: identity.rawUserID)
+        try ensureIdentityIsCurrent(identity)
+        try await recoverPendingRevocation(identity: identity, token: session.accessToken)
         let object = try await requestObject(
             path: "/functions/v1/garmin-sync",
             method: "POST",
             token: session.accessToken,
-            body: ["action": "createDevice", "displayName": displayName]
+            body: ["action": "listDevices"]
         )
-        guard let device = object["device"] as? [String: Any],
-              let id = device["id"] as? String,
-              let token = device["device_token"] as? String else {
-            throw GarminCloudError.invalidResponse
-        }
-        let value = GarminDevice(
-            id: id,
-            deviceToken: token,
-            displayName: device["display_name"] as? String ?? displayName,
-            createdAt: device["created_at"] as? String
-        )
-        lastMessage = "Device token created. Paste it into Garmin Connect IQ settings."
-        return value
+        try ensureIdentityIsCurrent(identity)
+        try publishDevices(parseDeviceList(object), for: identity)
     }
 
-    func submit(plan: GarminWorkoutPlan) async throws {
-        let planData = try GarminPlanValidator.validate(plan)
-        isWorking = true
+    func selectDevice(_ device: GarminDeviceSummary) throws {
+        guard !isWorking else { throw GarminCloudError.busy }
+        let identity = try activeIdentity()
+        guard device.bindingVersion == GarminDeviceBinding.currentVersion,
+              canonicalUUID(device.id) == device.id,
+              availableDevicesUserID == identity.canonicalUserID,
+              availableDevices.contains(device) else {
+            throw GarminCloudError.invalidBinding
+        }
+        let binding = GarminDeviceBinding(
+            version: GarminDeviceBinding.currentVersion,
+            userID: identity.canonicalUserID,
+            deviceID: device.id
+        )
+        try bindingStore.save(binding: binding)
+        selectedDevice = binding
+        lastMessage = "Selected Garmin watch: \(device.displayName)."
+    }
+
+    func createDevice(displayName: String = "Garmin watch") async throws -> GarminPairingCredential {
+        let cleanDisplayName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard isValidDisplayName(cleanDisplayName) else {
+            throw GarminCloudError.invalidRequest
+        }
+        try beginOperation()
         defer { isWorking = false }
-        let session = try await auth.validCloudSession()
+
+        let identity = try activeIdentity()
+        let session = try await auth.validCloudSession(expectedUserID: identity.rawUserID)
+        try ensureIdentityIsCurrent(identity)
+        try await recoverPendingRevocation(identity: identity, token: session.accessToken)
+        let object = try await requestObject(
+            path: "/functions/v1/garmin-sync",
+            method: "POST",
+            token: session.accessToken,
+            body: ["action": "createDevice", "displayName": cleanDisplayName]
+        )
+        let result = try parsePairingCredential(object)
+        try await persistCreatedDevice(
+            result,
+            identity: identity,
+            token: session.accessToken
+        )
+        lastMessage = "Device token created. Paste it into Garmin Connect IQ settings."
+        return result.credential
+    }
+
+    func rotateSelectedDeviceToken() async throws -> GarminPairingCredential {
+        try beginOperation()
+        defer { isWorking = false }
+
+        let identity = try activeIdentity()
+        let binding = try requiredBinding(for: identity)
+        guard availableDevicesUserID == identity.canonicalUserID,
+              let selectedSummary = availableDevices.first(where: { $0.id == binding.deviceID }) else {
+            throw GarminCloudError.deviceRefreshRequired
+        }
+        guard selectedSummary.tokenRevision < Int(Int32.max) else {
+            throw GarminCloudError.invalidResponse
+        }
+        let session = try await auth.validCloudSession(expectedUserID: identity.rawUserID)
+        try ensureIdentityIsCurrent(identity)
+        try await recoverPendingRevocation(identity: identity, token: session.accessToken)
+        let replacementToken = try generateDeviceToken()
+        let requestBody: [String: Any] = [
+            "action": "rotateDeviceToken",
+            "deviceId": binding.deviceID,
+            "replacementToken": replacementToken,
+            "expectedTokenRevision": selectedSummary.tokenRevision
+        ]
+        let object: [String: Any]
+        do {
+            object = try await requestRotation(
+                identity: identity,
+                token: session.accessToken,
+                body: requestBody
+            )
+        } catch GarminCloudError.requestFailed(let statusCode, _) where statusCode == 409 {
+            await refreshAfterRotationConflict(identity: identity, token: session.accessToken)
+            throw GarminCloudError.rotationConflict
+        }
+        guard let status = object["status"] as? String,
+              status == "rotated" || status == "already_rotated" else {
+            throw GarminCloudError.invalidResponse
+        }
+        let result = try parsePairingCredential(object)
+        guard result.summary.id == binding.deviceID,
+              result.summary.tokenRevision == selectedSummary.tokenRevision + 1,
+              result.credential.deviceToken == replacementToken else {
+            throw GarminCloudError.invalidResponse
+        }
+        try ensureIdentityIsCurrent(identity)
+        guard try bindingStore.binding(for: identity.canonicalUserID) == binding else {
+            throw GarminCloudError.invalidBinding
+        }
+        replaceAvailableDevice(result.summary)
+        lastMessage = "Garmin token rotated. Paste the new one into the same watch now."
+        return result.credential
+    }
+
+    func revokeSelectedDevice() async throws {
+        try beginOperation()
+        defer { isWorking = false }
+
+        let identity = try activeIdentity()
+        let binding = try requiredBinding(for: identity)
+        let session = try await auth.validCloudSession(expectedUserID: identity.rawUserID)
+        try ensureIdentityIsCurrent(identity)
+        try await recoverPendingRevocation(identity: identity, token: session.accessToken)
+        let object = try await requestObject(
+            path: "/functions/v1/garmin-sync",
+            method: "POST",
+            token: session.accessToken,
+            body: ["action": "revokeDevice", "deviceId": binding.deviceID]
+        )
+        guard let status = object["status"] as? String,
+              status == "revoked" || status == "already_revoked" else {
+            throw GarminCloudError.invalidResponse
+        }
+        try bindingStore.deleteBinding(for: identity.canonicalUserID)
+        try ensureIdentityIsCurrent(identity)
+        selectedDevice = nil
+        availableDevices.removeAll { $0.id == binding.deviceID }
+        lastMessage = "Garmin watch revoked. Reset GymApp on that watch before pairing it with a new device ID."
+    }
+
+    func clearLocalBindingData(for userID: String) throws {
+        guard let canonical = canonicalUUID(userID) else {
+            throw GarminCloudError.invalidBinding
+        }
+        try bindingStore.deleteAll(for: canonical)
+        if canonicalUUID(auth.session?.cloud?.userID ?? "") == canonical {
+            selectedDevice = nil
+            availableDevices = []
+            availableDevicesUserID = nil
+        }
+    }
+
+    func submit(plan: GarminWorkoutPlan, clientRequestID: UUID) async throws {
+        let planData = try GarminPlanValidator.validate(plan)
+        let canonicalRequestID = try canonicalVersion4UUID(clientRequestID)
+        try beginOperation()
+        defer { isWorking = false }
+
+        let identity = try activeIdentity()
+        let binding = try requiredBinding(for: identity)
+        let session = try await auth.validCloudSession(expectedUserID: identity.rawUserID)
+        try ensureIdentityIsCurrent(identity)
+        try await recoverPendingRevocation(identity: identity, token: session.accessToken)
         guard let planObject = try JSONSerialization.jsonObject(with: planData) as? [String: Any] else {
             throw GarminCloudError.invalidPlan
         }
-        _ = try await requestObject(
-            path: "/rest/v1/garmin_plans",
-            method: "POST",
+        let object = try await requestIdempotently(
+            identity: identity,
+            path: "/rest/v1/rpc/garmin_enqueue_plan",
             token: session.accessToken,
-            prefer: "return=minimal",
-            body: [["user_id": session.userID, "status": "pending", "plan": planObject]]
+            body: [
+                "p_device_id": binding.deviceID,
+                "p_plan": planObject,
+                "p_client_request_id": canonicalRequestID
+            ]
         )
-        lastMessage = "Plan queued. Open GymApp on the Garmin watch and choose CLOUD / SYNC."
+        try ensureIdentityIsCurrent(identity)
+        guard let status = object["status"] as? String else {
+            throw GarminCloudError.invalidResponse
+        }
+        if status == "conflict" {
+            throw GarminCloudError.enqueueConflict
+        }
+        guard status == "queued" || status == "already_queued",
+              let rawPlanID = object["planId"] as? String,
+              canonicalUUID(rawPlanID) == rawPlanID,
+              let planRevision = exactInteger(object["planRevision"]),
+              (1 ... Int(Int32.max)).contains(planRevision),
+              let planStatus = object["planStatus"] as? String,
+              ["pending", "downloaded", "completed", "invalid", "superseded"].contains(planStatus),
+              status != "queued" || planStatus == "pending" else {
+            throw GarminCloudError.invalidResponse
+        }
+        lastMessage = status == "queued"
+            ? "Plan queued. Open GymApp on the Garmin watch and choose CLOUD / SYNC."
+            : "This workout was already submitted to the selected Garmin watch."
+    }
+
+    private struct ActiveIdentity {
+        let rawUserID: String
+        let canonicalUserID: String
+    }
+
+    private struct ParsedPairingResult {
+        let summary: GarminDeviceSummary
+        let credential: GarminPairingCredential
+    }
+
+    private func beginOperation() throws {
+        guard !isWorking else { throw GarminCloudError.busy }
+        isWorking = true
+    }
+
+    private func activeIdentity() throws -> ActiveIdentity {
+        guard let rawUserID = auth.session?.cloud?.userID,
+              let canonicalUserID = canonicalUUID(rawUserID) else {
+            if auth.session?.cloud == nil { throw AuthServiceError.notCloudAccount }
+            throw GarminCloudError.invalidBinding
+        }
+        return ActiveIdentity(rawUserID: rawUserID, canonicalUserID: canonicalUserID)
+    }
+
+    private func ensureIdentityIsCurrent(_ identity: ActiveIdentity) throws {
+        guard auth.session?.cloud?.userID == identity.rawUserID else {
+            throw AuthServiceError.sessionChanged
+        }
+    }
+
+    private func requiredBinding(for identity: ActiveIdentity) throws -> GarminDeviceBinding {
+        guard let binding = try bindingStore.binding(for: identity.canonicalUserID),
+              binding.userID == identity.canonicalUserID else {
+            selectedDevice = nil
+            throw GarminCloudError.pairingRequired
+        }
+        selectedDevice = binding
+        return binding
+    }
+
+    private func reloadPublishedBinding(for session: AppAccountSession?) {
+        guard let rawUserID = session?.cloud?.userID,
+              let canonicalUserID = canonicalUUID(rawUserID) else {
+            selectedDevice = nil
+            return
+        }
+        do {
+            selectedDevice = try bindingStore.binding(for: canonicalUserID)
+        } catch {
+            selectedDevice = nil
+            lastMessage = GarminCloudError.invalidBinding.errorDescription
+        }
+    }
+
+    private func recoverPendingRevocation(
+        identity: ActiveIdentity,
+        token: String
+    ) async throws {
+        guard let pending = try bindingStore.pendingRevocation(
+            for: identity.canonicalUserID
+        ) else { return }
+        try ensureIdentityIsCurrent(identity)
+        guard await bestEffortRevoke(deviceID: pending.deviceID, token: token) else {
+            throw GarminCloudError.pendingRevocation
+        }
+        try bindingStore.clearPendingRevocation(for: identity.canonicalUserID)
+        try ensureIdentityIsCurrent(identity)
+    }
+
+    private func persistCreatedDevice(
+        _ result: ParsedPairingResult,
+        identity: ActiveIdentity,
+        token: String
+    ) async throws {
+        do {
+            try bindingStore.savePendingRevocation(
+                userID: identity.canonicalUserID,
+                deviceID: result.summary.id
+            )
+        } catch {
+            _ = await bestEffortRevoke(deviceID: result.summary.id, token: token)
+            throw GarminCloudError.bindingPersistenceFailed
+        }
+
+        do {
+            try ensureIdentityIsCurrent(identity)
+        } catch {
+            if await bestEffortRevoke(deviceID: result.summary.id, token: token) {
+                try? bindingStore.clearPendingRevocation(for: identity.canonicalUserID)
+            }
+            throw error
+        }
+
+        let binding = GarminDeviceBinding(
+            version: GarminDeviceBinding.currentVersion,
+            userID: identity.canonicalUserID,
+            deviceID: result.summary.id
+        )
+        do {
+            try bindingStore.save(binding: binding)
+            try bindingStore.clearPendingRevocation(for: identity.canonicalUserID)
+        } catch {
+            try? bindingStore.deleteBinding(for: identity.canonicalUserID)
+            if await bestEffortRevoke(deviceID: result.summary.id, token: token) {
+                try? bindingStore.clearPendingRevocation(for: identity.canonicalUserID)
+            }
+            throw GarminCloudError.bindingPersistenceFailed
+        }
+        do {
+            try ensureIdentityIsCurrent(identity)
+        } catch {
+            try? bindingStore.savePendingRevocation(
+                userID: identity.canonicalUserID,
+                deviceID: result.summary.id
+            )
+            if await bestEffortRevoke(deviceID: result.summary.id, token: token) {
+                try? bindingStore.deleteBinding(for: identity.canonicalUserID)
+                try? bindingStore.clearPendingRevocation(for: identity.canonicalUserID)
+            }
+            throw error
+        }
+        selectedDevice = binding
+        replaceAvailableDevice(result.summary)
+    }
+
+    private func bestEffortRevoke(deviceID: String, token: String) async -> Bool {
+        do {
+            let object = try await requestObject(
+                path: "/functions/v1/garmin-sync",
+                method: "POST",
+                token: token,
+                body: ["action": "revokeDevice", "deviceId": deviceID]
+            )
+            guard let status = object["status"] as? String else { return false }
+            return status == "revoked" || status == "already_revoked"
+        } catch {
+            return false
+        }
+    }
+
+    private func replaceAvailableDevice(_ device: GarminDeviceSummary) {
+        if let rawUserID = auth.session?.cloud?.userID,
+           let userID = canonicalUUID(rawUserID) {
+            availableDevicesUserID = userID
+        }
+        availableDevices.removeAll { $0.id == device.id }
+        availableDevices.insert(device, at: 0)
+    }
+
+    private func parseDeviceList(_ object: [String: Any]) throws -> [GarminDeviceSummary] {
+        guard let rawDevices = object["devices"] as? [Any], rawDevices.count <= 5 else {
+            throw GarminCloudError.invalidResponse
+        }
+        let devices = try rawDevices.map(parseDeviceSummary)
+        guard Set(devices.map(\.id)).count == devices.count else {
+            throw GarminCloudError.invalidResponse
+        }
+        return devices.sorted {
+            if $0.createdAt != $1.createdAt {
+                return ($0.createdAt ?? "") > ($1.createdAt ?? "")
+            }
+            return $0.id > $1.id
+        }
+    }
+
+    private func publishDevices(
+        _ devices: [GarminDeviceSummary],
+        for identity: ActiveIdentity
+    ) throws {
+        try ensureIdentityIsCurrent(identity)
+        availableDevices = devices
+        availableDevicesUserID = identity.canonicalUserID
+
+        let binding = try bindingStore.binding(for: identity.canonicalUserID)
+        if let binding, devices.contains(where: { $0.id == binding.deviceID }) {
+            selectedDevice = binding
+        } else if binding != nil {
+            try bindingStore.deleteBinding(for: identity.canonicalUserID)
+            selectedDevice = nil
+        }
+    }
+
+    private func requestRotation(
+        identity: ActiveIdentity,
+        token: String,
+        body: [String: Any]
+    ) async throws -> [String: Any] {
+        try await requestIdempotently(
+            identity: identity,
+            path: "/functions/v1/garmin-sync",
+            token: token,
+            body: body
+        )
+    }
+
+    private func requestIdempotently(
+        identity: ActiveIdentity,
+        path: String,
+        token: String,
+        body: [String: Any]
+    ) async throws -> [String: Any] {
+        do {
+            return try await requestObject(
+                path: path,
+                method: "POST",
+                token: token,
+                body: body
+            )
+        } catch let error as URLError where error.code != .cancelled {
+            try ensureIdentityIsCurrent(identity)
+            return try await requestObject(
+                path: path,
+                method: "POST",
+                token: token,
+                body: body
+            )
+        } catch GarminCloudError.requestFailed(let statusCode, _)
+            where (500 ... 599).contains(statusCode) {
+            // The database contracts make an identical body safe after an
+            // outcome-unknown gateway/server failure. Never retry 4xx/409/429.
+            try ensureIdentityIsCurrent(identity)
+            return try await requestObject(
+                path: path,
+                method: "POST",
+                token: token,
+                body: body
+            )
+        }
+    }
+
+    private func refreshAfterRotationConflict(
+        identity: ActiveIdentity,
+        token: String
+    ) async {
+        do {
+            try ensureIdentityIsCurrent(identity)
+            availableDevices = []
+            availableDevicesUserID = nil
+            let object = try await requestObject(
+                path: "/functions/v1/garmin-sync",
+                method: "POST",
+                token: token,
+                body: ["action": "listDevices"]
+            )
+            try publishDevices(parseDeviceList(object), for: identity)
+        } catch {
+            // Keep the durable selected UUID, but never retain a stale token revision.
+        }
+    }
+
+    private func generateDeviceToken() throws -> String {
+        var bytes = [UInt8](repeating: 0, count: 32)
+        guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess else {
+            throw GarminCloudError.invalidRequest
+        }
+        let alphabet = Array("0123456789abcdef".utf8)
+        var encoded = [UInt8]()
+        encoded.reserveCapacity(bytes.count * 2)
+        for byte in bytes {
+            encoded.append(alphabet[Int(byte >> 4)])
+            encoded.append(alphabet[Int(byte & 0x0f)])
+        }
+        return String(decoding: encoded, as: UTF8.self)
+    }
+
+    private func canonicalVersion4UUID(_ value: UUID) throws -> String {
+        let canonical = value.uuidString.lowercased()
+        let versionIndex = canonical.index(canonical.startIndex, offsetBy: 14)
+        let variantIndex = canonical.index(canonical.startIndex, offsetBy: 19)
+        guard canonical[versionIndex] == "4",
+              "89ab".contains(canonical[variantIndex]) else {
+            throw GarminCloudError.invalidRequest
+        }
+        return canonical
+    }
+
+    private func parsePairingCredential(_ object: [String: Any]) throws -> ParsedPairingResult {
+        guard let raw = object["device"] as? [String: Any],
+              let token = raw["device_token"] as? String,
+              token.utf8.count == 64,
+              token.unicodeScalars.allSatisfy({ scalar in
+                  let value = Int(scalar.value)
+                  return (48 ... 57).contains(value) || (97 ... 102).contains(value)
+              }) else {
+            throw GarminCloudError.invalidResponse
+        }
+        let summary = try parseDeviceSummary(raw)
+        return ParsedPairingResult(
+            summary: summary,
+            credential: GarminPairingCredential(
+                id: summary.id,
+                deviceToken: token,
+                displayName: summary.displayName
+            )
+        )
+    }
+
+    private func parseDeviceSummary(_ value: Any) throws -> GarminDeviceSummary {
+        guard let object = value as? [String: Any],
+              let rawID = object["id"] as? String,
+              let id = canonicalUUID(rawID),
+              rawID == id,
+              let displayName = object["display_name"] as? String,
+              isValidDisplayName(displayName),
+              exactInteger(object["binding_version"]) == GarminDeviceBinding.currentVersion,
+              let tokenRevision = exactInteger(object["token_revision"]),
+              (1 ... Int(Int32.max)).contains(tokenRevision),
+              validOptionalServerString(object["created_at"], maximumBytes: 64),
+              validOptionalServerString(object["last_seen_at"], maximumBytes: 64) else {
+            throw GarminCloudError.invalidResponse
+        }
+        return GarminDeviceSummary(
+            id: id,
+            displayName: displayName,
+            createdAt: object["created_at"] as? String,
+            lastSeenAt: object["last_seen_at"] as? String,
+            bindingVersion: GarminDeviceBinding.currentVersion,
+            tokenRevision: tokenRevision
+        )
+    }
+
+    private func isValidDisplayName(_ value: String) -> Bool {
+        (1 ... 80).contains(value.count) &&
+            value.utf8.count <= 320 &&
+            !value.unicodeScalars.contains { CharacterSet.controlCharacters.contains($0) }
+    }
+
+    private func validOptionalServerString(_ value: Any?, maximumBytes: Int) -> Bool {
+        guard let value, !(value is NSNull) else { return true }
+        guard let text = value as? String, text.utf8.count <= maximumBytes else { return false }
+        return !text.unicodeScalars.contains { CharacterSet.controlCharacters.contains($0) }
+    }
+
+    private func exactInteger(_ value: Any?) -> Int? {
+        guard let number = value as? NSNumber,
+              CFGetTypeID(number) != CFBooleanGetTypeID() else { return nil }
+        let double = number.doubleValue
+        guard double.isFinite, double.rounded() == double,
+              double >= Double(Int.min), double <= Double(Int.max) else { return nil }
+        return number.intValue
     }
 
     private func requestObject(
@@ -195,22 +893,71 @@ final class GarminCloudService: ObservableObject {
         guard let url = URL(string: path, relativeTo: GymAppConfiguration.supabaseURL) else {
             throw GarminCloudError.invalidResponse
         }
+        guard !token.isEmpty,
+              token.utf8.count <= Self.maximumAccessTokenBytes,
+              token.unicodeScalars.allSatisfy({ (0x21 ... 0x7e).contains($0.value) }),
+              JSONSerialization.isValidJSONObject(body) else {
+            throw GarminCloudError.invalidRequest
+        }
+        let bodyData = try JSONSerialization.data(withJSONObject: body)
+        guard bodyData.count <= Self.maximumRequestBodyBytes else {
+            throw GarminCloudError.invalidRequest
+        }
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.timeoutInterval = 25
+        request.cachePolicy = .reloadIgnoringLocalCacheData
         request.setValue(GymAppConfiguration.supabasePublishableKey, forHTTPHeaderField: "apikey")
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("no-store", forHTTPHeaderField: "Cache-Control")
         if let prefer { request.setValue(prefer, forHTTPHeaderField: "Prefer") }
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
-        let (data, response) = try await urlSession.data(for: request)
-        guard let http = response as? HTTPURLResponse else { throw GarminCloudError.invalidResponse }
-        let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+        request.httpBody = bodyData
+
+        let data: Data
+        let http: HTTPURLResponse
+        do {
+            (data, http) = try await BoundedURLSessionLoader.data(
+                for: request,
+                using: urlSession,
+                successLimit: Self.maximumResponseBodyBytes,
+                errorLimit: Self.maximumErrorResponseBodyBytes
+            )
+        } catch BoundedURLSessionError.responseTooLarge(let statusCode?)
+            where (500 ... 599).contains(statusCode) {
+            throw GarminCloudError.requestFailed(
+                statusCode: statusCode,
+                message: "Garmin cloud sync failed (HTTP \(statusCode))."
+            )
+        } catch is BoundedURLSessionError {
+            throw GarminCloudError.invalidResponse
+        }
+
+        let decodedObject = data.isEmpty
+            ? nil
+            : (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
         guard (200..<300).contains(http.statusCode) else {
             throw GarminCloudError.requestFailed(
-                object["error"] as? String ?? "Garmin cloud sync failed (HTTP \(http.statusCode))."
+                statusCode: http.statusCode,
+                message: decodedObject.flatMap(safeServerError) ??
+                    "Garmin cloud sync failed (HTTP \(http.statusCode))."
             )
         }
-        return object
+        if data.isEmpty { return [:] }
+        guard let decodedObject else { throw GarminCloudError.invalidResponse }
+        return decodedObject
+    }
+
+    private func safeServerError(in object: [String: Any]) -> String? {
+        guard let value = object["error"] as? String,
+              !value.isEmpty,
+              value.utf8.count <= Self.maximumServerErrorBytes,
+              value.unicodeScalars.allSatisfy({ scalar in
+                  scalar.value >= 0x20 && scalar.value != 0x7f
+              }) else {
+            return nil
+        }
+        return value
     }
 }

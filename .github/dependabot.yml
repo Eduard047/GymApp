@@ -1,0 +1,41 @@
+version: 2
+
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Riga
+    open-pull-requests-limit: 5
+    groups:
+      actions-minor-and-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  - package-ecosystem: gradle
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:15"
+      timezone: Europe/Riga
+    open-pull-requests-limit: 5
+    groups:
+      gradle-minor-and-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  - package-ecosystem: deno
+    directory: /supabase/functions/garmin-sync
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:30"
+      timezone: Europe/Riga
+    open-pull-requests-limit: 5
+    groups:
+      deno-minor-and-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]

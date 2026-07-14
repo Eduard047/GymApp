@@ -364,7 +364,12 @@ struct AddWorkoutView: View {
                     Label("Queue for Garmin", systemImage: "applewatch.radiowaves.left.and.right")
                         .font(.headline)
                 }
-                Text("After saving, the plan is added to your private cloud queue for the paired Garmin app.")
+                .disabled(garminCloud.selectedDevice == nil)
+                Text(
+                    garminCloud.selectedDevice == nil
+                        ? "Select or pair a Garmin watch in Account settings before queueing a plan."
+                        : "After saving, the plan is added to the private cloud queue for the selected Garmin watch."
+                )
                     .font(.caption)
                     .foregroundStyle(GymTheme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -542,6 +547,9 @@ struct AddWorkoutView: View {
 
     private func validationMessage() -> String? {
         guard !drafts.isEmpty else { return gymLocalized("Add at least one exercise.") }
+        if queueForGarmin && isCloudAccount && garminCloud.selectedDevice == nil {
+            return gymLocalized("Select or pair a Garmin watch in Account settings before queueing a plan.")
+        }
         for draft in drafts {
             guard store.exercise(id: draft.exerciseID) != nil else {
                 return gymLocalized("One selected exercise no longer exists.")
@@ -579,7 +587,10 @@ struct AddWorkoutView: View {
             Task { @MainActor in
                 if shouldQueue {
                     do {
-                        try await garminCloud.submit(plan: garminPlan(for: workout))
+                        try await garminCloud.submit(
+                            plan: garminPlan(for: workout),
+                            clientRequestID: workout.id
+                        )
                         let message = gymLocalized(
                             garminCloud.lastMessage ?? "Workout saved and queued for Garmin."
                         )

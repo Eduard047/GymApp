@@ -1,0 +1,105 @@
+rules:
+  - id: gymapp-kotlin-process-execution
+    message: Production Android or Wear code must not execute operating-system commands.
+    severity: ERROR
+    languages: [kotlin]
+    metadata:
+      cwe: "CWE-78: Improper Neutralization of Special Elements used in an OS Command"
+      confidence: HIGH
+    paths:
+      include:
+        - /app/src/main/**/*.kt
+        - /wear/src/main/**/*.kt
+        - /.github/security/semgrep-tests/*.kt
+    pattern-either:
+      - pattern: Runtime.getRuntime().exec(...)
+      - pattern: ProcessBuilder(...).start()
+
+  - id: gymapp-kotlin-dangerous-webview-bridge
+    message: WebView JavaScript bridges and file-URL access create a privileged web-to-app boundary; use a reviewed, origin-bound alternative.
+    severity: ERROR
+    languages: [kotlin]
+    metadata:
+      cwe: "CWE-749: Exposed Dangerous Method or Function"
+      confidence: HIGH
+    paths:
+      include:
+        - /app/src/main/**/*.kt
+        - /wear/src/main/**/*.kt
+        - /.github/security/semgrep-tests/*.kt
+    pattern-either:
+      - pattern: $WEBVIEW.addJavascriptInterface(...)
+      - pattern: $SETTINGS.allowUniversalAccessFromFileURLs = true
+      - pattern: $SETTINGS.setAllowUniversalAccessFromFileURLs(true)
+      - pattern: $SETTINGS.allowFileAccessFromFileURLs = true
+      - pattern: $SETTINGS.setAllowFileAccessFromFileURLs(true)
+
+  - id: gymapp-kotlin-sensitive-logging
+    message: Do not include credentials or password material in Android logs.
+    severity: ERROR
+    languages: [kotlin]
+    metadata:
+      cwe: "CWE-532: Insertion of Sensitive Information into Log File"
+      confidence: HIGH
+    paths:
+      include:
+        - /app/src/main/**/*.kt
+        - /wear/src/main/**/*.kt
+        - /.github/security/semgrep-tests/*.kt
+    pattern-regex: '(?i)Log\.(?:d|i|v|w|e)\([^\n]*(?:access.?token|refresh.?token|password|authorization)'
+
+  - id: gymapp-javascript-dynamic-code-execution
+    message: Dynamic JavaScript execution is forbidden in the PWA and Edge Function.
+    severity: ERROR
+    languages: [javascript, typescript]
+    metadata:
+      cwe: "CWE-95: Improper Neutralization of Directives in Dynamically Evaluated Code"
+      confidence: HIGH
+    paths:
+      include:
+        - /pwa/**/*.js
+        - /supabase/functions/**/*.ts
+        - /.github/security/semgrep-tests/*.js
+        - /.github/security/semgrep-tests/*.ts
+    pattern-either:
+      - pattern: eval(...)
+      - pattern: new Function(...)
+      - pattern: document.write(...)
+      - pattern: new Deno.Command(...)
+
+  - id: gymapp-swift-sensitive-userdefaults
+    message: Credentials and password material belong in Keychain, not UserDefaults.
+    severity: ERROR
+    languages: [swift]
+    metadata:
+      cwe: "CWE-312: Cleartext Storage of Sensitive Information"
+      confidence: HIGH
+    paths:
+      include:
+        - /ios/GymApp-iOS/GymApp/**/*.swift
+        - /.github/security/semgrep-tests/*.swift
+    patterns:
+      - pattern: 'UserDefaults.standard.set($VALUE, forKey: $KEY)'
+      - metavariable-regex:
+          metavariable: $KEY
+          regex: '(?i).*?(access.?token|refresh.?token|password|secret).*?'
+
+  - id: gymapp-hardcoded-cleartext-url
+    message: Production network destinations must use HTTPS.
+    severity: ERROR
+    languages: [kotlin, swift, javascript, typescript]
+    metadata:
+      cwe: "CWE-319: Cleartext Transmission of Sensitive Information"
+      confidence: HIGH
+    paths:
+      include:
+        - /app/src/main/**/*.kt
+        - /wear/src/main/**/*.kt
+        - /ios/GymApp-iOS/GymApp/**/*.swift
+        - /pwa/**/*.js
+        - /supabase/functions/**/*.ts
+        - /.github/security/semgrep-tests/*.kt
+        - /.github/security/semgrep-tests/*.swift
+        - /.github/security/semgrep-tests/*.js
+        - /.github/security/semgrep-tests/*.ts
+    pattern-regex: '["'']http://[^"'']+["'']'
