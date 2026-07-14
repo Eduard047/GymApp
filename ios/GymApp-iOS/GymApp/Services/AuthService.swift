@@ -638,8 +638,8 @@ final class AuthService: ObservableObject {
 
     private func validatePassword(_ password: String) throws {
         guard (8...72).contains(password.count),
-              password.contains(where: \.isLetter),
-              password.contains(where: \.isNumber) else {
+              password.contains(where: { $0.isLetter }),
+              password.contains(where: { $0.isNumber }) else {
             throw AuthServiceError.invalidPassword
         }
     }
