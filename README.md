@@ -46,10 +46,13 @@ Open `Exercises` and use `Backup and diagnostics`.
 
 - `Export JSON` creates an importable backup of exercises and workouts.
 - `Import JSON` restores workouts from an exported GymApp JSON backup.
-- `Send diagnostics / DB snapshot` creates the same full JSON snapshot with extra summary metadata.
+- `Export redacted diagnostics` creates an aggregate-only support report without workout rows,
+  exercise names, notes, account identifiers, or other backup content.
 - `Share PDF report` creates a readable diagnostics report for sharing/debugging.
 
-Important: PDF is for reading and sharing only. JSON is the source of truth for import/restore.
+Important: diagnostics and PDF reports are for support only and cannot restore data. Only the
+separate `Export JSON` backup is the source of truth for import/restore; review it before sharing
+because it contains private workout data.
 
 ### Wear OS app
 

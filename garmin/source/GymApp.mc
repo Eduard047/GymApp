@@ -71,25 +71,28 @@ class GymApp extends App.AppBase {
             return;
         }
         var type = message.get("type");
-        var typeText = type == null ? null : type.toString();
+        if (!(type instanceof Lang.String) || type.toString().length() > 32) {
+            GymStore.status = "BAD MSG";
+            return;
+        }
+        var typeText = type.toString();
         if (typeText != null && typeText.equals("sync")) {
             GymStore.status = "SYNC RX";
-            var applied = true;
+            var applied = false;
             try {
-                GymStore.applySync(message);
+                applied = GymStore.applyPhoneSync(message);
             } catch (e) {
                 applied = false;
                 GymStore.status = "SYNC FAIL";
             }
             sendSyncAck(message, applied);
         } else if (typeText != null && typeText.equals("ack")) {
-            if (GymStore.pending.size() > 0) {
-                GymStore.pending.remove(0);
-                GymStore.save();
+            var ackRequestId = message.get("requestId");
+            if (GymStore.bindingsMatch(message) && GymStore.removePendingByRequestId(ackRequestId)) {
+                GymStore.status = "SAVED";
+            } else {
+                GymStore.status = "BAD ACK";
             }
-            GymStore.status = "SAVED";
-        } else if (typeText == null) {
-            GymStore.status = "NO TYPE";
         } else {
             GymStore.status = "MSG " + typeText;
         }
@@ -97,14 +100,25 @@ class GymApp extends App.AppBase {
 
     function sendSyncAck(message, applied) {
         var syncId = message.get("syncId");
-        if (syncId == null) {
+        var requestId = message.get("requestId");
+        var syncRevision = message.get("syncRevision");
+        if (!GymStore.isBoundedText(syncId, GymStore.maxBindingLength) ||
+            !GymStore.isBoundedText(requestId, GymStore.maxBindingLength) ||
+            !GymStore.isValidCounter(syncRevision, GymStore.maxPhoneSyncRevision) ||
+            !syncId.toString().equals(requestId.toString()) ||
+            !GymStore.bindingsMatch(message)) {
             return;
         }
         GymStore.status = "ACKING";
         try {
             GymComm.send({
                 "type" => "sync_ack",
+                "bindingVersion" => GymStore.bindingVersion,
                 "syncId" => syncId.toString(),
+                "requestId" => requestId.toString(),
+                "syncRevision" => syncRevision.toLong(),
+                "accountBinding" => GymStore.accountBinding,
+                "deviceBinding" => GymStore.deviceBinding,
                 "language" => GymStore.language,
                 "planCount" => GymStore.plan.size(),
                 "exerciseCount" => GymStore.exercises.size(),

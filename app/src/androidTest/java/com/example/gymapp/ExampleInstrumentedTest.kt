@@ -19,6 +19,11 @@ class ExampleInstrumentedTest {
     fun useAppContext() {
         // Context of the app under test.
         val appContext = InstrumentationRegistry.getInstrumentation().targetContext
-        assertEquals("com.setforge.gymapp", appContext.packageName)
+        assertTrue(
+            appContext.packageName in setOf(
+                "com.setforge.gymapp",
+                "com.setforge.gymapp.dev"
+            )
+        )
     }
 }

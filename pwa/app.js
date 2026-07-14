@@ -1,16 +1,33 @@
 "use strict";
 
+if (window.__GYMAPP_TOP_LEVEL__ !== true || window.top !== window.self) {
+  throw new DOMException("GymApp must run in a top-level browsing context.", "SecurityError");
+}
+
 const STORAGE_KEY = "gym-pwa-state-v2";
 const LEGACY_KEY = "gym-pwa-state-v1";
 const AUTH_KEY = "gym-pwa-active-account-v1";
 const ACCOUNT_LIST_KEY = "gym-pwa-account-list-v1";
 const ACCOUNT_PREFIX = "gym-pwa-account:";
 const REMOTE_SESSION_KEY = "gym-pwa-supabase-session-v1";
-const GARMIN_DEVICE_TOKEN_KEY = "gym-pwa-garmin-device-token-v1";
+const LEGACY_GARMIN_DEVICE_TOKEN_KEY = "gym-pwa-garmin-device-token-v1";
+const GARMIN_DEVICE_BINDINGS_KEY = "gym-pwa-garmin-device-bindings-v2";
 const PUBLIC_SITE_URL = "https://gymapptracker.com/";
 const SUPPORT_URL = "https://gymapptracker.com/support.html";
 const PRIVACY_URL = "https://gymapptracker.com/privacy-policy.html";
 const AUTH_REDIRECT_URL = "https://gymapptracker.com/confirmed.html?platform=web";
+const MAX_REMOTE_RESPONSE_BYTES = 8 * 1024 * 1024;
+const MAX_REMOTE_AUTH_RESPONSE_BYTES = 64 * 1024;
+const MAX_REMOTE_ERROR_RESPONSE_BYTES = 8 * 1024;
+const MAX_REMOTE_RESPONSE_CHUNKS = 4096;
+const MAX_LOCAL_ACCOUNT_STORAGE_BYTES = 64 * 1024;
+const MAX_LOCAL_ACCOUNTS = 20;
+const MAX_ACCOUNT_NAME_LENGTH = 64;
+const LOCAL_ACCOUNT_ID_VERSION = 2;
+const LOCAL_ACCOUNT_ID_PATTERN = /^local-v2-[a-f0-9]{32}$/;
+const MAX_GARMIN_BINDING_STORAGE_BYTES = 64 * 1024;
+const MAX_GARMIN_BINDINGS = 20;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const app = document.querySelector("#app");
 
 const icons = {
@@ -55,8 +72,10 @@ function handleEmailConfirmationRedirect() {
   if (!hasAuthPayload) return false;
 
   if (!query.has("platform")) query.set("platform", "web");
-  const targetSearch = query.toString();
-  window.location.replace(`./confirmed.html${targetSearch ? `?${targetSearch}` : ""}${window.location.hash}`);
+  // Never forward a reusable bearer credential into another URL. The web
+  // confirmation page needs only the flow type; replace() also removes the
+  // original token-bearing location from browser history.
+  window.location.replace("./confirmed.html?platform=web");
   return true;
 }
 
@@ -71,7 +90,7 @@ const text = {
     syncWatch: "Sync Plan to Watch", addExercise: "Add Exercise", addSet: "Add Set", copyLast: "Copy Last Set",
     copyPlus: "Copy Last +2.5 kg", useLast: "Use Last Weight", applySmart: "Apply Smart Plan", templatePicker: "Copy a previous workout",
     exerciseName: "Exercise name", backup: "Backup and diagnostics", exportJson: "Export JSON", importJson: "Import JSON",
-    diagnostics: "Send diagnostics / DB snapshot", sharePdf: "Share PDF report", rename: "Rename Exercise", history: "History",
+    diagnostics: "Export redacted diagnostics", sharePdf: "Share PDF report", rename: "Rename Exercise", history: "History",
     workoutComplete: "Workout complete", impact: "Workout impact", personalRecords: "Personal records", levelProgress: "Level progress",
     momentum: "Momentum", daily: "Daily Missions", weekly: "Weekly Missions", monthly: "Monthly Missions", viewRanks: "View ranks"
   },
@@ -85,7 +104,7 @@ const text = {
     syncWatch: "Синхронізувати з годинником", addExercise: "Додати вправу", addSet: "Додати підхід", copyLast: "Копіювати підхід",
     copyPlus: "Копіювати +2.5 кг", useLast: "Остання вага", applySmart: "Застосувати план", templatePicker: "Скопіювати попереднє",
     exerciseName: "Назва вправи", backup: "Бекап і діагностика", exportJson: "Експорт JSON", importJson: "Імпорт JSON",
-    diagnostics: "Діагностика / знімок БД", sharePdf: "PDF звіт", rename: "Перейменувати", history: "Історія",
+    diagnostics: "Експорт знеособленої діагностики", sharePdf: "PDF звіт", rename: "Перейменувати", history: "Історія",
     workoutComplete: "Тренування завершено", impact: "Вплив тренування", personalRecords: "Особисті рекорди", levelProgress: "Прогрес рівня",
     momentum: "Імпульс", daily: "Щоденні місії", weekly: "Тижневі місії", monthly: "Місячні місії", viewRanks: "Дивитись ранги"
   }
@@ -949,6 +968,7 @@ const rankDefinitions = [
   ["cosmic-warlord", 80, "Cosmic Warlord", "Космічний воєвода"]
 ].map(([id, level, titleEn, titleUk]) => ({ id, level, titleEn, titleUk }));
 
+discardLegacyGarminToken();
 let activeAccount = loadActiveAccount();
 let state = loadState();
 let nav = [{ name: "workouts" }];
@@ -965,6 +985,11 @@ let leaderboardRequestId = 0;
 let timerInterval = null;
 let languageMenuOpen = false;
 let authMode = "login";
+let accountTransitionInProgress = false;
+let pendingRecommendations = [];
+const pendingGarminRevocations = new Map();
+let cloudStateRecovery = null;
+let cloudRecoveryInProgress = false;
 const authDrafts = {
   login: { email: "", password: "" },
   signup: { email: "", emailConfirm: "", password: "", passwordConfirm: "", name: "" }
@@ -1082,20 +1107,51 @@ function defaultAppState() {
       catalogKey: exercise.key
     })),
     sessions: [],
-    mappings: { ...defaultMappings },
+    mappings: Object.assign(Object.create(null), defaultMappings),
     profile: { split: "Push Pull Legs", days: 4, goal: "Balanced", calories: "Maintenance" }
   };
 }
 
-function normalizeAccountId(name) {
-  return String(name || "").toLowerCase().replace(/[^a-z0-9а-яіїєґ_-]+/gi, "-").replace(/^-+|-+$/g, "").slice(0, 48);
+function normalizeStoredAccount(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const id = typeof value.id === "string" ? value.id.trim() : "";
+  const name = typeof value.name === "string" ? value.name.trim() : "";
+  if (!/^[a-z0-9а-яіїєґ_-]{1,64}$/iu.test(id) || !name ||
+      name.length > MAX_ACCOUNT_NAME_LENGTH || new TextEncoder().encode(name).byteLength > 256) {
+    return null;
+  }
+  if (value.remote == null || value.remote === false) {
+    if (value.localIdVersion == null) return { id, name };
+    if (value.localIdVersion !== LOCAL_ACCOUNT_ID_VERSION || !LOCAL_ACCOUNT_ID_PATTERN.test(id)) return null;
+    return { id, name, localIdVersion: LOCAL_ACCOUNT_ID_VERSION };
+  }
+  if (value.remote !== "supabase" || !UUID_PATTERN.test(value.userId || "") ||
+      id !== `remote-${value.userId}`) return null;
+  const email = value.email == null ? "" : String(value.email).trim();
+  if (email.length > 254 || new TextEncoder().encode(email).byteLength > 320) return null;
+  return { id, name, email, userId: value.userId, remote: "supabase" };
 }
 
 function loadActiveAccount() {
   try {
-    const parsed = JSON.parse(localStorage.getItem(AUTH_KEY) || "null");
-    return parsed?.id && parsed?.name && parsed?.remote ? parsed : null;
+    const raw = localStorage.getItem(AUTH_KEY) || "null";
+    if (new TextEncoder().encode(raw).byteLength > MAX_LOCAL_ACCOUNT_STORAGE_BYTES) return null;
+    const account = normalizeStoredAccount(JSON.parse(raw));
+    if (!account) {
+      localStorage.removeItem(AUTH_KEY);
+      localStorage.removeItem(REMOTE_SESSION_KEY);
+      return null;
+    }
+    if (account.remote && loadRemoteSession()?.user?.id !== account.userId) {
+      localStorage.removeItem(AUTH_KEY);
+      localStorage.removeItem(REMOTE_SESSION_KEY);
+      return null;
+    }
+    if (!account.remote) localStorage.removeItem(REMOTE_SESSION_KEY);
+    return account;
   } catch {
+    localStorage.removeItem(AUTH_KEY);
+    localStorage.removeItem(REMOTE_SESSION_KEY);
     return null;
   }
 }
@@ -1106,8 +1162,20 @@ function activeStorageKey(account = activeAccount) {
 
 function accountList() {
   try {
-    const parsed = JSON.parse(localStorage.getItem(ACCOUNT_LIST_KEY) || "[]");
-    return Array.isArray(parsed) ? parsed.filter(item => item?.id && item?.name) : [];
+    const raw = localStorage.getItem(ACCOUNT_LIST_KEY) || "[]";
+    if (new TextEncoder().encode(raw).byteLength > MAX_LOCAL_ACCOUNT_STORAGE_BYTES) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed) || parsed.length > MAX_LOCAL_ACCOUNTS) return [];
+    const unique = [];
+    parsed.forEach(value => {
+      const account = normalizeStoredAccount(value);
+      if (!account) return;
+      const alreadyStored = account.remote
+        ? unique.some(item => item.remote && item.id === account.id)
+        : unique.some(item => !item.remote && item.id === account.id && item.name === account.name);
+      if (!alreadyStored) unique.push(account);
+    });
+    return unique;
   } catch {
     return [];
   }
@@ -1115,17 +1183,34 @@ function accountList() {
 
 function saveAccountList(accounts) {
   const unique = [];
-  accounts.forEach(account => {
-    if (account?.id && !unique.some(item => item.id === account.id)) unique.push(account);
+  (Array.isArray(accounts) ? accounts : []).forEach(value => {
+    const account = normalizeStoredAccount(value);
+    if (!account) return;
+    const alreadyStored = account.remote
+      ? unique.some(item => item.remote && item.id === account.id)
+      : unique.some(item => !item.remote && item.id === account.id && item.name === account.name);
+    if (!alreadyStored) unique.push(account);
   });
-  localStorage.setItem(ACCOUNT_LIST_KEY, JSON.stringify(unique));
+  localStorage.setItem(ACCOUNT_LIST_KEY, JSON.stringify(unique.slice(-MAX_LOCAL_ACCOUNTS)));
 }
 
 function supabaseConfig() {
   const config = window.GYM_SUPABASE || {};
+  const rawUrl = String(config.url || "").trim();
+  const anonKey = String(config.anonKey || "").trim();
+  let url = "";
+  try {
+    const parsed = new URL(rawUrl);
+    if (parsed.protocol === "https:" && !parsed.username && !parsed.password &&
+        !parsed.search && !parsed.hash && (parsed.pathname === "/" || parsed.pathname === "")) {
+      url = parsed.origin;
+    }
+  } catch {
+    url = "";
+  }
   return {
-    url: String(config.url || "").replace(/\/+$/, ""),
-    anonKey: String(config.anonKey || "")
+    url,
+    anonKey: anonKey.length >= 8 && anonKey.length <= 4096 && !/\s/.test(anonKey) ? anonKey : ""
   };
 }
 
@@ -1136,28 +1221,68 @@ function remoteAuthEnabled() {
 
 function loadRemoteSession() {
   try {
-    const parsed = JSON.parse(localStorage.getItem(REMOTE_SESSION_KEY) || "null");
-    return parsed?.access_token && parsed?.user?.id ? parsed : null;
+    const raw = localStorage.getItem(REMOTE_SESSION_KEY) || "null";
+    if (new TextEncoder().encode(raw).byteLength > MAX_REMOTE_AUTH_RESPONSE_BYTES) {
+      localStorage.removeItem(REMOTE_SESSION_KEY);
+      return null;
+    }
+    const parsed = JSON.parse(raw);
+    if (!validRemoteSession(parsed)) {
+      localStorage.removeItem(REMOTE_SESSION_KEY);
+      return null;
+    }
+    return parsed;
   } catch {
     return null;
   }
 }
 
 function saveRemoteSession(session) {
-  localStorage.setItem(REMOTE_SESSION_KEY, JSON.stringify(session));
+  if (!validRemoteSession(session)) throw new Error("Cloud session is invalid.");
+  const encoded = JSON.stringify(session);
+  if (new TextEncoder().encode(encoded).byteLength > MAX_REMOTE_AUTH_RESPONSE_BYTES) {
+    throw new Error("Cloud session exceeds the local storage limit.");
+  }
+  localStorage.setItem(REMOTE_SESSION_KEY, encoded);
 }
 
-function accessTokenExpirationSeconds(session) {
+function validRemoteSession(session) {
+  const userId = session?.user?.id;
+  const email = session?.user?.email;
+  return Boolean(
+    session && typeof session === "object" && !Array.isArray(session) &&
+    session.user && typeof session.user === "object" && !Array.isArray(session.user) &&
+    typeof session.access_token === "string" && session.access_token.length >= 16 &&
+    session.access_token.length <= 16384 &&
+    UUID_PATTERN.test(userId || "") && accessTokenSubject(session.access_token) === userId &&
+    (email === undefined || (typeof email === "string" && email.length <= 254 &&
+      new TextEncoder().encode(email).byteLength <= 320)) &&
+    (session.refresh_token === undefined ||
+      (typeof session.refresh_token === "string" && session.refresh_token.length >= 16 &&
+       session.refresh_token.length <= 8192))
+  );
+}
+
+function accessTokenClaims(accessToken) {
   try {
-    const payload = String(session?.access_token || "").split(".")[1];
-    if (!payload) return null;
+    const payload = String(accessToken || "").split(".")[1];
+    if (!payload || payload.length > 12288) return null;
     const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
     const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
     const decoded = JSON.parse(atob(padded));
-    return Number(decoded.exp) || null;
+    return decoded && typeof decoded === "object" && !Array.isArray(decoded) ? decoded : null;
   } catch {
     return null;
   }
+}
+
+function accessTokenSubject(accessToken) {
+  const subject = accessTokenClaims(accessToken)?.sub;
+  return typeof subject === "string" && UUID_PATTERN.test(subject) ? subject : null;
+}
+
+function accessTokenExpirationSeconds(session) {
+  return Number(accessTokenClaims(session?.access_token)?.exp) || null;
 }
 
 function remoteSessionNeedsRefresh(session) {
@@ -1167,26 +1292,63 @@ function remoteSessionNeedsRefresh(session) {
 
 async function refreshRemoteSession(session = loadRemoteSession()) {
   if (!session?.refresh_token) return session;
+  const requestEpoch = accountEpoch;
+  const expectedUserId = session.user?.id;
+  const expectedRefreshToken = session.refresh_token;
   const config = supabaseConfig();
-  const response = await fetch(`${config.url}/auth/v1/token?grant_type=refresh_token`, {
-    method: "POST",
-    headers: {
-      apikey: config.anonKey,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({ refresh_token: session.refresh_token })
-  });
-  if (!response.ok) {
-    localStorage.removeItem(REMOTE_SESSION_KEY);
-    throw new Error(await response.text().catch(() => "") || `Session refresh failed: ${response.status}`);
+  if (!config.url || !config.anonKey) throw new Error("Cloud request configuration is invalid.");
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 12000);
+  let response;
+  try {
+    response = await fetch(`${config.url}/auth/v1/token?grant_type=refresh_token`, {
+      method: "POST",
+      credentials: "omit",
+      cache: "no-store",
+      redirect: "error",
+      referrerPolicy: "no-referrer",
+      signal: controller.signal,
+      headers: {
+        apikey: config.anonKey,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ refresh_token: session.refresh_token })
+    });
+  } finally {
+    clearTimeout(timeout);
   }
-  const refreshed = await response.json();
+  if (!response.ok) {
+    const errorText = await readBoundedResponseText(response, MAX_REMOTE_ERROR_RESPONSE_BYTES).catch(() => "");
+    throw new Error(errorText || `Session refresh failed: ${response.status}`);
+  }
+  const responseText = await readBoundedResponseText(response, MAX_REMOTE_AUTH_RESPONSE_BYTES);
+  let refreshed;
+  try {
+    refreshed = JSON.parse(responseText);
+  } catch {
+    throw new Error("Session refresh returned invalid JSON.");
+  }
+  if (!refreshed || typeof refreshed !== "object" || Array.isArray(refreshed) ||
+      typeof refreshed.access_token !== "string" || refreshed.access_token.length < 16 ||
+      refreshed.access_token.length > 16384 ||
+      accessTokenSubject(refreshed.access_token) !== expectedUserId ||
+      (refreshed.refresh_token !== undefined &&
+       (typeof refreshed.refresh_token !== "string" || refreshed.refresh_token.length < 16 ||
+        refreshed.refresh_token.length > 8192)) ||
+      (refreshed.user?.id !== undefined && refreshed.user.id !== expectedUserId)) {
+    throw new Error("Session refresh returned an invalid account response.");
+  }
   const nextSession = {
     ...session,
     ...refreshed,
     user: refreshed.user || session.user,
     refresh_token: refreshed.refresh_token || session.refresh_token
   };
+  const current = loadRemoteSession();
+  if (requestEpoch !== accountEpoch || current?.refresh_token !== expectedRefreshToken ||
+      current?.user?.id !== expectedUserId || activeAccount?.userId !== expectedUserId) {
+    throw new Error("Stale session refresh was discarded.");
+  }
   saveRemoteSession(nextSession);
   return nextSession;
 }
@@ -1202,9 +1364,21 @@ function remoteHeaders(session = loadRemoteSession()) {
 
 async function supabaseRequest(path, options = {}) {
   const config = supabaseConfig();
-  const { timeoutMs = 12000, ...fetchOptions } = options;
+  if (!config.url || !config.anonKey || typeof path !== "string" ||
+      !path.startsWith("/") || path.startsWith("//") || path.includes("\\") || path.length > 4096) {
+    throw new Error("Cloud request configuration is invalid.");
+  }
+  const {
+    timeoutMs = 12000,
+    maxResponseBytes: requestedResponseBytes = MAX_REMOTE_RESPONSE_BYTES,
+    ...fetchOptions
+  } = options;
+  const { session: providedSession, ...requestOptions } = fetchOptions;
+  const maxResponseBytes = Number.isSafeInteger(requestedResponseBytes) && requestedResponseBytes > 0
+    ? Math.min(requestedResponseBytes, MAX_REMOTE_RESPONSE_BYTES)
+    : MAX_REMOTE_RESPONSE_BYTES;
   const isAuthRequest = path.startsWith("/auth/v1/");
-  let requestSession = fetchOptions.session || loadRemoteSession();
+  let requestSession = providedSession || loadRemoteSession();
   if (!isAuthRequest && requestSession?.access_token && remoteSessionNeedsRefresh(requestSession)) {
     requestSession = await refreshRemoteSession(requestSession);
   }
@@ -1214,9 +1388,13 @@ async function supabaseRequest(path, options = {}) {
     fetchOptions.signal.addEventListener("abort", () => controller.abort(), { once: true });
   }
   const request = () => fetch(`${config.url}${path}`, {
-      ...fetchOptions,
+      ...requestOptions,
+      credentials: "omit",
+      cache: "no-store",
+      redirect: "error",
+      referrerPolicy: "no-referrer",
       signal: controller.signal,
-      headers: { ...remoteHeaders(requestSession), ...(fetchOptions.headers || {}) }
+      headers: { ...remoteHeaders(requestSession), ...(requestOptions.headers || {}) }
     });
   let response;
   try {
@@ -1229,19 +1407,57 @@ async function supabaseRequest(path, options = {}) {
     clearTimeout(timeout);
   }
   if (!response.ok) {
-    const text = await response.text().catch(() => "");
+    const text = await readBoundedResponseText(
+      response,
+      Math.min(maxResponseBytes, MAX_REMOTE_ERROR_RESPONSE_BYTES)
+    ).catch(() => "");
     throw new Error(text || `Request failed: ${response.status}`);
   }
   if (response.status === 204) return null;
-  const body = await response.text();
+  const body = await readBoundedResponseText(response, maxResponseBytes);
   return body ? JSON.parse(body) : null;
+}
+
+async function readBoundedResponseText(response, maxBytes) {
+  const advertisedLength = response.headers.get("Content-Length");
+  if (advertisedLength !== null && /^\d+$/.test(advertisedLength.trim()) &&
+      Number(advertisedLength) > maxBytes) {
+    await response.body?.cancel().catch(() => {});
+    throw new Error(`Cloud response exceeds ${maxBytes} bytes.`);
+  }
+
+  if (!response.body || typeof response.body.getReader !== "function") {
+    throw new Error("Cloud response streaming is unavailable.");
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder("utf-8", { fatal: true });
+  const chunks = [];
+  let byteLength = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      byteLength += value.byteLength;
+      if (byteLength > maxBytes || chunks.length >= MAX_REMOTE_RESPONSE_CHUNKS) {
+        await reader.cancel().catch(() => {});
+        throw new Error(`Cloud response exceeds ${maxBytes} bytes.`);
+      }
+      chunks.push(decoder.decode(value, { stream: true }));
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  chunks.push(decoder.decode());
+  return chunks.join("");
 }
 
 function remoteAccountFromSession(session) {
   const email = session?.user?.email || "";
+  const metadataName = sanitizeDisplayName(session.user.user_metadata?.display_name || "");
   return {
     id: `remote-${session.user.id}`,
-    name: session.user.user_metadata?.display_name || email.split("@")[0] || "Supabase",
+    name: metadataName || sanitizeDisplayName(email.split("@")[0]) || "Supabase",
     email,
     userId: session.user.id,
     remote: "supabase"
@@ -1249,8 +1465,20 @@ function remoteAccountFromSession(session) {
 }
 
 async function loadRemoteState(session) {
-  const rows = await supabaseRequest(`/rest/v1/user_states?user_id=eq.${encodeURIComponent(session.user.id)}&select=state`, { session });
-  return Array.isArray(rows) && rows[0]?.state ? rows[0].state : null;
+  const userId = session?.user?.id;
+  if (!userId) throw new Error("Cloud session has no user.");
+  const rows = await supabaseRequest(
+    `/rest/v1/user_states?user_id=eq.${encodeURIComponent(userId)}&select=state,updated_at&limit=2`,
+    { session }
+  );
+  if (!Array.isArray(rows) || rows.length > 1) throw new Error("Cloud state ownership is ambiguous.");
+  if (!rows.length) return { userId, exists: false, revision: null, state: null };
+  const revision = typeof rows[0]?.updated_at === "string" ? rows[0].updated_at : "";
+  if (!validRemoteStateRevision(revision) || !rows[0]?.state || typeof rows[0].state !== "object" ||
+      Array.isArray(rows[0].state)) {
+    throw new Error("Cloud state response is invalid.");
+  }
+  return { userId, exists: true, revision, state: rows[0].state };
 }
 
 async function pullRemoteState() {
@@ -1258,14 +1486,39 @@ async function pullRemoteState() {
   const session = loadRemoteSession();
   if (!session?.user?.id) return false;
   const cloudState = await loadRemoteState(session);
-  if (!cloudState) return false;
-  state = normalizeImportedState(cloudState, defaultAppState());
+  if (!cloudState.exists) {
+    bindRemoteStateRevision(cloudState);
+    return false;
+  }
+  if (activeAccount?.userId !== cloudState.userId || loadRemoteSession()?.user?.id !== cloudState.userId) {
+    throw new Error("Cloud state was loaded for a stale account session.");
+  }
+  let nextState;
+  try {
+    nextState = normalizeImportedState(cloudState.state, defaultAppState());
+    cloudStateRecovery = null;
+  } catch {
+    nextState = defaultAppState();
+    cloudStateRecovery = {
+      userId: cloudState.userId,
+      revision: cloudState.revision,
+      rawState: cloudState.state
+    };
+  }
+  state = nextState;
+  bindRemoteStateRevision(cloudState);
   saveState({ queueRemote: false });
   return true;
 }
 
-function remoteStatePayload() {
+function remoteStatePayload(expectedUserId = activeAccount?.userId) {
+  if (!expectedUserId) throw new Error("Cloud state owner is missing.");
   return JSON.parse(JSON.stringify({
+    schemaVersion: 2,
+    exportedAt: Date.now(),
+    app: "GymApp",
+    diagnostics: false,
+    owner: { accountId: expectedUserId, userId: expectedUserId, remote: true },
     language: state.language,
     exercises: state.exercises,
     sessions: state.sessions,
@@ -1275,29 +1528,89 @@ function remoteStatePayload() {
 }
 
 let remoteSaveTimer = null;
+let accountEpoch = 0;
+let remoteStateSync = { userId: null, exists: false, revision: null };
 
-function queueRemoteSave() {
-  if (!activeAccount?.remote || !remoteAuthEnabled()) return;
+function resetRemoteSyncContext() {
+  accountEpoch += 1;
   clearTimeout(remoteSaveTimer);
-  remoteSaveTimer = setTimeout(() => saveRemoteState().catch(() => showToast(tx("Cloud sync failed.", "Синхронізація не вдалася."))), 700);
+  remoteSaveTimer = null;
+  remoteStateSync = { userId: null, exists: false, revision: null };
+  cloudStateRecovery = null;
+  cloudRecoveryInProgress = false;
 }
 
-async function saveRemoteState() {
+function bindRemoteStateRevision(record) {
+  if (!UUID_PATTERN.test(record?.userId || "") ||
+      (record.exists && !validRemoteStateRevision(record.revision)) ||
+      (!record.exists && record.revision != null)) throw new Error("Cloud revision is invalid.");
+  remoteStateSync = { userId: record.userId, exists: Boolean(record.exists), revision: record.revision || null };
+}
+
+function validRemoteStateRevision(value) {
+  return typeof value === "string" && value.length <= 64 &&
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/.test(value) &&
+    Number.isFinite(Date.parse(value));
+}
+
+function queueRemoteSave() {
+  if (!activeAccount?.remote || !remoteAuthEnabled() || cloudStateRecovery) return;
+  clearTimeout(remoteSaveTimer);
+  const expectedEpoch = accountEpoch;
+  const expectedUserId = activeAccount.userId;
+  remoteSaveTimer = setTimeout(() => {
+    remoteSaveTimer = null;
+    saveRemoteState({ expectedEpoch, expectedUserId })
+      .catch(() => showToast(tx("Cloud sync conflicted. Reload before saving again.", "Хмарні зміни конфліктують. Онови дані перед повторним збереженням.")));
+  }, 700);
+}
+
+async function saveRemoteState({ expectedEpoch = accountEpoch, expectedUserId = activeAccount?.userId } = {}) {
   const session = loadRemoteSession();
-  if (!session?.user?.id) return;
-  const payload = remoteStatePayload();
-  await supabaseRequest("/rest/v1/user_states?on_conflict=user_id", {
-    method: "POST",
-    session,
-    headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
-    body: JSON.stringify({ user_id: session.user.id, state: payload })
-  });
+  if (!session?.user?.id) throw new Error("Cloud session is missing.");
+  if (expectedEpoch !== accountEpoch || !expectedUserId || session.user.id !== expectedUserId ||
+      activeAccount?.userId !== expectedUserId) {
+    throw new Error("Cloud save belongs to a stale account session.");
+  }
+  if (remoteStateSync.userId !== expectedUserId) {
+    throw new Error("Cloud state must be loaded and validated before saving.");
+  }
+  const payload = remoteStatePayload(expectedUserId);
+  let rows;
+  if (remoteStateSync.exists) {
+    const revision = remoteStateSync.revision;
+    if (!revision) throw new Error("Cloud state revision is missing.");
+    rows = await supabaseRequest(
+      `/rest/v1/user_states?user_id=eq.${encodeURIComponent(expectedUserId)}&updated_at=eq.${encodeURIComponent(revision)}&select=updated_at`,
+      {
+        method: "PATCH",
+        session,
+        headers: { Prefer: "return=representation" },
+        body: JSON.stringify({ state: payload })
+      }
+    );
+  } else {
+    rows = await supabaseRequest("/rest/v1/user_states?select=updated_at", {
+      method: "POST",
+      session,
+      headers: { Prefer: "return=representation" },
+      body: JSON.stringify({ user_id: expectedUserId, state: payload })
+    });
+  }
+  if (!Array.isArray(rows) || rows.length !== 1 || !validRemoteStateRevision(rows[0]?.updated_at)) {
+    throw new Error("Cloud state changed on another client.");
+  }
+  if (expectedEpoch !== accountEpoch || activeAccount?.userId !== expectedUserId ||
+      loadRemoteSession()?.user?.id !== expectedUserId) {
+    throw new Error("Cloud save completed for a stale account session.");
+  }
+  bindRemoteStateRevision({ userId: expectedUserId, exists: true, revision: rows[0].updated_at });
   await supabaseRequest("/rest/v1/profiles?on_conflict=user_id", {
     method: "POST",
     session,
     headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
     body: JSON.stringify({
-      user_id: session.user.id,
+      user_id: expectedUserId,
       display_name: activeAccount.name,
       xp: totalXp(),
       level: levelFromXp(totalXp()),
@@ -1311,22 +1624,190 @@ function draftToGarminPlan(draft = workoutDraft) {
   return window.GymGarminCloud.draftToGarminPlan(draft, { title: tx("Workout plan", "Workout plan") });
 }
 
-async function ensureGarminDeviceToken(session) {
-  const current = localStorage.getItem(GARMIN_DEVICE_TOKEN_KEY);
-  if (current) return current;
+function discardLegacyGarminToken() {
+  localStorage.removeItem(LEGACY_GARMIN_DEVICE_TOKEN_KEY);
+}
+
+function loadGarminBindings() {
+  try {
+    const raw = localStorage.getItem(GARMIN_DEVICE_BINDINGS_KEY) || "{}";
+    if (new TextEncoder().encode(raw).byteLength > MAX_GARMIN_BINDING_STORAGE_BYTES) return Object.create(null);
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return Object.create(null);
+    const entries = Object.entries(parsed);
+    if (entries.length > MAX_GARMIN_BINDINGS) return Object.create(null);
+    const sanitized = Object.create(null);
+    let storageNeedsRewrite = false;
+    entries.forEach(([userId, value]) => {
+      storageNeedsRewrite ||= Boolean(value && typeof value === "object" && Object.hasOwn(value, "deviceToken"));
+      if (!UUID_PATTERN.test(userId) || value?.version !== 2 || value.userId !== userId ||
+          !UUID_PATTERN.test(value.deviceId || "")) {
+        storageNeedsRewrite = true;
+        return;
+      }
+      sanitized[userId] = { version: 2, userId, deviceId: value.deviceId };
+    });
+    if (storageNeedsRewrite) {
+      if (Object.keys(sanitized).length) {
+        localStorage.setItem(GARMIN_DEVICE_BINDINGS_KEY, JSON.stringify(sanitized));
+      } else {
+        localStorage.removeItem(GARMIN_DEVICE_BINDINGS_KEY);
+      }
+    }
+    return sanitized;
+  } catch {
+    return Object.create(null);
+  }
+}
+
+function garminBindingForUser(userId) {
+  const bindings = loadGarminBindings();
+  const value = Object.hasOwn(bindings, userId) ? bindings[userId] : null;
+  if (!value || value.version !== 2 || value.userId !== userId ||
+      !UUID_PATTERN.test(value.deviceId || "")) {
+    return null;
+  }
+  return value;
+}
+
+function saveGarminBinding(binding) {
+  if (!UUID_PATTERN.test(binding?.userId || "") || binding.version !== 2 ||
+      !UUID_PATTERN.test(binding.deviceId || "")) throw new Error("Invalid Garmin device binding.");
+  const bindings = loadGarminBindings();
+  if (!Object.hasOwn(bindings, binding.userId) &&
+      Object.keys(bindings).length >= MAX_GARMIN_BINDINGS) {
+    throw new Error("Garmin device binding storage is full.");
+  }
+  bindings[binding.userId] = {
+    version: 2,
+    userId: binding.userId,
+    deviceId: binding.deviceId
+  };
+  localStorage.setItem(GARMIN_DEVICE_BINDINGS_KEY, JSON.stringify(bindings));
+}
+
+function removeGarminBinding(userId) {
+  if (!userId) return;
+  const bindings = loadGarminBindings();
+  delete bindings[userId];
+  if (Object.keys(bindings).length) localStorage.setItem(GARMIN_DEVICE_BINDINGS_KEY, JSON.stringify(bindings));
+  else localStorage.removeItem(GARMIN_DEVICE_BINDINGS_KEY);
+}
+
+async function ensureGarminDeviceBinding(session) {
+  const userId = session?.user?.id;
+  if (!userId || activeAccount?.userId !== userId) throw new Error("Garmin pairing belongs to another account.");
+  const pendingDeviceId = pendingGarminRevocations.get(userId);
+  if (pendingDeviceId) {
+    try {
+      await revokeGarminDeviceById(session, pendingDeviceId);
+      pendingGarminRevocations.delete(userId);
+    } catch {
+      throw new Error(tx(
+        "A previous Garmin device creation is still awaiting revocation. Keep this page open and retry before pairing again.",
+        "Попереднє створення пристрою Garmin ще очікує відкликання. Не закривай цю сторінку й повтори спробу перед новим сполученням."
+      ));
+    }
+  }
+  const current = garminBindingForUser(userId);
+  if (current) return { binding: current, created: false };
+  const pairingWarning = tx(
+    "A one-time Garmin token will be shown. It works like a password: paste it only into this watch's Connect IQ settings. GymApp will not store or show it again. Continue?",
+    "Буде показано одноразовий токен Garmin. Він працює як пароль: встав його лише в налаштування Connect IQ цього годинника. GymApp не зберігатиме й не покаже його знову. Продовжити?"
+  );
+  if (typeof window.confirm !== "function" || !window.confirm(pairingWarning)) {
+    throw new Error(tx("Garmin pairing was cancelled.", "Сполучення Garmin скасовано."));
+  }
+  const expectedEpoch = accountEpoch;
   const response = await supabaseRequest("/functions/v1/garmin-sync", {
     method: "POST",
     session,
     body: JSON.stringify({ action: "createDevice", displayName: "Garmin watch" })
   });
-  const token = response?.device?.device_token;
-  if (!token) throw new Error("Garmin device token was not created.");
-  localStorage.setItem(GARMIN_DEVICE_TOKEN_KEY, token);
-  try {
-    await navigator.clipboard?.writeText(token);
-  } catch (_) {
+  const device = response?.device;
+  if (!UUID_PATTERN.test(device?.id || "") ||
+      !/^[a-f0-9]{64}$/i.test(device?.device_token || "") || device.binding_version !== 2) {
+    throw new Error("Garmin device binding was not created.");
   }
-  return token;
+  const binding = { version: 2, userId, deviceId: device.id };
+  pendingGarminRevocations.set(userId, device.id);
+  if (expectedEpoch !== accountEpoch || activeAccount?.userId !== userId || loadRemoteSession()?.user?.id !== userId) {
+    try {
+      await revokeGarminDeviceById(session, device.id);
+      pendingGarminRevocations.delete(userId);
+    } catch {
+      // Keep the nonsecret device ID in memory for the next in-session retry.
+    }
+    throw new Error("Garmin pairing completed for a stale account session.");
+  }
+  try {
+    // Persist the nonsecret device ID before the raw one-time token is revealed.
+    // If storage fails, no user-visible capability has escaped this function.
+    saveGarminBinding(binding);
+    pendingGarminRevocations.delete(userId);
+  } catch {
+    let revoked = false;
+    try {
+      await revokeGarminDeviceById(session, device.id);
+      revoked = true;
+    } catch {
+      // Retain the nonsecret device ID for retry while this page remains open.
+    }
+    if (revoked) {
+      pendingGarminRevocations.delete(userId);
+      throw new Error(tx(
+        "The Garmin binding could not be saved, so the unseen token was revoked. Free browser storage and try again.",
+        "Не вдалося зберегти прив’язку Garmin, тому непоказаний токен відкликано. Звільни місце в сховищі браузера й спробуй ще раз."
+      ));
+    }
+    throw new Error(tx(
+      "The unseen Garmin token could not be persisted or revoked. Keep this page open and retry Garmin sync or sign-out to revoke it.",
+      "Непоказаний токен Garmin не вдалося ані зберегти, ані відкликати. Не закривай цю сторінку й повтори Garmin sync або вихід, щоб відкликати його."
+    ));
+  }
+  const tokenPrompt = tx(
+    "Copy this Garmin pairing token into Connect IQ settings now. Treat it as a password. It will not be stored or shown again. Choose Cancel to revoke it.",
+    "Скопіюй цей токен Garmin у налаштування Connect IQ зараз. Стався до нього як до пароля. Він не зберігатиметься й більше не показуватиметься. Натисни «Скасувати», щоб відкликати його."
+  );
+  const acknowledged = typeof window.prompt === "function"
+    ? window.prompt(tokenPrompt, device.device_token)
+    : null;
+  if (acknowledged === null) {
+    try {
+      await revokeGarminDeviceById(session, device.id);
+      removeGarminBinding(userId);
+    } catch {
+      throw new Error(tx(
+        "The Garmin token could not be revoked. Sign out to retry revocation before pairing again.",
+        "Не вдалося відкликати токен Garmin. Вийди з акаунта, щоб повторити відкликання перед новим сполученням."
+      ));
+    }
+    throw new Error(tx("Garmin pairing was cancelled.", "Сполучення Garmin скасовано."));
+  }
+  return { binding, created: true };
+}
+
+async function revokeGarminDeviceById(session, deviceId) {
+  if (!UUID_PATTERN.test(deviceId || "")) {
+    throw new Error("Garmin device binding is invalid.");
+  }
+  const response = await supabaseRequest("/functions/v1/garmin-sync", {
+    method: "POST",
+    session,
+    body: JSON.stringify({ action: "revokeDevice", deviceId })
+  });
+  if (!response || !["revoked", "already_revoked"].includes(response.status)) {
+    throw new Error("Garmin device revocation was not confirmed.");
+  }
+}
+
+async function revokeGarminBinding(session) {
+  const userId = session?.user?.id;
+  if (!userId) throw new Error("Cloud session is missing.");
+  const binding = garminBindingForUser(userId);
+  if (!binding) return;
+  await revokeGarminDeviceById(session, binding.deviceId);
+  removeGarminBinding(userId);
 }
 
 async function queueGarminPlanFromDraft() {
@@ -1336,22 +1817,17 @@ async function queueGarminPlanFromDraft() {
   const plan = draftToGarminPlan();
   if (!plan) return showToast(tx("Please fill exercises and sets first.", "Please fill exercises and sets first."));
 
-  let tokenWasCreated = false;
-  let token = localStorage.getItem(GARMIN_DEVICE_TOKEN_KEY);
-  if (!token) {
-    token = await ensureGarminDeviceToken(session);
-    tokenWasCreated = true;
-  }
+  const { binding, created } = await ensureGarminDeviceBinding(session);
 
   await supabaseRequest("/rest/v1/garmin_plans", {
     method: "POST",
     session,
     headers: { Prefer: "return=minimal" },
-    body: JSON.stringify({ user_id: session.user.id, status: "pending", plan })
+    body: JSON.stringify({ user_id: session.user.id, device_id: binding.deviceId, status: "pending", plan })
   });
 
-  if (tokenWasCreated) {
-    showToast(tx("Garmin token copied. Paste it once in Connect IQ settings, then sync on watch.", "Garmin token copied. Paste it once in Connect IQ settings, then sync on watch."));
+  if (created) {
+    showToast(tx("Garmin token shown once. After saving it in Connect IQ settings, sync on the watch.", "Токен Garmin показано один раз. Збережи його в налаштуваннях Connect IQ і запусти синхронізацію на годиннику."));
   } else {
     showToast(tx("Plan queued for Garmin. Open the watch app and run Cloud sync.", "Plan queued for Garmin. Open the watch app and run Cloud sync."));
   }
@@ -1364,32 +1840,30 @@ function loadState() {
     const legacyRaw = localStorage.getItem(LEGACY_KEY);
     const raw = currentRaw || (!activeAccount ? legacyRaw : null);
     if (!raw) return fallback;
-    const parsed = JSON.parse(raw);
-    const normalizedSessions = Array.isArray(parsed.sessions) ? normalizeSessions(parsed.sessions) : [];
-    const legacySessions = legacyRaw ? normalizeSessions(JSON.parse(legacyRaw).sessions || []) : [];
-    const sessions = normalizedSessions.length && !allSetsFromSessions(normalizedSessions).length && allSetsFromSessions(legacySessions).length ? legacySessions : normalizedSessions;
-    return {
-      ...fallback,
-      ...parsed,
-      exercises: normalizeExerciseCatalog(exerciseCatalogInput(parsed), fallback.exercises),
-      sessions,
-      mappings: normalizeExerciseMappings(parsed.mappings, fallback.mappings),
-      profile: { ...fallback.profile, ...(parsed.profile || {}) }
-    };
+    return validateImportedEnvelope(raw, fallback).state;
   } catch {
     return fallback;
   }
 }
 
 function normalizeImportedState(parsed, fallback = defaultAppState()) {
-  const normalizedSessions = Array.isArray(parsed.sessions) ? normalizeSessions(parsed.sessions) : [];
+  return validateImportedEnvelope(parsed, fallback).state;
+}
+
+function validateImportedEnvelope(input, fallback = defaultAppState()) {
+  const validated = window.GymStateContract.validateAndNormalize(input, { fallback });
+  const safe = validated.state;
   return {
-    ...fallback,
-    ...parsed,
-    exercises: normalizeExerciseCatalog(exerciseCatalogInput(parsed), fallback.exercises),
-    sessions: normalizedSessions,
-    mappings: normalizeExerciseMappings(parsed.mappings, fallback.mappings),
-    profile: { ...fallback.profile, ...(parsed.profile || {}) }
+    owner: validated.owner,
+    diagnostics: validated.diagnostics,
+    state: {
+      language: safe.language,
+      exercises: normalizeExerciseCatalog(safe.exercises, fallback.exercises),
+      sessions: normalizeSessions(safe.sessions),
+      mappings: normalizeExerciseMappings(safe.mappings, fallback.mappings),
+      profile: safe.profile,
+      ...(safe.progressExerciseId ? { progressExerciseId: safe.progressExerciseId } : {})
+    }
   };
 }
 
@@ -1400,7 +1874,10 @@ function exerciseCatalogInput(value) {
 }
 
 function normalizeExerciseMappings(input, fallback = {}) {
-  const normalized = { ...(fallback || {}) };
+  const normalized = Object.create(null);
+  Object.entries(fallback || {}).forEach(([rawName, muscleIds]) => {
+    if (Array.isArray(muscleIds)) normalized[normalizeExerciseName(rawName)] = [...muscleIds];
+  });
   Object.entries(input || {}).forEach(([rawName, muscleIds]) => {
     if (!Array.isArray(muscleIds)) return;
     normalized[normalizeExerciseName(rawName)] = muscleIds
@@ -1416,8 +1893,8 @@ function normalizeSessions(sessions) {
     if (!session || typeof session !== "object") return [];
     return [{
       id: Number(session.id || uid()),
-      startedAt: Number(session.startedAt || session.date || Date.now()),
-      note: session.note || "",
+      startedAt: Number(session.startedAt ?? session.date ?? Date.now()),
+      note: session.note ?? "",
       exerciseNames: normalizeSessionExerciseNames(session),
       sets: normalizeSessionSets(session)
     }];
@@ -1499,6 +1976,12 @@ function normalizeExerciseCatalog(input, fallback = []) {
 }
 
 function saveState({ queueRemote = true } = {}) {
+  // Treat every mutation as a security boundary, including values produced by
+  // UI event handlers. This prevents a missed range/count check from reaching
+  // local storage or the cloud queue.
+  window.GymStateContract.validateAndNormalize({ schemaVersion: 2, ...state }, {
+    fallback: defaultAppState()
+  });
   localStorage.setItem(activeStorageKey(), JSON.stringify(state));
   if (queueRemote) queueRemoteSave();
 }
@@ -1677,9 +2160,13 @@ function groupedExercises(sets = allSets()) {
 }
 
 function sessionSummary(session) {
-  const names = exerciseReferencesForSession(session);
+  const exerciseIdentities = new Set(
+    (session.sets || [])
+      .filter(set => exerciseRawName(set))
+      .map(set => exerciseMatchKey(set))
+  );
   return {
-    exercises: names.length,
+    exercises: exerciseIdentities.size,
     sets: session.sets.length,
     volume: totalVolume([session])
   };
@@ -1714,7 +2201,10 @@ function exerciseNamesForSession(session) {
 }
 
 function xpForSessions(sessions) {
-  return sessions.reduce((sum, session) => sum + sessionXp(session), 0);
+  return Math.min(
+    window.GymProgressionRules.MAX_SUPPORTED_XP,
+    sessions.reduce((sum, session) => sum + sessionXp(session), 0)
+  );
 }
 
 function totalXp() {
@@ -1797,7 +2287,7 @@ function loginScreen() {
       ${remoteEnabled ? `<section class="panel highlighted auth-panel"><h2>${isSignUp ? tx("Create account", "Створити акаунт") : tx("Cloud account", "Хмарний акаунт")}</h2><div class="field-stack">
         ${isSignUp ? `<label>${tx("Email", "Email")}<input id="signup-email" data-auth-mode="signup" data-auth-field="email" autocomplete="email" inputmode="email" placeholder="email@example.com" value="${escapeAttr(authDrafts.signup.email)}"></label><label>${tx("Repeat email", "Повтори email")}<input id="signup-email-confirm" data-auth-mode="signup" data-auth-field="emailConfirm" autocomplete="email" inputmode="email" value="${escapeAttr(authDrafts.signup.emailConfirm)}"></label><label>${tx("Password", "Пароль")}<input id="signup-password" data-auth-mode="signup" data-auth-field="password" autocomplete="new-password" type="password" value="${escapeAttr(authDrafts.signup.password)}"></label><label>${tx("Repeat password", "Повтори пароль")}<input id="signup-password-confirm" data-auth-mode="signup" data-auth-field="passwordConfirm" autocomplete="new-password" type="password" value="${escapeAttr(authDrafts.signup.passwordConfirm)}"></label><label>${tx("Display name", "Ім'я в рейтингу")}<input id="signup-name" data-auth-mode="signup" data-auth-field="name" autocomplete="name" maxlength="32" value="${escapeAttr(authDrafts.signup.name)}"></label>` : `<label>${tx("Email", "Email")}<input id="login-email" data-auth-mode="login" data-auth-field="email" autocomplete="email" inputmode="email" placeholder="email@example.com" value="${escapeAttr(authDrafts.login.email)}"></label><label>${tx("Password", "Пароль")}<input id="login-password" data-auth-mode="login" data-auth-field="password" autocomplete="current-password" type="password" value="${escapeAttr(authDrafts.login.password)}"></label>`}
       </div><p class="muted">${tx("Password must be 8+ characters and include letters and numbers.", "Пароль має містити щонайменше 8 символів, літери та цифри.")}</p><div class="auth-actions"><button class="button" data-action="${isSignUp ? "remote-signup" : "remote-login"}">${isSignUp ? tx("Create account", "Створити акаунт") : tx("Log in", "Увійти")}</button><button class="button ghost" data-action="auth-mode" data-mode="${isSignUp ? "login" : "signup"}">${isSignUp ? tx("Log in instead", "Увійти натомість") : tx("Create account", "Створити акаунт")}</button></div>${isSignUp ? `<button class="button ghost full" data-action="remote-resend-confirmation">${tx("Resend confirmation email", "Надіслати підтвердження ще раз")}</button>` : ""}</section>` : ""}
-      <details class="local-account-details" ${remoteEnabled ? "" : "open"}><summary>${tx("Offline local account", "Офлайн-акаунт")}</summary><section class="panel auth-panel"><p class="muted">${remoteEnabled ? tx("Fallback for this browser only.", "Запасний режим лише для цього браузера.") : tx("Paste Supabase keys into supabase-config.js to enable real network login.", "Встав ключі Supabase у supabase-config.js, щоб увімкнути справжній мережевий вхід.")}</p><div class="field-row login-row"><input id="local-login-name" autocomplete="username" aria-label="${tx("Name", "Ім'я")}" placeholder="${tx("Name", "Ім'я")}"><button class="button" data-action="login-account">${tx("Enter", "Увійти")}</button></div>${accounts.length ? `<div class="saved-accounts"><span class="field-caption">${tx("Saved accounts", "Збережені акаунти")}</span><div class="chip-row">${accounts.map(account => `<button class="chip buttonlike" data-action="login-account" data-name="${escapeAttr(account.name)}">${escapeHtml(account.name)}</button>`).join("")}</div></div>` : ""}</section></details>
+      <details class="local-account-details" ${remoteEnabled ? "" : "open"}><summary>${tx("Offline local account", "Офлайн-акаунт")}</summary><section class="panel auth-panel"><p class="muted">${remoteEnabled ? tx("Fallback for this browser only.", "Запасний режим лише для цього браузера.") : tx("Paste Supabase keys into supabase-config.js to enable real network login.", "Встав ключі Supabase у supabase-config.js, щоб увімкнути справжній мережевий вхід.")}</p><div class="field-row login-row"><input id="local-login-name" autocomplete="username" maxlength="64" aria-label="${tx("Name", "Ім'я")}" placeholder="${tx("Name", "Ім'я")}"><button class="button" data-action="login-account">${tx("Enter", "Увійти")}</button></div>${accounts.length ? `<div class="saved-accounts"><span class="field-caption">${tx("Saved accounts", "Збережені акаунти")}</span><div class="chip-row">${accounts.map(account => `<button class="chip buttonlike" data-action="login-account" data-name="${escapeAttr(account.name)}">${escapeHtml(account.name)}</button>`).join("")}</div></div>` : ""}</section></details>
       <nav class="auth-links" aria-label="${tx("GymApp links", "Посилання GymApp")}"><a href="${PUBLIC_SITE_URL}" target="_blank" rel="noopener noreferrer">${tx("Website", "Сайт")}</a><a href="${SUPPORT_URL}" target="_blank" rel="noopener noreferrer">${tx("Support", "Підтримка")}</a><a href="${PRIVACY_URL}" target="_blank" rel="noopener noreferrer">${tx("Privacy", "Конфіденційність")}</a></nav>
       <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
     </main>
@@ -1818,9 +2308,17 @@ function languageSelectorMarkup() {
 
 function render() {
   rememberVisibleScroll();
+  pendingRecommendations = [];
   document.documentElement.lang = state.language === "uk" ? "uk" : "en";
   if (!activeAccount) {
     app.innerHTML = loginScreen();
+    bindEvents();
+    requestAnimationFrame(restoreVisibleScroll);
+    return;
+  }
+  if (activeAccount.remote === true &&
+      cloudStateRecovery?.userId === activeAccount.userId) {
+    app.innerHTML = cloudRecoveryScreen();
     bindEvents();
     requestAnimationFrame(restoreVisibleScroll);
     return;
@@ -1837,10 +2335,21 @@ function render() {
     ${modal ? modalMarkup() : ""}
     <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
   `;
+  hydrateRecommendationText();
   bindEvents();
   requestAnimationFrame(restoreVisibleScroll);
   startTimerTicker();
   if (current.name === "leaderboard") refreshLeaderboard();
+}
+
+function cloudRecoveryScreen() {
+  return `<div class="app-shell auth-shell">
+    <main class="screen auth-screen" data-scroll-key="cloud-recovery">
+      <section class="hero-panel auth-hero"><h2>${tx("Cloud data recovery", "Відновлення хмарних даних")}</h2><p>${tx("Your authenticated cloud row uses a legacy or invalid format. It was not loaded into the app and cannot sync until you choose a recovery action.", "Твій авторизований хмарний запис має застарілий або некоректний формат. Його не завантажено в застосунок, і синхронізація заблокована до вибору дії відновлення.")}</p></section>
+      <section class="panel highlighted auth-panel"><h2>${escapeHtml(activeAccount?.name || tx("Cloud account", "Хмарний акаунт"))}</h2><p>${tx("First download the untouched private JSON for offline recovery. Replacing it with an empty valid state is permanent and uses the exact server revision so another device's newer update cannot be overwritten.", "Спочатку завантаж незмінений приватний JSON для офлайн-відновлення. Заміна на порожній коректний стан незворотна й використовує точну ревізію сервера, тому новіші зміни з іншого пристрою не будуть перезаписані.")}</p><div class="actions vertical"><button class="button secondary full" data-action="export-cloud-recovery">${tx("Download original private JSON", "Завантажити оригінальний приватний JSON")}</button><button class="button full" data-action="reset-cloud-recovery">${tx("Replace cloud data with empty state", "Замінити хмарні дані порожнім станом")}</button><button class="button ghost full" data-action="logout-account">${tx("Sign out without changes", "Вийти без змін")}</button></div></section>
+      <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+    </main>
+  </div>`;
 }
 
 function isRootRoute(name) {
@@ -2014,7 +2523,8 @@ function mappedCount() {
 
 function mappingFor(exercise) {
   const rawName = exerciseRawName(exercise);
-  const manual = state.mappings[normalizeExerciseName(rawName)];
+  const key = normalizeExerciseName(rawName);
+  const manual = Object.hasOwn(state.mappings, key) ? state.mappings[key] : undefined;
   if (manual?.length) return manual;
   return contributionFor(exercise).map(item => item.muscleId);
 }
@@ -2022,7 +2532,7 @@ function mappingFor(exercise) {
 function contributionFor(exercise) {
   const rawName = exerciseRawName(exercise);
   const normalized = normalizeExerciseName(rawName);
-  const manual = state.mappings[normalized];
+  const manual = Object.hasOwn(state.mappings, normalized) ? state.mappings[normalized] : undefined;
   if (manual?.length) return manual.map(muscleId => ({ muscleId, weight: 1 }));
   if (exactMuscleMap[normalized]?.length) return exactMuscleMap[normalized];
   return inferMuscleContributions(exercise);
@@ -2037,7 +2547,8 @@ function inferMuscleContributions(exercise) {
   const inferred = new Map();
   const add = (muscleId, weight) => inferred.set(muscleId, Math.max(inferred.get(muscleId) || 0, clamp(weight, 0, 1)));
   const has = (...tokens) => tokens.some(token => normalized.includes(token));
-  (builtInExerciseFor(exercise)?.muscleIds || defaultMappings[normalized] || []).forEach(id => add(id, 1));
+  const defaults = Object.hasOwn(defaultMappings, normalized) ? defaultMappings[normalized] : [];
+  (builtInExerciseFor(exercise)?.muscleIds || defaults).forEach(id => add(id, 1));
   if (has("біцепс", "бицепс", "bicep", "curl", "сгибание рук", "згинання рук")) { add("biceps", 1); add("forearms", 0.25); }
   if (has("трицепс", "tricep", "француз", "розгинання рук", "разгибание рук", "pushdown")) add("triceps", 1);
   if (has("жим ног", "жим ногами", "leg press")) { add("quads", 1); add("glutes", 0.55); add("hamstrings", 0.35); }
@@ -2163,10 +2674,24 @@ function mixHex(a, b, t) {
 }
 
 function recommendationsCard() {
-  const recs = trainingRecommendations();
+  pendingRecommendations = trainingRecommendations().map(rec => ({
+    title: String(rec.title || ""),
+    supporting: String(rec.supporting || ""),
+    priority: String(rec.priority || "")
+  }));
   return `<section class="panel highlighted"><h2>${t("recommendations")}</h2><p class="muted">${tx("Based on muscle load and recent training gaps.", "На основі навантаження м'язів і останніх пауз у тренуваннях.")}</p>
-    <div class="list-gap">${recs.map(rec => `<div class="subpanel row-line"><div><strong>${rec.title}</strong><p>${rec.supporting}</p></div><span class="pill">${rec.priority}</span></div>`).join("")}</div>
+    <div class="list-gap">${pendingRecommendations.map((_, index) => `<div class="subpanel row-line" data-recommendation="${index}"><div><strong data-recommendation-field="title"></strong><p data-recommendation-field="supporting"></p></div><span class="pill" data-recommendation-field="priority"></span></div>`).join("")}</div>
   </section>`;
+}
+
+function hydrateRecommendationText() {
+  app.querySelectorAll("[data-recommendation]").forEach(row => {
+    const recommendation = pendingRecommendations[Number(row.dataset.recommendation)];
+    if (!recommendation) return;
+    row.querySelectorAll("[data-recommendation-field]").forEach(field => {
+      field.textContent = recommendation[field.dataset.recommendationField] || "";
+    });
+  });
 }
 
 function trainingRecommendations() {
@@ -2216,7 +2741,7 @@ function addWorkoutScreen() {
       <button class="button hero-outline hero-button" data-action="repeat-latest" ${state.sessions.length ? "" : "disabled"}>${svg("copy", "small-icon")}${t("repeatLast")}</button>
       <button class="button hero-outline hero-button" data-action="template-picker" ${state.sessions.length ? "" : "disabled"}>${svg("copy", "small-icon")}${t("copyWorkout")}</button>
     </section>
-    <section class="panel highlighted note-panel"><h2>${t("note")}</h2><textarea data-draft="note" maxlength="2000" aria-label="${t("note")}" placeholder="${tx("Push day, pull day, deload...", "Push день, pull день, делoad...")}">${escapeHtml(draft.note)}</textarea><span class="field-caption">${tx("Plan templates", "Шаблони плану")}</span><div class="chip-row">${noteTemplates().map(note => `<button class="chip buttonlike" data-action="note-template" data-note="${note.value}">${note.label}</button>`).join("")}</div></section>
+    <section class="panel highlighted note-panel"><h2>${t("note")}</h2><textarea data-draft="note" maxlength="2000" aria-label="${t("note")}" placeholder="${tx("Push day, pull day, deload...", "Push день, pull день, делoad...")}">${escapeHtml(draft.note)}</textarea><span class="field-caption">${tx("Plan templates", "Шаблони плану")}</span><div class="chip-row">${noteTemplates().map(note => `<button class="chip buttonlike" data-action="note-template" data-note="${escapeAttr(note.value)}">${escapeHtml(note.label)}</button>`).join("")}</div></section>
     ${trainingProfilePanel()}
     <section class="draft-list">${draft.blocks.map((block, index) => draftBlock(block, index)).join("")}</section>
     <button class="button secondary full" data-action="add-block">${svg("add", "small-icon")}${t("addExercise")}</button>
@@ -2313,7 +2838,7 @@ function profileValueLabel(value) {
     Deficit: tx("Deficit", "Дефіцит"),
     Maintenance: tx("Maintenance", "Підтримка"),
     Surplus: tx("Surplus", "Профіцит")
-  }[value] || value;
+  }[value] || tx("Unknown", "Невідомо");
 }
 
 function createDraft(source) {
@@ -2486,7 +3011,7 @@ function legacyDetailScreenOld(id) {
   const grouped = exerciseReferencesForSession(session).map(exercise => ({ ...exercise, sets: session.sets.filter(set => exercisesMatch(set, exercise)) }));
   const available = state.exercises.filter(exercise => !grouped.some(group => exercisesMatch(group, exercise)));
   const garmin = parseGarminWorkoutMetrics(session.note || "");
-  return `<section class="panel"><h2>${fmtDate(session.startedAt)}</h2><p>${session.note || tx("No note", "Без нотатки")}</p></section>
+  return `<section class="panel"><h2>${fmtDate(session.startedAt)}</h2><p>${session.note ? escapeHtml(session.note) : tx("No note", "Без нотатки")}</p></section>
     ${!session.sets.length && grouped.length ? `<section class="panel warning"><h2>${tx("No set data", "Немає даних підходів")}</h2><p>${tx("This imported workout contains exercise names, but no weights or reps. Export a full Backup JSON from the Android app and import it again.", "У цьому імпортованому тренуванні є назви вправ, але немає ваги й повторів. Експортуй повний Backup JSON з Android-додатка й імпортуй ще раз.")}</p></section>` : ""}
     <section class="panel"><div class="section-title"><h2>${tx("Add Exercise to This Workout", "Додати вправу в це тренування")}</h2></div>${available.length ? `<select id="quick-add">${available.map(ex => `<option value="${ex.id}">${escapeHtml(exerciseDisplayName(ex))}</option>`).join("")}</select><button class="button full" data-action="quick-add-exercise">${tx("Add to Workout", "Додати до тренування")}</button>` : `<p class="muted">${tx("All saved exercises are already in this workout.", "Усі збережені вправи вже є в цьому тренуванні.")}</p>`}</section>
     ${garmin ? garminWorkoutMetricsCard(session, garmin, grouped) : ""}
@@ -2639,13 +3164,79 @@ function rewardRow(item) {
 function loginAccount(rawName) {
   const name = String(rawName || "").trim();
   if (!name) return showToast(tx("Enter account name.", "Введи назву акаунта."));
-  const id = normalizeAccountId(name);
-  if (!id) return showToast(tx("Use letters or numbers for account name.", "Використай літери або цифри для назви акаунта."));
-  const account = { id, name };
+  if (name.length > MAX_ACCOUNT_NAME_LENGTH || new TextEncoder().encode(name).byteLength > 256) {
+    return showToast(tx("Account name is too long.", "Назва акаунта надто довга."));
+  }
+  if (/\p{C}/u.test(name) || !/[\p{L}\p{N}]/u.test(name)) {
+    return showToast(tx("Use visible letters or numbers for account name.", "Використай видимі літери або цифри для назви акаунта."));
+  }
+  const accounts = accountList();
+  const nameKey = name.normalize("NFKC").toLowerCase();
+  const matches = accounts.filter(account => !account.remote &&
+    account.name.normalize("NFKC").toLowerCase() === nameKey);
+  if (matches.length > 1) {
+    return showToast(tx(
+      "This legacy local account name is ambiguous. Its stored data was left untouched; rename/recover it before signing in.",
+      "Ця назва старого локального акаунта неоднозначна. Збережені дані не змінено; віднови або перейменуй акаунт перед входом."
+    ));
+  }
+  let account = matches[0] || null;
+  if (account && accounts.some(item => item.id === account.id &&
+      (item.remote || item.name !== account.name))) {
+    return showToast(tx(
+      "A legacy storage-key collision was detected. Sign-in is blocked so one local account cannot open another account's data.",
+      "Виявлено колізію старого ключа сховища. Вхід заблоковано, щоб один локальний акаунт не відкрив дані іншого."
+    ));
+  }
+  const creatingAccount = !account;
+  if (creatingAccount) {
+    if (accounts.length >= MAX_LOCAL_ACCOUNTS) {
+      return showToast(tx("Local account limit reached.", "Досягнуто ліміт локальних акаунтів."));
+    }
+    try {
+      account = {
+        id: createLocalAccountId(accounts),
+        name,
+        localIdVersion: LOCAL_ACCOUNT_ID_VERSION
+      };
+    } catch {
+      return showToast(tx(
+        "Secure local account creation is unavailable in this browser.",
+        "Безпечне створення локального акаунта недоступне в цьому браузері."
+      ));
+    }
+  }
   const key = activeStorageKey(account);
-  saveAccountList([...accountList().filter(item => item.id !== id), account]);
-  localStorage.setItem(AUTH_KEY, JSON.stringify(account));
-  if (!localStorage.getItem(key)) localStorage.setItem(key, JSON.stringify(state));
+  if (!creatingAccount && !localStorage.getItem(key)) {
+    return showToast(tx(
+      "This saved local account is missing its state. Nothing was created or merged automatically.",
+      "У цього збереженого локального акаунта відсутній стан. Нічого не створено й не об’єднано автоматично."
+    ));
+  }
+  const previousAccountList = localStorage.getItem(ACCOUNT_LIST_KEY);
+  const previousAuth = localStorage.getItem(AUTH_KEY);
+  try {
+    if (creatingAccount) {
+      localStorage.setItem(key, JSON.stringify(defaultAppState()));
+      saveAccountList([...accounts, account]);
+    }
+    localStorage.setItem(AUTH_KEY, JSON.stringify(account));
+    localStorage.removeItem(REMOTE_SESSION_KEY);
+  } catch {
+    try {
+      if (creatingAccount) {
+        localStorage.removeItem(key);
+        if (previousAccountList == null) localStorage.removeItem(ACCOUNT_LIST_KEY);
+        else localStorage.setItem(ACCOUNT_LIST_KEY, previousAccountList);
+      }
+      if (previousAuth == null) localStorage.removeItem(AUTH_KEY);
+      else localStorage.setItem(AUTH_KEY, previousAuth);
+    } catch {
+      // Preserve the original error message; storage may be unavailable.
+    }
+    return showToast(tx("Local account could not be saved.", "Не вдалося зберегти локальний акаунт."));
+  }
+  resetRemoteSyncContext();
   activeAccount = account;
   clearAuthDrafts();
   state = loadState();
@@ -2653,6 +3244,21 @@ function loginAccount(rawName) {
   replaceNavigationHistory();
   modal = null;
   render();
+}
+
+function createLocalAccountId(accounts = accountList()) {
+  const secureCrypto = window.crypto;
+  if (!secureCrypto || typeof secureCrypto.getRandomValues !== "function") {
+    throw new Error("Secure randomness is unavailable.");
+  }
+  const existingIds = new Set(accounts.map(account => account.id));
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const bytes = new Uint8Array(16);
+    secureCrypto.getRandomValues(bytes);
+    const id = `local-v2-${[...bytes].map(byte => byte.toString(16).padStart(2, "0")).join("")}`;
+    if (!existingIds.has(id) && !localStorage.getItem(ACCOUNT_PREFIX + id)) return id;
+  }
+  throw new Error("Unable to allocate a unique local account ID.");
 }
 
 function sanitizeDisplayName(value) {
@@ -2737,29 +3343,108 @@ async function remoteLogin(createAccount) {
       : "/auth/v1/token?grant_type=password";
     const session = await supabaseRequest(path, {
       method: "POST",
+      maxResponseBytes: MAX_REMOTE_AUTH_RESPONSE_BYTES,
       body: JSON.stringify(createAccount ? { email, password, data: { display_name: displayName || email.split("@")[0] } } : { email, password })
     });
     if (!session?.access_token || !session?.user?.id) {
       showToast(tx("Account created. Check your email to confirm the account, then log in.", "Account created. Check your email to confirm the account, then log in."));
       return;
     }
-    saveRemoteSession(session);
+    if (!validRemoteSession(session)) throw new Error("Cloud login returned an invalid session.");
     const account = remoteAccountFromSession(session);
     if (displayName) account.name = displayName;
+    const cloudState = await loadRemoteState(session);
+    let recovery = null;
+    let nextState = defaultAppState();
+    if (cloudState.exists) {
+      try {
+        nextState = normalizeImportedState(cloudState.state, defaultAppState());
+      } catch {
+        recovery = {
+          userId: cloudState.userId,
+          revision: cloudState.revision,
+          rawState: cloudState.state
+        };
+      }
+    }
+    resetRemoteSyncContext();
+    saveRemoteSession(session);
     localStorage.setItem(AUTH_KEY, JSON.stringify(account));
     saveAccountList([...accountList().filter(item => item.id !== account.id), account]);
     activeAccount = account;
+    bindRemoteStateRevision(cloudState);
+    cloudStateRecovery = recovery;
     clearAuthDrafts();
-    const cloudState = await loadRemoteState(session);
-    state = cloudState ? normalizeImportedState(cloudState, defaultAppState()) : defaultAppState();
-    saveState({ queueRemote: !cloudState });
+    state = nextState;
+    saveState({ queueRemote: !cloudState.exists });
     nav = [{ name: "workouts" }];
     replaceNavigationHistory();
     modal = null;
     render();
-    showToast(tx("Cloud login complete.", "Cloud login complete."));
+    showToast(recovery
+      ? tx("Cloud login complete. Recovery action is required before sync.", "Хмарний вхід виконано. Перед синхронізацією потрібна дія відновлення.")
+      : tx("Cloud login complete.", "Cloud login complete."));
   } catch (error) {
     showToast(friendlyAuthError(error));
+  }
+}
+
+function exportCloudRecovery() {
+  const recovery = cloudStateRecovery;
+  if (!recovery || recovery.userId !== activeAccount?.userId) {
+    return showToast(tx("No cloud recovery data is available.", "Дані для хмарного відновлення недоступні."));
+  }
+  try {
+    downloadJson(JSON.stringify(recovery.rawState, null, 2), false);
+  } catch {
+    showToast(tx("Recovery JSON download failed.", "Не вдалося завантажити JSON для відновлення."));
+  }
+}
+
+async function resetCloudRecovery() {
+  if (cloudRecoveryInProgress) return;
+  const recovery = cloudStateRecovery;
+  const session = loadRemoteSession();
+  if (!recovery || recovery.userId !== activeAccount?.userId || session?.user?.id !== recovery.userId ||
+      remoteStateSync.userId !== recovery.userId || remoteStateSync.revision !== recovery.revision) {
+    return showToast(tx("Cloud recovery session is stale. Sign out and log in again.", "Сесія хмарного відновлення застаріла. Вийди й увійди знову."));
+  }
+  const warning = tx(
+    "Permanently replace the quarantined cloud row with an empty GymApp state? Download the original JSON first if you may need its private workout history. Cancel is the safe default.",
+    "Незворотно замінити карантинний хмарний запис порожнім станом GymApp? Спочатку завантаж оригінальний JSON, якщо може знадобитися приватна історія тренувань. «Скасувати» — безпечний вибір за замовчування."
+  );
+  if (typeof window.confirm !== "function" || !window.confirm(warning)) return;
+
+  const expectedEpoch = accountEpoch;
+  const expectedUserId = recovery.userId;
+  cloudRecoveryInProgress = true;
+  cloudStateRecovery = null;
+  state = defaultAppState();
+  try {
+    await saveRemoteState({ expectedEpoch, expectedUserId });
+    saveState({ queueRemote: false });
+    render();
+    showToast(tx("Cloud state recovery completed.", "Відновлення хмарного стану завершено."));
+  } catch (error) {
+    const stateWasReplaced = remoteStateSync.userId === expectedUserId &&
+      remoteStateSync.revision !== recovery.revision;
+    const accountIsCurrent = expectedEpoch === accountEpoch && activeAccount?.userId === expectedUserId &&
+      loadRemoteSession()?.user?.id === expectedUserId;
+    if (stateWasReplaced && accountIsCurrent) {
+      saveState({ queueRemote: false });
+      render();
+      showToast(tx(
+        "Cloud state was recovered, but the public profile refresh should be retried later.",
+        "Хмарний стан відновлено, але оновлення публічного профілю слід повторити пізніше."
+      ));
+    } else if (accountIsCurrent) {
+      state = defaultAppState();
+      cloudStateRecovery = recovery;
+      render();
+      showToast(error?.message || tx("Cloud recovery failed.", "Не вдалося відновити хмарні дані."));
+    }
+  } finally {
+    cloudRecoveryInProgress = false;
   }
 }
 
@@ -2779,17 +3464,65 @@ async function resendRemoteConfirmation() {
   }
 }
 
-function logoutAccount() {
-  saveState();
-  clearAuthDrafts();
-  localStorage.removeItem(AUTH_KEY);
-  localStorage.removeItem(REMOTE_SESSION_KEY);
-  activeAccount = null;
-  state = loadState();
-  nav = [{ name: "workouts" }];
-  replaceNavigationHistory();
-  modal = null;
-  render();
+async function logoutAccount() {
+  if (accountTransitionInProgress) return;
+  accountTransitionInProgress = true;
+  let signedOutWithPendingGarminRevocation = false;
+  const hadPendingRemoteSave = remoteSaveTimer !== null;
+  try {
+    saveState({ queueRemote: false });
+    clearTimeout(remoteSaveTimer);
+    remoteSaveTimer = null;
+    const session = loadRemoteSession();
+    const remoteUserId = activeAccount?.remote ? activeAccount.userId : null;
+    const garminBinding = remoteUserId ? garminBindingForUser(remoteUserId) : null;
+    const pendingGarminDeviceId = remoteUserId ? pendingGarminRevocations.get(remoteUserId) : null;
+    if (garminBinding || pendingGarminDeviceId) {
+      try {
+        if (!session?.user?.id || session.user.id !== remoteUserId) {
+          throw new Error("The active cloud session cannot revoke this Garmin binding.");
+        }
+        if (garminBinding) await revokeGarminBinding(session);
+        if (pendingGarminDeviceId && pendingGarminDeviceId !== garminBinding?.deviceId) {
+          await revokeGarminDeviceById(session, pendingGarminDeviceId);
+        }
+        pendingGarminRevocations.delete(remoteUserId);
+      } catch {
+        const warning = tx(
+          "The Garmin watch could not be revoked. Cancel to keep this cloud session and retry (recommended). Choose OK only to sign out locally: the watch may remain authorized, and GymApp will preserve its binding record so you can retry after signing back into this account.",
+          "Не вдалося відкликати доступ годинника Garmin. Натисни «Скасувати», щоб зберегти хмарну сесію й повторити спробу (рекомендовано). Натисни OK лише для локального виходу: годинник може залишитися авторизованим, а GymApp збереже дані прив’язки для повторної спроби після входу в цей акаунт."
+        );
+        if (typeof window.confirm !== "function" || !window.confirm(warning)) {
+          if (hadPendingRemoteSave) queueRemoteSave();
+          throw new Error(tx(
+            "Sign-out was cancelled so Garmin revocation can be retried.",
+            "Вихід скасовано, щоб можна було повторити відкликання Garmin."
+          ));
+        }
+        signedOutWithPendingGarminRevocation = true;
+      }
+    }
+    resetRemoteSyncContext();
+    clearAuthDrafts();
+    localStorage.removeItem(AUTH_KEY);
+    localStorage.removeItem(REMOTE_SESSION_KEY);
+    activeAccount = null;
+    state = loadState();
+    nav = [{ name: "workouts" }];
+    replaceNavigationHistory();
+    modal = null;
+    render();
+    if (signedOutWithPendingGarminRevocation) {
+      showToast(tx(
+        "Signed out locally. Garmin may remain authorized; sign back into the same account to retry revocation.",
+        "Локальний вихід виконано. Garmin може залишатися авторизованим; увійди знову в цей акаунт, щоб повторити відкликання."
+      ));
+    }
+  } catch (error) {
+    showToast(error?.message || tx("Account switch was cancelled.", "Перемикання акаунта скасовано."));
+  } finally {
+    accountTransitionInProgress = false;
+  }
 }
 
 function accountPanel() {
@@ -3412,7 +4145,7 @@ function ranksScreen() {
 function modalMarkup() {
   if (modal.type === "template") return bottomSheet(`<h2>${t("templatePicker")}</h2>${state.sessions.length ? [...state.sessions].sort((a, b) => b.startedAt - a.startedAt).map(session => `<article class="workout-item"><h3>${fmtDate(session.startedAt)}</h3><p>${sessionSummary(session).exercises} ${tx("exercises", "вправ")} - ${sessionSummary(session).sets} ${tx("sets", "підходів")} - ${Math.round(sessionSummary(session).volume)} ${tx("volume", "обсяг")}</p><button class="button full" data-action="copy-template" data-id="${session.id}">${t("copyWorkout")}</button></article>`).join("") : `<p>${tx("No previous workouts yet.", "Попередніх тренувань ще немає.")}</p>`}`);
   if (modal.type === "import") return bottomSheet(`<h2>${tx("Import backup", "Імпорт бекапу")}</h2><textarea id="import-json" placeholder="${tx("Paste exported GymApp JSON here", "Встав сюди експортований JSON GymApp")}"></textarea><button class="button full" data-action="apply-import">${tx("Import", "Імпорт")}</button>`);
-  if (modal.type === "backup-json") return bottomSheet(`<h2>${tx("Backup JSON ready", "JSON бекапу готовий")}</h2><textarea readonly>${escapeHtml(modal.json)}</textarea><div class="actions"><button class="button" data-action="copy-json">${tx("Copy JSON", "Копіювати JSON")}</button><button class="button ghost" data-action="download-json">${tx("Download", "Завантажити")}</button></div><button class="button ghost full" data-action="pdf-report">${t("sharePdf")}</button>`);
+  if (modal.type === "backup-json") return bottomSheet(`<h2>${modal.diagnostics ? tx("Redacted diagnostics ready", "Знеособлена діагностика готова") : tx("Backup JSON ready", "JSON бекапу готовий")}</h2><textarea readonly>${escapeHtml(modal.json)}</textarea><div class="actions"><button class="button" data-action="copy-json">${tx("Copy JSON", "Копіювати JSON")}</button><button class="button ghost" data-action="download-json">${tx("Download", "Завантажити")}</button></div><button class="button ghost full" data-action="pdf-report">${t("sharePdf")}</button>`);
   if (modal.type === "rename") return bottomSheet(`<h2>${t("rename")}</h2><input id="rename-name" maxlength="120" value="${escapeAttr(exerciseDisplayName(modal.exercise))}"><button class="button full" data-action="apply-rename" data-id="${modal.exercise.id}">${tx("Save", "Зберегти")}</button>`);
   if (modal.type === "history") return bottomSheet(exerciseHistoryMarkup(modal.exercise));
   if (modal.type === "map") return bottomSheet(mappingEditor(modal.name));
@@ -3483,6 +4216,8 @@ function handleAction(action, el) {
   if (action === "remote-signup") return remoteLogin(true);
   if (action === "remote-resend-confirmation") return resendRemoteConfirmation();
   if (action === "login-account") return loginAccount(el.dataset.name || app.querySelector("#local-login-name")?.value);
+  if (action === "export-cloud-recovery") return exportCloudRecovery();
+  if (action === "reset-cloud-recovery") return resetCloudRecovery();
   if (action === "logout-account") return logoutAccount();
   if (action === "refresh-leaderboard") return refreshLeaderboard(true);
   if (action === "back") return back();
@@ -3495,7 +4230,7 @@ function handleAction(action, el) {
     saveState();
     return render();
   }
-  if (action === "backup") { modal = { type: "backup-json", json: exportPayload(false) }; return render(); }
+  if (action === "backup") { modal = { type: "backup-json", diagnostics: false, json: exportPayload(false) }; return render(); }
   if (action === "open-add") return push("add");
   if (action === "open-detail") return push("detail", { id: Number(el.dataset.id) });
   if (action === "delete-session") return deleteSession(Number(el.dataset.id));
@@ -3530,14 +4265,29 @@ function handleAction(action, el) {
   if (action === "repeat-latest") { workoutDraft = createDraft([...state.sessions].sort((a, b) => b.startedAt - a.startedAt)[0]); return render(); }
   if (action === "template-picker") { modal = { type: "template" }; return render(); }
   if (action === "copy-template") { workoutDraft = createDraft(state.sessions.find(s => s.id === Number(el.dataset.id))); modal = null; nav = [{ name: "workouts" }, { name: "add" }]; replaceNavigationHistory(); return render(); }
-  if (action === "add-block") { workoutDraft?.blocks.push({ exerciseName: "", sets: [{ weight: "", reps: "" }] }); return render(); }
+  if (action === "add-block") {
+    if (!workoutDraft) return;
+    if (workoutDraft.blocks.length >= window.GymStateContract.LIMITS.exercisesPerSession) {
+      return showToast(tx("This workout has reached the exercise limit.", "Досягнуто ліміт вправ у тренуванні."));
+    }
+    workoutDraft.blocks.push({ exerciseName: "", sets: [{ weight: "", reps: "" }] });
+    return render();
+  }
   if (action === "remove-block") {
     if (!workoutDraft) return;
     if (workoutDraft.blocks.length > 1) workoutDraft.blocks.splice(Number(el.dataset.block), 1);
     else workoutDraft.blocks[0] = { exerciseName: "", sets: [{ weight: "", reps: "" }] };
     return render();
   }
-  if (action === "add-set") { workoutDraft?.blocks[Number(el.dataset.block)]?.sets.push({ weight: "", reps: "" }); return render(); }
+  if (action === "add-set") {
+    const sets = workoutDraft?.blocks[Number(el.dataset.block)]?.sets;
+    if (!sets) return;
+    if (sets.length >= window.GymStateContract.LIMITS.setsPerExercise) {
+      return showToast(tx("This exercise has reached the set limit.", "Досягнуто ліміт підходів для вправи."));
+    }
+    sets.push({ weight: "", reps: "" });
+    return render();
+  }
   if (action === "copy-set" || action === "plus-set") { copyDraftSet(Number(el.dataset.block), action === "plus-set"); return render(); }
   if (action === "remove-set") {
     const sets = workoutDraft?.blocks[Number(el.dataset.block)]?.sets;
@@ -3562,12 +4312,12 @@ function handleAction(action, el) {
   if (action === "apply-rename") return applyRename(Number(el.dataset.id));
   if (action === "delete-exercise") return deleteExercise(Number(el.dataset.id));
   if (action === "exercise-history") { modal = { type: "history", exercise: state.exercises.find(ex => ex.id === Number(el.dataset.id)) }; return render(); }
-  if (action === "export-json") { modal = { type: "backup-json", json: exportPayload(false) }; return render(); }
-  if (action === "export-diagnostics") { modal = { type: "backup-json", json: exportPayload(true) }; return render(); }
+  if (action === "export-json") { modal = { type: "backup-json", diagnostics: false, json: exportPayload(false) }; return render(); }
+  if (action === "export-diagnostics") { modal = { type: "backup-json", diagnostics: true, json: exportPayload(true) }; return render(); }
   if (action === "import-json") { modal = { type: "import" }; return render(); }
   if (action === "apply-import") return applyImport();
-  if (action === "copy-json") return navigator.clipboard?.writeText(modal.json).then(() => showToast(tx("JSON copied.", "JSON скопійовано.")));
-  if (action === "download-json") return downloadJson(modal.json);
+  if (action === "copy-json") return copyExportJson();
+  if (action === "download-json") return downloadJson(modal.json, modal.diagnostics);
   if (action === "pdf-report") return printReport();
   if (action === "close-modal") { modal = null; return render(); }
 }
@@ -3589,8 +4339,15 @@ function updateDraftInput(input) {
 function updateProfile(el) {
   const field = el.dataset.field;
   const value = el.dataset.value;
-  if (field === "days") state.profile.days = Number.parseInt(value, 10);
-  else state.profile[field] = value;
+  if (field === "days") {
+    const days = Number.parseInt(value, 10);
+    if (!Number.isInteger(days) || days < 2 || days > 6) return;
+    state.profile.days = days;
+  } else {
+    const allowed = window.GymStateContract.PROFILE_ENUMS[field];
+    if (!allowed?.includes(value)) return;
+    state.profile[field] = value;
+  }
   saveState();
   render();
 }
@@ -3883,9 +4640,19 @@ function shouldPrioritizeHeavyLower(history) {
 function copyDraftSet(blockIndex, plus) {
   const block = workoutDraft?.blocks[blockIndex];
   if (!block) return;
+  if (block.sets.length >= window.GymStateContract.LIMITS.setsPerExercise) {
+    showToast(tx("This exercise has reached the set limit.", "Досягнуто ліміт підходів для вправи."));
+    return;
+  }
   const last = block.sets.at(-1) || { weight: "", reps: "" };
   const weight = Number(String(last.weight).replace(",", "."));
-  block.sets.push({ weight: Number.isFinite(weight) ? weight + (plus ? 2.5 : 0) : last.weight, reps: last.reps });
+  const nextWeight = Number.isFinite(weight) ? weight + (plus ? 2.5 : 0) : last.weight;
+  block.sets.push({
+    weight: typeof nextWeight === "number" && nextWeight <= window.GymStateContract.LIMITS.weightMax
+      ? nextWeight
+      : last.weight,
+    reps: last.reps
+  });
 }
 
 function applyLast(blockIndex) {
@@ -3907,31 +4674,83 @@ function applySmart(blockIndex) {
 function saveWorkout() {
   const draft = workoutDraft;
   if (!draft) return;
+  const limits = window.GymStateContract.LIMITS;
+  if (!Array.isArray(draft.blocks) || draft.blocks.length > limits.exercisesPerSession ||
+      state.sessions.length >= limits.sessions) {
+    return showToast(tx("This workout exceeds the supported size.", "Тренування перевищує допустимий розмір."));
+  }
+  const parsedBlocks = [];
+  const perExerciseCounts = new Map();
+  for (const block of draft.blocks) {
+    const exerciseName = String(block?.exerciseName || "").trim();
+    if (!exerciseName) continue;
+    if (!isSupportedExerciseName(exerciseName) || !Array.isArray(block.sets) ||
+        block.sets.length < 1 || block.sets.length > limits.setsPerExercise) {
+      return showToast(tx("An exercise or its set list is invalid.", "Вправа або список її підходів некоректні."));
+    }
+    const parsedSets = [];
+    for (const set of block.sets) {
+      const weightText = String(set?.weight ?? "").replace(",", ".").trim();
+      const repsText = String(set?.reps ?? "").trim();
+      const weight = Number(weightText);
+      const reps = Number(repsText);
+      if (!weightText || !repsText || !Number.isFinite(weight) || weight < 0 ||
+          weight > limits.weightMax || !Number.isInteger(reps) || reps < 1 || reps > limits.repsMax) {
+        return showToast(tx("Enter a valid weight and whole-number reps for every set.", "Введи коректну вагу й цілу кількість повторів для кожного підходу."));
+      }
+      parsedSets.push({ weight, reps });
+    }
+    const exerciseKey = normalizeExerciseName(exerciseName);
+    const nextCount = (perExerciseCounts.get(exerciseKey) || 0) + parsedSets.length;
+    if (nextCount > limits.setsPerExercise) {
+      return showToast(tx("One exercise exceeds the set limit.", "Одна вправа перевищує ліміт підходів."));
+    }
+    perExerciseCounts.set(exerciseKey, nextCount);
+    parsedBlocks.push({ block, exerciseName, sets: parsedSets });
+  }
+  const incomingSetCount = parsedBlocks.reduce((sum, block) => sum + block.sets.length, 0);
+  if (!incomingSetCount || incomingSetCount > limits.exercisesPerSession * limits.setsPerExercise ||
+      allSets().length + incomingSetCount > limits.totalSets) {
+    return showToast(tx("Please fill every selected set within the workout limits.", "Заповни всі вибрані підходи в межах лімітів тренування."));
+  }
+  const startedAt = draft.startedAt ?? Date.now();
+  if (!Number.isSafeInteger(startedAt) || startedAt < limits.timestampMin || startedAt > limits.timestampMax) {
+    return showToast(tx("Workout date is invalid.", "Дата тренування некоректна."));
+  }
+  const note = String(draft.note || "").slice(0, 2000);
+  const originalExercises = state.exercises;
+  state.exercises = [...state.exercises];
   const sets = [];
-  draft.blocks.forEach(block => {
-    const exerciseName = block.exerciseName.trim();
-    if (!exerciseName) return;
+  for (const parsedBlock of parsedBlocks) {
+    const { block, exerciseName } = parsedBlock;
     const requestedExercise = { name: exerciseName, ...(persistedExerciseCatalogKey(block) ? { catalogKey: persistedExerciseCatalogKey(block) } : {}) };
     const storedExercise = ensureExercise(requestedExercise);
-    const storedName = storedExercise?.name || canonicalExerciseName(exerciseName);
+    if (!storedExercise) {
+      state.exercises = originalExercises;
+      return showToast(tx("The exercise catalog has reached its limit.", "Каталог вправ досяг ліміту."));
+    }
+    const storedName = storedExercise.name;
     const catalogKey = persistedExerciseCatalogKey(storedExercise);
-    block.sets.forEach((set, index) => {
-      const weight = Number(String(set.weight).replace(",", "."));
-      const reps = Number.parseInt(set.reps, 10);
-      if (Number.isFinite(weight) && weight >= 0 && reps > 0) sets.push({
+    parsedBlock.sets.forEach((set, index) => {
+      sets.push({
         id: uid(),
         exerciseName: storedName,
         ...(catalogKey ? { catalogKey } : {}),
-        weight,
-        reps,
+        weight: set.weight,
+        reps: set.reps,
         orderIndex: index
       });
     });
-  });
-  if (!sets.length) return showToast(tx("Please fill all selected exercises and sets.", "Заповни всі вибрані вправи й підходи."));
+  }
   const id = uid();
-  state.sessions.push({ id, startedAt: draft.startedAt || Date.now(), note: String(draft.note || "").slice(0, 2000), sets });
-  saveState();
+  state.sessions.push({ id, startedAt, note, sets });
+  try {
+    saveState();
+  } catch {
+    state.sessions.pop();
+    state.exercises = originalExercises;
+    return showToast(tx("Workout data failed the safety checks.", "Дані тренування не пройшли перевірку безпеки."));
+  }
   workoutDraft = null;
   modal = null;
   nav = [{ name: "workouts" }, { name: "summary", id }];
@@ -3944,6 +4763,12 @@ function quickAddExercise() {
   const session = state.sessions.find(s => s.id === route().id);
   const ex = state.exercises.find(e => e.id === Number(document.querySelector("#quick-add")?.value));
   if (!session || !ex) return;
+  const limits = window.GymStateContract.LIMITS;
+  const existingCount = session.sets.filter(set => exercisesMatch(set, ex)).length;
+  if (existingCount >= limits.setsPerExercise || session.sets.length >= limits.exercisesPerSession * limits.setsPerExercise ||
+      allSets().length >= limits.totalSets) {
+    return showToast(tx("This workout has reached its set limit.", "Тренування досягло ліміту підходів."));
+  }
   const catalogKey = persistedExerciseCatalogKey(ex);
   session.sets.push({ id: uid(), exerciseName: ex.name, ...(catalogKey ? { catalogKey } : {}), weight: 0, reps: 8, orderIndex: 0 });
   saveState();
@@ -3953,6 +4778,12 @@ function quickAddExercise() {
 function detailAddSet(sessionId, name) {
   const session = state.sessions.find(s => s.id === sessionId);
   if (!session) return;
+  const limits = window.GymStateContract.LIMITS;
+  if (!isSupportedExerciseName(name) ||
+      session.sets.filter(set => normalizeExerciseName(set.exerciseName) === normalizeExerciseName(name)).length >= limits.setsPerExercise ||
+      session.sets.length >= limits.exercisesPerSession * limits.setsPerExercise || allSets().length >= limits.totalSets) {
+    return showToast(tx("This exercise has reached its set limit.", "Вправа досягла ліміту підходів."));
+  }
   const last = session.sets.filter(s => s.exerciseName === name).at(-1) || allSets().filter(s => s.exerciseName === name).at(-1);
   const exercise = last || state.exercises.find(item => item.name === name);
   const catalogKey = persistedExerciseCatalogKey(exercise);
@@ -3975,8 +4806,12 @@ function applyEditSet(id) {
   const set = findSet(id);
   if (!set) return;
   const weight = Number(String(document.querySelector("#edit-weight").value).replace(",", "."));
-  const reps = Number.parseInt(document.querySelector("#edit-reps").value, 10);
-  if (!Number.isFinite(weight) || weight < 0 || reps <= 0) return showToast(tx("Enter valid reps and optional weight.", "Введи коректні повтори й вагу."));
+  const reps = Number(String(document.querySelector("#edit-reps").value).trim());
+  const limits = window.GymStateContract.LIMITS;
+  if (!Number.isFinite(weight) || weight < 0 || weight > limits.weightMax ||
+      !Number.isInteger(reps) || reps < 1 || reps > limits.repsMax) {
+    return showToast(tx("Enter valid reps and optional weight.", "Введи коректні повтори й вагу."));
+  }
   set.weight = weight;
   set.reps = reps;
   saveState();
@@ -4015,17 +4850,25 @@ function findSet(id) {
   return state.sessions.flatMap(s => s.sets).find(s => s.id === id);
 }
 
+function isSupportedExerciseName(value) {
+  const name = typeof value === "string" ? value.trim() : "";
+  const limits = window.GymStateContract.LIMITS;
+  return Boolean(name && name.length <= limits.exerciseName &&
+    new TextEncoder().encode(name).byteLength <= limits.exerciseNameBytes);
+}
+
 function saveExercise() {
   const name = document.querySelector("#new-exercise-name")?.value.trim();
   if (!name) return showToast(tx("Enter exercise name.", "Введи назву вправи."));
-  if (name.length > 120) return showToast(tx("Exercise name is too long.", "Назва вправи надто довга."));
-  ensureExercise(name);
+  if (!isSupportedExerciseName(name)) return showToast(tx("Exercise name is too long.", "Назва вправи надто довга."));
+  if (!ensureExercise(name)) return showToast(tx("The exercise catalog has reached its limit.", "Каталог вправ досяг ліміту."));
   saveState();
   render();
 }
 
 function ensureExercise(name) {
   const rawName = exerciseRawName(name);
+  if (!isSupportedExerciseName(rawName)) return null;
   const requestedCatalogKey = persistedExerciseCatalogKey(name);
   const keyedMatch = requestedCatalogKey ? state.exercises.find(exercise => exercisesMatch(exercise, name)) : null;
   if (keyedMatch) return keyedMatch;
@@ -4040,6 +4883,7 @@ function ensureExercise(name) {
   const candidate = { name: canonicalName, ...(catalogKey ? { catalogKey } : {}) };
   const existing = state.exercises.find(exercise => exercisesMatch(exercise, candidate));
   if (existing) return existing;
+  if (state.exercises.length >= window.GymStateContract.LIMITS.exercises) return null;
   const created = { id: uid(), ...candidate };
   state.exercises.push(created);
   state.exercises.sort((left, right) => exerciseDisplayName(left).localeCompare(exerciseDisplayName(right), state.language));
@@ -4050,7 +4894,7 @@ function applyRename(id) {
   const exercise = state.exercises.find(ex => ex.id === id);
   const submittedName = document.querySelector("#rename-name")?.value.trim();
   if (!exercise || !submittedName) return;
-  if (submittedName.length > 120) return showToast(tx("Exercise name is too long.", "Назва вправи надто довга."));
+  if (!isSupportedExerciseName(submittedName)) return showToast(tx("Exercise name is too long.", "Назва вправи надто довга."));
   const old = exercise.name;
   const oldReference = { name: old, ...(persistedExerciseCatalogKey(exercise) ? { catalogKey: persistedExerciseCatalogKey(exercise) } : {}) };
   const unchangedLocalizedValue = submittedName === exerciseDisplayName(exercise);
@@ -4133,10 +4977,31 @@ function exportSessionExercises(session) {
 }
 
 function exportPayload(diagnostics) {
+  if (diagnostics) {
+    return JSON.stringify({
+      schemaVersion: 2,
+      exportedAt: Date.now(),
+      app: "GymApp",
+      source: "gym-pwa-diagnostics",
+      diagnostics: true,
+      summary: {
+        exerciseCount: state.exercises.length,
+        sessionCount: state.sessions.length,
+        setCount: allSets().length
+      },
+      environment: {
+        client: "pwa",
+        cloudConfigured: remoteAuthEnabled(),
+        accountMode: activeAccount?.remote ? "cloud" : "local"
+      }
+    }, null, 2);
+  }
   const payload = {
     schemaVersion: 2,
     exportedAt: Date.now(),
-    source: diagnostics ? "gym-pwa-diagnostics" : "gym-pwa",
+    app: "GymApp",
+    source: "gym-pwa",
+    diagnostics: false,
     owner: {
       accountId: activeAccount?.id || null,
       userId: activeAccount?.userId || null,
@@ -4156,53 +5021,102 @@ function exportPayload(diagnostics) {
     mappings: state.mappings,
     profile: state.profile
   };
-  if (diagnostics) payload.summary = { exerciseCount: state.exercises.length, sessionCount: state.sessions.length, setCount: allSets().length, totalVolume: totalVolume() };
   return JSON.stringify(payload, null, 2);
 }
 
-function importAllowed(parsed) {
+function importAllowed(owner) {
   if (!activeAccount?.remote) {
-    return !parsed.owner?.accountId || parsed.owner.accountId === activeAccount?.id;
+    return !owner?.accountId || owner.accountId === activeAccount?.id;
   }
-  return Boolean(parsed.owner?.userId && parsed.owner.userId === activeAccount.userId);
+  return Boolean(owner?.userId && owner.userId === activeAccount.userId);
 }
 
 function applyImport() {
   try {
-    const parsed = JSON.parse(document.querySelector("#import-json").value);
-    if (!importAllowed(parsed)) {
+    const raw = document.querySelector("#import-json").value;
+    const imported = validateImportedEnvelope(raw, state);
+    if (imported.diagnostics) {
+      showToast(tx("A redacted diagnostics report is not a restorable backup.", "Знеособлений звіт діагностики не є резервною копією."));
+      return;
+    }
+    if (!importAllowed(imported.owner)) {
       showToast(tx("This backup belongs to another account.", "Цей бекап належить іншому акаунту."));
       return;
     }
-    const imported = normalizeImportedState(parsed, state);
-    state.exercises = imported.exercises;
-    state.sessions = imported.sessions;
-    state.mappings = imported.mappings;
-    state.profile = imported.profile;
+    state = imported.state;
     saveState();
     modal = null;
     goRoot("workouts");
     showToast(tx("Backup imported.", "Бекап імпортовано."));
-  } catch {
-    showToast(tx("Invalid JSON.", "Некоректний JSON."));
+  } catch (error) {
+    showToast(error?.message || tx("Invalid backup.", "Некоректний бекап."));
   }
 }
 
-function downloadJson(json) {
+async function copyExportJson() {
+  if (!modal?.json || !navigator.clipboard?.writeText) {
+    return showToast(tx("Clipboard access is unavailable.", "Доступ до буфера обміну недоступний."));
+  }
+  if (!modal.diagnostics) {
+    const warning = tx(
+      "This full backup contains private workout history and account metadata. Copy it to the system clipboard? Other apps may be able to read it.",
+      "Повний бекап містить приватну історію тренувань і дані акаунта. Скопіювати його в системний буфер? Інші програми можуть мати до нього доступ."
+    );
+    if (typeof window.confirm !== "function" || !window.confirm(warning)) return;
+  }
+  try {
+    await navigator.clipboard.writeText(modal.json);
+    showToast(tx("JSON copied.", "JSON скопійовано."));
+  } catch {
+    showToast(tx("Clipboard write failed.", "Не вдалося записати в буфер обміну."));
+  }
+}
+
+function downloadJson(json, diagnostics = false) {
   const blob = new Blob([json], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `gym-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  a.download = `gym-${diagnostics ? "diagnostics" : "backup"}-${new Date().toISOString().slice(0, 10)}.json`;
   a.click();
   URL.revokeObjectURL(url);
 }
 
 function printReport() {
+  if (!modal?.json) return;
+  if (!modal.diagnostics) {
+    const warning = tx(
+      "This report will include the full private backup. Continue to the print dialog?",
+      "Звіт міститиме повний приватний бекап. Продовжити до діалогу друку?"
+    );
+    if (typeof window.confirm !== "function" || !window.confirm(warning)) return;
+  }
   const win = window.open("", "_blank");
+  if (!win) return showToast(tx("The report window was blocked.", "Вікно звіту заблоковано."));
+  win.opener = null;
   const data = JSON.parse(modal.json);
-  win.document.write(`<title>GymApp diagnostics</title><style>body{font-family:system-ui;padding:32px;color:#14202c}h1{margin-bottom:4px}pre{white-space:pre-wrap;background:#f4f1ec;padding:16px}</style><h1>GymApp diagnostics report</h1><p>Exported: ${new Date(data.exportedAt).toLocaleString()}</p><h2>Summary</h2><p>Exercises: ${data.summary?.exerciseCount ?? data.exercises.length}</p><p>Workouts: ${data.summary?.sessionCount ?? data.sessions.length}</p><p>Sets: ${data.summary?.setCount ?? allSets().length}</p><h2>Raw JSON</h2><pre>${escapeHtml(modal.json)}</pre>`);
-  win.document.close();
+  const document = win.document;
+  document.title = "GymApp diagnostics";
+  const style = document.createElement("style");
+  style.textContent = "body{font-family:system-ui;padding:32px;color:#14202c}h1{margin-bottom:4px}pre{white-space:pre-wrap;background:#f4f1ec;padding:16px}";
+  document.head.replaceChildren(style);
+  const add = (tag, text) => {
+    const element = document.createElement(tag);
+    element.textContent = text;
+    document.body.append(element);
+  };
+  const exerciseCount = data.summary?.exerciseCount ?? (Array.isArray(data.exercises) ? data.exercises.length : 0);
+  const sessionCount = data.summary?.sessionCount ?? (Array.isArray(data.sessions) ? data.sessions.length : 0);
+  const setCount = data.summary?.setCount ?? allSets().length;
+  document.body.replaceChildren();
+  add("h1", modal.diagnostics ? "GymApp redacted diagnostics report" : "GymApp private backup report");
+  add("p", `Exported: ${new Date(data.exportedAt).toLocaleString()}`);
+  add("h2", "Summary");
+  add("p", `Exercises: ${exerciseCount}`);
+  add("p", `Workouts: ${sessionCount}`);
+  add("p", `Sets: ${setCount}`);
+  add("h2", "Raw JSON");
+  add("pre", modal.json);
   win.print();
 }
 

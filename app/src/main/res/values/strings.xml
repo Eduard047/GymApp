@@ -375,9 +375,13 @@
     <string name="backup_tools_supporting">Backups merge into the current profile and skip duplicate sessions.</string>
     <string name="backup_export_json">Export JSON</string>
     <string name="backup_import_json">Import JSON</string>
-    <string name="backup_export_diagnostics">Send diagnostics / DB snapshot</string>
+    <string name="backup_export_diagnostics">Export redacted diagnostics</string>
     <string name="backup_export_ready">Backup JSON ready</string>
+    <string name="backup_diagnostics_ready">Redacted diagnostics ready</string>
     <string name="backup_copy_json">Copy JSON</string>
+    <string name="backup_copy_warning_title">Copy private backup?</string>
+    <string name="backup_copy_warning_message">This backup can contain your workout history and profile data. Other apps may read the clipboard. If you continue, GymApp will mark it as sensitive and try to clear it after 60 seconds if you have not copied something else.</string>
+    <string name="backup_copy_confirm">Copy for 60 seconds</string>
     <string name="backup_share_json">Share JSON</string>
     <string name="backup_share_pdf">Share PDF report</string>
     <string name="backup_import_title">Import backup</string>

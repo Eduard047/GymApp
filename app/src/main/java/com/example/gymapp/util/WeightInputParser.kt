@@ -12,6 +12,11 @@ fun parseWeightInputOrNull(input: String): Double? {
     if (normalized.isBlank()) {
         return 0.0
     }
+    if (normalized.length > MAX_WEIGHT_INPUT_LENGTH) {
+        return null
+    }
 
-    return normalized.toDoubleOrNull()
+    return normalized.toDoubleOrNull()?.takeIf(Double::isFinite)
 }
+
+private const val MAX_WEIGHT_INPUT_LENGTH = 64

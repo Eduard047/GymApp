@@ -200,6 +200,27 @@ class GymSession {
         status = discarded ? "DISCARD" : "DISC ERR";
     }
 
+    static function resetForAccountTransition() {
+        // An account transition is a privacy boundary: stop sensors and discard the
+        // active FIT recording. A new workout must be started explicitly by the user.
+        discard();
+        startedAt = 0;
+        pausedAt = 0;
+        pausedAccumSeconds = 0;
+        elapsedSeconds = 0;
+        hr = null;
+        avgHr = 0;
+        maxHr = 0;
+        hrSamples = 0;
+        gymCalories = 0.0;
+        garminCalories = null;
+        zone = 0;
+        recording = false;
+        paused = false;
+        autoLogPrompt = false;
+        activeSetSeen = false;
+    }
+
     static function createFitFields() {
         gymKcalField = null;
         gymZoneField = null;

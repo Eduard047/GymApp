@@ -135,11 +135,16 @@ object BuiltInExerciseCatalog {
      *
      * Backups are user-controlled input. A stale or hostile `catalogKey` must therefore never
      * turn a known exercise name into a different exercise and attach its sets to the wrong
-     * history row. The supplied key is useful only for custom/unknown names (or when it agrees
-     * with the name, which naturally produces the same result).
+     * history row. The supplied key is used only to recover a missing raw name. A present but
+     * unknown raw name keeps its own identity even if untrusted metadata names a built-in exercise.
      */
     fun resolvedKey(catalogKey: String?, rawName: String?): String? {
-        return inferKey(rawName) ?: definitionForKey(catalogKey)?.key
+        val cleanRawName = rawName?.trim().orEmpty()
+        return if (cleanRawName.isNotEmpty()) {
+            inferKey(cleanRawName)
+        } else {
+            definitionForKey(catalogKey)?.key
+        }
     }
 
     fun canonicalNameForKey(key: String?): String? = definitionForKey(key)?.nameEn

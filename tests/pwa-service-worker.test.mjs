@@ -64,6 +64,8 @@ test("service worker intercepts only allowlisted same-origin static assets at ca
     const handler = loadWorker(scope).listeners.get("fetch");
 
     assert.equal(isIntercepted(handler, new URL("./app.js?v=28", scope)), true);
+    assert.equal(isIntercepted(handler, new URL("./state-contract.js?v=44", scope)), true);
+    assert.equal(isIntercepted(handler, new URL("./frame-guard.js?v=44", scope)), true);
     assert.equal(isIntercepted(handler, scope), true);
     assert.equal(isIntercepted(handler, new URL("./rest/v1/user_states", scope)), false);
     assert.equal(isIntercepted(handler, "https://project.supabase.co/rest/v1/user_states"), false);
@@ -108,7 +110,7 @@ test("service worker reads only the current app cache", async () => {
   });
 
   assert.equal(await (await responsePromise).text(), "cached");
-  assert.deepEqual(worker.openedCaches, ["gym-pwa-v41"]);
+  assert.deepEqual(worker.openedCaches, ["gym-pwa-v44"]);
 });
 
 test("service worker activation deletes only its own stale caches", async () => {

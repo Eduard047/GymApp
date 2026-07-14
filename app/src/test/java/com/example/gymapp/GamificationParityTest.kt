@@ -8,6 +8,7 @@ import com.example.gymapp.data.repository.nextRankDefinitionAfter
 import com.example.gymapp.data.repository.rankDefinitionForLevel
 import java.time.ZoneId
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class GamificationParityTest {
@@ -58,6 +59,48 @@ class GamificationParityTest {
             assertEquals(row.id, row.expectedLevelStartXP, GamificationEngine.xpForLevelStart(row.expectedLevel))
             assertEquals(row.id, row.expectedNextLevelXP, GamificationEngine.xpForLevelStart(row.expectedLevel + 1))
         }
+    }
+
+    @Test(timeout = 1_000)
+    fun maximumIntegerXpUsesBoundedSaturatingProgressionMath() {
+        val level = GamificationEngine.levelForXp(Int.MAX_VALUE)
+
+        assertTrue(level > 1)
+        assertTrue(GamificationEngine.xpForLevelStart(level) <= Int.MAX_VALUE)
+        assertEquals(Int.MAX_VALUE, GamificationEngine.xpForLevelStart(level + 1))
+        assertEquals(1, GamificationEngine.levelForXp(Int.MIN_VALUE))
+    }
+
+    @Test
+    fun nonFiniteStoredVolumeCannotPoisonXp() {
+        val session = WorkoutSessionSummary(
+            session = WorkoutSessionEntity(date = 1_700_000_000_000L, note = null),
+            exerciseCount = 1,
+            setCount = 1,
+            totalVolume = Double.POSITIVE_INFINITY
+        )
+
+        assertEquals(114, GamificationEngine.xpForSession(session))
+    }
+
+    @Test
+    fun emptySessionsEarnNoXpAndSingleSessionXpIsCapped() {
+        val empty = WorkoutSessionSummary(
+            session = WorkoutSessionEntity(date = 1_700_000_000_000L, note = null),
+            exerciseCount = 100,
+            setCount = 0,
+            totalVolume = 1_000_000.0
+        )
+        val extreme = WorkoutSessionSummary(
+            session = WorkoutSessionEntity(date = 1_700_000_000_000L, note = null),
+            exerciseCount = Int.MAX_VALUE,
+            setCount = Int.MAX_VALUE,
+            totalVolume = Double.MAX_VALUE
+        )
+
+        assertEquals(0, GamificationEngine.xpForSession(empty))
+        assertEquals(GamificationEngine.MAX_SESSION_XP, GamificationEngine.xpForSession(extreme))
+        assertEquals(5_000, GamificationEngine.MAX_SESSION_XP)
     }
 
     private fun parseRow(line: String): GoldenRow {

@@ -10,6 +10,9 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface SetDao {
+    @Query("SELECT COUNT(*) FROM set_entries")
+    suspend fun getTotalSetCount(): Int
+
     @Insert
     suspend fun insert(setEntry: SetEntryEntity): Long
 
@@ -42,4 +45,3 @@ interface SetDao {
     @Query("SELECT MAX(orderIndex) FROM set_entries WHERE workoutExerciseId = :workoutExerciseId")
     suspend fun getMaxOrderIndex(workoutExerciseId: Long): Int?
 }
-

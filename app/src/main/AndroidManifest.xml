@@ -45,6 +45,22 @@
             android:exported="false"
             android:foregroundServiceType="shortService" />
 
+        <!-- Google Play Services must be able to bind this listener. Every message is still
+             authenticated to the single pinned Data Layer node before parsing or mutation. -->
+        <service
+            android:name=".wearsync.PhoneWearSyncListenerService"
+            android:exported="true"
+            tools:ignore="ExportedService">
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
+
+                <data
+                    android:host="*"
+                    android:pathPrefix="/gym/sync/"
+                    android:scheme="wear" />
+            </intent-filter>
+        </service>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

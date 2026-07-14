@@ -10,10 +10,31 @@ import com.example.gymapp.data.entity.WorkoutExerciseEntity
 import com.example.gymapp.data.entity.WorkoutSessionDetails
 import com.example.gymapp.data.entity.WorkoutSessionEntity
 import com.example.gymapp.data.entity.WorkoutSessionSummary
+import com.example.gymapp.data.entity.WearSyncSetRow
 import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface WorkoutDao {
+    @Query("SELECT COUNT(*) FROM workout_sessions")
+    suspend fun getSessionCount(): Int
+
+    @Query("SELECT COUNT(*) FROM workout_exercises")
+    suspend fun getTotalWorkoutExerciseCount(): Int
+
+    @Query(
+        """
+        SELECT
+            COALESCE((SELECT SUM(LENGTH(CAST(name AS BLOB))) FROM exercises), 0) +
+            COALESCE((SELECT SUM(LENGTH(CAST(note AS BLOB))) FROM workout_sessions WHERE note IS NOT NULL), 0) +
+            COALESCE((
+                SELECT SUM(LENGTH(CAST(e.name AS BLOB)))
+                FROM workout_exercises we
+                INNER JOIN exercises e ON e.id = we.exerciseId
+            ), 0)
+        """
+    )
+    suspend fun getBackupTextUtf8Bytes(): Long
+
     @Insert
     suspend fun insert(session: WorkoutSessionEntity): Long
 
@@ -46,6 +67,9 @@ interface WorkoutDao {
 
     @Query("DELETE FROM workout_sessions WHERE id = :sessionId")
     suspend fun deleteSessionById(sessionId: Long)
+
+    @Query("DELETE FROM workout_sessions")
+    suspend fun deleteAllSessions()
 
     @Query(
         """
@@ -130,6 +154,28 @@ interface WorkoutDao {
         """
     )
     suspend fun getSessionDetailsForSync(limit: Int): List<WorkoutSessionDetails>
+
+    @Query(
+        """
+        SELECT
+            ws.id AS sessionId,
+            ws.date AS sessionDate,
+            ws.note AS sessionNote,
+            we.orderIndex AS workoutExerciseOrder,
+            se.id AS setId,
+            e.name AS exerciseName,
+            se.weight AS weight,
+            se.reps AS reps,
+            se.orderIndex AS setOrder
+        FROM workout_sessions ws
+        INNER JOIN workout_exercises we ON we.sessionId = ws.id
+        INNER JOIN set_entries se ON se.workoutExerciseId = we.id
+        INNER JOIN exercises e ON e.id = we.exerciseId
+        ORDER BY ws.date DESC, ws.id DESC, we.orderIndex ASC, se.orderIndex ASC, se.id ASC
+        LIMIT :rowLimit
+        """
+    )
+    suspend fun getWearSyncRows(rowLimit: Int): List<WearSyncSetRow>
 
     @androidx.room.Transaction
     @Query(
@@ -252,4 +298,3 @@ interface WorkoutDao {
     )
     suspend fun getExerciseMaxWeightExcludingSession(exerciseId: Long, sessionId: Long): Double?
 }
-

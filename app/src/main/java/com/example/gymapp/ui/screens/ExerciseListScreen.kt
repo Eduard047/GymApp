@@ -2,6 +2,7 @@
 
 import android.content.Intent
 import android.content.Context
+import android.content.ClipData
 import android.graphics.Paint
 import android.graphics.Typeface
 import android.graphics.pdf.PdfDocument
@@ -20,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -36,14 +38,13 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
@@ -51,6 +52,7 @@ import com.example.gymapp.R
 import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.entity.ExerciseHistoryEntry
 import com.example.gymapp.data.repository.defaultContributionsForExercise
+import com.example.gymapp.data.repository.WorkoutDataLimits
 import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.EmptyStatePanel
 import com.example.gymapp.ui.components.ExerciseMuscleBreakdownCard
@@ -59,6 +61,7 @@ import com.example.gymapp.ui.components.SectionTitle
 import com.example.gymapp.ui.util.currentAppLanguageTag
 import com.example.gymapp.ui.util.localizedExerciseName
 import com.example.gymapp.ui.util.localizedMuscleName
+import com.example.gymapp.ui.util.SensitiveClipboard
 import com.example.gymapp.ui.viewmodel.ExerciseListUiState
 import com.example.gymapp.ui.viewmodel.ExerciseMuscleMappingUiModel
 import com.example.gymapp.ui.viewmodel.ExerciseMuscleOptionUiModel
@@ -70,7 +73,23 @@ import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
 import java.io.File
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
+
+private const val BACKUP_PREVIEW_CHARS = 4_000
+private const val MAX_PDF_PAGES = 24
+private const val MAX_PDF_REPORT_LINES = 480
+private const val MAX_PDF_EXERCISES = 120
+private const val MAX_PDF_SESSIONS = 60
+private const val MAX_PDF_EXERCISES_PER_SESSION = 24
+private const val MAX_PDF_SETS_PER_EXERCISE = 20
+private const val MAX_PDF_TEXT_CHARS = 320
+private const val PRIVATE_SHARE_RETENTION_MILLIS = 24 * 60 * 60 * 1_000L
+private const val MAX_RETAINED_PRIVATE_SHARE_FILES = 32
+private val PRIVATE_SHARE_FILE_LOCK = Any()
 
 private data class ExerciseHistorySessionGroup(
     val sessionId: Long,
@@ -354,6 +373,7 @@ fun ExerciseListScreen(
         ) {
             BackupJsonBottomSheetContent(
                 json = backupJson,
+                diagnosticsOnly = uiState.backupIsDiagnostics,
                 onDismiss = onClearBackup
             )
         }
@@ -727,10 +747,19 @@ private fun BackupToolsCard(
 @Composable
 private fun BackupJsonBottomSheetContent(
     json: String,
+    diagnosticsOnly: Boolean,
     onDismiss: () -> Unit
 ) {
-    val clipboardManager = LocalClipboardManager.current
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var showClipboardWarning by rememberSaveable { mutableStateOf(false) }
+    var shareError by rememberSaveable { mutableStateOf<String?>(null) }
+    val preview = remember(json) {
+        if (json.length <= BACKUP_PREVIEW_CHARS) json else {
+            json.take(BACKUP_PREVIEW_CHARS) +
+                "\n… Preview truncated. Use the guarded actions below."
+        }
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxWidth(),
@@ -739,18 +768,25 @@ private fun BackupJsonBottomSheetContent(
     ) {
         item {
             Text(
-                text = stringResource(R.string.backup_export_ready),
+                text = stringResource(
+                    if (diagnosticsOnly) {
+                        R.string.backup_diagnostics_ready
+                    } else {
+                        R.string.backup_export_ready
+                    }
+                ),
                 style = MaterialTheme.typography.headlineSmall
             )
         }
         item {
-            OutlinedTextField(
-                value = json,
-                onValueChange = {},
+            // A read-only text field remains selectable and would expose an unguarded Copy menu.
+            // Plain Text outside SelectionContainer keeps the warned action as the only copy path.
+            Text(
+                text = preview,
                 modifier = Modifier.fillMaxWidth(),
-                readOnly = true,
-                minLines = 6,
-                maxLines = 12
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 12,
+                overflow = TextOverflow.Ellipsis
             )
         }
         item {
@@ -759,25 +795,31 @@ private fun BackupJsonBottomSheetContent(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Button(
-                    onClick = {
-                        clipboardManager.setText(AnnotatedString(json))
-                    },
+                    onClick = { showClipboardWarning = true },
                     modifier = Modifier.weight(1f)
                 ) {
                     Text(stringResource(R.string.backup_copy_json))
                 }
                 OutlinedButton(
                     onClick = {
-                        val sendIntent = Intent(Intent.ACTION_SEND).apply {
-                            type = "application/json"
-                            putExtra(Intent.EXTRA_TEXT, json)
+                        shareError = null
+                        scope.launch {
+                            runCatching {
+                                val file = withContext(Dispatchers.IO) {
+                                    createBackupJsonFile(context, json)
+                                }
+                                sharePrivateBackupFile(
+                                    context = context,
+                                    file = file,
+                                    mimeType = "application/json",
+                                    chooserTitle = context.getString(R.string.backup_share_json)
+                                )
+                            }.onFailure { error ->
+                                if (error is CancellationException) throw error
+                                shareError = error.message
+                                    ?: "Could not prepare the private backup file."
+                            }
                         }
-                        context.startActivity(
-                            Intent.createChooser(
-                                sendIntent,
-                                context.getString(R.string.backup_share_json)
-                            )
-                        )
                     },
                     modifier = Modifier.weight(1f)
                 ) {
@@ -787,10 +829,38 @@ private fun BackupJsonBottomSheetContent(
         }
         item {
             OutlinedButton(
-                onClick = { shareBackupPdf(context, json) },
+                onClick = {
+                    shareError = null
+                    scope.launch {
+                        runCatching {
+                            val file = withContext(Dispatchers.IO) {
+                                createBackupPdfFile(context, json)
+                            }
+                            sharePrivateBackupFile(
+                                context = context,
+                                file = file,
+                                mimeType = "application/pdf",
+                                chooserTitle = context.getString(R.string.backup_share_pdf)
+                            )
+                        }.onFailure { error ->
+                            if (error is CancellationException) throw error
+                            shareError = error.message
+                                ?: "Could not prepare the private backup report."
+                        }
+                    }
+                },
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(stringResource(R.string.backup_share_pdf))
+            }
+        }
+        if (!shareError.isNullOrBlank()) {
+            item {
+                Text(
+                    text = checkNotNull(shareError),
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall
+                )
             }
         }
         item {
@@ -801,6 +871,32 @@ private fun BackupJsonBottomSheetContent(
                 Text(stringResource(R.string.action_close))
             }
         }
+    }
+
+    if (showClipboardWarning) {
+        AlertDialog(
+            onDismissRequest = { showClipboardWarning = false },
+            title = { Text(stringResource(R.string.backup_copy_warning_title)) },
+            text = { Text(stringResource(R.string.backup_copy_warning_message)) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (!SensitiveClipboard.copyBackup(context, json)) {
+                            shareError = "This backup is too large for the private clipboard. " +
+                                "Use Share JSON instead."
+                        }
+                        showClipboardWarning = false
+                    }
+                ) {
+                    Text(stringResource(R.string.backup_copy_confirm))
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { showClipboardWarning = false }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            }
+        )
     }
 }
 
@@ -857,98 +953,174 @@ private fun ImportBackupBottomSheetContent(
     }
 }
 
-private fun shareBackupPdf(context: Context, json: String) {
-    val file = createBackupPdfFile(context, json)
+private fun sharePrivateBackupFile(
+    context: Context,
+    file: File,
+    mimeType: String,
+    chooserTitle: String
+) {
     val uri = FileProvider.getUriForFile(
         context,
         "${context.packageName}.fileprovider",
         file
     )
     val sendIntent = Intent(Intent.ACTION_SEND).apply {
-        type = "application/pdf"
+        type = mimeType
         putExtra(Intent.EXTRA_STREAM, uri)
+        clipData = ClipData.newRawUri(file.name, uri)
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     }
     context.startActivity(
         Intent.createChooser(
             sendIntent,
-            context.getString(R.string.backup_share_pdf)
+            chooserTitle
         )
     )
+}
+
+private fun createBackupJsonFile(context: Context, json: String): File {
+    val bytes = json.toByteArray(Charsets.UTF_8)
+    check(bytes.size <= WorkoutDataLimits.MAX_BACKUP_BYTES) {
+        "Backup exceeds the private share size limit."
+    }
+    val outputFile = createPrivateBackupShareFile(context, "gymapp-backup-", ".json")
+    try {
+        outputFile.outputStream().buffered().use { output ->
+            output.write(bytes)
+        }
+        return outputFile
+    } catch (error: Throwable) {
+        outputFile.delete()
+        throw error
+    }
 }
 
 private fun createBackupPdfFile(context: Context, json: String): File {
+    // Parse and bound attacker-controlled backup content before allocating a native PDF.
+    val reportLines = backupReportLines(json)
     val document = PdfDocument()
-    val pageWidth = 595
-    val pageHeight = 842
-    val left = 42f
-    val top = 48f
-    val bottom = 800f
-    val lineHeight = 16f
-    var pageNumber = 1
-    var y = top
-    var page = document.startPage(
-        PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pageNumber).create()
-    )
-
-    val titlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = android.graphics.Color.rgb(20, 32, 44)
-        textSize = 18f
-        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-    }
-    val headingPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = android.graphics.Color.rgb(20, 32, 44)
-        textSize = 12f
-        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-    }
-    val bodyPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = android.graphics.Color.rgb(45, 56, 70)
-        textSize = 10f
-    }
-
-    fun newPage() {
-        document.finishPage(page)
-        pageNumber += 1
-        page = document.startPage(
+    return try {
+        val pageWidth = 595
+        val pageHeight = 842
+        val left = 42f
+        val top = 48f
+        val bottom = 800f
+        val lineHeight = 16f
+        var pageNumber = 1
+        var y = top
+        var page = document.startPage(
             PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pageNumber).create()
         )
-        y = top
-    }
 
-    fun drawWrapped(text: String, paint: Paint = bodyPaint, maxChars: Int = 92) {
-        wrapPdfLine(text, maxChars).forEach { line ->
-            if (y > bottom) {
-                newPage()
-            }
-            page.canvas.drawText(line, left, y, paint)
-            y += lineHeight
+        val titlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = android.graphics.Color.rgb(20, 32, 44)
+            textSize = 18f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         }
-    }
-
-    backupReportLines(json).forEachIndexed { index, line ->
-        when {
-            index == 0 -> {
-                drawWrapped(line, titlePaint, maxChars = 58)
-                y += 8f
-            }
-            line.startsWith("## ") -> {
-                y += 6f
-                drawWrapped(line.removePrefix("## "), headingPaint, maxChars = 76)
-                y += 2f
-            }
-            else -> drawWrapped(line)
+        val headingPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = android.graphics.Color.rgb(20, 32, 44)
+            textSize = 12f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         }
-    }
+        val bodyPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = android.graphics.Color.rgb(45, 56, 70)
+            textSize = 10f
+        }
 
-    document.finishPage(page)
-    val outputFile = File(context.cacheDir, "gymapp-diagnostics-${System.currentTimeMillis()}.pdf")
-    outputFile.outputStream().use(document::writeTo)
-    document.close()
-    return outputFile
+        var pageLimitReached = false
+
+        fun newPage(): Boolean {
+            if (pageNumber >= MAX_PDF_PAGES) {
+                pageLimitReached = true
+                return false
+            }
+            document.finishPage(page)
+            pageNumber += 1
+            page = document.startPage(
+                PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pageNumber).create()
+            )
+            y = top
+            return true
+        }
+
+        fun drawWrapped(text: String, paint: Paint = bodyPaint, maxChars: Int = 92) {
+            if (pageLimitReached) return
+            wrapPdfLine(text, maxChars).forEach { line ->
+                if (y > bottom && !newPage()) {
+                    return
+                }
+                page.canvas.drawText(line, left, y, paint)
+                y += lineHeight
+            }
+        }
+
+        reportLines.forEachIndexed { index, line ->
+            when {
+                index == 0 -> {
+                    drawWrapped(line, titlePaint, maxChars = 58)
+                    y += 8f
+                }
+                line.startsWith("## ") -> {
+                    y += 6f
+                    drawWrapped(line.removePrefix("## "), headingPaint, maxChars = 76)
+                    y += 2f
+                }
+                else -> drawWrapped(line)
+            }
+        }
+
+        document.finishPage(page)
+        val outputFile = createPrivateBackupShareFile(context, "gymapp-report-", ".pdf")
+        try {
+            outputFile.outputStream().use(document::writeTo)
+            outputFile
+        } catch (error: Throwable) {
+            outputFile.delete()
+            throw error
+        }
+    } finally {
+        document.close()
+    }
 }
+
+private fun createPrivateBackupShareFile(
+    context: Context,
+    prefix: String,
+    suffix: String
+): File = synchronized(PRIVATE_SHARE_FILE_LOCK) {
+    require(prefix in setOf("gymapp-backup-", "gymapp-report-"))
+    require(suffix in setOf(".json", ".pdf"))
+    val nowMillis = System.currentTimeMillis()
+    val shareDirectory = File(context.cacheDir, "backup-share").apply {
+        check(isDirectory || mkdirs()) { "Could not prepare the private share directory" }
+    }
+    val artifacts = shareDirectory.listFiles()
+        .orEmpty()
+        .filter(::isPrivateBackupShareArtifact)
+
+    // A chooser may retain the granted URI after returning to GymApp. Delete
+    // only expired artifacts; never invalidate a fresh grant to make room.
+    artifacts.filter { file ->
+        val age = nowMillis - file.lastModified()
+        age >= PRIVATE_SHARE_RETENTION_MILLIS
+    }.forEach(File::delete)
+    val retainedCount = shareDirectory.listFiles()
+        .orEmpty()
+        .count(::isPrivateBackupShareArtifact)
+    check(retainedCount < MAX_RETAINED_PRIVATE_SHARE_FILES) {
+        "Too many recent private share files. Try again after older shares expire."
+    }
+    File.createTempFile(prefix, suffix, shareDirectory)
+}
+
+private fun isPrivateBackupShareArtifact(file: File): Boolean =
+    file.isFile &&
+        (file.name.startsWith("gymapp-backup-") || file.name.startsWith("gymapp-report-")) &&
+        file.extension in setOf("pdf", "json")
 
 private fun backupReportLines(json: String): List<String> {
     val root = JSONObject(json)
+    val diagnosticsOnly = root.optBoolean("diagnostics", false)
     val exportedAt = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
         .format(Date(root.optLong("exportedAt", System.currentTimeMillis())))
     val exercises = root.optJSONArray("exercises")
@@ -956,9 +1128,16 @@ private fun backupReportLines(json: String): List<String> {
     val summary = root.optJSONObject("summary")
     val lines = mutableListOf<String>()
 
-    lines += "GymApp diagnostics report"
+    lines += if (diagnosticsOnly) {
+        "GymApp aggregate diagnostics report"
+    } else {
+        "GymApp PRIVATE workout backup report"
+    }
     lines += "Exported: $exportedAt"
     lines += "Schema: ${root.optInt("schemaVersion", 1)}"
+    if (!diagnosticsOnly) {
+        lines += "PRIVATE: includes exercise names, workout dates/notes, weights, and repetitions."
+    }
     lines += ""
     lines += "## Summary"
     lines += "Exercises: ${summary?.optInt("exerciseCount") ?: (exercises?.length() ?: 0)}"
@@ -967,19 +1146,29 @@ private fun backupReportLines(json: String): List<String> {
         lines += "Sets: ${it.optInt("setCount")}"
     }
 
+    if (diagnosticsOnly) {
+        lines += ""
+        lines += "This diagnostic snapshot contains aggregate counts only."
+        lines += "It excludes account identifiers, exercise names, notes, dates, and set values."
+        return lines.take(MAX_PDF_REPORT_LINES)
+    }
+
     lines += ""
     lines += "## Exercises"
     if (exercises == null || exercises.length() == 0) {
         lines += "No exercises exported."
     } else {
-        repeat(exercises.length().coerceAtMost(120)) { index ->
-            val name = exercises.optJSONObject(index)?.optString("name").orEmpty()
+        val exerciseLimit = exercises.length().coerceAtMost(MAX_PDF_EXERCISES)
+        for (index in 0 until exerciseLimit) {
+            val name = boundedPdfText(
+                exercises.optJSONObject(index)?.optString("name").orEmpty()
+            )
             if (name.isNotBlank()) {
                 lines += "- $name"
             }
         }
-        if (exercises.length() > 120) {
-            lines += "... ${exercises.length() - 120} more exercises"
+        if (exercises.length() > exerciseLimit) {
+            lines += "... ${exercises.length() - exerciseLimit} more exercises"
         }
     }
 
@@ -988,50 +1177,87 @@ private fun backupReportLines(json: String): List<String> {
     if (sessions == null || sessions.length() == 0) {
         lines += "No workouts exported."
     } else {
-        repeat(sessions.length().coerceAtMost(80)) { sessionIndex ->
-            val session = sessions.optJSONObject(sessionIndex) ?: return@repeat
+        val sessionLimit = sessions.length().coerceAtMost(MAX_PDF_SESSIONS)
+        for (sessionIndex in 0 until sessionLimit) {
+            if (lines.size >= MAX_PDF_REPORT_LINES) break
+            val session = sessions.optJSONObject(sessionIndex) ?: continue
             val date = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
                 .format(Date(session.optLong("date", 0L)))
-            val note = session.optString("note").takeIf { it.isNotBlank() }
+            val note = boundedPdfText(session.optString("note")).takeIf { it.isNotBlank() }
             lines += "$date${note?.let { " - $it" }.orEmpty()}"
             val sessionExercises = session.optJSONArray("exercises")
-            repeat(sessionExercises?.length() ?: 0) { exerciseIndex ->
-                val exercise = sessionExercises?.optJSONObject(exerciseIndex) ?: return@repeat
+            val sessionExerciseCount = sessionExercises?.length() ?: 0
+            val sessionExerciseLimit = sessionExerciseCount.coerceAtMost(
+                MAX_PDF_EXERCISES_PER_SESSION
+            )
+            for (exerciseIndex in 0 until sessionExerciseLimit) {
+                if (lines.size >= MAX_PDF_REPORT_LINES) break
+                val exercise = sessionExercises?.optJSONObject(exerciseIndex) ?: continue
                 val sets = exercise.optJSONArray("sets")
-                val setText = buildString {
-                    repeat(sets?.length() ?: 0) { setIndex ->
-                        val set = sets?.optJSONObject(setIndex) ?: return@repeat
-                        if (isNotEmpty()) append(", ")
-                        append(set.optDouble("weight", 0.0).toString().trimEnd('0').trimEnd('.'))
-                        append("kg x ")
-                        append(set.optInt("reps", 0))
+                val setCount = sets?.length() ?: 0
+                val setLimit = setCount.coerceAtMost(MAX_PDF_SETS_PER_EXERCISE)
+                val setParts = buildList {
+                    for (setIndex in 0 until setLimit) {
+                        val set = sets?.optJSONObject(setIndex) ?: continue
+                        val weight = set.optDouble("weight", 0.0)
+                            .toString()
+                            .trimEnd('0')
+                            .trimEnd('.')
+                        add("${weight}kg x ${set.optInt("reps", 0)}")
                     }
                 }
-                lines += "  - ${exercise.optString("name")}: $setText"
+                val moreSets = if (setCount > setLimit) {
+                    ", … ${setCount - setLimit} more sets"
+                } else {
+                    ""
+                }
+                lines += "  - ${boundedPdfText(exercise.optString("name"))}: " +
+                    setParts.joinToString(", ") + moreSets
+            }
+            if (sessionExerciseCount > sessionExerciseLimit) {
+                lines += "  … ${sessionExerciseCount - sessionExerciseLimit} more exercises"
             }
             lines += ""
         }
-        if (sessions.length() > 80) {
-            lines += "... ${sessions.length() - 80} more workouts"
+        if (sessions.length() > sessionLimit) {
+            lines += "... ${sessions.length() - sessionLimit} more workouts"
         }
     }
 
-    return lines
+    if (lines.size >= MAX_PDF_REPORT_LINES) {
+        lines[MAX_PDF_REPORT_LINES - 1] = "… Report truncated at the private PDF safety limit."
+    }
+    return lines.take(MAX_PDF_REPORT_LINES)
 }
 
+private fun boundedPdfText(value: String): String = buildString {
+    for (character in value) {
+        if (length >= MAX_PDF_TEXT_CHARS) break
+        append(
+            if (character.isISOControl() || character == '\n' || character == '\r') ' '
+            else character
+        )
+    }
+}.trim()
+
 private fun wrapPdfLine(text: String, maxChars: Int): List<String> {
-    if (text.length <= maxChars) return listOf(text)
-    val words = text.split(" ")
+    require(maxChars > 0)
+    val bounded = text.take(MAX_PDF_TEXT_CHARS)
+    if (bounded.length <= maxChars) return listOf(bounded)
+    val words = bounded.split(" ")
     val lines = mutableListOf<String>()
     var current = ""
     words.forEach { word ->
-        if (current.isBlank()) {
-            current = word
-        } else if (current.length + word.length + 1 <= maxChars) {
-            current += " $word"
-        } else {
-            lines += current
-            current = word
+        val chunks = if (word.length <= maxChars) listOf(word) else word.chunked(maxChars)
+        chunks.forEach { chunk ->
+            if (current.isBlank()) {
+                current = chunk
+            } else if (current.length + chunk.length + 1 <= maxChars) {
+                current += " $chunk"
+            } else {
+                lines += current
+                current = chunk
+            }
         }
     }
     if (current.isNotBlank()) lines += current

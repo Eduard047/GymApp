@@ -156,6 +156,7 @@ enum AuthServiceError: LocalizedError {
     case callbackMissingSession
     case callbackNotExpected
     case notCloudAccount
+    case sessionChanged
     case server(String)
 
     var errorDescription: String? {
@@ -167,6 +168,7 @@ enum AuthServiceError: LocalizedError {
         case .callbackMissingSession: return "The confirmation link did not contain a valid session."
         case .callbackNotExpected: return "This sign-in link was not requested on this device or has expired. Start the flow again."
         case .notCloudAccount: return "This action requires a cloud account."
+        case .sessionChanged: return "The account changed while the request was running. Try again."
         case .server(let message): return message
         }
     }
@@ -182,16 +184,47 @@ final class AuthService: ObservableObject {
 
     private let keychain: any KeychainStoring
     private let urlSession: URLSession
+    private let defaults: UserDefaults
     private let decoder = JSONDecoder()
     private let encoder = JSONEncoder()
     private let sessionAccount = "current-session"
     private let authTransactionAccount = "pending-auth-transaction"
+    private var sessionRevision: UInt64 = 0
 
-    init(keychain: any KeychainStoring = KeychainStore(), urlSession: URLSession = .shared) {
+    private static let pendingSecureDeletionKey = "gymapp.auth.pending-secure-session-deletion"
+
+    init(
+        keychain: any KeychainStoring = KeychainStore(),
+        urlSession: URLSession = .shared,
+        defaults: UserDefaults = .standard
+    ) {
         self.keychain = keychain
         self.urlSession = urlSession
-        self.session = try? keychain.read(account: sessionAccount).flatMap {
-            try decoder.decode(AppAccountSession.self, from: $0)
+        self.defaults = defaults
+
+        if defaults.bool(forKey: Self.pendingSecureDeletionKey) {
+            var cleanupFailed = false
+            do {
+                try keychain.delete(account: sessionAccount)
+            } catch {
+                cleanupFailed = true
+            }
+            do {
+                try keychain.delete(account: authTransactionAccount)
+            } catch {
+                cleanupFailed = true
+            }
+            if cleanupFailed {
+                self.session = nil
+                self.message = "Secure sign-out cleanup is incomplete. Retry sign-in or restart after unlocking this device."
+            } else {
+                defaults.removeObject(forKey: Self.pendingSecureDeletionKey)
+                self.session = nil
+            }
+        } else {
+            self.session = try? keychain.read(account: sessionAccount).flatMap {
+                try decoder.decode(AppAccountSession.self, from: $0)
+            }
         }
     }
 
@@ -356,8 +389,12 @@ final class AuthService: ObservableObject {
         }
     }
 
-    func validCloudSession() async throws -> CloudAccountSession {
+    func validCloudSession(expectedUserID: String? = nil) async throws -> CloudAccountSession {
         guard var cloud = session?.cloud else { throw AuthServiceError.notCloudAccount }
+        guard expectedUserID == nil || expectedUserID == cloud.userID else {
+            throw AuthServiceError.sessionChanged
+        }
+        let expectedRevision = sessionRevision
         if let expiresAt = cloud.expiresAt,
            expiresAt.timeIntervalSinceNow > 60 {
             return cloud
@@ -370,6 +407,12 @@ final class AuthService: ObservableObject {
             body: ["refresh_token": refreshToken]
         )
         let refreshed = try parseCloudSession(object, fallback: cloud)
+        guard sessionRevision == expectedRevision,
+              session?.cloud?.userID == cloud.userID,
+              refreshed.userID == cloud.userID,
+              expectedUserID == nil || expectedUserID == refreshed.userID else {
+            throw AuthServiceError.sessionChanged
+        }
         cloud = refreshed
         try persist(.cloud(cloud))
         return cloud
@@ -377,29 +420,30 @@ final class AuthService: ObservableObject {
 
     func signOut() async {
         isLoading = true
-        if let cloud = session?.cloud {
-            _ = try? await requestJSON(
-                path: "/auth/v1/logout?scope=global",
-                method: "POST",
-                token: cloud.accessToken,
-                body: [:]
-            )
-        }
+        let token = session?.cloud?.accessToken
         do {
             try clearSession()
         } catch {
             messageIsError = true
             message = friendlyMessage(error)
         }
+        if let token {
+            _ = try? await requestJSON(
+                path: "/auth/v1/logout?scope=global",
+                method: "POST",
+                token: token,
+                body: [:]
+            )
+        }
         isLoading = false
     }
 
     /// Server function deletes auth user and rows cascading from auth.users.
     /// The caller must erase the matching local store after this returns.
-    func deleteCloudAccountOnServer() async throws {
+    func deleteCloudAccountOnServer(expectedUserID: String) async throws {
         isLoading = true
         defer { isLoading = false }
-        let cloud = try await validCloudSession()
+        let cloud = try await validCloudSession(expectedUserID: expectedUserID)
         _ = try await requestJSON(
             path: "/functions/v1/delete-account",
             method: "POST",
@@ -410,18 +454,37 @@ final class AuthService: ObservableObject {
     }
 
     func clearSession() throws {
-        var deletionError: Error?
-        do {
-            try keychain.delete(account: sessionAccount)
-            try clearPendingAuthTransaction()
-        } catch {
-            deletionError = error
-        }
+        defaults.set(true, forKey: Self.pendingSecureDeletionKey)
+        _ = defaults.synchronize()
+        sessionRevision &+= 1
         session = nil
         message = nil
         needsPasswordUpdate = false
+
+        var deletionError: Error?
+        do {
+            try keychain.delete(account: sessionAccount)
+        } catch {
+            deletionError = deletionError ?? error
+        }
+        do {
+            try clearPendingAuthTransaction()
+        } catch {
+            deletionError = deletionError ?? error
+        }
+        if deletionError == nil {
+            defaults.removeObject(forKey: Self.pendingSecureDeletionKey)
+        }
         if let deletionError { throw deletionError }
     }
+
+#if DEBUG
+    /// Test-only seam for deterministic account-transition races. Release builds do
+    /// not expose a way to install an arbitrary authenticated session.
+    func installSessionForTesting(_ value: AppAccountSession) throws {
+        try persist(value)
+    }
+#endif
 
     private func perform(_ operation: @escaping @MainActor () async throws -> Void) async {
         isLoading = true
@@ -437,7 +500,9 @@ final class AuthService: ObservableObject {
 
     private func persist(_ value: AppAccountSession) throws {
         try keychain.save(encoder.encode(value), account: sessionAccount)
+        sessionRevision &+= 1
         session = value
+        defaults.removeObject(forKey: Self.pendingSecureDeletionKey)
     }
 
     private func beginAuthTransaction(
