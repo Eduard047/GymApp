@@ -258,45 +258,8 @@ jobs:
           CODEQL_RESULTS: ${{ runner.temp }}/codeql-results
         shell: bash
         run: |
-          python3 - <<'PY'
-          import json
-          import os
-          from pathlib import Path
-
-          paths = list(Path(os.environ["CODEQL_RESULTS"]).rglob("*.sarif"))
-          if not paths:
-              raise SystemExit("CodeQL did not produce a SARIF report")
-          failures = []
-          rule_count = 0
-          for path in paths:
-              document = json.loads(path.read_text(encoding="utf-8"))
-              for run in document.get("runs", []):
-                  rules = run.get("tool", {}).get("driver", {}).get("rules", [])
-                  rule_count += len(rules)
-                  by_id = {rule.get("id"): rule for rule in rules}
-                  for result in run.get("results", []):
-                      rule = by_id.get(result.get("ruleId"), {})
-                      raw_score = rule.get("properties", {}).get("security-severity", "0")
-                      try:
-                          score = float(raw_score)
-                      except (TypeError, ValueError):
-                          score = 0.0
-                      if score >= 7.0:
-                          message = " ".join(
-                              result.get("message", {}).get("text", "CodeQL finding").split()
-                          )[:500]
-                          failures.append((result.get("ruleId", "unknown"), score, message))
-          if rule_count == 0:
-              raise SystemExit("CodeQL SARIF contains no evaluated rules")
-          if failures:
-              for rule_id, score, message in failures:
-                  print(f"CodeQL {rule_id} ({score}): {message}")
-              raise SystemExit(f"CodeQL found {len(failures)} high or critical result(s)")
-          print(
-              f"CodeQL evaluated {rule_count} JavaScript/TypeScript rules "
-              "with no high or critical results."
-          )
-          PY
+          python3 .github/security/codeql_sarif_gate.py --self-test
+          python3 .github/security/codeql_sarif_gate.py "$CODEQL_RESULTS"
 
   sca:
     name: SCA / Gradle and Deno
@@ -320,7 +283,11 @@ jobs:
 
       - name: Install the pinned Android SDK platform
         shell: bash
-        run: sdkmanager "platforms;android-36.1" "build-tools;36.1.0"
+        run: |
+          set -euo pipefail
+          sdkmanager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$sdkmanager"
+          "$sdkmanager" "platforms;android-36.1" "build-tools;36.1.0"
 
       - name: Set up Deno 2.8.1
         uses: denoland/setup-deno@667a34cdef165d8d2b2e98dde39547c9daac7282 # v2.0.4
@@ -483,7 +450,11 @@ jobs:
 
       - name: Install the pinned Android SDK platform
         shell: bash
-        run: sdkmanager "platforms;android-36.1" "build-tools;36.1.0"
+        run: |
+          set -euo pipefail
+          sdkmanager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$sdkmanager"
+          "$sdkmanager" "platforms;android-36.1" "build-tools;36.1.0"
 
       - name: Test, assemble, and lint Android and Wear
         shell: bash
@@ -571,8 +542,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          xcrun simctl boot "$SIMULATOR_ID" 2>/dev/null || true
-          xcrun simctl bootstatus "$SIMULATOR_ID" --block
+          xcrun simctl bootstatus "$SIMULATOR_ID" -b
           xcodebuild test \
             -project ios/GymApp-iOS/GymApp.xcodeproj \
             -scheme GymApp \
