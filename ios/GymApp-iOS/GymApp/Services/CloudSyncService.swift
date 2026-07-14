@@ -76,6 +76,13 @@ final class CloudSyncService: ObservableObject {
     private var stateRevision: StateRevision = .unknown
     private var operationRevision: UInt64 = 0
 
+    private static let maximumCloudStateBytes = BackupImportLimits.standard.maximumFileBytes
+    private static let maximumCloudStateResponseBytes = 10 * 1_024 * 1_024
+    private static let maximumCloudResponseBytes = 256 * 1_024
+    private static let maximumCloudErrorResponseBytes = 8 * 1_024
+    private static let maximumCloudRequestBytes = 10 * 1_024 * 1_024
+    private static let maximumTokenBytes = 16 * 1_024
+
     init(auth: AuthService, urlSession: URLSession = .shared) {
         self.auth = auth
         self.urlSession = urlSession
@@ -96,7 +103,12 @@ final class CloudSyncService: ObservableObject {
         guard session.userID == userID else { throw AuthServiceError.sessionChanged }
         stateRevision = .unknown
         let path = "/rest/v1/user_states?select=state,updated_at&user_id=eq.\(Self.queryValue(userID))&limit=1"
-        let data = try await request(path: path, method: "GET", token: session.accessToken)
+        let data = try await request(
+            path: path,
+            method: "GET",
+            token: session.accessToken,
+            maximumResponseBytes: Self.maximumCloudStateResponseBytes
+        )
         guard operationRevision == expectedOperation,
               auth.session?.cloud?.userID == userID else {
             throw AuthServiceError.sessionChanged
@@ -123,6 +135,9 @@ final class CloudSyncService: ObservableObject {
         workouts: Int,
         expectedUserID: String? = nil
     ) async throws {
+        guard backupData.count <= Self.maximumCloudStateBytes else {
+            throw CloudSyncError.invalidPayload
+        }
         guard let state = try JSONSerialization.jsonObject(with: backupData) as? [String: Any] else {
             throw CloudSyncError.invalidPayload
         }
@@ -277,9 +292,17 @@ final class CloudSyncService: ObservableObject {
         token: String,
         prefer: String? = nil,
         conflictMeansStaleState: Bool = false,
+        maximumResponseBytes: Int? = nil,
         body: Any? = nil
     ) async throws -> Data {
         guard let url = URL(string: path, relativeTo: GymAppConfiguration.supabaseURL) else {
+            throw CloudSyncError.invalidResponse
+        }
+        let responseLimit = maximumResponseBytes ?? Self.maximumCloudResponseBytes
+        guard !token.isEmpty,
+              token.utf8.prefix(Self.maximumTokenBytes + 1).count <= Self.maximumTokenBytes,
+              token.unicodeScalars.allSatisfy({ (0x21...0x7e).contains($0.value) }),
+              (1...Self.maximumCloudStateResponseBytes).contains(responseLimit) else {
             throw CloudSyncError.invalidResponse
         }
         var request = URLRequest(url: url)
@@ -291,10 +314,24 @@ final class CloudSyncService: ObservableObject {
         if let prefer { request.setValue(prefer, forHTTPHeaderField: "Prefer") }
         if let body {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            let encoded = try JSONSerialization.data(withJSONObject: body)
+            guard encoded.count <= Self.maximumCloudRequestBytes else {
+                throw CloudSyncError.invalidPayload
+            }
+            request.httpBody = encoded
         }
-        let (data, response) = try await urlSession.data(for: request)
-        guard let http = response as? HTTPURLResponse else { throw CloudSyncError.invalidResponse }
+        let data: Data
+        let http: HTTPURLResponse
+        do {
+            (data, http) = try await BoundedURLSessionLoader.data(
+                for: request,
+                using: urlSession,
+                successLimit: responseLimit,
+                errorLimit: Self.maximumCloudErrorResponseBytes
+            )
+        } catch is BoundedURLSessionError {
+            throw CloudSyncError.invalidResponse
+        }
         guard (200..<300).contains(http.statusCode) else {
             if conflictMeansStaleState && http.statusCode == 409 {
                 throw CloudSyncError.staleRemoteState

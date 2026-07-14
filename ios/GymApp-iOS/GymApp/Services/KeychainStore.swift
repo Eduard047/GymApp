@@ -18,8 +18,8 @@ protocol KeychainStoring {
     func delete(account: String) throws
 }
 
-/// Small Keychain wrapper used only for authentication credentials.
-/// `ThisDeviceOnly` keeps refresh tokens out of device backups and migrations.
+/// Small Keychain wrapper for authentication credentials and nonsecret account/device bindings.
+/// `ThisDeviceOnly` keeps protected records out of device backups and migrations.
 struct KeychainStore: KeychainStoring {
     private let service: String
 

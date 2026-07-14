@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en" class="frame-pending">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="referrer" content="no-referrer">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src https://owrcbsrectdgaotndtxy.supabase.co; base-uri 'none'; form-action 'none'">
+    <title>GymApp legacy cleanup</title>
+    <script src="./frame-guard.v45.js"></script>
+    <link rel="stylesheet" href="./legacy-origin-cleanup.css">
+  </head>
+  <body>
+    <main class="cleanup-panel" aria-labelledby="cleanup-title">
+      <p class="eyebrow">GymApp security migration</p>
+      <h1 id="cleanup-title">Cleaning the legacy web origin</h1>
+      <p id="cleanup-status" role="status" aria-live="polite">Preparing secure cleanup…</p>
+      <p class="detail">Private workout data is left in place. This removes only old credentials, GymApp caches, and the legacy service worker.</p>
+      <a class="button" href="https://gymapptracker.com/">Continue to gymapptracker.com</a>
+    </main>
+    <script src="./supabase-config.v45.js" defer></script>
+    <script src="./legacy-origin-cleanup.js" defer></script>
+  </body>
+</html>
