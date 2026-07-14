@@ -54,8 +54,8 @@ if (-not $DeveloperKey -or -not (Test-Path $DeveloperKey)) {
 }
 
 New-Item -ItemType Directory -Path $outputRoot -Force | Out-Null
-$extension = if ($Release) { 'iq' } else { 'prg' }
-$output = Join-Path $outputRoot "gymapp-$Device.$extension"
+$outputName = if ($Release) { 'gymapp-garmin-connect-iq.iq' } else { "gymapp-$Device.prg" }
+$output = Join-Path $outputRoot $outputName
 $compilerArgs = @(
     '-f', 'monkey.jungle',
     '-y', $DeveloperKey,

@@ -63,10 +63,10 @@ because it contains private workout data.
 - Large current-set mode.
 - Explicit sync status: idle, waiting phone, sent, failed.
 
-### Garmin Fenix 8 Solar app
+### Garmin Connect IQ app
 
-- Native Connect IQ app for the Fenix 8 Solar 47 mm 260x260 MIP display.
-- Record exercises, weight, reps, and sets with the five hardware buttons.
+- Native Connect IQ app for compatible Garmin watches and wearables running Connect IQ 3.2 or newer.
+- Record exercises, weight, reps, and sets with hardware buttons or touch gestures, depending on the device.
 - 90-second rest timer with vibration.
 - Offline workout queue and two-way sync through Garmin Connect and the Android app.
 - Source and build instructions: `garmin/README.md`.
@@ -74,20 +74,23 @@ because it contains private workout data.
 ## Download security QA builds
 
 <p align="center">
-  <a href="https://github.com/Eduard047/GymApp/releases/tag/qa-2026.07.14.1">
-    <img alt="Security QA release" src="https://img.shields.io/badge/Security%20QA-2026.07.14.1-3f806a?style=for-the-badge">
+  <a href="https://github.com/Eduard047/GymApp/releases/tag/qa-2026.07.14.2">
+    <img alt="Security QA release" src="https://img.shields.io/badge/Security%20QA-2026.07.14.2-3f806a?style=for-the-badge">
   </a>
   <a href="https://github.com/Eduard047/GymApp/releases">
     <img alt="Releases" src="https://img.shields.io/badge/Open-Releases-181717?style=for-the-badge&logo=github&logoColor=white">
   </a>
-  <a href="https://github.com/Eduard047/GymApp/releases/download/qa-2026.07.14.1/gymapp-phone-qa.apk">
+  <a href="https://github.com/Eduard047/GymApp/releases/download/qa-2026.07.14.2/gymapp-phone-qa.apk">
     <img alt="Download Phone QA APK" src="https://img.shields.io/badge/Download-Phone%20QA-34A853?style=for-the-badge&logo=android&logoColor=white">
   </a>
-  <a href="https://github.com/Eduard047/GymApp/releases/download/qa-2026.07.14.1/gymapp-watch-qa.apk">
+  <a href="https://github.com/Eduard047/GymApp/releases/download/qa-2026.07.14.2/gymapp-watch-qa.apk">
     <img alt="Download Wear QA APK" src="https://img.shields.io/badge/Download-Wear%20QA-4285F4?style=for-the-badge&logo=wearos&logoColor=white">
   </a>
-  <a href="https://github.com/Eduard047/GymApp/releases/download/qa-2026.07.14.1/GymApp-iOS-Simulator-1.0.1-build2.zip">
+  <a href="https://github.com/Eduard047/GymApp/releases/download/qa-2026.07.14.2/GymApp-iOS-Simulator-1.0.1-build2.zip">
     <img alt="Download iOS Release Simulator Build" src="https://img.shields.io/badge/Download-iOS%20Simulator-000000?style=for-the-badge&logo=apple&logoColor=white">
+  </a>
+  <a href="https://github.com/Eduard047/GymApp/releases/download/qa-2026.07.14.2/gymapp-garmin-connect-iq.iq">
+    <img alt="Download Garmin Connect IQ package" src="https://img.shields.io/badge/Download-Garmin%20Connect%20IQ-007CC3?style=for-the-badge">
   </a>
 </p>
 
@@ -108,19 +111,20 @@ are deployed. This source/release workflow performs neither deployment.
 - Latest release: https://github.com/Eduard047/GymApp/releases/latest
 - Current store release tag: https://github.com/Eduard047/GymApp/releases/tag/release-2026.07.05.1238
 - Current Play AAB: https://github.com/Eduard047/GymApp/releases/download/release-2026.07.05.1238/gymapp-play-release.aab
-- Current security QA prerelease: https://github.com/Eduard047/GymApp/releases/tag/qa-2026.07.14.1
-- Phone QA APK: https://github.com/Eduard047/GymApp/releases/download/qa-2026.07.14.1/gymapp-phone-qa.apk
-- Wear QA APK: https://github.com/Eduard047/GymApp/releases/download/qa-2026.07.14.1/gymapp-watch-qa.apk
-- iOS Release Simulator build: https://github.com/Eduard047/GymApp/releases/download/qa-2026.07.14.1/GymApp-iOS-Simulator-1.0.1-build2.zip
+- Current security QA prerelease: https://github.com/Eduard047/GymApp/releases/tag/qa-2026.07.14.2
+- Phone QA APK: https://github.com/Eduard047/GymApp/releases/download/qa-2026.07.14.2/gymapp-phone-qa.apk
+- Wear QA APK: https://github.com/Eduard047/GymApp/releases/download/qa-2026.07.14.2/gymapp-watch-qa.apk
+- iOS Release Simulator build: https://github.com/Eduard047/GymApp/releases/download/qa-2026.07.14.2/GymApp-iOS-Simulator-1.0.1-build2.zip
+- Garmin Connect IQ package: https://github.com/Eduard047/GymApp/releases/download/qa-2026.07.14.2/gymapp-garmin-connect-iq.iq
 - Checksums and exact build metadata are attached as `SHA256SUMS.txt` and `BUILD-INFO.txt`.
 
 The Play AAB above is the older signed store build; it is not rebuilt from the
 current security branch. A new production AAB requires the matching private
 Play upload key and `scripts/build-play-release-aab.ps1`.
 
-The Garmin source changed in this security update. No IQ is attached because
-the Connect IQ SDK and developer key were unavailable; an older IQ must not be
-relabeled or reused for this source revision.
+The Garmin IQ is a developer-signed Connect IQ Store upload package exported
+from this source revision for every compatible target in `manifest.xml`. It is
+not a direct sideload file and has not been physically tested on every device.
 
 For the native iOS source, open:
 
