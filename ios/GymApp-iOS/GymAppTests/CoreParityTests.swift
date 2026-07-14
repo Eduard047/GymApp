@@ -2053,6 +2053,7 @@ final class CoreParityTests: XCTestCase {
             auth: auth,
             defaults: defaults,
             workoutDirectoryURL: directory,
+            remoteStateLoader: { _ in throw URLError(.notConnectedToInternet) },
             garminBindingStore: bindingStore
         )
 
