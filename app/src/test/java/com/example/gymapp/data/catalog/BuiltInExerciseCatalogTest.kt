@@ -71,9 +71,8 @@ class BuiltInExerciseCatalogTest {
     }
 
     @Test
-    fun validBackupKey_isFallbackOnlyForUnrecognizedRawName() {
-        assertEquals(
-            "bench_press",
+    fun validBackupKey_isFallbackOnlyWhenRawNameIsMissing() {
+        assertNull(
             BuiltInExerciseCatalog.resolvedKey(
                 catalogKey = "bench_press",
                 rawName = "Imported custom label"
@@ -83,6 +82,13 @@ class BuiltInExerciseCatalogTest {
             BuiltInExerciseCatalog.resolvedKey(
                 catalogKey = "not-a-real-catalog-key",
                 rawName = "Imported custom label"
+            )
+        )
+        assertEquals(
+            "bench_press",
+            BuiltInExerciseCatalog.resolvedKey(
+                catalogKey = "bench_press",
+                rawName = null
             )
         )
     }

@@ -68,6 +68,13 @@ struct WorkoutStoreOpenResult {
     let quarantinedFileURL: URL?
 }
 
+struct PreparedCloudBackup {
+    let data: Data
+    /// Only the native v2 envelope is safe to write back losslessly. Legacy PWA
+    /// payloads contain profile/language/mapping fields that the native model cannot retain.
+    let roundTripSafe: Bool
+}
+
 /// Account-scoped, dependency-free workout repository.
 ///
 /// Every mutation is validated, encoded as one snapshot and written with
@@ -112,6 +119,13 @@ public final class WorkoutStore: ObservableObject {
     private static let maximumNoteLength = 4_000
     private static let maximumWeight = 1_000_000.0
     private static let maximumReps = 10_000
+    // Foundation's documented practical Date domain. This preserves legitimate
+    // historical/future data while excluding values that cannot round-trip safely.
+    private static let minimumSupportedTimestampMilliseconds: Int64 = -62_135_769_600_000
+    private static let maximumSupportedTimestampMilliseconds: Int64 = 64_092_211_200_000
+    private static let maximumOwnerFieldBytes = 512
+    private static let maximumCatalogKeyBytes = 256
+    private static let maximumAppNameBytes = 128
 
     private struct PersistedEnvelope: Codable {
         var schemaVersion: Int
@@ -128,7 +142,11 @@ public final class WorkoutStore: ObservableObject {
         let key = try Self.validatedStorageKey(accountStorageKey)
         let directory = try directoryURL ?? Self.defaultDirectory(fileManager: fileManager)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        try Self.excludePrivateItemFromBackup(directory)
         let fileURL = Self.fileURL(for: key, in: directory)
+        if fileManager.fileExists(atPath: fileURL.path) {
+            try Self.excludePrivateItemFromBackup(fileURL)
+        }
         let loaded = try Self.load(
             accountStorageKey: key,
             from: fileURL,
@@ -181,6 +199,7 @@ public final class WorkoutStore: ObservableObject {
             at: resolvedDirectory,
             withIntermediateDirectories: true
         )
+        try excludePrivateItemFromBackup(resolvedDirectory)
 
         let sourceURL = fileURL(for: key, in: resolvedDirectory)
         guard fileManager.fileExists(atPath: sourceURL.path) else {
@@ -194,7 +213,12 @@ public final class WorkoutStore: ObservableObject {
         )
         do {
             try fileManager.moveItem(at: sourceURL, to: quarantineURL)
+            try excludePrivateItemFromBackup(quarantineURL)
         } catch {
+            if fileManager.fileExists(atPath: quarantineURL.path),
+               !fileManager.fileExists(atPath: sourceURL.path) {
+                try? fileManager.moveItem(at: quarantineURL, to: sourceURL)
+            }
             throw WorkoutStoreError.persistenceFailure(
                 "The damaged local file could not be preserved: \(error.localizedDescription)"
             )
@@ -225,6 +249,9 @@ public final class WorkoutStore: ObservableObject {
         guard key != self.accountStorageKey else { return }
 
         let fileURL = Self.fileURL(for: key, in: directoryURL)
+        if fileManager.fileExists(atPath: fileURL.path) {
+            try Self.excludePrivateItemFromBackup(fileURL)
+        }
         let loaded = try Self.load(
             accountStorageKey: key,
             from: fileURL,
@@ -248,13 +275,62 @@ public final class WorkoutStore: ObservableObject {
         publish(empty)
         do {
             try persist(empty)
-            if fileManager.fileExists(atPath: storageURL.path) {
-                try fileManager.removeItem(at: storageURL)
-            }
+            try Self.destroyAccountFiles(
+                accountStorageKey: accountStorageKey,
+                directoryURL: directoryURL,
+                fileManager: fileManager
+            )
         } catch let error as WorkoutStoreError {
             throw error
         } catch {
             throw WorkoutStoreError.persistenceFailure(error.localizedDescription)
+        }
+    }
+
+    /// Removes the primary envelope and recovery copies for exactly one account.
+    /// This does not decode the envelope, so deletion can still finish after corruption.
+    public static func destroyAccountFiles(
+        accountStorageKey: String,
+        directoryURL: URL? = nil,
+        fileManager: FileManager = .default
+    ) throws {
+        let key = try validatedStorageKey(accountStorageKey)
+        let directory = try directoryURL ?? defaultDirectory(fileManager: fileManager)
+        guard fileManager.fileExists(atPath: directory.path) else { return }
+
+        let primaryURL = fileURL(for: key, in: directory)
+        let primaryStem = primaryURL.deletingPathExtension().lastPathComponent
+        let recoveryPrefix = "\(primaryStem).recovery-"
+        var candidates = [primaryURL]
+        do {
+            let children = try fileManager.contentsOfDirectory(
+                at: directory,
+                includingPropertiesForKeys: nil,
+                options: [.skipsHiddenFiles]
+            )
+            candidates.append(contentsOf: children.filter { child in
+                let name = child.lastPathComponent
+                guard name.hasPrefix(recoveryPrefix), name.hasSuffix(".json") else {
+                    return false
+                }
+                let start = name.index(name.startIndex, offsetBy: recoveryPrefix.count)
+                let end = name.index(name.endIndex, offsetBy: -".json".count)
+                return UUID(uuidString: String(name[start ..< end])) != nil
+            })
+        } catch {
+            throw WorkoutStoreError.persistenceFailure(error.localizedDescription)
+        }
+
+        var firstError: Error?
+        for candidate in candidates where fileManager.fileExists(atPath: candidate.path) {
+            do {
+                try fileManager.removeItem(at: candidate)
+            } catch {
+                firstError = firstError ?? error
+            }
+        }
+        if let firstError {
+            throw WorkoutStoreError.persistenceFailure(firstError.localizedDescription)
         }
     }
 
@@ -827,17 +903,21 @@ public final class WorkoutStore: ObservableObject {
         includeDiagnostics: Bool = false,
         owner: BackupOwner? = nil,
         exportedAt: Date = Date()
-    ) -> GymBackup {
+    ) throws -> GymBackup {
+        let exportedAtMilliseconds = try Self.validatedTimestamp(
+            exportedAt,
+            field: "export timestamp"
+        )
         let exerciseByID = Dictionary(uniqueKeysWithValues: exercises.map { ($0.id, $0) })
         let backupExercises = exercises
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
             .map { BackupExercise(name: $0.name, catalogKey: $0.catalogKey) }
-        let backupSessions = workouts
+        let backupSessions = try workouts
             .filter { $0.setCount > 0 }
             .sorted { $0.date < $1.date }
             .map { workout in
                 BackupSession(
-                    date: workout.date.gymEpochMilliseconds,
+                    date: try Self.validatedTimestamp(workout.date, field: "session timestamp"),
                     note: workout.note,
                     exercises: workout.exercises.compactMap { block in
                         guard let exercise = exerciseByID[block.exerciseID], !block.sets.isEmpty else {
@@ -853,7 +933,7 @@ public final class WorkoutStore: ObservableObject {
             }
 
         return GymBackup(
-            exportedAt: exportedAt.gymEpochMilliseconds,
+            exportedAt: exportedAtMilliseconds,
             diagnostics: includeDiagnostics,
             owner: owner ?? BackupOwner(accountID: accountStorageKey),
             exercises: backupExercises,
@@ -878,8 +958,10 @@ public final class WorkoutStore: ObservableObject {
         encoder.outputFormatting = formatting
         do {
             return try encoder.encode(
-                makeBackup(includeDiagnostics: includeDiagnostics, owner: owner)
+                try makeBackup(includeDiagnostics: includeDiagnostics, owner: owner)
             )
+        } catch let error as WorkoutStoreError {
+            throw error
         } catch {
             throw WorkoutStoreError.persistenceFailure(error.localizedDescription)
         }
@@ -901,12 +983,137 @@ public final class WorkoutStore: ObservableObject {
         return json
     }
 
+    /// Adapts authenticated legacy PWA cloud rows to the native backup reader without
+    /// weakening owner checks. The caller must keep cloud writes paused when the result
+    /// is not round-trip safe, because native export does not preserve PWA-only fields.
+    static func prepareCloudBackup(
+        _ data: Data,
+        activeOwner: BackupOwner,
+        limits: BackupImportLimits = .standard
+    ) throws -> PreparedCloudBackup {
+        guard activeOwner.remote,
+              let expectedUserID = activeOwner.userID?.nilIfJSONNull,
+              let expectedAccountID = activeOwner.accountID?.nilIfJSONNull else {
+            throw WorkoutStoreError.backupOwnerMismatch
+        }
+        guard data.count <= limits.maximumFileBytes else {
+            throw WorkoutStoreError.importLimitExceeded("file size")
+        }
+        try validateJSONEnvelope(data, limits: limits)
+
+        let parsed: Any
+        do {
+            parsed = try JSONSerialization.jsonObject(with: data)
+        } catch {
+            throw WorkoutStoreError.malformedBackup(error.localizedDescription)
+        }
+        guard var root = parsed as? [String: Any] else {
+            throw WorkoutStoreError.malformedBackup("The cloud state must be a JSON object.")
+        }
+
+        let canonicalOwner: [String: Any] = {
+            var owner: [String: Any] = [
+                "accountId": expectedAccountID,
+                "userId": expectedUserID,
+                "remote": true
+            ]
+            if let email = activeOwner.email?.nilIfJSONNull { owner["email"] = email }
+            return owner
+        }()
+
+        if root["schemaVersion"] == nil {
+            let requiredPWAKeys: Set<String> = [
+                "language", "exercises", "sessions", "mappings", "profile"
+            ]
+            let allowedPWAKeys = requiredPWAKeys.union(["progressExerciseId"])
+            guard requiredPWAKeys.isSubset(of: Set(root.keys)),
+                  Set(root.keys).isSubset(of: allowedPWAKeys),
+                  let language = root["language"] as? String,
+                  language == "en" || language == "uk",
+                  root["exercises"] is [Any],
+                  root["sessions"] is [Any],
+                  root["mappings"] is [String: Any],
+                  root["profile"] is [String: Any] else {
+                throw WorkoutStoreError.malformedBackup(
+                    "The legacy PWA cloud state has an unsupported shape."
+                )
+            }
+            root["schemaVersion"] = GymBackup.currentSchemaVersion
+            root["exportedAt"] = Date().gymEpochMilliseconds
+            root["app"] = "GymApp"
+            root["diagnostics"] = false
+            root["owner"] = canonicalOwner
+            return PreparedCloudBackup(
+                data: try encodedCloudBackup(root, limits: limits),
+                roundTripSafe: false
+            )
+        }
+
+        let nativeKeys: Set<String> = [
+            "schemaVersion", "exportedAt", "app", "diagnostics", "owner",
+            "exercises", "sessions", "summary"
+        ]
+        var roundTripSafe = Set(root.keys).isSubset(of: nativeKeys)
+        var needsEncoding = false
+
+        if root["owner"] == nil || root["owner"] is NSNull {
+            // The authenticated user_states row supplies the missing legacy identity.
+            root["owner"] = canonicalOwner
+            needsEncoding = true
+        } else if let owner = root["owner"] as? [String: Any] {
+            guard let ownerUserID = owner["userId"] as? String,
+                  ownerUserID == expectedUserID else {
+                throw WorkoutStoreError.backupOwnerMismatch
+            }
+            if let remoteMarker = owner["remote"] as? String {
+                guard remoteMarker == "supabase" else {
+                    throw WorkoutStoreError.backupOwnerMismatch
+                }
+                // PWA uses `remote-<uuid>` while native clients use `cloud_<uuid>`.
+                // Exact user identity is authoritative; rewrite only the representation.
+                root["owner"] = canonicalOwner
+                needsEncoding = true
+                roundTripSafe = false
+            } else {
+                guard owner["remote"] as? Bool == true else {
+                    throw WorkoutStoreError.backupOwnerMismatch
+                }
+            }
+        } else {
+            throw WorkoutStoreError.backupOwnerMismatch
+        }
+
+        return PreparedCloudBackup(
+            data: needsEncoding ? try encodedCloudBackup(root, limits: limits) : data,
+            roundTripSafe: roundTripSafe
+        )
+    }
+
+    private static func encodedCloudBackup(
+        _ object: [String: Any],
+        limits: BackupImportLimits
+    ) throws -> Data {
+        let encoded: Data
+        do {
+            encoded = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+        } catch {
+            throw WorkoutStoreError.malformedBackup(error.localizedDescription)
+        }
+        guard encoded.count <= limits.maximumFileBytes else {
+            throw WorkoutStoreError.importLimitExceeded("file size")
+        }
+        return encoded
+    }
+
     @discardableResult
     public func importBackup(
         json: String,
         activeOwner: BackupOwner? = nil,
         limits: BackupImportLimits = .standard
     ) throws -> BackupImportResult {
+        guard Self.utf8Length(of: json, isAtMost: limits.maximumFileBytes) else {
+            throw WorkoutStoreError.importLimitExceeded("file size")
+        }
         guard let data = json.data(using: .utf8) else {
             throw WorkoutStoreError.malformedBackup("The document is not UTF-8 JSON.")
         }
@@ -950,6 +1157,9 @@ public final class WorkoutStore: ObservableObject {
         activeOwner: BackupOwner? = nil,
         limits: BackupImportLimits = .standard
     ) throws -> BackupImportResult {
+        guard Self.utf8Length(of: json, isAtMost: limits.maximumFileBytes) else {
+            throw WorkoutStoreError.importLimitExceeded("file size")
+        }
         guard let data = json.data(using: .utf8) else {
             throw WorkoutStoreError.malformedBackup("The document is not UTF-8 JSON.")
         }
@@ -965,6 +1175,7 @@ public final class WorkoutStore: ObservableObject {
         guard data.count <= limits.maximumFileBytes else {
             throw WorkoutStoreError.importLimitExceeded("file size")
         }
+        try Self.validateJSONEnvelope(data, limits: limits)
 
         let backup: GymBackup
         do {
@@ -975,6 +1186,13 @@ public final class WorkoutStore: ObservableObject {
         guard backup.schemaVersion == GymBackup.currentSchemaVersion else {
             throw WorkoutStoreError.unsupportedBackupSchema(backup.schemaVersion)
         }
+        guard backup.exercises.count <= limits.maximumExercises else {
+            throw WorkoutStoreError.importLimitExceeded("exercise count")
+        }
+        guard backup.sessions.count <= limits.maximumSessions else {
+            throw WorkoutStoreError.importLimitExceeded("session count")
+        }
+        try Self.validateBackupMetadata(backup, limits: limits)
         let resolvedOwner = activeOwner ?? BackupOwner(accountID: accountStorageKey)
         let destinationIsFresh = snapshot.exercises.isEmpty &&
             snapshot.workouts.isEmpty && snapshot.muscleMappings.isEmpty
@@ -983,19 +1201,15 @@ public final class WorkoutStore: ObservableObject {
             activeOwner: resolvedOwner,
             allowDifferentLocalAccountID: !replacingExisting && destinationIsFresh
         )
-        guard backup.exercises.count <= limits.maximumExercises else {
-            throw WorkoutStoreError.importLimitExceeded("exercise count")
-        }
-        guard backup.sessions.count <= limits.maximumSessions else {
-            throw WorkoutStoreError.importLimitExceeded("session count")
-        }
 
         var next = replacingExisting ? WorkoutDataSnapshot() : snapshot
         var exerciseIDByKey = Dictionary(
             uniqueKeysWithValues: next.exercises.map { (Self.nameKey($0.name), $0.id) }
         )
         var exerciseIDByCatalogKey: [String: UUID] = [:]
-        for exercise in next.exercises {
+        var exerciseIndexByID: [UUID: Int] = [:]
+        for (index, exercise) in next.exercises.enumerated() {
+            exerciseIndexByID[exercise.id] = index
             if let catalogKey = BuiltInExerciseCatalog.resolvedKey(
                 catalogKey: exercise.catalogKey,
                 name: exercise.name
@@ -1010,10 +1224,17 @@ public final class WorkoutStore: ObservableObject {
         var encounteredSets = 0
 
         func resolveExercise(_ rawName: String, catalogKey: String? = nil) throws -> UUID? {
+            guard Self.utf8Length(of: rawName, isAtMost: limits.maximumExerciseNameBytes) else {
+                throw WorkoutStoreError.importLimitExceeded("exercise name length")
+            }
             let name = rawName.gymTrimmed
             guard !name.isEmpty else { return nil }
             guard name.count <= limits.maximumExerciseNameLength else {
                 throw WorkoutStoreError.importLimitExceeded("exercise name length")
+            }
+            if let catalogKey,
+               catalogKey.utf8.count > Self.maximumCatalogKeyBytes {
+                throw WorkoutStoreError.importLimitExceeded("catalog key length")
             }
             let key = Self.nameKey(name)
             let resolvedCatalogKey = BuiltInExerciseCatalog.resolvedKey(
@@ -1021,7 +1242,7 @@ public final class WorkoutStore: ObservableObject {
                 name: name
             )
             if let id = exerciseIDByKey[key] {
-                if let index = next.exercises.firstIndex(where: { $0.id == id }),
+                if let index = exerciseIndexByID[id],
                    next.exercises[index].catalogKey == nil {
                     next.exercises[index].catalogKey = resolvedCatalogKey
                 }
@@ -1036,6 +1257,7 @@ public final class WorkoutStore: ObservableObject {
             }
             let exercise = Exercise(name: name, catalogKey: resolvedCatalogKey)
             next.exercises.append(exercise)
+            exerciseIndexByID[exercise.id] = next.exercises.count - 1
             exerciseIDByKey[key] = exercise.id
             if let resolvedCatalogKey {
                 exerciseIDByCatalogKey[resolvedCatalogKey] = exercise.id
@@ -1051,7 +1273,9 @@ public final class WorkoutStore: ObservableObject {
         var existingSignatures = Set(next.workouts.map(Self.importSignature))
         for session in backup.sessions {
             let rawNote = session.note?.gymTrimmed
-            if let rawNote, rawNote.count > limits.maximumNoteLength {
+            if let rawNote,
+               (rawNote.utf8.count > limits.maximumNoteBytes ||
+                rawNote.count > limits.maximumNoteLength) {
                 throw WorkoutStoreError.importLimitExceeded("note length")
             }
             let note = rawNote?.isEmpty == false ? rawNote : nil
@@ -1141,7 +1365,10 @@ public final class WorkoutStore: ObservableObject {
                 return WorkoutExerciseDraft(exerciseID: exerciseID, sets: sets)
             }
             guard !drafts.isEmpty else { continue }
-            let timestamp = session.date ?? session.startedAt ?? Date().gymEpochMilliseconds
+            let timestamp = try Self.validatedTimestamp(
+                session.date ?? session.startedAt ?? Date().gymEpochMilliseconds,
+                field: "session timestamp"
+            )
             let signature = Self.importSignature(
                 dateMilliseconds: timestamp,
                 note: note,
@@ -1238,8 +1465,8 @@ public final class WorkoutStore: ObservableObject {
     }
 
     private func commit(_ state: WorkoutDataSnapshot) throws {
+        try Self.validate(state)
         let normalized = Self.normalized(state)
-        try Self.validate(normalized)
         try persist(normalized)
         publish(normalized)
     }
@@ -1263,6 +1490,7 @@ public final class WorkoutStore: ObservableObject {
                 to: storageURL,
                 options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication]
             )
+            try Self.excludePrivateItemFromBackup(storageURL)
         } catch let error as WorkoutStoreError {
             throw error
         } catch {
@@ -1289,9 +1517,8 @@ public final class WorkoutStore: ObservableObject {
             guard envelope.accountStorageKey == accountStorageKey else {
                 throw WorkoutStoreError.storageAccountMismatch
             }
-            let state = normalized(envelope.snapshot)
-            try validate(state)
-            return state
+            try validate(envelope.snapshot)
+            return normalized(envelope.snapshot)
         } catch let error as WorkoutStoreError {
             throw error
         } catch {
@@ -1322,6 +1549,16 @@ public final class WorkoutStore: ObservableObject {
         return applicationSupport
             .appendingPathComponent("GymApp", isDirectory: true)
             .appendingPathComponent("Accounts", isDirectory: true)
+    }
+
+    private static func excludePrivateItemFromBackup(_ url: URL) throws {
+        do {
+            try (url as NSURL).setResourceValue(true, forKey: .isExcludedFromBackupKey)
+        } catch {
+            throw WorkoutStoreError.persistenceFailure(
+                "Private workout storage could not be excluded from backup: \(error.localizedDescription)"
+            )
+        }
     }
 
     private static func validatedStorageKey(_ key: String) throws -> String {
@@ -1366,11 +1603,15 @@ public final class WorkoutStore: ObservableObject {
         guard Set(state.exercises.map(\.id)).count == state.exercises.count else {
             throw WorkoutStoreError.corruptStore("Duplicate exercise identifier.")
         }
-        guard Set(state.exercises.map { nameKey($0.name) }).count == state.exercises.count else {
-            throw WorkoutStoreError.corruptStore("Duplicate exercise name.")
-        }
         for exercise in state.exercises {
             _ = try validatedExerciseName(exercise.name)
+            if let catalogKey = exercise.catalogKey,
+               !utf8Length(of: catalogKey, isAtMost: maximumCatalogKeyBytes) {
+                throw WorkoutStoreError.corruptStore("An exercise catalog key is too long.")
+            }
+        }
+        guard Set(state.exercises.map { nameKey($0.name) }).count == state.exercises.count else {
+            throw WorkoutStoreError.corruptStore("Duplicate exercise name.")
         }
         guard Set(state.workouts.map(\.id)).count == state.workouts.count else {
             throw WorkoutStoreError.corruptStore("Duplicate workout identifier.")
@@ -1381,6 +1622,9 @@ public final class WorkoutStore: ObservableObject {
         for workout in state.workouts {
             guard !workout.exercises.isEmpty else {
                 throw WorkoutStoreError.corruptStore("A workout has no exercises.")
+            }
+            guard isSupportedTimestamp(workout.date) else {
+                throw WorkoutStoreError.corruptStore("A workout timestamp is outside the supported range.")
             }
             _ = try validatedNote(workout.note)
             for block in workout.exercises {
@@ -1406,7 +1650,16 @@ public final class WorkoutStore: ObservableObject {
         }
         let validMuscles = Set(MuscleMappingEngine.muscleDefinitions.map(\.id))
         for mapping in state.muscleMappings {
-            guard !mapping.exerciseNameKey.isEmpty,
+            guard utf8Length(
+                    of: mapping.exerciseNameKey,
+                    isAtMost: BackupImportLimits.standard.maximumExerciseNameBytes
+                  ),
+                  utf8Length(
+                    of: mapping.exerciseName,
+                    isAtMost: BackupImportLimits.standard.maximumExerciseNameBytes
+                  ),
+                  utf8Length(of: mapping.muscleID, isAtMost: maximumCatalogKeyBytes),
+                  !mapping.exerciseNameKey.isEmpty,
                   validMuscles.contains(mapping.muscleID),
                   mapping.weight.isFinite,
                   (0 ... 1).contains(mapping.weight) else {
@@ -1415,7 +1668,185 @@ public final class WorkoutStore: ObservableObject {
         }
     }
 
+    /// Rejects pathological JSON before Foundation materializes nested containers or
+    /// attacker-controlled multi-megabyte strings.
+    private static func validateJSONEnvelope(
+        _ data: Data,
+        limits: BackupImportLimits
+    ) throws {
+        guard limits.maximumJSONNestingDepth > 0,
+              limits.maximumJSONStringBytes > 0 else {
+            throw WorkoutStoreError.importLimitExceeded("JSON parser configuration")
+        }
+
+        var depth = 0
+        var inString = false
+        var escaped = false
+        var currentStringBytes = 0
+        for byte in data {
+            if inString {
+                if escaped {
+                    escaped = false
+                    currentStringBytes += 1
+                } else if byte == 0x5C { // backslash
+                    escaped = true
+                    currentStringBytes += 1
+                } else if byte == 0x22 { // quote
+                    inString = false
+                } else {
+                    currentStringBytes += 1
+                }
+                guard currentStringBytes <= limits.maximumJSONStringBytes else {
+                    throw WorkoutStoreError.importLimitExceeded("JSON string size")
+                }
+                continue
+            }
+
+            switch byte {
+            case 0x22: // quote
+                inString = true
+                escaped = false
+                currentStringBytes = 0
+            case 0x7B, 0x5B: // { [
+                depth += 1
+                guard depth <= limits.maximumJSONNestingDepth else {
+                    throw WorkoutStoreError.importLimitExceeded("JSON nesting depth")
+                }
+            case 0x7D, 0x5D: // } ]
+                depth -= 1
+                guard depth >= 0 else {
+                    throw WorkoutStoreError.malformedBackup("Unbalanced JSON container.")
+                }
+            default:
+                break
+            }
+        }
+        guard !inString, depth == 0 else {
+            throw WorkoutStoreError.malformedBackup("Incomplete JSON document.")
+        }
+    }
+
+    private static func validateBackupMetadata(
+        _ backup: GymBackup,
+        limits: BackupImportLimits
+    ) throws {
+        _ = try validatedTimestamp(backup.exportedAt, field: "export timestamp")
+        guard backup.app.utf8.count <= maximumAppNameBytes else {
+            throw WorkoutStoreError.importLimitExceeded("app name length")
+        }
+        if let owner = backup.owner {
+            for value in [owner.accountID, owner.userID, owner.email].compactMap({ $0 }) {
+                guard value.utf8.count <= maximumOwnerFieldBytes else {
+                    throw WorkoutStoreError.importLimitExceeded("owner field length")
+                }
+            }
+        }
+        if let summary = backup.summary {
+            guard summary.exerciseCount >= 0,
+                  summary.sessionCount >= 0,
+                  summary.setCount >= 0,
+                  summary.exerciseCount <= limits.maximumExercises,
+                  summary.sessionCount <= limits.maximumSessions,
+                  summary.setCount <= limits.maximumTotalSets,
+                  summary.totalVolume.isFinite,
+                  summary.totalVolume >= 0 else {
+                throw WorkoutStoreError.malformedBackup("The backup summary is invalid.")
+            }
+        }
+
+        for exercise in backup.exercises {
+            try validateImportedExerciseText(
+                name: exercise.name,
+                catalogKey: exercise.catalogKey,
+                limits: limits
+            )
+        }
+        for session in backup.sessions {
+            if let timestamp = session.date ?? session.startedAt {
+                _ = try validatedTimestamp(timestamp, field: "session timestamp")
+            }
+            if let note = session.note {
+                guard note.utf8.count <= limits.maximumNoteBytes,
+                      note.count <= limits.maximumNoteLength else {
+                    throw WorkoutStoreError.importLimitExceeded("note length")
+                }
+            }
+            if let blocks = session.exercises {
+                guard blocks.count <= limits.maximumExercisesPerSession else {
+                    throw WorkoutStoreError.importLimitExceeded("exercises per session")
+                }
+                for block in blocks {
+                    try validateImportedExerciseText(
+                        name: block.name,
+                        catalogKey: block.catalogKey,
+                        limits: limits
+                    )
+                    guard block.sets.count <= limits.maximumSetsPerExercise else {
+                        throw WorkoutStoreError.importLimitExceeded("sets per exercise")
+                    }
+                }
+            }
+            if let flatSets = session.sets {
+                guard flatSets.count <= limits.maximumTotalSets else {
+                    throw WorkoutStoreError.importLimitExceeded("total set count")
+                }
+                for set in flatSets {
+                    if let name = set.exerciseName ?? set.name {
+                        try validateImportedExerciseText(
+                            name: name,
+                            catalogKey: nil,
+                            limits: limits
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    private static func validateImportedExerciseText(
+        name: String,
+        catalogKey: String?,
+        limits: BackupImportLimits
+    ) throws {
+        guard utf8Length(of: name, isAtMost: limits.maximumExerciseNameBytes),
+              name.count <= limits.maximumExerciseNameLength else {
+            throw WorkoutStoreError.importLimitExceeded("exercise name length")
+        }
+        if let catalogKey,
+           catalogKey.utf8.count > maximumCatalogKeyBytes {
+            throw WorkoutStoreError.importLimitExceeded("catalog key length")
+        }
+    }
+
+    private static func validatedTimestamp(_ value: Int64, field: String) throws -> Int64 {
+        guard (minimumSupportedTimestampMilliseconds ... maximumSupportedTimestampMilliseconds)
+            .contains(value) else {
+            throw WorkoutStoreError.malformedBackup("The \(field) is outside the supported range.")
+        }
+        return value
+    }
+
+    private static func validatedTimestamp(_ value: Date, field: String) throws -> Int64 {
+        let milliseconds = (value.timeIntervalSince1970 * 1_000).rounded()
+        guard milliseconds.isFinite,
+              milliseconds >= Double(minimumSupportedTimestampMilliseconds),
+              milliseconds <= Double(maximumSupportedTimestampMilliseconds) else {
+            throw WorkoutStoreError.invalidWorkout("The \(field) is outside the supported range.")
+        }
+        return Int64(milliseconds)
+    }
+
+    private static func isSupportedTimestamp(_ value: Date) -> Bool {
+        (try? validatedTimestamp(value, field: "session timestamp")) != nil
+    }
+
     private static func validatedExerciseName(_ name: String) throws -> String {
+        guard utf8Length(
+            of: name,
+            isAtMost: BackupImportLimits.standard.maximumExerciseNameBytes
+        ) else {
+            throw WorkoutStoreError.invalidExerciseName
+        }
         let cleaned = name.gymTrimmed
         guard !cleaned.isEmpty,
               cleaned.count <= maximumExerciseNameLength,
@@ -1427,6 +1858,12 @@ public final class WorkoutStore: ObservableObject {
 
     private static func validatedNote(_ note: String?) throws -> String? {
         guard let note else { return nil }
+        guard utf8Length(
+            of: note,
+            isAtMost: BackupImportLimits.standard.maximumNoteBytes
+        ) else {
+            throw WorkoutStoreError.invalidWorkout("The note is too long.")
+        }
         let cleaned = note.gymTrimmed
         guard cleaned.count <= maximumNoteLength else {
             throw WorkoutStoreError.invalidWorkout("The note is too long.")
@@ -1449,6 +1886,7 @@ public final class WorkoutStore: ObservableObject {
         drafts: [WorkoutExerciseDraft],
         knownExerciseIDs: Set<UUID>
     ) throws -> WorkoutSession {
+        _ = try validatedTimestamp(date, field: "session timestamp")
         guard !drafts.isEmpty else {
             throw WorkoutStoreError.invalidWorkout("At least one exercise is required.")
         }
@@ -1601,24 +2039,28 @@ public final class WorkoutStore: ObservableObject {
         activeOwner: BackupOwner,
         allowDifferentLocalAccountID: Bool = false
     ) throws {
+        if activeOwner.remote {
+            guard let backupOwner,
+                  backupOwner.remote,
+                  let backupUserID = backupOwner.userID?.nilIfJSONNull,
+                  let activeUserID = activeOwner.userID?.nilIfJSONNull,
+                  backupUserID == activeUserID else {
+                throw WorkoutStoreError.backupOwnerMismatch
+            }
+            return
+        }
+
         guard let backupOwner else { return }
         let backupUserID = backupOwner.userID?.nilIfJSONNull
         let backupAccountID = backupOwner.accountID?.nilIfJSONNull
-        let activeUserID = activeOwner.userID?.nilIfJSONNull
         let activeAccountID = activeOwner.accountID?.nilIfJSONNull
 
-        if activeOwner.remote {
-            guard backupUserID == nil || backupUserID == activeUserID else {
+        guard !backupOwner.remote, backupUserID == nil else {
+            throw WorkoutStoreError.backupOwnerMismatch
+        }
+        if !allowDifferentLocalAccountID {
+            guard backupAccountID == nil || backupAccountID == activeAccountID else {
                 throw WorkoutStoreError.backupOwnerMismatch
-            }
-        } else {
-            guard !backupOwner.remote, backupUserID == nil else {
-                throw WorkoutStoreError.backupOwnerMismatch
-            }
-            if !allowDifferentLocalAccountID {
-                guard backupAccountID == nil || backupAccountID == activeAccountID else {
-                    throw WorkoutStoreError.backupOwnerMismatch
-                }
             }
         }
     }
@@ -1641,13 +2083,20 @@ public final class WorkoutStore: ObservableObject {
         note: String?,
         drafts: [WorkoutExerciseDraft]
     ) -> String {
-        var value = "\(dateMilliseconds)|\(note?.gymTrimmed ?? "")"
+        var components = ["\(dateMilliseconds)|\(note?.gymTrimmed ?? "")"]
+        components.reserveCapacity(1 + drafts.count + drafts.reduce(0) { $0 + $1.sets.count })
         for block in drafts {
-            value += "|\(block.exerciseID.uuidString)"
+            components.append("|\(block.exerciseID.uuidString)")
             for set in block.sets {
-                value += ":\(set.weight)x\(set.reps)"
+                components.append(":\(set.weight)x\(set.reps)")
             }
         }
-        return value
+        return components.joined()
+    }
+
+    private static func utf8Length(of value: String, isAtMost maximum: Int) -> Bool {
+        guard maximum >= 0 else { return false }
+        if maximum == Int.max { return true }
+        return value.utf8.prefix(maximum + 1).count <= maximum
     }
 }

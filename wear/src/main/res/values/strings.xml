@@ -39,6 +39,7 @@
     <string name="message_invalid_draft">Введи коректні вправу, повтори та за потреби вагу.</string>
     <string name="message_invalid_set_input">Введи коректні повтори та за потреби вагу.</string>
     <string name="message_sync_unavailable">Телефон не підключено. Відкрий застосунок на телефоні та спробуй ще раз.</string>
+    <string name="message_plan_deferred">Новий план отримано. Поточну чернетку збережено; план буде застосовано після неї.</string>
     <string name="sync_status_idle">sync: idle</string>
     <string name="sync_status_waiting">sync: waiting phone</string>
     <string name="sync_status_sent">sync: sent</string>

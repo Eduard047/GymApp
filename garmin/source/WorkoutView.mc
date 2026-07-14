@@ -31,8 +31,12 @@ class WorkoutView extends Ui.View {
     function onShow() {
         ticker.start(method(:tick), 1000, true);
         if (!GymSession.recording) {
-            GymStore.clearActiveWorkout();
             GymSession.start();
+            if (GymStore.sets.size() > 0) {
+                // Sets are intentionally durable. A process restart starts a fresh FIT
+                // segment but never silently discards the unfinished workout.
+                GymStore.status = "RESUMED";
+            }
         } else {
             GymSession.startSensors();
         }
@@ -116,8 +120,15 @@ class WorkoutView extends Ui.View {
     function onCloudPlanFetched(ok, status, message) {
         if (ok && message != null) {
             try {
-                GymStore.applySync(message);
-                GymStore.status = status;
+                var applied = GymStore.applyCloudSync(message);
+                if (!applied) {
+                    GymStore.status = "CLOUD FAIL";
+                } else if (!GymStore.status.equals("PLAN WAIT")) {
+                    GymStore.status = status;
+                }
+                if (applied) {
+                    GymComm.acknowledgeCloudPlan(message, method(:onCloudPlanAcknowledged));
+                }
                 cloudAutoSyncActive = false;
             } catch (e) {
                 GymStore.status = "CLOUD FAIL";
@@ -134,9 +145,18 @@ class WorkoutView extends Ui.View {
         Ui.requestUpdate();
     }
 
+    function onCloudPlanAcknowledged(ok) {
+        if (!ok) {
+            GymStore.status = "CLOUD RETRY";
+            if (cloudAutoAttempts < 4) {
+                scheduleCloudSyncOnOpen(5000);
+            }
+        }
+        Ui.requestUpdate();
+    }
+
     function onWorkoutSent(ok) {
         if (ok) {
-            GymStore.clearWorkout();
             GymStore.status = "SENT";
         } else {
             GymStore.status = "QUEUED";
@@ -145,7 +165,7 @@ class WorkoutView extends Ui.View {
     }
 
     function flushPending() {
-        if (GymStore.pending.size() == 0) {
+        if (!GymStore.hasAccountBinding() || GymStore.pending.size() == 0) {
             return;
         }
         GymComm.send(GymStore.pending[0], method(:onPendingSent));
@@ -162,19 +182,34 @@ class WorkoutView extends Ui.View {
         if (GymStore.sets.size() == 0) {
             GymStore.status = "NO SETS";
             Ui.requestUpdate();
-            return;
+            return false;
         }
         var message = GymStore.workoutMessage();
-        GymStore.pending.add(message);
-        GymStore.clearActiveWorkout();
+        if (message == null) {
+            GymStore.status = "SYNC FIRST";
+            Ui.requestUpdate();
+            return false;
+        }
+        if (!GymStore.canQueueWorkout(message)) {
+            GymStore.status = "QUEUE FULL";
+            Ui.requestUpdate();
+            return false;
+        }
+        if (!GymStore.queueWorkout(message)) {
+            GymStore.status = "SAVE FAIL";
+            Ui.requestUpdate();
+            return false;
+        }
         GymComm.send(message, method(:onWorkoutSent));
         Attention.vibrate([new Attention.VibeProfile(80, 250)]);
+        return true;
     }
 
     function saveAndExit() {
-        finishWorkout();
-        GymSession.stopAndSave();
-        System.exit();
+        if (finishWorkout()) {
+            GymSession.stopAndSave();
+            System.exit();
+        }
     }
 
     function onUpdate(dc) {
@@ -757,6 +792,8 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
             GymStore.weight += GymStore.weightStep * delta;
             if (GymStore.weight < 0.0) {
                 GymStore.weight = 0.0;
+            } else if (GymStore.weight > GymStore.maxWeight) {
+                GymStore.weight = GymStore.maxWeight;
             }
         } else if (view.selected == 2) {
             GymStore.reps += delta;
@@ -796,4 +833,3 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
     }
 
 }
-

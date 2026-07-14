@@ -415,6 +415,96 @@ final class CoreParityTests: XCTestCase {
         ) { error in
             XCTAssertEqual(error as? WorkoutStoreError, .backupOwnerMismatch)
         }
+
+        let matchingOwner = BackupOwner(
+            accountID: "cloud_a",
+            userID: "user-a",
+            email: "a@example.com",
+            remote: true
+        )
+        let matchingTarget = try WorkoutStore(
+            accountStorageKey: "cloud_a",
+            directoryURL: try temporaryDirectory(named: "cloud-owner-required")
+        )
+        var ownerlessObject = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: data) as? [String: Any]
+        )
+        ownerlessObject.removeValue(forKey: "owner")
+        let ownerlessData = try JSONSerialization.data(withJSONObject: ownerlessObject)
+        XCTAssertThrowsError(
+            try matchingTarget.importBackup(data: ownerlessData, activeOwner: matchingOwner)
+        ) { error in
+            XCTAssertEqual(error as? WorkoutStoreError, .backupOwnerMismatch)
+        }
+
+        var falselyLocalObject = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: data) as? [String: Any]
+        )
+        var falselyLocalOwner = try XCTUnwrap(falselyLocalObject["owner"] as? [String: Any])
+        falselyLocalOwner["remote"] = false
+        falselyLocalObject["owner"] = falselyLocalOwner
+        let falselyLocalData = try JSONSerialization.data(withJSONObject: falselyLocalObject)
+        XCTAssertThrowsError(
+            try matchingTarget.importBackup(data: falselyLocalData, activeOwner: matchingOwner)
+        ) { error in
+            XCTAssertEqual(error as? WorkoutStoreError, .backupOwnerMismatch)
+        }
+        XCTAssertEqual(matchingTarget.snapshot, WorkoutDataSnapshot())
+    }
+
+    func testAuthenticatedPWACloudBackupsAreOwnerBoundAndReadOnly() throws {
+        let owner = BackupOwner(
+            accountID: "cloud_pwa-user",
+            userID: "pwa-user",
+            email: "pwa-user@example.com",
+            remote: true
+        )
+
+        let flat = try pwaFlatCloudData(exerciseName: "PWA Bench")
+        let preparedFlat = try WorkoutStore.prepareCloudBackup(flat, activeOwner: owner)
+        XCTAssertFalse(preparedFlat.roundTripSafe)
+
+        let flatTarget = try WorkoutStore(
+            accountStorageKey: owner.accountID!,
+            directoryURL: try temporaryDirectory(named: "pwa-flat-target")
+        )
+        let flatResult = try flatTarget.restoreBackup(
+            data: preparedFlat.data,
+            activeOwner: owner
+        )
+        XCTAssertEqual(flatResult.importedSessions, 1)
+        XCTAssertEqual(flatTarget.exercises.map(\.name), ["PWA Bench"])
+
+        let schemaBackup = try pwaSchemaCloudData(
+            exerciseName: "PWA Squat",
+            userID: "pwa-user"
+        )
+        let preparedSchema = try WorkoutStore.prepareCloudBackup(
+            schemaBackup,
+            activeOwner: owner
+        )
+        XCTAssertFalse(preparedSchema.roundTripSafe)
+        let schemaTarget = try WorkoutStore(
+            accountStorageKey: owner.accountID!,
+            directoryURL: try temporaryDirectory(named: "pwa-schema-target")
+        )
+        _ = try schemaTarget.restoreBackup(data: preparedSchema.data, activeOwner: owner)
+        XCTAssertEqual(schemaTarget.exercises.map(\.name), ["PWA Squat"])
+
+        let native = try remoteBackupData(exerciseName: "Native Deadlift", owner: owner)
+        XCTAssertTrue(
+            try WorkoutStore.prepareCloudBackup(native, activeOwner: owner).roundTripSafe
+        )
+
+        let foreign = try pwaSchemaCloudData(
+            exerciseName: "Foreign Secret",
+            userID: "other-user"
+        )
+        XCTAssertThrowsError(
+            try WorkoutStore.prepareCloudBackup(foreign, activeOwner: owner)
+        ) { error in
+            XCTAssertEqual(error as? WorkoutStoreError, .backupOwnerMismatch)
+        }
     }
 
     func testAuthoritativeRestoreReplacesStaleLocalSnapshot() throws {
@@ -710,6 +800,64 @@ final class CoreParityTests: XCTestCase {
         XCTAssertEqual(GamificationEngine.xpForSession(summary), 177)
     }
 
+    func testProgressionIgnoresEmptySessionsAndCapsSessionXP() {
+        let empty = WorkoutSessionSummary(
+            workoutID: UUID(),
+            date: Date(),
+            note: nil,
+            exerciseCount: 1,
+            setCount: 0,
+            totalVolume: 10_000
+        )
+        let oversized = WorkoutSessionSummary(
+            workoutID: UUID(),
+            date: Date(),
+            note: nil,
+            exerciseCount: Int.max,
+            setCount: Int.max,
+            totalVolume: .greatestFiniteMagnitude
+        )
+
+        XCTAssertEqual(GamificationEngine.xpForSession(empty), 0)
+        XCTAssertEqual(GamificationEngine.xpForSession(oversized), 5_000)
+    }
+
+    func testWorkoutStoreAllowsMoreThanFiveSessionsOnOneDay() throws {
+        let calendar = utcCalendar()
+        let day = try utcDate(year: 2026, month: 7, day: 13, calendar: calendar)
+        let store = try WorkoutStore(
+            accountStorageKey: "six-sessions-one-day",
+            directoryURL: try temporaryDirectory(named: "six-sessions-one-day")
+        )
+        let exercise = try store.addExercise(name: "Bench Press")
+
+        for offset in 0..<6 {
+            _ = try store.createWorkout(
+                date: day.addingTimeInterval(Double(offset * 60)),
+                exercises: [
+                    WorkoutExerciseDraft(
+                        exerciseID: exercise.id,
+                        sets: [WorkoutSetDraft(weight: 10, reps: 10)]
+                    )
+                ]
+            )
+        }
+
+        let sessions = store.workoutSummaries
+        let snapshot = GamificationEngine.buildSnapshot(
+            sessions: sessions,
+            now: day,
+            calendar: calendar
+        )
+        XCTAssertEqual(sessions.count, 6)
+        XCTAssertEqual(snapshot.summary.workoutCount, 6)
+        XCTAssertEqual(snapshot.summary.workoutDayCount, 1)
+        XCTAssertEqual(
+            snapshot.progression.totalXP,
+            sessions.reduce(0) { $0 + GamificationEngine.xpForSession($1) }
+        )
+    }
+
     func testCanonicalProgressionMatchesCrossPlatformGoldenFixture() throws {
         let calendar = utcCalendar()
 
@@ -738,6 +886,491 @@ final class CoreParityTests: XCTestCase {
             XCTAssertEqual(GamificationEngine.xpForLevelStart(row.level), row.levelStartXP, row.id)
             XCTAssertEqual(GamificationEngine.xpForLevelStart(row.level + 1), row.nextLevelXP, row.id)
         }
+    }
+
+    func testProgressionHandlesMaximumXPWithoutLinearLevelScanning() {
+        XCTAssertEqual(GamificationEngine.level(for: Int.max), 1_512_304)
+        XCTAssertEqual(
+            GamificationEngine.xpForLevelStart(1_512_304),
+            9_223_363_383_716_056_445
+        )
+        XCTAssertEqual(GamificationEngine.xpForLevelStart(1_512_305), Int.max)
+    }
+
+    func testWorkoutStorageAndFilesAreExcludedFromBackup() throws {
+        let directory = try temporaryDirectory(named: "backup-exclusion")
+        let store = try WorkoutStore(accountStorageKey: "private-account", directoryURL: directory)
+        _ = try store.addExercise(name: "Private Exercise")
+
+        XCTAssertEqual(
+            try directory.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup,
+            true
+        )
+        XCTAssertEqual(
+            try store.storageURL.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup,
+            true
+        )
+    }
+
+    func testDestroyAccountDataRemovesOnlyMatchingRecoveryCopies() throws {
+        let directory = try temporaryDirectory(named: "recovery-deletion")
+        let store = try WorkoutStore(accountStorageKey: "delete-recovery", directoryURL: directory)
+        _ = try store.addExercise(name: "Private Exercise")
+        let stem = store.storageURL.deletingPathExtension().lastPathComponent
+        let matchingRecovery = directory.appendingPathComponent(
+            "\(stem).recovery-\(UUID().uuidString.lowercased()).json"
+        )
+        try Data("private recovery".utf8).write(to: matchingRecovery)
+
+        let otherStore = try WorkoutStore(accountStorageKey: "keep-recovery", directoryURL: directory)
+        let otherStem = otherStore.storageURL.deletingPathExtension().lastPathComponent
+        let otherRecovery = directory.appendingPathComponent(
+            "\(otherStem).recovery-\(UUID().uuidString.lowercased()).json"
+        )
+        try Data("other account".utf8).write(to: otherRecovery)
+
+        try store.destroyAccountData()
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: matchingRecovery.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: otherRecovery.path))
+    }
+
+    func testBackupImportRejectsOversizedUnicodeBeforeMutation() throws {
+        let store = try WorkoutStore(
+            accountStorageKey: "unicode-limit",
+            directoryURL: try temporaryDirectory(named: "unicode-limit")
+        )
+        let maliciousName = "a" + String(repeating: "\u{0301}", count: 321)
+        XCTAssertEqual(maliciousName.count, 1)
+        XCTAssertGreaterThan(maliciousName.utf8.count, BackupImportLimits.standard.maximumExerciseNameBytes)
+        let object: [String: Any] = [
+            "schemaVersion": GymBackup.currentSchemaVersion,
+            "exportedAt": 1_750_000_000_000 as Int64,
+            "app": "GymApp",
+            "diagnostics": false,
+            "exercises": [["name": maliciousName]],
+            "sessions": []
+        ]
+        let data = try JSONSerialization.data(withJSONObject: object)
+
+        XCTAssertThrowsError(try store.importBackup(data: data))
+        XCTAssertEqual(store.snapshot, WorkoutDataSnapshot())
+    }
+
+    func testBackupImportRejectsDeepJSONAndOversizedFileBeforeMutation() throws {
+        let store = try WorkoutStore(
+            accountStorageKey: "json-limits",
+            directoryURL: try temporaryDirectory(named: "json-limits")
+        )
+        let nested = String(repeating: "[", count: 33) + "0" + String(repeating: "]", count: 33)
+        let deepJSON = """
+        {"schemaVersion":2,"exportedAt":1750000000000,"diagnostics":false,"exercises":[],"sessions":[],"unknown":\(nested)}
+        """
+        XCTAssertThrowsError(try store.importBackup(json: deepJSON))
+
+        let escapedString = String(
+            repeating: "\\u0061",
+            count: BackupImportLimits.standard.maximumJSONStringBytes / 6 + 1
+        )
+        let escapedJSON = """
+        {"schemaVersion":2,"exportedAt":1750000000000,"diagnostics":false,"exercises":[],"sessions":[],"unknown":"\(escapedString)"}
+        """
+        XCTAssertThrowsError(try store.importBackup(json: escapedJSON))
+
+        let oversized = Data(
+            repeating: 0x20,
+            count: BackupImportLimits.standard.maximumFileBytes + 1
+        )
+        XCTAssertThrowsError(try store.importBackup(data: oversized))
+        XCTAssertEqual(store.snapshot, WorkoutDataSnapshot())
+    }
+
+    func testBackupFileReaderEnforcesActualByteCount() throws {
+        let directory = try temporaryDirectory(named: "bounded-reader")
+        let file = directory.appendingPathComponent("backup.json")
+        try Data(repeating: 0x41, count: 1_025).write(to: file)
+
+        XCTAssertThrowsError(try BackupFileReader.read(from: file, maximumBytes: 1_024))
+        XCTAssertEqual(
+            try BackupFileReader.read(from: file, maximumBytes: 1_025).count,
+            1_025
+        )
+    }
+
+    func testLegacyBackupImportLimitsDecodeWithNewSecurityDefaults() throws {
+        let legacy = Data("""
+        {"maximumFileBytes":1024,"maximumExercises":10,"maximumSessions":20,"maximumExercisesPerSession":5,"maximumSetsPerExercise":6,"maximumTotalSets":30,"maximumExerciseNameLength":80,"maximumNoteLength":500}
+        """.utf8)
+        let decoded = try JSONDecoder().decode(BackupImportLimits.self, from: legacy)
+
+        XCTAssertEqual(decoded.maximumFileBytes, 1_024)
+        XCTAssertEqual(decoded.maximumExerciseNameBytes, BackupImportLimits.standard.maximumExerciseNameBytes)
+        XCTAssertEqual(decoded.maximumNoteBytes, BackupImportLimits.standard.maximumNoteBytes)
+        XCTAssertEqual(decoded.maximumJSONStringBytes, BackupImportLimits.standard.maximumJSONStringBytes)
+        XCTAssertEqual(decoded.maximumJSONNestingDepth, BackupImportLimits.standard.maximumJSONNestingDepth)
+    }
+
+    func testExtremeBackupTimestampsAreRejectedWithoutTrapping() throws {
+        let store = try WorkoutStore(
+            accountStorageKey: "timestamp-limits",
+            directoryURL: try temporaryDirectory(named: "timestamp-limits")
+        )
+        let floatingTimestamp = Data("""
+        {"schemaVersion":2,"exportedAt":1e308,"diagnostics":false,"exercises":[],"sessions":[]}
+        """.utf8)
+        XCTAssertThrowsError(try store.importBackup(data: floatingTimestamp))
+
+        let extremeSession = Data("""
+        {"schemaVersion":2,"exportedAt":1750000000000,"diagnostics":false,"exercises":[],"sessions":[{"date":9223372036854775807,"exercises":[]}]}
+        """.utf8)
+        XCTAssertThrowsError(try store.importBackup(data: extremeSession))
+        XCTAssertThrowsError(
+            try store.makeBackup(exportedAt: Date(timeIntervalSince1970: .infinity))
+        )
+        XCTAssertEqual(store.snapshot, WorkoutDataSnapshot())
+    }
+
+    func testGarminPlanAcceptsSixtySetsAndRejectsSixtyOneAndInvalidNumbers() throws {
+        let valid = garminPlan(setCount: 60)
+        XCTAssertNoThrow(try GarminPlanValidator.validate(valid))
+        XCTAssertThrowsError(try GarminPlanValidator.validate(garminPlan(setCount: 61)))
+
+        let twoHundredByteName = String(repeating: "🙂", count: 50)
+        let exactlyBoundedNames = garminPlan(setCount: 60, exerciseName: twoHundredByteName)
+        let oversizedFlattenedNames = garminPlan(
+            setCount: 60,
+            exerciseName: twoHundredByteName + "a"
+        )
+        XCTAssertNoThrow(try GarminPlanValidator.validate(exactlyBoundedNames))
+        XCTAssertThrowsError(try GarminPlanValidator.validate(oversizedFlattenedNames))
+
+        let invalidNumber = GarminWorkoutPlan(
+            source: valid.source,
+            version: valid.version,
+            title: valid.title,
+            createdAt: valid.createdAt,
+            startedAt: valid.startedAt,
+            note: valid.note,
+            exercises: [
+                GarminPlanExercise(
+                    name: "Squat",
+                    sets: [GarminPlanSet(weight: .nan, reps: 8, orderIndex: 0)]
+                )
+            ]
+        )
+        XCTAssertThrowsError(try GarminPlanValidator.validate(invalidNumber))
+
+        let oversizedName = "a" + String(repeating: "\u{0301}", count: 321)
+        let invalidName = GarminWorkoutPlan(
+            source: valid.source,
+            version: valid.version,
+            title: valid.title,
+            createdAt: valid.createdAt,
+            startedAt: valid.startedAt,
+            note: valid.note,
+            exercises: [
+                GarminPlanExercise(
+                    name: oversizedName,
+                    sets: [GarminPlanSet(weight: 100, reps: 8, orderIndex: 0)]
+                )
+            ]
+        )
+        XCTAssertThrowsError(try GarminPlanValidator.validate(invalidName))
+
+        let oversizedMetadata = GarminWorkoutPlan(
+            source: valid.source,
+            version: valid.version,
+            title: String(repeating: "T", count: 121),
+            createdAt: valid.createdAt,
+            startedAt: valid.startedAt,
+            note: String(repeating: "n", count: 2_001),
+            exercises: valid.exercises
+        )
+        XCTAssertThrowsError(try GarminPlanValidator.validate(oversizedMetadata))
+    }
+
+    func testFailedKeychainDeletionCannotResurrectSessionAfterRelaunch() throws {
+        let keychain = InMemoryKeychainStore()
+        let defaults = temporaryDefaults(named: "keychain-delete")
+        let cloud = cloudSession(userID: "keychain-user")
+        try keychain.save(
+            JSONEncoder().encode(AppAccountSession.cloud(cloud)),
+            account: "current-session"
+        )
+        let auth = AuthService(keychain: keychain, defaults: defaults)
+        XCTAssertEqual(auth.session?.cloud?.userID, cloud.userID)
+
+        keychain.accountsThatFailDeletion = ["current-session"]
+        XCTAssertThrowsError(try auth.clearSession())
+        XCTAssertNil(auth.session)
+
+        let relaunched = AuthService(keychain: keychain, defaults: defaults)
+        XCTAssertNil(relaunched.session)
+        keychain.accountsThatFailDeletion = []
+        try relaunched.clearSession()
+
+        let cleanedRelaunch = AuthService(keychain: keychain, defaults: defaults)
+        XCTAssertNil(cleanedRelaunch.session)
+        XCTAssertNil(try keychain.read(account: "current-session"))
+    }
+
+    func testLateTokenRefreshCannotResurrectSignedOutSession() async throws {
+        let keychain = InMemoryKeychainStore()
+        let defaults = temporaryDefaults(named: "late-refresh")
+        var expired = cloudSession(userID: "refresh-user")
+        expired.expiresAt = Date(timeIntervalSince1970: 0)
+        try keychain.save(
+            JSONEncoder().encode(AppAccountSession.cloud(expired)),
+            account: "current-session"
+        )
+
+        let started = expectation(description: "refresh started")
+        let release = DispatchSemaphore(value: 0)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let session = URLSession(configuration: configuration)
+        let auth = AuthService(keychain: keychain, urlSession: session, defaults: defaults)
+        AuthURLProtocolStub.handler = { request in
+            started.fulfill()
+            _ = release.wait(timeout: .now() + 5)
+            return try AuthURLProtocolStub.response(
+                for: request,
+                json: #"{"access_token":"new-access","refresh_token":"new-refresh","expires_in":3600,"user":{"id":"refresh-user","email":"refresh@example.com","user_metadata":{"display_name":"Refresh"}}}"#
+            )
+        }
+        defer {
+            release.signal()
+            AuthURLProtocolStub.handler = nil
+            session.invalidateAndCancel()
+        }
+
+        let refresh = Task { try await auth.validCloudSession() }
+        await fulfillment(of: [started], timeout: 2)
+        try auth.clearSession()
+        release.signal()
+
+        do {
+            _ = try await refresh.value
+            XCTFail("A stale refresh must not restore the session.")
+        } catch AuthServiceError.sessionChanged {
+            // Expected.
+        } catch {
+            XCTFail("Unexpected refresh error: \(error)")
+        }
+        XCTAssertNil(auth.session)
+        XCTAssertNil(try keychain.read(account: "current-session"))
+    }
+
+    func testCloudAccountDeletionCannotTargetAReplacementSession() async throws {
+        let recorder = AuthRequestRecorder()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        let auth = AuthService(
+            keychain: InMemoryKeychainStore(),
+            urlSession: urlSession,
+            defaults: temporaryDefaults(named: "delete-identity")
+        )
+        try auth.installSessionForTesting(.cloud(cloudSession(userID: "replacement-user")))
+        AuthURLProtocolStub.handler = { request in
+            recorder.append(request)
+            return try AuthURLProtocolStub.response(for: request, json: "{}")
+        }
+        defer {
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+        }
+
+        do {
+            try await auth.deleteCloudAccountOnServer(expectedUserID: "original-user")
+            XCTFail("Deletion must not follow a replacement authenticated session.")
+        } catch AuthServiceError.sessionChanged {
+            // Expected.
+        } catch {
+            XCTFail("Unexpected deletion error: \(error)")
+        }
+        XCTAssertTrue(recorder.requests.isEmpty)
+        XCTAssertEqual(auth.session?.cloud?.userID, "replacement-user")
+    }
+
+    func testPendingDeletionCleanupDoesNotClearAReplacementAccount() async throws {
+        let directory = try temporaryDirectory(named: "pending-delete-replacement")
+        let defaults = temporaryDefaults(named: "pending-delete-replacement")
+        let deletedSession = AppAccountSession.local(id: "deleted", displayName: "Deleted")
+        let replacementSession = AppAccountSession.local(id: "replacement", displayName: "Replacement")
+        let deletedStore = try WorkoutStore(
+            accountStorageKey: deletedSession.storageKey,
+            directoryURL: directory
+        )
+        _ = try deletedStore.addExercise(name: "Deleted Secret")
+        defaults.set(
+            deletedSession.storageKey,
+            forKey: "gymapp.pending-account-deletion-storage-key"
+        )
+
+        let auth = AuthService(
+            keychain: InMemoryKeychainStore(),
+            defaults: defaults
+        )
+        try auth.installSessionForTesting(replacementSession)
+        let appState = try AppState(
+            auth: auth,
+            defaults: defaults,
+            workoutDirectoryURL: directory
+        )
+
+        XCTAssertEqual(auth.session?.storageKey, replacementSession.storageKey)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: deletedStore.storageURL.path))
+        XCTAssertNil(defaults.string(forKey: "gymapp.pending-account-deletion-storage-key"))
+        let replacementReady = await waitUntil { appState.isAccountReady }
+        XCTAssertTrue(replacementReady)
+        XCTAssertEqual(appState.workoutStore.accountStorageKey, replacementSession.storageKey)
+    }
+
+    func testPWACloudActivationPausesAutomaticAndManualNativeWrites() async throws {
+        let directory = try temporaryDirectory(named: "pwa-read-only-activation")
+        let defaults = temporaryDefaults(named: "pwa-read-only-activation")
+        let recorder = AuthRequestRecorder()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        let auth = AuthService(
+            keychain: InMemoryKeychainStore(),
+            urlSession: urlSession,
+            defaults: defaults
+        )
+        let cloud = cloudSession(userID: "pwa-read-only-user")
+        let pwaData = try pwaFlatCloudData(exerciseName: "Browser Workout")
+        AuthURLProtocolStub.handler = { request in
+            recorder.append(request)
+            return try AuthURLProtocolStub.response(for: request, json: "[]")
+        }
+        defer {
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+        }
+        let appState = try AppState(
+            auth: auth,
+            defaults: defaults,
+            workoutDirectoryURL: directory,
+            cloudURLSession: urlSession,
+            remoteStateLoader: { requestedUserID in
+                XCTAssertEqual(requestedUserID, cloud.userID)
+                return pwaData
+            }
+        )
+
+        try auth.installSessionForTesting(.cloud(cloud))
+        let accountReady = await waitUntil {
+            appState.isAccountReady &&
+                appState.workoutStore.exercises.map(\.name) == ["Browser Workout"]
+        }
+        XCTAssertTrue(accountReady)
+        XCTAssertTrue(appState.isCloudWritePaused)
+
+        _ = try appState.workoutStore.addExercise(name: "Native Local Change")
+        appState.saveBeforeBackgrounding()
+        await appState.forceCloudSync()
+        let leaderboard = try await appState.refreshCloudLeaderboard()
+        try await Task.sleep(for: .milliseconds(100))
+
+        XCTAssertTrue(leaderboard.isEmpty)
+        XCTAssertEqual(recorder.requests.count, 1)
+        XCTAssertEqual(recorder.requests.first?.httpMethod, "GET")
+        XCTAssertEqual(recorder.requests.first?.url?.path, "/rest/v1/leaderboard_public")
+        XCTAssertTrue(appState.isCloudWritePaused)
+    }
+
+    func testForeignPWAOwnerCannotReplacePersistedAccountState() async throws {
+        let directory = try temporaryDirectory(named: "pwa-owner-mismatch")
+        let defaults = temporaryDefaults(named: "pwa-owner-mismatch")
+        let auth = AuthService(
+            keychain: InMemoryKeychainStore(),
+            defaults: defaults
+        )
+        let cloud = cloudSession(userID: "expected-user")
+        let session = AppAccountSession.cloud(cloud)
+        let persisted = try WorkoutStore(
+            accountStorageKey: session.storageKey,
+            directoryURL: directory
+        )
+        _ = try persisted.addExercise(name: "Persisted Private Exercise")
+        let foreign = try pwaSchemaCloudData(
+            exerciseName: "Foreign Exercise",
+            userID: "other-user"
+        )
+        let appState = try AppState(
+            auth: auth,
+            defaults: defaults,
+            workoutDirectoryURL: directory,
+            remoteStateLoader: { _ in foreign }
+        )
+
+        try auth.installSessionForTesting(session)
+        let accountReady = await waitUntil { appState.isAccountReady }
+
+        XCTAssertTrue(accountReady)
+        XCTAssertEqual(
+            appState.workoutStore.exercises.map(\.name),
+            ["Persisted Private Exercise"]
+        )
+        XCTAssertTrue(appState.isCloudWritePaused)
+        XCTAssertTrue(appState.statusIsError)
+    }
+
+    func testAccountActivationHidesPriorStoreAndDiscardsLateOwnerlessRestore() async throws {
+        let directory = try temporaryDirectory(named: "account-race")
+        let defaults = temporaryDefaults(named: "account-race")
+        let keychain = InMemoryKeychainStore()
+        let auth = AuthService(keychain: keychain, defaults: defaults)
+        let ownerlessA = try remoteBackupData(exerciseName: "Late Account A", owner: nil)
+        let cloudB = cloudSession(userID: "user-b")
+        let ownerB = BackupOwner(
+            accountID: AppAccountSession.cloud(cloudB).storageKey,
+            userID: cloudB.userID,
+            email: cloudB.email,
+            remote: true
+        )
+        let remoteB = try remoteBackupData(exerciseName: "Account B", owner: ownerB)
+        let gate = RemoteStateGate(
+            values: ["user-a": ownerlessA, "user-b": remoteB],
+            expectations: [
+                "user-a": expectation(description: "account A load started"),
+                "user-b": expectation(description: "account B load started")
+            ]
+        )
+        let appState = try AppState(
+            auth: auth,
+            defaults: defaults,
+            workoutDirectoryURL: directory,
+            remoteStateLoader: { userID in try await gate.load(userID: userID) }
+        )
+
+        try auth.installSessionForTesting(.local(id: "prior", displayName: "Prior"))
+        let priorReady = await waitUntil { appState.isAccountReady }
+        XCTAssertTrue(priorReady)
+        _ = try appState.workoutStore.addExercise(name: "Prior Account Secret")
+
+        let cloudA = cloudSession(userID: "user-a")
+        try auth.installSessionForTesting(.cloud(cloudA))
+        await fulfillment(of: [gate.expectation(for: "user-a")], timeout: 2)
+        XCTAssertFalse(appState.isAccountReady)
+        XCTAssertEqual(appState.workoutStore.exercises.map(\.name), ["Prior Account Secret"])
+
+        try auth.installSessionForTesting(.cloud(cloudB))
+        await fulfillment(of: [gate.expectation(for: "user-b")], timeout: 2)
+        XCTAssertFalse(appState.isAccountReady)
+        gate.release(userID: "user-b")
+        let accountBReady = await waitUntil {
+            appState.isAccountReady && appState.workoutStore.exercises.map(\.name) == ["Account B"]
+        }
+        XCTAssertTrue(accountBReady)
+
+        gate.release(userID: "user-a")
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(auth.session?.cloud?.userID, "user-b")
+        XCTAssertTrue(appState.isAccountReady)
+        XCTAssertEqual(appState.workoutStore.exercises.map(\.name), ["Account B"])
     }
 
     func testDemoDataIsExplicitAndIdempotent() throws {
@@ -843,6 +1476,145 @@ final class CoreParityTests: XCTestCase {
                 )
             }
     }
+
+    private func garminPlan(setCount: Int, exerciseName: String = "Squat") -> GarminWorkoutPlan {
+        GarminWorkoutPlan(
+            source: "gymapp-ios",
+            version: 1,
+            title: "Workout",
+            createdAt: "2026-07-13T20:00:00.000Z",
+            startedAt: "2026-07-13T20:00:00.000Z",
+            note: "",
+            exercises: [
+                GarminPlanExercise(
+                    name: exerciseName,
+                    sets: (0 ..< setCount).map {
+                        GarminPlanSet(weight: 100, reps: 8, orderIndex: $0)
+                    }
+                )
+            ]
+        )
+    }
+
+    private func cloudSession(userID: String) -> CloudAccountSession {
+        CloudAccountSession(
+            userID: userID,
+            email: "\(userID)@example.com",
+            displayName: userID,
+            accessToken: "access-\(userID)",
+            refreshToken: "refresh-\(userID)",
+            expiresAt: Date().addingTimeInterval(3_600)
+        )
+    }
+
+    private func remoteBackupData(exerciseName: String, owner: BackupOwner?) throws -> Data {
+        let store = try WorkoutStore(
+            accountStorageKey: "remote-source-\(UUID().uuidString)",
+            directoryURL: try temporaryDirectory(named: "remote-source")
+        )
+        let exercise = try store.addExercise(name: exerciseName)
+        _ = try store.createWorkout(
+            date: Date(timeIntervalSince1970: 1_750_000_000),
+            exercises: [
+                WorkoutExerciseDraft(
+                    exerciseID: exercise.id,
+                    sets: [.init(weight: 100, reps: 8)]
+                )
+            ]
+        )
+        var object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: store.exportBackupData(owner: owner)) as? [String: Any]
+        )
+        if owner == nil { object.removeValue(forKey: "owner") }
+        return try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+    }
+
+    private func pwaFlatCloudData(exerciseName: String) throws -> Data {
+        let object: [String: Any] = [
+            "language": "uk",
+            "exercises": [["id": 1, "name": exerciseName]],
+            "sessions": [[
+                "id": 10,
+                "startedAt": 1_750_000_000_000 as Int64,
+                "note": "Browser session",
+                "exerciseNames": [exerciseName],
+                "sets": [[
+                    "id": 11,
+                    "exerciseName": exerciseName,
+                    "weight": 80.0,
+                    "reps": 8,
+                    "orderIndex": 0
+                ]]
+            ]],
+            "mappings": [exerciseName.lowercased(): ["chest"]],
+            "profile": [
+                "split": "Upper / Lower",
+                "days": 4,
+                "goal": "Strength",
+                "calories": "Maintenance"
+            ]
+        ]
+        return try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+    }
+
+    private func pwaSchemaCloudData(exerciseName: String, userID: String) throws -> Data {
+        let object: [String: Any] = [
+            "schemaVersion": GymBackup.currentSchemaVersion,
+            "exportedAt": 1_750_000_000_000 as Int64,
+            "source": "gym-pwa",
+            "owner": [
+                "accountId": "remote-\(userID)",
+                "userId": userID,
+                "email": "\(userID)@example.com",
+                "remote": "supabase"
+            ],
+            "exercises": [["id": 1, "name": exerciseName]],
+            "sessions": [[
+                "id": 10,
+                "date": 1_750_000_000_000 as Int64,
+                "startedAt": 1_750_000_000_000 as Int64,
+                "note": "Browser export",
+                "exercises": [[
+                    "name": exerciseName,
+                    "sets": [["id": 11, "weight": 100.0, "reps": 5]]
+                ]],
+                "sets": [[
+                    "id": 11,
+                    "exerciseName": exerciseName,
+                    "weight": 100.0,
+                    "reps": 5,
+                    "orderIndex": 0
+                ]]
+            ]],
+            "exerciseCatalog": [exerciseName],
+            "mappings": [exerciseName.lowercased(): ["chest"]],
+            "profile": [
+                "split": "Upper / Lower",
+                "days": 4,
+                "goal": "Strength",
+                "calories": "Maintenance"
+            ]
+        ]
+        return try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+    }
+
+    private func temporaryDefaults(named name: String) -> UserDefaults {
+        let suiteName = "GymAppTests.\(name).\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        addTeardownBlock { defaults.removePersistentDomain(forName: suiteName) }
+        return defaults
+    }
+
+    private func waitUntil(
+        _ condition: @escaping @MainActor () -> Bool
+    ) async -> Bool {
+        for _ in 0 ..< 300 {
+            if condition() { return true }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        return condition()
+    }
 }
 
 private struct ProgressionSessionInput {
@@ -863,6 +1635,7 @@ private struct ProgressionGoldenRow {
 private final class InMemoryKeychainStore: KeychainStoring {
     private let lock = NSLock()
     private var values: [String: Data] = [:]
+    var accountsThatFailDeletion = Set<String>()
 
     func save(_ data: Data, account: String) throws {
         lock.withLock { values[account] = data }
@@ -873,7 +1646,43 @@ private final class InMemoryKeychainStore: KeychainStoring {
     }
 
     func delete(account: String) throws {
-        lock.withLock { _ = values.removeValue(forKey: account) }
+        try lock.withLock {
+            if accountsThatFailDeletion.contains(account) {
+                throw NSError(domain: "GymAppTests.KeychainDelete", code: 1)
+            }
+            _ = values.removeValue(forKey: account)
+        }
+    }
+}
+
+@MainActor
+private final class RemoteStateGate {
+    private let values: [String: Data]
+    private let expectations: [String: XCTestExpectation]
+    private var continuations: [String: CheckedContinuation<Data?, Error>] = [:]
+
+    init(values: [String: Data], expectations: [String: XCTestExpectation]) {
+        self.values = values
+        self.expectations = expectations
+    }
+
+    func expectation(for userID: String) -> XCTestExpectation {
+        expectations[userID]!
+    }
+
+    func load(userID: String) async throws -> Data? {
+        guard values[userID] != nil else {
+            throw NSError(domain: "GymAppTests.RemoteState", code: 1)
+        }
+        expectations[userID]?.fulfill()
+        return try await withCheckedThrowingContinuation { continuation in
+            continuations[userID] = continuation
+        }
+    }
+
+    func release(userID: String) {
+        guard let continuation = continuations.removeValue(forKey: userID) else { return }
+        continuation.resume(returning: values[userID])
     }
 }
 

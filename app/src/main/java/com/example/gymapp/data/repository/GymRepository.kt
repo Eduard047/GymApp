@@ -6,23 +6,30 @@ import com.example.gymapp.data.database.GymDatabase
 import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.entity.ExerciseHistoryEntry
 import com.example.gymapp.data.entity.ExerciseMuscleMappingEntity
+import com.example.gymapp.data.entity.GarminWorkoutReceiptEntity
 import com.example.gymapp.data.entity.SetEntryEntity
+import com.example.gymapp.data.entity.WearMutationReceiptEntity
+import com.example.gymapp.data.entity.WearSyncSetRow
 import com.example.gymapp.data.entity.WorkoutExerciseEntity
 import com.example.gymapp.data.entity.WorkoutSessionDetails
 import com.example.gymapp.data.entity.WorkoutSessionEntity
 import com.example.gymapp.data.entity.WorkoutSessionSummary
 import com.example.gymapp.util.DateTimeUtils
 import com.example.gymapp.util.TrainingProfile
+import java.nio.ByteBuffer
+import java.security.MessageDigest
 import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.temporal.TemporalAdjusters
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -41,6 +48,76 @@ data class WorkoutExerciseDraft(
     val exerciseId: Long,
     val sets: List<WorkoutSetDraft>
 )
+
+data class PhoneWearRepositorySnapshot(
+    val setRows: List<WearSyncSetRow>,
+    val exerciseNames: List<String>
+)
+
+enum class WearMutationApplyResult {
+    Applied,
+    AlreadyApplied,
+    Rejected
+}
+
+enum class GarminWorkoutApplyResult {
+    Applied,
+    AlreadyApplied,
+    Rejected
+}
+
+/**
+ * Collision-resistant identity for import de-duplication.
+ *
+ * Every variable-length value has an explicit presence/length marker and every numeric value is
+ * encoded at a fixed width. Notes and signed zero are normalized exactly as persistence treats
+ * them. This prevents an imported note from imitating the delimiters that separate exercise and
+ * set fields without breaking idempotence after a save/re-import round trip.
+ */
+internal fun workoutImportSignature(
+    date: Long,
+    note: String?,
+    workoutExercises: List<WorkoutExerciseDraft>
+): String {
+    val digest = MessageDigest.getInstance("SHA-256")
+    val numberBuffer = ByteBuffer.allocate(Long.SIZE_BYTES)
+
+    fun updateLong(value: Long) {
+        numberBuffer.clear()
+        numberBuffer.putLong(value)
+        digest.update(numberBuffer.array())
+    }
+
+    fun updateInt(value: Int) {
+        updateLong(value.toLong())
+    }
+
+    fun updateNullableString(value: String?) {
+        if (value == null) {
+            digest.update(0.toByte())
+            return
+        }
+        val utf8 = value.toByteArray(Charsets.UTF_8)
+        digest.update(1.toByte())
+        updateInt(utf8.size)
+        digest.update(utf8)
+    }
+
+    digest.update("GymAppWorkoutImportSignatureV1".toByteArray(Charsets.UTF_8))
+    updateLong(date)
+    updateNullableString(note?.trim()?.takeIf { it.isNotEmpty() })
+    updateInt(workoutExercises.size)
+    workoutExercises.forEach { exercise ->
+        updateLong(exercise.exerciseId)
+        updateInt(exercise.sets.size)
+        exercise.sets.forEach { set ->
+            val canonicalWeight = if (set.weight == 0.0) 0.0 else set.weight
+            updateLong(java.lang.Double.doubleToLongBits(canonicalWeight))
+            updateInt(set.reps)
+        }
+    }
+    return digest.digest().joinToString(separator = "") { byte -> "%02x".format(byte) }
+}
 
 data class DashboardStats(
     val workoutCount: Int,
@@ -63,6 +140,17 @@ data class SyncProfileStats(
     val workouts: Int
 )
 
+data class CloudWorkoutProjectionState internal constructor(
+    val digest: String,
+    val exerciseCount: Int,
+    val sessionCount: Int,
+    val workoutExerciseCount: Int,
+    val setCount: Int
+) {
+    val isEmpty: Boolean
+        get() = exerciseCount == 0 && sessionCount == 0 && workoutExerciseCount == 0 && setCount == 0
+}
+
 class GymRepository(
     private val database: GymDatabase
 ) {
@@ -70,28 +158,51 @@ class GymRepository(
     private val workoutDao = database.workoutDao()
     private val setDao = database.setDao()
     private val muscleMappingDao = database.muscleMappingDao()
+    private val wearMutationDao = database.wearMutationDao()
 
     fun observeExercises(): Flow<List<ExerciseEntity>> = exerciseDao.getExercises()
         .catch { emit(emptyList()) }
 
     suspend fun addExercise(name: String): Long {
+        require(name.length <= WorkoutDataLimits.MAX_EXERCISE_NAME_LENGTH * 2) {
+            "Exercise name is outside the supported length."
+        }
         val cleanedName = name.trim()
-        require(cleanedName.isNotBlank())
-        require(
-            exerciseDao.getExercisesSnapshot().none { existing ->
-                exerciseNamesConflict(existing.name, cleanedName)
+        require(WorkoutDataLimits.isValidExerciseName(cleanedName)) {
+            "Exercise name is outside the supported length."
+        }
+        return database.withTransaction {
+            val existingExercises = exerciseDao.getExercisesSnapshot()
+            require(existingExercises.size < WorkoutDataLimits.MAX_EXERCISES) {
+                "This account has reached the exercise limit."
             }
-        )
-        return exerciseDao.insert(ExerciseEntity(name = cleanedName))
+            require(
+                existingExercises.none { existing ->
+                    exerciseNamesConflict(existing.name, cleanedName)
+                }
+            )
+            exerciseDao.insert(ExerciseEntity(name = cleanedName))
+        }
     }
 
     suspend fun updateExercise(exercise: ExerciseEntity) {
+        require(exercise.name.length <= WorkoutDataLimits.MAX_EXERCISE_NAME_LENGTH * 2) {
+            "Exercise name is outside the supported length."
+        }
+        require(WorkoutDataLimits.isValidExerciseName(exercise.name.trim())) {
+            "Exercise name is outside the supported length."
+        }
         exerciseDao.update(exercise)
     }
 
     suspend fun renameExercise(exercise: ExerciseEntity, newName: String) {
+        require(newName.length <= WorkoutDataLimits.MAX_EXERCISE_NAME_LENGTH * 2) {
+            "Exercise name is outside the supported length."
+        }
         val cleanedName = newName.trim()
-        require(cleanedName.isNotBlank())
+        require(WorkoutDataLimits.isValidExerciseName(cleanedName)) {
+            "Exercise name is outside the supported length."
+        }
 
         require(
             exerciseDao.getExercisesSnapshot().none { existing ->
@@ -254,8 +365,20 @@ class GymRepository(
         exerciseName: String,
         muscleIds: List<String>
     ) {
+        require(exerciseName.length <= WorkoutDataLimits.MAX_EXERCISE_NAME_LENGTH * 2) {
+            "Exercise name is outside the supported length."
+        }
         val cleanedName = exerciseName.trim()
         if (cleanedName.isBlank()) return
+        require(WorkoutDataLimits.isValidExerciseName(cleanedName)) {
+            "Exercise name is outside the supported length."
+        }
+        require(muscleIds.size <= WorkoutDataLimits.MAX_EXERCISES_PER_SESSION) {
+            "Exercise mapping exceeds the muscle limit."
+        }
+        require(muscleIds.all { it.length <= WorkoutDataLimits.MAX_CATALOG_KEY_LENGTH }) {
+            "Muscle identifier exceeds the length limit."
+        }
 
         val exerciseNameKey = cleanedName.toExerciseMappingKey()
         val now = System.currentTimeMillis()
@@ -284,16 +407,71 @@ class GymRepository(
     suspend fun exportBackupJson(
         includeDiagnostics: Boolean = false,
         owner: BackupOwner? = null
-    ): String {
-        return buildBackupJson(includeDiagnostics = includeDiagnostics, owner = owner).toString(2)
+    ): String = withContext(Dispatchers.Default) {
+        val serialized = buildBackupJson(
+            includeDiagnostics = includeDiagnostics,
+            owner = owner
+        ).toString(2)
+        // Validate the exact representation retained by the UI and shared with other apps.
+        // Pretty-print whitespace can be material at the account-wide row limits.
+        WorkoutDataLimits.requireSafeJsonEnvelope(serialized)
+        serialized
+    }
+
+    /**
+     * Produces a deliberately content-free support snapshot.
+     *
+     * Account identifiers, exercise names, notes, dates, set values, and raw database rows are
+     * excluded. A user can share this aggregate safely without accidentally sharing a backup.
+     */
+    suspend fun exportDiagnosticsJson(): String = withContext(Dispatchers.Default) {
+        val summary = database.withTransaction {
+            JSONObject()
+                .put("exerciseCount", exerciseDao.getExerciseCount())
+                .put("sessionCount", workoutDao.getSessionCount())
+                .put("setCount", setDao.getTotalSetCount())
+        }
+        val root = JSONObject()
+            .put("schemaVersion", 1)
+            .put("exportedAt", System.currentTimeMillis())
+            .put("app", "GymApp")
+            .put("diagnostics", true)
+            .put("summary", summary)
+        val serialized = root.toString(2)
+        WorkoutDataLimits.requireSafeJsonEnvelope(serialized)
+        serialized
     }
 
     suspend fun buildBackupJson(
         includeDiagnostics: Boolean = false,
         owner: BackupOwner? = null
-    ): JSONObject {
-        val exercises = exerciseDao.getExercisesSnapshot()
-        val sessions = workoutDao.getAllSessionDetailsForBackup().map(::sortSessionDetails)
+    ): JSONObject = withContext(Dispatchers.Default) {
+        val (exercises, sessions) = database.withTransaction {
+            val exerciseCount = exerciseDao.getExerciseCount()
+            val sessionCount = workoutDao.getSessionCount()
+            val workoutExerciseCount = workoutDao.getTotalWorkoutExerciseCount()
+            val setCount = setDao.getTotalSetCount()
+            require(exerciseCount <= WorkoutDataLimits.MAX_EXERCISES) {
+                "Stored exercise data exceeds the safe export limit."
+            }
+            require(sessionCount <= WorkoutDataLimits.MAX_SESSIONS) {
+                "Stored workout data exceeds the safe export limit."
+            }
+            require(setCount <= WorkoutDataLimits.MAX_TOTAL_SETS) {
+                "Stored set data exceeds the safe export limit."
+            }
+            require(
+                WorkoutDataLimits.isBackupProjectionWithinLimit(
+                    exerciseCount = exerciseCount,
+                    sessionCount = sessionCount,
+                    workoutExerciseCount = workoutExerciseCount,
+                    setCount = setCount,
+                    textUtf8Bytes = workoutDao.getBackupTextUtf8Bytes()
+                )
+            ) { "Stored workout data exceeds the safe backup byte budget." }
+            exerciseDao.getExercisesSnapshot() to
+                workoutDao.getAllSessionDetailsForBackup().map(::sortSessionDetails)
+        }
         val root = JSONObject()
             .put("schemaVersion", 2)
             .put("exportedAt", System.currentTimeMillis())
@@ -353,39 +531,53 @@ class GymRepository(
                 .put("totalVolume", totalVolume)
         )
 
-        return root
+        // Enforce the same byte/depth envelope for generated cloud and manual
+        // backups. Account-wide row counts were checked before materializing
+        // relations above, so legacy over-limit databases fail early.
+        WorkoutDataLimits.requireSafeJsonEnvelope(root.toString())
+
+        root
     }
 
     suspend fun getSyncProfileStats(): SyncProfileStats {
-        val sessions = workoutDao.getAllSessionDetailsForBackup().map(::sortSessionDetails)
-        val summaries = sessions.map { details ->
-            WorkoutSessionSummary(
-                session = details.session,
-                exerciseCount = details.workoutExercises.size,
-                setCount = details.workoutExercises.sumOf { it.sets.size },
-                totalVolume = details.workoutExercises.sumOf { exercise ->
-                    exercise.sets.sumOf { set -> set.weight * set.reps }
-                }
+        return withContext(Dispatchers.Default) {
+            val sessions = workoutDao.getAllSessionDetailsForBackup().map(::sortSessionDetails)
+            val summaries = sessions.map { details ->
+                WorkoutSessionSummary(
+                    session = details.session,
+                    exerciseCount = details.workoutExercises.size,
+                    setCount = details.workoutExercises.sumOf { it.sets.size },
+                    totalVolume = details.workoutExercises.sumOf { exercise ->
+                        exercise.sets.sumOf { set -> set.weight * set.reps }
+                    }
+                )
+            }
+            val xp = summaries.fold(0) { total, summary ->
+                (total.toLong() + GamificationEngine.xpForSession(summary).toLong())
+                    .coerceAtMost(Int.MAX_VALUE.toLong())
+                    .toInt()
+            }
+            val level = GamificationEngine.levelForXp(xp)
+            SyncProfileStats(
+                xp = xp,
+                level = level,
+                workouts = summaries.size
             )
         }
-        val xp = summaries.sumOf(GamificationEngine::xpForSession)
-        val level = GamificationEngine.levelForXp(xp)
-        return SyncProfileStats(
-            xp = xp,
-            level = level,
-            workouts = summaries.size
-        )
     }
+
+    suspend fun getCloudWorkoutProjectionState(): CloudWorkoutProjectionState =
+        database.withTransaction { currentCloudWorkoutProjectionState() }
 
     suspend fun importBackupJson(
         rawJson: String,
         activeAccountId: String? = null,
         activeUserId: String? = null,
         activeRemote: Boolean = false
-    ): Int {
+    ): Int = withContext(Dispatchers.Default) {
+        WorkoutDataLimits.requireSafeJsonEnvelope(rawJson)
         val root = JSONObject(rawJson)
-        validateBackupOwner(root, activeAccountId, activeUserId, activeRemote)
-        return importBackupJsonObject(root, activeAccountId, activeUserId, activeRemote)
+        importBackupJsonObject(root, activeAccountId, activeUserId, activeRemote)
     }
 
     suspend fun importBackupJsonObject(
@@ -393,13 +585,74 @@ class GymRepository(
         activeAccountId: String? = null,
         activeUserId: String? = null,
         activeRemote: Boolean = false
-    ): Int {
-        validateBackupOwner(root, activeAccountId, activeUserId, activeRemote)
-        val sessions = root.optJSONArray("sessions") ?: JSONArray()
-        val exercises = root.optJSONArray("exercises") ?: JSONArray()
+    ): Int = importBackupJsonObjectInternal(
+        root = root,
+        activeAccountId = activeAccountId,
+        activeUserId = activeUserId,
+        activeRemote = activeRemote,
+        replaceExisting = false
+    )
+
+    /**
+     * Replaces the account workout projection with an already-fetched authoritative snapshot.
+     * Validation and owner binding happen before the transaction can delete any local rows.
+     */
+    suspend fun replaceWithBackupJsonObject(
+        root: JSONObject,
+        expectedLocalState: CloudWorkoutProjectionState,
+        activeAccountId: String? = null,
+        activeUserId: String? = null,
+        activeRemote: Boolean = false
+    ): Int = importBackupJsonObjectInternal(
+        root = root,
+        activeAccountId = activeAccountId,
+        activeUserId = activeUserId,
+        activeRemote = activeRemote,
+        replaceExisting = true,
+        expectedLocalState = expectedLocalState
+    )
+
+    private suspend fun importBackupJsonObjectInternal(
+        root: JSONObject,
+        activeAccountId: String?,
+        activeUserId: String?,
+        activeRemote: Boolean,
+        replaceExisting: Boolean,
+        expectedLocalState: CloudWorkoutProjectionState? = null
+    ): Int = withContext(Dispatchers.Default) {
+        val backup = BackupImportValidator.validate(root)
+        validateBackupOwnerContext(root, activeAccountId, activeUserId, activeRemote)
+        val expectedReplacementDigest = if (replaceExisting) {
+            canonicalWorkoutPayloadDigest(backup)
+        } else {
+            null
+        }
         var importedSessions = 0
 
         database.withTransaction {
+            if (replaceExisting) {
+                require(expectedLocalState != null)
+                require(currentCloudWorkoutProjectionState() == expectedLocalState) {
+                    "Local workout data changed while cloud state was loading. Automatic replacement is paused."
+                }
+                // Foreign-key cascades remove workout_exercises and set_entries. Replay receipts
+                // deliberately remain intact: replacing cloud state must not reopen old wearable
+                // mutation IDs.
+                workoutDao.deleteAllSessions()
+                exerciseDao.deleteAllExercises()
+            }
+            val existingExerciseCount = exerciseDao.getExerciseCount()
+            var sessionCount = workoutDao.getSessionCount()
+            var accountSetCount = setDao.getTotalSetCount()
+            require(existingExerciseCount <= WorkoutDataLimits.MAX_EXERCISES) {
+                "Stored exercise data exceeds the safe import limit."
+            }
+            require(sessionCount <= WorkoutDataLimits.MAX_SESSIONS) {
+                "Stored workout data exceeds the safe import limit."
+            }
+            require(accountSetCount <= WorkoutDataLimits.MAX_TOTAL_SETS) {
+                "Stored set data exceeds the safe import limit."
+            }
             val existingExercises = exerciseDao.getExercisesSnapshot()
             val exerciseIdByNameKey = existingExercises
                 .associate { exercise -> exercise.name.normalizedExerciseName() to exercise.id }
@@ -412,15 +665,39 @@ class GymRepository(
                 }
             }
 
-            suspend fun resolveImportedExercise(exerciseJson: JSONObject, vararg nameFields: String): Long? {
-                val rawName = exerciseJson.backupExerciseName(*nameFields)
-                if (rawName.isBlank()) return null
+            val prospectiveNameKeys = exerciseIdByNameKey.keys.toMutableSet()
+            val prospectiveCatalogKeys = exerciseIdByCatalogKey.keys.toMutableSet()
+            var prospectiveExerciseCount = existingExercises.size
 
+            fun accountForImportedExercise(exercise: ValidatedBackupExercise) {
+                val nameKey = exercise.name.normalizedExerciseName()
+                if (nameKey in prospectiveNameKeys) return
+                val catalogKey = BuiltInExerciseCatalog.resolvedKey(
+                    catalogKey = exercise.catalogKey,
+                    rawName = exercise.name
+                )
+                if (catalogKey != null && catalogKey in prospectiveCatalogKeys) return
+
+                prospectiveExerciseCount += 1
+                require(prospectiveExerciseCount <= WorkoutDataLimits.MAX_EXERCISES) {
+                    "Backup exceeds the exercise limit for this account."
+                }
+                prospectiveNameKeys += nameKey
+                if (catalogKey != null) prospectiveCatalogKeys += catalogKey
+            }
+
+            backup.exercises.forEach(::accountForImportedExercise)
+            backup.sessions.forEach { session ->
+                session.blocks.forEach { block -> accountForImportedExercise(block.exercise) }
+            }
+
+            suspend fun resolveImportedExercise(exercise: ValidatedBackupExercise): Long {
+                val rawName = exercise.name
                 val nameKey = rawName.normalizedExerciseName()
                 exerciseIdByNameKey[nameKey]?.let { return it }
 
                 val catalogKey = BuiltInExerciseCatalog.resolvedKey(
-                    catalogKey = exerciseJson.optString("catalogKey", ""),
+                    catalogKey = exercise.catalogKey,
                     rawName = rawName
                 )
                 if (catalogKey != null) {
@@ -435,103 +712,129 @@ class GymRepository(
                 return exerciseId
             }
 
-            val existingSignatures = workoutDao.getAllSessionDetailsForBackup()
+            val existingSessions = workoutDao.getAllSessionDetailsForBackup()
+            val existingSignatures = existingSessions
                 .map(::sortSessionDetails)
                 .map(::sessionImportSignature)
                 .toMutableSet()
 
-            repeat(exercises.length()) { index ->
-                exercises.optJSONObject(index)?.let { exerciseJson ->
-                    resolveImportedExercise(exerciseJson, "name")
-                }
-            }
+            backup.exercises.forEach { exercise -> resolveImportedExercise(exercise) }
 
-            repeat(sessions.length()) { sessionIndex ->
-                val sessionJson = sessions.optJSONObject(sessionIndex) ?: return@repeat
-                val exerciseJsonArray = sessionJson.optJSONArray("exercises")
-                val flatSetJsonArray = sessionJson.optJSONArray("sets")
-                val setsByExerciseId = linkedMapOf<Long, MutableList<WorkoutSetDraft>>()
-
-                if (exerciseJsonArray != null) {
-                    repeat(exerciseJsonArray.length()) { exerciseIndex ->
-                        val exerciseJson = exerciseJsonArray.optJSONObject(exerciseIndex) ?: return@repeat
-                        val exerciseId = resolveImportedExercise(exerciseJson, "name") ?: return@repeat
-                        val setJsonArray = exerciseJson.optJSONArray("sets") ?: JSONArray()
-                        val sets = mutableListOf<WorkoutSetDraft>()
-                        repeat(setJsonArray.length()) { setIndex ->
-                            val setJson = setJsonArray.optJSONObject(setIndex) ?: return@repeat
-                            val weight = setJson.optDouble("weight", 0.0).coerceAtLeast(0.0)
-                            val reps = setJson.optInt("reps", 0).coerceAtLeast(0)
-                            if (reps > 0) {
-                                sets += WorkoutSetDraft(weight = weight, reps = reps)
+            backup.sessions.forEach { session ->
+                val drafts = if (replaceExisting) {
+                    // Authoritative native snapshots must round-trip exactly. Room permits the
+                    // same exercise in multiple ordered blocks and two semantically identical
+                    // sessions; neither is a duplicate when restoring the server projection.
+                    session.blocks.map { block ->
+                        WorkoutExerciseDraft(
+                            exerciseId = resolveImportedExercise(block.exercise),
+                            sets = block.sets.map { set ->
+                                WorkoutSetDraft(weight = set.weight, reps = set.reps)
                             }
-                        }
-                        if (sets.isNotEmpty()) {
-                            setsByExerciseId.getOrPut(exerciseId) { mutableListOf() }.addAll(sets)
-                        }
+                        )
                     }
-                } else if (flatSetJsonArray != null) {
-                    repeat(flatSetJsonArray.length()) { setIndex ->
-                        val setJson = flatSetJsonArray.optJSONObject(setIndex) ?: return@repeat
-                        val exerciseId = resolveImportedExercise(
-                            setJson,
-                            "exerciseName",
-                            "name"
-                        ) ?: return@repeat
-                        val reps = setJson.optInt("reps", 0).coerceAtLeast(0)
-                        if (reps > 0) {
-                            setsByExerciseId.getOrPut(exerciseId) { mutableListOf() } += WorkoutSetDraft(
-                                weight = setJson.optDouble("weight", 0.0).coerceAtLeast(0.0),
-                                reps = reps
+                } else {
+                    val setsByExerciseId = linkedMapOf<Long, MutableList<WorkoutSetDraft>>()
+                    session.blocks.forEach { block ->
+                        val exerciseId = resolveImportedExercise(block.exercise)
+                        if (block.sets.isNotEmpty()) {
+                            setsByExerciseId.getOrPut(exerciseId) { mutableListOf() }.addAll(
+                                block.sets.map { set ->
+                                    WorkoutSetDraft(weight = set.weight, reps = set.reps)
+                                }
                             )
                         }
                     }
-                }
 
-                val drafts = setsByExerciseId.map { (exerciseId, sets) ->
-                    WorkoutExerciseDraft(exerciseId = exerciseId, sets = sets)
+                    setsByExerciseId.map { (exerciseId, sets) ->
+                        WorkoutExerciseDraft(exerciseId = exerciseId, sets = sets)
+                    }
                 }
 
                 if (drafts.isNotEmpty()) {
-                    val sessionDate = sessionJson.optLong(
-                        "date",
-                        sessionJson.optLong("startedAt", System.currentTimeMillis())
-                    )
-                    val sessionNote = sessionJson.optString("note").takeIf { it.isNotBlank() }
-                    val signature = sessionImportSignature(sessionDate, sessionNote, drafts)
-                    if (existingSignatures.add(signature)) {
-                        createWorkoutSession(
-                            date = sessionDate,
-                            note = sessionNote,
+                    val signature = workoutImportSignature(session.date, session.note, drafts)
+                    if (replaceExisting || existingSignatures.add(signature)) {
+                        require(sessionCount < WorkoutDataLimits.MAX_SESSIONS) {
+                            "Backup exceeds the workout limit for this account."
+                        }
+                        requireValidWorkout(
+                            date = session.date,
+                            note = session.note,
                             workoutExercises = drafts
                         )
+                        val incomingSetCount = drafts.sumOf { it.sets.size }
+                        require(WorkoutDataLimits.canAddSets(accountSetCount, incomingSetCount)) {
+                            "Backup exceeds the total set limit for this account."
+                        }
+                        insertValidatedWorkoutSession(
+                            date = session.date,
+                            note = session.note,
+                            workoutExercises = drafts
+                        )
+                        accountSetCount += incomingSetCount
+                        sessionCount += 1
                         importedSessions += 1
                     }
                 }
             }
+
+            if (replaceExisting) {
+                require(currentCloudWorkoutProjectionState().digest == expectedReplacementDigest) {
+                    "Cloud state cannot be represented without loss. Local data was preserved."
+                }
+            }
         }
 
-        return importedSessions
+        importedSessions
     }
 
-    private fun validateBackupOwner(
-        root: JSONObject,
-        activeAccountId: String?,
-        activeUserId: String?,
-        activeRemote: Boolean
-    ) {
-        val owner = root.optJSONObject("owner") ?: return
-        val backupUserId = owner.optString("userId").takeIf { it.isNotBlank() && it != "null" }
-        val backupAccountId = owner.optString("accountId").takeIf { it.isNotBlank() && it != "null" }
-        if (activeRemote) {
-            require(backupUserId == null || backupUserId == activeUserId) {
-                "This backup belongs to another account."
+    /** Must be called from [database]'s transaction to make replacement compare-and-swap safe. */
+    private suspend fun currentCloudWorkoutProjectionState(): CloudWorkoutProjectionState {
+        val exerciseCount = exerciseDao.getExerciseCount()
+        val sessionCount = workoutDao.getSessionCount()
+        val workoutExerciseCount = workoutDao.getTotalWorkoutExerciseCount()
+        val setCount = setDao.getTotalSetCount()
+        require(exerciseCount in 0..WorkoutDataLimits.MAX_EXERCISES)
+        require(sessionCount in 0..WorkoutDataLimits.MAX_SESSIONS)
+        require(workoutExerciseCount in 0..WorkoutDataLimits.MAX_TOTAL_SETS)
+        require(setCount in 0..WorkoutDataLimits.MAX_TOTAL_SETS)
+
+        val exercises = exerciseDao.getExercisesSnapshot()
+        val sessions = workoutDao.getAllSessionDetailsForBackup().map(::sortSessionDetails)
+        val projection = ValidatedBackup(
+            exercises = exercises.map { exercise ->
+                ValidatedBackupExercise(
+                    name = exercise.name,
+                    catalogKey = BuiltInExerciseCatalog.inferKey(exercise.name)
+                )
+            },
+            sessions = sessions.map { details ->
+                ValidatedBackupSession(
+                    date = details.session.date,
+                    note = details.session.note,
+                    blocks = details.workoutExercises.map { workoutExercise ->
+                        ValidatedBackupBlock(
+                            exercise = ValidatedBackupExercise(
+                                name = workoutExercise.exercise.name,
+                                catalogKey = BuiltInExerciseCatalog.inferKey(
+                                    workoutExercise.exercise.name
+                                )
+                            ),
+                            sets = workoutExercise.sets.map { set ->
+                                ValidatedBackupSet(weight = set.weight, reps = set.reps)
+                            }
+                        )
+                    }
+                )
             }
-        } else {
-            require(backupUserId == null && (backupAccountId == null || backupAccountId == activeAccountId)) {
-                "This backup belongs to another account."
-            }
-        }
+        )
+        return CloudWorkoutProjectionState(
+            digest = canonicalWorkoutPayloadDigest(projection),
+            exerciseCount = exerciseCount,
+            sessionCount = sessionCount,
+            workoutExerciseCount = workoutExerciseCount,
+            setCount = setCount
+        )
     }
 
     fun observeExerciseHistoryForMonth(
@@ -593,36 +896,16 @@ class GymRepository(
         note: String?,
         workoutExercises: List<WorkoutExerciseDraft>
     ): Long {
+        requireValidWorkout(date = date, note = note, workoutExercises = workoutExercises)
         return database.withTransaction {
-            val sessionId = workoutDao.insert(
-                WorkoutSessionEntity(
-                    date = date,
-                    note = note?.trim().orEmpty().ifBlank { null }
-                )
-            )
-
-            workoutExercises.forEachIndexed { exerciseIndex, workoutExerciseDraft ->
-                val workoutExerciseId = workoutDao.insertWorkoutExercise(
-                    WorkoutExerciseEntity(
-                        sessionId = sessionId,
-                        exerciseId = workoutExerciseDraft.exerciseId,
-                        orderIndex = exerciseIndex
-                    )
-                )
-
-                workoutExerciseDraft.sets.forEachIndexed { setIndex, setDraft ->
-                    setDao.insert(
-                        SetEntryEntity(
-                            workoutExerciseId = workoutExerciseId,
-                            weight = setDraft.weight,
-                            reps = setDraft.reps,
-                            orderIndex = setIndex
-                        )
-                    )
-                }
+            require(workoutDao.getSessionCount() < WorkoutDataLimits.MAX_SESSIONS) {
+                "This account has reached the workout limit."
             }
-
-            sessionId
+            val incomingSetCount = workoutExercises.sumOf { it.sets.size }
+            require(WorkoutDataLimits.canAddSets(setDao.getTotalSetCount(), incomingSetCount)) {
+                "This account has reached the total set limit."
+            }
+            insertValidatedWorkoutSession(date, note, workoutExercises)
         }
     }
 
@@ -634,38 +917,106 @@ class GymRepository(
         if (sets.isEmpty()) {
             return null
         }
+        require(WorkoutDataLimits.isValidTimestamp(date)) {
+            "Workout timestamp is outside the supported range."
+        }
+        require(WorkoutDataLimits.isValidNote(note)) { "Workout note exceeds the length limit." }
+        require(sets.size <= WorkoutDataLimits.MAX_EXERCISES_PER_SESSION * WorkoutDataLimits.MAX_SETS_PER_EXERCISE) {
+            "Workout exceeds the set limit."
+        }
 
-        val exerciseIdByName = linkedMapOf<String, Long>()
-        val groupedDrafts = linkedMapOf<Long, MutableList<WorkoutSetDraft>>()
-
-        for (set in sets) {
+        val normalizedSets = sets.map { set ->
+            require(set.exerciseName.length <= WorkoutDataLimits.MAX_EXERCISE_NAME_LENGTH * 2) {
+                "Exercise name is outside the supported length."
+            }
             val name = set.exerciseName.trim()
-            if (name.isBlank()) continue
+            require(WorkoutDataLimits.isValidExerciseName(name)) {
+                "Exercise name is outside the supported length."
+            }
+            requireValidSet(weight = set.weight, reps = set.reps)
+            set.copy(exerciseName = name)
+        }
+        val countsByExercise = normalizedSets.groupingBy { it.exerciseName.normalizedExerciseName() }.eachCount()
+        require(countsByExercise.size <= WorkoutDataLimits.MAX_EXERCISES_PER_SESSION) {
+            "Workout exceeds the exercise limit."
+        }
+        require(countsByExercise.values.all { it <= WorkoutDataLimits.MAX_SETS_PER_EXERCISE }) {
+            "Workout exercise exceeds the set limit."
+        }
 
-            val key = name.lowercase()
-            val exerciseId = exerciseIdByName.getOrPut(key) {
-                runCatching { exerciseDao.getByName(name) }.getOrNull()?.id
-                    ?: exerciseDao.insert(ExerciseEntity(name = name))
+        return database.withTransaction {
+            require(workoutDao.getSessionCount() < WorkoutDataLimits.MAX_SESSIONS) {
+                "This account has reached the workout limit."
+            }
+            require(WorkoutDataLimits.canAddSets(setDao.getTotalSetCount(), normalizedSets.size)) {
+                "This account has reached the total set limit."
+            }
+            val existingExercises = exerciseDao.getExercisesSnapshot()
+            val exerciseIdByName = existingExercises
+                .associate { it.name.normalizedExerciseName() to it.id }
+                .toMutableMap()
+            val exerciseIdByCatalogKey = linkedMapOf<String, Long>().apply {
+                existingExercises.forEach { exercise ->
+                    BuiltInExerciseCatalog.inferKey(exercise.name)?.let { catalogKey ->
+                        putIfAbsent(catalogKey, exercise.id)
+                    }
+                }
+            }
+            val prospectiveNameKeys = exerciseIdByName.keys.toMutableSet()
+            val prospectiveCatalogKeys = exerciseIdByCatalogKey.keys.toMutableSet()
+            var prospectiveExerciseCount = existingExercises.size
+            normalizedSets.forEach { set ->
+                val nameKey = set.exerciseName.normalizedExerciseName()
+                if (nameKey in prospectiveNameKeys) return@forEach
+                val catalogKey = BuiltInExerciseCatalog.inferKey(set.exerciseName)
+                if (catalogKey != null && catalogKey in prospectiveCatalogKeys) return@forEach
+                prospectiveExerciseCount += 1
+                prospectiveNameKeys += nameKey
+                if (catalogKey != null) prospectiveCatalogKeys += catalogKey
+            }
+            require(prospectiveExerciseCount <= WorkoutDataLimits.MAX_EXERCISES) {
+                "This account has reached the exercise limit."
+            }
+            val groupedDrafts = linkedMapOf<Long, MutableList<WorkoutSetDraft>>()
+
+            normalizedSets.forEach { set ->
+                val name = set.exerciseName
+                val key = name.normalizedExerciseName()
+                val catalogKey = BuiltInExerciseCatalog.inferKey(name)
+                val exerciseId = exerciseIdByName[key]
+                    ?: catalogKey?.let(exerciseIdByCatalogKey::get)
+                    ?: exerciseDao.insert(ExerciseEntity(name = name)).also { insertedId ->
+                        exerciseIdByName[key] = insertedId
+                        if (catalogKey != null) {
+                            exerciseIdByCatalogKey.putIfAbsent(catalogKey, insertedId)
+                        }
+                    }
+                exerciseIdByName.putIfAbsent(key, exerciseId)
+                if (catalogKey != null) {
+                    exerciseIdByCatalogKey.putIfAbsent(catalogKey, exerciseId)
+                }
+
+                groupedDrafts.getOrPut(exerciseId) { mutableListOf() }
+                    .add(WorkoutSetDraft(weight = set.weight, reps = set.reps))
             }
 
-            groupedDrafts.getOrPut(exerciseId) { mutableListOf() }
-                .add(WorkoutSetDraft(weight = set.weight, reps = set.reps))
-        }
-
-        if (groupedDrafts.isEmpty()) {
-            return null
-        }
-
-        return createWorkoutSession(
-            date = date,
-            note = note,
-            workoutExercises = groupedDrafts.map { (exerciseId, drafts) ->
+            val workoutExercises = groupedDrafts.map { (exerciseId, drafts) ->
                 WorkoutExerciseDraft(exerciseId = exerciseId, sets = drafts)
             }
-        )
+            requireValidWorkout(
+                date = date,
+                note = note,
+                workoutExercises = workoutExercises
+            )
+            insertValidatedWorkoutSession(date, note, workoutExercises)
+        }
     }
 
     suspend fun updateWorkoutSession(session: WorkoutSessionEntity) {
+        require(WorkoutDataLimits.isValidTimestamp(session.date)) {
+            "Workout timestamp is outside the supported range."
+        }
+        require(WorkoutDataLimits.isValidNote(session.note)) { "Workout note exceeds the length limit." }
         workoutDao.update(session)
     }
 
@@ -683,15 +1034,25 @@ class GymRepository(
         weight: Double,
         reps: Int
     ): Long {
-        val nextIndex = (setDao.getMaxOrderIndex(workoutExerciseId) ?: -1) + 1
-        return setDao.insert(
-            SetEntryEntity(
-                workoutExerciseId = workoutExerciseId,
-                weight = weight,
-                reps = reps,
-                orderIndex = nextIndex
+        require(workoutExerciseId > 0) { "Workout exercise identifier is invalid." }
+        requireValidSet(weight = weight, reps = reps)
+        return database.withTransaction {
+            require(WorkoutDataLimits.canAddSets(setDao.getTotalSetCount(), 1)) {
+                "This account has reached the total set limit."
+            }
+            val nextIndex = (setDao.getMaxOrderIndex(workoutExerciseId) ?: -1) + 1
+            require(nextIndex < WorkoutDataLimits.MAX_SETS_PER_EXERCISE) {
+                "Workout exercise exceeds the set limit."
+            }
+            setDao.insert(
+                SetEntryEntity(
+                    workoutExerciseId = workoutExerciseId,
+                    weight = weight,
+                    reps = reps,
+                    orderIndex = nextIndex
+                )
             )
-        )
+        }
     }
 
     suspend fun addExerciseToSession(
@@ -700,8 +1061,16 @@ class GymRepository(
         initialWeight: Double,
         initialReps: Int
     ): Long {
+        require(sessionId > 0 && exerciseId > 0) { "Workout identifiers are invalid." }
+        requireValidSet(weight = initialWeight, reps = initialReps)
         return database.withTransaction {
+            require(WorkoutDataLimits.canAddSets(setDao.getTotalSetCount(), 1)) {
+                "This account has reached the total set limit."
+            }
             val nextOrderIndex = (workoutDao.getMaxWorkoutExerciseOrderIndex(sessionId) ?: -1) + 1
+            require(nextOrderIndex < WorkoutDataLimits.MAX_EXERCISES_PER_SESSION) {
+                "Workout exceeds the exercise limit."
+            }
             val workoutExerciseId = workoutDao.insertWorkoutExercise(
                 WorkoutExerciseEntity(
                     sessionId = sessionId,
@@ -722,14 +1091,31 @@ class GymRepository(
     }
 
     suspend fun insertSet(setEntry: SetEntryEntity): Long {
-        return setDao.insert(setEntry.copy(id = 0))
+        require(setEntry.workoutExerciseId > 0) { "Workout exercise identifier is invalid." }
+        requireValidSet(weight = setEntry.weight, reps = setEntry.reps)
+        require(setEntry.orderIndex in 0 until WorkoutDataLimits.MAX_SETS_PER_EXERCISE) {
+            "Set order is outside the supported range."
+        }
+        return database.withTransaction {
+            require(WorkoutDataLimits.canAddSets(setDao.getTotalSetCount(), 1)) {
+                "This account has reached the total set limit."
+            }
+            setDao.insert(setEntry.copy(id = 0))
+        }
     }
 
     suspend fun updateSet(setEntry: SetEntryEntity) {
+        require(setEntry.id > 0 && setEntry.workoutExerciseId > 0) { "Set identifier is invalid." }
+        requireValidSet(weight = setEntry.weight, reps = setEntry.reps)
+        require(setEntry.orderIndex in 0 until WorkoutDataLimits.MAX_SETS_PER_EXERCISE) {
+            "Set order is outside the supported range."
+        }
         setDao.update(setEntry)
     }
 
     suspend fun updateSetById(setId: Long, weight: Double, reps: Int) {
+        require(setId > 0) { "Set identifier is invalid." }
+        requireValidSet(weight = weight, reps = reps)
         val existing = setDao.getById(setId) ?: return
         setDao.update(
             existing.copy(
@@ -783,11 +1169,217 @@ class GymRepository(
     }
 
     suspend fun getExerciseNamesForSync(limit: Int = 400): List<String> {
-        return exerciseDao.getExerciseNamesForSync()
+        require(limit in 1..WorkoutDataLimits.MAX_EXERCISES)
+        return exerciseDao.getExerciseNamesForSync(limit)
             .map { it.trim() }
             .filter { it.isNotBlank() }
             .distinctBy { it.lowercase() }
-            .take(limit)
+    }
+
+    /** Bounded, transactionally consistent source snapshot for the phone-to-watch mirror. */
+    suspend fun getPhoneWearSyncSnapshot(
+        maxSetRows: Int,
+        maxExerciseNames: Int
+    ): PhoneWearRepositorySnapshot {
+        require(maxSetRows in 1..WorkoutDataLimits.MAX_TOTAL_SETS)
+        require(maxExerciseNames in 1..WorkoutDataLimits.MAX_EXERCISES)
+        return database.withTransaction {
+            val rowsWithSentinel = workoutDao.getWearSyncRows(maxSetRows + 1)
+            val rows = if (rowsWithSentinel.size > maxSetRows) {
+                // The final session may be partial at the SQL LIMIT boundary. Drop it as a whole
+                // rather than presenting a truncated workout as authoritative on the watch.
+                val potentiallyPartialSessionId = rowsWithSentinel.last().sessionId
+                rowsWithSentinel.dropLastWhile { it.sessionId == potentiallyPartialSessionId }
+            } else {
+                rowsWithSentinel
+            }
+            PhoneWearRepositorySnapshot(
+                setRows = rows,
+                exerciseNames = exerciseDao.getExerciseNamesForSync(maxExerciseNames)
+                    .map(String::trim)
+                    .filter(String::isNotBlank)
+                    .distinctBy { it.lowercase() }
+            )
+        }
+    }
+
+    /**
+     * Atomically persists a bound Garmin workout and its durable idempotency receipt.
+     *
+     * The stable protocol scope deliberately excludes the auth session generation: a watch may
+     * retry the same queued request after the same account signs out and back in. Receipts have no
+     * count/time eviction because eviction would make an old request reachable again.
+     */
+    suspend fun applyGarminCreateWorkout(
+        ownerBinding: String,
+        deviceBinding: String,
+        requestId: String,
+        payloadDigest: String,
+        date: Long,
+        note: String?,
+        sets: List<NamedWorkoutSetDraft>
+    ): GarminWorkoutApplyResult {
+        require(ownerBinding.matches(GARMIN_OWNER_BINDING_PATTERN))
+        require(
+            deviceBinding.matches(GARMIN_DEVICE_BINDING_PATTERN) &&
+                deviceBinding.toLongOrNull() != null
+        )
+        require(requestId.matches(GARMIN_REQUEST_ID_PATTERN))
+        require(payloadDigest.matches(SHA256_HEX_PATTERN))
+
+        return database.withTransaction {
+            val receiptDao = database.garminWorkoutReceiptDao()
+            val existing = receiptDao.get(ownerBinding, deviceBinding, requestId)
+            if (existing != null) {
+                return@withTransaction if (existing.payloadDigest == payloadDigest) {
+                    GarminWorkoutApplyResult.AlreadyApplied
+                } else {
+                    GarminWorkoutApplyResult.Rejected
+                }
+            }
+
+            val sessionId = createWorkoutSessionFromNamedSets(
+                date = date,
+                note = note,
+                sets = sets
+            ) ?: return@withTransaction GarminWorkoutApplyResult.Rejected
+            receiptDao.insert(
+                GarminWorkoutReceiptEntity(
+                    ownerBinding = ownerBinding,
+                    deviceBinding = deviceBinding,
+                    requestId = requestId,
+                    payloadDigest = payloadDigest,
+                    workoutSessionId = sessionId,
+                    createdAt = System.currentTimeMillis()
+                )
+            )
+            GarminWorkoutApplyResult.Applied
+        }
+    }
+
+    suspend fun applyWearCreateWorkout(
+        ownerId: String,
+        accountGeneration: Long,
+        operationId: String,
+        sourceNodeId: String,
+        payloadDigest: String,
+        date: Long,
+        note: String?,
+        sets: List<NamedWorkoutSetDraft>
+    ): WearMutationApplyResult {
+        return applyWearMutation(
+            ownerId = ownerId,
+            accountGeneration = accountGeneration,
+            operationId = operationId,
+            sourceNodeId = sourceNodeId,
+            mutationType = WEAR_MUTATION_CREATE,
+            payloadDigest = payloadDigest
+        ) {
+            createWorkoutSessionFromNamedSets(date = date, note = note, sets = sets) != null
+        }
+    }
+
+    suspend fun applyWearUpdateSet(
+        ownerId: String,
+        accountGeneration: Long,
+        operationId: String,
+        sourceNodeId: String,
+        payloadDigest: String,
+        setId: Long,
+        weight: Double,
+        reps: Int
+    ): WearMutationApplyResult {
+        require(setId > 0)
+        requireValidSet(weight, reps)
+        return applyWearMutation(
+            ownerId = ownerId,
+            accountGeneration = accountGeneration,
+            operationId = operationId,
+            sourceNodeId = sourceNodeId,
+            mutationType = WEAR_MUTATION_UPDATE,
+            payloadDigest = payloadDigest
+        ) {
+            val existing = setDao.getById(setId) ?: return@applyWearMutation false
+            setDao.update(existing.copy(weight = weight, reps = reps))
+            true
+        }
+    }
+
+    suspend fun applyWearDeleteSet(
+        ownerId: String,
+        accountGeneration: Long,
+        operationId: String,
+        sourceNodeId: String,
+        payloadDigest: String,
+        setId: Long
+    ): WearMutationApplyResult {
+        require(setId > 0)
+        return applyWearMutation(
+            ownerId = ownerId,
+            accountGeneration = accountGeneration,
+            operationId = operationId,
+            sourceNodeId = sourceNodeId,
+            mutationType = WEAR_MUTATION_DELETE,
+            payloadDigest = payloadDigest
+        ) {
+            val workoutExerciseId = setDao.getWorkoutExerciseIdBySetId(setId)
+                ?: return@applyWearMutation false
+            setDao.deleteById(setId)
+            cleanupAfterSetDeletion(workoutExerciseId)
+            true
+        }
+    }
+
+    private suspend fun applyWearMutation(
+        ownerId: String,
+        accountGeneration: Long,
+        operationId: String,
+        sourceNodeId: String,
+        mutationType: String,
+        payloadDigest: String,
+        mutation: suspend () -> Boolean
+    ): WearMutationApplyResult {
+        require(ownerId.matches(Regex("^[0-9a-f]{64}$")))
+        require(accountGeneration in 1L..9_007_199_254_740_991L)
+        require(operationId.matches(WEAR_OPERATION_ID_PATTERN))
+        require(sourceNodeId.isNotBlank() && sourceNodeId.length <= 256 && sourceNodeId.none(Char::isISOControl))
+        require(mutationType in WEAR_MUTATION_TYPES)
+        require(payloadDigest.matches(Regex("^[0-9a-f]{64}$")))
+
+        return database.withTransaction {
+            // Stale-generation messages are rejected by the phone binding before this boundary,
+            // so their receipts can be removed without reopening a replay path. This prevents
+            // old logins from permanently exhausting the bounded receipt journal.
+            wearMutationDao.deleteObsoleteGenerations(ownerId, accountGeneration)
+            val existing = wearMutationDao.get(ownerId, accountGeneration, operationId)
+            if (existing != null) {
+                return@withTransaction if (
+                    existing.sourceNodeId == sourceNodeId &&
+                    existing.mutationType == mutationType &&
+                    existing.payloadDigest == payloadDigest
+                ) {
+                    WearMutationApplyResult.AlreadyApplied
+                } else {
+                    WearMutationApplyResult.Rejected
+                }
+            }
+            require(wearMutationDao.count(ownerId, accountGeneration) < MAX_WEAR_MUTATION_RECEIPTS) {
+                "This account has reached the durable Wear mutation limit."
+            }
+            if (!mutation()) return@withTransaction WearMutationApplyResult.Rejected
+            wearMutationDao.insert(
+                WearMutationReceiptEntity(
+                    ownerId = ownerId,
+                    accountGeneration = accountGeneration,
+                    operationId = operationId,
+                    sourceNodeId = sourceNodeId,
+                    mutationType = mutationType,
+                    payloadDigest = payloadDigest,
+                    createdAt = System.currentTimeMillis()
+                )
+            )
+            WearMutationApplyResult.Applied
+        }
     }
 
     private fun calculateStreakDays(allSessions: List<WorkoutSessionSummary>): Int {
@@ -840,7 +1432,7 @@ class GymRepository(
     }
 
     private fun sessionImportSignature(details: WorkoutSessionDetails): String {
-        return sessionImportSignature(
+        return workoutImportSignature(
             date = details.session.date,
             note = details.session.note,
             workoutExercises = details.workoutExercises
@@ -856,26 +1448,140 @@ class GymRepository(
         )
     }
 
-    private fun sessionImportSignature(
+    private fun requireValidWorkout(
         date: Long,
         note: String?,
         workoutExercises: List<WorkoutExerciseDraft>
-    ): String {
-        return buildString {
-            append(date)
-            append('|')
-            append(note.orEmpty().trim())
-            workoutExercises.forEach { exercise ->
-                append('|')
-                append(exercise.exerciseId)
-                exercise.sets.forEach { set ->
-                    append(':')
-                    append(set.weight)
-                    append('x')
-                    append(set.reps)
-                }
+    ) {
+        require(WorkoutDataLimits.isValidTimestamp(date)) {
+            "Workout timestamp is outside the supported range."
+        }
+        require(WorkoutDataLimits.isValidNote(note)) { "Workout note exceeds the length limit." }
+        require(workoutExercises.isNotEmpty()) { "Workout must contain at least one exercise." }
+        require(workoutExercises.size <= WorkoutDataLimits.MAX_EXERCISES_PER_SESSION) {
+            "Workout exceeds the exercise limit."
+        }
+        require(workoutExercises.all { it.exerciseId > 0 }) { "Exercise identifier is invalid." }
+        var totalSets = 0
+        val setsPerExercise = mutableMapOf<Long, Int>()
+        workoutExercises.forEach { exercise ->
+            require(exercise.sets.isNotEmpty()) { "Workout exercise must contain at least one set." }
+            require(exercise.sets.size <= WorkoutDataLimits.MAX_SETS_PER_EXERCISE) {
+                "Workout exercise exceeds the set limit."
+            }
+            val exerciseSetCount = setsPerExercise.getOrDefault(exercise.exerciseId, 0) + exercise.sets.size
+            require(exerciseSetCount <= WorkoutDataLimits.MAX_SETS_PER_EXERCISE) {
+                "Workout exercise exceeds the set limit."
+            }
+            setsPerExercise[exercise.exerciseId] = exerciseSetCount
+            exercise.sets.forEach { set ->
+                requireValidSet(weight = set.weight, reps = set.reps)
+                totalSets += 1
             }
         }
+        require(totalSets <= WorkoutDataLimits.MAX_TOTAL_SETS) { "Workout exceeds the total set limit." }
+    }
+
+    /** Must only be called inside [database]'s transaction after validation and capacity checks. */
+    private suspend fun insertValidatedWorkoutSession(
+        date: Long,
+        note: String?,
+        workoutExercises: List<WorkoutExerciseDraft>
+    ): Long {
+        val sessionId = workoutDao.insert(
+            WorkoutSessionEntity(
+                date = date,
+                note = note?.trim().orEmpty().ifBlank { null }
+            )
+        )
+
+        workoutExercises.forEachIndexed { exerciseIndex, workoutExerciseDraft ->
+            val workoutExerciseId = workoutDao.insertWorkoutExercise(
+                WorkoutExerciseEntity(
+                    sessionId = sessionId,
+                    exerciseId = workoutExerciseDraft.exerciseId,
+                    orderIndex = exerciseIndex
+                )
+            )
+
+            workoutExerciseDraft.sets.forEachIndexed { setIndex, setDraft ->
+                setDao.insert(
+                    SetEntryEntity(
+                        workoutExerciseId = workoutExerciseId,
+                        weight = setDraft.weight,
+                        reps = setDraft.reps,
+                        orderIndex = setIndex
+                    )
+                )
+            }
+        }
+
+        return sessionId
+    }
+
+    private fun requireValidSet(weight: Double, reps: Int) {
+        require(WorkoutDataLimits.isValidWeight(weight)) {
+            "Set weight is outside the supported range."
+        }
+        require(WorkoutDataLimits.isValidReps(reps)) {
+            "Set repetitions are outside the supported range."
+        }
+    }
+
+    private companion object {
+        val GARMIN_OWNER_BINDING_PATTERN = Regex("^[0-9a-f]{64}$")
+        val GARMIN_DEVICE_BINDING_PATTERN = Regex("^-?[0-9]{1,19}$")
+        val GARMIN_REQUEST_ID_PATTERN = Regex("^[A-Za-z0-9_.:-]{16,128}$")
+        val SHA256_HEX_PATTERN = Regex("^[0-9a-f]{64}$")
+        const val MAX_WEAR_MUTATION_RECEIPTS = 100_000
+        const val WEAR_MUTATION_CREATE = "create_workout"
+        const val WEAR_MUTATION_UPDATE = "update_set"
+        const val WEAR_MUTATION_DELETE = "delete_set"
+        val WEAR_MUTATION_TYPES = setOf(
+            WEAR_MUTATION_CREATE,
+            WEAR_MUTATION_UPDATE,
+            WEAR_MUTATION_DELETE
+        )
+        val WEAR_OPERATION_ID_PATTERN = Regex(
+            "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        )
+    }
+}
+
+internal fun validateBackupOwnerContext(
+    root: JSONObject,
+    activeAccountId: String?,
+    activeUserId: String?,
+    activeRemote: Boolean
+) {
+    val owner = root.optJSONObject("owner")
+    if (activeRemote) {
+        val currentUserId = activeUserId?.takeIf { it.isNotBlank() }
+            ?: throw IllegalArgumentException("An active cloud account is required for this backup.")
+        if (owner == null) return // Legacy cloud rows are account-bound by authenticated RLS.
+
+        val backupUserId = (owner.opt("userId") as? String)?.takeIf { it.isNotBlank() }
+        val backupAccountId = (owner.opt("accountId") as? String)?.takeIf { it.isNotBlank() }
+        require(backupUserId == null || backupUserId == currentUserId) {
+            "This backup belongs to another account."
+        }
+
+        val remoteMarker = owner.opt("remote")
+        val isPwaRemoteOwner = remoteMarker == true || remoteMarker == "supabase"
+        val isExactPwaAlias = backupUserId == currentUserId &&
+            backupAccountId == "remote-$currentUserId" &&
+            isPwaRemoteOwner
+        require(backupAccountId == null || backupAccountId == currentUserId || isExactPwaAlias) {
+            "This backup belongs to another account."
+        }
+        return
+    }
+
+    if (owner == null) return
+    val backupUserId = (owner.opt("userId") as? String)?.takeIf { it.isNotBlank() }
+    val backupAccountId = (owner.opt("accountId") as? String)?.takeIf { it.isNotBlank() }
+    require(backupUserId == null && (backupAccountId == null || backupAccountId == activeAccountId)) {
+        "This backup belongs to another account."
     }
 }
 
@@ -899,18 +1605,4 @@ private fun exerciseBackupJson(rawName: String): JSONObject {
                 put("catalogKey", key)
             }
         }
-}
-
-private fun JSONObject.backupExerciseName(vararg nameFields: String): String {
-    nameFields.forEach { field ->
-        val rawName = optString(field, "").trim()
-        if (rawName.isNotBlank() && rawName != "null") {
-            // The raw name remains authoritative to preserve existing history identity.
-            return rawName
-        }
-    }
-
-    // A catalog key lets newer backups recover a missing display name while old schema-v2
-    // backups, which only have `name`, continue through the path above unchanged.
-    return BuiltInExerciseCatalog.canonicalNameForKey(optString("catalogKey", "").trim()).orEmpty()
 }

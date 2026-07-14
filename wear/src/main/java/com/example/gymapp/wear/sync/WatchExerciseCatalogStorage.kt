@@ -22,10 +22,11 @@ object WatchExerciseCatalogStorage {
             normalized.forEach { put(it) }
         }.toString()
 
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val committed = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
             .putString(KEY_EXERCISE_NAMES_JSON, encoded)
-            .apply()
+            .commit()
+        check(committed) { "Could not persist exercise catalog" }
     }
 
     fun load(context: Context): List<String> {
@@ -58,8 +59,8 @@ object WatchExerciseCatalogStorage {
                     trySend(load(appContext))
                 }
             }
-            trySend(load(appContext))
             prefs.registerOnSharedPreferenceChangeListener(listener)
+            trySend(load(appContext))
             awaitClose {
                 prefs.unregisterOnSharedPreferenceChangeListener(listener)
             }

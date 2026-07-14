@@ -19,8 +19,17 @@ struct AppRootView: View {
         Group {
             if auth.session == nil {
                 AuthView(authService: auth)
-            } else {
+            } else if appState.isAccountReady {
                 MainTabShell(appState: appState)
+                    .environmentObject(appState.workoutStore)
+                    .id(appState.activeAccountStorageKey)
+            } else {
+                AccountPreparationView(
+                    isWorking: appState.isPreparingAccount,
+                    message: appState.accountPreparationError,
+                    retry: appState.retryAccountActivation,
+                    signOut: { Task { await auth.signOut() } }
+                )
             }
         }
         .environment(\.locale, AppLanguage(rawValue: languageCode)?.locale ?? Locale(identifier: "en"))
@@ -50,6 +59,47 @@ struct AppRootView: View {
             try? await Task.sleep(for: .milliseconds(1_400))
             withAnimation(.easeOut(duration: 0.28)) {
                 showsIntro = false
+            }
+        }
+    }
+}
+
+private struct AccountPreparationView: View {
+    @AppStorage("app-language") private var languageCode = AppLanguage.english.rawValue
+
+    let isWorking: Bool
+    let message: String?
+    let retry: () -> Void
+    let signOut: () -> Void
+
+    var body: some View {
+        ContentUnavailableView {
+            Label(
+                gymText("Preparing account", "Підготовка акаунта", languageCode: languageCode),
+                systemImage: isWorking ? "arrow.triangle.2.circlepath" : "person.crop.circle.badge.exclamationmark"
+            )
+        } description: {
+            Text(
+                message ?? gymText(
+                    "Opening this account's protected workout data.",
+                    "Відкриваємо захищені дані тренувань цього акаунта.",
+                    languageCode: languageCode
+                )
+            )
+        } actions: {
+            if isWorking {
+                ProgressView()
+            } else {
+                Button(
+                    gymText("Try again", "Спробувати ще раз", languageCode: languageCode),
+                    action: retry
+                )
+                .buttonStyle(.borderedProminent)
+                Button(
+                    gymText("Sign out", "Вийти", languageCode: languageCode),
+                    action: signOut
+                )
+                .buttonStyle(.bordered)
             }
         }
     }
@@ -245,7 +295,7 @@ private struct MainTabShell: View {
 
     private var ratingTab: some View {
         NavigationStack {
-            LeaderboardView(store: store, cloudSync: appState.cloudSync, auth: auth)
+            LeaderboardView(store: store, appState: appState, auth: auth)
                 .gymLanguageToolbar()
         }
     }

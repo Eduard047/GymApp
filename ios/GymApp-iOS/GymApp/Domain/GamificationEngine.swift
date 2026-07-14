@@ -120,6 +120,7 @@ public struct TrendPoint: Codable, Identifiable, Hashable, Sendable {
 public enum GamificationEngine {
     private static let dailyHeatmapDays = 365
     private static let trendWindowDays = 30
+    private static let maximumXPPerSession = 5_000
 
     private struct DayAggregate {
         var workoutCount = 0
@@ -175,24 +176,117 @@ public enum GamificationEngine {
     }
 
     public static func xpForSession(_ session: WorkoutSessionSummary) -> Int {
-        let volumeBonus = Int((session.totalVolume / 80).rounded())
-        return max(0, 90 + session.exerciseCount * 16 + session.setCount * 8 + volumeBonus)
+        let setCount = max(0, session.setCount)
+        guard setCount > 0 else { return 0 }
+
+        let safeVolume = session.totalVolume.isFinite && session.totalVolume >= 0
+            ? session.totalVolume
+            : 0
+        let rawVolumeBonus = (safeVolume / 80).rounded()
+        let volumeBonus = rawVolumeBonus >= Double(Int.max) ? Int.max : Int(rawVolumeBonus)
+        let earnedXP = saturatingAdd(
+            saturatingAdd(
+                saturatingAdd(90, saturatingMultiply(max(0, session.exerciseCount), 16)),
+                saturatingMultiply(setCount, 8)
+            ),
+            volumeBonus
+        )
+        return min(maximumXPPerSession, earnedXP)
     }
 
     public static func level(for totalXP: Int) -> Int {
-        var level = 1
-        while totalXP >= xpForLevelStart(level + 1) { level += 1 }
-        return level
+        let target = max(0, totalXP)
+        var lower = 1
+        var upper = 2
+        while let threshold = exactXPForLevelStart(upper), threshold <= target {
+            lower = upper
+            guard upper <= Int.max / 2 else { return lower }
+            upper *= 2
+        }
+        while lower + 1 < upper {
+            let midpoint = lower + (upper - lower) / 2
+            if let threshold = exactXPForLevelStart(midpoint), threshold <= target {
+                lower = midpoint
+            } else {
+                upper = midpoint
+            }
+        }
+        return lower
     }
 
     public static func xpForLevelStart(_ level: Int) -> Int {
-        guard level > 1 else { return 0 }
-        return (1 ..< level).reduce(0) { $0 + xpForNextLevel($1) }
+        exactXPForLevelStart(level) ?? Int.max
     }
 
     public static func xpForNextLevel(_ level: Int) -> Int {
-        let stage = max(0, level - 1)
-        return 200 + stage * 85 + stage * stage * 8
+        let stage = level > 1 ? level - 1 : 0
+        let linear = saturatingMultiply(stage, 85)
+        let quadratic = saturatingMultiply(saturatingMultiply(stage, stage), 8)
+        return saturatingAdd(saturatingAdd(200, linear), quadratic)
+    }
+
+    /// Closed-form progression-v1 threshold. `nil` means the mathematical value does
+    /// not fit in `Int`; callers use it as an upper-bound sentinel, never as equality.
+    private static func exactXPForLevelStart(_ level: Int) -> Int? {
+        guard level > 1 else { return 0 }
+        let count = level - 1
+        guard let twiceCount = checkedMultiply(count, 2), twiceCount > 0 else { return nil }
+        let squareFactor = twiceCount - 1
+
+        guard let base = checkedMultiply(200, count),
+              let triangular = checkedDividedProduct([count, count - 1], divisor: 2),
+              let linear = checkedMultiply(85, triangular),
+              let squares = checkedDividedProduct(
+                [count - 1, count, squareFactor],
+                divisor: 6
+              ),
+              let quadratic = checkedMultiply(8, squares),
+              let partial = checkedAdd(base, linear) else {
+            return nil
+        }
+        return checkedAdd(partial, quadratic)
+    }
+
+    private static func checkedDividedProduct(_ values: [Int], divisor: Int) -> Int? {
+        var factors = values
+        var remainingDivisor = divisor
+        for index in factors.indices where remainingDivisor > 1 {
+            let common = greatestCommonDivisor(factors[index], remainingDivisor)
+            factors[index] /= common
+            remainingDivisor /= common
+        }
+        guard remainingDivisor == 1 else { return nil }
+        return factors.reduce(Optional(1)) { partial, factor in
+            guard let partial else { return nil }
+            return checkedMultiply(partial, factor)
+        }
+    }
+
+    private static func greatestCommonDivisor(_ lhs: Int, _ rhs: Int) -> Int {
+        var a = lhs
+        var b = rhs
+        while b != 0 {
+            (a, b) = (b, a % b)
+        }
+        return max(1, a)
+    }
+
+    private static func checkedMultiply(_ lhs: Int, _ rhs: Int) -> Int? {
+        let result = lhs.multipliedReportingOverflow(by: rhs)
+        return result.overflow ? nil : result.partialValue
+    }
+
+    private static func checkedAdd(_ lhs: Int, _ rhs: Int) -> Int? {
+        let result = lhs.addingReportingOverflow(rhs)
+        return result.overflow ? nil : result.partialValue
+    }
+
+    private static func saturatingMultiply(_ lhs: Int, _ rhs: Int) -> Int {
+        checkedMultiply(lhs, rhs) ?? Int.max
+    }
+
+    private static func saturatingAdd(_ lhs: Int, _ rhs: Int) -> Int {
+        checkedAdd(lhs, rhs) ?? Int.max
     }
 
     public static func title(for level: Int) -> GamificationTitle {

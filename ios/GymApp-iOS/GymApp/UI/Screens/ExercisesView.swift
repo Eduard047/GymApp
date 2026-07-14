@@ -623,7 +623,10 @@ struct ExercisesView: View {
             guard fileSize <= BackupImportLimits.standard.maximumFileBytes else {
                 throw WorkoutStoreError.importLimitExceeded("file size")
             }
-            pendingImportData = try Data(contentsOf: url, options: .mappedIfSafe)
+            pendingImportData = try BackupFileReader.read(
+                from: url,
+                maximumBytes: BackupImportLimits.standard.maximumFileBytes
+            )
             activeAlert = .importBackup
         } catch {
             activeAlert = .error(errorMessage(error))
@@ -693,6 +696,26 @@ struct ExercisesView: View {
 
     private func errorMessage(_ error: Error) -> String {
         gymErrorMessage(error)
+    }
+}
+
+enum BackupFileReader {
+    static func read(from url: URL, maximumBytes: Int) throws -> Data {
+        guard maximumBytes >= 0 else {
+            throw WorkoutStoreError.importLimitExceeded("file size")
+        }
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+
+        var result = Data()
+        result.reserveCapacity(min(maximumBytes, 256 * 1_024))
+        while let chunk = try handle.read(upToCount: 64 * 1_024), !chunk.isEmpty {
+            guard chunk.count <= maximumBytes - result.count else {
+                throw WorkoutStoreError.importLimitExceeded("file size")
+            }
+            result.append(chunk)
+        }
+        return result
     }
 }
 

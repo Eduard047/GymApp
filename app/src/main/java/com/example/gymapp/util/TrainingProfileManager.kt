@@ -1,6 +1,9 @@
 package com.example.gymapp.util
 
 import android.content.Context
+import com.example.gymapp.auth.AccountSession
+import com.example.gymapp.auth.databaseName
+import java.security.MessageDigest
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -32,47 +35,96 @@ data class TrainingProfile(
     val calorieMode: CalorieMode = CalorieMode.Deficit
 )
 
+internal fun trainingProfileAccountKey(session: AccountSession?): String? {
+    val stableIdentity = session?.databaseName() ?: return null
+    return MessageDigest.getInstance("SHA-256")
+        .digest("GymAppTrainingProfileAccountV1:$stableIdentity".toByteArray(Charsets.UTF_8))
+        .joinToString(separator = "") { byte -> "%02x".format(byte) }
+}
+
 class TrainingProfileManager(
     context: Context
 ) {
-    private val preferences = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-    private val _profile = MutableStateFlow(readProfile())
+    private val appContext = context.applicationContext
+    private val preferences = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val lock = Any()
+    private var activeAccountKey: String? = null
+    private val _profile = MutableStateFlow(TrainingProfile())
     val profile: StateFlow<TrainingProfile> = _profile.asStateFlow()
 
+    init {
+        // The legacy file had no owner binding. Assigning it to whichever account logs in next
+        // would expose another person's fitness settings, so it is deliberately discarded.
+        appContext.deleteSharedPreferences(LEGACY_PREFS_NAME)
+    }
+
+    internal fun switchAccount(session: AccountSession?) {
+        val nextAccountKey = trainingProfileAccountKey(session)
+        synchronized(lock) {
+            if (activeAccountKey == nextAccountKey) return
+            activeAccountKey = nextAccountKey
+            _profile.value = nextAccountKey?.let(::readProfile) ?: TrainingProfile()
+        }
+    }
+
     fun updateSplit(split: TrainingSplit) {
-        updateProfile(_profile.value.copy(split = split))
+        synchronized(lock) {
+            updateProfileLocked(_profile.value.copy(split = split))
+        }
     }
 
     fun updateWorkoutsPerWeek(value: Int) {
-        updateProfile(_profile.value.copy(workoutsPerWeek = value.coerceIn(2, 6)))
+        synchronized(lock) {
+            updateProfileLocked(_profile.value.copy(workoutsPerWeek = value.coerceIn(2, 6)))
+        }
     }
 
     fun updateGoal(goal: TrainingGoal) {
-        updateProfile(_profile.value.copy(goal = goal))
+        synchronized(lock) {
+            updateProfileLocked(_profile.value.copy(goal = goal))
+        }
     }
 
     fun updateCalorieMode(mode: CalorieMode) {
-        updateProfile(_profile.value.copy(calorieMode = mode))
+        synchronized(lock) {
+            updateProfileLocked(_profile.value.copy(calorieMode = mode))
+        }
     }
 
-    private fun updateProfile(profile: TrainingProfile) {
+    private fun updateProfileLocked(profile: TrainingProfile) {
+        val accountKey = activeAccountKey ?: return
         preferences.edit()
-            .putString(KEY_SPLIT, profile.split.name)
-            .putInt(KEY_WORKOUTS_PER_WEEK, profile.workoutsPerWeek)
-            .putString(KEY_GOAL, profile.goal.name)
-            .putString(KEY_CALORIE_MODE, profile.calorieMode.name)
+            .putString(scopedKey(accountKey, KEY_SPLIT), profile.split.name)
+            .putInt(scopedKey(accountKey, KEY_WORKOUTS_PER_WEEK), profile.workoutsPerWeek)
+            .putString(scopedKey(accountKey, KEY_GOAL), profile.goal.name)
+            .putString(scopedKey(accountKey, KEY_CALORIE_MODE), profile.calorieMode.name)
             .apply()
         _profile.value = profile
     }
 
-    private fun readProfile(): TrainingProfile {
+    private fun readProfile(accountKey: String): TrainingProfile {
+        require(accountKey.matches(ACCOUNT_KEY_PATTERN))
         return TrainingProfile(
-            split = preferences.enumValue(KEY_SPLIT, TrainingSplit.UpperLower),
-            workoutsPerWeek = preferences.getInt(KEY_WORKOUTS_PER_WEEK, 4).coerceIn(2, 6),
-            goal = preferences.enumValue(KEY_GOAL, TrainingGoal.AestheticFatLoss),
-            calorieMode = preferences.enumValue(KEY_CALORIE_MODE, CalorieMode.Deficit)
+            split = preferences.enumValue(
+                scopedKey(accountKey, KEY_SPLIT),
+                TrainingSplit.UpperLower
+            ),
+            workoutsPerWeek = preferences.getInt(
+                scopedKey(accountKey, KEY_WORKOUTS_PER_WEEK),
+                4
+            ).coerceIn(2, 6),
+            goal = preferences.enumValue(
+                scopedKey(accountKey, KEY_GOAL),
+                TrainingGoal.AestheticFatLoss
+            ),
+            calorieMode = preferences.enumValue(
+                scopedKey(accountKey, KEY_CALORIE_MODE),
+                CalorieMode.Deficit
+            )
         )
     }
+
+    private fun scopedKey(accountKey: String, field: String): String = "$accountKey:$field"
 
     private inline fun <reified T : Enum<T>> android.content.SharedPreferences.enumValue(
         key: String,
@@ -83,10 +135,12 @@ class TrainingProfileManager(
     }
 
     private companion object {
-        const val PREFS_NAME = "gym_training_profile"
+        const val PREFS_NAME = "gym_training_profiles"
+        const val LEGACY_PREFS_NAME = "gym_training_profile"
         const val KEY_SPLIT = "split"
         const val KEY_WORKOUTS_PER_WEEK = "workouts_per_week"
         const val KEY_GOAL = "goal"
         const val KEY_CALORIE_MODE = "calorie_mode"
+        val ACCOUNT_KEY_PATTERN = Regex("^[0-9a-f]{64}$")
     }
 }

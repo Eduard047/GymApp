@@ -12,6 +12,7 @@ import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.entity.ExerciseHistoryEntry
 import com.example.gymapp.data.repository.GymRepository
 import com.example.gymapp.data.repository.MUSCLE_DEFINITIONS
+import com.example.gymapp.data.repository.WorkoutDataLimits
 import com.example.gymapp.data.repository.defaultContributionsForExercise
 import com.example.gymapp.data.repository.normalizedExerciseName
 import com.example.gymapp.data.repository.toManualContributionMap
@@ -38,6 +39,7 @@ data class ExerciseListUiState(
     val selectedExerciseName: String? = null,
     val selectedExerciseHistory: List<ExerciseHistoryEntry> = emptyList(),
     val backupJson: String? = null,
+    val backupIsDiagnostics: Boolean = false,
     val backupMessage: String? = null,
     val importJson: String = "",
     val importMessage: String? = null,
@@ -72,11 +74,16 @@ private data class ExerciseEditState(
 )
 
 private data class ExerciseBackupState(
-    val backupJson: String?,
+    val generatedExport: GeneratedExerciseExport?,
     val backupMessage: String?,
     val importJson: String,
     val importMessage: String?,
     val isImportOpen: Boolean
+)
+
+private data class GeneratedExerciseExport(
+    val json: String,
+    val diagnosticsOnly: Boolean
 )
 
 private data class ExerciseMappingState(
@@ -95,7 +102,7 @@ class ExerciseListViewModel(
     private val editingExercise = MutableStateFlow<ExerciseEntity?>(null)
     private val editingExerciseName = MutableStateFlow("")
     private val selectedExerciseId = MutableStateFlow<Long?>(null)
-    private val backupJson = MutableStateFlow<String?>(null)
+    private val generatedExport = MutableStateFlow<GeneratedExerciseExport?>(null)
     private val backupMessage = MutableStateFlow<String?>(null)
     private val importJson = MutableStateFlow("")
     private val importMessage = MutableStateFlow<String?>(null)
@@ -137,14 +144,14 @@ class ExerciseListViewModel(
     }
 
     private val backupState = combine(
-        backupJson,
+        generatedExport,
         backupMessage,
         importJson,
         importMessage,
         isImportOpen
-    ) { backup, backupStatus, importText, importStatus, importOpen ->
+    ) { export, backupStatus, importText, importStatus, importOpen ->
         ExerciseBackupState(
-            backupJson = backup,
+            generatedExport = export,
             backupMessage = backupStatus,
             importJson = importText,
             importMessage = importStatus,
@@ -211,7 +218,8 @@ class ExerciseListViewModel(
             selectedExerciseId = base.selectedExerciseId,
             selectedExerciseName = base.exercises.firstOrNull { it.id == base.selectedExerciseId }?.name,
             selectedExerciseHistory = base.selectedExerciseHistory,
-            backupJson = backup.backupJson,
+            backupJson = backup.generatedExport?.json,
+            backupIsDiagnostics = backup.generatedExport?.diagnosticsOnly == true,
             backupMessage = backup.backupMessage,
             importJson = backup.importJson,
             importMessage = backup.importMessage,
@@ -344,7 +352,10 @@ class ExerciseListViewModel(
             runCatching {
                 repository.exportBackupJson(includeDiagnostics = false, owner = activeBackupOwner())
             }.onSuccess { json ->
-                backupJson.value = json
+                generatedExport.value = GeneratedExerciseExport(
+                    json = json,
+                    diagnosticsOnly = false
+                )
                 backupMessage.value = "Backup JSON ready"
             }.onFailure {
                 backupMessage.value = "Backup export failed"
@@ -355,9 +366,12 @@ class ExerciseListViewModel(
     fun exportDiagnostics() {
         viewModelScope.launch {
             runCatching {
-                repository.exportBackupJson(includeDiagnostics = true, owner = activeBackupOwner())
+                repository.exportDiagnosticsJson()
             }.onSuccess { json ->
-                backupJson.value = json
+                generatedExport.value = GeneratedExerciseExport(
+                    json = json,
+                    diagnosticsOnly = true
+                )
                 backupMessage.value = "Diagnostics snapshot ready"
             }.onFailure {
                 backupMessage.value = "Diagnostics export failed"
@@ -366,7 +380,7 @@ class ExerciseListViewModel(
     }
 
     fun clearBackupJson() {
-        backupJson.value = null
+        generatedExport.value = null
     }
 
     fun openImport() {
@@ -380,12 +394,22 @@ class ExerciseListViewModel(
     }
 
     fun updateImportJson(value: String) {
+        if (!WorkoutDataLimits.canRetainBackupText(value)) {
+            importJson.value = ""
+            importMessage.value = "Backup exceeds the file size limit"
+            return
+        }
         importJson.value = value
         importMessage.value = null
     }
 
     fun importBackup() {
-        val rawJson = importJson.value.trim()
+        val rawInput = importJson.value
+        if (!WorkoutDataLimits.canRetainBackupText(rawInput)) {
+            importMessage.value = "Backup exceeds the file size limit"
+            return
+        }
+        val rawJson = rawInput.trim()
         if (rawJson.isBlank()) {
             importMessage.value = "Paste backup JSON first"
             return

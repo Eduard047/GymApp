@@ -1,5 +1,9 @@
 "use strict";
 
+if (window.__GYMAPP_TOP_LEVEL__ !== true || window.top !== window.self) {
+  throw new DOMException("GymApp confirmation must run in a top-level browsing context.", "SecurityError");
+}
+
 const PUBLIC_SITE_URL = "https://gymapptracker.com/";
 const ANDROID_AUTH_CALLBACK_URL = "com.setforge.gymapp://auth/callback";
 const IOS_AUTH_CALLBACK_URL = "com.setforge.gymapp.ios://auth/callback";

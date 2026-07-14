@@ -4,6 +4,7 @@ import test from "node:test";
 import vm from "node:vm";
 
 const appSource = await readFile("pwa/app.js", "utf8");
+const stateContractSource = await readFile("pwa/state-contract.js", "utf8");
 
 function loadPwaContext() {
   const values = new Map();
@@ -12,12 +13,14 @@ function loadPwaContext() {
     Date,
     Map,
     Set,
+    TextEncoder,
     URLSearchParams,
     window: {
       location: { search: "?access_token=test", hash: "", replace() {} },
       addEventListener() {},
       GymProgressionRules: {
         sessionXP: () => 100,
+        MAX_SUPPORTED_XP: 2147483647,
         requirementForLevel: () => 100,
         cumulativeXPForLevel: () => 0,
         levelProgress: value => ({ level: 1, currentLevelXp: Number(value || 0), xpForNextLevel: 100, progressFraction: 0 })
@@ -45,7 +48,12 @@ function loadPwaContext() {
   context.window.document = context.document;
   context.window.navigator = context.navigator;
   context.window.localStorage = context.localStorage;
+  context.window.self = context.window;
+  context.window.top = context.window;
+  context.window.__GYMAPP_TOP_LEVEL__ = true;
   vm.createContext(context);
+  vm.runInContext(stateContractSource, context);
+  context.window.GymStateContract = context.GymStateContract;
   vm.runInContext(appSource, context);
   return context;
 }
@@ -196,27 +204,57 @@ test("schema-v2 export keeps nested catalog keys and round-trips sets once", () 
   assert.equal("catalogKey" in roundTripped.sets[1], false);
 });
 
-test("malformed backup entries are ignored without inventing identities or losing valid history", () => {
+test("PWA diagnostics are aggregate-only and cannot expose backup content", () => {
   const context = loadPwaContext();
-  const imported = jsonFrom(context, `normalizeImportedState({
-    exercises: [null, 42, { id: 3, name: "Планка", catalogKey: "invalid" }],
-    sessions: [null, {
-      id: 5,
-      startedAt: 6,
-      exercises: [null, {
-        name: "Bench Press",
-        catalogKey: "squat",
-        sets: [null, { id: 7, weight: 40, reps: 10 }]
+  vm.runInContext(`
+    activeAccount = { id: "private-local", name: "Private Owner", email: "owner@example.test" };
+    state = {
+      ...defaultAppState(),
+      exercises: [{ id: 1, name: "Secret Exercise" }],
+      sessions: [{
+        id: 10,
+        startedAt: 20,
+        note: "Private medical note",
+        exerciseNames: ["Secret Exercise"],
+        sets: [{ id: 11, exerciseName: "Secret Exercise", weight: 50, reps: 8, orderIndex: 0 }]
       }]
-    }]
-  }, defaultAppState())`);
+    };
+  `, context);
 
-  assert.deepEqual(imported.exercises, [{ id: 3, name: "Планка" }]);
-  assert.equal(imported.sessions.length, 1);
-  assert.deepEqual(imported.sessions[0].exerciseNames, ["Bench Press"]);
-  assert.deepEqual(imported.sessions[0].sets, [
-    { id: 7, exerciseName: "Bench Press", catalogKey: "bench_press", weight: 40, reps: 10, orderIndex: 0 }
-  ]);
+  const diagnostics = jsonFrom(context, "JSON.parse(exportPayload(true))");
+  assert.equal(diagnostics.diagnostics, true);
+  assert.deepEqual(diagnostics.summary, { exerciseCount: 1, sessionCount: 1, setCount: 1 });
+  for (const privateField of ["owner", "exercises", "sessions", "mappings", "profile"]) {
+    assert.equal(privateField in diagnostics, false, privateField);
+  }
+  const serialized = JSON.stringify(diagnostics);
+  assert.doesNotMatch(serialized, /Private Owner|owner@example|Secret Exercise|medical note/);
+});
+
+test("local mutation commits enforce numeric bounds and preserve epoch-zero timestamps", () => {
+  const context = loadPwaContext();
+  assert.equal(
+    vm.runInContext("normalizeSessions([{ id: 1, startedAt: 0, note: '', sets: [] }])[0].startedAt", context),
+    0
+  );
+  assert.throws(() => vm.runInContext(`
+    state = defaultAppState();
+    state.sessions = [{
+      id: 1,
+      startedAt: 20,
+      note: "",
+      sets: [{ id: 2, exerciseName: "Bench Press", weight: Infinity, reps: 8, orderIndex: 0 }]
+    }];
+    saveState({ queueRemote: false });
+  `, context), /finite number/);
+});
+
+test("malformed backup entries reject the whole temporary import state", () => {
+  const context = loadPwaContext();
+  assert.throws(() => vm.runInContext(`normalizeImportedState({
+      exercises: [null, 42, { id: 3, name: "Планка", catalogKey: "invalid" }],
+      sessions: []
+    }, defaultAppState())`, context), /must be a string|must be an object/);
 });
 
 test("detail, summary, and progress UI use a set catalog key for localized display and history", () => {

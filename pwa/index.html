@@ -1,8 +1,10 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="frame-pending">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="referrer" content="no-referrer">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://*.supabase.co; worker-src 'self'; manifest-src 'self'; object-src 'none'; frame-src 'none'; media-src 'none'; base-uri 'none'; form-action 'self'; upgrade-insecure-requests">
     <meta name="theme-color" content="#eaf1f5" media="(prefers-color-scheme: light)">
     <meta name="theme-color" content="#04070c" media="(prefers-color-scheme: dark)">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -11,10 +13,11 @@
     <meta name="description" content="GymApp workout tracking, progress, missions, and cloud sync.">
     <meta property="og:url" content="https://gymapptracker.com/">
     <title>Gym Workout Tracker</title>
+    <script src="./frame-guard.js?v=44"></script>
     <link rel="canonical" href="https://gymapptracker.com/">
     <link rel="manifest" href="./manifest.webmanifest">
     <link rel="apple-touch-icon" href="./icon.svg">
-    <link rel="stylesheet" href="./styles.css?v=27">
+    <link rel="stylesheet" href="./styles.css?v=44">
   </head>
   <body>
     <div id="app" class="app-shell"></div>
@@ -23,10 +26,11 @@
         <path d="" />
       </svg>
     </template>
-    <script src="./muscle-regions.js?v=16" defer></script>
-    <script src="./supabase-config.js?v=16" defer></script>
-    <script src="./garmin-cloud-sync.js?v=1" defer></script>
-    <script src="./progression-rules.js?v=1" defer></script>
-    <script src="./app.js?v=29" defer></script>
+    <script src="./muscle-regions.js?v=44" defer></script>
+    <script src="./supabase-config.js?v=44" defer></script>
+    <script src="./state-contract.js?v=44" defer></script>
+    <script src="./garmin-cloud-sync.js?v=44" defer></script>
+    <script src="./progression-rules.js?v=44" defer></script>
+    <script src="./app.js?v=44" defer></script>
   </body>
 </html>

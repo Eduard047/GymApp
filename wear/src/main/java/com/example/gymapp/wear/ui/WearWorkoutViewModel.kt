@@ -13,11 +13,17 @@ import com.example.gymapp.wear.data.WearWorkoutRepository
 import com.example.gymapp.wear.data.WearWorkoutSessionUiModel
 import com.example.gymapp.wear.data.WearWorkoutSetDraft
 import com.example.gymapp.wear.sync.WatchExerciseCatalogStorage
+import com.example.gymapp.wear.sync.WatchPendingWorkoutStorage
 import com.example.gymapp.wear.sync.WatchPlanStorage
+import com.example.gymapp.wear.sync.WatchSyncBindingStorage
+import com.example.gymapp.wear.sync.WatchSyncBinding
 import com.example.gymapp.wear.sync.WearSyncClient
 import com.example.gymapp.wear.sync.WatchSyncJson
 import com.example.gymapp.wear.sync.SyncedWorkoutPlanMeta
+import com.example.gymapp.wear.sync.SyncPaths
+import com.example.gymapp.wear.sync.WatchSyncParseResult
 import com.example.gymapp.wear.util.parseWeightInputOrNull
+import java.util.UUID
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -61,6 +67,8 @@ class WearWorkoutViewModel(
 ) : AndroidViewModel(application) {
     private val appContext = application.applicationContext
     private var lastAppliedWorkoutPlanRaw: String? = null
+    private var draftBinding = currentBindingIdentity()
+    private var draftInstanceId = UUID.randomUUID().toString()
 
     private var nextDraftSetId = 2L
     private val draftSets = MutableStateFlow(listOf(WearSetInputUiState(id = 1L)))
@@ -131,103 +139,156 @@ class WearWorkoutViewModel(
     )
 
     init {
+        restorePendingWorkoutDraft()
         applyPendingWorkoutPlanFromSync()
         viewModelScope.launch {
             WatchPlanStorage.observe(appContext).collect { rawPlan ->
                 applyPendingWorkoutPlanFromSync(rawPlan)
             }
         }
+        viewModelScope.launch {
+            WatchSyncBindingStorage.observe(appContext).collect { binding ->
+                val nextBinding = bindingIdentity(binding)
+                if (nextBinding != draftBinding) {
+                    draftBinding = nextBinding
+                    resetAccountScopedEditor()
+                }
+            }
+        }
         requestRemoteSync(showError = false)
     }
 
     fun addDraftSet() {
-        draftSets.update { current ->
-            current + WearSetInputUiState(id = nextDraftSetId++)
+        if (isSaving.value || !ensureDraftBindingCurrent()) return
+        if (draftSets.value.size >= SyncPaths.MAX_WORKOUT_SETS) {
+            message.value = appContext.getString(R.string.message_invalid_draft)
+            return
         }
+        commitDraftEdit(draftSets.value + WearSetInputUiState(id = nextDraftSetId++))
     }
 
     fun duplicateLastDraftSet(weightDelta: Double = 0.0) {
-        draftSets.update { current ->
-            val lastSet = current.lastOrNull() ?: WearSetInputUiState(id = nextDraftSetId++)
-            val adjustedWeight = when {
-                lastSet.weight.isBlank() -> ""
-                weightDelta == 0.0 -> lastSet.weight
-                else -> {
-                    val parsed = parseWeightInputOrNull(lastSet.weight)
-                    if (parsed == null) {
-                        lastSet.weight
-                    } else {
-                        formatWeight((parsed + weightDelta).coerceAtLeast(0.0))
-                    }
+        if (isSaving.value || !ensureDraftBindingCurrent()) return
+        if (draftSets.value.size >= SyncPaths.MAX_WORKOUT_SETS) {
+            message.value = appContext.getString(R.string.message_invalid_draft)
+            return
+        }
+        val current = draftSets.value
+        val lastSet = current.lastOrNull() ?: WearSetInputUiState(id = nextDraftSetId++)
+        val adjustedWeight = when {
+            lastSet.weight.isBlank() -> ""
+            weightDelta == 0.0 -> lastSet.weight
+            else -> {
+                val parsed = parseWeightInputOrNull(lastSet.weight)
+                if (parsed == null) {
+                    lastSet.weight
+                } else {
+                    formatWeight((parsed + weightDelta).coerceAtLeast(0.0))
                 }
             }
+        }
+        commitDraftEdit(
             current + lastSet.copy(
                 id = nextDraftSetId++,
                 weight = adjustedWeight
             )
-        }
+        )
     }
 
     fun removeDraftSet(setId: Long) {
-        draftSets.update { current ->
-            val updated = current.filterNot { it.id == setId }
+        if (isSaving.value || !ensureDraftBindingCurrent()) return
+        val updated = draftSets.value.filterNot { it.id == setId }
+        commitDraftEdit(
             if (updated.isEmpty()) listOf(WearSetInputUiState(id = nextDraftSetId++)) else updated
-        }
+        )
     }
 
     fun updateDraftExercise(setId: Long, value: String) {
-        draftSets.update { current ->
-            current.map { set ->
-                if (set.id == setId) set.copy(exerciseName = value) else set
+        if (isSaving.value || !ensureDraftBindingCurrent()) return
+        commitDraftEdit(
+            draftSets.value.map { set ->
+                if (set.id == setId) {
+                    set.copy(exerciseName = value.take(SyncPaths.MAX_EXERCISE_NAME_LENGTH))
+                } else {
+                    set
+                }
             }
-        }
+        )
     }
 
     fun updateDraftWeight(setId: Long, value: String) {
-        draftSets.update { current ->
-            current.map { set ->
-                if (set.id == setId) set.copy(weight = value) else set
+        if (isSaving.value || !ensureDraftBindingCurrent()) return
+        commitDraftEdit(
+            draftSets.value.map { set ->
+                if (set.id == setId) set.copy(weight = value.take(32)) else set
             }
-        }
+        )
     }
 
     fun updateDraftReps(setId: Long, value: String) {
-        draftSets.update { current ->
-            current.map { set ->
-                if (set.id == setId) set.copy(reps = value) else set
+        if (isSaving.value || !ensureDraftBindingCurrent()) return
+        commitDraftEdit(
+            draftSets.value.map { set ->
+                if (set.id == setId) set.copy(reps = value.take(6)) else set
             }
-        }
+        )
     }
 
     fun saveWorkout() {
+        if (isSaving.value) return
+        if (!ensureDraftBindingCurrent()) return
+        val submittedDraft = draftSets.value
+        val parsedSets = submittedDraft.mapNotNull(::parseDraftSet)
+        if (parsedSets.size != submittedDraft.size || parsedSets.isEmpty()) {
+            message.value = appContext.getString(R.string.message_invalid_draft)
+            return
+        }
+        val submittedFullBinding = currentAccountBinding() ?: return
+        val submittedBinding = bindingIdentity(submittedFullBinding)
+        val submittedDraftId = draftInstanceId
+        val submittedSourcePlan = lastAppliedWorkoutPlanRaw
+        isSaving.value = true
+        syncStatus.value = WearSyncStatus.WaitingPhone
         viewModelScope.launch {
-            val parsedSets = draftSets.value.mapNotNull(::parseDraftSet)
-            if (parsedSets.size != draftSets.value.size || parsedSets.isEmpty()) {
-                message.value = appContext.getString(R.string.message_invalid_draft)
-                return@launch
-            }
-
-            isSaving.value = true
-            syncStatus.value = WearSyncStatus.WaitingPhone
             runCatching {
                 syncClient.createWorkout(
+                    binding = submittedFullBinding,
+                    draftId = submittedDraftId,
                     startedAt = System.currentTimeMillis(),
                     note = null,
-                    sets = parsedSets
+                    sets = parsedSets,
+                    sourcePlanRaw = submittedSourcePlan
                 )
-            }.onSuccess {
+            }.onSuccess { pendingMutation ->
+                if (currentBindingIdentity() != submittedBinding || draftSets.value != submittedDraft) {
+                    return@onSuccess
+                }
+                val storedPlan = WatchPlanStorage.load(appContext)
+                val consumedStoredPlan = storedPlan != null && storedPlan == lastAppliedWorkoutPlanRaw
                 draftSets.value = listOf(WearSetInputUiState(id = nextDraftSetId++))
+                draftInstanceId = UUID.randomUUID().toString()
                 selectedSessionId.value = null
-                WatchPlanStorage.clear(appContext)
-                workoutPlanMeta.value = null
+                if (consumedStoredPlan) {
+                    WatchPlanStorage.clear(appContext)
+                    lastAppliedWorkoutPlanRaw = null
+                    workoutPlanMeta.value = null
+                } else {
+                    applyPendingWorkoutPlanFromSync(storedPlan)
+                }
                 message.value = appContext.getString(R.string.message_workout_saved)
                 syncStatus.value = WearSyncStatus.Sent
+                // This is deliberately last: until the plan/editor transition is complete,
+                // retain the stable operation id so a crash retry remains idempotent.
+                WatchPendingWorkoutStorage.clearIfMatches(appContext, pendingMutation)
                 requestRemoteSync(showError = false)
             }.onFailure {
+                if (currentBindingIdentity() != submittedBinding) return@onFailure
                 message.value = appContext.getString(R.string.message_sync_unavailable)
                 syncStatus.value = WearSyncStatus.Failed
             }
-            isSaving.value = false
+            if (currentBindingIdentity() == submittedBinding) {
+                isSaving.value = false
+            }
         }
     }
 
@@ -242,23 +303,34 @@ class WearWorkoutViewModel(
     ) {
         val parsedWeight = parseWeightInputOrNull(updatedWeight)
         val parsedReps = updatedReps.trim().toIntOrNull()
-        if (parsedWeight == null || parsedReps == null || parsedWeight < 0.0 || parsedReps <= 0) {
+        if (
+            parsedWeight == null ||
+            !parsedWeight.isFinite() ||
+            parsedReps == null ||
+            parsedWeight !in 0.0..SyncPaths.MAX_WEIGHT ||
+            parsedReps !in 1..SyncPaths.MAX_REPS
+        ) {
             message.value = appContext.getString(R.string.message_invalid_set_input)
             return
         }
 
+        val submittedBinding = currentAccountBinding() ?: return
+        val submittedIdentity = currentBindingIdentity()
         viewModelScope.launch {
             syncStatus.value = WearSyncStatus.WaitingPhone
             runCatching {
                 syncClient.updateSet(
+                    binding = submittedBinding,
                     setId = set.id,
                     weight = parsedWeight,
                     reps = parsedReps
                 )
             }.onSuccess {
+                if (currentBindingIdentity() != submittedIdentity) return@onSuccess
                 syncStatus.value = WearSyncStatus.Sent
                 requestRemoteSync(showError = false)
             }.onFailure {
+                if (currentBindingIdentity() != submittedIdentity) return@onFailure
                 message.value = appContext.getString(R.string.message_sync_unavailable)
                 syncStatus.value = WearSyncStatus.Failed
             }
@@ -266,14 +338,18 @@ class WearWorkoutViewModel(
     }
 
     fun deleteSet(setId: Long) {
+        val submittedBinding = currentAccountBinding() ?: return
+        val submittedIdentity = currentBindingIdentity()
         viewModelScope.launch {
             syncStatus.value = WearSyncStatus.WaitingPhone
             runCatching {
-                syncClient.deleteSet(setId)
+                syncClient.deleteSet(binding = submittedBinding, setId = setId)
             }.onSuccess {
+                if (currentBindingIdentity() != submittedIdentity) return@onSuccess
                 syncStatus.value = WearSyncStatus.Sent
                 requestRemoteSync(showError = false)
             }.onFailure {
+                if (currentBindingIdentity() != submittedIdentity) return@onFailure
                 message.value = appContext.getString(R.string.message_sync_unavailable)
                 syncStatus.value = WearSyncStatus.Failed
             }
@@ -308,7 +384,12 @@ class WearWorkoutViewModel(
 
         val weight = parseWeightInputOrNull(input.weight) ?: return null
         val reps = input.reps.trim().toIntOrNull() ?: return null
-        if (weight < 0.0 || reps <= 0) {
+        if (
+            exerciseName.length > SyncPaths.MAX_EXERCISE_NAME_LENGTH ||
+            !weight.isFinite() ||
+            weight !in 0.0..SyncPaths.MAX_WEIGHT ||
+            reps !in 1..SyncPaths.MAX_REPS
+        ) {
             return null
         }
 
@@ -333,12 +414,22 @@ class WearWorkoutViewModel(
             return
         }
 
-        val parsedSets = WatchSyncJson.parseWorkoutPlanPayload(rawPlan)
-        if (parsedSets.isEmpty()) {
+        val parsed = WatchSyncJson.parseWorkoutPlanPayload(rawPlan)
+        if (parsed !is WatchSyncParseResult.Valid) {
+            WatchPlanStorage.clear(appContext)
+            return
+        }
+        val payload = parsed.value
+
+        val hasMeaningfulDraft = draftSets.value.size > 1 || draftSets.value.any { set ->
+            set.exerciseName.isNotBlank() || set.weight.isNotBlank() || set.reps.isNotBlank()
+        }
+        if (hasMeaningfulDraft) {
+            message.value = appContext.getString(R.string.message_plan_deferred)
             return
         }
 
-        val mappedDrafts = parsedSets.map { draft ->
+        val mappedDrafts = payload.sets.map { draft ->
             WearSetInputUiState(
                 id = nextDraftSetId++,
                 exerciseName = draft.exerciseName,
@@ -346,8 +437,10 @@ class WearWorkoutViewModel(
                 reps = draft.reps.toString()
             )
         }
+        WatchPendingWorkoutStorage.clear(appContext)
+        draftInstanceId = UUID.randomUUID().toString()
         draftSets.value = mappedDrafts
-        workoutPlanMeta.value = WatchSyncJson.parseWorkoutPlanMeta(rawPlan)
+        workoutPlanMeta.value = payload.meta
         lastAppliedWorkoutPlanRaw = rawPlan
     }
 
@@ -356,6 +449,85 @@ class WearWorkoutViewModel(
             weight.toInt().toString()
         } else {
             String.format(java.util.Locale.US, "%.1f", weight)
+        }
+    }
+
+    private fun commitDraftEdit(candidate: List<WearSetInputUiState>) {
+        if (candidate == draftSets.value) return
+        runCatching {
+            WatchPendingWorkoutStorage.clear(appContext)
+            draftInstanceId = UUID.randomUUID().toString()
+            draftSets.value = candidate
+        }.getOrElse {
+            message.value = appContext.getString(R.string.message_sync_unavailable)
+        }
+    }
+
+    private fun currentBindingIdentity(): DraftBindingIdentity {
+        return bindingIdentity(WatchSyncBindingStorage.load(appContext))
+    }
+
+    private fun currentAccountBinding(): WatchSyncBinding? {
+        val snapshot = WatchSyncBindingStorage.load(appContext) ?: return null
+        val identity = bindingIdentity(snapshot)
+        if (identity != draftBinding) {
+            draftBinding = identity
+            resetAccountScopedEditor()
+            return null
+        }
+        return snapshot.takeIf {
+            it.ownerId != null && it.accountGeneration in 1L..SyncPaths.MAX_PROTOCOL_COUNTER
+        }
+    }
+
+    private fun bindingIdentity(binding: WatchSyncBinding?): DraftBindingIdentity =
+        DraftBindingIdentity(
+            sourceNodeId = binding?.sourceNodeId,
+            ownerId = binding?.ownerId,
+            accountGeneration = binding?.accountGeneration ?: 0L
+        )
+
+    private fun resetAccountScopedEditor() {
+        runCatching { WatchPendingWorkoutStorage.clear(appContext) }
+        draftInstanceId = UUID.randomUUID().toString()
+        draftSets.value = listOf(WearSetInputUiState(id = nextDraftSetId++))
+        selectedSessionId.value = null
+        lastAppliedWorkoutPlanRaw = null
+        workoutPlanMeta.value = null
+        isSaving.value = false
+        message.value = null
+        syncStatus.value = WearSyncStatus.Idle
+    }
+
+    private fun ensureDraftBindingCurrent(): Boolean {
+        val current = currentBindingIdentity()
+        if (current == draftBinding) return true
+        draftBinding = current
+        resetAccountScopedEditor()
+        return false
+    }
+
+    private fun restorePendingWorkoutDraft() {
+        val pending = WatchPendingWorkoutStorage.load(
+            context = appContext,
+            binding = WatchSyncBindingStorage.load(appContext)
+        ) ?: return
+        draftInstanceId = pending.draftId
+        draftSets.value = pending.sets.map { set ->
+            WearSetInputUiState(
+                id = nextDraftSetId++,
+                exerciseName = set.exerciseName,
+                weight = formatWeight(set.weight),
+                reps = set.reps.toString()
+            )
+        }
+        val storedPlan = WatchPlanStorage.load(appContext)
+        if (pending.sourcePlanRaw != null && pending.sourcePlanRaw == storedPlan) {
+            lastAppliedWorkoutPlanRaw = storedPlan
+            val parsed = WatchSyncJson.parseWorkoutPlanPayload(storedPlan)
+            if (parsed is WatchSyncParseResult.Valid) {
+                workoutPlanMeta.value = parsed.value.meta
+            }
         }
     }
 
@@ -378,4 +550,10 @@ private data class EditorState(
     val availableExercises: List<String>,
     val sessions: List<WearWorkoutSessionUiModel>,
     val workoutPlanMeta: SyncedWorkoutPlanMeta?
+)
+
+private data class DraftBindingIdentity(
+    val sourceNodeId: String?,
+    val ownerId: String?,
+    val accountGeneration: Long
 )

@@ -50,3 +50,21 @@ test("PWA permanent total excludes rotating mission rewards", () => {
   const index = fs.readFileSync(path.join(root, "pwa", "index.html"), "utf8");
   assert.ok(index.indexOf("progression-rules.js") < index.indexOf("app.js"));
 });
+
+test("empty workouts earn no progression and extreme XP is bounded without a linear loop", () => {
+  assert.equal(rules.sessionXP({ exercises: 12, sets: 0, volume: 0 }), 0);
+  assert.equal(rules.sessionXP({ exercises: 100, sets: 10000, volume: 1e15 }), rules.MAX_SESSION_XP);
+  assert.equal(rules.MAX_SESSION_XP, 5000);
+  const started = performance.now();
+  const progress = rules.levelProgress(1e307);
+  const elapsed = performance.now() - started;
+
+  assert.equal(rules.MAX_SUPPORTED_XP, 2147483647);
+  assert.ok(progress.level > 1);
+  assert.ok(progress.nextLevelXp <= rules.MAX_SUPPORTED_XP);
+  assert.ok(elapsed < 100, `extreme XP calculation took ${elapsed}ms`);
+
+  const source = fs.readFileSync(path.join(root, "pwa", "progression-rules.js"), "utf8");
+  assert.match(source, /const squares = stages \* \(stages - 1\)/);
+  assert.doesNotMatch(source, /while \(remaining >= next\)/);
+});

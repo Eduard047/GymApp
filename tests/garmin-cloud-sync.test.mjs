@@ -4,7 +4,12 @@ import { createRequire } from "node:module";
 import test from "node:test";
 
 const require = createRequire(import.meta.url);
-const { draftToGarminPlan, cloudPlanResponseToSyncMessage } = require("../pwa/garmin-cloud-sync.js");
+const {
+  PLAN_LIMITS,
+  validateGarminPlan,
+  draftToGarminPlan,
+  cloudPlanResponseToSyncMessage
+} = require("../pwa/garmin-cloud-sync.js");
 
 test("PWA draft becomes a clean Garmin cloud plan", () => {
   const plan = draftToGarminPlan({
@@ -14,20 +19,15 @@ test("PWA draft becomes a clean Garmin cloud plan", () => {
       {
         exerciseName: " Bench Press ",
         sets: [
-          { weight: "80,5", reps: "8" },
-          { weight: "-1", reps: "8" },
-          { weight: "bad", reps: "8" },
-          { weight: "82.5", reps: "0" }
+          { weight: "80,5", reps: "8" }
         ]
       },
       {
         exerciseName: "Squat",
         sets: [
-          { weight: "120", reps: 5 },
-          { weight: "", reps: 3 }
+          { weight: "120", reps: 5 }
         ]
-      },
-      { exerciseName: "   ", sets: [{ weight: 10, reps: 10 }] }
+      }
     ]
   }, {
     title: "Today plan",
@@ -45,10 +45,7 @@ test("PWA draft becomes a clean Garmin cloud plan", () => {
       { name: "Bench Press", sets: [{ weight: 80.5, reps: 8, orderIndex: 0 }] },
       {
         name: "Squat",
-        sets: [
-          { weight: 120, reps: 5, orderIndex: 0 },
-          { weight: 0, reps: 3, orderIndex: 1 }
-        ]
+        sets: [{ weight: 120, reps: 5, orderIndex: 0 }]
       }
     ]
   });
@@ -58,23 +55,103 @@ test("empty or invalid draft is rejected before Supabase queueing", () => {
   assert.equal(draftToGarminPlan(null), null);
   assert.equal(draftToGarminPlan({ blocks: [{ exerciseName: "", sets: [{ weight: 10, reps: 8 }] }] }), null);
   assert.equal(draftToGarminPlan({ blocks: [{ exerciseName: "Bench", sets: [{ weight: -10, reps: 8 }] }] }), null);
+  assert.equal(draftToGarminPlan({ blocks: [{ exerciseName: "Bench", sets: [
+    { weight: 10, reps: 8 },
+    { weight: "bad", reps: 8 }
+  ] }] }), null, "one invalid set rejects the whole plan instead of truncating it");
+  assert.equal(draftToGarminPlan({ note: "x".repeat(2001), blocks: [
+    { exerciseName: "Bench", sets: [{ weight: 10, reps: 8 }] }
+  ] }), null);
+  assert.equal(draftToGarminPlan({ blocks: [
+    { exerciseName: "Bench", sets: Array.from({ length: 61 }, () => ({ weight: 10, reps: 8 })) }
+  ] }), null);
+});
+
+test("repeated exercise names fit Garmin's per-value storage byte budget", () => {
+  const plan = {
+    source: "pwa",
+    version: 1,
+    title: "Unicode plan",
+    createdAt: "2026-06-29T12:00:00.000Z",
+    startedAt: "2026-06-29T12:00:00.000Z",
+    note: "",
+    exercises: [{
+      name: "Ж".repeat(160),
+      sets: Array.from({ length: 60 }, (_, orderIndex) => ({ weight: 10, reps: 8, orderIndex }))
+    }]
+  };
+
+  assert.equal(PLAN_LIMITS.totalExerciseNameBytes, 12000);
+  assert.deepEqual(validateGarminPlan(plan), {
+    ok: false,
+    error: "Plan exercise names exceed the Garmin storage byte limit."
+  });
+});
+
+test("set order must match Garmin's direct parser position", () => {
+  const plan = {
+    source: "pwa",
+    version: 1,
+    title: "Order plan",
+    createdAt: "2026-06-29T12:00:00.000Z",
+    startedAt: "2026-06-29T12:00:00.000Z",
+    note: "",
+    exercises: [{ name: "Bench", sets: [{ weight: 10, reps: 8, orderIndex: 1 }] }]
+  };
+  assert.equal(validateGarminPlan(plan).ok, false);
+});
+
+test("Garmin plans require complete bounded RFC3339 timestamps", () => {
+  const plan = {
+    source: "pwa",
+    version: 1,
+    title: "Timestamp plan",
+    createdAt: "2026-06-29T12:00:00.000Z",
+    startedAt: "2026-06-29T12:00:00.000Z",
+    note: "",
+    exercises: [{ name: "Bench", sets: [{ weight: 10, reps: 8, orderIndex: 0 }] }]
+  };
+
+  for (const timestamp of [
+    "2026-06-29T12:00:00",
+    "2026-06-29T12:00:00.1234567Z",
+    "2026-06-29 tomorrow",
+    "2026-06-29T12:00:00Z trailing"
+  ]) {
+    assert.equal(validateGarminPlan({ ...plan, createdAt: timestamp }).ok, false);
+  }
+  assert.equal(validateGarminPlan({ ...plan, createdAt: "2026-06-29T12:00:00+03:00" }).ok, true);
 });
 
 test("cloud response flattens to the sync payload Garmin applies", () => {
   const message = cloudPlanResponseToSyncMessage({
     status: "ok",
-    planId: "plan-123",
+    bindingVersion: 2,
+    accountBinding: "a".repeat(64),
+    deviceBinding: "00000000-0000-4000-8000-000000000001",
+    planId: "00000000-0000-4000-8000-000000000002",
+    planRevision: 42,
     plan: {
+      source: "pwa",
+      version: 1,
+      title: "Today plan",
+      createdAt: "2026-06-29T12:00:00.000Z",
+      startedAt: "2026-06-29T10:30:00.000Z",
+      note: "",
       exercises: [
-        { name: "Bench Press", sets: [{ weight: 80.5, reps: 8 }, { weight: 82.5, reps: 6 }] },
-        { name: "Squat", sets: [{ weight: 120, reps: 5 }] }
+        { name: "Bench Press", sets: [{ weight: 80.5, reps: 8, orderIndex: 0 }, { weight: 82.5, reps: 6, orderIndex: 1 }] },
+        { name: "Squat", sets: [{ weight: 120, reps: 5, orderIndex: 0 }] }
       ]
     }
   });
 
   assert.deepEqual(message, {
     type: "sync",
-    syncId: "plan-123",
+    syncId: "00000000-0000-4000-8000-000000000002",
+    bindingVersion: 2,
+    accountBinding: "a".repeat(64),
+    deviceBinding: "00000000-0000-4000-8000-000000000001",
+    planRevision: 42,
     resetWorkout: false,
     planNames: ["Bench Press", "Bench Press", "Squat"],
     planWeights: [80.5, 82.5, 120],
@@ -88,14 +165,40 @@ test("non-plan cloud responses do not produce Garmin sync messages", () => {
   assert.equal(cloudPlanResponseToSyncMessage({ status: "error", error: "Invalid device" }), null);
 });
 
+test("cloud delivery revisions must be positive monotonic int32 counters", () => {
+  const base = {
+    status: "ok",
+    bindingVersion: 2,
+    accountBinding: "a".repeat(64),
+    deviceBinding: "00000000-0000-4000-8000-000000000001",
+    planId: "00000000-0000-4000-8000-000000000002",
+    plan: {
+      source: "pwa",
+      version: 1,
+      title: "Today plan",
+      createdAt: "2026-06-29T12:00:00.000Z",
+      startedAt: "2026-06-29T12:00:00.000Z",
+      note: "",
+      exercises: [{ name: "Bench", sets: [{ weight: 10, reps: 8, orderIndex: 0 }] }]
+    }
+  };
+  for (const planRevision of [0, -1, 1.5, 2147483648, "2", null]) {
+    assert.equal(cloudPlanResponseToSyncMessage({ ...base, planRevision }), null);
+  }
+  assert.equal(cloudPlanResponseToSyncMessage({ ...base, planRevision: 2147483647 })?.planRevision, 2147483647);
+});
+
 test("PWA, Supabase, and Garmin code are wired to the same cloud sync contract", async () => {
-  const [appJs, indexHtml, swJs, edgeFunction, schema, rpcMigration, gymComm, workoutView, settingsXml, manifest, buildScript] = await Promise.all([
+  const [appJs, indexHtml, swJs, edgeFunction, edgeConfig, schema, securityMigration, denoConfig, denoLock, gymComm, workoutView, settingsXml, manifest, buildScript] = await Promise.all([
     readFile("pwa/app.js", "utf8"),
     readFile("pwa/index.html", "utf8"),
     readFile("pwa/sw.js", "utf8"),
     readFile("supabase/functions/garmin-sync/index.ts", "utf8"),
+    readFile("supabase/config.toml", "utf8"),
     readFile("supabase/migrations/20260629120000_garmin_cloud_sync.sql", "utf8"),
-    readFile("supabase/migrations/20260630000100_garmin_fetch_pending_plan_rpc.sql", "utf8"),
+    readFile("supabase/migrations/20260713210000_harden_garmin_pairing_and_plans.sql", "utf8"),
+    readFile("supabase/functions/garmin-sync/deno.json", "utf8"),
+    readFile("supabase/functions/garmin-sync/deno.lock", "utf8"),
     readFile("garmin/source/GymComm.mc", "utf8"),
     readFile("garmin/source/WorkoutView.mc", "utf8"),
     readFile("garmin/resources/settings/settings.xml", "utf8"),
@@ -103,11 +206,14 @@ test("PWA, Supabase, and Garmin code are wired to the same cloud sync contract",
     readFile("scripts/build-garmin.ps1", "utf8")
   ]);
 
-  assert.match(indexHtml, /garmin-cloud-sync\.js\?v=1/);
+  assert.match(indexHtml, /garmin-cloud-sync\.js\?v=44/);
   assert.match(swJs, /garmin-cloud-sync\.js/);
   assert.match(appJs, /\/functions\/v1\/garmin-sync/);
   assert.match(appJs, /\/rest\/v1\/garmin_plans/);
   assert.match(appJs, /action:\s*"createDevice"/);
+  assert.match(appJs, /action:\s*"revokeDevice"/);
+  assert.doesNotMatch(appJs, /localStorage\.getItem\(GARMIN_DEVICE_TOKEN_KEY\)/);
+  assert.doesNotMatch(appJs, /navigator\.clipboard\?\.writeText\(device\.device_token\)/);
 
   assert.match(schema, /create table if not exists public\.garmin_devices/);
   assert.match(schema, /create table if not exists public\.garmin_plans/);
@@ -116,18 +222,35 @@ test("PWA, Supabase, and Garmin code are wired to the same cloud sync contract",
 
   assert.match(edgeFunction, /action === "createDevice"/);
   assert.match(edgeFunction, /action === "fetchPlan"/);
+  assert.match(edgeFunction, /action === "revokeDevice"/);
   assert.match(edgeFunction, /SUPABASE_ANON_KEY/);
-  assert.match(edgeFunction, /rpc\("garmin_fetch_pending_plan"/);
-  assert.match(rpcMigration, /security definer/);
-  assert.match(rpcMigration, /status = 'downloaded'/);
-  assert.match(rpcMigration, /grant execute on function public\.garmin_fetch_pending_plan\(text\) to anon, authenticated/);
+  assert.match(edgeFunction, /rpc\(\s*"garmin_fetch_pending_plan"/);
+  assert.match(edgeFunction, /action === "ackPlan"/);
+  assert.match(edgeFunction, /rpc\(\s*"garmin_ack_plan"/);
+  assert.doesNotMatch(edgeFunction.slice(
+    edgeFunction.indexOf('if (body.action === "fetchPlan")'),
+    edgeFunction.indexOf('if (body.action === "ackPlan")')
+  ), /garmin_ack_plan/);
+  assert.match(edgeConfig, /\[functions\.garmin-sync\][\s\S]*verify_jwt = false/);
+  assert.doesNotMatch(edgeFunction, /https:\/\/esm\.sh/);
+  assert.match(denoConfig, /npm:@supabase\/supabase-js@2\.110\.2/);
+  assert.match(denoConfig, /"frozen": true/);
+  assert.match(denoLock, /"integrity": "sha512-/);
+  assert.match(securityMigration, /security definer/);
+  assert.match(securityMigration, /status = 'downloaded'/);
+  assert.match(securityMigration, /status = 'invalid'/);
+  assert.match(securityMigration, /status = 'superseded'/);
+  assert.match(securityMigration, /for update skip locked/);
+  assert.match(securityMigration, /grant execute on function public\.garmin_fetch_pending_plan\(text\) to anon/);
+  assert.match(securityMigration, /grant execute on function public\.garmin_ack_plan\(text, uuid, bigint\) to anon/);
+  assert.match(securityMigration, /grant execute on function public\.garmin_revoke_device\(uuid\) to authenticated/);
 
   assert.match(settingsXml, /@Properties\.CloudDeviceToken/);
   assert.match(gymComm, /CloudDeviceToken/);
   assert.match(gymComm, /Comm\.makeWebRequest/);
   assert.match(gymComm, /\/functions\/v1\/garmin-sync/);
   assert.match(workoutView, /requestCloudSyncNow/);
-  assert.match(workoutView, /GymStore\.applySync\(message\)/);
+  assert.match(workoutView, /GymStore\.applyCloudSync\(message\)/);
   assert.match(workoutView, /function sx\(w, baseX\)/);
   assert.match(workoutView, /function sy\(h, baseY\)/);
   assert.match(workoutView, /function sr\(w, h, value\)/);

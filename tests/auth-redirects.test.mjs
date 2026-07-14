@@ -29,6 +29,7 @@ function runCallback(url) {
   const scrubbed = [];
   const assigned = [];
   const context = {
+    DOMException,
     URL,
     URLSearchParams,
     document: {
@@ -52,6 +53,9 @@ function runCallback(url) {
       }
     }
   };
+  context.window.self = context.window;
+  context.window.top = context.window;
+  context.window.__GYMAPP_TOP_LEVEL__ = true;
 
   vm.runInNewContext(callbackSource, context);
   return {

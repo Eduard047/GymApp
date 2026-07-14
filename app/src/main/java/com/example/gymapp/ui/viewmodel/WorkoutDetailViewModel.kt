@@ -9,6 +9,7 @@ import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.entity.SetEntryEntity
 import com.example.gymapp.data.entity.WorkoutSessionDetails
 import com.example.gymapp.data.repository.GymRepository
+import com.example.gymapp.data.repository.WorkoutDataLimits
 import com.example.gymapp.util.RestTimerController
 import com.example.gymapp.util.parseWeightInputOrNull
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -136,8 +137,11 @@ class WorkoutDetailViewModel(
 
     fun updateSet(setEntry: SetEntryEntity, weight: String, reps: String) {
         val parsedWeight = parseWeightInputOrNull(weight)
-        val parsedReps = reps.trim().toIntOrNull()
-        if (parsedWeight == null || parsedReps == null || parsedWeight < 0.0 || parsedReps <= 0) {
+        val repsInput = reps.trim()
+        val parsedReps = repsInput.takeIf { it.length <= MAX_REPS_INPUT_LENGTH }?.toIntOrNull()
+        if (parsedWeight == null || parsedReps == null ||
+            !WorkoutDataLimits.isValidWeight(parsedWeight) || !WorkoutDataLimits.isValidReps(parsedReps)
+        ) {
             viewModelScope.launch {
                 _events.emit(WorkoutDetailEvent.InvalidInput)
             }
@@ -186,6 +190,8 @@ class WorkoutDetailViewModel(
     }
 
     companion object {
+        private const val MAX_REPS_INPUT_LENGTH = 10
+
         private const val DEFAULT_REST_SECONDS = 90
 
         fun factory(
@@ -203,4 +209,3 @@ class WorkoutDetailViewModel(
         }
     }
 }
-

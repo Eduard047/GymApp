@@ -11,6 +11,7 @@ import com.example.gymapp.data.repository.GymRepository
 import com.example.gymapp.data.repository.NamedWorkoutSetDraft
 import com.example.gymapp.data.repository.WorkoutRecommendation
 import com.example.gymapp.data.repository.WorkoutRecommendationEngine
+import com.example.gymapp.data.repository.WorkoutDataLimits
 import com.example.gymapp.data.repository.WorkoutExerciseDraft
 import com.example.gymapp.data.repository.WorkoutSetDraft
 import com.example.gymapp.sync.PhoneSyncClient
@@ -249,6 +250,10 @@ class AddWorkoutViewModel(
     )
 
     fun updateNote(value: String) {
+        if (!WorkoutDataLimits.isValidNote(value)) {
+            hasValidationError.value = true
+            return
+        }
         resetWatchPlanSyncResult()
         note.value = value
     }
@@ -307,7 +312,12 @@ class AddWorkoutViewModel(
     fun addExerciseDraft() {
         resetWatchPlanSyncResult()
         exerciseDrafts.update { current ->
-            current + ExerciseInputState(draftId = nextDraftId++)
+            if (current.size >= WorkoutDataLimits.MAX_EXERCISES_PER_SESSION) {
+                hasValidationError.value = true
+                current
+            } else {
+                current + ExerciseInputState(draftId = nextDraftId++)
+            }
         }
     }
 
@@ -336,6 +346,10 @@ class AddWorkoutViewModel(
         exerciseDrafts.update { current ->
             current.map { draft ->
                 if (draft.draftId == draftId) {
+                    if (draft.sets.size >= WorkoutDataLimits.MAX_SETS_PER_EXERCISE) {
+                        hasValidationError.value = true
+                        return@map draft
+                    }
                     val lastWeight = draft.exerciseId?.let { lastWeightsSnapshot[it] }
                     draft.copy(
                         sets = draft.sets + SetInputState(
@@ -357,6 +371,10 @@ class AddWorkoutViewModel(
                 if (draft.draftId != draftId) {
                     draft
                 } else {
+                    if (draft.sets.size >= WorkoutDataLimits.MAX_SETS_PER_EXERCISE) {
+                        hasValidationError.value = true
+                        return@map draft
+                    }
                     val previousSet = draft.sets.lastOrNull() ?: SetInputState()
                     val nextWeight = when {
                         previousSet.weight.isBlank() -> ""
@@ -366,7 +384,12 @@ class AddWorkoutViewModel(
                             if (parsedWeight == null) {
                                 previousSet.weight
                             } else {
-                                formatWeight((parsedWeight + weightDelta).coerceAtLeast(0.0))
+                                val adjusted = (parsedWeight + weightDelta).coerceAtLeast(0.0)
+                                if (WorkoutDataLimits.isValidWeight(adjusted)) {
+                                    formatWeight(adjusted)
+                                } else {
+                                    previousSet.weight
+                                }
                             }
                         }
                     }
@@ -394,6 +417,10 @@ class AddWorkoutViewModel(
     }
 
     fun updateSetWeight(draftId: Long, setIndex: Int, value: String) {
+        if (value.length > MAX_WEIGHT_INPUT_LENGTH) {
+            hasValidationError.value = true
+            return
+        }
         hasValidationError.value = false
         resetWatchPlanSyncResult()
         exerciseDrafts.update { current ->
@@ -411,6 +438,10 @@ class AddWorkoutViewModel(
     }
 
     fun updateSetReps(draftId: Long, setIndex: Int, value: String) {
+        if (value.length > MAX_REPS_INPUT_LENGTH) {
+            hasValidationError.value = true
+            return
+        }
         hasValidationError.value = false
         resetWatchPlanSyncResult()
         exerciseDrafts.update { current ->
@@ -430,7 +461,7 @@ class AddWorkoutViewModel(
     fun saveWorkout() {
         viewModelScope.launch {
             val parsedExercises = parseDrafts(exerciseDrafts.value)
-            if (parsedExercises.isEmpty()) {
+            if (parsedExercises.isEmpty() || !WorkoutDataLimits.isValidNote(note.value)) {
                 hasValidationError.value = true
                 return@launch
             }
@@ -583,27 +614,28 @@ class AddWorkoutViewModel(
     }
 
     private fun parseDrafts(drafts: List<ExerciseInputState>): List<WorkoutExerciseDraft> {
-        return drafts.mapNotNull { draft ->
-            val exerciseId = draft.exerciseId ?: return@mapNotNull null
-            val sets = draft.sets.mapNotNull { set ->
+        if (drafts.size > WorkoutDataLimits.MAX_EXERCISES_PER_SESSION) return emptyList()
+        val result = mutableListOf<WorkoutExerciseDraft>()
+        drafts.forEach { draft ->
+            val exerciseId = draft.exerciseId ?: return@forEach
+            if (draft.sets.isEmpty() || draft.sets.size > WorkoutDataLimits.MAX_SETS_PER_EXERCISE) {
+                return emptyList()
+            }
+            val sets = mutableListOf<WorkoutSetDraft>()
+            draft.sets.forEach { set ->
                 val weight = parseWeightInputOrNull(set.weight)
-                val reps = set.reps.trim().toIntOrNull()
-                if (weight == null || reps == null || weight < 0.0 || reps <= 0) {
-                    null
-                } else {
-                    WorkoutSetDraft(weight = weight, reps = reps)
+                val repsInput = set.reps.trim()
+                val reps = repsInput.takeIf { it.length <= MAX_REPS_INPUT_LENGTH }?.toIntOrNull()
+                if (weight == null || reps == null ||
+                    !WorkoutDataLimits.isValidWeight(weight) || !WorkoutDataLimits.isValidReps(reps)
+                ) {
+                    return emptyList()
                 }
+                sets += WorkoutSetDraft(weight = weight, reps = reps)
             }
-
-            if (sets.isEmpty()) {
-                null
-            } else {
-                WorkoutExerciseDraft(
-                    exerciseId = exerciseId,
-                    sets = sets
-                )
-            }
+            result += WorkoutExerciseDraft(exerciseId = exerciseId, sets = sets)
         }
+        return result
     }
 
     fun applyWorkoutRecommendation(draftId: Long) {
@@ -635,38 +667,39 @@ class AddWorkoutViewModel(
         drafts: List<ExerciseInputState>,
         exercises: List<ExerciseEntity>
     ): List<NamedWorkoutSetDraft> {
+        if (drafts.size > WorkoutDataLimits.MAX_EXERCISES_PER_SESSION) return emptyList()
         val exerciseNameById = exercises.associate { it.id to it.name.trim() }
         val result = mutableListOf<NamedWorkoutSetDraft>()
 
         drafts.forEach { draft ->
             val exerciseId = draft.exerciseId ?: return@forEach
             val exerciseName = exerciseNameById[exerciseId].orEmpty()
-            if (exerciseName.isBlank()) {
+            if (!WorkoutDataLimits.isValidExerciseName(exerciseName)) {
                 return emptyList()
             }
 
-            val sourceSets = if (draft.sets.isEmpty()) listOf(SetInputState()) else draft.sets
+            if (draft.sets.isEmpty() || draft.sets.size > WorkoutDataLimits.MAX_SETS_PER_EXERCISE) {
+                return emptyList()
+            }
+            val sourceSets = draft.sets
             val parsedSets = sourceSets.map { set ->
                 val parsedWeight = parseWeightInputOrNull(set.weight)
-                val parsedReps = set.reps.trim().toIntOrNull()
-                val safeWeight = parsedWeight?.takeIf { it >= 0.0 } ?: 0.0
-                val safeReps = parsedReps?.takeIf { it > 0 } ?: 1
+                val repsInput = set.reps.trim()
+                val parsedReps = repsInput.takeIf { it.length <= MAX_REPS_INPUT_LENGTH }?.toIntOrNull()
+                if (parsedWeight == null || parsedReps == null ||
+                    !WorkoutDataLimits.isValidWeight(parsedWeight) ||
+                    !WorkoutDataLimits.isValidReps(parsedReps)
+                ) {
+                    return emptyList()
+                }
                 NamedWorkoutSetDraft(
                     exerciseName = exerciseName,
-                    weight = safeWeight,
-                    reps = safeReps
+                    weight = parsedWeight,
+                    reps = parsedReps
                 )
             }
 
-            if (parsedSets.isEmpty()) {
-                result += NamedWorkoutSetDraft(
-                    exerciseName = exerciseName,
-                    weight = 0.0,
-                    reps = 1
-                )
-            } else {
-                result += parsedSets
-            }
+            result += parsedSets
         }
 
         return result
@@ -681,6 +714,9 @@ class AddWorkoutViewModel(
     }
 
     companion object {
+        private const val MAX_WEIGHT_INPUT_LENGTH = 64
+        private const val MAX_REPS_INPUT_LENGTH = 10
+
         fun factory(
             repository: GymRepository,
             syncClient: PhoneSyncClient,
@@ -696,4 +732,3 @@ class AddWorkoutViewModel(
         }
     }
 }
-

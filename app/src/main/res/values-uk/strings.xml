@@ -375,9 +375,13 @@
     <string name="backup_tools_supporting">Резервні копії об’єднуються з поточним профілем і пропускають дублікати сесій.</string>
     <string name="backup_export_json">Експорт JSON</string>
     <string name="backup_import_json">Імпорт JSON</string>
-    <string name="backup_export_diagnostics">Надіслати diagnostics / знімок БД</string>
+    <string name="backup_export_diagnostics">Експорт знеособленої діагностики</string>
     <string name="backup_export_ready">Backup JSON готовий</string>
+    <string name="backup_diagnostics_ready">Знеособлена діагностика готова</string>
     <string name="backup_copy_json">Копіювати JSON</string>
+    <string name="backup_copy_warning_title">Копіювати приватну резервну копію?</string>
+    <string name="backup_copy_warning_message">Ця резервна копія може містити історію тренувань і дані профілю. Інші застосунки можуть прочитати буфер обміну. Якщо продовжити, GymApp позначить дані як конфіденційні й спробує очистити їх через 60 секунд, якщо ти не скопіюєш щось інше.</string>
+    <string name="backup_copy_confirm">Копіювати на 60 секунд</string>
     <string name="backup_share_json">Поділитися JSON</string>
     <string name="backup_share_pdf">Поділитися PDF звітом</string>
     <string name="backup_import_title">Імпорт backup</string>
