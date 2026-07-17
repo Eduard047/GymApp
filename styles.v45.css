@@ -270,22 +270,6 @@ textarea:focus-visible,
 
 .exercise-search-panel > label { font-weight: 700; }
 
-.exercise-library-heading {
-  display: grid;
-  gap: 4px;
-}
-
-.exercise-library-heading h2,
-.exercise-library-heading p { margin: 0; }
-
-.exercise-add-button { min-height: 52px; }
-
-.account-actions {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  margin-top: 12px;
-}
-
 .filter-scroll {
   display: flex;
   gap: 8px;
@@ -1285,10 +1269,10 @@ button:disabled {
 }
 
 .exercise-row {
-  padding: 16px;
-  border: 1px solid var(--outline-variant);
-  border-radius: var(--radius-lg);
-  background: var(--surface);
+  padding: 12px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
 }
 
 .exercise-name {
@@ -1296,7 +1280,6 @@ button:disabled {
   flex: 1;
   font-size: 16px;
   line-height: 24px;
-  margin: 0;
 }
 
 .clickable { cursor: pointer; }
@@ -1626,31 +1609,10 @@ textarea:focus {
 }
 
 .exercise-row {
-  display: grid;
-  gap: 13px;
-}
-
-.exercise-card-head,
-.exercise-metrics,
-.exercise-card-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
-}
-
-.exercise-card-head { justify-content: space-between; }
-.exercise-metrics { flex-wrap: wrap; }
-
-.exercise-card-actions {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.exercise-card-actions .button {
-  min-width: 0;
-  min-height: 48px;
-  white-space: normal;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .table {

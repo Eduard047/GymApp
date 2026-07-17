@@ -17,7 +17,6 @@ const PUBLIC_SITE_URL = "https://gymapptracker.com/";
 const SUPPORT_URL = "https://gymapptracker.com/support.html";
 const PRIVACY_URL = "https://gymapptracker.com/privacy-policy.html";
 const AUTH_REDIRECT_URL = "https://gymapptracker.com/confirmed.html?platform=web";
-const GARMIN_APP_RELEASE_URL = "https://github.com/Eduard047/GymApp/releases/download/qa-2026.07.17.1/gymapp-garmin-connect-iq.iq";
 const MAX_REMOTE_RESPONSE_BYTES = 8 * 1024 * 1024;
 const MAX_REMOTE_AUTH_RESPONSE_BYTES = 64 * 1024;
 const MAX_REMOTE_ERROR_RESPONSE_BYTES = 8 * 1024;
@@ -1030,7 +1029,6 @@ let languageMenuOpen = false;
 let exerciseSearchQuery = "";
 let exerciseBodyFilter = "all";
 let exerciseMuscleFilter = "all";
-let exerciseSortMode = "name";
 let authMode = "login";
 let accountTransitionInProgress = false;
 let garminSyncInProgress = false;
@@ -4254,7 +4252,7 @@ async function unpairGarmin() {
 function accountPanel() {
   const label = activeAccount?.name || tx("Local", "Локальний");
   const hasGarminBinding = Boolean(activeAccount?.remote && garminBindingForUser(activeAccount.userId));
-  return `<section class="panel highlighted account-card"><div class="row-head"><div><h2>${tx("Account", "Акаунт")}</h2><p>${escapeHtml(label)}</p></div><span class="pill">${activeAccount?.remote ? tx("Cloud", "Хмара") : tx("Local", "Локально")}</span></div><div class="actions account-actions"><a class="button ghost" href="${GARMIN_APP_RELEASE_URL}" target="_blank" rel="noopener noreferrer">${tx("Get Garmin app", "Завантажити Garmin-застосунок")}</a>${hasGarminBinding ? `<button class="button danger" data-action="unpair-garmin">${tx("Unpair Garmin", "Від’єднати Garmin")}</button>` : ""}<button class="button ghost" data-action="logout-account">${tx("Switch", "Змінити")}</button></div></section>`;
+  return `<section class="material-card account-card"><div class="row-head"><div><h2>${tx("Account", "Акаунт")}</h2><p>${escapeHtml(label)}</p></div><div class="actions">${hasGarminBinding ? `<button class="button danger" data-action="unpair-garmin">${tx("Unpair Garmin", "Від’єднати Garmin")}</button>` : ""}<button class="button ghost" data-action="logout-account">${tx("Switch", "Змінити")}</button></div></div></section>`;
 }
 
 function localLeaderboardRow() {
@@ -4343,16 +4341,13 @@ function leaderboardRow(row, index) {
 function exercisesScreen() {
   const mappingRows = filteredLibraryExercises();
   const regionFilters = [["all", tx("All", "Усі")], ["upper", tx("Upper body", "Верх тіла")], ["lower", tx("Lower body", "Низ тіла")], ["core", tx("Core", "Кор")]];
-  const sortFilters = [["name", tx("By name", "За назвою")], ["most", tx("Most frequent", "Найчастіші")], ["least", tx("Least frequent", "Найрідші")]];
   return `<section class="screen-copy"><h2>${t("exercises")}</h2><p>${tx("Manage your library, history, muscle groups, and backups.", "Керуй каталогом, історією, групами м’язів і резервними копіями.")}</p></section>
-    <button class="button full exercise-add-button" data-action="open-exercise-add">${svg("add", "small-icon")}${t("addExercise")}</button>
-    ${accountPanel()}
-    <section class="panel backup-card"><span class="eyebrow">${tx("Your data", "Твої дані")}</span><h2>${t("backup")}</h2><p class="muted">${tx("Backups merge into the current profile and skip duplicate sessions.", "Резервні копії об’єднуються з поточним профілем і пропускають дублікати тренувань.")}</p><div class="actions"><button class="button ghost" data-action="export-json">${t("exportJson")}</button><button class="button ghost" data-action="import-json">${t("importJson")}</button><button class="button ghost full" data-action="export-diagnostics">${t("diagnostics")}</button></div></section>
-    <section class="panel exercise-library-heading"><span class="eyebrow">${tx("Your training", "Твої тренування")}</span><h2>${tx("Exercise library", "Каталог вправ")}</h2><p class="muted">${tx("Add a custom movement or open a saved exercise to view its history.", "Додай власну вправу або відкрий збережену, щоб переглянути історію.")}</p></section>
+    ${accountPanel()}<div class="field-row exercise-add-row"><label for="new-exercise-name" class="sr-only">${tx("Exercise name", "Назва вправи")}</label><input id="new-exercise-name" maxlength="120" aria-label="${tx("Exercise name", "Назва вправи")}" placeholder="${tx("Exercise name", "Назва вправи")}"><button class="button" data-action="save-exercise">${t("addExercise")}</button></div>
+    <section class="material-card backup-card"><h2>${t("backup")}</h2><div class="actions"><button class="button ghost" data-action="export-json">${t("exportJson")}</button><button class="button ghost" data-action="import-json">${t("importJson")}</button><button class="button ghost full" data-action="export-diagnostics">${t("diagnostics")}</button></div></section>
     <section class="panel highlighted exercise-search-panel"><label for="exercise-search">${tx("Search exercises", "Пошук вправ")}</label><div class="field-row"><input id="exercise-search" type="search" maxlength="120" value="${escapeAttr(exerciseSearchQuery)}" placeholder="${tx("Name in English or Ukrainian", "Назва українською або англійською")}">${exerciseSearchQuery ? `<button class="icon-button" data-action="clear-exercise-search" aria-label="${tx("Clear search", "Очистити пошук")}">${svg("close")}</button>` : ""}</div>
       <div class="filter-scroll">${regionFilters.map(([id, label]) => `<button class="chip buttonlike ${exerciseBodyFilter === id ? "selected" : ""}" data-action="exercise-body-filter" data-filter="${id}" aria-pressed="${exerciseBodyFilter === id}">${label}</button>`).join("")}</div>
-      <div class="filter-scroll">${sortFilters.map(([id, label]) => `<button class="chip buttonlike ${exerciseSortMode === id ? "selected" : ""}" data-action="exercise-sort" data-sort="${id}" aria-pressed="${exerciseSortMode === id}">${label}</button>`).join("")}</div>
       <div class="filter-scroll"><button class="chip buttonlike ${exerciseMuscleFilter === "all" ? "selected" : ""}" data-action="exercise-muscle-filter" data-filter="all">${tx("All muscles", "Усі м’язи")}</button>${muscles.map(([id]) => `<button class="chip buttonlike ${exerciseMuscleFilter === id ? "selected" : ""}" data-action="exercise-muscle-filter" data-filter="${id}">${escapeHtml(muscleLabel(id))}</button>`).join("")}</div><p class="muted">${mappingRows.length} ${tx("exercises", "вправ")}</p></section>
+    ${mappingRows.length ? exerciseMappingsPanel(mappingRows) : ""}
     <section class="exercise-list">${mappingRows.length ? mappingRows.map(exerciseRow).join("") : `<div class="empty">${tx("No matching exercises.", "Вправ за цими фільтрами не знайдено.")}</div>`}</section>`;
 }
 
@@ -4364,25 +4359,12 @@ const exerciseBodyMuscles = {
 
 function filteredLibraryExercises() {
   const bodyMuscles = exerciseBodyMuscles[exerciseBodyFilter];
-  const matching = state.exercises.filter(exercise => {
+  return state.exercises.filter(exercise => {
     const ids = new Set(mappingFor(exercise).map(item => typeof item === "string" ? item : item.muscleId));
     const matchesBody = !bodyMuscles || [...ids].some(id => bodyMuscles.has(id));
     const matchesMuscle = exerciseMuscleFilter === "all" || ids.has(exerciseMuscleFilter);
     return exerciseMatchesSearch(exercise, exerciseSearchQuery) && matchesBody && matchesMuscle;
   });
-  return matching.sort((left, right) => {
-    const nameOrder = exerciseDisplayName(left).localeCompare(exerciseDisplayName(right), state.language);
-    if (exerciseSortMode === "name") return nameOrder || Number(left.id) - Number(right.id);
-    const difference = exerciseWorkoutCount(left) - exerciseWorkoutCount(right);
-    if (difference) return exerciseSortMode === "most" ? -difference : difference;
-    return nameOrder || Number(left.id) - Number(right.id);
-  });
-}
-
-function exerciseWorkoutCount(exercise) {
-  return state.sessions.reduce((count, session) => count + Number(
-    exerciseReferencesForSession(session).some(reference => exercisesMatch(reference, exercise))
-  ), 0);
 }
 
 function exerciseMappingsPanel(exercises) {
@@ -4394,9 +4376,7 @@ function exerciseMappingsPanel(exercises) {
 
 function exerciseRow(exercise) {
   const builtIn = Boolean(builtInExerciseFor(exercise));
-  const workoutCount = exerciseWorkoutCount(exercise);
-  const mappingCount = mappingFor(exercise).length;
-  return `<article class="panel exercise-row"><div class="exercise-card-head"><h3 class="exercise-name">${escapeHtml(exerciseDisplayName(exercise))}</h3><div class="actions">${builtIn ? `<span class="pill">${tx("Built-in", "Вбудована")}</span>` : `<button class="icon-button" data-action="rename-exercise" data-id="${exercise.id}" aria-label="${tx("Rename exercise", "Перейменувати вправу")}">${svg("edit")}</button>`}<button class="icon-button" data-action="delete-exercise" data-id="${exercise.id}" aria-label="${tx("Delete exercise", "Видалити вправу")}">${svg("delete")}</button></div></div><div class="exercise-metrics"><span class="pill">${n(workoutCount, "workout", "workouts", "тренування", "тренування", "тренувань")}</span><span class="pill">${mappingCount ? tx(`${mappingCount} mapped`, `Зіставлено: ${mappingCount}`) : tx("Auto mapping", "Автомапінг")}</span></div><div class="exercise-card-actions"><button class="button ghost" data-action="exercise-history" data-id="${exercise.id}">${tx("History", "Історія")}</button><button class="button ghost" data-action="map-exercise" data-name="${escapeAttr(exercise.name)}">${tx("Muscle groups", "Групи м’язів")}</button></div></article>`;
+  return `<article class="exercise-row clickable" data-action="exercise-history" data-id="${exercise.id}"><span class="exercise-name">${escapeHtml(exerciseDisplayName(exercise))}</span><div class="actions">${builtIn ? `<span class="pill">${tx("Built-in", "Вбудована")}</span>` : `<button class="icon-button" data-action="rename-exercise" data-id="${exercise.id}" aria-label="${tx("Rename exercise", "Перейменувати вправу")}">${svg("edit")}</button>`}<button class="icon-button" data-action="delete-exercise" data-id="${exercise.id}" aria-label="${tx("Delete exercise", "Видалити вправу")}">${svg("delete")}</button></div></article>`;
 }
 
 function progressScreen() {
@@ -4923,7 +4903,6 @@ function ranksScreen() {
 function modalMarkup() {
   if (modal.type === "template") return bottomSheet(`<h2>${t("templatePicker")}</h2>${state.sessions.length ? [...state.sessions].sort((a, b) => b.startedAt - a.startedAt).map(session => `<article class="workout-item"><h3>${fmtDate(session.startedAt)}</h3><p>${sessionSummary(session).exercises} ${tx("exercises", "вправ")} - ${sessionSummary(session).sets} ${tx("sets", "підходів")} - ${Math.round(sessionSummary(session).volume)} ${tx("volume", "обсяг")}</p><button class="button full" data-action="copy-template" data-id="${session.id}">${t("copyWorkout")}</button></article>`).join("") : `<p>${tx("No previous workouts yet.", "Попередніх тренувань ще немає.")}</p>`}`);
   if (modal.type === "import") return bottomSheet(`<h2>${tx("Import backup", "Імпорт бекапу")}</h2><textarea id="import-json" placeholder="${tx("Paste exported GymApp JSON here", "Встав сюди експортований JSON GymApp")}"></textarea><button class="button full" data-action="apply-import">${tx("Import", "Імпорт")}</button>`);
-  if (modal.type === "add-exercise") return bottomSheet(`<h2>${tx("Add exercise", "Додати вправу")}</h2><input id="new-exercise-name" maxlength="120" aria-label="${tx("Exercise name", "Назва вправи")}" placeholder="${tx("Exercise name", "Назва вправи")}"><button class="button full" data-action="save-exercise">${tx("Add exercise", "Додати вправу")}</button>`);
   if (modal.type === "backup-json") return bottomSheet(`<h2>${modal.diagnostics ? tx("Redacted diagnostics ready", "Знеособлена діагностика готова") : tx("Backup JSON ready", "JSON бекапу готовий")}</h2><textarea readonly>${escapeHtml(modal.json)}</textarea><div class="actions"><button class="button" data-action="copy-json">${tx("Copy JSON", "Копіювати JSON")}</button><button class="button ghost" data-action="download-json">${tx("Download", "Завантажити")}</button></div><button class="button ghost full" data-action="pdf-report">${t("sharePdf")}</button>`);
   if (modal.type === "rename") return bottomSheet(`<h2>${t("rename")}</h2><input id="rename-name" maxlength="120" value="${escapeAttr(exerciseDisplayName(modal.exercise))}"><button class="button full" data-action="apply-rename" data-id="${modal.exercise.id}">${tx("Save", "Зберегти")}</button>`);
   if (modal.type === "history") return bottomSheet(exerciseHistoryMarkup(modal.exercise));
@@ -5045,8 +5024,6 @@ function handleAction(action, el) {
   if (action === "clear-exercise-search") { exerciseSearchQuery = ""; return render(); }
   if (action === "exercise-body-filter") { exerciseBodyFilter = ["all", "upper", "lower", "core"].includes(el.dataset.filter) ? el.dataset.filter : "all"; return render(); }
   if (action === "exercise-muscle-filter") { exerciseMuscleFilter = el.dataset.filter === "all" || muscles.some(([id]) => id === el.dataset.filter) ? el.dataset.filter : "all"; return render(); }
-  if (action === "exercise-sort") { exerciseSortMode = ["name", "most", "least"].includes(el.dataset.sort) ? el.dataset.sort : "name"; return render(); }
-  if (action === "open-exercise-add") { modal = { type: "add-exercise" }; return render(); }
   if (action === "overview-mode") {
     overviewMode = el.dataset.mode === "list" ? "list" : "overview";
     render();
@@ -5669,7 +5646,6 @@ function saveExercise() {
   if (!isSupportedExerciseName(name)) return showToast(tx("Exercise name is too long.", "Назва вправи надто довга."));
   if (!ensureExercise(name)) return showToast(tx("The exercise catalog has reached its limit.", "Каталог вправ досяг ліміту."));
   saveState();
-  modal = null;
   render();
 }
 
