@@ -62,6 +62,17 @@ function jsonFrom(context, expression) {
   return JSON.parse(vm.runInContext(`JSON.stringify(${expression})`, context));
 }
 
+test("Garmin download link is pinned to the QA package and isolates the new tab", () => {
+  const context = loadPwaContext();
+  const html = vm.runInContext("accountPanel()", context);
+
+  assert.match(
+    html,
+    /https:\/\/github\.com\/Eduard047\/GymApp\/releases\/download\/qa-2026\.07\.17\.1\/gymapp-garmin-connect-iq\.iq/
+  );
+  assert.match(html, /target="_blank" rel="noopener noreferrer"/);
+});
+
 test("built-in exercise catalog persists stable keys and localizes only display names", () => {
   const context = loadPwaContext();
   const defaults = jsonFrom(context, "defaultAppState().exercises");
@@ -150,6 +161,38 @@ test("an explicit empty remote catalog remains empty and is not replaced by defa
 
   assert.equal(vm.runInContext("normalizeImportedState({ exercises: [], sessions: [] }, defaultAppState()).exercises.length", context), 0);
   assert.equal(vm.runInContext("normalizeImportedState({ sessions: [] }, defaultAppState()).exercises.length", context), 51);
+});
+
+test("exercise library sorts by unique workout frequency in both directions", () => {
+  const context = loadPwaContext();
+  vm.runInContext(`
+    state = {
+      ...defaultAppState(),
+      exercises: [
+        { id: 1, name: "Bench Press", catalogKey: "bench_press" },
+        { id: 2, name: "Squat", catalogKey: "squat" },
+        { id: 3, name: "Plank", catalogKey: "plank" }
+      ],
+      sessions: [
+        { id: 10, startedAt: 10, sets: [
+          { id: 11, exerciseName: "Bench Press", catalogKey: "bench_press", weight: 50, reps: 8 },
+          { id: 12, exerciseName: "Bench Press", catalogKey: "bench_press", weight: 55, reps: 6 },
+          { id: 13, exerciseName: "Squat", catalogKey: "squat", weight: 80, reps: 5 }
+        ] },
+        { id: 20, startedAt: 20, sets: [
+          { id: 21, exerciseName: "Bench Press", catalogKey: "bench_press", weight: 60, reps: 5 }
+        ] }
+      ]
+    };
+    exerciseSortMode = "most";
+  `, context);
+
+  assert.equal(vm.runInContext("exerciseWorkoutCount(state.exercises[0])", context), 2);
+  assert.equal(vm.runInContext("exerciseWorkoutCount(state.exercises[1])", context), 1);
+  assert.deepEqual(jsonFrom(context, "filteredLibraryExercises().map(exercise => exercise.id)"), [1, 2, 3]);
+
+  vm.runInContext('exerciseSortMode = "least"', context);
+  assert.deepEqual(jsonFrom(context, "filteredLibraryExercises().map(exercise => exercise.id)"), [3, 2, 1]);
 });
 
 test("legacy session aliases preserve separate raw history", () => {

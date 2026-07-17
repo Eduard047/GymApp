@@ -21,6 +21,14 @@ struct ExercisesView: View {
         }
     }
 
+    private enum SortMode: String, CaseIterable, Identifiable {
+        case name
+        case mostFrequent
+        case leastFrequent
+
+        var id: Self { self }
+    }
+
     private enum PresentedSheet: Identifiable {
         case addExercise
         case editExercise(Exercise)
@@ -65,6 +73,7 @@ struct ExercisesView: View {
     @State private var searchText = ""
     @State private var bodyFilter: BodyFilter = .all
     @State private var muscleFilter: String?
+    @State private var sortMode: SortMode = .name
     @State private var presentedSheet: PresentedSheet?
     @State private var activeAlert: ActiveAlert?
     @State private var showsAccountSettings = false
@@ -350,6 +359,18 @@ struct ExercisesView: View {
 
             ScrollView(.horizontal) {
                 HStack(spacing: 8) {
+                    ForEach(SortMode.allCases) { mode in
+                        Button(sortModeTitle(mode)) { sortMode = mode }
+                            .buttonStyle(.bordered)
+                            .tint(sortMode == mode ? GymTheme.primary : GymTheme.textSecondary)
+                            .accessibilityAddTraits(sortMode == mode ? .isSelected : [])
+                    }
+                }
+            }
+            .scrollIndicators(.hidden)
+
+            ScrollView(.horizontal) {
+                HStack(spacing: 8) {
                     Button(gymLocalized("All muscles")) { muscleFilter = nil }
                         .buttonStyle(.bordered)
                         .tint(muscleFilter == nil ? GymTheme.primary : GymTheme.textSecondary)
@@ -380,6 +401,17 @@ struct ExercisesView: View {
         case .upper: gymText("Upper body", "Верх тіла", languageCode: gymCurrentLanguageCode())
         case .lower: gymText("Lower body", "Низ тіла", languageCode: gymCurrentLanguageCode())
         case .core: gymText("Core", "Кор", languageCode: gymCurrentLanguageCode())
+        }
+    }
+
+    private func sortModeTitle(_ mode: SortMode) -> String {
+        switch mode {
+        case .name:
+            gymText("By name", "За назвою", languageCode: gymCurrentLanguageCode())
+        case .mostFrequent:
+            gymText("Most frequent", "Найчастіші", languageCode: gymCurrentLanguageCode())
+        case .leastFrequent:
+            gymText("Least frequent", "Найрідші", languageCode: gymCurrentLanguageCode())
         }
     }
 
@@ -450,14 +482,14 @@ struct ExercisesView: View {
                 HStack(spacing: 8) {
                     GymInfoPill(
                         gymCount(
-                            stats.setCount,
-                            englishOne: "set",
-                            englishMany: "sets",
-                            ukrainianOne: "підхід",
-                            ukrainianFew: "підходи",
-                            ukrainianMany: "підходів"
+                            stats.sessionCount,
+                            englishOne: "workout",
+                            englishMany: "workouts",
+                            ukrainianOne: "тренування",
+                            ukrainianFew: "тренування",
+                            ukrainianMany: "тренувань"
                         ),
-                        systemImage: "list.number"
+                        systemImage: "calendar"
                     )
                     GymInfoPill(
                         mappingCount == 0
@@ -523,11 +555,8 @@ struct ExercisesView: View {
     }
 
     private var filteredExercises: [Exercise] {
-        let sorted = store.exercises.sorted {
-            gymExerciseName($0).localizedCaseInsensitiveCompare(gymExerciseName($1)) == .orderedAscending
-        }
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        return sorted.filter { exercise in
+        let matching = store.exercises.filter { exercise in
             let definition = catalogDefinition(for: exercise)
             let names = [exercise.name, gymExerciseName(exercise)] +
                 (definition.map { [$0.englishName, $0.ukrainianName] + $0.legacyAliases } ?? [])
@@ -538,6 +567,24 @@ struct ExercisesView: View {
             let matchesBody = bodyFilter == .all || !exerciseMuscles.isDisjoint(with: bodyFilter.muscleIDs)
             let matchesMuscle = muscleFilter == nil || exerciseMuscles.contains(muscleFilter!)
             return matchesQuery && matchesBody && matchesMuscle
+        }
+        return matching.sorted { left, right in
+            let nameOrder = gymExerciseName(left).localizedCaseInsensitiveCompare(gymExerciseName(right))
+            let nameComesFirst = nameOrder == .orderedAscending || (
+                nameOrder == .orderedSame && left.id.uuidString < right.id.uuidString
+            )
+            switch sortMode {
+            case .name:
+                return nameComesFirst
+            case .mostFrequent:
+                let leftCount = store.progressStats(exerciseID: left.id).sessionCount
+                let rightCount = store.progressStats(exerciseID: right.id).sessionCount
+                return leftCount == rightCount ? nameComesFirst : leftCount > rightCount
+            case .leastFrequent:
+                let leftCount = store.progressStats(exerciseID: left.id).sessionCount
+                let rightCount = store.progressStats(exerciseID: right.id).sessionCount
+                return leftCount == rightCount ? nameComesFirst : leftCount < rightCount
+            }
         }
     }
 

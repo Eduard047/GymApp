@@ -169,6 +169,7 @@
 
     <string name="exercise_block_title">Exercise %1$d</string>
     <string name="exercise_set_count_compact">%1$d sets</string>
+    <string name="exercise_workout_count_compact">%1$d workouts</string>
     <string name="exercise_muscles_title">Muscles worked</string>
     <string name="cd_collapse_exercise">Collapse exercise</string>
     <string name="cd_expand_exercise">Expand exercise</string>
@@ -504,5 +505,9 @@
     <string name="exercise_filter_lower">Lower body</string>
     <string name="exercise_filter_core">Core</string>
     <string name="exercise_filter_all_muscles">All muscles</string>
+    <string name="exercise_sort_name">By name</string>
+    <string name="exercise_sort_most_frequent">Most frequent</string>
+    <string name="exercise_sort_least_frequent">Least frequent</string>
     <string name="exercise_card_built_in">Built-in</string>
+    <string name="garmin_open_app">Get Garmin app</string>
 </resources>
