@@ -204,6 +204,8 @@ final class AppState: ObservableObject {
                 generation: generation,
                 expectedStorageKey: expectedStorageKey
             )
+            var seededExerciseCount = try candidate.seedBuiltInExercises()
+            _ = try candidate.seedDefaultMuscleMappings()
 
             var cloudError: Error?
             var cloudWritesAllowed = false
@@ -250,6 +252,13 @@ final class AppState: ObservableObject {
                     cloudError = error
                 }
             }
+            // A remote restore may replace local rows. Accounts without a seed marker receive
+            // the catalog once; a current marker preserves exercises the user intentionally deleted.
+            let catalogSeedVersionBeforeFinalSeed = candidate.catalogSeedVersion
+            seededExerciseCount += try candidate.seedBuiltInExercises()
+            let catalogSeedMarkerChanged =
+                candidate.catalogSeedVersion != catalogSeedVersionBeforeFinalSeed
+            _ = try candidate.seedDefaultMuscleMappings()
             try ensureActivationIsCurrent(
                 generation: generation,
                 expectedStorageKey: expectedStorageKey
@@ -258,6 +267,9 @@ final class AppState: ObservableObject {
             publish(store: candidate, activeStorageKey: expectedStorageKey)
             isPreparingAccount = false
             accountPreparationError = nil
+            if (seededExerciseCount > 0 || catalogSeedMarkerChanged) && cloudWritesAllowed {
+                scheduleCloudSave(delay: .zero)
+            }
 
             if openedStore.quarantinedFileURL != nil {
                 show(

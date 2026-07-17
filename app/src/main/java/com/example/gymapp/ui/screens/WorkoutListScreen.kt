@@ -1,5 +1,6 @@
 package com.example.gymapp.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -28,6 +29,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -73,6 +75,11 @@ fun WorkoutListScreen(
     val coroutineScope = rememberCoroutineScope()
     var workoutsSelected by rememberSaveable { mutableStateOf(false) }
     var sessionPendingDelete by remember { mutableStateOf<WorkoutSessionEntity?>(null) }
+    val showTopControls by remember {
+        derivedStateOf {
+            listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset < 24
+        }
+    }
     // Fixed overview item count before the workout list header.
     val workoutSectionIndex = 6
 
@@ -80,70 +87,69 @@ fun WorkoutListScreen(
         modifier = modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .padding(top = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(3.dp)
-            ) {
-                Text(
-                    text = stringResource(R.string.title_workouts),
-                    style = MaterialTheme.typography.headlineLarge,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = stringResource(R.string.workouts_screen_subtitle),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+        AnimatedVisibility(visible = showTopControls) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
+                        .padding(top = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text(
+                            text = stringResource(R.string.title_workouts),
+                            style = MaterialTheme.typography.headlineLarge,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = stringResource(R.string.workouts_screen_subtitle),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
 
-            Button(
-                onClick = onAddWorkout,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 52.dp),
-                shape = MaterialTheme.shapes.small
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Add,
-                    contentDescription = null
+                    Button(
+                        onClick = onAddWorkout,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 52.dp),
+                        shape = MaterialTheme.shapes.small
+                    ) {
+                        Icon(imageVector = Icons.Default.Add, contentDescription = null)
+                        Text(
+                            text = stringResource(R.string.action_add_workout),
+                            modifier = Modifier.padding(start = 8.dp),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+
+                MonthSwitcher(
+                    monthLabel = uiState.monthLabel,
+                    isCurrentMonth = uiState.monthOffset == 0,
+                    onPreviousMonth = onPreviousMonth,
+                    onCurrentMonth = onCurrentMonth,
+                    onNextMonth = onNextMonth,
+                    modifier = Modifier.padding(horizontal = 12.dp)
                 )
-                Text(
-                    text = stringResource(R.string.action_add_workout),
-                    modifier = Modifier.padding(start = 8.dp),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+
+                WorkoutSectionSwitcher(
+                    sessionCount = uiState.sessions.size,
+                    workoutsSelected = workoutsSelected,
+                    onOverviewClick = {
+                        workoutsSelected = false
+                        coroutineScope.launch { listState.animateScrollToItem(0) }
+                    },
+                    onWorkoutListClick = {
+                        workoutsSelected = true
+                        coroutineScope.launch { listState.animateScrollToItem(workoutSectionIndex) }
+                    },
+                    modifier = Modifier.padding(horizontal = 12.dp)
                 )
             }
         }
-
-        MonthSwitcher(
-            monthLabel = uiState.monthLabel,
-            isCurrentMonth = uiState.monthOffset == 0,
-            onPreviousMonth = onPreviousMonth,
-            onCurrentMonth = onCurrentMonth,
-            onNextMonth = onNextMonth,
-            modifier = Modifier.padding(horizontal = 12.dp)
-        )
-
-        WorkoutSectionSwitcher(
-            sessionCount = uiState.sessions.size,
-            workoutsSelected = workoutsSelected,
-            onOverviewClick = {
-                workoutsSelected = false
-                coroutineScope.launch { listState.animateScrollToItem(0) }
-            },
-            onWorkoutListClick = {
-                workoutsSelected = true
-                coroutineScope.launch { listState.animateScrollToItem(workoutSectionIndex) }
-            },
-            modifier = Modifier.padding(horizontal = 12.dp)
-        )
 
         LazyColumn(
             state = listState,

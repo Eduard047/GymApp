@@ -66,10 +66,38 @@ test("built-in exercise catalog persists stable keys and localizes only display 
   const context = loadPwaContext();
   const defaults = jsonFrom(context, "defaultAppState().exercises");
 
-  assert.equal(defaults.length, 15);
+  assert.equal(defaults.length, 51);
   assert.deepEqual(defaults[0], { id: 1, name: "Bench Press", catalogKey: "bench_press" });
   assert.equal(vm.runInContext('exerciseDisplayName(defaultAppState().exercises[0], "uk")', context), "Жим штанги лежачи");
   assert.equal(vm.runInContext('exerciseDisplayName({ name: "My custom press" }, "uk")', context), "My custom press");
+});
+
+test("catalog seeding runs once and preserves later user deletions", () => {
+  const context = loadPwaContext();
+  vm.runInContext(`state = normalizeImportedState({
+    language: "en",
+    exercises: [{ id: 900, name: "My custom exercise" }],
+    sessions: [],
+    mappings: {},
+    profile: { split: "Push Pull Legs", days: 4, goal: "Balanced", calories: "Maintenance" }
+  }, defaultAppState())`, context);
+
+  assert.equal(vm.runInContext("state.catalogSeedVersion", context), 0);
+  assert.equal(vm.runInContext("ensureBuiltInExerciseCatalog(state)", context), true);
+  assert.equal(vm.runInContext("state.catalogSeedVersion", context), 1);
+  assert.equal(vm.runInContext("state.exercises.length", context), 52);
+
+  vm.runInContext(`state.exercises = state.exercises.filter(
+    exercise => exercise.catalogKey !== "bench_press"
+  )`, context);
+  assert.equal(vm.runInContext("ensureBuiltInExerciseCatalog(state)", context), false);
+  assert.equal(vm.runInContext(
+    'state.exercises.some(exercise => exercise.catalogKey === "bench_press")',
+    context
+  ), false);
+
+  const exported = jsonFrom(context, "JSON.parse(exportPayload(false))");
+  assert.equal(exported.catalogSeedVersion, 1);
 });
 
 test("legacy aliases localize without collapsing or rewriting separate catalog rows", () => {
@@ -121,7 +149,7 @@ test("an explicit empty remote catalog remains empty and is not replaced by defa
   const context = loadPwaContext();
 
   assert.equal(vm.runInContext("normalizeImportedState({ exercises: [], sessions: [] }, defaultAppState()).exercises.length", context), 0);
-  assert.equal(vm.runInContext("normalizeImportedState({ sessions: [] }, defaultAppState()).exercises.length", context), 15);
+  assert.equal(vm.runInContext("normalizeImportedState({ sessions: [] }, defaultAppState()).exercises.length", context), 51);
 });
 
 test("legacy session aliases preserve separate raw history", () => {

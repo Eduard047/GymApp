@@ -25,7 +25,7 @@ class BuiltInExerciseCatalogTest {
             Triple("plank", "Plank", "Планка")
         )
 
-        assertEquals(expected.size, BuiltInExerciseCatalog.definitions.size)
+        assertEquals(51, BuiltInExerciseCatalog.definitions.size)
         expected.forEach { (key, english, ukrainian) ->
             assertEquals(key, BuiltInExerciseCatalog.inferKey(english))
             assertEquals(key, BuiltInExerciseCatalog.inferKey(ukrainian))

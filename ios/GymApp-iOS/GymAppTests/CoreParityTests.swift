@@ -194,8 +194,8 @@ final class CoreParityTests: XCTestCase {
     }
 
     func testBuiltInExerciseCatalogUsesStableKeysAndExactAliases() throws {
-        XCTAssertEqual(BuiltInExerciseCatalog.definitions.count, 15)
-        XCTAssertEqual(Set(BuiltInExerciseCatalog.definitions.map(\.key)).count, 15)
+        XCTAssertEqual(BuiltInExerciseCatalog.definitions.count, 51)
+        XCTAssertEqual(Set(BuiltInExerciseCatalog.definitions.map(\.key)).count, 51)
         XCTAssertEqual(BuiltInExerciseCatalog.canonicalKey(forName: "Bench Press"), "bench_press")
         XCTAssertEqual(BuiltInExerciseCatalog.canonicalKey(forName: "Жим штанги лежачи"), "bench_press")
         XCTAssertEqual(BuiltInExerciseCatalog.canonicalKey(forName: "Barbell Squat"), "squat")
@@ -213,6 +213,31 @@ final class CoreParityTests: XCTestCase {
         let custom = Exercise(name: "Eduard Special Press")
         XCTAssertNil(custom.catalogKey)
         XCTAssertEqual(gymExerciseName(custom, languageCode: "uk"), custom.name)
+    }
+
+    func testCatalogSeedMarkerPreservesDeletedBuiltInExercise() throws {
+        let directory = try temporaryDirectory(named: "catalog-seed-once")
+        let store = try WorkoutStore(
+            accountStorageKey: "catalog-seed-once",
+            directoryURL: directory
+        )
+
+        XCTAssertEqual(try store.seedBuiltInExercises(), 51)
+        XCTAssertEqual(store.catalogSeedVersion, BuiltInExerciseCatalog.seedVersion)
+        let bench = try XCTUnwrap(store.exercises.first { $0.catalogKey == "bench_press" })
+        try store.deleteExercise(id: bench.id)
+
+        XCTAssertEqual(try store.seedBuiltInExercises(), 0)
+        XCTAssertFalse(store.exercises.contains { $0.catalogKey == "bench_press" })
+
+        let reopened = try WorkoutStore(
+            accountStorageKey: "catalog-seed-once",
+            directoryURL: directory
+        )
+        XCTAssertEqual(reopened.catalogSeedVersion, BuiltInExerciseCatalog.seedVersion)
+        XCTAssertEqual(try reopened.seedBuiltInExercises(), 0)
+        XCTAssertFalse(reopened.exercises.contains { $0.catalogKey == "bench_press" })
+        XCTAssertEqual(try reopened.makeBackup().catalogSeedVersion, BuiltInExerciseCatalog.seedVersion)
     }
 
     func testLegacyExerciseJSONInfersCatalogKeyWithoutChangingRawName() throws {
@@ -609,7 +634,7 @@ final class CoreParityTests: XCTestCase {
 
     func testExerciseDeletionCascadesWorkoutData() throws {
         let store = try WorkoutStore(accountStorageKey: "cascade", directoryURL: try temporaryDirectory(named: "cascade"))
-        let exercise = try store.addExercise(name: "Deadlift")
+        let exercise = try store.addExercise(name: "Custom Deadlift Variation")
         _ = try store.createWorkout(
             date: Date(),
             exercises: [WorkoutExerciseDraft(exerciseID: exercise.id, sets: [.init(weight: 120, reps: 5)])]
@@ -2099,7 +2124,7 @@ final class CoreParityTests: XCTestCase {
         try auth.installSessionForTesting(.cloud(cloud))
         let accountReady = await waitUntil {
             appState.isAccountReady &&
-                appState.workoutStore.exercises.map(\.name) == ["Browser Workout"]
+                self.customExerciseNames(in: appState.workoutStore) == ["Browser Workout"]
         }
         XCTAssertTrue(accountReady)
         XCTAssertTrue(appState.isCloudWritePaused)
@@ -2147,7 +2172,7 @@ final class CoreParityTests: XCTestCase {
 
         XCTAssertTrue(accountReady)
         XCTAssertEqual(
-            appState.workoutStore.exercises.map(\.name),
+            customExerciseNames(in: appState.workoutStore),
             ["Persisted Private Exercise"]
         )
         XCTAssertTrue(appState.isCloudWritePaused)
@@ -2191,14 +2216,14 @@ final class CoreParityTests: XCTestCase {
         try auth.installSessionForTesting(.cloud(cloudA))
         await fulfillment(of: [gate.expectation(for: "user-a")], timeout: 2)
         XCTAssertFalse(appState.isAccountReady)
-        XCTAssertEqual(appState.workoutStore.exercises.map(\.name), ["Prior Account Secret"])
+        XCTAssertEqual(customExerciseNames(in: appState.workoutStore), ["Prior Account Secret"])
 
         try auth.installSessionForTesting(.cloud(cloudB))
         await fulfillment(of: [gate.expectation(for: "user-b")], timeout: 2)
         XCTAssertFalse(appState.isAccountReady)
         gate.release(userID: "user-b")
         let accountBReady = await waitUntil {
-            appState.isAccountReady && appState.workoutStore.exercises.map(\.name) == ["Account B"]
+            appState.isAccountReady && self.customExerciseNames(in: appState.workoutStore) == ["Account B"]
         }
         XCTAssertTrue(accountBReady)
 
@@ -2206,7 +2231,7 @@ final class CoreParityTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(100))
         XCTAssertEqual(auth.session?.cloud?.userID, "user-b")
         XCTAssertTrue(appState.isAccountReady)
-        XCTAssertEqual(appState.workoutStore.exercises.map(\.name), ["Account B"])
+        XCTAssertEqual(customExerciseNames(in: appState.workoutStore), ["Account B"])
     }
 
     func testDemoDataIsExplicitAndIdempotent() throws {
@@ -2450,6 +2475,15 @@ final class CoreParityTests: XCTestCase {
             try? await Task.sleep(for: .milliseconds(10))
         }
         return condition()
+    }
+
+    private func customExerciseNames(in store: WorkoutStore) -> [String] {
+        store.exercises.filter { exercise in
+            BuiltInExerciseCatalog.resolvedKey(
+                catalogKey: exercise.catalogKey,
+                name: exercise.name
+            ) == nil
+        }.map(\.name)
     }
 }
 

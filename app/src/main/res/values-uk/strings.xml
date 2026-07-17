@@ -487,4 +487,22 @@
     <string name="cd_prev_month">Попередній місяць</string>
     <string name="cd_next_month">Наступний місяць</string>
     <string name="cd_back">Назад</string>
+    <string name="exercise_search_label">Пошук вправ</string>
+    <string name="exercise_search_placeholder">Назва українською або англійською</string>
+    <string name="exercise_search_clear">Очистити пошук</string>
+    <string name="exercise_search_no_results">Вправ не знайдено</string>
+    <string name="exercise_search_no_results_supporting">Спробуйте іншу назву, частину тіла або групу м’язів.</string>
+    <string name="exercise_search_result_count">Вправ: %1$d</string>
+    <string name="exercise_picker_all">Усі</string>
+    <string name="exercise_picker_frequent">Часті</string>
+    <string name="exercise_picker_frequent_empty">Часто використовувані вправи з’являться тут після збереження тренувань.</string>
+    <string name="exercise_card_mapped_count">Зіставлено: %1$d</string>
+    <string name="exercise_card_auto_mapping">Автозіставлення</string>
+    <string name="exercise_card_muscle_groups">Групи м’язів</string>
+    <string name="exercise_filter_all">Усі</string>
+    <string name="exercise_filter_upper">Верх тіла</string>
+    <string name="exercise_filter_lower">Низ тіла</string>
+    <string name="exercise_filter_core">Кор</string>
+    <string name="exercise_filter_all_muscles">Усі м’язи</string>
+    <string name="exercise_card_built_in">Вбудована</string>
 </resources>

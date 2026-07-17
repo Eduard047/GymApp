@@ -55,6 +55,7 @@ data class AddWorkoutUiState(
     val workoutDate: Long = System.currentTimeMillis(),
     val note: String = "",
     val exercises: List<ExerciseEntity> = emptyList(),
+    val frequentExerciseIds: List<Long> = emptyList(),
     val exerciseDrafts: List<ExerciseInputState> = emptyList(),
     val lastWeights: Map<Long, Double?> = emptyMap(),
     val workoutRecommendations: Map<Long, WorkoutRecommendation> = emptyMap(),
@@ -107,6 +108,11 @@ class AddWorkoutViewModel(
         val isTemplateLoading: Boolean
     )
 
+    private data class ExerciseCatalogState(
+        val exercises: List<ExerciseEntity>,
+        val frequentExerciseIds: List<Long>
+    )
+
     private var nextDraftId = 2L
 
     private val note = MutableStateFlow("")
@@ -127,6 +133,28 @@ class AddWorkoutViewModel(
             started = SharingStarted.Eagerly,
             initialValue = emptyList()
         )
+    private val exerciseCatalogState = combine(exercises, exerciseHistory) { exerciseList, history ->
+        val frequentIds = history
+            .groupBy { it.exerciseId }
+            .map { (exerciseId, entries) ->
+                Triple(
+                    exerciseId,
+                    entries.map { it.sessionId }.distinct().size,
+                    entries.maxOfOrNull { it.sessionDate } ?: Long.MIN_VALUE
+                )
+            }
+            .sortedWith(
+                compareByDescending<Triple<Long, Int, Long>> { it.second }
+                    .thenByDescending { it.third }
+                    .thenBy { it.first }
+            )
+            .take(12)
+            .map { it.first }
+        ExerciseCatalogState(
+            exercises = exerciseList,
+            frequentExerciseIds = frequentIds
+        )
+    }
     private val workoutTemplates = repository.observeSessions().map { sessions ->
         sessions
             .take(60)
@@ -219,15 +247,16 @@ class AddWorkoutViewModel(
     }
 
     val uiState: StateFlow<AddWorkoutUiState> = combine(
-        exercises,
+        exerciseCatalogState,
         lastWeights,
         workoutRecommendations,
         workoutTemplates,
         localState
-    ) { exerciseList, lastWeightsMap, recommendations, templates, local ->
+    ) { catalog, lastWeightsMap, recommendations, templates, local ->
         AddWorkoutUiState(
             note = local.note,
-            exercises = exerciseList,
+            exercises = catalog.exercises,
+            frequentExerciseIds = catalog.frequentExerciseIds,
             exerciseDrafts = local.exerciseDrafts,
             lastWeights = lastWeightsMap,
             workoutRecommendations = recommendations,

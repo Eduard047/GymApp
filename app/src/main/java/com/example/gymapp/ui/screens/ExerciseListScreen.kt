@@ -7,6 +7,8 @@ import android.graphics.Paint
 import android.graphics.Typeface
 import android.graphics.pdf.PdfDocument
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -15,15 +17,23 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.FitnessCenter
+import androidx.compose.material.icons.filled.FormatListNumbered
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -32,6 +42,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -43,15 +54,19 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import com.example.gymapp.R
 import com.example.gymapp.data.entity.ExerciseEntity
+import com.example.gymapp.data.catalog.BuiltInExerciseCatalog
 import com.example.gymapp.data.entity.ExerciseHistoryEntry
 import com.example.gymapp.data.repository.defaultContributionsForExercise
+import com.example.gymapp.data.repository.MUSCLE_DEFINITIONS
 import com.example.gymapp.data.repository.WorkoutDataLimits
 import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.EmptyStatePanel
@@ -63,7 +78,6 @@ import com.example.gymapp.ui.util.localizedExerciseName
 import com.example.gymapp.ui.util.localizedMuscleName
 import com.example.gymapp.ui.util.SensitiveClipboard
 import com.example.gymapp.ui.viewmodel.ExerciseListUiState
-import com.example.gymapp.ui.viewmodel.ExerciseMuscleMappingUiModel
 import com.example.gymapp.ui.viewmodel.ExerciseMuscleOptionUiModel
 import java.time.Instant
 import java.time.YearMonth
@@ -90,6 +104,13 @@ private const val MAX_PDF_TEXT_CHARS = 320
 private const val PRIVATE_SHARE_RETENTION_MILLIS = 24 * 60 * 60 * 1_000L
 private const val MAX_RETAINED_PRIVATE_SHARE_FILES = 32
 private val PRIVATE_SHARE_FILE_LOCK = Any()
+
+private enum class ExerciseBodyFilter(val muscleIds: Set<String>) {
+    All(emptySet()),
+    Upper(setOf("chest", "shoulders", "biceps", "triceps", "forearms", "lats", "upperBack")),
+    Lower(setOf("lowerBack", "glutes", "quads", "hamstrings", "adductors", "calves")),
+    Core(setOf("abs", "obliques"))
+}
 
 private data class ExerciseHistorySessionGroup(
     val sessionId: Long,
@@ -126,7 +147,34 @@ fun ExerciseListScreen(
 ) {
     var isAddExerciseOpen by rememberSaveable { mutableStateOf(false) }
     var pendingAddedName by rememberSaveable { mutableStateOf<String?>(null) }
-
+    var searchQuery by rememberSaveable { mutableStateOf("") }
+    var bodyFilter by rememberSaveable { mutableStateOf(ExerciseBodyFilter.All) }
+    var muscleFilter by rememberSaveable { mutableStateOf<String?>(null) }
+    val musclesByExercise = remember(uiState.muscleMappings) {
+        uiState.muscleMappings.associate { mapping -> mapping.exerciseName to mapping.muscleIds.toSet() }
+    }
+    val filteredExercises = remember(uiState.exercises, musclesByExercise, searchQuery, bodyFilter, muscleFilter) {
+        val normalizedQuery = searchQuery.trim().lowercase(Locale.ROOT)
+        uiState.exercises.filter { exercise ->
+            val definition = BuiltInExerciseCatalog.definitionForName(exercise.name)
+            val searchableNames = buildList {
+                add(exercise.name)
+                definition?.let {
+                    add(it.nameEn)
+                    add(it.nameUk)
+                    addAll(it.legacyAliases)
+                }
+            }
+            val muscleIds = musclesByExercise[exercise.name].orEmpty()
+            val matchesQuery = normalizedQuery.isEmpty() || searchableNames.any { name ->
+                name.lowercase(Locale.ROOT).contains(normalizedQuery)
+            }
+            val matchesBody = bodyFilter == ExerciseBodyFilter.All ||
+                muscleIds.any(bodyFilter.muscleIds::contains)
+            val matchesMuscle = muscleFilter == null || muscleFilter in muscleIds
+            matchesQuery && matchesBody && matchesMuscle
+        }
+    }
     LaunchedEffect(uiState.newExerciseName, uiState.hasInputError, pendingAddedName) {
         if (
             pendingAddedName != null &&
@@ -219,69 +267,130 @@ fun ExerciseListScreen(
             }
         }
 
-        if (uiState.muscleMappings.isNotEmpty()) {
-            item {
-                ExerciseMuscleMappingsCard(
-                    mappings = uiState.muscleMappings,
-                    onEditExerciseMapping = onEditExerciseMapping
-                )
-            }
+        item {
+            ExerciseSearchAndFilters(
+                query = searchQuery,
+                onQueryChange = { searchQuery = it },
+                bodyFilter = bodyFilter,
+                onBodyFilterChange = { bodyFilter = it },
+                muscleFilter = muscleFilter,
+                onMuscleFilterChange = { muscleFilter = it },
+                resultCount = filteredExercises.size
+            )
         }
 
-        if (uiState.exercises.isEmpty()) {
+        if (filteredExercises.isEmpty()) {
             item {
                 EmptyStatePanel(
-                    title = stringResource(R.string.empty_exercises),
-                    supporting = stringResource(R.string.exercise_library_empty_supporting)
+                    title = if (uiState.exercises.isEmpty()) {
+                        stringResource(R.string.empty_exercises)
+                    } else {
+                        stringResource(R.string.exercise_search_no_results)
+                    },
+                    supporting = if (uiState.exercises.isEmpty()) {
+                        stringResource(R.string.exercise_library_empty_supporting)
+                    } else {
+                        stringResource(R.string.exercise_search_no_results_supporting)
+                    }
                 )
             }
         } else {
             items(
-                items = uiState.exercises,
+                items = filteredExercises,
                 key = { it.id }
             ) { exercise ->
+                val mappingCount = musclesByExercise[exercise.name].orEmpty().size
+                val setCount = uiState.exerciseSetCounts[exercise.id] ?: 0
+                val isBuiltIn = BuiltInExerciseCatalog.definitionForName(exercise.name) != null
                 AppPanel(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onExerciseClick(exercise.id) },
-                    highlighted = true
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Row(
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        verticalArrangement = Arrangement.spacedBy(13.dp)
                     ) {
-                        Column(
-                            modifier = Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Text(
                                 text = localizedExerciseName(exercise.name),
+                                modifier = Modifier.weight(1f),
                                 style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis
                             )
-                            Text(
-                                text = stringResource(R.string.exercise_card_supporting),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            if (isBuiltIn) {
+                                InfoPill(text = stringResource(R.string.exercise_card_built_in))
+                            } else {
+                                IconButton(onClick = { onStartRenameExercise(exercise) }) {
+                                    Icon(
+                                        imageVector = Icons.Default.Edit,
+                                        contentDescription = stringResource(R.string.cd_edit)
+                                    )
+                                }
+                            }
+                            IconButton(onClick = { onDeleteExercise(exercise) }) {
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription = stringResource(R.string.cd_delete),
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            ExerciseMetricPill(
+                                icon = Icons.Default.FormatListNumbered,
+                                text = stringResource(R.string.exercise_set_count_compact, setCount)
+                            )
+                            ExerciseMetricPill(
+                                icon = Icons.Default.FitnessCenter,
+                                text = if (mappingCount == 0) {
+                                    stringResource(R.string.exercise_card_auto_mapping)
+                                } else {
+                                    stringResource(R.string.exercise_card_mapped_count, mappingCount)
+                                }
                             )
                         }
-                        InfoPill(text = stringResource(R.string.exercise_card_history))
-                        IconButton(onClick = { onStartRenameExercise(exercise) }) {
-                            Icon(
-                                imageVector = Icons.Default.Edit,
-                                contentDescription = stringResource(R.string.cd_edit)
-                            )
-                        }
-                        IconButton(onClick = { onDeleteExercise(exercise) }) {
-                            Icon(
-                                imageVector = Icons.Default.Delete,
-                                contentDescription = stringResource(R.string.cd_delete),
-                                tint = MaterialTheme.colorScheme.error
-                            )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = { onExerciseClick(exercise.id) },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .heightIn(min = 58.dp)
+                            ) {
+                                Icon(imageVector = Icons.Default.History, contentDescription = null)
+                                Text(
+                                    text = stringResource(R.string.exercise_card_history),
+                                    modifier = Modifier.padding(start = 8.dp),
+                                    maxLines = 2
+                                )
+                            }
+                            OutlinedButton(
+                                onClick = { onEditExerciseMapping(exercise.name) },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .heightIn(min = 58.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.FitnessCenter,
+                                    contentDescription = null
+                                )
+                                Text(
+                                    text = stringResource(R.string.exercise_card_muscle_groups),
+                                    modifier = Modifier.padding(start = 8.dp),
+                                    maxLines = 2
+                                )
+                            }
                         }
                     }
                 }
@@ -397,6 +506,126 @@ fun ExerciseListScreen(
 }
 
 @Composable
+private fun ExerciseMetricPill(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    text: String
+) {
+    val accent = MaterialTheme.colorScheme.primary
+    Surface(
+        color = accent.copy(alpha = 0.10f),
+        contentColor = accent,
+        shape = CircleShape,
+        border = BorderStroke(1.dp, accent.copy(alpha = 0.22f))
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Icon(imageVector = icon, contentDescription = null, modifier = Modifier.size(17.dp))
+            Text(
+                text = text,
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1
+            )
+        }
+    }
+}
+
+@Composable
+private fun ExerciseSearchAndFilters(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    bodyFilter: ExerciseBodyFilter,
+    onBodyFilterChange: (ExerciseBodyFilter) -> Unit,
+    muscleFilter: String?,
+    onMuscleFilterChange: (String?) -> Unit,
+    resultCount: Int
+) {
+    val languageTag = currentAppLanguageTag()
+    AppPanel(modifier = Modifier.fillMaxWidth(), highlighted = true) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            OutlinedTextField(
+                value = query,
+                onValueChange = onQueryChange,
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                leadingIcon = {
+                    Icon(Icons.Default.Search, contentDescription = null)
+                },
+                trailingIcon = if (query.isNotEmpty()) {
+                    {
+                        IconButton(onClick = { onQueryChange("") }) {
+                            Icon(
+                                Icons.Default.Close,
+                                contentDescription = stringResource(R.string.exercise_search_clear)
+                            )
+                        }
+                    }
+                } else {
+                    null
+                },
+                label = { Text(stringResource(R.string.exercise_search_label)) },
+                placeholder = { Text(stringResource(R.string.exercise_search_placeholder)) }
+            )
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                ExerciseBodyFilter.entries.forEach { filter ->
+                    val label = when (filter) {
+                        ExerciseBodyFilter.All -> R.string.exercise_filter_all
+                        ExerciseBodyFilter.Upper -> R.string.exercise_filter_upper
+                        ExerciseBodyFilter.Lower -> R.string.exercise_filter_lower
+                        ExerciseBodyFilter.Core -> R.string.exercise_filter_core
+                    }
+                    FilterChip(
+                        selected = bodyFilter == filter,
+                        onClick = { onBodyFilterChange(filter) },
+                        label = { Text(stringResource(label)) }
+                    )
+                }
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                FilterChip(
+                    selected = muscleFilter == null,
+                    onClick = { onMuscleFilterChange(null) },
+                    label = { Text(stringResource(R.string.exercise_filter_all_muscles)) }
+                )
+                MUSCLE_DEFINITIONS.forEach { muscle ->
+                    FilterChip(
+                        selected = muscleFilter == muscle.id,
+                        onClick = {
+                            onMuscleFilterChange(if (muscleFilter == muscle.id) null else muscle.id)
+                        },
+                        label = { Text(localizedMuscleName(muscle.id, languageTag)) }
+                    )
+                }
+            }
+
+            Text(
+                text = stringResource(R.string.exercise_search_result_count, resultCount),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
 private fun AddExerciseBottomSheetContent(
     exerciseName: String,
     hasInputError: Boolean,
@@ -444,58 +673,6 @@ private fun AddExerciseBottomSheetContent(
                 text = stringResource(R.string.action_add_exercise),
                 modifier = Modifier.padding(start = 8.dp)
             )
-        }
-    }
-}
-
-@Composable
-private fun ExerciseMuscleMappingsCard(
-    mappings: List<ExerciseMuscleMappingUiModel>,
-    onEditExerciseMapping: (String) -> Unit
-) {
-    val languageTag = currentAppLanguageTag()
-    AppPanel(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            SectionTitle(
-                eyebrow = stringResource(R.string.exercise_mappings_eyebrow),
-                title = stringResource(R.string.exercise_mappings_title),
-                supporting = stringResource(R.string.exercise_mappings_supporting)
-            )
-            mappings.forEach { mapping ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = localizedExerciseName(mapping.exerciseName),
-                            style = MaterialTheme.typography.bodyMedium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Text(
-                            text = if (mapping.isMapped) {
-                                mapping.muscleIds.joinToString(", ") { muscleId ->
-                                    localizedMuscleName(muscleId, languageTag)
-                                }
-                            } else {
-                                stringResource(R.string.exercise_mappings_unmapped)
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                    OutlinedButton(onClick = { onEditExerciseMapping(mapping.exerciseName) }) {
-                        Text(stringResource(R.string.exercise_mappings_edit))
-                    }
-                }
-            }
         }
     }
 }

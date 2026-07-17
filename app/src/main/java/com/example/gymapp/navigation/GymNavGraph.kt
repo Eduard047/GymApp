@@ -33,6 +33,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -46,6 +47,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -142,7 +144,7 @@ internal fun accountUiIsolationKey(
 
 internal fun isCanonicalAndroidCloudEnvelope(root: JSONObject, activeUserId: String): Boolean =
     runCatching {
-        require(root.keySet() == setOf(
+        val requiredKeys = setOf(
             "schemaVersion",
             "exportedAt",
             "app",
@@ -151,9 +153,13 @@ internal fun isCanonicalAndroidCloudEnvelope(root: JSONObject, activeUserId: Str
             "exercises",
             "sessions",
             "summary"
-        ))
+        )
+        require(root.keySet() == requiredKeys || root.keySet() == requiredKeys + "catalogSeedVersion")
         require(root.exactIntegralNumber("schemaVersion") == 2L)
         require(root.exactIntegralNumber("exportedAt") != null)
+        if (root.has("catalogSeedVersion")) {
+            require(root.exactIntegralNumber("catalogSeedVersion") in 0L..1L)
+        }
         require(root.opt("app") == "GymApp")
         require(root.opt("diagnostics") is Boolean)
 
@@ -249,6 +255,13 @@ fun GymAppRoot(
     val cloudSession = (authState.session as? AccountSession.Cloud)
         ?.takeUnless { authState.needsPasswordUpdate }
 
+    LaunchedEffect(uiIsolationKey) {
+        if (authState.session is AccountSession.Local) {
+            repository.seedBuiltInExercises()
+            repository.seedDefaultExerciseMuscleMappings()
+        }
+    }
+
     LaunchedEffect(cloudSession?.sessionGeneration) {
         val session = cloudSession ?: return@LaunchedEffect
         cloudPullGeneration = null
@@ -336,6 +349,10 @@ fun GymAppRoot(
             )
         }
         pullResult.onSuccess { canonicalRoundTripSafe ->
+            // A successful authoritative pull may have replaced the local rows. Re-apply the
+            // public built-in catalog before autosave starts so every account gets the same list.
+            repository.seedBuiltInExercises()
+            repository.seedDefaultExerciseMuscleMappings()
             if (!canonicalRoundTripSafe) {
                 authManager.setMessage(
                     "Cloud data conflicts with unsynced local changes. Automatic upload is paused."
@@ -419,6 +436,7 @@ fun GymAppRoot(
         else -> R.string.app_name
     }
     val passwordUpdateFailedMessage = stringResource(R.string.auth_password_update_failed)
+    val topAppBarScrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
 
     key(uiIsolationKey) {
         GymBackground {
@@ -519,7 +537,9 @@ fun GymAppRoot(
             }
 
             Scaffold(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .nestedScroll(topAppBarScrollBehavior.nestedScrollConnection),
                 containerColor = Color.Transparent,
                 contentColor = MaterialTheme.colorScheme.onBackground,
                 topBar = {
@@ -529,7 +549,8 @@ fun GymAppRoot(
                         showRootTitle = !hasInContentRootHeader,
                         selectedLanguage = selectedLanguage,
                         onBack = { navController.navigateUp() },
-                        onLanguageSelected = { languageManager.setLanguage(it) }
+                        onLanguageSelected = { languageManager.setLanguage(it) },
+                        scrollBehavior = topAppBarScrollBehavior
                     )
                 },
                 bottomBar = {
@@ -971,7 +992,8 @@ private fun AppTopBar(
     showRootTitle: Boolean,
     selectedLanguage: AppLanguage,
     onBack: () -> Unit,
-    onLanguageSelected: (AppLanguage) -> Unit
+    onLanguageSelected: (AppLanguage) -> Unit,
+    scrollBehavior: TopAppBarScrollBehavior
 ) {
     if (isRootDestination) {
         TopAppBar(
@@ -992,7 +1014,8 @@ private fun AppTopBar(
                     selectedLanguage = selectedLanguage,
                     onLanguageSelected = onLanguageSelected
                 )
-            }
+            },
+            scrollBehavior = scrollBehavior
         )
     } else {
         CenterAlignedTopAppBar(
@@ -1029,7 +1052,8 @@ private fun AppTopBar(
                     selectedLanguage = selectedLanguage,
                     onLanguageSelected = onLanguageSelected
                 )
-            }
+            },
+            scrollBehavior = scrollBehavior
         )
     }
 }

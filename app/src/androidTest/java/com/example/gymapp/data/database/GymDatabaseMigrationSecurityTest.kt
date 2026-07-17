@@ -15,6 +15,53 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class GymDatabaseMigrationSecurityTest {
     @Test
+    fun migrationSixToSevenAddsEmptyCatalogSeedRegistry() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "migration-catalog-seed-${UUID.randomUUID()}"
+        context.deleteDatabase(databaseName)
+        val initial = openHelper(databaseName, 6, onCreate = { db ->
+            db.execSQL(
+                "CREATE TABLE exercises (id INTEGER PRIMARY KEY, name TEXT NOT NULL)"
+            )
+            db.execSQL("INSERT INTO exercises(id, name) VALUES (1, 'Keep me')")
+        })
+        initial.writableDatabase
+        initial.close()
+
+        val upgraded = openHelper(
+            databaseName,
+            7,
+            onCreate = { error("Existing database should be upgraded") },
+            onUpgrade = { db, oldVersion, newVersion ->
+                assertEquals(6, oldVersion)
+                assertEquals(7, newVersion)
+                GymDatabase.MIGRATION_6_7.migrate(db)
+            }
+        )
+        try {
+            val db = upgraded.writableDatabase
+            db.query("SELECT COUNT(*) FROM app_metadata").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(0, cursor.getInt(0))
+            }
+            db.execSQL(
+                "INSERT INTO app_metadata(id, catalogSeedVersion) VALUES (1, 1)"
+            )
+            db.query("SELECT catalogSeedVersion FROM app_metadata WHERE id = 1").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(1, cursor.getInt(0))
+            }
+            db.query("SELECT name FROM exercises WHERE id = 1").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("Keep me", cursor.getString(0))
+            }
+        } finally {
+            upgraded.close()
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
     fun migrationFiveToSixAddsDurableGarminReceiptsWithoutDroppingWearReceipts() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val databaseName = "migration-garmin-receipts-${UUID.randomUUID()}"

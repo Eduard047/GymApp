@@ -6,6 +6,7 @@ data class BuiltInExerciseDefinition(
     val key: String,
     val nameEn: String,
     val nameUk: String,
+    val muscleIds: Set<String>,
     val legacyAliases: Set<String> = emptySet()
 )
 
@@ -16,90 +17,74 @@ data class BuiltInExerciseDefinition(
  * only an identity/display layer, so enabling it does not rename existing data or split history.
  */
 object BuiltInExerciseCatalog {
+    const val SEED_VERSION: Int = 1
+
     val definitions: List<BuiltInExerciseDefinition> = listOf(
-        BuiltInExerciseDefinition(
-            key = "bench_press",
-            nameEn = "Bench Press",
-            nameUk = "Жим штанги лежачи",
-            legacyAliases = setOf("жим лежачи")
-        ),
-        BuiltInExerciseDefinition(
-            key = "incline_dumbbell_press",
-            nameEn = "Incline Dumbbell Press",
-            nameUk = "Жим гантелей на похилій лаві"
-        ),
-        BuiltInExerciseDefinition(
-            key = "pull_up",
-            nameEn = "Pull Up",
-            nameUk = "Підтягування",
-            legacyAliases = setOf("Pull-Up")
-        ),
-        BuiltInExerciseDefinition(
-            key = "lat_pulldown",
-            nameEn = "Lat Pulldown",
-            nameUk = "Тяга верхнього блока",
-            legacyAliases = setOf("Тяга верхнього блока до грудей", "Фронтальна тяга")
-        ),
-        BuiltInExerciseDefinition(
-            key = "barbell_row",
-            nameEn = "Barbell Row",
-            nameUk = "Тяга штанги в нахилі"
-        ),
-        BuiltInExerciseDefinition(
-            key = "squat",
-            nameEn = "Squat",
-            nameUk = "Присідання зі штангою",
-            legacyAliases = setOf("Barbell Squat", "Присід зі штангою")
-        ),
-        BuiltInExerciseDefinition(
-            key = "leg_press",
-            nameEn = "Leg Press",
-            nameUk = "Жим ногами у тренажері",
-            legacyAliases = setOf("Жим ногами")
-        ),
-        BuiltInExerciseDefinition(
-            key = "romanian_deadlift",
-            nameEn = "Romanian Deadlift",
-            nameUk = "Румунська тяга"
-        ),
-        BuiltInExerciseDefinition(
-            key = "deadlift",
-            nameEn = "Deadlift",
-            nameUk = "Станова тяга"
-        ),
-        BuiltInExerciseDefinition(
-            key = "shoulder_press",
-            nameEn = "Shoulder Press",
-            nameUk = "Жим над головою",
-            legacyAliases = setOf("Overhead Press", "Жим сидячи над головою", "Жим сидячи")
-        ),
-        BuiltInExerciseDefinition(
-            key = "lateral_raise",
-            nameEn = "Lateral Raise",
-            nameUk = "Підйоми гантелей через сторони",
-            legacyAliases = setOf("Махи в сторони")
-        ),
-        BuiltInExerciseDefinition(
-            key = "biceps_curl",
-            nameEn = "Biceps Curl",
-            nameUk = "Згинання рук на біцепс"
-        ),
-        BuiltInExerciseDefinition(
-            key = "triceps_pushdown",
-            nameEn = "Triceps Pushdown",
-            nameUk = "Розгинання рук на блоці"
-        ),
-        BuiltInExerciseDefinition(
-            key = "calf_raise",
-            nameEn = "Calf Raise",
-            nameUk = "Підйом на носки",
-            legacyAliases = setOf("Підйом на носки стоячи")
-        ),
-        BuiltInExerciseDefinition(
-            key = "plank",
-            nameEn = "Plank",
-            nameUk = "Планка"
-        )
+        definition("bench_press", "Bench Press", "Жим штанги лежачи", "chest", "triceps", "shoulders", aliases = setOf("жим лежачи")),
+        definition("dumbbell_bench_press", "Dumbbell Bench Press", "Жим гантелей лежачи", "chest", "triceps", "shoulders", aliases = setOf("гантелі лежачи")),
+        definition("incline_dumbbell_press", "Incline Dumbbell Press", "Жим гантелей на похилій лаві", "chest", "shoulders", "triceps"),
+        definition("incline_bench_press", "Incline Bench Press", "Жим штанги на похилій лаві", "chest", "shoulders", "triceps"),
+        definition("chest_fly_machine", "Machine Chest Fly", "Зведення рук у тренажері", "chest", "shoulders", aliases = setOf("метелик в середину")),
+        definition("push_up", "Push Up", "Віджимання від підлоги", "chest", "triceps", "shoulders", aliases = setOf("Push-Up")),
+        definition("dips", "Dips", "Віджимання на брусах", "triceps", "chest", "shoulders", aliases = setOf("брусья")),
+        definition("pull_up", "Pull Up", "Підтягування", "lats", "biceps", "upperBack", "forearms", aliases = setOf("Pull-Up")),
+        definition("assisted_pull_up", "Assisted Pull Up", "Підтягування у гравітроні", "lats", "upperBack", "biceps", "forearms", aliases = setOf("підтягування в гравітроні")),
+        definition("band_assisted_pull_up", "Band Assisted Pull Up", "Підтягування з еспандером", "lats", "upperBack", "biceps", "forearms", aliases = setOf("підтягування з резинкою")),
+        definition("lat_pulldown", "Lat Pulldown", "Тяга верхнього блока", "lats", "upperBack", "biceps", "forearms", aliases = setOf("Тяга верхнього блока до грудей", "Фронтальна тяга")),
+        definition("straight_arm_pulldown", "Straight Arm Pulldown", "Тяга прямих рук на верхньому блоці", "lats", "upperBack", aliases = setOf("Журавель", "Тяга верхніх блоків у тренажері")),
+        definition("barbell_row", "Barbell Row", "Тяга штанги в нахилі", "upperBack", "lats", "biceps", "forearms"),
+        definition("seated_cable_row", "Seated Cable Row", "Горизонтальна тяга блока", "upperBack", "lats", "biceps", "forearms"),
+        definition("plate_loaded_row", "Plate Loaded Row", "Горизонтальна тяга у важільному тренажері", "upperBack", "lats", "biceps", "forearms", aliases = setOf("горизонтальна важільна тяга")),
+        definition("face_pull", "Face Pull", "Тяга каната до обличчя", "shoulders", "upperBack"),
+        definition("squat", "Squat", "Присідання зі штангою", "quads", "glutes", "hamstrings", "adductors", "lowerBack", aliases = setOf("Barbell Squat", "Присід зі штангою")),
+        definition("leg_press", "Leg Press", "Жим ногами у тренажері", "quads", "glutes", "hamstrings", aliases = setOf("Жим ногами")),
+        definition("bulgarian_split_squat", "Bulgarian Split Squat", "Болгарські випади", "quads", "glutes", "hamstrings"),
+        definition("lunge", "Lunge", "Випади", "quads", "glutes", "hamstrings"),
+        definition("romanian_deadlift", "Romanian Deadlift", "Румунська тяга", "hamstrings", "glutes", "lowerBack"),
+        definition("deadlift", "Deadlift", "Станова тяга", "hamstrings", "glutes", "lowerBack", "upperBack", "forearms"),
+        definition("hip_thrust", "Hip Thrust", "Ягодичний міст зі штангою", "glutes", "hamstrings"),
+        definition("leg_extension", "Leg Extension", "Розгинання ніг у тренажері", "quads", aliases = setOf("розгинання ніг")),
+        definition("lying_leg_curl", "Lying Leg Curl", "Згинання ніг лежачи", "hamstrings", "calves", aliases = setOf("згибання ніг лежачи")),
+        definition("seated_leg_curl", "Seated Leg Curl", "Згинання ніг сидячи", "hamstrings", "calves", aliases = setOf("згибання ніг сидячі", "згибання ніг сидячи")),
+        definition("hip_adduction", "Hip Adduction", "Зведення ніг у тренажері", "adductors", aliases = setOf("зведення ніг")),
+        definition("calf_raise", "Calf Raise", "Підйом на носки", "calves", aliases = setOf("Підйом на носки стоячи")),
+        definition("shoulder_press", "Shoulder Press", "Жим над головою", "shoulders", "triceps", aliases = setOf("Overhead Press", "Жим сидячи над головою", "Жим сидячи")),
+        definition("lateral_raise", "Lateral Raise", "Підйоми гантелей через сторони", "shoulders", aliases = setOf("Махи в сторони", "махи в сторони з гантелями")),
+        definition("machine_lateral_raise", "Machine Lateral Raise", "Підйоми рук через сторони у тренажері", "shoulders", aliases = setOf("махи в сторони в тренажері")),
+        definition("rear_delt_fly", "Rear Delt Fly", "Зворотні розведення у тренажері", "shoulders", "upperBack", aliases = setOf("метелик в сторони")),
+        definition("upright_row", "Upright Row", "Тяга штанги до підборіддя", "shoulders", "upperBack", "biceps", aliases = setOf("протяжка", "вертикальна тяга")),
+        definition("biceps_curl", "Biceps Curl", "Згинання рук на біцепс", "biceps", "forearms"),
+        definition("barbell_curl", "Barbell Curl", "Згинання рук зі штангою", "biceps", "forearms", aliases = setOf("штанга на біцепс")),
+        definition("seated_dumbbell_curl", "Seated Dumbbell Curl", "Згинання рук з гантелями сидячи", "biceps", "forearms", aliases = setOf("біцепс з гантелями сидячи")),
+        definition("hammer_curl", "Hammer Curl", "Молоткові згинання рук", "biceps", "forearms"),
+        definition("cable_curl", "Cable Curl", "Згинання рук на нижньому блоці", "biceps", "forearms", aliases = setOf("біцепс в кросовері")),
+        definition("preacher_curl", "Preacher Curl", "Згинання рук на лаві Скотта", "biceps", "forearms", aliases = setOf("тренажер скота(біцепс)")),
+        definition("triceps_pushdown", "Triceps Pushdown", "Розгинання рук на блоці", "triceps"),
+        definition("v_bar_pushdown", "V-Bar Triceps Pushdown", "Розгинання рук на блоці з V-рукояттю", "triceps", aliases = setOf("трицепс трикутник")),
+        definition("overhead_dumbbell_triceps_extension", "Overhead Dumbbell Triceps Extension", "Розгинання гантелі над головою", "triceps", "shoulders", aliases = setOf("гантеля над головою")),
+        definition("french_press", "French Press", "Французький жим", "triceps", "shoulders"),
+        definition("hyperextension", "Hyperextension", "Гіперекстензія", "lowerBack", "glutes", "hamstrings"),
+        definition("side_hyperextension", "Side Hyperextension", "Бокові нахили на гіперекстензії", "obliques", "abs", "lowerBack", aliases = setOf("Нахили в сторони на гіперекстензії")),
+        definition("plank", "Plank", "Планка", "abs", "obliques"),
+        definition("weighted_crunch", "Weighted Crunch", "Скручування з диском", "abs", "obliques", aliases = setOf("прес звичайний з диском")),
+        definition("hanging_leg_raise", "Hanging Leg Raise", "Підйом ніг у висі", "abs", aliases = setOf("прес(підйом ніг)")),
+        definition("plate_twist", "Plate Twist", "Повороти корпусу з диском", "obliques", "abs", aliases = setOf("прес з диском в сторони")),
+        definition("weighted_side_bend", "Weighted Side Bend", "Бокові нахили з обтяженням", "obliques", "abs", aliases = setOf("бокові нахили")),
+        definition("warm_up", "Warm Up", "Розминка", "shoulders", "chest", "upperBack", "lats", "abs", "glutes", "quads", "hamstrings")
+    )
+
+    private fun definition(
+        key: String,
+        nameEn: String,
+        nameUk: String,
+        vararg muscleIds: String,
+        aliases: Set<String> = emptySet()
+    ) = BuiltInExerciseDefinition(
+        key = key,
+        nameEn = nameEn,
+        nameUk = nameUk,
+        muscleIds = muscleIds.toSet(),
+        legacyAliases = aliases
     )
 
     private val definitionsByKey = definitions.associateBy { it.key }
