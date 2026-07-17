@@ -74,22 +74,22 @@ because it contains private workout data.
 ## Download security QA builds
 
 <p align="center">
-  <a href="https://github.com/Eduard047/GymApp/releases/tag/qa-2026.07.14.2">
-    <img alt="Security QA release" src="https://img.shields.io/badge/Security%20QA-2026.07.14.2-3f806a?style=for-the-badge">
+  <a href="https://github.com/Eduard047/GymApp/releases/tag/qa-2026.07.17.1">
+    <img alt="Security QA release" src="https://img.shields.io/badge/Security%20QA-2026.07.17.1-3f806a?style=for-the-badge">
   </a>
   <a href="https://github.com/Eduard047/GymApp/releases">
     <img alt="Releases" src="https://img.shields.io/badge/Open-Releases-181717?style=for-the-badge&logo=github&logoColor=white">
   </a>
-  <a href="https://github.com/Eduard047/GymApp/releases/download/qa-2026.07.14.2/gymapp-phone-qa.apk">
+  <a href="https://github.com/Eduard047/GymApp/releases/download/qa-2026.07.17.1/gymapp-phone-qa.apk">
     <img alt="Download Phone QA APK" src="https://img.shields.io/badge/Download-Phone%20QA-34A853?style=for-the-badge&logo=android&logoColor=white">
   </a>
-  <a href="https://github.com/Eduard047/GymApp/releases/download/qa-2026.07.14.2/gymapp-watch-qa.apk">
+  <a href="https://github.com/Eduard047/GymApp/releases/download/qa-2026.07.17.1/gymapp-watch-qa.apk">
     <img alt="Download Wear QA APK" src="https://img.shields.io/badge/Download-Wear%20QA-4285F4?style=for-the-badge&logo=wearos&logoColor=white">
   </a>
-  <a href="https://github.com/Eduard047/GymApp/releases/download/qa-2026.07.14.2/GymApp-iOS-Simulator-1.0.1-build2.zip">
+  <a href="https://github.com/Eduard047/GymApp/releases/download/qa-2026.07.17.1/GymApp-iOS-Simulator-1.0.2-build3.zip">
     <img alt="Download iOS Release Simulator Build" src="https://img.shields.io/badge/Download-iOS%20Simulator-000000?style=for-the-badge&logo=apple&logoColor=white">
   </a>
-  <a href="https://github.com/Eduard047/GymApp/releases/download/qa-2026.07.14.2/gymapp-garmin-connect-iq.iq">
+  <a href="https://github.com/Eduard047/GymApp/releases/download/qa-2026.07.17.1/gymapp-garmin-connect-iq.iq">
     <img alt="Download Garmin Connect IQ package" src="https://img.shields.io/badge/Download-Garmin%20Connect%20IQ-007CC3?style=for-the-badge">
   </a>
 </p>
@@ -111,11 +111,11 @@ are deployed. This source/release workflow performs neither deployment.
 - Latest release: https://github.com/Eduard047/GymApp/releases/latest
 - Current store release tag: https://github.com/Eduard047/GymApp/releases/tag/release-2026.07.05.1238
 - Current Play AAB: https://github.com/Eduard047/GymApp/releases/download/release-2026.07.05.1238/gymapp-play-release.aab
-- Current security QA prerelease: https://github.com/Eduard047/GymApp/releases/tag/qa-2026.07.14.2
-- Phone QA APK: https://github.com/Eduard047/GymApp/releases/download/qa-2026.07.14.2/gymapp-phone-qa.apk
-- Wear QA APK: https://github.com/Eduard047/GymApp/releases/download/qa-2026.07.14.2/gymapp-watch-qa.apk
-- iOS Release Simulator build: https://github.com/Eduard047/GymApp/releases/download/qa-2026.07.14.2/GymApp-iOS-Simulator-1.0.1-build2.zip
-- Garmin Connect IQ package: https://github.com/Eduard047/GymApp/releases/download/qa-2026.07.14.2/gymapp-garmin-connect-iq.iq
+- Current security QA prerelease: https://github.com/Eduard047/GymApp/releases/tag/qa-2026.07.17.1
+- Phone QA APK: https://github.com/Eduard047/GymApp/releases/download/qa-2026.07.17.1/gymapp-phone-qa.apk
+- Wear QA APK: https://github.com/Eduard047/GymApp/releases/download/qa-2026.07.17.1/gymapp-watch-qa.apk
+- iOS Release Simulator build: https://github.com/Eduard047/GymApp/releases/download/qa-2026.07.17.1/GymApp-iOS-Simulator-1.0.2-build3.zip
+- Garmin Connect IQ package: https://github.com/Eduard047/GymApp/releases/download/qa-2026.07.17.1/gymapp-garmin-connect-iq.iq
 - Checksums and exact build metadata are attached as `SHA256SUMS.txt` and `BUILD-INFO.txt`.
 
 The Play AAB above is the older signed store build; it is not rebuilt from the

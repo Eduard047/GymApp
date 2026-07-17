@@ -169,6 +169,7 @@
 
     <string name="exercise_block_title">Вправа %1$d</string>
     <string name="exercise_set_count_compact">%1$d підх.</string>
+    <string name="exercise_workout_count_compact">Тренувань: %1$d</string>
     <string name="exercise_muscles_title">Задіяні мʼязи</string>
     <string name="cd_collapse_exercise">Згорнути вправу</string>
     <string name="cd_expand_exercise">Розгорнути вправу</string>
@@ -504,5 +505,9 @@
     <string name="exercise_filter_lower">Низ тіла</string>
     <string name="exercise_filter_core">Кор</string>
     <string name="exercise_filter_all_muscles">Усі м’язи</string>
+    <string name="exercise_sort_name">За назвою</string>
+    <string name="exercise_sort_most_frequent">Найчастіші</string>
+    <string name="exercise_sort_least_frequent">Найрідші</string>
     <string name="exercise_card_built_in">Вбудована</string>
+    <string name="garmin_open_app">Завантажити Garmin-застосунок</string>
 </resources>

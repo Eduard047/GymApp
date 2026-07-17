@@ -3,6 +3,7 @@
 import android.content.Intent
 import android.content.Context
 import android.content.ClipData
+import android.net.Uri
 import android.graphics.Paint
 import android.graphics.Typeface
 import android.graphics.pdf.PdfDocument
@@ -103,6 +104,8 @@ private const val MAX_PDF_SETS_PER_EXERCISE = 20
 private const val MAX_PDF_TEXT_CHARS = 320
 private const val PRIVATE_SHARE_RETENTION_MILLIS = 24 * 60 * 60 * 1_000L
 private const val MAX_RETAINED_PRIVATE_SHARE_FILES = 32
+private const val GARMIN_APP_RELEASE_URL =
+    "https://github.com/Eduard047/GymApp/releases/download/qa-2026.07.17.1/gymapp-garmin-connect-iq.iq"
 private val PRIVATE_SHARE_FILE_LOCK = Any()
 
 private enum class ExerciseBodyFilter(val muscleIds: Set<String>) {
@@ -110,6 +113,12 @@ private enum class ExerciseBodyFilter(val muscleIds: Set<String>) {
     Upper(setOf("chest", "shoulders", "biceps", "triceps", "forearms", "lats", "upperBack")),
     Lower(setOf("lowerBack", "glutes", "quads", "hamstrings", "adductors", "calves")),
     Core(setOf("abs", "obliques"))
+}
+
+private enum class ExerciseSortMode {
+    Name,
+    MostFrequent,
+    LeastFrequent
 }
 
 private data class ExerciseHistorySessionGroup(
@@ -150,12 +159,24 @@ fun ExerciseListScreen(
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var bodyFilter by rememberSaveable { mutableStateOf(ExerciseBodyFilter.All) }
     var muscleFilter by rememberSaveable { mutableStateOf<String?>(null) }
+    var sortMode by rememberSaveable { mutableStateOf(ExerciseSortMode.Name) }
+    val context = LocalContext.current
+    val languageTag = currentAppLanguageTag()
     val musclesByExercise = remember(uiState.muscleMappings) {
         uiState.muscleMappings.associate { mapping -> mapping.exerciseName to mapping.muscleIds.toSet() }
     }
-    val filteredExercises = remember(uiState.exercises, musclesByExercise, searchQuery, bodyFilter, muscleFilter) {
+    val filteredExercises = remember(
+        uiState.exercises,
+        uiState.exerciseWorkoutCounts,
+        musclesByExercise,
+        searchQuery,
+        bodyFilter,
+        muscleFilter,
+        sortMode,
+        languageTag
+    ) {
         val normalizedQuery = searchQuery.trim().lowercase(Locale.ROOT)
-        uiState.exercises.filter { exercise ->
+        val filtered = uiState.exercises.filter { exercise ->
             val definition = BuiltInExerciseCatalog.definitionForName(exercise.name)
             val searchableNames = buildList {
                 add(exercise.name)
@@ -173,6 +194,20 @@ fun ExerciseListScreen(
                 muscleIds.any(bodyFilter.muscleIds::contains)
             val matchesMuscle = muscleFilter == null || muscleFilter in muscleIds
             matchesQuery && matchesBody && matchesMuscle
+        }
+        val byName = compareBy<ExerciseEntity> {
+            BuiltInExerciseCatalog.displayName(it.name, languageTag).lowercase(Locale.ROOT)
+        }.thenBy { it.id }
+        when (sortMode) {
+            ExerciseSortMode.Name -> filtered.sortedWith(byName)
+            ExerciseSortMode.MostFrequent -> filtered.sortedWith(
+                compareByDescending<ExerciseEntity> { uiState.exerciseWorkoutCounts[it.id] ?: 0 }
+                    .then(byName)
+            )
+            ExerciseSortMode.LeastFrequent -> filtered.sortedWith(
+                compareBy<ExerciseEntity> { uiState.exerciseWorkoutCounts[it.id] ?: 0 }
+                    .then(byName)
+            )
         }
     }
     LaunchedEffect(uiState.newExerciseName, uiState.hasInputError, pendingAddedName) {
@@ -239,7 +274,16 @@ fun ExerciseListScreen(
                 label = uiState.accountLabel,
                 supporting = uiState.accountSupporting,
                 canLogout = uiState.canLogout,
-                onLogout = onLogout
+                onLogout = onLogout,
+                onOpenGarminApp = {
+                    runCatching {
+                        context.startActivity(
+                            Intent(Intent.ACTION_VIEW, Uri.parse(GARMIN_APP_RELEASE_URL)).apply {
+                                addCategory(Intent.CATEGORY_BROWSABLE)
+                            }
+                        )
+                    }
+                }
             )
         }
 
@@ -275,6 +319,8 @@ fun ExerciseListScreen(
                 onBodyFilterChange = { bodyFilter = it },
                 muscleFilter = muscleFilter,
                 onMuscleFilterChange = { muscleFilter = it },
+                sortMode = sortMode,
+                onSortModeChange = { sortMode = it },
                 resultCount = filteredExercises.size
             )
         }
@@ -300,7 +346,7 @@ fun ExerciseListScreen(
                 key = { it.id }
             ) { exercise ->
                 val mappingCount = musclesByExercise[exercise.name].orEmpty().size
-                val setCount = uiState.exerciseSetCounts[exercise.id] ?: 0
+                val workoutCount = uiState.exerciseWorkoutCounts[exercise.id] ?: 0
                 val isBuiltIn = BuiltInExerciseCatalog.definitionForName(exercise.name) != null
                 AppPanel(
                     modifier = Modifier.fillMaxWidth()
@@ -346,7 +392,7 @@ fun ExerciseListScreen(
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             ExerciseMetricPill(
                                 icon = Icons.Default.FormatListNumbered,
-                                text = stringResource(R.string.exercise_set_count_compact, setCount)
+                                text = stringResource(R.string.exercise_workout_count_compact, workoutCount)
                             )
                             ExerciseMetricPill(
                                 icon = Icons.Default.FitnessCenter,
@@ -541,6 +587,8 @@ private fun ExerciseSearchAndFilters(
     onBodyFilterChange: (ExerciseBodyFilter) -> Unit,
     muscleFilter: String?,
     onMuscleFilterChange: (String?) -> Unit,
+    sortMode: ExerciseSortMode,
+    onSortModeChange: (ExerciseSortMode) -> Unit,
     resultCount: Int
 ) {
     val languageTag = currentAppLanguageTag()
@@ -589,6 +637,26 @@ private fun ExerciseSearchAndFilters(
                     FilterChip(
                         selected = bodyFilter == filter,
                         onClick = { onBodyFilterChange(filter) },
+                        label = { Text(stringResource(label)) }
+                    )
+                }
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                ExerciseSortMode.entries.forEach { mode ->
+                    val label = when (mode) {
+                        ExerciseSortMode.Name -> R.string.exercise_sort_name
+                        ExerciseSortMode.MostFrequent -> R.string.exercise_sort_most_frequent
+                        ExerciseSortMode.LeastFrequent -> R.string.exercise_sort_least_frequent
+                    }
+                    FilterChip(
+                        selected = sortMode == mode,
+                        onClick = { onSortModeChange(mode) },
                         label = { Text(stringResource(label)) }
                     )
                 }
@@ -749,7 +817,8 @@ private fun AccountStatusCard(
     label: String,
     supporting: String,
     canLogout: Boolean,
-    onLogout: () -> Unit
+    onLogout: () -> Unit,
+    onOpenGarminApp: () -> Unit
 ) {
     AppPanel(
         modifier = Modifier.fillMaxWidth(),
@@ -798,6 +867,13 @@ private fun AccountStatusCard(
                 ) {
                     Text(stringResource(R.string.auth_switch_account))
                 }
+            }
+            OutlinedButton(
+                onClick = onOpenGarminApp,
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.small
+            ) {
+                Text(stringResource(R.string.garmin_open_app))
             }
         }
     }

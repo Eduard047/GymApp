@@ -369,6 +369,9 @@ private struct GarminSettingsCard: View {
     @State private var displayName = "Garmin watch"
     @State private var errorMessage: String?
     @State private var tokenPresentation: GarminTokenPresentation?
+    private let garminReleaseURL = URL(
+        string: "https://github.com/Eduard047/GymApp/releases/download/qa-2026.07.17.1/gymapp-garmin-connect-iq.iq"
+    )!
     @State private var showsRevokeConfirmation = false
 
     var body: some View {
@@ -379,6 +382,13 @@ private struct GarminSettingsCard: View {
                     title: "Paired watches",
                     supporting: "Choose exactly which active watch receives iOS workout plans. The selected device is stored securely for this Supabase account."
                 )
+
+                Link(destination: garminReleaseURL) {
+                    Label("Get Garmin app", systemImage: "arrow.up.right.square")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(GymSecondaryButtonStyle())
+                .accessibilityHint("Downloads the Garmin Connect IQ package from the current GymApp QA release")
 
                 if let errorMessage {
                     GymStatusBanner(message: errorMessage, isError: true)
