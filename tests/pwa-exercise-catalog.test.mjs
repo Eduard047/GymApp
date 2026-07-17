@@ -66,9 +66,11 @@ test("Garmin download link is pinned to the QA package and isolates the new tab"
   const context = loadPwaContext();
   const html = vm.runInContext("accountPanel()", context);
 
-  assert.match(
-    html,
-    /https:\/\/github\.com\/Eduard047\/GymApp\/releases\/download\/qa-2026\.07\.17\.1\/gymapp-garmin-connect-iq\.iq/
+  assert.equal(
+    html.includes(
+      'href="https://github.com/Eduard047/GymApp/releases/download/qa-2026.07.17.1/gymapp-garmin-connect-iq.iq"'
+    ),
+    true
   );
   assert.match(html, /target="_blank" rel="noopener noreferrer"/);
 });
