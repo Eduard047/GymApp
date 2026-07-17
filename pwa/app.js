@@ -123,22 +123,59 @@ const muscles = [
 
 const builtInExerciseCatalog = [
   { key: "bench_press", names: { en: "Bench Press", uk: "Жим штанги лежачи" }, aliases: ["жим лежачи"], muscleIds: ["chest", "triceps", "shoulders"] },
+  { key: "dumbbell_bench_press", names: { en: "Dumbbell Bench Press", uk: "Жим гантелей лежачи" }, aliases: ["гантелі лежачи"], muscleIds: ["chest", "triceps", "shoulders"] },
   { key: "incline_dumbbell_press", names: { en: "Incline Dumbbell Press", uk: "Жим гантелей на похилій лаві" }, aliases: [], muscleIds: ["chest", "shoulders", "triceps"] },
-  { key: "pull_up", names: { en: "Pull Up", uk: "Підтягування" }, aliases: ["Pull-Up"], muscleIds: ["lats", "biceps", "upperBack"] },
-  { key: "lat_pulldown", names: { en: "Lat Pulldown", uk: "Тяга верхнього блока" }, aliases: ["Тяга верхнього блока до грудей", "Фронтальна тяга"], muscleIds: ["lats", "biceps"] },
-  { key: "barbell_row", names: { en: "Barbell Row", uk: "Тяга штанги в нахилі" }, aliases: [], muscleIds: ["upperBack", "lats", "biceps"] },
-  { key: "squat", names: { en: "Squat", uk: "Присідання зі штангою" }, aliases: ["Barbell Squat", "Присід зі штангою"], muscleIds: ["quads", "glutes", "adductors"] },
-  { key: "leg_press", names: { en: "Leg Press", uk: "Жим ногами у тренажері" }, aliases: ["Жим ногами"], muscleIds: ["quads", "glutes"] },
+  { key: "incline_bench_press", names: { en: "Incline Bench Press", uk: "Жим штанги на похилій лаві" }, aliases: [], muscleIds: ["chest", "shoulders", "triceps"] },
+  { key: "chest_fly_machine", names: { en: "Machine Chest Fly", uk: "Зведення рук у тренажері" }, aliases: ["метелик в середину"], muscleIds: ["chest", "shoulders"] },
+  { key: "push_up", names: { en: "Push Up", uk: "Віджимання від підлоги" }, aliases: ["Push-Up"], muscleIds: ["chest", "triceps", "shoulders"] },
+  { key: "dips", names: { en: "Dips", uk: "Віджимання на брусах" }, aliases: ["брусья"], muscleIds: ["triceps", "chest", "shoulders"] },
+  { key: "pull_up", names: { en: "Pull Up", uk: "Підтягування" }, aliases: ["Pull-Up"], muscleIds: ["lats", "biceps", "upperBack", "forearms"] },
+  { key: "assisted_pull_up", names: { en: "Assisted Pull Up", uk: "Підтягування у гравітроні" }, aliases: ["підтягування в гравітроні"], muscleIds: ["lats", "upperBack", "biceps", "forearms"] },
+  { key: "band_assisted_pull_up", names: { en: "Band Assisted Pull Up", uk: "Підтягування з еспандером" }, aliases: ["підтягування з резинкою"], muscleIds: ["lats", "upperBack", "biceps", "forearms"] },
+  { key: "lat_pulldown", names: { en: "Lat Pulldown", uk: "Тяга верхнього блока" }, aliases: ["Тяга верхнього блока до грудей", "Фронтальна тяга"], muscleIds: ["lats", "upperBack", "biceps", "forearms"] },
+  { key: "straight_arm_pulldown", names: { en: "Straight Arm Pulldown", uk: "Тяга прямих рук на верхньому блоці" }, aliases: ["Журавель", "Тяга верхніх блоків у тренажері"], muscleIds: ["lats", "upperBack"] },
+  { key: "barbell_row", names: { en: "Barbell Row", uk: "Тяга штанги в нахилі" }, aliases: [], muscleIds: ["upperBack", "lats", "biceps", "forearms"] },
+  { key: "seated_cable_row", names: { en: "Seated Cable Row", uk: "Горизонтальна тяга блока" }, aliases: [], muscleIds: ["upperBack", "lats", "biceps", "forearms"] },
+  { key: "plate_loaded_row", names: { en: "Plate Loaded Row", uk: "Горизонтальна тяга у важільному тренажері" }, aliases: ["горизонтальна важільна тяга"], muscleIds: ["upperBack", "lats", "biceps", "forearms"] },
+  { key: "face_pull", names: { en: "Face Pull", uk: "Тяга каната до обличчя" }, aliases: [], muscleIds: ["shoulders", "upperBack"] },
+  { key: "squat", names: { en: "Squat", uk: "Присідання зі штангою" }, aliases: ["Barbell Squat", "Присід зі штангою"], muscleIds: ["quads", "glutes", "hamstrings", "adductors", "lowerBack"] },
+  { key: "leg_press", names: { en: "Leg Press", uk: "Жим ногами у тренажері" }, aliases: ["Жим ногами"], muscleIds: ["quads", "glutes", "hamstrings"] },
+  { key: "bulgarian_split_squat", names: { en: "Bulgarian Split Squat", uk: "Болгарські випади" }, aliases: [], muscleIds: ["quads", "glutes", "hamstrings"] },
+  { key: "lunge", names: { en: "Lunge", uk: "Випади" }, aliases: [], muscleIds: ["quads", "glutes", "hamstrings"] },
   { key: "romanian_deadlift", names: { en: "Romanian Deadlift", uk: "Румунська тяга" }, aliases: [], muscleIds: ["hamstrings", "glutes", "lowerBack"] },
-  { key: "deadlift", names: { en: "Deadlift", uk: "Станова тяга" }, aliases: [], muscleIds: ["hamstrings", "glutes", "lowerBack", "upperBack"] },
-  { key: "shoulder_press", names: { en: "Shoulder Press", uk: "Жим над головою" }, aliases: ["Overhead Press", "Жим сидячи над головою", "Жим сидячи"], muscleIds: ["shoulders", "triceps"] },
-  { key: "lateral_raise", names: { en: "Lateral Raise", uk: "Підйоми гантелей через сторони" }, aliases: ["Махи в сторони"], muscleIds: ["shoulders"] },
-  { key: "biceps_curl", names: { en: "Biceps Curl", uk: "Згинання рук на біцепс" }, aliases: [], muscleIds: ["biceps", "forearms"] },
-  { key: "triceps_pushdown", names: { en: "Triceps Pushdown", uk: "Розгинання рук на блоці" }, aliases: [], muscleIds: ["triceps"] },
+  { key: "deadlift", names: { en: "Deadlift", uk: "Станова тяга" }, aliases: [], muscleIds: ["hamstrings", "glutes", "lowerBack", "upperBack", "forearms"] },
+  { key: "hip_thrust", names: { en: "Hip Thrust", uk: "Ягодичний міст зі штангою" }, aliases: [], muscleIds: ["glutes", "hamstrings"] },
+  { key: "leg_extension", names: { en: "Leg Extension", uk: "Розгинання ніг у тренажері" }, aliases: ["розгинання ніг"], muscleIds: ["quads"] },
+  { key: "lying_leg_curl", names: { en: "Lying Leg Curl", uk: "Згинання ніг лежачи" }, aliases: ["згибання ніг лежачи"], muscleIds: ["hamstrings", "calves"] },
+  { key: "seated_leg_curl", names: { en: "Seated Leg Curl", uk: "Згинання ніг сидячи" }, aliases: ["згибання ніг сидячі", "згибання ніг сидячи"], muscleIds: ["hamstrings", "calves"] },
+  { key: "hip_adduction", names: { en: "Hip Adduction", uk: "Зведення ніг у тренажері" }, aliases: ["зведення ніг"], muscleIds: ["adductors"] },
   { key: "calf_raise", names: { en: "Calf Raise", uk: "Підйом на носки" }, aliases: ["Підйом на носки стоячи"], muscleIds: ["calves"] },
-  { key: "plank", names: { en: "Plank", uk: "Планка" }, aliases: [], muscleIds: ["abs", "obliques"] }
+  { key: "shoulder_press", names: { en: "Shoulder Press", uk: "Жим над головою" }, aliases: ["Overhead Press", "Жим сидячи над головою", "Жим сидячи"], muscleIds: ["shoulders", "triceps"] },
+  { key: "lateral_raise", names: { en: "Lateral Raise", uk: "Підйоми гантелей через сторони" }, aliases: ["Махи в сторони", "махи в сторони з гантелями"], muscleIds: ["shoulders"] },
+  { key: "machine_lateral_raise", names: { en: "Machine Lateral Raise", uk: "Підйоми рук через сторони у тренажері" }, aliases: ["махи в сторони в тренажері"], muscleIds: ["shoulders"] },
+  { key: "rear_delt_fly", names: { en: "Rear Delt Fly", uk: "Зворотні розведення у тренажері" }, aliases: ["метелик в сторони"], muscleIds: ["shoulders", "upperBack"] },
+  { key: "upright_row", names: { en: "Upright Row", uk: "Тяга штанги до підборіддя" }, aliases: ["протяжка", "вертикальна тяга"], muscleIds: ["shoulders", "upperBack", "biceps"] },
+  { key: "biceps_curl", names: { en: "Biceps Curl", uk: "Згинання рук на біцепс" }, aliases: [], muscleIds: ["biceps", "forearms"] },
+  { key: "barbell_curl", names: { en: "Barbell Curl", uk: "Згинання рук зі штангою" }, aliases: ["штанга на біцепс"], muscleIds: ["biceps", "forearms"] },
+  { key: "seated_dumbbell_curl", names: { en: "Seated Dumbbell Curl", uk: "Згинання рук з гантелями сидячи" }, aliases: ["біцепс з гантелями сидячи"], muscleIds: ["biceps", "forearms"] },
+  { key: "hammer_curl", names: { en: "Hammer Curl", uk: "Молоткові згинання рук" }, aliases: [], muscleIds: ["biceps", "forearms"] },
+  { key: "cable_curl", names: { en: "Cable Curl", uk: "Згинання рук на нижньому блоці" }, aliases: ["біцепс в кросовері"], muscleIds: ["biceps", "forearms"] },
+  { key: "preacher_curl", names: { en: "Preacher Curl", uk: "Згинання рук на лаві Скотта" }, aliases: ["тренажер скота(біцепс)"], muscleIds: ["biceps", "forearms"] },
+  { key: "triceps_pushdown", names: { en: "Triceps Pushdown", uk: "Розгинання рук на блоці" }, aliases: [], muscleIds: ["triceps"] },
+  { key: "v_bar_pushdown", names: { en: "V-Bar Triceps Pushdown", uk: "Розгинання рук на блоці з V-рукояттю" }, aliases: ["трицепс трикутник"], muscleIds: ["triceps"] },
+  { key: "overhead_dumbbell_triceps_extension", names: { en: "Overhead Dumbbell Triceps Extension", uk: "Розгинання гантелі над головою" }, aliases: ["гантеля над головою"], muscleIds: ["triceps", "shoulders"] },
+  { key: "french_press", names: { en: "French Press", uk: "Французький жим" }, aliases: [], muscleIds: ["triceps", "shoulders"] },
+  { key: "hyperextension", names: { en: "Hyperextension", uk: "Гіперекстензія" }, aliases: [], muscleIds: ["lowerBack", "glutes", "hamstrings"] },
+  { key: "side_hyperextension", names: { en: "Side Hyperextension", uk: "Бокові нахили на гіперекстензії" }, aliases: ["Нахили в сторони на гіперекстензії"], muscleIds: ["obliques", "abs", "lowerBack"] },
+  { key: "plank", names: { en: "Plank", uk: "Планка" }, aliases: [], muscleIds: ["abs", "obliques"] },
+  { key: "weighted_crunch", names: { en: "Weighted Crunch", uk: "Скручування з диском" }, aliases: ["прес звичайний з диском"], muscleIds: ["abs", "obliques"] },
+  { key: "hanging_leg_raise", names: { en: "Hanging Leg Raise", uk: "Підйом ніг у висі" }, aliases: ["прес(підйом ніг)"], muscleIds: ["abs"] },
+  { key: "plate_twist", names: { en: "Plate Twist", uk: "Повороти корпусу з диском" }, aliases: ["прес з диском в сторони"], muscleIds: ["obliques", "abs"] },
+  { key: "weighted_side_bend", names: { en: "Weighted Side Bend", uk: "Бокові нахили з обтяженням" }, aliases: ["бокові нахили"], muscleIds: ["obliques", "abs"] },
+  { key: "warm_up", names: { en: "Warm Up", uk: "Розминка" }, aliases: [], muscleIds: ["shoulders", "chest", "upperBack", "lats", "abs", "glutes", "quads", "hamstrings"] }
 ];
 
+const CATALOG_SEED_VERSION = 1;
 const builtInExerciseByKey = new Map(builtInExerciseCatalog.map(exercise => [exercise.key, exercise]));
 const builtInExerciseKeyByAlias = new Map(
   builtInExerciseCatalog.flatMap(exercise =>
@@ -989,6 +1026,9 @@ let leaderboardRequestController = null;
 let leaderboardRequestId = 0;
 let timerInterval = null;
 let languageMenuOpen = false;
+let exerciseSearchQuery = "";
+let exerciseBodyFilter = "all";
+let exerciseMuscleFilter = "all";
 let authMode = "login";
 let accountTransitionInProgress = false;
 let garminSyncInProgress = false;
@@ -1107,6 +1147,7 @@ function n(count, enOne, enMany, ukOne, ukFew, ukMany) {
 function defaultAppState() {
   return {
     language: "en",
+    catalogSeedVersion: CATALOG_SEED_VERSION,
     exercises: builtInExerciseCatalog.map((exercise, index) => ({
       id: index + 1,
       name: exercise.names.en,
@@ -1116,6 +1157,31 @@ function defaultAppState() {
     mappings: Object.assign(Object.create(null), defaultMappings),
     profile: { split: "Push Pull Legs", days: 4, goal: "Balanced", calories: "Maintenance" }
   };
+}
+
+function ensureBuiltInExerciseCatalog(targetState) {
+  if (!targetState || !Array.isArray(targetState.exercises) ||
+      targetState.catalogSeedVersion >= CATALOG_SEED_VERSION) return false;
+  const existingKeys = new Set(targetState.exercises.map(exerciseCatalogKey).filter(Boolean));
+  const usedIds = new Set(targetState.exercises.map(exercise => Number(exercise.id)).filter(Number.isSafeInteger));
+  let candidateId = Math.max(0, ...usedIds) + 1;
+  let inserted = 0;
+  for (const definition of builtInExerciseCatalog) {
+    if (existingKeys.has(definition.key) || targetState.exercises.length >= window.GymStateContract.LIMITS.exercises) continue;
+    while (usedIds.has(candidateId)) candidateId++;
+    targetState.exercises.push({ id: candidateId, name: definition.names.en, catalogKey: definition.key });
+    usedIds.add(candidateId);
+    existingKeys.add(definition.key);
+    candidateId++;
+    inserted++;
+  }
+  targetState.exercises.sort((left, right) =>
+    exerciseDisplayName(left, targetState.language).localeCompare(exerciseDisplayName(right, targetState.language), targetState.language)
+  );
+  if (builtInExerciseCatalog.every(definition => existingKeys.has(definition.key))) {
+    targetState.catalogSeedVersion = CATALOG_SEED_VERSION;
+  }
+  return inserted > 0 || targetState.catalogSeedVersion === CATALOG_SEED_VERSION;
 }
 
 function normalizeStoredAccount(value) {
@@ -1592,6 +1658,7 @@ async function pullRemoteState() {
   let nextState;
   try {
     nextState = normalizeImportedState(cloudState.state, defaultAppState());
+    var catalogChanged = ensureBuiltInExerciseCatalog(nextState);
     cloudStateRecovery = null;
   } catch {
     nextState = defaultAppState();
@@ -1603,7 +1670,7 @@ async function pullRemoteState() {
   }
   state = nextState;
   bindRemoteStateRevision(cloudState);
-  saveState({ queueRemote: false });
+  saveState({ queueRemote: catalogChanged && cloudStateRecovery === null });
   return true;
 }
 
@@ -1616,6 +1683,7 @@ function remoteStatePayload(expectedUserId = activeAccount?.userId) {
     diagnostics: false,
     owner: { accountId: expectedUserId, userId: expectedUserId, remote: true },
     language: state.language,
+    catalogSeedVersion: state.catalogSeedVersion,
     exercises: state.exercises,
     sessions: state.sessions,
     mappings: state.mappings,
@@ -2402,7 +2470,16 @@ function loadState() {
     const legacyRaw = localStorage.getItem(LEGACY_KEY);
     const raw = currentRaw || (!activeAccount ? legacyRaw : null);
     if (!raw) return fallback;
-    return validateImportedEnvelope(raw, fallback).state;
+    const loaded = validateImportedEnvelope(raw, fallback).state;
+    const catalogChanged = ensureBuiltInExerciseCatalog(loaded);
+    if (catalogChanged) {
+      try {
+        localStorage.setItem(activeStorageKey(), JSON.stringify(loaded));
+      } catch {
+        // Keep the valid account usable in memory; the next normal mutation retries persistence.
+      }
+    }
+    return loaded;
   } catch {
     return fallback;
   }
@@ -2420,6 +2497,7 @@ function validateImportedEnvelope(input, fallback = defaultAppState()) {
     diagnostics: validated.diagnostics,
     state: {
       language: safe.language,
+      catalogSeedVersion: safe.catalogSeedVersion,
       exercises: normalizeExerciseCatalog(safe.exercises, fallback.exercises),
       sessions: normalizeSessions(safe.sessions),
       mappings: normalizeExerciseMappings(safe.mappings, fallback.mappings),
@@ -2562,12 +2640,12 @@ function routeScrollKey(current = route()) {
 
 function visibleScrollContainer() {
   const main = app.querySelector("main[data-scroll-key]");
-  return main?.querySelector(".workouts-scroll") || main;
+  return main;
 }
 
 function rememberVisibleScroll() {
   const main = app.querySelector("main[data-scroll-key]");
-  const scroller = main?.querySelector(".workouts-scroll") || main;
+  const scroller = main;
   if (main?.dataset.scrollKey && scroller) {
     routeScrollPositions.set(main.dataset.scrollKey, scroller.scrollTop);
   }
@@ -2575,7 +2653,7 @@ function rememberVisibleScroll() {
 
 function restoreVisibleScroll() {
   const main = app.querySelector("main[data-scroll-key]");
-  const scroller = main?.querySelector(".workouts-scroll") || main;
+  const scroller = main;
   if (!main?.dataset.scrollKey || !scroller) return;
   scroller.scrollTop = routeScrollPositions.get(main.dataset.scrollKey) || 0;
 }
@@ -2919,10 +2997,11 @@ function isRootRoute(name) {
 }
 
 function titleForRoute(current) {
-  return {
-    workouts: t("workouts"), missions: t("missions"), exercises: t("exercises"), progress: t("progress"), leaderboard: tx("Rating", "Рейтинг"),
+  const title = {
+    workouts: "", missions: t("missions"), exercises: "", progress: t("progress"), leaderboard: tx("Rating", "Рейтинг"),
     add: t("addWorkout"), detail: tx("Workout Details", "Деталі тренування"), summary: tx("Workout Summary", "Підсумок тренування"), ranks: t("ranks")
-  }[current.name] || "Gym Workout Tracker";
+  }[current.name];
+  return title ?? "Gym Workout Tracker";
 }
 
 function bottomNav() {
@@ -2956,6 +3035,7 @@ function workoutsScreen() {
   const sessions = [...selectedMonthSessions()].sort((a, b) => b.startedAt - a.startedAt);
   const savedSessions = n(sessions.length, "saved session", "saved sessions", "збережене тренування", "збережені тренування", "збережених тренувань");
   return `
+    <section class="screen-copy workouts-screen-copy"><h2>${t("workouts")}</h2><p>${tx("Your training history and next best move.", "Твоя історія тренувань і наступний найкращий крок.")}</p><button class="button full" data-action="open-add">${svg("add", "small-icon")}${t("addWorkout")}</button></section>
     <div class="workouts-controls">
       ${monthSwitcher()}
       <section class="segmented panel compact" aria-label="${tx("Workout sections", "Розділи тренувань")}">
@@ -2971,7 +3051,6 @@ function workoutsScreen() {
       </section>
       <section class="workout-list">${sessions.length ? sessions.map(workoutItem).join("") : `<section class="panel highlighted empty-state-panel"><h3>${t("noWorkouts")}</h3><p>${tx("Track consistency, output and intensity at a glance.", "Відстежуй стабільність, обсяг і інтенсивність одним поглядом.")}</p></section>`}</section>
     </div>
-    <button class="fab" data-action="open-add">${svg("add", "small-icon")}${t("addWorkout")}</button>
   `;
 }
 
@@ -3917,10 +3996,12 @@ async function remoteLogin(createAccount) {
     if (displayName) account.name = displayName;
     const cloudState = await loadRemoteState(session);
     let recovery = null;
+    let catalogChanged = false;
     let nextState = defaultAppState();
     if (cloudState.exists) {
       try {
         nextState = normalizeImportedState(cloudState.state, defaultAppState());
+        catalogChanged = ensureBuiltInExerciseCatalog(nextState);
       } catch {
         recovery = {
           userId: cloudState.userId,
@@ -3938,7 +4019,7 @@ async function remoteLogin(createAccount) {
     cloudStateRecovery = recovery;
     clearAuthDrafts();
     state = nextState;
-    saveState({ queueRemote: !cloudState.exists });
+    saveState({ queueRemote: !cloudState.exists || catalogChanged });
     nav = [{ name: "workouts" }];
     replaceNavigationHistory();
     modal = null;
@@ -4258,11 +4339,32 @@ function leaderboardRow(row, index) {
 }
 
 function exercisesScreen() {
-  const mappingRows = state.exercises;
-  return `${accountPanel()}<div class="field-row exercise-add-row"><label for="new-exercise-name" class="sr-only">${tx("Exercise name", "Назва вправи")}</label><input id="new-exercise-name" maxlength="120" aria-label="${tx("Exercise name", "Назва вправи")}" placeholder="${tx("Exercise name", "Назва вправи")}"><button class="button ghost" data-action="save-exercise">${t("addExercise")}</button></div>
+  const mappingRows = filteredLibraryExercises();
+  const regionFilters = [["all", tx("All", "Усі")], ["upper", tx("Upper body", "Верх тіла")], ["lower", tx("Lower body", "Низ тіла")], ["core", tx("Core", "Кор")]];
+  return `<section class="screen-copy"><h2>${t("exercises")}</h2><p>${tx("Manage your library, history, muscle groups, and backups.", "Керуй каталогом, історією, групами м’язів і резервними копіями.")}</p></section>
+    ${accountPanel()}<div class="field-row exercise-add-row"><label for="new-exercise-name" class="sr-only">${tx("Exercise name", "Назва вправи")}</label><input id="new-exercise-name" maxlength="120" aria-label="${tx("Exercise name", "Назва вправи")}" placeholder="${tx("Exercise name", "Назва вправи")}"><button class="button" data-action="save-exercise">${t("addExercise")}</button></div>
     <section class="material-card backup-card"><h2>${t("backup")}</h2><div class="actions"><button class="button ghost" data-action="export-json">${t("exportJson")}</button><button class="button ghost" data-action="import-json">${t("importJson")}</button><button class="button ghost full" data-action="export-diagnostics">${t("diagnostics")}</button></div></section>
+    <section class="panel highlighted exercise-search-panel"><label for="exercise-search">${tx("Search exercises", "Пошук вправ")}</label><div class="field-row"><input id="exercise-search" type="search" maxlength="120" value="${escapeAttr(exerciseSearchQuery)}" placeholder="${tx("Name in English or Ukrainian", "Назва українською або англійською")}">${exerciseSearchQuery ? `<button class="icon-button" data-action="clear-exercise-search" aria-label="${tx("Clear search", "Очистити пошук")}">${svg("close")}</button>` : ""}</div>
+      <div class="filter-scroll">${regionFilters.map(([id, label]) => `<button class="chip buttonlike ${exerciseBodyFilter === id ? "selected" : ""}" data-action="exercise-body-filter" data-filter="${id}" aria-pressed="${exerciseBodyFilter === id}">${label}</button>`).join("")}</div>
+      <div class="filter-scroll"><button class="chip buttonlike ${exerciseMuscleFilter === "all" ? "selected" : ""}" data-action="exercise-muscle-filter" data-filter="all">${tx("All muscles", "Усі м’язи")}</button>${muscles.map(([id]) => `<button class="chip buttonlike ${exerciseMuscleFilter === id ? "selected" : ""}" data-action="exercise-muscle-filter" data-filter="${id}">${escapeHtml(muscleLabel(id))}</button>`).join("")}</div><p class="muted">${mappingRows.length} ${tx("exercises", "вправ")}</p></section>
     ${mappingRows.length ? exerciseMappingsPanel(mappingRows) : ""}
-    <section class="exercise-list">${state.exercises.length ? state.exercises.map(exerciseRow).join("") : `<div class="empty">${tx("No exercises yet.", "Вправ ще немає.")}</div>`}</section>`;
+    <section class="exercise-list">${mappingRows.length ? mappingRows.map(exerciseRow).join("") : `<div class="empty">${tx("No matching exercises.", "Вправ за цими фільтрами не знайдено.")}</div>`}</section>`;
+}
+
+const exerciseBodyMuscles = {
+  upper: new Set(["chest", "shoulders", "biceps", "triceps", "forearms", "lats", "upperBack"]),
+  lower: new Set(["lowerBack", "glutes", "quads", "hamstrings", "adductors", "calves"]),
+  core: new Set(["abs", "obliques"])
+};
+
+function filteredLibraryExercises() {
+  const bodyMuscles = exerciseBodyMuscles[exerciseBodyFilter];
+  return state.exercises.filter(exercise => {
+    const ids = new Set(mappingFor(exercise).map(item => typeof item === "string" ? item : item.muscleId));
+    const matchesBody = !bodyMuscles || [...ids].some(id => bodyMuscles.has(id));
+    const matchesMuscle = exerciseMuscleFilter === "all" || ids.has(exerciseMuscleFilter);
+    return exerciseMatchesSearch(exercise, exerciseSearchQuery) && matchesBody && matchesMuscle;
+  });
 }
 
 function exerciseMappingsPanel(exercises) {
@@ -4273,7 +4375,8 @@ function exerciseMappingsPanel(exercises) {
 }
 
 function exerciseRow(exercise) {
-  return `<article class="exercise-row clickable" data-action="exercise-history" data-id="${exercise.id}"><span class="exercise-name">${escapeHtml(exerciseDisplayName(exercise))}</span><div class="actions"><button class="icon-button" data-action="rename-exercise" data-id="${exercise.id}" aria-label="${tx("Rename exercise", "Перейменувати вправу")}">${svg("edit")}</button><button class="icon-button" data-action="delete-exercise" data-id="${exercise.id}" aria-label="${tx("Delete exercise", "Видалити вправу")}">${svg("delete")}</button></div></article>`;
+  const builtIn = Boolean(builtInExerciseFor(exercise));
+  return `<article class="exercise-row clickable" data-action="exercise-history" data-id="${exercise.id}"><span class="exercise-name">${escapeHtml(exerciseDisplayName(exercise))}</span><div class="actions">${builtIn ? `<span class="pill">${tx("Built-in", "Вбудована")}</span>` : `<button class="icon-button" data-action="rename-exercise" data-id="${exercise.id}" aria-label="${tx("Rename exercise", "Перейменувати вправу")}">${svg("edit")}</button>`}<button class="icon-button" data-action="delete-exercise" data-id="${exercise.id}" aria-label="${tx("Delete exercise", "Видалити вправу")}">${svg("delete")}</button></div></article>`;
 }
 
 function progressScreen() {
@@ -4863,6 +4966,27 @@ function bindEvents() {
     saveState();
     render();
   });
+  const exerciseSearch = app.querySelector("#exercise-search");
+  if (exerciseSearch) exerciseSearch.addEventListener("input", () => {
+    exerciseSearchQuery = exerciseSearch.value.slice(0, 120);
+    render();
+    requestAnimationFrame(() => {
+      const next = app.querySelector("#exercise-search");
+      if (next) {
+        next.focus({ preventScroll: true });
+        next.setSelectionRange(next.value.length, next.value.length);
+      }
+    });
+  });
+  const scrollContainer = visibleScrollContainer();
+  if (scrollContainer) {
+    scrollContainer.addEventListener("scroll", syncTopbarVisibility, { passive: true });
+    syncTopbarVisibility();
+  }
+}
+
+function syncTopbarVisibility() {
+  app.classList.toggle("topbar-collapsed", (visibleScrollContainer()?.scrollTop || 0) > 24);
 }
 
 function handleAction(action, el) {
@@ -4897,6 +5021,9 @@ function handleAction(action, el) {
   if (action === "month-prev") { monthOffsets[activeMonthScope()]--; return render(); }
   if (action === "month-next") { monthOffsets[activeMonthScope()]++; return render(); }
   if (action === "month-current") { monthOffsets[activeMonthScope()] = 0; return render(); }
+  if (action === "clear-exercise-search") { exerciseSearchQuery = ""; return render(); }
+  if (action === "exercise-body-filter") { exerciseBodyFilter = ["all", "upper", "lower", "core"].includes(el.dataset.filter) ? el.dataset.filter : "all"; return render(); }
+  if (action === "exercise-muscle-filter") { exerciseMuscleFilter = el.dataset.filter === "all" || muscles.some(([id]) => id === el.dataset.filter) ? el.dataset.filter : "all"; return render(); }
   if (action === "overview-mode") {
     overviewMode = el.dataset.mode === "list" ? "list" : "overview";
     render();
@@ -5664,6 +5791,7 @@ function exportPayload(diagnostics) {
       email: activeAccount?.email || null,
       remote: activeAccount?.remote || null
     },
+    catalogSeedVersion: state.catalogSeedVersion,
     exercises: state.exercises,
     sessions: state.sessions.map(session => ({
       id: session.id,
@@ -5700,6 +5828,7 @@ function applyImport() {
       return;
     }
     state = imported.state;
+    ensureBuiltInExerciseCatalog(state);
     saveState();
     modal = null;
     goRoot("workouts");

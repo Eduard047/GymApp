@@ -2,31 +2,19 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const [androidSource, iosSource, pwaSource] = await Promise.all([
+const [androidSource, iosSource, pwaSource, migrationSource] = await Promise.all([
   readFile("app/src/main/java/com/example/gymapp/data/catalog/BuiltInExerciseCatalog.kt", "utf8"),
   readFile("ios/GymApp-iOS/GymApp/Domain/BuiltInExerciseCatalog.swift", "utf8"),
-  readFile("pwa/app.js", "utf8")
+  readFile("pwa/app.js", "utf8"),
+  readFile("supabase/migrations/20260716105128_create_exercise_catalog.sql", "utf8")
 ]);
 
-const expectedCatalog = [
-  ["bench_press", "Bench Press", "Жим штанги лежачи"],
-  ["incline_dumbbell_press", "Incline Dumbbell Press", "Жим гантелей на похилій лаві"],
-  ["pull_up", "Pull Up", "Підтягування"],
-  ["lat_pulldown", "Lat Pulldown", "Тяга верхнього блока"],
-  ["barbell_row", "Barbell Row", "Тяга штанги в нахилі"],
-  ["squat", "Squat", "Присідання зі штангою"],
-  ["leg_press", "Leg Press", "Жим ногами у тренажері"],
-  ["romanian_deadlift", "Romanian Deadlift", "Румунська тяга"],
-  ["deadlift", "Deadlift", "Станова тяга"],
-  ["shoulder_press", "Shoulder Press", "Жим над головою"],
-  ["lateral_raise", "Lateral Raise", "Підйоми гантелей через сторони"],
-  ["biceps_curl", "Biceps Curl", "Згинання рук на біцепс"],
-  ["triceps_pushdown", "Triceps Pushdown", "Розгинання рук на блоці"],
-  ["calf_raise", "Calf Raise", "Підйом на носки"],
-  ["plank", "Plank", "Планка"]
-];
+const expectedCatalog = [...pwaSource.matchAll(
+  /\{ key: "([a-z0-9_]+)", names: \{ en: "([^"]+)", uk: "([^"]+)" \}/g
+)].map(match => match.slice(1));
 
 test("Android, iOS, and PWA expose the same built-in exercise contract", () => {
+  assert.equal(expectedCatalog.length, 51);
   for (const [key, english, ukrainian] of expectedCatalog) {
     for (const [platform, source] of [
       ["Android", androidSource],
@@ -37,5 +25,33 @@ test("Android, iOS, and PWA expose the same built-in exercise contract", () => {
       assert.ok(source.includes(`"${english}"`), `${platform} is missing ${english}`);
       assert.ok(source.includes(`"${ukrainian}"`), `${platform} is missing ${ukrainian}`);
     }
+    assert.ok(migrationSource.includes(`('${key}', '${english.replaceAll("'", "''")}', '${ukrainian.replaceAll("'", "''")}'`));
   }
+});
+
+test("the imported database exercise names remain recognized aliases", () => {
+  const importedNames = [
+    "Журавель", "Нахили в сторони на гіперекстензії", "Присід зі штангою", "Розминка",
+    "бокові нахили", "брусья", "біцепс в кросовері", "біцепс з гантелями сидячи",
+    "вертикальна тяга", "гантеля над головою", "гантелі лежачи", "горизонтальна важільна тяга",
+    "гіперекстензія", "жим лежачи", "жим ногами", "жим сидячи", "зведення ніг",
+    "згибання ніг лежачи", "згибання ніг сидячі", "махи в сторони", "махи в сторони в тренажері",
+    "махи в сторони з гантелями", "метелик в середину", "метелик в сторони",
+    "прес з диском в сторони", "прес звичайний з диском", "прес(підйом ніг)", "протяжка",
+    "підйом на носки", "підтягування в гравітроні", "підтягування з резинкою", "розгинання ніг",
+    "румунська тяга", "станова тяга", "тренажер скота(біцепс)", "трицепс трикутник",
+    "французький жим", "фронтальна тяга", "штанга на біцепс"
+  ];
+  for (const name of importedNames) {
+    assert.ok(pwaSource.toLocaleLowerCase("uk").includes(name.toLocaleLowerCase("uk")), `missing backup alias: ${name}`);
+  }
+});
+
+test("the shared exercise catalog is read-only through Supabase RLS", () => {
+  assert.match(migrationSource, /alter table public\.exercise_catalog enable row level security;/i);
+  assert.match(migrationSource, /revoke all on table public\.exercise_catalog from anon, authenticated;/i);
+  assert.match(migrationSource, /grant select on table public\.exercise_catalog to anon, authenticated;/i);
+  assert.match(migrationSource, /for select\s+to anon, authenticated\s+using \(true\);/i);
+  assert.doesNotMatch(migrationSource, /grant\s+(?:insert|update|delete|all)/i);
+  assert.doesNotMatch(migrationSource, /for\s+(?:insert|update|delete|all)/i);
 });

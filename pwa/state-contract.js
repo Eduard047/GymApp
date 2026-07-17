@@ -32,6 +32,7 @@
     goal: Object.freeze(["Aesthetic Cut", "Muscle Gain", "Strength", "Balanced"]),
     calories: Object.freeze(["Deficit", "Maintenance", "Surplus"])
   });
+  const CATALOG_SEED_VERSION = 1;
 
   class StateContractError extends Error {
     constructor(message, code = "invalid_state") {
@@ -421,6 +422,9 @@
     const counters = { totalSets: 0, idBase: Date.now(), knownExerciseNames };
     const state = {
       language: root.language === "uk" ? "uk" : "en",
+      catalogSeedVersion: root.catalogSeedVersion == null
+        ? 0
+        : integer(root.catalogSeedVersion, "state.catalogSeedVersion", 0, CATALOG_SEED_VERSION),
       exercises: normalizedExercises,
       sessions: sessionsInput.map((session, index) => normalizeSession(session, index, counters)),
       mappings: normalizeMappings(root.mappings, fallback.mappings),

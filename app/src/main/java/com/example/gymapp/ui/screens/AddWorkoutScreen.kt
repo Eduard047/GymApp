@@ -5,9 +5,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -18,14 +20,15 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -53,6 +56,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
+import com.example.gymapp.data.catalog.BuiltInExerciseCatalog
 import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.repository.WorkoutRecommendation
 import com.example.gymapp.data.repository.WorkoutRecommendationKind
@@ -65,6 +69,7 @@ import com.example.gymapp.ui.components.ExerciseMuscleMap
 import com.example.gymapp.ui.components.HeroPanel
 import com.example.gymapp.ui.components.InfoPill
 import com.example.gymapp.ui.components.SectionTitle
+import com.example.gymapp.ui.util.currentAppLanguageTag
 import com.example.gymapp.ui.util.localizedExerciseName
 import com.example.gymapp.ui.viewmodel.AddWorkoutUiState
 import com.example.gymapp.ui.viewmodel.ExerciseInputState
@@ -306,6 +311,7 @@ fun AddWorkoutScreen(
                 index = index,
                 draft = draft,
                 exercises = uiState.exercises,
+                frequentExerciseIds = uiState.frequentExerciseIds,
                 lastWeight = draft.exerciseId?.let { uiState.lastWeights[it] },
                 recommendation = draft.exerciseId?.let { uiState.workoutRecommendations[it] },
                 onExerciseSelected = { selectedExerciseId ->
@@ -668,6 +674,7 @@ private fun ExerciseDraftCard(
     index: Int,
     draft: ExerciseInputState,
     exercises: List<ExerciseEntity>,
+    frequentExerciseIds: List<Long>,
     lastWeight: Double?,
     recommendation: WorkoutRecommendation?,
     onExerciseSelected: (Long) -> Unit,
@@ -772,6 +779,7 @@ private fun ExerciseDraftCard(
             ExerciseSelector(
                 selectedExerciseId = draft.exerciseId,
                 exercises = exercises,
+                frequentExerciseIds = frequentExerciseIds,
                 onExerciseSelected = onExerciseSelected,
                 modifier = Modifier.fillMaxWidth()
             )
@@ -1013,43 +1021,174 @@ private fun WorkoutRecommendationReason.smartCoachLabel(daysSinceLastSession: In
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ExerciseSelector(
     selectedExerciseId: Long?,
     exercises: List<ExerciseEntity>,
+    frequentExerciseIds: List<Long>,
     onExerciseSelected: (Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var expanded by remember(selectedExerciseId, exercises) { mutableStateOf(false) }
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    var query by rememberSaveable { mutableStateOf("") }
+    var frequentOnly by rememberSaveable { mutableStateOf(false) }
+    val languageTag = currentAppLanguageTag()
     val selectedLabel = exercises
         .firstOrNull { it.id == selectedExerciseId }
-        ?.let { localizedExerciseName(it.name) }
+        ?.let { BuiltInExerciseCatalog.displayName(it.name, languageTag) }
         ?: stringResource(R.string.label_select_exercise)
+    val frequentRank = remember(frequentExerciseIds) {
+        frequentExerciseIds.withIndex().associate { (index, id) -> id to index }
+    }
+    val normalizedQuery = query.trim().lowercase(Locale.ROOT)
+    val visibleExercises = remember(
+        exercises,
+        frequentRank,
+        frequentOnly,
+        normalizedQuery,
+        languageTag
+    ) {
+        exercises
+            .filter { exercise ->
+                val definition = BuiltInExerciseCatalog.definitionForName(exercise.name)
+                val matchesSearch = normalizedQuery.isEmpty() || buildList {
+                    add(exercise.name)
+                    add(BuiltInExerciseCatalog.displayName(exercise.name, languageTag))
+                    definition?.let {
+                        add(it.nameEn)
+                        add(it.nameUk)
+                        addAll(it.legacyAliases)
+                    }
+                }.any { it.lowercase(Locale.ROOT).contains(normalizedQuery) }
+                matchesSearch && (!frequentOnly || exercise.id in frequentRank)
+            }
+            .sortedWith { left, right ->
+                if (frequentOnly) {
+                    (frequentRank[left.id] ?: Int.MAX_VALUE)
+                        .compareTo(frequentRank[right.id] ?: Int.MAX_VALUE)
+                } else {
+                    BuiltInExerciseCatalog.displayName(left.name, languageTag).compareTo(
+                        BuiltInExerciseCatalog.displayName(right.name, languageTag),
+                        ignoreCase = true
+                    )
+                }
+            }
+    }
 
-    Box(modifier = modifier) {
-        OutlinedButton(
-            onClick = { expanded = true },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text(
-                text = selectedLabel,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
+    OutlinedButton(
+        onClick = { expanded = true },
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Icon(imageVector = Icons.Default.Search, contentDescription = null)
+        Text(
+            text = selectedLabel,
+            modifier = Modifier.padding(start = 8.dp),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
 
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false }
+    if (expanded) {
+        ModalBottomSheet(
+            onDismissRequest = { expanded = false },
+            containerColor = MaterialTheme.colorScheme.background,
+            contentColor = MaterialTheme.colorScheme.onBackground
         ) {
-            exercises.forEach { exercise ->
-                DropdownMenuItem(
-                    text = { Text(localizedExerciseName(exercise.name)) },
-                    onClick = {
-                        onExerciseSelected(exercise.id)
-                        expanded = false
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 16.dp, end = 16.dp, bottom = 28.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.label_select_exercise),
+                    style = MaterialTheme.typography.headlineSmall
+                )
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text(stringResource(R.string.exercise_search_label)) },
+                    placeholder = { Text(stringResource(R.string.exercise_search_placeholder)) },
+                    leadingIcon = {
+                        Icon(imageVector = Icons.Default.Search, contentDescription = null)
                     }
                 )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = !frequentOnly,
+                        onClick = { frequentOnly = false },
+                        label = { Text(stringResource(R.string.exercise_picker_all)) }
+                    )
+                    FilterChip(
+                        selected = frequentOnly,
+                        onClick = { frequentOnly = true },
+                        label = { Text(stringResource(R.string.exercise_picker_frequent)) },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Star,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    )
+                }
+                Text(
+                    text = stringResource(R.string.exercise_search_result_count, visibleExercises.size),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 480.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    if (visibleExercises.isEmpty()) {
+                        item {
+                            Text(
+                                text = if (frequentOnly && frequentExerciseIds.isEmpty()) {
+                                    stringResource(R.string.exercise_picker_frequent_empty)
+                                } else {
+                                    stringResource(R.string.exercise_search_no_results)
+                                },
+                                modifier = Modifier.padding(vertical = 20.dp),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    } else {
+                        items(visibleExercises, key = { it.id }) { exercise ->
+                            OutlinedButton(
+                                onClick = {
+                                    onExerciseSelected(exercise.id)
+                                    expanded = false
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = BuiltInExerciseCatalog.displayName(
+                                        exercise.name,
+                                        languageTag
+                                    ),
+                                    modifier = Modifier.weight(1f),
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                if (exercise.id == selectedExerciseId) {
+                                    Spacer(modifier = Modifier.size(8.dp))
+                                    Icon(
+                                        imageVector = Icons.Default.CheckCircle,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }

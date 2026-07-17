@@ -400,26 +400,48 @@ struct WorkoutRestTimerControls: View {
 }
 
 struct ExercisePickerSheet: View {
+    private enum Scope: String, CaseIterable, Identifiable {
+        case all
+        case frequent
+
+        var id: Self { self }
+    }
+
     @Environment(\.dismiss) private var dismiss
     @State private var search = ""
     @State private var newExerciseName = ""
     @State private var errorMessage: String?
+    @State private var scope: Scope = .all
 
     let exercises: [Exercise]
     let selectedExerciseIDs: Set<UUID>
+    var frequentExerciseIDs: [UUID] = []
     let onSelect: (Exercise) -> Void
     let onCreate: (String) throws -> Exercise
 
     private var filteredExercises: [Exercise] {
         let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
+        let frequentRank = Dictionary(
+            uniqueKeysWithValues: frequentExerciseIDs.enumerated().map { ($0.element, $0.offset) }
+        )
         return exercises
             .filter { exercise in
-                query.isEmpty ||
+                let matchesScope = scope == .all || frequentRank[exercise.id] != nil
+                let matchesSearch = query.isEmpty ||
                     exercise.name.localizedCaseInsensitiveContains(query) ||
-                    gymExerciseName(exercise).localizedCaseInsensitiveContains(query)
+                    gymExerciseName(exercise).localizedCaseInsensitiveContains(query) ||
+                    BuiltInExerciseCatalog.definition(forKey: exercise.catalogKey ?? "")?
+                        .englishName.localizedCaseInsensitiveContains(query) == true ||
+                    BuiltInExerciseCatalog.definition(forKey: exercise.catalogKey ?? "")?
+                        .ukrainianName.localizedCaseInsensitiveContains(query) == true
+                return matchesScope && matchesSearch
             }
-            .sorted {
-                gymExerciseName($0).localizedCaseInsensitiveCompare(gymExerciseName($1)) == .orderedAscending
+            .sorted { left, right in
+                if scope == .frequent {
+                    return (frequentRank[left.id] ?? .max) < (frequentRank[right.id] ?? .max)
+                }
+                return gymExerciseName(left)
+                    .localizedCaseInsensitiveCompare(gymExerciseName(right)) == .orderedAscending
             }
     }
 
@@ -445,8 +467,25 @@ struct ExercisePickerSheet: View {
                 }
 
                 Section("Exercises") {
+                    Picker("Exercise filter", selection: $scope) {
+                        Text(gymLocalized("All")).tag(Scope.all)
+                        Text(gymLocalized("Frequent")).tag(Scope.frequent)
+                    }
+                    .pickerStyle(.segmented)
+                    .accessibilityLabel(gymLocalized("Exercise filter"))
+
                     if filteredExercises.isEmpty {
-                        ContentUnavailableView.search(text: search)
+                        if scope == .frequent && frequentExerciseIDs.isEmpty && search.isEmpty {
+                            ContentUnavailableView {
+                                Label(gymLocalized("No frequent exercises yet"), systemImage: "star")
+                            } description: {
+                                Text(gymLocalized(
+                                    "Frequently used exercises appear after you save workouts."
+                                ))
+                            }
+                        } else {
+                            ContentUnavailableView.search(text: search)
+                        }
                     } else {
                         ForEach(filteredExercises) { exercise in
                             Button {

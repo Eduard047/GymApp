@@ -98,6 +98,7 @@ struct AddWorkoutView: View {
             ExercisePickerSheet(
                 exercises: store.exercises,
                 selectedExerciseIDs: Set(drafts.map(\.exerciseID)),
+                frequentExerciseIDs: frequentExerciseIDs,
                 onSelect: addExercise,
                 onCreate: { try store.addExercise(name: $0) }
             )
@@ -414,6 +415,28 @@ struct AddWorkoutView: View {
 
     private func exerciseName(_ exerciseID: UUID) -> String {
         store.exercise(id: exerciseID).map { gymExerciseName($0) } ?? gymLocalized("Deleted exercise")
+    }
+
+    private var frequentExerciseIDs: [UUID] {
+        Dictionary(grouping: store.allExerciseHistory(), by: \.exerciseID)
+            .map { exerciseID, entries in
+                (
+                    exerciseID: exerciseID,
+                    sessionCount: Set(entries.map(\.workoutID)).count,
+                    lastUsedAt: entries.map(\.sessionDate).max() ?? .distantPast
+                )
+            }
+            .sorted { left, right in
+                if left.sessionCount != right.sessionCount {
+                    return left.sessionCount > right.sessionCount
+                }
+                if left.lastUsedAt != right.lastUsedAt {
+                    return left.lastUsedAt > right.lastUsedAt
+                }
+                return left.exerciseID.uuidString < right.exerciseID.uuidString
+            }
+            .prefix(12)
+            .map(\.exerciseID)
     }
 
     private func addExercise(_ exercise: Exercise) {

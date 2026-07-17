@@ -482,6 +482,16 @@
         }
       }
     },
+    "All" : {
+      "localizations" : {
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Усі"
+          }
+        }
+      }
+    },
     "All time" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -2008,6 +2018,16 @@
         }
       }
     },
+    "Exercise filter" : {
+      "localizations" : {
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Фільтр вправ"
+          }
+        }
+      }
+    },
     "Exercise added." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -2326,6 +2346,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Серія з чотирнадцяти днів"
+          }
+        }
+      }
+    },
+    "Frequent" : {
+      "localizations" : {
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Часті"
+          }
+        }
+      }
+    },
+    "Frequently used exercises appear after you save workouts." : {
+      "localizations" : {
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Часто використовувані вправи з’являться після збереження тренувань."
           }
         }
       }
@@ -3349,6 +3389,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Вправ ще немає"
+          }
+        }
+      }
+    },
+    "No frequent exercises yet" : {
+      "localizations" : {
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Поки немає частих вправ"
           }
         }
       }
