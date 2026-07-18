@@ -549,6 +549,8 @@ private final class BoundedHTTPURLProtocolStub: URLProtocol, @unchecked Sendable
     )?
     nonisolated(unsafe) static var stallHandler: ((URLRequest) -> Bool)?
     nonisolated(unsafe) static var onStopLoading: (() -> Void)?
+    private let stopLoadingLock = NSLock()
+    private var capturedStopLoadingHandler: (() -> Void)?
 
     override class func canInit(with request: URLRequest) -> Bool {
         ["http", "https"].contains(request.url?.scheme?.lowercased() ?? "")
@@ -559,6 +561,9 @@ private final class BoundedHTTPURLProtocolStub: URLProtocol, @unchecked Sendable
     }
 
     override func startLoading() {
+        stopLoadingLock.lock()
+        capturedStopLoadingHandler = Self.onStopLoading
+        stopLoadingLock.unlock()
         do {
             let materializedRequest = try Self.materializedRequest(request)
             if Self.stallHandler?(materializedRequest) == true { return }
@@ -581,7 +586,11 @@ private final class BoundedHTTPURLProtocolStub: URLProtocol, @unchecked Sendable
     }
 
     override func stopLoading() {
-        Self.onStopLoading?()
+        stopLoadingLock.lock()
+        let handler = capturedStopLoadingHandler
+        capturedStopLoadingHandler = nil
+        stopLoadingLock.unlock()
+        handler?()
     }
 
     static func reset() {
