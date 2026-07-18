@@ -369,8 +369,12 @@ private struct GarminSettingsCard: View {
     @State private var displayName = "Garmin watch"
     @State private var errorMessage: String?
     @State private var tokenPresentation: GarminTokenPresentation?
-    private let garminReleaseURL = URL(
-        string: "https://github.com/Eduard047/GymApp/releases/download/qa-2026.07.17.1/gymapp-garmin-connect-iq.iq"
+    private let garminStoreURL = URL(
+        string: "https://apps.garmin.com/apps/fe82a300-4d9f-4588-8b10-365d75280b8f"
+    )!
+    private let connectIQSchemeURL = URL(string: "connectiq://")!
+    private let connectIQAppStoreURL = URL(
+        string: "https://apps.apple.com/app/connect-iq-store/id1317652970"
     )!
     @State private var showsRevokeConfirmation = false
 
@@ -383,12 +387,12 @@ private struct GarminSettingsCard: View {
                     supporting: "Choose exactly which active watch receives iOS workout plans. The selected device is stored securely for this Supabase account."
                 )
 
-                Link(destination: garminReleaseURL) {
-                    Label("Get Garmin app", systemImage: "arrow.up.right.square")
+                Button(action: openGarminStore) {
+                    Label("Open Gym Workout Tracker in Garmin", systemImage: "arrow.up.right.square")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(GymSecondaryButtonStyle())
-                .accessibilityHint("Downloads the Garmin Connect IQ package from the current GymApp QA release")
+                .accessibilityHint("Opens this app in Connect IQ, or opens the App Store if Connect IQ is not installed")
 
                 if let errorMessage {
                     GymStatusBanner(message: errorMessage, isError: true)
@@ -493,6 +497,14 @@ private struct GarminSettingsCard: View {
         } message: {
             Text("This invalidates the watch token and quarantines its pending plans. Reusing this watch with a new device ID requires resetting GymApp on the watch. Use token rotation instead when reconnecting the same watch.")
         }
+    }
+
+    private func openGarminStore() {
+        let application = UIApplication.shared
+        let destination = application.canOpenURL(connectIQSchemeURL)
+            ? garminStoreURL
+            : connectIQAppStoreURL
+        application.open(destination)
     }
 
     private func deviceButton(_ device: GarminDeviceSummary) -> some View {

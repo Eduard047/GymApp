@@ -509,5 +509,5 @@
     <string name="exercise_sort_most_frequent">Most frequent</string>
     <string name="exercise_sort_least_frequent">Least frequent</string>
     <string name="exercise_card_built_in">Built-in</string>
-    <string name="garmin_open_app">Get Garmin app</string>
+    <string name="garmin_open_app">Open Gym Workout Tracker in Garmin</string>
 </resources>

@@ -58,7 +58,7 @@ function guardContext({ framed }) {
 test("frame guard is the earliest script and both documents start fail-closed", () => {
   for (const html of [indexHtml, confirmedHtml]) {
     assert.match(html, /<html[^>]+class="frame-pending"/);
-    const guardIndex = html.indexOf('<script src="./frame-guard.v46.js"></script>');
+    const guardIndex = html.indexOf('<script src="./frame-guard.v47.js"></script>');
     assert.equal(html.indexOf("<script"), guardIndex);
     const nextScriptIndex = html.indexOf("<script", guardIndex + 1);
     assert.ok(guardIndex > 0 && (nextScriptIndex === -1 || guardIndex < nextScriptIndex));
