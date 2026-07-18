@@ -5,16 +5,16 @@ import vm from "node:vm";
 
 const workerSource = readFileSync(new URL("../pwa/sw.js", import.meta.url), "utf8");
 const VERSIONED_ASSET_PAIRS = [
-  ["confirmed.css", "confirmed.v46.css"],
-  ["confirmed.js", "confirmed.v46.js"],
-  ["frame-guard.js", "frame-guard.v46.js"],
-  ["styles.css", "styles.v46.css"],
-  ["muscle-regions.js", "muscle-regions.v46.js"],
-  ["supabase-config.js", "supabase-config.v46.js"],
-  ["state-contract.js", "state-contract.v46.js"],
-  ["garmin-cloud-sync.js", "garmin-cloud-sync.v46.js"],
-  ["progression-rules.js", "progression-rules.v46.js"],
-  ["app.js", "app.v46.js"]
+  ["confirmed.css", "confirmed.v47.css"],
+  ["confirmed.js", "confirmed.v47.js"],
+  ["frame-guard.js", "frame-guard.v47.js"],
+  ["styles.css", "styles.v47.css"],
+  ["muscle-regions.js", "muscle-regions.v47.js"],
+  ["supabase-config.js", "supabase-config.v47.js"],
+  ["state-contract.js", "state-contract.v47.js"],
+  ["garmin-cloud-sync.js", "garmin-cloud-sync.v47.js"],
+  ["progression-rules.js", "progression-rules.v47.js"],
+  ["app.js", "app.v47.js"]
 ];
 
 function loadWorker(scope = "https://example.test/GymApp/", options = {}) {
@@ -135,14 +135,14 @@ function isIntercepted(handler, url, options = {}) {
   return responsePromiseFor(handler, url, options) !== null;
 }
 
-test("service worker caches only exact immutable v46 same-origin assets", () => {
+test("service worker caches only exact immutable v47 same-origin assets", () => {
   for (const scope of ["https://example.test/", "https://example.test/GymApp/"]) {
     const handler = loadWorker(scope).listeners.get("fetch");
 
-    assert.equal(isIntercepted(handler, new URL("./app.v46.js", scope)), true);
-    assert.equal(isIntercepted(handler, new URL("./state-contract.v46.js", scope)), true);
-    assert.equal(isIntercepted(handler, new URL("./frame-guard.v46.js", scope)), true);
-    assert.equal(isIntercepted(handler, new URL("./app.js?v=46", scope)), false);
+    assert.equal(isIntercepted(handler, new URL("./app.v47.js", scope)), true);
+    assert.equal(isIntercepted(handler, new URL("./state-contract.v47.js", scope)), true);
+    assert.equal(isIntercepted(handler, new URL("./frame-guard.v47.js", scope)), true);
+    assert.equal(isIntercepted(handler, new URL("./app.js?v=47", scope)), false);
     assert.equal(isIntercepted(handler, new URL("./app.js", scope)), false);
     assert.equal(isIntercepted(handler, scope), true);
     assert.equal(isIntercepted(handler, new URL("./rest/v1/user_states", scope)), false);
@@ -150,26 +150,26 @@ test("service worker caches only exact immutable v46 same-origin assets", () => 
   }
 });
 
-test("v46 pathname assets cannot be mistaken for predecessor assets", () => {
+test("v47 pathname assets cannot be mistaken for predecessor assets", () => {
   const predecessorPaths = new Set([
     "confirmed.css", "confirmed.js", "frame-guard.js", "styles.css",
     "muscle-regions.js", "supabase-config.js", "state-contract.js",
     "garmin-cloud-sync.js", "progression-rules.js", "app.js"
   ]);
-  const v46Paths = [
-    "confirmed.v46.css", "confirmed.v46.js", "frame-guard.v46.js", "styles.v46.css",
-    "muscle-regions.v46.js", "supabase-config.v46.js", "state-contract.v46.js",
-    "garmin-cloud-sync.v46.js", "progression-rules.v46.js", "app.v46.js"
+  const v47Paths = [
+    "confirmed.v47.css", "confirmed.v47.js", "frame-guard.v47.js", "styles.v47.css",
+    "muscle-regions.v47.js", "supabase-config.v47.js", "state-contract.v47.js",
+    "garmin-cloud-sync.v47.js", "progression-rules.v47.js", "app.v47.js"
   ];
 
-  for (const pathname of v46Paths) {
+  for (const pathname of v47Paths) {
     assert.equal(predecessorPaths.has(pathname), false, pathname);
     assert.match(workerSource, new RegExp(`\\./${pathname.replaceAll(".", "\\.")}`));
   }
-  assert.doesNotMatch(workerSource, /\.\/app\.js\?v=46/);
+  assert.doesNotMatch(workerSource, /\.\/app\.js\?v=47/);
 });
 
-test("every deployed v46 asset exists and is byte-identical to its canonical source", () => {
+test("every deployed v47 asset exists and is byte-identical to its canonical source", () => {
   for (const [canonical, versioned] of VERSIONED_ASSET_PAIRS) {
     const canonicalBytes = readFileSync(new URL(`../pwa/${canonical}`, import.meta.url));
     const versionedBytes = readFileSync(new URL(`../pwa/${versioned}`, import.meta.url));
@@ -180,19 +180,19 @@ test("every deployed v46 asset exists and is byte-identical to its canonical sou
 test("service worker ignores credential-bearing, partial-content, and non-GET requests", () => {
   const handler = loadWorker().listeners.get("fetch");
 
-  assert.equal(isIntercepted(handler, "https://example.test/GymApp/app.v46.js", {
+  assert.equal(isIntercepted(handler, "https://example.test/GymApp/app.v47.js", {
     headers: { Authorization: "Bearer test-token" }
   }), false);
   assert.equal(isIntercepted(handler, "https://example.test/GymApp/index.html", {
     headers: { apikey: "test-key" }
   }), false);
-  assert.equal(isIntercepted(handler, "https://example.test/GymApp/app.v46.js", {
+  assert.equal(isIntercepted(handler, "https://example.test/GymApp/app.v47.js", {
     headers: { Range: "bytes=0-10" }
   }), false);
   assert.equal(isIntercepted(handler, "https://example.test/GymApp/index.html", {
     headers: { "If-Range": "etag" }
   }), false);
-  assert.equal(isIntercepted(handler, "https://example.test/GymApp/app.v46.js", { method: "POST" }), false);
+  assert.equal(isIntercepted(handler, "https://example.test/GymApp/app.v47.js", { method: "POST" }), false);
 });
 
 test("searched auth callbacks are network-only but receive enforceable anti-framing headers", async () => {
@@ -251,7 +251,7 @@ test("sensitive callback network failures never fall back to cached HTML", async
 
 test("token-like asset queries are neither intercepted nor cached", () => {
   const handler = loadWorker().listeners.get("fetch");
-  assert.equal(isIntercepted(handler, "https://example.test/GymApp/app.v46.js?provider_token=secret"), false);
+  assert.equal(isIntercepted(handler, "https://example.test/GymApp/app.v47.js?provider_token=secret"), false);
   assert.equal(isIntercepted(handler, "https://example.test/GymApp/icon.svg?access_token=secret"), false);
 });
 
@@ -261,7 +261,7 @@ test("cached documents receive the same anti-framing policy", async () => {
   const response = await responsePromiseFor(handler, "https://example.test/GymApp/");
 
   assert.equal(await response.text(), "cached");
-  assert.deepEqual(worker.openedCaches, ["gym-pwa-v47"]);
+  assert.deepEqual(worker.openedCaches, ["gym-pwa-v48"]);
   assert.match(response.headers.get("Content-Security-Policy"), /style-src 'self'/);
   assert.match(response.headers.get("Content-Security-Policy"), /frame-ancestors 'none'/);
   assert.doesNotMatch(response.headers.get("Content-Security-Policy"), /unsafe-inline/);
@@ -277,9 +277,9 @@ test("install reloads one internally consistent version without taking over old 
   handler({ waitUntil(value) { installPromise = value; } });
   await installPromise;
 
-  assert.deepEqual(worker.openedCaches, ["gym-pwa-v47"]);
-  assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/app.v46.js")));
-  assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/styles.v46.css")));
+  assert.deepEqual(worker.openedCaches, ["gym-pwa-v48"]);
+  assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/app.v47.js")));
+  assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/styles.v47.css")));
   assert.equal(worker.addedAssets.every(asset => asset instanceof Request && asset.cache === "reload"), true);
   assert.equal(worker.skipWaitingCount(), 0);
 });

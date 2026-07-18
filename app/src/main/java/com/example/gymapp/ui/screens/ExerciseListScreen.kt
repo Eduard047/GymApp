@@ -3,7 +3,6 @@
 import android.content.Intent
 import android.content.Context
 import android.content.ClipData
-import android.net.Uri
 import android.graphics.Paint
 import android.graphics.Typeface
 import android.graphics.pdf.PdfDocument
@@ -69,6 +68,7 @@ import com.example.gymapp.data.entity.ExerciseHistoryEntry
 import com.example.gymapp.data.repository.defaultContributionsForExercise
 import com.example.gymapp.data.repository.MUSCLE_DEFINITIONS
 import com.example.gymapp.data.repository.WorkoutDataLimits
+import com.example.gymapp.garmin.openGymWorkoutTrackerInGarminStore
 import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.EmptyStatePanel
 import com.example.gymapp.ui.components.ExerciseMuscleBreakdownCard
@@ -104,8 +104,6 @@ private const val MAX_PDF_SETS_PER_EXERCISE = 20
 private const val MAX_PDF_TEXT_CHARS = 320
 private const val PRIVATE_SHARE_RETENTION_MILLIS = 24 * 60 * 60 * 1_000L
 private const val MAX_RETAINED_PRIVATE_SHARE_FILES = 32
-private const val GARMIN_APP_RELEASE_URL =
-    "https://github.com/Eduard047/GymApp/releases/download/qa-2026.07.17.1/gymapp-garmin-connect-iq.iq"
 private val PRIVATE_SHARE_FILE_LOCK = Any()
 
 private enum class ExerciseBodyFilter(val muscleIds: Set<String>) {
@@ -276,13 +274,7 @@ fun ExerciseListScreen(
                 canLogout = uiState.canLogout,
                 onLogout = onLogout,
                 onOpenGarminApp = {
-                    runCatching {
-                        context.startActivity(
-                            Intent(Intent.ACTION_VIEW, Uri.parse(GARMIN_APP_RELEASE_URL)).apply {
-                                addCategory(Intent.CATEGORY_BROWSABLE)
-                            }
-                        )
-                    }
+                    openGymWorkoutTrackerInGarminStore(context)
                 }
             )
         }

@@ -6,7 +6,7 @@ import vm from "node:vm";
 const appSource = await readFile("pwa/app.js", "utf8");
 const stateContractSource = await readFile("pwa/state-contract.js", "utf8");
 
-function loadPwaContext() {
+function loadPwaContext({ userAgent = "" } = {}) {
   const values = new Map();
   const context = {
     console,
@@ -32,7 +32,7 @@ function loadPwaContext() {
         return { innerHTML: "", querySelectorAll: () => [], querySelector: () => null };
       }
     },
-    navigator: {},
+    navigator: { userAgent },
     localStorage: {
       getItem: key => values.get(key) ?? null,
       setItem: (key, value) => values.set(key, String(value)),
@@ -62,17 +62,37 @@ function jsonFrom(context, expression) {
   return JSON.parse(vm.runInContext(`JSON.stringify(${expression})`, context));
 }
 
-test("Garmin download link is pinned to the QA package and isolates the new tab", () => {
+test("Garmin store link opens our public listing and isolates the new tab", () => {
   const context = loadPwaContext();
   const html = vm.runInContext("accountPanel()", context);
 
   assert.equal(
     html.includes(
-      'href="https://github.com/Eduard047/GymApp/releases/download/qa-2026.07.17.1/gymapp-garmin-connect-iq.iq"'
+      'href="https://apps.garmin.com/apps/fe82a300-4d9f-4588-8b10-365d75280b8f"'
     ),
     true
   );
-  assert.match(html, /target="_blank" rel="noopener noreferrer"/);
+  assert.equal(html.includes('target="_blank" rel="noopener noreferrer"'), true);
+  assert.equal(html.includes(".iq"), false);
+});
+
+test("Android web link opens Connect IQ and falls back to its Google Play listing", () => {
+  const context = loadPwaContext({ userAgent: "Mozilla/5.0 (Linux; Android 16) Chrome/140" });
+  const html = vm.runInContext("accountPanel()", context);
+
+  assert.equal(
+    html.includes(
+      'href="intent://apps.garmin.com/apps/fe82a300-4d9f-4588-8b10-365d75280b8f#Intent;'
+    ),
+    true
+  );
+  assert.equal(html.includes("package=com.garmin.connectiq;"), true);
+  assert.equal(
+    html.includes(
+      "S.browser_fallback_url=https%3A%2F%2Fplay.google.com%2Fstore%2Fapps%2Fdetails%3Fid%3Dcom.garmin.connectiq;"
+    ),
+    true
+  );
 });
 
 test("built-in exercise catalog persists stable keys and localizes only display names", () => {

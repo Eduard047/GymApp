@@ -509,5 +509,5 @@
     <string name="exercise_sort_most_frequent">Найчастіші</string>
     <string name="exercise_sort_least_frequent">Найрідші</string>
     <string name="exercise_card_built_in">Вбудована</string>
-    <string name="garmin_open_app">Завантажити Garmin-застосунок</string>
+    <string name="garmin_open_app">Відкрити Gym Workout Tracker у Garmin</string>
 </resources>
