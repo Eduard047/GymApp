@@ -6,11 +6,14 @@ enum BoundedURLSessionError: Error, Sendable {
 }
 
 enum BoundedURLSessionLoader {
+    typealias TaskCompletionObserver = @Sendable (URLSessionTask.State, Bool) -> Void
+
     static func data(
         for request: URLRequest,
         using sourceSession: URLSession,
         successLimit: Int,
-        errorLimit: Int
+        errorLimit: Int,
+        taskCompletionObserver: TaskCompletionObserver? = nil
     ) async throws -> (Data, HTTPURLResponse) {
         precondition(successLimit > 0 && errorLimit > 0, "Response limits must be positive.")
         guard let origin = HTTPSOrigin(url: request.url) else {
@@ -20,7 +23,8 @@ enum BoundedURLSessionLoader {
         let collector = BoundedURLSessionCollector(
             successLimit: successLimit,
             errorLimit: errorLimit,
-            origin: origin
+            origin: origin,
+            taskCompletionObserver: taskCompletionObserver
         )
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
@@ -67,6 +71,7 @@ private final class BoundedURLSessionCollector: NSObject, URLSessionDataDelegate
     private let successLimit: Int
     private let errorLimit: Int
     private let origin: HTTPSOrigin
+    private let taskCompletionObserver: BoundedURLSessionLoader.TaskCompletionObserver?
     private let lock = NSLock()
 
     private var continuation: CheckedContinuation<Output, Error>?
@@ -78,10 +83,16 @@ private final class BoundedURLSessionCollector: NSObject, URLSessionDataDelegate
     private var cancellationRequested = false
     private var completed = false
 
-    init(successLimit: Int, errorLimit: Int, origin: HTTPSOrigin) {
+    init(
+        successLimit: Int,
+        errorLimit: Int,
+        origin: HTTPSOrigin,
+        taskCompletionObserver: BoundedURLSessionLoader.TaskCompletionObserver?
+    ) {
         self.successLimit = successLimit
         self.errorLimit = errorLimit
         self.origin = origin
+        self.taskCompletionObserver = taskCompletionObserver
     }
 
     func start(
@@ -118,11 +129,19 @@ private final class BoundedURLSessionCollector: NSObject, URLSessionDataDelegate
     }
 
     func cancel() {
-        finish(
-            .failure(CancellationError()),
-            cancelSession: true,
-            recordCancellation: true
-        )
+        lock.lock()
+        guard !completed else {
+            lock.unlock()
+            return
+        }
+        cancellationRequested = true
+        let dataTask = task
+        lock.unlock()
+
+        // URLSessionTask.cancel() is asynchronous. Keep the continuation, child
+        // session, and delegate alive until didCompleteWithError acknowledges the
+        // cancellation instead of racing session invalidation against URL loading.
+        dataTask?.cancel()
     }
 
     func urlSession(
@@ -207,8 +226,13 @@ private final class BoundedURLSessionCollector: NSObject, URLSessionDataDelegate
         task: URLSessionTask,
         didCompleteWithError error: Error?
     ) {
+        let errorValue = error as NSError?
+        let wasCancelled = errorValue?.domain == NSURLErrorDomain
+            && errorValue?.code == NSURLErrorCancelled
+        taskCompletionObserver?(task.state, wasCancelled)
+
         if let error {
-            finish(.failure(error), cancelSession: false)
+            finish(.failure(error), cancelSession: false, taskCompleted: true)
             return
         }
 
@@ -220,20 +244,28 @@ private final class BoundedURLSessionCollector: NSObject, URLSessionDataDelegate
             result = .failure(BoundedURLSessionError.invalidResponse)
         }
         lock.unlock()
-        finish(result, cancelSession: false)
+        finish(result, cancelSession: false, taskCompleted: true)
     }
 
     private func finish(
         _ result: Result<Output, Error>,
         cancelSession: Bool,
-        recordCancellation: Bool = false
+        taskCompleted: Bool = false
     ) {
         lock.lock()
-        if recordCancellation { cancellationRequested = true }
         guard !completed, let continuation else {
             lock.unlock()
             return
         }
+        if cancellationRequested && !taskCompleted {
+            let dataTask = task
+            lock.unlock()
+            dataTask?.cancel()
+            return
+        }
+        let finalResult: Result<Output, Error> = cancellationRequested
+            ? .failure(CancellationError())
+            : result
         completed = true
         self.continuation = nil
         let childSession = session
@@ -242,12 +274,8 @@ private final class BoundedURLSessionCollector: NSObject, URLSessionDataDelegate
         task = nil
         lock.unlock()
 
-        if cancelSession {
-            dataTask?.cancel()
-            childSession?.invalidateAndCancel()
-        } else {
-            childSession?.finishTasksAndInvalidate()
-        }
-        continuation.resume(with: result)
+        if cancelSession { dataTask?.cancel() }
+        childSession?.finishTasksAndInvalidate()
+        continuation.resume(with: finalResult)
     }
 }

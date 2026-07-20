@@ -95,14 +95,11 @@ final class BoundedHTTPTests: XCTestCase {
 
     func testLoaderCancellationStopsTheChildDataTask() async throws {
         let started = expectation(description: "URLProtocol request started")
-        let stopped = expectation(description: "URLProtocol request stopped")
+        let taskCompletion = BoundedHTTPTaskCompletionRecorder()
         let session = makeURLSession()
         BoundedHTTPURLProtocolStub.stallHandler = { _ in
             started.fulfill()
             return true
-        }
-        BoundedHTTPURLProtocolStub.onStopLoading = {
-            stopped.fulfill()
         }
         defer {
             BoundedHTTPURLProtocolStub.reset()
@@ -114,7 +111,10 @@ final class BoundedHTTPTests: XCTestCase {
                 for: URLRequest(url: try endpoint("cancel")),
                 using: session,
                 successLimit: 64,
-                errorLimit: 16
+                errorLimit: 16,
+                taskCompletionObserver: { state, wasCancelled in
+                    taskCompletion.record(state: state, wasCancelled: wasCancelled)
+                }
             )
         }
         await fulfillment(of: [started], timeout: 2)
@@ -128,7 +128,12 @@ final class BoundedHTTPTests: XCTestCase {
         } catch {
             XCTFail("Cancellation must surface as CancellationError, got: \(error)")
         }
-        await fulfillment(of: [stopped], timeout: 2)
+        let completion = try XCTUnwrap(taskCompletion.snapshot)
+        XCTAssertEqual(completion.state, .completed)
+        XCTAssertTrue(
+            completion.wasCancelled,
+            "The child data task must complete with NSURLErrorCancelled."
+        )
     }
 
     func testLoaderAllowsOnlySameOriginHTTPSRedirect() async throws {
@@ -548,9 +553,6 @@ private final class BoundedHTTPURLProtocolStub: URLProtocol, @unchecked Sendable
         (URLRequest) throws -> (URLRequest, HTTPURLResponse)?
     )?
     nonisolated(unsafe) static var stallHandler: ((URLRequest) -> Bool)?
-    nonisolated(unsafe) static var onStopLoading: (() -> Void)?
-    private let stopLoadingLock = NSLock()
-    private var capturedStopLoadingHandler: (() -> Void)?
 
     override class func canInit(with request: URLRequest) -> Bool {
         ["http", "https"].contains(request.url?.scheme?.lowercased() ?? "")
@@ -561,9 +563,6 @@ private final class BoundedHTTPURLProtocolStub: URLProtocol, @unchecked Sendable
     }
 
     override func startLoading() {
-        stopLoadingLock.lock()
-        capturedStopLoadingHandler = Self.onStopLoading
-        stopLoadingLock.unlock()
         do {
             let materializedRequest = try Self.materializedRequest(request)
             if Self.stallHandler?(materializedRequest) == true { return }
@@ -585,19 +584,12 @@ private final class BoundedHTTPURLProtocolStub: URLProtocol, @unchecked Sendable
         }
     }
 
-    override func stopLoading() {
-        stopLoadingLock.lock()
-        let handler = capturedStopLoadingHandler
-        capturedStopLoadingHandler = nil
-        stopLoadingLock.unlock()
-        handler?()
-    }
+    override func stopLoading() {}
 
     static func reset() {
         handler = nil
         redirectHandler = nil
         stallHandler = nil
-        onStopLoading = nil
     }
 
     private static func materializedRequest(_ request: URLRequest) throws -> URLRequest {
@@ -659,6 +651,32 @@ private final class BoundedHTTPRequestRecorder: @unchecked Sendable {
     func append(_ request: URLRequest) {
         lock.lock()
         storedRequests.append(request)
+        lock.unlock()
+    }
+}
+
+private struct BoundedHTTPTaskCompletionSnapshot {
+    let state: URLSessionTask.State
+    let wasCancelled: Bool
+}
+
+private final class BoundedHTTPTaskCompletionRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storedSnapshot: BoundedHTTPTaskCompletionSnapshot?
+
+    var snapshot: BoundedHTTPTaskCompletionSnapshot? {
+        lock.lock()
+        let value = storedSnapshot
+        lock.unlock()
+        return value
+    }
+
+    func record(state: URLSessionTask.State, wasCancelled: Bool) {
+        lock.lock()
+        storedSnapshot = BoundedHTTPTaskCompletionSnapshot(
+            state: state,
+            wasCancelled: wasCancelled
+        )
         lock.unlock()
     }
 }
