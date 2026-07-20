@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.example.gymapp.R
 import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.entity.ExerciseHistoryEntry
 import com.example.gymapp.data.entity.WorkoutSessionDetails
@@ -16,6 +17,7 @@ import com.example.gymapp.data.repository.WorkoutExerciseDraft
 import com.example.gymapp.data.repository.WorkoutSetDraft
 import com.example.gymapp.sync.PhoneSyncClient
 import com.example.gymapp.util.CalorieMode
+import com.example.gymapp.util.LocalizedText
 import com.example.gymapp.util.TrainingGoal
 import com.example.gymapp.util.TrainingProfile
 import com.example.gymapp.util.TrainingProfileManager
@@ -66,11 +68,45 @@ data class AddWorkoutUiState(
     val isTemplateLoading: Boolean = false,
     val isSyncingPlanToWatch: Boolean = false,
     val didSyncPlanToWatch: Boolean? = null,
-    val watchPlanSyncError: String? = null,
+    val watchPlanSyncError: LocalizedText? = null,
     val isSaving: Boolean = false,
     val hasValidationError: Boolean = false,
     val createdSessionId: Long? = null
 )
+
+internal fun planSyncErrorText(error: Throwable): LocalizedText {
+    val message = error.message.orEmpty()
+    val resource = when {
+        message == "Workout plan is empty" -> R.string.message_workout_plan_empty
+        message == "Workout plan is outside Garmin limits" ->
+            R.string.message_plan_outside_garmin_limits
+        message.contains("Garmin SDK", ignoreCase = true) ->
+            R.string.message_garmin_sdk_not_ready
+        message == "Sign in before Garmin sync" -> R.string.message_garmin_sign_in_required
+        message.contains("account changed", ignoreCase = true) ->
+            R.string.message_garmin_account_changed
+        message.contains("account transition", ignoreCase = true) ||
+            message.contains("previous Garmin account", ignoreCase = true) ||
+            message.contains("trusted-device state conflicts", ignoreCase = true) ||
+            message.contains("clear old account data", ignoreCase = true) ->
+            R.string.message_garmin_reconnect_account_cleanup
+        message.startsWith("Cannot persist", ignoreCase = true) ||
+            message.contains("local state was not saved", ignoreCase = true) ->
+            R.string.message_garmin_storage_failed
+        message.contains("exactly one Garmin watch", ignoreCase = true) ->
+            R.string.message_garmin_pair_one_watch
+        message.contains("trusted Garmin", ignoreCase = true) ||
+            message.contains("watch is not paired", ignoreCase = true) ->
+            R.string.message_no_trusted_garmin_watch
+        message.contains("sync_ack", ignoreCase = true) ->
+            R.string.message_garmin_ack_missing
+        message.startsWith("Send status", ignoreCase = true) ||
+            message.contains("send to Garmin", ignoreCase = true) ||
+            message == "Send timeout" -> R.string.message_garmin_send_failed
+        else -> R.string.message_plan_sync_failed
+    }
+    return LocalizedText(resource)
+}
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class AddWorkoutViewModel(
@@ -81,7 +117,7 @@ class AddWorkoutViewModel(
     private data class TransientState(
         val isSyncingPlanToWatch: Boolean,
         val didSyncPlanToWatch: Boolean?,
-        val watchPlanSyncError: String?,
+        val watchPlanSyncError: LocalizedText?,
         val isSaving: Boolean,
         val hasValidationError: Boolean,
         val createdSessionId: Long?
@@ -95,7 +131,7 @@ class AddWorkoutViewModel(
         val isTemplateLoading: Boolean,
         val isSyncingPlanToWatch: Boolean,
         val didSyncPlanToWatch: Boolean?,
-        val watchPlanSyncError: String?,
+        val watchPlanSyncError: LocalizedText?,
         val isSaving: Boolean,
         val hasValidationError: Boolean,
         val createdSessionId: Long?
@@ -121,7 +157,7 @@ class AddWorkoutViewModel(
     private val isTemplateLoading = MutableStateFlow(false)
     private val isSyncingPlanToWatch = MutableStateFlow(false)
     private val didSyncPlanToWatch = MutableStateFlow<Boolean?>(null)
-    private val watchPlanSyncError = MutableStateFlow<String?>(null)
+    private val watchPlanSyncError = MutableStateFlow<LocalizedText?>(null)
     private val isSaving = MutableStateFlow(false)
     private val hasValidationError = MutableStateFlow(false)
     private val createdSessionId = MutableStateFlow<Long?>(null)
@@ -307,7 +343,7 @@ class AddWorkoutViewModel(
         trainingProfileManager.updateCalorieMode(mode)
     }
 
-    fun generateSmartWorkout() {
+    fun generateSmartWorkout(defaultNote: String) {
         val currentState = uiState.value
         val plan = WorkoutRecommendationEngine.buildWorkoutPlan(
             exercises = currentState.exercises,
@@ -334,7 +370,7 @@ class AddWorkoutViewModel(
             )
         }
         if (note.value.isBlank()) {
-            note.value = "Smart Coach plan"
+            note.value = defaultNote
         }
     }
 
@@ -523,7 +559,7 @@ class AddWorkoutViewModel(
             if (namedSets.isEmpty()) {
                 hasValidationError.value = true
                 didSyncPlanToWatch.value = false
-                watchPlanSyncError.value = "Workout plan is empty"
+                watchPlanSyncError.value = LocalizedText(R.string.message_workout_plan_empty)
                 return@launch
             }
 
@@ -544,7 +580,7 @@ class AddWorkoutViewModel(
                 watchPlanSyncError.value = null
             }.onFailure { error ->
                 didSyncPlanToWatch.value = false
-                watchPlanSyncError.value = error.message
+                watchPlanSyncError.value = planSyncErrorText(error)
             }
 
             isSyncingPlanToWatch.value = false

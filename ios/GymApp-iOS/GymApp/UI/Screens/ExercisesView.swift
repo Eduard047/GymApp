@@ -1134,15 +1134,18 @@ private struct ExerciseMuscleMappingSheet: View {
                     }
 
                     ForEach(MuscleMappingEngine.muscleDefinitions) { muscle in
+                        let localizedMuscleTitle = gymText(
+                            muscle.titleEn,
+                            muscle.titleUk,
+                            languageCode: gymCurrentLanguageCode()
+                        )
                         GymPanel(
                             highlighted: selection.contains(muscle.id),
                             contentPadding: EdgeInsets(top: 10, leading: 14, bottom: 10, trailing: 14)
                         ) {
                             Toggle(isOn: binding(for: muscle.id)) {
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(
-                                        gymText(muscle.titleEn, muscle.titleUk, languageCode: gymCurrentLanguageCode())
-                                    )
+                                    Text(localizedMuscleTitle)
                                         .font(.headline)
                                     Text(
                                         gymCurrentLanguageCode() == "uk" ? muscle.titleEn : muscle.titleUk
@@ -1154,8 +1157,8 @@ private struct ExerciseMuscleMappingSheet: View {
                             .tint(GymTheme.primary)
                             .accessibilityHint(
                                 gymText(
-                                    "Adds or removes \(muscle.titleEn) from the manual mapping",
-                                    "Додає або видаляє «\(muscle.titleUk)» у ручному зіставленні",
+                                    "Adds or removes \(localizedMuscleTitle) from the manual mapping",
+                                    "Додає або видаляє «\(localizedMuscleTitle)» у ручному зіставленні",
                                     languageCode: gymCurrentLanguageCode()
                                 )
                             )

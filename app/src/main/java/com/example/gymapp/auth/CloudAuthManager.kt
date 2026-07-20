@@ -4,7 +4,9 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.net.Uri
 import com.example.gymapp.BuildConfig
+import com.example.gymapp.R
 import com.example.gymapp.data.repository.WorkoutDataLimits
+import com.example.gymapp.util.LocalizedText
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -80,7 +82,7 @@ fun AccountSession.databaseName(): String {
 data class AuthUiState(
     val session: AccountSession? = null,
     val isLoading: Boolean = false,
-    val message: String? = null,
+    val message: LocalizedText? = null,
     val messageIsError: Boolean = true,
     val needsPasswordUpdate: Boolean = false
 )
@@ -283,7 +285,7 @@ private fun newCloudSessionGeneration(): String = UUID.randomUUID().toString()
 class CloudAuthManager(context: Context) {
     private data class StoredSessionRead(
         val session: AccountSession? = null,
-        val recoveryMessage: String? = null
+        val recoveryMessage: LocalizedText? = null
     )
 
     private data class RemoteRevisionKey(
@@ -437,7 +439,7 @@ class CloudAuthManager(context: Context) {
         }
     }
 
-    fun setMessage(message: String?, isError: Boolean = true) {
+    fun setMessage(message: LocalizedText?, isError: Boolean = true) {
         synchronized(authStateLock) {
             _authState.value = _authState.value.copy(
                 isLoading = false,
@@ -455,7 +457,7 @@ class CloudAuthManager(context: Context) {
             if (!clearAuthPreferencesSynchronously(prefs)) {
                 _authState.value = _authState.value.copy(
                     isLoading = false,
-                    message = "Secure logout could not clear credentials from this device. Try again.",
+                    message = LocalizedText(R.string.auth_message_logout_failed),
                     messageIsError = true
                 )
                 return@synchronized null
@@ -584,7 +586,7 @@ class CloudAuthManager(context: Context) {
             _authState.value = _authState.value.copy(
                 session = activeSession,
                 isLoading = false,
-                message = "Password updated.",
+                message = LocalizedText(R.string.auth_message_password_updated),
                 messageIsError = false,
                 needsPasswordUpdate = false
             )
@@ -742,7 +744,7 @@ class CloudAuthManager(context: Context) {
                 val row = rows.optJSONObject(index) ?: JSONObject()
                 LeaderboardRow(
                     profileId = row.optString("profile_id").takeIf { it.isNotBlank() },
-                    displayName = row.optString("display_name").ifBlank { "GymApp user" },
+                    displayName = row.optString("display_name"),
                     xp = row.optInt("xp"),
                     level = row.optInt("level", 1),
                     workouts = row.optInt("workouts"),
@@ -1023,7 +1025,7 @@ class CloudAuthManager(context: Context) {
                 val validatedName = storedName?.let(::validatedLocalDisplayNameOrNull)
                 if (validatedName == null) {
                     StoredSessionRead(
-                        recoveryMessage = "The saved local profile is invalid. Its data was left untouched."
+                        recoveryMessage = LocalizedText(R.string.auth_error_saved_local_invalid)
                     )
                 } else {
                     val session = AccountSession.Local(validatedName)
@@ -1031,8 +1033,9 @@ class CloudAuthManager(context: Context) {
                         StoredSessionRead(session = session)
                     } else {
                         StoredSessionRead(
-                            recoveryMessage = "The local workout database could not be safely opened. " +
-                                "Its files were left untouched for recovery."
+                            recoveryMessage = LocalizedText(
+                                R.string.auth_error_local_database_unavailable
+                            )
                         )
                     }
                 }
@@ -1053,7 +1056,7 @@ class CloudAuthManager(context: Context) {
                 )
             }.getOrElse {
                 StoredSessionRead(
-                    recoveryMessage = "The saved cloud session is invalid. Sign in again."
+                    recoveryMessage = LocalizedText(R.string.auth_error_saved_cloud_invalid)
                 )
             }
             else -> StoredSessionRead()

@@ -12,6 +12,7 @@ import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.json.JSONArray
 import org.json.JSONObject
 
 @RunWith(AndroidJUnit4::class)
@@ -35,6 +36,71 @@ class BackupCatalogKeyImportTest {
                 database.exerciseDao().getExercisesSnapshot().any { it.name == "Bench Press" }
             )
             assertEquals(1, repository.buildBackupJson().getInt("catalogSeedVersion"))
+
+            val cloud = repository.buildCloudBackupJson(
+                BackupOwner(
+                    accountId = "123e4567-e89b-12d3-a456-426614174000",
+                    userId = "123e4567-e89b-12d3-a456-426614174000",
+                    remote = true
+                )
+            )
+            val cloudKeys = buildSet {
+                val keys = cloud.keys()
+                while (keys.hasNext()) add(keys.next())
+            }
+            assertEquals(
+                setOf(
+                    "schemaVersion",
+                    "exportedAt",
+                    "app",
+                    "diagnostics",
+                    "owner",
+                    "exercises",
+                    "sessions",
+                    "summary"
+                ),
+                cloudKeys
+            )
+            assertFalse(cloud.has("catalogSeedVersion"))
+        } finally {
+            database.close()
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
+    fun fullLegacyCatalogRemainsUsableAndRetriesSeedingLater() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "catalog-seed-capacity-${UUID.randomUUID()}"
+        val database = GymDatabase.getInstance(context, databaseName)
+
+        try {
+            val repository = GymRepository(database)
+            val backup = repository.buildBackupJson().apply {
+                put(
+                    "exercises",
+                    JSONArray().apply {
+                        repeat(WorkoutDataLimits.MAX_EXERCISES) { index ->
+                            put(JSONObject().put("name", "Capacity exercise $index"))
+                        }
+                    }
+                )
+                getJSONObject("summary").put(
+                    "exerciseCount",
+                    WorkoutDataLimits.MAX_EXERCISES
+                )
+            }
+            assertEquals(
+                0,
+                repository.importBackupJsonObject(backup)
+            )
+
+            assertEquals(0, repository.seedBuiltInExercises())
+            assertEquals(
+                WorkoutDataLimits.MAX_EXERCISES,
+                database.exerciseDao().getExerciseCount()
+            )
+            assertEquals(0, repository.buildBackupJson().getInt("catalogSeedVersion"))
         } finally {
             database.close()
             context.deleteDatabase(databaseName)

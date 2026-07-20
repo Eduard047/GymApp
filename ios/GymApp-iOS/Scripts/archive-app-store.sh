@@ -5,8 +5,8 @@ set -eu
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 BUNDLE_ID="${BUNDLE_ID:-com.setforge.gymapp.ios}"
-MARKETING_VERSION="${MARKETING_VERSION:-1.1.0}"
-BUILD_NUMBER="${BUILD_NUMBER:-4}"
+MARKETING_VERSION="${MARKETING_VERSION:-2.1.0}"
+BUILD_NUMBER="${BUILD_NUMBER:-5}"
 ARCHIVE_PATH="${ARCHIVE_PATH:-$ROOT/build/GymApp.xcarchive}"
 EXPORT_PATH="${EXPORT_PATH:-$ROOT/build/AppStoreExport}"
 EXPORT_OPTIONS="$ROOT/build/ExportOptions.plist"
@@ -34,10 +34,12 @@ xcodebuild \
   $PROVISIONING_FLAG \
   archive
 
+# shellcheck disable=SC2086
 xcodebuild \
   -exportArchive \
   -archivePath "$ARCHIVE_PATH" \
   -exportPath "$EXPORT_PATH" \
-  -exportOptionsPlist "$EXPORT_OPTIONS"
+  -exportOptionsPlist "$EXPORT_OPTIONS" \
+  $PROVISIONING_FLAG
 
 echo "Exported App Store package to $EXPORT_PATH"

@@ -368,8 +368,8 @@ struct AddWorkoutView: View {
                 .disabled(garminCloud.selectedDevice == nil)
                 Text(
                     garminCloud.selectedDevice == nil
-                        ? "Select or pair a Garmin watch in Account settings before queueing a plan."
-                        : "After saving, the plan is added to the private cloud queue for the selected Garmin watch."
+                        ? gymLocalized("Select or pair a Garmin watch in Account settings before queueing a plan.")
+                        : gymLocalized("After saving, the plan is added to the private cloud queue for the selected Garmin watch.")
                 )
                     .font(.caption)
                     .foregroundStyle(GymTheme.textSecondary)

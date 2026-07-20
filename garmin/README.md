@@ -1,6 +1,6 @@
 ﻿# GymApp for Garmin watches
 
-Connect IQ watch app targeting compatible Garmin watches and wearable devices listed in `manifest.xml`. The UI is drawn from a 260x260 baseline and scales positions/sizes from the active `dc.getWidth()` / `dc.getHeight()` values, so higher-resolution round screens such as Venu 3 do not render the layout as a tiny fixed-size block.
+Connect IQ watch app targeting the 108 API-compatible Garmin watches and wearable devices listed in `manifest.xml`. Products whose installed device package cannot satisfy the app's Connect IQ 3.2 minimum are intentionally excluded. The UI is drawn from a 260x260 baseline and scales positions/sizes from the active `dc.getWidth()` / `dc.getHeight()` values, so higher-resolution round screens such as Venu 3 do not render the layout as a tiny fixed-size block.
 
 ## Current controls
 
@@ -8,14 +8,15 @@ Connect IQ watch app targeting compatible Garmin watches and wearable devices li
 - The app automatically estimates effort state from heart-rate trend: warmup, set active, rest, or ready.
 - When the watch detects a likely completed set, the dashboard shows `LOG SET?`; tap/select logs the set with the currently selected exercise, weight, and reps.
 - Tap an empty dashboard area, or press right/select, to open the set entry screen.
-- On touch watches, the exercise, weight, reps, and save rows are large direct tap targets. Tap the left or right half of weight/reps to decrease or increase it.
+- On touch watches, the exercise, weight, reps, save, and settings rows use full-width tap regions. Tap the left or right half of an adjustable row to decrease or increase it.
 - On one- and two-button watches, next/previous moves between rows and select/start activates the highlighted row, so every action remains reachable without touch.
+- On multi-button watches, up/down moves focus, left/right decreases/increases the selected value, and select/start performs the primary action.
 - Set entry lets you pick exercise, adjust weight by the configured step, adjust reps, and save a set.
-- Swipe between dashboard, set entry, debug, and settings screens when the device supports touch gestures.
+- On touch watches, swipe up/down to move focus, left to move to the next content screen, and right to go back.
 - Debug screen shows HR, zone, effort state, HR trend, auto-log status, sensitivity, and the latest auto-detect reason.
 - Settings screen lets you change auto-log on/off, auto-detect sensitivity, weight step, default rest time, and default reps.
-- `START`: pause/resume the workout.
-- `BACK` from dashboard: open pause menu.
+- `SELECT` / `START`: perform the highlighted action.
+- `BACK` or `MENU` from dashboard: pause the workout and open the pause menu.
 - Pause menu has `RESUME`, `SAVE`, and `DISCARD`.
 - `SAVE` opens a summary screen first; confirming there saves the Garmin FIT activity and sends the GymApp summary to the Android phone app.
 - `DISCARD` exits without saving the Garmin activity or sending the GymApp workout.
@@ -51,10 +52,20 @@ Device development build:
 .\scripts\build-garmin.ps1 -DeveloperKey "C:\path\to\developer_key.der" -Device fenix8solar47mm
 ```
 
+macOS development build:
+
+```bash
+./scripts/build-garmin.sh --developer-key /secure/developer_key.der --device fenix8solar47mm
+```
+
 Store export:
 
 ```powershell
 .\scripts\build-garmin.ps1 -Release
+```
+
+```bash
+./scripts/build-garmin.sh --release
 ```
 
 The store export is written as `garmin/build/gymapp-garmin-connect-iq.iq`. It contains a device-specific binary for every compatible product declared in `manifest.xml`; it is not tied to the default development device name. A `.prg` development build remains device-specific and keeps that device in its filename.

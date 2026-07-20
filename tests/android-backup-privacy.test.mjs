@@ -11,6 +11,9 @@ const [
   viewModel,
   repository,
   clipboardHelper,
+  stringsEn,
+  stringsUk,
+  stringsRu,
 ] =
   await Promise.all([
     readFile("app/src/main/AndroidManifest.xml", "utf8"),
@@ -33,7 +36,14 @@ const [
       "app/src/main/java/com/example/gymapp/ui/util/SensitiveClipboard.kt",
       "utf8"
     ),
+    readFile("app/src/main/res/values/strings.xml", "utf8"),
+    readFile("app/src/main/res/values-uk/strings.xml", "utf8"),
+    readFile("app/src/main/res/values-ru/strings.xml", "utf8"),
   ]);
+
+function stringResource(xml, name) {
+  return xml.match(new RegExp(`<string\\s+name="${name}">([\\s\\S]*?)<\\/string>`))?.[1];
+}
 
 const requiredExclusions = [
   /<exclude\s+domain="database"\s+path="\."\s*\/>/,
@@ -121,7 +131,12 @@ test("private backup preview cannot bypass the guarded clipboard action", () => 
     /OutlinedTextField\([\s\S]{0,240}?value\s*=\s*json,/
   );
   assert.doesNotMatch(sheet, /SelectionContainer\s*\(/);
-  assert.match(screen, /Preview truncated\. Use the guarded actions below\./);
+  assert.match(screen, /R\.string\.backup_preview_truncated/);
+  const previews = [stringsEn, stringsUk, stringsRu].map((xml) =>
+    stringResource(xml, "backup_preview_truncated")
+  );
+  assert.ok(previews.every(Boolean), "every supported locale must label a truncated preview");
+  assert.equal(new Set(previews).size, 3, "preview warning must be translated in every locale");
 });
 
 test("large private backup sharing uses bounded FileProvider streams, never Binder text", () => {
@@ -188,9 +203,18 @@ test("private PDF rendering is off-main, clearly labeled, and resource bounded",
   assert.match(screen, /coerceAtMost\(\s*MAX_PDF_SETS_PER_EXERCISE\s*\)/);
   assert.match(screen, /boundedPdfText\(/);
   assert.match(screen, /word\.chunked\(maxChars\)/);
-  assert.match(screen, /GymApp aggregate diagnostics report/);
-  assert.match(screen, /GymApp PRIVATE workout backup report/);
-  assert.match(screen, /PRIVATE: includes exercise names, workout dates\/notes/);
+  assert.match(screen, /R\.string\.backup_report_diagnostics_title/);
+  assert.match(screen, /R\.string\.backup_report_private_title/);
+  assert.match(screen, /R\.string\.backup_report_private_notice/);
+  for (const xml of [stringsEn, stringsUk, stringsRu]) {
+    assert.ok(stringResource(xml, "backup_report_diagnostics_title"));
+    assert.ok(stringResource(xml, "backup_report_private_title"));
+    assert.ok(stringResource(xml, "backup_report_private_notice"));
+  }
+  const privateTitles = [stringsEn, stringsUk, stringsRu].map((xml) =>
+    stringResource(xml, "backup_report_private_title")
+  );
+  assert.equal(new Set(privateTitles).size, 3, "private report title must be translated");
   assert.match(screen, /finally\s*\{\s*document\.close\(\)/);
 
   const pdfStart = screen.indexOf("private fun createBackupPdfFile");
@@ -198,7 +222,7 @@ test("private PDF rendering is off-main, clearly labeled, and resource bounded",
   const pdfMethod = screen.slice(pdfStart, pdfEnd);
   assert.ok(pdfStart >= 0 && pdfEnd > pdfStart, "PDF generator is missing");
   assert.ok(
-    pdfMethod.indexOf("val reportLines = backupReportLines(json)") <
+    pdfMethod.indexOf("val reportLines = backupReportLines(context, json)") <
       pdfMethod.indexOf("val document = PdfDocument()"),
     "bounded report parsing must finish before the PdfDocument lifecycle starts"
   );

@@ -257,7 +257,7 @@ class WorkoutView extends Ui.View {
         drawCompactValue(dc, w, h, 178, 162, "GAR", garminKcal);
 
         var rest = GymStore.restSeconds();
-        var status = GymSession.autoLogPrompt ? GymStore.tr("LOG SET?", "ПІДХІД?", "ПОДХОД?") : (rest > 0 ? (GymStore.tr("REST ", "ВІДП ", "ОТДЫХ ") + rest.toString() + "s") : effortLabel(GymSession.effortState));
+        var status = GymSession.autoLogPrompt ? GymStore.tr("LOG SET?", "ПІДХІД?", "ПОДХОД?") : (rest > 0 ? (GymStore.tr("REST ", "ВІДП ", "ОТДЫХ ") + rest.toString() + GymStore.tr("s", "с", "с")) : effortLabel(GymSession.effortState));
         dc.setColor(GymSession.autoLogPrompt ? Gfx.COLOR_GREEN : (rest > 0 ? Gfx.COLOR_YELLOW : stateColor(GymSession.effortState)), Gfx.COLOR_TRANSPARENT);
         dc.drawText(w / 2, sy(h, 202), Gfx.FONT_XTINY, status, Gfx.TEXT_JUSTIFY_CENTER);
 
@@ -283,7 +283,7 @@ class WorkoutView extends Ui.View {
         dc.drawText(w / 2, sy(h, 66), Gfx.FONT_SMALL, GymStore.tr("SET", "ПІДХІД", "ПОДХОД"), Gfx.TEXT_JUSTIFY_CENTER);
         dc.drawText(w / 2, sy(h, 98), Gfx.FONT_NUMBER_MEDIUM, savedSetNumber.toString(), Gfx.TEXT_JUSTIFY_CENTER);
         dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, sy(h, 176), Gfx.FONT_XTINY, fitText(GymStore.currentExercise(), 12), Gfx.TEXT_JUSTIFY_CENTER);
+        dc.drawText(w / 2, sy(h, 176), Gfx.FONT_XTINY, fitText(GymStore.currentExerciseLabel(), 18), Gfx.TEXT_JUSTIFY_CENTER);
     }
 
     function drawPausedOverlay(dc, w, h) {
@@ -375,6 +375,10 @@ class WorkoutView extends Ui.View {
             return GymStore.isRu() ? "ОТДЫХ" : "ВІДП";
         } else if (state.equals("READY")) {
             return GymStore.isRu() ? "ГОТОВО" : "ГОТОВ";
+        } else if (state.equals("WARMUP")) {
+            return GymStore.isRu() ? "РАЗМИН" : "РОЗМИН";
+        } else if (state.equals("PAUSED")) {
+            return "ПАУЗА";
         }
         return state;
     }
@@ -384,13 +388,13 @@ class WorkoutView extends Ui.View {
         dc.drawText(w / 2, sy(h, 28), Gfx.FONT_XTINY, GymStore.tr("SET ENTRY", "ПІДХІД", "ПОДХОД"), Gfx.TEXT_JUSTIFY_CENTER);
 
         dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, sy(h, 56), Gfx.FONT_XTINY, fitText(GymStore.currentExercise(), 10), Gfx.TEXT_JUSTIFY_CENTER);
-        dc.drawText(w / 2, sy(h, 78), Gfx.FONT_XTINY, GymStore.weight.format("%.1f") + "kg x " + GymStore.reps.toString(), Gfx.TEXT_JUSTIFY_CENTER);
+        dc.drawText(w / 2, sy(h, 56), Gfx.FONT_XTINY, fitText(GymStore.currentExerciseLabel(), 18), Gfx.TEXT_JUSTIFY_CENTER);
+        dc.drawText(w / 2, sy(h, 78), Gfx.FONT_XTINY, setSummaryText(), Gfx.TEXT_JUSTIFY_CENTER);
 
-        drawRow(dc, w, h, 0, 92, GymStore.tr("<  EX  >", "<  ВПР  >", "<  УПР  >"), GymStore.tr("choose", "вибір", "выбор"));
-        drawRow(dc, w, h, 1, 128, "-  KG  +", GymStore.weight.format("%.1f"));
-        drawRow(dc, w, h, 2, 164, GymStore.tr("-  REP  +", "-  ПОВТ  +", "-  ПОВТ  +"), GymStore.reps.toString());
-        drawRow(dc, w, h, 3, 200, GymStore.tr("SAVE SET", "ЗБЕР ПІДХ", "СОХР ПОДХ"), GymStore.sets.size().toString());
+        drawAdjustRow(dc, w, h, 0, 90, GymStore.tr("EXERCISE", "ВПРАВА", "УПРАЖН"), GymStore.tr("choose", "вибір", "выбор"));
+        drawAdjustRow(dc, w, h, 1, 130, GymStore.tr("KG", "КГ", "КГ"), localizedDecimal(GymStore.weight));
+        drawAdjustRow(dc, w, h, 2, 170, GymStore.tr("REPS", "ПОВТ", "ПОВТ"), GymStore.reps.toString());
+        drawRow(dc, w, h, 3, 210, GymStore.tr("SAVE SET", "ЗБЕР ПІДХ", "СОХР ПОДХ"), GymStore.sets.size().toString());
     }
 
     function drawPauseMenu(dc, w, h) {
@@ -436,9 +440,9 @@ class WorkoutView extends Ui.View {
         drawDebugLine(dc, w, h, 86, "ST", fitText(effortLabel(GymSession.effortState), 7));
         drawDebugLine(dc, w, h, 106, "MET", GymSession.lastMet.format("%.1f"));
         drawDebugLine(dc, w, h, 126, "K/M", GymSession.lastKcalPerMinute.format("%.1f"));
-        drawDebugLine(dc, w, h, 146, "AUTO", GymStore.onOff(GymStore.autoPromptEnabled));
-        drawDebugLine(dc, w, h, 166, "SENS", fitText(GymStore.sensitivityLabel(), 7));
-        drawDebugLine(dc, w, h, 186, "SYNC", fitText(GymStore.status, 7));
+        drawDebugLine(dc, w, h, 146, GymStore.tr("AUTO", "АВТО", "АВТО"), GymStore.onOff(GymStore.autoPromptEnabled));
+        drawDebugLine(dc, w, h, 166, GymStore.tr("SENS", "ЧУТЛ", "ЧУВСТ"), fitText(GymStore.sensitivityLabel(), 7));
+        drawDebugLine(dc, w, h, 186, GymStore.tr("SYNC", "СИНХ", "СИНХ"), statusLabel(GymStore.status));
     }
 
     function drawDebugLine(dc, w, h, baseY, label, value) {
@@ -452,12 +456,63 @@ class WorkoutView extends Ui.View {
         dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
         dc.drawText(w / 2, sy(h, 28), Gfx.FONT_XTINY, GymStore.tr("SETTINGS", "НАЛАШТ", "НАСТРОЙКИ"), Gfx.TEXT_JUSTIFY_CENTER);
 
-        drawSettingsRow(dc, w, h, 0, 44, GymStore.tr("AUTO", "АВТО", "АВТО"), GymStore.onOff(GymStore.autoPromptEnabled));
-        drawSettingsRow(dc, w, h, 1, 76, GymStore.tr("DETECT", "ДЕТЕКТ", "ДЕТЕКТ"), fitText(GymStore.sensitivityLabel(), 6));
-        drawSettingsRow(dc, w, h, 2, 108, GymStore.tr("KG STEP", "КРОК КГ", "ШАГ КГ"), GymStore.weightStep.format("%.1f"));
-        drawSettingsRow(dc, w, h, 3, 140, GymStore.tr("REST", "ВІДП", "ОТДЫХ"), GymStore.restSecondsDefault.toString() + "s");
-        drawSettingsRow(dc, w, h, 4, 172, GymStore.tr("REPS", "ПОВТ", "ПОВТ"), GymStore.reps.toString());
-        drawSettingsRow(dc, w, h, 5, 204, "CLOUD", "SYNC");
+        drawSettingsRow(dc, w, h, 0, 42, GymStore.tr("AUTO", "АВТО", "АВТО"), adjustText(GymStore.onOff(GymStore.autoPromptEnabled)));
+        drawSettingsRow(dc, w, h, 1, 76, GymStore.tr("DETECT", "ЧУТЛ", "ЧУВСТ"), adjustText(fitText(GymStore.sensitivityLabel(), 6)));
+        drawSettingsRow(dc, w, h, 2, 110, GymStore.tr("KG STEP", "КРОК КГ", "ШАГ КГ"), adjustText(localizedDecimal(GymStore.weightStep)));
+        drawSettingsRow(dc, w, h, 3, 144, GymStore.tr("REST", "ВІДП", "ОТДЫХ"), adjustText(GymStore.restSecondsDefault.toString() + GymStore.tr("s", "с", "с")));
+        drawSettingsRow(dc, w, h, 4, 178, GymStore.tr("REPS", "ПОВТ", "ПОВТ"), adjustText(GymStore.reps.toString()));
+        drawSettingsRow(dc, w, h, 5, 212, GymStore.tr("CLOUD", "ХМАРА", "ОБЛАКО"), GymStore.tr("SYNC", "СИНХ", "СИНХ"));
+    }
+
+    function adjustText(value) {
+        return "< " + value + " >";
+    }
+
+    function localizedDecimal(value) {
+        var text = value.format("%.1f");
+        if ((!GymStore.isUk() && !GymStore.isRu()) || text.length() < 3) {
+            return text;
+        }
+        var length = text.length();
+        return text.substring(0, length - 2) + "," + text.substring(length - 1, length);
+    }
+
+    function setSummaryText() {
+        return localizedDecimal(GymStore.weight) +
+            GymStore.tr("kg x ", " кг × ", " кг × ") + GymStore.reps.toString();
+    }
+
+    function statusLabel(value) {
+        var text = value == null ? "" : value.toString();
+        if (!GymStore.isUk() && !GymStore.isRu()) {
+            return fitText(text, 7);
+        }
+        if (text.equals("READY")) {
+            return GymStore.tr(text, "ГОТОВ", "ГОТОВО");
+        } else if (text.equals("RESUMED")) {
+            return GymStore.tr(text, "ВІДНОВ", "ВОЗОБН");
+        } else if (text.equals("REST DONE")) {
+            return GymStore.tr(text, "ВІДП ГОТ", "ОТД ГОТ");
+        } else if (text.equals("SET SAVED")) {
+            return GymStore.tr(text, "ЗБЕР", "СОХР");
+        } else if (text.equals("SENT")) {
+            return GymStore.tr(text, "НАДІСЛ", "ОТПРАВ");
+        } else if (text.equals("QUEUED") || text.equals("QUEUED SAFE")) {
+            return GymStore.tr(text, "ЧЕРГА", "ОЧЕРЕДЬ");
+        } else if (text.equals("WAITING ACK")) {
+            return GymStore.tr(text, "ЧЕКАЄ", "ЖДЕМ");
+        } else if (text.equals("OFFLINE")) {
+            return "ОФЛАЙН";
+        } else if (text.equals("NO PHONE")) {
+            return GymStore.tr(text, "НЕМА ТЛ", "НЕТ ТЕЛ");
+        } else if (text.equals("SYNC REQ") || text.equals("SYNC RX")) {
+            return GymStore.tr(text, "СИНХ...", "СИНХ...");
+        } else if (text.equals("CLOUD...")) {
+            return GymStore.tr(text, "ХМАРА", "ОБЛАКО");
+        } else if (text.equals("CLOUD FAIL") || text.equals("CLOUD RETRY")) {
+            return GymStore.tr(text, "ПОХМАР", "ОШ ОБЛ");
+        }
+        return fitText(text, 7);
     }
 
     function drawSettingsRow(dc, w, h, index, baseY, label, value) {
@@ -491,13 +546,28 @@ class WorkoutView extends Ui.View {
         var y = sy(h, baseY);
         if (selectedRow) {
             dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_BLACK);
-            dc.fillRoundedRectangle(sx(w, 38), y - sr(w, h, 2), sr(w, h, 184), sr(w, h, 34), sr(w, h, 9));
+            dc.fillRoundedRectangle(sx(w, 32), y - sr(w, h, 2), sr(w, h, 196), sr(w, h, 38), sr(w, h, 9));
             dc.setColor(Gfx.COLOR_BLACK, Gfx.COLOR_TRANSPARENT);
         } else {
             dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
         }
         dc.drawText(sx(w, 50), sy(h, baseY + 8), Gfx.FONT_XTINY, fitText(label, 11), Gfx.TEXT_JUSTIFY_LEFT);
         dc.drawText(sx(w, 210), sy(h, baseY + 8), Gfx.FONT_XTINY, value, Gfx.TEXT_JUSTIFY_RIGHT);
+    }
+
+    function drawAdjustRow(dc, w, h, index, baseY, label, value) {
+        var selectedRow = index == selected;
+        var y = sy(h, baseY);
+        if (selectedRow) {
+            dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_BLACK);
+            dc.fillRoundedRectangle(sx(w, 32), y - sr(w, h, 2), sr(w, h, 196), sr(w, h, 38), sr(w, h, 9));
+            dc.setColor(Gfx.COLOR_BLACK, Gfx.COLOR_TRANSPARENT);
+        } else {
+            dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
+        }
+        dc.drawText(sx(w, 58), sy(h, baseY + 9), Gfx.FONT_XTINY, "-", Gfx.TEXT_JUSTIFY_CENTER);
+        dc.drawText(w / 2, sy(h, baseY + 9), Gfx.FONT_XTINY, fitText(label + " " + value, 14), Gfx.TEXT_JUSTIFY_CENTER);
+        dc.drawText(sx(w, 202), sy(h, baseY + 9), Gfx.FONT_XTINY, "+", Gfx.TEXT_JUSTIFY_CENTER);
     }
 
     function drawHeader(dc, w, h, label) {
@@ -581,7 +651,7 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         } else if (view.page == 2) {
             handlePauseMenu();
         } else if (view.page == 5) {
-            handleSettings();
+            handleSettings(1);
         } else if (view.page == 4) {
             view.page = 0;
         } else if (view.page == 0) {
@@ -633,14 +703,34 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         return true;
     }
 
+    function onNextMode() {
+        navigateContent(1);
+        Ui.requestUpdate();
+        return true;
+    }
+
+    function onPreviousMode() {
+        navigateContent(-1);
+        Ui.requestUpdate();
+        return true;
+    }
+
+    function onMenu() {
+        openPauseMenu();
+        Ui.requestUpdate();
+        return true;
+    }
+
     function onBack() {
         if (view.page == 3) {
             view.page = 2;
+            view.pauseSelected = 1;
             Ui.requestUpdate();
             return true;
         }
         if (view.page == 2) {
             view.page = 0;
+            view.pauseSelected = 0;
             Ui.requestUpdate();
             return true;
         }
@@ -649,7 +739,7 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
             Ui.requestUpdate();
             return true;
         }
-        view.page = 2;
+        openPauseMenu();
         Ui.requestUpdate();
         return true;
     }
@@ -674,10 +764,10 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
                 }
             }
         } else if (view.page == 5) {
-            var settingsRow = rowAt(y, 44, 32, view.settingsCount);
+            var settingsRow = rowAt(y, 42, 34, view.settingsCount);
             if (settingsRow >= 0) {
                 view.settingsSelected = settingsRow;
-                handleSettings();
+                handleSettings(x < (view.screenWidth / 2) ? -1 : 1);
             }
         } else if (view.page == 4) {
             view.page = 0;
@@ -688,7 +778,7 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
                 view.page = 1;
             }
         } else {
-            var entryRow = rowAt(y, 92, 36, 4);
+            var entryRow = rowAt(y, 90, 40, 4);
             if (entryRow >= 0) {
                 view.selected = entryRow;
                 if (entryRow == 3) {
@@ -717,88 +807,46 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
 
     function onSwipe(evt) {
         var direction = evt.getDirection();
-        if (view.page == 3) {
-            return true;
-        } else if (view.page == 2 && direction == Ui.SWIPE_UP) {
-            view.pauseSelected = (view.pauseSelected + 1) % 3;
-        } else if (view.page == 2 && direction == Ui.SWIPE_DOWN) {
-            view.pauseSelected = (view.pauseSelected + 2) % 3;
+        if (direction == Ui.SWIPE_UP) {
+            return onNextPage();
+        } else if (direction == Ui.SWIPE_DOWN) {
+            return onPreviousPage();
         } else if (direction == Ui.SWIPE_LEFT) {
-            if (view.page == 0) {
-                view.page = 5;
-            } else if (view.page == 5) {
-                view.page = 4;
-            } else if (view.page == 4) {
-                view.page = 1;
-            } else if (view.page == 1) {
-                view.page = 0;
-            }
+            return onNextMode();
         } else if (direction == Ui.SWIPE_RIGHT) {
-            if (view.page == 0) {
-                view.page = 1;
-            } else if (view.page == 1) {
-                view.page = 4;
-            } else if (view.page == 4) {
-                view.page = 5;
-            } else if (view.page == 5) {
-                view.page = 0;
-            }
-        } else if (direction == Ui.SWIPE_UP && view.page == 1) {
-            view.selected = (view.selected + 1) % 4;
-        } else if (direction == Ui.SWIPE_DOWN && view.page == 1) {
-            view.selected = (view.selected + 3) % 4;
-        } else if (direction == Ui.SWIPE_UP && view.page == 5) {
-            view.settingsSelected = (view.settingsSelected + 1) % view.settingsCount;
-        } else if (direction == Ui.SWIPE_DOWN && view.page == 5) {
-            view.settingsSelected = (view.settingsSelected + view.settingsCount - 1) % view.settingsCount;
+            return onBack();
         }
-        Ui.requestUpdate();
-        return true;
+        return false;
     }
 
     function onKey(evt) {
         var key = evt.getKey();
-        if (key == Ui.KEY_UP && view.page == 2) {
-            view.pauseSelected = (view.pauseSelected + 2) % 3;
-        } else if (key == Ui.KEY_DOWN && view.page == 2) {
-            view.pauseSelected = (view.pauseSelected + 1) % 3;
-        } else if (key == Ui.KEY_UP && view.page == 1) {
-            view.selected = (view.selected + 3) % 4;
-        } else if (key == Ui.KEY_DOWN && view.page == 1) {
-            view.selected = (view.selected + 1) % 4;
-        } else if (key == Ui.KEY_UP && view.page == 5) {
-            view.settingsSelected = (view.settingsSelected + view.settingsCount - 1) % view.settingsCount;
-        } else if (key == Ui.KEY_DOWN && view.page == 5) {
-            view.settingsSelected = (view.settingsSelected + 1) % view.settingsCount;
-        } else if (key == Ui.KEY_ENTER) {
-            if (view.page == 3) {
-                view.saveAndExit();
-            } else if (view.page == 2) {
-                handlePauseMenu();
+        if (key == Ui.KEY_UP) {
+            return onPreviousPage();
+        } else if (key == Ui.KEY_DOWN) {
+            return onNextPage();
+        } else if (key == Ui.KEY_LEFT) {
+            if (view.page == 1) {
+                activate(-1);
             } else if (view.page == 5) {
-                handleSettings();
-            } else if (view.page == 4) {
-                view.page = 0;
+                handleSettings(-1);
             } else {
-                handleSelect();
+                navigateContent(-1);
             }
-        } else if (key == Ui.KEY_ESC) {
-            onBack();
-        } else if (key == Ui.KEY_START) {
-            if (view.page == 3) {
-                view.saveAndExit();
-            } else if (view.page == 2) {
-                handlePauseMenu();
+        } else if (key == Ui.KEY_RIGHT) {
+            if (view.page == 1) {
+                activate(1);
+            } else if (view.page == 5) {
+                handleSettings(1);
             } else {
-                GymSession.togglePause();
-                view.showPauseFlash();
-                view.page = 0;
+                navigateContent(1);
             }
+        } else if (key == Ui.KEY_ENTER || key == Ui.KEY_START) {
+            return onSelect();
+        } else if (key == Ui.KEY_ESC || key == Ui.KEY_LAP) {
+            return onBack();
         } else if (key == Ui.KEY_MENU) {
-            if (!GymSession.paused) {
-                GymSession.pause();
-            }
-            view.page = 2;
+            return onMenu();
         } else {
             return false;
         }
@@ -810,11 +858,44 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         if (view.page == 0) {
             view.page = 1;
         } else if (view.page == 5) {
-            handleSettings();
+            handleSettings(1);
         } else if (view.page == 4) {
             view.page = 0;
         } else {
             activate(1);
+        }
+    }
+
+    function openPauseMenu() {
+        if (!GymSession.paused) {
+            GymSession.pause();
+        }
+        view.pauseSelected = 0;
+        view.page = 2;
+    }
+
+    function navigateContent(delta) {
+        if (view.page == 2 || view.page == 3) {
+            return;
+        }
+        if (delta > 0) {
+            if (view.page == 0) {
+                view.page = 1;
+            } else if (view.page == 1) {
+                view.page = 4;
+            } else if (view.page == 4) {
+                view.page = 5;
+            } else {
+                view.page = 0;
+            }
+        } else if (view.page == 0) {
+            view.page = 5;
+        } else if (view.page == 5) {
+            view.page = 4;
+        } else if (view.page == 4) {
+            view.page = 1;
+        } else {
+            view.page = 0;
         }
     }
 
@@ -845,6 +926,8 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
             GymStore.reps += delta;
             if (GymStore.reps < 1) {
                 GymStore.reps = 1;
+            } else if (GymStore.reps > GymStore.maxReps) {
+                GymStore.reps = GymStore.maxReps;
             }
         } else if (view.selected == 3 && delta > 0) {
             recordSet();
@@ -858,19 +941,21 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         Attention.vibrate([new Attention.VibeProfile(60, 150)]);
     }
 
-    function handleSettings() {
+    function handleSettings(delta) {
         if (view.settingsSelected == 0) {
             GymStore.toggleAutoPrompt();
         } else if (view.settingsSelected == 1) {
-            GymStore.cycleSensitivity();
+            GymStore.adjustSensitivity(delta);
         } else if (view.settingsSelected == 2) {
-            GymStore.cycleWeightStep();
+            GymStore.adjustWeightStep(delta);
         } else if (view.settingsSelected == 3) {
-            GymStore.cycleRestDefault();
+            GymStore.adjustRestDefault(delta);
         } else if (view.settingsSelected == 4) {
-            GymStore.reps += 1;
+            GymStore.reps += delta < 0 ? -1 : 1;
             if (GymStore.reps > 20) {
                 GymStore.reps = 1;
+            } else if (GymStore.reps < 1) {
+                GymStore.reps = 20;
             }
             GymStore.save();
         } else if (view.settingsSelected == 5) {

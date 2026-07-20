@@ -1502,7 +1502,11 @@ private fun NumericInputOverlay(
                                 contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
                             ) {
                                 Text(
-                                    text = key,
+                                    text = when (key) {
+                                        "Del" -> stringResource(R.string.action_keypad_delete)
+                                        "C" -> stringResource(R.string.action_keypad_clear)
+                                        else -> key
+                                    },
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                     textAlign = TextAlign.Center
@@ -1633,38 +1637,45 @@ private fun adjustRepsText(current: String, delta: Int): String {
     return (parsed + delta).coerceAtLeast(1).toString()
 }
 
+@Composable
 private fun SyncedWorkoutPlanMeta.smartPlanSummary(): String {
-    val parts = buildList {
-        split?.let {
-            add(
-                when (it) {
-                    "UpperLower" -> "верх/низ"
-                    "FullBody" -> "все тіло"
-                    "PushPullLegs" -> "жим/тяга/ноги"
-                    else -> "своя програма"
-                }
-            )
-        }
-        workoutsPerWeek?.let { add("$it/тиж") }
-        goal?.let {
-            add(
-                when (it) {
-                    "AestheticFatLoss" -> "естетика"
-                    "MuscleGain" -> "маса"
-                    "Strength" -> "сила"
-                    else -> "баланс"
-                }
-            )
-        }
-        calorieMode?.let {
-            add(
-                when (it) {
-                    "Deficit" -> "дефіцит"
-                    "Surplus" -> "профіцит"
-                    else -> "підтримка"
-                }
-            )
+    val splitLabel = when (split) {
+        null -> null
+        "UpperLower" -> stringResource(R.string.smart_split_upper_lower)
+        "FullBody" -> stringResource(R.string.smart_split_full_body)
+        "PushPullLegs" -> stringResource(R.string.smart_split_push_pull_legs)
+        else -> stringResource(R.string.smart_split_custom)
+    }
+    val frequencyLabel = if (workoutsPerWeek == null) {
+        null
+    } else {
+        stringResource(R.string.smart_frequency_per_week, workoutsPerWeek)
+    }
+    val goalLabel = when (goal) {
+        null -> null
+        "AestheticFatLoss" -> stringResource(R.string.smart_goal_aesthetic)
+        "MuscleGain" -> stringResource(R.string.smart_goal_muscle_gain)
+        "Strength" -> stringResource(R.string.smart_goal_strength)
+        else -> stringResource(R.string.smart_goal_balance)
+    }
+    val calorieLabel = when (calorieMode) {
+        null -> null
+        "Deficit" -> stringResource(R.string.smart_calorie_deficit)
+        "Surplus" -> stringResource(R.string.smart_calorie_surplus)
+        else -> stringResource(R.string.smart_calorie_maintenance)
+    }
+    val summary = listOfNotNull(
+        splitLabel,
+        frequencyLabel,
+        goalLabel,
+        calorieLabel
+    ).joinToString(" · ")
+
+    return summary.ifBlank {
+        when (planSource) {
+            "manual" -> stringResource(R.string.smart_plan_manual)
+            "smart" -> stringResource(R.string.title_smart_plan)
+            else -> planSource
         }
     }
-    return parts.joinToString(" · ").ifBlank { planSource }
 }

@@ -11,7 +11,7 @@ Native SwiftUI port of the Android GymApp. The project targets iOS 17 and is bui
 - Email/password Supabase account, secure Keychain session storage, cloud state and leaderboard.
 - Offline account so core workout tracking never requires registration.
 - Garmin cloud plan queue using the existing Supabase/Garmin Connect IQ path.
-- English and Ukrainian UI, light/dark appearance, Dynamic Type and VoiceOver labels.
+- English, Ukrainian and Russian UI, light/dark appearance, Dynamic Type and VoiceOver labels.
 - In-app privacy/support links, password recovery and account-deletion UI.
 - Privacy manifest, App Store metadata drafts, review notes and submission checklist.
 
@@ -38,12 +38,13 @@ xcodebuild \
   test
 ```
 
-### Latest verification (2026-07-11)
+### Latest verification
 
-- iOS unit tests: **15/15 passed** on the iPhone 17 / iOS 26.5 simulator,
-  including the HTTPS auth-bridge and unsolicited-callback rejection cases.
-- Release `iphoneos` build: **passed** as an unsigned arm64 app with deployment
-  target iOS 17.0 and bundle ID `com.setforge.gymapp.ios`.
+- iOS unit tests: **84/84 passed** on the iPhone 17 / iOS 26.5 simulator on
+  2026-07-20, including localization, bounded-network, cloud compatibility,
+  HTTPS auth-bridge, and unsolicited-callback rejection cases.
+- Release `iphoneos` build: **passed** on 2026-07-11 as an unsigned arm64 app
+  with deployment target iOS 17.0 and bundle ID `com.setforge.gymapp.ios`.
 - Strict Swift 6 complete-concurrency warnings-as-errors build: **passed**.
 - `deno check supabase/functions/delete-account/index.ts`: **passed** with
   Deno 2.9.2 / TypeScript 6.0.3.

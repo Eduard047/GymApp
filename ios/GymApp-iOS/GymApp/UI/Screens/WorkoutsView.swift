@@ -444,11 +444,13 @@ public struct WorkoutsView: View {
             return Alert(
                 title: Text("Delete workout?"),
                 message: Text(
-                    gymText(
-                        "The workout from \(gymFormattedDate(workout.date, date: .long, time: .omitted)) and all of its sets will be removed from this device.",
-                        "Тренування за \(gymFormattedDate(workout.date, date: .long, time: .omitted)) і всі його підходи буде видалено з цього пристрою.",
-                        languageCode: gymCurrentLanguageCode()
-                    )
+                    gymCurrentLanguageCode() == "ru"
+                        ? "Тренировка за \(gymFormattedDate(workout.date, date: .long, time: .omitted)) и все её подходы будут удалены с этого устройства."
+                        : gymText(
+                            "The workout from \(gymFormattedDate(workout.date, date: .long, time: .omitted)) and all of its sets will be removed from this device.",
+                            "Тренування за \(gymFormattedDate(workout.date, date: .long, time: .omitted)) і всі його підходи буде видалено з цього пристрою.",
+                            languageCode: gymCurrentLanguageCode()
+                        )
                 ),
                 primaryButton: .destructive(Text("Delete")) {
                     deleteWorkout(workout)

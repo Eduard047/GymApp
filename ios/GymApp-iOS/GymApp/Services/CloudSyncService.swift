@@ -281,7 +281,7 @@ final class CloudSyncService: ObservableObject {
         do {
             return try await action()
         } catch {
-            lastError = error.localizedDescription
+            lastError = gymSafeEnglishErrorMessage(error)
             throw error
         }
     }

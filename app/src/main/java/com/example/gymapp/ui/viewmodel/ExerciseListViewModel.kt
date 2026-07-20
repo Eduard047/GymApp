@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.example.gymapp.R
 import com.example.gymapp.auth.AccountSession
 import com.example.gymapp.auth.CloudAuthManager
 import com.example.gymapp.data.repository.BackupOwner
@@ -16,6 +17,7 @@ import com.example.gymapp.data.repository.WorkoutDataLimits
 import com.example.gymapp.data.repository.defaultContributionsForExercise
 import com.example.gymapp.data.repository.normalizedExerciseName
 import com.example.gymapp.data.repository.toManualContributionMap
+import com.example.gymapp.util.LocalizedText
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -41,12 +43,12 @@ data class ExerciseListUiState(
     val selectedExerciseHistory: List<ExerciseHistoryEntry> = emptyList(),
     val backupJson: String? = null,
     val backupIsDiagnostics: Boolean = false,
-    val backupMessage: String? = null,
+    val backupMessage: LocalizedText? = null,
     val importJson: String = "",
-    val importMessage: String? = null,
+    val importMessage: LocalizedText? = null,
     val isImportOpen: Boolean = false,
-    val accountLabel: String = "Local",
-    val accountSupporting: String = "Offline on this phone",
+    val accountLabel: String = "",
+    val accountSupporting: String = "",
     val canLogout: Boolean = false
 )
 
@@ -88,9 +90,9 @@ private data class ExerciseEditState(
 
 private data class ExerciseBackupState(
     val generatedExport: GeneratedExerciseExport?,
-    val backupMessage: String?,
+    val backupMessage: LocalizedText?,
     val importJson: String,
-    val importMessage: String?,
+    val importMessage: LocalizedText?,
     val isImportOpen: Boolean
 )
 
@@ -116,9 +118,9 @@ class ExerciseListViewModel(
     private val editingExerciseName = MutableStateFlow("")
     private val selectedExerciseId = MutableStateFlow<Long?>(null)
     private val generatedExport = MutableStateFlow<GeneratedExerciseExport?>(null)
-    private val backupMessage = MutableStateFlow<String?>(null)
+    private val backupMessage = MutableStateFlow<LocalizedText?>(null)
     private val importJson = MutableStateFlow("")
-    private val importMessage = MutableStateFlow<String?>(null)
+    private val importMessage = MutableStateFlow<LocalizedText?>(null)
     private val isImportOpen = MutableStateFlow(false)
     private val mappingEditorExerciseName = MutableStateFlow<String?>(null)
 
@@ -381,9 +383,9 @@ class ExerciseListViewModel(
                     json = json,
                     diagnosticsOnly = false
                 )
-                backupMessage.value = "Backup JSON ready"
+                backupMessage.value = LocalizedText(R.string.backup_export_ready)
             }.onFailure {
-                backupMessage.value = "Backup export failed"
+                backupMessage.value = LocalizedText(R.string.backup_export_failed)
             }
         }
     }
@@ -397,9 +399,9 @@ class ExerciseListViewModel(
                     json = json,
                     diagnosticsOnly = true
                 )
-                backupMessage.value = "Diagnostics snapshot ready"
+                backupMessage.value = LocalizedText(R.string.backup_diagnostics_ready)
             }.onFailure {
-                backupMessage.value = "Diagnostics export failed"
+                backupMessage.value = LocalizedText(R.string.backup_diagnostics_export_failed)
             }
         }
     }
@@ -421,7 +423,7 @@ class ExerciseListViewModel(
     fun updateImportJson(value: String) {
         if (!WorkoutDataLimits.canRetainBackupText(value)) {
             importJson.value = ""
-            importMessage.value = "Backup exceeds the file size limit"
+            importMessage.value = LocalizedText(R.string.backup_file_too_large)
             return
         }
         importJson.value = value
@@ -431,12 +433,12 @@ class ExerciseListViewModel(
     fun importBackup() {
         val rawInput = importJson.value
         if (!WorkoutDataLimits.canRetainBackupText(rawInput)) {
-            importMessage.value = "Backup exceeds the file size limit"
+            importMessage.value = LocalizedText(R.string.backup_file_too_large)
             return
         }
         val rawJson = rawInput.trim()
         if (rawJson.isBlank()) {
-            importMessage.value = "Paste backup JSON first"
+            importMessage.value = LocalizedText(R.string.backup_paste_first)
             return
         }
         viewModelScope.launch {
@@ -450,17 +452,15 @@ class ExerciseListViewModel(
                 )
             }.onSuccess { importedSessions ->
                 backupMessage.value = if (importedSessions > 0) {
-                    "Imported $importedSessions workouts"
+                    LocalizedText(R.string.backup_imported_workouts, importedSessions)
                 } else {
-                    "Import finished: no new workouts found"
+                    LocalizedText(R.string.backup_import_no_new)
                 }
                 importJson.value = ""
                 importMessage.value = null
                 isImportOpen.value = false
-            }.onFailure { throwable ->
-                val message = throwable.message
-                    ?.takeIf { it.isNotBlank() }
-                    ?: "Backup import failed. Check that the pasted text is valid GymApp JSON."
+            }.onFailure {
+                val message = LocalizedText(R.string.backup_import_failed)
                 importMessage.value = message
                 backupMessage.value = message
             }
@@ -491,15 +491,15 @@ class ExerciseListViewModel(
         return when (val session = authManager?.authState?.value?.session) {
             is AccountSession.Cloud -> session.displayName
             is AccountSession.Local -> session.displayName
-            null -> "Local"
+            null -> ""
         }
     }
 
     private fun activeAccountSupporting(): String {
         return when (val session = authManager?.authState?.value?.session) {
             is AccountSession.Cloud -> session.email
-            is AccountSession.Local -> "Offline on this phone"
-            null -> "Offline on this phone"
+            is AccountSession.Local -> ""
+            null -> ""
         }
     }
 

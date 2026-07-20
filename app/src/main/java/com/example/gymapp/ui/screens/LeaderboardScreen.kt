@@ -38,13 +38,15 @@ import com.example.gymapp.ui.components.EmptyStatePanel
 import com.example.gymapp.ui.components.HeroPanel
 import com.example.gymapp.ui.components.MetricTile
 import com.example.gymapp.ui.viewmodel.SoloProgressUiModel
+import com.example.gymapp.util.LocalizedText
+import com.example.gymapp.util.asString
 
 @Composable
 fun LeaderboardScreen(
     rows: List<LeaderboardRow>,
     soloProgress: SoloProgressUiModel,
     isLoading: Boolean,
-    error: String?,
+    error: LocalizedText?,
     onRefresh: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -122,7 +124,7 @@ fun LeaderboardScreen(
 
         error?.let { message ->
             item {
-                LeaderboardStatusBanner(message = message)
+                LeaderboardStatusBanner(message = message.asString())
             }
         }
 
@@ -332,7 +334,9 @@ private fun LeaderboardRowCard(
                 verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
                 Text(
-                    text = row.displayName,
+                    text = row.displayName.ifBlank {
+                        stringResource(R.string.leaderboard_unknown_user)
+                    },
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     maxLines = 2,

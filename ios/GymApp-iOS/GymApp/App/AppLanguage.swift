@@ -28,7 +28,9 @@ func gymText(_ english: String, _ ukrainian: String, languageCode: String) -> St
         return ukrainian
     case AppLanguage.russian.rawValue:
         let localized = gymLocalized(english, languageCode: languageCode)
-        return localized == english ? gymRussianFromUkrainian(ukrainian) : localized
+        if localized != english { return localized }
+        if let exact = gymRussianEnglishFallbacks[english] { return exact }
+        return gymRussianFromUkrainian(ukrainian)
     default:
         return english
     }
@@ -64,6 +66,9 @@ func gymLocalized(
     _ english: String,
     languageCode: String = gymCurrentLanguageCode()
 ) -> String {
+    if english != gymGenericErrorMessage, gymContainsUnsafeErrorDetail(english) {
+        return gymLocalized(gymGenericErrorMessage, languageCode: languageCode)
+    }
     guard let language = AppLanguage(rawValue: languageCode), language != .english,
           let path = Bundle.main.path(forResource: language.rawValue, ofType: "lproj"),
           let bundle = Bundle(path: path) else {
@@ -77,23 +82,125 @@ func gymLocalized(
     return gymRussianDynamicFallback(english)
 }
 
-private func gymRussianDynamicFallback(_ english: String) -> String {
-    let rules: [(String, String, String)] = [
-        ("The local workout store is invalid: ", "", "Локальное хранилище тренировок повреждено: %@"),
-        ("The workout is invalid: ", "", "Тренировка некорректна: %@"),
-        ("The backup is invalid: ", "", "Резервная копия некорректна: %@"),
-        ("Workout data could not be saved: ", "", "Не удалось сохранить данные тренировки: %@")
+private func gymContainsUnsafeErrorDetail(_ message: String) -> Bool {
+    let rules: [(String, String)] = [
+        ("The local workout store is invalid: ", ""),
+        ("The workout is invalid: ", ""),
+        ("The backup is invalid: ", ""),
+        ("Workout data could not be saved: ", ""),
+        ("Unsupported local schema ", "."),
+        ("Backup schema version ", " is not supported."),
+        ("The backup exceeds the allowed ", " limit."),
+        ("The secure session could not be accessed (", ")."),
+        ("Cloud sync failed (HTTP ", ")."),
+        ("Garmin cloud sync failed (HTTP ", ").")
     ]
-    for (prefix, suffix, format) in rules where english.hasPrefix(prefix) && english.hasSuffix(suffix) {
-        let start = english.index(english.startIndex, offsetBy: prefix.count)
-        let end = english.index(english.endIndex, offsetBy: -suffix.count)
-        guard start <= end else { continue }
-        return String(format: format, String(english[start ..< end]))
+    return rules.contains { message.hasPrefix($0.0) && message.hasSuffix($0.1) }
+}
+
+private func gymRussianDynamicFallback(_ english: String) -> String {
+    let rawErrorRules: [(String, String)] = [
+        ("The local workout store is invalid: ", ""),
+        ("The workout is invalid: ", ""),
+        ("The backup is invalid: ", ""),
+        ("Workout data could not be saved: ", ""),
+        ("Backup schema version ", " is not supported."),
+        ("The backup exceeds the allowed ", " limit."),
+        ("The secure session could not be accessed (", ")."),
+        ("Cloud sync failed (HTTP ", ")."),
+        ("Garmin cloud sync failed (HTTP ", ").")
+    ]
+    if rawErrorRules.contains(where: { english.hasPrefix($0.0) && english.hasSuffix($0.1) }) {
+        return "Что-то пошло не так. Попробуй ещё раз."
     }
     return english
 }
 
+private let gymRussianExactFallbacks: [String: String] = [
+    "Груди": "Грудь",
+    "Плечі": "Плечи",
+    "Біцепс": "Бицепс",
+    "Тріцепс": "Трицепс",
+    "Передпліччя": "Предплечья",
+    "Прес": "Пресс",
+    "Косі мʼязи": "Косые мышцы",
+    "Широчайші": "Широчайшие",
+    "Верх спини": "Верх спины",
+    "Поперек": "Поясница",
+    "Сідниці": "Ягодицы",
+    "Квадрицепси": "Квадрицепсы",
+    "Біцепс стегна": "Бицепс бедра",
+    "Привідні": "Приводящие мышцы",
+    "Ікри": "Икры"
+]
+
+private let gymRussianEnglishFallbacks: [String: String] = [
+    "Report this display name?": "Пожаловаться на это имя?",
+    "GymApp will send the profile identifier and a fixed offensive-name reason to the moderation queue. No free-form text is sent.":
+        "GymApp отправит идентификатор профиля и фиксированную причину «неприемлемое имя» в очередь модерации. Произвольный текст не отправляется.",
+    "Report": "Пожаловаться",
+    "Top users by XP, level and saved workouts.": "Лучшие пользователи по XP, уровню и сохранённым тренировкам.",
+    "YOUR RANKING": "ТВОЙ РЕЙТИНГ",
+    "Leaderboard": "Таблица лидеров",
+    "Loading cloud rating…": "Загрузка облачного рейтинга…",
+    "Showing on-device stats.": "Показана статистика с этого устройства.",
+    "Synced through Supabase.": "Синхронизировано через Supabase.",
+    "Show blocked athletes again": "Снова показывать заблокированных атлетов",
+    "Blocked athletes are visible again.": "Заблокированные атлеты снова видны.",
+    "Loading": "Загрузка",
+    "Refresh": "Обновить",
+    "Sign in with a cloud account to refresh": "Войди в облачный аккаунт, чтобы обновить",
+    "Uploads your latest stats and reloads the ranking": "Загружает твою актуальную статистику и обновляет рейтинг",
+    "Local ranking": "Локальный рейтинг",
+    "No users yet": "Пользователей пока нет",
+    "The cloud rating will appear after profiles sync.": "Облачный рейтинг появится после синхронизации профилей.",
+    "Report display name": "Пожаловаться на имя",
+    "Block from leaderboard": "Заблокировать в рейтинге",
+    "Safety options": "Параметры безопасности",
+    "You": "Ты",
+    "This is an offline account. Sign in with a cloud account to compare with other athletes; your workouts remain available on this device.":
+        "Это офлайн-аккаунт. Войди в облачный аккаунт, чтобы сравнивать результаты с другими атлетами; твои тренировки останутся доступными на этом устройстве.",
+    "The cloud leaderboard is unavailable, so your latest on-device XP, level and workouts are shown. Pull down or tap Refresh to try again.":
+        "Облачный рейтинг недоступен, поэтому показаны актуальные XP, уровень и тренировки с этого устройства. Потяни вниз или нажми «Обновить», чтобы повторить попытку.",
+    "Report sent. The display name was added to the moderation queue.": "Жалоба отправлена. Имя добавлено в очередь модерации.",
+    "Athlete blocked from your leaderboard.": "Атлет заблокирован в твоём рейтинге.",
+    "Exercise": "Упражнение",
+    "Add an exercise and log a workout to see progress.": "Добавь упражнение и запиши тренировку, чтобы увидеть прогресс.",
+    "Selects which exercise to analyze": "Выбирает упражнение для анализа",
+    "Muscle Breakdown": "Распределение по мышцам",
+    "No muscle mapping is available for this exercise yet.": "Для этого упражнения пока нет сопоставления с мышцами.",
+    "Progress Summary": "Сводка прогресса",
+    "Volume = weight × reps across all completed sets.": "Объём = вес × повторения во всех завершённых подходах.",
+    "Month best": "Лучшее за месяц",
+    "Month volume": "Объём за месяц",
+    "All-time PR": "Личный рекорд",
+    "No progress this month": "В этом месяце прогресса пока нет",
+    "Log sets for the selected exercise to unlock trends.": "Запиши подходы выбранного упражнения, чтобы открыть тренды.",
+    "Recent sessions": "Последние сессии",
+    "Workout History": "История тренировок",
+    "This list changes with the selected month and exercise.": "Список меняется в зависимости от выбранных месяца и упражнения.",
+    "Delete set": "Удалить подход",
+    "Create an exercise and log a workout first.": "Сначала создай упражнение и запиши тренировку.",
+    "best weight": "лучший вес",
+    "volume": "объём",
+    "No change vs prior month": "Без изменений по сравнению с прошлым месяцем",
+    "Delete this set?": "Удалить этот подход?",
+    "Couldn’t delete set": "Не удалось удалить подход",
+    "Visual Trends": "Визуальные тренды",
+    "No chart data": "Нет данных для графика",
+    "Max Weight Trend": "Динамика максимального веса",
+    "Baseline": "Базовый уровень",
+    "Maximum weight chart": "График максимального веса",
+    "Volume by Session": "Объём по сессиям",
+    "Session volume chart": "График объёма по сессиям",
+    "No trend yet": "Пока нет тренда",
+    "Holding steady": "Без изменений"
+]
+
 private func gymRussianFromUkrainian(_ ukrainian: String) -> String {
+    if let exact = gymRussianExactFallbacks[ukrainian] {
+        return exact
+    }
     let replacements: [(String, String)] = [
         ("Космічний воєвода", "Космический воевода"),
         ("Понадмежний", "Запредельный"),
@@ -122,8 +229,31 @@ private func gymRussianFromUkrainian(_ ukrainian: String) -> String {
         ("із групами м’язів", "с группами мышц"),
         ("у ручному зіставленні", "в ручном сопоставлении"),
         ("з каталогу вправ", "из каталога упражнений"),
+        ("Навантаження для", "Нагрузка для"),
+        ("Тренування збережено, але", "Тренировка сохранена, но"),
+        ("Тренування ·", "Тренировка ·"),
+        ("Твоє поточне місце", "Твоё текущее место"),
+        ("Оновлено", "Обновлено"),
+        ("Місце", "Место"),
+        ("поточний користувач", "текущий пользователь"),
+        ("Сховати поле", "Скрыть поле"),
+        ("Показати поле", "Показать поле"),
+        ("у вибраному місяці", "в выбранном месяце"),
+        ("не вибрано", "не выбрано"),
+        ("вибрано", "выбрано"),
+        ("цього місяця", "в этом месяце"),
+        ("підх.", "подх."),
+        ("повторів", "повторов"),
+        ("Немає показника", "Нет показателя"),
+        ("Перший місяць для", "Первый месяц для"),
+        ("до попереднього місяця", "по сравнению с предыдущим месяцем"),
+        ("повт. буде видалено. Якщо це останній підхід, вправу або тренування також буде видалено.", "повторений будет удалено. Если это последний подход, упражнение или тренировка также будут удалены."),
+        ("Останні", "Последние"),
+        ("до першої сесії", "по сравнению с первой сессией"),
         ("додати до черги Garmin не вдалося", "не удалось добавить в очередь Garmin"),
-        ("усі його підходи буде видалено з цього пристрою", "все его подходы будут удалены с этого устройства"),
+        ("і всі його підходи буде видалено з цього пристрою", "и все её подходы будут удалены с этого устройства"),
+        ("усі його підходи буде видалено з цього пристрою", "все её подходы будут удалены с этого устройства"),
+        ("із тренування", "из тренировки"),
         ("до наступного рівня", "до следующего уровня"),
         ("на цьому рівні", "на этом уровне"),
         ("за тренування", "за тренировку"),
@@ -152,6 +282,7 @@ private func gymRussianFromUkrainian(_ ukrainian: String) -> String {
         ("підходи", "подходы"),
         ("підходів", "подходов"),
         ("Рівень", "Уровень"),
+        ("рівень", "уровень"),
         ("Далі", "Далее"),
         ("на рівні", "на уровне"),
         ("Вправ", "Упражнений"),
@@ -181,20 +312,7 @@ private func gymRussianFromUkrainian(_ ukrainian: String) -> String {
     }
 }
 
-private func gymUkrainianDynamicFallback(_ english: String, bundle: Bundle) -> String {
-    func exact(_ key: String) -> String {
-        let localized = bundle.localizedString(forKey: key, value: key, table: "Localizable")
-        guard localized == key else { return localized }
-        let prefix = "Unsupported local schema "
-        let suffix = "."
-        if key.hasPrefix(prefix), key.hasSuffix(suffix) {
-            let start = key.index(key.startIndex, offsetBy: prefix.count)
-            let end = key.index(key.endIndex, offsetBy: -suffix.count)
-            return "Непідтримувана версія локальної схеми \(key[start ..< end])."
-        }
-        return key
-    }
-
+private func gymUkrainianDynamicFallback(_ english: String, bundle _: Bundle) -> String {
     func value(between prefix: String, and suffix: String) -> String? {
         guard english.hasPrefix(prefix), english.hasSuffix(suffix) else { return nil }
         let start = english.index(english.startIndex, offsetBy: prefix.count)
@@ -203,31 +321,25 @@ private func gymUkrainianDynamicFallback(_ english: String, bundle: Bundle) -> S
         return String(english[start ..< end])
     }
 
-    let prefixedMessages: [(String, String)] = [
-        ("The local workout store is invalid: ", "Локальне сховище тренувань пошкоджене: "),
-        ("The workout is invalid: ", "Тренування некоректне: "),
-        ("The backup is invalid: ", "Резервна копія некоректна: "),
-        ("Workout data could not be saved: ", "Не вдалося зберегти дані тренувань: ")
+    let rawErrorPrefixes = [
+        "The local workout store is invalid: ",
+        "The workout is invalid: ",
+        "The backup is invalid: ",
+        "Workout data could not be saved: "
     ]
-    for (prefix, translatedPrefix) in prefixedMessages where english.hasPrefix(prefix) {
-        let detail = String(english.dropFirst(prefix.count))
-        return translatedPrefix + exact(detail)
+    if rawErrorPrefixes.contains(where: english.hasPrefix) {
+        return "Щось пішло не так. Спробуй ще раз."
     }
 
-    if let version = value(between: "Backup schema version ", and: " is not supported.") {
-        return "Версія схеми резервної копії \(version) не підтримується."
-    }
-    if let limit = value(between: "The backup exceeds the allowed ", and: " limit.") {
-        return "Резервна копія перевищує дозволене обмеження: \(exact(limit))."
-    }
-    if let status = value(between: "The secure session could not be accessed (", and: ").") {
-        return "Не вдалося отримати доступ до захищеної сесії (\(status))."
-    }
-    if let status = value(between: "Cloud sync failed (HTTP ", and: ").") {
-        return "Хмарна синхронізація не вдалася (HTTP \(status))."
-    }
-    if let status = value(between: "Garmin cloud sync failed (HTTP ", and: ").") {
-        return "Хмарна синхронізація Garmin не вдалася (HTTP \(status))."
+    let rawErrorRules = [
+        ("Backup schema version ", " is not supported."),
+        ("The backup exceeds the allowed ", " limit."),
+        ("The secure session could not be accessed (", ")."),
+        ("Cloud sync failed (HTTP ", ")."),
+        ("Garmin cloud sync failed (HTTP ", ").")
+    ]
+    if rawErrorRules.contains(where: { value(between: $0.0, and: $0.1) != nil }) {
+        return "Щось пішло не так. Спробуй ще раз."
     }
     return english
 }
@@ -253,30 +365,142 @@ func gymErrorMessage(
     _ error: Error,
     languageCode: String = gymCurrentLanguageCode()
 ) -> String {
-    let english: String
+    gymLocalized(gymSafeEnglishErrorMessage(error), languageCode: languageCode)
+}
+
+/// Converts internal failures into a bounded, app-owned message before they reach UI.
+/// Provider response bodies, persistence details, HTTP payloads and Keychain status
+/// codes remain available on their typed errors for control flow, but are never shown.
+func gymSafeEnglishErrorMessage(_ error: Error) -> String {
     if let urlError = error as? URLError {
         switch urlError.code {
         case .notConnectedToInternet:
-            english = "The Internet connection appears to be offline."
+            return "The Internet connection appears to be offline."
         case .timedOut:
-            english = "The request timed out."
+            return "The request timed out."
         case .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed:
-            english = "The server could not be reached."
+            return "The server could not be reached."
         case .networkConnectionLost:
-            english = "The network connection was lost."
+            return "The network connection was lost."
         case .cancelled:
-            english = "The request was cancelled."
+            return "The request was cancelled."
         case .secureConnectionFailed, .serverCertificateHasBadDate,
              .serverCertificateUntrusted, .serverCertificateHasUnknownRoot,
              .serverCertificateNotYetValid, .clientCertificateRejected:
-            english = "A secure connection could not be established."
+            return "A secure connection could not be established."
         default:
-            english = "The network request failed. Try again."
+            return "The network request failed. Try again."
         }
-    } else {
-        english = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
     }
-    return gymLocalized(english, languageCode: languageCode)
+
+    if let authError = error as? AuthServiceError {
+        switch authError {
+        case .invalidEmail,
+             .invalidPassword,
+             .invalidDisplayName,
+             .malformedResponse,
+             .callbackMissingSession,
+             .callbackNotExpected,
+             .notCloudAccount,
+             .sessionChanged:
+            return authError.errorDescription ?? gymGenericErrorMessage
+        case .server(let message):
+            return gymSafeAuthServerErrorMessage(message)
+        }
+    }
+
+    if let cloudError = error as? CloudSyncError {
+        switch cloudError {
+        case .invalidPayload,
+             .invalidLeaderboardProfile,
+             .invalidResponse,
+             .staleRemoteState,
+             .reportAlreadySubmitted:
+            return cloudError.errorDescription ?? gymGenericErrorMessage
+        case .requestFailed:
+            return gymGenericErrorMessage
+        }
+    }
+
+    if let garminError = error as? GarminCloudError {
+        switch garminError {
+        case .invalidPlan,
+             .invalidRequest,
+             .invalidResponse,
+             .invalidBinding,
+             .pairingRequired,
+             .busy,
+             .pendingRevocation,
+             .bindingPersistenceFailed,
+             .deviceRefreshRequired,
+             .rotationConflict,
+             .enqueueConflict:
+            return garminError.errorDescription ?? gymGenericErrorMessage
+        case .requestFailed:
+            return gymGenericErrorMessage
+        }
+    }
+
+    if error is KeychainStoreError {
+        return gymGenericErrorMessage
+    }
+
+    if let storeError = error as? WorkoutStoreError {
+        switch storeError {
+        case .corruptStore,
+             .invalidWorkout,
+             .unsupportedBackupSchema,
+             .malformedBackup,
+             .importLimitExceeded,
+             .persistenceFailure:
+            return gymGenericErrorMessage
+        case .invalidAccountStorageKey,
+             .storageAccountMismatch,
+             .invalidExerciseName,
+             .duplicateExerciseName,
+             .exerciseNotFound,
+             .exerciseInUse,
+             .builtInExerciseReadOnly,
+             .workoutNotFound,
+             .workoutExerciseNotFound,
+             .setNotFound,
+             .invalidWeight,
+             .invalidReps,
+             .backupOwnerMismatch:
+            return storeError.errorDescription ?? gymGenericErrorMessage
+        }
+    }
+
+    return gymGenericErrorMessage
+}
+
+private let gymGenericErrorMessage = "Something went wrong. Try again."
+
+private func gymSafeAuthServerErrorMessage(_ raw: String) -> String {
+    let message = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    let lower = message.lowercased()
+    if lower.contains("invalid login") || lower.contains("invalid credentials") {
+        return "Email or password is incorrect."
+    }
+    if lower.contains("email not confirmed") {
+        return "Confirm your email first, then sign in."
+    }
+    if lower.contains("rate limit") || lower.contains("over_email_send_rate_limit") {
+        return "Too many emails were requested. Try again later."
+    }
+    if lower.contains("already registered") || lower.contains("user_already_exists") {
+        return "An account with this email already exists."
+    }
+
+    let safeMessages: Set<String> = [
+        "Email or password is incorrect.",
+        "Confirm your email first, then sign in.",
+        "Too many emails were requested. Try again later.",
+        "An account with this email already exists.",
+        "Cloud service is temporarily unavailable. Try again later.",
+        "Cloud request failed. Check your connection and try again."
+    ]
+    return safeMessages.contains(message) ? message : gymGenericErrorMessage
 }
 
 func gymCount(

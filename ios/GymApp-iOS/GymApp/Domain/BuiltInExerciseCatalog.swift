@@ -127,9 +127,13 @@ public enum BuiltInExerciseCatalog {
     }
 
     public static func resolvedKey(catalogKey: String?, name: String) -> String? {
-        // Backup JSON is user-controlled input. A recognized raw name is authoritative so a
-        // stale or hostile catalogKey cannot redirect its sets into another exercise's history.
-        canonicalKey(forName: name) ?? definition(forKey: catalogKey)?.key
+        // Backup JSON is user-controlled input. Any non-empty raw name is authoritative:
+        // recognized names resolve through reviewed aliases, while unknown names remain custom.
+        // A catalogKey is only recovery metadata for legacy records whose raw name is missing.
+        let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return cleanName.isEmpty
+            ? definition(forKey: catalogKey)?.key
+            : canonicalKey(forName: cleanName)
     }
 
     public static func displayName(

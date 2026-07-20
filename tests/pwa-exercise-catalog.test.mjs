@@ -5,6 +5,7 @@ import vm from "node:vm";
 
 const appSource = await readFile("pwa/app.js", "utf8");
 const stateContractSource = await readFile("pwa/state-contract.js", "utf8");
+const russianTextSource = await readFile("pwa/russian-text.js", "utf8");
 
 function loadPwaContext({ userAgent = "" } = {}) {
   const values = new Map();
@@ -54,6 +55,7 @@ function loadPwaContext({ userAgent = "" } = {}) {
   vm.createContext(context);
   vm.runInContext(stateContractSource, context);
   context.window.GymStateContract = context.GymStateContract;
+  vm.runInContext(russianTextSource, context);
   vm.runInContext(appSource, context);
   return context;
 }
@@ -133,7 +135,7 @@ test("catalog seeding runs once and preserves later user deletions", () => {
   assert.equal(exported.catalogSeedVersion, 1);
 });
 
-test("legacy aliases localize without collapsing or rewriting separate catalog rows", () => {
+test("canonical aliases derive their stable key while custom labels remain custom", () => {
   const context = loadPwaContext();
   const normalized = jsonFrom(context, `normalizeExerciseCatalog([
     { id: 7, name: "Жим штанги лежачи" },
@@ -143,12 +145,12 @@ test("legacy aliases localize without collapsing or rewriting separate catalog r
   ])`);
 
   assert.deepEqual(normalized, [
-    { id: 7, name: "Жим штанги лежачи" },
-    { id: 8, name: "Bench Press" },
+    { id: 7, name: "Жим штанги лежачи", catalogKey: "bench_press" },
+    { id: 8, name: "Bench Press", catalogKey: "bench_press" },
     { id: 9, name: "Моя вправа" },
     { id: 10, name: "Bench Press", catalogKey: "bench_press" }
   ]);
-  assert.notEqual(
+  assert.equal(
     vm.runInContext('exerciseMatchKey({ name: "Bench Press" })', context),
     vm.runInContext('exerciseMatchKey({ name: "Жим штанги лежачи" })', context)
   );
@@ -156,6 +158,7 @@ test("legacy aliases localize without collapsing or rewriting separate catalog r
   assert.equal(vm.runInContext('exerciseMatchesSearch({ name: "Bench Press", catalogKey: "bench_press" }, "штанги", "uk")', context), true);
   assert.equal(vm.runInContext('exerciseCatalogKey("Barbell Squat")', context), "squat");
   assert.equal(vm.runInContext('exerciseCatalogKey("Присід зі штангою")', context), "squat");
+  assert.equal(vm.runInContext('exerciseCatalogKey("Приседания со штангой")', context), "squat");
   assert.equal(vm.runInContext('exerciseCatalogKey("Жим сидячи над головою")', context), "shoulder_press");
 });
 
@@ -169,12 +172,20 @@ test("recognized raw name wins over a conflicting imported catalog key", () => {
 
   assert.deepEqual(normalized, [
     { id: 1, name: "Bench Press", catalogKey: "bench_press" },
-    { id: 2, name: "My custom bench label", catalogKey: "bench_press" },
-    { id: 3, name: "Планка" }
+    { id: 2, name: "My custom bench label" },
+    { id: 3, name: "Планка", catalogKey: "plank" }
   ]);
   assert.equal(
     vm.runInContext('exerciseDisplayName({ name: "Bench Press", catalogKey: "squat" }, "en")', context),
     "Bench Press"
+  );
+  assert.equal(
+    vm.runInContext('resolvedExerciseCatalogKey({ catalogKey: "bench_press" })', context),
+    "bench_press"
+  );
+  assert.equal(
+    vm.runInContext('resolvedExerciseCatalogKey({ name: "My custom bench", catalogKey: "bench_press" })', context),
+    null
   );
 });
 
@@ -217,7 +228,7 @@ test("exercise library sorts by unique workout frequency in both directions", ()
   assert.deepEqual(jsonFrom(context, "filteredLibraryExercises().map(exercise => exercise.id)"), [3, 2, 1]);
 });
 
-test("legacy session aliases preserve separate raw history", () => {
+test("legacy session aliases preserve raw labels and derive the same stable identity", () => {
   const context = loadPwaContext();
   const session = jsonFrom(context, `normalizeSessions([{
     id: 1,
@@ -231,11 +242,11 @@ test("legacy session aliases preserve separate raw history", () => {
 
   assert.deepEqual(session.exerciseNames, ["Bench Press", "Жим штанги лежачи"]);
   assert.deepEqual(session.sets.map(set => set.exerciseName), ["Bench Press", "Жим штанги лежачи"]);
-  assert.equal("catalogKey" in session.sets[0], false);
-  assert.equal("catalogKey" in session.sets[1], false);
+  assert.equal(session.sets[0].catalogKey, "bench_press");
+  assert.equal(session.sets[1].catalogKey, "bench_press");
 });
 
-test("nested session blocks propagate an allowlisted catalog key without rewriting history", () => {
+test("nested session blocks ignore an attacker key for a nonblank custom name", () => {
   const context = loadPwaContext();
   const session = jsonFrom(context, `normalizeSessions([{
     id: 1,
@@ -252,7 +263,7 @@ test("nested session blocks propagate an allowlisted catalog key without rewriti
   }])[0]`);
 
   assert.deepEqual(session.sets, [
-    { id: 2, exerciseName: "My bench label", catalogKey: "bench_press", weight: 50, reps: 8, orderIndex: 0 },
+    { id: 2, exerciseName: "My bench label", weight: 50, reps: 8, orderIndex: 0 },
     { id: 3, exerciseName: "Bench Press", catalogKey: "bench_press", weight: 60, reps: 5, orderIndex: 1 }
   ]);
 });
@@ -282,11 +293,10 @@ test("schema-v2 export keeps nested catalog keys and round-trips sets once", () 
     {
       name: "Bench Press",
       catalogKey: "bench_press",
-      sets: [{ id: 11, exerciseName: "Bench Press", catalogKey: "bench_press", weight: 50, reps: 8, orderIndex: 0 }]
-    },
-    {
-      name: "Жим штанги лежачи",
-      sets: [{ id: 12, exerciseName: "Жим штанги лежачи", weight: 55, reps: 6, orderIndex: 0 }]
+      sets: [
+        { id: 11, exerciseName: "Bench Press", catalogKey: "bench_press", weight: 50, reps: 8, orderIndex: 0 },
+        { id: 12, exerciseName: "Жим штанги лежачи", weight: 55, reps: 6, orderIndex: 0 }
+      ]
     }
   ]);
 
@@ -294,7 +304,7 @@ test("schema-v2 export keeps nested catalog keys and round-trips sets once", () 
   assert.equal(roundTripped.sets.length, 2);
   assert.deepEqual(roundTripped.sets.map(set => set.exerciseName), ["Bench Press", "Жим штанги лежачи"]);
   assert.equal(roundTripped.sets[0].catalogKey, "bench_press");
-  assert.equal("catalogKey" in roundTripped.sets[1], false);
+  assert.equal(roundTripped.sets[1].catalogKey, "bench_press");
 });
 
 test("PWA diagnostics are aggregate-only and cannot expose backup content", () => {
@@ -350,7 +360,7 @@ test("malformed backup entries reject the whole temporary import state", () => {
     }, defaultAppState())`, context), /must be a string|must be an object/);
 });
 
-test("detail, summary, and progress UI use a set catalog key for localized display and history", () => {
+test("detail, summary, and progress UI do not reclassify a custom label from an attacker key", () => {
   const context = loadPwaContext();
   vm.runInContext(`state = {
     ...defaultAppState(),
@@ -371,7 +381,8 @@ test("detail, summary, and progress UI use a set catalog key for localized displ
     vm.runInContext("summaryScreen(10)", context),
     vm.runInContext("progressScreen()", context)
   ]) {
-    assert.match(markup, /Жим штанги лежачи/);
+    assert.match(markup, /My bench label/);
+    assert.doesNotMatch(markup, /Жим штанги лежачи/);
   }
   assert.equal(
     vm.runInContext("allSets().filter(set => exercisesMatch(set, state.exercises[0])).length", context),
@@ -395,7 +406,7 @@ test("saving an untouched localized rename keeps a legacy raw alias and identity
   `, context);
 
   assert.deepEqual(jsonFrom(context, "state.exercises"), [{ id: 1, name: "Barbell Squat" }]);
-  assert.equal(vm.runInContext('exerciseMatchKey(state.exercises[0])', context), "custom:barbell squat");
+  assert.equal(vm.runInContext('exerciseMatchKey(state.exercises[0])', context), "catalog:squat");
 });
 
 test("logging a legacy alias reuses its exact catalog row instead of creating a duplicate", () => {

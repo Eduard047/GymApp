@@ -80,6 +80,8 @@ import com.example.gymapp.ui.util.localizedMuscleName
 import com.example.gymapp.ui.util.SensitiveClipboard
 import com.example.gymapp.ui.viewmodel.ExerciseListUiState
 import com.example.gymapp.ui.viewmodel.ExerciseMuscleOptionUiModel
+import com.example.gymapp.util.LocalizedText
+import com.example.gymapp.util.asString
 import java.time.Instant
 import java.time.YearMonth
 import java.time.ZoneId
@@ -124,6 +126,24 @@ private data class ExerciseHistorySessionGroup(
     val sessionDate: Long,
     val sets: List<ExerciseHistoryEntry>
 )
+
+internal fun exerciseNameMatchesLocalizedQuery(exerciseName: String, query: String): Boolean {
+    val normalizedQuery = query.trim().lowercase(Locale.ROOT)
+    if (normalizedQuery.isEmpty()) return true
+    val definition = BuiltInExerciseCatalog.definitionForName(exerciseName)
+    val searchableNames = buildList {
+        add(exerciseName)
+        definition?.let {
+            add(it.nameEn)
+            add(it.nameUk)
+            add(BuiltInExerciseCatalog.displayName(exerciseName, "ru"))
+            addAll(it.legacyAliases)
+        }
+    }
+    return searchableNames.any { name ->
+        name.lowercase(Locale.ROOT).contains(normalizedQuery)
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -173,21 +193,9 @@ fun ExerciseListScreen(
         sortMode,
         languageTag
     ) {
-        val normalizedQuery = searchQuery.trim().lowercase(Locale.ROOT)
         val filtered = uiState.exercises.filter { exercise ->
-            val definition = BuiltInExerciseCatalog.definitionForName(exercise.name)
-            val searchableNames = buildList {
-                add(exercise.name)
-                definition?.let {
-                    add(it.nameEn)
-                    add(it.nameUk)
-                    addAll(it.legacyAliases)
-                }
-            }
             val muscleIds = musclesByExercise[exercise.name].orEmpty()
-            val matchesQuery = normalizedQuery.isEmpty() || searchableNames.any { name ->
-                name.lowercase(Locale.ROOT).contains(normalizedQuery)
-            }
+            val matchesQuery = exerciseNameMatchesLocalizedQuery(exercise.name, searchQuery)
             val matchesBody = bodyFilter == ExerciseBodyFilter.All ||
                 muscleIds.any(bodyFilter.muscleIds::contains)
             val matchesMuscle = muscleFilter == null || muscleFilter in muscleIds
@@ -269,8 +277,12 @@ fun ExerciseListScreen(
 
         item {
             AccountStatusCard(
-                label = uiState.accountLabel,
-                supporting = uiState.accountSupporting,
+                label = uiState.accountLabel.ifBlank {
+                    stringResource(R.string.account_mode_local)
+                },
+                supporting = uiState.accountSupporting.ifBlank {
+                    stringResource(R.string.account_offline_supporting)
+                },
                 canLogout = uiState.canLogout,
                 onLogout = onLogout,
                 onOpenGarminApp = {
@@ -932,7 +944,7 @@ private fun RenameExerciseBottomSheetContent(
 
 @Composable
 private fun BackupToolsCard(
-    message: String?,
+    message: LocalizedText?,
     onExportBackup: () -> Unit,
     onExportDiagnostics: () -> Unit,
     onOpenImport: () -> Unit
@@ -978,9 +990,9 @@ private fun BackupToolsCard(
             ) {
                 Text(stringResource(R.string.backup_export_diagnostics))
             }
-            if (!message.isNullOrBlank()) {
+            if (message != null) {
                 Text(
-                    text = message,
+                    text = message.asString(),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -998,11 +1010,12 @@ private fun BackupJsonBottomSheetContent(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var showClipboardWarning by rememberSaveable { mutableStateOf(false) }
-    var shareError by rememberSaveable { mutableStateOf<String?>(null) }
-    val preview = remember(json) {
+    var shareError by remember { mutableStateOf<LocalizedText?>(null) }
+    val previewTruncatedMessage = stringResource(R.string.backup_preview_truncated)
+    val preview = remember(json, previewTruncatedMessage) {
         if (json.length <= BACKUP_PREVIEW_CHARS) json else {
             json.take(BACKUP_PREVIEW_CHARS) +
-                "\n… Preview truncated. Use the guarded actions below."
+                "\n… $previewTruncatedMessage"
         }
     }
 
@@ -1061,8 +1074,7 @@ private fun BackupJsonBottomSheetContent(
                                 )
                             }.onFailure { error ->
                                 if (error is CancellationException) throw error
-                                shareError = error.message
-                                    ?: "Could not prepare the private backup file."
+                                shareError = LocalizedText(R.string.backup_share_json_failed)
                             }
                         }
                     },
@@ -1089,8 +1101,7 @@ private fun BackupJsonBottomSheetContent(
                             )
                         }.onFailure { error ->
                             if (error is CancellationException) throw error
-                            shareError = error.message
-                                ?: "Could not prepare the private backup report."
+                            shareError = LocalizedText(R.string.backup_share_pdf_failed)
                         }
                     }
                 },
@@ -1099,10 +1110,10 @@ private fun BackupJsonBottomSheetContent(
                 Text(stringResource(R.string.backup_share_pdf))
             }
         }
-        if (!shareError.isNullOrBlank()) {
+        if (shareError != null) {
             item {
                 Text(
-                    text = checkNotNull(shareError),
+                    text = checkNotNull(shareError).asString(),
                     color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.bodySmall
                 )
@@ -1127,8 +1138,7 @@ private fun BackupJsonBottomSheetContent(
                 Button(
                     onClick = {
                         if (!SensitiveClipboard.copyBackup(context, json)) {
-                            shareError = "This backup is too large for the private clipboard. " +
-                                "Use Share JSON instead."
+                            shareError = LocalizedText(R.string.backup_clipboard_too_large)
                         }
                         showClipboardWarning = false
                     }
@@ -1148,7 +1158,7 @@ private fun BackupJsonBottomSheetContent(
 @Composable
 private fun ImportBackupBottomSheetContent(
     importJson: String,
-    importMessage: String?,
+    importMessage: LocalizedText?,
     onImportJsonChange: (String) -> Unit,
     onImportBackup: () -> Unit,
     onDismiss: () -> Unit
@@ -1171,9 +1181,9 @@ private fun ImportBackupBottomSheetContent(
             maxLines = 12,
             placeholder = { Text(stringResource(R.string.backup_import_placeholder)) }
         )
-        if (!importMessage.isNullOrBlank()) {
+        if (importMessage != null) {
             Text(
-                text = importMessage,
+                text = importMessage.asString(),
                 color = MaterialTheme.colorScheme.error,
                 style = MaterialTheme.typography.bodyMedium
             )
@@ -1242,7 +1252,7 @@ private fun createBackupJsonFile(context: Context, json: String): File {
 
 private fun createBackupPdfFile(context: Context, json: String): File {
     // Parse and bound attacker-controlled backup content before allocating a native PDF.
-    val reportLines = backupReportLines(json)
+    val reportLines = backupReportLines(context, json)
     val document = PdfDocument()
     return try {
         val pageWidth = 595
@@ -1363,10 +1373,15 @@ private fun isPrivateBackupShareArtifact(file: File): Boolean =
         (file.name.startsWith("gymapp-backup-") || file.name.startsWith("gymapp-report-")) &&
         file.extension in setOf("pdf", "json")
 
-private fun backupReportLines(json: String): List<String> {
+private fun backupReportLines(context: Context, json: String): List<String> {
     val root = JSONObject(json)
     val diagnosticsOnly = root.optBoolean("diagnostics", false)
-    val exportedAt = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
+    val locale = context.resources.configuration.locales[0]
+    val exportedAt = DateFormat.getDateTimeInstance(
+        DateFormat.MEDIUM,
+        DateFormat.SHORT,
+        locale
+    )
         .format(Date(root.optLong("exportedAt", System.currentTimeMillis())))
     val exercises = root.optJSONArray("exercises")
     val sessions = root.optJSONArray("sessions")
@@ -1374,34 +1389,43 @@ private fun backupReportLines(json: String): List<String> {
     val lines = mutableListOf<String>()
 
     lines += if (diagnosticsOnly) {
-        "GymApp aggregate diagnostics report"
+        context.getString(R.string.backup_report_diagnostics_title)
     } else {
-        "GymApp PRIVATE workout backup report"
+        context.getString(R.string.backup_report_private_title)
     }
-    lines += "Exported: $exportedAt"
-    lines += "Schema: ${root.optInt("schemaVersion", 1)}"
+    lines += context.getString(R.string.backup_report_exported, exportedAt)
+    lines += context.getString(
+        R.string.backup_report_schema,
+        root.optInt("schemaVersion", 1)
+    )
     if (!diagnosticsOnly) {
-        lines += "PRIVATE: includes exercise names, workout dates/notes, weights, and repetitions."
+        lines += context.getString(R.string.backup_report_private_notice)
     }
     lines += ""
-    lines += "## Summary"
-    lines += "Exercises: ${summary?.optInt("exerciseCount") ?: (exercises?.length() ?: 0)}"
-    lines += "Workouts: ${summary?.optInt("sessionCount") ?: (sessions?.length() ?: 0)}"
+    lines += "## ${context.getString(R.string.backup_report_summary_heading)}"
+    lines += context.getString(
+        R.string.backup_report_exercises_count,
+        summary?.optInt("exerciseCount") ?: (exercises?.length() ?: 0)
+    )
+    lines += context.getString(
+        R.string.backup_report_workouts_count,
+        summary?.optInt("sessionCount") ?: (sessions?.length() ?: 0)
+    )
     summary?.let {
-        lines += "Sets: ${it.optInt("setCount")}"
+        lines += context.getString(R.string.backup_report_sets_count, it.optInt("setCount"))
     }
 
     if (diagnosticsOnly) {
         lines += ""
-        lines += "This diagnostic snapshot contains aggregate counts only."
-        lines += "It excludes account identifiers, exercise names, notes, dates, and set values."
+        lines += context.getString(R.string.backup_report_diagnostics_notice)
+        lines += context.getString(R.string.backup_report_diagnostics_exclusions)
         return lines.take(MAX_PDF_REPORT_LINES)
     }
 
     lines += ""
-    lines += "## Exercises"
+    lines += "## ${context.getString(R.string.backup_report_exercises_heading)}"
     if (exercises == null || exercises.length() == 0) {
-        lines += "No exercises exported."
+        lines += context.getString(R.string.backup_report_no_exercises)
     } else {
         val exerciseLimit = exercises.length().coerceAtMost(MAX_PDF_EXERCISES)
         for (index in 0 until exerciseLimit) {
@@ -1413,20 +1437,27 @@ private fun backupReportLines(json: String): List<String> {
             }
         }
         if (exercises.length() > exerciseLimit) {
-            lines += "... ${exercises.length() - exerciseLimit} more exercises"
+            lines += context.getString(
+                R.string.backup_report_more_exercises,
+                exercises.length() - exerciseLimit
+            )
         }
     }
 
     lines += ""
-    lines += "## Workouts"
+    lines += "## ${context.getString(R.string.backup_report_workouts_heading)}"
     if (sessions == null || sessions.length() == 0) {
-        lines += "No workouts exported."
+        lines += context.getString(R.string.backup_report_no_workouts)
     } else {
         val sessionLimit = sessions.length().coerceAtMost(MAX_PDF_SESSIONS)
         for (sessionIndex in 0 until sessionLimit) {
             if (lines.size >= MAX_PDF_REPORT_LINES) break
             val session = sessions.optJSONObject(sessionIndex) ?: continue
-            val date = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
+            val date = DateFormat.getDateTimeInstance(
+                DateFormat.MEDIUM,
+                DateFormat.SHORT,
+                locale
+            )
                 .format(Date(session.optLong("date", 0L)))
             val note = boundedPdfText(session.optString("note")).takeIf { it.isNotBlank() }
             lines += "$date${note?.let { " - $it" }.orEmpty()}"
@@ -1448,11 +1479,20 @@ private fun backupReportLines(json: String): List<String> {
                             .toString()
                             .trimEnd('0')
                             .trimEnd('.')
-                        add("${weight}kg x ${set.optInt("reps", 0)}")
+                        add(
+                            context.getString(
+                                R.string.backup_report_set_value,
+                                weight,
+                                set.optInt("reps", 0)
+                            )
+                        )
                     }
                 }
                 val moreSets = if (setCount > setLimit) {
-                    ", … ${setCount - setLimit} more sets"
+                    ", … ${context.getString(
+                        R.string.backup_report_more_sets,
+                        setCount - setLimit
+                    )}"
                 } else {
                     ""
                 }
@@ -1460,17 +1500,24 @@ private fun backupReportLines(json: String): List<String> {
                     setParts.joinToString(", ") + moreSets
             }
             if (sessionExerciseCount > sessionExerciseLimit) {
-                lines += "  … ${sessionExerciseCount - sessionExerciseLimit} more exercises"
+                lines += "  … ${context.getString(
+                    R.string.backup_report_more_exercises,
+                    sessionExerciseCount - sessionExerciseLimit
+                )}"
             }
             lines += ""
         }
         if (sessions.length() > sessionLimit) {
-            lines += "... ${sessions.length() - sessionLimit} more workouts"
+            lines += context.getString(
+                R.string.backup_report_more_workouts,
+                sessions.length() - sessionLimit
+            )
         }
     }
 
     if (lines.size >= MAX_PDF_REPORT_LINES) {
-        lines[MAX_PDF_REPORT_LINES - 1] = "… Report truncated at the private PDF safety limit."
+        lines[MAX_PDF_REPORT_LINES - 1] =
+            context.getString(R.string.backup_report_truncated)
     }
     return lines.take(MAX_PDF_REPORT_LINES)
 }

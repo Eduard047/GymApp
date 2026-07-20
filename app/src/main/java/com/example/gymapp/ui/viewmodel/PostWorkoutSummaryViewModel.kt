@@ -1,10 +1,12 @@
 package com.example.gymapp.ui.viewmodel
 
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.example.gymapp.data.catalog.BuiltInExerciseCatalog
 import com.example.gymapp.data.entity.ExerciseHistoryEntry
 import com.example.gymapp.data.entity.ExerciseMuscleMappingEntity
 import com.example.gymapp.data.repository.BadgeRarity
@@ -14,14 +16,17 @@ import com.example.gymapp.data.repository.GymRepository
 import com.example.gymapp.data.repository.MUSCLE_DEFINITIONS
 import com.example.gymapp.data.repository.MissionBoardSnapshot
 import com.example.gymapp.data.repository.MissionSnapshot
+import com.example.gymapp.data.repository.RANK_DEFINITIONS
 import com.example.gymapp.data.repository.estimatedLoad
 import com.example.gymapp.data.repository.muscleContributionsForExercise
 import com.example.gymapp.data.repository.toManualContributionMap
+import com.example.gymapp.util.RussianText
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import java.time.ZoneId
+import java.util.Locale
 import kotlin.math.pow
 import kotlin.math.roundToInt
 
@@ -66,7 +71,7 @@ data class PostWorkoutSummaryUiState(
     val currentLevel: Int = 1,
     val previousLevel: Int = 1,
     val totalXp: Int = 0,
-    val levelTitle: String = "Rookie",
+    val levelTitle: String = "--",
     val nextTitle: String? = null,
     val xpIntoLevel: Int = 0,
     val xpToNextLevel: Int = 200,
@@ -90,6 +95,62 @@ data class PostWorkoutSummaryUiState(
 private data class MutableSessionMuscleStats(
     var load: Double = 0.0,
     val setIds: MutableSet<Long> = linkedSetOf()
+)
+
+internal data class PostWorkoutAchievementTranslation(
+    val title: String,
+    val description: String,
+    val badgeName: String
+)
+
+internal val POST_WORKOUT_MISSION_UK = mapOf(
+    "daily_workout" to Pair("Завершити тренування", "Заверши хоча б одне тренування сьогодні."),
+    "daily_sets" to Pair("Записати 8 підходів", "Виконай вісім підходів за один день."),
+    "daily_exercises" to Pair("Виконати 3 вправи", "Виконай три різні вправи сьогодні."),
+    "daily_volume" to Pair("Набрати обсяг 1 000", "Набери загальний обсяг 1 000 сьогодні."),
+    "weekly_days" to Pair("Тренуватися 3 дні", "Тренуйся у три різні дні цього тижня."),
+    "weekly_workouts" to Pair("Завершити 4 тренування", "Заверши чотири тренування цього тижня."),
+    "weekly_sets" to Pair("Записати 30 підходів", "Виконай тридцять підходів цього тижня."),
+    "weekly_volume" to Pair("Набрати обсяг 5 000", "Набери загальний обсяг 5 000 цього тижня.")
+)
+
+internal val POST_WORKOUT_ACHIEVEMENT_UK = mapOf(
+    "first_workout" to PostWorkoutAchievementTranslation(
+        "Перше тренування", "Заверши своє перше тренування.", "Перший підхід"
+    ),
+    "workout_5" to PostWorkoutAchievementTranslation(
+        "Початок звички", "Заверши п’ять тренувань.", "Початок звички"
+    ),
+    "workout_10" to PostWorkoutAchievementTranslation(
+        "Будівник стабільності", "Заверши десять тренувань.", "Стабільність"
+    ),
+    "workout_25" to PostWorkoutAchievementTranslation(
+        "Працьовитий", "Заверши двадцять п’ять тренувань.", "Працьовитий"
+    ),
+    "workout_50" to PostWorkoutAchievementTranslation(
+        "Ветеран", "Заверши п’ятдесят тренувань.", "Ветеран"
+    ),
+    "workout_100" to PostWorkoutAchievementTranslation(
+        "Центуріон", "Заверши сто тренувань.", "Центуріон"
+    ),
+    "streak_7" to PostWorkoutAchievementTranslation(
+        "Серія на сім днів", "Підтримуй серію протягом семи днів.", "Імпульс"
+    ),
+    "streak_14" to PostWorkoutAchievementTranslation(
+        "Серія на чотирнадцять днів", "Підтримуй серію протягом чотирнадцяти днів.", "Стан потоку"
+    ),
+    "streak_30" to PostWorkoutAchievementTranslation(
+        "Серія на тридцять днів", "Підтримуй серію протягом тридцяти днів.", "Незламний"
+    ),
+    "volume_10k" to PostWorkoutAchievementTranslation(
+        "Десять тисяч обсягу", "Накопич загальний обсяг 10 000.", "Творець обсягу"
+    ),
+    "volume_50k" to PostWorkoutAchievementTranslation(
+        "П’ятдесят тисяч обсягу", "Накопич загальний обсяг 50 000.", "Підкорювач гір"
+    ),
+    "comeback" to PostWorkoutAchievementTranslation(
+        "Повернення", "Повернися після семиденної перерви.", "Повернення"
+    )
 )
 
 class PostWorkoutSummaryViewModel(
@@ -174,8 +235,8 @@ class PostWorkoutSummaryViewModel(
                 currentLevel = afterSnapshot.progression.level,
                 previousLevel = beforeSnapshot.progression.level,
                 totalXp = afterSnapshot.progression.totalXp,
-                levelTitle = afterSnapshot.progression.title.name,
-                nextTitle = afterSnapshot.progression.nextTitle?.name,
+                levelTitle = localizedRankTitle(afterSnapshot.progression.title.name),
+                nextTitle = afterSnapshot.progression.nextTitle?.name?.let(::localizedRankTitle),
                 xpIntoLevel = afterSnapshot.progression.xpIntoLevel,
                 xpToNextLevel = afterSnapshot.progression.xpToNextLevel,
                 levelProgress = afterSnapshot.progression.levelProgress.toFloat(),
@@ -210,10 +271,18 @@ class PostWorkoutSummaryViewModel(
 
         val newDaily = after.daily
             .filter { it.completed && it.id !in beforeDailyIds }
-            .map { it.toCompletedMissionUiState(cadence = "Daily") }
+            .map {
+                it.toCompletedMissionUiState(
+                    cadence = localizedText(en = "Daily", uk = "Щоденна")
+                )
+            }
         val newWeekly = after.weekly
             .filter { it.completed && it.id !in beforeWeeklyIds }
-            .map { it.toCompletedMissionUiState(cadence = "Weekly") }
+            .map {
+                it.toCompletedMissionUiState(
+                    cadence = localizedText(en = "Weekly", uk = "Щотижнева")
+                )
+            }
 
         return newDaily + newWeekly
     }
@@ -230,9 +299,16 @@ class PostWorkoutSummaryViewModel(
         return after.achievements
             .filter { it.unlocked && it.id !in beforeUnlockedIds }
             .map { achievement ->
+                val translation = POST_WORKOUT_ACHIEVEMENT_UK[achievement.id]
                 NewBadgeUiState(
-                    name = achievement.badge.name,
-                    title = achievement.title,
+                    name = localizedText(
+                        en = achievement.badge.name,
+                        uk = translation?.badgeName ?: achievement.badge.name
+                    ),
+                    title = localizedText(
+                        en = achievement.title,
+                        uk = translation?.title ?: achievement.title
+                    ),
                     rarity = achievement.badge.rarity,
                     rewardXp = achievement.rewardXp
                 )
@@ -262,7 +338,7 @@ class PostWorkoutSummaryViewModel(
             val ratio = if (maxLoad <= 0.0) 0.0 else (stats.load / maxLoad).coerceIn(0.0, 1.0)
             PostWorkoutMuscleUiState(
                 id = definition.id,
-                label = definition.titleEn,
+                label = localizedText(definition.titleEn, definition.titleUk),
                 load = stats.load.roundToInt(),
                 sets = stats.setIds.size,
                 intensity = ratio.pow(0.72).toFloat().coerceIn(0f, 1f)
@@ -291,7 +367,10 @@ class PostWorkoutSummaryViewModel(
                     return@mapNotNull null
                 }
                 PostWorkoutPrUiState(
-                    exerciseName = bestCurrentSet.exerciseName,
+                    exerciseName = BuiltInExerciseCatalog.displayName(
+                        bestCurrentSet.exerciseName,
+                        currentLocale().language
+                    ),
                     weight = bestCurrentSet.weight,
                     previousBest = previousBest
                 )
@@ -300,12 +379,38 @@ class PostWorkoutSummaryViewModel(
     }
 
     private fun MissionSnapshot.toCompletedMissionUiState(cadence: String): CompletedMissionUiState {
+        val translation = POST_WORKOUT_MISSION_UK[id]
         return CompletedMissionUiState(
-            title = title,
-            description = description,
+            title = localizedText(en = title, uk = translation?.first ?: title),
+            description = localizedText(en = description, uk = translation?.second ?: description),
             rewardXp = rewardXp,
             cadence = cadence
         )
+    }
+
+    private fun localizedRankTitle(english: String): String {
+        val ukrainian = RANK_DEFINITIONS
+            .firstOrNull { it.titleEn == english }
+            ?.titleUk
+            ?: english
+        return localizedText(en = english, uk = ukrainian)
+    }
+
+    private fun localizedText(en: String, uk: String): String = when (
+        currentLocale().language.lowercase(Locale.ROOT)
+    ) {
+        "uk" -> uk
+        "ru" -> RussianText.translate(en)
+        else -> en
+    }
+
+    private fun currentLocale(): Locale {
+        val appLocales = AppCompatDelegate.getApplicationLocales()
+        return if (appLocales.isEmpty) {
+            Locale.getDefault()
+        } else {
+            appLocales[0] ?: Locale.getDefault()
+        }
     }
 
     companion object {

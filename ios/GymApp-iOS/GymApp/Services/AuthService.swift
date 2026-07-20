@@ -661,13 +661,7 @@ final class AuthService: ObservableObject {
     }
 
     private func friendlyMessage(_ error: Error) -> String {
-        let raw = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-        let lower = raw.lowercased()
-        if lower.contains("invalid login") || lower.contains("invalid credentials") { return "Email or password is incorrect." }
-        if lower.contains("email not confirmed") { return "Confirm your email first, then sign in." }
-        if lower.contains("rate limit") || lower.contains("over_email_send_rate_limit") { return "Too many emails were requested. Try again later." }
-        if lower.contains("already registered") || lower.contains("user_already_exists") { return "An account with this email already exists." }
-        return raw
+        gymSafeEnglishErrorMessage(error)
     }
 
     private static func errorMessage(status: Int, object: [String: Any]) -> String {

@@ -69,6 +69,7 @@ import com.example.gymapp.auth.AuthUiState
 import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.HeroPanel
 import com.example.gymapp.ui.components.SectionTitle
+import com.example.gymapp.util.asString
 
 @Composable
 fun AuthScreen(
@@ -264,7 +265,7 @@ fun AuthScreen(
                     }
                     uiState.message?.let { message ->
                         AuthStatusBanner(
-                            message = message,
+                            message = message.asString(),
                             isError = uiState.messageIsError
                         )
                     }
@@ -465,7 +466,7 @@ fun PasswordUpdateScreen(
                     }
                     uiState.message?.let { message ->
                         AuthStatusBanner(
-                            message = message,
+                            message = message.asString(),
                             isError = uiState.messageIsError
                         )
                     }

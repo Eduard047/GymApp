@@ -204,6 +204,7 @@ final class AppState: ObservableObject {
                 generation: generation,
                 expectedStorageKey: expectedStorageKey
             )
+            let persistedCatalogSeedVersion = candidate.catalogSeedVersion
             var seededExerciseCount = try candidate.seedBuiltInExercises()
             _ = try candidate.seedDefaultMuscleMappings()
 
@@ -227,7 +228,8 @@ final class AppState: ObservableObject {
                         )
                         let preparedBackup = try WorkoutStore.prepareCloudBackup(
                             remoteData,
-                            activeOwner: expectedOwner
+                            activeOwner: expectedOwner,
+                            localCatalogSeedVersion: persistedCatalogSeedVersion
                         )
                         _ = try candidate.restoreBackup(
                             data: preparedBackup.data,
@@ -557,10 +559,7 @@ final class AppState: ObservableObject {
             throw AuthServiceError.sessionChanged
         }
         let profile = store.syncProfileStats()
-        let data = try store.exportBackupData(
-            owner: owner,
-            prettyPrinted: false
-        )
+        let data = try store.exportCloudBackupData(owner: owner)
         try await cloudSync.saveRemoteState(
             backupData: data,
             xp: profile.xp,

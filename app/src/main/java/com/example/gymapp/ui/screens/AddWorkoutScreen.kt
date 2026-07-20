@@ -80,6 +80,7 @@ import com.example.gymapp.util.DateTimeUtils
 import com.example.gymapp.util.TrainingGoal
 import com.example.gymapp.util.TrainingProfile
 import com.example.gymapp.util.TrainingSplit
+import com.example.gymapp.util.asString
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -383,7 +384,7 @@ fun AddWorkoutScreen(
                             color = MaterialTheme.colorScheme.primary
                         )
                         false -> Text(
-                            text = uiState.watchPlanSyncError
+                            text = uiState.watchPlanSyncError?.asString()
                                 ?: stringResource(R.string.message_plan_sync_failed),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error
@@ -696,14 +697,16 @@ private fun ExerciseDraftCard(
             .associate { contribution -> contribution.muscleId to contribution.weight.toFloat() }
     }
     val setCountLabel = stringResource(R.string.exercise_set_count_compact, draft.sets.size)
-    val setSummary = remember(draft.sets, setCountLabel) {
-        val details = draft.sets.joinToString(separator = " · ") { set ->
-            val weight = set.weight.ifBlank { "—" }
-            val reps = set.reps.ifBlank { "—" }
-            "$weight kg × $reps"
-        }
-        if (details.isBlank()) setCountLabel else "$setCountLabel · $details"
+    val setDetails = mutableListOf<String>()
+    for (set in draft.sets) {
+        setDetails += stringResource(
+            R.string.set_weight_reps_value,
+            set.weight.ifBlank { "—" },
+            set.reps.ifBlank { "—" }
+        )
     }
+    val details = setDetails.joinToString(separator = " · ")
+    val setSummary = if (details.isBlank()) setCountLabel else "$setCountLabel · $details"
 
     AppPanel(
         modifier = Modifier.fillMaxWidth(),
@@ -940,12 +943,19 @@ private fun SmartRecommendationPanel(
                 }
             }
 
+            val recommendationSetValues = mutableListOf<String>()
+            for (set in recommendation.sets) {
+                val weight = set.weight?.let {
+                    String.format(Locale.getDefault(), "%.1f", it)
+                } ?: lightWeightLabel
+                recommendationSetValues += stringResource(
+                    R.string.set_weight_reps_value,
+                    weight,
+                    set.reps.toString()
+                )
+            }
             Text(
-                text = recommendation.sets.joinToString(separator = "  |  ") { set ->
-                    val weight = set.weight?.let { String.format(Locale.getDefault(), "%.1f kg", it) }
-                        ?: lightWeightLabel
-                    "$weight x ${set.reps}"
-                },
+                text = recommendationSetValues.joinToString(separator = "  |  "),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface
             )

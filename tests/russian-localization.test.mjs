@@ -72,25 +72,152 @@ test("PWA accepts Russian state and renders Russian runtime text before app star
   assert.equal(window.GymRussianText.translate("Barbell Row"), "Тяга штанги в наклоне");
   assert.equal(window.GymRussianText.translate("Deadlift"), "Становая тяга");
   assert.equal(window.GymRussianText.translate("4-workout week"), "4 тренировок за неделю");
+  const auditedRussian = new Map([
+    ["Add workouts to unlock daily, weekly, and monthly goals.", "Добавь тренировки, чтобы открыть ежедневные, недельные и месячные цели."],
+    ["All saved exercises are already in this workout.", "Все сохранённые упражнения уже добавлены в эту тренировку."],
+    ["An account with this email already exists. Log in or resend the confirmation email.", "Аккаунт с этим адресом электронной почты уже существует. Войди или повторно отправь письмо для подтверждения."],
+    ["Based on muscle load and recent training gaps.", "На основе нагрузки на мышцы и недавних перерывов в тренировках."],
+    ["Build plan: hold weight and add reps before the next jump.", "План набора: сохраняй вес и добавляй повторы перед следующим увеличением веса."],
+    ["Cloud sync conflicted. Reload before saving again.", "Возник конфликт облачной синхронизации. Обнови данные перед повторным сохранением."],
+    ["Confirm your email first, then log in.", "Сначала подтверди адрес электронной почты, затем войди."],
+    ["Consistency milestone reached.", "Достигнута веха стабильности."],
+    ["Generate Smart Workout", "Сгенерировать тренировку"],
+    ["Monthly", "Месячные"],
+    ["Next suggested workout: pull", "Следующая рекомендованная тренировка: тяга"],
+    ["Next suggested workout: push", "Следующая рекомендованная тренировка: жим"],
+    ["Wait for the account operation to finish.", "Дождись завершения операции с аккаунтом."],
+    ["A previous Garmin device creation is still awaiting revocation. Keep this page open and retry before pairing again.", "Предыдущее создание устройства Garmin всё ещё ожидает отзыва. Не закрывай эту страницу и повтори попытку перед новым сопряжением."],
+    ["Aesthetic goal: the plan favors clean volume and technique.", "Цель сушки: план делает упор на качественный объём и технику."],
+    ["Achievements", "Достижения"],
+    ["Back", "Сзади"],
+    ["Back to workouts", "К тренировкам"],
+    ["Backup JSON ready", "Резервная копия JSON готова"],
+    ["Backup imported.", "Резервная копия импортирована."],
+    ["Auto mapping", "Автосопоставление"],
+    ["Auto mapping works first, manual choices override it.", "Сначала применяется автосопоставление, а ручной выбор имеет приоритет."],
+    ["Avg / Set", "Сред. / подход"],
+    ["By name", "По названию"],
+    ["Built-in", "Встроенное"],
+    ["Copy Last +2.5 kg", "Копировать последний +2,5 кг"],
+    ["Copy Previous Workout", "Скопировать предыдущую тренировку"],
+    ["Completed missions and new badges from this finish.", "Выполненные миссии и новые значки после завершения тренировки."],
+    ["Deload", "Разгрузка"],
+    ["Garmin sync failed. Check your connection and try again.", "Не удалось синхронизировать Garmin. Проверь подключение и попробуй снова."],
+    ["Import backup", "Импорт резервной копии"],
+    ["Invalid backup.", "Некорректная резервная копия."],
+    ["Latest max", "Последний максимум"],
+    ["Least frequent", "Реже всего"],
+    ["Load", "Нагрузка"],
+    ["Local mode. Sign in to a cloud account to join the rating.", "Локальный режим. Войди в облачный аккаунт, чтобы присоединиться к рейтингу."],
+    ["Log in instead", "Войти вместо регистрации"],
+    ["Log your plan fast and keep momentum with smart set shortcuts.", "Быстро запиши план и сохраняй темп с помощью удобных действий для подходов."],
+    ["Momentum", "Темп"],
+    ["Name in English, Ukrainian, or Russian", "Название на английском, украинском или русском"],
+    ["Next", "Далее"],
+    ["No leaderboard rows yet.", "В рейтинге пока никого нет."],
+    ["This backup belongs to another account.", "Эта резервная копия принадлежит другому аккаунту."],
+    ["This full backup contains private workout history and account metadata. Copy it to the system clipboard? Other apps may be able to read it.", "Полная резервная копия содержит личную историю тренировок и данные аккаунта. Скопировать её в системный буфер обмена? Другие приложения могут получить к ней доступ."],
+    ["This report will include the full private backup. Continue to the print dialog?", "Отчёт будет содержать полную личную резервную копию. Перейти к диалогу печати?"],
+    ["synced from Garmin", "синхронизировано с Garmin"],
+    ["2 / week", "2 раза в неделю"],
+    ["3 / week", "3 раза в неделю"],
+    ["4 / week", "4 раза в неделю"],
+    ["5 / week", "5 раз в неделю"],
+    ["6 / week", "6 раз в неделю"],
+    ["Copy Last Set", "Копировать последний подход"],
+    ["Copy a previous workout", "Скопировать предыдущую тренировку"],
+    ["Copy this Garmin pairing token into Connect IQ settings now. Treat it as a password. It will not be stored or shown again. Choose Cancel to revoke it.", "Сейчас скопируй этот токен сопряжения Garmin в настройки Connect IQ. Относись к нему как к паролю. Он не будет сохранён или показан повторно. Нажми «Отмена», чтобы отозвать его."],
+    ["Existing Garmin recovery was cancelled. No new device identity was created.", "Восстановление существующего сопряжения Garmin отменено. Новый идентификатор устройства не создан."],
+    ["First download the untouched private JSON for offline recovery. Replacing it with an empty valid state is permanent and uses the exact server revision so another device's newer update cannot be overwritten.", "Сначала скачай неизменённый приватный JSON для офлайн-восстановления. Замена на пустое корректное состояние необратима и использует точную ревизию сервера, поэтому новые изменения с другого устройства не будут перезаписаны."],
+    ["Front", "Спереди"],
+    ["Garmin unpair failed.", "Не удалось отсоединить Garmin."],
+    ["Last", "Последний вес"],
+    ["Maintenance", "Поддержание"],
+    ["Maximum weight and session volume over time.", "Максимальный вес и объём тренировки в динамике."],
+    ["No exercise data yet", "По этому упражнению пока нет данных"],
+    ["No logged exercises for this muscle in the selected period.", "Для этой группы мышц в выбранном периоде нет записанных упражнений."],
+    ["Open the full rank list and check the next unlocks.", "Открой полный список рангов и посмотри, что откроется дальше."],
+    ["Paste exported GymApp JSON here", "Вставь сюда экспортированный JSON GymApp"],
+    ["Plateau plan: change the rep target to break the flat trend.", "План выхода с плато: измени цель по повторам, чтобы преодолеть застой."],
+    ["Recent reps or volume dipped, so the plan stays conservative.", "Повторы или объём снизились, поэтому план остаётся консервативным."],
+    ["Recent volume dropped compared with the previous session.", "Объём последней тренировки ниже объёма предыдущей."],
+    ["Repeat Last Workout", "Повторить последнюю тренировку"],
+    ["Share PDF report", "Поделиться PDF-отчётом"],
+    ["Sign in to sync workouts across devices.", "Войди, чтобы синхронизировать тренировки между устройствами."],
+    ["Smart Coach", "Умный тренер"],
+    ["Smart Coach uses this to match your plan, goal and recovery.", "Умный тренер использует эти данные, чтобы подобрать план с учётом цели и восстановления."],
+    ["Solo Progress", "Личный прогресс"],
+    ["Suggested from your recent exercise pattern and training profile.", "Подобрано с учётом недавних упражнений и профиля тренировок."],
+    ["Switch", "Сменить аккаунт"],
+    ["The increase is intentionally conservative.", "Увеличение намеренно небольшое."],
+    ["The pending Garmin device is no longer active. Run Sync Watch again to choose or create a pairing.", "Ожидающее сопряжения устройство Garmin больше не активно. Снова нажми «Синхронизировать с часами», чтобы выбрать или создать сопряжение."],
+    ["This legacy local account name is ambiguous. Its stored data was left untouched; rename/recover it before signing in.", "Название старого локального аккаунта неоднозначно. Его данные не изменены; восстанови или переименуй аккаунт перед входом."],
+    ["Use Last Weight", "Использовать последний вес"],
+    ["View workout", "Открыть тренировку"],
+    ["Your authenticated cloud row uses a legacy or invalid format. It was not loaded into the app and cannot sync until you choose a recovery action.", "Твоя аутентифицированная облачная запись имеет устаревший или некорректный формат. Она не загружена в приложение, и синхронизация заблокирована до выбора способа восстановления."],
+    ["Your latest result and the direction of recent sessions.", "Последний результат и динамика недавних тренировок."],
+    ["into this level", "на этом уровне"],
+    ["A one-time Garmin token will be shown. It works like a password: paste it only into this watch's Connect IQ settings. GymApp will not store or show it again. Continue?", "Будет показан одноразовый токен Garmin. Он работает как пароль: вставь его только в настройки Connect IQ этих часов. GymApp не сохранит и больше не покажет его. Продолжить?"],
+    ["Last session was stable across the sets.", "Результаты последней тренировки были стабильными во всех подходах."],
+    ["Password must be 8+ characters and include letters and numbers.", "Пароль должен содержать не менее 8 символов, включая буквы и цифры."],
+    ["Repeat email", "Повтори адрес электронной почты"],
+    ["Resend confirmation email", "Повторно отправить письмо для подтверждения"],
+    ["The unseen Garmin token could not be persisted or revoked. Keep this page open and retry Garmin sync or sign-out to revoke it.", "Непоказанный токен Garmin не удалось ни сохранить, ни отозвать. Не закрывай эту страницу: повтори синхронизацию с Garmin или выйди из аккаунта, чтобы отозвать токен."],
+    ["Workout summary unavailable.", "Сводка по тренировке недоступна."],
+    ["Your training history and next best move.", "Твоя история тренировок и рекомендация, что делать дальше."]
+  ]);
+  for (const [english, russian] of auditedRussian) {
+    assert.equal(window.GymRussianText.translate(english), russian, english);
+  }
+  assert.doesNotMatch([...auditedRussian.values()].join("\n"), /погруз|лунн|прыжком|\b(?:pull|push)\b|Sync Watch|Garmin sync/i);
   assert.match(contractSource, /\["en", "uk", "ru"\]\.includes/);
   assert.match(appSource, /data-language="ru">Русский/);
-  assert.ok(indexSource.indexOf("russian-text.v48.js") < indexSource.indexOf("app.v48.js"));
-  assert.match(workerSource, /"\.\/russian-text\.v48\.js"/);
+  assert.match(appSource, /\^Garmin\(\?: Fenix 8\)\?\(\?: ·\|\$\)/);
+  assert.match(appSource, /tx\("synced from Garmin", "синхронізовано з Garmin"\)/);
+  assert.match(appSource, /txAttr\("Name in English, Ukrainian, or Russian", "Назва англійською, українською або російською"\)/);
+  assert.doesNotMatch(appSource, /Name in English, Ukrainian or Russian/);
+  assert.ok(indexSource.indexOf("russian-text.v50.js") < indexSource.indexOf("app.v50.js"));
+  assert.match(workerSource, /"\.\/russian-text\.v50\.js"/);
 });
 
 test("Garmin accepts Russian language sync and uses direct touch hit targets", async () => {
-  const [manifest, store, view, russianResources] = await Promise.all([
+  const [manifest, store, view, russianResources, ukrainianResources, buildScript] = await Promise.all([
     readFile("garmin/manifest.xml", "utf8"),
     readFile("garmin/source/GymStore.mc", "utf8"),
     readFile("garmin/source/WorkoutView.mc", "utf8"),
-    readFile("garmin/resources-rus/strings.xml", "utf8")
+    readFile("garmin/resources-rus/strings.xml", "utf8"),
+    readFile("garmin/resources-ukr/strings.xml", "utf8"),
+    readFile("scripts/build-garmin.sh", "utf8")
   ]);
   assert.match(manifest, /<iq:language>rus<\/iq:language>/);
   assert.match(store, /language\.equals\("ru"\)/);
   assert.match(store, /static function tr\(en, uk, ru\)/);
+  assert.match(store, /System\.LANGUAGE_RUS/);
+  assert.match(store, /System\.LANGUAGE_UKR/);
+  assert.match(store, /return "Exercise";/);
+  assert.match(store, /static function currentExerciseLabel\(\)/);
+  assert.match(store, /name\.equals\("Bench Press"\)[\s\S]*Жим штанги лежачи[\s\S]*Жим штанги лежа/);
+  assert.match(store, /name\.equals\("Squat"\)[\s\S]*Присідання зі штангою[\s\S]*Приседания со штангой/);
+  assert.match(store, /name\.equals\("Deadlift"\)[\s\S]*Станова тяга[\s\S]*Становая тяга/);
+  assert.match(store, /name\.equals\("Overhead Press"\)[\s\S]*Жим над головою[\s\S]*Жим над головой/);
+  assert.match(store, /name\.equals\("Curl"\)[\s\S]*Згинання рук[\s\S]*Сгибание рук/);
+  assert.match(store, /"exerciseName" => currentExercise\(\)/);
   assert.match(view, /evt\.getCoordinates\(\)/);
   assert.match(view, /function rowAt\(/);
   assert.match(view, /activate\(x < \(view\.screenWidth \/ 2\) \? -1 : 1\)/);
+  assert.match(view, /handleSettings\(x < \(view\.screenWidth \/ 2\) \? -1 : 1\)/);
+  assert.match(view, /function onMenu\(\)/);
+  assert.match(view, /function onNextMode\(\)/);
+  assert.match(view, /function onPreviousMode\(\)/);
   assert.match(view, /pauseRow == 2 && view\.pauseSelected != 2/);
+  assert.match(view, /GymStore\.currentExerciseLabel\(\)/);
+  assert.match(view, /function localizedDecimal\(value\)/);
+  assert.match(view, /GymStore\.tr\("kg x ", " кг × ", " кг × "\)/);
+  assert.match(view, /GymStore\.tr\("s", "с", "с"\)/);
+  assert.match(view, /GymStore\.tr\("DETECT", "ЧУТЛ", "ЧУВСТ"\)/);
+  assert.match(view, /function statusLabel\(value\)/);
   assert.match(russianResources, /Облачный токен/);
+  assert.match(ukrainianResources, /Хмарний токен/);
+  assert.match(buildScript, /-r -e/);
+  assert.equal([...manifest.matchAll(/<iq:product id=/g)].length, 108);
 });

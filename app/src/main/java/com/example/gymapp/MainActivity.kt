@@ -9,6 +9,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.example.gymapp.auth.AuthCallbackKind
+import com.example.gymapp.auth.authErrorText
 import com.example.gymapp.navigation.GymAppRoot
 import com.example.gymapp.ui.theme.GymAppTheme
 import kotlinx.coroutines.launch
@@ -62,20 +63,20 @@ class MainActivity : AppCompatActivity() {
             runCatching {
                 app.cloudAuthManager.completeAuthCallback(uri)
             }.onSuccess { result ->
-                val message = when (result.kind) {
+                val messageResource = when (result.kind) {
                     AuthCallbackKind.PasswordRecovery ->
-                        "Recovery link verified. Choose a new password in GymApp."
+                        R.string.auth_recovery_verified
                     AuthCallbackKind.EmailConfirmation ->
-                        "Email confirmed. You're logged in."
+                        R.string.auth_message_email_confirmed
                 }
                 Toast.makeText(
                     this@MainActivity,
-                    message,
+                    getString(messageResource),
                     Toast.LENGTH_LONG
                 ).show()
             }.onFailure { throwable ->
                 app.cloudAuthManager.setMessage(
-                    throwable.message ?: "Authentication link failed. Request a new email and try again."
+                    authErrorText(throwable, R.string.auth_message_callback_failed)
                 )
             }
         }

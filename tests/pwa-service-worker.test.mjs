@@ -5,17 +5,17 @@ import vm from "node:vm";
 
 const workerSource = readFileSync(new URL("../pwa/sw.js", import.meta.url), "utf8");
 const VERSIONED_ASSET_PAIRS = [
-  ["confirmed.css", "confirmed.v48.css"],
-  ["confirmed.js", "confirmed.v48.js"],
-  ["frame-guard.js", "frame-guard.v48.js"],
-  ["styles.css", "styles.v48.css"],
-  ["muscle-regions.js", "muscle-regions.v48.js"],
-  ["supabase-config.js", "supabase-config.v48.js"],
-  ["state-contract.js", "state-contract.v48.js"],
-  ["garmin-cloud-sync.js", "garmin-cloud-sync.v48.js"],
-  ["progression-rules.js", "progression-rules.v48.js"],
-  ["russian-text.js", "russian-text.v48.js"],
-  ["app.js", "app.v48.js"]
+  ["confirmed.css", "confirmed.v50.css"],
+  ["confirmed.js", "confirmed.v50.js"],
+  ["frame-guard.js", "frame-guard.v50.js"],
+  ["styles.css", "styles.v50.css"],
+  ["muscle-regions.js", "muscle-regions.v50.js"],
+  ["supabase-config.js", "supabase-config.v50.js"],
+  ["state-contract.js", "state-contract.v50.js"],
+  ["garmin-cloud-sync.js", "garmin-cloud-sync.v50.js"],
+  ["progression-rules.js", "progression-rules.v50.js"],
+  ["russian-text.js", "russian-text.v50.js"],
+  ["app.js", "app.v50.js"]
 ];
 
 function loadWorker(scope = "https://example.test/GymApp/", options = {}) {
@@ -136,14 +136,14 @@ function isIntercepted(handler, url, options = {}) {
   return responsePromiseFor(handler, url, options) !== null;
 }
 
-test("service worker caches only exact immutable v48 same-origin assets", () => {
+test("service worker caches only exact immutable v50 same-origin assets", () => {
   for (const scope of ["https://example.test/", "https://example.test/GymApp/"]) {
     const handler = loadWorker(scope).listeners.get("fetch");
 
-    assert.equal(isIntercepted(handler, new URL("./app.v48.js", scope)), true);
-    assert.equal(isIntercepted(handler, new URL("./state-contract.v48.js", scope)), true);
-    assert.equal(isIntercepted(handler, new URL("./frame-guard.v48.js", scope)), true);
-    assert.equal(isIntercepted(handler, new URL("./app.js?v=48", scope)), false);
+    assert.equal(isIntercepted(handler, new URL("./app.v50.js", scope)), true);
+    assert.equal(isIntercepted(handler, new URL("./state-contract.v50.js", scope)), true);
+    assert.equal(isIntercepted(handler, new URL("./frame-guard.v50.js", scope)), true);
+    assert.equal(isIntercepted(handler, new URL("./app.js?v=50", scope)), false);
     assert.equal(isIntercepted(handler, new URL("./app.js", scope)), false);
     assert.equal(isIntercepted(handler, scope), true);
     assert.equal(isIntercepted(handler, new URL("./rest/v1/user_states", scope)), false);
@@ -151,26 +151,26 @@ test("service worker caches only exact immutable v48 same-origin assets", () => 
   }
 });
 
-test("v48 pathname assets cannot be mistaken for predecessor assets", () => {
+test("v50 pathname assets cannot be mistaken for predecessor assets", () => {
   const predecessorPaths = new Set([
     "confirmed.css", "confirmed.js", "frame-guard.js", "styles.css",
     "muscle-regions.js", "supabase-config.js", "state-contract.js",
     "garmin-cloud-sync.js", "progression-rules.js", "russian-text.js", "app.js"
   ]);
-  const v48Paths = [
-    "confirmed.v48.css", "confirmed.v48.js", "frame-guard.v48.js", "styles.v48.css",
-    "muscle-regions.v48.js", "supabase-config.v48.js", "state-contract.v48.js",
-    "garmin-cloud-sync.v48.js", "progression-rules.v48.js", "russian-text.v48.js", "app.v48.js"
+  const v50Paths = [
+    "confirmed.v50.css", "confirmed.v50.js", "frame-guard.v50.js", "styles.v50.css",
+    "muscle-regions.v50.js", "supabase-config.v50.js", "state-contract.v50.js",
+    "garmin-cloud-sync.v50.js", "progression-rules.v50.js", "russian-text.v50.js", "app.v50.js"
   ];
 
-  for (const pathname of v48Paths) {
+  for (const pathname of v50Paths) {
     assert.equal(predecessorPaths.has(pathname), false, pathname);
     assert.match(workerSource, new RegExp(`\\./${pathname.replaceAll(".", "\\.")}`));
   }
-  assert.doesNotMatch(workerSource, /\.\/app\.js\?v=48/);
+  assert.doesNotMatch(workerSource, /\.\/app\.js\?v=50/);
 });
 
-test("every deployed v48 asset exists and is byte-identical to its canonical source", () => {
+test("every deployed v50 asset exists and is byte-identical to its canonical source", () => {
   for (const [canonical, versioned] of VERSIONED_ASSET_PAIRS) {
     const canonicalBytes = readFileSync(new URL(`../pwa/${canonical}`, import.meta.url));
     const versionedBytes = readFileSync(new URL(`../pwa/${versioned}`, import.meta.url));
@@ -181,19 +181,19 @@ test("every deployed v48 asset exists and is byte-identical to its canonical sou
 test("service worker ignores credential-bearing, partial-content, and non-GET requests", () => {
   const handler = loadWorker().listeners.get("fetch");
 
-  assert.equal(isIntercepted(handler, "https://example.test/GymApp/app.v48.js", {
+  assert.equal(isIntercepted(handler, "https://example.test/GymApp/app.v50.js", {
     headers: { Authorization: "Bearer test-token" }
   }), false);
   assert.equal(isIntercepted(handler, "https://example.test/GymApp/index.html", {
     headers: { apikey: "test-key" }
   }), false);
-  assert.equal(isIntercepted(handler, "https://example.test/GymApp/app.v48.js", {
+  assert.equal(isIntercepted(handler, "https://example.test/GymApp/app.v50.js", {
     headers: { Range: "bytes=0-10" }
   }), false);
   assert.equal(isIntercepted(handler, "https://example.test/GymApp/index.html", {
     headers: { "If-Range": "etag" }
   }), false);
-  assert.equal(isIntercepted(handler, "https://example.test/GymApp/app.v48.js", { method: "POST" }), false);
+  assert.equal(isIntercepted(handler, "https://example.test/GymApp/app.v50.js", { method: "POST" }), false);
 });
 
 test("searched auth callbacks are network-only but receive enforceable anti-framing headers", async () => {
@@ -252,7 +252,7 @@ test("sensitive callback network failures never fall back to cached HTML", async
 
 test("token-like asset queries are neither intercepted nor cached", () => {
   const handler = loadWorker().listeners.get("fetch");
-  assert.equal(isIntercepted(handler, "https://example.test/GymApp/app.v48.js?provider_token=secret"), false);
+  assert.equal(isIntercepted(handler, "https://example.test/GymApp/app.v50.js?provider_token=secret"), false);
   assert.equal(isIntercepted(handler, "https://example.test/GymApp/icon.svg?access_token=secret"), false);
 });
 
@@ -262,7 +262,7 @@ test("cached documents receive the same anti-framing policy", async () => {
   const response = await responsePromiseFor(handler, "https://example.test/GymApp/");
 
   assert.equal(await response.text(), "cached");
-  assert.deepEqual(worker.openedCaches, ["gym-pwa-v49"]);
+  assert.deepEqual(worker.openedCaches, ["gym-pwa-v50"]);
   assert.match(response.headers.get("Content-Security-Policy"), /style-src 'self'/);
   assert.match(response.headers.get("Content-Security-Policy"), /frame-ancestors 'none'/);
   assert.doesNotMatch(response.headers.get("Content-Security-Policy"), /unsafe-inline/);
@@ -278,9 +278,9 @@ test("install reloads one internally consistent version without taking over old 
   handler({ waitUntil(value) { installPromise = value; } });
   await installPromise;
 
-  assert.deepEqual(worker.openedCaches, ["gym-pwa-v49"]);
-  assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/app.v48.js")));
-  assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/styles.v48.css")));
+  assert.deepEqual(worker.openedCaches, ["gym-pwa-v50"]);
+  assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/app.v50.js")));
+  assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/styles.v50.css")));
   assert.equal(worker.addedAssets.every(asset => asset instanceof Request && asset.cache === "reload"), true);
   assert.equal(worker.skipWaitingCount(), 0);
 });

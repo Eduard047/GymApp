@@ -366,7 +366,7 @@ private struct GarminTokenPresentation: Identifiable {
 private struct GarminSettingsCard: View {
     @ObservedObject var garminCloud: GarminCloudService
 
-    @State private var displayName = "Garmin watch"
+    @State private var displayName = gymLocalized("Garmin watch")
     @State private var errorMessage: String?
     @State private var tokenPresentation: GarminTokenPresentation?
     private let garminStoreURL = URL(
@@ -509,6 +509,20 @@ private struct GarminSettingsCard: View {
 
     private func deviceButton(_ device: GarminDeviceSummary) -> some View {
         let selected = garminCloud.selectedDevice?.deviceID == device.id
+        let identifierSuffix = String(device.id.suffix(8))
+        let identifierLabel: String
+        let deviceAccessibilityLabel: String
+        switch gymCurrentLanguageCode() {
+        case AppLanguage.ukrainian.rawValue:
+            identifierLabel = "Пристрій …\(identifierSuffix)"
+            deviceAccessibilityLabel = "\(device.displayName), останні символи ідентифікатора пристрою: \(identifierSuffix)"
+        case AppLanguage.russian.rawValue:
+            identifierLabel = "Устройство …\(identifierSuffix)"
+            deviceAccessibilityLabel = "\(device.displayName), последние символы идентификатора устройства: \(identifierSuffix)"
+        default:
+            identifierLabel = "Device …\(identifierSuffix)"
+            deviceAccessibilityLabel = "\(device.displayName), device ending \(identifierSuffix)"
+        }
         return Button {
             do {
                 try garminCloud.selectDevice(device)
@@ -521,10 +535,10 @@ private struct GarminSettingsCard: View {
                 Image(systemName: selected ? "checkmark.circle.fill" : "circle")
                     .foregroundStyle(selected ? GymTheme.primary : GymTheme.textSecondary)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(gymLocalized(device.displayName))
+                    Text(device.displayName)
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(GymTheme.textPrimary)
-                    Text("Device …\(device.id.suffix(8))")
+                    Text(identifierLabel)
                         .font(.caption.monospaced())
                         .foregroundStyle(GymTheme.textSecondary)
                 }
@@ -544,7 +558,7 @@ private struct GarminSettingsCard: View {
                 .fill(selected ? GymTheme.primary.opacity(0.1) : GymTheme.surfaceVariant)
         )
         .disabled(garminCloud.isWorking)
-        .accessibilityLabel("\(device.displayName), device ending \(device.id.suffix(8))")
+        .accessibilityLabel(deviceAccessibilityLabel)
         .accessibilityValue(selected ? "Selected" : "Not selected")
     }
 

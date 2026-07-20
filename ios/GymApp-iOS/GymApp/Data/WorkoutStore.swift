@@ -376,9 +376,9 @@ public final class WorkoutStore: ObservableObject {
                 )
             })
             for definition in BuiltInExerciseCatalog.definitions where !existingKeys.contains(definition.key) {
-                guard state.exercises.count < BackupImportLimits.standard.maximumExercises else {
-                    throw WorkoutStoreError.importLimitExceeded("exercise count")
-                }
+                // A full legacy account must still open. Keep the marker unset so deleting an
+                // exercise later gives the migration another chance to add the remaining items.
+                guard state.exercises.count < BackupImportLimits.standard.maximumExercises else { break }
                 state.exercises.append(
                     Exercise(
                         name: definition.englishName,
@@ -388,7 +388,9 @@ public final class WorkoutStore: ObservableObject {
                 existingKeys.insert(definition.key)
                 inserted += 1
             }
-            state.catalogSeedVersion = BuiltInExerciseCatalog.seedVersion
+            if BuiltInExerciseCatalog.definitions.allSatisfy({ existingKeys.contains($0.key) }) {
+                state.catalogSeedVersion = BuiltInExerciseCatalog.seedVersion
+            }
         }
         return inserted
     }
@@ -1026,12 +1028,31 @@ public final class WorkoutStore: ObservableObject {
         return json
     }
 
+    /// Encodes the legacy eight-key native cloud root accepted by already-released clients.
+    /// The seed marker remains part of local/manual backups, but it is local migration metadata
+    /// and must not extend the public cloud envelope in this release.
+    func exportCloudBackupData(owner: BackupOwner) throws -> Data {
+        let backupData = try exportBackupData(owner: owner, prettyPrinted: false)
+        let parsed: Any
+        do {
+            parsed = try JSONSerialization.jsonObject(with: backupData)
+        } catch {
+            throw WorkoutStoreError.persistenceFailure(error.localizedDescription)
+        }
+        guard var root = parsed as? [String: Any] else {
+            throw WorkoutStoreError.persistenceFailure("Cloud backup encoding failed.")
+        }
+        root.removeValue(forKey: "catalogSeedVersion")
+        return try Self.encodedCloudBackup(root, limits: .standard)
+    }
+
     /// Adapts authenticated legacy PWA cloud rows to the native backup reader without
     /// weakening owner checks. The caller must keep cloud writes paused when the result
     /// is not round-trip safe, because native export does not preserve PWA-only fields.
     static func prepareCloudBackup(
         _ data: Data,
         activeOwner: BackupOwner,
+        localCatalogSeedVersion: Int = 0,
         limits: BackupImportLimits = .standard
     ) throws -> PreparedCloudBackup {
         guard activeOwner.remote,
@@ -1041,6 +1062,9 @@ public final class WorkoutStore: ObservableObject {
         }
         guard data.count <= limits.maximumFileBytes else {
             throw WorkoutStoreError.importLimitExceeded("file size")
+        }
+        guard (0 ... BuiltInExerciseCatalog.seedVersion).contains(localCatalogSeedVersion) else {
+            throw WorkoutStoreError.corruptStore("Unsupported exercise catalog seed version.")
         }
         try validateJSONEnvelope(data, limits: limits)
 
@@ -1068,7 +1092,9 @@ public final class WorkoutStore: ObservableObject {
             let requiredPWAKeys: Set<String> = [
                 "language", "exercises", "sessions", "mappings", "profile"
             ]
-            let allowedPWAKeys = requiredPWAKeys.union(["progressExerciseId"])
+            let allowedPWAKeys = requiredPWAKeys.union([
+                "progressExerciseId", "catalogSeedVersion"
+            ])
             guard requiredPWAKeys.isSubset(of: Set(root.keys)),
                   Set(root.keys).isSubset(of: allowedPWAKeys),
                   let language = root["language"] as? String,
@@ -1086,6 +1112,9 @@ public final class WorkoutStore: ObservableObject {
             root["app"] = "GymApp"
             root["diagnostics"] = false
             root["owner"] = canonicalOwner
+            if root["catalogSeedVersion"] == nil {
+                root["catalogSeedVersion"] = localCatalogSeedVersion
+            }
             return PreparedCloudBackup(
                 data: try encodedCloudBackup(root, limits: limits),
                 roundTripSafe: false
@@ -1098,6 +1127,14 @@ public final class WorkoutStore: ObservableObject {
         ]
         var roundTripSafe = Set(root.keys).isSubset(of: nativeKeys)
         var needsEncoding = false
+
+        if root["catalogSeedVersion"] == nil {
+            // Legacy public cloud rows predate this local-only migration marker. Reuse the
+            // marker that was persisted before account activation so repeated pulls do not
+            // resurrect a built-in exercise the user intentionally deleted.
+            root["catalogSeedVersion"] = localCatalogSeedVersion
+            needsEncoding = true
+        }
 
         if root["owner"] == nil || root["owner"] is NSNull {
             // The authenticated user_states row supplies the missing legacy identity.

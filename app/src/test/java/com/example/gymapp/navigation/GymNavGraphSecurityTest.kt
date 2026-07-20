@@ -88,6 +88,13 @@ class GymNavGraphSecurityTest {
         assertFalse(isCanonicalAndroidCloudEnvelope(canonical, userId))
         canonical.put("catalogSeedVersion", 1)
         assertTrue(canonicalWorkoutPayloadMatches(canonical, JSONObject(canonical.toString())))
+        val legacyEightKeyEnvelope = JSONObject(canonical.toString()).apply {
+            remove("catalogSeedVersion")
+        }
+        assertEquals(
+            canonicalWorkoutPayloadDigest(legacyEightKeyEnvelope),
+            canonicalWorkoutPayloadDigest(canonical)
+        )
         val additiveLocalState = JSONObject(canonical.toString()).apply {
             getJSONArray("sessions").put(
                 JSONObject()

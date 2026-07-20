@@ -148,6 +148,13 @@ class GymStore {
         var savedLanguage = Storage.getValue("language");
         if (savedLanguage != null) {
             language = normalizedLanguage(savedLanguage.toString());
+        } else {
+            var systemLanguage = System.getDeviceSettings().systemLanguage;
+            if (systemLanguage == System.LANGUAGE_UKR) {
+                language = "uk";
+            } else if (systemLanguage == System.LANGUAGE_RUS) {
+                language = "ru";
+            }
         }
         if (legacyUnboundState) {
             // Once present, this single-value snapshot is the atomic source of truth for
@@ -328,6 +335,34 @@ class GymStore {
         return exercises[exerciseIndex];
     }
 
+    // Translate only at render time. Canonical exercise names remain unchanged in
+    // storage, workout sets, phone messages, and cloud synchronization.
+    static function currentExerciseLabel() {
+        return localizedExerciseName(currentExercise());
+    }
+
+    static function localizedExerciseName(value) {
+        var name = value == null ? "Exercise" : value.toString();
+        if (name.equals("Exercise")) {
+            return tr("Exercise", "Вправа", "Упражнение");
+        } else if (name.equals("Bench Press")) {
+            return tr(name, "Жим штанги лежачи", "Жим штанги лежа");
+        } else if (name.equals("Squat")) {
+            return tr(name, "Присідання зі штангою", "Приседания со штангой");
+        } else if (name.equals("Deadlift")) {
+            return tr(name, "Станова тяга", "Становая тяга");
+        } else if (name.equals("Pull Up")) {
+            return tr(name, "Підтягування", "Подтягивание");
+        } else if (name.equals("Overhead Press")) {
+            return tr(name, "Жим над головою", "Жим над головой");
+        } else if (name.equals("Curl")) {
+            return tr(name, "Згинання рук", "Сгибание рук");
+        } else if (name.equals("Biceps Curl")) {
+            return tr(name, "Згинання рук на біцепс", "Сгибание рук на бицепс");
+        }
+        return name;
+    }
+
     static function applyCurrentPlanSet() {
         if (plan.size() == 0) {
             return;
@@ -385,7 +420,19 @@ class GymStore {
     }
 
     static function cycleWeightStep() {
-        if (weightStep < 5.0) {
+        adjustWeightStep(1);
+    }
+
+    static function adjustWeightStep(delta) {
+        if (delta < 0) {
+            if (weightStep > 5.0) {
+                weightStep = 5.0;
+            } else if (weightStep > 2.5) {
+                weightStep = 2.5;
+            } else {
+                weightStep = 10.0;
+            }
+        } else if (weightStep < 5.0) {
             weightStep = 5.0;
         } else if (weightStep < 10.0) {
             weightStep = 10.0;
@@ -396,7 +443,21 @@ class GymStore {
     }
 
     static function cycleRestDefault() {
-        if (restSecondsDefault < 90) {
+        adjustRestDefault(1);
+    }
+
+    static function adjustRestDefault(delta) {
+        if (delta < 0) {
+            if (restSecondsDefault > 120) {
+                restSecondsDefault = 120;
+            } else if (restSecondsDefault > 90) {
+                restSecondsDefault = 90;
+            } else if (restSecondsDefault > 60) {
+                restSecondsDefault = 60;
+            } else {
+                restSecondsDefault = 180;
+            }
+        } else if (restSecondsDefault < 90) {
             restSecondsDefault = 90;
         } else if (restSecondsDefault < 120) {
             restSecondsDefault = 120;
@@ -417,25 +478,21 @@ class GymStore {
     }
 
     static function cycleSensitivity() {
-        sensitivityIndex = (sensitivityIndex + 1) % 3;
+        adjustSensitivity(1);
+    }
+
+    static function adjustSensitivity(delta) {
+        sensitivityIndex = (sensitivityIndex + (delta < 0 ? 2 : 1)) % 3;
         save();
     }
 
     static function sensitivityLabel() {
-        if (isUk()) {
-            if (sensitivityIndex == 0) {
-                return "НИЗ";
-            } else if (sensitivityIndex == 2) {
-                return "ВИС";
-            }
-            return "НОРМ";
-        }
         if (sensitivityIndex == 0) {
-            return "LOW";
+            return tr("LOW", "НИЗ", "НИЗ");
         } else if (sensitivityIndex == 2) {
-            return "HIGH";
+            return tr("HIGH", "ВИС", "ВЫС");
         }
-        return "NORMAL";
+        return tr("NORMAL", "НОРМ", "НОРМ");
     }
 
     static function clearWorkout() {

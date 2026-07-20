@@ -12,6 +12,11 @@ plus Garmin, Wear OS, and browser companions.
 GitHub Releases remain the distribution source for downloadable Android, iOS
 Simulator, and Garmin test artifacts.
 
+The Android, Wear OS, native iOS, and browser interfaces support English,
+Ukrainian, and Russian.
+
+Current source release: **GymApp 2.1.0** (PWA cache generation **v50**).
+
 ## Current Feature Set
 
 ### Phone app
@@ -27,7 +32,7 @@ Simulator, and Garmin test artifacts.
 - SwiftUI application in `ios/GymApp-iOS` with the same Supabase account and workout data.
 - Password recovery, cloud sync, canonical XP/rank rules, muscle maps, activity heatmap, missions, and leaderboards.
 - App Store privacy manifest, localized metadata, support/privacy pages, release validation, and archive scripts.
-- Current QA binary is an unsigned universal Release-configuration iOS Simulator build; a signed App Store IPA still requires Apple Distribution signing.
+- The release workflow produces a universal Release-configuration iOS Simulator build; an App Store IPA requires the matching Apple Distribution identity and provisioning profile.
 
 ### Muscle Map
 
@@ -71,56 +76,29 @@ because it contains private workout data.
 - Offline workout queue and two-way sync through Garmin Connect and the Android app.
 - Source and build instructions: `garmin/README.md`.
 
-## Download security QA builds
+## Downloads
 
-<p align="center">
-  <a href="https://github.com/Eduard047/GymApp/releases/tag/qa-2026.07.17.1">
-    <img alt="Security QA release" src="https://img.shields.io/badge/Security%20QA-2026.07.17.1-3f806a?style=for-the-badge">
-  </a>
-  <a href="https://github.com/Eduard047/GymApp/releases">
-    <img alt="Releases" src="https://img.shields.io/badge/Open-Releases-181717?style=for-the-badge&logo=github&logoColor=white">
-  </a>
-  <a href="https://github.com/Eduard047/GymApp/releases/download/qa-2026.07.17.1/gymapp-phone-qa.apk">
-    <img alt="Download Phone QA APK" src="https://img.shields.io/badge/Download-Phone%20QA-34A853?style=for-the-badge&logo=android&logoColor=white">
-  </a>
-  <a href="https://github.com/Eduard047/GymApp/releases/download/qa-2026.07.17.1/gymapp-watch-qa.apk">
-    <img alt="Download Wear QA APK" src="https://img.shields.io/badge/Download-Wear%20QA-4285F4?style=for-the-badge&logo=wearos&logoColor=white">
-  </a>
-  <a href="https://github.com/Eduard047/GymApp/releases/download/qa-2026.07.17.1/GymApp-iOS-Simulator-1.0.2-build3.zip">
-    <img alt="Download iOS Release Simulator Build" src="https://img.shields.io/badge/Download-iOS%20Simulator-000000?style=for-the-badge&logo=apple&logoColor=white">
-  </a>
-  <a href="https://github.com/Eduard047/GymApp/releases/download/qa-2026.07.17.1/gymapp-garmin-connect-iq.iq">
-    <img alt="Download Garmin Connect IQ package" src="https://img.shields.io/badge/Download-Garmin%20Connect%20IQ-007CC3?style=for-the-badge">
-  </a>
-</p>
+- Releases page: https://github.com/Eduard047/GymApp/releases
+- Latest published release: https://github.com/Eduard047/GymApp/releases/latest
+- Web app: https://gymapptracker.com/
 
-<p align="center">
-  Non-debuggable, test-signed Android QA builds and an unsigned Release-configuration iOS Simulator build. These are prerelease test artifacts, not Play Store or App Store binaries.
-</p>
+Each release documents exactly which artifacts were produced and how they were
+signed. Production Android APK/AAB files require the existing private Android
+release key. App Store IPA files require the matching Apple Distribution identity
+and provisioning profile. Debug, QA, unsigned, and Simulator-only files must not
+be presented as store binaries.
 
-Publishing these QA assets does not deploy the matching PWA callback bridge or
-Supabase backend. Until the exact v45 `confirmed.html` bridge is live and the
-QA redirect is present in the Supabase Auth allow-list, email confirmation and
-password recovery in the `.dev` Android build fail closed. Garmin cloud actions
-also remain unavailable until the ordered migration and matching Edge Function
-are deployed. This source/release workflow performs neither deployment.
+Publishing release assets does not deploy Supabase migrations or Edge Functions.
+Backend deployment is a separate privileged operation and must be reviewed before
+it is run.
 
 ## Releases
 
-- Releases page: https://github.com/Eduard047/GymApp/releases
-- Latest release: https://github.com/Eduard047/GymApp/releases/latest
-- Current store release tag: https://github.com/Eduard047/GymApp/releases/tag/release-2026.07.05.1238
-- Current Play AAB: https://github.com/Eduard047/GymApp/releases/download/release-2026.07.05.1238/gymapp-play-release.aab
-- Current security QA prerelease: https://github.com/Eduard047/GymApp/releases/tag/qa-2026.07.17.1
-- Phone QA APK: https://github.com/Eduard047/GymApp/releases/download/qa-2026.07.17.1/gymapp-phone-qa.apk
-- Wear QA APK: https://github.com/Eduard047/GymApp/releases/download/qa-2026.07.17.1/gymapp-watch-qa.apk
-- iOS Release Simulator build: https://github.com/Eduard047/GymApp/releases/download/qa-2026.07.17.1/GymApp-iOS-Simulator-1.0.2-build3.zip
-- Garmin Connect IQ package: https://github.com/Eduard047/GymApp/releases/download/qa-2026.07.17.1/gymapp-garmin-connect-iq.iq
-- Checksums and exact build metadata are attached as `SHA256SUMS.txt` and `BUILD-INFO.txt`.
-
-The Play AAB above is the older signed store build; it is not rebuilt from the
-current security branch. A new production AAB requires the matching private
-Play upload key and `scripts/build-play-release-aab.ps1`.
+Release assets use stable, platform-neutral names such as
+`gymapp-phone-release.apk`, `gymapp-play-release.aab`,
+`gymapp-garmin-connect-iq.iq`, and `gymapp-pwa-v50.zip`. Checksums and exact
+build metadata are attached as `SHA256SUMS.txt` and `BUILD-INFO.txt` when those
+assets are available.
 
 The Garmin IQ is a developer-signed Connect IQ Store upload package exported
 from this source revision for every compatible target in `manifest.xml`. It is

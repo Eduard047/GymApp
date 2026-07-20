@@ -215,6 +215,408 @@ final class CoreParityTests: XCTestCase {
         XCTAssertEqual(gymExerciseName(custom, languageCode: "uk"), custom.name)
     }
 
+    func testRussianDynamicDeletionFallbackDoesNotLeakUkrainianText() {
+        let exerciseName = "Жим штанги лёжа"
+        XCTAssertEqual(
+            gymText(
+                "Delete \(exerciseName) from workout",
+                "Видалити «\(exerciseName)» із тренування",
+                languageCode: "ru"
+            ),
+            "Удалить «\(exerciseName)» из тренировки"
+        )
+
+        let date = "20 июля 2026 г."
+        XCTAssertEqual(
+            gymText(
+                "The workout from \(date) and all of its sets will be removed from this device.",
+                "Тренування за \(date) і всі його підходи буде видалено з цього пристрою.",
+                languageCode: "ru"
+            ),
+            "Тренировка за \(date) и все её подходы будут удалены с этого устройства."
+        )
+    }
+
+    func testRussianDynamicDashboardAndGarminFallbacksAreFullyLocalized() {
+        let muscleName = gymText("Shoulders", "Плечі", languageCode: "ru")
+        XCTAssertEqual(muscleName, "Плечи")
+        XCTAssertEqual(
+            gymText(
+                "\(muscleName) loaded by",
+                "Навантаження для «\(muscleName)»",
+                languageCode: "ru"
+            ),
+            "Нагрузка для «Плечи»"
+        )
+
+        let error = "Сервер недоступен."
+        XCTAssertEqual(
+            gymText(
+                "Workout saved, but Garmin queue failed: \(error)",
+                "Тренування збережено, але додати до черги Garmin не вдалося: \(error)",
+                languageCode: "ru"
+            ),
+            "Тренировка сохранена, но не удалось добавить в очередь Garmin: \(error)"
+        )
+
+        let date = "20 июля 2026 г."
+        XCTAssertEqual(
+            gymText(
+                "Workout · \(date)",
+                "Тренування · \(date)",
+                languageCode: "ru"
+            ),
+            "Тренировка · \(date)"
+        )
+
+        XCTAssertEqual(
+            gymText(
+                "Adds or removes \(muscleName) from the manual mapping",
+                "Додає або видаляє «\(muscleName)» у ручному зіставленні",
+                languageCode: "ru"
+            ),
+            "Добавляет или удаляет «Плечи» в ручном сопоставлении"
+        )
+    }
+
+    func testRussianDynamicFallbackLocalizesEveryMuscleTitle() {
+        let titles = [
+            ("Chest", "Груди", "Грудь"),
+            ("Shoulders", "Плечі", "Плечи"),
+            ("Biceps", "Біцепс", "Бицепс"),
+            ("Triceps", "Тріцепс", "Трицепс"),
+            ("Forearms", "Передпліччя", "Предплечья"),
+            ("Abs", "Прес", "Пресс"),
+            ("Obliques", "Косі мʼязи", "Косые мышцы"),
+            ("Lats", "Широчайші", "Широчайшие"),
+            ("Upper back", "Верх спини", "Верх спины"),
+            ("Lower back", "Поперек", "Поясница"),
+            ("Glutes", "Сідниці", "Ягодицы"),
+            ("Quads", "Квадрицепси", "Квадрицепсы"),
+            ("Hamstrings", "Біцепс стегна", "Бицепс бедра"),
+            ("Adductors", "Привідні", "Приводящие мышцы"),
+            ("Calves", "Ікри", "Икры")
+        ]
+
+        for (english, ukrainian, russian) in titles {
+            XCTAssertEqual(
+                gymText(english, ukrainian, languageCode: "ru"),
+                russian,
+                english
+            )
+        }
+    }
+
+    func testRussianExactFallbackLocalizesLeaderboardAndProgressCopy() {
+        let copies = [
+            (
+                "Top users by XP, level and saved workouts.",
+                "Топ користувачів за XP, рівнем і збереженими тренуваннями.",
+                "Лучшие пользователи по XP, уровню и сохранённым тренировкам."
+            ),
+            (
+                "Report sent. The display name was added to the moderation queue.",
+                "Скаргу надіслано. Ім’я додано до черги модерації.",
+                "Жалоба отправлена. Имя добавлено в очередь модерации."
+            ),
+            (
+                "This is an offline account. Sign in with a cloud account to compare with other athletes; your workouts remain available on this device.",
+                "Це офлайн-акаунт. Увійди у хмарний акаунт, щоб порівняти результат з іншими атлетами; твої тренування залишаються на цьому пристрої.",
+                "Это офлайн-аккаунт. Войди в облачный аккаунт, чтобы сравнивать результаты с другими атлетами; твои тренировки останутся доступными на этом устройстве."
+            ),
+            (
+                "Exercise",
+                "Вправа",
+                "Упражнение"
+            ),
+            (
+                "Volume = weight × reps across all completed sets.",
+                "Обсяг = вага × повтори в усіх виконаних підходах.",
+                "Объём = вес × повторения во всех завершённых подходах."
+            ),
+            (
+                "This list changes with the selected month and exercise.",
+                "Список оновлюється для вибраного місяця і вправи.",
+                "Список меняется в зависимости от выбранных месяца и упражнения."
+            ),
+            (
+                "Delete this set?",
+                "Видалити цей підхід?",
+                "Удалить этот подход?"
+            ),
+            (
+                "Session volume chart",
+                "Графік обсягу сесій",
+                "График объёма по сессиям"
+            )
+        ]
+
+        for (english, ukrainian, russian) in copies {
+            XCTAssertEqual(
+                gymText(english, ukrainian, languageCode: "ru"),
+                russian,
+                english
+            )
+        }
+    }
+
+    func testFinalCatalogQACopyIsExactInRussianAndUkrainian() {
+        let russian: [String: String] = [
+            "Shows exercise contributions for this muscle": "Показывает вклад упражнений в нагрузку на эту мышцу",
+            "This removes the workout and every set. This action cannot be undone.": "Тренировка и все её подходы будут удалены. Это действие нельзя отменить.",
+            "Build smart workout": "Создать умную тренировку",
+            "+2.5": "+2,5",
+            "Email": "Электронная почта",
+            "Momentum": "Темп",
+            "Achievements": "Достижения",
+            "Resend confirmation email": "Повторно отправить письмо с подтверждением",
+            "Your training history and next best move.": "Твоя история тренировок и следующий лучший шаг.",
+            "Import backup": "Импорт резервной копии",
+            "Balanced": "Баланс",
+            "Sign in to keep workouts synchronized across your devices.": "Войди, чтобы синхронизировать тренировки между устройствами.",
+            "Avg volume": "Сред. объём",
+            "Recent unlocks and the next solo milestones.": "Последние достижения и ближайшие личные цели.",
+            "Total Reps": "Всего повторений",
+            "Last": "Последний вес",
+            "Previous": "Предыдущий подход"
+        ]
+        for (english, expected) in russian {
+            XCTAssertEqual(gymLocalized(english, languageCode: "ru"), expected, english)
+        }
+
+        let ukrainian: [String: String] = [
+            "Previous workout copied. Adjust any set before saving.": "Попереднє тренування скопійовано. За потреби зміни підходи перед збереженням.",
+            "Email": "Електронна пошта",
+            "Last": "Остання вага",
+            "Previous": "Попередній підхід"
+        ]
+        for (english, expected) in ukrainian {
+            XCTAssertEqual(gymLocalized(english, languageCode: "uk"), expected, english)
+        }
+    }
+
+    func testRussianDynamicFallbackLocalizesLeaderboardAndProgressValues() {
+        let values = [
+            (
+                "Your current place: #4",
+                "Твоє поточне місце: №4",
+                "Твоё текущее место: №4"
+            ),
+            (
+                "Updated just now",
+                "Оновлено только что",
+                "Обновлено только что"
+            ),
+            (
+                "Place 2, Athlete",
+                "Місце 2, Athlete",
+                "Место 2, Athlete"
+            ),
+            (
+                "120 XP, level 3, 4 workouts, current user",
+                "120 XP, рівень 3, 4 тренировки, поточний користувач",
+                "120 XP, уровень 3, 4 тренировки, текущий пользователь"
+            ),
+            (
+                "3 this month",
+                "3 цього місяця",
+                "3 в этом месяце"
+            ),
+            (
+                "3 sets",
+                "3 підх.",
+                "3 подх."
+            ),
+            (
+                "8 reps",
+                "8 повторів",
+                "8 повторов"
+            ),
+            (
+                "3 sessions in the selected month.",
+                "3 сес. у вибраному місяці.",
+                "3 сес. в выбранном месяце."
+            ),
+            (
+                "No лучший вес in this month",
+                "Немає показника «лучший вес» цього місяця",
+                "Нет показателя «лучший вес» в этом месяце"
+            ),
+            (
+                "First month for объём",
+                "Перший місяць для «объём»",
+                "Первый месяц для «объём»"
+            ),
+            (
+                "+10 кг vs prior month",
+                "+10 кг до попереднього місяця",
+                "+10 кг по сравнению с предыдущим месяцем"
+            ),
+            (
+                "80 кг × 8 reps will be removed. If it is the final set, its exercise or workout will also be removed.",
+                "80 кг × 8 повт. буде видалено. Якщо це останній підхід, вправу або тренування також буде видалено.",
+                "80 кг × 8 повторений будет удалено. Если это последний подход, упражнение или тренировка также будут удалены."
+            ),
+            (
+                "Last 4 sessions in the selected month.",
+                "Останні 4 сес. у вибраному місяці.",
+                "Последние 4 сес. в выбранном месяце."
+            ),
+            (
+                "+5 кг vs first session",
+                "+5 кг до першої сесії",
+                "+5 кг по сравнению с первой сессией"
+            ),
+            (
+                "2 load, 3 sets, selected",
+                "навантаження 2, 3 подхода, вибрано",
+                "нагрузка 2, 3 подхода, выбрано"
+            ),
+            (
+                "Hide password",
+                "Сховати поле «пароль»",
+                "Скрыть поле «пароль»"
+            )
+        ]
+
+        for (english, ukrainian, russian) in values {
+            XCTAssertEqual(
+                gymText(english, ukrainian, languageCode: "ru"),
+                russian,
+                english
+            )
+        }
+    }
+
+    func testUnknownAndRawErrorsUseLocalizedGenericCopyWithoutLeakingDetails() {
+        let marker = "provider-private-marker-do-not-display"
+        let rawErrors: [Error] = [
+            NSError(
+                domain: "GymAppTests.RawProvider",
+                code: 418,
+                userInfo: [NSLocalizedDescriptionKey: marker]
+            ),
+            AuthServiceError.server(marker),
+            CloudSyncError.requestFailed(marker),
+            GarminCloudError.requestFailed(statusCode: 502, message: marker),
+            KeychainStoreError.unexpectedStatus(-25_300),
+            WorkoutStoreError.corruptStore(marker),
+            WorkoutStoreError.invalidWorkout(marker),
+            WorkoutStoreError.unsupportedBackupSchema(999),
+            WorkoutStoreError.malformedBackup(marker),
+            WorkoutStoreError.importLimitExceeded(marker),
+            WorkoutStoreError.persistenceFailure(marker)
+        ]
+        let expected = [
+            "en": "Something went wrong. Try again.",
+            "uk": "Щось пішло не так. Спробуй ще раз.",
+            "ru": "Что-то пошло не так. Попробуй ещё раз."
+        ]
+
+        for error in rawErrors {
+            for (languageCode, message) in expected {
+                let rendered = gymErrorMessage(error, languageCode: languageCode)
+                XCTAssertEqual(rendered, message)
+                XCTAssertFalse(rendered.contains(marker))
+                XCTAssertFalse(rendered.contains("502"))
+                XCTAssertFalse(rendered.contains("999"))
+                XCTAssertFalse(rendered.contains("25300"))
+            }
+        }
+
+        let rawDynamicMessages = [
+            "The local workout store is invalid: \(marker)",
+            "The workout is invalid: \(marker)",
+            "The backup is invalid: \(marker)",
+            "Workout data could not be saved: \(marker)",
+            "Unsupported local schema 999.",
+            "Backup schema version 999 is not supported.",
+            "The backup exceeds the allowed \(marker) limit.",
+            "The secure session could not be accessed (-25300).",
+            "Cloud sync failed (HTTP 502).",
+            "Garmin cloud sync failed (HTTP 502)."
+        ]
+        for rawMessage in rawDynamicMessages {
+            for (languageCode, message) in expected {
+                let rendered = gymLocalized(rawMessage, languageCode: languageCode)
+                XCTAssertEqual(rendered, message)
+                XCTAssertFalse(rendered.contains(marker))
+                XCTAssertFalse(rendered.contains("502"))
+                XCTAssertFalse(rendered.contains("999"))
+                XCTAssertFalse(rendered.contains("25300"))
+            }
+        }
+    }
+
+    func testSafeTypedAndRecognizedAuthErrorsRemainLocalized() {
+        for languageCode in ["en", "uk", "ru"] {
+            XCTAssertEqual(
+                gymErrorMessage(AuthServiceError.invalidEmail, languageCode: languageCode),
+                gymLocalized("Enter a valid email address.", languageCode: languageCode)
+            )
+            XCTAssertEqual(
+                gymErrorMessage(
+                    AuthServiceError.server("Invalid login credentials: provider detail"),
+                    languageCode: languageCode
+                ),
+                gymLocalized("Email or password is incorrect.", languageCode: languageCode)
+            )
+        }
+    }
+
+    func testAuthProviderFailureDoesNotReachPublishedMessage() async {
+        let marker = "provider-private-marker-do-not-display"
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let session = URLSession(configuration: configuration)
+        let auth = AuthService(
+            keychain: InMemoryKeychainStore(),
+            urlSession: session,
+            defaults: temporaryDefaults(named: "safe-auth-provider-error")
+        )
+        AuthURLProtocolStub.handler = { request in
+            try AuthURLProtocolStub.response(
+                for: request,
+                statusCode: 400,
+                json: #"{"message":"provider-private-marker-do-not-display"}"#
+            )
+        }
+        defer {
+            AuthURLProtocolStub.handler = nil
+            session.invalidateAndCancel()
+        }
+
+        await auth.signIn(email: "athlete@example.com", password: "Password9")
+
+        XCTAssertTrue(auth.messageIsError)
+        XCTAssertEqual(auth.message, "Something went wrong. Try again.")
+        XCTAssertFalse(auth.message?.contains(marker) == true)
+    }
+
+    func testCloudSyncIndicatorPublishesSafeMessageAndRethrowsOriginalError() async {
+        let marker = "provider-private-marker-do-not-display"
+        let auth = AuthService(
+            keychain: InMemoryKeychainStore(),
+            defaults: temporaryDefaults(named: "safe-cloud-indicator-error")
+        )
+        let cloud = CloudSyncService(auth: auth)
+
+        do {
+            let _: Void = try await cloud.withSyncIndicator {
+                throw CloudSyncError.requestFailed(marker)
+            }
+            XCTFail("The original cloud error must be rethrown.")
+        } catch CloudSyncError.requestFailed(let detail) {
+            XCTAssertEqual(detail, marker)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+
+        XCTAssertFalse(cloud.isSyncing)
+        XCTAssertEqual(cloud.lastError, "Something went wrong. Try again.")
+        XCTAssertFalse(cloud.lastError?.contains(marker) == true)
+    }
+
     func testCatalogSeedMarkerPreservesDeletedBuiltInExercise() throws {
         let directory = try temporaryDirectory(named: "catalog-seed-once")
         let store = try WorkoutStore(
@@ -411,6 +813,59 @@ final class CoreParityTests: XCTestCase {
         XCTAssertEqual(importedWorkout.exercises.first?.exerciseID, squat.id)
         XCTAssertEqual(importedWorkout.exercises.first?.sets.count, 2)
         XCTAssertFalse(importedWorkout.exercises.contains { $0.exerciseID == bench.id })
+    }
+
+    func testImportKeepsUnknownNonblankNameCustomDespiteHostileCatalogKey() throws {
+        XCTAssertNil(
+            BuiltInExerciseCatalog.resolvedKey(
+                catalogKey: "bench_press",
+                name: "Imported custom label"
+            )
+        )
+        XCTAssertEqual(
+            BuiltInExerciseCatalog.resolvedKey(catalogKey: "bench_press", name: "   "),
+            "bench_press"
+        )
+
+        let target = try WorkoutStore(
+            accountStorageKey: "catalog-custom-hostile-key-target",
+            directoryURL: try temporaryDirectory(named: "catalog-custom-hostile-key-target")
+        )
+        let bench = try target.addExercise(name: "Bench Press")
+        let owner = BackupOwner(accountID: "catalog-custom-hostile-key-target", remote: false)
+        let hostileBackup: [String: Any] = [
+            "schemaVersion": GymBackup.currentSchemaVersion,
+            "exportedAt": 1_750_000_000_000 as Int64,
+            "app": "GymApp",
+            "diagnostics": false,
+            "owner": [
+                "accountId": "catalog-custom-hostile-key-target",
+                "remote": false
+            ],
+            "exercises": [],
+            "sessions": [[
+                "date": 1_750_000_000_000 as Int64,
+                "exercises": [[
+                    "name": "Imported custom label",
+                    "catalogKey": "bench_press",
+                    "sets": [["weight": 42.5, "reps": 9]]
+                ]]
+            ]]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: hostileBackup, options: [.sortedKeys])
+
+        let result = try target.importBackup(data: data, activeOwner: owner)
+
+        XCTAssertEqual(result.addedExercises, 1)
+        XCTAssertEqual(result.importedSessions, 1)
+        let custom = try XCTUnwrap(target.exercises.first { $0.name == "Imported custom label" })
+        XCTAssertNil(custom.catalogKey)
+        XCTAssertNotEqual(custom.id, bench.id)
+        let importedExercise = try XCTUnwrap(target.workouts.first?.exercises.first)
+        XCTAssertEqual(importedExercise.exerciseID, custom.id)
+        XCTAssertEqual(importedExercise.sets.count, 1)
+        XCTAssertEqual(importedExercise.sets.first?.weight, 42.5)
+        XCTAssertEqual(importedExercise.sets.first?.reps, 9)
     }
 
     func testRemoteBackupCannotCrossAccounts() throws {

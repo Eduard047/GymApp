@@ -187,17 +187,19 @@ class GymRepository(
 
         BuiltInExerciseCatalog.definitions.forEach { definition ->
             if (definition.key in existingCatalogKeys) return@forEach
-            require(currentCount < WorkoutDataLimits.MAX_EXERCISES) {
-                "This account has reached the exercise limit."
-            }
+            // A full legacy account must remain usable. Leave the marker unset so a later
+            // deletion can make room for the remaining catalog items on a future retry.
+            if (currentCount >= WorkoutDataLimits.MAX_EXERCISES) return@forEach
             exerciseDao.insert(ExerciseEntity(name = definition.nameEn))
             existingCatalogKeys += definition.key
             currentCount += 1
             inserted += 1
         }
-        appMetadataDao.upsert(
-            AppMetadataEntity(catalogSeedVersion = BuiltInExerciseCatalog.SEED_VERSION)
-        )
+        if (BuiltInExerciseCatalog.definitions.all { it.key in existingCatalogKeys }) {
+            appMetadataDao.upsert(
+                AppMetadataEntity(catalogSeedVersion = BuiltInExerciseCatalog.SEED_VERSION)
+            )
+        }
         inserted
     }
 
@@ -584,6 +586,17 @@ class GymRepository(
         root
     }
 
+    /**
+     * Builds the public cloud envelope understood by already-released clients.
+     *
+     * The catalog seed marker is local migration metadata and remains in manual backups, but
+     * older Android releases require the canonical cloud root to keep its legacy eight keys.
+     */
+    suspend fun buildCloudBackupJson(owner: BackupOwner): JSONObject =
+        buildBackupJson(owner = owner).apply {
+            remove("catalogSeedVersion")
+        }
+
     suspend fun getSyncProfileStats(): SyncProfileStats {
         return withContext(Dispatchers.Default) {
             val sessions = workoutDao.getAllSessionDetailsForBackup().map(::sortSessionDetails)
@@ -688,7 +701,14 @@ class GymRepository(
             }
             val currentSeedVersion = appMetadataDao.getCatalogSeedVersion() ?: 0
             val restoredSeedVersion = if (replaceExisting) {
-                backup.catalogSeedVersion
+                if (root.has("catalogSeedVersion")) {
+                    backup.catalogSeedVersion
+                } else {
+                    // The public cloud envelope predates the local seed marker. Preserve a
+                    // completed local migration so later pulls do not resurrect a built-in
+                    // exercise the user intentionally deleted.
+                    expectedLocalState?.catalogSeedVersion ?: currentSeedVersion
+                }
             } else {
                 maxOf(currentSeedVersion, backup.catalogSeedVersion)
             }

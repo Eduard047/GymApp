@@ -2,13 +2,26 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const [phoneBuild, wearBuild, mainManifest, debugManifest, mainActivity, cloudAuth] = await Promise.all([
+const [
+  phoneBuild,
+  wearBuild,
+  mainManifest,
+  debugManifest,
+  mainActivity,
+  cloudAuth,
+  phoneReleaseScript,
+  playReleaseScript,
+  gradleProperties,
+] = await Promise.all([
   readFile("app/build.gradle.kts", "utf8"),
   readFile("wear/build.gradle.kts", "utf8"),
   readFile("app/src/main/AndroidManifest.xml", "utf8"),
   readFile("app/src/debug/AndroidManifest.xml", "utf8"),
   readFile("app/src/main/java/com/example/gymapp/MainActivity.kt", "utf8"),
   readFile("app/src/main/java/com/example/gymapp/auth/CloudAuthManager.kt", "utf8"),
+  readFile("scripts/build-phone-release-apk.ps1", "utf8"),
+  readFile("scripts/build-play-release-aab.ps1", "utf8"),
+  readFile("gradle.properties", "utf8"),
 ]);
 
 function qaBlock(build) {
@@ -57,4 +70,85 @@ test("Wear production releases use the same optional production signing contract
     wearBuild,
     /release\s*\{[\s\S]*?if \(keystorePropertiesFile\.exists\(\)\)[\s\S]*?signingConfig/
   );
+});
+
+test("production Android scripts default to the declared release version", () => {
+  const versionName = gradleProperties.match(/^appVersionName=(.+)$/m)?.[1]?.trim();
+  const versionCode = gradleProperties.match(/^appVersionCode=(\d+)$/m)?.[1];
+  assert.ok(versionName, "appVersionName must be declared");
+  assert.ok(versionCode, "appVersionCode must be declared");
+
+  for (const [label, script] of [
+    ["phone APK", phoneReleaseScript],
+    ["Play AAB", playReleaseScript],
+  ]) {
+    assert.match(script, /Get-Content \$gradlePropertiesPath/,
+      `${label} must read the checked-in version defaults`);
+    assert.match(script, /releaseProperties\['appVersionCode'\]/,
+      `${label} must use appVersionCode`);
+    assert.match(script, /releaseProperties\['appVersionName'\]/,
+      `${label} must use appVersionName`);
+    assert.doesNotMatch(script, /Get-Date|TotalMinutes|versionBase/,
+      `${label} must not silently replace the release version with a timestamp`);
+    assert.match(script, /VersionCode -le 0 -or \$VersionCode -gt 2100000000/,
+      `${label} must reject invalid Android version codes`);
+    assert.match(script, /VersionName\.Length -gt 64/,
+      `${label} must bound the version name`);
+    assert.match(script, /\\x00-\\x1F\\x7F/,
+      `${label} must reject control characters in the version name`);
+    assert.match(script, /-PappVersionCode=\$VersionCode/);
+    assert.match(script, /-PappVersionName=\$VersionName/);
+  }
+});
+
+test("production APK is verified before it is copied for publication", () => {
+  const verificationIndex = phoneReleaseScript.indexOf("Assert-ZipArchiveEntries $phoneApkSource");
+  const copyIndex = phoneReleaseScript.indexOf("Copy-Item -Path $phoneApkSource");
+
+  assert.ok(verificationIndex >= 0, "phone APK ZIP verification must run");
+  assert.ok(copyIndex > verificationIndex, "phone APK must be verified before it is copied");
+  assert.match(phoneReleaseScript, /expectedPackageId\s*=\s*"com\.setforge\.gymapp"/);
+  assert.match(phoneReleaseScript, /Assert-ReleaseOutputMetadata @metadataArguments/);
+  assert.match(phoneReleaseScript, /aapt2[\s\S]*?dump badging/i);
+  assert.match(phoneReleaseScript, /application-debuggable/);
+  assert.match(phoneReleaseScript, /application-testOnly/);
+  assert.match(phoneReleaseScript, /apksigner[\s\S]*?verify --verbose --print-certs/i);
+  assert.match(phoneReleaseScript, /APK Signature Scheme v2/);
+  assert.match(phoneReleaseScript, /signer does not match the configured release keystore/i);
+});
+
+test("production AAB is verified before it is copied for publication", () => {
+  const verificationIndex = playReleaseScript.indexOf("Assert-ZipArchiveEntries @bundleZipArguments");
+  const copyIndex = playReleaseScript.indexOf("Copy-Item -Path $bundleSource");
+
+  assert.ok(verificationIndex >= 0, "Play AAB ZIP verification must run");
+  assert.ok(copyIndex > verificationIndex, "Play AAB must be verified before it is copied");
+  assert.match(playReleaseScript, /BundleConfig\.pb/);
+  assert.match(playReleaseScript, /base\/manifest\/AndroidManifest\.xml/);
+  assert.match(playReleaseScript, /linked-resources-for-bundle-proto-format\.ap_/);
+  assert.match(playReleaseScript, /bundleManifestSha256\s+-cne\s+\$generatedManifestSha256/);
+  assert.match(playReleaseScript, /Assert-ReleaseManifestMetadata @manifestMetadataArguments/);
+  assert.match(playReleaseScript, /application-debuggable/);
+  assert.match(playReleaseScript, /application-testOnly/);
+  assert.match(playReleaseScript, /'-verify',[\s\S]*?'-strict',[\s\S]*?'-verbose',[\s\S]*?'-certs'/);
+  assert.match(playReleaseScript, /jar verified\\\.\\s\*\$/);
+  assert.match(playReleaseScript, /signer does not match the configured release keystore/i);
+});
+
+test("release signer checks keep keystore passwords out of command lines and output", () => {
+  for (const [label, script] of [
+    ["phone APK", phoneReleaseScript],
+    ["Play AAB", playReleaseScript],
+  ]) {
+    assert.match(script, /-storepass:env/,
+      `${label} must pass the password to Java through a scoped environment variable`);
+    assert.match(script, /SetEnvironmentVariable\([\s\S]*?StorePassword/,
+      `${label} must scope the keystore password in process memory`);
+    assert.doesNotMatch(script, /Write-(?:Host|Output|Warning)[^\r\n]*(?:storePassword|StorePassword)/i,
+      `${label} must not print the keystore password`);
+    assert.doesNotMatch(script, /'-storepass'\s*,\s*\$StorePassword/i,
+      `${label} must not put the keystore password on the command line`);
+    assert.match(script, /Read\(\$buffer, 0, \$buffer\.Length\)/,
+      `${label} must read every ZIP entry to detect corrupt compressed data`);
+  }
 });

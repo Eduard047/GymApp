@@ -134,7 +134,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "+2.5"
+            "value" : "+2,5"
           }
         }
       }
@@ -179,7 +179,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Для шаблона разгрузки требуется предварительная тренировка."
+            "value" : "Для шаблона разгрузки нужна предыдущая тренировка."
           }
         }
       }
@@ -196,6 +196,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Резервная копия JSON содержит названия упражнений, даты тренировок, подходы, заметки и данные о владельце аккаунта. Передавай ее только людям, которым доверяешь."
+          }
+        }
+      }
+    },
+    "A previous Garmin pairing is still awaiting secure revocation. Keep the app open and retry." : {
+      "localizations" : {
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Попереднє сполучення Garmin ще очікує безпечного відкликання. Не закривай застосунок і спробуй ще раз."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Предыдущее подключение Garmin ещё ожидает безопасного отзыва. Не закрывай приложение и попробуй ещё раз."
           }
         }
       }
@@ -479,7 +495,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Достижение"
+            "value" : "Достижения"
           }
         }
       }
@@ -780,6 +796,22 @@
         }
       }
     },
+    "After saving, the plan is added to the private cloud queue for the selected Garmin watch." : {
+      "localizations" : {
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Після збереження план буде додано до приватної хмарної черги для вибраного годинника Garmin."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "После сохранения план будет добавлен в приватную облачную очередь для выбранных часов Garmin."
+          }
+        }
+      }
+    },
     "All" : {
       "localizations" : {
         "uk" : {
@@ -792,6 +824,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Все"
+          }
+        }
+      }
+    },
+    "All muscles" : {
+      "localizations" : {
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Усі м’язи"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Все мышцы"
           }
         }
       }
@@ -860,6 +908,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Упражнение с таким названием уже существует."
+          }
+        }
+      }
+    },
+    "Another Garmin operation is already in progress. Try again." : {
+      "localizations" : {
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Інша операція Garmin уже виконується. Спробуй ще раз."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Другая операция Garmin уже выполняется. Попробуй ещё раз."
           }
         }
       }
@@ -1044,7 +1108,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Сер. объем"
+            "value" : "Сред. объём"
           }
         }
       }
@@ -1163,7 +1227,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Сбалансировано"
+            "value" : "Баланс"
           }
         }
       }
@@ -1179,7 +1243,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "На основе погрузки мышц и недавних перерывов."
+            "value" : "На основе нагрузки на мышцы и недавних перерывов в тренировках."
           }
         }
       }
@@ -1212,7 +1276,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Создать разумную тренировку"
+            "value" : "Создать умную тренировку"
           }
         }
       }
@@ -1261,7 +1325,23 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Строительный"
+            "value" : "Строитель"
+          }
+        }
+      }
+    },
+    "Built-in exercises cannot be renamed." : {
+      "localizations" : {
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Вбудовані вправи не можна перейменувати."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Встроенные упражнения нельзя переименовать."
           }
         }
       }
@@ -1696,7 +1776,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Завершите пятьдесят тренировок."
+            "value" : "Заверши пятьдесят тренировок."
           }
         }
       }
@@ -1713,7 +1793,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Завершите пять тренировок."
+            "value" : "Заверши пять тренировок."
           }
         }
       }
@@ -1730,7 +1810,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Завершите сто тренировок."
+            "value" : "Заверши сто тренировок."
           }
         }
       }
@@ -1747,7 +1827,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Завершив десять тренировок."
+            "value" : "Заверши десять тренировок."
           }
         }
       }
@@ -1764,7 +1844,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Завершить тренировку"
+            "value" : "Заверши эту тренировку"
           }
         }
       }
@@ -1781,7 +1861,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Завершив двадцать пять тренировок."
+            "value" : "Заверши двадцать пять тренировок."
           }
         }
       }
@@ -1815,7 +1895,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Завершите свою первую тренировку."
+            "value" : "Заверши свою первую тренировку."
           }
         }
       }
@@ -1933,7 +2013,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Строительство стабильности"
+            "value" : "Стабильный прогресс"
           }
         }
       }
@@ -2024,13 +2104,13 @@
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Копіювати попереднє"
+            "value" : "Скопіювати попереднє тренування"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Копировать предыдущее"
+            "value" : "Скопировать предыдущую тренировку"
           }
         }
       }
@@ -2062,7 +2142,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Копировать тренировки"
+            "value" : "Копировать тренировку"
           }
         }
       }
@@ -2110,7 +2190,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Не удалось удалить тренировки"
+            "value" : "Не удалось удалить тренировку"
           }
         }
       }
@@ -2490,7 +2570,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Удалить тренировки?"
+            "value" : "Удалить тренировку?"
           }
         }
       }
@@ -2884,13 +2964,13 @@
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Email"
+            "value" : "Електронна пошта"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Email"
+            "value" : "Электронная почта"
           }
         }
       }
@@ -2907,7 +2987,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Адреса emailа не совпадают."
+            "value" : "Адреса электронной почты не совпадают."
           }
         }
       }
@@ -3528,7 +3608,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Завершение"
+            "value" : "Заверши"
           }
         }
       }
@@ -3544,7 +3624,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Завершить и просмотреть результат"
+            "value" : "Заверши и просмотри итоги"
           }
         }
       }
@@ -3561,7 +3641,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Завершив сегодня как минимум одну тренировку."
+            "value" : "Заверши сегодня как минимум одну тренировку."
           }
         }
       }
@@ -3578,7 +3658,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Завершив четыре тренировки на этой неделе."
+            "value" : "Заверши четыре тренировки на этой неделе."
           }
         }
       }
@@ -3711,7 +3791,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Части"
+            "value" : "Частые"
           }
         }
       }
@@ -3990,7 +4070,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Импорт копии"
+            "value" : "Импорт резервной копии"
           }
         }
       }
@@ -4008,6 +4088,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Некорректное сопоставление мышц."
+          }
+        }
+      }
+    },
+    "Interactive muscle map" : {
+      "localizations" : {
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Інтерактивна мапа м’язів"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Интерактивная карта мышц"
           }
         }
       }
@@ -4151,13 +4247,13 @@
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Останнє"
+            "value" : "Остання вага"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Последнее"
+            "value" : "Последний вес"
           }
         }
       }
@@ -4310,7 +4406,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Легендарно"
+            "value" : "Легендарная"
           }
         }
       }
@@ -4427,7 +4523,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Погрузка"
+            "value" : "Нагрузка"
           }
         }
       }
@@ -4796,7 +4892,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ручные сопоставление мышц"
+            "value" : "Ручные сопоставления мышц"
           }
         }
       }
@@ -4896,7 +4992,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Импульс"
+            "value" : "Темп"
           }
         }
       }
@@ -4979,7 +5075,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Движущийся гор"
+            "value" : "Покоритель гор"
           }
         }
       }
@@ -5079,7 +5175,23 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Период погрузки мышц"
+            "value" : "Период нагрузки на мышцы"
+          }
+        }
+      }
+    },
+    "Muscle load scale, less activity to more activity" : {
+      "localizations" : {
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Шкала навантаження м’язів: від меншої активності до більшої"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Шкала нагрузки на мышцы: от меньшей активности к большей"
           }
         }
       }
@@ -5211,7 +5323,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Дали"
+            "value" : "Далее"
           }
         }
       }
@@ -5397,6 +5509,22 @@
         }
       }
     },
+    "No muscle selected" : {
+      "localizations" : {
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "М’яз не вибрано"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Мышца не выбрана"
+          }
+        }
+      }
+    },
     "No matches" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -5477,7 +5605,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Пароли, токены доступа и обновления и Keychain не включены."
+            "value" : "Пароли, токены доступа, токены обновления и значения Keychain не включены."
           }
         }
       }
@@ -5494,7 +5622,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Предварительной тренировки еще нет."
+            "value" : "Предыдущей тренировки ещё нет."
           }
         }
       }
@@ -5511,7 +5639,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Нет предварительного веса"
+            "value" : "Нет предыдущего веса"
           }
         }
       }
@@ -6217,13 +6345,13 @@
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Попереднє"
+            "value" : "Попередній підхід"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Предыдущее"
+            "value" : "Предыдущий подход"
           }
         }
       }
@@ -6250,13 +6378,13 @@
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Попереднє тренування скопійовано. Зміни потрібні підходи перед збереженням."
+            "value" : "Попереднє тренування скопійовано. За потреби зміни підходи перед збереженням."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Предварительная тренировка скопирована. Изменения требуются подходы перед сохранением."
+            "value" : "Предыдущая тренировка скопирована. Перед сохранением при необходимости измени подходы."
           }
         }
       }
@@ -6625,7 +6753,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Недавние достижения и последующие личные цели."
+            "value" : "Последние достижения и ближайшие личные цели."
           }
         }
       }
@@ -6659,6 +6787,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Для сравнения групп мышц рекомендациям нужна история тренировок."
+          }
+        }
+      }
+    },
+    "Refresh the Garmin watch list before rotating its token." : {
+      "localizations" : {
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Онови список годинників Garmin перед ротацією токена."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Обнови список часов Garmin перед сменой токена."
           }
         }
       }
@@ -6717,13 +6861,13 @@
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Повторити останнє"
+            "value" : "Повторити останнє тренування"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Повторить последнее"
+            "value" : "Повторить последнюю тренировку"
           }
         }
       }
@@ -6755,7 +6899,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Повторение"
+            "value" : "Повторения"
           }
         }
       }
@@ -6821,7 +6965,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Отправить письмо подтверждение еще раз"
+            "value" : "Повторно отправить письмо с подтверждением"
           }
         }
       }
@@ -6922,7 +7066,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Просмотрите, что хранит GymApp, или открой советы по устранению проблем и контактной информации."
+            "value" : "Просмотри, что хранит GymApp, или открой справку по устранению неполадок и контактную информацию."
           }
         }
       }
@@ -7086,7 +7230,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Сохраняет резервную копию GymApp JSON из-за выбора файлов"
+            "value" : "Сохраняет резервную копию GymApp в формате JSON с помощью окна выбора файлов"
           }
         }
       }
@@ -7219,7 +7363,23 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Выбери все группы мышц, тренирующих это движение. Пустой выбор использует автоматическое сопоставление GymApp под названием."
+            "value" : "Выбери все группы мышц, которые тренирует это движение. Если ничего не выбрано, GymApp использует автоматическое сопоставление по названию."
+          }
+        }
+      }
+    },
+    "Select or pair a Garmin watch in Account settings before queueing a plan." : {
+      "localizations" : {
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перш ніж додавати план до черги, вибери або підключи годинник Garmin у налаштуваннях акаунта."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перед добавлением плана в очередь выбери или подключи часы Garmin в настройках аккаунта."
           }
         }
       }
@@ -7437,7 +7597,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Показывает вклад упражнений в погрузку этой мышцы"
+            "value" : "Показывает вклад упражнений в нагрузку на эту мышцу"
           }
         }
       }
@@ -7471,7 +7631,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Вход для синхронизации тренировки между устройствами."
+            "value" : "Войди, чтобы синхронизировать тренировки между устройствами."
           }
         }
       }
@@ -7607,6 +7767,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ЛИЧНЫЙ ПРОГРЕСС"
+          }
+        }
+      }
+    },
+    "Something went wrong. Try again." : {
+      "localizations" : {
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Щось пішло не так. Спробуй ще раз."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Что-то пошло не так. Попробуй ещё раз."
           }
         }
       }
@@ -7924,6 +8100,22 @@
         }
       }
     },
+    "Tap a highlighted body region to select that muscle group." : {
+      "localizations" : {
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Торкнися підсвіченої ділянки тіла, щоб вибрати цю групу м’язів."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Коснись выделенной области тела, чтобы выбрать эту группу мышц."
+          }
+        }
+      }
+    },
     "Templates" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -7971,6 +8163,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Десять тысяч объема"
+          }
+        }
+      }
+    },
+    "The account changed while the request was running. Try again." : {
+      "localizations" : {
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Обліковий запис змінився під час виконання запиту. Спробуй ще раз."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Учётная запись изменилась во время выполнения запроса. Попробуй ещё раз."
           }
         }
       }
@@ -8145,6 +8353,38 @@
         }
       }
     },
+    "The Garmin sync request is too large or malformed." : {
+      "localizations" : {
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Запит синхронізації Garmin завеликий або некоректний."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Запрос синхронизации Garmin слишком большой или некорректный."
+          }
+        }
+      }
+    },
+    "The Garmin watch selection could not be stored securely, so its one-time token was not shown." : {
+      "localizations" : {
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не вдалося безпечно зберегти вибір годинника Garmin, тому його одноразовий токен не показано."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не удалось безопасно сохранить выбор часов Garmin, поэтому их одноразовый токен не показан."
+          }
+        }
+      }
+    },
     "The Internet connection appears to be offline." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -8276,7 +8516,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Профиля рейтинга, на который направлена ​​жалоба, не существует."
+            "value" : "Профиля рейтинга, на который направлена жалоба, не существует."
           }
         }
       }
@@ -8311,6 +8551,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Запрос отменен."
+          }
+        }
+      }
+    },
+    "The selected Garmin watch binding is invalid. Select or pair the watch again." : {
+      "localizations" : {
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Прив’язка вибраного годинника Garmin некоректна. Вибери або сполучи годинник знову."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Привязка выбранных часов Garmin некорректна. Выбери или подключи часы снова."
           }
         }
       }
@@ -8612,7 +8868,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Тренировка и все его подходы будут удалены. Это действие нельзя отменить."
+            "value" : "Тренировка и все её подходы будут удалены. Это действие нельзя отменить."
           }
         }
       }
@@ -8629,7 +8885,23 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Эта ссылка для входа не спрашивала на этом устройстве или она просрочена. Начни процесс снова."
+            "value" : "Эта ссылка для входа не была запрошена на этом устройстве или срок её действия истёк. Начни процесс заново."
+          }
+        }
+      }
+    },
+    "This watch changed elsewhere. Its details were refreshed; review the selection and retry token rotation." : {
+      "localizations" : {
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Цей годинник змінено деінде. Його дані оновлено; перевір вибір і повтори ротацію токена."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Эти часы изменены в другом месте. Их данные обновлены; проверь выбор и повтори смену токена."
           }
         }
       }
@@ -8647,6 +8919,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Эта тренировка улучшила твою историю упражнений."
+          }
+        }
+      }
+    },
+    "This workout queue request conflicts with an earlier submission and was not duplicated." : {
+      "localizations" : {
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Цей запит до черги тренувань конфліктує з попереднім і не був продубльований."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Этот запрос в очередь тренировок конфликтует с предыдущим и не был продублирован."
           }
         }
       }
@@ -8731,7 +9019,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Всего повторов"
+            "value" : "Всего повторений"
           }
         }
       }
@@ -9734,7 +10022,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Тренировка сохранена и добавлена ​​в очередь Garmin."
+            "value" : "Тренировка сохранена и добавлена в очередь Garmin."
           }
         }
       }
@@ -9926,7 +10214,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Твоя история тренировок и самый лучший следующий шаг."
+            "value" : "Твоя история тренировок и следующий лучший шаг."
           }
         }
       }
@@ -10030,7 +10318,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Встроенная"
+            "value" : "Встроенное"
           }
         }
       }
@@ -10050,7 +10338,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Под названием"
+            "value" : "По названию"
           }
         }
       }
@@ -10270,7 +10558,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Самые редкие"
+            "value" : "Реже всего"
           }
         }
       }
@@ -10380,7 +10668,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Лунные"
+            "value" : "Месячные"
           }
         }
       }
@@ -10693,6 +10981,246 @@
             "value" : "Боковые наклоны с отягощением"
           }
         }
+      }
+    },
+    "Ends this session without deleting your account or cloud data. Your selected Garmin watch remains paired until you explicitly revoke it." : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Завершує цей сеанс без видалення облікового запису або хмарних даних. Вибраний годинник Garmin залишиться сполученим, доки ти явно не відкличеш його." } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Завершает этот сеанс без удаления учётной записи или облачных данных. Выбранные часы Garmin останутся подключёнными, пока ты явно не отзовёшь их." } }
+      }
+    },
+    "Garmin watch" : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Годинник Garmin" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Часы Garmin" } }
+      }
+    },
+    "Garmin" : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Garmin" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Garmin" } }
+      }
+    },
+    "Paired watches" : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Сполучені годинники" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Подключённые часы" } }
+      }
+    },
+    "Choose exactly which active watch receives iOS workout plans. The selected device is stored securely for this Supabase account." : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Вибери, який саме активний годинник отримуватиме плани тренувань з iOS. Вибраний пристрій безпечно зберігається для цього облікового запису Supabase." } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Выбери, какие именно активные часы будут получать планы тренировок с iOS. Выбранное устройство безопасно сохраняется для этой учётной записи Supabase." } }
+      }
+    },
+    "Open Gym Workout Tracker in Garmin" : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Відкрити Gym Workout Tracker у Garmin" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Открыть Gym Workout Tracker в Garmin" } }
+      }
+    },
+    "Opens this app in Connect IQ, or opens the App Store if Connect IQ is not installed" : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Відкриває цей застосунок у Connect IQ або App Store, якщо Connect IQ не встановлено" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Открывает это приложение в Connect IQ или App Store, если Connect IQ не установлен" } }
+      }
+    },
+    "Loading Garmin watches…" : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Завантаження годинників Garmin…" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Загрузка часов Garmin…" } }
+      }
+    },
+    "No active Garmin watches found." : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Активних годинників Garmin не знайдено." } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Активные часы Garmin не найдены." } }
+      }
+    },
+    "Refresh watches" : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Оновити список годинників" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Обновить список часов" } }
+      }
+    },
+    "Rotate token for selected watch" : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Оновити токен вибраного годинника" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Сменить токен выбранных часов" } }
+      }
+    },
+    "Use token rotation to reconnect the same watch. It preserves the device ID already pinned by the Garmin app." : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Щоб повторно підключити той самий годинник, онови токен. Це збереже ідентифікатор пристрою, уже закріплений застосунком Garmin." } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Чтобы повторно подключить те же часы, смени токен. Это сохранит идентификатор устройства, уже закреплённый приложением Garmin." } }
+      }
+    },
+    "Revoke selected watch" : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Відкликати вибраний годинник" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Отозвать выбранные часы" } }
+      }
+    },
+    "Watch name" : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Назва годинника" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Название часов" } }
+      }
+    },
+    "A label up to 80 characters for a new Garmin watch" : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Назва нового годинника Garmin довжиною до 80 символів" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Название новых часов Garmin длиной до 80 символов" } }
+      }
+    },
+    "Pairing…" : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Підключення…" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Подключение…" } }
+      }
+    },
+    "Pair a brand-new watch" : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Підключити новий годинник" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Подключить новые часы" } }
+      }
+    },
+    "Create a new device ID only for a watch that has never used GymApp cloud sync. For an existing watch, select it above or rotate its token." : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Створюй новий ідентифікатор пристрою лише для годинника, який ще не використовував хмарну синхронізацію GymApp. Для наявного годинника вибери його вище або онови його токен." } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Создавай новый идентификатор устройства только для часов, которые ещё не использовали облачную синхронизацию GymApp. Для существующих часов выбери их выше или смени их токен." } }
+      }
+    },
+    "Revoke selected Garmin watch?" : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Відкликати вибраний годинник Garmin?" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Отозвать выбранные часы Garmin?" } }
+      }
+    },
+    "Revoke" : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Відкликати" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Отозвать" } }
+      }
+    },
+    "This invalidates the watch token and quarantines its pending plans. Reusing this watch with a new device ID requires resetting GymApp on the watch. Use token rotation instead when reconnecting the same watch." : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Це зробить токен годинника недійсним і перемістить його плани в очікуванні до карантину. Щоб повторно використати цей годинник із новим ідентифікатором пристрою, потрібно скинути GymApp на годиннику. Для повторного підключення того самого годинника натомість онови токен." } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Это сделает токен часов недействительным и поместит ожидающие планы в карантин. Чтобы повторно использовать эти часы с новым идентификатором устройства, нужно сбросить GymApp на часах. Для повторного подключения тех же часов вместо этого смени токен." } }
+      }
+    },
+    "Selected" : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Вибрано" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Выбрано" } }
+      }
+    },
+    "Not selected" : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Не вибрано" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Не выбрано" } }
+      }
+    },
+    "One-time secret" : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Одноразовий секрет" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Одноразовый секрет" } }
+      }
+    },
+    "Save the Garmin token now" : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Збережи токен Garmin зараз" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Сохрани токен Garmin сейчас" } }
+      }
+    },
+    "Paste this token only into GymApp settings in Garmin Connect IQ. It will not be stored or shown again." : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Встав цей токен лише в налаштування GymApp у Garmin Connect IQ. Він не зберігатиметься й більше не показуватиметься." } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Вставь этот токен только в настройки GymApp в Garmin Connect IQ. Он не будет сохранён или показан снова." } }
+      }
+    },
+    "One-time Garmin pairing token" : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Одноразовий токен сполучення Garmin" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Одноразовый токен подключения Garmin" } }
+      }
+    },
+    "Copied for 5 minutes" : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Скопійовано на 5 хвилин" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Скопировано на 5 минут" } }
+      }
+    },
+    "Copy token" : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Скопіювати токен" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Скопировать токен" } }
+      }
+    },
+    "Copying is optional and requires confirmation. The clipboard item stays on this device and expires after five minutes, but another app opened during that time may be able to read it." : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Копіювання необов’язкове й потребує підтвердження. Елемент буфера обміну залишається на цьому пристрої та видаляється через п’ять хвилин, але інший застосунок, відкритий протягом цього часу, може його прочитати." } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Копирование необязательно и требует подтверждения. Элемент буфера обмена остаётся на этом устройстве и удаляется через пять минут, но другое приложение, открытое в это время, может его прочитать." } }
+      }
+    },
+    "I saved the token" : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Токен збережено" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Токен сохранён" } }
+      }
+    },
+    "Revoking…" : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Відкликання…" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Отзыв…" } }
+      }
+    },
+    "Cancel and revoke this new watch" : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Скасувати й відкликати цей новий годинник" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Отменить и отозвать эти новые часы" } }
+      }
+    },
+    "Close without saving" : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Закрити без збереження" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Закрыть без сохранения" } }
+      }
+    },
+    "Garmin pairing" : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Сполучення з Garmin" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Подключение Garmin" } }
+      }
+    },
+    "Copy this secret token?" : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Скопіювати цей секретний токен?" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Скопировать этот секретный токен?" } }
+      }
+    },
+    "Copy for 5 minutes" : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Скопіювати на 5 хвилин" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Скопировать на 5 минут" } }
+      }
+    },
+    "Only continue if you will paste it directly into this watch’s Garmin Connect IQ settings. Do not send or save it elsewhere." : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Продовжуй, лише якщо одразу вставиш його в налаштування Garmin Connect IQ цього годинника. Не надсилай і не зберігай його деінде." } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Продолжай, только если сразу вставишь его в настройки Garmin Connect IQ на этих часах. Не отправляй и не сохраняй его в других местах." } }
+      }
+    },
+    "Front" : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Спереду" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Спереди" } }
+      }
+    },
+    "Back" : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Ззаду" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Сзади" } }
       }
     }
   },

@@ -355,14 +355,10 @@ internal fun canonicalWorkoutPayloadDigest(backup: ValidatedBackup): String {
         updateLong(java.lang.Double.doubleToLongBits(canonical))
     }
 
-    if (backup.catalogSeedVersion == 0) {
-        // Preserve pre-catalog cloud baselines so the app can safely decide whether an old
-        // local snapshot is clean before applying the one-time catalog migration.
-        updateString("gymapp-canonical-workout-payload/v1")
-    } else {
-        updateString("gymapp-canonical-workout-payload/v2")
-        updateInt(backup.catalogSeedVersion)
-    }
+    // The seed marker is local catalog-migration metadata, not part of the public cloud
+    // workout projection. Keeping it out of the digest lets legacy eight-key envelopes and
+    // newer readers that accept the optional field compare as the same workout state.
+    updateString("gymapp-canonical-workout-payload/v1")
     updateInt(backup.exercises.size)
     backup.exercises.forEach { exercise ->
         updateString(exercise.name)

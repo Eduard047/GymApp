@@ -64,6 +64,7 @@ import androidx.navigation.navArgument
 import com.example.gymapp.R
 import com.example.gymapp.auth.AccountSession
 import com.example.gymapp.auth.CloudAuthManager
+import com.example.gymapp.auth.authErrorText
 import com.example.gymapp.auth.databaseName
 import com.example.gymapp.auth.LeaderboardRow
 import com.example.gymapp.data.repository.BackupOwner
@@ -95,6 +96,7 @@ import com.example.gymapp.sync.CloudSyncBaselineStore
 import com.example.gymapp.sync.cloudSnapshotApplyDecision
 import com.example.gymapp.util.AppLanguage
 import com.example.gymapp.util.LanguageManager
+import com.example.gymapp.util.LocalizedText
 import com.example.gymapp.util.RestTimerController
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.CancellationException
@@ -345,7 +347,7 @@ fun GymAppRoot(
         pullResult.onFailure { throwable ->
             if (throwable is CancellationException) throw throwable
             authManager.setMessage(
-                throwable.message ?: "Cloud data could not be loaded safely. Automatic upload is paused."
+                authErrorText(throwable, R.string.cloud_sync_load_failed)
             )
         }
         pullResult.onSuccess { canonicalRoundTripSafe ->
@@ -355,7 +357,7 @@ fun GymAppRoot(
             repository.seedDefaultExerciseMuscleMappings()
             if (!canonicalRoundTripSafe) {
                 authManager.setMessage(
-                    "Cloud data conflicts with unsynced local changes. Automatic upload is paused."
+                    LocalizedText(R.string.cloud_sync_conflict)
                 )
             }
         }
@@ -391,7 +393,7 @@ fun GymAppRoot(
                         email = session.email,
                         remote = true
                     )
-                    val state = repository.buildBackupJson(owner = owner)
+                    val state = repository.buildCloudBackupJson(owner = owner)
                     val stateDigest = withContext(Dispatchers.Default) {
                         checkNotNull(canonicalWorkoutPayloadDigest(state))
                     }
@@ -418,7 +420,7 @@ fun GymAppRoot(
                     if (throwable is CancellationException) throw throwable
                     cloudPullGeneration = null
                     authManager.setMessage(
-                        throwable.message ?: "Cloud changes could not be saved safely."
+                        authErrorText(throwable, R.string.cloud_sync_save_failed)
                     )
                 }
             }
@@ -435,7 +437,6 @@ fun GymAppRoot(
         currentRoute?.startsWith("post_workout_summary/") == true -> R.string.title_post_workout_summary
         else -> R.string.app_name
     }
-    val passwordUpdateFailedMessage = stringResource(R.string.auth_password_update_failed)
     val topAppBarScrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
 
     key(uiIsolationKey) {
@@ -451,7 +452,10 @@ fun GymAppRoot(
                                 authManager.updatePassword(password)
                             }.onFailure { throwable ->
                                 authManager.setMessage(
-                                    throwable.message ?: passwordUpdateFailedMessage
+                                    authErrorText(
+                                        throwable,
+                                        R.string.auth_password_update_failed
+                                    )
                                 )
                             }
                         }
@@ -472,7 +476,9 @@ fun GymAppRoot(
                                 authManager.login(email, password)
                                 authManager.setMessage(null)
                             }.onFailure { throwable ->
-                                authManager.setMessage(throwable.message ?: "Login failed")
+                                authManager.setMessage(
+                                    authErrorText(throwable, R.string.auth_message_login_failed)
+                                )
                             }
                         }
                     },
@@ -483,14 +489,16 @@ fun GymAppRoot(
                                 val session = authManager.signUp(email, password, displayName)
                                 if (session == null) {
                                     authManager.setMessage(
-                                        "Account created. Check your email to confirm the account, then log in.",
+                                        LocalizedText(R.string.auth_message_account_created),
                                         isError = false
                                     )
                                     return@runCatching
                                 }
                                 authManager.setMessage(null)
                             }.onFailure { throwable ->
-                                authManager.setMessage(throwable.message ?: "Sign up failed")
+                                authManager.setMessage(
+                                    authErrorText(throwable, R.string.auth_message_signup_failed)
+                                )
                             }
                         }
                     },
@@ -500,11 +508,16 @@ fun GymAppRoot(
                             runCatching {
                                 authManager.resendSignUpConfirmation(email)
                                 authManager.setMessage(
-                                    "Confirmation email sent. Confirm it, then return here and log in with your password.",
+                                    LocalizedText(R.string.auth_message_confirmation_sent),
                                     isError = false
                                 )
                             }.onFailure { throwable ->
-                                authManager.setMessage(throwable.message ?: "Could not resend confirmation email")
+                                authManager.setMessage(
+                                    authErrorText(
+                                        throwable,
+                                        R.string.auth_message_confirmation_failed
+                                    )
+                                )
                             }
                         }
                     },
@@ -514,12 +527,15 @@ fun GymAppRoot(
                             runCatching {
                                 authManager.requestPasswordReset(email)
                                 authManager.setMessage(
-                                    "Password reset email sent. Open the newest email on this phone, then tap Open GymApp.",
+                                    LocalizedText(R.string.auth_message_password_reset_sent),
                                     isError = false
                                 )
                             }.onFailure { throwable ->
                                 authManager.setMessage(
-                                    throwable.message ?: "Could not send the password reset email."
+                                    authErrorText(
+                                        throwable,
+                                        R.string.auth_message_password_reset_failed
+                                    )
                                 )
                             }
                         }
@@ -732,6 +748,7 @@ fun GymAppRoot(
                                 )
                             )
                             val uiState by viewModel.uiState.collectAsState()
+                            val smartCoachPlanNote = stringResource(R.string.smart_coach_plan_note)
 
                             LaunchedEffect(uiState.createdSessionId) {
                                 val createdSessionId = uiState.createdSessionId
@@ -752,7 +769,9 @@ fun GymAppRoot(
                                 onWorkoutsPerWeekSelected = viewModel::updateWorkoutsPerWeek,
                                 onTrainingGoalSelected = viewModel::updateTrainingGoal,
                                 onCalorieModeSelected = viewModel::updateCalorieMode,
-                                onGenerateSmartWorkout = viewModel::generateSmartWorkout,
+                                onGenerateSmartWorkout = {
+                                    viewModel.generateSmartWorkout(smartCoachPlanNote)
+                                },
                                 onAddExerciseDraft = viewModel::addExerciseDraft,
                                 onRemoveExerciseDraft = viewModel::removeExerciseDraft,
                                 onExerciseSelected = viewModel::updateExerciseSelection,
@@ -905,12 +924,12 @@ fun GymAppRoot(
                             val uiState by viewModel.uiState.collectAsState()
                             var rows by remember { mutableStateOf<List<LeaderboardRow>>(emptyList()) }
                             var isLoading by remember { mutableStateOf(false) }
-                            var error by remember { mutableStateOf<String?>(null) }
+                            var error by remember { mutableStateOf<LocalizedText?>(null) }
 
                             fun refreshLeaderboard() {
                                 val session = authState.session as? AccountSession.Cloud
                                 if (session == null) {
-                                    error = "Log in to load the cloud rating."
+                                    error = LocalizedText(R.string.leaderboard_login_required)
                                     rows = emptyList()
                                     return
                                 }
@@ -948,7 +967,10 @@ fun GymAppRoot(
                                         rows = loadedRows
                                         isLoading = false
                                     }.onFailure { throwable ->
-                                        error = throwable.message ?: "Could not load cloud rating."
+                                        error = authErrorText(
+                                            throwable,
+                                            R.string.leaderboard_load_failed
+                                        )
                                         rows = listOf(localRows)
                                         isLoading = false
                                     }

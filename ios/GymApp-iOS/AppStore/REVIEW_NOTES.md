@@ -22,7 +22,7 @@ The demo account contains three fictional exercises and two fictional workouts s
 
 ## App overview and navigation
 
-GymApp is an English/Ukrainian workout planner and strength-training log. Its five primary tabs are:
+GymApp is an English/Ukrainian/Russian workout planner and strength-training log. Its five primary tabs are:
 
 1. **Workouts** — monthly overview/history, heatmap, muscle map, recommendations, achievements, create and edit workout sessions.
 2. **Missions** — daily, weekly, and monthly training goals.
