@@ -417,9 +417,7 @@ struct PostWorkoutSummaryView: View {
         guard let definition = MuscleMappingEngine.muscleDefinitions.first(where: { $0.id == load.muscleID }) else {
             return load.muscleID
         }
-        return gymCurrentLanguageCode() == AppLanguage.ukrainian.rawValue
-            ? definition.titleUk
-            : definition.titleEn
+        return gymText(definition.titleEn, definition.titleUk, languageCode: gymCurrentLanguageCode())
     }
 
     private func badgeColor(_ rarity: BadgeRarity) -> Color {

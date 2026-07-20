@@ -5,10 +5,12 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import androidx.appcompat.app.AppCompatDelegate
 import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.entity.ExerciseHistoryEntry
 import com.example.gymapp.data.repository.GymRepository
 import com.example.gymapp.util.DateTimeUtils
+import com.example.gymapp.util.RussianText
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -89,8 +91,11 @@ class ExerciseProgressViewModel(
     private val repository: GymRepository
 ) : ViewModel() {
     private val zoneId = ZoneId.systemDefault()
-    private val locale = Locale.getDefault()
+    private val locale = AppCompatDelegate.getApplicationLocales().let { locales ->
+        if (locales.isEmpty) Locale.getDefault() else locales[0] ?: Locale.getDefault()
+    }
     private val isUkrainian = locale.language.equals("uk", ignoreCase = true)
+    private val isRussian = locale.language.equals("ru", ignoreCase = true)
     private val shortDateFormatter = DateTimeFormatter.ofPattern("d MMM", locale)
     private val monthOffset = MutableStateFlow(0)
     private val selectedExerciseId = MutableStateFlow<Long?>(null)
@@ -241,10 +246,10 @@ class ExerciseProgressViewModel(
 
         return ExerciseProgressSpotlightUiModel(
             title = exerciseName ?: t(en = "Exercise spotlight", uk = "Фокус вправи"),
-            subtitle = if (isUkrainian) {
-                "${monthPoints.size} сес. у вибраному місяці."
-            } else {
-                "${monthPoints.size} session${if (monthPoints.size == 1) "" else "s"} in the selected month."
+            subtitle = when {
+                isUkrainian -> "${monthPoints.size} сес. у вибраному місяці."
+                isRussian -> "${monthPoints.size} сес. в выбранном месяце."
+                else -> "${monthPoints.size} session${if (monthPoints.size == 1) "" else "s"} in the selected month."
             },
             latestWeightLabel = formatWeight(latest.maxWeight),
             latestWeightCaption = t(en = "Latest max", uk = "Останній макс"),
@@ -261,10 +266,10 @@ class ExerciseProgressViewModel(
                 unit = t(en = "volume", uk = "обсягу")
             ),
             allTimeBestLabel = "PR ${formatWeight(allTimeBest)}",
-            consistencyLabel = if (isUkrainian) {
-                "${monthPoints.size} цього місяця"
-            } else {
-                "${monthPoints.size} this month"
+            consistencyLabel = when {
+                isUkrainian -> "${monthPoints.size} цього місяця"
+                isRussian -> "${monthPoints.size} в этом месяце"
+                else -> "${monthPoints.size} this month"
             }
         )
     }
@@ -289,10 +294,10 @@ class ExerciseProgressViewModel(
                 totalReps = point.totalReps,
                 weightLabel = formatWeight(point.maxWeight),
                 volumeLabel = point.totalVolume.roundToInt().toString(),
-                repsLabel = if (isUkrainian) {
-                    "${point.totalReps} повт"
-                } else {
-                    "${point.totalReps} reps"
+                repsLabel = when {
+                    isUkrainian -> "${point.totalReps} повт"
+                    isRussian -> "${point.totalReps} повт"
+                    else -> "${point.totalReps} reps"
                 },
                 weightRatio = (point.maxWeight / maxWeight).toFloat().coerceIn(0f, 1f),
                 volumeRatio = (point.totalVolume / maxVolume).toFloat().coerceIn(0f, 1f),
@@ -323,10 +328,10 @@ class ExerciseProgressViewModel(
             return t(en = "Holding steady", uk = "Стабільно")
         }
         val prefix = if (delta > 0) "+" else "-"
-        return if (isUkrainian) {
-            "$prefix${formatTrendValue(delta.absoluteValue)} $unit відносно першої сесії"
-        } else {
-            "$prefix${formatTrendValue(delta.absoluteValue)} $unit vs first session"
+        return when {
+            isUkrainian -> "$prefix${formatTrendValue(delta.absoluteValue)} $unit відносно першої сесії"
+            isRussian -> "$prefix${formatTrendValue(delta.absoluteValue)} $unit относительно первой сессии"
+            else -> "$prefix${formatTrendValue(delta.absoluteValue)} $unit vs first session"
         }
     }
 
@@ -339,10 +344,10 @@ class ExerciseProgressViewModel(
             return t(en = "Flat vs previous", uk = "Без змін від попередньої")
         }
         val prefix = if (delta > 0) "+" else "-"
-        return if (isUkrainian) {
-            "$prefix${formatTrendValue(delta.absoluteValue)} $unit відносно попередньої"
-        } else {
-            "$prefix${formatTrendValue(delta.absoluteValue)} $unit vs previous"
+        return when {
+            isUkrainian -> "$prefix${formatTrendValue(delta.absoluteValue)} $unit відносно попередньої"
+            isRussian -> "$prefix${formatTrendValue(delta.absoluteValue)} $unit относительно предыдущей"
+            else -> "$prefix${formatTrendValue(delta.absoluteValue)} $unit vs previous"
         }
     }
 
@@ -358,10 +363,14 @@ class ExerciseProgressViewModel(
         locale,
         "%.1f %s",
         weight,
-        if (isUkrainian) "кг" else "kg"
+        if (isUkrainian || isRussian) "кг" else "kg"
     )
 
-    private fun t(en: String, uk: String): String = if (isUkrainian) uk else en
+    private fun t(en: String, uk: String): String = when (locale.language.lowercase(Locale.ROOT)) {
+        "uk" -> uk
+        "ru" -> RussianText.translate(en)
+        else -> en
+    }
 
     companion object {
         fun factory(repository: GymRepository): ViewModelProvider.Factory = viewModelFactory {
@@ -371,4 +380,3 @@ class ExerciseProgressViewModel(
         }
     }
 }
-

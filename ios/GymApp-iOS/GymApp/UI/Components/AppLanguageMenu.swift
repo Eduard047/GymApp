@@ -8,13 +8,14 @@ struct AppLanguageMenu: View {
             Picker("Language", selection: $languageCode) {
                 Label("English", systemImage: languageCode == "en" ? "checkmark" : "globe").tag("en")
                 Label("Українська", systemImage: languageCode == "uk" ? "checkmark" : "globe").tag("uk")
+                Label("Русский", systemImage: languageCode == "ru" ? "checkmark" : "globe").tag("ru")
             }
         } label: {
             Label(languageCode.uppercased(), systemImage: "globe")
                 .labelStyle(.titleAndIcon)
         }
-        .accessibilityLabel(languageCode == "uk" ? "Мова" : "Language")
-        .accessibilityValue(languageCode == "uk" ? "Українська" : "English")
+        .accessibilityLabel(gymText("Language", "Мова", languageCode: languageCode))
+        .accessibilityValue(languageCode == "uk" ? "Українська" : languageCode == "ru" ? "Русский" : "English")
     }
 }
 

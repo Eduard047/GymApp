@@ -142,7 +142,7 @@ public enum BuiltInExerciseCatalog {
         ) else {
             return rawName
         }
-        return languageCode == "uk" ? definition.ukrainianName : definition.englishName
+        return gymText(definition.englishName, definition.ukrainianName, languageCode: languageCode)
     }
 
     private static func normalizedAlias(_ value: String) -> String {

@@ -7,9 +7,11 @@ Connect IQ watch app targeting compatible Garmin watches and wearable devices li
 - Main dashboard shows workout time, current heart rate, heart-rate zone bar, Gym kcal, and Garmin kcal.
 - The app automatically estimates effort state from heart-rate trend: warmup, set active, rest, or ready.
 - When the watch detects a likely completed set, the dashboard shows `LOG SET?`; tap/select logs the set with the currently selected exercise, weight, and reps.
-- Tap/right/select from the dashboard opens the set entry screen.
-- Set entry screen lets you pick exercise, adjust weight by 2.5 kg, adjust reps, and save a set.
-- Swipe between dashboard, set entry, debug, and settings screens.
+- Tap an empty dashboard area, or press right/select, to open the set entry screen.
+- On touch watches, the exercise, weight, reps, and save rows are large direct tap targets. Tap the left or right half of weight/reps to decrease or increase it.
+- On one- and two-button watches, next/previous moves between rows and select/start activates the highlighted row, so every action remains reachable without touch.
+- Set entry lets you pick exercise, adjust weight by the configured step, adjust reps, and save a set.
+- Swipe between dashboard, set entry, debug, and settings screens when the device supports touch gestures.
 - Debug screen shows HR, zone, effort state, HR trend, auto-log status, sensitivity, and the latest auto-detect reason.
 - Settings screen lets you change auto-log on/off, auto-detect sensitivity, weight step, default rest time, and default reps.
 - `START`: pause/resume the workout.

@@ -1118,6 +1118,22 @@ private fun LanguageSelector(
                     expanded = false
                 }
             )
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        text = stringResource(R.string.language_russian),
+                        color = if (selectedLanguage == AppLanguage.RU) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        }
+                    )
+                },
+                onClick = {
+                    onLanguageSelected(AppLanguage.RU)
+                    expanded = false
+                }
+            )
         }
     }
 }

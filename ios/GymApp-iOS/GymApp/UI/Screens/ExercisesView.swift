@@ -375,7 +375,7 @@ struct ExercisesView: View {
                         .buttonStyle(.bordered)
                         .tint(muscleFilter == nil ? GymTheme.primary : GymTheme.textSecondary)
                     ForEach(MuscleMappingEngine.muscleDefinitions) { muscle in
-                        Button(gymCurrentLanguageCode() == "uk" ? muscle.titleUk : muscle.titleEn) {
+                        Button(gymText(muscle.titleEn, muscle.titleUk, languageCode: gymCurrentLanguageCode())) {
                             muscleFilter = muscleFilter == muscle.id ? nil : muscle.id
                         }
                         .buttonStyle(.bordered)
@@ -1141,15 +1141,11 @@ private struct ExerciseMuscleMappingSheet: View {
                             Toggle(isOn: binding(for: muscle.id)) {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(
-                                        gymCurrentLanguageCode() == "uk"
-                                            ? muscle.titleUk
-                                            : muscle.titleEn
+                                        gymText(muscle.titleEn, muscle.titleUk, languageCode: gymCurrentLanguageCode())
                                     )
                                         .font(.headline)
                                     Text(
-                                        gymCurrentLanguageCode() == "uk"
-                                            ? muscle.titleEn
-                                            : muscle.titleUk
+                                        gymCurrentLanguageCode() == "uk" ? muscle.titleEn : muscle.titleUk
                                     )
                                         .font(.caption)
                                         .foregroundStyle(GymTheme.textSecondary)

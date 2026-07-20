@@ -1,5 +1,6 @@
 package com.example.gymapp.data.catalog
 
+import com.example.gymapp.util.RussianText
 import java.util.Locale
 
 data class BuiltInExerciseDefinition(
@@ -136,10 +137,10 @@ object BuiltInExerciseCatalog {
 
     fun displayName(rawName: String, languageTag: String?): String {
         val definition = definitionForName(rawName) ?: return rawName
-        return if (languageTag.equals("uk", ignoreCase = true)) {
-            definition.nameUk
-        } else {
-            definition.nameEn
+        return when {
+            languageTag.equals("uk", ignoreCase = true) -> definition.nameUk
+            languageTag.equals("ru", ignoreCase = true) -> RussianText.translate(definition.nameEn)
+            else -> definition.nameEn
         }
     }
 

@@ -37,6 +37,7 @@ import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import java.time.temporal.TemporalAdjusters
 import java.util.Locale
+import com.example.gymapp.util.RussianText
 import kotlin.math.abs
 import kotlin.math.pow
 import kotlin.math.roundToInt
@@ -371,10 +372,10 @@ class WorkoutListViewModel(
                 en = "Log a workout to start your momentum.",
                 uk = "Запиши тренування, щоб запустити свій темп."
             )
-            weeklyStreakWeeks > 0 -> if (isUkrainian()) {
-                "$weeklyStreakWeeks тиж. поспіль із 3+ тренуваннями."
-            } else {
-                "$weeklyStreakWeeks successful week${if (weeklyStreakWeeks == 1) "" else "s"} in a row."
+            weeklyStreakWeeks > 0 -> when {
+                isUkrainian() -> "$weeklyStreakWeeks тиж. поспіль із 3+ тренуваннями."
+                isRussian() -> "$weeklyStreakWeeks нед. подряд с 3+ тренировками."
+                else -> "$weeklyStreakWeeks successful week${if (weeklyStreakWeeks == 1) "" else "s"} in a row."
             }
             monthXp > 0 && missionXpBonus > 0 && includeMissionXpInMonth -> t(
                 en = "$monthXp workout XP this month. Mission rewards are tracked separately.",
@@ -1778,10 +1779,10 @@ class WorkoutListViewModel(
         unitEn: String,
         unitUk: String
     ): MissionProgressUiModel {
-        val progressLabel = if (isUkrainian()) {
-            "${progress.coerceAtMost(goal)} / $goal $unitUk"
-        } else {
-            "${progress.coerceAtMost(goal)} / $goal $unitEn"
+        val progressLabel = when {
+            isUkrainian() -> "${progress.coerceAtMost(goal)} / $goal $unitUk"
+            isRussian() -> "${progress.coerceAtMost(goal)} / $goal ${RussianText.translate(unitEn)}"
+            else -> "${progress.coerceAtMost(goal)} / $goal $unitEn"
         }
 
         return MissionProgressUiModel(
@@ -1972,7 +1973,11 @@ class WorkoutListViewModel(
         return (progress.toFloat() / goal.toFloat()).coerceIn(0f, 1f)
     }
 
-    private fun t(en: String, uk: String): String = if (isUkrainian()) uk else en
+    private fun t(en: String, uk: String): String = when (currentLocale().language.lowercase(Locale.ROOT)) {
+        "uk" -> uk
+        "ru" -> RussianText.translate(en)
+        else -> en
+    }
 
     private fun currentLocale(): Locale {
         val appLocales = AppCompatDelegate.getApplicationLocales()
@@ -1985,6 +1990,10 @@ class WorkoutListViewModel(
 
     private fun isUkrainian(): Boolean {
         return currentLocale().language.equals("uk", ignoreCase = true)
+    }
+
+    private fun isRussian(): Boolean {
+        return currentLocale().language.equals("ru", ignoreCase = true)
     }
 
     private fun Long.toLocalDate(): LocalDate {
