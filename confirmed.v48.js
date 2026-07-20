@@ -5,7 +5,10 @@ if (window.__GYMAPP_TOP_LEVEL__ !== true || window.top !== window.self) {
 }
 
 const PUBLIC_SITE_URL = "https://gymapptracker.com/";
-const ANDROID_AUTH_CALLBACK_URL = "com.setforge.gymapp://auth/callback";
+const ANDROID_AUTH_CALLBACK_URLS = Object.freeze({
+  production: "com.setforge.gymapp://auth/callback",
+  qa: "com.setforge.gymapp.dev://auth/callback"
+});
 const IOS_AUTH_CALLBACK_URL = "com.setforge.gymapp.ios://auth/callback";
 const AUTH_STATE_PATTERN = /^[A-Za-z0-9_-]{32}$/;
 const AUTH_CODE_PATTERN = /^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$/;
@@ -16,6 +19,7 @@ const rawSearch = window.location.search.replace(/^\?/, "");
 const rawHash = window.location.hash.replace(/^#/, "");
 const BRIDGE_QUERY_KEYS = new Set([
   "platform",
+  "variant",
   "state",
   "purpose",
   "code",
@@ -88,6 +92,7 @@ const bridgeQuery = parseBridgeQuery();
 
 function configureIOSBridge() {
   const platforms = bridgeQuery.getAll("platform");
+  const variants = bridgeQuery.getAll("variant");
   const states = bridgeQuery.getAll("state");
   const purposes = bridgeQuery.getAll("purpose");
   const codes = bridgeQuery.getAll("code");
@@ -99,6 +104,7 @@ function configureIOSBridge() {
   const hasError = errors.length === 1 && isSafeValue(errors[0], 128);
   const hasDescription = descriptions.length === 1 && isSafeValue(descriptions[0], 1024);
   const invalid = platforms.length !== 1 || platforms[0] !== "ios" ||
+    variants.length !== 0 ||
     states.length !== 1 || !AUTH_STATE_PATTERN.test(state) ||
     purposes.length > 1 || !["signup", "recovery"].includes(purpose) ||
     rawHash.length > 0 || bridgeQuery.malformed || bridgeQuery.tokenLike ||
@@ -170,12 +176,13 @@ function configureIOSBridge() {
 
 function configureAndroidBridge() {
   const platforms = bridgeQuery.getAll("platform");
+  const variants = bridgeQuery.getAll("variant");
   const states = bridgeQuery.getAll("state");
   const purposes = bridgeQuery.getAll("purpose");
   const codes = bridgeQuery.getAll("code");
   const errors = bridgeQuery.getAll("error");
   const descriptions = bridgeQuery.getAll("error_description");
-  const isPKCECallback = purposes.length > 0 || states.length > 0 ||
+  const isPKCECallback = variants.length > 0 || purposes.length > 0 || states.length > 0 ||
     codes.length > 0 || errors.length > 0 || descriptions.length > 0;
 
   if (isPKCECallback) {
@@ -185,6 +192,7 @@ function configureAndroidBridge() {
     const hasError = errors.length === 1 && isSafeValue(errors[0], 128);
     const hasDescription = descriptions.length === 1 && isSafeValue(descriptions[0], 1024);
     const invalid = platforms.length !== 1 || platforms[0] !== "android" ||
+      variants.length > 1 || (variants.length === 1 && variants[0] !== "qa") ||
       states.length !== 1 || !AUTH_STATE_PATTERN.test(state) ||
       purposes.length !== 1 || !["signup", "recovery"].includes(purpose) ||
       rawHash.length > 0 || bridgeQuery.malformed || bridgeQuery.tokenLike ||
@@ -202,7 +210,10 @@ function configureAndroidBridge() {
       return false;
     }
 
-    const appUrl = new URL(ANDROID_AUTH_CALLBACK_URL);
+    const callbackUrl = variants[0] === "qa"
+      ? ANDROID_AUTH_CALLBACK_URLS.qa
+      : ANDROID_AUTH_CALLBACK_URLS.production;
+    const appUrl = new URL(callbackUrl);
     appUrl.searchParams.set("state", state);
     appUrl.searchParams.set("purpose", purpose);
     if (hasCode) {
@@ -256,12 +267,22 @@ function configureAndroidBridge() {
 }
 
 function configureWebReturn() {
+  if (bridgeQuery.getAll("variant").length > 0) {
+    setContent(
+      "Confirmation link unavailable",
+      "This web confirmation link contains an unsupported app variant.",
+      "Return to GymApp website",
+      PUBLIC_SITE_URL
+    );
+    return false;
+  }
   setContent(
     "Email confirmed",
     "Your account is ready. Return to GymApp and log in with your password.",
     "Return to GymApp",
     PUBLIC_SITE_URL
   );
+  return true;
 }
 
 const platform = bridgeQuery.getAll("platform")[0] || null;

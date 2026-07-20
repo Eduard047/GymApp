@@ -1,7 +1,7 @@
 "use strict";
 
 const CACHE_PREFIX = "gym-pwa-";
-const CACHE_VERSION = "v48";
+const CACHE_VERSION = "v49";
 const CACHE_NAME = `${CACHE_PREFIX}${CACHE_VERSION}`;
 const LEGACY_GITHUB_ORIGIN = "https://eduard047.github.io";
 const IS_LEGACY_GITHUB_ORIGIN = self.location.origin === LEGACY_GITHUB_ORIGIN;
@@ -11,16 +11,17 @@ const ASSETS = [
   "./",
   "./index.html",
   "./confirmed.html",
-  "./confirmed.v47.css",
-  "./confirmed.v47.js",
-  "./frame-guard.v47.js",
-  "./styles.v47.css",
-  "./muscle-regions.v47.js",
-  "./supabase-config.v47.js",
-  "./state-contract.v47.js",
-  "./garmin-cloud-sync.v47.js",
-  "./progression-rules.v47.js",
-  "./app.v47.js",
+  "./confirmed.v48.css",
+  "./confirmed.v48.js",
+  "./frame-guard.v48.js",
+  "./styles.v48.css",
+  "./muscle-regions.v48.js",
+  "./supabase-config.v48.js",
+  "./state-contract.v48.js",
+  "./garmin-cloud-sync.v48.js",
+  "./progression-rules.v48.js",
+  "./russian-text.v48.js",
+  "./app.v48.js",
   "./manifest.webmanifest",
   "./icon.svg"
 ];
