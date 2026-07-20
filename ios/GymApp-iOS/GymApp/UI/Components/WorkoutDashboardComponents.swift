@@ -299,9 +299,7 @@ enum WorkoutDashboardDataBuilder {
     }
 
     private static func localizedMuscleName(_ definition: MuscleDefinition) -> String {
-        gymCurrentLanguageCode() == "uk"
-            ? definition.titleUk
-            : definition.titleEn
+        gymText(definition.titleEn, definition.titleUk, languageCode: gymCurrentLanguageCode())
     }
 
     private static func mostRecentDate(
@@ -642,9 +640,14 @@ struct WorkoutActivityHeatmap: View {
         localizedCalendar.locale = AppLanguage(rawValue: gymCurrentLanguageCode())?.locale
         let symbols = localizedCalendar.veryShortStandaloneWeekdaySymbols
         guard symbols.count == 7 else {
-            return gymCurrentLanguageCode() == AppLanguage.ukrainian.rawValue
-                ? ["П", "В", "С", "Ч", "П", "С", "Н"]
-                : ["M", "T", "W", "T", "F", "S", "S"]
+            switch gymCurrentLanguageCode() {
+            case AppLanguage.ukrainian.rawValue:
+                return ["П", "В", "С", "Ч", "П", "С", "Н"]
+            case AppLanguage.russian.rawValue:
+                return ["П", "В", "С", "Ч", "П", "С", "В"]
+            default:
+                return ["M", "T", "W", "T", "F", "S", "S"]
+            }
         }
         return Array(symbols[1...6]) + [symbols[0]]
     }

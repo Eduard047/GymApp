@@ -1029,7 +1029,7 @@ public final class WorkoutStore: ObservableObject {
             guard requiredPWAKeys.isSubset(of: Set(root.keys)),
                   Set(root.keys).isSubset(of: allowedPWAKeys),
                   let language = root["language"] as? String,
-                  language == "en" || language == "uk",
+                  ["en", "uk", "ru"].contains(language),
                   root["exercises"] is [Any],
                   root["sessions"] is [Any],
                   root["mappings"] is [String: Any],

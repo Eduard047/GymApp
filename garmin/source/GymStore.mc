@@ -147,7 +147,7 @@ class GymStore {
         }
         var savedLanguage = Storage.getValue("language");
         if (savedLanguage != null) {
-            language = savedLanguage.toString().equals("uk") ? "uk" : "en";
+            language = normalizedLanguage(savedLanguage.toString());
         }
         if (legacyUnboundState) {
             // Once present, this single-value snapshot is the atomic source of truth for
@@ -289,13 +289,30 @@ class GymStore {
         return language.equals("uk");
     }
 
-    static function tr(en, uk) {
-        return isUk() ? uk : en;
+    static function isRu() {
+        return language.equals("ru");
+    }
+
+    static function normalizedLanguage(value) {
+        if (value != null && (value.equals("uk") || value.equals("ru"))) {
+            return value;
+        }
+        return "en";
+    }
+
+    static function tr(en, uk, ru) {
+        if (isUk()) {
+            return uk;
+        }
+        return isRu() ? ru : en;
     }
 
     static function onOff(value) {
         if (isUk()) {
             return value ? "ТАК" : "НІ";
+        }
+        if (isRu()) {
+            return value ? "ДА" : "НЕТ";
         }
         return value ? "ON" : "OFF";
     }
@@ -635,7 +652,7 @@ class GymStore {
     static function applyValidatedSync(message) {
         var syncedLanguage = message.get("language");
         if (syncedLanguage != null) {
-            language = syncedLanguage.toString().equals("uk") ? "uk" : "en";
+            language = normalizedLanguage(syncedLanguage.toString());
         }
         var flatNames = message.get("planNames");
         var flatWeights = message.get("planWeights");
@@ -763,7 +780,8 @@ class GymStore {
         var syncedLanguage = message.get("language");
         if (syncedLanguage != null &&
             (!(syncedLanguage instanceof Lang.String) ||
-                (!syncedLanguage.toString().equals("en") && !syncedLanguage.toString().equals("uk")))) {
+                (!syncedLanguage.toString().equals("en") && !syncedLanguage.toString().equals("uk") &&
+                    !syncedLanguage.toString().equals("ru")))) {
             return false;
         }
         var resetWorkout = message.get("resetWorkout");
@@ -1158,7 +1176,7 @@ class GymStore {
             !(autoPromptEnabled instanceof Lang.Boolean) ||
             !(sensitivityIndex instanceof Lang.Number) ||
             sensitivityIndex < 0 || sensitivityIndex > 2 ||
-            !(language.equals("en") || language.equals("uk"))) {
+            !(language.equals("en") || language.equals("uk") || language.equals("ru"))) {
             return false;
         }
         var snapshot = {
@@ -1225,7 +1243,7 @@ class GymStore {
             return false;
         }
         var savedLanguage = value.get("language").toString();
-        return (savedLanguage.equals("en") || savedLanguage.equals("uk")) &&
+        return (savedLanguage.equals("en") || savedLanguage.equals("uk") || savedLanguage.equals("ru")) &&
             estimatedValueBytes(value) <= maxEstimatedStoreBytes;
     }
 

@@ -391,6 +391,7 @@
     <string name="language_button">Мова</string>
     <string name="language_english">EN</string>
     <string name="language_ukrainian">UKR</string>
+    <string name="language_russian">RU</string>
 
     <string name="session_item_title">Тренування %1$s</string>
     <string name="details_note">Нотатка: %1$s</string>

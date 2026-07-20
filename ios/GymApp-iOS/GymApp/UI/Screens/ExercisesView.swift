@@ -3,6 +3,32 @@ import UniformTypeIdentifiers
 
 @MainActor
 struct ExercisesView: View {
+    private enum BodyFilter: String, CaseIterable, Identifiable {
+        case all
+        case upper
+        case lower
+        case core
+
+        var id: Self { self }
+
+        var muscleIDs: Set<String> {
+            switch self {
+            case .all: []
+            case .upper: ["chest", "shoulders", "biceps", "triceps", "forearms", "lats", "upperBack"]
+            case .lower: ["lowerBack", "glutes", "quads", "hamstrings", "adductors", "calves"]
+            case .core: ["abs", "obliques"]
+            }
+        }
+    }
+
+    private enum SortMode: String, CaseIterable, Identifiable {
+        case name
+        case mostFrequent
+        case leastFrequent
+
+        var id: Self { self }
+    }
+
     private enum PresentedSheet: Identifiable {
         case addExercise
         case editExercise(Exercise)
@@ -45,6 +71,9 @@ struct ExercisesView: View {
     @EnvironmentObject private var store: WorkoutStore
 
     @State private var searchText = ""
+    @State private var bodyFilter: BodyFilter = .all
+    @State private var muscleFilter: String?
+    @State private var sortMode: SortMode = .name
     @State private var presentedSheet: PresentedSheet?
     @State private var activeAlert: ActiveAlert?
     @State private var showsAccountSettings = false
@@ -280,6 +309,8 @@ struct ExercisesView: View {
             }
             .gymTextFieldChrome()
 
+            exerciseFilters
+
             if filteredExercises.isEmpty {
                 GymPanel {
                     ContentUnavailableView {
@@ -312,6 +343,78 @@ struct ExercisesView: View {
         }
     }
 
+    private var exerciseFilters: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ScrollView(.horizontal) {
+                HStack(spacing: 8) {
+                    ForEach(BodyFilter.allCases) { filter in
+                        Button(bodyFilterTitle(filter)) { bodyFilter = filter }
+                            .buttonStyle(.bordered)
+                            .tint(bodyFilter == filter ? GymTheme.primary : GymTheme.textSecondary)
+                            .accessibilityAddTraits(bodyFilter == filter ? .isSelected : [])
+                    }
+                }
+            }
+            .scrollIndicators(.hidden)
+
+            ScrollView(.horizontal) {
+                HStack(spacing: 8) {
+                    ForEach(SortMode.allCases) { mode in
+                        Button(sortModeTitle(mode)) { sortMode = mode }
+                            .buttonStyle(.bordered)
+                            .tint(sortMode == mode ? GymTheme.primary : GymTheme.textSecondary)
+                            .accessibilityAddTraits(sortMode == mode ? .isSelected : [])
+                    }
+                }
+            }
+            .scrollIndicators(.hidden)
+
+            ScrollView(.horizontal) {
+                HStack(spacing: 8) {
+                    Button(gymLocalized("All muscles")) { muscleFilter = nil }
+                        .buttonStyle(.bordered)
+                        .tint(muscleFilter == nil ? GymTheme.primary : GymTheme.textSecondary)
+                    ForEach(MuscleMappingEngine.muscleDefinitions) { muscle in
+                        Button(gymText(muscle.titleEn, muscle.titleUk, languageCode: gymCurrentLanguageCode())) {
+                            muscleFilter = muscleFilter == muscle.id ? nil : muscle.id
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(muscleFilter == muscle.id ? GymTheme.primary : GymTheme.textSecondary)
+                    }
+                }
+            }
+            .scrollIndicators(.hidden)
+
+            Text(gymText(
+                "\(filteredExercises.count) exercises",
+                "Вправ: \(filteredExercises.count)",
+                languageCode: gymCurrentLanguageCode()
+            ))
+            .font(.caption)
+            .foregroundStyle(GymTheme.textSecondary)
+        }
+    }
+
+    private func bodyFilterTitle(_ filter: BodyFilter) -> String {
+        switch filter {
+        case .all: gymLocalized("All")
+        case .upper: gymText("Upper body", "Верх тіла", languageCode: gymCurrentLanguageCode())
+        case .lower: gymText("Lower body", "Низ тіла", languageCode: gymCurrentLanguageCode())
+        case .core: gymText("Core", "Кор", languageCode: gymCurrentLanguageCode())
+        }
+    }
+
+    private func sortModeTitle(_ mode: SortMode) -> String {
+        switch mode {
+        case .name:
+            gymText("By name", "За назвою", languageCode: gymCurrentLanguageCode())
+        case .mostFrequent:
+            gymText("Most frequent", "Найчастіші", languageCode: gymCurrentLanguageCode())
+        case .leastFrequent:
+            gymText("Least frequent", "Найрідші", languageCode: gymCurrentLanguageCode())
+        }
+    }
+
     private func exerciseCard(_ exercise: Exercise) -> some View {
         let stats = store.progressStats(exerciseID: exercise.id)
         let mappingCount = manualMuscleIDs(for: exercise).count
@@ -328,43 +431,65 @@ struct ExercisesView: View {
 
                     Spacer(minLength: 4)
 
-                    Menu {
-                        Button {
-                            presentedSheet = .editExercise(exercise)
-                        } label: {
-                            Label("Rename", systemImage: "pencil")
+                    if catalogDefinition(for: exercise) != nil {
+                        HStack(spacing: 6) {
+                            GymInfoPill(
+                                gymText("Built-in", "Вбудована", languageCode: gymCurrentLanguageCode()),
+                                systemImage: "checkmark.seal"
+                            )
+                            Button(role: .destructive) {
+                                activeAlert = .delete(exercise)
+                            } label: {
+                                Image(systemName: "trash")
+                                    .frame(minWidth: 44, minHeight: 44)
+                            }
+                            .accessibilityLabel(
+                                gymText(
+                                    "Delete \(displayName)",
+                                    "Видалити «\(displayName)»",
+                                    languageCode: gymCurrentLanguageCode()
+                                )
+                            )
                         }
+                    } else {
+                        Menu {
+                            Button {
+                                presentedSheet = .editExercise(exercise)
+                            } label: {
+                                Label("Rename", systemImage: "pencil")
+                            }
 
-                        Button(role: .destructive) {
-                            activeAlert = .delete(exercise)
+                            Button(role: .destructive) {
+                                activeAlert = .delete(exercise)
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
                         } label: {
-                            Label("Delete", systemImage: "trash")
+                            Image(systemName: "ellipsis.circle")
+                                .font(.title3)
+                                .frame(minWidth: 44, minHeight: 44)
                         }
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
-                            .font(.title3)
-                            .frame(minWidth: 44, minHeight: 44)
-                    }
-                    .accessibilityLabel(
-                        gymText(
-                            "More actions for \(displayName)",
-                            "Більше дій для «\(displayName)»",
-                            languageCode: gymCurrentLanguageCode()
+                        .accessibilityLabel(
+                            gymText(
+                                "More actions for \(displayName)",
+                                "Більше дій для «\(displayName)»",
+                                languageCode: gymCurrentLanguageCode()
+                            )
                         )
-                    )
+                    }
                 }
 
                 HStack(spacing: 8) {
                     GymInfoPill(
                         gymCount(
-                            stats.setCount,
-                            englishOne: "set",
-                            englishMany: "sets",
-                            ukrainianOne: "підхід",
-                            ukrainianFew: "підходи",
-                            ukrainianMany: "підходів"
+                            stats.sessionCount,
+                            englishOne: "workout",
+                            englishMany: "workouts",
+                            ukrainianOne: "тренування",
+                            ukrainianFew: "тренування",
+                            ukrainianMany: "тренувань"
                         ),
-                        systemImage: "list.number"
+                        systemImage: "calendar"
                     )
                     GymInfoPill(
                         mappingCount == 0
@@ -430,15 +555,56 @@ struct ExercisesView: View {
     }
 
     private var filteredExercises: [Exercise] {
-        let sorted = store.exercises.sorted {
-            gymExerciseName($0).localizedCaseInsensitiveCompare(gymExerciseName($1)) == .orderedAscending
-        }
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return sorted }
-        return sorted.filter { exercise in
-            exercise.name.localizedCaseInsensitiveContains(query) ||
-                gymExerciseName(exercise).localizedCaseInsensitiveContains(query)
+        let matching = store.exercises.filter { exercise in
+            let definition = catalogDefinition(for: exercise)
+            let names = [exercise.name, gymExerciseName(exercise)] +
+                (definition.map { [$0.englishName, $0.ukrainianName] + $0.legacyAliases } ?? [])
+            let exerciseMuscles = effectiveMuscleIDs(for: exercise)
+            let matchesQuery = query.isEmpty || names.contains { name in
+                name.localizedCaseInsensitiveContains(query)
+            }
+            let matchesBody = bodyFilter == .all || !exerciseMuscles.isDisjoint(with: bodyFilter.muscleIDs)
+            let matchesMuscle = muscleFilter == nil || exerciseMuscles.contains(muscleFilter!)
+            return matchesQuery && matchesBody && matchesMuscle
         }
+        return matching.sorted { left, right in
+            let nameOrder = gymExerciseName(left).localizedCaseInsensitiveCompare(gymExerciseName(right))
+            let nameComesFirst = nameOrder == .orderedAscending || (
+                nameOrder == .orderedSame && left.id.uuidString < right.id.uuidString
+            )
+            switch sortMode {
+            case .name:
+                return nameComesFirst
+            case .mostFrequent:
+                let leftCount = store.progressStats(exerciseID: left.id).sessionCount
+                let rightCount = store.progressStats(exerciseID: right.id).sessionCount
+                return leftCount == rightCount ? nameComesFirst : leftCount > rightCount
+            case .leastFrequent:
+                let leftCount = store.progressStats(exerciseID: left.id).sessionCount
+                let rightCount = store.progressStats(exerciseID: right.id).sessionCount
+                return leftCount == rightCount ? nameComesFirst : leftCount < rightCount
+            }
+        }
+    }
+
+    private func effectiveMuscleIDs(for exercise: Exercise) -> Set<String> {
+        let manual = Set(manualMuscleIDs(for: exercise))
+        if !manual.isEmpty { return manual }
+        if let definition = catalogDefinition(for: exercise) {
+            return Set(definition.muscleIDs)
+        }
+        return Set(MuscleMappingEngine.defaultContributions(for: exercise.name).map(\.muscleID))
+    }
+
+    private func catalogDefinition(for exercise: Exercise) -> BuiltInExerciseDefinition? {
+        if let definition = BuiltInExerciseCatalog.definition(forKey: exercise.catalogKey) {
+            return definition
+        }
+        guard let key = BuiltInExerciseCatalog.canonicalKey(forName: exercise.name) else {
+            return nil
+        }
+        return BuiltInExerciseCatalog.definition(forKey: key)
     }
 
     private func manualMuscleIDs(for exercise: Exercise) -> [String] {
@@ -975,15 +1141,11 @@ private struct ExerciseMuscleMappingSheet: View {
                             Toggle(isOn: binding(for: muscle.id)) {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(
-                                        gymCurrentLanguageCode() == "uk"
-                                            ? muscle.titleUk
-                                            : muscle.titleEn
+                                        gymText(muscle.titleEn, muscle.titleUk, languageCode: gymCurrentLanguageCode())
                                     )
                                         .font(.headline)
                                     Text(
-                                        gymCurrentLanguageCode() == "uk"
-                                            ? muscle.titleEn
-                                            : muscle.titleUk
+                                        gymCurrentLanguageCode() == "uk" ? muscle.titleEn : muscle.titleUk
                                     )
                                         .font(.caption)
                                         .foregroundStyle(GymTheme.textSecondary)

@@ -9,7 +9,8 @@ import kotlinx.coroutines.flow.asStateFlow
 
 enum class AppLanguage(val tag: String) {
     EN("en"),
-    UK("uk");
+    UK("uk"),
+    RU("ru");
 
     companion object {
         fun fromTag(tag: String?): AppLanguage? {
@@ -50,7 +51,11 @@ class LanguageManager(
         val appLocales = AppCompatDelegate.getApplicationLocales()
         val appliedTag = if (appLocales.isEmpty) null else appLocales[0]?.language
         val tag = appliedTag ?: appContext.resources.configuration.locales[0]?.language
-        return if (tag == "uk") AppLanguage.UK else AppLanguage.EN
+        return when (tag) {
+            "uk" -> AppLanguage.UK
+            "ru" -> AppLanguage.RU
+            else -> AppLanguage.EN
+        }
     }
 
     private companion object {
@@ -58,4 +63,3 @@ class LanguageManager(
         const val KEY_LANGUAGE = "language_tag"
     }
 }
-

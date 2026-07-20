@@ -1159,9 +1159,10 @@ private fun GarminWorkoutMetrics.calorieGapLabel(): String {
 }
 
 private fun parseGarminWorkoutMetrics(note: String): GarminWorkoutMetrics? {
-    if (!note.contains("Garmin Fenix 8", ignoreCase = true)) return null
+    // Keep parsing legacy "Garmin Fenix 8" notes while using a device-neutral marker for new watches.
+    if (!Regex("""^Garmin(?: Fenix 8)?(?: ·|$)""", RegexOption.IGNORE_CASE).containsMatchIn(note)) return null
 
-    val duration = Regex("""(?:Duration|Тривалість)\s+([0-9]+:[0-9]{2}(?::[0-9]{2})?)""")
+    val duration = Regex("""(?:Duration|Тривалість|Длительность)\s+([0-9]+:[0-9]{2}(?::[0-9]{2})?)""")
         .find(note)
         ?.groupValues
         ?.getOrNull(1)
@@ -1175,17 +1176,17 @@ private fun parseGarminWorkoutMetrics(note: String): GarminWorkoutMetrics? {
         ?.groupValues
         ?.getOrNull(1)
         ?.toIntOrNull()
-    val avgHeartRate = Regex("""(?:Avg HR|Сер пульс)\s+([0-9]+)""")
+    val avgHeartRate = Regex("""(?:Avg HR|Сер пульс|Средний пульс)\s+([0-9]+)""")
         .find(note)
         ?.groupValues
         ?.getOrNull(1)
         ?.toIntOrNull()
-    val maxHeartRate = Regex("""(?:Max HR|Макс пульс)\s+([0-9]+)""")
+    val maxHeartRate = Regex("""(?:Max HR|Макс пульс|Макс\. пульс)\s+([0-9]+)""")
         .find(note)
         ?.groupValues
         ?.getOrNull(1)
         ?.toIntOrNull()
-    val zone = Regex("""(?:HR zone|Зона пульсу)\s+(Z[0-9]+)""")
+    val zone = Regex("""(?:HR zone|Зона пульсу|Зона пульса)\s+(Z[0-9]+)""")
         .find(note)
         ?.groupValues
         ?.getOrNull(1)

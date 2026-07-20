@@ -54,7 +54,7 @@ GymApp is a fitness log and planning tool, not a medical device. It does not dia
 
 ## What's New
 
-Initial iOS release with workout logging, Smart Coach guidance, progress views, missions, ranks, cloud sync, Garmin plan delivery, backup tools, and English/Ukrainian localization.
+Adds full Russian localization and improved Garmin controls for touch devices and watches with fewer buttons, alongside workout logging, progress, missions, and sync.
 
 ## Suggested screenshot captions
 

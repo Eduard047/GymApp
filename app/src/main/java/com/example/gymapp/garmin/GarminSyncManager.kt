@@ -929,15 +929,17 @@ class GarminSyncManager(
     }
 
     private fun buildGarminWorkoutNote(command: GarminWorkoutCommand): String {
-        val isUk = application.languageManager.currentLanguage() == AppLanguage.UK
-        val details = mutableListOf("Garmin Fenix 8")
+        val language = application.languageManager.currentLanguage()
+        val isUk = language == AppLanguage.UK
+        val isRu = language == AppLanguage.RU
+        val details = mutableListOf("Garmin")
         command.durationSeconds?.takeIf { it > 0L }?.let { seconds ->
             val minutes = seconds / 60
             val remainder = seconds % 60
-            details += if (isUk) {
-                "Тривалість ${minutes}:${remainder.toString().padStart(2, '0')}"
-            } else {
-                "Duration ${minutes}:${remainder.toString().padStart(2, '0')}"
+            details += when {
+                isUk -> "Тривалість ${minutes}:${remainder.toString().padStart(2, '0')}"
+                isRu -> "Длительность ${minutes}:${remainder.toString().padStart(2, '0')}"
+                else -> "Duration ${minutes}:${remainder.toString().padStart(2, '0')}"
             }
         }
         command.gymCalories?.takeIf { it > 0.0 }?.let { calories ->
@@ -947,13 +949,25 @@ class GarminSyncManager(
             details += if (isUk) "Garmin ккал $calories" else "Garmin kcal $calories"
         }
         command.averageHeartRate?.takeIf { it > 0 }?.let { bpm ->
-            details += if (isUk) "Сер пульс $bpm" else "Avg HR $bpm"
+            details += when {
+                isUk -> "Сер пульс $bpm"
+                isRu -> "Средний пульс $bpm"
+                else -> "Avg HR $bpm"
+            }
         }
         command.maximumHeartRate?.takeIf { it > 0 }?.let { bpm ->
-            details += if (isUk) "Макс пульс $bpm" else "Max HR $bpm"
+            details += when {
+                isUk -> "Макс пульс $bpm"
+                isRu -> "Макс. пульс $bpm"
+                else -> "Max HR $bpm"
+            }
         }
         command.heartRateZone?.takeIf { it > 0 }?.let { zone ->
-            details += if (isUk) "Зона пульсу Z$zone" else "HR zone Z$zone"
+            details += when {
+                isUk -> "Зона пульсу Z$zone"
+                isRu -> "Зона пульса Z$zone"
+                else -> "HR zone Z$zone"
+            }
         }
         return details.joinToString(separator = " · ")
     }

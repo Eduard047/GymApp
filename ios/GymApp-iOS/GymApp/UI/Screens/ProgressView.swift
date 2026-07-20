@@ -491,9 +491,7 @@ struct ExerciseProgressView: View {
             uniqueKeysWithValues: MuscleMappingEngine.muscleDefinitions.map { definition in
                 (
                     definition.id,
-                    languageCode == AppLanguage.ukrainian.rawValue
-                        ? definition.titleUk
-                        : definition.titleEn
+                    gymText(definition.titleEn, definition.titleUk, languageCode: languageCode)
                 )
             }
         )

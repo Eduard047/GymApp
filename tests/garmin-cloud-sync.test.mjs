@@ -189,7 +189,7 @@ test("cloud delivery revisions must be positive monotonic int32 counters", () =>
 });
 
 test("PWA, Supabase, and Garmin code are wired to the same cloud sync contract", async () => {
-  const [appJs, indexHtml, swJs, edgeFunction, edgeConfig, schema, securityMigration, denoConfig, denoLock, gymComm, workoutView, settingsXml, manifest, buildScript] = await Promise.all([
+  const [appJs, indexHtml, swJs, edgeFunction, edgeConfig, schema, hardeningMigration, rateLimitMigration, denoConfig, denoLock, gymComm, workoutView, settingsXml, manifest, buildScript] = await Promise.all([
     readFile("pwa/app.js", "utf8"),
     readFile("pwa/index.html", "utf8"),
     readFile("pwa/sw.js", "utf8"),
@@ -197,6 +197,7 @@ test("PWA, Supabase, and Garmin code are wired to the same cloud sync contract",
     readFile("supabase/config.toml", "utf8"),
     readFile("supabase/migrations/20260629120000_garmin_cloud_sync.sql", "utf8"),
     readFile("supabase/migrations/20260713210000_harden_garmin_pairing_and_plans.sql", "utf8"),
+    readFile("supabase/migrations/20260714010000_add_garmin_device_rate_limits.sql", "utf8"),
     readFile("supabase/functions/garmin-sync/deno.json", "utf8"),
     readFile("supabase/functions/garmin-sync/deno.lock", "utf8"),
     readFile("garmin/source/GymComm.mc", "utf8"),
@@ -206,10 +207,12 @@ test("PWA, Supabase, and Garmin code are wired to the same cloud sync contract",
     readFile("scripts/build-garmin.ps1", "utf8")
   ]);
 
-  assert.match(indexHtml, /garmin-cloud-sync\.js\?v=44/);
-  assert.match(swJs, /garmin-cloud-sync\.js/);
+  assert.match(indexHtml, /garmin-cloud-sync\.v48\.js/);
+  assert.match(swJs, /garmin-cloud-sync\.v48\.js/);
   assert.match(appJs, /\/functions\/v1\/garmin-sync/);
-  assert.match(appJs, /\/rest\/v1\/garmin_plans/);
+  assert.match(appJs, /\/rest\/v1\/rpc\/garmin_enqueue_plan/);
+  assert.doesNotMatch(appJs, /supabaseRequest\("\/rest\/v1\/garmin_plans"/);
+  assert.match(appJs, /p_client_request_id:\s*record\.requestId/);
   assert.match(appJs, /action:\s*"createDevice"/);
   assert.match(appJs, /action:\s*"revokeDevice"/);
   assert.doesNotMatch(appJs, /localStorage\.getItem\(GARMIN_DEVICE_TOKEN_KEY\)/);
@@ -223,6 +226,8 @@ test("PWA, Supabase, and Garmin code are wired to the same cloud sync contract",
   assert.match(edgeFunction, /action === "createDevice"/);
   assert.match(edgeFunction, /action === "fetchPlan"/);
   assert.match(edgeFunction, /action === "revokeDevice"/);
+  assert.match(edgeFunction, /action === "listDevices"/);
+  assert.match(edgeFunction, /action === "rotateDeviceToken"/);
   assert.match(edgeFunction, /SUPABASE_ANON_KEY/);
   assert.match(edgeFunction, /rpc\(\s*"garmin_fetch_pending_plan"/);
   assert.match(edgeFunction, /action === "ackPlan"/);
@@ -233,17 +238,23 @@ test("PWA, Supabase, and Garmin code are wired to the same cloud sync contract",
   ), /garmin_ack_plan/);
   assert.match(edgeConfig, /\[functions\.garmin-sync\][\s\S]*verify_jwt = false/);
   assert.doesNotMatch(edgeFunction, /https:\/\/esm\.sh/);
+  assert.match(edgeFunction, /"Cache-Control": "no-store"/);
   assert.match(denoConfig, /npm:@supabase\/supabase-js@2\.110\.2/);
   assert.match(denoConfig, /"frozen": true/);
   assert.match(denoLock, /"integrity": "sha512-/);
-  assert.match(securityMigration, /security definer/);
-  assert.match(securityMigration, /status = 'downloaded'/);
-  assert.match(securityMigration, /status = 'invalid'/);
-  assert.match(securityMigration, /status = 'superseded'/);
-  assert.match(securityMigration, /for update skip locked/);
-  assert.match(securityMigration, /grant execute on function public\.garmin_fetch_pending_plan\(text\) to anon/);
-  assert.match(securityMigration, /grant execute on function public\.garmin_ack_plan\(text, uuid, bigint\) to anon/);
-  assert.match(securityMigration, /grant execute on function public\.garmin_revoke_device\(uuid\) to authenticated/);
+  assert.match(hardeningMigration, /security definer/);
+  assert.match(hardeningMigration, /status = 'downloaded'/);
+  assert.match(hardeningMigration, /status = 'invalid'/);
+  assert.match(hardeningMigration, /status = 'superseded'/);
+  assert.match(hardeningMigration, /for update skip locked/);
+  assert.match(hardeningMigration, /grant execute on function public\.garmin_revoke_device\(uuid\) to authenticated/);
+  assert.match(rateLimitMigration, /security definer/);
+  assert.match(rateLimitMigration, /'status', 'rate_limited'/);
+  assert.match(rateLimitMigration, /status = 'invalid'/);
+  assert.match(rateLimitMigration, /for update;/);
+  assert.match(rateLimitMigration, /rename to garmin_fetch_pending_plan_core/);
+  assert.match(rateLimitMigration, /grant execute on function public\.garmin_fetch_pending_plan\(text\)\s+to anon/);
+  assert.match(rateLimitMigration, /grant execute on function public\.garmin_ack_plan\(text, uuid, bigint\)\s+to anon/);
 
   assert.match(settingsXml, /@Properties\.CloudDeviceToken/);
   assert.match(gymComm, /CloudDeviceToken/);

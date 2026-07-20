@@ -3,9 +3,16 @@ import Foundation
 enum AppLanguage: String, CaseIterable, Identifiable {
     case english = "en"
     case ukrainian = "uk"
+    case russian = "ru"
 
     var id: String { rawValue }
-    var title: String { self == .english ? "EN" : "UK" }
+    var title: String {
+        switch self {
+        case .english: "EN"
+        case .ukrainian: "UK"
+        case .russian: "RU"
+        }
+    }
     var locale: Locale { Locale(identifier: rawValue) }
 }
 
@@ -16,7 +23,15 @@ func gymCurrentLanguageCode() -> String {
 }
 
 func gymText(_ english: String, _ ukrainian: String, languageCode: String) -> String {
-    languageCode == AppLanguage.ukrainian.rawValue ? ukrainian : english
+    switch languageCode {
+    case AppLanguage.ukrainian.rawValue:
+        return ukrainian
+    case AppLanguage.russian.rawValue:
+        let localized = gymLocalized(english, languageCode: languageCode)
+        return localized == english ? gymRussianFromUkrainian(ukrainian) : localized
+    default:
+        return english
+    }
 }
 
 func gymExerciseName(
@@ -49,14 +64,121 @@ func gymLocalized(
     _ english: String,
     languageCode: String = gymCurrentLanguageCode()
 ) -> String {
-    guard languageCode == AppLanguage.ukrainian.rawValue,
-          let path = Bundle.main.path(forResource: AppLanguage.ukrainian.rawValue, ofType: "lproj"),
+    guard let language = AppLanguage(rawValue: languageCode), language != .english,
+          let path = Bundle.main.path(forResource: language.rawValue, ofType: "lproj"),
           let bundle = Bundle(path: path) else {
         return english
     }
     let localized = bundle.localizedString(forKey: english, value: english, table: "Localizable")
     guard localized == english else { return localized }
-    return gymUkrainianDynamicFallback(english, bundle: bundle)
+    if language == .ukrainian {
+        return gymUkrainianDynamicFallback(english, bundle: bundle)
+    }
+    return gymRussianDynamicFallback(english)
+}
+
+private func gymRussianDynamicFallback(_ english: String) -> String {
+    let rules: [(String, String, String)] = [
+        ("The local workout store is invalid: ", "", "Локальное хранилище тренировок повреждено: %@"),
+        ("The workout is invalid: ", "", "Тренировка некорректна: %@"),
+        ("The backup is invalid: ", "", "Резервная копия некорректна: %@"),
+        ("Workout data could not be saved: ", "", "Не удалось сохранить данные тренировки: %@")
+    ]
+    for (prefix, suffix, format) in rules where english.hasPrefix(prefix) && english.hasSuffix(suffix) {
+        let start = english.index(english.startIndex, offsetBy: prefix.count)
+        let end = english.index(english.endIndex, offsetBy: -suffix.count)
+        guard start <= end else { continue }
+        return String(format: format, String(english[start ..< end]))
+    }
+    return english
+}
+
+private func gymRussianFromUkrainian(_ ukrainian: String) -> String {
+    let replacements: [(String, String)] = [
+        ("Космічний воєвода", "Космический воевода"),
+        ("Понадмежний", "Запредельный"),
+        ("Нескінченний", "Бесконечный"),
+        ("Трансцендентний", "Трансцендентный"),
+        ("Галактичний", "Галактический"),
+        ("Сингулярність", "Сингулярность"),
+        ("Вознесений", "Вознесённый"),
+        ("Завойовник", "Завоеватель"),
+        ("Безсмертний", "Бессмертный"),
+        ("Міфічний", "Мифический"),
+        ("Незламний", "Несокрушимый"),
+        ("Вмотивований", "Мотивированный"),
+        ("Стартовий", "Начинающий"),
+        ("Стабільний", "Стабильный"),
+        ("Ударний", "Ударник"),
+        ("Домінатор", "Доминатор"),
+        ("Еліта", "Элита"),
+        ("Колос", "Колосс"),
+        ("Воїн", "Рождённый воином"),
+        ("Вічний", "Вечный"),
+        ("Володар", "Властелин"),
+        ("Омні", "Омни"),
+        ("Емпірей", "Эмпирей"),
+        ("Повернутися до поточного місяця", "Вернуться к текущему месяцу"),
+        ("із групами м’язів", "с группами мышц"),
+        ("у ручному зіставленні", "в ручном сопоставлении"),
+        ("з каталогу вправ", "из каталога упражнений"),
+        ("додати до черги Garmin не вдалося", "не удалось добавить в очередь Garmin"),
+        ("усі його підходи буде видалено з цього пристрою", "все его подходы будут удалены с этого устройства"),
+        ("до наступного рівня", "до следующего уровня"),
+        ("на цьому рівні", "на этом уровне"),
+        ("за тренування", "за тренировку"),
+        ("Тренування за", "Тренировка за"),
+        ("Видалити тренування", "Удалить тренировку"),
+        ("Видалити підхід", "Удалить подход"),
+        ("Видалити", "Удалить"),
+        ("Додає або видаляє", "Добавляет или удаляет"),
+        ("Дає змогу вручну зіставити", "Позволяет вручную сопоставить"),
+        ("Показує всі збережені підходи", "Показывает все сохранённые подходы"),
+        ("Більше дій для", "Больше действий для"),
+        ("Попередній рекорд", "Предыдущий рекорд"),
+        ("Новий рекорд ваги", "Новый рекорд веса"),
+        ("Розрахунковий 1ПМ", "Расчётный 1ПМ"),
+        ("Розумний тренер створив тренування", "Умный тренер создал тренировку"),
+        ("завантажено", "загружен"),
+        ("Замінює вміст редактора шаблоном", "Заменяет содержимое редактора шаблоном"),
+        ("Запустити таймер відпочинку", "Запустить таймер отдыха"),
+        ("Залишилося", "Осталось"),
+        ("Використовує останню записану вагу", "Использует последний записанный вес"),
+        ("Остання вага", "Последний вес"),
+        ("Повторення для підходу", "Повторения для подхода"),
+        ("Вага для підходу", "Вес для подхода"),
+        ("Підхід", "Подход"),
+        ("підхід", "подход"),
+        ("підходи", "подходы"),
+        ("підходів", "подходов"),
+        ("Рівень", "Уровень"),
+        ("Далі", "Далее"),
+        ("на рівні", "на уровне"),
+        ("Вправ", "Упражнений"),
+        ("вправи", "упражнения"),
+        ("вправ", "упражнений"),
+        ("зіставлено", "сопоставлено"),
+        ("Імпортовано", "Импортировано"),
+        ("додано", "добавлено"),
+        ("пропущено", "пропущено"),
+        ("проігноровано", "проигнорировано"),
+        ("Обсяг", "Объём"),
+        ("обсяг", "объём"),
+        ("навантаження", "нагрузка"),
+        ("Створено", "Создано"),
+        ("Час наступного підходу", "Время следующего подхода"),
+        ("секунд", "секунд"),
+        ("повт.", "повт."),
+        ("кілограмів", "килограммов"),
+        ("повторень", "повторений"),
+        ("Поточний місяць", "Текущий месяц"),
+        ("Серія у", "Серия в"),
+        ("створює справжній темп", "создаёт хороший темп"),
+        ("загалом", "всего")
+    ]
+    return replacements.reduce(ukrainian) { result, replacement in
+        result.replacingOccurrences(of: replacement.0, with: replacement.1)
+    }
 }
 
 private func gymUkrainianDynamicFallback(_ english: String, bundle: Bundle) -> String {
@@ -166,6 +288,20 @@ func gymCount(
     ukrainianMany: String,
     languageCode: String = gymCurrentLanguageCode()
 ) -> String {
+    if languageCode == AppLanguage.russian.rawValue {
+        let forms = gymRussianNounForms[englishOne] ?? [
+            gymLocalized(englishOne, languageCode: languageCode),
+            gymLocalized(englishMany, languageCode: languageCode),
+            gymLocalized(englishMany, languageCode: languageCode)
+        ]
+        let absolute = abs(count)
+        let lastTwo = absolute % 100
+        let last = absolute % 10
+        let noun = last == 1 && lastTwo != 11
+            ? forms[0]
+            : ((2 ... 4).contains(last) && !(12 ... 14).contains(lastTwo) ? forms[1] : forms[2])
+        return "\(count) \(noun)"
+    }
     guard languageCode == AppLanguage.ukrainian.rawValue else {
         return "\(count) \(count == 1 ? englishOne : englishMany)"
     }
@@ -182,3 +318,17 @@ func gymCount(
     }
     return "\(count) \(noun)"
 }
+
+private let gymRussianNounForms: [String: [String]] = [
+    "day": ["день", "дня", "дней"],
+    "week": ["неделя", "недели", "недель"],
+    "workout": ["тренировка", "тренировки", "тренировок"],
+    "workout per week": ["тренировка в неделю", "тренировки в неделю", "тренировок в неделю"],
+    "session": ["сессия", "сессии", "сессий"],
+    "set": ["подход", "подхода", "подходов"],
+    "exercise": ["упражнение", "упражнения", "упражнений"],
+    "active day": ["активный день", "активных дня", "активных дней"],
+    "group": ["группа", "группы", "групп"],
+    "duplicate": ["дубликат", "дубликата", "дубликатов"],
+    "invalid set": ["некорректный подход", "некорректных подхода", "некорректных подходов"]
+]

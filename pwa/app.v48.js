@@ -12,10 +12,15 @@ const ACCOUNT_PREFIX = "gym-pwa-account:";
 const REMOTE_SESSION_KEY = "gym-pwa-supabase-session-v1";
 const LEGACY_GARMIN_DEVICE_TOKEN_KEY = "gym-pwa-garmin-device-token-v1";
 const GARMIN_DEVICE_BINDINGS_KEY = "gym-pwa-garmin-device-bindings-v2";
+const GARMIN_ENQUEUE_REQUESTS_KEY = "gym-pwa-garmin-enqueue-requests-v1";
 const PUBLIC_SITE_URL = "https://gymapptracker.com/";
 const SUPPORT_URL = "https://gymapptracker.com/support.html";
 const PRIVACY_URL = "https://gymapptracker.com/privacy-policy.html";
 const AUTH_REDIRECT_URL = "https://gymapptracker.com/confirmed.html?platform=web";
+const GARMIN_STORE_APP_URL = "https://apps.garmin.com/apps/fe82a300-4d9f-4588-8b10-365d75280b8f";
+const CONNECT_IQ_ANDROID_PACKAGE = "com.garmin.connectiq";
+const CONNECT_IQ_GOOGLE_PLAY_URL = `https://play.google.com/store/apps/details?id=${CONNECT_IQ_ANDROID_PACKAGE}`;
+const GARMIN_STORE_ANDROID_INTENT_URL = `intent://apps.garmin.com/apps/fe82a300-4d9f-4588-8b10-365d75280b8f#Intent;scheme=https;package=${CONNECT_IQ_ANDROID_PACKAGE};S.browser_fallback_url=${encodeURIComponent(CONNECT_IQ_GOOGLE_PLAY_URL)};end`;
 const MAX_REMOTE_RESPONSE_BYTES = 8 * 1024 * 1024;
 const MAX_REMOTE_AUTH_RESPONSE_BYTES = 64 * 1024;
 const MAX_REMOTE_ERROR_RESPONSE_BYTES = 8 * 1024;
@@ -27,7 +32,10 @@ const LOCAL_ACCOUNT_ID_VERSION = 2;
 const LOCAL_ACCOUNT_ID_PATTERN = /^local-v2-[a-f0-9]{32}$/;
 const MAX_GARMIN_BINDING_STORAGE_BYTES = 64 * 1024;
 const MAX_GARMIN_BINDINGS = 20;
+const MAX_GARMIN_ENQUEUE_STORAGE_BYTES = 512 * 1024;
+const MAX_GARMIN_ENQUEUE_REQUESTS = 4;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const app = document.querySelector("#app");
 
 const icons = {
@@ -119,22 +127,59 @@ const muscles = [
 
 const builtInExerciseCatalog = [
   { key: "bench_press", names: { en: "Bench Press", uk: "Жим штанги лежачи" }, aliases: ["жим лежачи"], muscleIds: ["chest", "triceps", "shoulders"] },
+  { key: "dumbbell_bench_press", names: { en: "Dumbbell Bench Press", uk: "Жим гантелей лежачи" }, aliases: ["гантелі лежачи"], muscleIds: ["chest", "triceps", "shoulders"] },
   { key: "incline_dumbbell_press", names: { en: "Incline Dumbbell Press", uk: "Жим гантелей на похилій лаві" }, aliases: [], muscleIds: ["chest", "shoulders", "triceps"] },
-  { key: "pull_up", names: { en: "Pull Up", uk: "Підтягування" }, aliases: ["Pull-Up"], muscleIds: ["lats", "biceps", "upperBack"] },
-  { key: "lat_pulldown", names: { en: "Lat Pulldown", uk: "Тяга верхнього блока" }, aliases: ["Тяга верхнього блока до грудей", "Фронтальна тяга"], muscleIds: ["lats", "biceps"] },
-  { key: "barbell_row", names: { en: "Barbell Row", uk: "Тяга штанги в нахилі" }, aliases: [], muscleIds: ["upperBack", "lats", "biceps"] },
-  { key: "squat", names: { en: "Squat", uk: "Присідання зі штангою" }, aliases: ["Barbell Squat", "Присід зі штангою"], muscleIds: ["quads", "glutes", "adductors"] },
-  { key: "leg_press", names: { en: "Leg Press", uk: "Жим ногами у тренажері" }, aliases: ["Жим ногами"], muscleIds: ["quads", "glutes"] },
+  { key: "incline_bench_press", names: { en: "Incline Bench Press", uk: "Жим штанги на похилій лаві" }, aliases: [], muscleIds: ["chest", "shoulders", "triceps"] },
+  { key: "chest_fly_machine", names: { en: "Machine Chest Fly", uk: "Зведення рук у тренажері" }, aliases: ["метелик в середину"], muscleIds: ["chest", "shoulders"] },
+  { key: "push_up", names: { en: "Push Up", uk: "Віджимання від підлоги" }, aliases: ["Push-Up"], muscleIds: ["chest", "triceps", "shoulders"] },
+  { key: "dips", names: { en: "Dips", uk: "Віджимання на брусах" }, aliases: ["брусья"], muscleIds: ["triceps", "chest", "shoulders"] },
+  { key: "pull_up", names: { en: "Pull Up", uk: "Підтягування" }, aliases: ["Pull-Up"], muscleIds: ["lats", "biceps", "upperBack", "forearms"] },
+  { key: "assisted_pull_up", names: { en: "Assisted Pull Up", uk: "Підтягування у гравітроні" }, aliases: ["підтягування в гравітроні"], muscleIds: ["lats", "upperBack", "biceps", "forearms"] },
+  { key: "band_assisted_pull_up", names: { en: "Band Assisted Pull Up", uk: "Підтягування з еспандером" }, aliases: ["підтягування з резинкою"], muscleIds: ["lats", "upperBack", "biceps", "forearms"] },
+  { key: "lat_pulldown", names: { en: "Lat Pulldown", uk: "Тяга верхнього блока" }, aliases: ["Тяга верхнього блока до грудей", "Фронтальна тяга"], muscleIds: ["lats", "upperBack", "biceps", "forearms"] },
+  { key: "straight_arm_pulldown", names: { en: "Straight Arm Pulldown", uk: "Тяга прямих рук на верхньому блоці" }, aliases: ["Журавель", "Тяга верхніх блоків у тренажері"], muscleIds: ["lats", "upperBack"] },
+  { key: "barbell_row", names: { en: "Barbell Row", uk: "Тяга штанги в нахилі" }, aliases: [], muscleIds: ["upperBack", "lats", "biceps", "forearms"] },
+  { key: "seated_cable_row", names: { en: "Seated Cable Row", uk: "Горизонтальна тяга блока" }, aliases: [], muscleIds: ["upperBack", "lats", "biceps", "forearms"] },
+  { key: "plate_loaded_row", names: { en: "Plate Loaded Row", uk: "Горизонтальна тяга у важільному тренажері" }, aliases: ["горизонтальна важільна тяга"], muscleIds: ["upperBack", "lats", "biceps", "forearms"] },
+  { key: "face_pull", names: { en: "Face Pull", uk: "Тяга каната до обличчя" }, aliases: [], muscleIds: ["shoulders", "upperBack"] },
+  { key: "squat", names: { en: "Squat", uk: "Присідання зі штангою" }, aliases: ["Barbell Squat", "Присід зі штангою"], muscleIds: ["quads", "glutes", "hamstrings", "adductors", "lowerBack"] },
+  { key: "leg_press", names: { en: "Leg Press", uk: "Жим ногами у тренажері" }, aliases: ["Жим ногами"], muscleIds: ["quads", "glutes", "hamstrings"] },
+  { key: "bulgarian_split_squat", names: { en: "Bulgarian Split Squat", uk: "Болгарські випади" }, aliases: [], muscleIds: ["quads", "glutes", "hamstrings"] },
+  { key: "lunge", names: { en: "Lunge", uk: "Випади" }, aliases: [], muscleIds: ["quads", "glutes", "hamstrings"] },
   { key: "romanian_deadlift", names: { en: "Romanian Deadlift", uk: "Румунська тяга" }, aliases: [], muscleIds: ["hamstrings", "glutes", "lowerBack"] },
-  { key: "deadlift", names: { en: "Deadlift", uk: "Станова тяга" }, aliases: [], muscleIds: ["hamstrings", "glutes", "lowerBack", "upperBack"] },
-  { key: "shoulder_press", names: { en: "Shoulder Press", uk: "Жим над головою" }, aliases: ["Overhead Press", "Жим сидячи над головою", "Жим сидячи"], muscleIds: ["shoulders", "triceps"] },
-  { key: "lateral_raise", names: { en: "Lateral Raise", uk: "Підйоми гантелей через сторони" }, aliases: ["Махи в сторони"], muscleIds: ["shoulders"] },
-  { key: "biceps_curl", names: { en: "Biceps Curl", uk: "Згинання рук на біцепс" }, aliases: [], muscleIds: ["biceps", "forearms"] },
-  { key: "triceps_pushdown", names: { en: "Triceps Pushdown", uk: "Розгинання рук на блоці" }, aliases: [], muscleIds: ["triceps"] },
+  { key: "deadlift", names: { en: "Deadlift", uk: "Станова тяга" }, aliases: [], muscleIds: ["hamstrings", "glutes", "lowerBack", "upperBack", "forearms"] },
+  { key: "hip_thrust", names: { en: "Hip Thrust", uk: "Ягодичний міст зі штангою" }, aliases: [], muscleIds: ["glutes", "hamstrings"] },
+  { key: "leg_extension", names: { en: "Leg Extension", uk: "Розгинання ніг у тренажері" }, aliases: ["розгинання ніг"], muscleIds: ["quads"] },
+  { key: "lying_leg_curl", names: { en: "Lying Leg Curl", uk: "Згинання ніг лежачи" }, aliases: ["згибання ніг лежачи"], muscleIds: ["hamstrings", "calves"] },
+  { key: "seated_leg_curl", names: { en: "Seated Leg Curl", uk: "Згинання ніг сидячи" }, aliases: ["згибання ніг сидячі", "згибання ніг сидячи"], muscleIds: ["hamstrings", "calves"] },
+  { key: "hip_adduction", names: { en: "Hip Adduction", uk: "Зведення ніг у тренажері" }, aliases: ["зведення ніг"], muscleIds: ["adductors"] },
   { key: "calf_raise", names: { en: "Calf Raise", uk: "Підйом на носки" }, aliases: ["Підйом на носки стоячи"], muscleIds: ["calves"] },
-  { key: "plank", names: { en: "Plank", uk: "Планка" }, aliases: [], muscleIds: ["abs", "obliques"] }
+  { key: "shoulder_press", names: { en: "Shoulder Press", uk: "Жим над головою" }, aliases: ["Overhead Press", "Жим сидячи над головою", "Жим сидячи"], muscleIds: ["shoulders", "triceps"] },
+  { key: "lateral_raise", names: { en: "Lateral Raise", uk: "Підйоми гантелей через сторони" }, aliases: ["Махи в сторони", "махи в сторони з гантелями"], muscleIds: ["shoulders"] },
+  { key: "machine_lateral_raise", names: { en: "Machine Lateral Raise", uk: "Підйоми рук через сторони у тренажері" }, aliases: ["махи в сторони в тренажері"], muscleIds: ["shoulders"] },
+  { key: "rear_delt_fly", names: { en: "Rear Delt Fly", uk: "Зворотні розведення у тренажері" }, aliases: ["метелик в сторони"], muscleIds: ["shoulders", "upperBack"] },
+  { key: "upright_row", names: { en: "Upright Row", uk: "Тяга штанги до підборіддя" }, aliases: ["протяжка", "вертикальна тяга"], muscleIds: ["shoulders", "upperBack", "biceps"] },
+  { key: "biceps_curl", names: { en: "Biceps Curl", uk: "Згинання рук на біцепс" }, aliases: [], muscleIds: ["biceps", "forearms"] },
+  { key: "barbell_curl", names: { en: "Barbell Curl", uk: "Згинання рук зі штангою" }, aliases: ["штанга на біцепс"], muscleIds: ["biceps", "forearms"] },
+  { key: "seated_dumbbell_curl", names: { en: "Seated Dumbbell Curl", uk: "Згинання рук з гантелями сидячи" }, aliases: ["біцепс з гантелями сидячи"], muscleIds: ["biceps", "forearms"] },
+  { key: "hammer_curl", names: { en: "Hammer Curl", uk: "Молоткові згинання рук" }, aliases: [], muscleIds: ["biceps", "forearms"] },
+  { key: "cable_curl", names: { en: "Cable Curl", uk: "Згинання рук на нижньому блоці" }, aliases: ["біцепс в кросовері"], muscleIds: ["biceps", "forearms"] },
+  { key: "preacher_curl", names: { en: "Preacher Curl", uk: "Згинання рук на лаві Скотта" }, aliases: ["тренажер скота(біцепс)"], muscleIds: ["biceps", "forearms"] },
+  { key: "triceps_pushdown", names: { en: "Triceps Pushdown", uk: "Розгинання рук на блоці" }, aliases: [], muscleIds: ["triceps"] },
+  { key: "v_bar_pushdown", names: { en: "V-Bar Triceps Pushdown", uk: "Розгинання рук на блоці з V-рукояттю" }, aliases: ["трицепс трикутник"], muscleIds: ["triceps"] },
+  { key: "overhead_dumbbell_triceps_extension", names: { en: "Overhead Dumbbell Triceps Extension", uk: "Розгинання гантелі над головою" }, aliases: ["гантеля над головою"], muscleIds: ["triceps", "shoulders"] },
+  { key: "french_press", names: { en: "French Press", uk: "Французький жим" }, aliases: [], muscleIds: ["triceps", "shoulders"] },
+  { key: "hyperextension", names: { en: "Hyperextension", uk: "Гіперекстензія" }, aliases: [], muscleIds: ["lowerBack", "glutes", "hamstrings"] },
+  { key: "side_hyperextension", names: { en: "Side Hyperextension", uk: "Бокові нахили на гіперекстензії" }, aliases: ["Нахили в сторони на гіперекстензії"], muscleIds: ["obliques", "abs", "lowerBack"] },
+  { key: "plank", names: { en: "Plank", uk: "Планка" }, aliases: [], muscleIds: ["abs", "obliques"] },
+  { key: "weighted_crunch", names: { en: "Weighted Crunch", uk: "Скручування з диском" }, aliases: ["прес звичайний з диском"], muscleIds: ["abs", "obliques"] },
+  { key: "hanging_leg_raise", names: { en: "Hanging Leg Raise", uk: "Підйом ніг у висі" }, aliases: ["прес(підйом ніг)"], muscleIds: ["abs"] },
+  { key: "plate_twist", names: { en: "Plate Twist", uk: "Повороти корпусу з диском" }, aliases: ["прес з диском в сторони"], muscleIds: ["obliques", "abs"] },
+  { key: "weighted_side_bend", names: { en: "Weighted Side Bend", uk: "Бокові нахили з обтяженням" }, aliases: ["бокові нахили"], muscleIds: ["obliques", "abs"] },
+  { key: "warm_up", names: { en: "Warm Up", uk: "Розминка" }, aliases: [], muscleIds: ["shoulders", "chest", "upperBack", "lats", "abs", "glutes", "quads", "hamstrings"] }
 ];
 
+const CATALOG_SEED_VERSION = 1;
 const builtInExerciseByKey = new Map(builtInExerciseCatalog.map(exercise => [exercise.key, exercise]));
 const builtInExerciseKeyByAlias = new Map(
   builtInExerciseCatalog.flatMap(exercise =>
@@ -968,6 +1013,7 @@ const rankDefinitions = [
   ["cosmic-warlord", 80, "Cosmic Warlord", "Космічний воєвода"]
 ].map(([id, level, titleEn, titleUk]) => ({ id, level, titleEn, titleUk }));
 
+let volatileRemoteSessionRaw = null;
 discardLegacyGarminToken();
 let activeAccount = loadActiveAccount();
 let state = loadState();
@@ -984,8 +1030,13 @@ let leaderboardRequestController = null;
 let leaderboardRequestId = 0;
 let timerInterval = null;
 let languageMenuOpen = false;
+let exerciseSearchQuery = "";
+let exerciseBodyFilter = "all";
+let exerciseMuscleFilter = "all";
+let exerciseSortMode = "name";
 let authMode = "login";
 let accountTransitionInProgress = false;
+let garminSyncInProgress = false;
 let pendingRecommendations = [];
 const pendingGarminRevocations = new Map();
 let cloudStateRecovery = null;
@@ -1133,6 +1184,7 @@ function ru(value) {
 function defaultAppState() {
   return {
     language: "en",
+    catalogSeedVersion: CATALOG_SEED_VERSION,
     exercises: builtInExerciseCatalog.map((exercise, index) => ({
       id: index + 1,
       name: exercise.names.en,
@@ -1142,6 +1194,31 @@ function defaultAppState() {
     mappings: Object.assign(Object.create(null), defaultMappings),
     profile: { split: "Push Pull Legs", days: 4, goal: "Balanced", calories: "Maintenance" }
   };
+}
+
+function ensureBuiltInExerciseCatalog(targetState) {
+  if (!targetState || !Array.isArray(targetState.exercises) ||
+      targetState.catalogSeedVersion >= CATALOG_SEED_VERSION) return false;
+  const existingKeys = new Set(targetState.exercises.map(exerciseCatalogKey).filter(Boolean));
+  const usedIds = new Set(targetState.exercises.map(exercise => Number(exercise.id)).filter(Number.isSafeInteger));
+  let candidateId = Math.max(0, ...usedIds) + 1;
+  let inserted = 0;
+  for (const definition of builtInExerciseCatalog) {
+    if (existingKeys.has(definition.key) || targetState.exercises.length >= window.GymStateContract.LIMITS.exercises) continue;
+    while (usedIds.has(candidateId)) candidateId++;
+    targetState.exercises.push({ id: candidateId, name: definition.names.en, catalogKey: definition.key });
+    usedIds.add(candidateId);
+    existingKeys.add(definition.key);
+    candidateId++;
+    inserted++;
+  }
+  targetState.exercises.sort((left, right) =>
+    exerciseDisplayName(left, targetState.language).localeCompare(exerciseDisplayName(right, targetState.language), targetState.language)
+  );
+  if (builtInExerciseCatalog.every(definition => existingKeys.has(definition.key))) {
+    targetState.catalogSeedVersion = CATALOG_SEED_VERSION;
+  }
+  return inserted > 0 || targetState.catalogSeedVersion === CATALOG_SEED_VERSION;
 }
 
 function normalizeStoredAccount(value) {
@@ -1167,24 +1244,51 @@ function normalizeStoredAccount(value) {
 function loadActiveAccount() {
   try {
     const raw = localStorage.getItem(AUTH_KEY) || "null";
-    if (new TextEncoder().encode(raw).byteLength > MAX_LOCAL_ACCOUNT_STORAGE_BYTES) return null;
+    if (new TextEncoder().encode(raw).byteLength > MAX_LOCAL_ACCOUNT_STORAGE_BYTES) {
+      localStorage.removeItem(AUTH_KEY);
+      clearRemoteSession();
+      return null;
+    }
     const account = normalizeStoredAccount(JSON.parse(raw));
     if (!account) {
       localStorage.removeItem(AUTH_KEY);
-      localStorage.removeItem(REMOTE_SESSION_KEY);
+      clearRemoteSession();
       return null;
     }
     if (account.remote && loadRemoteSession()?.user?.id !== account.userId) {
-      localStorage.removeItem(AUTH_KEY);
-      localStorage.removeItem(REMOTE_SESSION_KEY);
+      // A remote session is tab-scoped. An independent tab with no matching
+      // session must not delete the shared account marker used by another tab.
+      clearRemoteSession();
       return null;
     }
-    if (!account.remote) localStorage.removeItem(REMOTE_SESSION_KEY);
+    if (!account.remote) clearRemoteSession();
     return account;
   } catch {
     localStorage.removeItem(AUTH_KEY);
-    localStorage.removeItem(REMOTE_SESSION_KEY);
+    clearRemoteSession();
     return null;
+  }
+}
+
+function removeActiveAccountMarkerIfOwned(account) {
+  const expected = normalizeStoredAccount(account);
+  // Remote credentials are tab-scoped while this marker is origin-scoped.
+  // Removing a remote marker here would sign another still-authenticated tab
+  // out on its next reload, even when both tabs belong to the same account.
+  if (!expected || expected.remote) return false;
+  try {
+    const raw = localStorage.getItem(AUTH_KEY);
+    if (!raw) return true;
+    if (new TextEncoder().encode(raw).byteLength > MAX_LOCAL_ACCOUNT_STORAGE_BYTES) return false;
+    const current = normalizeStoredAccount(JSON.parse(raw));
+    if (!current) return false;
+    const sameIdentity = !current?.remote && current?.id === expected.id && current?.name === expected.name &&
+      current?.localIdVersion === expected.localIdVersion;
+    if (!sameIdentity) return true;
+    localStorage.removeItem(AUTH_KEY);
+    return localStorage.getItem(AUTH_KEY) === null;
+  } catch {
+    return false;
   }
 }
 
@@ -1251,20 +1355,81 @@ function remoteAuthEnabled() {
   return Boolean(config.url && config.anonKey);
 }
 
-function loadRemoteSession() {
+function removeLegacyRemoteSession() {
   try {
-    const raw = localStorage.getItem(REMOTE_SESSION_KEY) || "null";
+    if (localStorage.getItem(REMOTE_SESSION_KEY) === null) return true;
+    localStorage.removeItem(REMOTE_SESSION_KEY);
+    return localStorage.getItem(REMOTE_SESSION_KEY) === null;
+  } catch {
+    return false;
+  }
+}
+
+function takeLegacyRemoteSessionRaw() {
+  let raw = null;
+  try {
+    raw = localStorage.getItem(REMOTE_SESSION_KEY);
+  } catch {
+    raw = null;
+  }
+  removeLegacyRemoteSession();
+  return raw;
+}
+
+function transientRemoteSessionRaw() {
+  try {
+    return window.sessionStorage?.getItem(REMOTE_SESSION_KEY) ?? volatileRemoteSessionRaw;
+  } catch {
+    return volatileRemoteSessionRaw;
+  }
+}
+
+function writeTransientRemoteSessionRaw(raw) {
+  volatileRemoteSessionRaw = raw;
+  try {
+    window.sessionStorage?.setItem(REMOTE_SESSION_KEY, raw);
+  } catch {
+    // The in-memory copy keeps the current top-level session usable.
+  }
+  removeLegacyRemoteSession();
+}
+
+function clearRemoteSession() {
+  volatileRemoteSessionRaw = null;
+  let transientCleared = false;
+  try {
+    const transientStorage = window.sessionStorage;
+    if (transientStorage) {
+      transientStorage.removeItem(REMOTE_SESSION_KEY);
+      transientCleared = transientStorage.getItem(REMOTE_SESSION_KEY) === null;
+    } else {
+      transientCleared = true;
+    }
+  } catch {
+    transientCleared = false;
+  }
+  const legacyCleared = removeLegacyRemoteSession();
+  return transientCleared && legacyCleared;
+}
+
+function loadRemoteSession() {
+  const transientRaw = transientRemoteSessionRaw();
+  const legacyRaw = takeLegacyRemoteSessionRaw();
+  const raw = transientRaw ?? legacyRaw ?? "null";
+  try {
     if (new TextEncoder().encode(raw).byteLength > MAX_REMOTE_AUTH_RESPONSE_BYTES) {
-      localStorage.removeItem(REMOTE_SESSION_KEY);
+      clearRemoteSession();
       return null;
     }
     const parsed = JSON.parse(raw);
     if (!validRemoteSession(parsed)) {
-      localStorage.removeItem(REMOTE_SESSION_KEY);
+      clearRemoteSession();
       return null;
     }
+    if (transientRaw == null && legacyRaw != null) writeTransientRemoteSessionRaw(raw);
     return parsed;
   } catch {
+    clearRemoteSession();
     return null;
   }
 }
@@ -1273,9 +1438,9 @@ function saveRemoteSession(session) {
   if (!validRemoteSession(session)) throw new Error("Cloud session is invalid.");
   const encoded = JSON.stringify(session);
   if (new TextEncoder().encode(encoded).byteLength > MAX_REMOTE_AUTH_RESPONSE_BYTES) {
-    throw new Error("Cloud session exceeds the local storage limit.");
+    throw new Error("Cloud session exceeds the browser session limit.");
   }
-  localStorage.setItem(REMOTE_SESSION_KEY, encoded);
+  writeTransientRemoteSessionRaw(encoded);
 }
 
 function validRemoteSession(session) {
@@ -1443,7 +1608,9 @@ async function supabaseRequest(path, options = {}) {
       response,
       Math.min(maxResponseBytes, MAX_REMOTE_ERROR_RESPONSE_BYTES)
     ).catch(() => "");
-    throw new Error(text || `Request failed: ${response.status}`);
+    const error = new Error(text || `Request failed: ${response.status}`);
+    error.status = response.status;
+    throw error;
   }
   if (response.status === 204) return null;
   const body = await readBoundedResponseText(response, maxResponseBytes);
@@ -1528,6 +1695,7 @@ async function pullRemoteState() {
   let nextState;
   try {
     nextState = normalizeImportedState(cloudState.state, defaultAppState());
+    var catalogChanged = ensureBuiltInExerciseCatalog(nextState);
     cloudStateRecovery = null;
   } catch {
     nextState = defaultAppState();
@@ -1539,7 +1707,7 @@ async function pullRemoteState() {
   }
   state = nextState;
   bindRemoteStateRevision(cloudState);
-  saveState({ queueRemote: false });
+  saveState({ queueRemote: catalogChanged && cloudStateRecovery === null });
   return true;
 }
 
@@ -1552,6 +1720,7 @@ function remoteStatePayload(expectedUserId = activeAccount?.userId) {
     diagnostics: false,
     owner: { accountId: expectedUserId, userId: expectedUserId, remote: true },
     language: state.language,
+    catalogSeedVersion: state.catalogSeedVersion,
     exercises: state.exercises,
     sessions: state.sessions,
     mappings: state.mappings,
@@ -1677,7 +1846,15 @@ function loadGarminBindings() {
         storageNeedsRewrite = true;
         return;
       }
-      sanitized[userId] = { version: 2, userId, deviceId: value.deviceId };
+      if (Object.hasOwn(value, "recoveryPending") && value.recoveryPending !== true) {
+        storageNeedsRewrite = true;
+      }
+      sanitized[userId] = {
+        version: 2,
+        userId,
+        deviceId: value.deviceId,
+        ...(value.recoveryPending === true ? { recoveryPending: true } : {})
+      };
     });
     if (storageNeedsRewrite) {
       if (Object.keys(sanitized).length) {
@@ -1704,7 +1881,10 @@ function garminBindingForUser(userId) {
 
 function saveGarminBinding(binding) {
   if (!UUID_PATTERN.test(binding?.userId || "") || binding.version !== 2 ||
-      !UUID_PATTERN.test(binding.deviceId || "")) throw new Error("Invalid Garmin device binding.");
+      !UUID_PATTERN.test(binding.deviceId || "") ||
+      (binding.recoveryPending !== undefined && binding.recoveryPending !== true)) {
+    throw new Error("Invalid Garmin device binding.");
+  }
   const bindings = loadGarminBindings();
   if (!Object.hasOwn(bindings, binding.userId) &&
       Object.keys(bindings).length >= MAX_GARMIN_BINDINGS) {
@@ -1713,7 +1893,8 @@ function saveGarminBinding(binding) {
   bindings[binding.userId] = {
     version: 2,
     userId: binding.userId,
-    deviceId: binding.deviceId
+    deviceId: binding.deviceId,
+    ...(binding.recoveryPending === true ? { recoveryPending: true } : {})
   };
   localStorage.setItem(GARMIN_DEVICE_BINDINGS_KEY, JSON.stringify(bindings));
 }
@@ -1726,9 +1907,183 @@ function removeGarminBinding(userId) {
   else localStorage.removeItem(GARMIN_DEVICE_BINDINGS_KEY);
 }
 
+function normalizedGarminDevice(value, { requireToken = false } = {}) {
+  if (!value || typeof value !== "object" || Array.isArray(value) ||
+      !UUID_PATTERN.test(value.id || "") || value.binding_version !== 2 ||
+      !Number.isInteger(value.token_revision) || value.token_revision < 1 ||
+      value.token_revision > 2147483647) {
+    return null;
+  }
+  const displayName = typeof value.display_name === "string" ? value.display_name.trim() : "";
+  const createdAt = typeof value.created_at === "string" ? value.created_at : "";
+  const lastSeenAt = value.last_seen_at == null ? null : value.last_seen_at;
+  if (!displayName || displayName.length > 80 || /[\u0000-\u001f\u007f]/.test(displayName) ||
+      new TextEncoder().encode(displayName).byteLength > 320 ||
+      !validRemoteStateRevision(createdAt) ||
+      (lastSeenAt !== null && !validRemoteStateRevision(lastSeenAt))) {
+    return null;
+  }
+  const token = value.device_token;
+  if (requireToken && (typeof token !== "string" || !/^[a-f0-9]{64}$/.test(token))) {
+    return null;
+  }
+  return {
+    id: value.id,
+    displayName,
+    createdAt,
+    lastSeenAt,
+    bindingVersion: 2,
+    tokenRevision: value.token_revision,
+    ...(requireToken ? { deviceToken: token } : {})
+  };
+}
+
+async function listGarminDevices(session) {
+  const response = await supabaseRequest("/functions/v1/garmin-sync", {
+    method: "POST",
+    session,
+    body: JSON.stringify({ action: "listDevices" })
+  });
+  if (!Array.isArray(response?.devices) || response.devices.length > 5) {
+    throw new Error("Garmin device list is invalid.");
+  }
+  const devices = response.devices.map(value => normalizedGarminDevice(value));
+  if (devices.some(value => !value) || new Set(devices.map(value => value.id)).size !== devices.length) {
+    throw new Error("Garmin device list is invalid.");
+  }
+  return devices;
+}
+
+function newGarminReplacementToken() {
+  if (!window.crypto || typeof window.crypto.getRandomValues !== "function") {
+    throw new Error("Secure Garmin token generation is unavailable in this browser.");
+  }
+  const bytes = new Uint8Array(32);
+  window.crypto.getRandomValues(bytes);
+  return [...bytes].map(byte => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function throwGarminRotationConflict(session, deviceId) {
+  const refreshed = await listGarminDevices(session);
+  const current = refreshed.find(device => device.id === deviceId);
+  const detail = current ? ` Current token revision is ${current.tokenRevision}.` : " The device is no longer active.";
+  throw new Error(`Garmin token rotation conflicted with another request.${detail} Review the watch selection and retry.`);
+}
+
+async function rotateGarminDeviceToken(session, device) {
+  const deviceId = device?.id;
+  const expectedTokenRevision = device?.tokenRevision;
+  if (!UUID_PATTERN.test(deviceId || "") || !Number.isInteger(expectedTokenRevision) ||
+      expectedTokenRevision < 1 || expectedTokenRevision > 2147483646) {
+    throw new Error("Garmin device token revision is invalid or exhausted.");
+  }
+  const replacementToken = newGarminReplacementToken();
+  const requestBody = JSON.stringify({
+    action: "rotateDeviceToken",
+    deviceId,
+    replacementToken,
+    expectedTokenRevision
+  });
+  const requestRotation = () => supabaseRequest("/functions/v1/garmin-sync", {
+    method: "POST",
+    session,
+    body: requestBody
+  });
+  let response;
+  try {
+    response = await requestRotation();
+  } catch (error) {
+    if (error?.status === 409) return throwGarminRotationConflict(session, deviceId);
+    if (error?.status !== undefined && error.status < 500) throw error;
+    try {
+      // Replaying this exact token and expected revision is idempotent. Never
+      // generate a second secret for an outcome-unknown request.
+      response = await requestRotation();
+    } catch (retryError) {
+      if (retryError?.status === 409) return throwGarminRotationConflict(session, deviceId);
+      throw retryError;
+    }
+  }
+  const rotated = normalizedGarminDevice(response?.device, { requireToken: true });
+  if (!rotated || !["rotated", "already_rotated"].includes(response?.status) ||
+      rotated.id !== deviceId || rotated.deviceToken !== replacementToken ||
+      rotated.tokenRevision !== expectedTokenRevision + 1) {
+    throw new Error("Garmin token rotation returned an invalid device.");
+  }
+  return rotated;
+}
+
+function chooseGarminDeviceForRecovery(devices) {
+  if (!devices.length) return null;
+  if (devices.length === 1) {
+    const warning = tx(
+      `Restore the existing Garmin pairing “${devices[0].displayName}”? Its old token will stop immediately, and a replacement token for the same watch identity will be shown once. Cancel keeps the current token working.`,
+      `Відновити наявне сполучення Garmin «${devices[0].displayName}»? Старий токен одразу перестане працювати, а новий токен для того самого годинника буде показано один раз. «Скасувати» збереже чинний токен.`
+    );
+    return typeof window.confirm === "function" && window.confirm(warning) ? devices[0] : null;
+  }
+  if (typeof window.prompt !== "function") return null;
+  const options = devices.map((device, index) =>
+    `${index + 1}. ${device.displayName.replace(/[\u0000-\u001f\u007f]+/g, " ")} (${device.id.slice(0, 8)})`
+  ).join("\n");
+  const selected = window.prompt(tx(
+    `Choose the existing Garmin watch to restore (1-${devices.length}). Rotating its token preserves the watch identity:\n${options}`,
+    `Обери наявний годинник Garmin для відновлення (1-${devices.length}). Ротація токена збереже ідентифікатор годинника:\n${options}`
+  ), "1");
+  if (selected === null || !/^[1-5]$/.test(selected.trim())) return null;
+  return devices[Number(selected.trim()) - 1] || null;
+}
+
+async function recoverGarminDeviceBinding(session, device) {
+  const userId = session?.user?.id;
+  if (!userId || activeAccount?.userId !== userId || !device ||
+      !UUID_PATTERN.test(device.id || "") || !Number.isInteger(device.tokenRevision) ||
+      device.tokenRevision < 1 || device.tokenRevision > 2147483646) {
+    throw new Error("Garmin recovery belongs to another account.");
+  }
+  const expectedEpoch = accountEpoch;
+  const binding = { version: 2, userId, deviceId: device.id };
+  // Persist the stable, nonsecret UUID and incomplete state before invalidating
+  // the old bearer token. A lost response or closed prompt can then be retried
+  // without inventing a second watch identity.
+  saveGarminBinding({ ...binding, recoveryPending: true });
+  const rotated = await rotateGarminDeviceToken(session, device);
+  if (expectedEpoch !== accountEpoch || activeAccount?.userId !== userId ||
+      loadRemoteSession()?.user?.id !== userId) {
+    throw new Error(tx(
+      "Garmin token rotation completed for a stale account session. Sign back into the same account and run Sync Watch to finish recovery for this watch identity.",
+      "Ротацію токена Garmin завершено для застарілої сесії. Увійди в той самий акаунт і запусти Sync Watch, щоб завершити відновлення цього годинника."
+    ));
+  }
+  let rawToken = rotated.deviceToken;
+  const tokenPrompt = tx(
+    "Paste this replacement token into the same watch's Connect IQ settings now. The old token has stopped working. This token will not be stored or shown again.",
+    "Встав цей новий токен у налаштування Connect IQ того самого годинника. Старий токен уже не працює. Новий токен не зберігатиметься й більше не показуватиметься."
+  );
+  const acknowledged = typeof window.prompt === "function"
+    ? window.prompt(tokenPrompt, rawToken)
+    : null;
+  rawToken = null;
+  if (acknowledged === null) {
+    throw new Error(tx(
+      "The replacement Garmin token was not confirmed. Run Sync Watch again to rotate another token for the same watch identity.",
+      "Новий токен Garmin не підтверджено. Запусти Sync Watch ще раз, щоб створити інший токен для того самого ідентифікатора годинника."
+    ));
+  }
+  saveGarminBinding(binding);
+  return binding;
+}
+
 async function ensureGarminDeviceBinding(session) {
   const userId = session?.user?.id;
   if (!userId || activeAccount?.userId !== userId) throw new Error("Garmin pairing belongs to another account.");
+  const expectedEpoch = accountEpoch;
+  const assertCurrentAccount = () => {
+    if (expectedEpoch !== accountEpoch || activeAccount?.userId !== userId ||
+        loadRemoteSession()?.user?.id !== userId) {
+      throw new Error("Garmin pairing was cancelled for a stale account session.");
+    }
+  };
   const pendingDeviceId = pendingGarminRevocations.get(userId);
   if (pendingDeviceId) {
     try {
@@ -1740,9 +2095,47 @@ async function ensureGarminDeviceBinding(session) {
         "Попереднє створення пристрою Garmin ще очікує відкликання. Не закривай цю сторінку й повтори спробу перед новим сполученням."
       ));
     }
+    assertCurrentAccount();
   }
   const current = garminBindingForUser(userId);
+  if (current?.recoveryPending) {
+    const refreshedDevices = await listGarminDevices(session);
+    assertCurrentAccount();
+    const pendingDevice = refreshedDevices.find(device => device.id === current.deviceId);
+    if (!pendingDevice) {
+      removeGarminBinding(userId);
+      throw new Error(tx(
+        "The pending Garmin device is no longer active. Run Sync Watch again to choose or create a pairing.",
+        "Незавершений пристрій Garmin більше не активний. Знову запусти Sync Watch, щоб вибрати або створити сполучення."
+      ));
+    }
+    const retryWarning = tx(
+      "Finish the pending Garmin recovery? This rotates a replacement token for the same watch identity and shows it once. Cancel leaves the current server token unchanged.",
+      "Завершити незакінчене відновлення Garmin? Буде створено новий токен для того самого ідентифікатора годинника й показано один раз. «Скасувати» не змінить чинний серверний токен."
+    );
+    if (typeof window.confirm !== "function" || !window.confirm(retryWarning)) {
+      throw new Error(tx(
+        "Pending Garmin recovery was not changed.",
+        "Незавершене відновлення Garmin не змінено."
+      ));
+    }
+    const binding = await recoverGarminDeviceBinding(session, pendingDevice);
+    return { binding, created: false, rotated: true };
+  }
   if (current) return { binding: current, created: false };
+  const existingDevices = await listGarminDevices(session);
+  assertCurrentAccount();
+  if (existingDevices.length) {
+    const selectedDevice = chooseGarminDeviceForRecovery(existingDevices);
+    if (!selectedDevice) {
+      throw new Error(tx(
+        "Existing Garmin recovery was cancelled. No new device identity was created.",
+        "Відновлення наявного Garmin скасовано. Новий ідентифікатор пристрою не створено."
+      ));
+    }
+    const binding = await recoverGarminDeviceBinding(session, selectedDevice);
+    return { binding, created: false, rotated: true };
+  }
   const pairingWarning = tx(
     "A one-time Garmin token will be shown. It works like a password: paste it only into this watch's Connect IQ settings. GymApp will not store or show it again. Continue?",
     "Буде показано одноразовий токен Garmin. Він працює як пароль: встав його лише в налаштування Connect IQ цього годинника. GymApp не зберігатиме й не покаже його знову. Продовжити?"
@@ -1750,7 +2143,6 @@ async function ensureGarminDeviceBinding(session) {
   if (typeof window.confirm !== "function" || !window.confirm(pairingWarning)) {
     throw new Error(tx("Garmin pairing was cancelled.", "Сполучення Garmin скасовано."));
   }
-  const expectedEpoch = accountEpoch;
   const response = await supabaseRequest("/functions/v1/garmin-sync", {
     method: "POST",
     session,
@@ -1758,7 +2150,8 @@ async function ensureGarminDeviceBinding(session) {
   });
   const device = response?.device;
   if (!UUID_PATTERN.test(device?.id || "") ||
-      !/^[a-f0-9]{64}$/i.test(device?.device_token || "") || device.binding_version !== 2) {
+      !/^[a-f0-9]{64}$/.test(device?.device_token || "") || device.binding_version !== 2 ||
+      device.token_revision !== 1) {
     throw new Error("Garmin device binding was not created.");
   }
   const binding = { version: 2, userId, deviceId: device.id };
@@ -1775,7 +2168,7 @@ async function ensureGarminDeviceBinding(session) {
   try {
     // Persist the nonsecret device ID before the raw one-time token is revealed.
     // If storage fails, no user-visible capability has escaped this function.
-    saveGarminBinding(binding);
+    saveGarminBinding({ ...binding, recoveryPending: true });
     pendingGarminRevocations.delete(userId);
   } catch {
     let revoked = false;
@@ -1810,12 +2203,13 @@ async function ensureGarminDeviceBinding(session) {
       removeGarminBinding(userId);
     } catch {
       throw new Error(tx(
-        "The Garmin token could not be revoked. Sign out to retry revocation before pairing again.",
-        "Не вдалося відкликати токен Garmin. Вийди з акаунта, щоб повторити відкликання перед новим сполученням."
+        "The Garmin token could not be revoked. Use Unpair Garmin to retry revocation, or run Sync Watch again to rotate a replacement token for the same watch identity.",
+        "Не вдалося відкликати токен Garmin. Скористайся «Від’єднати Garmin», щоб повторити відкликання, або знову запусти Sync Watch для ротації нового токена того самого годинника."
       ));
     }
     throw new Error(tx("Garmin pairing was cancelled.", "Сполучення Garmin скасовано."));
   }
+  saveGarminBinding(binding);
   return { binding, created: true };
 }
 
@@ -1842,26 +2236,267 @@ async function revokeGarminBinding(session) {
   removeGarminBinding(userId);
 }
 
+function garminLogicalPlanJson(plan) {
+  const { createdAt: _createdAt, ...logicalPlan } = plan;
+  return JSON.stringify(logicalPlan);
+}
+
+function loadGarminEnqueueRequests() {
+  try {
+    const raw = localStorage.getItem(GARMIN_ENQUEUE_REQUESTS_KEY) || "{}";
+    if (new TextEncoder().encode(raw).byteLength > MAX_GARMIN_ENQUEUE_STORAGE_BYTES) {
+      localStorage.removeItem(GARMIN_ENQUEUE_REQUESTS_KEY);
+      return Object.create(null);
+    }
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) ||
+        Object.keys(parsed).length > MAX_GARMIN_ENQUEUE_REQUESTS) {
+      localStorage.removeItem(GARMIN_ENQUEUE_REQUESTS_KEY);
+      return Object.create(null);
+    }
+    const safe = Object.create(null);
+    let rewrite = false;
+    for (const [userId, value] of Object.entries(parsed)) {
+      const planJson = typeof value?.planJson === "string" ? value.planJson : "";
+      const logicalPlanJson = typeof value?.logicalPlanJson === "string" ? value.logicalPlanJson : "";
+      if (!UUID_PATTERN.test(userId) || value?.version !== 1 || value.userId !== userId ||
+          !UUID_PATTERN.test(value.deviceId || "") || !UUID_V4_PATTERN.test(value.requestId || "") ||
+          new TextEncoder().encode(planJson).byteLength > 64 * 1024 ||
+          new TextEncoder().encode(logicalPlanJson).byteLength > 64 * 1024 ||
+          (value.conflict !== undefined && value.conflict !== true)) {
+        rewrite = true;
+        continue;
+      }
+      let validation;
+      try {
+        validation = window.GymGarminCloud.validateGarminPlan(JSON.parse(planJson));
+      } catch {
+        validation = null;
+      }
+      if (!validation?.ok || logicalPlanJson !== garminLogicalPlanJson(validation.plan)) {
+        rewrite = true;
+        continue;
+      }
+      safe[userId] = {
+        version: 1,
+        userId,
+        deviceId: value.deviceId,
+        requestId: value.requestId,
+        planJson: JSON.stringify(validation.plan),
+        logicalPlanJson,
+        ...(value.conflict === true ? { conflict: true } : {})
+      };
+    }
+    if (rewrite) saveGarminEnqueueRequests(safe);
+    return safe;
+  } catch {
+    return Object.create(null);
+  }
+}
+
+function saveGarminEnqueueRequests(requests) {
+  const entries = Object.entries(requests || {});
+  if (entries.length > MAX_GARMIN_ENQUEUE_REQUESTS) {
+    throw new Error("Garmin enqueue request storage is full.");
+  }
+  if (!entries.length) {
+    localStorage.removeItem(GARMIN_ENQUEUE_REQUESTS_KEY);
+    return;
+  }
+  const encoded = JSON.stringify(Object.fromEntries(entries));
+  if (new TextEncoder().encode(encoded).byteLength > MAX_GARMIN_ENQUEUE_STORAGE_BYTES) {
+    throw new Error("Garmin enqueue request storage exceeds its limit.");
+  }
+  localStorage.setItem(GARMIN_ENQUEUE_REQUESTS_KEY, encoded);
+}
+
+function newUuidV4() {
+  if (!window.crypto || typeof window.crypto.getRandomValues !== "function") {
+    throw new Error("Secure request ID generation is unavailable in this browser.");
+  }
+  const bytes = new Uint8Array(16);
+  window.crypto.getRandomValues(bytes);
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = [...bytes].map(byte => byte.toString(16).padStart(2, "0"));
+  return `${hex.slice(0, 4).join("")}-${hex.slice(4, 6).join("")}-${hex.slice(6, 8).join("")}-${hex.slice(8, 10).join("")}-${hex.slice(10).join("")}`;
+}
+
+function clearGarminEnqueueRequest(userId, requestId) {
+  const requests = loadGarminEnqueueRequests();
+  if (requests[userId]?.requestId !== requestId) return;
+  delete requests[userId];
+  saveGarminEnqueueRequests(requests);
+}
+
+function prepareGarminEnqueueRequest(userId, deviceId, candidatePlan) {
+  const validation = window.GymGarminCloud.validateGarminPlan(candidatePlan);
+  if (!validation?.ok) throw new Error("Garmin plan is invalid.");
+  const candidateLogicalJson = garminLogicalPlanJson(validation.plan);
+  const requests = loadGarminEnqueueRequests();
+  const existing = requests[userId];
+  const sameLogicalRequest = existing?.deviceId === deviceId &&
+    existing.logicalPlanJson === candidateLogicalJson;
+  if (existing && sameLogicalRequest && existing.conflict !== true) {
+    return { record: existing, plan: JSON.parse(existing.planJson) };
+  }
+  if (existing) {
+    const warning = existing.conflict === true
+      ? tx(
+          "The previous Garmin request ID conflicted with server state. Start a new request ID for this submission? Cancel keeps the conflict for review.",
+          "Попередній Garmin request ID конфліктує зі станом сервера. Створити новий request ID для цього надсилання? «Скасувати» збереже конфлікт для перевірки."
+        )
+      : tx(
+          "A previous Garmin queue result is still unknown. Start a different logical submission anyway? It may create a second plan if the earlier request succeeded. Cancel is recommended.",
+          "Результат попереднього Garmin-запиту ще невідомий. Усе одно почати інше надсилання? Якщо попередній запит спрацював, може з’явитися другий план. Рекомендовано скасувати."
+        );
+    if (typeof window.confirm !== "function" || !window.confirm(warning)) {
+      throw new Error("Garmin enqueue retry remains pending review.");
+    }
+  }
+  const record = {
+    version: 1,
+    userId,
+    deviceId,
+    requestId: newUuidV4(),
+    planJson: JSON.stringify(validation.plan),
+    logicalPlanJson: candidateLogicalJson
+  };
+  requests[userId] = record;
+  saveGarminEnqueueRequests(requests);
+  return { record, plan: validation.plan };
+}
+
+function markGarminEnqueueConflict(userId, requestId) {
+  const requests = loadGarminEnqueueRequests();
+  if (requests[userId]?.requestId !== requestId) return;
+  requests[userId] = { ...requests[userId], conflict: true };
+  saveGarminEnqueueRequests(requests);
+}
+
+async function enqueueGarminPlan(session, binding, candidatePlan) {
+  const userId = session?.user?.id;
+  if (!userId || activeAccount?.userId !== userId || binding?.userId !== userId ||
+      !UUID_PATTERN.test(binding.deviceId || "")) {
+    throw new Error("Garmin enqueue belongs to another account or device.");
+  }
+  const { record, plan } = prepareGarminEnqueueRequest(userId, binding.deviceId, candidatePlan);
+  const requestBody = JSON.stringify({
+    p_device_id: binding.deviceId,
+    p_plan: plan,
+    p_client_request_id: record.requestId
+  });
+  const request = () => supabaseRequest("/rest/v1/rpc/garmin_enqueue_plan", {
+    method: "POST",
+    session,
+    body: requestBody
+  });
+  let response;
+  try {
+    response = await request();
+  } catch (error) {
+    if (error?.status !== undefined && error.status < 500) {
+      clearGarminEnqueueRequest(userId, record.requestId);
+      throw error;
+    }
+    try {
+      response = await request();
+    } catch (retryError) {
+      if (retryError?.status !== undefined && retryError.status < 500) {
+        clearGarminEnqueueRequest(userId, record.requestId);
+      }
+      throw retryError;
+    }
+  }
+  if (response?.status === "conflict") {
+    markGarminEnqueueConflict(userId, record.requestId);
+    throw new Error("Garmin enqueue request ID conflicted with different server content.");
+  }
+  if (typeof response?.error === "string") {
+    clearGarminEnqueueRequest(userId, record.requestId);
+    const allowedErrors = new Set([
+      "Unauthorized",
+      "Invalid enqueue request",
+      "Invalid Garmin plan",
+      "Device not found",
+      "Plan creation limit reached"
+    ]);
+    throw new Error(allowedErrors.has(response.error) ? response.error : "Garmin enqueue failed.");
+  }
+  const allowedStatuses = new Set(["pending", "downloaded", "completed", "invalid", "superseded"]);
+  if (!["queued", "already_queued"].includes(response?.status) ||
+      !UUID_PATTERN.test(response.planId || "") ||
+      !Number.isInteger(response.planRevision) || response.planRevision < 1 ||
+      response.planRevision > 2147483647 || !allowedStatuses.has(response.planStatus) ||
+      (response.status === "queued" && response.planStatus !== "pending")) {
+    throw new Error("Garmin enqueue returned an invalid response; retry will reuse the same request ID.");
+  }
+  clearGarminEnqueueRequest(userId, record.requestId);
+  return response;
+}
+
 async function queueGarminPlanFromDraft() {
+  if (accountTransitionInProgress) {
+    return showToast(tx("Wait for the account operation to finish.", "Дочекайся завершення операції з акаунтом."));
+  }
+  if (garminSyncInProgress) {
+    return showToast(tx("Garmin sync is already in progress.", "Синхронізація Garmin уже виконується."));
+  }
   if (!remoteAuthEnabled()) return showToast(tx("Cloud login is not configured.", "Cloud login is not configured."));
   const session = loadRemoteSession();
   if (!session?.user?.id) return showToast(tx("Log in to cloud first.", "Log in to cloud first."));
   const plan = draftToGarminPlan();
   if (!plan) return showToast(tx("Please fill exercises and sets first.", "Please fill exercises and sets first."));
+  const expectedEpoch = accountEpoch;
+  const expectedUserId = session.user.id;
+  const lockManager = navigator?.locks;
+  if (!lockManager || typeof lockManager.request !== "function") {
+    return showToast(tx(
+      "Secure cross-tab Garmin sync is unavailable in this browser. Close other GymApp tabs and use a supported browser before retrying.",
+      "Безпечна синхронізація Garmin між вкладками недоступна в цьому браузері. Закрий інші вкладки GymApp і повтори в підтримуваному браузері."
+    ));
+  }
+  garminSyncInProgress = true;
+  try {
+    let lockAcquired = false;
+    await lockManager.request(`gymapp-garmin-sync:${expectedUserId}`, {
+      mode: "exclusive",
+      ifAvailable: true
+    }, async lock => {
+      if (!lock) return;
+      lockAcquired = true;
+      if (expectedEpoch !== accountEpoch || activeAccount?.userId !== expectedUserId ||
+          loadRemoteSession()?.user?.id !== expectedUserId) {
+        throw new Error("Garmin sync was cancelled for a stale account session.");
+      }
+      const { binding, created, rotated } = await ensureGarminDeviceBinding(session);
+      if (expectedEpoch !== accountEpoch || activeAccount?.userId !== expectedUserId ||
+          loadRemoteSession()?.user?.id !== expectedUserId) {
+        throw new Error("Garmin sync was cancelled for a stale account session.");
+      }
 
-  const { binding, created } = await ensureGarminDeviceBinding(session);
+      await enqueueGarminPlan(session, binding, plan);
+      if (expectedEpoch !== accountEpoch || activeAccount?.userId !== expectedUserId ||
+          loadRemoteSession()?.user?.id !== expectedUserId) {
+        throw new Error("Garmin plan was queued for the previous account; switch back to manage it.");
+      }
 
-  await supabaseRequest("/rest/v1/garmin_plans", {
-    method: "POST",
-    session,
-    headers: { Prefer: "return=minimal" },
-    body: JSON.stringify({ user_id: session.user.id, device_id: binding.deviceId, status: "pending", plan })
-  });
-
-  if (created) {
-    showToast(tx("Garmin token shown once. After saving it in Connect IQ settings, sync on the watch.", "Токен Garmin показано один раз. Збережи його в налаштуваннях Connect IQ і запусти синхронізацію на годиннику."));
-  } else {
-    showToast(tx("Plan queued for Garmin. Open the watch app and run Cloud sync.", "Plan queued for Garmin. Open the watch app and run Cloud sync."));
+      if (rotated) {
+        showToast(tx("Garmin token rotated for the existing watch. Save it in Connect IQ settings, then sync on the watch.", "Токен Garmin оновлено для наявного годинника. Збережи його в налаштуваннях Connect IQ і запусти синхронізацію на годиннику."));
+      } else if (created) {
+        showToast(tx("Garmin token shown once. After saving it in Connect IQ settings, sync on the watch.", "Токен Garmin показано один раз. Збережи його в налаштуваннях Connect IQ і запусти синхронізацію на годиннику."));
+      } else {
+        showToast(tx("Plan queued for Garmin. Open the watch app and run Cloud sync.", "Plan queued for Garmin. Open the watch app and run Cloud sync."));
+      }
+    });
+    if (!lockAcquired) {
+      showToast(tx(
+        "Garmin sync is already running in another GymApp tab. Finish it there before retrying.",
+        "Синхронізація Garmin уже виконується в іншій вкладці GymApp. Заверши її там перед повторною спробою."
+      ));
+    }
+  } finally {
+    garminSyncInProgress = false;
   }
 }
 
@@ -1872,7 +2507,16 @@ function loadState() {
     const legacyRaw = localStorage.getItem(LEGACY_KEY);
     const raw = currentRaw || (!activeAccount ? legacyRaw : null);
     if (!raw) return fallback;
-    return validateImportedEnvelope(raw, fallback).state;
+    const loaded = validateImportedEnvelope(raw, fallback).state;
+    const catalogChanged = ensureBuiltInExerciseCatalog(loaded);
+    if (catalogChanged) {
+      try {
+        localStorage.setItem(activeStorageKey(), JSON.stringify(loaded));
+      } catch {
+        // Keep the valid account usable in memory; the next normal mutation retries persistence.
+      }
+    }
+    return loaded;
   } catch {
     return fallback;
   }
@@ -1890,6 +2534,7 @@ function validateImportedEnvelope(input, fallback = defaultAppState()) {
     diagnostics: validated.diagnostics,
     state: {
       language: safe.language,
+      catalogSeedVersion: safe.catalogSeedVersion,
       exercises: normalizeExerciseCatalog(safe.exercises, fallback.exercises),
       sessions: normalizeSessions(safe.sessions),
       mappings: normalizeExerciseMappings(safe.mappings, fallback.mappings),
@@ -2032,12 +2677,12 @@ function routeScrollKey(current = route()) {
 
 function visibleScrollContainer() {
   const main = app.querySelector("main[data-scroll-key]");
-  return main?.querySelector(".workouts-scroll") || main;
+  return main;
 }
 
 function rememberVisibleScroll() {
   const main = app.querySelector("main[data-scroll-key]");
-  const scroller = main?.querySelector(".workouts-scroll") || main;
+  const scroller = main;
   if (main?.dataset.scrollKey && scroller) {
     routeScrollPositions.set(main.dataset.scrollKey, scroller.scrollTop);
   }
@@ -2045,7 +2690,7 @@ function rememberVisibleScroll() {
 
 function restoreVisibleScroll() {
   const main = app.querySelector("main[data-scroll-key]");
-  const scroller = main?.querySelector(".workouts-scroll") || main;
+  const scroller = main;
   if (!main?.dataset.scrollKey || !scroller) return;
   scroller.scrollTop = routeScrollPositions.get(main.dataset.scrollKey) || 0;
 }
@@ -2391,10 +3036,11 @@ function isRootRoute(name) {
 }
 
 function titleForRoute(current) {
-  return {
-    workouts: t("workouts"), missions: t("missions"), exercises: t("exercises"), progress: t("progress"), leaderboard: tx("Rating", "Рейтинг"),
+  const title = {
+    workouts: "", missions: t("missions"), exercises: "", progress: t("progress"), leaderboard: tx("Rating", "Рейтинг"),
     add: t("addWorkout"), detail: tx("Workout Details", "Деталі тренування"), summary: tx("Workout Summary", "Підсумок тренування"), ranks: t("ranks")
-  }[current.name] || "Gym Workout Tracker";
+  }[current.name];
+  return title ?? "Gym Workout Tracker";
 }
 
 function bottomNav() {
@@ -2428,6 +3074,7 @@ function workoutsScreen() {
   const sessions = [...selectedMonthSessions()].sort((a, b) => b.startedAt - a.startedAt);
   const savedSessions = n(sessions.length, "saved session", "saved sessions", "збережене тренування", "збережені тренування", "збережених тренувань");
   return `
+    <section class="screen-copy workouts-screen-copy"><h2>${t("workouts")}</h2><p>${tx("Your training history and next best move.", "Твоя історія тренувань і наступний найкращий крок.")}</p><button class="button full" data-action="open-add">${svg("add", "small-icon")}${t("addWorkout")}</button></section>
     <div class="workouts-controls">
       ${monthSwitcher()}
       <section class="segmented panel compact" aria-label="${tx("Workout sections", "Розділи тренувань")}">
@@ -2443,7 +3090,6 @@ function workoutsScreen() {
       </section>
       <section class="workout-list">${sessions.length ? sessions.map(workoutItem).join("") : `<section class="panel highlighted empty-state-panel"><h3>${t("noWorkouts")}</h3><p>${tx("Track consistency, output and intensity at a glance.", "Відстежуй стабільність, обсяг і інтенсивність одним поглядом.")}</p></section>`}</section>
     </div>
-    <button class="fab" data-action="open-add">${svg("add", "small-icon")}${t("addWorkout")}</button>
   `;
 }
 
@@ -2467,7 +3113,7 @@ function soloProgressHero() {
   return `<section class="hero-panel solo-progress-hero">
     <div class="eyebrow">${t("soloProgress")}</div>
     <div class="hero-split"><div><span class="pill hero-pill">${tx("LEVEL", "РІВЕНЬ")} ${level}</span><h2>${rankTitle(xp)}</h2><p>${progress.currentLevelXp} / ${progress.xpForNextLevel} XP ${tx("to next level", "до наступного рівня")}</p></div><div class="hero-stat"><span>${tx("TOTAL XP", "УСЬОГО XP")}</span><strong>${xp}</strong><small>${tx("earned", "зароблено")}</small></div></div>
-    <div class="progress"><span style="width:${progress.progressFraction * 100}%"></span></div>
+    <div class="progress"><span class="${percentageClass(progress.progressFraction * 100)}"></span></div>
     <div class="metric-grid three"><div><span>${tx("Month XP", "XP за місяць")}</span><strong>${xpForSessions(selectedMonthSessions())} XP</strong></div><div><span>${tx("Next title", "Наступний ранг")}</span><strong>${nextTitle}</strong></div><div><span>${tx("Week streak", "Серія тижнів")}</span><strong>${weeklyStreak()} ${tx("wk", "тж")}</strong></div></div>
   </section>`;
 }
@@ -2505,7 +3151,7 @@ function activityHeatmapCard() {
   const max = Math.max(1, ...byDay.values());
   return `<section class="panel"><div class="section-title"><div><h2>${t("heatmap")}</h2><p>${fmtDate(d.getTime(), { month: "long", year: "numeric" })}</p></div><span class="pill">${n(byDay.size, "active day", "active days", "активний день", "активні дні", "активних днів")}</span></div>
     <div class="metric-grid"><div><span>${tx("Sessions", "Сесії")}</span><strong>${monthSessions.length}</strong></div><div><span>${tx("Load", "Навантаження")}</span><strong>${Math.round(trainingLoad(monthSessions))}</strong></div></div>
-    <div class="heatmap-grid">${cells.map(day => `<button class="heat-cell ${day ? "" : "outside"}" style="${day ? `--i:${(byDay.get(day) || 0) / max}` : ""}" title="${day || ""}">${day || ""}</button>`).join("")}</div>
+    <div class="heatmap-grid">${cells.map(day => `<button class="heat-cell ${day ? heatLevelClass((byDay.get(day) || 0) / max) : "outside"}" title="${day || ""}">${day || ""}</button>`).join("")}</div>
     <div class="legend"><span>${tx("Less", "Менше")}</span><i></i><i></i><i></i><i></i><span>${tx("More", "Більше")}</span></div>
   </section>`;
 }
@@ -2755,7 +3401,7 @@ function achievementsCard() {
     achievement(tx("Volume builder", "Будівник обсягу"), tx("Accumulate 10000 total volume.", "Набери 10000 загального обсягу."), Math.round(totalVolume()), 10000)
   ].sort((a, b) => Number(b.progress >= b.target) - Number(a.progress >= a.target) || (b.progress / b.target) - (a.progress / a.target) || a.target - b.target).slice(0, 4);
   return `<section class="panel highlighted"><h2>${t("achievements")}</h2><p class="muted">${tx("Recent unlocks and the next solo milestones.", "Останні відкриття й наступні особисті віхи.")}</p>
-    ${achievements.map(a => `<div class="achievement"><div class="percent">${Math.min(100, Math.round(a.progress / a.target * 100))}%</div><div><strong>${a.title}</strong><p>${a.description}</p><div class="progress"><span style="width:${Math.min(100, a.progress / a.target * 100)}%"></span></div><small>${Math.round(a.progress)} / ${a.target}</small></div></div>`).join("")}
+    ${achievements.map(a => `<div class="achievement"><div class="percent">${Math.min(100, Math.round(a.progress / a.target * 100))}%</div><div><strong>${a.title}</strong><p>${a.description}</p><div class="progress"><span class="${percentageClass(a.progress / a.target * 100)}"></span></div><small>${Math.round(a.progress)} / ${a.target}</small></div></div>`).join("")}
   </section>`;
 }
 
@@ -2816,7 +3462,7 @@ function draftBlock(block, blockIndex) {
 }
 
 function smartPanel(rec, blockIndex) {
-  return `<div class="subpanel smart"><div class="row-head"><div><strong>${t("smartCoach")}</strong><p>${rec.kind}</p></div>${svg("auto", "small-icon")}</div><p>${rec.sets.map(s => `${s.weight == null ? tx("light", "легко") : `${s.weight.toFixed(1)} kg`} x ${s.reps}`).join(" | ")}</p><div class="progress"><span style="width:${rec.confidence * 100}%"></span></div><small>${tx("Confidence", "Впевненість")} ${Math.round(rec.confidence * 100)}%</small>${rec.reasons.slice(0, 3).map(reason => `<p class="muted">${escapeHtml(reason)}</p>`).join("")}<button class="button full" data-action="apply-smart" data-block="${blockIndex}">${svg("auto", "small-icon")}${t("applySmart")}</button></div>`;
+  return `<div class="subpanel smart"><div class="row-head"><div><strong>${t("smartCoach")}</strong><p>${rec.kind}</p></div>${svg("auto", "small-icon")}</div><p>${rec.sets.map(s => `${s.weight == null ? tx("light", "легко") : `${s.weight.toFixed(1)} kg`} x ${s.reps}`).join(" | ")}</p><div class="progress"><span class="${percentageClass(rec.confidence * 100)}"></span></div><small>${tx("Confidence", "Впевненість")} ${Math.round(rec.confidence * 100)}%</small>${rec.reasons.slice(0, 3).map(reason => `<p class="muted">${escapeHtml(reason)}</p>`).join("")}<button class="button full" data-action="apply-smart" data-block="${blockIndex}">${svg("auto", "small-icon")}${t("applySmart")}</button></div>`;
 }
 
 function draftSetSummary(block) {
@@ -3164,7 +3810,7 @@ function summaryScreen(id) {
     <section class="metric-grid post summary-metrics"><div><span>${tx("XP gained", "Отримано XP")}</span><strong>+${xpGain} XP</strong></div><div><span>${tx("Current title", "Поточний ранг")}</span><strong>${rankTitle(xpTotal)}</strong></div><div><span>${tx("Streak", "Серія")}</span><strong>${streakDays()} ${tx("d", "д")}</strong></div><div><span>${tx("Exercises", "Вправи")}</span><strong>${summary.exercises}</strong></div><div><span>${tx("Sets", "Підходи")}</span><strong>${summary.sets}</strong></div><div><span>${tx("Volume", "Обсяг")}</span><strong>${Math.round(summary.volume)}</strong></div></section>
     <section class="panel ${mStats.length ? "highlighted" : ""}"><h2>${t("impact")}</h2><p class="muted">${mStats[0] ? `${tx("Most loaded today", "Найбільше навантажено сьогодні")}: ${mStats[0].label}` : tx("Mapped muscle load will appear after sets are saved.", "Навантаження м'язів з'явиться після збереження підходів.")}</p>${mStats.slice(0, 5).map(m => barRow(m.label, m.load, mStats[0]?.load || 1, `${Math.round(m.load)} ${tx("load", "навантаження")} - ${n(m.sets, "set", "sets", "підхід", "підходи", "підходів")}`)).join("")}</section>
     ${records.length ? `<section class="panel highlighted"><h2>${t("personalRecords")}</h2>${records.map(r => `<div class="row-line"><div><strong>${escapeHtml(exerciseDisplayName(r))}</strong><p>${r.prev ? `${tx("Previous best", "Попередній рекорд")} ${r.prev.toFixed(1)} kg` : tx("First logged best", "Перший зафіксований рекорд")}</p></div><span class="pill">${r.now.toFixed(1)} kg</span></div>`).join("")}</section>` : ""}
-    <section class="panel"><h2>${t("levelProgress")}</h2><p>${tx("Level", "Рівень")} ${levelFromXp(xpTotal)} - ${rankTitle(xpTotal)}</p><div class="progress"><span style="width:${progress.progressFraction * 100}%"></span></div><div class="row-line"><span>${progress.currentLevelXp} XP ${tx("into this level", "у цьому рівні")}</span><strong>${progress.xpForNextLevel - progress.currentLevelXp} XP ${tx("to next", "до наступного")}</strong></div></section>
+    <section class="panel"><h2>${t("levelProgress")}</h2><p>${tx("Level", "Рівень")} ${levelFromXp(xpTotal)} - ${rankTitle(xpTotal)}</p><div class="progress"><span class="${percentageClass(progress.progressFraction * 100)}"></span></div><div class="row-line"><span>${progress.currentLevelXp} XP ${tx("into this level", "у цьому рівні")}</span><strong>${progress.xpForNextLevel - progress.currentLevelXp} XP ${tx("to next", "до наступного")}</strong></div></section>
     <section class="panel"><h2>${t("momentum")}</h2><p>${streakDays() > 1 ? `${tx("Streak extended to", "Серію продовжено до")} ${streakDays()} ${tx("days.", "днів.")}` : tx("A fresh streak has started.", "Нова серія почалася.")}</p><div class="chip-row"><span class="chip">${tx("Logged today", "Записано сьогодні")}</span><span class="chip">${tx("Best", "Найкраще")} ${streakDays()} ${tx("d", "д")}</span></div></section>
     ${summaryRewardsSection(rewards)}
     <div class="actions vertical"><button class="button full" data-action="summary-view" data-id="${session.id}">${tx("View workout", "Переглянути тренування")}</button><button class="button ghost full" data-action="summary-done">${tx("Back to workouts", "Назад до тренувань")}</button></div>`;
@@ -3255,7 +3901,7 @@ function loginAccount(rawName) {
       saveAccountList([...accounts, account]);
     }
     localStorage.setItem(AUTH_KEY, JSON.stringify(account));
-    localStorage.removeItem(REMOTE_SESSION_KEY);
+    clearRemoteSession();
   } catch {
     try {
       if (creatingAccount) {
@@ -3389,10 +4035,12 @@ async function remoteLogin(createAccount) {
     if (displayName) account.name = displayName;
     const cloudState = await loadRemoteState(session);
     let recovery = null;
+    let catalogChanged = false;
     let nextState = defaultAppState();
     if (cloudState.exists) {
       try {
         nextState = normalizeImportedState(cloudState.state, defaultAppState());
+        catalogChanged = ensureBuiltInExerciseCatalog(nextState);
       } catch {
         recovery = {
           userId: cloudState.userId,
@@ -3410,7 +4058,7 @@ async function remoteLogin(createAccount) {
     cloudStateRecovery = recovery;
     clearAuthDrafts();
     state = nextState;
-    saveState({ queueRemote: !cloudState.exists });
+    saveState({ queueRemote: !cloudState.exists || catalogChanged });
     nav = [{ name: "workouts" }];
     replaceNavigationHistory();
     modal = null;
@@ -3500,31 +4148,32 @@ async function resendRemoteConfirmation() {
 
 async function logoutAccount() {
   if (accountTransitionInProgress) return;
+  if (garminSyncInProgress) {
+    return showToast(tx("Wait for Garmin sync to finish before switching accounts.", "Дочекайся завершення Garmin sync перед зміною акаунта."));
+  }
   accountTransitionInProgress = true;
   let signedOutWithPendingGarminRevocation = false;
+  let remoteSessionRevocationFailed = false;
   const hadPendingRemoteSave = remoteSaveTimer !== null;
+  const accountBeingLoggedOut = normalizeStoredAccount(activeAccount);
   try {
     saveState({ queueRemote: false });
     clearTimeout(remoteSaveTimer);
     remoteSaveTimer = null;
-    const session = loadRemoteSession();
+    let session = loadRemoteSession();
     const remoteUserId = activeAccount?.remote ? activeAccount.userId : null;
-    const garminBinding = remoteUserId ? garminBindingForUser(remoteUserId) : null;
     const pendingGarminDeviceId = remoteUserId ? pendingGarminRevocations.get(remoteUserId) : null;
-    if (garminBinding || pendingGarminDeviceId) {
+    if (pendingGarminDeviceId) {
       try {
         if (!session?.user?.id || session.user.id !== remoteUserId) {
-          throw new Error("The active cloud session cannot revoke this Garmin binding.");
+          throw new Error("The active cloud session cannot revoke this incomplete Garmin pairing.");
         }
-        if (garminBinding) await revokeGarminBinding(session);
-        if (pendingGarminDeviceId && pendingGarminDeviceId !== garminBinding?.deviceId) {
-          await revokeGarminDeviceById(session, pendingGarminDeviceId);
-        }
+        await revokeGarminDeviceById(session, pendingGarminDeviceId);
         pendingGarminRevocations.delete(remoteUserId);
       } catch {
         const warning = tx(
-          "The Garmin watch could not be revoked. Cancel to keep this cloud session and retry (recommended). Choose OK only to sign out locally: the watch may remain authorized, and GymApp will preserve its binding record so you can retry after signing back into this account.",
-          "Не вдалося відкликати доступ годинника Garmin. Натисни «Скасувати», щоб зберегти хмарну сесію й повторити спробу (рекомендовано). Натисни OK лише для локального виходу: годинник може залишитися авторизованим, а GymApp збереже дані прив’язки для повторної спроби після входу в цей акаунт."
+          "An incomplete Garmin pairing could not be revoked. Cancel to keep this cloud session and retry (recommended). Choose OK only to sign out locally; GymApp will retry cleanup after you sign back into this account.",
+          "Не вдалося відкликати незавершене сполучення Garmin. Натисни «Скасувати», щоб зберегти хмарну сесію й повторити спробу (рекомендовано). Натисни OK лише для локального виходу; GymApp повторить очищення після входу в цей акаунт."
         );
         if (typeof window.confirm !== "function" || !window.confirm(warning)) {
           if (hadPendingRemoteSave) queueRemoteSave();
@@ -3536,10 +4185,47 @@ async function logoutAccount() {
         signedOutWithPendingGarminRevocation = true;
       }
     }
+    if (session?.user?.id && session.user.id === remoteUserId) {
+      try {
+        session = loadRemoteSession() || session;
+        let refreshedForLogout = false;
+        if (remoteSessionNeedsRefresh(session) && session.refresh_token) {
+          session = await refreshRemoteSession(session);
+          refreshedForLogout = true;
+        }
+        const revokeSession = () => supabaseRequest("/auth/v1/logout?scope=local", {
+            method: "POST",
+            session,
+            timeoutMs: 5000,
+            maxResponseBytes: MAX_REMOTE_ERROR_RESPONSE_BYTES
+          });
+        try {
+          await revokeSession();
+        } catch (error) {
+          if (error?.status !== 401 || refreshedForLogout || !session.refresh_token) throw error;
+          session = await refreshRemoteSession(session);
+          refreshedForLogout = true;
+          await revokeSession();
+        }
+      } catch {
+        // Local cleanup must still complete. The short-lived access JWT may
+        // remain valid until expiry, and the erased refresh credential can no
+        // longer be used to target this exact server session for a retry.
+        remoteSessionRevocationFailed = true;
+      }
+    }
+    const localMarkerCleared = accountBeingLoggedOut?.remote === "supabase"
+      ? true
+      : removeActiveAccountMarkerIfOwned(accountBeingLoggedOut);
+    const remoteSessionCleared = clearRemoteSession();
+    if (!localMarkerCleared || !remoteSessionCleared) {
+      throw new Error(tx(
+        "Sign-out was stopped because browser account data could not be erased. The account remains open in this tab. Restore storage access and retry.",
+        "Вихід зупинено, оскільки не вдалося стерти дані акаунта у браузері. Акаунт залишається відкритим у цій вкладці. Віднови доступ до сховища й повтори спробу."
+      ));
+    }
     resetRemoteSyncContext();
     clearAuthDrafts();
-    localStorage.removeItem(AUTH_KEY);
-    localStorage.removeItem(REMOTE_SESSION_KEY);
     activeAccount = null;
     state = loadState();
     nav = [{ name: "workouts" }];
@@ -3548,8 +4234,13 @@ async function logoutAccount() {
     render();
     if (signedOutWithPendingGarminRevocation) {
       showToast(tx(
-        "Signed out locally. Garmin may remain authorized; sign back into the same account to retry revocation.",
-        "Локальний вихід виконано. Garmin може залишатися авторизованим; увійди знову в цей акаунт, щоб повторити відкликання."
+        "Signed out locally. An incomplete Garmin pairing still needs cleanup; sign back into the same account to retry.",
+        "Локальний вихід виконано. Незавершене сполучення Garmin ще потребує очищення; увійди знову в цей акаунт, щоб повторити."
+      ));
+    } else if (remoteSessionRevocationFailed) {
+      showToast(tx(
+        "Signed out locally, but server revocation was not confirmed. That old session may remain valid until server expiry or administrative revocation.",
+        "Локальний вихід виконано, але серверне відкликання не підтверджено. Стара сесія може діяти до серверного завершення строку або адміністративного відкликання."
       ));
     }
   } catch (error) {
@@ -3559,9 +4250,53 @@ async function logoutAccount() {
   }
 }
 
+async function unpairGarmin() {
+  if (accountTransitionInProgress) return;
+  if (garminSyncInProgress) {
+    return showToast(tx("Wait for Garmin sync to finish before unpairing.", "Дочекайся завершення Garmin sync перед від’єднанням."));
+  }
+  const session = loadRemoteSession();
+  const userId = activeAccount?.remote ? activeAccount.userId : null;
+  const binding = userId ? garminBindingForUser(userId) : null;
+  if (!userId || session?.user?.id !== userId || !binding) {
+    return showToast(tx("No active Garmin pairing is available.", "Активне сполучення Garmin відсутнє."));
+  }
+  const warning = tx(
+    "Permanently revoke this Garmin pairing? Cloud sync on the current watch will stop. Before pairing it again, reset or reinstall GymApp on the watch so it forgets the old device identity. Cancel keeps the working pairing.",
+    "Назавжди відкликати це сполучення Garmin? Хмарна синхронізація на поточному годиннику припиниться. Перед повторним сполученням скинь або перевстанови GymApp на годиннику, щоб він забув старий ідентифікатор пристрою. «Скасувати» збереже робоче сполучення."
+  );
+  if (typeof window.confirm !== "function" || !window.confirm(warning)) return;
+
+  accountTransitionInProgress = true;
+  try {
+    const pendingDeviceId = pendingGarminRevocations.get(userId);
+    if (pendingDeviceId && pendingDeviceId !== binding.deviceId) {
+      await revokeGarminDeviceById(session, pendingDeviceId);
+      pendingGarminRevocations.delete(userId);
+    }
+    await revokeGarminBinding(session);
+    pendingGarminRevocations.delete(userId);
+    render();
+    showToast(tx(
+      "Garmin pairing revoked. Reset the watch app before creating a new pairing.",
+      "Сполучення Garmin відкликано. Скинь застосунок на годиннику перед створенням нового сполучення."
+    ));
+  } catch (error) {
+    showToast(error?.message || tx("Garmin unpair failed.", "Не вдалося від’єднати Garmin."));
+  } finally {
+    accountTransitionInProgress = false;
+  }
+}
+
+function garminStoreAppLink() {
+  const userAgent = String(navigator.userAgent || "");
+  return userAgent.toLowerCase().includes("android") ? GARMIN_STORE_ANDROID_INTENT_URL : GARMIN_STORE_APP_URL;
+}
+
 function accountPanel() {
   const label = activeAccount?.name || tx("Local", "Локальний");
-  return `<section class="material-card account-card"><div class="row-head"><div><h2>${tx("Account", "Акаунт")}</h2><p>${escapeHtml(label)}</p></div><button class="button ghost" data-action="logout-account">${tx("Switch", "Змінити")}</button></div></section>`;
+  const hasGarminBinding = Boolean(activeAccount?.remote && garminBindingForUser(activeAccount.userId));
+  return `<section class="panel highlighted account-card"><div class="row-head"><div><h2>${tx("Account", "Акаунт")}</h2><p>${escapeHtml(label)}</p></div><span class="pill">${activeAccount?.remote ? tx("Cloud", "Хмара") : tx("Local", "Локально")}</span></div><div class="actions account-actions"><a class="button ghost" href="${escapeAttr(garminStoreAppLink())}" target="_blank" rel="noopener noreferrer">${tx("Open in Garmin Connect IQ", "Відкрити в Garmin Connect IQ")}</a>${hasGarminBinding ? `<button class="button danger" data-action="unpair-garmin">${tx("Unpair Garmin", "Від’єднати Garmin")}</button>` : ""}<button class="button ghost" data-action="logout-account">${tx("Switch", "Змінити")}</button></div></section>`;
 }
 
 function localLeaderboardRow() {
@@ -3648,11 +4383,48 @@ function leaderboardRow(row, index) {
 }
 
 function exercisesScreen() {
-  const mappingRows = state.exercises;
-  return `${accountPanel()}<div class="field-row exercise-add-row"><label for="new-exercise-name" class="sr-only">${tx("Exercise name", "Назва вправи")}</label><input id="new-exercise-name" maxlength="120" aria-label="${tx("Exercise name", "Назва вправи")}" placeholder="${tx("Exercise name", "Назва вправи")}"><button class="button ghost" data-action="save-exercise">${t("addExercise")}</button></div>
-    <section class="material-card backup-card"><h2>${t("backup")}</h2><div class="actions"><button class="button ghost" data-action="export-json">${t("exportJson")}</button><button class="button ghost" data-action="import-json">${t("importJson")}</button><button class="button ghost full" data-action="export-diagnostics">${t("diagnostics")}</button></div></section>
-    ${mappingRows.length ? exerciseMappingsPanel(mappingRows) : ""}
-    <section class="exercise-list">${state.exercises.length ? state.exercises.map(exerciseRow).join("") : `<div class="empty">${tx("No exercises yet.", "Вправ ще немає.")}</div>`}</section>`;
+  const mappingRows = filteredLibraryExercises();
+  const regionFilters = [["all", tx("All", "Усі")], ["upper", tx("Upper body", "Верх тіла")], ["lower", tx("Lower body", "Низ тіла")], ["core", tx("Core", "Кор")]];
+  const sortFilters = [["name", tx("By name", "За назвою")], ["most", tx("Most frequent", "Найчастіші")], ["least", tx("Least frequent", "Найрідші")]];
+  return `<section class="screen-copy"><h2>${t("exercises")}</h2><p>${tx("Manage your library, history, muscle groups, and backups.", "Керуй каталогом, історією, групами м’язів і резервними копіями.")}</p></section>
+    <button class="button full exercise-add-button" data-action="open-exercise-add">${svg("add", "small-icon")}${t("addExercise")}</button>
+    ${accountPanel()}
+    <section class="panel backup-card"><span class="eyebrow">${tx("Your data", "Твої дані")}</span><h2>${t("backup")}</h2><p class="muted">${tx("Backups merge into the current profile and skip duplicate sessions.", "Резервні копії об’єднуються з поточним профілем і пропускають дублікати тренувань.")}</p><div class="actions"><button class="button ghost" data-action="export-json">${t("exportJson")}</button><button class="button ghost" data-action="import-json">${t("importJson")}</button><button class="button ghost full" data-action="export-diagnostics">${t("diagnostics")}</button></div></section>
+    <section class="panel exercise-library-heading"><span class="eyebrow">${tx("Your training", "Твої тренування")}</span><h2>${tx("Exercise library", "Каталог вправ")}</h2><p class="muted">${tx("Add a custom movement or open a saved exercise to view its history.", "Додай власну вправу або відкрий збережену, щоб переглянути історію.")}</p></section>
+    <section class="panel highlighted exercise-search-panel"><label for="exercise-search">${tx("Search exercises", "Пошук вправ")}</label><div class="field-row"><input id="exercise-search" type="search" maxlength="120" value="${escapeAttr(exerciseSearchQuery)}" placeholder="${tx("Name in English or Ukrainian", "Назва українською або англійською")}">${exerciseSearchQuery ? `<button class="icon-button" data-action="clear-exercise-search" aria-label="${tx("Clear search", "Очистити пошук")}">${svg("close")}</button>` : ""}</div>
+      <div class="filter-scroll">${regionFilters.map(([id, label]) => `<button class="chip buttonlike ${exerciseBodyFilter === id ? "selected" : ""}" data-action="exercise-body-filter" data-filter="${id}" aria-pressed="${exerciseBodyFilter === id}">${label}</button>`).join("")}</div>
+      <div class="filter-scroll">${sortFilters.map(([id, label]) => `<button class="chip buttonlike ${exerciseSortMode === id ? "selected" : ""}" data-action="exercise-sort" data-sort="${id}" aria-pressed="${exerciseSortMode === id}">${label}</button>`).join("")}</div>
+      <div class="filter-scroll"><button class="chip buttonlike ${exerciseMuscleFilter === "all" ? "selected" : ""}" data-action="exercise-muscle-filter" data-filter="all">${tx("All muscles", "Усі м’язи")}</button>${muscles.map(([id]) => `<button class="chip buttonlike ${exerciseMuscleFilter === id ? "selected" : ""}" data-action="exercise-muscle-filter" data-filter="${id}">${escapeHtml(muscleLabel(id))}</button>`).join("")}</div><p class="muted">${mappingRows.length} ${tx("exercises", "вправ")}</p></section>
+    <section class="exercise-list">${mappingRows.length ? mappingRows.map(exerciseRow).join("") : `<div class="empty">${tx("No matching exercises.", "Вправ за цими фільтрами не знайдено.")}</div>`}</section>`;
+}
+
+const exerciseBodyMuscles = {
+  upper: new Set(["chest", "shoulders", "biceps", "triceps", "forearms", "lats", "upperBack"]),
+  lower: new Set(["lowerBack", "glutes", "quads", "hamstrings", "adductors", "calves"]),
+  core: new Set(["abs", "obliques"])
+};
+
+function filteredLibraryExercises() {
+  const bodyMuscles = exerciseBodyMuscles[exerciseBodyFilter];
+  const matching = state.exercises.filter(exercise => {
+    const ids = new Set(mappingFor(exercise).map(item => typeof item === "string" ? item : item.muscleId));
+    const matchesBody = !bodyMuscles || [...ids].some(id => bodyMuscles.has(id));
+    const matchesMuscle = exerciseMuscleFilter === "all" || ids.has(exerciseMuscleFilter);
+    return exerciseMatchesSearch(exercise, exerciseSearchQuery) && matchesBody && matchesMuscle;
+  });
+  return matching.sort((left, right) => {
+    const nameOrder = exerciseDisplayName(left).localeCompare(exerciseDisplayName(right), state.language);
+    if (exerciseSortMode === "name") return nameOrder || Number(left.id) - Number(right.id);
+    const difference = exerciseWorkoutCount(left) - exerciseWorkoutCount(right);
+    if (difference) return exerciseSortMode === "most" ? -difference : difference;
+    return nameOrder || Number(left.id) - Number(right.id);
+  });
+}
+
+function exerciseWorkoutCount(exercise) {
+  return state.sessions.reduce((count, session) => count + Number(
+    exerciseReferencesForSession(session).some(reference => exercisesMatch(reference, exercise))
+  ), 0);
 }
 
 function exerciseMappingsPanel(exercises) {
@@ -3663,7 +4435,10 @@ function exerciseMappingsPanel(exercises) {
 }
 
 function exerciseRow(exercise) {
-  return `<article class="exercise-row clickable" data-action="exercise-history" data-id="${exercise.id}"><span class="exercise-name">${escapeHtml(exerciseDisplayName(exercise))}</span><div class="actions"><button class="icon-button" data-action="rename-exercise" data-id="${exercise.id}" aria-label="${tx("Rename exercise", "Перейменувати вправу")}">${svg("edit")}</button><button class="icon-button" data-action="delete-exercise" data-id="${exercise.id}" aria-label="${tx("Delete exercise", "Видалити вправу")}">${svg("delete")}</button></div></article>`;
+  const builtIn = Boolean(builtInExerciseFor(exercise));
+  const workoutCount = exerciseWorkoutCount(exercise);
+  const mappingCount = mappingFor(exercise).length;
+  return `<article class="panel exercise-row"><div class="exercise-card-head"><h3 class="exercise-name">${escapeHtml(exerciseDisplayName(exercise))}</h3><div class="actions">${builtIn ? `<span class="pill">${tx("Built-in", "Вбудована")}</span>` : `<button class="icon-button" data-action="rename-exercise" data-id="${exercise.id}" aria-label="${tx("Rename exercise", "Перейменувати вправу")}">${svg("edit")}</button>`}<button class="icon-button" data-action="delete-exercise" data-id="${exercise.id}" aria-label="${tx("Delete exercise", "Видалити вправу")}">${svg("delete")}</button></div></div><div class="exercise-metrics"><span class="pill">${n(workoutCount, "workout", "workouts", "тренування", "тренування", "тренувань")}</span><span class="pill">${mappingCount ? tx(`${mappingCount} mapped`, `Зіставлено: ${mappingCount}`) : tx("Auto mapping", "Автомапінг")}</span></div><div class="exercise-card-actions"><button class="button ghost" data-action="exercise-history" data-id="${exercise.id}">${tx("History", "Історія")}</button><button class="button ghost" data-action="map-exercise" data-name="${escapeAttr(exercise.name)}">${tx("Muscle groups", "Групи м’язів")}</button></div></article>`;
 }
 
 function progressScreen() {
@@ -3757,14 +4532,25 @@ function exerciseTrendCharts(grouped, monthPeak) {
   const y = point => 152 - point.maxWeight / maxWeight * 140;
   const linePath = points.map((point, index) => `${index ? "L" : "M"}${x(index).toFixed(3)} ${y(point).toFixed(3)}`).join(" ");
   const fillPath = `M0 152 ${points.map((point, index) => `L${x(index).toFixed(3)} ${y(point).toFixed(3)}`).join(" ")} L100 152 Z`;
+  const dotMarkup = points.map((point, index) =>
+    `<circle class="chart-dot ${point.latest ? "latest" : ""}" cx="${x(index).toFixed(3)}" cy="${y(point).toFixed(3)}" r="${point.latest ? "2.8" : "2"}"/>`
+  ).join("");
+  const barGap = points.length > 1 ? 2 : 0;
+  const barWidth = (100 - barGap * (points.length - 1)) / points.length;
+  const barMarkup = points.map((point, index) => {
+    const ratio = clamp(point.volume / maxVolume, 0, 1);
+    const height = Math.max(1, ratio * 152);
+    const barX = index * (barWidth + barGap);
+    return `<rect class="chart-bar ${point.latest ? "latest" : ""}" x="${barX.toFixed(3)}" y="${(152 - height).toFixed(3)}" width="${barWidth.toFixed(3)}" height="${height.toFixed(3)}" rx="2"/>`;
+  }).join("");
   const labels = `<div class="chart-labels">${points.map(point => `<span>${escapeHtml(point.label)}</span>`).join("")}</div>`;
   const first = points[0];
   const latest = points.at(-1);
   const averageVolume = points.reduce((sum, point) => sum + point.volume, 0) / points.length;
 
   return `<section class="panel highlighted trend-panel"><h2>${tx("Visual Trends", "Візуальні тренди")}</h2><p class="muted">${tx(`${points.length} recent sessions`, `${points.length} останніх тренувань`)}</p>
-    <div class="chart-section"><h3>${tx("Maximum weight", "Максимальна вага")}</h3><p class="muted">${escapeHtml(progressDeltaLabel(latest.maxWeight, first.maxWeight, tx("kg vs first session", "кг відносно першої сесії")))}</p><div class="trend-chart-plot"><svg viewBox="0 0 100 180" preserveAspectRatio="none" aria-hidden="true"><path class="chart-guide" d="M0 0 H100 M0 76 H100 M0 152 H100"/><path class="chart-line-fill" d="${fillPath}"/><path class="chart-line" d="${linePath}"/></svg>${points.map((point, index) => `<i class="chart-dot ${point.latest ? "latest" : ""}" style="--chart-x:${x(index).toFixed(3)}%;--chart-y:${y(point).toFixed(3)}px"></i>`).join("")}</div>${labels}</div>
-    <div class="chart-section"><h3>${tx("Session volume", "Обсяг тренування")}</h3><p class="muted">${escapeHtml(progressDeltaLabel(latest.volume, first.volume, tx("volume vs first session", "обсягу відносно першої сесії")))}</p><div class="trend-chart-plot"><svg viewBox="0 0 100 180" preserveAspectRatio="none" aria-hidden="true"><path class="chart-guide" d="M0 0 H100 M0 76 H100 M0 152 H100"/></svg><div class="chart-bars" style="--chart-count:${points.length}">${points.map(point => `<i class="chart-bar ${point.latest ? "latest" : ""}" style="--chart-ratio:${clamp(point.volume / maxVolume, 0, 1).toFixed(4)}"></i>`).join("")}</div></div>${labels}</div>
+    <div class="chart-section"><h3>${tx("Maximum weight", "Максимальна вага")}</h3><p class="muted">${escapeHtml(progressDeltaLabel(latest.maxWeight, first.maxWeight, tx("kg vs first session", "кг відносно першої сесії")))}</p><div class="trend-chart-plot"><svg viewBox="0 0 100 180" preserveAspectRatio="none" aria-hidden="true"><path class="chart-guide" d="M0 0 H100 M0 76 H100 M0 152 H100"/><path class="chart-line-fill" d="${fillPath}"/><path class="chart-line" d="${linePath}"/>${dotMarkup}</svg></div>${labels}</div>
+    <div class="chart-section"><h3>${tx("Session volume", "Обсяг тренування")}</h3><p class="muted">${escapeHtml(progressDeltaLabel(latest.volume, first.volume, tx("volume vs first session", "обсягу відносно першої сесії")))}</p><div class="trend-chart-plot"><svg viewBox="0 0 100 180" preserveAspectRatio="none" aria-hidden="true"><path class="chart-guide" d="M0 0 H100 M0 76 H100 M0 152 H100"/>${barMarkup}</svg></div>${labels}</div>
     <div class="metric-grid"><div><span>${tx("Peak weight", "Пікова вага")}</span><strong>${formatSetWeight(monthPeak)} kg</strong></div><div><span>${tx("Average volume", "Середній обсяг")}</span><strong>${Math.round(averageVolume)}</strong></div></div></section>`;
 }
 
@@ -4159,7 +4945,7 @@ function missionSection(title, supporting, missions) {
 
 function missionCard(m) {
   const status = m.done ? tx("Completed", "Виконано") : tx("In progress", "У процесі");
-  return `<article class="mission-row ${m.done ? "highlighted" : ""}"><div class="row-head"><div><h3>${m.title}</h3><p>${m.summary}</p></div><span class="pill">${status}</span></div><div class="chip-row"><span class="chip">${m.cadenceLabel}</span><span class="chip">+${m.reward} XP</span><span class="muted">${m.progressLabel}</span></div><div class="progress"><span style="width:${Math.min(100, m.progress / Math.max(1, m.target) * 100)}%"></span></div></article>`;
+  return `<article class="mission-row ${m.done ? "highlighted" : ""}"><div class="row-head"><div><h3>${m.title}</h3><p>${m.summary}</p></div><span class="pill">${status}</span></div><div class="chip-row"><span class="chip">${m.cadenceLabel}</span><span class="chip">+${m.reward} XP</span><span class="muted">${m.progressLabel}</span></div><div class="progress"><span class="${percentageClass(m.progress / Math.max(1, m.target) * 100)}"></span></div></article>`;
 }
 
 function ranksScreen() {
@@ -4170,7 +4956,7 @@ function ranksScreen() {
     const current = rank.isCurrent;
     const status = current ? tx("Current", "Поточний") : unlocked ? tx("Unlocked", "Відкрито") : tx("Locked", "Закрито");
     const progressValue = unlocked ? 100 : rank.progressFraction * 100;
-    return `<section class="panel ${current ? "highlighted" : ""}"><div class="row-head"><div><h2>${rank.title}</h2><p>${status}</p></div><span class="pill">${status}</span></div><div class="metric-grid"><div><span>${tx("Required level", "Потрібний рівень")}</span><strong>${rank.level}</strong></div><div><span>${tx("Required total XP", "Потрібно XP")}</span><strong>${rank.xp}</strong></div></div><div class="progress"><span style="width:${progressValue}%"></span></div><div class="row-line"><span>${Math.min(xp, rank.xp)} / ${rank.xp} XP</span>${!unlocked ? `<strong>${rank.xpRemaining} XP ${tx("left", "лишилось")}</strong>` : ""}</div></section>`;
+    return `<section class="panel ${current ? "highlighted" : ""}"><div class="row-head"><div><h2>${rank.title}</h2><p>${status}</p></div><span class="pill">${status}</span></div><div class="metric-grid"><div><span>${tx("Required level", "Потрібний рівень")}</span><strong>${rank.level}</strong></div><div><span>${tx("Required total XP", "Потрібно XP")}</span><strong>${rank.xp}</strong></div></div><div class="progress"><span class="${percentageClass(progressValue)}"></span></div><div class="row-line"><span>${Math.min(xp, rank.xp)} / ${rank.xp} XP</span>${!unlocked ? `<strong>${rank.xpRemaining} XP ${tx("left", "лишилось")}</strong>` : ""}</div></section>`;
   }).join("") : `<section class="panel"><div class="empty"><h2>${tx("No ranks yet", "Рангів ще немає")}</h2><p>${tx("Earn XP to unlock rank titles.", "Заробляй XP, щоб відкривати ранги.")}</p></div></section>`;
   return `<section class="hero-panel"><h2>${t("ranks")}</h2><p>${tx("See every title, its level gate, and the XP needed to unlock it.", "Переглянь усі ранги, потрібний рівень і XP для відкриття.")}</p><div class="metric-grid"><div><span>${tx("TOTAL XP", "УСЬОГО XP")}</span><strong>${xp}</strong></div><div><span>${tx("Current level", "Поточний рівень")}</span><strong>${levelFromXp(xp)}</strong></div></div><p>${tx("Current title", "Поточний ранг")}: ${rankTitle(xp)}</p></section>
     ${cards}`;
@@ -4179,6 +4965,7 @@ function ranksScreen() {
 function modalMarkup() {
   if (modal.type === "template") return bottomSheet(`<h2>${t("templatePicker")}</h2>${state.sessions.length ? [...state.sessions].sort((a, b) => b.startedAt - a.startedAt).map(session => `<article class="workout-item"><h3>${fmtDate(session.startedAt)}</h3><p>${sessionSummary(session).exercises} ${tx("exercises", "вправ")} - ${sessionSummary(session).sets} ${tx("sets", "підходів")} - ${Math.round(sessionSummary(session).volume)} ${tx("volume", "обсяг")}</p><button class="button full" data-action="copy-template" data-id="${session.id}">${t("copyWorkout")}</button></article>`).join("") : `<p>${tx("No previous workouts yet.", "Попередніх тренувань ще немає.")}</p>`}`);
   if (modal.type === "import") return bottomSheet(`<h2>${tx("Import backup", "Імпорт бекапу")}</h2><textarea id="import-json" placeholder="${tx("Paste exported GymApp JSON here", "Встав сюди експортований JSON GymApp")}"></textarea><button class="button full" data-action="apply-import">${tx("Import", "Імпорт")}</button>`);
+  if (modal.type === "add-exercise") return bottomSheet(`<h2>${tx("Add exercise", "Додати вправу")}</h2><input id="new-exercise-name" maxlength="120" aria-label="${tx("Exercise name", "Назва вправи")}" placeholder="${tx("Exercise name", "Назва вправи")}"><button class="button full" data-action="save-exercise">${tx("Add exercise", "Додати вправу")}</button>`);
   if (modal.type === "backup-json") return bottomSheet(`<h2>${modal.diagnostics ? tx("Redacted diagnostics ready", "Знеособлена діагностика готова") : tx("Backup JSON ready", "JSON бекапу готовий")}</h2><textarea readonly>${escapeHtml(modal.json)}</textarea><div class="actions"><button class="button" data-action="copy-json">${tx("Copy JSON", "Копіювати JSON")}</button><button class="button ghost" data-action="download-json">${tx("Download", "Завантажити")}</button></div><button class="button ghost full" data-action="pdf-report">${t("sharePdf")}</button>`);
   if (modal.type === "rename") return bottomSheet(`<h2>${t("rename")}</h2><input id="rename-name" maxlength="120" value="${escapeAttr(exerciseDisplayName(modal.exercise))}"><button class="button full" data-action="apply-rename" data-id="${modal.exercise.id}">${tx("Save", "Зберегти")}</button>`);
   if (modal.type === "history") return bottomSheet(exerciseHistoryMarkup(modal.exercise));
@@ -4242,6 +5029,27 @@ function bindEvents() {
     saveState();
     render();
   });
+  const exerciseSearch = app.querySelector("#exercise-search");
+  if (exerciseSearch) exerciseSearch.addEventListener("input", () => {
+    exerciseSearchQuery = exerciseSearch.value.slice(0, 120);
+    render();
+    requestAnimationFrame(() => {
+      const next = app.querySelector("#exercise-search");
+      if (next) {
+        next.focus({ preventScroll: true });
+        next.setSelectionRange(next.value.length, next.value.length);
+      }
+    });
+  });
+  const scrollContainer = visibleScrollContainer();
+  if (scrollContainer) {
+    scrollContainer.addEventListener("scroll", syncTopbarVisibility, { passive: true });
+    syncTopbarVisibility();
+  }
+}
+
+function syncTopbarVisibility() {
+  app.classList.toggle("topbar-collapsed", (visibleScrollContainer()?.scrollTop || 0) > 24);
 }
 
 function handleAction(action, el) {
@@ -4253,6 +5061,7 @@ function handleAction(action, el) {
   if (action === "export-cloud-recovery") return exportCloudRecovery();
   if (action === "reset-cloud-recovery") return resetCloudRecovery();
   if (action === "logout-account") return logoutAccount();
+  if (action === "unpair-garmin") return unpairGarmin();
   if (action === "refresh-leaderboard") return refreshLeaderboard(true);
   if (action === "back") return back();
   if (action === "language-menu") { languageMenuOpen = !languageMenuOpen; return render(); }
@@ -4275,6 +5084,11 @@ function handleAction(action, el) {
   if (action === "month-prev") { monthOffsets[activeMonthScope()]--; return render(); }
   if (action === "month-next") { monthOffsets[activeMonthScope()]++; return render(); }
   if (action === "month-current") { monthOffsets[activeMonthScope()] = 0; return render(); }
+  if (action === "clear-exercise-search") { exerciseSearchQuery = ""; return render(); }
+  if (action === "exercise-body-filter") { exerciseBodyFilter = ["all", "upper", "lower", "core"].includes(el.dataset.filter) ? el.dataset.filter : "all"; return render(); }
+  if (action === "exercise-muscle-filter") { exerciseMuscleFilter = el.dataset.filter === "all" || muscles.some(([id]) => id === el.dataset.filter) ? el.dataset.filter : "all"; return render(); }
+  if (action === "exercise-sort") { exerciseSortMode = ["name", "most", "least"].includes(el.dataset.sort) ? el.dataset.sort : "name"; return render(); }
+  if (action === "open-exercise-add") { modal = { type: "add-exercise" }; return render(); }
   if (action === "overview-mode") {
     overviewMode = el.dataset.mode === "list" ? "list" : "overview";
     render();
@@ -4897,6 +5711,7 @@ function saveExercise() {
   if (!isSupportedExerciseName(name)) return showToast(tx("Exercise name is too long.", "Назва вправи надто довга."));
   if (!ensureExercise(name)) return showToast(tx("The exercise catalog has reached its limit.", "Каталог вправ досяг ліміту."));
   saveState();
+  modal = null;
   render();
 }
 
@@ -5042,6 +5857,7 @@ function exportPayload(diagnostics) {
       email: activeAccount?.email || null,
       remote: activeAccount?.remote || null
     },
+    catalogSeedVersion: state.catalogSeedVersion,
     exercises: state.exercises,
     sessions: state.sessions.map(session => ({
       id: session.id,
@@ -5078,6 +5894,7 @@ function applyImport() {
       return;
     }
     state = imported.state;
+    ensureBuiltInExerciseCatalog(state);
     saveState();
     modal = null;
     goRoot("workouts");
@@ -5131,9 +5948,7 @@ function printReport() {
   const data = JSON.parse(modal.json);
   const document = win.document;
   document.title = "GymApp diagnostics";
-  const style = document.createElement("style");
-  style.textContent = "body{font-family:system-ui;padding:32px;color:#14202c}h1{margin-bottom:4px}pre{white-space:pre-wrap;background:#f4f1ec;padding:16px}";
-  document.head.replaceChildren(style);
+  document.head.replaceChildren();
   const add = (tag, text) => {
     const element = document.createElement(tag);
     element.textContent = text;
@@ -5194,6 +6009,18 @@ function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
+function percentageClass(value) {
+  const numeric = Number(value);
+  const bounded = Number.isFinite(numeric) ? clamp(numeric, 0, 100) : 0;
+  return `percentage-${Math.round(bounded / 5) * 5}`;
+}
+
+function heatLevelClass(value) {
+  const numeric = Number(value);
+  const bounded = Number.isFinite(numeric) ? clamp(numeric, 0, 1) : 0;
+  return `heat-level-${Math.round(bounded * 10)}`;
+}
+
 function roundToNearestHalf(value) {
   return Math.round(value * 2) / 2;
 }
@@ -5229,7 +6056,7 @@ function formatTimer(seconds) {
 }
 
 function barRow(label, value, max, detail) {
-  return `<div class="bar-row"><span>${escapeHtml(label)}</span><div class="bar-track"><div class="bar-fill" style="width:${Math.min(100, value / max * 100)}%"></div></div><span class="muted">${escapeHtml(detail)}</span></div>`;
+  return `<div class="bar-row"><span>${escapeHtml(label)}</span><div class="bar-track"><div class="bar-fill ${percentageClass(value / max * 100)}"></div></div><span class="muted">${escapeHtml(detail)}</span></div>`;
 }
 
 function titleCase(value) {
@@ -5256,7 +6083,9 @@ function showToast(message) {
 }
 
 if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js").catch(() => {}));
+  window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js", {
+    updateViaCache: "none"
+  }).catch(() => {}));
 }
 
 window.addEventListener("popstate", event => {

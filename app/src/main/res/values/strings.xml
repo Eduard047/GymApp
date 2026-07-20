@@ -391,6 +391,7 @@
     <string name="language_button">Language</string>
     <string name="language_english">EN</string>
     <string name="language_ukrainian">UKR</string>
+    <string name="language_russian">RU</string>
 
     <string name="session_item_title">Workout %1$s</string>
     <string name="details_note">Note: %1$s</string>
