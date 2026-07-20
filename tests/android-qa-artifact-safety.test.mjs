@@ -4,7 +4,6 @@ import test from "node:test";
 
 const [
   phoneBuild,
-  wearBuild,
   mainManifest,
   debugManifest,
   mainActivity,
@@ -14,7 +13,6 @@ const [
   gradleProperties,
 ] = await Promise.all([
   readFile("app/build.gradle.kts", "utf8"),
-  readFile("wear/build.gradle.kts", "utf8"),
   readFile("app/src/main/AndroidManifest.xml", "utf8"),
   readFile("app/src/debug/AndroidManifest.xml", "utf8"),
   readFile("app/src/main/java/com/example/gymapp/MainActivity.kt", "utf8"),
@@ -31,21 +29,16 @@ function qaBlock(build) {
 }
 
 test("public QA variants inherit release behavior and stay outside production", () => {
-  for (const [label, build] of [
-    ["phone", phoneBuild],
-    ["watch", wearBuild],
-  ]) {
-    const qa = qaBlock(build);
-    assert.match(qa, /initWith\(getByName\("release"\)\)/, `${label} QA must inherit release`);
-    assert.match(qa, /applicationIdSuffix\s*=\s*"\.dev"/, `${label} QA must not use production ID`);
-    assert.match(qa, /versionNameSuffix\s*=\s*"-qa"/, `${label} QA must be visibly labelled`);
-    assert.match(qa, /isDebuggable\s*=\s*false/, `${label} QA must be non-debuggable`);
-    assert.match(
-      qa,
-      /signingConfig\s*=\s*signingConfigs\.getByName\("debug"\)/,
-      `${label} QA must use only the non-production test certificate`
-    );
-  }
+  const qa = qaBlock(phoneBuild);
+  assert.match(qa, /initWith\(getByName\("release"\)\)/, "phone QA must inherit release");
+  assert.match(qa, /applicationIdSuffix\s*=\s*"\.dev"/, "phone QA must not use production ID");
+  assert.match(qa, /versionNameSuffix\s*=\s*"-qa"/, "phone QA must be visibly labelled");
+  assert.match(qa, /isDebuggable\s*=\s*false/, "phone QA must be non-debuggable");
+  assert.match(
+    qa,
+    /signingConfig\s*=\s*signingConfigs\.getByName\("debug"\)/,
+    "phone QA must use only the non-production test certificate"
+  );
 });
 
 test("the QA source set does not inherit the phone debug receiver", () => {
@@ -63,11 +56,11 @@ test("QA authentication callbacks cannot be claimed by the production app", () =
   assert.match(cloudAuth, /BuildConfig\.AUTH_BRIDGE_VARIANT_QUERY/);
 });
 
-test("Wear production releases use the same optional production signing contract as phone", () => {
-  assert.match(wearBuild, /rootProject\.file\("keystore\.properties"\)/);
-  assert.match(wearBuild, /create\("release"\)[\s\S]*?storeFile/);
+test("Phone production releases use the optional production signing contract", () => {
+  assert.match(phoneBuild, /rootProject\.file\("keystore\.properties"\)/);
+  assert.match(phoneBuild, /create\("release"\)[\s\S]*?storeFile/);
   assert.match(
-    wearBuild,
+    phoneBuild,
     /release\s*\{[\s\S]*?if \(keystorePropertiesFile\.exists\(\)\)[\s\S]*?signingConfig/
   );
 });

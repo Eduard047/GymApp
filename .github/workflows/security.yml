@@ -208,7 +208,6 @@ jobs:
             --max-target-bytes 2000000 \
             --exclude .gradle \
             --exclude app/build \
-            --exclude wear/build \
             --exclude garmin/build \
             --exclude ios/DerivedData \
             --exclude .github/security/semgrep-tests \
@@ -429,7 +428,7 @@ jobs:
             supabase/functions/_shared/garmin-plan-contract.ts
 
   android-tests:
-    name: Regression / Android and Wear
+    name: Regression / Android
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -456,24 +455,18 @@ jobs:
           test -x "$sdkmanager"
           "$sdkmanager" "platforms;android-36.1" "build-tools;36.1.0"
 
-      - name: Test, assemble, and lint Android and Wear
+      - name: Test, assemble, and lint Android
         shell: bash
         run: |
           bash ./gradlew --no-daemon \
             -PappVersionCode=2000000001 \
-            -PwearVersionCode=2000000001 \
             -PappVersionName=ci \
-            -PwearVersionName=ci \
             :app:testDebugUnitTest \
-            :wear:testDebugUnitTest \
             :app:assembleDebug \
-            :wear:assembleDebug \
             :app:assembleQa \
-            :wear:assembleQa \
             :app:lintDebug \
-            :wear:lintDebug \
             :app:lintQa \
-            :wear:lintQa
+            :app:compileDebugAndroidTestKotlin
 
       - name: Verify downloadable QA artifact boundaries
         shell: bash
@@ -481,32 +474,23 @@ jobs:
           set -euo pipefail
           build_tools="$ANDROID_HOME/build-tools/36.1.0"
           phone_apk="app/build/outputs/apk/qa/app-qa.apk"
-          watch_apk="wear/build/outputs/apk/qa/wear-qa.apk"
-          for apk in "$phone_apk" "$watch_apk"; do
-            badging="$("$build_tools/aapt2" dump badging "$apk")"
-            manifest="$("$build_tools/aapt2" dump xmltree "$apk" --file AndroidManifest.xml)"
-            signature="$("$build_tools/apksigner" verify --verbose --print-certs "$apk")"
-            grep -q "package: name='com.setforge.gymapp.dev'" <<<"$badging"
-            grep -Eq "versionName='[^']+-qa'" <<<"$badging"
-            ! grep -q '^application-debuggable$' <<<"$badging"
-            ! grep -q '^application-testOnly$' <<<"$badging"
-            ! grep -Eq 'GarminDebugReceiver|PreviewActivity|androidx\.activity\.ComponentActivity' <<<"$manifest"
-            grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' <<<"$signature"
-          done
+          badging="$("$build_tools/aapt2" dump badging "$phone_apk")"
+          manifest="$("$build_tools/aapt2" dump xmltree "$phone_apk" --file AndroidManifest.xml)"
+          signature="$("$build_tools/apksigner" verify --verbose --print-certs "$phone_apk")"
+          grep -q "package: name='com.setforge.gymapp.dev'" <<<"$badging"
+          grep -Eq "versionName='[^']+-qa'" <<<"$badging"
+          ! grep -q '^application-debuggable$' <<<"$badging"
+          ! grep -q '^application-testOnly$' <<<"$badging"
+          ! grep -Eq 'GarminDebugReceiver|PreviewActivity|androidx\.activity\.ComponentActivity' <<<"$manifest"
+          grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' <<<"$signature"
           phone_version_code="$("$build_tools/aapt2" dump badging "$phone_apk" \
             | sed -n "s/^package:.* versionCode='\([^']*\)'.*/\1/p")"
-          watch_version_code="$("$build_tools/aapt2" dump badging "$watch_apk" \
-            | sed -n "s/^package:.* versionCode='\([^']*\)'.*/\1/p")"
           [[ "$phone_version_code" == "2000000001" ]]
-          [[ "$phone_version_code" == "$watch_version_code" ]]
           phone_manifest="$("$build_tools/aapt2" dump xmltree "$phone_apk" --file AndroidManifest.xml)"
           grep -q ':scheme.*="com.setforge.gymapp.dev"' <<<"$phone_manifest"
           phone_cert="$("$build_tools/apksigner" verify --print-certs "$phone_apk" \
             | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')"
-          watch_cert="$("$build_tools/apksigner" verify --print-certs "$watch_apk" \
-            | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')"
           [[ "$phone_cert" =~ ^[0-9a-f]{64}$ ]]
-          [[ "$phone_cert" == "$watch_cert" ]]
 
   ios-tests:
     name: Regression / iOS

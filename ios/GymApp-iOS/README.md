@@ -64,15 +64,17 @@ xcodebuild \
    tap. Do not change the flow back to implicit access/refresh tokens.
 4. Use `https://gymapptracker.com/support.html` and
    `https://gymapptracker.com/privacy-policy.html` in App Store Connect. Both
-   pages are live over enforced HTTPS and were exact-content verified on
-   2026-07-11.
+   English/Ukrainian/Russian pages are live over enforced HTTPS and were
+   exact-content hash-verified on 2026-07-20.
 5. Complete Apple Team/signing, register the configured bundle identifier, and
    add the review-contact phone listed in
    [APP_STORE_CHECKLIST.md](AppStore/APP_STORE_CHECKLIST.md).
 6. Recheck cloud login, confirmation, password recovery and deletion against production immediately before submission. The automated backend deletion/RLS contract passed on 2026-07-11; physical-device PKCE testing remains a release task.
 
-The configured support and privacy URLs are live and verified. The hosted policy
-now covers iOS, Android, browser/PWA, Wear OS, and optional Garmin features.
+The configured support and privacy URLs are live and match the canonical source
+copies. The policy covers iOS, Android, browser/PWA, and optional Garmin features
+in English, Ukrainian, and Russian; re-verify the hosted copy after every policy
+update.
 
 ### Verified external release status (2026-07-11)
 

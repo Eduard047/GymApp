@@ -51,10 +51,12 @@ const requiredExclusions = [
   /<exclude\s+domain="sharedpref"\s+path="gym_cloud_auth\.xml\.bak"\s*\/>/,
   /<exclude\s+domain="sharedpref"\s+path="gym_local_database_bindings\.xml"\s*\/>/,
   /<exclude\s+domain="sharedpref"\s+path="gym_local_database_bindings\.xml\.bak"\s*\/>/,
-  /<exclude\s+domain="sharedpref"\s+path="garmin_sync\.xml"\s*\/>/,
-  /<exclude\s+domain="sharedpref"\s+path="garmin_sync\.xml\.bak"\s*\/>/,
+  // Retired phone/watch sync files remain privacy tombstones for upgrades; they
+  // do not represent active Wear OS support and must never enter backup/transfer.
   /<exclude\s+domain="sharedpref"\s+path="phone_wear_sync\.xml"\s*\/>/,
   /<exclude\s+domain="sharedpref"\s+path="phone_wear_sync\.xml\.bak"\s*\/>/,
+  /<exclude\s+domain="sharedpref"\s+path="garmin_sync\.xml"\s*\/>/,
+  /<exclude\s+domain="sharedpref"\s+path="garmin_sync\.xml\.bak"\s*\/>/,
   /<exclude\s+domain="sharedpref"\s+path="gym_training_profile\.xml"\s*\/>/,
   /<exclude\s+domain="sharedpref"\s+path="gym_training_profile\.xml\.bak"\s*\/>/,
   /<exclude\s+domain="sharedpref"\s+path="gym_training_profiles\.xml"\s*\/>/,

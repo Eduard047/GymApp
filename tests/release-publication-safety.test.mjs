@@ -42,7 +42,7 @@ test("the disabled script contains no local or remote git mutation", () => {
 test("the disabled script neither builds nor handles distributable artifacts", () => {
   assert.doesNotMatch(script, /build-update-apk|gradlew(?:\.bat)?/i);
   assert.doesNotMatch(script, /(?:Copy|Move|Remove)-Item\b/i);
-  assert.doesNotMatch(script, /(?:gymapp|app|wear)[^\r\n]*\.(?:apk|aab)\b/i);
+  assert.doesNotMatch(script, /(?:gymapp|app)[^\r\n]*\.(?:apk|aab)\b/i);
 });
 
 test("Git ignores local context, secrets, diagnostics, and distributable archives", () => {

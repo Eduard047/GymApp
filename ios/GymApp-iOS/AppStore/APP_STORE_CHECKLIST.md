@@ -37,9 +37,9 @@ Current upload minimum: builds uploaded after 2026-04-28 must use **Xcode 26 or 
 
 ## 3. Privacy and account deletion
 
-- [x] The reviewed combined policy from [privacy-policy.html](privacy-policy.html) is published at `https://gymapptracker.com/privacy-policy.html`; HTTPS 200 and exact SHA-256 match verified on 2026-07-11. It covers iOS, Android, browser/PWA, Wear OS, and optional Garmin features.
-- [x] [support.html](support.html) is hosted at `https://gymapptracker.com/support.html`; HTTPS 200, owner, support email, and exact SHA-256 verified on 2026-07-11.
-- [x] The support and privacy URLs in `GymAppConfiguration` are both live and match the reviewed hosted pages. Enter the same URLs in App Store Connect.
+- [x] The updated English/Ukrainian/Russian combined policy from [privacy-policy.html](privacy-policy.html) is published at `https://gymapptracker.com/privacy-policy.html`; HTTPS 200 and exact SHA-256 `a5c3dc078f30084cabdcbbbc3b043a6ceee5fb8be0339a1d5258cd10f75f9c04` were verified on 2026-07-20. It covers iOS, Android, browser/PWA, and optional Garmin features.
+- [x] The updated English/Ukrainian/Russian [support.html](support.html) is published at `https://gymapptracker.com/support.html`; HTTPS 200 and exact SHA-256 `a22cd0d42fec7fc29bfa8e573ebe115d193fc352c473389bd07130253259ea14` were verified on 2026-07-20.
+- [x] The support and privacy URLs in `GymAppConfiguration` resolve to the reviewed hosted content from `gh-pages` commit `f3edd58cbe1a255f1335c868ece6dafa7244b33c`. Enter the same URLs in App Store Connect.
 - [x] Owner, support email, support URL, and privacy URL placeholders are resolved in both local HTML deliverables.
 - [ ] In App Store Connect, answer App Privacy exactly as documented in `APP_PRIVACY.md`; reconcile it with the final binary, server, Supabase project, and all processors: [Manage app privacy](https://developer.apple.com/help/app-store-connect/manage-app-information/manage-app-privacy/).
 - [x] Account deletion is exposed at **Exercises → Account → Delete Account** and uses irreversible confirmation: [Apple account deletion](https://developer.apple.com/support/offering-account-deletion-in-your-app).

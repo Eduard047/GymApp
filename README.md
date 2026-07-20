@@ -1,7 +1,7 @@
 ﻿# Gym Workout Tracker
 
 Cross-platform Gym Workout Tracker with native Android and iOS applications,
-plus Garmin, Wear OS, and browser companions.
+plus Garmin and browser companions.
 
 ## Public URLs
 
@@ -12,7 +12,7 @@ plus Garmin, Wear OS, and browser companions.
 GitHub Releases remain the distribution source for downloadable Android, iOS
 Simulator, and Garmin test artifacts.
 
-The Android, Wear OS, native iOS, and browser interfaces support English,
+The Android, native iOS, Garmin, and browser interfaces support English,
 Ukrainian, and Russian.
 
 Current source release: **GymApp 2.1.0** (PWA cache generation **v50**).
@@ -59,15 +59,6 @@ Important: diagnostics and PDF reports are for support only and cannot restore d
 separate `Export JSON` backup is the source of truth for import/restore; review it before sharing
 because it contains private workout data.
 
-### Wear OS app
-
-- Record workout sets from the watch.
-- Numeric keypad editor for weight and reps, avoiding the system keyboard input bug.
-- Haptic feedback on save/delete/quick controls.
-- Quick presets for current-set weight and reps.
-- Large current-set mode.
-- Explicit sync status: idle, waiting phone, sent, failed.
-
 ### Garmin Connect IQ app
 
 - Native Connect IQ app for compatible Garmin watches and wearables running Connect IQ 3.2 or newer.
@@ -110,33 +101,32 @@ For the native iOS source, open:
 open ios/GymApp-iOS/GymApp.xcodeproj
 ```
 
-## Build QA APKs
+## Build the QA APK
 
-Use the helper to build non-debuggable, test-signed Phone and Wear QA APKs with
-one timestamp-based version code:
+Use the helper to build a non-debuggable, test-signed Phone QA APK with a
+timestamp-based version code:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\build-update-apk.ps1
 ```
 
-The script builds `:app:assembleQa` and `:wear:assembleQa`, then writes ignored
-local artifacts `gymapp-phone-qa.apk`, `gymapp-watch-qa.apk`, and SHA-256 build
-metadata under `tmp/`. QA uses package ID `com.setforge.gymapp.dev`, a separate
-authentication callback scheme, release source behavior, and a local test key.
-It must never be uploaded to Play Console.
+The script builds `:app:assembleQa`, then writes the ignored local artifact
+`gymapp-phone-qa.apk` and SHA-256 build metadata under `tmp/`. QA uses package
+ID `com.setforge.gymapp.dev`, a separate authentication callback scheme,
+release source behavior, and a local test key. It must never be uploaded to Play
+Console.
 
 Direct Gradle equivalent:
 
 ```text
 $env:JAVA_HOME='C:\Program Files\Android\Android Studio\jbr'
-.\gradlew.bat :app:assembleQa :wear:assembleQa -PappVersionCode=<version> -PwearVersionCode=<same-version> -PappVersionName=<name> -PwearVersionName=<same-name>
+.\gradlew.bat :app:assembleQa -PappVersionCode=<version> -PappVersionName=<name>
 ```
 
-## Install the QA builds
+## Install the QA build
 
 ```powershell
 adb install -r gymapp-phone-qa.apk
-adb -s <watch-serial> install -r gymapp-watch-qa.apk
 ```
 
 Data is preserved only if:
@@ -146,16 +136,12 @@ Data is preserved only if:
 - The new APK has a higher `versionCode` than the installed one.
 
 The new Phone QA APK can update the immediately preceding public Phone test
-build because both use the same signer. The previously published Wear debug APK
-used a different signer. Before installing this Wear QA build, sync/export all
-watch data, then uninstall the old Wear app; uninstalling removes local and
-queued watch data.
+build because both use the same signer.
 
 Module-output install commands:
 
 ```powershell
 adb install -r .\app\build\outputs\apk\qa\app-qa.apk
-adb -s <watch-serial> install -r .\wear\build\outputs\apk\qa\wear-qa.apk
 ```
 
 For wireless debugging:

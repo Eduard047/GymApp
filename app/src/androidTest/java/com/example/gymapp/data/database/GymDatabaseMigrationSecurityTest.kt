@@ -15,6 +15,59 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class GymDatabaseMigrationSecurityTest {
     @Test
+    fun migrationFourToEightPreservesWorkoutDataAndRetiresWearState() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "migration-legacy-chain-${UUID.randomUUID()}"
+        context.deleteDatabase(databaseName)
+        val initial = openHelper(databaseName, 4, onCreate = { db ->
+            db.execSQL(
+                "CREATE TABLE workout_sessions (id INTEGER PRIMARY KEY, date INTEGER NOT NULL, note TEXT)"
+            )
+            db.execSQL(
+                "INSERT INTO workout_sessions(id, date, note) VALUES (1, 1750000000000, 'Keep legacy workout')"
+            )
+        })
+        initial.writableDatabase
+        initial.close()
+
+        val upgraded = openHelper(
+            databaseName,
+            8,
+            onCreate = { error("Existing database should be upgraded") },
+            onUpgrade = { db, oldVersion, newVersion ->
+                assertEquals(4, oldVersion)
+                assertEquals(8, newVersion)
+                GymDatabase.MIGRATION_4_5.migrate(db)
+                GymDatabase.MIGRATION_5_6.migrate(db)
+                GymDatabase.MIGRATION_6_7.migrate(db)
+                GymDatabase.MIGRATION_7_8.migrate(db)
+            }
+        )
+        try {
+            val db = upgraded.writableDatabase
+            db.query("SELECT note FROM workout_sessions WHERE id = 1").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("Keep legacy workout", cursor.getString(0))
+            }
+            db.query("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'wear_mutation_receipts'")
+                .use { cursor ->
+                    assertTrue(cursor.moveToFirst())
+                    assertEquals(0, cursor.getInt(0))
+                }
+            db.query("PRAGMA table_info(garmin_workout_receipts)").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+            }
+            db.query("SELECT COUNT(*) FROM app_metadata").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(0, cursor.getInt(0))
+            }
+        } finally {
+            upgraded.close()
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
     fun migrationSixToSevenAddsEmptyCatalogSeedRegistry() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val databaseName = "migration-catalog-seed-${UUID.randomUUID()}"
@@ -62,43 +115,16 @@ class GymDatabaseMigrationSecurityTest {
     }
 
     @Test
-    fun migrationFiveToSixAddsDurableGarminReceiptsWithoutDroppingWearReceipts() {
+    fun migrationFiveToSixAddsDurableGarminReceiptsWithoutDroppingExistingData() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val databaseName = "migration-garmin-receipts-${UUID.randomUUID()}"
         context.deleteDatabase(databaseName)
         val initial = openHelper(databaseName, 5, onCreate = { db ->
-            db.execSQL(
-                """
-                CREATE TABLE wear_mutation_receipts (
-                    ownerId TEXT NOT NULL,
-                    accountGeneration INTEGER NOT NULL,
-                    operationId TEXT NOT NULL,
-                    sourceNodeId TEXT NOT NULL,
-                    mutationType TEXT NOT NULL,
-                    payloadDigest TEXT NOT NULL,
-                    createdAt INTEGER NOT NULL,
-                    PRIMARY KEY(ownerId, accountGeneration, operationId)
-                )
-                """.trimIndent()
-            )
+            db.execSQL("CREATE TABLE exercises (id INTEGER PRIMARY KEY, name TEXT NOT NULL)")
         })
         try {
             initial.writableDatabase.execSQL(
-                """
-                INSERT INTO wear_mutation_receipts(
-                    ownerId, accountGeneration, operationId, sourceNodeId,
-                    mutationType, payloadDigest, createdAt
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                """.trimIndent(),
-                arrayOf<Any>(
-                    "a".repeat(64),
-                    7L,
-                    "123e4567-e89b-42d3-a456-426614174000",
-                    "trusted-watch",
-                    "create_workout",
-                    "b".repeat(64),
-                    1_750_000_000_000L
-                )
+                "INSERT INTO exercises(id, name) VALUES (1, 'Keep me')"
             )
         } finally {
             initial.close()
@@ -116,9 +142,9 @@ class GymDatabaseMigrationSecurityTest {
         )
         try {
             val db = upgraded.writableDatabase
-            db.query("SELECT COUNT(*) FROM wear_mutation_receipts").use { cursor ->
+            db.query("SELECT name FROM exercises WHERE id = 1").use { cursor ->
                 assertTrue(cursor.moveToFirst())
-                assertEquals(1, cursor.getInt(0))
+                assertEquals("Keep me", cursor.getString(0))
             }
             db.query("PRAGMA table_info(garmin_workout_receipts)").use { cursor ->
                 val primaryKeys = linkedMapOf<String, Int>()
@@ -131,66 +157,6 @@ class GymDatabaseMigrationSecurityTest {
                 assertEquals(3, primaryKeys["requestId"])
                 assertEquals(0, primaryKeys["payloadDigest"])
                 assertEquals(0, primaryKeys["workoutSessionId"])
-            }
-        } finally {
-            upgraded.close()
-            context.deleteDatabase(databaseName)
-        }
-    }
-
-    @Test
-    fun migrationFourToFiveAddsDurableWearReceiptTableWithoutDroppingExistingData() {
-        val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val databaseName = "migration-wear-receipts-${UUID.randomUUID()}"
-        context.deleteDatabase(databaseName)
-        val initial = openHelper(databaseName, 4, onCreate = { db ->
-            db.execSQL(
-                "CREATE TABLE workout_sessions (id INTEGER PRIMARY KEY, date INTEGER NOT NULL, note TEXT)"
-            )
-        })
-        try {
-            initial.writableDatabase.execSQL(
-                "INSERT INTO workout_sessions(id, date, note) VALUES (1, 1750000000000, 'keep')"
-            )
-        } finally {
-            initial.close()
-        }
-
-        val upgraded = openHelper(
-            databaseName,
-            5,
-            onCreate = { error("Existing database should be upgraded") },
-            onUpgrade = { db, oldVersion, newVersion ->
-                assertEquals(4, oldVersion)
-                assertEquals(5, newVersion)
-                GymDatabase.MIGRATION_4_5.migrate(db)
-            }
-        )
-        try {
-            val db = upgraded.writableDatabase
-            db.query("SELECT note FROM workout_sessions WHERE id = 1").use { cursor ->
-                assertTrue(cursor.moveToFirst())
-                assertEquals("keep", cursor.getString(0))
-            }
-            db.query("PRAGMA table_info(wear_mutation_receipts)").use { cursor ->
-                val primaryKeys = linkedMapOf<String, Int>()
-                while (cursor.moveToNext()) {
-                    primaryKeys[cursor.getString(cursor.getColumnIndexOrThrow("name"))] =
-                        cursor.getInt(cursor.getColumnIndexOrThrow("pk"))
-                }
-                assertEquals(1, primaryKeys["ownerId"])
-                assertEquals(2, primaryKeys["accountGeneration"])
-                assertEquals(3, primaryKeys["operationId"])
-                assertEquals(0, primaryKeys["payloadDigest"])
-            }
-            db.query("PRAGMA index_list(wear_mutation_receipts)").use { cursor ->
-                val nameColumn = cursor.getColumnIndexOrThrow("name")
-                var foundCreatedAtIndex = false
-                while (cursor.moveToNext()) {
-                    foundCreatedAtIndex = foundCreatedAtIndex ||
-                        cursor.getString(nameColumn) == "index_wear_mutation_receipts_createdAt"
-                }
-                assertTrue(foundCreatedAtIndex)
             }
         } finally {
             upgraded.close()

@@ -1,6 +1,6 @@
 rules:
   - id: gymapp-kotlin-process-execution
-    message: Production Android or Wear code must not execute operating-system commands.
+    message: Production Android code must not execute operating-system commands.
     severity: ERROR
     languages: [kotlin]
     metadata:
@@ -9,7 +9,6 @@ rules:
     paths:
       include:
         - /app/src/main/**/*.kt
-        - /wear/src/main/**/*.kt
         - /.github/security/semgrep-tests/*.kt
     pattern-either:
       - pattern: Runtime.getRuntime().exec(...)
@@ -25,7 +24,6 @@ rules:
     paths:
       include:
         - /app/src/main/**/*.kt
-        - /wear/src/main/**/*.kt
         - /.github/security/semgrep-tests/*.kt
     pattern-either:
       - pattern: $WEBVIEW.addJavascriptInterface(...)
@@ -44,7 +42,6 @@ rules:
     paths:
       include:
         - /app/src/main/**/*.kt
-        - /wear/src/main/**/*.kt
         - /.github/security/semgrep-tests/*.kt
     pattern-regex: '(?i)Log\.(?:d|i|v|w|e)\([^\n]*(?:access.?token|refresh.?token|password|authorization)'
 
@@ -94,7 +91,6 @@ rules:
     paths:
       include:
         - /app/src/main/**/*.kt
-        - /wear/src/main/**/*.kt
         - /ios/GymApp-iOS/GymApp/**/*.swift
         - /pwa/**/*.js
         - /supabase/functions/**/*.ts

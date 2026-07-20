@@ -11,14 +11,12 @@ import com.example.gymapp.data.dao.AppMetadataDao
 import com.example.gymapp.data.dao.GarminWorkoutReceiptDao
 import com.example.gymapp.data.dao.MuscleMappingDao
 import com.example.gymapp.data.dao.SetDao
-import com.example.gymapp.data.dao.WearMutationDao
 import com.example.gymapp.data.dao.WorkoutDao
 import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.entity.AppMetadataEntity
 import com.example.gymapp.data.entity.ExerciseMuscleMappingEntity
 import com.example.gymapp.data.entity.GarminWorkoutReceiptEntity
 import com.example.gymapp.data.entity.SetEntryEntity
-import com.example.gymapp.data.entity.WearMutationReceiptEntity
 import com.example.gymapp.data.entity.WorkoutExerciseEntity
 import com.example.gymapp.data.entity.WorkoutSessionEntity
 import java.util.concurrent.ConcurrentHashMap
@@ -31,11 +29,10 @@ import java.util.concurrent.ConcurrentHashMap
         WorkoutExerciseEntity::class,
         SetEntryEntity::class,
         ExerciseMuscleMappingEntity::class,
-        WearMutationReceiptEntity::class,
         GarminWorkoutReceiptEntity::class
     ],
-    version = 7,
-    exportSchema = false
+    version = 8,
+    exportSchema = true
 )
 abstract class GymDatabase : RoomDatabase() {
     abstract fun exerciseDao(): ExerciseDao
@@ -43,7 +40,6 @@ abstract class GymDatabase : RoomDatabase() {
     abstract fun workoutDao(): WorkoutDao
     abstract fun setDao(): SetDao
     abstract fun muscleMappingDao(): MuscleMappingDao
-    abstract fun wearMutationDao(): WearMutationDao
     abstract fun garminWorkoutReceiptDao(): GarminWorkoutReceiptDao
 
     companion object {
@@ -279,6 +275,23 @@ abstract class GymDatabase : RoomDatabase() {
             }
         }
 
+        internal val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("DROP INDEX IF EXISTS index_wear_mutation_receipts_createdAt")
+                db.execSQL("DROP TABLE IF EXISTS wear_mutation_receipts")
+            }
+        }
+
+        internal val REGISTERED_MIGRATIONS: Array<Migration> = arrayOf(
+            MIGRATION_1_2,
+            MIGRATION_2_3,
+            MIGRATION_3_4,
+            MIGRATION_4_5,
+            MIGRATION_5_6,
+            MIGRATION_6_7,
+            MIGRATION_7_8
+        )
+
         fun getInstance(context: Context, databaseName: String = "gym_database"): GymDatabase {
             val safeName = databaseName
                 .replace(Regex("[^A-Za-z0-9_.-]"), "_")
@@ -289,14 +302,7 @@ abstract class GymDatabase : RoomDatabase() {
                     GymDatabase::class.java,
                     safeName
                 )
-                    .addMigrations(
-                        MIGRATION_1_2,
-                        MIGRATION_2_3,
-                        MIGRATION_3_4,
-                        MIGRATION_4_5,
-                        MIGRATION_5_6,
-                        MIGRATION_6_7
-                    )
+                    .addMigrations(*REGISTERED_MIGRATIONS)
                     .build()
             }
         }

@@ -47,30 +47,22 @@ $versionBase = [DateTimeOffset]::Parse("2026-01-01T00:00:00Z")
 $versionCode = 2000000000 + [int][Math]::Floor(([DateTimeOffset]::UtcNow - $versionBase).TotalMinutes)
 $versionName = (Get-Date).ToString("yyyy.MM.dd.HHmm")
 
-Write-Host "Building non-debuggable QA APKs with versionCode=$versionCode versionName=$versionName"
+Write-Host "Building non-debuggable phone QA APK with versionCode=$versionCode versionName=$versionName"
 
-& "$projectRoot\gradlew.bat" :app:assembleQa :wear:assembleQa "-PappVersionCode=$versionCode" "-PappVersionName=$versionName" "-PwearVersionCode=$versionCode" "-PwearVersionName=$versionName"
+& "$projectRoot\gradlew.bat" :app:assembleQa "-PappVersionCode=$versionCode" "-PappVersionName=$versionName"
 if ($LASTEXITCODE -ne 0) {
     throw "Gradle build failed."
 }
 
 $phoneApkSource = Join-Path $projectRoot "app\build\outputs\apk\qa\app-qa.apk"
 $phoneApkTarget = Join-Path $projectRoot "gymapp-phone-qa.apk"
-$wearApkSource = Join-Path $projectRoot "wear\build\outputs\apk\qa\wear-qa.apk"
-$wearApkTarget = Join-Path $projectRoot "gymapp-watch-qa.apk"
 
 if (-not (Test-Path $phoneApkSource)) {
     throw "Phone APK not found at: $phoneApkSource"
 }
 
-if (-not (Test-Path $wearApkSource)) {
-    throw "Watch APK not found at: $wearApkSource"
-}
-
 Copy-Item -Path $phoneApkSource -Destination $phoneApkTarget -Force
-Copy-Item -Path $wearApkSource -Destination $wearApkTarget -Force
 $phoneSha256 = (Get-FileHash -Algorithm SHA256 -Path $phoneApkTarget).Hash.ToLowerInvariant()
-$watchSha256 = (Get-FileHash -Algorithm SHA256 -Path $wearApkTarget).Hash.ToLowerInvariant()
 
 $metadataDir = Join-Path $projectRoot "tmp"
 New-Item -ItemType Directory -Path $metadataDir -Force | Out-Null
@@ -83,13 +75,9 @@ $metadataPath = Join-Path $metadataDir "last-qa-apk.json"
     signingPurpose = "local-test-only"
     phoneApk = $phoneApkTarget
     phoneSha256 = $phoneSha256
-    watchApk = $wearApkTarget
-    watchSha256 = $watchSha256
 } | ConvertTo-Json | Set-Content -Path $metadataPath -Encoding UTF8
 
 Write-Host "Copied phone APK to: $phoneApkTarget"
-Write-Host "Copied watch APK to: $wearApkTarget"
 Write-Host "Build metadata written to: $metadataPath"
 Write-Host "Phone install command: adb install -r gymapp-phone-qa.apk"
-Write-Host "Watch install command: adb install -r gymapp-watch-qa.apk"
-Write-Warning "QA APKs are signed with a local test key and are not Play Store artifacts. If an installed build uses another signer, sync/export its data and uninstall it before installing this QA build."
+Write-Warning "The QA APK is signed with a local test key and is not a Play Store artifact. If an installed build uses another signer, sync/export its data and uninstall it before installing this QA build."

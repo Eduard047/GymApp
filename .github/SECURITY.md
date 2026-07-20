@@ -19,6 +19,6 @@ Before merging or releasing:
 7. Configure the PWA host to return `Content-Security-Policy: frame-ancestors 'none'` and `X-Frame-Options: DENY`. Do not cache authenticated responses or user data.
 8. Build Android production artifacts only through the signed release process. Never publish debug APKs, debug components, diagnostics, local databases, backups, or signing material.
 9. Verify application IDs, version codes, signing identity, included components, and artifact checksums before uploading release assets.
-10. Complete phone, Wear OS, and Garmin physical-device tests for account switching, replay, interrupted synchronization, and re-pairing before promoting a release.
+10. Complete phone and Garmin physical-device tests for account switching, replay, interrupted synchronization, and re-pairing before promoting a release.
 
 The automated pipeline intentionally has no DAST job until a dedicated staging URL exists. Automated scanners complement, but do not replace, hosted authorization tests and manual security review.

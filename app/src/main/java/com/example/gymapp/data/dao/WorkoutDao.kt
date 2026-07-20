@@ -10,7 +10,6 @@ import com.example.gymapp.data.entity.WorkoutExerciseEntity
 import com.example.gymapp.data.entity.WorkoutSessionDetails
 import com.example.gymapp.data.entity.WorkoutSessionEntity
 import com.example.gymapp.data.entity.WorkoutSessionSummary
-import com.example.gymapp.data.entity.WearSyncSetRow
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -137,45 +136,6 @@ interface WorkoutDao {
         """
     )
     suspend fun getLatestSessionDetails(): WorkoutSessionDetails?
-
-    @androidx.room.Transaction
-    @Query(
-        """
-        SELECT *
-        FROM workout_sessions ws
-        WHERE EXISTS (
-            SELECT 1
-            FROM workout_exercises we
-            INNER JOIN set_entries se ON se.workoutExerciseId = we.id
-            WHERE we.sessionId = ws.id
-        )
-        ORDER BY ws.date DESC
-        LIMIT :limit
-        """
-    )
-    suspend fun getSessionDetailsForSync(limit: Int): List<WorkoutSessionDetails>
-
-    @Query(
-        """
-        SELECT
-            ws.id AS sessionId,
-            ws.date AS sessionDate,
-            ws.note AS sessionNote,
-            we.orderIndex AS workoutExerciseOrder,
-            se.id AS setId,
-            e.name AS exerciseName,
-            se.weight AS weight,
-            se.reps AS reps,
-            se.orderIndex AS setOrder
-        FROM workout_sessions ws
-        INNER JOIN workout_exercises we ON we.sessionId = ws.id
-        INNER JOIN set_entries se ON se.workoutExerciseId = we.id
-        INNER JOIN exercises e ON e.id = we.exerciseId
-        ORDER BY ws.date DESC, ws.id DESC, we.orderIndex ASC, se.orderIndex ASC, se.id ASC
-        LIMIT :rowLimit
-        """
-    )
-    suspend fun getWearSyncRows(rowLimit: Int): List<WearSyncSetRow>
 
     @androidx.room.Transaction
     @Query(

@@ -145,12 +145,15 @@ before submission.
 - Site: `https://gymapptracker.com/` — HTTPS 200 from GitHub Pages; HTTP-to-HTTPS
   enforcement enabled. `www.gymapptracker.com` redirects to the apex domain.
 - Support: `https://gymapptracker.com/support.html` — HTTPS 200; live/local
-  SHA-256 `802c9db8d8fe20417f782f020cea577f819b01ba39577a041b922f349d506a2a`.
-- Privacy: `https://gymapptracker.com/privacy-policy.html` — HTTPS 200; combined
-  iOS/Android/PWA/Wear OS/Garmin policy with live/local SHA-256
-  `d7063572a9152cc6b45e0f2fabfc391bdcaef240d4f092cf199fc2e4310f2a54`.
-- The first-party confirmation bridge and legal pages were deployed from
-  `gh-pages` commit `0147badeb5e8a4d140236af22c8911e699a3429b`.
+  SHA-256 `a22cd0d42fec7fc29bfa8e573ebe115d193fc352c473389bd07130253259ea14`,
+  exact-content verified on 2026-07-20.
+- Privacy: `https://gymapptracker.com/privacy-policy.html` — HTTPS 200; the
+  English/Ukrainian/Russian combined policy has live/local SHA-256
+  `a5c3dc078f30084cabdcbbbc3b043a6ceee5fb8be0339a1d5258cd10f75f9c04`,
+  exact-content verified on 2026-07-20.
+- The current legal pages were deployed from `gh-pages` commit
+  `f3edd58cbe1a255f1335c868ece6dafa7244b33c`; the first-party confirmation
+  bridge remains part of the same hosted site.
 - Supabase Auth Site URL is `https://gymapptracker.com/`. Its five-entry
   redirect allowlist retains the previous GitHub callback and iOS custom-scheme
   fallback alongside the Android, Web, and state-bound iOS HTTPS callbacks.

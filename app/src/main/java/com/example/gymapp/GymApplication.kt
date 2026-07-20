@@ -12,7 +12,6 @@ import com.example.gymapp.garmin.GarminSyncManager
 import com.example.gymapp.util.LanguageManager
 import com.example.gymapp.util.RestTimerController
 import com.example.gymapp.util.TrainingProfileManager
-import com.example.gymapp.wearsync.PhoneWearSyncManager
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -31,10 +30,10 @@ class GymApplication : Application() {
     val trainingProfileManager: TrainingProfileManager by lazy { TrainingProfileManager(this) }
     val restTimerController: RestTimerController by lazy { RestTimerController(this) }
     val garminSyncManager: GarminSyncManager by lazy { GarminSyncManager(this) }
-    internal val phoneWearSyncManager: PhoneWearSyncManager by lazy { PhoneWearSyncManager(this) }
 
     override fun onCreate() {
         super.onCreate()
+        deleteSharedPreferences(RETIRED_PHONE_WEAR_PREFERENCES)
         val authManager = cloudAuthManager
         val profileManager = trainingProfileManager
         applicationScope.launch(start = CoroutineStart.UNDISPATCHED) {
@@ -43,7 +42,6 @@ class GymApplication : Application() {
             }
         }
         garminSyncManager.initialize()
-        phoneWearSyncManager.initialize()
     }
 
     fun repositoryFor(session: AccountSession?): GymRepository {
@@ -60,3 +58,5 @@ class GymApplication : Application() {
 
 val Context.gymApplication: GymApplication
     get() = applicationContext as GymApplication
+
+private const val RETIRED_PHONE_WEAR_PREFERENCES = "phone_wear_sync"
