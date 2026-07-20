@@ -50,47 +50,43 @@ public struct WorkoutsView: View {
 
     public var body: some View {
         GymBackground {
-            VStack(spacing: 10) {
-                screenHeader
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 12) {
+                        screenHeader
 
-                WorkoutMonthSwitcher(
-                    month: selectedMonth,
-                    isCurrentMonth: monthOffset == 0,
-                    onPrevious: { monthOffset -= 1 },
-                    onCurrent: { monthOffset = 0 },
-                    onNext: { monthOffset = min(0, monthOffset + 1) }
-                )
-                .padding(.horizontal, 12)
+                        WorkoutMonthSwitcher(
+                            month: selectedMonth,
+                            isCurrentMonth: monthOffset == 0,
+                            onPrevious: { monthOffset -= 1 },
+                            onCurrent: { monthOffset = 0 },
+                            onNext: { monthOffset = min(0, monthOffset + 1) }
+                        )
 
-                sectionPicker
-                    .padding(.horizontal, 12)
+                        sectionPicker
 
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        LazyVStack(spacing: 12) {
                             overviewContent
                                 .id(Section.overview)
 
                             workoutListContent
                                 .id(Section.workouts)
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .padding(.bottom, 16)
                     }
-                    .scrollIndicators(.hidden)
-                    .onChange(of: section) { _, newSection in
-                        withAnimation(reduceMotion ? nil : .snappy(duration: 0.35)) {
-                            proxy.scrollTo(newSection, anchor: .top)
-                        }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .padding(.bottom, 16)
+                }
+                .scrollIndicators(.hidden)
+                .onChange(of: section) { _, newSection in
+                    withAnimation(reduceMotion ? nil : .snappy(duration: 0.35)) {
+                        proxy.scrollTo(newSection, anchor: .top)
                     }
-                    .task {
+                }
+                .task {
 #if DEBUG
-                        guard let anchor = screenshotSectionAnchor else { return }
-                        await Task.yield()
-                        proxy.scrollTo(anchor, anchor: .top)
+                    guard let anchor = screenshotSectionAnchor else { return }
+                    await Task.yield()
+                    proxy.scrollTo(anchor, anchor: .top)
 #endif
-                    }
                 }
             }
         }
@@ -104,13 +100,17 @@ public struct WorkoutsView: View {
                 Spacer(minLength: 8)
                 addWorkoutButton
                     .fixedSize(horizontal: true, vertical: false)
+                AppLanguageMenu()
             }
             VStack(alignment: .leading, spacing: 10) {
-                headerCopy
+                HStack(alignment: .top) {
+                    headerCopy
+                    Spacer(minLength: 8)
+                    AppLanguageMenu()
+                }
                 addWorkoutButton
             }
         }
-        .padding(.horizontal, 16)
         .padding(.top, 8)
     }
 

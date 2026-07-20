@@ -3,6 +3,7 @@ package com.example.gymapp.auth
 import android.content.Context
 import android.content.SharedPreferences
 import android.net.Uri
+import com.example.gymapp.BuildConfig
 import com.example.gymapp.data.repository.WorkoutDataLimits
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -30,7 +31,8 @@ import java.util.concurrent.ConcurrentHashMap
 
 private const val SUPABASE_URL = "https://owrcbsrectdgaotndtxy.supabase.co"
 private const val SUPABASE_KEY = "sb_publishable_vvOMzx6V_sPBpD-b3VZfzg_y14u8kIg"
-private const val AUTH_REDIRECT_URL = "https://gymapptracker.com/confirmed.html?platform=android"
+private val AUTH_REDIRECT_URL =
+    "https://gymapptracker.com/confirmed.html?platform=android${BuildConfig.AUTH_BRIDGE_VARIANT_QUERY}"
 private const val WEB_AUTH_REDIRECT_URL = "https://gymapptracker.com/confirmed.html?platform=web"
 private const val NEEDS_PASSWORD_UPDATE_KEY = "needs_password_update"
 private const val PENDING_SIGNUP_KEY = "pending_signup_confirmation"

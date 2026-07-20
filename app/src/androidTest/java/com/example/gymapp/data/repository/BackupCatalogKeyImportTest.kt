@@ -17,6 +17,31 @@ import org.json.JSONObject
 @RunWith(AndroidJUnit4::class)
 class BackupCatalogKeyImportTest {
     @Test
+    fun catalogSeedMarkerPreservesDeletedBuiltInExercise() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "catalog-seed-once-${UUID.randomUUID()}"
+        val database = GymDatabase.getInstance(context, databaseName)
+
+        try {
+            val repository = GymRepository(database)
+            assertEquals(51, repository.seedBuiltInExercises())
+            val bench = database.exerciseDao().getExercisesSnapshot()
+                .first { it.name == "Bench Press" }
+
+            repository.deleteExercise(bench)
+
+            assertEquals(0, repository.seedBuiltInExercises())
+            assertFalse(
+                database.exerciseDao().getExercisesSnapshot().any { it.name == "Bench Press" }
+            )
+            assertEquals(1, repository.buildBackupJson().getInt("catalogSeedVersion"))
+        } finally {
+            database.close()
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
     fun authoritativeRestorePreservesRepeatedBlocksAndIdenticalSessions() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val databaseName = "authoritative-exact-shape-${UUID.randomUUID()}"

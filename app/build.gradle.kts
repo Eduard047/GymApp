@@ -44,6 +44,9 @@ android {
         versionName = appVersionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        manifestPlaceholders["authCallbackScheme"] = "com.setforge.gymapp"
+        buildConfigField("String", "AUTH_CALLBACK_SCHEME", "\"com.setforge.gymapp\"")
+        buildConfigField("String", "AUTH_BRIDGE_VARIANT_QUERY", "\"\"")
     }
 
     signingConfigs {
@@ -63,6 +66,9 @@ android {
                 applicationIdSuffix = ".dev"
                 versionNameSuffix = "-dev"
             }
+            manifestPlaceholders["authCallbackScheme"] = "com.setforge.gymapp.dev"
+            buildConfigField("String", "AUTH_CALLBACK_SCHEME", "\"com.setforge.gymapp.dev\"")
+            buildConfigField("String", "AUTH_BRIDGE_VARIANT_QUERY", "\"&variant=qa\"")
         }
         release {
             isMinifyEnabled = false
@@ -74,6 +80,17 @@ android {
                 "proguard-rules.pro"
             )
         }
+        create("qa") {
+            initWith(getByName("release"))
+            applicationIdSuffix = ".dev"
+            versionNameSuffix = "-qa"
+            isDebuggable = false
+            signingConfig = signingConfigs.getByName("debug")
+            manifestPlaceholders["authCallbackScheme"] = "com.setforge.gymapp.dev"
+            buildConfigField("String", "AUTH_CALLBACK_SCHEME", "\"com.setforge.gymapp.dev\"")
+            buildConfigField("String", "AUTH_BRIDGE_VARIANT_QUERY", "\"&variant=qa\"")
+            matchingFallbacks += listOf("release")
+        }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -84,6 +101,7 @@ android {
         jvmTarget = "11"
     }
     buildFeatures {
+        buildConfig = true
         compose = true
     }
 }

@@ -164,7 +164,7 @@ class GymStore {
         var savedProcessedSyncIds = Storage.getValue("processedSyncIds");
         processedSyncIds = isValidProcessedSyncIds(savedProcessedSyncIds) ? savedProcessedSyncIds : [];
         var phoneFence = Storage.getValue("phoneSyncFence");
-        if (isValidPhoneSyncFence(phoneFence)) {
+        if (phoneFence instanceof Lang.Dictionary && isValidPhoneSyncFence(phoneFence)) {
             lastPhoneSyncRevision = phoneFence.get("revision").toLong();
             lastPhoneSyncId = phoneFence.get("id").toString();
             lastPhoneSyncAccountBinding = phoneFence.get("accountBinding").toString();
@@ -179,7 +179,8 @@ class GymStore {
                 isValidAccountBinding(savedAccountBinding) ? savedAccountBinding.toString() : null;
         }
         var cloudFence = Storage.getValue("cloudSyncFence");
-        if (isValidSyncFence(cloudFence, maxCloudPlanRevision, 36)) {
+        if (cloudFence instanceof Lang.Dictionary &&
+            isValidSyncFence(cloudFence, maxCloudPlanRevision, 36)) {
             lastCloudPlanRevision = cloudFence.get("revision").toNumber();
             lastCloudPlanId = cloudFence.get("id").toString();
         } else {
@@ -1207,7 +1208,8 @@ class GymStore {
 
     static function restoreLegacyCurrentQuarantine() {
         var snapshot = Storage.getValue("legacyQuarantineCurrent");
-        if (!isValidLegacyCurrentQuarantine(snapshot)) {
+        if (!(snapshot instanceof Lang.Dictionary) ||
+            !isValidLegacyCurrentQuarantine(snapshot)) {
             return false;
         }
         exercises = copyExerciseList(snapshot.get("exercises"));
@@ -1232,13 +1234,10 @@ class GymStore {
             !isValidSetList(value.get("plan"), maxPlanSets, true) ||
             !isValidLegacyPendingList(value.get("pending")) ||
             !isValidWeight(value.get("weight")) || !isValidReps(value.get("reps")) ||
-            !isValidWeight(value.get("weightStep")) || value.get("weightStep") <= 0.0 ||
-            value.get("weightStep") > 100.0 ||
-            !(value.get("restSecondsDefault") instanceof Lang.Number) ||
-            value.get("restSecondsDefault") < 1 || value.get("restSecondsDefault") > 3600 ||
+            !isValidWeightStep(value.get("weightStep")) ||
+            !isValidRestSeconds(value.get("restSecondsDefault")) ||
             !(value.get("autoPromptEnabled") instanceof Lang.Boolean) ||
-            !(value.get("sensitivityIndex") instanceof Lang.Number) ||
-            value.get("sensitivityIndex") < 0 || value.get("sensitivityIndex") > 2 ||
+            !isValidSensitivity(value.get("sensitivityIndex")) ||
             !isBoundedText(value.get("language"), 2)) {
             return false;
         }
@@ -1286,7 +1285,7 @@ class GymStore {
         var key = source.equals("cloud") ? "cloudSyncStage" : "phoneSyncStage";
         var maximum = source.equals("cloud") ? maxCloudPlanRevision : maxPhoneSyncRevision;
         var stage = Storage.getValue(key);
-        if (isValidSyncStage(stage, maximum, source)) {
+        if (stage instanceof Lang.Dictionary && isValidSyncStage(stage, maximum, source)) {
             var stagedMessage = normalizedSyncMessage(stage.get("message"), source);
             if (source.equals("cloud")) {
                 stagedCloudPlanRevision = stage.get("revision").toNumber();
@@ -1591,9 +1590,13 @@ class GymStore {
             return false;
         }
         var message = value.get("message");
+        if (!(message instanceof Lang.Dictionary)) {
+            return false;
+        }
         var messageRevision = source.equals("cloud") ?
-            message.get("planRevision").toLong() : message.get("syncRevision").toLong();
-        return value.get("revision").toLong() == messageRevision &&
+            counterToLong(message.get("planRevision")) :
+            counterToLong(message.get("syncRevision"));
+        return counterToLong(value.get("revision")) == messageRevision &&
             value.get("id").toString().equals(message.get("requestId").toString()) &&
             value.get("accountBinding").toString().equals(
                 message.get("accountBinding").toString()
@@ -1673,6 +1676,29 @@ class GymStore {
         }
         var numeric = value.toFloat();
         return numeric == numeric && numeric >= 0.0 && numeric <= maxWeight;
+    }
+
+    static function isValidWeightStep(value) {
+        if (!isNumeric(value)) {
+            return false;
+        }
+        var numeric = value.toFloat();
+        return numeric == numeric && numeric > 0.0 && numeric <= 100.0;
+    }
+
+    static function isValidRestSeconds(value) {
+        return value instanceof Lang.Number && value >= 1 && value <= 3600;
+    }
+
+    static function isValidSensitivity(value) {
+        return value instanceof Lang.Number && value >= 0 && value <= 2;
+    }
+
+    static function counterToLong(value) {
+        if (!(value instanceof Lang.Number) && !(value instanceof Lang.Long)) {
+            return 0l;
+        }
+        return value.toLong();
     }
 
     static function isValidReps(value) {

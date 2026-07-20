@@ -3,6 +3,7 @@
 import androidx.room.withTransaction
 import com.example.gymapp.data.catalog.BuiltInExerciseCatalog
 import com.example.gymapp.data.database.GymDatabase
+import com.example.gymapp.data.entity.AppMetadataEntity
 import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.entity.ExerciseHistoryEntry
 import com.example.gymapp.data.entity.ExerciseMuscleMappingEntity
@@ -142,19 +143,25 @@ data class SyncProfileStats(
 
 data class CloudWorkoutProjectionState internal constructor(
     val digest: String,
+    val catalogSeedVersion: Int,
     val exerciseCount: Int,
+    val customExerciseCount: Int,
     val sessionCount: Int,
     val workoutExerciseCount: Int,
     val setCount: Int
 ) {
     val isEmpty: Boolean
-        get() = exerciseCount == 0 && sessionCount == 0 && workoutExerciseCount == 0 && setCount == 0
+        get() = customExerciseCount == 0 &&
+            sessionCount == 0 &&
+            workoutExerciseCount == 0 &&
+            setCount == 0
 }
 
 class GymRepository(
     private val database: GymDatabase
 ) {
     private val exerciseDao = database.exerciseDao()
+    private val appMetadataDao = database.appMetadataDao()
     private val workoutDao = database.workoutDao()
     private val setDao = database.setDao()
     private val muscleMappingDao = database.muscleMappingDao()
@@ -162,6 +169,37 @@ class GymRepository(
 
     fun observeExercises(): Flow<List<ExerciseEntity>> = exerciseDao.getExercises()
         .catch { emit(emptyList()) }
+
+    /**
+     * Makes the versioned app catalog available in every account database without replacing
+     * custom rows or workout history. Recognized legacy aliases satisfy the same catalog key.
+     */
+    suspend fun seedBuiltInExercises(): Int = database.withTransaction {
+        if ((appMetadataDao.getCatalogSeedVersion() ?: 0) >= BuiltInExerciseCatalog.SEED_VERSION) {
+            return@withTransaction 0
+        }
+        val existing = exerciseDao.getExercisesSnapshot()
+        val existingCatalogKeys = existing.mapNotNull { exercise ->
+            BuiltInExerciseCatalog.inferKey(exercise.name)
+        }.toMutableSet()
+        var currentCount = existing.size
+        var inserted = 0
+
+        BuiltInExerciseCatalog.definitions.forEach { definition ->
+            if (definition.key in existingCatalogKeys) return@forEach
+            require(currentCount < WorkoutDataLimits.MAX_EXERCISES) {
+                "This account has reached the exercise limit."
+            }
+            exerciseDao.insert(ExerciseEntity(name = definition.nameEn))
+            existingCatalogKeys += definition.key
+            currentCount += 1
+            inserted += 1
+        }
+        appMetadataDao.upsert(
+            AppMetadataEntity(catalogSeedVersion = BuiltInExerciseCatalog.SEED_VERSION)
+        )
+        inserted
+    }
 
     suspend fun addExercise(name: String): Long {
         require(name.length <= WorkoutDataLimits.MAX_EXERCISE_NAME_LENGTH * 2) {
@@ -196,6 +234,9 @@ class GymRepository(
     }
 
     suspend fun renameExercise(exercise: ExerciseEntity, newName: String) {
+        require(BuiltInExerciseCatalog.inferKey(exercise.name) == null) {
+            "Built-in exercises cannot be renamed."
+        }
         require(newName.length <= WorkoutDataLimits.MAX_EXERCISE_NAME_LENGTH * 2) {
             "Exercise name is outside the supported length."
         }
@@ -446,7 +487,7 @@ class GymRepository(
         includeDiagnostics: Boolean = false,
         owner: BackupOwner? = null
     ): JSONObject = withContext(Dispatchers.Default) {
-        val (exercises, sessions) = database.withTransaction {
+        val (catalogSeedVersion, exercises, sessions) = database.withTransaction {
             val exerciseCount = exerciseDao.getExerciseCount()
             val sessionCount = workoutDao.getSessionCount()
             val workoutExerciseCount = workoutDao.getTotalWorkoutExerciseCount()
@@ -469,14 +510,18 @@ class GymRepository(
                     textUtf8Bytes = workoutDao.getBackupTextUtf8Bytes()
                 )
             ) { "Stored workout data exceeds the safe backup byte budget." }
-            exerciseDao.getExercisesSnapshot() to
+            Triple(
+                appMetadataDao.getCatalogSeedVersion() ?: 0,
+                exerciseDao.getExercisesSnapshot(),
                 workoutDao.getAllSessionDetailsForBackup().map(::sortSessionDetails)
+            )
         }
         val root = JSONObject()
             .put("schemaVersion", 2)
             .put("exportedAt", System.currentTimeMillis())
             .put("app", "GymApp")
             .put("diagnostics", includeDiagnostics)
+            .put("catalogSeedVersion", catalogSeedVersion)
             .put("owner", JSONObject().apply {
                 put("accountId", owner?.accountId)
                 put("userId", owner?.userId)
@@ -641,6 +686,13 @@ class GymRepository(
                 workoutDao.deleteAllSessions()
                 exerciseDao.deleteAllExercises()
             }
+            val currentSeedVersion = appMetadataDao.getCatalogSeedVersion() ?: 0
+            val restoredSeedVersion = if (replaceExisting) {
+                backup.catalogSeedVersion
+            } else {
+                maxOf(currentSeedVersion, backup.catalogSeedVersion)
+            }
+            appMetadataDao.upsert(AppMetadataEntity(catalogSeedVersion = restoredSeedVersion))
             val existingExerciseCount = exerciseDao.getExerciseCount()
             var sessionCount = workoutDao.getSessionCount()
             var accountSetCount = setDao.getTotalSetCount()
@@ -802,6 +854,7 @@ class GymRepository(
         val exercises = exerciseDao.getExercisesSnapshot()
         val sessions = workoutDao.getAllSessionDetailsForBackup().map(::sortSessionDetails)
         val projection = ValidatedBackup(
+            catalogSeedVersion = appMetadataDao.getCatalogSeedVersion() ?: 0,
             exercises = exercises.map { exercise ->
                 ValidatedBackupExercise(
                     name = exercise.name,
@@ -830,7 +883,11 @@ class GymRepository(
         )
         return CloudWorkoutProjectionState(
             digest = canonicalWorkoutPayloadDigest(projection),
+            catalogSeedVersion = projection.catalogSeedVersion,
             exerciseCount = exerciseCount,
+            customExerciseCount = exercises.count { exercise ->
+                BuiltInExerciseCatalog.inferKey(exercise.name) == null
+            },
             sessionCount = sessionCount,
             workoutExerciseCount = workoutExerciseCount,
             setCount = setCount

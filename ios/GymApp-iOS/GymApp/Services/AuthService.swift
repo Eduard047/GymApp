@@ -192,6 +192,12 @@ final class AuthService: ObservableObject {
     private var sessionRevision: UInt64 = 0
 
     private static let pendingSecureDeletionKey = "gymapp.auth.pending-secure-session-deletion"
+    private static let maximumAuthResponseBytes = 64 * 1_024
+    private static let maximumAuthErrorResponseBytes = 8 * 1_024
+    private static let maximumAuthRequestBytes = 64 * 1_024
+    private static let maximumAuthCallbackURLBytes = 8 * 1_024
+    private static let maximumTokenBytes = 16 * 1_024
+    private static let maximumAuthorizationCodeBytes = 4 * 1_024
 
     init(
         keychain: any KeychainStoring = KeychainStore(),
@@ -354,6 +360,11 @@ final class AuthService: ObservableObject {
     func handleOpenURL(_ url: URL) async {
         guard AuthCallbackRouting.isAuthDestination(url) else { return }
         await perform {
+            guard url.absoluteString.utf8
+                    .prefix(Self.maximumAuthCallbackURLBytes + 1).count
+                    <= Self.maximumAuthCallbackURLBytes else {
+                throw AuthServiceError.malformedResponse
+            }
             let values = AuthCallbackRouting.callbackValues(url)
             guard self.session == nil,
                   let transaction = try self.pendingAuthTransaction(),
@@ -371,6 +382,10 @@ final class AuthService: ObservableObject {
 
             guard let authCode = values["code"], !authCode.isEmpty else {
                 throw AuthServiceError.callbackMissingSession
+            }
+            guard authCode.utf8.prefix(Self.maximumAuthorizationCodeBytes + 1).count
+                    <= Self.maximumAuthorizationCodeBytes else {
+                throw AuthServiceError.malformedResponse
             }
             let object = try await self.requestJSON(
                 path: "/auth/v1/token?grant_type=pkce",
@@ -393,6 +408,10 @@ final class AuthService: ObservableObject {
         guard var cloud = session?.cloud else { throw AuthServiceError.notCloudAccount }
         guard expectedUserID == nil || expectedUserID == cloud.userID else {
             throw AuthServiceError.sessionChanged
+        }
+        guard Self.isValidAccessToken(cloud.accessToken),
+              cloud.refreshToken.map(Self.isValidOptionalToken) ?? true else {
+            throw AuthServiceError.malformedResponse
         }
         let expectedRevision = sessionRevision
         if let expiresAt = cloud.expiresAt,
@@ -531,7 +550,8 @@ final class AuthService: ObservableObject {
     }
 
     private func parseCloudSession(_ object: [String: Any], fallback: CloudAccountSession? = nil) throws -> CloudAccountSession {
-        guard let accessToken = object["access_token"] as? String, !accessToken.isEmpty else {
+        guard let accessToken = object["access_token"] as? String,
+              Self.isValidAccessToken(accessToken) else {
             throw AuthServiceError.malformedResponse
         }
         let user = object["user"] as? [String: Any] ?? [:]
@@ -543,7 +563,11 @@ final class AuthService: ObservableObject {
             ?? fallback?.displayName
             ?? email.split(separator: "@").first.map(String.init)
             ?? "GymApp user"
-        let refreshToken = (object["refresh_token"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? fallback?.refreshToken
+        let refreshToken = (object["refresh_token"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+            ?? fallback?.refreshToken
+        guard refreshToken.map(Self.isValidOptionalToken) ?? true else {
+            throw AuthServiceError.malformedResponse
+        }
         let expiresIn = (object["expires_in"] as? NSNumber)?.doubleValue ?? 3600
         return CloudAccountSession(
             userID: userID,
@@ -571,12 +595,31 @@ final class AuthService: ObservableObject {
         request.setValue(GymAppConfiguration.supabasePublishableKey, forHTTPHeaderField: "apikey")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        if let token { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        if let token {
+            guard Self.isValidAccessToken(token) else { throw AuthServiceError.malformedResponse }
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
         headers.forEach { request.setValue($0.value, forHTTPHeaderField: $0.key) }
-        if let body { request.httpBody = try JSONSerialization.data(withJSONObject: body) }
+        if let body {
+            let encoded = try JSONSerialization.data(withJSONObject: body)
+            guard encoded.count <= Self.maximumAuthRequestBytes else {
+                throw AuthServiceError.malformedResponse
+            }
+            request.httpBody = encoded
+        }
 
-        let (data, response) = try await urlSession.data(for: request)
-        guard let http = response as? HTTPURLResponse else { throw AuthServiceError.malformedResponse }
+        let data: Data
+        let http: HTTPURLResponse
+        do {
+            (data, http) = try await BoundedURLSessionLoader.data(
+                for: request,
+                using: urlSession,
+                successLimit: Self.maximumAuthResponseBytes,
+                errorLimit: Self.maximumAuthErrorResponseBytes
+            )
+        } catch is BoundedURLSessionError {
+            throw AuthServiceError.malformedResponse
+        }
         let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
         guard (200..<300).contains(http.statusCode) else {
             throw AuthServiceError.server(Self.errorMessage(status: http.statusCode, object: object))
@@ -586,7 +629,7 @@ final class AuthService: ObservableObject {
 
     private func validatedEmail(_ email: String) throws -> String {
         let value = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let pattern = #"^[^\s@]+@[^\s@]+\.[^\s@]{2,}$"#
+        let pattern = "^[^\\s@]+@[^\\s@]+\\.[^\\s@]{2,}$"
         guard value.count <= 254, value.range(of: pattern, options: .regularExpression) != nil else {
             throw AuthServiceError.invalidEmail
         }
@@ -595,16 +638,20 @@ final class AuthService: ObservableObject {
 
     private func validatePassword(_ password: String) throws {
         guard (8...72).contains(password.count),
-              password.contains(where: \.isLetter),
-              password.contains(where: \.isNumber) else {
+              password.contains(where: { $0.isLetter }),
+              password.contains(where: { $0.isNumber }) else {
             throw AuthServiceError.invalidPassword
         }
     }
 
     private func validatedDisplayName(_ value: String, fallbackEmail: String) throws -> String {
-        let candidate = value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            ? String(fallbackEmail.split(separator: "@").first ?? "Athlete")
-            : value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let candidate: String
+        if trimmed.isEmpty {
+            candidate = String(fallbackEmail.split(separator: "@").first ?? "Athlete")
+        } else {
+            candidate = trimmed
+        }
         let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: " .-_") )
         guard (2...32).contains(candidate.count),
               candidate.unicodeScalars.allSatisfy({ allowed.contains($0) }) else {
@@ -632,6 +679,17 @@ final class AuthService: ObservableObject {
         return raw?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
             ? raw!
             : "Cloud request failed. Check your connection and try again."
+    }
+
+    private static func isValidAccessToken(_ value: String) -> Bool {
+        !value.isEmpty
+            && value.utf8.prefix(maximumTokenBytes + 1).count <= maximumTokenBytes
+            && value.unicodeScalars.allSatisfy { (0x21...0x7e).contains($0.value) }
+    }
+
+    private static func isValidOptionalToken(_ value: String) -> Bool {
+        value.utf8.prefix(maximumTokenBytes + 1).count <= maximumTokenBytes
+            && value.unicodeScalars.allSatisfy { (0x21...0x7e).contains($0.value) }
     }
 
     private static func codeChallenge(for verifier: String) -> String {

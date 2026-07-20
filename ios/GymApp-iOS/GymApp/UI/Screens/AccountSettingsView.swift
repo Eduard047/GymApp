@@ -1,4 +1,6 @@
 import SwiftUI
+import UIKit
+import UniformTypeIdentifiers
 
 @MainActor
 struct AccountSettingsView: View {
@@ -35,6 +37,9 @@ struct AccountSettingsView: View {
 
                     accountDetailsCard
                     syncCard
+                    if isCloudAccount {
+                        GarminSettingsCard(garminCloud: appState.garminCloud)
+                    }
                     privacyAndSupportCard
                     sessionCard
                     dangerZone
@@ -267,7 +272,7 @@ struct AccountSettingsView: View {
 
     private var signOutSupportingText: String {
         if isCloudAccount {
-            return "Ends this session without deleting your account or cloud data."
+            return "Ends this session without deleting your account or cloud data. Your selected Garmin watch remains paired until you explicitly revoke it."
         }
         return "Local profiles cannot be selected again after leaving. Export a backup first if you want to keep this data."
     }
@@ -347,6 +352,379 @@ struct AccountSettingsView: View {
             await appState.forceCloudSync()
             isSyncing = false
         }
+    }
+}
+
+private struct GarminTokenPresentation: Identifiable {
+    let credential: GarminPairingCredential
+    let canRevoke: Bool
+
+    var id: String { credential.id }
+}
+
+@MainActor
+private struct GarminSettingsCard: View {
+    @ObservedObject var garminCloud: GarminCloudService
+
+    @State private var displayName = "Garmin watch"
+    @State private var errorMessage: String?
+    @State private var tokenPresentation: GarminTokenPresentation?
+    private let garminStoreURL = URL(
+        string: "https://apps.garmin.com/apps/fe82a300-4d9f-4588-8b10-365d75280b8f"
+    )!
+    private let connectIQSchemeURL = URL(string: "connectiq://")!
+    private let connectIQAppStoreURL = URL(
+        string: "https://apps.apple.com/app/connect-iq-store/id1317652970"
+    )!
+    @State private var showsRevokeConfirmation = false
+
+    var body: some View {
+        GymPanel {
+            VStack(alignment: .leading, spacing: 14) {
+                GymSectionTitle(
+                    eyebrow: "Garmin",
+                    title: "Paired watches",
+                    supporting: "Choose exactly which active watch receives iOS workout plans. The selected device is stored securely for this Supabase account."
+                )
+
+                Button(action: openGarminStore) {
+                    Label("Open Gym Workout Tracker in Garmin", systemImage: "arrow.up.right.square")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(GymSecondaryButtonStyle())
+                .accessibilityHint("Opens this app in Connect IQ, or opens the App Store if Connect IQ is not installed")
+
+                if let errorMessage {
+                    GymStatusBanner(message: errorMessage, isError: true)
+                }
+
+                if garminCloud.availableDevices.isEmpty {
+                    Label(
+                        garminCloud.isWorking ? "Loading Garmin watches…" : "No active Garmin watches found.",
+                        systemImage: "applewatch"
+                    )
+                    .font(.subheadline)
+                    .foregroundStyle(GymTheme.textSecondary)
+                } else {
+                    VStack(spacing: 8) {
+                        ForEach(garminCloud.availableDevices) { device in
+                            deviceButton(device)
+                        }
+                    }
+                }
+
+                Button {
+                    Task { await refreshDevices() }
+                } label: {
+                    Label("Refresh watches", systemImage: "arrow.clockwise")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(GymSecondaryButtonStyle())
+                .disabled(garminCloud.isWorking)
+
+                Divider()
+
+                if garminCloud.selectedDevice != nil {
+                    Button {
+                        Task { await rotateToken() }
+                    } label: {
+                        Label("Rotate token for selected watch", systemImage: "key.horizontal")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(GymSecondaryButtonStyle())
+                    .disabled(garminCloud.isWorking)
+
+                    Text("Use token rotation to reconnect the same watch. It preserves the device ID already pinned by the Garmin app.")
+                        .font(.caption)
+                        .foregroundStyle(GymTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Button(role: .destructive) {
+                        showsRevokeConfirmation = true
+                    } label: {
+                        Label("Revoke selected watch", systemImage: "applewatch")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(GymSecondaryButtonStyle())
+                    .disabled(garminCloud.isWorking)
+                }
+
+                Divider()
+
+                TextField("Watch name", text: $displayName)
+                    .textInputAutocapitalization(.words)
+                    .autocorrectionDisabled()
+                    .gymTextFieldChrome()
+                    .accessibilityHint("A label up to 80 characters for a new Garmin watch")
+
+                Button {
+                    Task { await createNewDevice() }
+                } label: {
+                    if garminCloud.isWorking {
+                        HStack(spacing: 9) {
+                            ProgressView().tint(.white)
+                            Text("Pairing…")
+                        }
+                    } else {
+                        Label("Pair a brand-new watch", systemImage: "plus.circle")
+                    }
+                }
+                .buttonStyle(GymPrimaryButtonStyle())
+                .disabled(garminCloud.isWorking || displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                Text("Create a new device ID only for a watch that has never used GymApp cloud sync. For an existing watch, select it above or rotate its token.")
+                    .font(.caption)
+                    .foregroundStyle(GymTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .task { await refreshDevices() }
+        .sheet(item: $tokenPresentation, onDismiss: { tokenPresentation = nil }) { presentation in
+            NavigationStack {
+                GarminTokenView(
+                    presentation: presentation,
+                    selectedDeviceID: garminCloud.selectedDevice?.deviceID,
+                    revoke: { try await garminCloud.revokeSelectedDevice() },
+                    onClose: { tokenPresentation = nil }
+                )
+            }
+        }
+        .alert("Revoke selected Garmin watch?", isPresented: $showsRevokeConfirmation) {
+            Button("Revoke", role: .destructive) {
+                Task { await revokeSelectedDevice() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This invalidates the watch token and quarantines its pending plans. Reusing this watch with a new device ID requires resetting GymApp on the watch. Use token rotation instead when reconnecting the same watch.")
+        }
+    }
+
+    private func openGarminStore() {
+        let application = UIApplication.shared
+        let destination = application.canOpenURL(connectIQSchemeURL)
+            ? garminStoreURL
+            : connectIQAppStoreURL
+        application.open(destination)
+    }
+
+    private func deviceButton(_ device: GarminDeviceSummary) -> some View {
+        let selected = garminCloud.selectedDevice?.deviceID == device.id
+        return Button {
+            do {
+                try garminCloud.selectDevice(device)
+                errorMessage = nil
+            } catch {
+                errorMessage = gymErrorMessage(error)
+            }
+        } label: {
+            HStack(spacing: 11) {
+                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(selected ? GymTheme.primary : GymTheme.textSecondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(gymLocalized(device.displayName))
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(GymTheme.textPrimary)
+                    Text("Device …\(device.id.suffix(8))")
+                        .font(.caption.monospaced())
+                        .foregroundStyle(GymTheme.textSecondary)
+                }
+                Spacer(minLength: 8)
+                if selected {
+                    Text("Selected")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(GymTheme.primary)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .buttonStyle(.plain)
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: GymTheme.controlCornerRadius, style: .continuous)
+                .fill(selected ? GymTheme.primary.opacity(0.1) : GymTheme.surfaceVariant)
+        )
+        .disabled(garminCloud.isWorking)
+        .accessibilityLabel("\(device.displayName), device ending \(device.id.suffix(8))")
+        .accessibilityValue(selected ? "Selected" : "Not selected")
+    }
+
+    private func refreshDevices() async {
+        guard !garminCloud.isWorking else { return }
+        do {
+            try await garminCloud.refreshDevices()
+            errorMessage = nil
+        } catch {
+            errorMessage = gymErrorMessage(error)
+        }
+    }
+
+    private func createNewDevice() async {
+        do {
+            let credential = try await garminCloud.createDevice(displayName: displayName)
+            tokenPresentation = GarminTokenPresentation(
+                credential: credential,
+                canRevoke: true
+            )
+            errorMessage = nil
+        } catch {
+            errorMessage = gymErrorMessage(error)
+        }
+    }
+
+    private func rotateToken() async {
+        do {
+            let credential = try await garminCloud.rotateSelectedDeviceToken()
+            tokenPresentation = GarminTokenPresentation(
+                credential: credential,
+                canRevoke: false
+            )
+            errorMessage = nil
+        } catch {
+            errorMessage = gymErrorMessage(error)
+        }
+    }
+
+    private func revokeSelectedDevice() async {
+        do {
+            try await garminCloud.revokeSelectedDevice()
+            errorMessage = nil
+        } catch {
+            errorMessage = gymErrorMessage(error)
+        }
+    }
+}
+
+@MainActor
+private struct GarminTokenView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
+
+    let presentation: GarminTokenPresentation
+    let selectedDeviceID: String?
+    let revoke: () async throws -> Void
+    let onClose: () -> Void
+
+    @State private var showsCopyWarning = false
+    @State private var copied = false
+    @State private var isRevoking = false
+    @State private var errorMessage: String?
+
+    var body: some View {
+        GymBackground {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    GymSectionTitle(
+                        eyebrow: "One-time secret",
+                        title: "Save the Garmin token now",
+                        supporting: "Paste this token only into GymApp settings in Garmin Connect IQ. It will not be stored or shown again."
+                    )
+
+                    if let errorMessage {
+                        GymStatusBanner(message: errorMessage, isError: true)
+                    }
+
+                    GymPanel(highlighted: true) {
+                        Text(presentation.credential.deviceToken)
+                            .font(.system(.body, design: .monospaced, weight: .semibold))
+                            .foregroundStyle(GymTheme.textPrimary)
+                            .privacySensitive()
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityLabel("One-time Garmin pairing token")
+                    }
+
+                    Button {
+                        showsCopyWarning = true
+                    } label: {
+                        Label(copied ? "Copied for 5 minutes" : "Copy token", systemImage: "doc.on.doc")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(GymPrimaryButtonStyle())
+                    .disabled(isRevoking)
+
+                    Text("Copying is optional and requires confirmation. The clipboard item stays on this device and expires after five minutes, but another app opened during that time may be able to read it.")
+                        .font(.caption)
+                        .foregroundStyle(GymTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Button("I saved the token") { close() }
+                        .buttonStyle(GymSecondaryButtonStyle())
+                        .disabled(isRevoking)
+
+                    if presentation.canRevoke {
+                        Button(role: .destructive) {
+                            revokeAndClose()
+                        } label: {
+                            if isRevoking {
+                                ProgressView("Revoking…")
+                                    .frame(maxWidth: .infinity)
+                            } else {
+                                Label("Cancel and revoke this new watch", systemImage: "xmark.shield")
+                                    .frame(maxWidth: .infinity)
+                            }
+                        }
+                        .buttonStyle(GymSecondaryButtonStyle())
+                        .disabled(isRevoking)
+                    } else {
+                        Button("Close without saving") { close() }
+                            .buttonStyle(GymSecondaryButtonStyle())
+                            .disabled(isRevoking)
+                    }
+                }
+                .padding(18)
+            }
+        }
+        .navigationTitle("Garmin pairing")
+        .navigationBarTitleDisplayMode(.inline)
+        .interactiveDismissDisabled()
+        .alert("Copy this secret token?", isPresented: $showsCopyWarning) {
+            Button("Copy for 5 minutes") { copyToken() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Only continue if you will paste it directly into this watch’s Garmin Connect IQ settings. Do not send or save it elsewhere.")
+        }
+        .onChange(of: selectedDeviceID) { _, currentID in
+            if currentID != presentation.credential.id { close() }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active { close() }
+        }
+    }
+
+    private func copyToken() {
+        UIPasteboard.general.setItems(
+            [[UTType.utf8PlainText.identifier: presentation.credential.deviceToken]],
+            options: [
+                UIPasteboard.OptionsKey.localOnly: true,
+                UIPasteboard.OptionsKey.expirationDate: Date().addingTimeInterval(5 * 60)
+            ]
+        )
+        copied = true
+    }
+
+    private func revokeAndClose() {
+        guard !isRevoking else { return }
+        isRevoking = true
+        Task {
+            do {
+                try await revoke()
+                clearMatchingClipboard()
+                close()
+            } catch {
+                errorMessage = gymErrorMessage(error)
+                isRevoking = false
+            }
+        }
+    }
+
+    private func clearMatchingClipboard() {
+        if UIPasteboard.general.string == presentation.credential.deviceToken {
+            UIPasteboard.general.items = []
+        }
+    }
+
+    private func close() {
+        onClose()
+        dismiss()
     }
 }
 

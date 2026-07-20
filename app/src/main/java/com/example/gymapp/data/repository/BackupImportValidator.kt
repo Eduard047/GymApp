@@ -35,6 +35,7 @@ internal data class ValidatedBackupSession(
 )
 
 internal data class ValidatedBackup(
+    val catalogSeedVersion: Int = 0,
     val exercises: List<ValidatedBackupExercise>,
     val sessions: List<ValidatedBackupSession>
 )
@@ -45,6 +46,15 @@ internal object BackupImportValidator {
         validateSchema(root)
         validateOptionalExportedAt(root)
         validateOwnerShape(root)
+        val catalogSeedVersion = if (root.has("catalogSeedVersion") && !root.isNull("catalogSeedVersion")) {
+            root.requiredIntegralNumber("catalogSeedVersion").also {
+                require(it in 0..BuiltInExerciseCatalog.SEED_VERSION.toLong()) {
+                    "Unsupported exercise catalog seed version."
+                }
+            }.toInt()
+        } else {
+            0
+        }
 
         val exerciseArray = root.optionalArray("exercises")
         val sessionArray = root.optionalArray("sessions")
@@ -142,7 +152,11 @@ internal object BackupImportValidator {
             ValidatedBackupSession(date = date, note = note, blocks = blocks)
         }
 
-        return ValidatedBackup(exercises = exercises, sessions = sessions)
+        return ValidatedBackup(
+            catalogSeedVersion = catalogSeedVersion,
+            exercises = exercises,
+            sessions = sessions
+        )
     }
 
     private fun validateSchema(root: JSONObject) {
@@ -341,7 +355,14 @@ internal fun canonicalWorkoutPayloadDigest(backup: ValidatedBackup): String {
         updateLong(java.lang.Double.doubleToLongBits(canonical))
     }
 
-    updateString("gymapp-canonical-workout-payload/v1")
+    if (backup.catalogSeedVersion == 0) {
+        // Preserve pre-catalog cloud baselines so the app can safely decide whether an old
+        // local snapshot is clean before applying the one-time catalog migration.
+        updateString("gymapp-canonical-workout-payload/v1")
+    } else {
+        updateString("gymapp-canonical-workout-payload/v2")
+        updateInt(backup.catalogSeedVersion)
+    }
     updateInt(backup.exercises.size)
     backup.exercises.forEach { exercise ->
         updateString(exercise.name)

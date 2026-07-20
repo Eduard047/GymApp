@@ -27,6 +27,8 @@ final class AppState: ObservableObject {
     private let remoteStateLoader: (@MainActor (String) async throws -> Data?)?
 
     private static let pendingDeletionStorageKey = "gymapp.pending-account-deletion-storage-key"
+    private static let legacyPendingDeletionGarminUserIDKey =
+        "gymapp.pending-account-deletion-garmin-user-id"
     private static let trainingProfileKeyPrefix = "gymapp.training-profile.v1."
     private static let hiddenLeaderboardProfilesKey = "leaderboard-hidden-profile-ids"
 
@@ -35,7 +37,8 @@ final class AppState: ObservableObject {
         defaults: UserDefaults = .standard,
         workoutDirectoryURL: URL? = nil,
         cloudURLSession: URLSession = .shared,
-        remoteStateLoader: (@MainActor (String) async throws -> Data?)? = nil
+        remoteStateLoader: (@MainActor (String) async throws -> Data?)? = nil,
+        garminBindingStore: GarminDeviceBindingStore = GarminDeviceBindingStore()
     ) throws {
         self.auth = auth
         self.defaults = defaults
@@ -46,12 +49,17 @@ final class AppState: ObservableObject {
         Self.finishPendingDeletionCleanupIfNeeded(
             auth: auth,
             defaults: defaults,
-            workoutDirectoryURL: workoutDirectoryURL
+            workoutDirectoryURL: workoutDirectoryURL,
+            garminBindingStore: garminBindingStore
         )
 
         self.restTimers = RestTimerManager()
         self.cloudSync = CloudSyncService(auth: auth, urlSession: cloudURLSession)
-        self.garminCloud = GarminCloudService(auth: auth)
+        self.garminCloud = GarminCloudService(
+            auth: auth,
+            urlSession: cloudURLSession,
+            bindingStore: garminBindingStore
+        )
         let openedStore = try WorkoutStore.openRecoveringCorruptStore(
             accountStorageKey: "signed-out",
             directoryURL: workoutDirectoryURL
@@ -196,6 +204,8 @@ final class AppState: ObservableObject {
                 generation: generation,
                 expectedStorageKey: expectedStorageKey
             )
+            var seededExerciseCount = try candidate.seedBuiltInExercises()
+            _ = try candidate.seedDefaultMuscleMappings()
 
             var cloudError: Error?
             var cloudWritesAllowed = false
@@ -242,6 +252,13 @@ final class AppState: ObservableObject {
                     cloudError = error
                 }
             }
+            // A remote restore may replace local rows. Accounts without a seed marker receive
+            // the catalog once; a current marker preserves exercises the user intentionally deleted.
+            let catalogSeedVersionBeforeFinalSeed = candidate.catalogSeedVersion
+            seededExerciseCount += try candidate.seedBuiltInExercises()
+            let catalogSeedMarkerChanged =
+                candidate.catalogSeedVersion != catalogSeedVersionBeforeFinalSeed
+            _ = try candidate.seedDefaultMuscleMappings()
             try ensureActivationIsCurrent(
                 generation: generation,
                 expectedStorageKey: expectedStorageKey
@@ -250,6 +267,9 @@ final class AppState: ObservableObject {
             publish(store: candidate, activeStorageKey: expectedStorageKey)
             isPreparingAccount = false
             accountPreparationError = nil
+            if (seededExerciseCount > 0 || catalogSeedMarkerChanged) && cloudWritesAllowed {
+                scheduleCloudSave(delay: .zero)
+            }
 
             if openedStore.quarantinedFileURL != nil {
                 show(
@@ -370,6 +390,7 @@ final class AppState: ObservableObject {
         let storageKey = session.storageKey
         let deletingStore = workoutStore
         defaults.set(storageKey, forKey: Self.pendingDeletionStorageKey)
+        defaults.removeObject(forKey: Self.legacyPendingDeletionGarminUserIDKey)
 
         do {
             if let cloud = session.cloud {
@@ -395,11 +416,18 @@ final class AppState: ObservableObject {
             applyingRemoteState = true
         }
 
+        var cleanupError: Error?
         if deletingSessionIsStillCurrent { restTimers.cancelAll() }
+        if let cloudUserID = session.cloud?.userID {
+            do {
+                try garminCloud.clearLocalBindingData(for: cloudUserID)
+            } catch {
+                cleanupError = cleanupError ?? error
+            }
+        }
         defaults.removeObject(forKey: Self.trainingProfileKeyPrefix + storageKey)
         defaults.removeObject(forKey: Self.hiddenLeaderboardProfilesKey)
 
-        var cleanupError: Error?
         do {
             try deletingStore.destroyAccountData()
         } catch {
@@ -431,6 +459,7 @@ final class AppState: ObservableObject {
         }
 
         defaults.removeObject(forKey: Self.pendingDeletionStorageKey)
+        defaults.removeObject(forKey: Self.legacyPendingDeletionGarminUserIDKey)
         if deletingSessionIsStillCurrent { statusMessage = nil }
     }
 
@@ -565,10 +594,14 @@ final class AppState: ObservableObject {
     private static func finishPendingDeletionCleanupIfNeeded(
         auth: AuthService,
         defaults: UserDefaults,
-        workoutDirectoryURL: URL?
+        workoutDirectoryURL: URL?,
+        garminBindingStore: GarminDeviceBindingStore
     ) {
         guard let storageKey = defaults.string(forKey: pendingDeletionStorageKey),
-              !storageKey.isEmpty else { return }
+              !storageKey.isEmpty else {
+            defaults.removeObject(forKey: legacyPendingDeletionGarminUserIDKey)
+            return
+        }
 
         var cleanupFailed = false
         do {
@@ -582,6 +615,13 @@ final class AppState: ObservableObject {
 
         defaults.removeObject(forKey: trainingProfileKeyPrefix + storageKey)
         defaults.removeObject(forKey: hiddenLeaderboardProfilesKey)
+        if let cloudUserID = cloudUserID(fromDeletionStorageKey: storageKey) {
+            do {
+                try garminBindingStore.deleteAll(for: cloudUserID)
+            } catch {
+                cleanupFailed = true
+            }
+        }
         if auth.session?.storageKey == storageKey {
             do {
                 try auth.clearSession()
@@ -594,5 +634,14 @@ final class AppState: ObservableObject {
         if !cleanupFailed {
             defaults.removeObject(forKey: pendingDeletionStorageKey)
         }
+        defaults.removeObject(forKey: legacyPendingDeletionGarminUserIDKey)
+    }
+
+    private static func cloudUserID(fromDeletionStorageKey storageKey: String) -> String? {
+        let prefix = "cloud_"
+        guard storageKey.hasPrefix(prefix) else { return nil }
+        let suffix = String(storageKey.dropFirst(prefix.count))
+        guard suffix.utf8.count == 36, let uuid = UUID(uuidString: suffix) else { return nil }
+        return uuid.uuidString.lowercased()
     }
 }

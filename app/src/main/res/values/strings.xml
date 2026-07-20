@@ -169,6 +169,7 @@
 
     <string name="exercise_block_title">Exercise %1$d</string>
     <string name="exercise_set_count_compact">%1$d sets</string>
+    <string name="exercise_workout_count_compact">%1$d workouts</string>
     <string name="exercise_muscles_title">Muscles worked</string>
     <string name="cd_collapse_exercise">Collapse exercise</string>
     <string name="cd_expand_exercise">Expand exercise</string>
@@ -488,4 +489,26 @@
     <string name="cd_prev_month">Previous month</string>
     <string name="cd_next_month">Next month</string>
     <string name="cd_back">Back</string>
+    <string name="exercise_search_label">Search exercises</string>
+    <string name="exercise_search_placeholder">Name in English or Ukrainian</string>
+    <string name="exercise_search_clear">Clear search</string>
+    <string name="exercise_search_no_results">No matching exercises</string>
+    <string name="exercise_search_no_results_supporting">Try another name, body area, or muscle group.</string>
+    <string name="exercise_search_result_count">%1$d exercises</string>
+    <string name="exercise_picker_all">All</string>
+    <string name="exercise_picker_frequent">Frequent</string>
+    <string name="exercise_picker_frequent_empty">Your frequently used exercises will appear here after you save some workouts.</string>
+    <string name="exercise_card_mapped_count">%1$d mapped</string>
+    <string name="exercise_card_auto_mapping">Auto mapping</string>
+    <string name="exercise_card_muscle_groups">Muscle groups</string>
+    <string name="exercise_filter_all">All</string>
+    <string name="exercise_filter_upper">Upper body</string>
+    <string name="exercise_filter_lower">Lower body</string>
+    <string name="exercise_filter_core">Core</string>
+    <string name="exercise_filter_all_muscles">All muscles</string>
+    <string name="exercise_sort_name">By name</string>
+    <string name="exercise_sort_most_frequent">Most frequent</string>
+    <string name="exercise_sort_least_frequent">Least frequent</string>
+    <string name="exercise_card_built_in">Built-in</string>
+    <string name="garmin_open_app">Open Gym Workout Tracker in Garmin</string>
 </resources>

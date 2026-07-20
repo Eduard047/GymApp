@@ -47,7 +47,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun handleAuthRedirect(intent: Intent?) {
         val uri = intent?.data ?: return
-        if (uri.scheme != "com.setforge.gymapp" || uri.host != "auth" || uri.path != "/callback") {
+        if (uri.scheme != BuildConfig.AUTH_CALLBACK_SCHEME ||
+            uri.host != "auth" ||
+            uri.path != "/callback"
+        ) {
             return
         }
         // Do not retain token-bearing implicit callback data on the Activity intent.

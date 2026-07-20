@@ -6,7 +6,7 @@ import vm from "node:vm";
 const appSource = await readFile("pwa/app.js", "utf8");
 const stateContractSource = await readFile("pwa/state-contract.js", "utf8");
 
-function loadPwaContext() {
+function loadPwaContext({ userAgent = "" } = {}) {
   const values = new Map();
   const context = {
     console,
@@ -32,7 +32,7 @@ function loadPwaContext() {
         return { innerHTML: "", querySelectorAll: () => [], querySelector: () => null };
       }
     },
-    navigator: {},
+    navigator: { userAgent },
     localStorage: {
       getItem: key => values.get(key) ?? null,
       setItem: (key, value) => values.set(key, String(value)),
@@ -62,14 +62,75 @@ function jsonFrom(context, expression) {
   return JSON.parse(vm.runInContext(`JSON.stringify(${expression})`, context));
 }
 
+test("Garmin store link opens our public listing and isolates the new tab", () => {
+  const context = loadPwaContext();
+  const html = vm.runInContext("accountPanel()", context);
+
+  assert.equal(
+    html.includes(
+      'href="https://apps.garmin.com/apps/fe82a300-4d9f-4588-8b10-365d75280b8f"'
+    ),
+    true
+  );
+  assert.equal(html.includes('target="_blank" rel="noopener noreferrer"'), true);
+  assert.equal(html.includes(".iq"), false);
+});
+
+test("Android web link opens Connect IQ and falls back to its Google Play listing", () => {
+  const context = loadPwaContext({ userAgent: "Mozilla/5.0 (Linux; Android 16) Chrome/140" });
+  const html = vm.runInContext("accountPanel()", context);
+
+  assert.equal(
+    html.includes(
+      'href="intent://apps.garmin.com/apps/fe82a300-4d9f-4588-8b10-365d75280b8f#Intent;'
+    ),
+    true
+  );
+  assert.equal(html.includes("package=com.garmin.connectiq;"), true);
+  assert.equal(
+    html.includes(
+      "S.browser_fallback_url=https%3A%2F%2Fplay.google.com%2Fstore%2Fapps%2Fdetails%3Fid%3Dcom.garmin.connectiq;"
+    ),
+    true
+  );
+});
+
 test("built-in exercise catalog persists stable keys and localizes only display names", () => {
   const context = loadPwaContext();
   const defaults = jsonFrom(context, "defaultAppState().exercises");
 
-  assert.equal(defaults.length, 15);
+  assert.equal(defaults.length, 51);
   assert.deepEqual(defaults[0], { id: 1, name: "Bench Press", catalogKey: "bench_press" });
   assert.equal(vm.runInContext('exerciseDisplayName(defaultAppState().exercises[0], "uk")', context), "Жим штанги лежачи");
   assert.equal(vm.runInContext('exerciseDisplayName({ name: "My custom press" }, "uk")', context), "My custom press");
+});
+
+test("catalog seeding runs once and preserves later user deletions", () => {
+  const context = loadPwaContext();
+  vm.runInContext(`state = normalizeImportedState({
+    language: "en",
+    exercises: [{ id: 900, name: "My custom exercise" }],
+    sessions: [],
+    mappings: {},
+    profile: { split: "Push Pull Legs", days: 4, goal: "Balanced", calories: "Maintenance" }
+  }, defaultAppState())`, context);
+
+  assert.equal(vm.runInContext("state.catalogSeedVersion", context), 0);
+  assert.equal(vm.runInContext("ensureBuiltInExerciseCatalog(state)", context), true);
+  assert.equal(vm.runInContext("state.catalogSeedVersion", context), 1);
+  assert.equal(vm.runInContext("state.exercises.length", context), 52);
+
+  vm.runInContext(`state.exercises = state.exercises.filter(
+    exercise => exercise.catalogKey !== "bench_press"
+  )`, context);
+  assert.equal(vm.runInContext("ensureBuiltInExerciseCatalog(state)", context), false);
+  assert.equal(vm.runInContext(
+    'state.exercises.some(exercise => exercise.catalogKey === "bench_press")',
+    context
+  ), false);
+
+  const exported = jsonFrom(context, "JSON.parse(exportPayload(false))");
+  assert.equal(exported.catalogSeedVersion, 1);
 });
 
 test("legacy aliases localize without collapsing or rewriting separate catalog rows", () => {
@@ -121,7 +182,39 @@ test("an explicit empty remote catalog remains empty and is not replaced by defa
   const context = loadPwaContext();
 
   assert.equal(vm.runInContext("normalizeImportedState({ exercises: [], sessions: [] }, defaultAppState()).exercises.length", context), 0);
-  assert.equal(vm.runInContext("normalizeImportedState({ sessions: [] }, defaultAppState()).exercises.length", context), 15);
+  assert.equal(vm.runInContext("normalizeImportedState({ sessions: [] }, defaultAppState()).exercises.length", context), 51);
+});
+
+test("exercise library sorts by unique workout frequency in both directions", () => {
+  const context = loadPwaContext();
+  vm.runInContext(`
+    state = {
+      ...defaultAppState(),
+      exercises: [
+        { id: 1, name: "Bench Press", catalogKey: "bench_press" },
+        { id: 2, name: "Squat", catalogKey: "squat" },
+        { id: 3, name: "Plank", catalogKey: "plank" }
+      ],
+      sessions: [
+        { id: 10, startedAt: 10, sets: [
+          { id: 11, exerciseName: "Bench Press", catalogKey: "bench_press", weight: 50, reps: 8 },
+          { id: 12, exerciseName: "Bench Press", catalogKey: "bench_press", weight: 55, reps: 6 },
+          { id: 13, exerciseName: "Squat", catalogKey: "squat", weight: 80, reps: 5 }
+        ] },
+        { id: 20, startedAt: 20, sets: [
+          { id: 21, exerciseName: "Bench Press", catalogKey: "bench_press", weight: 60, reps: 5 }
+        ] }
+      ]
+    };
+    exerciseSortMode = "most";
+  `, context);
+
+  assert.equal(vm.runInContext("exerciseWorkoutCount(state.exercises[0])", context), 2);
+  assert.equal(vm.runInContext("exerciseWorkoutCount(state.exercises[1])", context), 1);
+  assert.deepEqual(jsonFrom(context, "filteredLibraryExercises().map(exercise => exercise.id)"), [1, 2, 3]);
+
+  vm.runInContext('exerciseSortMode = "least"', context);
+  assert.deepEqual(jsonFrom(context, "filteredLibraryExercises().map(exercise => exercise.id)"), [3, 2, 1]);
 });
 
 test("legacy session aliases preserve separate raw history", () => {

@@ -238,7 +238,6 @@ private struct MainTabShell: View {
                 onOpenWorkout: { workoutPath.append(.detail($0)) },
                 onOpenRanks: { workoutPath.append(.ranks) }
             )
-            .gymLanguageToolbar()
             .navigationDestination(for: WorkoutRoute.self) { route in
                 switch route {
                 case .detail(let id):

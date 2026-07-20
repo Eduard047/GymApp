@@ -9,6 +9,7 @@ public enum WorkoutStoreError: Error, LocalizedError, Equatable, Sendable {
     case duplicateExerciseName
     case exerciseNotFound
     case exerciseInUse
+    case builtInExerciseReadOnly
     case workoutNotFound
     case workoutExerciseNotFound
     case setNotFound
@@ -37,6 +38,8 @@ public enum WorkoutStoreError: Error, LocalizedError, Equatable, Sendable {
             return "The exercise no longer exists."
         case .exerciseInUse:
             return "The exercise is used by saved workouts."
+        case .builtInExerciseReadOnly:
+            return "Built-in exercises cannot be renamed."
         case .workoutNotFound:
             return "The workout no longer exists."
         case .workoutExerciseNotFound:
@@ -85,6 +88,7 @@ public final class WorkoutStore: ObservableObject {
     @Published public private(set) var exercises: [Exercise]
     @Published public private(set) var workouts: [WorkoutSession]
     @Published public private(set) var muscleMappings: [ExerciseMuscleMapping]
+    public private(set) var catalogSeedVersion: Int
 
     public private(set) var accountStorageKey: String
     public private(set) var storageURL: URL
@@ -93,7 +97,8 @@ public final class WorkoutStore: ObservableObject {
         WorkoutDataSnapshot(
             exercises: exercises,
             workouts: workouts,
-            muscleMappings: muscleMappings
+            muscleMappings: muscleMappings,
+            catalogSeedVersion: catalogSeedVersion
         )
     }
 
@@ -160,6 +165,7 @@ public final class WorkoutStore: ObservableObject {
         self.exercises = loaded.exercises
         self.workouts = loaded.workouts
         self.muscleMappings = loaded.muscleMappings
+        self.catalogSeedVersion = loaded.catalogSeedVersion
     }
 
     /// Opens the account store while preserving an unreadable or mismatched envelope.
@@ -357,11 +363,47 @@ public final class WorkoutStore: ObservableObject {
         return created!
     }
 
+    /// Adds every missing public catalog item while preserving custom exercises and history.
+    @discardableResult
+    public func seedBuiltInExercises() throws -> Int {
+        var inserted = 0
+        try mutate { state in
+            guard state.catalogSeedVersion < BuiltInExerciseCatalog.seedVersion else { return }
+            var existingKeys = Set(state.exercises.compactMap { exercise in
+                BuiltInExerciseCatalog.resolvedKey(
+                    catalogKey: exercise.catalogKey,
+                    name: exercise.name
+                )
+            })
+            for definition in BuiltInExerciseCatalog.definitions where !existingKeys.contains(definition.key) {
+                guard state.exercises.count < BackupImportLimits.standard.maximumExercises else {
+                    throw WorkoutStoreError.importLimitExceeded("exercise count")
+                }
+                state.exercises.append(
+                    Exercise(
+                        name: definition.englishName,
+                        catalogKey: definition.key
+                    )
+                )
+                existingKeys.insert(definition.key)
+                inserted += 1
+            }
+            state.catalogSeedVersion = BuiltInExerciseCatalog.seedVersion
+        }
+        return inserted
+    }
+
     public func renameExercise(id: UUID, to newName: String) throws {
         let cleaned = try Self.validatedExerciseName(newName)
         try mutate { state in
             guard let index = state.exercises.firstIndex(where: { $0.id == id }) else {
                 throw WorkoutStoreError.exerciseNotFound
+            }
+            guard BuiltInExerciseCatalog.resolvedKey(
+                catalogKey: state.exercises[index].catalogKey,
+                name: state.exercises[index].name
+            ) == nil else {
+                throw WorkoutStoreError.builtInExerciseReadOnly
             }
             guard !state.exercises.contains(where: {
                 $0.id != id && Self.exerciseIdentityConflicts($0, candidateName: cleaned)
@@ -936,6 +978,7 @@ public final class WorkoutStore: ObservableObject {
             exportedAt: exportedAtMilliseconds,
             diagnostics: includeDiagnostics,
             owner: owner ?? BackupOwner(accountID: accountStorageKey),
+            catalogSeedVersion: catalogSeedVersion,
             exercises: backupExercises,
             sessions: backupSessions,
             summary: BackupSummary(
@@ -1051,7 +1094,7 @@ public final class WorkoutStore: ObservableObject {
 
         let nativeKeys: Set<String> = [
             "schemaVersion", "exportedAt", "app", "diagnostics", "owner",
-            "exercises", "sessions", "summary"
+            "catalogSeedVersion", "exercises", "sessions", "summary"
         ]
         var roundTripSafe = Set(root.keys).isSubset(of: nativeKeys)
         var needsEncoding = false
@@ -1203,6 +1246,9 @@ public final class WorkoutStore: ObservableObject {
         )
 
         var next = replacingExisting ? WorkoutDataSnapshot() : snapshot
+        next.catalogSeedVersion = replacingExisting
+            ? backup.catalogSeedVersion
+            : max(next.catalogSeedVersion, backup.catalogSeedVersion)
         var exerciseIDByKey = Dictionary(
             uniqueKeysWithValues: next.exercises.map { (Self.nameKey($0.name), $0.id) }
         )
@@ -1475,6 +1521,7 @@ public final class WorkoutStore: ObservableObject {
         exercises = state.exercises
         workouts = state.workouts
         muscleMappings = state.muscleMappings
+        catalogSeedVersion = state.catalogSeedVersion
     }
 
     private func persist(_ state: WorkoutDataSnapshot) throws {
@@ -1595,11 +1642,15 @@ public final class WorkoutStore: ObservableObject {
                     return $0.muscleID < $1.muscleID
                 }
                 return $0.exerciseNameKey < $1.exerciseNameKey
-            }
+            },
+            catalogSeedVersion: state.catalogSeedVersion
         )
     }
 
     private static func validate(_ state: WorkoutDataSnapshot) throws {
+        guard (0 ... BuiltInExerciseCatalog.seedVersion).contains(state.catalogSeedVersion) else {
+            throw WorkoutStoreError.corruptStore("Unsupported exercise catalog seed version.")
+        }
         guard Set(state.exercises.map(\.id)).count == state.exercises.count else {
             throw WorkoutStoreError.corruptStore("Duplicate exercise identifier.")
         }
@@ -1730,6 +1781,11 @@ public final class WorkoutStore: ObservableObject {
         _ backup: GymBackup,
         limits: BackupImportLimits
     ) throws {
+        guard (0 ... BuiltInExerciseCatalog.seedVersion).contains(backup.catalogSeedVersion) else {
+            throw WorkoutStoreError.malformedBackup(
+                "The exercise catalog seed version is unsupported."
+            )
+        }
         _ = try validatedTimestamp(backup.exportedAt, field: "export timestamp")
         guard backup.app.utf8.count <= maximumAppNameBytes else {
             throw WorkoutStoreError.importLimitExceeded("app name length")

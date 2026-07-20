@@ -1,6 +1,6 @@
 ﻿# GymApp for Garmin watches
 
-Connect IQ watch app targeting supported Garmin watch and wearable devices listed in `manifest.xml`. The UI is drawn from a 260x260 baseline and scales positions/sizes from the active `dc.getWidth()` / `dc.getHeight()` values, so higher-resolution round screens such as Venu 3 do not render the Fenix layout as a tiny fixed-size block.
+Connect IQ watch app targeting compatible Garmin watches and wearable devices listed in `manifest.xml`. The UI is drawn from a 260x260 baseline and scales positions/sizes from the active `dc.getWidth()` / `dc.getHeight()` values, so higher-resolution round screens such as Venu 3 do not render the layout as a tiny fixed-size block.
 
 ## Current controls
 
@@ -57,7 +57,10 @@ Store export:
 .\scripts\build-garmin.ps1 -Release
 ```
 
+The store export is written as `garmin/build/gymapp-garmin-connect-iq.iq`. It contains a device-specific binary for every compatible product declared in `manifest.xml`; it is not tied to the default development device name. A `.prg` development build remains device-specific and keeps that device in its filename.
+
+Keep the RSA developer key outside the repository and back it up securely. Garmin requires the same key for every future update to an existing Connect IQ Store app.
+
 Android communication uses Garmin's official `ciq-companion-app-sdk` and requires Garmin Connect to be installed, running, and paired with the watch.
 
 The Garmin app id is `A72A5B9F4E3D4E5A8B72C1D9F6123E40`; it must remain identical in `manifest.xml` and the Android bridge.
-

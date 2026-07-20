@@ -1,0 +1,611 @@
+name: Security
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  secrets:
+    name: Secrets / gitleaks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out complete history
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install verified Gitleaks 8.30.1
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/gitleaks_8.30.1_linux_x64.tar.gz"
+          curl --fail --show-error --silent --location --retry 3 \
+            --proto '=https' --tlsv1.2 \
+            --output "$archive" \
+            https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  $archive" \
+            | sha256sum --check --strict
+          mkdir -p "$RUNNER_TEMP/gitleaks-bin"
+          tar --extract --gzip --file "$archive" --directory "$RUNNER_TEMP/gitleaks-bin" gitleaks
+          echo "$RUNNER_TEMP/gitleaks-bin" >> "$GITHUB_PATH"
+
+      - name: Validate Gitleaks allowlist isolation
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixtures="$RUNNER_TEMP/gitleaks-allowlist-fixtures"
+          reports="$RUNNER_TEMP/gitleaks-allowlist-reports"
+          rm -rf "$fixtures" "$reports"
+          mkdir -p \
+            "$fixtures/public-allowed" \
+            "$fixtures/public-bypass" \
+            "$fixtures/uuid-allowed/app/src/test/java/com/example/gymapp/auth" \
+            "$fixtures/uuid-bypass/app/src/test/java/com/example/gymapp/auth" \
+            "$reports"
+
+          part_one="aB3dE5fG"
+          part_two="7hJ9kL2m"
+          part_three="N4pQ6rS8"
+          part_four="tU0vW1xY"
+          detected_value="${part_one}${part_two}${part_three}${part_four}"
+          public_value="sb_publishable_${detected_value}"
+          fixture_id="34e770dd-9ff9-416c-87fa-43b31d7ef225"
+
+          printf 'api_key = "%s"\n' \
+            "$public_value" > "$fixtures/public-allowed/fixture.txt"
+          printf 'api_key = "%s"; publishable = "%s"\n' \
+            "$detected_value" "$public_value" > "$fixtures/public-bypass/fixture.txt"
+          printf 'val authCode = "%s"\n' \
+            "$fixture_id" > \
+            "$fixtures/uuid-allowed/app/src/test/java/com/example/gymapp/auth/CloudAuthManagerTest.kt"
+          printf 'val apiKey = "%s"; val authCode = "%s"\n' \
+            "$detected_value" "$fixture_id" > \
+            "$fixtures/uuid-bypass/app/src/test/java/com/example/gymapp/auth/CloudAuthManagerTest.kt"
+
+          scan_case() {
+            local source="$1"
+            local report="$2"
+            local expected="$3"
+            local status=0
+
+            gitleaks dir "$source" \
+              --config "$GITHUB_WORKSPACE/.gitleaks.toml" \
+              --enable-rule generic-api-key \
+              --redact=100 \
+              --no-banner \
+              --no-color \
+              --report-format json \
+              --report-path "$report" || status=$?
+
+            if [[ "$expected" == "clean" ]]; then
+              [[ "$status" -eq 0 ]]
+            else
+              [[ "$status" -eq 1 ]]
+            fi
+
+            EXPECTED="$expected" REPORT="$report" python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          findings = json.loads(Path(os.environ["REPORT"]).read_text(encoding="utf-8"))
+          if os.environ["EXPECTED"] == "clean":
+              if findings:
+                  raise SystemExit(f"Expected no findings, got: {findings}")
+          elif (
+              len(findings) != 1
+              or findings[0].get("RuleID") != "generic-api-key"
+              or findings[0].get("Secret") != "REDACTED"
+          ):
+              raise SystemExit(f"Expected one redacted generic-api-key finding, got: {findings}")
+          PY
+          }
+
+          scan_case "$fixtures/public-allowed" "$reports/public-allowed.json" clean
+          scan_case "$fixtures/public-bypass" "$reports/public-bypass.json" detected
+          scan_case "$fixtures/uuid-allowed" "$reports/uuid-allowed.json" clean
+          scan_case "$fixtures/uuid-bypass" "$reports/uuid-bypass.json" detected
+
+      - name: Scan all reachable commits
+        shell: bash
+        run: |
+          gitleaks git . \
+            --config .gitleaks.toml \
+            --redact=100 \
+            --no-banner \
+            --no-color \
+            --report-format json \
+            --report-path gitleaks-results.json \
+            --timeout 300
+
+      - name: Upload redacted Gitleaks report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: gitleaks-results
+          path: gitleaks-results.json
+          if-no-files-found: warn
+          retention-days: 14
+
+  sast:
+    name: SAST / semgrep
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    container:
+      image: semgrep/semgrep@sha256:207983631beecdbe7fa29196c7f4a7a5f29033933cdb76c687ce4a672e07618d # 1.164.0
+    steps:
+      - name: Check out source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Run high-confidence security rules
+        env:
+          SEMGREP_SEND_METRICS: "off"
+        shell: bash
+        run: |
+          semgrep scan \
+            --config .github/security/semgrep.yml \
+            --strict \
+            --metrics off \
+            --no-git-ignore \
+            --json \
+            --output semgrep-rule-tests.json \
+            .github/security/semgrep-tests
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path(".github/security/semgrep-tests")
+          expected = set()
+          for path in root.iterdir():
+              if not path.is_file():
+                  continue
+              lines = path.read_text(encoding="utf-8").splitlines()
+              for index, line in enumerate(lines, start=1):
+                  marker = "ruleid:"
+                  if marker in line:
+                      expected.add((path.as_posix(), index + 1, line.split(marker, 1)[1].strip()))
+
+          report = json.loads(Path("semgrep-rule-tests.json").read_text(encoding="utf-8"))
+          if report.get("errors"):
+              raise SystemExit(f"Semgrep rule test errors: {report['errors']}")
+          actual = {
+              (
+                  finding["path"],
+                  finding["start"]["line"],
+                  finding["check_id"].rsplit(".", 1)[-1],
+              )
+              for finding in report.get("results", [])
+          }
+          if actual != expected:
+              raise SystemExit(
+                  f"Semgrep rule tests did not match annotations; missing={expected - actual}, "
+                  f"unexpected={actual - expected}"
+              )
+          print(f"Validated {len(actual)} Semgrep rule matches.")
+          PY
+          semgrep scan \
+            --config .github/security/semgrep.yml \
+            --severity ERROR \
+            --error \
+            --strict \
+            --metrics off \
+            --max-target-bytes 2000000 \
+            --exclude .gradle \
+            --exclude app/build \
+            --exclude wear/build \
+            --exclude garmin/build \
+            --exclude ios/DerivedData \
+            --exclude .github/security/semgrep-tests \
+            --json \
+            --output semgrep-results.json \
+            .
+
+      - name: Upload Semgrep report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: semgrep-results
+          path: semgrep-results.json
+          if-no-files-found: warn
+          retention-days: 14
+
+  codeql:
+    name: SAST / CodeQL (JavaScript and TypeScript)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      actions: read
+      contents: read
+      packages: read
+      security-events: write
+    steps:
+      - name: Check out source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@99df26d4f13ea111d4ec1a7dddef6063f76b97e9 # v4.37.0
+        with:
+          languages: javascript-typescript
+          build-mode: none
+          queries: security-extended
+
+      - name: Analyze JavaScript and TypeScript
+        uses: github/codeql-action/analyze@99df26d4f13ea111d4ec1a7dddef6063f76b97e9 # v4.37.0
+        with:
+          category: /language:javascript-typescript
+          output: ${{ runner.temp }}/codeql-results
+
+      - name: Reject high and critical CodeQL findings
+        env:
+          CODEQL_RESULTS: ${{ runner.temp }}/codeql-results
+        shell: bash
+        run: |
+          python3 .github/security/codeql_sarif_gate.py --self-test
+          python3 .github/security/codeql_sarif_gate.py "$CODEQL_RESULTS"
+
+  sca:
+    name: SCA / Gradle and Deno
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
+        with:
+          distribution: temurin
+          java-version: "21"
+          check-latest: false
+
+      - name: Set up Gradle cache
+        uses: gradle/actions/setup-gradle@017a9effdb900e5b5b2fddfb590a105619dca3c3 # v4.4.2
+
+      - name: Install the pinned Android SDK platform
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$sdkmanager"
+          "$sdkmanager" "platforms;android-36.1" "build-tools;36.1.0"
+
+      - name: Set up Deno 2.8.1
+        uses: denoland/setup-deno@667a34cdef165d8d2b2e98dde39547c9daac7282 # v2.0.4
+        with:
+          deno-version: 2.8.1
+          cache: true
+
+      - name: Audit locked Deno dependencies
+        working-directory: supabase/functions/garmin-sync
+        shell: bash
+        run: deno audit --frozen --level=high
+
+      - name: Generate the release dependency SBOM
+        shell: bash
+        run: |
+          bash ./gradlew --no-daemon \
+            --init-script .github/security/cyclonedx.init.gradle.kts \
+            cyclonedxBom
+
+      - name: Require a non-empty CycloneDX dependency graph
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path("build/reports/cyclonedx/bom.json")
+          bom = json.loads(path.read_text(encoding="utf-8"))
+          if bom.get("bomFormat") != "CycloneDX" or bom.get("specVersion") != "1.6":
+              raise SystemExit("Unexpected SBOM format or schema version")
+          components = bom.get("components", [])
+          third_party = [
+              component
+              for component in components
+              if component.get("purl")
+              and not component["purl"].startswith("pkg:maven/GymApp/")
+          ]
+          if not third_party or not bom.get("dependencies"):
+              raise SystemExit("SBOM contains no third-party dependency graph")
+          if any(not component.get("purl") for component in components):
+              raise SystemExit("SBOM contains a component without a package URL")
+          print(
+              f"Validated {len(components)} components, "
+              f"including {len(third_party)} third-party components."
+          )
+          PY
+
+      - name: Scan the Gradle SBOM for vulnerabilities
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.72.0
+          scan-type: sbom
+          scan-ref: build/reports/cyclonedx/bom.json
+          scanners: vuln
+          vuln-type: library
+          severity: HIGH,CRITICAL
+          ignore-unfixed: false
+          exit-code: 1
+          format: json
+          output: trivy-results.json
+          list-all-pkgs: true
+          hide-progress: true
+          timeout: 15m
+
+      - name: Require Trivy to inspect the SBOM packages
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path("trivy-results.json")
+          if not path.is_file():
+              raise SystemExit("Trivy did not produce a report")
+          report = json.loads(path.read_text(encoding="utf-8"))
+          packages = sum(
+              len(result.get("Packages", []))
+              for result in report.get("Results", [])
+          )
+          if packages == 0:
+              raise SystemExit("Trivy inspected zero dependency packages")
+          print(f"Trivy inspected {packages} dependency packages.")
+          PY
+
+      - name: Upload Trivy report and SBOM
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: trivy-results-and-sbom
+          path: |
+            trivy-results.json
+            build/reports/cyclonedx/bom.json
+          if-no-files-found: warn
+          retention-days: 14
+
+  contract-tests:
+    name: Regression / Node and Deno
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js 24.18.0 LTS
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 24.18.0
+          check-latest: false
+
+      - name: Run cross-platform security contracts
+        run: npm test
+
+      - name: Parse PWA JavaScript
+        shell: bash
+        run: |
+          set -euo pipefail
+          for file in pwa/*.js; do
+            node --check "$file"
+          done
+
+      - name: Set up Deno 2.8.1
+        uses: denoland/setup-deno@667a34cdef165d8d2b2e98dde39547c9daac7282 # v2.0.4
+        with:
+          deno-version: 2.8.1
+          cache: true
+
+      - name: Check and format Edge Function sources
+        shell: bash
+        run: |
+          deno check \
+            --config supabase/functions/garmin-sync/deno.json \
+            supabase/functions/garmin-sync/index.ts \
+            supabase/functions/_shared/garmin-plan-contract.ts
+          deno fmt --check \
+            supabase/functions/garmin-sync/index.ts \
+            supabase/functions/_shared/garmin-plan-contract.ts
+
+  android-tests:
+    name: Regression / Android and Wear
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
+        with:
+          distribution: temurin
+          java-version: "21"
+          check-latest: false
+
+      - name: Set up Gradle cache
+        uses: gradle/actions/setup-gradle@017a9effdb900e5b5b2fddfb590a105619dca3c3 # v4.4.2
+
+      - name: Install the pinned Android SDK platform
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$sdkmanager"
+          "$sdkmanager" "platforms;android-36.1" "build-tools;36.1.0"
+
+      - name: Test, assemble, and lint Android and Wear
+        shell: bash
+        run: |
+          bash ./gradlew --no-daemon \
+            -PappVersionCode=2000000001 \
+            -PwearVersionCode=2000000001 \
+            -PappVersionName=ci \
+            -PwearVersionName=ci \
+            :app:testDebugUnitTest \
+            :wear:testDebugUnitTest \
+            :app:assembleDebug \
+            :wear:assembleDebug \
+            :app:assembleQa \
+            :wear:assembleQa \
+            :app:lintDebug \
+            :wear:lintDebug \
+            :app:lintQa \
+            :wear:lintQa
+
+      - name: Verify downloadable QA artifact boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          build_tools="$ANDROID_HOME/build-tools/36.1.0"
+          phone_apk="app/build/outputs/apk/qa/app-qa.apk"
+          watch_apk="wear/build/outputs/apk/qa/wear-qa.apk"
+          for apk in "$phone_apk" "$watch_apk"; do
+            badging="$("$build_tools/aapt2" dump badging "$apk")"
+            manifest="$("$build_tools/aapt2" dump xmltree "$apk" --file AndroidManifest.xml)"
+            signature="$("$build_tools/apksigner" verify --verbose --print-certs "$apk")"
+            grep -q "package: name='com.setforge.gymapp.dev'" <<<"$badging"
+            grep -Eq "versionName='[^']+-qa'" <<<"$badging"
+            ! grep -q '^application-debuggable$' <<<"$badging"
+            ! grep -q '^application-testOnly$' <<<"$badging"
+            ! grep -Eq 'GarminDebugReceiver|PreviewActivity|androidx\.activity\.ComponentActivity' <<<"$manifest"
+            grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' <<<"$signature"
+          done
+          phone_version_code="$("$build_tools/aapt2" dump badging "$phone_apk" \
+            | sed -n "s/^package:.* versionCode='\([^']*\)'.*/\1/p")"
+          watch_version_code="$("$build_tools/aapt2" dump badging "$watch_apk" \
+            | sed -n "s/^package:.* versionCode='\([^']*\)'.*/\1/p")"
+          [[ "$phone_version_code" == "2000000001" ]]
+          [[ "$phone_version_code" == "$watch_version_code" ]]
+          phone_manifest="$("$build_tools/aapt2" dump xmltree "$phone_apk" --file AndroidManifest.xml)"
+          grep -q ':scheme.*="com.setforge.gymapp.dev"' <<<"$phone_manifest"
+          phone_cert="$("$build_tools/apksigner" verify --print-certs "$phone_apk" \
+            | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')"
+          watch_cert="$("$build_tools/apksigner" verify --print-certs "$watch_apk" \
+            | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')"
+          [[ "$phone_cert" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$phone_cert" == "$watch_cert" ]]
+
+  ios-tests:
+    name: Regression / iOS
+    runs-on: macos-26
+    timeout-minutes: 35
+    steps:
+      - name: Check out source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Select an available iPhone simulator
+        id: simulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          simulator_id="$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          data = json.load(sys.stdin)
+          for runtime in sorted(data.get("devices", {}), reverse=True):
+              for device in data["devices"][runtime]:
+                  if device.get("isAvailable") and device.get("name", "").startswith("iPhone"):
+                      print(device["udid"])
+                      raise SystemExit(0)
+          raise SystemExit("No available iPhone simulator")
+          ')"
+          [[ "$simulator_id" =~ ^[0-9A-Fa-f-]{36}$ ]]
+          echo "id=$simulator_id" >> "$GITHUB_OUTPUT"
+
+      - name: Run iOS simulator tests
+        env:
+          SIMULATOR_ID: ${{ steps.simulator.outputs.id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcrun simctl bootstatus "$SIMULATOR_ID" -b
+          xcodebuild test \
+            -project ios/GymApp-iOS/GymApp.xcodeproj \
+            -scheme GymApp \
+            -configuration Debug \
+            -destination "platform=iOS Simulator,id=$SIMULATOR_ID" \
+            -derivedDataPath "$RUNNER_TEMP/GymAppTestsDerivedData" \
+            -parallel-testing-enabled NO \
+            -maximum-parallel-testing-workers 1 \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Build the iOS Release configuration without signing
+        shell: bash
+        run: |
+          xcodebuild build \
+            -project ios/GymApp-iOS/GymApp.xcodeproj \
+            -scheme GymApp \
+            -configuration Release \
+            -sdk iphonesimulator \
+            -destination "generic/platform=iOS Simulator" \
+            -derivedDataPath "$RUNNER_TEMP/GymAppReleaseDerivedData" \
+            CODE_SIGNING_ALLOWED=NO
+
+  security-gate:
+    name: Security Gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    if: ${{ always() }}
+    needs:
+      - secrets
+      - sast
+      - codeql
+      - sca
+      - contract-tests
+      - android-tests
+      - ios-tests
+    env:
+      SECRETS_RESULT: ${{ needs.secrets.result }}
+      SAST_RESULT: ${{ needs.sast.result }}
+      CODEQL_RESULT: ${{ needs.codeql.result }}
+      SCA_RESULT: ${{ needs.sca.result }}
+      CONTRACT_RESULT: ${{ needs.contract-tests.result }}
+      ANDROID_RESULT: ${{ needs.android-tests.result }}
+      IOS_RESULT: ${{ needs.ios-tests.result }}
+    steps:
+      - name: Require every security check to succeed
+        shell: bash
+        run: |
+          set -euo pipefail
+          failed=0
+          for result in \
+            "$SECRETS_RESULT" \
+            "$SAST_RESULT" \
+            "$CODEQL_RESULT" \
+            "$SCA_RESULT" \
+            "$CONTRACT_RESULT" \
+            "$ANDROID_RESULT" \
+            "$IOS_RESULT"; do
+            if [[ "$result" != "success" ]]; then
+              failed=1
+            fi
+          done
+          if [[ "$failed" -ne 0 ]]; then
+            echo "One or more security checks failed, were cancelled, or were skipped."
+            exit 1
+          fi
+          echo "All security checks passed."

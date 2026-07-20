@@ -28,6 +28,7 @@ import kotlinx.coroutines.launch
 
 data class ExerciseListUiState(
     val exercises: List<ExerciseEntity> = emptyList(),
+    val exerciseWorkoutCounts: Map<Long, Int> = emptyMap(),
     val muscleMappings: List<ExerciseMuscleMappingUiModel> = emptyList(),
     val mappingEditorExerciseName: String? = null,
     val mappingEditorMuscles: List<ExerciseMuscleOptionUiModel> = emptyList(),
@@ -60,12 +61,24 @@ data class ExerciseMuscleOptionUiModel(
     val isSelected: Boolean
 )
 
+internal fun workoutCountByExercise(
+    history: List<ExerciseHistoryEntry>
+): Map<Long, Int> = history
+    .groupBy { it.exerciseId }
+    .mapValues { (_, entries) -> entries.map { it.sessionId }.distinct().size }
+
 private data class ExerciseListBaseState(
     val exercises: List<ExerciseEntity>,
+    val exerciseWorkoutCounts: Map<Long, Int>,
     val newExerciseName: String,
     val hasInputError: Boolean,
     val selectedExerciseId: Long?,
     val selectedExerciseHistory: List<ExerciseHistoryEntry>
+)
+
+private data class ExerciseLibraryState(
+    val exercises: List<ExerciseEntity>,
+    val exerciseWorkoutCounts: Map<Long, Int>
 )
 
 private data class ExerciseEditState(
@@ -117,15 +130,26 @@ class ExerciseListViewModel(
         }
     }
 
-    private val baseState = combine(
+    private val exerciseLibraryState = combine(
         repository.observeExercises(),
+        repository.observeAllExerciseHistory()
+    ) { exercises, history ->
+        ExerciseLibraryState(
+            exercises = exercises,
+            exerciseWorkoutCounts = workoutCountByExercise(history)
+        )
+    }
+
+    private val baseState = combine(
+        exerciseLibraryState,
         newExerciseName,
         hasInputError,
         selectedExerciseId,
         selectedExerciseHistory
-    ) { exercises, name, error, selectedId, history ->
+    ) { library, name, error, selectedId, history ->
         ExerciseListBaseState(
-            exercises = exercises,
+            exercises = library.exercises,
+            exerciseWorkoutCounts = library.exerciseWorkoutCounts,
             newExerciseName = name,
             hasInputError = error,
             selectedExerciseId = selectedId,
@@ -208,6 +232,7 @@ class ExerciseListViewModel(
     ) { base, edit, backup, mapping ->
         ExerciseListUiState(
             exercises = base.exercises,
+            exerciseWorkoutCounts = base.exerciseWorkoutCounts,
             muscleMappings = mapping.mappings,
             mappingEditorExerciseName = mapping.editorExerciseName,
             mappingEditorMuscles = mapping.editorMuscles,

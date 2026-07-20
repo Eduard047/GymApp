@@ -365,15 +365,33 @@ public struct WorkoutDataSnapshot: Codable, Hashable, Sendable {
     public var exercises: [Exercise]
     public var workouts: [WorkoutSession]
     public var muscleMappings: [ExerciseMuscleMapping]
+    public var catalogSeedVersion: Int
 
     public init(
         exercises: [Exercise] = [],
         workouts: [WorkoutSession] = [],
-        muscleMappings: [ExerciseMuscleMapping] = []
+        muscleMappings: [ExerciseMuscleMapping] = [],
+        catalogSeedVersion: Int = 0
     ) {
         self.exercises = exercises
         self.workouts = workouts
         self.muscleMappings = muscleMappings
+        self.catalogSeedVersion = catalogSeedVersion
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case exercises, workouts, muscleMappings, catalogSeedVersion
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        exercises = try container.decodeIfPresent([Exercise].self, forKey: .exercises) ?? []
+        workouts = try container.decodeIfPresent([WorkoutSession].self, forKey: .workouts) ?? []
+        muscleMappings = try container.decodeIfPresent(
+            [ExerciseMuscleMapping].self,
+            forKey: .muscleMappings
+        ) ?? []
+        catalogSeedVersion = try container.decodeIfPresent(Int.self, forKey: .catalogSeedVersion) ?? 0
     }
 }
 
@@ -520,6 +538,7 @@ public struct GymBackup: Codable, Hashable, Sendable {
     public var app: String
     public var diagnostics: Bool
     public var owner: BackupOwner?
+    public var catalogSeedVersion: Int
     public var exercises: [BackupExercise]
     public var sessions: [BackupSession]
     public var summary: BackupSummary?
@@ -530,6 +549,7 @@ public struct GymBackup: Codable, Hashable, Sendable {
         app: String = "GymApp",
         diagnostics: Bool,
         owner: BackupOwner?,
+        catalogSeedVersion: Int = 0,
         exercises: [BackupExercise],
         sessions: [BackupSession],
         summary: BackupSummary?
@@ -539,13 +559,14 @@ public struct GymBackup: Codable, Hashable, Sendable {
         self.app = app
         self.diagnostics = diagnostics
         self.owner = owner
+        self.catalogSeedVersion = catalogSeedVersion
         self.exercises = exercises
         self.sessions = sessions
         self.summary = summary
     }
 
     private enum CodingKeys: String, CodingKey {
-        case schemaVersion, exportedAt, app, diagnostics, owner, exercises, sessions, summary
+        case schemaVersion, exportedAt, app, diagnostics, owner, catalogSeedVersion, exercises, sessions, summary
     }
 
     public init(from decoder: Decoder) throws {
@@ -570,6 +591,7 @@ public struct GymBackup: Codable, Hashable, Sendable {
         app = try container.decodeIfPresent(String.self, forKey: .app) ?? "GymApp"
         diagnostics = try container.decodeIfPresent(Bool.self, forKey: .diagnostics) ?? false
         owner = try container.decodeIfPresent(BackupOwner.self, forKey: .owner)
+        catalogSeedVersion = try container.decodeIfPresent(Int.self, forKey: .catalogSeedVersion) ?? 0
         exercises = try container.decodeIfPresent([BackupExercise].self, forKey: .exercises) ?? []
         sessions = try container.decodeIfPresent([BackupSession].self, forKey: .sessions) ?? []
         summary = try container.decodeIfPresent(BackupSummary.self, forKey: .summary)

@@ -27,7 +27,7 @@ Simulator, and Garmin test artifacts.
 - SwiftUI application in `ios/GymApp-iOS` with the same Supabase account and workout data.
 - Password recovery, cloud sync, canonical XP/rank rules, muscle maps, activity heatmap, missions, and leaderboards.
 - App Store privacy manifest, localized metadata, support/privacy pages, release validation, and archive scripts.
-- Current public binary is a universal iOS Simulator build; a signed App Store IPA still requires Apple Distribution signing.
+- Current QA binary is an unsigned universal Release-configuration iOS Simulator build; a signed App Store IPA still requires Apple Distribution signing.
 
 ### Muscle Map
 
@@ -63,34 +63,47 @@ because it contains private workout data.
 - Large current-set mode.
 - Explicit sync status: idle, waiting phone, sent, failed.
 
-### Garmin Fenix 8 Solar app
+### Garmin Connect IQ app
 
-- Native Connect IQ app for the Fenix 8 Solar 47 mm 260x260 MIP display.
-- Record exercises, weight, reps, and sets with the five hardware buttons.
+- Native Connect IQ app for compatible Garmin watches and wearables running Connect IQ 3.2 or newer.
+- Record exercises, weight, reps, and sets with hardware buttons or touch gestures, depending on the device.
 - 90-second rest timer with vibration.
 - Offline workout queue and two-way sync through Garmin Connect and the Android app.
 - Source and build instructions: `garmin/README.md`.
 
-## Download APK
+## Download security QA builds
 
 <p align="center">
-  <a href="https://github.com/Eduard047/GymApp/releases/latest">
-    <img alt="Latest Build" src="https://img.shields.io/github/v/release/Eduard047/GymApp?include_prereleases&style=for-the-badge&label=Latest%20Build">
+  <a href="https://github.com/Eduard047/GymApp/releases/tag/qa-2026.07.17.1">
+    <img alt="Security QA release" src="https://img.shields.io/badge/Security%20QA-2026.07.17.1-3f806a?style=for-the-badge">
   </a>
   <a href="https://github.com/Eduard047/GymApp/releases">
     <img alt="Releases" src="https://img.shields.io/badge/Open-Releases-181717?style=for-the-badge&logo=github&logoColor=white">
   </a>
-  <a href="https://github.com/Eduard047/GymApp/releases/download/debug-2026.07.12.1819/gymapp-phone-debug.apk">
-    <img alt="Download Phone APK" src="https://img.shields.io/badge/Download-Phone%20APK-34A853?style=for-the-badge&logo=android&logoColor=white">
+  <a href="https://github.com/Eduard047/GymApp/releases/download/qa-2026.07.17.1/gymapp-phone-qa.apk">
+    <img alt="Download Phone QA APK" src="https://img.shields.io/badge/Download-Phone%20QA-34A853?style=for-the-badge&logo=android&logoColor=white">
   </a>
-  <a href="https://github.com/Eduard047/GymApp/releases/download/debug-2026.07.12.1819/GymApp-iOS-1.0.0-build1-Simulator-universal.app.zip">
-    <img alt="Download iOS Simulator Build" src="https://img.shields.io/badge/Download-iOS%20Simulator-000000?style=for-the-badge&logo=apple&logoColor=white">
+  <a href="https://github.com/Eduard047/GymApp/releases/download/qa-2026.07.17.1/gymapp-watch-qa.apk">
+    <img alt="Download Wear QA APK" src="https://img.shields.io/badge/Download-Wear%20QA-4285F4?style=for-the-badge&logo=wearos&logoColor=white">
+  </a>
+  <a href="https://github.com/Eduard047/GymApp/releases/download/qa-2026.07.17.1/GymApp-iOS-Simulator-1.0.2-build3.zip">
+    <img alt="Download iOS Release Simulator Build" src="https://img.shields.io/badge/Download-iOS%20Simulator-000000?style=for-the-badge&logo=apple&logoColor=white">
+  </a>
+  <a href="https://github.com/Eduard047/GymApp/releases/download/qa-2026.07.17.1/gymapp-garmin-connect-iq.iq">
+    <img alt="Download Garmin Connect IQ package" src="https://img.shields.io/badge/Download-Garmin%20Connect%20IQ-007CC3?style=for-the-badge">
   </a>
 </p>
 
 <p align="center">
-  Android debug builds for testing. If direct download fails, open Releases and download APK assets manually.
+  Non-debuggable, test-signed Android QA builds and an unsigned Release-configuration iOS Simulator build. These are prerelease test artifacts, not Play Store or App Store binaries.
 </p>
+
+Publishing these QA assets does not deploy the matching PWA callback bridge or
+Supabase backend. Until the exact v45 `confirmed.html` bridge is live and the
+QA redirect is present in the Supabase Auth allow-list, email confirmation and
+password recovery in the `.dev` Android build fail closed. Garmin cloud actions
+also remain unavailable until the ordered migration and matching Edge Function
+are deployed. This source/release workflow performs neither deployment.
 
 ## Releases
 
@@ -98,16 +111,20 @@ because it contains private workout data.
 - Latest release: https://github.com/Eduard047/GymApp/releases/latest
 - Current store release tag: https://github.com/Eduard047/GymApp/releases/tag/release-2026.07.05.1238
 - Current Play AAB: https://github.com/Eduard047/GymApp/releases/download/release-2026.07.05.1238/gymapp-play-release.aab
-- Current cross-platform prerelease: https://github.com/Eduard047/GymApp/releases/tag/debug-2026.07.12.1819
-- Current phone debug APK: https://github.com/Eduard047/GymApp/releases/download/debug-2026.07.12.1819/gymapp-phone-debug.apk
-- Current iOS Simulator build: https://github.com/Eduard047/GymApp/releases/download/debug-2026.07.12.1819/GymApp-iOS-1.0.0-build1-Simulator-universal.app.zip
-- Current Garmin IQ package: https://github.com/Eduard047/GymApp/releases/download/debug-2026.07.12.1819/gymapp-fenix8solar47mm.iq
+- Current security QA prerelease: https://github.com/Eduard047/GymApp/releases/tag/qa-2026.07.17.1
+- Phone QA APK: https://github.com/Eduard047/GymApp/releases/download/qa-2026.07.17.1/gymapp-phone-qa.apk
+- Wear QA APK: https://github.com/Eduard047/GymApp/releases/download/qa-2026.07.17.1/gymapp-watch-qa.apk
+- iOS Release Simulator build: https://github.com/Eduard047/GymApp/releases/download/qa-2026.07.17.1/GymApp-iOS-Simulator-1.0.2-build3.zip
+- Garmin Connect IQ package: https://github.com/Eduard047/GymApp/releases/download/qa-2026.07.17.1/gymapp-garmin-connect-iq.iq
+- Checksums and exact build metadata are attached as `SHA256SUMS.txt` and `BUILD-INFO.txt`.
 
-When publishing a new phone build, upload the debug APK asset to the current release:
+The Play AAB above is the older signed store build; it is not rebuilt from the
+current security branch. A new production AAB requires the matching private
+Play upload key and `scripts/build-play-release-aab.ps1`.
 
-```text
-app/build/outputs/apk/debug/app-debug.apk
-```
+The Garmin IQ is a developer-signed Connect IQ Store upload package exported
+from this source revision for every compatible target in `manifest.xml`. It is
+not a direct sideload file and has not been physically tested on every device.
 
 For the native iOS source, open:
 
@@ -115,42 +132,33 @@ For the native iOS source, open:
 open ios/GymApp-iOS/GymApp.xcodeproj
 ```
 
-The Garmin IQ attached to the cross-platform prerelease is byte-identical to
-the verified `release-2026.07.05.1238` asset because Garmin source did not
-change in this update.
+## Build QA APKs
 
-## Build Update APK (preserve app data)
-
-Use the helper script to build a debug APK with auto-generated version fields:
+Use the helper to build non-debuggable, test-signed Phone and Wear QA APKs with
+one timestamp-based version code:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\build-update-apk.ps1
 ```
 
-The script will:
+The script builds `:app:assembleQa` and `:wear:assembleQa`, then writes ignored
+local artifacts `gymapp-phone-qa.apk`, `gymapp-watch-qa.apk`, and SHA-256 build
+metadata under `tmp/`. QA uses package ID `com.setforge.gymapp.dev`, a separate
+authentication callback scheme, release source behavior, and a local test key.
+It must never be uploaded to Play Console.
 
-1. Ensure `JAVA_HOME` is set (from environment, `java` in PATH, or common fallback locations).
-2. Generate timestamp-based `versionCode`.
-3. Generate datetime-based `versionName`.
-4. Build with:
+Direct Gradle equivalent:
 
-```powershell
-./gradlew.bat :app:assembleDebug -PappVersionCode=<generated> -PappVersionName=<generated>
-```
-
-5. Copy output APK to project root as `app-debug.apk`.
-
-For the normal module output used by GitHub Releases:
-
-```powershell
+```text
 $env:JAVA_HOME='C:\Program Files\Android\Android Studio\jbr'
-.\gradlew.bat :app:assembleDebug :wear:assembleDebug
+.\gradlew.bat :app:assembleQa :wear:assembleQa -PappVersionCode=<version> -PwearVersionCode=<same-version> -PappVersionName=<name> -PwearVersionName=<same-name>
 ```
 
-## Install Update Without Reinstall
+## Install the QA builds
 
 ```powershell
-adb install -r app-debug.apk
+adb install -r gymapp-phone-qa.apk
+adb -s <watch-serial> install -r gymapp-watch-qa.apk
 ```
 
 Data is preserved only if:
@@ -159,10 +167,17 @@ Data is preserved only if:
 - The APK is signed with the same signing key as the installed app.
 - The new APK has a higher `versionCode` than the installed one.
 
-For local debug builds from the module output:
+The new Phone QA APK can update the immediately preceding public Phone test
+build because both use the same signer. The previously published Wear debug APK
+used a different signer. Before installing this Wear QA build, sync/export all
+watch data, then uninstall the old Wear app; uninstalling removes local and
+queued watch data.
+
+Module-output install commands:
 
 ```powershell
-adb install -r -d .\app\build\outputs\apk\debug\app-debug.apk
+adb install -r .\app\build\outputs\apk\qa\app-qa.apk
+adb -s <watch-serial> install -r .\wear\build\outputs\apk\qa\wear-qa.apk
 ```
 
 For wireless debugging:
@@ -170,7 +185,7 @@ For wireless debugging:
 ```powershell
 adb pair <phone-ip>:<pairing-port> <pairing-code>
 adb connect <phone-ip>:<connect-port>
-adb -s <phone-ip>:<connect-port> install -r -d .\app\build\outputs\apk\debug\app-debug.apk
+adb -s <phone-ip>:<connect-port> install -r .\app\build\outputs\apk\qa\app-qa.apk
 ```
 
 ## iPhone PWA
@@ -197,27 +212,76 @@ The PWA stores workouts locally in the browser, syncs through Supabase when clou
 
 ### Public-site and Auth cutover
 
-The `pwa/CNAME` file prepares GitHub Pages for `gymapptracker.com`. Before
-publishing it or changing Supabase Auth, verify that the apex domain serves the
-first-party GymApp pages directly over HTTPS and does not redirect to a registrar
-parking page. Do not send authentication callbacks to the custom domain until
-that check passes.
+The custom-domain cutover is already live: `pwa/CNAME` makes GitHub Pages serve
+the first-party PWA at `https://gymapptracker.com/`, and the legacy
+`https://eduard047.github.io/GymApp/` origin currently responds with a
+cross-origin `301` to the custom domain.
 
-After the DNS/Pages cutover, configure Supabase Auth with:
+GitHub Pages does not support repository-defined response headers. The PWA uses
+a fail-closed frame guard on the first visit; once its service worker is active,
+HTML responses also receive `frame-ancestors 'none'` and `X-Frame-Options: DENY`.
+Enforcing those headers on the very first response requires moving the custom
+domain behind a header-capable CDN or host. Do not add Netlify/Cloudflare header
+files while GitHub Pages remains the actual origin because Pages ignores them.
+
+Cloud access and refresh tokens use tab-scoped `sessionStorage`, not persistent
+`localStorage`. The first hardened load migrates and deletes a valid legacy
+session once; closing the browser/PWA session requires a fresh cloud login. An
+explicit account switch also attempts Supabase `scope=local` revocation so it
+does not sign Android, iOS, or other devices out. If that network revocation
+cannot be confirmed, local credentials are still erased and the UI warns that
+the old server session can remain valid until server expiry or administrative
+revocation. Sign-out completes only after browser storage confirms that the
+current tab's credential and any legacy persistent copy are gone; if storage
+denies removal, the account stays open in that tab and the user is told to
+restore storage access and retry.
+
+Configure the Supabase Auth redirect allow-list with:
 
 - Site URL: `https://gymapptracker.com/`
-- Android redirect: `https://gymapptracker.com/confirmed.html?platform=android`
+- Production Android redirect base:
+  `https://gymapptracker.com/confirmed.html?platform=android`
+- QA/debug Android redirect base:
+  `https://gymapptracker.com/confirmed.html?platform=android&variant=qa`
 - Web redirect: `https://gymapptracker.com/confirmed.html?platform=web`
 - iOS PKCE redirect allow-list pattern:
   `https://gymapptracker.com/confirmed.html?platform=ios&state=*`
 
+The bridge accepts exactly one optional `variant=qa` only for Android and sends
+that flow to `com.setforge.gymapp.dev://auth/callback`. An absent variant uses
+the production `com.setforge.gymapp://auth/callback`; duplicate, unknown, iOS,
+or web variants fail closed. The state, purpose, and one-time PKCE code remain
+bound to the initiating app flow.
+
 Keep `https://eduard047.github.io/GymApp/confirmed.html` in the redirect allow
-list and keep the legacy GitHub Pages callback functional while released Android
-builds or already-sent confirmation emails can still use it. The legacy callback
-forwards the existing Android implicit-flow fragment. The iOS route is separate:
-it requires `platform=ios`, one 32-character base64url `state`, and forwards only
-the PKCE `code` or bounded `error` fields after a user taps the bridge button.
-It never accepts an implicit token fragment.
+list while released builds or already-sent confirmation emails can still use it.
+The cleanup worker deliberately excludes `confirmed.html` callbacks. The bridge
+rejects implicit bearer-token fragments; Android and iOS routes require a bound
+PKCE `code` plus one 32-character base64url `state`, and forward only the
+single-use code or bounded error fields through the exact platform callback.
+
+#### Legacy-origin cleanup is a staged operation
+
+The current `301` strands any already-installed v44 service worker and old
+browser session under `eduard047.github.io`: a service worker update is not
+allowed to follow that cross-origin redirect. Therefore a normal commit, Pages
+deployment, or custom-domain release does **not** deliver the included
+`legacy-origin-cleanup.html` or the v45 legacy cleanup branch to those clients.
+Those artifacts are dormant until the old origin can temporarily serve them as
+a same-origin `200` response.
+
+Do not call legacy cleanup complete until one of these separately reviewed
+remediations is performed:
+
+1. Administratively revoke sessions issued before the cutover and instruct
+   affected users to clear site data for `eduard047.github.io`; or
+2. With explicit release approval, temporarily make `/GymApp/` serve this exact
+   build from the legacy origin, keep `confirmed.html` callbacks exempt, wait for
+   the v45 worker to activate and verify credential/cache/worker removal, then
+   restore the CNAME/custom domain and re-verify every auth redirect.
+
+The second option can interrupt the public custom domain and authentication
+callbacks, so it must not be performed as part of an ordinary source release.
 
 ### Garmin cloud sync POC
 
@@ -232,9 +296,26 @@ The iPhone/PWA Garmin path uses Supabase as a queue and Garmin Connect Mobile as
 supabase functions deploy garmin-sync --project-ref owrcbsrectdgaotndtxy
 ```
 
-3. In the PWA Add Workout screen, tap `Sync Watch`. The first run creates a Garmin device token and copies it.
+The migration and Edge Function must be deployed before publishing the matching
+PWA release. The hardened client requires `listDevices`, `token_revision`, and
+CAS-based `rotateDeviceToken`; it deliberately fails closed against an older
+Edge Function rather than creating a duplicate watch identity.
+
+3. In the PWA Add Workout screen, tap `Sync Watch`. The first run creates a
+   Garmin device token and shows it once.
 4. Paste that token into the GymApp `Cloud Token` setting in Garmin Connect IQ Mobile.
 5. On the watch, open settings and select `CLOUD / SYNC` to download the latest pending plan.
+
+Token recovery keeps the existing watch UUID. The browser generates the
+replacement with 32 bytes of CSPRNG entropy, sends it with the expected server
+token revision, and retries only the exact same CAS request when the outcome is
+unknown. Raw tokens are never stored; a revision conflict refreshes device
+metadata and requires explicit retry.
+
+Device creation and plan enqueue run under an account-scoped Web Lock so two
+GymApp tabs cannot mint competing watch identities or independent enqueue IDs.
+Browsers that do not provide this cross-tab security primitive fail closed and
+must not be used for PWA Garmin pairing/sync.
 
 Run the no-device Garmin cloud sync checks:
 

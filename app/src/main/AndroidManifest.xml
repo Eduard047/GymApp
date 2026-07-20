@@ -36,7 +36,7 @@
                 <data
                     android:host="auth"
                     android:path="/callback"
-                    android:scheme="com.setforge.gymapp" />
+                    android:scheme="${authCallbackScheme}" />
             </intent-filter>
         </activity>
 
