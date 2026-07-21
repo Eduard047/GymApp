@@ -371,13 +371,17 @@ public final class WorkoutStore: ObservableObject {
         var inserted = 0
         try mutate { state in
             guard state.catalogSeedVersion < BuiltInExerciseCatalog.seedVersion else { return }
+            let currentSeedVersion = max(0, state.catalogSeedVersion)
+            let pendingDefinitions = BuiltInExerciseCatalog.definitions.filter {
+                $0.introducedInSeedVersion > currentSeedVersion
+            }
             var existingKeys = Set(state.exercises.compactMap { exercise in
                 BuiltInExerciseCatalog.resolvedKey(
                     catalogKey: exercise.catalogKey,
                     name: exercise.name
                 )
             })
-            for definition in BuiltInExerciseCatalog.definitions where !existingKeys.contains(definition.key) {
+            for definition in pendingDefinitions where !existingKeys.contains(definition.key) {
                 // A full legacy account must still open. Keep the marker unset so deleting an
                 // exercise later gives the migration another chance to add the remaining items.
                 guard state.exercises.count < BackupImportLimits.standard.maximumExercises else { break }
@@ -390,7 +394,7 @@ public final class WorkoutStore: ObservableObject {
                 existingKeys.insert(definition.key)
                 inserted += 1
             }
-            if BuiltInExerciseCatalog.definitions.allSatisfy({ existingKeys.contains($0.key) }) {
+            if pendingDefinitions.allSatisfy({ existingKeys.contains($0.key) }) {
                 state.catalogSeedVersion = BuiltInExerciseCatalog.seedVersion
             }
         }

@@ -3,6 +3,7 @@ package com.example.gymapp.data.repository
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.example.gymapp.data.database.GymDatabase
+import com.example.gymapp.data.entity.AppMetadataEntity
 import java.util.UUID
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -64,7 +65,7 @@ class BackupCatalogKeyImportTest {
 
         try {
             val repository = GymRepository(database)
-            assertEquals(51, repository.seedBuiltInExercises())
+            assertEquals(52, repository.seedBuiltInExercises())
             val bench = database.exerciseDao().getExercisesSnapshot()
                 .first { it.name == "Bench Press" }
 
@@ -74,7 +75,7 @@ class BackupCatalogKeyImportTest {
             assertFalse(
                 database.exerciseDao().getExercisesSnapshot().any { it.name == "Bench Press" }
             )
-            assertEquals(1, repository.buildBackupJson().getInt("catalogSeedVersion"))
+            assertEquals(2, repository.buildBackupJson().getInt("catalogSeedVersion"))
 
             val cloud = repository.buildCloudBackupJson(
                 BackupOwner(
@@ -101,6 +102,31 @@ class BackupCatalogKeyImportTest {
                 cloudKeys
             )
             assertFalse(cloud.has("catalogSeedVersion"))
+        } finally {
+            database.close()
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
+    fun catalogVersionTwoAddsOnlyHipAbductionToExistingAccounts() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "catalog-seed-v2-${UUID.randomUUID()}"
+        val database = GymDatabase.getInstance(context, databaseName)
+
+        try {
+            val repository = GymRepository(database)
+            assertEquals(52, repository.seedBuiltInExercises())
+            val exercises = database.exerciseDao().getExercisesSnapshot()
+            repository.deleteExercise(exercises.first { it.name == "Bench Press" })
+            repository.deleteExercise(exercises.first { it.name == "Hip Abduction" })
+            database.appMetadataDao().upsert(AppMetadataEntity(catalogSeedVersion = 1))
+
+            assertEquals(1, repository.seedBuiltInExercises())
+            val upgraded = database.exerciseDao().getExercisesSnapshot()
+            assertTrue(upgraded.any { it.name == "Hip Abduction" })
+            assertFalse(upgraded.any { it.name == "Bench Press" })
+            assertEquals(2, repository.buildBackupJson().getInt("catalogSeedVersion"))
         } finally {
             database.close()
             context.deleteDatabase(databaseName)

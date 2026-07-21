@@ -290,7 +290,7 @@ test("cached documents receive the same anti-framing policy", async () => {
   const response = await responsePromiseFor(handler, "https://example.test/GymApp/");
 
   assert.equal(await response.text(), "cached");
-  assert.deepEqual(worker.openedCaches, ["gym-pwa-v57"]);
+  assert.deepEqual(worker.openedCaches, ["gym-pwa-v59"]);
   assert.match(response.headers.get("Content-Security-Policy"), /style-src 'self'/);
   assert.match(response.headers.get("Content-Security-Policy"), /frame-ancestors 'none'/);
   assert.doesNotMatch(response.headers.get("Content-Security-Policy"), /unsafe-inline/);
@@ -306,7 +306,7 @@ test("install reloads one internally consistent version without taking over old 
   handler({ waitUntil(value) { installPromise = value; } });
   await installPromise;
 
-  assert.deepEqual(worker.openedCaches, ["gym-pwa-v57"]);
+  assert.deepEqual(worker.openedCaches, ["gym-pwa-v59"]);
   assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/app.v52.js")));
   assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/styles.v52.css")));
   assert.equal(worker.addedAssets.every(asset => asset instanceof Request && asset.cache === "reload"), true);

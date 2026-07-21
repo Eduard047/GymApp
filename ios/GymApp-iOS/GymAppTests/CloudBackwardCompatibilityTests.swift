@@ -87,6 +87,30 @@ final class CloudBackwardCompatibilityTests: XCTestCase {
         XCTAssertEqual(reopened.catalogSeedVersion, 0)
     }
 
+    func testCatalogVersionTwoAddsOnlyHipAbductionToExistingAccounts() throws {
+        let directory = try temporaryDirectory(named: "catalog-seed-v2")
+        let accountID = "catalog-seed-v2"
+        let owner = BackupOwner(accountID: accountID)
+        let store = try WorkoutStore(accountStorageKey: accountID, directoryURL: directory)
+        XCTAssertEqual(try store.seedBuiltInExercises(), 52)
+
+        var versionOneBackup = try store.makeBackup(owner: owner)
+        versionOneBackup.catalogSeedVersion = 1
+        versionOneBackup.exercises.removeAll {
+            $0.catalogKey == "bench_press" || $0.catalogKey == "hip_abduction"
+        }
+        versionOneBackup.summary?.exerciseCount = versionOneBackup.exercises.count
+        _ = try store.restoreBackup(
+            data: JSONEncoder().encode(versionOneBackup),
+            activeOwner: owner
+        )
+
+        XCTAssertEqual(try store.seedBuiltInExercises(), 1)
+        XCTAssertTrue(store.exercises.contains { $0.catalogKey == "hip_abduction" })
+        XCTAssertFalse(store.exercises.contains { $0.catalogKey == "bench_press" })
+        XCTAssertEqual(store.catalogSeedVersion, 2)
+    }
+
     private func jsonObject(_ data: Data) throws -> [String: Any] {
         try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
     }

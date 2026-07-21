@@ -101,6 +101,7 @@ object RussianText {
         "Hamstrings" to "Бицепс бедра",
         "Hanging Leg Raise" to "Подъем ног в висе",
         "Hip Adduction" to "Сведение ног в тренажере",
+        "Hip Abduction" to "Разведение ног в тренажере",
         "Hip Thrust" to "Ягодичный мост со штангой",
         "Hold a 7-day streak." to "Удержи серию 7 дней.",
         "Holding steady" to "Стабильно",

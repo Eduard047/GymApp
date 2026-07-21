@@ -367,6 +367,134 @@
         }
       }
     },
+    "After creating the account, we will show where the confirmation email was sent." : {
+      "localizations" : {
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Після створення акаунта ми покажемо, на яку адресу надіслано лист для підтвердження."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "После создания аккаунта мы покажем, на какой адрес отправлено письмо для подтверждения."
+          }
+        }
+      }
+    },
+    "Back to sign in" : {
+      "localizations" : {
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Повернутися до входу"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Вернуться ко входу"
+          }
+        }
+      }
+    },
+    "Check your email" : {
+      "localizations" : {
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перевірте електронну пошту"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Проверьте электронную почту"
+          }
+        }
+      }
+    },
+    "Confirmation link sent to" : {
+      "localizations" : {
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Посилання надіслано на адресу"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ссылка отправлена на адрес"
+          }
+        }
+      }
+    },
+    "If you cannot find it, check your Spam folder." : {
+      "localizations" : {
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Якщо листа немає, перевірте папку «Спам»."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Если письма нет, проверьте папку «Спам»."
+          }
+        }
+      }
+    },
+    "Send email again" : {
+      "localizations" : {
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Надіслати лист ще раз"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Отправить письмо ещё раз"
+          }
+        }
+      }
+    },
+    "Use a different address" : {
+      "localizations" : {
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Використати іншу адресу"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Использовать другой адрес"
+          }
+        }
+      }
+    },
+    "We sent a confirmation link to the address below. Open the newest email from GymApp and tap “Confirm email”. Then return to GymApp and sign in." : {
+      "localizations" : {
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ми надіслали посилання для підтвердження на адресу нижче. Відкрийте найновіший лист від GymApp і натисніть «Підтвердити email». Потім поверніться до GymApp та увійдіть."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Мы отправили ссылку для подтверждения на адрес ниже. Откройте последнее письмо от GymApp и нажмите «Подтвердить email». Затем вернитесь в GymApp и войдите."
+          }
+        }
+      }
+    },
     "Account mode" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -10645,6 +10773,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Сведение ног в тренажере"
+          }
+        }
+      }
+    },
+    "Hip Abduction" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Разведение ног в тренажере"
           }
         }
       }

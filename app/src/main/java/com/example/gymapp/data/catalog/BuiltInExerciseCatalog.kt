@@ -8,7 +8,8 @@ data class BuiltInExerciseDefinition(
     val nameEn: String,
     val nameUk: String,
     val muscleIds: Set<String>,
-    val legacyAliases: Set<String> = emptySet()
+    val legacyAliases: Set<String> = emptySet(),
+    val introducedInSeedVersion: Int = 1
 )
 
 /**
@@ -18,7 +19,7 @@ data class BuiltInExerciseDefinition(
  * only an identity/display layer, so enabling it does not rename existing data or split history.
  */
 object BuiltInExerciseCatalog {
-    const val SEED_VERSION: Int = 1
+    const val SEED_VERSION: Int = 2
 
     val definitions: List<BuiltInExerciseDefinition> = listOf(
         definition("bench_press", "Bench Press", "Жим штанги лежачи", "chest", "triceps", "shoulders", aliases = setOf("жим лежачи")),
@@ -48,6 +49,14 @@ object BuiltInExerciseCatalog {
         definition("lying_leg_curl", "Lying Leg Curl", "Згинання ніг лежачи", "hamstrings", "calves", aliases = setOf("згибання ніг лежачи")),
         definition("seated_leg_curl", "Seated Leg Curl", "Згинання ніг сидячи", "hamstrings", "calves", aliases = setOf("згибання ніг сидячі", "згибання ніг сидячи")),
         definition("hip_adduction", "Hip Adduction", "Зведення ніг у тренажері", "adductors", aliases = setOf("зведення ніг")),
+        definition(
+            "hip_abduction",
+            "Hip Abduction",
+            "Розведення ніг у тренажері",
+            "glutes",
+            aliases = setOf("розведення ніг", "разведение ног", "разведение ног в тренажере"),
+            introducedInSeedVersion = 2
+        ),
         definition("calf_raise", "Calf Raise", "Підйом на носки", "calves", aliases = setOf("Підйом на носки стоячи")),
         definition("shoulder_press", "Shoulder Press", "Жим над головою", "shoulders", "triceps", aliases = setOf("Overhead Press", "Жим сидячи над головою", "Жим сидячи")),
         definition("lateral_raise", "Lateral Raise", "Підйоми гантелей через сторони", "shoulders", aliases = setOf("Махи в сторони", "махи в сторони з гантелями")),
@@ -79,13 +88,15 @@ object BuiltInExerciseCatalog {
         nameEn: String,
         nameUk: String,
         vararg muscleIds: String,
-        aliases: Set<String> = emptySet()
+        aliases: Set<String> = emptySet(),
+        introducedInSeedVersion: Int = 1
     ) = BuiltInExerciseDefinition(
         key = key,
         nameEn = nameEn,
         nameUk = nameUk,
         muscleIds = muscleIds.toSet(),
-        legacyAliases = aliases
+        legacyAliases = aliases,
+        introducedInSeedVersion = introducedInSeedVersion
     )
 
     private val definitionsByKey = definitions.associateBy { it.key }

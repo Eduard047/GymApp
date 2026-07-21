@@ -65,6 +65,10 @@ private val EXACT_MUSCLE_MAP = mapOf(
     "тяга верхних блоков в тренажере" to muscles("lats" to 1.0, "upperBack" to 0.75, "biceps" to 0.45, "forearms" to 0.25),
     "зведення ніг" to muscles("adductors" to 1.0, "quads" to 0.25),
     "зведення ніг у тренажері" to muscles("adductors" to 1.0, "quads" to 0.25),
+    "розведення ніг" to muscles("glutes" to 1.0),
+    "розведення ніг у тренажері" to muscles("glutes" to 1.0),
+    "разведение ног" to muscles("glutes" to 1.0),
+    "разведение ног в тренажере" to muscles("glutes" to 1.0),
     "згибання ніг" to muscles("hamstrings" to 1.0, "calves" to 0.2),
     "згинання ніг у тренажері" to muscles("hamstrings" to 1.0, "calves" to 0.2),
     "сгибание ног" to muscles("hamstrings" to 1.0, "calves" to 0.2),
@@ -225,6 +229,9 @@ fun muscleContributionsForExercise(
     }
     if (normalizedName.containsAny("зведення ніг", "сведение ног", "adductor")) {
         add("adductors", 1.0)
+    }
+    if (normalizedName.containsAny("розведення ніг", "разведение ног", "hip abduction", "abductor")) {
+        add("glutes", 1.0)
     }
     if (normalizedName.containsAny("метелик", "pec deck", "зведення рук", "сведение рук", "fly", "flies")) {
         add("chest", 1.0)

@@ -101,7 +101,7 @@ test("built-in exercise catalog persists stable keys and localizes only display 
   const context = loadPwaContext();
   const defaults = jsonFrom(context, "defaultAppState().exercises");
 
-  assert.equal(defaults.length, 51);
+  assert.equal(defaults.length, 52);
   assert.deepEqual(defaults[0], { id: 1, name: "Bench Press", catalogKey: "bench_press" });
   assert.equal(vm.runInContext('exerciseDisplayName(defaultAppState().exercises[0], "uk")', context), "Жим штанги лежачи");
   assert.equal(vm.runInContext('exerciseDisplayName({ name: "My custom press" }, "uk")', context), "My custom press");
@@ -119,8 +119,8 @@ test("catalog seeding runs once and preserves later user deletions", () => {
 
   assert.equal(vm.runInContext("state.catalogSeedVersion", context), 0);
   assert.equal(vm.runInContext("ensureBuiltInExerciseCatalog(state)", context), true);
-  assert.equal(vm.runInContext("state.catalogSeedVersion", context), 1);
-  assert.equal(vm.runInContext("state.exercises.length", context), 52);
+  assert.equal(vm.runInContext("state.catalogSeedVersion", context), 2);
+  assert.equal(vm.runInContext("state.exercises.length", context), 53);
 
   vm.runInContext(`state.exercises = state.exercises.filter(
     exercise => exercise.catalogKey !== "bench_press"
@@ -132,7 +132,27 @@ test("catalog seeding runs once and preserves later user deletions", () => {
   ), false);
 
   const exported = jsonFrom(context, "JSON.parse(exportPayload(false))");
-  assert.equal(exported.catalogSeedVersion, 1);
+  assert.equal(exported.catalogSeedVersion, 2);
+});
+
+test("catalog version 2 adds only hip abduction to existing accounts", () => {
+  const context = loadPwaContext();
+  vm.runInContext(`state = defaultAppState();
+    state.catalogSeedVersion = 1;
+    state.exercises = state.exercises.filter(exercise =>
+      exercise.catalogKey !== "hip_abduction" && exercise.catalogKey !== "bench_press"
+    );`, context);
+
+  assert.equal(vm.runInContext("ensureBuiltInExerciseCatalog(state)", context), true);
+  assert.equal(vm.runInContext("state.catalogSeedVersion", context), 2);
+  assert.equal(vm.runInContext(
+    'state.exercises.some(exercise => exercise.catalogKey === "hip_abduction")',
+    context
+  ), true);
+  assert.equal(vm.runInContext(
+    'state.exercises.some(exercise => exercise.catalogKey === "bench_press")',
+    context
+  ), false);
 });
 
 test("canonical aliases derive their stable key while custom labels remain custom", () => {
@@ -160,6 +180,19 @@ test("canonical aliases derive their stable key while custom labels remain custo
   assert.equal(vm.runInContext('exerciseCatalogKey("Присід зі штангою")', context), "squat");
   assert.equal(vm.runInContext('exerciseCatalogKey("Приседания со штангой")', context), "squat");
   assert.equal(vm.runInContext('exerciseCatalogKey("Жим сидячи над головою")', context), "shoulder_press");
+  assert.equal(vm.runInContext('exerciseCatalogKey("Разведение ног в тренажере")', context), "hip_abduction");
+});
+
+test("hip abduction aliases map to glutes without shoulder pollution", () => {
+  const context = loadPwaContext();
+  for (const name of ["Hip Abduction", "Розведення ніг", "Разведение ног в тренажере"]) {
+    const muscleIds = jsonFrom(
+      context,
+      `contributionFor({ name: ${JSON.stringify(name)} }).map(item => item.muscleId)`
+    );
+    assert.equal(muscleIds.includes("glutes"), true, `${name} should map to glutes`);
+    assert.equal(muscleIds.includes("shoulders"), false, `${name} should not map to shoulders`);
+  }
 });
 
 test("recognized raw name wins over a conflicting imported catalog key", () => {
@@ -193,7 +226,7 @@ test("an explicit empty remote catalog remains empty and is not replaced by defa
   const context = loadPwaContext();
 
   assert.equal(vm.runInContext("normalizeImportedState({ exercises: [], sessions: [] }, defaultAppState()).exercises.length", context), 0);
-  assert.equal(vm.runInContext("normalizeImportedState({ sessions: [] }, defaultAppState()).exercises.length", context), 51);
+  assert.equal(vm.runInContext("normalizeImportedState({ sessions: [] }, defaultAppState()).exercises.length", context), 52);
 });
 
 test("exercise library sorts by unique workout frequency in both directions", () => {

@@ -194,6 +194,7 @@ final class AuthService: ObservableObject {
     @Published private(set) var isLoading = false
     @Published var message: String?
     @Published private(set) var messageIsError = true
+    @Published private(set) var pendingConfirmationEmail: String?
     @Published private(set) var needsPasswordUpdate = false
 
     private let keychain: any KeychainStoring
@@ -257,8 +258,10 @@ final class AuthService: ObservableObject {
     }
 
     func signIn(email: String, password: String) async {
+        var submittedEmail: String?
         await perform {
             let cleanEmail = try self.validatedEmail(email)
+            submittedEmail = cleanEmail
             try self.validatePassword(password)
             let object = try await self.requestJSON(
                 path: "/auth/v1/token?grant_type=password",
@@ -268,6 +271,14 @@ final class AuthService: ObservableObject {
             let cloud = try self.parseCloudSession(object)
             try self.persist(.cloud(cloud), requiresPasswordUpdate: false)
             self.message = nil
+        }
+        if session == nil,
+           message == "Confirm your email first, then sign in.",
+           let submittedEmail {
+            _ = try? beginAuthTransaction(email: submittedEmail, kind: .signup)
+            pendingConfirmationEmail = submittedEmail
+            messageIsError = false
+            message = nil
         }
     }
 
@@ -300,8 +311,9 @@ final class AuthService: ObservableObject {
                     signedIn = true
                     self.message = nil
                 } else {
+                    self.pendingConfirmationEmail = cleanEmail
                     self.messageIsError = false
-                    self.message = "Account created. Check your email, then return to GymApp."
+                    self.message = nil
                 }
             } catch {
                 try? self.clearPendingAuthTransaction()
@@ -329,6 +341,15 @@ final class AuthService: ObservableObject {
             self.messageIsError = false
             self.message = "Confirmation email sent. Check inbox and spam."
         }
+    }
+
+    func dismissEmailConfirmation(clearPendingRequest: Bool) {
+        if clearPendingRequest {
+            try? clearPendingAuthTransaction()
+        }
+        pendingConfirmationEmail = nil
+        message = nil
+        messageIsError = false
     }
 
     func requestPasswordReset(email: String) async {
@@ -509,6 +530,7 @@ final class AuthService: ObservableObject {
         sessionRevision &+= 1
         session = nil
         message = nil
+        pendingConfirmationEmail = nil
         needsPasswordUpdate = false
 
         var deletionError: Error?
@@ -560,6 +582,7 @@ final class AuthService: ObservableObject {
         try keychain.save(encoder.encode(persisted), account: sessionAccount)
         sessionRevision &+= 1
         session = value
+        pendingConfirmationEmail = nil
         needsPasswordUpdate = protectedState
         defaults.removeObject(forKey: Self.pendingSecureDeletionKey)
     }

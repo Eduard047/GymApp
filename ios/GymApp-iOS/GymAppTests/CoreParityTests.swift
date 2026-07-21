@@ -223,14 +223,16 @@ final class CoreParityTests: XCTestCase {
     }
 
     func testBuiltInExerciseCatalogUsesStableKeysAndExactAliases() throws {
-        XCTAssertEqual(BuiltInExerciseCatalog.definitions.count, 51)
-        XCTAssertEqual(Set(BuiltInExerciseCatalog.definitions.map(\.key)).count, 51)
+        XCTAssertEqual(BuiltInExerciseCatalog.definitions.count, 52)
+        XCTAssertEqual(Set(BuiltInExerciseCatalog.definitions.map(\.key)).count, 52)
         XCTAssertEqual(BuiltInExerciseCatalog.canonicalKey(forName: "Bench Press"), "bench_press")
         XCTAssertEqual(BuiltInExerciseCatalog.canonicalKey(forName: "Жим штанги лежачи"), "bench_press")
         XCTAssertEqual(BuiltInExerciseCatalog.canonicalKey(forName: "Barbell Squat"), "squat")
         XCTAssertEqual(BuiltInExerciseCatalog.canonicalKey(forName: "Присід зі штангою"), "squat")
         XCTAssertEqual(BuiltInExerciseCatalog.canonicalKey(forName: "жим лежачи"), "bench_press")
         XCTAssertEqual(BuiltInExerciseCatalog.canonicalKey(forName: "Жим сидячи над головою"), "shoulder_press")
+        XCTAssertEqual(BuiltInExerciseCatalog.canonicalKey(forName: "разведение ног"), "hip_abduction")
+        XCTAssertEqual(BuiltInExerciseCatalog.canonicalKey(forName: "Разведение ног в тренажере"), "hip_abduction")
         XCTAssertNil(BuiltInExerciseCatalog.canonicalKey(forName: "My Bench Press Variation"))
 
         let legacy = Exercise(name: "Barbell Squat")
@@ -622,6 +624,72 @@ final class CoreParityTests: XCTestCase {
         XCTAssertFalse(auth.message?.contains(marker) == true)
     }
 
+    func testSignUpShowsPersistentEmailConfirmationState() async {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let session = URLSession(configuration: configuration)
+        let auth = AuthService(
+            keychain: InMemoryKeychainStore(),
+            urlSession: session,
+            defaults: temporaryDefaults(named: "pending-email-confirmation")
+        )
+        AuthURLProtocolStub.handler = { request in
+            XCTAssertEqual(request.url?.path, "/auth/v1/signup")
+            return try AuthURLProtocolStub.response(
+                for: request,
+                json: #"{"id":"00000000-0000-0000-0000-000000000001","email":"athlete@example.com"}"#
+            )
+        }
+        defer {
+            AuthURLProtocolStub.handler = nil
+            session.invalidateAndCancel()
+        }
+
+        let signedIn = await auth.signUp(
+            email: " Athlete@Example.com ",
+            password: "Password9",
+            displayName: "Athlete"
+        )
+
+        XCTAssertFalse(signedIn)
+        XCTAssertNil(auth.session)
+        XCTAssertNil(auth.message)
+        XCTAssertFalse(auth.messageIsError)
+        XCTAssertEqual(auth.pendingConfirmationEmail, "athlete@example.com")
+
+        auth.dismissEmailConfirmation(clearPendingRequest: false)
+        XCTAssertNil(auth.pendingConfirmationEmail)
+    }
+
+    func testUnconfirmedSignInShowsEmailConfirmationState() async {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let session = URLSession(configuration: configuration)
+        let auth = AuthService(
+            keychain: InMemoryKeychainStore(),
+            urlSession: session,
+            defaults: temporaryDefaults(named: "unconfirmed-sign-in")
+        )
+        AuthURLProtocolStub.handler = { request in
+            try AuthURLProtocolStub.response(
+                for: request,
+                statusCode: 400,
+                json: #"{"message":"Email not confirmed"}"#
+            )
+        }
+        defer {
+            AuthURLProtocolStub.handler = nil
+            session.invalidateAndCancel()
+        }
+
+        await auth.signIn(email: "athlete@example.com", password: "Password9")
+
+        XCTAssertNil(auth.session)
+        XCTAssertNil(auth.message)
+        XCTAssertFalse(auth.messageIsError)
+        XCTAssertEqual(auth.pendingConfirmationEmail, "athlete@example.com")
+    }
+
     func testCloudSyncIndicatorPublishesSafeMessageAndRethrowsOriginalError() async {
         let marker = "provider-private-marker-do-not-display"
         let auth = AuthService(
@@ -653,7 +721,7 @@ final class CoreParityTests: XCTestCase {
             directoryURL: directory
         )
 
-        XCTAssertEqual(try store.seedBuiltInExercises(), 51)
+        XCTAssertEqual(try store.seedBuiltInExercises(), 52)
         XCTAssertEqual(store.catalogSeedVersion, BuiltInExerciseCatalog.seedVersion)
         let bench = try XCTUnwrap(store.exercises.first { $0.catalogKey == "bench_press" })
         try store.deleteExercise(id: bench.id)
@@ -1206,6 +1274,14 @@ final class CoreParityTests: XCTestCase {
         XCTAssertEqual(map["chest"], 0.85)
         XCTAssertEqual(map["triceps"], 0.55)
         XCTAssertEqual(map["shoulders"], 0.45)
+    }
+
+    func testHipAbductionMapsToGlutesWithoutShoulders() {
+        for name in ["Hip Abduction", "Розведення ніг", "Разведение ног в тренажере"] {
+            let muscleIDs = Set(MuscleMappingEngine.defaultContributions(for: name).map(\.muscleID))
+            XCTAssertTrue(muscleIDs.contains("glutes"), "\(name) should map to glutes")
+            XCTAssertFalse(muscleIDs.contains("shoulders"), "\(name) should not map to shoulders")
+        }
     }
 
     func testActivityHeatmapShowsEveryDayOfCurrentFiveWeekMonth() throws {

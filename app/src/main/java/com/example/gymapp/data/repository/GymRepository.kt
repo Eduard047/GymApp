@@ -161,8 +161,12 @@ class GymRepository(
      * custom rows or workout history. Recognized legacy aliases satisfy the same catalog key.
      */
     suspend fun seedBuiltInExercises(): Int = database.withTransaction {
-        if ((appMetadataDao.getCatalogSeedVersion() ?: 0) >= BuiltInExerciseCatalog.SEED_VERSION) {
+        val currentSeedVersion = (appMetadataDao.getCatalogSeedVersion() ?: 0).coerceAtLeast(0)
+        if (currentSeedVersion >= BuiltInExerciseCatalog.SEED_VERSION) {
             return@withTransaction 0
+        }
+        val pendingDefinitions = BuiltInExerciseCatalog.definitions.filter {
+            it.introducedInSeedVersion > currentSeedVersion
         }
         val existing = exerciseDao.getExercisesSnapshot()
         val existingCatalogKeys = existing.mapNotNull { exercise ->
@@ -171,7 +175,7 @@ class GymRepository(
         var currentCount = existing.size
         var inserted = 0
 
-        BuiltInExerciseCatalog.definitions.forEach { definition ->
+        pendingDefinitions.forEach { definition ->
             if (definition.key in existingCatalogKeys) return@forEach
             // A full legacy account must remain usable. Leave the marker unset so a later
             // deletion can make room for the remaining catalog items on a future retry.
@@ -181,7 +185,7 @@ class GymRepository(
             currentCount += 1
             inserted += 1
         }
-        if (BuiltInExerciseCatalog.definitions.all { it.key in existingCatalogKeys }) {
+        if (pendingDefinitions.all { it.key in existingCatalogKeys }) {
             appMetadataDao.upsert(
                 AppMetadataEntity(catalogSeedVersion = BuiltInExerciseCatalog.SEED_VERSION)
             )

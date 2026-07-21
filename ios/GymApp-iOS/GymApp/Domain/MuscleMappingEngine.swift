@@ -75,6 +75,10 @@ public enum MuscleMappingEngine {
         "тяга верхних блоков в тренажере": muscles(("lats", 1), ("upperBack", 0.75), ("biceps", 0.45), ("forearms", 0.25)),
         "зведення ніг": muscles(("adductors", 1), ("quads", 0.25)),
         "зведення ніг у тренажері": muscles(("adductors", 1), ("quads", 0.25)),
+        "розведення ніг": muscles(("glutes", 1)),
+        "розведення ніг у тренажері": muscles(("glutes", 1)),
+        "разведение ног": muscles(("glutes", 1)),
+        "разведение ног в тренажере": muscles(("glutes", 1)),
         "згибання ніг": muscles(("hamstrings", 1), ("calves", 0.2)),
         "згинання ніг у тренажері": muscles(("hamstrings", 1), ("calves", 0.2)),
         "сгибание ног": muscles(("hamstrings", 1), ("calves", 0.2)),
@@ -198,6 +202,7 @@ public enum MuscleMappingEngine {
             add("glutes", 1); add("hamstrings", 0.35)
         }
         if containsAny(normalized, ["зведення ніг", "сведение ног", "adductor"]) { add("adductors", 1) }
+        if containsAny(normalized, ["розведення ніг", "разведение ног", "hip abduction", "abductor"]) { add("glutes", 1) }
         if containsAny(normalized, ["метелик", "pec deck", "зведення рук", "сведение рук", "fly", "flies"]) {
             add("chest", 1); add("shoulders", 0.25)
         }

@@ -4,6 +4,13 @@ import androidx.annotation.StringRes
 import com.example.gymapp.R
 import com.example.gymapp.util.LocalizedText
 
+internal fun requiresEmailConfirmation(error: Throwable): Boolean {
+    return error.message in setOf(
+        "Email confirmation may be required before login.",
+        "Confirm your email first, then log in."
+    )
+}
+
 /** Converts bounded internal/auth provider failures into safe localized UI copy. */
 internal fun authErrorText(
     error: Throwable,

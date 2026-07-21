@@ -32,7 +32,7 @@
     goal: Object.freeze(["Aesthetic Cut", "Muscle Gain", "Strength", "Balanced"]),
     calories: Object.freeze(["Deficit", "Maintenance", "Surplus"])
   });
-  const CATALOG_SEED_VERSION = 1;
+  const CATALOG_SEED_VERSION = 2;
 
   class StateContractError extends Error {
     constructor(message, code = "invalid_state") {

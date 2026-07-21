@@ -67,6 +67,16 @@
     <string name="auth_welcome_back">З поверненням</string>
     <string name="auth_sign_in_supporting">Увійди, щоб тренування синхронізувалися між твоїми пристроями.</string>
     <string name="auth_create_account_supporting">Створи хмарний обліковий запис, а потім підтвердь email, щоб почати синхронізацію.</string>
+    <string name="auth_confirmation_title">Перевірте електронну пошту</string>
+    <string name="auth_confirmation_body">Ми надіслали посилання для підтвердження на адресу нижче. Відкрийте найновіший лист від GymApp і натисніть «Підтвердити email». Потім поверніться до GymApp та увійдіть.</string>
+    <string name="auth_confirmation_sent_to">Посилання надіслано на адресу</string>
+    <string name="auth_confirmation_spam_hint">Якщо листа немає, перевірте папку «Спам».</string>
+    <string name="auth_confirmation_open_email">Відкрити пошту</string>
+    <string name="auth_confirmation_resend">Надіслати лист ще раз</string>
+    <string name="auth_confirmation_change_address">Використати іншу адресу</string>
+    <string name="auth_confirmation_back_to_sign_in">Повернутися до входу</string>
+    <string name="auth_confirmation_after_signup_hint">Після створення акаунта ми покажемо, на яку адресу надіслано лист для підтвердження.</string>
+    <string name="auth_email_app_unavailable">На цьому пристрої немає доступного поштового застосунку. Відкрийте пошту вручну.</string>
     <string name="auth_create_account">Створити обліковий запис</string>
     <string name="auth_log_in">Увійти</string>
     <string name="auth_log_in_instead">Увійти натомість</string>

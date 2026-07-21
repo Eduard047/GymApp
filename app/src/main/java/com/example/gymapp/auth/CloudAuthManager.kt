@@ -84,6 +84,7 @@ data class AuthUiState(
     val isLoading: Boolean = false,
     val message: LocalizedText? = null,
     val messageIsError: Boolean = true,
+    val pendingConfirmationEmail: String? = null,
     val needsPasswordUpdate: Boolean = false
 )
 
@@ -445,6 +446,32 @@ class CloudAuthManager(context: Context) {
                 isLoading = false,
                 message = message,
                 messageIsError = isError
+            )
+        }
+    }
+
+    fun showEmailConfirmation(email: String) {
+        val cleanEmail = normalizeEmail(email)
+        validateEmail(cleanEmail)
+        synchronized(authStateLock) {
+            _authState.value = _authState.value.copy(
+                isLoading = false,
+                message = null,
+                messageIsError = false,
+                pendingConfirmationEmail = cleanEmail
+            )
+        }
+    }
+
+    fun dismissEmailConfirmation(clearPendingRequest: Boolean) {
+        if (clearPendingRequest) {
+            clearPendingAuthTransaction(PENDING_SIGNUP_KEY)
+        }
+        synchronized(authStateLock) {
+            _authState.value = _authState.value.copy(
+                isLoading = false,
+                message = null,
+                pendingConfirmationEmail = null
             )
         }
     }

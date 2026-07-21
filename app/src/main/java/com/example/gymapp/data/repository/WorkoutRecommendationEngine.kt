@@ -693,6 +693,7 @@ object WorkoutRecommendationEngine {
             pattern(MovementPattern.Calf)
         }
         if (normalized.containsAny("зведення ніг", "сведение ног", "adductor")) add("adductors")
+        if (normalized.containsAny("розведення ніг", "разведение ног", "hip abduction", "abductor")) add("glutes")
 
         if (normalized.containsAny("жим", "press", "bench", "віджим", "отжим", "push up", "dips", "брусь") &&
             !normalized.containsAny("ног", "leg press")

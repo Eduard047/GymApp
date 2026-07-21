@@ -6,19 +6,22 @@ public struct BuiltInExerciseDefinition: Hashable, Sendable {
     public let ukrainianName: String
     public let muscleIDs: [String]
     public let legacyAliases: [String]
+    public let introducedInSeedVersion: Int
 
     public init(
         key: String,
         englishName: String,
         ukrainianName: String,
         muscleIDs: [String],
-        legacyAliases: [String] = []
+        legacyAliases: [String] = [],
+        introducedInSeedVersion: Int = 1
     ) {
         self.key = key
         self.englishName = englishName
         self.ukrainianName = ukrainianName
         self.muscleIDs = muscleIDs
         self.legacyAliases = legacyAliases
+        self.introducedInSeedVersion = introducedInSeedVersion
     }
 }
 
@@ -28,7 +31,7 @@ public struct BuiltInExerciseDefinition: Hashable, Sendable {
 /// The catalog key is optional metadata used only to choose a display label, so old
 /// snapshots and cross-platform schema-v2 backups remain valid.
 public enum BuiltInExerciseCatalog {
-    public static let seedVersion = 1
+    public static let seedVersion = 2
 
     public static let definitions: [BuiltInExerciseDefinition] = [
         definition("bench_press", "Bench Press", "Жим штанги лежачи", ["chest", "triceps", "shoulders"], aliases: ["жим лежачи"]),
@@ -58,6 +61,14 @@ public enum BuiltInExerciseCatalog {
         definition("lying_leg_curl", "Lying Leg Curl", "Згинання ніг лежачи", ["hamstrings", "calves"], aliases: ["згибання ніг лежачи"]),
         definition("seated_leg_curl", "Seated Leg Curl", "Згинання ніг сидячи", ["hamstrings", "calves"], aliases: ["згибання ніг сидячі", "згибання ніг сидячи"]),
         definition("hip_adduction", "Hip Adduction", "Зведення ніг у тренажері", ["adductors"], aliases: ["зведення ніг"]),
+        definition(
+            "hip_abduction",
+            "Hip Abduction",
+            "Розведення ніг у тренажері",
+            ["glutes"],
+            aliases: ["розведення ніг", "разведение ног", "разведение ног в тренажере"],
+            introducedInSeedVersion: 2
+        ),
         definition("calf_raise", "Calf Raise", "Підйом на носки", ["calves"], aliases: ["Підйом на носки стоячи"]),
         definition("shoulder_press", "Shoulder Press", "Жим над головою", ["shoulders", "triceps"], aliases: ["Overhead Press", "Жим сидячи над головою", "Жим сидячи"]),
         definition("lateral_raise", "Lateral Raise", "Підйоми гантелей через сторони", ["shoulders"], aliases: ["Махи в сторони", "махи в сторони з гантелями"]),
@@ -89,14 +100,16 @@ public enum BuiltInExerciseCatalog {
         _ englishName: String,
         _ ukrainianName: String,
         _ muscleIDs: [String],
-        aliases: [String] = []
+        aliases: [String] = [],
+        introducedInSeedVersion: Int = 1
     ) -> BuiltInExerciseDefinition {
         BuiltInExerciseDefinition(
             key: key,
             englishName: englishName,
             ukrainianName: ukrainianName,
             muscleIDs: muscleIDs,
-            legacyAliases: aliases
+            legacyAliases: aliases,
+            introducedInSeedVersion: introducedInSeedVersion
         )
     }
 

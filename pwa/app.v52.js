@@ -156,6 +156,7 @@ const builtInExerciseCatalog = [
   { key: "lying_leg_curl", names: { en: "Lying Leg Curl", uk: "Згинання ніг лежачи" }, aliases: ["згибання ніг лежачи"], muscleIds: ["hamstrings", "calves"] },
   { key: "seated_leg_curl", names: { en: "Seated Leg Curl", uk: "Згинання ніг сидячи" }, aliases: ["згибання ніг сидячі", "згибання ніг сидячи"], muscleIds: ["hamstrings", "calves"] },
   { key: "hip_adduction", names: { en: "Hip Adduction", uk: "Зведення ніг у тренажері" }, aliases: ["зведення ніг"], muscleIds: ["adductors"] },
+  { key: "hip_abduction", names: { en: "Hip Abduction", uk: "Розведення ніг у тренажері" }, aliases: ["розведення ніг", "разведение ног", "разведение ног в тренажере"], muscleIds: ["glutes"], introducedInSeedVersion: 2 },
   { key: "calf_raise", names: { en: "Calf Raise", uk: "Підйом на носки" }, aliases: ["Підйом на носки стоячи"], muscleIds: ["calves"] },
   { key: "shoulder_press", names: { en: "Shoulder Press", uk: "Жим над головою" }, aliases: ["Overhead Press", "Жим сидячи над головою", "Жим сидячи"], muscleIds: ["shoulders", "triceps"] },
   { key: "lateral_raise", names: { en: "Lateral Raise", uk: "Підйоми гантелей через сторони" }, aliases: ["Махи в сторони", "махи в сторони з гантелями"], muscleIds: ["shoulders"] },
@@ -182,7 +183,7 @@ const builtInExerciseCatalog = [
   { key: "warm_up", names: { en: "Warm Up", uk: "Розминка" }, aliases: [], muscleIds: ["shoulders", "chest", "upperBack", "lats", "abs", "glutes", "quads", "hamstrings"] }
 ];
 
-const CATALOG_SEED_VERSION = 1;
+const CATALOG_SEED_VERSION = 2;
 const builtInExerciseByKey = new Map(builtInExerciseCatalog.map(exercise => [exercise.key, exercise]));
 const builtInExerciseKeyByAlias = new Map(
   builtInExerciseCatalog.flatMap(exercise =>
@@ -601,6 +602,30 @@ const exactMuscleMap = Object.fromEntries(Object.entries({
     [
       "quads",
       0.25
+    ]
+  ],
+  "розведення ніг": [
+    [
+      "glutes",
+      1
+    ]
+  ],
+  "розведення ніг у тренажері": [
+    [
+      "glutes",
+      1
+    ]
+  ],
+  "разведение ног": [
+    [
+      "glutes",
+      1
+    ]
+  ],
+  "разведение ног в тренажере": [
+    [
+      "glutes",
+      1
     ]
   ],
   "згибання ніг": [
@@ -1040,6 +1065,8 @@ let exerciseMuscleFilter = "all";
 let exerciseSortMode = "name";
 let exerciseFavoritesOnly = false;
 let authMode = "login";
+let pendingEmailConfirmation = null;
+let authRequestInProgress = false;
 let accountTransitionInProgress = false;
 let garminSyncInProgress = false;
 let pendingRecommendations = [];
@@ -1055,6 +1082,7 @@ const USER_VISIBLE_ERROR_MESSAGES = Symbol("GymAppUserVisibleErrorMessages");
 
 function clearAuthDrafts() {
   authMode = "login";
+  pendingEmailConfirmation = null;
   authDrafts.login = { email: "", password: "" };
   authDrafts.signup = { email: "", emailConfirm: "", password: "", passwordConfirm: "", name: "" };
 }
@@ -1231,11 +1259,15 @@ function defaultAppState() {
 function ensureBuiltInExerciseCatalog(targetState) {
   if (!targetState || !Array.isArray(targetState.exercises) ||
       targetState.catalogSeedVersion >= CATALOG_SEED_VERSION) return false;
+  const currentSeedVersion = Math.max(0, Number(targetState.catalogSeedVersion) || 0);
+  const pendingDefinitions = builtInExerciseCatalog.filter(
+    definition => (definition.introducedInSeedVersion || 1) > currentSeedVersion
+  );
   const existingKeys = new Set(targetState.exercises.map(exerciseCatalogKey).filter(Boolean));
   const usedIds = new Set(targetState.exercises.map(exercise => Number(exercise.id)).filter(Number.isSafeInteger));
   let candidateId = Math.max(0, ...usedIds) + 1;
   let inserted = 0;
-  for (const definition of builtInExerciseCatalog) {
+  for (const definition of pendingDefinitions) {
     if (existingKeys.has(definition.key) || targetState.exercises.length >= window.GymStateContract.LIMITS.exercises) continue;
     while (usedIds.has(candidateId)) candidateId++;
     targetState.exercises.push({ id: candidateId, name: definition.names.en, catalogKey: definition.key });
@@ -1247,7 +1279,7 @@ function ensureBuiltInExerciseCatalog(targetState) {
   targetState.exercises.sort((left, right) =>
     exerciseDisplayName(left, targetState.language).localeCompare(exerciseDisplayName(right, targetState.language), targetState.language)
   );
-  if (builtInExerciseCatalog.every(definition => existingKeys.has(definition.key))) {
+  if (pendingDefinitions.every(definition => existingKeys.has(definition.key))) {
     targetState.catalogSeedVersion = CATALOG_SEED_VERSION;
   }
   return inserted > 0 || targetState.catalogSeedVersion === CATALOG_SEED_VERSION;
@@ -3033,14 +3065,25 @@ function loginScreen() {
   return `<div class="app-shell auth-shell">
     <main class="screen auth-screen" data-scroll-key="auth">
       <section class="hero-panel auth-hero"><h2>GymApp</h2><p>${remoteEnabled ? tx("Sign in to sync workouts across devices.", "Увійди, щоб синхронізувати тренування між пристроями.") : tx("Cloud login is ready after Supabase keys are added.", "Хмарний вхід запрацює після додавання ключів Supabase.")}</p></section>
-      ${remoteEnabled ? `<section class="panel highlighted auth-panel"><h2>${isSignUp ? tx("Create account", "Створити акаунт") : tx("Cloud account", "Хмарний акаунт")}</h2><div class="field-stack">
+      ${remoteEnabled ? pendingEmailConfirmation ? emailConfirmationPanel() : `<section class="panel highlighted auth-panel"><h2>${isSignUp ? tx("Create account", "Створити акаунт") : tx("Cloud account", "Хмарний акаунт")}</h2><div class="field-stack">
         ${isSignUp ? `<label>${tx("Email", "Email")}<input id="signup-email" data-auth-mode="signup" data-auth-field="email" autocomplete="email" inputmode="email" placeholder="email@example.com" value="${escapeAttr(authDrafts.signup.email)}"></label><label>${tx("Repeat email", "Повтори адресу електронної пошти")}<input id="signup-email-confirm" data-auth-mode="signup" data-auth-field="emailConfirm" autocomplete="email" inputmode="email" value="${escapeAttr(authDrafts.signup.emailConfirm)}"></label><label>${tx("Password", "Пароль")}<input id="signup-password" data-auth-mode="signup" data-auth-field="password" autocomplete="new-password" type="password" value="${escapeAttr(authDrafts.signup.password)}"></label><label>${tx("Repeat password", "Повтори пароль")}<input id="signup-password-confirm" data-auth-mode="signup" data-auth-field="passwordConfirm" autocomplete="new-password" type="password" value="${escapeAttr(authDrafts.signup.passwordConfirm)}"></label><label>${tx("Display name", "Ім’я профілю")}<input id="signup-name" data-auth-mode="signup" data-auth-field="name" autocomplete="name" maxlength="32" value="${escapeAttr(authDrafts.signup.name)}"></label>` : `<label>${tx("Email", "Email")}<input id="login-email" data-auth-mode="login" data-auth-field="email" autocomplete="email" inputmode="email" placeholder="email@example.com" value="${escapeAttr(authDrafts.login.email)}"></label><label>${tx("Password", "Пароль")}<input id="login-password" data-auth-mode="login" data-auth-field="password" autocomplete="current-password" type="password" value="${escapeAttr(authDrafts.login.password)}"></label>`}
-      </div><p class="muted">${tx("Password must be 8+ characters and include letters and numbers.", "Пароль має містити щонайменше 8 символів, зокрема літери й цифри.")}</p><div class="auth-actions"><button class="button" data-action="${isSignUp ? "remote-signup" : "remote-login"}">${isSignUp ? tx("Create account", "Створити акаунт") : tx("Log in", "Увійти")}</button><button class="button ghost" data-action="auth-mode" data-mode="${isSignUp ? "login" : "signup"}">${isSignUp ? tx("Log in instead", "Увійти натомість") : tx("Create account", "Створити акаунт")}</button></div>${isSignUp ? `<button class="button ghost full" data-action="remote-resend-confirmation">${tx("Resend confirmation email", "Повторно надіслати лист для підтвердження")}</button>` : ""}</section>` : ""}
+      </div><p class="muted">${tx("Password must be 8+ characters and include letters and numbers.", "Пароль має містити щонайменше 8 символів, зокрема літери й цифри.")}</p><div class="auth-actions"><button class="button" data-action="${isSignUp ? "remote-signup" : "remote-login"}">${isSignUp ? tx("Create account", "Створити акаунт") : tx("Log in", "Увійти")}</button><button class="button ghost" data-action="auth-mode" data-mode="${isSignUp ? "login" : "signup"}">${isSignUp ? tx("Log in instead", "Увійти натомість") : tx("Create account", "Створити акаунт")}</button></div>${isSignUp ? `<p class="muted auth-confirmation-preview">${tx("After creating the account, we will show where the confirmation email was sent.", "Після створення акаунта ми покажемо, на яку адресу надіслано лист для підтвердження.")}</p>` : ""}</section>` : ""}
       <details class="local-account-details" ${remoteEnabled ? "" : "open"}><summary>${tx("Offline local account", "Офлайн-акаунт")}</summary><section class="panel auth-panel"><p class="muted">${remoteEnabled ? tx("Fallback for this browser only.", "Запасний режим лише для цього браузера.") : tx("Paste Supabase keys into supabase-config.js to enable real network login.", "Встав ключі Supabase у supabase-config.js, щоб увімкнути справжній мережевий вхід.")}</p><div class="field-row login-row"><input id="local-login-name" autocomplete="username" maxlength="64" aria-label="${txAttr("Name", "Ім'я")}" placeholder="${txAttr("Name", "Ім'я")}"><button class="button" data-action="login-account">${tx("Enter", "Увійти")}</button></div>${accounts.length ? `<div class="saved-accounts"><span class="field-caption">${tx("Saved accounts", "Збережені акаунти")}</span><div class="chip-row">${accounts.map(account => `<button class="chip buttonlike" data-action="login-account" data-name="${escapeAttr(account.name)}">${escapeHtml(account.name)}</button>`).join("")}</div></div>` : ""}</section></details>
       <nav class="auth-links" aria-label="${txAttr("GymApp links", "Посилання GymApp")}"><a href="${PUBLIC_SITE_URL}" target="_blank" rel="noopener noreferrer">${tx("Website", "Сайт")}</a><a href="${SUPPORT_URL}" target="_blank" rel="noopener noreferrer">${tx("Support", "Підтримка")}</a><a href="${PRIVACY_URL}" target="_blank" rel="noopener noreferrer">${tx("Privacy", "Конфіденційність")}</a></nav>
       <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
     </main>
   </div>`;
+}
+
+function emailConfirmationPanel() {
+  const notice = pendingEmailConfirmation;
+  if (!notice) return "";
+  return `<section class="panel highlighted auth-panel email-confirmation-panel" aria-labelledby="email-confirmation-title">
+    <div class="email-confirmation-heading"><span class="email-confirmation-icon" aria-hidden="true">✉</span><div><span>${tx("Confirmation link sent to", "Посилання надіслано на адресу")}</span><strong id="pending-confirmation-email"></strong></div></div>
+    <div class="email-confirmation-copy"><h2 id="email-confirmation-title">${tx("Check your email", "Перевірте електронну пошту")}</h2><p>${tx("We sent a confirmation link to the address below. Open the newest email from GymApp and tap “Confirm email”. Then return to GymApp and sign in.", "Ми надіслали посилання для підтвердження на адресу нижче. Відкрийте найновіший лист від GymApp і натисніть «Підтвердити email». Потім поверніться до GymApp та увійдіть.")}</p><p class="muted">${tx("If you cannot find it, check your Spam folder.", "Якщо листа немає, перевірте папку «Спам».")}</p></div>
+    ${notice.status ? `<div class="email-confirmation-status ${notice.statusIsError ? "error" : ""}" role="status">${escapeHtml(notice.status)}</div>` : ""}
+    <div class="email-confirmation-actions"><button class="button full" data-action="remote-resend-confirmation" ${authRequestInProgress ? "disabled" : ""}>${tx("Send email again", "Надіслати лист ще раз")}</button><button class="button ghost full" data-action="confirmation-change-address" ${authRequestInProgress ? "disabled" : ""}>${tx("Use a different address", "Використати іншу адресу")}</button><button class="button ghost full" data-action="confirmation-back-to-login" ${authRequestInProgress ? "disabled" : ""}>${tx("Back to sign in", "Повернутися до входу")}</button></div>
+  </section>`;
 }
 
 function languageSelectorMarkup() {
@@ -3316,6 +3359,7 @@ function inferMuscleContributions(exercise) {
   if (has("гіперекстензі", "гиперэкстенз", "hyperextension")) { add("lowerBack", 1); add("glutes", 0.55); add("hamstrings", 0.45); }
   if (has("сідниц", "ягодиц", "glute", "hip thrust", "місток", "мостик")) { add("glutes", 1); add("hamstrings", 0.35); }
   if (has("зведення ніг", "сведение ног", "adductor")) add("adductors", 1);
+  if (has("розведення ніг", "разведение ног", "hip abduction", "abductor")) add("glutes", 1);
   if (has("метелик", "pec deck", "зведення рук", "сведение рук", "fly", "flies")) { add("chest", 1); add("shoulders", 0.25); }
   return [...inferred].filter(([muscleId]) => muscles.some(([id]) => id === muscleId)).map(([muscleId, weight]) => ({ muscleId, weight }));
 }
@@ -4262,7 +4306,15 @@ function friendlyAuthError(error) {
   );
 }
 
+function isEmailConfirmationError(error) {
+  const raw = typeof error?.message === "string"
+    ? error.message.slice(0, MAX_REMOTE_ERROR_RESPONSE_BYTES)
+    : "";
+  return /email not confirmed|email_not_confirmed/i.test(raw);
+}
+
 async function remoteLogin(createAccount) {
+  if (authRequestInProgress) return;
   if (!remoteAuthEnabled()) return showToast(tx("Supabase is not configured.", "Supabase не налаштовано."));
   const email = normalizeAuthEmail(createAccount
     ? document.querySelector("#signup-email")?.value
@@ -4281,6 +4333,7 @@ async function remoteLogin(createAccount) {
   if (createAccount && password !== passwordConfirm) {
     return showToast(tx("Passwords do not match.", "Паролі не збігаються."));
   }
+  authRequestInProgress = true;
   try {
     const path = createAccount
       ? `/auth/v1/signup?redirect_to=${encodeURIComponent(AUTH_REDIRECT_URL)}`
@@ -4291,7 +4344,10 @@ async function remoteLogin(createAccount) {
       body: JSON.stringify(createAccount ? { email, password, data: { display_name: displayName || email.split("@")[0] } } : { email, password })
     });
     if (!session?.access_token || !session?.user?.id) {
-      showToast(tx("Account created. Check your email to confirm the account, then log in.", "Акаунт створено. Підтвердь адресу електронної пошти, а потім увійди."));
+      authDrafts.signup.password = "";
+      authDrafts.signup.passwordConfirm = "";
+      pendingEmailConfirmation = { email, status: "", statusIsError: false };
+      render();
       return;
     }
     if (!validRemoteSession(session)) throw new Error("Cloud login returned an invalid session.");
@@ -4333,7 +4389,16 @@ async function remoteLogin(createAccount) {
       ? tx("Cloud login complete. Recovery action is required before sync.", "Хмарний вхід виконано. Перед синхронізацією потрібна дія відновлення.")
       : tx("Cloud login complete.", "Вхід у хмарний акаунт виконано."));
   } catch (error) {
-    showToast(friendlyAuthError(error));
+    if (!createAccount && isEmailConfirmationError(error)) {
+      authDrafts.login.password = "";
+      pendingEmailConfirmation = { email, status: "", statusIsError: false };
+      render();
+    } else {
+      showToast(friendlyAuthError(error));
+    }
+  } finally {
+    authRequestInProgress = false;
+    if (pendingEmailConfirmation && !activeAccount) render();
   }
 }
 
@@ -4401,19 +4466,50 @@ async function resetCloudRecovery() {
 }
 
 async function resendRemoteConfirmation() {
+  if (authRequestInProgress) return;
   if (!remoteAuthEnabled()) return showToast(tx("Supabase is not configured.", "Supabase не налаштовано."));
-  const email = normalizeAuthEmail(document.querySelector("#signup-email")?.value);
+  const email = normalizeAuthEmail(pendingEmailConfirmation?.email);
   const validationError = validateConfirmationEmail(email);
-  if (validationError) return showToast(validationError);
+  if (validationError || !pendingEmailConfirmation) return showToast(validationError || tx("Start account creation again.", "Почніть створення акаунта ще раз."));
+  authRequestInProgress = true;
+  pendingEmailConfirmation = { ...pendingEmailConfirmation, status: "", statusIsError: false };
+  render();
   try {
     await supabaseRequest(`/auth/v1/resend?redirect_to=${encodeURIComponent(AUTH_REDIRECT_URL)}`, {
       method: "POST",
       body: JSON.stringify({ type: "signup", email })
     });
-    showToast(tx("Confirmation email sent. Check your inbox and spam folder.", "Лист для підтвердження надіслано. Перевір вхідні та папку зі спамом."));
+    pendingEmailConfirmation = {
+      email,
+      status: tx("Confirmation email sent. Check your inbox and spam folder.", "Лист для підтвердження надіслано. Перевір вхідні та папку зі спамом."),
+      statusIsError: false
+    };
   } catch (error) {
-    showToast(friendlyAuthError(error));
+    pendingEmailConfirmation = { email, status: friendlyAuthError(error), statusIsError: true };
+  } finally {
+    authRequestInProgress = false;
+    render();
   }
+}
+
+function changePendingConfirmationAddress() {
+  if (!pendingEmailConfirmation || authRequestInProgress) return;
+  const email = pendingEmailConfirmation.email;
+  pendingEmailConfirmation = null;
+  authMode = "signup";
+  authDrafts.signup = { email, emailConfirm: "", password: "", passwordConfirm: "", name: authDrafts.signup.name || "" };
+  render();
+  requestAnimationFrame(() => app.querySelector("#signup-email")?.focus());
+}
+
+function returnToLoginFromConfirmation() {
+  if (!pendingEmailConfirmation || authRequestInProgress) return;
+  const email = pendingEmailConfirmation.email;
+  pendingEmailConfirmation = null;
+  authMode = "login";
+  authDrafts.login = { email, password: "" };
+  render();
+  requestAnimationFrame(() => app.querySelector("#login-email")?.focus());
 }
 
 async function logoutAccount() {
@@ -5349,6 +5445,10 @@ function bindEvents() {
       if (authDrafts[mode] && Object.hasOwn(authDrafts[mode], field)) authDrafts[mode][field] = input.value;
     });
   });
+  const pendingEmail = app.querySelector("#pending-confirmation-email");
+  if (pendingEmail && pendingEmailConfirmation) {
+    pendingEmail.textContent = pendingEmailConfirmation.email;
+  }
   app.querySelectorAll("[data-block][data-field]").forEach(input => {
     input.addEventListener("input", () => updateDraftInput(input));
     if (input.matches("select")) {
@@ -5395,6 +5495,8 @@ function handleAction(action, el) {
   if (action === "remote-login") return remoteLogin(false);
   if (action === "remote-signup") return remoteLogin(true);
   if (action === "remote-resend-confirmation") return resendRemoteConfirmation();
+  if (action === "confirmation-change-address") return changePendingConfirmationAddress();
+  if (action === "confirmation-back-to-login") return returnToLoginFromConfirmation();
   if (action === "login-account") return loginAccount(el.dataset.name || app.querySelector("#local-login-name")?.value);
   if (action === "export-cloud-recovery") return exportCloudRecovery();
   if (action === "reset-cloud-recovery") return resetCloudRecovery();

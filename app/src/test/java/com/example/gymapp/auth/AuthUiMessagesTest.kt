@@ -69,4 +69,24 @@ class AuthUiMessagesTest {
         )
         assertEquals(fallback, authErrorText(IllegalStateException(), fallback).resourceId)
     }
+
+    @Test
+    fun emailConfirmationRequirementIsSeparatedFromActualLoginErrors() {
+        assertEquals(
+            true,
+            requiresEmailConfirmation(
+                IllegalStateException("Confirm your email first, then log in.")
+            )
+        )
+        assertEquals(
+            true,
+            requiresEmailConfirmation(
+                IllegalStateException("Email confirmation may be required before login.")
+            )
+        )
+        assertEquals(
+            false,
+            requiresEmailConfirmation(IllegalStateException("Email or password is incorrect."))
+        )
+    }
 }

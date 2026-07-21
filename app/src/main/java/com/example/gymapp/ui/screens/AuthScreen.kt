@@ -1,6 +1,8 @@
 package com.example.gymapp.ui.screens
 
+import android.content.ActivityNotFoundException
 import android.content.Context
+import android.content.Intent
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -25,6 +27,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Visibility
@@ -35,6 +38,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -77,6 +81,7 @@ fun AuthScreen(
     onLogin: (email: String, password: String) -> Unit,
     onSignUp: (email: String, password: String, displayName: String) -> Unit,
     onResendConfirmation: (email: String) -> Unit,
+    onDismissEmailConfirmation: (clearPendingRequest: Boolean) -> Unit,
     onPasswordReset: (email: String) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -93,6 +98,7 @@ fun AuthScreen(
     var signUpPasswordVisible by remember { mutableStateOf(false) }
     var signUpPasswordConfirmVisible by remember { mutableStateOf(false) }
     var localMessage by remember { mutableStateOf<String?>(null) }
+    val pendingConfirmationEmail = uiState.pendingConfirmationEmail
 
     BoxWithConstraints(
         modifier = modifier
@@ -144,17 +150,62 @@ fun AuthScreen(
                     SectionTitle(
                         eyebrow = stringResource(R.string.auth_secure_account),
                         title = stringResource(
-                            if (isSignUp) R.string.auth_create_account else R.string.auth_welcome_back
+                            when {
+                                pendingConfirmationEmail != null -> R.string.auth_confirmation_title
+                                isSignUp -> R.string.auth_create_account
+                                else -> R.string.auth_welcome_back
+                            }
                         ),
                         supporting = stringResource(
-                            if (isSignUp) {
-                                R.string.auth_create_account_supporting
-                            } else {
-                                R.string.auth_sign_in_supporting
+                            when {
+                                pendingConfirmationEmail != null -> R.string.auth_confirmation_body
+                                isSignUp -> R.string.auth_create_account_supporting
+                                else -> R.string.auth_sign_in_supporting
                             }
                         )
                     )
 
+                    if (pendingConfirmationEmail != null) {
+                        EmailConfirmationCard(
+                            email = pendingConfirmationEmail,
+                            isLoading = uiState.isLoading,
+                            onOpenEmail = {
+                                if (!openEmailInbox(context)) {
+                                    localMessage = context.getString(R.string.auth_email_app_unavailable)
+                                }
+                            },
+                            onResend = {
+                                localMessage = null
+                                onResendConfirmation(pendingConfirmationEmail)
+                            },
+                            onChangeAddress = {
+                                signUpEmail = pendingConfirmationEmail
+                                signUpEmailConfirm = ""
+                                signUpPassword = ""
+                                signUpPasswordConfirm = ""
+                                localMessage = null
+                                isSignUp = true
+                                onDismissEmailConfirmation(true)
+                            },
+                            onBackToSignIn = {
+                                email = pendingConfirmationEmail
+                                password = ""
+                                localMessage = null
+                                isSignUp = false
+                                onDismissEmailConfirmation(false)
+                            }
+                        )
+
+                        localMessage?.let { message ->
+                            AuthStatusBanner(message = message, isError = true)
+                        }
+                        uiState.message?.let { message ->
+                            AuthStatusBanner(
+                                message = message.asString(),
+                                isError = uiState.messageIsError
+                            )
+                        }
+                    } else {
                     AuthModeSelector(
                         isSignUp = isSignUp,
                         enabled = !uiState.isLoading,
@@ -327,24 +378,13 @@ fun AuthScreen(
                     }
 
                     if (isSignUp) {
-                        TextButton(
-                            onClick = {
-                                val validation = validateConfirmationEmailInput(signUpEmail)
-                                if (validation == null) {
-                                    localMessage = null
-                                    onResendConfirmation(signUpEmail)
-                                } else {
-                                    localMessage = localizedAuthValidationMessage(context, validation)
-                                }
-                            },
-                            enabled = !uiState.isLoading,
-                            shape = RoundedCornerShape(16.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(min = 48.dp)
-                        ) {
-                            Text(stringResource(R.string.auth_resend_confirmation))
-                        }
+                        Text(
+                            text = stringResource(R.string.auth_confirmation_after_signup_hint),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth()
+                        )
                     } else {
                         TextButton(
                             onClick = {
@@ -365,7 +405,121 @@ fun AuthScreen(
                             Text(stringResource(R.string.auth_forgot_password))
                         }
                     }
+                    }
                 }
+            }
+        }
+    }
+}
+
+private fun openEmailInbox(context: Context): Boolean {
+    return try {
+        context.startActivity(
+            Intent(Intent.ACTION_MAIN)
+                .addCategory(Intent.CATEGORY_APP_EMAIL)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
+        true
+    } catch (_: ActivityNotFoundException) {
+        false
+    } catch (_: SecurityException) {
+        false
+    }
+}
+
+@Composable
+private fun EmailConfirmationCard(
+    email: String,
+    isLoading: Boolean,
+    onOpenEmail: () -> Unit,
+    onResend: () -> Unit,
+    onChangeAddress: () -> Unit,
+    onBackToSignIn: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val accent = MaterialTheme.colorScheme.primary
+    val shape = RoundedCornerShape(20.dp)
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.48f))
+            .border(BorderStroke(1.dp, accent.copy(alpha = 0.3f)), shape)
+            .semantics { liveRegion = LiveRegionMode.Polite }
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(accent.copy(alpha = 0.14f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Email,
+                    contentDescription = null,
+                    tint = accent
+                )
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(
+                    text = stringResource(R.string.auth_confirmation_sent_to),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = email,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+        }
+
+        Text(
+            text = stringResource(R.string.auth_confirmation_spam_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        Button(
+            onClick = onOpenEmail,
+            enabled = !isLoading,
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp)
+        ) {
+            Text(stringResource(R.string.auth_confirmation_open_email))
+        }
+        OutlinedButton(
+            onClick = onResend,
+            enabled = !isLoading,
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+        ) {
+            Text(stringResource(R.string.auth_confirmation_resend))
+        }
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            TextButton(
+                onClick = onChangeAddress,
+                enabled = !isLoading,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(stringResource(R.string.auth_confirmation_change_address))
+            }
+            TextButton(
+                onClick = onBackToSignIn,
+                enabled = !isLoading,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(stringResource(R.string.auth_confirmation_back_to_sign_in))
             }
         }
     }

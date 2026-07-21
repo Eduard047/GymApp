@@ -80,12 +80,19 @@ public struct AuthView: View {
             VStack(alignment: .leading, spacing: 16) {
                 GymSectionTitle(
                     eyebrow: "Secure account",
-                    title: mode == .signIn ? "Welcome back" : "Create account",
-                    supporting: mode == .signIn
-                        ? "Sign in to keep workouts synchronized across your devices."
-                        : "Create a cloud account, then confirm your email to start syncing."
+                    title: authService.pendingConfirmationEmail == nil
+                        ? (mode == .signIn ? "Welcome back" : "Create account")
+                        : "Check your email",
+                    supporting: authService.pendingConfirmationEmail == nil
+                        ? (mode == .signIn
+                            ? "Sign in to keep workouts synchronized across your devices."
+                            : "Create a cloud account, then confirm your email to start syncing.")
+                        : "We sent a confirmation link to the address below. Open the newest email from GymApp and tap “Confirm email”. Then return to GymApp and sign in."
                 )
 
+                if let pendingEmail = authService.pendingConfirmationEmail {
+                    emailConfirmationCard(email: pendingEmail)
+                } else {
                 Picker("Account action", selection: $mode) {
                     ForEach(AuthMode.allCases) { item in
                         Text(item.title).tag(item)
@@ -155,6 +162,7 @@ public struct AuthView: View {
                 )
 
                 secondaryAccountActions
+                }
 
                 Divider()
                     .overlay(GymTheme.outline.opacity(0.5))
@@ -290,13 +298,85 @@ public struct AuthView: View {
             .disabled(authService.isLoading)
             .frame(maxWidth: .infinity, alignment: .center)
         } else {
-            Button("Resend confirmation email") {
-                resendConfirmation()
+            Text("After creating the account, we will show where the confirmation email was sent.")
+                .font(.caption)
+                .foregroundStyle(GymTheme.textSecondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+        }
+    }
+
+    private func emailConfirmationCard(email pendingEmail: String) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 12) {
+                Image(systemName: "envelope.badge")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(GymTheme.primary)
+                    .frame(width: 44, height: 44)
+                    .background(GymTheme.primary.opacity(0.13), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Confirmation link sent to")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(GymTheme.textSecondary)
+                    Text(pendingEmail)
+                        .font(.headline)
+                        .foregroundStyle(GymTheme.textPrimary)
+                        .textSelection(.enabled)
+                }
+            }
+
+            Text("If you cannot find it, check your Spam folder.")
+                .font(.caption)
+                .foregroundStyle(GymTheme.textSecondary)
+
+            if let localMessage {
+                GymStatusBanner(message: localMessage, isError: true)
+            } else if let message = authService.message {
+                GymStatusBanner(message: message, isError: authService.messageIsError)
+            }
+
+            Button("Send email again") {
+                localMessage = nil
+                focusedField = nil
+                Task { await authService.resendConfirmation(email: pendingEmail) }
+            }
+            .buttonStyle(GymPrimaryButtonStyle())
+            .disabled(authService.isLoading)
+
+            Button("Use a different address") {
+                email = pendingEmail
+                repeatedEmail = ""
+                password = ""
+                repeatedPassword = ""
+                localMessage = nil
+                mode = .signUp
+                authService.dismissEmailConfirmation(clearPendingRequest: true)
+                focusedField = .email
+            }
+            .buttonStyle(GymSecondaryButtonStyle())
+            .disabled(authService.isLoading)
+
+            Button("Back to sign in") {
+                email = pendingEmail
+                password = ""
+                localMessage = nil
+                mode = .signIn
+                authService.dismissEmailConfirmation(clearPendingRequest: false)
+                focusedField = .email
             }
             .font(.subheadline.weight(.semibold))
+            .frame(maxWidth: .infinity)
             .disabled(authService.isLoading)
-            .frame(maxWidth: .infinity, alignment: .center)
         }
+        .padding(16)
+        .background(GymTheme.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .strokeBorder(GymTheme.primary.opacity(0.3), lineWidth: 1)
+        }
+        .accessibilityElement(children: .contain)
     }
 
     private var legalLinks: some View {

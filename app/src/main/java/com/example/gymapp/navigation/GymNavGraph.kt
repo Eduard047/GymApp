@@ -67,6 +67,8 @@ import com.example.gymapp.auth.CloudAuthManager
 import com.example.gymapp.auth.authErrorText
 import com.example.gymapp.auth.databaseName
 import com.example.gymapp.auth.LeaderboardRow
+import com.example.gymapp.auth.requiresEmailConfirmation
+import com.example.gymapp.data.catalog.BuiltInExerciseCatalog
 import com.example.gymapp.data.repository.BackupOwner
 import com.example.gymapp.data.repository.canonicalWorkoutPayloadDigest
 import com.example.gymapp.gymApplication
@@ -160,7 +162,10 @@ internal fun isCanonicalAndroidCloudEnvelope(root: JSONObject, activeUserId: Str
         require(root.exactIntegralNumber("schemaVersion") == 2L)
         require(root.exactIntegralNumber("exportedAt") != null)
         if (root.has("catalogSeedVersion")) {
-            require(root.exactIntegralNumber("catalogSeedVersion") in 0L..1L)
+            require(
+                root.exactIntegralNumber("catalogSeedVersion") in
+                    0L..BuiltInExerciseCatalog.SEED_VERSION.toLong()
+            )
         }
         require(root.opt("app") == "GymApp")
         require(root.opt("diagnostics") is Boolean)
@@ -476,9 +481,13 @@ fun GymAppRoot(
                                 authManager.login(email, password)
                                 authManager.setMessage(null)
                             }.onFailure { throwable ->
-                                authManager.setMessage(
-                                    authErrorText(throwable, R.string.auth_message_login_failed)
-                                )
+                                if (requiresEmailConfirmation(throwable)) {
+                                    authManager.showEmailConfirmation(email)
+                                } else {
+                                    authManager.setMessage(
+                                        authErrorText(throwable, R.string.auth_message_login_failed)
+                                    )
+                                }
                             }
                         }
                     },
@@ -488,10 +497,7 @@ fun GymAppRoot(
                             runCatching {
                                 val session = authManager.signUp(email, password, displayName)
                                 if (session == null) {
-                                    authManager.setMessage(
-                                        LocalizedText(R.string.auth_message_account_created),
-                                        isError = false
-                                    )
+                                    authManager.showEmailConfirmation(email)
                                     return@runCatching
                                 }
                                 authManager.setMessage(null)
@@ -521,6 +527,7 @@ fun GymAppRoot(
                             }
                         }
                     },
+                    onDismissEmailConfirmation = authManager::dismissEmailConfirmation,
                     onPasswordReset = { email ->
                         coroutineScope.launch {
                             authManager.setLoading(true)

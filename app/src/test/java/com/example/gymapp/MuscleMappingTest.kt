@@ -7,6 +7,16 @@ import org.junit.Test
 
 class MuscleMappingTest {
     @Test
+    fun hipAbductionMapsToGlutesWithoutShoulders() {
+        listOf("Hip Abduction", "Розведення ніг", "Разведение ног в тренажере").forEach { exerciseName ->
+            val muscleIds = muscleContributionsForExercise(exerciseName).map { it.muscleId }.toSet()
+
+            assertTrue("$exerciseName should map to glutes", muscleIds.contains("glutes"))
+            assertFalse("$exerciseName should not map to shoulders", muscleIds.contains("shoulders"))
+        }
+    }
+
+    @Test
     fun legCurlMapsToHamstringsWithoutArmBiceps() {
         val muscleIds = muscleContributionsForExercise("Leg Curl").map { it.muscleId }.toSet()
 

@@ -678,7 +678,7 @@ test("cloud saves require a previously validated revision and publish portable o
   assert.equal(payload.schemaVersion, 2);
   assert.equal(payload.app, "GymApp");
   assert.equal("catalogSeedVersion" in payload, false);
-  assert.equal(vm.runInContext("state.catalogSeedVersion", context), 1);
+  assert.equal(vm.runInContext("state.catalogSeedVersion", context), 2);
   assert.deepEqual(JSON.parse(JSON.stringify(payload.owner)), {
     accountId: "00000000-0000-4000-8000-000000000001",
     userId: "00000000-0000-4000-8000-000000000001",

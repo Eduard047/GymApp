@@ -164,7 +164,7 @@ test("audited Ukrainian runtime labels keep their intended workout, progress, au
     ["Last session was stable across the sets.", "Результати останнього тренування були стабільними в усіх підходах."],
     ["Password must be 8+ characters and include letters and numbers.", "Пароль має містити щонайменше 8 символів, зокрема літери й цифри."],
     ["Repeat email", "Повтори адресу електронної пошти"],
-    ["Resend confirmation email", "Повторно надіслати лист для підтвердження"],
+    ["Send email again", "Надіслати лист ще раз"],
     ["The unseen Garmin token could not be persisted or revoked. Keep this page open and retry Garmin sync or sign-out to revoke it.", "Непоказаний токен Garmin не вдалося ні зберегти, ні відкликати. Не закривай цю сторінку: повтори синхронізацію з Garmin або вийди з акаунта, щоб відкликати токен."],
     ["Workout summary unavailable.", "Підсумок тренування недоступний."],
     ["Your training history and next best move.", "Твоя історія тренувань і рекомендація, що робити далі."]

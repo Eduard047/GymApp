@@ -908,6 +908,7 @@ public enum RecommendationEngine {
         if has("сідниц", "ягодиц", "glute", "hip thrust", "місток", "мостик") { add("glutes", "hamstrings"); pattern(.hinge) }
         if has("икр", "ікр", "calf", "носок", "носки") { add("calves"); pattern(.calf) }
         if has("зведення ніг", "сведение ног", "adductor") { add("adductors") }
+        if has("розведення ніг", "разведение ног", "hip abduction", "abductor") { add("glutes") }
 
         if has("жим", "press", "bench", "віджим", "отжим", "push up", "dips", "брусь") && !has("ног", "leg press") {
             add("chest", "triceps", "shoulders")

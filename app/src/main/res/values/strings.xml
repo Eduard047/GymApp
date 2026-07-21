@@ -67,6 +67,16 @@
     <string name="auth_welcome_back">Welcome back</string>
     <string name="auth_sign_in_supporting">Sign in to keep workouts synchronized across your devices.</string>
     <string name="auth_create_account_supporting">Create a cloud account, then confirm your email to start syncing.</string>
+    <string name="auth_confirmation_title">Check your email</string>
+    <string name="auth_confirmation_body">We sent a confirmation link to the address below. Open the newest email from GymApp and tap “Confirm email”. Then return to GymApp and sign in.</string>
+    <string name="auth_confirmation_sent_to">Confirmation link sent to</string>
+    <string name="auth_confirmation_spam_hint">If you cannot find it, check your Spam folder.</string>
+    <string name="auth_confirmation_open_email">Open email app</string>
+    <string name="auth_confirmation_resend">Send email again</string>
+    <string name="auth_confirmation_change_address">Use a different address</string>
+    <string name="auth_confirmation_back_to_sign_in">Back to sign in</string>
+    <string name="auth_confirmation_after_signup_hint">After creating the account, we will show where the confirmation email was sent.</string>
+    <string name="auth_email_app_unavailable">No email app is available on this device. Open your inbox manually.</string>
     <string name="auth_create_account">Create account</string>
     <string name="auth_log_in">Log in</string>
     <string name="auth_log_in_instead">Log in instead</string>
