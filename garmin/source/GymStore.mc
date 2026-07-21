@@ -551,7 +551,7 @@ class GymStore {
             "requestId" => requestId,
             "accountBinding" => accountBinding,
             "deviceBinding" => deviceBinding,
-            "startedAtSeconds" => Time.now().value(),
+            "startedAtSeconds" => GymSession.startedAt,
             "durationSeconds" => GymSession.elapsedSeconds,
             "gymCalories" => GymSession.gymCalories,
             "garminCalories" => GymSession.garminCalories,

@@ -1,6 +1,6 @@
 # GymApp — App Store release checklist
 
-Status date: 2026-07-20. Apple changes requirements over time; recheck [Upcoming Requirements](https://developer.apple.com/news/upcoming-requirements/) and the current [App Review Guidelines](https://developer.apple.com/app-store/review/guidelines/) before every submission.
+Status date: 2026-07-21. Apple changes requirements over time; recheck [Upcoming Requirements](https://developer.apple.com/news/upcoming-requirements/) and the current [App Review Guidelines](https://developer.apple.com/app-store/review/guidelines/) before every submission.
 
 ## 1. Manual ownership, team, signing, and identifiers
 
@@ -9,7 +9,7 @@ Status date: 2026-07-20. Apple changes requirements over time; recheck [Upcoming
 - [ ] **Bundle ID:** the project uses `com.setforge.gymapp.ios`; register it in the Apple Developer account and ensure the App Store Connect record matches exactly.
 - [x] **SKU selected:** use permanent internal SKU `GYMAPP-IOS-2026` when creating the App Store Connect record.
 - [ ] **Signing:** enable Automatically manage signing for Release, or create an App Store distribution certificate and matching provisioning profile. Archive must show no signing warnings.
-- [x] **Version/build:** current source values are `2.1.0` (`5`). Increment the build before a replacement upload and never reuse a processed build number.
+- [x] **Version/build:** current source values are `2.2.0` (`6`). Increment the build before a replacement upload and never reuse a processed build number.
 - [x] **Capabilities:** the project contains no ATT, HealthKit, Location, Camera, Microphone, Contacts, Push, Sign in with Apple, or IAP entitlement. Keep the signed target limited to capabilities actually used.
 - [ ] **Agreements:** Account Holder accepts current agreements. If the app or IAP is paid, sign the Paid Apps Agreement and complete banking/tax details: [Apple agreements](https://developer.apple.com/help/app-store-connect/manage-agreements/sign-and-update-agreements/).
 
@@ -28,8 +28,10 @@ Current upload minimum: builds uploaded after 2026-04-28 must use **Xcode 26 or 
   clients/already-sent messages; Dashboard readback confirmed all five entries
   on 2026-07-11.
 - [ ] Test signup and recovery PKCE exchange on the same physical device, an expired link, an unsolicited callback, and a callback containing raw access/refresh tokens (which the app must reject).
-- [x] Production Supabase migrations `202607100001_create_leaderboard_public.sql`, `202607100002_harden_profile_reads.sql`, and `202607110003_fix_user_state_revision.sql` are deployed. A two-user production E2E run on 2026-07-11 verified sanitized leaderboard access, own-row RLS, anonymous/direct-delete denial, reporting, server-owned revisions, and cleanup. Evidence: [PRODUCTION_BACKEND_VERIFICATION.md](PRODUCTION_BACKEND_VERIFICATION.md).
-- [x] No separate staging project is currently used. If one is introduced, apply the same three migrations in order and repeat the production verification runbook there.
+- [x] Production Supabase migrations are recorded through `20260721143853_retire_legacy_garmin_table_grants.sql`. All eight previously missing canonical migrations were applied in deployment order on 2026-07-21; structural/ACL and rollback-only runtime checks passed and the Supabase advisors were rerun. Evidence and exact scope: [PRODUCTION_BACKEND_VERIFICATION.md](PRODUCTION_BACKEND_VERIFICATION.md).
+- [x] Production `garmin-sync` version 4 is `ACTIVE`; OPTIONS, invalid JSON shape, malformed token, and random format-valid fetch/ack denial passed HTTP smoke checks on 2026-07-21.
+- [ ] Before submission, run a valid-device Edge Function fetch/ack smoke with a real paired capability and confirm the existing per-device second limiter. The 2026-07-21 database verification did not perform this end-to-end check; upstream gateway throttling remains recommended for volumetric traffic.
+- [x] No separate staging project is currently used. If one is introduced, apply every canonical migration from the repository-root `supabase/migrations/` directory in order and repeat the verification runbook there.
 - [ ] Complete the physical two-device client test: delete/edit on device A, then attempt a stale save from device B. The backend stale conditional `PATCH` and Android-style upsert contract passed on 2026-07-11, but the full device flow must still prove that removed workouts are not resurrected.
 - [ ] Test Release on physical iPhone(s), supported iOS versions, dark/light appearance, Dynamic Type, VoiceOver basics, offline/slow network, fresh install, upgrade, login/logout, and account deletion.
 - [ ] Test on an IPv6-only network and ensure backend services remain live during review.
@@ -37,12 +39,12 @@ Current upload minimum: builds uploaded after 2026-04-28 must use **Xcode 26 or 
 
 ## 3. Privacy and account deletion
 
-- [x] The updated English/Ukrainian/Russian combined policy from [privacy-policy.html](privacy-policy.html) is published at `https://gymapptracker.com/privacy-policy.html`; HTTPS 200 and exact SHA-256 `a5c3dc078f30084cabdcbbbc3b043a6ceee5fb8be0339a1d5258cd10f75f9c04` were verified on 2026-07-20. It covers iOS, Android, browser/PWA, and optional Garmin features.
-- [x] The updated English/Ukrainian/Russian [support.html](support.html) is published at `https://gymapptracker.com/support.html`; HTTPS 200 and exact SHA-256 `a22cd0d42fec7fc29bfa8e573ebe115d193fc352c473389bd07130253259ea14` were verified on 2026-07-20.
-- [x] The support and privacy URLs in `GymAppConfiguration` resolve to the reviewed hosted content from `gh-pages` commit `f3edd58cbe1a255f1335c868ece6dafa7244b33c`. Enter the same URLs in App Store Connect.
+- [ ] Publish the refreshed English/Ukrainian/Russian [privacy-policy.html](privacy-policy.html), [support.html](support.html), `legal.css`, `legal-language.js`, and referenced icon assets to `https://gymapptracker.com/`, then verify HTTPS 200 and exact local/live SHA-256 values. This source update intentionally did not modify or deploy the separate `gh-pages` worktree. The pre-redesign production policy baseline (`a5c3dc078f30084cabdcbbbc3b043a6ceee5fb8be0339a1d5258cd10f75f9c04`) was last verified on 2026-07-20.
+- [ ] After that publication, verify the refreshed support page at `https://gymapptracker.com/support.html` against its local SHA-256. The pre-redesign production support baseline (`a22cd0d42fec7fc29bfa8e573ebe115d193fc352c473389bd07130253259ea14`) was last verified on 2026-07-20.
+- [ ] Recheck that the support and privacy URLs in `GymAppConfiguration` resolve to the newly published reviewed content before entering the same URLs in App Store Connect. The currently deployed baseline came from `gh-pages` commit `f3edd58cbe1a255f1335c868ece6dafa7244b33c`.
 - [x] Owner, support email, support URL, and privacy URL placeholders are resolved in both local HTML deliverables.
 - [ ] In App Store Connect, answer App Privacy exactly as documented in `APP_PRIVACY.md`; reconcile it with the final binary, server, Supabase project, and all processors: [Manage app privacy](https://developer.apple.com/help/app-store-connect/manage-app-information/manage-app-privacy/).
-- [x] Account deletion is exposed at **Exercises → Account → Delete Account** and uses irreversible confirmation: [Apple account deletion](https://developer.apple.com/support/offering-account-deletion-in-your-app).
+- [x] Account deletion is exposed at **Profile → Account, privacy & deletion → Delete Account** and uses irreversible confirmation: [Apple account deletion](https://developer.apple.com/support/offering-account-deletion-in-your-app).
 - [x] Production `delete-account` version 1 is `ACTIVE` with `verify_jwt=true`. On 2026-07-11, two disposable users were hard-deleted and SQL verification found no remaining Auth identity, profile, state, Garmin, or report rows; production Storage contained no objects.
 - [x] `deleteCurrentAccountAndData` clears the local account database, Supabase Keychain session, and account-specific preferences, then returns to signed-out state after successful server deletion.
 - [ ] Repeat that complete cleanup path from the final signed build on a physical iPhone.
@@ -91,7 +93,7 @@ Apple requires a final, fully functional submission, complete metadata, live bac
 
 - [x] **Digital goods/subscriptions:** not present; the app is free with no IAP, subscriptions, paid unlocks, or external purchase links. Revisit if the business model changes: [App Review 3.1](https://developer.apple.com/app-store/review/guidelines/#business).
 - [x] **Google/Facebook/other social login:** not present; only first-party email/password login is offered, so the Guideline 4.8 alternative-login rule is not triggered by this build.
-- [x] **Leaderboard display names:** production filtering, Report/Block controls, fixed report reason, private queue, and RLS passed E2E. Queue ownership, daily monitoring, 24-hour target, actions, escalation, reporter feedback, and retention are documented in [MODERATION_RUNBOOK.md](MODERATION_RUNBOOK.md); the owner must keep the queue monitored throughout review and production.
+- [x] **Protected progress:** current clients expose only the signed-in owner’s row and no longer offer cross-account report/block controls. The production backend now enforces the same boundary for released clients. The private queue and [MODERATION_RUNBOOK.md](MODERATION_RUNBOOK.md) remain only for legacy reports and must stay monitored until those reports are resolved or expire under the retention policy.
 - [x] **Personal data sent to third-party AI:** none. Smart Coach is deterministic on-device logic; no personal data is sent to an AI provider.
 - [x] **Kids, medical, regulated health, gambling, finance, or crypto functionality:** none in this build. GymApp is a general workout log and makes no medical claim.
 

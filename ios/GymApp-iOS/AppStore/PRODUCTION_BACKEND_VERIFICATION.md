@@ -1,7 +1,14 @@
 # GymApp production backend verification
 
-Status: **passed on 2026-07-11**
+Status: **baseline passed on 2026-07-11; migration update verified on 2026-07-21**
 Supabase project: `owrcbsrectdgaotndtxy` (`GymApp`, `eu-west-1`)
+
+> The live two-user E2E evidence below remains the 2026-07-11 baseline. On
+> 2026-07-21 all eight previously missing canonical migrations were applied in
+> deployment order. Structural/ACL checks and rollback-only runtime probes passed,
+> and the Supabase advisors were run after deployment. The 2026-07-21 verification
+> did not include a valid-device Edge Function fetch/ack smoke; do not infer that
+> end-to-end result from the database checks.
 
 This record contains no access tokens, passwords, secret/service-role keys, real
 user identifiers, or customer data. All destructive tests used two generated
@@ -17,6 +24,15 @@ both accounts and every dependent test row were removed.
 | Sanitized leaderboard/moderation | `20260711084556` — `create_leaderboard_public` | Applied |
 | RLS/grant/privacy hardening | `20260711084559` — `harden_gymapp_production_access` | Applied |
 | Server revision correction | `20260711090358` — `fix_user_state_revision_trigger` | Applied and live-probed |
+| Canonical profile progression | `20260721142924` — `canonical_profile_progression` | Applied 2026-07-21 |
+| Garmin pairing/plan hardening | `20260721142935` — `harden_garmin_pairing_and_plans` | Applied 2026-07-21 |
+| Progression reconciliation | `20260721142942` — `reconcile_canonical_progression` | Applied 2026-07-21 |
+| Per-device Garmin limits | `20260721142951` — `add_garmin_device_rate_limits` | Applied 2026-07-21 |
+| Exercise catalog | `20260721143010` — `create_exercise_catalog` | Applied 2026-07-21 |
+| Owner-only protected progress | `20260721143038` — `restrict_leaderboard_to_owner_until_verified_ingestion` | Applied 2026-07-21 |
+| Bounded Garmin pre-auth limits | `20260721143058` — `add_bounded_garmin_preauth_rate_limits` | Applied 2026-07-21 |
+| Retired anonymous Garmin table grants | `20260721143853` — `retire_legacy_garmin_table_grants` | Applied 2026-07-21 |
+| Garmin bridge | `garmin-sync` version 4 | `ACTIVE`; mixed user-JWT/device-capability authentication is enforced in function/RPC code |
 | Account deletion | `delete-account` version 1 | `ACTIVE`, `verify_jwt=true` |
 | iOS Auth redirect | `com.setforge.gymapp.ios://auth/callback/*` | Allowlisted in Dashboard |
 
@@ -65,6 +81,14 @@ The production run verified:
 | `GET /rest/v1/leaderboard` (removed legacy view) | `404` |
 | `GET /functions/v1/delete-account` | `405` |
 | `POST /functions/v1/delete-account` without JWT | `401` |
+| `OPTIONS /functions/v1/garmin-sync` | `200` |
+| `POST /functions/v1/garmin-sync` with unknown action | `400` |
+| `POST /functions/v1/garmin-sync` with malformed device token | `400` |
+| `POST /functions/v1/garmin-sync` fetch/ack with a random format-valid token | `401` |
+
+The Garmin HTTP smoke used a generated non-persistent token and no real device
+or plan. It verifies gateway reachability, input mapping, and invalid-capability
+denial, but it does not replace the outstanding valid-device fetch/ack smoke.
 
 ## Auth and App Review account
 

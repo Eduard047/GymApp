@@ -347,7 +347,7 @@ public struct AuthView: View {
                             Label("Offline mode", systemImage: "iphone")
                                 .font(.title2.bold())
                                 .accessibilityAddTraits(.isHeader)
-                            Text("Create a local profile without signing in. Cloud rating and multi-device sync will remain unavailable.")
+                            Text("Create a local profile without signing in. Protected cloud progress and multi-device sync will remain unavailable.")
                                 .font(.subheadline)
                                 .foregroundStyle(Color.white.opacity(0.84))
                                 .fixedSize(horizontal: false, vertical: true)

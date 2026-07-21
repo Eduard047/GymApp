@@ -276,7 +276,7 @@ class GarminSyncSecurityTest {
         assertEquals(430, parsed.garminCalories)
         assertEquals(132, parsed.averageHeartRate)
         assertEquals(168, parsed.maximumHeartRate)
-        assertEquals(3, parsed.heartRateZone)
+        assertEquals(3, parsed.endingHeartRateZone)
     }
 
     @Test
@@ -300,6 +300,12 @@ class GarminSyncSecurityTest {
         assertNull(
             parseGarminWorkoutCommand(
                 baseline + ("sets" to listOf(validSet() + ("weight" to Double.NaN))),
+                nowMillis
+            )
+        )
+        assertNull(
+            parseGarminWorkoutCommand(
+                baseline + ("avgHeartRate" to 180) + ("maxHeartRate" to 120),
                 nowMillis
             )
         )
@@ -539,11 +545,13 @@ class GarminSyncSecurityTest {
         val changedCommand = command.copy(
             sets = command.sets.map { it.copy(reps = it.reps + 1) }
         )
+        val changedEndingZone = command.copy(endingHeartRateZone = 4)
 
         val digest = canonicalGarminWorkoutPayloadDigest(command)
 
         assertEquals(digest, canonicalGarminWorkoutPayloadDigest(sameCommand))
         assertNotEquals(digest, canonicalGarminWorkoutPayloadDigest(changedCommand))
+        assertNotEquals(digest, canonicalGarminWorkoutPayloadDigest(changedEndingZone))
         assertTrue(digest.matches(Regex("^[0-9a-f]{64}$")))
     }
 

@@ -238,11 +238,12 @@ final class CloudSyncService: ObservableObject {
             guard let profileID = row["profile_id"] as? String,
                   Self.isValidPublicProfileID(profileID) else { return nil }
             let isCurrentUser = row["is_current_user"] as? Bool ?? false
+            guard isCurrentUser else { return nil }
             return LeaderboardEntry(
                 id: profileID,
                 // Kept for existing in-process UI correlation only; no other user's
                 // Supabase UUID is requested or received from the public view.
-                userID: isCurrentUser ? session.userID : profileID,
+                userID: session.userID,
                 displayName: (row["display_name"] as? String)?.nonEmpty ?? "GymApp user",
                 xp: (row["xp"] as? NSNumber)?.intValue ?? 0,
                 level: max(1, (row["level"] as? NSNumber)?.intValue ?? 1),

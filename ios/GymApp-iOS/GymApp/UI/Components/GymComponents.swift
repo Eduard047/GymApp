@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Reusable glass card corresponding to the Android `AppPanel` component.
+/// Reusable editorial card with a quiet surface and thin keyline.
 public struct GymPanel<Content: View>: View {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var colorSchemeContrast
@@ -32,41 +32,35 @@ public struct GymPanel<Content: View>: View {
             }
             .clipShape(RoundedRectangle(cornerRadius: GymTheme.panelCornerRadius, style: .continuous))
             .shadow(
-                color: Color.black.opacity(reduceTransparency ? 0.08 : 0.13),
-                radius: highlighted ? 20 : 13,
+                color: Color.black.opacity(reduceTransparency ? 0.035 : 0.055),
+                radius: highlighted ? 7 : 3,
                 x: 0,
-                y: highlighted ? 11 : 7
+                y: highlighted ? 4 : 2
             )
     }
 
     @ViewBuilder
     private var panelBackground: some View {
         let shape = RoundedRectangle(cornerRadius: GymTheme.panelCornerRadius, style: .continuous)
-        if reduceTransparency {
-            shape.fill(highlighted ? GymTheme.surfaceVariant : GymTheme.surface)
-        } else {
-            shape
-                .fill(.ultraThinMaterial)
-                .overlay {
-                    shape.fill(
-                        highlighted
-                            ? GymTheme.primary.opacity(0.075)
-                            : GymTheme.surface.opacity(0.15)
-                    )
-                }
+        shape.fill(highlighted && reduceTransparency ? GymTheme.surfaceVariant : GymTheme.surface)
+        if highlighted && !reduceTransparency {
+            shape.fill(GymTheme.primary.opacity(0.035))
         }
     }
 
     private var borderColor: Color {
         if highlighted {
-            return GymTheme.primary.opacity(colorSchemeContrast == .increased ? 0.7 : 0.34)
+            return GymTheme.primary.opacity(colorSchemeContrast == .increased ? 0.9 : 0.42)
         }
-        return GymTheme.outlineSoft.opacity(colorSchemeContrast == .increased ? 0.9 : 0.62)
+        return GymTheme.outlineSoft.opacity(colorSchemeContrast == .increased ? 1 : 0.82)
     }
 }
 
-/// High-emphasis gradient card corresponding to the Android `HeroPanel`.
+/// High-emphasis ink-and-cobalt card for the single focal message on a screen.
 public struct GymHeroPanel<Content: View>: View {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
+
     private let content: Content
 
     public init(@ViewBuilder content: () -> Content) {
@@ -79,24 +73,22 @@ public struct GymHeroPanel<Content: View>: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .foregroundStyle(GymTheme.onHero)
             .background {
-                ZStack(alignment: .topTrailing) {
-                    RoundedRectangle(cornerRadius: GymTheme.panelCornerRadius, style: .continuous)
-                        .fill(GymTheme.heroGradient)
-
-                    Circle()
-                        .fill(Color.white.opacity(0.10))
-                        .frame(width: 150, height: 150)
-                        .offset(x: 52, y: -70)
-                        .blur(radius: 2)
-                        .accessibilityHidden(true)
+                let shape = RoundedRectangle(cornerRadius: GymTheme.panelCornerRadius, style: .continuous)
+                if reduceTransparency {
+                    shape.fill(GymTheme.heroLeading)
+                } else {
+                    shape.fill(GymTheme.heroGradient)
                 }
             }
             .overlay {
                 RoundedRectangle(cornerRadius: GymTheme.panelCornerRadius, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.18), lineWidth: 1)
+                    .strokeBorder(
+                        Color.white.opacity(colorSchemeContrast == .increased ? 0.42 : 0.16),
+                        lineWidth: colorSchemeContrast == .increased ? 1.5 : 1
+                    )
             }
             .clipShape(RoundedRectangle(cornerRadius: GymTheme.panelCornerRadius, style: .continuous))
-            .shadow(color: GymTheme.heroLeading.opacity(0.24), radius: 20, x: 0, y: 12)
+            .shadow(color: Color.black.opacity(0.12), radius: 8, x: 0, y: 4)
     }
 }
 
@@ -109,9 +101,9 @@ public struct GymBrandMark: View {
 
     public var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: size * 0.30, style: .continuous)
+            RoundedRectangle(cornerRadius: size * 0.24, style: .continuous)
                 .fill(GymTheme.heroGradient)
-                .shadow(color: GymTheme.primary.opacity(0.3), radius: size * 0.22, y: size * 0.10)
+                .shadow(color: Color.black.opacity(0.14), radius: size * 0.09, y: size * 0.045)
 
             Image(systemName: "dumbbell.fill")
                 .font(.system(size: size * 0.40, weight: .bold, design: .rounded))
@@ -156,12 +148,12 @@ public struct GymMetricTile: View {
         .frame(maxWidth: .infinity, minHeight: 78, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: GymTheme.compactCornerRadius, style: .continuous)
-                .fill(onHero ? Color.white.opacity(0.11) : GymTheme.surfaceVariant.opacity(0.55))
+                .fill(onHero ? Color.white.opacity(0.085) : GymTheme.surfaceVariant)
         )
         .overlay {
             RoundedRectangle(cornerRadius: GymTheme.compactCornerRadius, style: .continuous)
                 .strokeBorder(
-                    onHero ? Color.white.opacity(0.14) : GymTheme.outlineSoft.opacity(0.55),
+                    onHero ? Color.white.opacity(0.14) : GymTheme.outlineSoft.opacity(0.86),
                     lineWidth: 1
                 )
         }
@@ -197,8 +189,8 @@ public struct GymInfoPill: View {
         .foregroundStyle(accent)
         .padding(.horizontal, 11)
         .padding(.vertical, 7)
-        .background(Capsule().fill(accent.opacity(0.12)))
-        .overlay { Capsule().strokeBorder(accent.opacity(0.22), lineWidth: 1) }
+        .background(Capsule().fill(accent.opacity(0.08)))
+        .overlay { Capsule().strokeBorder(accent.opacity(0.28), lineWidth: 1) }
         .accessibilityElement(children: .combine)
     }
 }
@@ -223,7 +215,7 @@ public struct GymSectionTitle: View {
                     .font(.caption.weight(.bold))
                     .foregroundStyle(GymTheme.primary)
                     .textCase(.uppercase)
-                    .tracking(0.6)
+                    .tracking(0.75)
             }
             Text(gymLocalized(title, locale: locale))
                 .font(.title2.bold())
@@ -265,11 +257,11 @@ public struct GymStatusBanner: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: GymTheme.controlCornerRadius, style: .continuous)
-                .fill((isError ? GymTheme.error : GymTheme.primary).opacity(0.11))
+                .fill(GymTheme.surface)
         )
         .overlay {
             RoundedRectangle(cornerRadius: GymTheme.controlCornerRadius, style: .continuous)
-                .strokeBorder((isError ? GymTheme.error : GymTheme.primary).opacity(0.26), lineWidth: 1)
+                .strokeBorder((isError ? GymTheme.error : GymTheme.primary).opacity(0.36), lineWidth: 1)
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
@@ -281,7 +273,6 @@ public struct GymStatusBanner: View {
 }
 
 public struct GymTextFieldChrome: ViewModifier {
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var colorSchemeContrast
 
     public init() {}
@@ -293,16 +284,12 @@ public struct GymTextFieldChrome: ViewModifier {
             .padding(.vertical, 12)
             .background {
                 RoundedRectangle(cornerRadius: GymTheme.controlCornerRadius, style: .continuous)
-                    .fill(
-                        reduceTransparency
-                            ? GymTheme.surface
-                            : GymTheme.surface.opacity(0.68)
-                    )
+                    .fill(GymTheme.surface)
             }
             .overlay {
                 RoundedRectangle(cornerRadius: GymTheme.controlCornerRadius, style: .continuous)
                     .strokeBorder(
-                        GymTheme.outline.opacity(colorSchemeContrast == .increased ? 0.95 : 0.58),
+                        GymTheme.outline.opacity(colorSchemeContrast == .increased ? 1 : 0.72),
                         lineWidth: colorSchemeContrast == .increased ? 1.5 : 1
                     )
             }
@@ -324,13 +311,14 @@ public struct GymPrimaryButtonStyle: ButtonStyle {
     public func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.headline)
-            .foregroundStyle(Color.white)
+            .foregroundStyle(GymTheme.onPrimary)
             .padding(.horizontal, 18)
             .padding(.vertical, 13)
             .frame(maxWidth: .infinity)
             .background(
                 RoundedRectangle(cornerRadius: GymTheme.controlCornerRadius, style: .continuous)
-                    .fill(GymTheme.primary.gradient)
+                    .fill(GymTheme.primaryAction)
+                    .brightness(configuration.isPressed ? -0.055 : 0)
             )
             .opacity(isEnabled ? 1 : 0.48)
             .scaleEffect(configuration.isPressed && !reduceMotion ? 0.985 : 1)
@@ -353,11 +341,11 @@ public struct GymSecondaryButtonStyle: ButtonStyle {
             .frame(maxWidth: .infinity)
             .background(
                 RoundedRectangle(cornerRadius: GymTheme.controlCornerRadius, style: .continuous)
-                    .fill(GymTheme.primary.opacity(configuration.isPressed ? 0.15 : 0.08))
+                    .fill(configuration.isPressed ? GymTheme.surfaceVariant : GymTheme.surface)
             )
             .overlay {
                 RoundedRectangle(cornerRadius: GymTheme.controlCornerRadius, style: .continuous)
-                    .strokeBorder(GymTheme.primary.opacity(0.34), lineWidth: 1)
+                    .strokeBorder(GymTheme.primary.opacity(0.4), lineWidth: 1)
             }
             .opacity(isEnabled ? 1 : 0.48)
             .scaleEffect(configuration.isPressed && !reduceMotion ? 0.985 : 1)

@@ -35,6 +35,15 @@ interface ExerciseDao {
     @Query("SELECT * FROM exercises WHERE id = :exerciseId LIMIT 1")
     suspend fun getById(exerciseId: Long): ExerciseEntity?
 
+    @Query("UPDATE exercises SET isFavorite = :isFavorite WHERE id = :exerciseId")
+    suspend fun setFavorite(exerciseId: Long, isFavorite: Boolean): Int
+
+    @Query(
+        "UPDATE exercises SET isFavorite = CASE WHEN isFavorite = 1 THEN 0 ELSE 1 END " +
+            "WHERE id = :exerciseId"
+    )
+    suspend fun toggleFavorite(exerciseId: Long): Int
+
     @Query(
         """
         SELECT name

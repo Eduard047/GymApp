@@ -1128,59 +1128,151 @@ struct WorkoutRecommendationsCard: View {
     }
 }
 
-struct WorkoutAchievementsCard: View {
-    let achievements: [AchievementSnapshot]
+enum AchievementIconCatalog {
+    static let iconsByID: [String: String] = [
+        "first_workout": "sparkles",
+        "workout_5": "figure.strengthtraining.traditional",
+        "workout_10": "calendar.badge.checkmark",
+        "workout_25": "bolt.shield.fill",
+        "workout_50": "shield.lefthalf.filled",
+        "workout_100": "crown.fill",
+        "streak_7": "flame",
+        "streak_14": "flame.fill",
+        "streak_30": "sun.max.fill",
+        "volume_10k": "scalemass.fill",
+        "volume_50k": "mountain.2.fill",
+        "comeback": "arrow.uturn.backward.circle.fill"
+    ]
 
-    private var preview: [AchievementSnapshot] {
-        let unlocked = achievements
-            .filter(\.unlocked)
-            .sorted { ($0.unlockedAtEpochDay ?? 0) > ($1.unlockedAtEpochDay ?? 0) }
-        let locked = achievements
-            .filter { !$0.unlocked }
-            .sorted { progressFraction($0) > progressFraction($1) }
-        return Array((unlocked + locked).prefix(4))
+    static func icon(forID id: String) -> String {
+        iconsByID[id] ?? "medal.fill"
+    }
+}
+
+struct AchievementGallery: View {
+    let achievements: [AchievementSnapshot]
+    @AppStorage("app-language") private var languageCode = AppLanguage.english.rawValue
+
+    private var columns: [GridItem] {
+        [GridItem(.adaptive(minimum: 250), spacing: 12, alignment: .top)]
     }
 
     var body: some View {
-        GymPanel {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Achievements")
-                    .font(.headline)
-                    .accessibilityAddTraits(.isHeader)
-                Text("Recent unlocks and the next solo milestones.")
+        VStack(alignment: .leading, spacing: 12) {
+            GymSectionTitle(
+                eyebrow: gymLocalized("Achievements", languageCode: languageCode),
+                title: gymText(
+                    "Your badge collection",
+                    "Твоя колекція відзнак",
+                    languageCode: languageCode
+                ),
+                supporting: gymText(
+                    "Every canonical milestone, its progress, rarity, and unlock date.",
+                    "Усі основні цілі, їхній прогрес, рідкість і дата відкриття.",
+                    languageCode: languageCode
+                )
+            )
+
+            HStack(spacing: 8) {
+                GymInfoPill(
+                    "\(achievements.filter(\.unlocked).count) / \(achievements.count)",
+                    systemImage: "checkmark.seal.fill",
+                    accent: GymTheme.primary
+                )
+                Text(gymLocalized("Unlocked collection", languageCode: languageCode))
                     .font(.caption)
                     .foregroundStyle(GymTheme.textSecondary)
+            }
 
-                ForEach(preview) { achievement in
-                    HStack(alignment: .top, spacing: 10) {
-                        Image(systemName: achievement.unlocked ? "medal.fill" : "lock.fill")
-                            .font(.title3)
-                            .foregroundStyle(achievement.unlocked ? GymTheme.tertiary : GymTheme.textSecondary)
-                            .frame(width: 28)
-                            .accessibilityHidden(true)
-                        VStack(alignment: .leading, spacing: 5) {
-                            HStack(alignment: .firstTextBaseline) {
-                                Text(gymLocalized(achievement.title))
-                                    .font(.subheadline.weight(.semibold))
-                                Spacer(minLength: 8)
-                                Text(achievement.unlocked ? gymLocalized("Unlocked") : "+\(achievement.rewardXP) XP")
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(achievement.unlocked ? GymTheme.tertiary : GymTheme.primary)
-                            }
-                            Text(gymLocalized(achievement.description))
-                                .font(.caption)
-                                .foregroundStyle(GymTheme.textSecondary)
-                            ProgressView(value: progressFraction(achievement))
-                                .tint(achievement.unlocked ? GymTheme.tertiary : GymTheme.primary)
-                            Text(achievementProgressLabel(achievement))
-                                .font(.caption2)
-                                .foregroundStyle(GymTheme.textSecondary)
-                        }
-                    }
-                    .accessibilityElement(children: .combine)
+            LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
+                ForEach(achievements) { achievement in
+                    achievementCard(achievement)
                 }
             }
         }
+    }
+
+    private func achievementCard(_ achievement: AchievementSnapshot) -> some View {
+        let accent = rarityColor(achievement.badge.rarity)
+        return VStack(alignment: .leading, spacing: 11) {
+            HStack(alignment: .top, spacing: 11) {
+                Image(systemName: AchievementIconCatalog.icon(forID: achievement.id))
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(achievement.unlocked ? accent : GymTheme.textSecondary)
+                    .frame(width: 42, height: 42)
+                    .background(
+                        (achievement.unlocked ? accent : GymTheme.textSecondary).opacity(0.12),
+                        in: RoundedRectangle(cornerRadius: GymTheme.controlCornerRadius, style: .continuous)
+                    )
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(gymLocalized(achievement.title, languageCode: languageCode))
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(GymTheme.textPrimary)
+                    Text(gymLocalized(achievement.badge.name, languageCode: languageCode))
+                        .font(.caption)
+                        .foregroundStyle(GymTheme.textSecondary)
+                }
+
+                Spacer(minLength: 6)
+                GymInfoPill(
+                    rarityTitle(achievement.badge.rarity),
+                    systemImage: achievement.unlocked ? "checkmark" : "lock.fill",
+                    accent: achievement.unlocked ? accent : GymTheme.textSecondary
+                )
+            }
+
+            Text(gymLocalized(achievement.description, languageCode: languageCode))
+                .font(.caption)
+                .foregroundStyle(GymTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            ProgressView(value: progressFraction(achievement))
+                .tint(achievement.unlocked ? accent : GymTheme.primary)
+
+            HStack(alignment: .firstTextBaseline) {
+                Text(achievementProgressLabel(achievement))
+                    .font(.caption.monospacedDigit().weight(.semibold))
+                    .foregroundStyle(GymTheme.textSecondary)
+                Spacer(minLength: 8)
+                Text("+\(achievement.rewardXP) XP")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(achievement.unlocked ? accent : GymTheme.primary)
+            }
+
+            if let epochDay = achievement.unlockedAtEpochDay {
+                Label(
+                    unlockedDateLabel(epochDay),
+                    systemImage: "calendar.badge.checkmark"
+                )
+                .font(.caption2)
+                .foregroundStyle(GymTheme.textSecondary)
+            } else {
+                Label(gymLocalized("Locked", languageCode: languageCode), systemImage: "lock")
+                    .font(.caption2)
+                    .foregroundStyle(GymTheme.textSecondary)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            GymTheme.surface,
+            in: RoundedRectangle(cornerRadius: GymTheme.compactCornerRadius, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: GymTheme.compactCornerRadius, style: .continuous)
+                .strokeBorder(
+                    achievement.unlocked ? accent.opacity(0.42) : GymTheme.outlineSoft,
+                    lineWidth: 1
+                )
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityValue(
+            achievement.unlocked
+                ? gymLocalized("Unlocked", languageCode: languageCode)
+                : "\(achievementProgressLabel(achievement)), \(gymLocalized("Locked", languageCode: languageCode))"
+        )
     }
 
     private func progressFraction(_ achievement: AchievementSnapshot) -> Double {
@@ -1193,6 +1285,43 @@ struct WorkoutAchievementsCard: View {
         return "\(compactNumber(progress)) / \(compactNumber(achievement.target))"
     }
 
+    private func unlockDate(_ epochDay: Int64) -> String {
+        gymFormattedDate(
+            Calendar.current.gymDate(forEpochDay: epochDay),
+            date: .abbreviated,
+            time: .omitted,
+            languageCode: languageCode
+        )
+    }
+
+    private func unlockedDateLabel(_ epochDay: Int64) -> String {
+        let date = unlockDate(epochDay)
+        switch languageCode {
+        case AppLanguage.ukrainian.rawValue: return "Відкрито \(date)"
+        case AppLanguage.russian.rawValue: return "Открыто \(date)"
+        default: return "Unlocked \(date)"
+        }
+    }
+
+    private func rarityTitle(_ rarity: BadgeRarity) -> String {
+        switch rarity {
+        case .common: gymLocalized("Common", languageCode: languageCode)
+        case .uncommon: gymLocalized("Uncommon", languageCode: languageCode)
+        case .rare: gymLocalized("Rare", languageCode: languageCode)
+        case .epic: gymLocalized("Epic", languageCode: languageCode)
+        case .legendary: gymLocalized("Legendary", languageCode: languageCode)
+        }
+    }
+
+    private func rarityColor(_ rarity: BadgeRarity) -> Color {
+        switch rarity {
+        case .common: GymTheme.secondary
+        case .uncommon: GymTheme.primary
+        case .rare: GymTheme.tertiary
+        case .epic: .purple
+        case .legendary: .orange
+        }
+    }
 }
 
 private func compactNumber(_ value: Double) -> String {

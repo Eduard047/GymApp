@@ -57,7 +57,7 @@ internal data class GarminWorkoutCommand(
     val garminCalories: Int?,
     val averageHeartRate: Int?,
     val maximumHeartRate: Int?,
-    val heartRateZone: Int?
+    val endingHeartRateZone: Int?
 )
 
 internal fun canonicalGarminWorkoutPayloadDigest(command: GarminWorkoutCommand): String {
@@ -106,7 +106,9 @@ internal fun canonicalGarminWorkoutPayloadDigest(command: GarminWorkoutCommand):
     updateOptionalInt(command.garminCalories)
     updateOptionalInt(command.averageHeartRate)
     updateOptionalInt(command.maximumHeartRate)
-    updateOptionalInt(command.heartRateZone)
+    // Keep the v1 digest slot and wire meaning stable. Garmin sends the zone for
+    // the final accepted heart-rate reading; it is not a peak or dominant zone.
+    updateOptionalInt(command.endingHeartRateZone)
 
     return digest.digest().joinToString(separator = "") { byte ->
         (byte.toInt() and 0xff).toString(16).padStart(2, '0')
@@ -285,6 +287,9 @@ internal fun parseGarminWorkoutCommand(
     ) ?: nowSeconds
     val startedAtMillis = Math.multiplyExact(startedAtSeconds, 1_000L)
     require(WorkoutDataLimits.isValidTimestamp(startedAtMillis))
+    val averageHeartRate = optionalBoundedInt(command, "avgHeartRate", 0, MAX_GARMIN_HEART_RATE)
+    val maximumHeartRate = optionalBoundedInt(command, "maxHeartRate", 0, MAX_GARMIN_HEART_RATE)
+    require(averageHeartRate == null || maximumHeartRate == null || averageHeartRate <= maximumHeartRate)
 
     GarminWorkoutCommand(
         requestId = requestId,
@@ -298,9 +303,9 @@ internal fun parseGarminWorkoutCommand(
         ),
         gymCalories = optionalFiniteDouble(command, "gymCalories", 0.0, MAX_GARMIN_CALORIES),
         garminCalories = optionalBoundedInt(command, "garminCalories", 0, MAX_GARMIN_CALORIES.toInt()),
-        averageHeartRate = optionalBoundedInt(command, "avgHeartRate", 0, MAX_GARMIN_HEART_RATE),
-        maximumHeartRate = optionalBoundedInt(command, "maxHeartRate", 0, MAX_GARMIN_HEART_RATE),
-        heartRateZone = optionalBoundedInt(command, "heartRateZone", 0, MAX_GARMIN_HEART_RATE_ZONE)
+        averageHeartRate = averageHeartRate,
+        maximumHeartRate = maximumHeartRate,
+        endingHeartRateZone = optionalBoundedInt(command, "heartRateZone", 0, MAX_GARMIN_HEART_RATE_ZONE)
     )
 }.getOrNull()
 

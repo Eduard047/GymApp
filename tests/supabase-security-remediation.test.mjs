@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const garminMigrationPath = "supabase/migrations/20260713210000_harden_garmin_pairing_and_plans.sql";
-const progressionMigrationPath = "supabase/migrations/20260713211000_reconcile_canonical_progression.sql";
+const garminMigrationPath = "supabase/migrations/20260721142935_harden_garmin_pairing_and_plans.sql";
+const progressionMigrationPath = "supabase/migrations/20260721142942_reconcile_canonical_progression.sql";
 
 test("Garmin migration binds, validates, quarantines, and grants each RPC to the narrow role", async () => {
   const sql = await readFile(garminMigrationPath, "utf8");

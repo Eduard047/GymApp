@@ -106,6 +106,18 @@ test("Garmin messages are bounded, account-bound, replay-aware, and acked by id"
   assert.match(sessionReset, /discard\(\)/);
   assert.match(sessionReset, /recording = false/);
   assert.doesNotMatch(sessionReset, /start\(\)/);
+  const sessionStart = session.match(/static function start\(\) \{[\s\S]*?\n    \}/)?.[0] || "";
+  assert.match(sessionStart, /startedAt = Time\.now\(\)\.value\(\)/);
+  assert.match(sessionStart, /hr = null/);
+  assert.match(sessionStart, /garminCalories = null/);
+  const sessionTick = session.match(/static function tick\(\) \{[\s\S]*?\n    \}/)?.[0] || "";
+  assert.match(sessionTick, /var appliedActivityHeartRate = updateGarminActivityInfo\(\)/);
+  assert.match(sessionTick, /if \(!appliedActivityHeartRate\) \{\s*updateHeartRateFromSensor\(\)/);
+  const activityInfo = session.match(/static function updateGarminActivityInfo\(\) \{[\s\S]*?\n    \}/)?.[0] || "";
+  assert.match(activityInfo, /appliedHeartRate = applyHeartRate\(info\.currentHeartRate\)/);
+  assert.match(activityInfo, /return appliedHeartRate/);
+  assert.match(store, /"startedAtSeconds" => GymSession\.startedAt/);
+  assert.doesNotMatch(store, /"startedAtSeconds" => Time\.now\(\)\.value\(\)/);
   assert.match(androidManager, /cacheAndPushPlan[\s\S]*syncPayload\(exerciseCatalog, plan, syncId, resetWorkout = false\)/);
   assert.match(androidManager, /pushSyncForContext[\s\S]*syncPayload\(exercises, plan, syncId, resetWorkout = false\)/);
   assert.match(androidManager, /sendPendingAuthResetIfPossible[\s\S]*exercises = emptyList\(\)[\s\S]*plan = emptyList\(\)[\s\S]*resetWorkout = true/);

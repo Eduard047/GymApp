@@ -108,7 +108,7 @@ private struct AccountPreparationView: View {
 @MainActor
 private struct MainTabShell: View {
     private enum Tab: String, CaseIterable, Identifiable {
-        case workouts, missions, exercises, progress, rating
+        case workouts, missions, exercises, progress, profile
         var id: String { rawValue }
 
         var icon: String {
@@ -117,7 +117,7 @@ private struct MainTabShell: View {
             case .missions: "scope"
             case .exercises: "dumbbell.fill"
             case .progress: "chart.xyaxis.line"
-            case .rating: "trophy.fill"
+            case .profile: "person.crop.circle.fill"
             }
         }
 
@@ -127,7 +127,7 @@ private struct MainTabShell: View {
             case .missions: gymText("Missions", "Місії", languageCode: language)
             case .exercises: gymText("Exercises", "Вправи", languageCode: language)
             case .progress: gymText("Progress", "Прогрес", languageCode: language)
-            case .rating: gymText("Rating", "Рейтинг", languageCode: language)
+            case .profile: gymText("Profile", "Профіль", languageCode: language)
             }
         }
     }
@@ -161,7 +161,10 @@ private struct MainTabShell: View {
             .split(separator: "=", maxSplits: 1)
             .last
             .map(String.init)
-        _selectedTab = State(initialValue: requested.flatMap(Tab.init(rawValue:)) ?? .workouts)
+        let initialTab = requested == "rating"
+            ? Tab.profile
+            : requested.flatMap(Tab.init(rawValue:))
+        _selectedTab = State(initialValue: initialTab ?? .workouts)
     }
 
     var body: some View {
@@ -186,10 +189,10 @@ private struct MainTabShell: View {
                 .tag(Tab.progress)
                 .accessibilityIdentifier("tab-progress")
 
-            ratingTab
-                .tabItem { Label(Tab.rating.title(languageCode), systemImage: Tab.rating.icon) }
-                .tag(Tab.rating)
-                .accessibilityIdentifier("tab-rating")
+            profileTab
+                .tabItem { Label(Tab.profile.title(languageCode), systemImage: Tab.profile.icon) }
+                .tag(Tab.profile)
+                .accessibilityIdentifier("tab-profile")
         }
         .tint(GymTheme.primary)
         .toolbarBackground(.ultraThinMaterial, for: .tabBar)
@@ -292,9 +295,9 @@ private struct MainTabShell: View {
         }
     }
 
-    private var ratingTab: some View {
+    private var profileTab: some View {
         NavigationStack {
-            LeaderboardView(store: store, appState: appState, auth: auth)
+            ProfileView(appState: appState, auth: auth, store: store)
                 .gymLanguageToolbar()
         }
     }

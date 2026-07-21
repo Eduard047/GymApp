@@ -52,6 +52,32 @@ test("the state boundary accepts and normalizes a legitimate schema-v2 backup", 
   });
 });
 
+test("exercise favorites are bounded booleans with a backward-compatible alias", () => {
+  const canonical = validBackup();
+  canonical.exercises[0].favorite = true;
+  assert.equal(contract.validateAndNormalize(canonical).state.exercises[0].favorite, true);
+
+  const legacy = validBackup();
+  legacy.exercises[0].isFavorite = true;
+  assert.deepEqual(contract.validateAndNormalize(legacy).state.exercises[0], {
+    id: 1,
+    name: "Bench Press",
+    catalogKey: "bench_press",
+    favorite: true
+  });
+
+  for (const favorite of ["true", 1, null, {}, []]) {
+    const invalid = validBackup();
+    invalid.exercises[0].favorite = favorite;
+    assert.throws(() => contract.validateAndNormalize(invalid), /favorite must be a boolean/);
+  }
+
+  const conflicting = validBackup();
+  conflicting.exercises[0].favorite = true;
+  conflicting.exercises[0].isFavorite = false;
+  assert.throws(() => contract.validateAndNormalize(conflicting), /conflicting favorite values/);
+});
+
 test("profile enums never return an attacker-controlled fallback string", () => {
   const backup = validBackup();
   backup.profile = {
@@ -204,7 +230,8 @@ test("recommendation content is hydrated with textContent and profile labels fai
   assert.match(source, /field\.textContent = recommendation\[field\.dataset\.recommendationField\]/);
   assert.doesNotMatch(source, /\$\{rec\.(?:title|supporting|priority)\}/);
   assert.match(source, /\}\[value\] \|\| tx\("Unknown", "Невідомо"\)/);
-  assert.match(source, /state = imported\.state;/);
+  assert.match(source, /const nextState = imported\.state;/);
+  assert.match(source, /preserveExerciseFavorites\(nextState, state\);/);
   assert.match(source, /if \(imported\.diagnostics\)/);
   assert.match(source, /activeAccount\.remote === true &&[\s\S]*cloudStateRecovery\?\.userId === activeAccount\.userId/);
   assert.match(source, /session\.note \? escapeHtml\(session\.note\)/);

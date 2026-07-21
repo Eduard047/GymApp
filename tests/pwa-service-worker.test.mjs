@@ -4,18 +4,21 @@ import test from "node:test";
 import vm from "node:vm";
 
 const workerSource = readFileSync(new URL("../pwa/sw.js", import.meta.url), "utf8");
+const manifest = JSON.parse(readFileSync(new URL("../pwa/manifest.webmanifest", import.meta.url), "utf8"));
+const indexHtml = readFileSync(new URL("../pwa/index.html", import.meta.url), "utf8");
+const confirmedHtml = readFileSync(new URL("../pwa/confirmed.html", import.meta.url), "utf8");
 const VERSIONED_ASSET_PAIRS = [
-  ["confirmed.css", "confirmed.v50.css"],
-  ["confirmed.js", "confirmed.v50.js"],
-  ["frame-guard.js", "frame-guard.v50.js"],
-  ["styles.css", "styles.v50.css"],
-  ["muscle-regions.js", "muscle-regions.v50.js"],
-  ["supabase-config.js", "supabase-config.v50.js"],
-  ["state-contract.js", "state-contract.v50.js"],
-  ["garmin-cloud-sync.js", "garmin-cloud-sync.v50.js"],
-  ["progression-rules.js", "progression-rules.v50.js"],
-  ["russian-text.js", "russian-text.v50.js"],
-  ["app.js", "app.v50.js"]
+  ["confirmed.css", "confirmed.v52.css"],
+  ["confirmed.js", "confirmed.v52.js"],
+  ["frame-guard.js", "frame-guard.v52.js"],
+  ["styles.css", "styles.v52.css"],
+  ["muscle-regions.js", "muscle-regions.v52.js"],
+  ["supabase-config.js", "supabase-config.v52.js"],
+  ["state-contract.js", "state-contract.v52.js"],
+  ["garmin-cloud-sync.js", "garmin-cloud-sync.v52.js"],
+  ["progression-rules.js", "progression-rules.v52.js"],
+  ["russian-text.js", "russian-text.v52.js"],
+  ["app.js", "app.v52.js"]
 ];
 
 function loadWorker(scope = "https://example.test/GymApp/", options = {}) {
@@ -136,14 +139,16 @@ function isIntercepted(handler, url, options = {}) {
   return responsePromiseFor(handler, url, options) !== null;
 }
 
-test("service worker caches only exact immutable v50 same-origin assets", () => {
+test("service worker caches only exact immutable v52 same-origin assets", () => {
   for (const scope of ["https://example.test/", "https://example.test/GymApp/"]) {
     const handler = loadWorker(scope).listeners.get("fetch");
 
-    assert.equal(isIntercepted(handler, new URL("./app.v50.js", scope)), true);
-    assert.equal(isIntercepted(handler, new URL("./state-contract.v50.js", scope)), true);
-    assert.equal(isIntercepted(handler, new URL("./frame-guard.v50.js", scope)), true);
-    assert.equal(isIntercepted(handler, new URL("./app.js?v=50", scope)), false);
+    assert.equal(isIntercepted(handler, new URL("./app.v52.js", scope)), true);
+    assert.equal(isIntercepted(handler, new URL("./state-contract.v52.js", scope)), true);
+    assert.equal(isIntercepted(handler, new URL("./frame-guard.v52.js", scope)), true);
+    assert.equal(isIntercepted(handler, new URL("./icon-maskable-512.png", scope)), true);
+    assert.equal(isIntercepted(handler, new URL("./favicon-32.png", scope)), true);
+    assert.equal(isIntercepted(handler, new URL("./app.js?v=51", scope)), false);
     assert.equal(isIntercepted(handler, new URL("./app.js", scope)), false);
     assert.equal(isIntercepted(handler, scope), true);
     assert.equal(isIntercepted(handler, new URL("./rest/v1/user_states", scope)), false);
@@ -151,26 +156,26 @@ test("service worker caches only exact immutable v50 same-origin assets", () => 
   }
 });
 
-test("v50 pathname assets cannot be mistaken for predecessor assets", () => {
+test("v52 pathname assets cannot be mistaken for predecessor assets", () => {
   const predecessorPaths = new Set([
     "confirmed.css", "confirmed.js", "frame-guard.js", "styles.css",
     "muscle-regions.js", "supabase-config.js", "state-contract.js",
     "garmin-cloud-sync.js", "progression-rules.js", "russian-text.js", "app.js"
   ]);
-  const v50Paths = [
-    "confirmed.v50.css", "confirmed.v50.js", "frame-guard.v50.js", "styles.v50.css",
-    "muscle-regions.v50.js", "supabase-config.v50.js", "state-contract.v50.js",
-    "garmin-cloud-sync.v50.js", "progression-rules.v50.js", "russian-text.v50.js", "app.v50.js"
+  const v52Paths = [
+    "confirmed.v52.css", "confirmed.v52.js", "frame-guard.v52.js", "styles.v52.css",
+    "muscle-regions.v52.js", "supabase-config.v52.js", "state-contract.v52.js",
+    "garmin-cloud-sync.v52.js", "progression-rules.v52.js", "russian-text.v52.js", "app.v52.js"
   ];
 
-  for (const pathname of v50Paths) {
+  for (const pathname of v52Paths) {
     assert.equal(predecessorPaths.has(pathname), false, pathname);
     assert.match(workerSource, new RegExp(`\\./${pathname.replaceAll(".", "\\.")}`));
   }
-  assert.doesNotMatch(workerSource, /\.\/app\.js\?v=50/);
+  assert.doesNotMatch(workerSource, /\.\/app\.js\?v=51/);
 });
 
-test("every deployed v50 asset exists and is byte-identical to its canonical source", () => {
+test("every deployed v52 asset exists and is byte-identical to its canonical source", () => {
   for (const [canonical, versioned] of VERSIONED_ASSET_PAIRS) {
     const canonicalBytes = readFileSync(new URL(`../pwa/${canonical}`, import.meta.url));
     const versionedBytes = readFileSync(new URL(`../pwa/${versioned}`, import.meta.url));
@@ -178,22 +183,45 @@ test("every deployed v50 asset exists and is byte-identical to its canonical sou
   }
 });
 
+test("install surfaces use dedicated any, maskable, favicon, and Apple icons", () => {
+  assert.deepEqual(manifest.icons, [
+    { src: "./icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+    { src: "./icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+    { src: "./icon-maskable-192.png", sizes: "192x192", type: "image/png", purpose: "maskable" },
+    { src: "./icon-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" }
+  ]);
+  for (const html of [indexHtml, confirmedHtml]) {
+    assert.match(html, /rel="icon" href="\.\/favicon-32\.png" type="image\/png" sizes="32x32"/);
+    assert.match(html, /rel="apple-touch-icon" href="\.\/apple-touch-icon\.png" sizes="180x180"/);
+  }
+  for (const asset of [
+    "icon-192.png",
+    "icon-512.png",
+    "icon-maskable-192.png",
+    "icon-maskable-512.png",
+    "apple-touch-icon.png",
+    "favicon-32.png"
+  ]) {
+    assert.match(workerSource, new RegExp(`"\\./${asset.replaceAll(".", "\\.")}"`));
+  }
+});
+
 test("service worker ignores credential-bearing, partial-content, and non-GET requests", () => {
   const handler = loadWorker().listeners.get("fetch");
 
-  assert.equal(isIntercepted(handler, "https://example.test/GymApp/app.v50.js", {
+  assert.equal(isIntercepted(handler, "https://example.test/GymApp/app.v52.js", {
     headers: { Authorization: "Bearer test-token" }
   }), false);
   assert.equal(isIntercepted(handler, "https://example.test/GymApp/index.html", {
     headers: { apikey: "test-key" }
   }), false);
-  assert.equal(isIntercepted(handler, "https://example.test/GymApp/app.v50.js", {
+  assert.equal(isIntercepted(handler, "https://example.test/GymApp/app.v52.js", {
     headers: { Range: "bytes=0-10" }
   }), false);
   assert.equal(isIntercepted(handler, "https://example.test/GymApp/index.html", {
     headers: { "If-Range": "etag" }
   }), false);
-  assert.equal(isIntercepted(handler, "https://example.test/GymApp/app.v50.js", { method: "POST" }), false);
+  assert.equal(isIntercepted(handler, "https://example.test/GymApp/app.v52.js", { method: "POST" }), false);
 });
 
 test("searched auth callbacks are network-only but receive enforceable anti-framing headers", async () => {
@@ -252,8 +280,8 @@ test("sensitive callback network failures never fall back to cached HTML", async
 
 test("token-like asset queries are neither intercepted nor cached", () => {
   const handler = loadWorker().listeners.get("fetch");
-  assert.equal(isIntercepted(handler, "https://example.test/GymApp/app.v50.js?provider_token=secret"), false);
-  assert.equal(isIntercepted(handler, "https://example.test/GymApp/icon.svg?access_token=secret"), false);
+  assert.equal(isIntercepted(handler, "https://example.test/GymApp/app.v52.js?provider_token=secret"), false);
+  assert.equal(isIntercepted(handler, "https://example.test/GymApp/icon-512.png?access_token=secret"), false);
 });
 
 test("cached documents receive the same anti-framing policy", async () => {
@@ -262,7 +290,7 @@ test("cached documents receive the same anti-framing policy", async () => {
   const response = await responsePromiseFor(handler, "https://example.test/GymApp/");
 
   assert.equal(await response.text(), "cached");
-  assert.deepEqual(worker.openedCaches, ["gym-pwa-v50"]);
+  assert.deepEqual(worker.openedCaches, ["gym-pwa-v57"]);
   assert.match(response.headers.get("Content-Security-Policy"), /style-src 'self'/);
   assert.match(response.headers.get("Content-Security-Policy"), /frame-ancestors 'none'/);
   assert.doesNotMatch(response.headers.get("Content-Security-Policy"), /unsafe-inline/);
@@ -278,9 +306,9 @@ test("install reloads one internally consistent version without taking over old 
   handler({ waitUntil(value) { installPromise = value; } });
   await installPromise;
 
-  assert.deepEqual(worker.openedCaches, ["gym-pwa-v50"]);
-  assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/app.v50.js")));
-  assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/styles.v50.css")));
+  assert.deepEqual(worker.openedCaches, ["gym-pwa-v57"]);
+  assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/app.v52.js")));
+  assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/styles.v52.css")));
   assert.equal(worker.addedAssets.every(asset => asset instanceof Request && asset.cache === "reload"), true);
   assert.equal(worker.skipWaitingCount(), 0);
 });

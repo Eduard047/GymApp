@@ -123,8 +123,8 @@ test("full backup clipboard export requires confirmation and uses timed sensitiv
 
 test("private backup preview cannot bypass the guarded clipboard action", () => {
   const sheet = screen.slice(
-    screen.indexOf("private fun BackupJsonBottomSheetContent"),
-    screen.indexOf("private fun ImportBackupBottomSheetContent")
+    screen.indexOf("fun BackupJsonBottomSheetContent"),
+    screen.indexOf("fun ImportBackupBottomSheetContent")
   );
   assert.match(screen, /BACKUP_PREVIEW_CHARS\s*=\s*4_000/);
   assert.match(screen, /Text\(\s*text\s*=\s*preview,/);
@@ -142,8 +142,8 @@ test("private backup preview cannot bypass the guarded clipboard action", () => 
 });
 
 test("large private backup sharing uses bounded FileProvider streams, never Binder text", () => {
-  const sheetStart = screen.indexOf("private fun BackupJsonBottomSheetContent");
-  const sheetEnd = screen.indexOf("private fun ImportBackupBottomSheetContent", sheetStart);
+  const sheetStart = screen.indexOf("fun BackupJsonBottomSheetContent");
+  const sheetEnd = screen.indexOf("fun ImportBackupBottomSheetContent", sheetStart);
   const sheet = screen.slice(sheetStart, sheetEnd);
 
   assert.ok(sheetStart >= 0 && sheetEnd > sheetStart, "backup sheet is missing");
@@ -248,8 +248,8 @@ test("backup and diagnostics UI labels are carried atomically with generated JSO
   assert.match(screen, /R\.string\.backup_export_ready/);
   assert.doesNotMatch(
     screen.slice(
-      screen.indexOf("private fun BackupJsonBottomSheetContent"),
-      screen.indexOf("private fun ImportBackupBottomSheetContent")
+      screen.indexOf("fun BackupJsonBottomSheetContent"),
+      screen.indexOf("fun ImportBackupBottomSheetContent")
     ),
     /JSONObject\(json\)/,
     "the main-thread sheet must not reparse an up-to-8 MiB export to choose its title"

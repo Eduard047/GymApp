@@ -27,6 +27,8 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.FitnessCenter
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.FormatListNumbered
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Search
@@ -68,7 +70,6 @@ import com.example.gymapp.data.entity.ExerciseHistoryEntry
 import com.example.gymapp.data.repository.defaultContributionsForExercise
 import com.example.gymapp.data.repository.MUSCLE_DEFINITIONS
 import com.example.gymapp.data.repository.WorkoutDataLimits
-import com.example.gymapp.garmin.openGymWorkoutTrackerInGarminStore
 import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.EmptyStatePanel
 import com.example.gymapp.ui.components.ExerciseMuscleBreakdownCard
@@ -113,6 +114,47 @@ private enum class ExerciseBodyFilter(val muscleIds: Set<String>) {
     Upper(setOf("chest", "shoulders", "biceps", "triceps", "forearms", "lats", "upperBack")),
     Lower(setOf("lowerBack", "glutes", "quads", "hamstrings", "adductors", "calves")),
     Core(setOf("abs", "obliques"))
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun AccountBackupSheets(
+    uiState: ExerciseListUiState,
+    onClearBackup: () -> Unit,
+    onCloseImport: () -> Unit,
+    onImportJsonChange: (String) -> Unit,
+    onImportBackup: () -> Unit
+) {
+    val backupJson = uiState.backupJson
+    if (backupJson != null) {
+        ModalBottomSheet(
+            onDismissRequest = onClearBackup,
+            containerColor = MaterialTheme.colorScheme.background,
+            contentColor = MaterialTheme.colorScheme.onBackground
+        ) {
+            BackupJsonBottomSheetContent(
+                json = backupJson,
+                diagnosticsOnly = uiState.backupIsDiagnostics,
+                onDismiss = onClearBackup
+            )
+        }
+    }
+
+    if (uiState.isImportOpen) {
+        ModalBottomSheet(
+            onDismissRequest = onCloseImport,
+            containerColor = MaterialTheme.colorScheme.background,
+            contentColor = MaterialTheme.colorScheme.onBackground
+        ) {
+            ImportBackupBottomSheetContent(
+                importJson = uiState.importJson,
+                importMessage = uiState.importMessage,
+                onImportJsonChange = onImportJsonChange,
+                onImportBackup = onImportBackup,
+                onDismiss = onCloseImport
+            )
+        }
+    }
 }
 
 private enum class ExerciseSortMode {
@@ -162,14 +204,7 @@ fun ExerciseListScreen(
     onSaveExerciseMapping: () -> Unit,
     onDismissExerciseMapping: () -> Unit,
     onDismissHistory: () -> Unit,
-    onExportBackup: () -> Unit,
-    onExportDiagnostics: () -> Unit,
-    onClearBackup: () -> Unit,
-    onOpenImport: () -> Unit,
-    onCloseImport: () -> Unit,
-    onImportJsonChange: (String) -> Unit,
-    onImportBackup: () -> Unit,
-    onLogout: () -> Unit,
+    onToggleFavorite: (ExerciseEntity) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var isAddExerciseOpen by rememberSaveable { mutableStateOf(false) }
@@ -178,7 +213,7 @@ fun ExerciseListScreen(
     var bodyFilter by rememberSaveable { mutableStateOf(ExerciseBodyFilter.All) }
     var muscleFilter by rememberSaveable { mutableStateOf<String?>(null) }
     var sortMode by rememberSaveable { mutableStateOf(ExerciseSortMode.Name) }
-    val context = LocalContext.current
+    var favoritesOnly by rememberSaveable { mutableStateOf(false) }
     val languageTag = currentAppLanguageTag()
     val musclesByExercise = remember(uiState.muscleMappings) {
         uiState.muscleMappings.associate { mapping -> mapping.exerciseName to mapping.muscleIds.toSet() }
@@ -191,6 +226,7 @@ fun ExerciseListScreen(
         bodyFilter,
         muscleFilter,
         sortMode,
+        favoritesOnly,
         languageTag
     ) {
         val filtered = uiState.exercises.filter { exercise ->
@@ -199,7 +235,8 @@ fun ExerciseListScreen(
             val matchesBody = bodyFilter == ExerciseBodyFilter.All ||
                 muscleIds.any(bodyFilter.muscleIds::contains)
             val matchesMuscle = muscleFilter == null || muscleFilter in muscleIds
-            matchesQuery && matchesBody && matchesMuscle
+            val matchesFavorite = !favoritesOnly || exercise.isFavorite
+            matchesQuery && matchesBody && matchesMuscle && matchesFavorite
         }
         val byName = compareBy<ExerciseEntity> {
             BuiltInExerciseCatalog.displayName(it.name, languageTag).lowercase(Locale.ROOT)
@@ -276,31 +313,6 @@ fun ExerciseListScreen(
         }
 
         item {
-            AccountStatusCard(
-                label = uiState.accountLabel.ifBlank {
-                    stringResource(R.string.account_mode_local)
-                },
-                supporting = uiState.accountSupporting.ifBlank {
-                    stringResource(R.string.account_offline_supporting)
-                },
-                canLogout = uiState.canLogout,
-                onLogout = onLogout,
-                onOpenGarminApp = {
-                    openGymWorkoutTrackerInGarminStore(context)
-                }
-            )
-        }
-
-        item {
-            BackupToolsCard(
-                message = uiState.backupMessage,
-                onExportBackup = onExportBackup,
-                onExportDiagnostics = onExportDiagnostics,
-                onOpenImport = onOpenImport
-            )
-        }
-
-        item {
             AppPanel(modifier = Modifier.fillMaxWidth()) {
                 Column(
                     modifier = Modifier.padding(16.dp),
@@ -325,6 +337,8 @@ fun ExerciseListScreen(
                 onMuscleFilterChange = { muscleFilter = it },
                 sortMode = sortMode,
                 onSortModeChange = { sortMode = it },
+                favoritesOnly = favoritesOnly,
+                onFavoritesOnlyChange = { favoritesOnly = it },
                 resultCount = filteredExercises.size
             )
         }
@@ -383,6 +397,27 @@ fun ExerciseListScreen(
                                         contentDescription = stringResource(R.string.cd_edit)
                                     )
                                 }
+                            }
+                            IconButton(onClick = { onToggleFavorite(exercise) }) {
+                                Icon(
+                                    imageVector = if (exercise.isFavorite) {
+                                        Icons.Default.Favorite
+                                    } else {
+                                        Icons.Default.FavoriteBorder
+                                    },
+                                    contentDescription = stringResource(
+                                        if (exercise.isFavorite) {
+                                            R.string.exercise_favorite_remove
+                                        } else {
+                                            R.string.exercise_favorite_add
+                                        }
+                                    ),
+                                    tint = if (exercise.isFavorite) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    }
+                                )
                             }
                             IconButton(onClick = { onDeleteExercise(exercise) }) {
                                 Icon(
@@ -523,36 +558,6 @@ fun ExerciseListScreen(
         }
     }
 
-    val backupJson = uiState.backupJson
-    if (backupJson != null) {
-        ModalBottomSheet(
-            onDismissRequest = onClearBackup,
-            containerColor = MaterialTheme.colorScheme.background,
-            contentColor = MaterialTheme.colorScheme.onBackground
-        ) {
-            BackupJsonBottomSheetContent(
-                json = backupJson,
-                diagnosticsOnly = uiState.backupIsDiagnostics,
-                onDismiss = onClearBackup
-            )
-        }
-    }
-
-    if (uiState.isImportOpen) {
-        ModalBottomSheet(
-            onDismissRequest = onCloseImport,
-            containerColor = MaterialTheme.colorScheme.background,
-            contentColor = MaterialTheme.colorScheme.onBackground
-        ) {
-            ImportBackupBottomSheetContent(
-                importJson = uiState.importJson,
-                importMessage = uiState.importMessage,
-                onImportJsonChange = onImportJsonChange,
-                onImportBackup = onImportBackup,
-                onDismiss = onCloseImport
-            )
-        }
-    }
 }
 
 @Composable
@@ -593,6 +598,8 @@ private fun ExerciseSearchAndFilters(
     onMuscleFilterChange: (String?) -> Unit,
     sortMode: ExerciseSortMode,
     onSortModeChange: (ExerciseSortMode) -> Unit,
+    favoritesOnly: Boolean,
+    onFavoritesOnlyChange: (Boolean) -> Unit,
     resultCount: Int
 ) {
     val languageTag = currentAppLanguageTag()
@@ -631,6 +638,22 @@ private fun ExerciseSearchAndFilters(
                     .horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                FilterChip(
+                    selected = favoritesOnly,
+                    onClick = { onFavoritesOnlyChange(!favoritesOnly) },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = if (favoritesOnly) {
+                                Icons.Default.Favorite
+                            } else {
+                                Icons.Default.FavoriteBorder
+                            },
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    },
+                    label = { Text(stringResource(R.string.exercise_filter_favorites)) }
+                )
                 ExerciseBodyFilter.entries.forEach { filter ->
                     val label = when (filter) {
                         ExerciseBodyFilter.All -> R.string.exercise_filter_all
@@ -817,9 +840,10 @@ private fun ExerciseMappingBottomSheetContent(
 }
 
 @Composable
-private fun AccountStatusCard(
+internal fun AccountStatusCard(
     label: String,
     supporting: String,
+    isCloudAccount: Boolean,
     canLogout: Boolean,
     onLogout: () -> Unit,
     onOpenGarminApp: () -> Unit
@@ -855,7 +879,7 @@ private fun AccountStatusCard(
                 }
                 InfoPill(
                     text = stringResource(
-                        if (supporting.contains('@')) {
+                        if (isCloudAccount) {
                             R.string.account_mode_cloud
                         } else {
                             R.string.account_mode_local
@@ -943,7 +967,7 @@ private fun RenameExerciseBottomSheetContent(
 }
 
 @Composable
-private fun BackupToolsCard(
+internal fun BackupToolsCard(
     message: LocalizedText?,
     onExportBackup: () -> Unit,
     onExportDiagnostics: () -> Unit,
@@ -1002,7 +1026,7 @@ private fun BackupToolsCard(
 }
 
 @Composable
-private fun BackupJsonBottomSheetContent(
+internal fun BackupJsonBottomSheetContent(
     json: String,
     diagnosticsOnly: Boolean,
     onDismiss: () -> Unit
@@ -1156,7 +1180,7 @@ private fun BackupJsonBottomSheetContent(
 }
 
 @Composable
-private fun ImportBackupBottomSheetContent(
+internal fun ImportBackupBottomSheetContent(
     importJson: String,
     importMessage: LocalizedText?,
     onImportJsonChange: (String) -> Unit,

@@ -18,17 +18,17 @@ Paste the reviewed content below into App Store Connect. Replace every `REPLACE_
 - Account expiry: **non-expiring**
 - Required region/VPN: **None**
 
-The demo account contains three fictional exercises and two fictional workouts so Review can inspect charts, missions, ranks, Smart Coach, profile, and leaderboard without creating personal data. Its production login, cloud profile/state, and current-user leaderboard row were verified on 2026-07-11. Verify the same credentials from a clean physical device immediately before submission.
+The demo account contains three fictional exercises and two fictional workouts so Review can inspect charts, missions, ranks, Smart Coach, profile, and protected progress without creating personal data. Its production login and cloud profile/state were verified on 2026-07-11. Verify the same credentials and the pending owner-only backend migration from a clean physical device immediately before submission.
 
 ## App overview and navigation
 
 GymApp is an English/Ukrainian/Russian workout planner and strength-training log. Its five primary tabs are:
 
-1. **Workouts** — monthly overview/history, heatmap, muscle map, recommendations, achievements, create and edit workout sessions.
-2. **Missions** — daily, weekly, and monthly training goals.
-3. **Exercises** — exercise library, muscle mappings, account tools, JSON import/export, and PDF sharing.
+1. **Workouts** — monthly overview/history, heatmap, muscle map, recommendations, and create/edit workout sessions.
+2. **Missions** — daily, weekly, and monthly training goals, with earned achievement badges at the bottom.
+3. **Exercises** — exercise library, muscle mappings, favorites, and favorite-only filtering.
 4. **Progress** — exercise/muscle summaries and strength/volume charts.
-5. **Rating** — public leaderboard showing display name, XP, level, and workout count.
+5. **Profile** — account/privacy/deletion, backup and diagnostics tools, and owner-only protected progress. Competitive cross-account standings are intentionally paused until scoring has a trusted server-side source.
 
 To create a session, open Workouts and tap the add button. A reviewer can use templates, repeat/copy a prior workout, add exercises/sets, finish the workout, and view its summary. Smart Coach recommendations are derived from the demo account's training history.
 
@@ -36,15 +36,16 @@ To create a session, open Workouts and tap the add button. A reviewer can use te
 
 - GymApp uses first-party email/password authentication with Supabase. It has no Google/Facebook/social login and therefore no Guideline 4.8 alternative-login requirement.
 - Email confirmation and recovery use a same-device PKCE exchange. The app rejects implicit raw-token callbacks and unsolicited/expired callback state.
-- Production backend: active and production-verified on 2026-07-11.
+- Production backend: active; migration state and access controls were reverified on 2026-07-21.
 - Supabase Auth allowlists `com.setforge.gymapp.ios://auth/callback/*`; the final signed build still requires same-device confirmation/recovery testing on a physical iPhone before submission.
-- Leaderboard/privacy migrations `202607100001`, `202607100002`, and revision fix `202607110003` are deployed. Production migration history records `20260711084556`, `20260711084559`, and `20260711090358`; the two-user authenticated RLS/report/revision suite passed.
+- Production history is verified through `20260721143853_retire_legacy_garmin_table_grants.sql`. All eight previously missing canonical migrations were applied in deployment order on 2026-07-21; structural/ACL, owner-isolation, and rollback-only pre-auth limiter checks passed. A valid-device Garmin fetch/ack smoke remains required before App Store submission.
+- Production `garmin-sync` version 4 is active. OPTIONS, malformed input, unknown action, and random format-valid fetch/ack denial were verified over HTTP on 2026-07-21 without using a real capability; the valid-device smoke remains open.
 - Required reviewer hardware/sample QR/feature flags: **None**
-- Garmin sync is optional and is not required for App Review. All core workout, progress, mission, rank, backup, and leaderboard paths work without Garmin hardware.
+- Garmin sync is optional and is not required for App Review. All core workout, progress, mission, rank, backup, and owner-only protected-progress paths work without Garmin hardware.
 
 ## Account deletion
 
-Path: **Exercises → Account → Delete Account**. The app shows an irreversible-deletion confirmation and calls the authenticated `delete-account` Edge Function. The server derives the user UUID from the verified bearer token and does not accept an arbitrary user ID.
+Path: **Profile → Account, privacy & deletion → Delete Account**. The app shows an irreversible-deletion confirmation and calls the authenticated `delete-account` Edge Function. The server derives the user UUID from the verified bearer token and does not accept an arbitrary user ID.
 
 - Production function deployed and tested: `delete-account` version 1, `ACTIVE`, `verify_jwt=true`, verified 2026-07-11.
 - Disposable account deletion test date/result: on 2026-07-11, two disposable users were deleted through the live function after positive and negative contract tests. SQL verification found zero remaining Auth users/identities, profiles, cloud states, Garmin devices/plans, and moderation reports for those users.
@@ -57,25 +58,26 @@ Deletion removes the Supabase Auth user and cascades `user_states`, `profiles`, 
 - No camera, microphone, location, Contacts, Photos, Motion & Fitness, or HealthKit access.
 - Rest-timer alerts use only local notifications. Notification authorization is requested contextually when the reviewer chooses an alert; declining it does not block workout logging or any paid/content feature.
 - `PrivacyInfo.xcprivacy` declares no tracking, the actual server-collected data categories, and required-reason API `UserDefaults` with approved first-party reason `CA92.1`.
-- Account/cloud data includes email, Supabase UUID, display name, workout logs, notes, derived XP/level/workout count, and optional Garmin token/plans/import metrics. The leaderboard exposes only a random public profile ID, display name, XP, level, and workout count; it never returns another user’s Auth UUID.
+- Account/cloud data includes email, Supabase UUID, display name, workout logs, notes, derived XP/level/workout count, and optional Garmin token/plans/import metrics. The protected-progress projection returns the random profile ID, display name, XP, level, and workout count only to that signed-in owner; it does not return another user’s row or Auth UUID.
 
 ## Business model and content
 
 - The app is free and contains no In-App Purchases, subscriptions, paid digital unlocks, external purchase links, or advertising.
-- There is no public posting, chat, or social feed. The only public user-generated field is the restricted display name on the leaderboard. The production database applies a display-name safety filter; every other-user row has visible **Safety options** to report the name to the moderation queue or block that athlete locally. Reports contain the fixed `inappropriate_name` reason rather than free-form text. Martynenko Eduard owns the private queue and daily monitoring process, with the normally-within-24-hours target, action/escalation, feedback, and retention steps documented in [MODERATION_RUNBOOK.md](MODERATION_RUNBOOK.md) and summarized on the Support URL.
+- There is no public posting, chat, social feed, or active cross-account leaderboard. Display names and progress are owner-only while verified scoring is being designed. The private moderation queue remains only for reports submitted before this restriction and continues to follow [MODERATION_RUNBOOK.md](MODERATION_RUNBOOK.md).
 - GymApp is not a medical device and makes no diagnostic or treatment claims.
 
 ## Export/import
 
-The JSON/PDF tools intentionally invoke the iOS share sheet. Files are created only after the reviewer selects Export/Share. Auth tokens and private Keychain credentials are not included in exported workout backups.
+The JSON/PDF tools under **Profile → Backup & diagnostics** intentionally invoke the iOS share sheet. Files are created only after the reviewer selects Export/Share. Auth tokens and private Keychain credentials are not included in exported workout backups.
 
 ## Review readiness gate
 
 - [ ] All placeholders above replaced.
 - [ ] Demo credentials confirmed from a clean device and remain active.
-- [x] Production backend and delete function verified live on 2026-07-11; monitor them throughout review.
-- [x] All three migrations deployed in order; `leaderboard_public`, own-row-only direct profile RLS, display-name filtering, report insertion/RLS, stale revisions, deletion cascades, and cleanup tested with two disposable accounts. Operational moderation monitoring must remain active throughout review.
-- [x] Reviewed combined privacy policy and support page are live and reachable without login; both were verified on 2026-07-11.
+- [x] Production backend migration state and access controls reverified on 2026-07-21; the delete function was verified live on 2026-07-11. Monitor both throughout review.
+- [x] Deployed `20260721143038_restrict_leaderboard_to_owner_until_verified_ingestion.sql`; owner-only access and anonymous denial passed structural and runtime checks. Operational moderation monitoring must remain active for legacy reports.
+- [ ] `20260721143058_add_bounded_garmin_preauth_rate_limits.sql` is deployed and its random-token limiter passed a rollback-only runtime check. Verify a real valid watch still completes fetch/ack before submission.
+- [ ] Publish the refreshed combined privacy policy/support source and shared assets to the separate `gh-pages` branch, then verify both live without login. The pre-redesign pages were last verified live on 2026-07-20; this source-only update intentionally did not deploy them.
 - [x] Non-obvious functionality and the optional Garmin limitation are described above.
 - [ ] No test, debug, staging, or hidden feature remains in the submitted build.
 

@@ -20,7 +20,7 @@ function quotedValueFollowing(source, marker) {
 test("native clients open our Garmin listing with platform store fallbacks", async () => {
   const [androidLauncher, androidScreen, iosSettings, iosInfo] = await Promise.all([
     readFile("app/src/main/java/com/example/gymapp/garmin/GarminStoreLauncher.kt", "utf8"),
-    readFile("app/src/main/java/com/example/gymapp/ui/screens/ExerciseListScreen.kt", "utf8"),
+    readFile("app/src/main/java/com/example/gymapp/ui/screens/ProfileScreen.kt", "utf8"),
     readFile("ios/GymApp-iOS/GymApp/UI/Screens/AccountSettingsView.swift", "utf8"),
     readFile("ios/GymApp-iOS/GymApp/Resources/Info.plist", "utf8")
   ]);

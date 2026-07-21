@@ -49,6 +49,7 @@ data class ExerciseListUiState(
     val isImportOpen: Boolean = false,
     val accountLabel: String = "",
     val accountSupporting: String = "",
+    val isCloudAccount: Boolean = false,
     val canLogout: Boolean = false
 )
 
@@ -253,6 +254,7 @@ class ExerciseListViewModel(
             isImportOpen = backup.isImportOpen,
             accountLabel = activeAccountLabel(),
             accountSupporting = activeAccountSupporting(),
+            isCloudAccount = authManager?.authState?.value?.session is AccountSession.Cloud,
             canLogout = authManager != null
         )
     }.stateIn(
@@ -294,6 +296,12 @@ class ExerciseListViewModel(
     fun deleteExercise(exercise: ExerciseEntity) {
         viewModelScope.launch {
             repository.deleteExercise(exercise)
+        }
+    }
+
+    fun toggleFavorite(exercise: ExerciseEntity) {
+        viewModelScope.launch {
+            repository.toggleExerciseFavorite(exercise.id)
         }
     }
 

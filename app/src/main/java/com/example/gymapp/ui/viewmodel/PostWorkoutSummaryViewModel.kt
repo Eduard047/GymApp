@@ -20,6 +20,10 @@ import com.example.gymapp.data.repository.RANK_DEFINITIONS
 import com.example.gymapp.data.repository.estimatedLoad
 import com.example.gymapp.data.repository.muscleContributionsForExercise
 import com.example.gymapp.data.repository.toManualContributionMap
+import com.example.gymapp.garmin.WorkoutComparison
+import com.example.gymapp.garmin.buildWorkoutComparisonForSession
+import com.example.gymapp.garmin.isWorkoutEarlier
+import com.example.gymapp.garmin.toExerciseHistoryEntries
 import com.example.gymapp.util.RussianText
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -88,6 +92,7 @@ data class PostWorkoutSummaryUiState(
     val topMuscleLabel: String? = null,
     val muscles: List<PostWorkoutMuscleUiState> = emptyList(),
     val personalRecords: List<PostWorkoutPrUiState> = emptyList(),
+    val workoutComparison: WorkoutComparison? = null,
     val completedMissions: List<CompletedMissionUiState> = emptyList(),
     val newBadges: List<NewBadgeUiState> = emptyList()
 )
@@ -172,11 +177,27 @@ class PostWorkoutSummaryViewModel(
                 sessionId = sessionId
             )
         } else {
-            val allSessions = sessions.sortedBy { it.session.date }
-            val previousSessions = allSessions.filterNot { it.session.id == sessionId }
             val anchorTime = sessionDetails.session.date
+            val sessionsThroughCurrent = sessions
+                .filter { summary ->
+                    summary.session.id == sessionId || isWorkoutEarlier(
+                        candidateDate = summary.session.date,
+                        candidateId = summary.session.id,
+                        currentDate = anchorTime,
+                        currentId = sessionId
+                    )
+                }
+                .sortedWith(compareBy({ it.session.date }, { it.session.id }))
+            val previousSessions = sessionsThroughCurrent.filter { summary ->
+                isWorkoutEarlier(
+                    candidateDate = summary.session.date,
+                    candidateId = summary.session.id,
+                    currentDate = anchorTime,
+                    currentId = sessionId
+                )
+            }
             val afterSnapshot = GamificationEngine.buildSnapshot(
-                sessions = allSessions,
+                sessions = sessionsThroughCurrent,
                 nowMillis = anchorTime,
                 zoneId = zoneId
             )
@@ -199,26 +220,22 @@ class PostWorkoutSummaryViewModel(
             val volume = sessionDetails.workoutExercises.sumOf { workoutExercise ->
                 workoutExercise.sets.sumOf { set -> set.weight * set.reps }
             }
-            val sessionHistoryEntries = sessionDetails.workoutExercises.flatMap { workoutExercise ->
-                workoutExercise.sets.map { set ->
-                    ExerciseHistoryEntry(
-                        setId = set.id,
-                        sessionId = sessionDetails.session.id,
-                        sessionDate = sessionDetails.session.date,
-                        exerciseId = workoutExercise.exercise.id,
-                        exerciseName = workoutExercise.exercise.name,
-                        weight = set.weight,
-                        reps = set.reps,
-                        setOrderIndex = set.orderIndex
-                    )
-                }
-            }
+            val sessionHistoryEntries = sessionDetails.toExerciseHistoryEntries()
             val muscles = buildSessionMuscles(
                 sessionHistoryEntries = sessionHistoryEntries,
                 muscleMappings = muscleMappings
             )
             val personalRecords = buildPersonalRecords(
                 sessionEntries = sessionHistoryEntries,
+                allHistory = exerciseHistory,
+                currentSessionDate = sessionDetails.session.date
+            )
+            val workoutComparison = buildWorkoutComparisonForSession(
+                currentSessionId = sessionDetails.session.id,
+                currentSessionDate = sessionDetails.session.date,
+                currentNote = sessionDetails.session.note,
+                currentEntries = sessionHistoryEntries,
+                allSessions = sessions,
                 allHistory = exerciseHistory
             )
 
@@ -252,6 +269,7 @@ class PostWorkoutSummaryViewModel(
                 topMuscleLabel = muscles.firstOrNull()?.label,
                 muscles = muscles,
                 personalRecords = personalRecords,
+                workoutComparison = workoutComparison,
                 completedMissions = completedMissions,
                 newBadges = newBadges
             )
@@ -348,10 +366,18 @@ class PostWorkoutSummaryViewModel(
 
     private fun buildPersonalRecords(
         sessionEntries: List<ExerciseHistoryEntry>,
-        allHistory: List<ExerciseHistoryEntry>
+        allHistory: List<ExerciseHistoryEntry>,
+        currentSessionDate: Long
     ): List<PostWorkoutPrUiState> {
         val previousBestByExercise = allHistory
-            .filterNot { it.sessionId == sessionId }
+            .filter { entry ->
+                isWorkoutEarlier(
+                    candidateDate = entry.sessionDate,
+                    candidateId = entry.sessionId,
+                    currentDate = currentSessionDate,
+                    currentId = sessionId
+                )
+            }
             .groupBy { it.exerciseId }
             .mapValues { (_, entries) -> entries.maxOfOrNull { it.weight } ?: 0.0 }
 

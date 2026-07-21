@@ -10,6 +10,10 @@ import com.example.gymapp.data.entity.SetEntryEntity
 import com.example.gymapp.data.entity.WorkoutSessionDetails
 import com.example.gymapp.data.repository.GymRepository
 import com.example.gymapp.data.repository.WorkoutDataLimits
+import com.example.gymapp.garmin.WorkoutComparison
+import com.example.gymapp.garmin.buildWorkoutComparisonForSession
+import com.example.gymapp.garmin.isWorkoutEarlier
+import com.example.gymapp.garmin.toExerciseHistoryEntries
 import com.example.gymapp.util.RestTimerController
 import com.example.gymapp.util.parseWeightInputOrNull
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -19,7 +23,6 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -28,7 +31,13 @@ data class WorkoutDetailUiState(
     val canUndoDelete: Boolean = false,
     val personalRecordFlags: Map<Long, Boolean> = emptyMap(),
     val restSecondsRemaining: Int = 0,
-    val availableExercisesToAdd: List<ExerciseEntity> = emptyList()
+    val availableExercisesToAdd: List<ExerciseEntity> = emptyList(),
+    val workoutComparison: WorkoutComparison? = null
+)
+
+private data class WorkoutDetailSessionContext(
+    val details: WorkoutSessionDetails?,
+    val comparison: WorkoutComparison?
 )
 
 sealed interface WorkoutDetailEvent {
@@ -45,18 +54,54 @@ class WorkoutDetailViewModel(
 ) : ViewModel() {
     private val sessionDetailsFlow = repository.observeSessionDetails(sessionId)
     private val allExercisesFlow = repository.observeExercises()
+    private val allExerciseHistoryFlow = repository.observeAllExerciseHistory()
+    private val sessionContextFlow = combine(
+        sessionDetailsFlow,
+        repository.observeSessions(),
+        allExerciseHistoryFlow
+    ) { details, sessions, exerciseHistory ->
+        WorkoutDetailSessionContext(
+            details = details,
+            comparison = details?.let { current ->
+                buildWorkoutComparisonForSession(
+                    currentSessionId = current.session.id,
+                    currentSessionDate = current.session.date,
+                    currentNote = current.session.note,
+                    currentEntries = current.toExerciseHistoryEntries(),
+                    allSessions = sessions,
+                    allHistory = exerciseHistory
+                )
+            }
+        )
+    }
     private val deletedSetForUndo = MutableStateFlow<SetEntryEntity?>(null)
-    private val personalRecordFlags = sessionDetailsFlow.mapLatest { details ->
+    private val personalRecordFlags = combine(
+        sessionDetailsFlow,
+        allExerciseHistoryFlow
+    ) { details, exerciseHistory ->
         if (details == null) {
             emptyMap()
         } else {
+            val maxWeightBeforeSessionByExercise = mutableMapOf<Long, Double>()
+            exerciseHistory.forEach { entry ->
+                if (isWorkoutEarlier(
+                        candidateDate = entry.sessionDate,
+                        candidateId = entry.sessionId,
+                        currentDate = details.session.date,
+                        currentId = sessionId
+                    )
+                ) {
+                    val previousMaximum = maxWeightBeforeSessionByExercise[entry.exerciseId]
+                    if (previousMaximum == null || entry.weight > previousMaximum) {
+                        maxWeightBeforeSessionByExercise[entry.exerciseId] = entry.weight
+                    }
+                }
+            }
             val flags = mutableMapOf<Long, Boolean>()
             details.workoutExercises.forEach { workoutExercise ->
                 val maxWeightInSession = workoutExercise.sets.maxOfOrNull { it.weight } ?: 0.0
-                val maxWeightBeforeSession = repository.getExerciseMaxWeightExcludingSession(
-                    exerciseId = workoutExercise.workoutExercise.exerciseId,
-                    sessionId = sessionId
-                )
+                val maxWeightBeforeSession =
+                    maxWeightBeforeSessionByExercise[workoutExercise.workoutExercise.exerciseId]
                 flags[workoutExercise.workoutExercise.id] = (
                     maxWeightInSession > 0.0 &&
                         (maxWeightBeforeSession == null || maxWeightInSession > maxWeightBeforeSession)
@@ -69,12 +114,13 @@ class WorkoutDetailViewModel(
     val events = _events.asSharedFlow()
 
     val uiState: StateFlow<WorkoutDetailUiState> = combine(
-        sessionDetailsFlow,
+        sessionContextFlow,
         deletedSetForUndo,
         personalRecordFlags,
         restTimerController.remainingSeconds,
         allExercisesFlow
-    ) { details, deletedSet, prFlags, restSeconds, allExercises ->
+    ) { sessionContext, deletedSet, prFlags, restSeconds, allExercises ->
+        val details = sessionContext.details
         val selectedExerciseIds = details
             ?.workoutExercises
             ?.map { it.workoutExercise.exerciseId }
@@ -85,7 +131,8 @@ class WorkoutDetailViewModel(
             canUndoDelete = deletedSet != null,
             personalRecordFlags = prFlags,
             restSecondsRemaining = restSeconds,
-            availableExercisesToAdd = allExercises.filterNot { it.id in selectedExerciseIds }
+            availableExercisesToAdd = allExercises.filterNot { it.id in selectedExerciseIds },
+            workoutComparison = sessionContext.comparison
         )
     }.stateIn(
         scope = viewModelScope,

@@ -1,5 +1,4 @@
 import SwiftUI
-import UniformTypeIdentifiers
 
 @MainActor
 struct ExercisesView: View {
@@ -51,38 +50,27 @@ struct ExercisesView: View {
 
     private enum ActiveAlert: Identifiable {
         case delete(Exercise)
-        case importBackup
         case error(String)
 
         var id: String {
             switch self {
             case let .delete(exercise):
                 return "delete-\(exercise.id.uuidString)"
-            case .importBackup:
-                return "import-backup"
             case let .error(message):
                 return "error-\(message)"
             }
         }
     }
 
-    @EnvironmentObject private var appState: AppState
-    @EnvironmentObject private var auth: AuthService
     @EnvironmentObject private var store: WorkoutStore
 
     @State private var searchText = ""
     @State private var bodyFilter: BodyFilter = .all
     @State private var muscleFilter: String?
+    @State private var favoritesOnly = false
     @State private var sortMode: SortMode = .name
     @State private var presentedSheet: PresentedSheet?
     @State private var activeAlert: ActiveAlert?
-    @State private var showsAccountSettings = false
-    @State private var showsImporter = false
-    @State private var showsExporter = false
-    @State private var pendingImportData: Data?
-    @State private var exportDocument: GymExportDocument?
-    @State private var exportContentType: UTType = .json
-    @State private var exportFilename = "GymApp-backup"
     @State private var resultMessage: String?
 
     var body: some View {
@@ -90,14 +78,12 @@ struct ExercisesView: View {
             ScrollView {
                 LazyVStack(spacing: 14) {
                     header
-                    accountCard
 
                     if let resultMessage {
                         GymStatusBanner(message: resultMessage, isError: false)
                             .transition(.opacity.combined(with: .move(edge: .top)))
                     }
 
-                    backupCard
                     exerciseLibrary
                 }
                 .padding(.horizontal, 14)
@@ -107,27 +93,7 @@ struct ExercisesView: View {
             .scrollDismissesKeyboard(.interactively)
         }
         .sheet(item: $presentedSheet, content: presentedContent)
-        .sheet(isPresented: $showsAccountSettings) {
-            NavigationStack {
-                AccountSettingsView(showsCloseButton: true)
-            }
-            .environmentObject(appState)
-            .environmentObject(auth)
-        }
         .alert(item: $activeAlert, content: makeAlert)
-        .fileImporter(
-            isPresented: $showsImporter,
-            allowedContentTypes: [.json],
-            allowsMultipleSelection: false,
-            onCompletion: handleImportSelection
-        )
-        .fileExporter(
-            isPresented: $showsExporter,
-            document: exportDocument,
-            contentType: exportContentType,
-            defaultFilename: exportFilename,
-            onCompletion: handleExportCompletion
-        )
     }
 
     private var header: some View {
@@ -152,7 +118,7 @@ struct ExercisesView: View {
                 .font(.largeTitle.bold())
                 .foregroundStyle(GymTheme.textPrimary)
                 .accessibilityAddTraits(.isHeader)
-            Text("Manage your library, history, muscle groups, and backups.")
+            Text("Manage your library, history, muscle groups, and favorites.")
                 .font(.subheadline)
                 .foregroundStyle(GymTheme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -167,119 +133,6 @@ struct ExercisesView: View {
         }
         .buttonStyle(GymPrimaryButtonStyle())
         .accessibilityHint("Adds a custom exercise to your library")
-    }
-
-    private var accountCard: some View {
-        GymPanel(highlighted: true) {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .top, spacing: 12) {
-                    Image(systemName: auth.session?.cloud == nil ? "iphone" : "person.crop.circle.badge.checkmark")
-                        .font(.title2)
-                        .foregroundStyle(GymTheme.primary)
-                        .accessibilityHidden(true)
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(gymLocalized(auth.session?.displayName ?? "GymApp athlete"))
-                            .font(.headline)
-                            .foregroundStyle(GymTheme.textPrimary)
-                        Text(gymLocalized(accountSubtitle))
-                            .font(.subheadline)
-                            .foregroundStyle(GymTheme.textSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-
-                    Spacer(minLength: 4)
-                    GymInfoPill(
-                        auth.session?.cloud == nil ? "Local" : "Cloud",
-                        systemImage: auth.session?.cloud == nil ? "internaldrive" : "icloud"
-                    )
-                }
-
-                Button {
-                    showsAccountSettings = true
-                } label: {
-                    Label("Account, privacy & deletion", systemImage: "gearshape")
-                }
-                .buttonStyle(GymSecondaryButtonStyle())
-                .accessibilityHint("Opens account settings, support, sign out, and account deletion")
-            }
-        }
-    }
-
-    private var accountSubtitle: String {
-        if let email = auth.session?.cloud?.email {
-            return email
-        }
-        return "Workout data is stored on this device. Export a backup before changing devices."
-    }
-
-    private var backupCard: some View {
-        GymPanel {
-            VStack(alignment: .leading, spacing: 14) {
-                GymSectionTitle(
-                    eyebrow: "Your data",
-                    title: "Backup & diagnostics",
-                    supporting: "Backups merge into the current profile and skip duplicate sessions."
-                )
-
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 10) {
-                        exportBackupButton
-                        importBackupButton
-                    }
-                    VStack(spacing: 10) {
-                        exportBackupButton
-                        importBackupButton
-                    }
-                }
-
-                Menu {
-                    Button {
-                        prepareJSONExport(includeDiagnostics: true)
-                    } label: {
-                        Label("Diagnostics JSON", systemImage: "curlybraces")
-                    }
-
-                    Button {
-                        prepareDiagnosticsPDF()
-                    } label: {
-                        Label("Diagnostics PDF", systemImage: "doc.richtext")
-                    }
-                } label: {
-                    Label("Export diagnostics", systemImage: "stethoscope")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(GymSecondaryButtonStyle())
-                .accessibilityHint("Exports app and workout diagnostics without authentication tokens")
-
-                Text("A JSON backup contains your exercise names, workout dates, sets, notes, and account ownership metadata. Share it only with people you trust.")
-                    .font(.caption)
-                    .foregroundStyle(GymTheme.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-    }
-
-    private var exportBackupButton: some View {
-        Button {
-            prepareJSONExport(includeDiagnostics: false)
-        } label: {
-            Label("Export backup", systemImage: "square.and.arrow.up")
-                .frame(maxWidth: .infinity)
-        }
-        .buttonStyle(GymSecondaryButtonStyle())
-        .accessibilityHint("Saves a GymApp JSON backup using the Files picker")
-    }
-
-    private var importBackupButton: some View {
-        Button {
-            showsImporter = true
-        } label: {
-            Label("Import backup", systemImage: "square.and.arrow.down")
-                .frame(maxWidth: .infinity)
-        }
-        .buttonStyle(GymSecondaryButtonStyle())
-        .accessibilityHint("Selects a GymApp JSON backup to merge into this profile")
     }
 
     private var exerciseLibrary: some View {
@@ -321,15 +174,15 @@ struct ExercisesView: View {
                     } description: {
                         Text(
                             gymLocalized(store.exercises.isEmpty
-                                ? "Add an exercise now or import a backup."
-                                : "Try another name or clear the search.")
+                                ? "Add an exercise now or import a backup from Profile."
+                                : "Try another name or clear the filters.")
                         )
                     } actions: {
                         if store.exercises.isEmpty {
                             Button("Add exercise") { presentedSheet = .addExercise }
                                 .buttonStyle(.borderedProminent)
                         } else {
-                            Button("Clear search") { searchText = "" }
+                            Button("Clear filters", action: clearFilters)
                                 .buttonStyle(.bordered)
                         }
                     }
@@ -347,6 +200,19 @@ struct ExercisesView: View {
         VStack(alignment: .leading, spacing: 8) {
             ScrollView(.horizontal) {
                 HStack(spacing: 8) {
+                    Button {
+                        favoritesOnly.toggle()
+                    } label: {
+                        Label(
+                            gymLocalized("Favorites"),
+                            systemImage: favoritesOnly ? "heart.fill" : "heart"
+                        )
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(favoritesOnly ? GymTheme.primary : GymTheme.textSecondary)
+                    .accessibilityAddTraits(favoritesOnly ? .isSelected : [])
+                    .accessibilityHint(gymLocalized("Shows only favorite exercises"))
+
                     ForEach(BodyFilter.allCases) { filter in
                         Button(bodyFilterTitle(filter)) { bodyFilter = filter }
                             .buttonStyle(.bordered)
@@ -415,6 +281,13 @@ struct ExercisesView: View {
         }
     }
 
+    private func clearFilters() {
+        searchText = ""
+        bodyFilter = .all
+        muscleFilter = nil
+        favoritesOnly = false
+    }
+
     private func exerciseCard(_ exercise: Exercise) -> some View {
         let stats = store.progressStats(exerciseID: exercise.id)
         let mappingCount = manualMuscleIDs(for: exercise).count
@@ -430,6 +303,8 @@ struct ExercisesView: View {
                         .accessibilityAddTraits(.isHeader)
 
                     Spacer(minLength: 4)
+
+                    favoriteButton(exercise, displayName: displayName)
 
                     if catalogDefinition(for: exercise) != nil {
                         HStack(spacing: 6) {
@@ -518,6 +393,49 @@ struct ExercisesView: View {
         }
     }
 
+    private func favoriteButton(_ exercise: Exercise, displayName: String) -> some View {
+        Button {
+            do {
+                _ = try store.toggleExerciseFavorite(id: exercise.id)
+            } catch {
+                activeAlert = .error(errorMessage(error))
+            }
+        } label: {
+            Image(systemName: exercise.isFavorite ? "heart.fill" : "heart")
+                .font(.title3)
+                .foregroundStyle(exercise.isFavorite ? GymTheme.primary : GymTheme.textSecondary)
+                .frame(minWidth: 44, minHeight: 44)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(favoriteAccessibilityLabel(exercise, displayName: displayName))
+        .accessibilityValue(favoriteAccessibilityValue(exercise))
+    }
+
+    private func favoriteAccessibilityLabel(_ exercise: Exercise, displayName: String) -> String {
+        switch gymCurrentLanguageCode() {
+        case AppLanguage.ukrainian.rawValue:
+            exercise.isFavorite
+                ? "Видалити «\(displayName)» з улюблених"
+                : "Додати «\(displayName)» до улюблених"
+        case AppLanguage.russian.rawValue:
+            exercise.isFavorite
+                ? "Удалить «\(displayName)» из избранного"
+                : "Добавить «\(displayName)» в избранное"
+        default:
+            exercise.isFavorite
+                ? "Remove \(displayName) from favorites"
+                : "Add \(displayName) to favorites"
+        }
+    }
+
+    private func favoriteAccessibilityValue(_ exercise: Exercise) -> String {
+        switch gymCurrentLanguageCode() {
+        case AppLanguage.ukrainian.rawValue: exercise.isFavorite ? "Улюблена" : "Не улюблена"
+        case AppLanguage.russian.rawValue: exercise.isFavorite ? "В избранном" : "Не в избранном"
+        default: exercise.isFavorite ? "Favorite" : "Not favorite"
+        }
+    }
+
     private func historyButton(_ exercise: Exercise) -> some View {
         let displayName = gymExerciseName(exercise)
         return Button {
@@ -566,7 +484,8 @@ struct ExercisesView: View {
             }
             let matchesBody = bodyFilter == .all || !exerciseMuscles.isDisjoint(with: bodyFilter.muscleIDs)
             let matchesMuscle = muscleFilter == nil || exerciseMuscles.contains(muscleFilter!)
-            return matchesQuery && matchesBody && matchesMuscle
+            let matchesFavorite = !favoritesOnly || exercise.isFavorite
+            return matchesQuery && matchesBody && matchesMuscle && matchesFavorite
         }
         return matching.sorted { left, right in
             let nameOrder = gymExerciseName(left).localizedCaseInsensitiveCompare(gymExerciseName(right))
@@ -688,18 +607,6 @@ struct ExercisesView: View {
                 secondaryButton: .cancel()
             )
 
-        case .importBackup:
-            return Alert(
-                title: Text("Merge this backup?"),
-                message: Text("New exercises and sessions will be added to this profile. Matching sessions are skipped; existing data is kept."),
-                primaryButton: .default(Text("Merge")) {
-                    performPendingImport()
-                },
-                secondaryButton: .cancel {
-                    pendingImportData = nil
-                }
-            )
-
         case let .error(message):
             return Alert(
                 title: Text("Couldn’t complete the action"),
@@ -709,200 +616,8 @@ struct ExercisesView: View {
         }
     }
 
-    private func prepareJSONExport(includeDiagnostics: Bool) {
-        do {
-            let data = try appState.exportBackup(includeDiagnostics: includeDiagnostics)
-            exportDocument = GymExportDocument(data: data)
-            exportContentType = .json
-            exportFilename = includeDiagnostics ? "GymApp-diagnostics" : "GymApp-backup"
-            showsExporter = true
-        } catch {
-            activeAlert = .error(errorMessage(error))
-        }
-    }
-
-    private func prepareDiagnosticsPDF() {
-        do {
-            let dashboard = store.dashboardStats()
-            let sync = store.syncProfileStats()
-            let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? gymLocalized("Unknown")
-            let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? gymLocalized("Unknown")
-            let accountMode = gymLocalized(auth.session?.cloud == nil ? "Local profile" : "Cloud account")
-            let lastSync = appState.cloudSync.lastSyncedAt.map {
-                gymFormattedDate($0, date: .abbreviated, time: .standard)
-            } ?? gymLocalized("Never")
-            let pdfURL = try ExportService.writeDiagnosticsPDF(sections: [
-                (
-                    heading: gymLocalized("Application"),
-                    lines: [
-                        "\(gymLocalized("Version")): \(version) (\(build))",
-                        "\(gymLocalized("System")): \(ProcessInfo.processInfo.operatingSystemVersionString)",
-                        "\(gymLocalized("Locale")): \(Locale.current.identifier)",
-                        "\(gymLocalized("Account mode")): \(accountMode)"
-                    ]
-                ),
-                (
-                    heading: gymLocalized("Workout data"),
-                    lines: [
-                        "\(gymLocalized("Exercises")): \(store.exercises.count)",
-                        "\(gymLocalized("Workouts")): \(dashboard.workoutCount)",
-                        "\(gymLocalized("Total volume")): \(dashboard.totalVolume.formatted(.number.precision(.fractionLength(0...1))))",
-                        "\(gymLocalized("Profile XP")): \(sync.xp)",
-                        "\(gymLocalized("Profile level")): \(sync.level)",
-                        "\(gymLocalized("Manual muscle mappings")): \(store.muscleMappings.count)"
-                    ]
-                ),
-                (
-                    heading: gymLocalized("Cloud sync"),
-                    lines: [
-                        "\(gymLocalized("Last successful sync")): \(lastSync)",
-                        "\(gymLocalized("Last error")): \(gymLocalized(appState.cloudSync.lastError ?? "None"))"
-                    ]
-                ),
-                (
-                    heading: gymLocalized("Privacy"),
-                    lines: [
-                        gymLocalized("No passwords, access tokens, refresh tokens, or Keychain values are included."),
-                        gymLocalized("Generated only after an explicit user action.")
-                    ]
-                )
-            ])
-            defer { try? FileManager.default.removeItem(at: pdfURL) }
-            exportDocument = GymExportDocument(data: try Data(contentsOf: pdfURL))
-            exportContentType = .pdf
-            exportFilename = "GymApp-diagnostics"
-            showsExporter = true
-        } catch {
-            activeAlert = .error(errorMessage(error))
-        }
-    }
-
-    private func handleImportSelection(_ result: Result<[URL], Error>) {
-        do {
-            guard let url = try result.get().first else { return }
-            let accessed = url.startAccessingSecurityScopedResource()
-            defer {
-                if accessed { url.stopAccessingSecurityScopedResource() }
-            }
-
-            let fileSize = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
-            guard fileSize <= BackupImportLimits.standard.maximumFileBytes else {
-                throw WorkoutStoreError.importLimitExceeded("file size")
-            }
-            pendingImportData = try BackupFileReader.read(
-                from: url,
-                maximumBytes: BackupImportLimits.standard.maximumFileBytes
-            )
-            activeAlert = .importBackup
-        } catch {
-            activeAlert = .error(errorMessage(error))
-        }
-    }
-
-    private func performPendingImport() {
-        guard let data = pendingImportData else { return }
-        pendingImportData = nil
-        do {
-            let result = try appState.importBackup(data)
-            resultMessage = importSummary(result)
-        } catch {
-            activeAlert = .error(errorMessage(error))
-        }
-    }
-
-    private func handleExportCompletion(_ result: Result<URL, Error>) {
-        exportDocument = nil
-        switch result {
-        case .success:
-            resultMessage = "Export saved."
-        case let .failure(error):
-            activeAlert = .error(errorMessage(error))
-        }
-    }
-
-    private func importSummary(_ result: BackupImportResult) -> String {
-        let sessions = gymCount(
-            result.importedSessions,
-            englishOne: "session",
-            englishMany: "sessions",
-            ukrainianOne: "сесію",
-            ukrainianFew: "сесії",
-            ukrainianMany: "сесій"
-        )
-        let exercises = gymCount(
-            result.addedExercises,
-            englishOne: "exercise",
-            englishMany: "exercises",
-            ukrainianOne: "вправу",
-            ukrainianFew: "вправи",
-            ukrainianMany: "вправ"
-        )
-        let duplicates = gymCount(
-            result.skippedDuplicateSessions,
-            englishOne: "duplicate",
-            englishMany: "duplicates",
-            ukrainianOne: "дублікат",
-            ukrainianFew: "дублікати",
-            ukrainianMany: "дублікатів"
-        )
-        let invalidSets = gymCount(
-            result.ignoredInvalidSets,
-            englishOne: "invalid set",
-            englishMany: "invalid sets",
-            ukrainianOne: "некоректний підхід",
-            ukrainianFew: "некоректні підходи",
-            ukrainianMany: "некоректних підходів"
-        )
-        return gymText(
-            "\(sessions) imported · \(exercises) added · \(duplicates) skipped · \(invalidSets) ignored",
-            "Імпортовано: \(sessions) · додано: \(exercises) · пропущено: \(duplicates) · проігноровано: \(invalidSets)",
-            languageCode: gymCurrentLanguageCode()
-        )
-    }
-
     private func errorMessage(_ error: Error) -> String {
         gymErrorMessage(error)
-    }
-}
-
-enum BackupFileReader {
-    static func read(from url: URL, maximumBytes: Int) throws -> Data {
-        guard maximumBytes >= 0 else {
-            throw WorkoutStoreError.importLimitExceeded("file size")
-        }
-        let handle = try FileHandle(forReadingFrom: url)
-        defer { try? handle.close() }
-
-        var result = Data()
-        result.reserveCapacity(min(maximumBytes, 256 * 1_024))
-        while let chunk = try handle.read(upToCount: 64 * 1_024), !chunk.isEmpty {
-            guard chunk.count <= maximumBytes - result.count else {
-                throw WorkoutStoreError.importLimitExceeded("file size")
-            }
-            result.append(chunk)
-        }
-        return result
-    }
-}
-
-private struct GymExportDocument: FileDocument {
-    static var readableContentTypes: [UTType] { [.json, .pdf] }
-
-    let data: Data
-
-    init(data: Data) {
-        self.data = data
-    }
-
-    init(configuration: ReadConfiguration) throws {
-        guard let data = configuration.file.regularFileContents else {
-            throw CocoaError(.fileReadCorruptFile)
-        }
-        self.data = data
-    }
-
-    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
-        FileWrapper(regularFileWithContents: data)
     }
 }
 

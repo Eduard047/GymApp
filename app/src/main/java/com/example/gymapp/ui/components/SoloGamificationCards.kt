@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -21,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -33,6 +35,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
+import com.example.gymapp.data.repository.BadgeRarity
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.EmojiEvents
+import androidx.compose.material.icons.filled.FitnessCenter
+import androidx.compose.material.icons.filled.LocalFireDepartment
+import androidx.compose.material.icons.filled.Replay
+import androidx.compose.material.icons.filled.TrendingUp
 import com.example.gymapp.ui.viewmodel.AchievementPreviewUiModel
 import com.example.gymapp.ui.viewmodel.ActivityHeatmapDayUiModel
 import com.example.gymapp.ui.viewmodel.ActivityHeatmapUiModel
@@ -400,18 +409,19 @@ fun AchievementPreviewCard(
             )
 
             achievements.forEach { achievement ->
-                val accentColor = if (achievement.isUnlocked) {
-                    MaterialTheme.colorScheme.tertiary
-                } else {
-                    MaterialTheme.colorScheme.primary
+                val accentColor = when (achievement.badgeRarity) {
+                    BadgeRarity.COMMON -> MaterialTheme.colorScheme.secondary
+                    BadgeRarity.UNCOMMON -> MaterialTheme.colorScheme.primary
+                    BadgeRarity.RARE -> MaterialTheme.colorScheme.tertiary
+                    BadgeRarity.EPIC -> Color(0xFF8057C7)
+                    BadgeRarity.LEGENDARY -> Color(0xFFD28A16)
                 }
-                val badgeText = "${(achievement.progressFraction * 100).toInt().coerceIn(0, 100)}%"
 
                 Surface(
                     color = if (achievement.isUnlocked) {
-                        accentColor.copy(alpha = 0.1f)
+                        MaterialTheme.colorScheme.surface
                     } else {
-                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.46f)
+                        MaterialTheme.colorScheme.surfaceVariant
                     },
                     shape = MaterialTheme.shapes.large,
                     border = BorderStroke(
@@ -431,11 +441,11 @@ fun AchievementPreviewCard(
                                 .background(accentColor.copy(alpha = 0.14f)),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text(
-                                text = badgeText,
-                                style = MaterialTheme.typography.labelLarge,
-                                fontWeight = FontWeight.Bold,
-                                color = accentColor
+                            Icon(
+                                imageVector = achievementBadgeIcon(achievement.id),
+                                contentDescription = achievement.badgeName,
+                                modifier = Modifier.size(24.dp),
+                                tint = accentColor
                             )
                         }
 
@@ -461,6 +471,13 @@ fun AchievementPreviewCard(
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
+                                    Text(
+                                        text = "${achievement.badgeName} • ${achievementRarityLabel(achievement.badgeRarity)}",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = accentColor,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
                                 }
                                 Text(
                                     text = achievement.statusLabel,
@@ -482,7 +499,7 @@ fun AchievementPreviewCard(
                             )
 
                             Text(
-                                text = achievement.progressLabel,
+                                text = "${achievement.progressLabel} • +${achievement.rewardXp} XP",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
@@ -495,6 +512,25 @@ fun AchievementPreviewCard(
         }
     }
 }
+
+private fun achievementBadgeIcon(id: String): ImageVector = when {
+    id.startsWith("streak_") -> Icons.Default.LocalFireDepartment
+    id.startsWith("volume_") -> Icons.Default.TrendingUp
+    id == "comeback" -> Icons.Default.Replay
+    id == "first_workout" -> Icons.Default.FitnessCenter
+    else -> Icons.Default.EmojiEvents
+}
+
+@Composable
+private fun achievementRarityLabel(rarity: BadgeRarity): String = stringResource(
+    when (rarity) {
+        BadgeRarity.COMMON -> R.string.achievement_rarity_common
+        BadgeRarity.UNCOMMON -> R.string.achievement_rarity_uncommon
+        BadgeRarity.RARE -> R.string.achievement_rarity_rare
+        BadgeRarity.EPIC -> R.string.achievement_rarity_epic
+        BadgeRarity.LEGENDARY -> R.string.achievement_rarity_legendary
+    }
+)
 
 @Composable
 private fun SoloHeroStat(

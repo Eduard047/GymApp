@@ -36,6 +36,7 @@ import com.example.gymapp.ui.components.HeroPanel
 import com.example.gymapp.ui.components.InfoPill
 import com.example.gymapp.ui.components.MetricTile
 import com.example.gymapp.ui.components.SectionTitle
+import com.example.gymapp.ui.components.WorkoutComparisonCard
 import com.example.gymapp.ui.util.localizedExerciseName
 import com.example.gymapp.ui.viewmodel.CompletedMissionUiState
 import com.example.gymapp.ui.viewmodel.NewBadgeUiState
@@ -89,6 +90,12 @@ fun PostWorkoutSummaryScreen(
 
                 item {
                     SummaryMetrics(uiState = uiState)
+                }
+
+                uiState.workoutComparison?.let { comparison ->
+                    item {
+                        WorkoutComparisonCard(comparison = comparison)
+                    }
                 }
 
                 item {

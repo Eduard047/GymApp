@@ -31,7 +31,7 @@ import java.util.concurrent.ConcurrentHashMap
         ExerciseMuscleMappingEntity::class,
         GarminWorkoutReceiptEntity::class
     ],
-    version = 8,
+    version = 9,
     exportSchema = true
 )
 abstract class GymDatabase : RoomDatabase() {
@@ -282,6 +282,14 @@ abstract class GymDatabase : RoomDatabase() {
             }
         }
 
+        internal val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE exercises ADD COLUMN isFavorite INTEGER NOT NULL DEFAULT 0"
+                )
+            }
+        }
+
         internal val REGISTERED_MIGRATIONS: Array<Migration> = arrayOf(
             MIGRATION_1_2,
             MIGRATION_2_3,
@@ -289,7 +297,8 @@ abstract class GymDatabase : RoomDatabase() {
             MIGRATION_4_5,
             MIGRATION_5_6,
             MIGRATION_6_7,
-            MIGRATION_7_8
+            MIGRATION_7_8,
+            MIGRATION_8_9
         )
 
         fun getInstance(context: Context, databaseName: String = "gym_database"): GymDatabase {

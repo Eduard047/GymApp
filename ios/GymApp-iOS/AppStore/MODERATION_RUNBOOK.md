@@ -1,14 +1,21 @@
 # GymApp leaderboard moderation runbook
 
-Status date: 2026-07-11
+Status date: 2026-07-21
+
+Cross-account standings are disabled in current clients. Once deployed, the
+pending owner-only backend migration will prevent released clients from
+discovering other profiles through the compatibility view. Keep this runbook active only for
+legacy reports already in the private queue; resolve or retain them under the
+documented policy. Do not reopen cross-account standings until progression comes
+from a trusted server-side award source and a new abuse review is complete.
 
 ## Ownership and response target
 
 - Queue owner: **Martynenko Eduard**
 - Support contact: **support@gymapptracker.com**
-- Review target: inspect new reports at least once every calendar day while an
-  App Store submission is in review and while the public leaderboard is active.
-  Valid reports should normally receive an action within 24 hours.
+- Review target: inspect unresolved legacy reports at least once every calendar
+  day while any remain. Valid reports should normally receive an action within
+  24 hours.
 - Urgent priority: personal information, credible threats, hate/harassment, or
   repeated impersonation. Inspect these first and disable the affected profile or
   account as soon as practical.

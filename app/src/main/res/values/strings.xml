@@ -5,7 +5,7 @@
     <string name="tab_missions">Missions</string>
     <string name="tab_exercises">Exercises</string>
     <string name="tab_progress">Progress</string>
-    <string name="tab_rating">Rating</string>
+    <string name="tab_profile">Profile</string>
 
     <string name="title_workouts">Workouts</string>
     <string name="workouts_screen_subtitle">Your training history and next best move.</string>
@@ -15,18 +15,19 @@
     <string name="title_post_workout_summary">Workout Summary</string>
     <string name="title_ranks">Rank Titles</string>
     <string name="title_exercises">Exercises</string>
-    <string name="exercises_screen_subtitle">Manage your library, history, muscle groups, and backups.</string>
+    <string name="exercises_screen_subtitle">Manage your library, favorites, history, and muscle groups.</string>
     <string name="title_progress">Progress</string>
-    <string name="title_rating">Rating</string>
-    <string name="leaderboard_hero_title">Rating</string>
-    <string name="leaderboard_hero_supporting">Top users by XP, level and saved workouts.</string>
+    <string name="title_profile">Profile</string>
+    <string name="profile_screen_subtitle">Account, Garmin, private backups, diagnostics, and protected progress.</string>
+    <string name="leaderboard_hero_title">Protected progress</string>
+    <string name="leaderboard_hero_supporting">Competitive standings are paused until workout scores can be verified server-side. Your private progress stays available.</string>
     <string name="leaderboard_your_xp">Your XP</string>
-    <string name="leaderboard_title">Leaderboard</string>
-    <string name="leaderboard_loading_supporting">Loading cloud rating...</string>
-    <string name="leaderboard_synced_supporting">Synced through Supabase.</string>
+    <string name="leaderboard_title">Your synced progress</string>
+    <string name="leaderboard_loading_supporting">Loading your protected cloud progress...</string>
+    <string name="leaderboard_synced_supporting">Only your profile is shown while verified scoring is being built.</string>
     <string name="leaderboard_loading_action">Loading</string>
     <string name="leaderboard_refresh_action">Refresh</string>
-    <string name="leaderboard_empty">No users in the rating yet.</string>
+    <string name="leaderboard_empty">No synced progress yet.</string>
     <string name="leaderboard_row_detail">Level %1$d - %2$d workouts</string>
 
     <string name="action_add_workout">Add Workout</string>
@@ -321,7 +322,12 @@
         <item>S</item>
     </string-array>
     <string name="achievements_title">Achievements</string>
-    <string name="achievements_supporting">Recent unlocks and the next solo milestones.</string>
+    <string name="achievements_supporting">Your complete badge gallery, progress, and unlock rewards.</string>
+    <string name="achievement_rarity_common">Common</string>
+    <string name="achievement_rarity_uncommon">Uncommon</string>
+    <string name="achievement_rarity_rare">Rare</string>
+    <string name="achievement_rarity_epic">Epic</string>
+    <string name="achievement_rarity_legendary">Legendary</string>
     <string name="muscle_heatmap_title">Muscle Map</string>
     <string name="muscle_heatmap_supporting">Colors show which muscle groups carried the most load across your logged training history.</string>
     <string name="muscle_heatmap_sets">Sets</string>
@@ -468,8 +474,8 @@
     <string name="backup_report_more_workouts">More workouts: %1$d</string>
     <string name="backup_report_truncated">Report truncated at the private PDF safety limit.</string>
 
-    <string name="leaderboard_login_required">Log in to load the cloud rating.</string>
-    <string name="leaderboard_load_failed">Could not load the cloud rating.</string>
+    <string name="leaderboard_login_required">Log in to load your protected cloud progress.</string>
+    <string name="leaderboard_load_failed">Could not load your protected cloud progress.</string>
     <string name="leaderboard_unknown_user">GymApp user</string>
     <string name="set_weight_reps_value">%1$s kg × %2$s</string>
 
@@ -497,10 +503,14 @@
     <string name="garmin_metric_avg_hr">Avg HR</string>
     <string name="garmin_metric_max_hr">Max HR</string>
     <string name="garmin_metric_bpm_value">%1$d bpm</string>
+    <string name="garmin_metric_bpm_unit">bpm</string>
     <string name="garmin_metric_duration_value">duration %1$s</string>
     <string name="garmin_metric_heart_rate">heart rate</string>
     <string name="garmin_metric_peak">peak</string>
-    <string name="garmin_hr_chart_title">Heart-rate shape</string>
+    <string name="garmin_metric_ending_zone">Ending zone</string>
+    <string name="garmin_metric_ending_zone_helper">zone at the final valid reading</string>
+    <string name="garmin_hr_chart_title">Saved heart-rate markers</string>
+    <string name="garmin_hr_chart_helper">Only the saved average and maximum are shown; Garmin did not send a time series.</string>
     <string name="garmin_metric_avg_short">Avg %1$d</string>
     <string name="garmin_metric_max_short">Max %1$d</string>
     <string name="garmin_metric_hr_intensity">HR intensity</string>
@@ -512,6 +522,11 @@
     <string name="garmin_intensity_solid">Solid</string>
     <string name="garmin_intensity_high">High</string>
     <string name="garmin_kcal_explainer">Gym kcal is saved from the Garmin app strength formula. Garmin kcal is the system value Garmin Connect uses for daily calories.</string>
+    <string name="workout_comparison_eyebrow">Like for like</string>
+    <string name="workout_comparison_title">Versus the previous matching workout</string>
+    <string name="workout_comparison_supporting">%1$d matching exercises • previous workout %2$s</string>
+    <string name="workout_comparison_previous_delta">Previous %1$s · %2$s</string>
+    <string name="workout_comparison_no_change">no change</string>
 
     <string name="dialog_edit_set_title">Edit Set</string>
     <string name="dialog_delete_workout_title">Delete workout?</string>
@@ -567,6 +582,8 @@
     <string name="cd_language">Change language</string>
     <string name="cd_add_workout">Add workout</string>
     <string name="cd_delete">Delete</string>
+    <string name="exercise_favorite_add">Add to favorites</string>
+    <string name="exercise_favorite_remove">Remove from favorites</string>
     <string name="cd_edit">Edit</string>
     <string name="cd_remove_set">Remove set</string>
     <string name="cd_remove_exercise">Remove exercise</string>
@@ -586,6 +603,7 @@
     <string name="exercise_card_auto_mapping">Auto mapping</string>
     <string name="exercise_card_muscle_groups">Muscle groups</string>
     <string name="exercise_filter_all">All</string>
+    <string name="exercise_filter_favorites">Favorites</string>
     <string name="exercise_filter_upper">Upper body</string>
     <string name="exercise_filter_lower">Lower body</string>
     <string name="exercise_filter_core">Core</string>

@@ -1,5 +1,6 @@
 package com.example.gymapp.data.repository
 
+import com.example.gymapp.data.catalog.BuiltInExerciseCatalog
 import com.example.gymapp.data.entity.ExerciseHistoryEntry
 import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.util.CalorieMode
@@ -8,7 +9,6 @@ import com.example.gymapp.util.TrainingProfile
 import com.example.gymapp.util.TrainingSplit
 import java.time.Instant
 import java.time.ZoneId
-import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.round
@@ -61,6 +61,12 @@ enum class SmartWorkoutFocus {
     FullBody
 }
 
+enum class SmartWorkoutVariant {
+    A,
+    B,
+    C
+}
+
 data class SmartWorkoutExercise(
     val exercise: ExerciseEntity,
     val recommendation: WorkoutRecommendation
@@ -68,13 +74,14 @@ data class SmartWorkoutExercise(
 
 data class SmartWorkoutPlan(
     val focus: SmartWorkoutFocus,
-    val exercises: List<SmartWorkoutExercise>
+    val exercises: List<SmartWorkoutExercise>,
+    val variant: SmartWorkoutVariant = SmartWorkoutVariant.A
 )
 
 object WorkoutRecommendationEngine {
     private const val DefaultSetCount = 3
     private const val DefaultReps = 10
-    private const val MaxHistorySets = 120
+    private const val MaxHistorySessions = 24
     private const val ComebackBreakDays = 10
 
     fun buildForExercise(
@@ -82,19 +89,51 @@ object WorkoutRecommendationEngine {
         history: List<ExerciseHistoryEntry>,
         trainingProfile: TrainingProfile = TrainingProfile(),
         nowMillis: Long = System.currentTimeMillis(),
-        zoneId: ZoneId = ZoneId.systemDefault()
+        zoneId: ZoneId = ZoneId.systemDefault(),
+        exerciseName: String? = null
     ): WorkoutRecommendation {
-        val exerciseHistory = history
+        val targetIdentityKey = exerciseName
+            ?.takeIf { it.isNotBlank() }
+            ?.let(::analyzeExercise)
+            ?.identityKey
+        val sessions = history
             .asSequence()
-            .filter { it.exerciseId == exerciseId }
-            .sortedWith(compareByDescending<ExerciseHistoryEntry> { it.sessionDate }.thenBy { it.setOrderIndex })
-            .take(MaxHistorySets)
-            .toList()
+            .take(WorkoutDataLimits.MAX_TOTAL_SETS)
+            .filter { entry ->
+                entry.isUsableForRecommendation(nowMillis) && (
+                    entry.exerciseId == exerciseId ||
+                        targetIdentityKey != null && analyzeExercise(entry.exerciseName).identityKey == targetIdentityKey
+                    )
+            }
+            .groupBy { it.sessionId }
+            .map { (sessionId, entries) ->
+                ExerciseSessionSnapshot(
+                    sessionId = sessionId,
+                    sets = entries
+                        .sortedWith(
+                            compareBy<ExerciseHistoryEntry> { it.setOrderIndex }
+                                .thenBy { it.setId }
+                        )
+                        .take(WorkoutDataLimits.MAX_SETS_PER_EXERCISE)
+                )
+            }
+            .sortedWith(
+                compareByDescending<ExerciseSessionSnapshot> { it.date }
+                    .thenByDescending { it.sessionId }
+            )
+            .take(MaxHistorySessions)
 
-        if (exerciseHistory.isEmpty()) {
+        if (sessions.isEmpty()) {
+            val repRange = goalRepRange(trainingProfile)
+            val targetSetCount = setBudget(DefaultSetCount, trainingProfile)
             return WorkoutRecommendation(
                 exerciseId = exerciseId,
-                sets = List(DefaultSetCount) { RecommendedWorkoutSet(weight = null, reps = DefaultReps) },
+                sets = List(targetSetCount) {
+                    RecommendedWorkoutSet(
+                        weight = null,
+                        reps = DefaultReps.coerceIn(repRange.minimum, repRange.maximum)
+                    )
+                },
                 kind = WorkoutRecommendationKind.NewExercise,
                 confidence = 0.35f,
                 estimatedVolume = 0.0,
@@ -103,79 +142,85 @@ object WorkoutRecommendationEngine {
             )
         }
 
-        val sessions = exerciseHistory
-            .groupBy { it.sessionId }
-            .values
-            .map { entries -> ExerciseSessionSnapshot(entries.sortedBy { it.setOrderIndex }) }
-            .sortedByDescending { it.date }
-
         val latest = sessions.first()
         val previous = sessions.getOrNull(1)
         val daysSinceLastSession = daysBetween(latest.date, nowMillis, zoneId)
-        val recentSessions = sessions.take(5)
+        val repRange = goalRepRange(trainingProfile)
         val bestEstimatedMax = sessions.maxOf { it.estimatedMax }
-        val recentMaxWeights = recentSessions.map { it.maxWeight }
-        val plateauDetected = recentMaxWeights.size >= 4 &&
-            recentMaxWeights.maxOrNull() != null &&
-            recentMaxWeights.minOrNull() != null &&
-            abs(recentMaxWeights.max() - recentMaxWeights.min()) <= 1.25
+        val plateauDetected = isTruePlateau(sessions.take(4))
+        val repeatedRegression = sessions.size >= 3 &&
+            isComparableRegression(newer = sessions[0], older = sessions[1]) &&
+            isComparableRegression(newer = sessions[1], older = sessions[2])
         val latestNearBest = latest.estimatedMax >= bestEstimatedMax * 0.97
-        val previousVolume = previous?.volume ?: latest.volume
-        val volumeRatio = if (previousVolume <= 0.0) 1.0 else latest.volume / previousVolume
-        val latestStable = latest.minReps >= 8 && latest.sets.size >= 3
-        val latestStrained = latest.minReps <= 5 || volumeRatio < 0.88
+        val previousVolumePerSet = previous?.averageVolumePerSet ?: latest.averageVolumePerSet
+        val volumeRatio = if (previousVolumePerSet <= 0.0) {
+            1.0
+        } else {
+            latest.averageVolumePerSet / previousVolumePerSet
+        }
+        val latestStable = latest.sets.all { it.reps >= repRange.minimum }
+        val latestStrained = latest.sets.any { it.reps < repRange.minimum } || volumeRatio < 0.9
+        val earnedProgression = latest.sets.all { it.reps >= repRange.maximum }
         val isFatLossDeficit = trainingProfile.goal == TrainingGoal.AestheticFatLoss &&
             trainingProfile.calorieMode == CalorieMode.Deficit
 
         val kind = when {
             daysSinceLastSession >= ComebackBreakDays -> WorkoutRecommendationKind.Comeback
-            latestStrained || (isFatLossDeficit && volumeRatio < 0.96) -> WorkoutRecommendationKind.Deload
+            repeatedRegression -> WorkoutRecommendationKind.Deload
+            earnedProgression -> WorkoutRecommendationKind.ProgressiveOverload
             plateauDetected -> WorkoutRecommendationKind.PlateauBreak
-            latestStable && volumeRatio >= 0.95 && !isFatLossDeficit -> WorkoutRecommendationKind.ProgressiveOverload
             else -> WorkoutRecommendationKind.HoldAndBuild
         }
 
-        val targetSetCount = when {
-            trainingProfile.goal == TrainingGoal.Strength -> latest.sets.size.coerceIn(3, 5)
-            isFatLossDeficit -> latest.sets.size.coerceIn(3, 4)
-            else -> latest.sets.size.coerceIn(2, 5)
-        }
-        val targetWeight = when (kind) {
-            WorkoutRecommendationKind.NewExercise -> null
-            WorkoutRecommendationKind.ProgressiveOverload -> latest.maxWeight + chooseWeightStep(
-                weight = latest.maxWeight,
-                trainingProfile = trainingProfile
-            )
-            WorkoutRecommendationKind.HoldAndBuild -> latest.maxWeight
-            WorkoutRecommendationKind.Deload -> latest.maxWeight * if (isFatLossDeficit) 0.9 else 0.92
-            WorkoutRecommendationKind.Comeback -> latest.maxWeight * comebackMultiplier(daysSinceLastSession)
-            WorkoutRecommendationKind.PlateauBreak -> latest.maxWeight
-        }?.let(::roundToNearestHalf)
-
-        val targetReps = when (kind) {
-            WorkoutRecommendationKind.NewExercise -> DefaultReps
-            WorkoutRecommendationKind.ProgressiveOverload -> latest.averageReps.roundToInt().coerceIn(6, goalMaxReps(trainingProfile))
-            WorkoutRecommendationKind.HoldAndBuild -> (latest.averageReps.roundToInt() + 1).coerceIn(8, goalMaxReps(trainingProfile))
-            WorkoutRecommendationKind.Deload -> (latest.averageReps.roundToInt() + 1).coerceIn(8, 12)
-            WorkoutRecommendationKind.Comeback -> latest.averageReps.roundToInt().coerceIn(8, 12)
-            WorkoutRecommendationKind.PlateauBreak -> if (latest.averageReps >= 9.0 && !isFatLossDeficit) 6 else 11
-        }
-
-        val sets = List(targetSetCount) { index ->
-            val reps = when {
-                kind == WorkoutRecommendationKind.PlateauBreak && targetReps <= 6 -> (targetReps - index / 2).coerceAtLeast(4)
-                index >= 3 -> (targetReps - 1).coerceAtLeast(5)
-                else -> targetReps
+        val targetSetCount = setBudget(latest.sets.size, trainingProfile)
+        val baselineSets = baselineSets(latest.sets, targetSetCount)
+        val sets = baselineSets.mapIndexed { index, baseline ->
+            val weight = when (kind) {
+                WorkoutRecommendationKind.NewExercise -> null
+                WorkoutRecommendationKind.ProgressiveOverload -> {
+                    if (baseline.weight <= 0.0) {
+                        baseline.weight
+                    } else {
+                        boundedRoundedWeight(
+                            baseline.weight + chooseWeightStep(
+                                weight = baseline.weight,
+                                trainingProfile = trainingProfile
+                            )
+                        )
+                    }
+                }
+                WorkoutRecommendationKind.HoldAndBuild,
+                WorkoutRecommendationKind.PlateauBreak -> baseline.weight
+                WorkoutRecommendationKind.Deload -> boundedRoundedWeight(
+                    baseline.weight * if (isFatLossDeficit) 0.9 else 0.92
+                )
+                WorkoutRecommendationKind.Comeback -> boundedRoundedWeight(
+                    baseline.weight * comebackMultiplier(daysSinceLastSession)
+                )
             }
-            RecommendedWorkoutSet(weight = targetWeight, reps = reps)
+            val reps = when (kind) {
+                WorkoutRecommendationKind.NewExercise -> DefaultReps.coerceIn(repRange.minimum, repRange.maximum)
+                WorkoutRecommendationKind.ProgressiveOverload -> {
+                    if (baseline.weight <= 0.0) repRange.maximum else repRange.minimum
+                }
+                WorkoutRecommendationKind.HoldAndBuild ->
+                    (baseline.reps + 1).coerceIn(repRange.minimum, repRange.maximum)
+                WorkoutRecommendationKind.Deload,
+                WorkoutRecommendationKind.Comeback ->
+                    baseline.reps.coerceIn(repRange.minimum, repRange.maximum)
+                WorkoutRecommendationKind.PlateauBreak -> {
+                    if (index % 2 == 0) repRange.minimum else repRange.maximum
+                }
+            }
+            RecommendedWorkoutSet(weight = weight, reps = reps)
         }
 
         val reasons = buildList {
             if (latestStable) add(WorkoutRecommendationReason.LastSessionStrong)
-            if (latestStrained) add(WorkoutRecommendationReason.LastSessionUnstable)
+            if (latestStrained || repeatedRegression) add(WorkoutRecommendationReason.LastSessionUnstable)
             if (daysSinceLastSession >= ComebackBreakDays) add(WorkoutRecommendationReason.RecentBreak)
             if (volumeRatio >= 1.08) add(WorkoutRecommendationReason.VolumeTrendingUp)
-            if (volumeRatio < 0.9) add(WorkoutRecommendationReason.VolumeDropped)
+            if (volumeRatio < 0.9 || repeatedRegression) add(WorkoutRecommendationReason.VolumeDropped)
             if (plateauDetected) add(WorkoutRecommendationReason.PlateauDetected)
             if (latestNearBest) add(WorkoutRecommendationReason.NearPersonalBest)
             if (trainingProfile.goal == TrainingGoal.AestheticFatLoss) {
@@ -212,26 +257,45 @@ object WorkoutRecommendationEngine {
         nowMillis: Long = System.currentTimeMillis(),
         zoneId: ZoneId = ZoneId.systemDefault()
     ): SmartWorkoutPlan {
-        if (exercises.isEmpty()) {
+        val safeExercises = exercises
+            .asSequence()
+            .take(WorkoutDataLimits.MAX_EXERCISES)
+            .filter { exercise ->
+                exercise.id > 0L && WorkoutDataLimits.isValidExerciseName(exercise.name)
+            }
+            .toList()
+            .distinctBy { it.id }
+        if (safeExercises.isEmpty()) {
             return SmartWorkoutPlan(focus = SmartWorkoutFocus.FullBody, exercises = emptyList())
         }
 
-        val focus = chooseWorkoutFocus(history, trainingProfile, nowMillis, zoneId)
-        val targetExerciseCount = when (focus) {
-            SmartWorkoutFocus.Upper -> 5
-            SmartWorkoutFocus.Lower -> 5
-            SmartWorkoutFocus.Push -> 5
-            SmartWorkoutFocus.Pull -> 5
-            SmartWorkoutFocus.Legs -> 5
-            SmartWorkoutFocus.FullBody -> 6
+        val safeHistory = history
+            .asSequence()
+            .take(WorkoutDataLimits.MAX_TOTAL_SETS)
+            .filter { it.isUsableForRecommendation(nowMillis) }
+            .toList()
+        val focus = chooseWorkoutFocus(safeHistory, trainingProfile, nowMillis, zoneId)
+        val variant = chooseWorkoutVariant(focus, safeHistory)
+        var targetExerciseCount = if (focus == SmartWorkoutFocus.FullBody) 6 else 5
+        targetExerciseCount += when (trainingProfile.workoutsPerWeek.coerceIn(2, 6)) {
+            2 -> 1
+            5, 6 -> -1
+            else -> 0
         }
+        targetExerciseCount = targetExerciseCount.coerceIn(4, 7)
 
-        val historyByExerciseId = history.groupBy { it.exerciseId }
-        val recentSessionIds = recentSessionIds(history, limit = 3)
+        val analysesByExerciseId = safeExercises.associate { exercise ->
+            exercise.id to analyzeExercise(exercise.name)
+        }
+        val historyByIdentity = safeHistory.groupBy { entry ->
+            analysesByExerciseId[entry.exerciseId]?.identityKey
+                ?: analyzeExercise(entry.exerciseName).identityKey
+        }
+        val recentSessionIds = recentSessionIds(safeHistory, limit = 3)
         val targetMuscles = targetMusclesForFocus(focus)
-        val candidates = exercises.map { exercise ->
-            val exerciseHistory = historyByExerciseId[exercise.id].orEmpty()
-            val analysis = analyzeExercise(exercise.name)
+        val candidates = safeExercises.map { exercise ->
+            val analysis = analysesByExerciseId.getValue(exercise.id)
+            val exerciseHistory = historyByIdentity[analysis.identityKey].orEmpty()
             val daysSince = exerciseHistory
                 .maxOfOrNull { it.sessionDate }
                 ?.let { daysBetween(it, nowMillis, zoneId) }
@@ -259,21 +323,32 @@ object WorkoutRecommendationEngine {
             val noveltyScore = if (sessionCount == 0) 12.0 else 0.0
             val dueScore = daysSince.coerceAtMost(28) * 1.25
             val confidenceScore = sessionCount.coerceAtMost(4) * 2.0
+            val variantScore = variantPreferenceScore(analysis, focus, variant)
 
             ExerciseCandidate(
                 exercise = exercise,
                 analysis = analysis,
-                score = focusScore + muscleMatchScore + noveltyScore + dueScore + confidenceScore -
+                score = focusScore + muscleMatchScore + noveltyScore + dueScore + confidenceScore + variantScore -
                     recentExercisePenalty - sameWeekExercisePenalty
             )
         }
+            .groupBy { it.analysis.identityKey }
+            .values
+            .map { equivalentCandidates ->
+                equivalentCandidates.sortedWith(
+                    compareByDescending<ExerciseCandidate> { it.score }
+                        .thenBy { it.exercise.name.lowercase() }
+                        .thenBy { it.exercise.id }
+                ).first()
+            }
 
         val selected = selectBalancedExercises(
             candidates = candidates,
             focus = focus,
+            variant = variant,
             targetMuscles = targetMuscles,
             targetExerciseCount = targetExerciseCount,
-            history = history,
+            history = safeHistory,
             nowMillis = nowMillis,
             zoneId = zoneId
         )
@@ -284,13 +359,15 @@ object WorkoutRecommendationEngine {
                     exercise = candidate.exercise,
                     recommendation = buildForExercise(
                         exerciseId = candidate.exercise.id,
-                        history = history,
+                        history = historyByIdentity[candidate.analysis.identityKey].orEmpty(),
                         trainingProfile = trainingProfile,
                         nowMillis = nowMillis,
-                        zoneId = zoneId
+                        zoneId = zoneId,
+                        exerciseName = candidate.exercise.name
                     )
                 )
-            }
+            },
+            variant = variant
         )
     }
 
@@ -311,13 +388,80 @@ object WorkoutRecommendationEngine {
         }
     }
 
-    private fun goalMaxReps(trainingProfile: TrainingProfile): Int {
+    private fun goalRepRange(trainingProfile: TrainingProfile): RepRange {
         return when (trainingProfile.goal) {
-            TrainingGoal.Strength -> 8
-            TrainingGoal.AestheticFatLoss -> 14
-            TrainingGoal.MuscleGain -> 12
-            TrainingGoal.Balanced -> 12
+            TrainingGoal.Strength -> RepRange(minimum = 3, maximum = 6)
+            TrainingGoal.MuscleGain -> RepRange(minimum = 8, maximum = 12)
+            TrainingGoal.AestheticFatLoss -> RepRange(minimum = 8, maximum = 14)
+            TrainingGoal.Balanced -> RepRange(minimum = 6, maximum = 12)
         }
+    }
+
+    private fun setBudget(observedSetCount: Int, trainingProfile: TrainingProfile): Int {
+        var budget = observedSetCount.coerceIn(1, WorkoutDataLimits.MAX_SETS_PER_EXERCISE)
+        if (trainingProfile.goal == TrainingGoal.MuscleGain) budget += 1
+        budget += when (trainingProfile.calorieMode) {
+            CalorieMode.Deficit -> -1
+            CalorieMode.Maintenance -> 0
+            CalorieMode.Surplus -> 1
+        }
+        budget += when (trainingProfile.workoutsPerWeek.coerceIn(2, 6)) {
+            2 -> 1
+            5, 6 -> -1
+            else -> 0
+        }
+
+        val bounds = when (trainingProfile.goal) {
+            TrainingGoal.Strength -> 3..5
+            TrainingGoal.MuscleGain -> 3..6
+            TrainingGoal.AestheticFatLoss -> 2..4
+            TrainingGoal.Balanced -> 2..5
+        }
+        return budget.coerceIn(bounds.first, bounds.last)
+    }
+
+    private fun baselineSets(
+        latestSets: List<ExerciseHistoryEntry>,
+        targetSetCount: Int
+    ): List<ExerciseHistoryEntry> {
+        return List(targetSetCount) { index ->
+            latestSets.getOrElse(index) { latestSets.last() }
+        }
+    }
+
+    private fun boundedRoundedWeight(value: Double): Double {
+        return roundToNearestHalf(value.coerceIn(0.0, WorkoutDataLimits.MAX_WEIGHT))
+    }
+
+    private fun isComparableRegression(
+        newer: ExerciseSessionSnapshot,
+        older: ExerciseSessionSnapshot
+    ): Boolean {
+        if (older.maxWeight <= 0.0 && newer.maxWeight <= 0.0) {
+            return newer.averageReps < older.averageReps * 0.9
+        }
+        if (older.estimatedMax <= 0.0 || older.averageVolumePerSet <= 0.0) return false
+        return newer.estimatedMax < older.estimatedMax * 0.97 &&
+            newer.averageVolumePerSet < older.averageVolumePerSet * 0.92
+    }
+
+    private fun isTruePlateau(recentSessions: List<ExerciseSessionSnapshot>): Boolean {
+        if (recentSessions.size < 4) return false
+        val latest = recentSessions.first()
+        val oldest = recentSessions.last()
+        val estimatedMaxImproved = when {
+            oldest.estimatedMax <= 0.0 -> latest.estimatedMax > 0.0
+            else -> latest.estimatedMax > oldest.estimatedMax * 1.015
+        }
+        val averageRepsImproved = latest.averageReps > oldest.averageReps + 0.25
+        val volumePerSetImproved = when {
+            oldest.averageVolumePerSet <= 0.0 -> latest.averageVolumePerSet > 0.0
+            else -> latest.averageVolumePerSet > oldest.averageVolumePerSet * 1.02
+        }
+        val maxWeights = recentSessions.map { it.maxWeight }
+        val stableLoad = (maxWeights.maxOrNull() ?: 0.0) - (maxWeights.minOrNull() ?: 0.0) <=
+            max(1.25, oldest.maxWeight * 0.02)
+        return stableLoad && !estimatedMaxImproved && !averageRepsImproved && !volumePerSetImproved
     }
 
     private fun comebackMultiplier(daysSinceLastSession: Int): Double {
@@ -367,34 +511,45 @@ object WorkoutRecommendationEngine {
         }
 
         val sessions = history.sessionGroupsByDate()
-        val latestSession = sessions.firstOrNull()?.entries
-            ?: return SmartWorkoutFocus.Upper
-        val latestFocus = dominantFocus(latestSession)
+        if (sessions.isEmpty()) return SmartWorkoutFocus.Upper
 
         return when (trainingProfile.split) {
             TrainingSplit.UpperLower -> {
+                val latestRecognizedFocus = sessions
+                    .asSequence()
+                    .map { dominantFocus(it.entries) }
+                    .firstOrNull { it.isUpperDay() || it.isLowerDay() }
+                if (latestRecognizedFocus != null) {
+                    return if (latestRecognizedFocus.isLowerDay()) {
+                        SmartWorkoutFocus.Upper
+                    } else {
+                        SmartWorkoutFocus.Lower
+                    }
+                }
                 val thisWeekSessions = sessions.filter { session ->
                     daysBetween(session.date, nowMillis, zoneId) <= 6
                 }
-                val latestWeekFocus = thisWeekSessions.firstOrNull()?.entries?.let(::dominantFocus) ?: latestFocus
-                when {
-                    latestWeekFocus.isLowerDay() -> SmartWorkoutFocus.Upper
-                    latestWeekFocus.isUpperDay() -> SmartWorkoutFocus.Lower
-                    else -> {
-                        val upperCount = thisWeekSessions.count { dominantFocus(it.entries).isUpperDay() }
-                        val lowerCount = thisWeekSessions.count { dominantFocus(it.entries).isLowerDay() }
-                        if (lowerCount < upperCount) SmartWorkoutFocus.Lower else SmartWorkoutFocus.Upper
-                    }
-                }
+                val upperCount = thisWeekSessions.count { dominantFocus(it.entries).isUpperDay() }
+                val lowerCount = thisWeekSessions.count { dominantFocus(it.entries).isLowerDay() }
+                if (lowerCount < upperCount) SmartWorkoutFocus.Lower else SmartWorkoutFocus.Upper
             }
             TrainingSplit.PushPullLegs -> {
-                when (latestFocus) {
+                val latestRecognizedFocus = sessions
+                    .asSequence()
+                    .map { dominantFocus(it.entries) }
+                    .firstOrNull {
+                        it == SmartWorkoutFocus.Push ||
+                            it == SmartWorkoutFocus.Pull ||
+                            it.isLowerDay()
+                    }
+                when (latestRecognizedFocus) {
                     SmartWorkoutFocus.Push -> SmartWorkoutFocus.Pull
                     SmartWorkoutFocus.Pull -> SmartWorkoutFocus.Legs
                     SmartWorkoutFocus.Legs,
                     SmartWorkoutFocus.Lower -> SmartWorkoutFocus.Push
                     SmartWorkoutFocus.Upper,
-                    SmartWorkoutFocus.FullBody -> chooseMostNeglectedFocus(history)
+                    SmartWorkoutFocus.FullBody,
+                    null -> chooseMostNeglectedFocus(history)
                 }
             }
             TrainingSplit.FullBody -> SmartWorkoutFocus.FullBody
@@ -402,41 +557,105 @@ object WorkoutRecommendationEngine {
         }
     }
 
-    private fun classifyExercise(name: String): SmartWorkoutFocus {
-        val normalized = name.lowercase()
-            .replace('ʼ', '\'')
-            .replace('’', '\'')
-            .replace(Regex("\\s+"), " ")
-            .trim()
-
-        val legsTokens = listOf(
-            "нога", "ноги", "прис", "squat", "leg", "квад", "стег", "ікр", "икр",
-            "calf", "румун", "станов", "deadlift", "згибання ніг", "розгинання ніг",
-            "жим ногами", "сідниц", "ягод", "glute"
-        )
-        val pushTokens = listOf(
-            "жим", "груд", "chest", "плеч", "shoulder", "tricep", "трицеп",
-            "метелик", "брусь", "dips", "press"
-        )
-        val pullTokens = listOf(
-            "спин", "тяга", "row", "pull", "підтяг", "подтяг", "біцеп", "бицеп",
-            "curl", "штанга на біцепс", "гантелі сидячи"
-        )
-        val coreTokens = listOf("прес", "abs", "crunch", "нахил", "oblique", "гіперекстензі", "hyperextension")
-
-        return when {
-            legsTokens.any { normalized.contains(it) } -> SmartWorkoutFocus.Legs
-            pullTokens.any { normalized.contains(it) } -> SmartWorkoutFocus.Pull
-            pushTokens.any { normalized.contains(it) } -> SmartWorkoutFocus.Push
-            coreTokens.any { normalized.contains(it) } -> SmartWorkoutFocus.FullBody
-            else -> SmartWorkoutFocus.FullBody
+    private fun chooseWorkoutVariant(
+        focus: SmartWorkoutFocus,
+        history: List<ExerciseHistoryEntry>
+    ): SmartWorkoutVariant {
+        val completedSlotCount = history.sessionGroupsByDate().count { session ->
+            if (focus == SmartWorkoutFocus.FullBody) {
+                true
+            } else {
+                val completedFocus = dominantFocus(session.entries)
+                when (focus) {
+                    SmartWorkoutFocus.Upper -> completedFocus.isUpperDay()
+                    SmartWorkoutFocus.Lower,
+                    SmartWorkoutFocus.Legs -> completedFocus.isLowerDay()
+                    SmartWorkoutFocus.Push -> completedFocus == SmartWorkoutFocus.Push
+                    SmartWorkoutFocus.Pull -> completedFocus == SmartWorkoutFocus.Pull
+                    SmartWorkoutFocus.FullBody -> true
+                }
+            }
+        }
+        val slotCount = if (focus == SmartWorkoutFocus.FullBody) 3 else 2
+        return when (completedSlotCount % slotCount) {
+            1 -> SmartWorkoutVariant.B
+            2 -> SmartWorkoutVariant.C
+            else -> SmartWorkoutVariant.A
         }
     }
 
+    private fun variantPreferenceScore(
+        analysis: ExerciseAnalysis,
+        focus: SmartWorkoutFocus,
+        variant: SmartWorkoutVariant
+    ): Double {
+        val slotCount = if (focus == SmartWorkoutFocus.FullBody) 3 else 2
+        val variantIndex = variant.index.coerceAtMost(slotCount - 1)
+        val bucketScore = if (stableBucket(analysis.identityKey, slotCount) == variantIndex) 10.0 else 0.0
+        val preferredPatterns = preferredPatternsForVariant(focus, variant)
+        val patternScore = if (analysis.patterns.any { it in preferredPatterns }) 18.0 else 0.0
+        return bucketScore + patternScore
+    }
+
+    private fun preferredPatternsForVariant(
+        focus: SmartWorkoutFocus,
+        variant: SmartWorkoutVariant
+    ): Set<MovementPattern> {
+        return when (focus) {
+            SmartWorkoutFocus.Upper -> when (variant) {
+                SmartWorkoutVariant.A -> setOf(MovementPattern.HorizontalPress, MovementPattern.HorizontalPull)
+                SmartWorkoutVariant.B,
+                SmartWorkoutVariant.C -> setOf(MovementPattern.VerticalPress, MovementPattern.VerticalPull)
+            }
+            SmartWorkoutFocus.Push -> when (variant) {
+                SmartWorkoutVariant.A -> setOf(MovementPattern.HorizontalPress)
+                SmartWorkoutVariant.B,
+                SmartWorkoutVariant.C -> setOf(MovementPattern.VerticalPress)
+            }
+            SmartWorkoutFocus.Pull -> when (variant) {
+                SmartWorkoutVariant.A -> setOf(MovementPattern.HorizontalPull)
+                SmartWorkoutVariant.B,
+                SmartWorkoutVariant.C -> setOf(MovementPattern.VerticalPull)
+            }
+            SmartWorkoutFocus.Lower,
+            SmartWorkoutFocus.Legs -> when (variant) {
+                SmartWorkoutVariant.A -> setOf(MovementPattern.Squat, MovementPattern.LegPress)
+                SmartWorkoutVariant.B,
+                SmartWorkoutVariant.C -> setOf(MovementPattern.Hinge, MovementPattern.KneeFlexion)
+            }
+            SmartWorkoutFocus.FullBody -> when (variant) {
+                SmartWorkoutVariant.A -> setOf(
+                    MovementPattern.HorizontalPress,
+                    MovementPattern.HorizontalPull,
+                    MovementPattern.Squat
+                )
+                SmartWorkoutVariant.B -> setOf(
+                    MovementPattern.VerticalPress,
+                    MovementPattern.VerticalPull,
+                    MovementPattern.Hinge
+                )
+                SmartWorkoutVariant.C -> setOf(
+                    MovementPattern.LegPress,
+                    MovementPattern.KneeExtension,
+                    MovementPattern.Calf,
+                    MovementPattern.Core
+                )
+            }
+        }
+    }
+
+    private fun stableBucket(value: String, bucketCount: Int): Int {
+        val hash = value.fold(0) { result, character -> result * 31 + character.code }
+        return Math.floorMod(hash, bucketCount)
+    }
+
     private fun analyzeExercise(name: String): ExerciseAnalysis {
-        val normalized = name.normalizedExerciseName()
+        val definition = BuiltInExerciseCatalog.definitionForName(name)
+        val normalized = (definition?.nameEn ?: name).normalizedExerciseName()
+        val identityKey = definition?.let { "catalog:${it.key}" } ?: "custom:$normalized"
         val muscles = linkedSetOf<String>()
         val patterns = linkedSetOf<MovementPattern>()
+        definition?.muscleIds?.let(muscles::addAll)
 
         fun add(vararg ids: String) {
             muscles += ids
@@ -496,6 +715,10 @@ object WorkoutRecommendationEngine {
             add("lats", "upperBack", "biceps")
             pattern(MovementPattern.VerticalPull)
         }
+        if (normalized.containsAny("face pull", "тяга каната до обличчя", "тяга каната к лицу")) {
+            add("shoulders", "upperBack")
+            pattern(MovementPattern.HorizontalPull)
+        }
         if (normalized.containsAny("тяга", "row") && !normalized.containsAny("румун", "румын", "станов", "становая", "deadlift", "підборід", "подбород")) {
             add("lats", "upperBack", "biceps")
             pattern(MovementPattern.HorizontalPull)
@@ -514,15 +737,27 @@ object WorkoutRecommendationEngine {
             pattern(MovementPattern.Hinge)
         }
 
+        val classificationMuscles = definition?.muscleIds ?: muscles
+        val lowerCount = classificationMuscles.count { it in lowerMuscles }
+        val pushCount = classificationMuscles.count { it in pushMuscles }
+        val pullCount = classificationMuscles.count { it in pullMuscles }
         val category = when {
-            muscles.any { it in lowerMuscles } -> SmartWorkoutFocus.Legs
-            muscles.any { it in pullMuscles } && muscles.none { it in pushMuscles } -> SmartWorkoutFocus.Pull
-            muscles.any { it in pushMuscles } -> SmartWorkoutFocus.Push
-            muscles.any { it in coreMuscles } -> SmartWorkoutFocus.FullBody
+            definition?.key == "warm_up" -> SmartWorkoutFocus.FullBody
+            patterns.any { it in lowerMovementPatterns } || lowerCount > max(pushCount, pullCount) ->
+                SmartWorkoutFocus.Legs
+            patterns.any { it == MovementPattern.HorizontalPull || it == MovementPattern.VerticalPull } &&
+                patterns.none { it == MovementPattern.HorizontalPress || it == MovementPattern.VerticalPress } ->
+                SmartWorkoutFocus.Pull
+            patterns.any { it == MovementPattern.HorizontalPress || it == MovementPattern.VerticalPress } ->
+                SmartWorkoutFocus.Push
+            pullCount > pushCount -> SmartWorkoutFocus.Pull
+            pushCount > pullCount -> SmartWorkoutFocus.Push
+            classificationMuscles.any { it in coreMuscles } -> SmartWorkoutFocus.FullBody
             else -> SmartWorkoutFocus.FullBody
         }
 
         return ExerciseAnalysis(
+            identityKey = identityKey,
             category = category,
             muscles = muscles,
             patterns = patterns.ifEmpty { linkedSetOf(MovementPattern.Accessory) }
@@ -543,6 +778,7 @@ object WorkoutRecommendationEngine {
     private fun selectBalancedExercises(
         candidates: List<ExerciseCandidate>,
         focus: SmartWorkoutFocus,
+        variant: SmartWorkoutVariant,
         targetMuscles: Set<String>,
         targetExerciseCount: Int,
         history: List<ExerciseHistoryEntry>,
@@ -563,14 +799,30 @@ object WorkoutRecommendationEngine {
             }
             .toMutableList()
 
-        if (focus == SmartWorkoutFocus.Lower || focus == SmartWorkoutFocus.Legs) {
+        if (focus != SmartWorkoutFocus.FullBody) {
             selectRequiredPattern(
                 remaining = remaining,
                 selected = selected,
                 coveredMuscles = coveredMuscles,
-                patterns = setOf(MovementPattern.Squat, MovementPattern.LegPress)
+                patterns = preferredPatternsForVariant(focus, variant)
             )
-            if (shouldPrioritizeHeavyLower(history)) {
+        }
+
+        if (focus == SmartWorkoutFocus.Lower || focus == SmartWorkoutFocus.Legs) {
+            if (selected.none { candidate ->
+                    candidate.analysis.patterns.any { it == MovementPattern.Squat || it == MovementPattern.LegPress }
+                }
+            ) {
+                selectRequiredPattern(
+                    remaining = remaining,
+                    selected = selected,
+                    coveredMuscles = coveredMuscles,
+                    patterns = setOf(MovementPattern.Squat, MovementPattern.LegPress)
+                )
+            }
+            if (shouldPrioritizeHeavyLower(history) &&
+                selected.none { candidate -> MovementPattern.Hinge in candidate.analysis.patterns }
+            ) {
                 selectRequiredPattern(
                     remaining = remaining,
                     selected = selected,
@@ -584,7 +836,8 @@ object WorkoutRecommendationEngine {
             listOf(SmartWorkoutFocus.Push, SmartWorkoutFocus.Pull, SmartWorkoutFocus.Legs).forEach { requiredFocus ->
                 val best = remaining
                     .filter { it.analysis.category == requiredFocus }
-                    .maxByOrNull { it.score }
+                    .sortedWith(exerciseCandidateOrder())
+                    .firstOrNull()
                     ?: return@forEach
                 selected += best
                 coveredMuscles += best.analysis.muscles
@@ -593,8 +846,8 @@ object WorkoutRecommendationEngine {
         }
 
         while (selected.size < targetExerciseCount && remaining.isNotEmpty()) {
-            val best = remaining.maxWithOrNull(
-                compareBy<ExerciseCandidate> { candidate ->
+            val best = remaining.sortedWith(
+                compareByDescending<ExerciseCandidate> { candidate ->
                     balancedScore(
                         candidate = candidate,
                         coveredMuscles = coveredMuscles,
@@ -603,8 +856,9 @@ object WorkoutRecommendationEngine {
                         nowMillis = nowMillis,
                         zoneId = zoneId
                     )
-                }.thenByDescending { it.exercise.name.lowercase() }
-            ) ?: break
+                }.thenBy { it.analysis.identityKey }
+                    .thenBy { it.exercise.id }
+            ).firstOrNull() ?: break
             selected += best
             coveredMuscles += best.analysis.muscles
             remaining.removeAll { it.exercise.id == best.exercise.id }
@@ -614,7 +868,7 @@ object WorkoutRecommendationEngine {
             selected += candidates
                 .filter { candidate -> isExerciseEligibleForFocus(candidate.analysis, focus) }
                 .filterNot { candidate -> selected.any { it.exercise.id == candidate.exercise.id } }
-                .sortedWith(compareByDescending<ExerciseCandidate> { it.score }.thenBy { it.exercise.name.lowercase() })
+                .sortedWith(exerciseCandidateOrder())
                 .take(targetExerciseCount - selected.size)
         }
 
@@ -629,12 +883,24 @@ object WorkoutRecommendationEngine {
     ) {
         val best = remaining
             .filter { candidate -> candidate.analysis.patterns.any { it in patterns } }
-            .maxByOrNull { candidate -> candidate.score + candidate.analysis.patterns.count { it in patterns } * 35.0 }
+            .sortedWith(
+                compareByDescending<ExerciseCandidate> { candidate ->
+                    candidate.score + candidate.analysis.patterns.count { it in patterns } * 35.0
+                }.thenBy { it.analysis.identityKey }
+                    .thenBy { it.exercise.id }
+            )
+            .firstOrNull()
             ?: return
 
         selected += best
         coveredMuscles += best.analysis.muscles
         remaining.removeAll { it.exercise.id == best.exercise.id }
+    }
+
+    private fun exerciseCandidateOrder(): Comparator<ExerciseCandidate> {
+        return compareByDescending<ExerciseCandidate> { it.score }
+            .thenBy { it.analysis.identityKey }
+            .thenBy { it.exercise.id }
     }
 
     private fun shouldPrioritizeHeavyLower(history: List<ExerciseHistoryEntry>): Boolean {
@@ -701,11 +967,9 @@ object WorkoutRecommendationEngine {
 
     private fun recentSessionIds(history: List<ExerciseHistoryEntry>, limit: Int): Set<Long> {
         return history
-            .groupBy { it.sessionId }
-            .values
-            .sortedByDescending { entries -> entries.maxOf { it.sessionDate } }
+            .sessionGroupsByDate()
             .take(limit)
-            .map { entries -> entries.first().sessionId }
+            .map { it.id }
             .toSet()
     }
 
@@ -747,18 +1011,22 @@ object WorkoutRecommendationEngine {
         return round(value * 2.0) / 2.0
     }
 
-    private fun Double.roundToInt(): Int = round(this).toInt()
-
     private data class ExerciseSessionSnapshot(
+        val sessionId: Long,
         val sets: List<ExerciseHistoryEntry>
     ) {
         val date: Long = sets.first().sessionDate
         val maxWeight: Double = sets.maxOf { it.weight }
-        val minReps: Int = sets.minOf { it.reps }
         val averageReps: Double = sets.map { it.reps }.average()
         val volume: Double = sets.sumOf { it.weight * it.reps }
+        val averageVolumePerSet: Double = volume / sets.size
         val estimatedMax: Double = sets.maxOf { it.weight * (1.0 + it.reps / 30.0) }
     }
+
+    private data class RepRange(
+        val minimum: Int,
+        val maximum: Int
+    )
 
     private data class ExerciseCandidate(
         val exercise: ExerciseEntity,
@@ -767,6 +1035,7 @@ object WorkoutRecommendationEngine {
     )
 
     private data class ExerciseAnalysis(
+        val identityKey: String,
         val category: SmartWorkoutFocus,
         val muscles: Set<String>,
         val patterns: Set<MovementPattern>
@@ -787,6 +1056,14 @@ object WorkoutRecommendationEngine {
         Accessory
     }
 
+    private val lowerMovementPatterns = setOf(
+        MovementPattern.Squat,
+        MovementPattern.LegPress,
+        MovementPattern.Hinge,
+        MovementPattern.KneeFlexion,
+        MovementPattern.KneeExtension,
+        MovementPattern.Calf
+    )
     private val upperFocuses = setOf(SmartWorkoutFocus.Upper, SmartWorkoutFocus.Push, SmartWorkoutFocus.Pull)
     private val lowerFocuses = setOf(SmartWorkoutFocus.Lower, SmartWorkoutFocus.Legs)
     private val pushMuscles = setOf("chest", "shoulders", "triceps")
@@ -814,8 +1091,33 @@ private fun List<ExerciseHistoryEntry>.sessionGroupsByDate(): List<SessionGroup>
                 entries = entries
             )
         }
-        .sortedByDescending { it.date }
+        .sortedWith(compareByDescending<SessionGroup> { it.date }.thenByDescending { it.id })
 }
+
+private val SmartWorkoutVariant.index: Int
+    get() = when (this) {
+        SmartWorkoutVariant.A -> 0
+        SmartWorkoutVariant.B -> 1
+        SmartWorkoutVariant.C -> 2
+    }
+
+private fun ExerciseHistoryEntry.isUsableForRecommendation(nowMillis: Long): Boolean {
+    val latestAllowedTimestamp = if (nowMillis > Long.MAX_VALUE - RecommendationFutureClockSkewMillis) {
+        Long.MAX_VALUE
+    } else {
+        nowMillis + RecommendationFutureClockSkewMillis
+    }
+    return sessionId > 0L &&
+        exerciseId > 0L &&
+        setOrderIndex in 0 until WorkoutDataLimits.MAX_SETS_PER_EXERCISE &&
+        WorkoutDataLimits.isValidTimestamp(sessionDate) &&
+        sessionDate <= latestAllowedTimestamp &&
+        WorkoutDataLimits.isValidWeight(weight) &&
+        WorkoutDataLimits.isValidReps(reps) &&
+        WorkoutDataLimits.isValidExerciseName(exerciseName)
+}
+
+private const val RecommendationFutureClockSkewMillis = 24L * 60L * 60L * 1_000L
 
 private fun SmartWorkoutFocus.isUpperDay(): Boolean {
     return this == SmartWorkoutFocus.Upper || this == SmartWorkoutFocus.Push || this == SmartWorkoutFocus.Pull

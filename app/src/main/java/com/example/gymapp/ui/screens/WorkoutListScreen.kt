@@ -43,7 +43,6 @@ import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
 import com.example.gymapp.data.entity.WorkoutSessionEntity
 import com.example.gymapp.data.repository.DashboardStats
-import com.example.gymapp.ui.components.AchievementPreviewCard
 import com.example.gymapp.ui.components.ActivityHeatmapCard
 import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.EmptyStatePanel
@@ -81,7 +80,7 @@ fun WorkoutListScreen(
         }
     }
     // Fixed overview item count before the workout list header.
-    val workoutSectionIndex = 6
+    val workoutSectionIndex = 5
 
     Column(
         modifier = modifier.fillMaxSize(),
@@ -184,10 +183,6 @@ fun WorkoutListScreen(
 
             item {
                 RecommendationsCard(recommendations = uiState.trainingRecommendations)
-            }
-
-            item {
-                AchievementPreviewCard(achievements = uiState.achievements)
             }
 
             item {

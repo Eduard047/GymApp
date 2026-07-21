@@ -432,3 +432,139 @@ test("adding another language alias reuses the existing built-in row", () => {
   assert.equal(vm.runInContext('ensureExercise("Squat").id', context), 7);
   assert.equal(vm.runInContext("state.exercises.length", context), 1);
 });
+
+test("favorites are account-local, filterable, and excluded from cloud schema-v2", () => {
+  const context = loadPwaContext();
+  vm.runInContext(`
+    render = () => {};
+    activeAccount = { id: "local-v2-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", name: "Alpha", localIdVersion: 2 };
+    state = {
+      ...defaultAppState(),
+      exercises: [
+        { id: 1, name: "Bench Press", catalogKey: "bench_press", favorite: true },
+        { id: 2, name: "Squat", catalogKey: "squat" },
+        { id: 3, name: "Plank", catalogKey: "plank", favorite: true }
+      ]
+    };
+    exerciseFavoritesOnly = true;
+  `, context);
+
+  assert.deepEqual(jsonFrom(context, "filteredLibraryExercises().map(exercise => exercise.id)"), [1, 3]);
+  vm.runInContext("toggleExerciseFavorite(1)", context);
+  assert.deepEqual(jsonFrom(context, "filteredLibraryExercises().map(exercise => exercise.id)"), [3]);
+  assert.equal(vm.runInContext(`JSON.parse(localStorage.getItem(
+    "gym-pwa-account:local-v2-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  )).exercises[0].favorite === undefined`, context), true);
+
+  vm.runInContext(`
+    activeAccount = {
+      id: "remote-11111111-1111-4111-8111-111111111111",
+      name: "Cloud",
+      userId: "11111111-1111-4111-8111-111111111111",
+      remote: "supabase"
+    };
+    state.exercises[2].favorite = true;
+  `, context);
+  const remote = jsonFrom(context, 'remoteStatePayload("11111111-1111-4111-8111-111111111111")');
+  assert.equal(remote.exercises.some(exercise => "favorite" in exercise || "isFavorite" in exercise), false);
+  assert.equal(jsonFrom(context, "JSON.parse(exportPayload(false)).exercises")[2].favorite, true);
+});
+
+test("older manual backups preserve existing favorites while explicit false can clear them", () => {
+  const context = loadPwaContext();
+  const preserved = jsonFrom(context, `(() => {
+    const previous = { exercises: [{ id: 1, name: "Bench Press", catalogKey: "bench_press", favorite: true }] };
+    const next = { exercises: [{ id: 9, name: "Bench Press", catalogKey: "bench_press" }] };
+    preserveExerciseFavorites(next, previous);
+    return next.exercises[0];
+  })()`);
+  assert.equal(preserved.favorite, true);
+
+  const cleared = jsonFrom(context, `(() => {
+    const previous = { exercises: [{ id: 1, name: "Bench Press", catalogKey: "bench_press", favorite: true }] };
+    const next = { exercises: [{ id: 9, name: "Bench Press", catalogKey: "bench_press", favorite: false }] };
+    preserveExerciseFavorites(next, previous);
+    return next.exercises[0];
+  })()`);
+  assert.equal(cleared.favorite, false);
+
+  const cloudProtected = jsonFrom(context, `(() => {
+    const previous = { exercises: [{ id: 1, name: "Bench Press", catalogKey: "bench_press", favorite: true }] };
+    const next = { exercises: [{ id: 9, name: "Bench Press", catalogKey: "bench_press", favorite: false }] };
+    preserveExerciseFavorites(next, previous, { preferPrevious: true });
+    return next.exercises[0];
+  })()`);
+  assert.equal(cloudProtected.favorite, true);
+});
+
+test("Profile owns account tools and keeps the leaderboard below them", () => {
+  const context = loadPwaContext();
+  vm.runInContext(`
+    activeAccount = { id: "local-v2-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", name: "Profile Owner", localIdVersion: 2 };
+    state = defaultAppState();
+  `, context);
+  const profile = vm.runInContext("leaderboardScreen()", context);
+  const exercises = vm.runInContext("exercisesScreen()", context);
+
+  assert.match(profile, /Profile Owner/);
+  assert.match(profile, /support\.html/);
+  assert.match(profile, /privacy-policy\.html/);
+  assert.ok(profile.indexOf("Profile Owner") < profile.indexOf("leaderboard-list"));
+  assert.doesNotMatch(exercises, /Profile Owner|support\.html|privacy-policy\.html|export-json/);
+  assert.equal(vm.runInContext('titleForRoute({ name: "leaderboard" })', context), "Profile");
+});
+
+test("Missions renders the full stable achievement gallery and Workouts has no duplicate", () => {
+  const context = loadPwaContext();
+  const missions = vm.runInContext("missionsScreen()", context);
+  const workoutsOverview = vm.runInContext("overviewCards([])", context);
+  const ids = [...missions.matchAll(/data-achievement-id="([^"]+)"/g)].map(match => match[1]);
+
+  assert.deepEqual(ids, [
+    "first_workout",
+    "workout_5",
+    "workout_10",
+    "workout_25",
+    "workout_50",
+    "workout_100",
+    "streak_7",
+    "streak_14",
+    "streak_30",
+    "volume_10k",
+    "volume_50k",
+    "comeback"
+  ]);
+  assert.equal(new Set(ids).size, ids.length);
+  assert.doesNotMatch(workoutsOverview, /data-achievement-id=/);
+});
+
+test("leaderboard cache and in-flight work are invalidated by account generation", () => {
+  const context = loadPwaContext();
+  vm.runInContext(`
+    let leaderboardAbortObserved = false;
+    leaderboardRequestId = 7;
+    leaderboardRequestController = { abort() { leaderboardAbortObserved = true; } };
+    leaderboardState = { status: "loaded", source: "old", rows: [{ display_name: "Old" }], error: "" };
+    resetLeaderboardContext();
+  `, context);
+  assert.equal(vm.runInContext("leaderboardAbortObserved", context), true);
+  assert.equal(vm.runInContext("leaderboardRequestId", context), 8);
+  assert.deepEqual(jsonFrom(context, "leaderboardState"), {
+    status: "idle",
+    source: null,
+    rows: [],
+    error: ""
+  });
+
+  vm.runInContext(`
+    activeAccount = { id: "local-v2-cccccccccccccccccccccccccccccccc", name: "One", localIdVersion: 2 };
+    accountEpoch = 4;
+  `, context);
+  const first = vm.runInContext("leaderboardSourceKey()", context);
+  vm.runInContext(`
+    activeAccount = { id: "local-v2-dddddddddddddddddddddddddddddddd", name: "Two", localIdVersion: 2 };
+    accountEpoch += 1;
+  `, context);
+  const second = vm.runInContext("leaderboardSourceKey()", context);
+  assert.notEqual(first, second);
+});

@@ -6,17 +6,27 @@ public struct Exercise: Codable, Identifiable, Hashable, Sendable {
     public let id: UUID
     public var name: String
     public var catalogKey: String?
+    /// A device-local preference. WorkoutStore persists this in its account-scoped
+    /// envelope rather than the shared backup/cloud contract.
+    public var isFavorite: Bool
 
-    public init(id: UUID = UUID(), name: String, catalogKey: String? = nil) {
+    public init(
+        id: UUID = UUID(),
+        name: String,
+        catalogKey: String? = nil,
+        isFavorite: Bool = false
+    ) {
         self.id = id
         self.name = name
         self.catalogKey = BuiltInExerciseCatalog.resolvedKey(catalogKey: catalogKey, name: name)
+        self.isFavorite = isFavorite
     }
 
     private enum CodingKeys: String, CodingKey {
         case id
         case name
         case catalogKey
+        case isFavorite
     }
 
     public init(from decoder: Decoder) throws {
@@ -34,6 +44,7 @@ public struct Exercise: Codable, Identifiable, Hashable, Sendable {
             catalogKey: try container.decodeIfPresent(String.self, forKey: .catalogKey),
             name: name
         )
+        isFavorite = try container.decodeIfPresent(Bool.self, forKey: .isFavorite) ?? false
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -41,6 +52,8 @@ public struct Exercise: Codable, Identifiable, Hashable, Sendable {
         try container.encode(id, forKey: .id)
         try container.encode(name, forKey: .name)
         try container.encodeIfPresent(catalogKey, forKey: .catalogKey)
+        // Favorites intentionally stay out of WorkoutDataSnapshot, backups, and the
+        // public cloud shape. WorkoutStore.PersistedEnvelope encodes them separately.
     }
 }
 

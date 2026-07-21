@@ -1,6 +1,10 @@
 import Combine
 import Foundation
 
+func leaderboardHiddenProfilesDefaultsKey(for accountStorageKey: String) -> String {
+    "leaderboard-hidden-profile-ids.\(accountStorageKey)"
+}
+
 @MainActor
 final class AppState: ObservableObject {
     let auth: AuthService
@@ -429,6 +433,9 @@ final class AppState: ObservableObject {
         }
         defaults.removeObject(forKey: Self.trainingProfileKeyPrefix + storageKey)
         defaults.removeObject(forKey: Self.hiddenLeaderboardProfilesKey)
+        defaults.removeObject(
+            forKey: leaderboardHiddenProfilesDefaultsKey(for: storageKey)
+        )
 
         do {
             try deletingStore.destroyAccountData()
@@ -614,6 +621,9 @@ final class AppState: ObservableObject {
 
         defaults.removeObject(forKey: trainingProfileKeyPrefix + storageKey)
         defaults.removeObject(forKey: hiddenLeaderboardProfilesKey)
+        defaults.removeObject(
+            forKey: leaderboardHiddenProfilesDefaultsKey(for: storageKey)
+        )
         if let cloudUserID = cloudUserID(fromDeletionStorageKey: storageKey) {
             do {
                 try garminBindingStore.deleteAll(for: cloudUserID)

@@ -13,9 +13,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.EmojiEvents
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -48,6 +50,7 @@ fun LeaderboardScreen(
     isLoading: Boolean,
     error: LocalizedText?,
     onRefresh: () -> Unit,
+    headerContent: LazyListScope.() -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     LazyColumn(
@@ -55,6 +58,8 @@ fun LeaderboardScreen(
         contentPadding = PaddingValues(start = 16.dp, top = 10.dp, end = 16.dp, bottom = 28.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        headerContent()
+
         item {
             HeroPanel(modifier = Modifier.fillMaxWidth()) {
                 BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
@@ -315,18 +320,26 @@ private fun LeaderboardRowCard(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
-                    if (place <= 3) {
+                    if (row.isCurrentUser) {
+                        Icon(
+                            imageVector = Icons.Default.Person,
+                            contentDescription = null,
+                            modifier = Modifier.size(19.dp)
+                        )
+                    } else if (place <= 3) {
                         Icon(
                             imageVector = Icons.Default.EmojiEvents,
                             contentDescription = null,
                             modifier = Modifier.size(15.dp)
                         )
                     }
-                    Text(
-                        text = place.toString(),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
+                    if (!row.isCurrentUser) {
+                        Text(
+                            text = place.toString(),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             }
             Column(

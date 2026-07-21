@@ -124,6 +124,20 @@ private struct PendingAuthTransaction: Codable, Equatable, Sendable {
     }
 }
 
+private struct PersistedAuthState: Codable, Equatable, Sendable {
+    static let currentVersion = 1
+
+    let version: Int
+    let session: AppAccountSession
+    let requiresPasswordUpdate: Bool
+
+    init(session: AppAccountSession, requiresPasswordUpdate: Bool) {
+        self.version = Self.currentVersion
+        self.session = session
+        self.requiresPasswordUpdate = requiresPasswordUpdate
+    }
+}
+
 enum AppAccountSession: Codable, Equatable, Sendable {
     case local(id: String, displayName: String)
     case cloud(CloudAccountSession)
@@ -180,7 +194,7 @@ final class AuthService: ObservableObject {
     @Published private(set) var isLoading = false
     @Published var message: String?
     @Published private(set) var messageIsError = true
-    @Published var needsPasswordUpdate = false
+    @Published private(set) var needsPasswordUpdate = false
 
     private let keychain: any KeychainStoring
     private let urlSession: URLSession
@@ -227,9 +241,17 @@ final class AuthService: ObservableObject {
                 defaults.removeObject(forKey: Self.pendingSecureDeletionKey)
                 self.session = nil
             }
-        } else {
-            self.session = try? keychain.read(account: sessionAccount).flatMap {
-                try decoder.decode(AppAccountSession.self, from: $0)
+        } else if let data = try? keychain.read(account: sessionAccount) {
+            if let persisted = try? decoder.decode(PersistedAuthState.self, from: data),
+               persisted.version == PersistedAuthState.currentVersion {
+                self.session = persisted.session
+                self.needsPasswordUpdate = persisted.requiresPasswordUpdate
+                    && persisted.session.cloud != nil
+            } else if let legacySession = try? decoder.decode(AppAccountSession.self, from: data) {
+                // Released builds stored the raw session. Restore it safely and
+                // migrate on the next successful persistence operation.
+                self.session = legacySession
+                self.needsPasswordUpdate = false
             }
         }
     }
@@ -244,7 +266,7 @@ final class AuthService: ObservableObject {
                 body: ["email": cleanEmail, "password": password]
             )
             let cloud = try self.parseCloudSession(object)
-            try self.persist(.cloud(cloud))
+            try self.persist(.cloud(cloud), requiresPasswordUpdate: false)
             self.message = nil
         }
     }
@@ -273,7 +295,7 @@ final class AuthService: ObservableObject {
                 )
                 if let token = object["access_token"] as? String, !token.isEmpty {
                     let cloud = try self.parseCloudSession(object)
-                    try self.persist(.cloud(cloud))
+                    try self.persist(.cloud(cloud), requiresPasswordUpdate: false)
                     try self.clearPendingAuthTransaction()
                     signedIn = true
                     self.message = nil
@@ -336,14 +358,20 @@ final class AuthService: ObservableObject {
     func updatePassword(_ password: String) async {
         await perform {
             try self.validatePassword(password)
-            let token = try await self.validCloudSession().accessToken
+            let cloud = try await self.validCloudSession()
+            let expectedRevision = self.sessionRevision
             _ = try await self.requestJSON(
                 path: "/auth/v1/user",
                 method: "PUT",
-                token: token,
+                token: cloud.accessToken,
                 body: ["password": password]
             )
-            self.needsPasswordUpdate = false
+            guard self.sessionRevision == expectedRevision,
+                  let currentSession = self.session,
+                  currentSession.cloud?.userID == cloud.userID else {
+                throw AuthServiceError.sessionChanged
+            }
+            try self.persist(currentSession, requiresPasswordUpdate: false)
             self.messageIsError = false
             self.message = "Password updated."
         }
@@ -353,7 +381,7 @@ final class AuthService: ObservableObject {
         let trimmed = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
         let cleanName = try validatedDisplayName(trimmed.isEmpty ? "Local Athlete" : trimmed, fallbackEmail: "local@gym.app")
         let local = AppAccountSession.local(id: UUID().uuidString.lowercased(), displayName: cleanName)
-        try persist(local)
+        try persist(local, requiresPasswordUpdate: false)
         message = nil
     }
 
@@ -396,9 +424,12 @@ final class AuthService: ObservableObject {
                 ]
             )
             let cloud = try self.parseCloudSession(object)
-            try self.persist(.cloud(cloud))
+            let requiresPasswordUpdate = transaction.kind == .recovery
+            try self.persist(
+                .cloud(cloud),
+                requiresPasswordUpdate: requiresPasswordUpdate
+            )
             try self.clearPendingAuthTransaction()
-            self.needsPasswordUpdate = transaction.kind == .recovery
             self.messageIsError = false
             self.message = self.needsPasswordUpdate ? "Choose a new password." : "Email confirmed. You're signed in."
         }
@@ -433,7 +464,7 @@ final class AuthService: ObservableObject {
             throw AuthServiceError.sessionChanged
         }
         cloud = refreshed
-        try persist(.cloud(cloud))
+        try persist(.cloud(cloud), requiresPasswordUpdate: needsPasswordUpdate)
         return cloud
     }
 
@@ -501,7 +532,7 @@ final class AuthService: ObservableObject {
     /// Test-only seam for deterministic account-transition races. Release builds do
     /// not expose a way to install an arbitrary authenticated session.
     func installSessionForTesting(_ value: AppAccountSession) throws {
-        try persist(value)
+        try persist(value, requiresPasswordUpdate: false)
     }
 #endif
 
@@ -517,10 +548,19 @@ final class AuthService: ObservableObject {
         isLoading = false
     }
 
-    private func persist(_ value: AppAccountSession) throws {
-        try keychain.save(encoder.encode(value), account: sessionAccount)
+    private func persist(
+        _ value: AppAccountSession,
+        requiresPasswordUpdate: Bool
+    ) throws {
+        let protectedState = requiresPasswordUpdate && value.cloud != nil
+        let persisted = PersistedAuthState(
+            session: value,
+            requiresPasswordUpdate: protectedState
+        )
+        try keychain.save(encoder.encode(persisted), account: sessionAccount)
         sessionRevision &+= 1
         session = value
+        needsPasswordUpdate = protectedState
         defaults.removeObject(forKey: Self.pendingSecureDeletionKey)
     }
 

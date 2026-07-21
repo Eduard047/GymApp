@@ -77,8 +77,8 @@ import com.example.gymapp.ui.screens.AuthScreen
 import com.example.gymapp.ui.screens.ExerciseListScreen
 import com.example.gymapp.ui.screens.ExerciseProgressScreen
 import com.example.gymapp.ui.screens.GymBackground
-import com.example.gymapp.ui.screens.LeaderboardScreen
 import com.example.gymapp.ui.screens.MissionsScreen
+import com.example.gymapp.ui.screens.ProfileScreen
 import com.example.gymapp.ui.screens.RanksScreen
 import com.example.gymapp.ui.screens.PostWorkoutSummaryScreen
 import com.example.gymapp.ui.screens.PasswordUpdateScreen
@@ -430,7 +430,7 @@ fun GymAppRoot(
         currentRoute == AppDestination.Missions.route -> R.string.title_missions
         currentRoute == AppDestination.Exercises.route -> R.string.title_exercises
         currentRoute == AppDestination.Progress.route -> R.string.title_progress
-        currentRoute == AppDestination.Leaderboard.route -> R.string.title_rating
+        currentRoute == AppDestination.Profile.route -> R.string.title_profile
         currentRoute == AppDestination.Ranks.route -> R.string.title_ranks
         currentRoute == AppDestination.AddWorkout.route -> R.string.title_add_workout
         currentRoute?.startsWith("workout_detail/") == true -> R.string.title_workout_detail
@@ -579,14 +579,14 @@ fun GymAppRoot(
                             contentAlignment = Alignment.BottomCenter
                         ) {
                             Surface(
-                                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
+                                color = MaterialTheme.colorScheme.surface,
                                 shape = MaterialTheme.shapes.extraLarge,
                                 tonalElevation = 0.dp,
-                                shadowElevation = 18.dp,
+                                shadowElevation = 4.dp,
                                 border = BorderStroke(
                                     1.dp,
                                     MaterialTheme.colorScheme.outlineVariant.copy(
-                                        alpha = MaterialTheme.colorScheme.outlineVariant.alpha * 0.92f
+                                        alpha = 1f
                                     )
                                 )
                             ) {
@@ -888,14 +888,7 @@ fun GymAppRoot(
                                 onSaveExerciseMapping = viewModel::saveExerciseMapping,
                                 onDismissExerciseMapping = viewModel::closeExerciseMapping,
                                 onDismissHistory = viewModel::closeExerciseHistory,
-                                onExportBackup = viewModel::exportBackup,
-                                onExportDiagnostics = viewModel::exportDiagnostics,
-                                onClearBackup = viewModel::clearBackupJson,
-                                onOpenImport = viewModel::openImport,
-                                onCloseImport = viewModel::closeImport,
-                                onImportJsonChange = viewModel::updateImportJson,
-                                onImportBackup = viewModel::importBackup,
-                                onLogout = viewModel::logout,
+                                onToggleFavorite = viewModel::toggleFavorite,
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
@@ -917,11 +910,16 @@ fun GymAppRoot(
                             )
                         }
 
-                        composable(route = AppDestination.Leaderboard.route) {
+                        composable(route = AppDestination.Profile.route) {
                             val viewModel: WorkoutListViewModel = viewModel(
                                 factory = WorkoutListViewModel.factory(repository)
                             )
                             val uiState by viewModel.uiState.collectAsState()
+                            val profileViewModel: ExerciseListViewModel = viewModel(
+                                key = "profile_account_tools",
+                                factory = ExerciseListViewModel.factory(repository, authManager)
+                            )
+                            val profileState by profileViewModel.uiState.collectAsState()
                             var rows by remember { mutableStateOf<List<LeaderboardRow>>(emptyList()) }
                             var isLoading by remember { mutableStateOf(false) }
                             var error by remember { mutableStateOf<LocalizedText?>(null) }
@@ -981,12 +979,21 @@ fun GymAppRoot(
                                 refreshLeaderboard()
                             }
 
-                            LeaderboardScreen(
+                            ProfileScreen(
+                                accountState = profileState,
                                 rows = rows,
                                 soloProgress = uiState.soloProgress,
-                                isLoading = isLoading,
-                                error = error,
-                                onRefresh = { refreshLeaderboard() },
+                                isLeaderboardLoading = isLoading,
+                                leaderboardError = error,
+                                onRefreshLeaderboard = { refreshLeaderboard() },
+                                onExportBackup = profileViewModel::exportBackup,
+                                onExportDiagnostics = profileViewModel::exportDiagnostics,
+                                onClearBackup = profileViewModel::clearBackupJson,
+                                onOpenImport = profileViewModel::openImport,
+                                onCloseImport = profileViewModel::closeImport,
+                                onImportJsonChange = profileViewModel::updateImportJson,
+                                onImportBackup = profileViewModel::importBackup,
+                                onLogout = profileViewModel::logout,
                                 modifier = Modifier.fillMaxSize()
                             )
                         }

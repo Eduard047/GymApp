@@ -25,6 +25,7 @@ local.properties
 /.idea/misc.xml
 /.idea/vcs.xml
 /.kotlin/
+/node_modules/
 
 # APK / AAB artifacts
 *.apk

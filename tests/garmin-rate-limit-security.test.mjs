@@ -3,7 +3,73 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const migrationPath =
-  "supabase/migrations/20260714010000_add_garmin_device_rate_limits.sql";
+  "supabase/migrations/20260721142951_add_garmin_device_rate_limits.sql";
+const preauthMigrationPath =
+  "supabase/migrations/20260721143058_add_bounded_garmin_preauth_rate_limits.sql";
+
+test("format-valid unknown Garmin tokens are bounded before device lookup", async () => {
+  const [sql, edge] = await Promise.all([
+    readFile(preauthMigrationPath, "utf8"),
+    readFile("supabase/functions/garmin-sync/index.ts", "utf8"),
+  ]);
+
+  const tableStart = sql.indexOf(
+    "create table gymapp_private.garmin_preauth_rate_limits",
+  );
+  const consumerStart = sql.indexOf(
+    "create or replace function gymapp_private.consume_garmin_preauth_rate_limit",
+  );
+  const resolverStart = sql.indexOf(
+    "create or replace function gymapp_private.garmin_rate_limit_for_token",
+  );
+  const verifyStart = sql.indexOf("do $verify$");
+  assert.ok(
+    tableStart > 0 && tableStart < consumerStart && consumerStart < resolverStart &&
+      resolverStart < verifyStart,
+    "the fixed table, pre-auth consumer, resolver, and verification must stay ordered",
+  );
+
+  const tableAndSeed = sql.slice(tableStart, consumerStart);
+  const consumer = sql.slice(consumerStart, resolverStart);
+  const resolver = sql.slice(resolverStart, verifyStart);
+
+  assert.match(tableAndSeed, /primary key \(bucket_action, shard_id\)/);
+  assert.match(tableAndSeed, /bucket_action in \('fetch_plan', 'ack_plan', 'quarantine_plan'\)/);
+  assert.match(tableAndSeed, /generate_series\(0, 63\)/);
+  assert.match(tableAndSeed, /\('fetch_plan'::text, 32::numeric\)/);
+  assert.match(tableAndSeed, /\('ack_plan'::text, 16::numeric\)/);
+  assert.match(tableAndSeed, /\('quarantine_plan'::text, 4::numeric\)/);
+  assert.doesNotMatch(tableAndSeed, /device_token|token_hash/);
+  assert.match(sql, /count\(\*\) from gymapp_private\.garmin_preauth_rate_limits\) <> 192/);
+  assert.match(sql, /revoke all on table gymapp_private\.garmin_preauth_rate_limits[\s\S]*from public, anon, authenticated, service_role/);
+
+  assert.match(consumer, /p_token_hash !~ '\^\[a-f0-9\]\{64\}\$'/);
+  assert.match(consumer, /get_byte\([\s\S]*decode\([\s\S]*% 64/);
+  assert.match(consumer, /for update skip locked/);
+  assert.match(consumer, /if not found then\s+return 1/);
+  assert.match(consumer, /available_tokens := least\(/);
+  assert.match(consumer, /return least\(greatest\(retry_after_seconds, 1\), 3600\)::integer/);
+  assert.doesNotMatch(consumer, /insert into|on conflict|upsert/i);
+
+  assert.equal(
+    (resolver.match(/garmin_device_token_hash\(p_device_token\)/g) || []).length,
+    1,
+    "the raw capability must be hashed once before limiting and lookup",
+  );
+  assert.ok(
+    resolver.indexOf("consume_garmin_preauth_rate_limit") <
+      resolver.indexOf("from public.garmin_devices"),
+    "the fixed pre-auth bucket must be consumed before device lookup",
+  );
+  assert.match(resolver, /device\.device_token = token_hash/);
+  assert.match(resolver, /consume_garmin_device_rate_limit\([\s\S]*found_device_id/);
+  assert.doesNotMatch(resolver, /insert into|on conflict|upsert/i);
+
+  assert.match(sql, /revoke all on function gymapp_private\.consume_garmin_preauth_rate_limit\(text, text\)[\s\S]*from public, anon, authenticated, service_role/);
+  assert.match(sql, /notify pgrst, 'reload schema'/);
+  assert.match(edge, /value\.status !== "rate_limited"/);
+  assert.match(edge, /"Retry-After": String\(retryAfter\)/);
+});
 
 test("Garmin capability RPCs use durable atomic per-device token buckets", async () => {
   const [sql, edge] = await Promise.all([

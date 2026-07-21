@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="supported-color-schemes" content="light dark">
+  <title>Confirm your GymApp email</title>
+  <style>
+    @media (prefers-color-scheme: dark) {
+      .email-body { background-color: #080f1b !important; }
+      .email-card { background-color: #111c2b !important; border-color: #455368 !important; }
+      .email-title, .email-copy, .email-brand { color: #f5f2ea !important; }
+      .email-muted { color: #b8c1cd !important; }
+      .email-rule { border-color: #2b394d !important; }
+      .email-link { color: #a9baff !important; }
+    }
+    @media only screen and (max-width: 620px) {
+      .email-shell { width: 100% !important; }
+      .email-card-cell { padding: 28px 22px !important; }
+      .email-title { font-size: 28px !important; line-height: 34px !important; }
+      .email-button { display: block !important; width: 100% !important; box-sizing: border-box !important; }
+    }
+  </style>
+</head>
+<body class="email-body" style="margin:0; padding:0; width:100%; background-color:#f3f0e8; color:#18212c; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; -webkit-text-size-adjust:100%;">
+  <div style="display:none; max-height:0; overflow:hidden; opacity:0; color:transparent; mso-hide:all;">
+    One tap confirms your email and finishes setting up GymApp.
+  </div>
+  <table role="presentation" class="email-body" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%; border-collapse:collapse; background-color:#f3f0e8;">
+    <tr>
+      <td align="center" style="padding:32px 14px;">
+        <table role="presentation" class="email-shell" width="600" cellspacing="0" cellpadding="0" border="0" style="width:600px; max-width:600px; border-collapse:separate;">
+          <tr>
+            <td style="padding:0 4px 16px;">
+              <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;">
+                <tr>
+                  <td aria-hidden="true" width="40" height="40" align="center" valign="middle" style="width:40px; height:40px; border-radius:12px; background-color:#315bd9; color:#ffffff; font-size:20px; font-weight:800; line-height:40px;">G</td>
+                  <td class="email-brand" style="padding-left:12px; color:#18212c; font-size:15px; font-weight:800; letter-spacing:1.6px;">GYMAPP</td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td class="email-card email-card-cell" style="padding:42px 44px; background-color:#fffefa; border:1px solid #c8c2b6; border-radius:20px;">
+              <p class="email-muted" style="margin:0 0 13px; color:#626b75; font-size:12px; font-weight:750; letter-spacing:1.4px; line-height:18px; text-transform:uppercase;">Account confirmation</p>
+              <h1 class="email-title" style="margin:0 0 16px; color:#18212c; font-size:34px; font-weight:780; letter-spacing:-0.7px; line-height:40px;">Ready for your next workout?</h1>
+              <p class="email-copy" style="margin:0 0 28px; color:#18212c; font-size:17px; line-height:27px;">Confirm your email to finish creating your GymApp account and securely return to the app.</p>
+
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%; border-collapse:collapse;">
+                <tr>
+                  <td align="center" bgcolor="#294fc2" style="border-radius:14px; background-color:#294fc2;">
+                    <a class="email-button" href="{{ .ConfirmationURL }}" style="display:inline-block; min-height:48px; padding:0 28px; border:1px solid #294fc2; border-radius:14px; background-color:#294fc2; color:#ffffff; font-size:16px; font-weight:750; line-height:48px; text-align:center; text-decoration:none;">Confirm email</a>
+                  </td>
+                </tr>
+              </table>
+
+              <p class="email-muted" style="margin:22px 0 0; color:#626b75; font-size:14px; line-height:22px;">If the button does not work, use the <a class="email-link" href="{{ .ConfirmationURL }}" style="color:#294fc2; font-weight:650; text-decoration:underline;">secure confirmation link</a>. For the safest handoff, open it on the device where you started registration.</p>
+
+              <div class="email-rule" style="margin:30px 0 22px; border-top:1px solid #ddd7cb;"></div>
+              <p class="email-muted" style="margin:0; color:#626b75; font-size:13px; line-height:21px;">You received this message because someone used this address to create a GymApp account. If that was not you, you can safely ignore this email. Never forward this message or share its confirmation link.</p>
+            </td>
+          </tr>
+          <tr>
+            <td class="email-muted" style="padding:18px 6px 0; color:#626b75; font-size:12px; line-height:19px; text-align:center;">
+              <a class="email-link" href="https://gymapptracker.com/support.html" style="color:#294fc2; text-decoration:underline;">Support</a>
+              &nbsp;&middot;&nbsp;
+              <a class="email-link" href="https://gymapptracker.com/privacy-policy.html" style="color:#294fc2; text-decoration:underline;">Privacy</a>
+              <br>GymApp &middot; Workout planning and progress
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

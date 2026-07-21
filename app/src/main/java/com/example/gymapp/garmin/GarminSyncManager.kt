@@ -962,11 +962,11 @@ class GarminSyncManager(
                 else -> "Max HR $bpm"
             }
         }
-        command.heartRateZone?.takeIf { it > 0 }?.let { zone ->
+        command.endingHeartRateZone?.takeIf { it > 0 }?.let { zone ->
             details += when {
-                isUk -> "Зона пульсу Z$zone"
-                isRu -> "Зона пульса Z$zone"
-                else -> "HR zone Z$zone"
+                isUk -> "Кінцева зона пульсу Z$zone"
+                isRu -> "Конечная зона пульса Z$zone"
+                else -> "Ending HR zone Z$zone"
             }
         }
         return details.joinToString(separator = " · ")

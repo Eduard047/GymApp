@@ -135,14 +135,28 @@ private let gymRussianExactFallbacks: [String: String] = [
 ]
 
 private let gymRussianEnglishFallbacks: [String: String] = [
+    "Protected progress": "Защищённый прогресс",
+    "Competitive standings are paused until workout scores can be verified server-side. Your private progress stays available.":
+        "Соревновательный рейтинг приостановлен, пока сервер не сможет проверять тренировочные баллы. Твой приватный прогресс остаётся доступным.",
+    "Private preview": "Приватный просмотр",
+    "YOUR PROGRESS": "ТВОЙ ПРОГРЕСС",
+    "Your synced progress": "Твой синхронизированный прогресс",
+    "Loading protected cloud progress…": "Загружаем защищённый облачный прогресс…",
+    "Only your profile is shown while verified scoring is being built.":
+        "Показывается только твой профиль, пока мы создаём проверяемый рейтинг.",
+    "Uploads and reloads your protected progress": "Загружает и обновляет твой защищённый прогресс",
+    "Local progress": "Локальный прогресс",
+    "No synced progress yet": "Синхронизированного прогресса пока нет",
+    "Sign in and sync to restore your protected progress here.":
+        "Войди и синхронизируй данные, чтобы восстановить здесь свой защищённый прогресс.",
+    "This is an offline account. Sign in with a cloud account to protect and synchronize your progress; your workouts remain available on this device.":
+        "Это офлайн-аккаунт. Войди в облачный аккаунт, чтобы защитить и синхронизировать прогресс; твои тренировки останутся доступными на этом устройстве.",
+    "Protected cloud progress is unavailable, so the latest on-device XP, level and workouts are shown. Pull down or tap Refresh to try again.":
+        "Защищённый облачный прогресс недоступен, поэтому показаны актуальные XP, уровень и тренировки с этого устройства. Потяни вниз или нажми «Обновить», чтобы повторить попытку.",
     "Report this display name?": "Пожаловаться на это имя?",
     "GymApp will send the profile identifier and a fixed offensive-name reason to the moderation queue. No free-form text is sent.":
         "GymApp отправит идентификатор профиля и фиксированную причину «неприемлемое имя» в очередь модерации. Произвольный текст не отправляется.",
     "Report": "Пожаловаться",
-    "Top users by XP, level and saved workouts.": "Лучшие пользователи по XP, уровню и сохранённым тренировкам.",
-    "YOUR RANKING": "ТВОЙ РЕЙТИНГ",
-    "Leaderboard": "Таблица лидеров",
-    "Loading cloud rating…": "Загрузка облачного рейтинга…",
     "Showing on-device stats.": "Показана статистика с этого устройства.",
     "Synced through Supabase.": "Синхронизировано через Supabase.",
     "Show blocked athletes again": "Снова показывать заблокированных атлетов",
@@ -151,17 +165,10 @@ private let gymRussianEnglishFallbacks: [String: String] = [
     "Refresh": "Обновить",
     "Sign in with a cloud account to refresh": "Войди в облачный аккаунт, чтобы обновить",
     "Uploads your latest stats and reloads the ranking": "Загружает твою актуальную статистику и обновляет рейтинг",
-    "Local ranking": "Локальный рейтинг",
-    "No users yet": "Пользователей пока нет",
-    "The cloud rating will appear after profiles sync.": "Облачный рейтинг появится после синхронизации профилей.",
     "Report display name": "Пожаловаться на имя",
     "Block from leaderboard": "Заблокировать в рейтинге",
     "Safety options": "Параметры безопасности",
     "You": "Ты",
-    "This is an offline account. Sign in with a cloud account to compare with other athletes; your workouts remain available on this device.":
-        "Это офлайн-аккаунт. Войди в облачный аккаунт, чтобы сравнивать результаты с другими атлетами; твои тренировки останутся доступными на этом устройстве.",
-    "The cloud leaderboard is unavailable, so your latest on-device XP, level and workouts are shown. Pull down or tap Refresh to try again.":
-        "Облачный рейтинг недоступен, поэтому показаны актуальные XP, уровень и тренировки с этого устройства. Потяни вниз или нажми «Обновить», чтобы повторить попытку.",
     "Report sent. The display name was added to the moderation queue.": "Жалоба отправлена. Имя добавлено в очередь модерации.",
     "Athlete blocked from your leaderboard.": "Атлет заблокирован в твоём рейтинге.",
     "Exercise": "Упражнение",

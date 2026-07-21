@@ -118,7 +118,8 @@ public final class WorkoutStore: ObservableObject {
     private let directoryURL: URL
     private let fileManager: FileManager
 
-    private static let persistedSchemaVersion = 1
+    private static let persistedSchemaVersion = 2
+    private static let oldestSupportedPersistedSchemaVersion = 1
     private static let maximumAccountStorageKeyLength = 128
     private static let maximumExerciseNameLength = 160
     private static let maximumNoteLength = 4_000
@@ -137,6 +138,7 @@ public final class WorkoutStore: ObservableObject {
         var accountStorageKey: String
         var savedAt: Date
         var snapshot: WorkoutDataSnapshot
+        var favoriteExerciseIDs: [UUID]?
     }
 
     public init(
@@ -470,6 +472,21 @@ public final class WorkoutStore: ObservableObject {
 
     public func exercise(named name: String) -> Exercise? {
         exercises.first { Self.namesEqual($0.name, name) }
+    }
+
+    /// Toggles a device-local preference in the same atomic account-store commit as
+    /// the rest of the exercise state. Shared backups intentionally omit this flag.
+    @discardableResult
+    public func toggleExerciseFavorite(id: UUID) throws -> Bool {
+        var updatedValue = false
+        try mutate { state in
+            guard let index = state.exercises.firstIndex(where: { $0.id == id }) else {
+                throw WorkoutStoreError.exerciseNotFound
+            }
+            state.exercises[index].isFavorite.toggle()
+            updatedValue = state.exercises[index].isFavorite
+        }
+        return updatedValue
     }
 
     // MARK: Workout CRUD and templates
@@ -1282,6 +1299,29 @@ public final class WorkoutStore: ObservableObject {
             allowDifferentLocalAccountID: !replacingExisting && destinationIsFresh
         )
 
+        // Favorite status is local to this account and deliberately absent from the
+        // Android/PWA-compatible backup. Preserve it by stable exercise identity when
+        // a cloud restore replaces UUIDs, so an older client cannot erase the choice.
+        let favoriteCatalogKeys: Set<String> = Set(snapshot.exercises.compactMap { exercise in
+            guard exercise.isFavorite else { return nil }
+            return BuiltInExerciseCatalog.resolvedKey(
+                catalogKey: exercise.catalogKey,
+                name: exercise.name
+            )
+        })
+        let favoriteNameKeys: Set<String> = Set(snapshot.exercises.compactMap { exercise in
+            exercise.isFavorite ? Self.nameKey(exercise.name) : nil
+        })
+        func isLocallyFavorite(name: String, catalogKey: String?) -> Bool {
+            if let resolved = BuiltInExerciseCatalog.resolvedKey(
+                catalogKey: catalogKey,
+                name: name
+            ), favoriteCatalogKeys.contains(resolved) {
+                return true
+            }
+            return favoriteNameKeys.contains(Self.nameKey(name))
+        }
+
         var next = replacingExisting ? WorkoutDataSnapshot() : snapshot
         next.catalogSeedVersion = replacingExisting
             ? backup.catalogSeedVersion
@@ -1338,7 +1378,11 @@ public final class WorkoutStore: ObservableObject {
             guard next.exercises.count < limits.maximumExercises else {
                 throw WorkoutStoreError.importLimitExceeded("exercise count")
             }
-            let exercise = Exercise(name: name, catalogKey: resolvedCatalogKey)
+            let exercise = Exercise(
+                name: name,
+                catalogKey: resolvedCatalogKey,
+                isFavorite: isLocallyFavorite(name: name, catalogKey: resolvedCatalogKey)
+            )
             next.exercises.append(exercise)
             exerciseIndexByID[exercise.id] = next.exercises.count - 1
             exerciseIDByKey[key] = exercise.id
@@ -1566,7 +1610,11 @@ public final class WorkoutStore: ObservableObject {
             schemaVersion: Self.persistedSchemaVersion,
             accountStorageKey: accountStorageKey,
             savedAt: Date(),
-            snapshot: state
+            snapshot: state,
+            favoriteExerciseIDs: state.exercises
+                .filter(\.isFavorite)
+                .map(\.id)
+                .sorted { $0.uuidString < $1.uuidString }
         )
         do {
             let data = try Self.localEncoder().encode(envelope)
@@ -1593,7 +1641,8 @@ public final class WorkoutStore: ObservableObject {
         do {
             let data = try Data(contentsOf: url, options: .mappedIfSafe)
             let envelope = try localDecoder().decode(PersistedEnvelope.self, from: data)
-            guard envelope.schemaVersion == persistedSchemaVersion else {
+            guard (oldestSupportedPersistedSchemaVersion ... persistedSchemaVersion)
+                .contains(envelope.schemaVersion) else {
                 throw WorkoutStoreError.corruptStore(
                     "Unsupported local schema \(envelope.schemaVersion)."
                 )
@@ -1601,8 +1650,21 @@ public final class WorkoutStore: ObservableObject {
             guard envelope.accountStorageKey == accountStorageKey else {
                 throw WorkoutStoreError.storageAccountMismatch
             }
-            try validate(envelope.snapshot)
-            return normalized(envelope.snapshot)
+            var migratedSnapshot = envelope.snapshot
+            let persistedFavoriteIDs = envelope.favoriteExerciseIDs ?? []
+            guard persistedFavoriteIDs.count <= BackupImportLimits.standard.maximumExercises else {
+                throw WorkoutStoreError.corruptStore("Too many favorite exercise identifiers.")
+            }
+            let favoriteIDs = Set(persistedFavoriteIDs).union(
+                migratedSnapshot.exercises.lazy.filter(\.isFavorite).map(\.id)
+            )
+            migratedSnapshot.exercises = migratedSnapshot.exercises.map { exercise in
+                var migrated = exercise
+                migrated.isFavorite = favoriteIDs.contains(exercise.id)
+                return migrated
+            }
+            try validate(migratedSnapshot)
+            return normalized(migratedSnapshot)
         } catch let error as WorkoutStoreError {
             throw error
         } catch {

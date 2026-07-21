@@ -5,7 +5,7 @@
     <string name="tab_missions">Миссии</string>
     <string name="tab_exercises">Упражнения</string>
     <string name="tab_progress">Прогресс</string>
-    <string name="tab_rating">Рейтинг</string>
+    <string name="tab_profile">Профиль</string>
 
     <string name="title_workouts">Тренировки</string>
     <string name="workouts_screen_subtitle">Твоя история тренировок и следующий лучший шаг.</string>
@@ -15,18 +15,19 @@
     <string name="title_post_workout_summary">Итог тренировки</string>
     <string name="title_ranks">Ранги</string>
     <string name="title_exercises">Упражнения</string>
-    <string name="exercises_screen_subtitle">Управляй библиотекой, историей, группами мышц и резервными копиями.</string>
+    <string name="exercises_screen_subtitle">Управляй библиотекой, избранным, историей и группами мышц.</string>
     <string name="title_progress">Прогресс</string>
-    <string name="title_rating">Рейтинг</string>
-    <string name="leaderboard_hero_title">Рейтинг</string>
-    <string name="leaderboard_hero_supporting">Топ пользователей по XP, уровню и сохраненным тренировкам.</string>
+    <string name="title_profile">Профиль</string>
+    <string name="profile_screen_subtitle">Аккаунт, Garmin, приватные резервные копии, диагностика и защищённый прогресс.</string>
+    <string name="leaderboard_hero_title">Защищённый прогресс</string>
+    <string name="leaderboard_hero_supporting">Соревновательный рейтинг приостановлен, пока сервер не сможет проверять тренировочные баллы. Твой приватный прогресс остаётся доступным.</string>
     <string name="leaderboard_your_xp">Твои XP</string>
-    <string name="leaderboard_title">Таблица рейтинга</string>
-    <string name="leaderboard_loading_supporting">Загружаем облачный рейтинг...</string>
-    <string name="leaderboard_synced_supporting">Синхронизирован через Supabase.</string>
+    <string name="leaderboard_title">Твой синхронизированный прогресс</string>
+    <string name="leaderboard_loading_supporting">Загружаем защищённый облачный прогресс...</string>
+    <string name="leaderboard_synced_supporting">Показывается только твой профиль, пока мы создаём проверяемый рейтинг.</string>
     <string name="leaderboard_loading_action">Загрузка</string>
     <string name="leaderboard_refresh_action">Обновить</string>
-    <string name="leaderboard_empty">В рейтинге пока нет пользователей.</string>
+    <string name="leaderboard_empty">Синхронизированного прогресса пока нет.</string>
     <string name="leaderboard_row_detail">Уровень %1$d - %2$d тренировок</string>
 
     <string name="action_add_workout">Добавить тренировку</string>
@@ -321,7 +322,12 @@
         <item>В</item>
     </string-array>
     <string name="achievements_title">Достижения</string>
-    <string name="achievements_supporting">Последние достижения и ближайшие личные цели.</string>
+    <string name="achievements_supporting">Полная галерея значков, прогресс и награды за открытие.</string>
+    <string name="achievement_rarity_common">Обычный</string>
+    <string name="achievement_rarity_uncommon">Необычный</string>
+    <string name="achievement_rarity_rare">Редкий</string>
+    <string name="achievement_rarity_epic">Эпический</string>
+    <string name="achievement_rarity_legendary">Легендарный</string>
     <string name="muscle_heatmap_title">Карта мышц</string>
     <string name="muscle_heatmap_supporting">Цвета показывают, какие группы мышц получили наибольшую нагрузку за всю историю тренировок.</string>
     <string name="muscle_heatmap_sets">Подходы</string>
@@ -468,8 +474,8 @@
     <string name="backup_report_more_workouts">Ещё тренировок: %1$d</string>
     <string name="backup_report_truncated">Отчёт сокращён из-за ограничения размера приватного PDF.</string>
 
-    <string name="leaderboard_login_required">Войди, чтобы загрузить облачный рейтинг.</string>
-    <string name="leaderboard_load_failed">Не удалось загрузить облачный рейтинг.</string>
+    <string name="leaderboard_login_required">Войди, чтобы загрузить защищённый облачный прогресс.</string>
+    <string name="leaderboard_load_failed">Не удалось загрузить защищённый облачный прогресс.</string>
     <string name="leaderboard_unknown_user">Пользователь GymApp</string>
     <string name="set_weight_reps_value">%1$s кг × %2$s</string>
 
@@ -497,10 +503,14 @@
     <string name="garmin_metric_avg_hr">Сред. пульс</string>
     <string name="garmin_metric_max_hr">Макс. пульс</string>
     <string name="garmin_metric_bpm_value">%1$d уд/мин</string>
+    <string name="garmin_metric_bpm_unit">уд/мин</string>
     <string name="garmin_metric_duration_value">продолжительность %1$s</string>
     <string name="garmin_metric_heart_rate">пульс</string>
     <string name="garmin_metric_peak">пик</string>
-    <string name="garmin_hr_chart_title">Форма пульса</string>
+    <string name="garmin_metric_ending_zone">Конечная зона</string>
+    <string name="garmin_metric_ending_zone_helper">зона по последнему корректному измерению</string>
+    <string name="garmin_hr_chart_title">Сохранённые отметки пульса</string>
+    <string name="garmin_hr_chart_helper">Показаны только сохранённые среднее и максимальное значения; Garmin не передал временной ряд.</string>
     <string name="garmin_metric_avg_short">Сред. %1$d</string>
     <string name="garmin_metric_max_short">Макс. %1$d</string>
     <string name="garmin_metric_hr_intensity">Интенсивность</string>
@@ -512,6 +522,11 @@
     <string name="garmin_intensity_solid">Активно</string>
     <string name="garmin_intensity_high">Высокая</string>
     <string name="garmin_kcal_explainer">Gym ккал сохранены из формулы силовой тренировки GymApp на Garmin. Garmin ккал – это системное значение, которое Garmin Connect учитывает в дневных калориях.</string>
+    <string name="workout_comparison_eyebrow">Точное сравнение</string>
+    <string name="workout_comparison_title">С предыдущей похожей тренировкой</string>
+    <string name="workout_comparison_supporting">%1$d совпадающих упражнений • предыдущая тренировка %2$s</string>
+    <string name="workout_comparison_previous_delta">Было %1$s · %2$s</string>
+    <string name="workout_comparison_no_change">без изменений</string>
 
     <string name="dialog_edit_set_title">Редактировать подход</string>
     <string name="dialog_delete_workout_title">Удалить тренировку?</string>
@@ -567,6 +582,8 @@
     <string name="cd_language">Изменить язык</string>
     <string name="cd_add_workout">Добавить тренировку</string>
     <string name="cd_delete">Удалить</string>
+    <string name="exercise_favorite_add">Добавить в избранное</string>
+    <string name="exercise_favorite_remove">Убрать из избранного</string>
     <string name="cd_edit">Редактировать</string>
     <string name="cd_remove_set">Удалить подход</string>
     <string name="cd_remove_exercise">Удалить упражнение</string>
@@ -586,6 +603,7 @@
     <string name="exercise_card_auto_mapping">Автосопоставление</string>
     <string name="exercise_card_muscle_groups">Группы мышц</string>
     <string name="exercise_filter_all">Все</string>
+    <string name="exercise_filter_favorites">Любимые</string>
     <string name="exercise_filter_upper">Верх тела</string>
     <string name="exercise_filter_lower">Низ тела</string>
     <string name="exercise_filter_core">Кор</string>

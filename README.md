@@ -15,7 +15,7 @@ Simulator, and Garmin test artifacts.
 The Android, native iOS, Garmin, and browser interfaces support English,
 Ukrainian, and Russian.
 
-Current source release: **GymApp 2.1.0** (PWA cache generation **v50**).
+Current source release: **GymApp 2.2.0** (PWA cache generation **v52**).
 
 ## Current Feature Set
 
@@ -30,7 +30,7 @@ Current source release: **GymApp 2.1.0** (PWA cache generation **v50**).
 ### Native iOS app
 
 - SwiftUI application in `ios/GymApp-iOS` with the same Supabase account and workout data.
-- Password recovery, cloud sync, canonical XP/rank rules, muscle maps, activity heatmap, missions, and leaderboards.
+- Password recovery, cloud sync, canonical XP/rank rules, muscle maps, activity heatmap, missions, and owner-only protected progress.
 - App Store privacy manifest, localized metadata, support/privacy pages, release validation, and archive scripts.
 - The release workflow produces a universal Release-configuration iOS Simulator build; an App Store IPA requires the matching Apple Distribution identity and provisioning profile.
 
@@ -87,7 +87,7 @@ it is run.
 
 Release assets use stable, platform-neutral names such as
 `gymapp-phone-release.apk`, `gymapp-play-release.aab`,
-`gymapp-garmin-connect-iq.iq`, and `gymapp-pwa-v50.zip`. Checksums and exact
+`gymapp-garmin-connect-iq.iq`, and `gymapp-pwa-v52.zip`. Checksums and exact
 build metadata are attached as `SHA256SUMS.txt` and `BUILD-INFO.txt` when those
 assets are available.
 
@@ -289,8 +289,8 @@ npm run test:garmin-cloud
 
 ### Supabase migration safety
 
-Production is migration-managed. The exact privacy-hardening versions recorded in
-production history are:
+Production is migration-managed. The original privacy-hardening versions recorded
+in production history are:
 
 - `20260711084556_create_leaderboard_public.sql`
 - `20260711084559_harden_gymapp_production_access.sql`
@@ -302,3 +302,25 @@ removes cross-user direct `profiles` reads and anonymous table grants; the third
 fixes the server-owned cloud-state revision trigger. Do not restore a
 `Leaderboard is public` policy on `profiles`, the old `public.leaderboard`
 view, or direct anonymous Garmin table access.
+
+On 2026-07-21 production was advanced through
+`20260721143853_retire_legacy_garmin_table_grants.sql`: all eight previously
+missing canonical migrations were applied in deployment order. Structural and ACL
+checks plus rollback-only runtime probes passed, and the Supabase advisors were
+run after deployment. The owner-only compatibility view therefore keeps its six
+fields but returns only `auth.uid()`; competitive standings stay disabled until
+an append-only trusted award source is designed and deployed.
+
+The bounded pre-auth migration adds a fixed 192-row token-bucket layer before
+Garmin capability lookups while preserving every public RPC signature and the
+existing per-device limiter. The final recorded migration defensively revokes
+retired direct anonymous Garmin table grants. A valid-device Edge Function fetch/ack smoke was
+not part of the database verification and remains a release check. Upstream
+gateway limiting is still the strongest protection against volumetric traffic
+reaching the Edge Function itself.
+
+Production `garmin-sync` version 4 was deployed on 2026-07-21 from the pinned
+source in this repository. An HTTP smoke confirmed OPTIONS `200`, unknown and
+malformed requests `400`, and random format-valid tokens `401` for both fetch
+and acknowledgement. No real device capability or plan was used, so the
+valid-device fetch/ack release check remains open.

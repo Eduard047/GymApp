@@ -3,11 +3,12 @@ import SwiftUI
 @MainActor
 struct LeaderboardView: View {
     @AppStorage("app-language") private var languageCode = AppLanguage.english.rawValue
-    @AppStorage("leaderboard-hidden-profile-ids") private var hiddenProfileIDsJSON = "[]"
+    @AppStorage private var hiddenProfileIDsJSON: String
     @ObservedObject private var store: WorkoutStore
     @ObservedObject private var appState: AppState
     @ObservedObject private var cloudSync: CloudSyncService
     @ObservedObject private var auth: AuthService
+    private let embedded: Bool
 
     @State private var remoteRows: [LeaderboardEntry] = []
     @State private var errorMessage: String?
@@ -17,68 +18,91 @@ struct LeaderboardView: View {
     @State private var safetyMessage: String?
     @State private var safetyMessageIsError = false
 
-    init(store: WorkoutStore, appState: AppState, auth: AuthService) {
+    init(
+        store: WorkoutStore,
+        appState: AppState,
+        auth: AuthService,
+        embedded: Bool = false
+    ) {
         self.store = store
         self.appState = appState
         self.cloudSync = appState.cloudSync
         self.auth = auth
+        self.embedded = embedded
+        _hiddenProfileIDsJSON = AppStorage(
+            wrappedValue: "[]",
+            leaderboardHiddenProfilesDefaultsKey(for: store.accountStorageKey)
+        )
     }
 
     var body: some View {
-        GymBackground {
-            ScrollView {
-                LazyVStack(spacing: 12) {
-                    ratingHero
-                    refreshCard
-
-                    if isShowingLocalFallback {
-                        fallbackCard
-                    }
-
-                    if let errorMessage {
-                        GymStatusBanner(message: errorMessage, isError: true)
-                    }
-
-                    if let safetyMessage {
-                        GymStatusBanner(message: safetyMessage, isError: safetyMessageIsError)
-                    }
-
-                    if displayedRows.isEmpty, !cloudSync.isSyncing {
-                        emptyState
-                    } else {
-                        ForEach(Array(displayedRows.enumerated()), id: \.element.id) { index, row in
-                            leaderboardRow(row, place: index + 1)
-                        }
-                    }
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .padding(.bottom, 20)
-            }
-            .scrollIndicators(.hidden)
-            .refreshable {
+        configuredContent
+            .environment(\.locale, appLocale)
+            .task(id: auth.session?.storageKey) {
                 await refreshLeaderboard()
             }
+            .alert(item: $pendingReport) { row in
+                Alert(
+                    title: Text(t("Report this display name?", "Поскаржитися на це ім’я?")),
+                    message: Text(
+                        t(
+                            "GymApp will send the profile identifier and a fixed offensive-name reason to the moderation queue. No free-form text is sent.",
+                            "GymApp надішле ідентифікатор профілю та фіксовану причину щодо неприйнятного імені до черги модерації. Довільний текст не надсилається."
+                        )
+                    ),
+                    primaryButton: .destructive(Text(t("Report", "Поскаржитися"))) {
+                        Task { await reportDisplayName(row) }
+                    },
+                    secondaryButton: .cancel(Text(t("Cancel", "Скасувати")))
+                )
+            }
+    }
+
+    @ViewBuilder
+    private var configuredContent: some View {
+        if embedded {
+            leaderboardContent
+        } else {
+            GymBackground {
+                ScrollView {
+                    leaderboardContent
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .padding(.bottom, 20)
+                }
+                .scrollIndicators(.hidden)
+                .refreshable {
+                    await refreshLeaderboard()
+                }
+            }
+            .navigationTitle(t("Protected progress", "Захищений прогрес"))
         }
-        .navigationTitle(t("Rating", "Рейтинг"))
-        .environment(\.locale, appLocale)
-        .task(id: auth.session?.storageKey) {
-            await refreshLeaderboard()
-        }
-        .alert(item: $pendingReport) { row in
-            Alert(
-                title: Text(t("Report this display name?", "Поскаржитися на це ім’я?")),
-                message: Text(
-                    t(
-                        "GymApp will send the profile identifier and a fixed offensive-name reason to the moderation queue. No free-form text is sent.",
-                        "GymApp надішле ідентифікатор профілю та фіксовану причину щодо неприйнятного імені до черги модерації. Довільний текст не надсилається."
-                    )
-                ),
-                primaryButton: .destructive(Text(t("Report", "Поскаржитися"))) {
-                    Task { await reportDisplayName(row) }
-                },
-                secondaryButton: .cancel(Text(t("Cancel", "Скасувати")))
-            )
+    }
+
+    private var leaderboardContent: some View {
+        LazyVStack(spacing: 12) {
+            ratingHero
+            refreshCard
+
+            if isShowingLocalFallback {
+                fallbackCard
+            }
+
+            if let errorMessage {
+                GymStatusBanner(message: errorMessage, isError: true)
+            }
+
+            if let safetyMessage {
+                GymStatusBanner(message: safetyMessage, isError: safetyMessageIsError)
+            }
+
+            if displayedRows.isEmpty, !cloudSync.isSyncing {
+                emptyState
+            } else {
+                ForEach(Array(displayedRows.enumerated()), id: \.element.id) { index, row in
+                    leaderboardRow(row, place: index + 1)
+                }
+            }
         }
     }
 
@@ -101,28 +125,31 @@ struct LeaderboardView: View {
 
     private var heroCopy: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Label(t("Rating", "Рейтинг"), systemImage: "trophy.fill")
+            Label(t("Protected progress", "Захищений прогрес"), systemImage: "lock.shield.fill")
                 .font(.title.bold())
                 .accessibilityAddTraits(.isHeader)
-            Text(t("Top users by XP, level and saved workouts.", "Топ користувачів за XP, рівнем і збереженими тренуваннями."))
+            Text(
+                t(
+                    "Competitive standings are paused until workout scores can be verified server-side. Your private progress stays available.",
+                    "Змагальний рейтинг призупинено, доки сервер не зможе перевіряти тренувальні бали. Твій приватний прогрес залишається доступним."
+                )
+            )
                 .font(.subheadline)
                 .foregroundStyle(Color.white.opacity(0.84))
                 .fixedSize(horizontal: false, vertical: true)
 
-            if let currentPlace, !isShowingLocalFallback {
-                Text(t("Your current place: #\(currentPlace)", "Твоє поточне місце: №\(currentPlace)"))
-                    .font(.caption.weight(.semibold))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(Color.white.opacity(0.13), in: Capsule())
-            }
+            Text(t("Private preview", "Приватний перегляд"))
+                .font(.caption.weight(.semibold))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(Color.white.opacity(0.13), in: Capsule())
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var yourStats: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(t("YOUR RANKING", "ТВІЙ РЕЙТИНГ"))
+            Text(t("YOUR PROGRESS", "ТВІЙ ПРОГРЕС"))
                 .font(.caption2.weight(.bold))
                 .tracking(0.5)
                 .foregroundStyle(Color.white.opacity(0.72))
@@ -168,13 +195,13 @@ struct LeaderboardView: View {
                 Image(systemName: isShowingLocalFallback ? "iphone" : "cloud.fill")
                     .foregroundStyle(isShowingLocalFallback ? GymTheme.secondary : GymTheme.primary)
                     .accessibilityHidden(true)
-                Text(t("Leaderboard", "Таблиця рейтингу"))
+                Text(t("Your synced progress", "Твій синхронізований прогрес"))
                     .font(.headline)
                     .accessibilityAddTraits(.isHeader)
             }
 
             if cloudSync.isSyncing {
-                Text(t("Loading cloud rating…", "Завантажуємо хмарний рейтинг…"))
+                Text(t("Loading protected cloud progress…", "Завантажуємо захищений хмарний прогрес…"))
                     .font(.subheadline)
                     .foregroundStyle(GymTheme.textSecondary)
             } else if let lastRefreshedAt, !isShowingLocalFallback {
@@ -190,7 +217,10 @@ struct LeaderboardView: View {
                 Text(
                     isShowingLocalFallback
                         ? t("Showing on-device stats.", "Показано дані з цього пристрою.")
-                        : t("Synced through Supabase.", "Синхронізовано через Supabase.")
+                        : t(
+                            "Only your profile is shown while verified scoring is being built.",
+                            "Показано лише твій профіль, поки ми створюємо перевірений рейтинг."
+                        )
                 )
                 .font(.subheadline)
                 .foregroundStyle(GymTheme.textSecondary)
@@ -229,7 +259,7 @@ struct LeaderboardView: View {
         .accessibilityHint(
             auth.session?.cloud == nil
                 ? t("Sign in with a cloud account to refresh", "Увійди у хмарний акаунт, щоб оновити")
-                : t("Uploads your latest stats and reloads the ranking", "Завантажує твої актуальні дані й оновлює рейтинг")
+                : t("Uploads and reloads your protected progress", "Завантажує та оновлює твій захищений прогрес")
         )
     }
 
@@ -241,7 +271,7 @@ struct LeaderboardView: View {
                     .foregroundStyle(GymTheme.secondary)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(t("Local ranking", "Локальний рейтинг"))
+                    Text(t("Local progress", "Локальний прогрес"))
                         .font(.subheadline.weight(.semibold))
                     Text(fallbackExplanation)
                         .font(.caption)
@@ -256,9 +286,9 @@ struct LeaderboardView: View {
     private var emptyState: some View {
         GymPanel {
             ContentUnavailableView {
-                Label(t("No users yet", "Користувачів ще немає"), systemImage: "person.3")
+                Label(t("No synced progress yet", "Синхронізованого прогресу ще немає"), systemImage: "person.crop.circle")
             } description: {
-                Text(t("The cloud rating will appear after profiles sync.", "Хмарний рейтинг з’явиться після синхронізації профілів."))
+                Text(t("Sign in and sync to restore your protected progress here.", "Увійди та синхронізуй дані, щоб відновити тут свій захищений прогрес."))
             }
             .frame(maxWidth: .infinity)
         }
@@ -269,14 +299,14 @@ struct LeaderboardView: View {
             VStack(alignment: .leading, spacing: 10) {
                 ViewThatFits(in: .horizontal) {
                     HStack(spacing: 12) {
-                        placeBadge(place)
+                        placeBadge(place, isCurrentUser: row.isCurrentUser)
                         rowIdentity(row)
                         Spacer(minLength: 8)
                         xpLabel(row)
                     }
                     VStack(alignment: .leading, spacing: 10) {
                         HStack(alignment: .top, spacing: 10) {
-                            placeBadge(place)
+                            placeBadge(place, isCurrentUser: row.isCurrentUser)
                             rowIdentity(row)
                         }
                         xpLabel(row)
@@ -308,8 +338,8 @@ struct LeaderboardView: View {
             .accessibilityElement(children: .contain)
             .accessibilityLabel(
                 t(
-                    "Place \(place), \(gymLocalized(row.displayName, languageCode: languageCode))",
-                    "Місце \(place), \(gymLocalized(row.displayName, languageCode: languageCode))"
+                    "Protected progress for \(gymLocalized(row.displayName, languageCode: languageCode))",
+                    "Захищений прогрес: \(gymLocalized(row.displayName, languageCode: languageCode))"
                 )
             )
             .accessibilityValue(
@@ -323,11 +353,14 @@ struct LeaderboardView: View {
         }
     }
 
-    private func placeBadge(_ place: Int) -> some View {
+    private func placeBadge(_ place: Int, isCurrentUser: Bool) -> some View {
         ZStack {
             RoundedRectangle(cornerRadius: 13)
                 .fill(placeColor(place).opacity(0.15))
-            if place <= 3 {
+            if isCurrentUser {
+                Image(systemName: "person.fill")
+                    .font(.headline)
+            } else if place <= 3 {
                 VStack(spacing: 1) {
                     Image(systemName: "medal.fill")
                         .font(.caption)
@@ -404,20 +437,16 @@ struct LeaderboardView: View {
         return Set(values)
     }
 
-    private var currentPlace: Int? {
-        displayedRows.firstIndex(where: \.isCurrentUser).map { $0 + 1 }
-    }
-
     private var fallbackExplanation: String {
         if auth.session?.cloud == nil {
             return t(
-                "This is an offline account. Sign in with a cloud account to compare with other athletes; your workouts remain available on this device.",
-                "Це офлайн-акаунт. Увійди у хмарний акаунт, щоб порівняти результат з іншими атлетами; твої тренування залишаються на цьому пристрої."
+                "This is an offline account. Sign in with a cloud account to protect and synchronize your progress; your workouts remain available on this device.",
+                "Це офлайн-акаунт. Увійди у хмарний акаунт, щоб захистити й синхронізувати прогрес; твої тренування залишаються на цьому пристрої."
             )
         }
         return t(
-            "The cloud leaderboard is unavailable, so your latest on-device XP, level and workouts are shown. Pull down or tap Refresh to try again.",
-            "Хмарний рейтинг недоступний, тому показано актуальні XP, рівень і тренування з цього пристрою. Потягни вниз або натисни «Оновити», щоб спробувати ще раз."
+            "Protected cloud progress is unavailable, so the latest on-device XP, level and workouts are shown. Pull down or tap Refresh to try again.",
+            "Захищений хмарний прогрес недоступний, тому показано актуальні XP, рівень і тренування з цього пристрою. Потягни вниз або натисни «Оновити», щоб спробувати ще раз."
         )
     }
 

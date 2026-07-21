@@ -4,11 +4,11 @@ Native SwiftUI port of the Android GymApp. The project targets iOS 17 and is bui
 
 ## Included
 
-- Five-tab phone experience: Workouts, Missions, Exercises, Progress, Rating.
+- Five-tab phone experience: Workouts, Missions, Exercises, Progress, Profile.
 - Workout, exercise and set CRUD; templates; Smart Coach; PRs; rest timers.
 - Muscle mapping, activity heatmap, XP, levels, ranks, missions and summaries.
 - Android-compatible GymApp JSON backup/import and PDF diagnostics.
-- Email/password Supabase account, secure Keychain session storage, cloud state and leaderboard.
+- Email/password Supabase account, secure Keychain session storage, cloud state and owner-only protected progress.
 - Offline account so core workout tracking never requires registration.
 - Garmin cloud plan queue using the existing Supabase/Garmin Connect IQ path.
 - English, Ukrainian and Russian UI, light/dark appearance, Dynamic Type and VoiceOver labels.
@@ -40,9 +40,9 @@ xcodebuild \
 
 ### Latest verification
 
-- iOS unit tests: **84/84 passed** on the iPhone 17 / iOS 26.5 simulator on
-  2026-07-20, including localization, bounded-network, cloud compatibility,
-  HTTPS auth-bridge, and unsolicited-callback rejection cases.
+- iOS unit tests: **102/102 passed** on the iPhone 17 / iOS 26.5 simulator on
+  2026-07-21, including localization, bounded-network, cloud compatibility,
+  persistent password-recovery state, HTTPS auth-bridge, and unsolicited-callback rejection cases.
 - Release `iphoneos` build: **passed** on 2026-07-11 as an unsigned arm64 app
   with deployment target iOS 17.0 and bundle ID `com.setforge.gymapp.ios`.
 - Strict Swift 6 complete-concurrency warnings-as-errors build: **passed**.
@@ -50,13 +50,13 @@ xcodebuild \
   Deno 2.9.2 / TypeScript 6.0.3.
 - Production Supabase RLS/deletion E2E and hosted policy/support URL checks:
   **passed**.
-- Existing Android/PWA compatibility regression suite: **23/23 passed**; the
-  hosted PWA uses the hardened leaderboard contract.
+- Cross-platform Node regression suite: **206/206 passed** on 2026-07-21. The
+  current PWA and native clients use the owner-only protected-progress contract.
 
 ## Before a real App Store upload
 
 1. Open `GymApp.xcodeproj`, select your Apple Developer Team, and confirm the final bundle identifier.
-2. Keep the three ordered Supabase migrations and `delete-account` Edge Function synchronized in every environment. They are deployed and production-tested as recorded in [PRODUCTION_BACKEND_VERIFICATION.md](AppStore/PRODUCTION_BACKEND_VERIFICATION.md).
+2. Keep every canonical migration from the repository-root `supabase/migrations/` directory and both Edge Functions synchronized in every environment. Production is recorded through `20260721143853_retire_legacy_garmin_table_grants.sql`, and `garmin-sync` version 4 is active; the 2026-07-21 structural/ACL, rollback-only runtime, and invalid-capability HTTP checks passed. Complete the valid-device Edge Function fetch/ack smoke before submission. Evidence and scope are recorded in [PRODUCTION_BACKEND_VERIFICATION.md](AppStore/PRODUCTION_BACKEND_VERIFICATION.md).
 3. Keep `https://gymapptracker.com/confirmed.html?platform=ios&state=*` and
    `com.setforge.gymapp.ios://auth/callback/*` in the Supabase Auth redirect
    allowlist. The first-party HTTPS page accepts only a PKCE `code` plus the
@@ -76,17 +76,26 @@ copies. The policy covers iOS, Android, browser/PWA, and optional Garmin feature
 in English, Ukrainian, and Russian; re-verify the hosted copy after every policy
 update.
 
-### Verified external release status (2026-07-11)
+### External verification status
 
-The production database, RLS, leaderboard, and account-deletion server gates are
-complete:
+The production database, RLS, former cross-account leaderboard, and
+account-deletion behavior below passed on 2026-07-11. On 2026-07-21 all eight
+newer canonical migrations, from `canonical_profile_progression` through
+`retire_legacy_garmin_table_grants`, were applied in deployment order;
+structural/ACL and rollback-only runtime checks passed and the Supabase advisors
+were rerun. That database verification did not include a valid-device Edge
+Function fetch/ack smoke:
 
 - migrations `create_leaderboard_public`, `harden_gymapp_production_access`, and
   `fix_user_state_revision_trigger` are recorded in production migration history;
+- the eight later canonical migrations through
+  `20260721143853_retire_legacy_garmin_table_grants` are also recorded in
+  production migration history;
 - authenticated users receive the sanitized `leaderboard_public` projection,
   while anonymous base-table/view/report reads return `401` and the legacy
   `leaderboard` endpoint returns `404`;
-- `delete-account` version 1 is `ACTIVE` with `verify_jwt=true`; and
+- `delete-account` version 1 is `ACTIVE` with `verify_jwt=true`;
+- `garmin-sync` version 4 is `ACTIVE` with its explicit mixed user-JWT/device-capability boundary, and invalid-capability HTTP checks passed; and
 - a two-user production E2E run passed RLS, reporting, stale-revision, deletion,
   and cascade checks, then confirmed zero disposable rows remained.
 

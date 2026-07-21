@@ -6,7 +6,7 @@ const [androidSource, iosSource, pwaSource, migrationSource] = await Promise.all
   readFile("app/src/main/java/com/example/gymapp/data/catalog/BuiltInExerciseCatalog.kt", "utf8"),
   readFile("ios/GymApp-iOS/GymApp/Domain/BuiltInExerciseCatalog.swift", "utf8"),
   readFile("pwa/app.js", "utf8"),
-  readFile("supabase/migrations/20260716105128_create_exercise_catalog.sql", "utf8")
+  readFile("supabase/migrations/20260721143010_create_exercise_catalog.sql", "utf8")
 ]);
 
 const expectedCatalog = [...pwaSource.matchAll(

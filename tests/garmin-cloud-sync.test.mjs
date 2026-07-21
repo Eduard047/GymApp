@@ -196,8 +196,8 @@ test("PWA, Supabase, and Garmin code are wired to the same cloud sync contract",
     readFile("supabase/functions/garmin-sync/index.ts", "utf8"),
     readFile("supabase/config.toml", "utf8"),
     readFile("supabase/migrations/20260629120000_garmin_cloud_sync.sql", "utf8"),
-    readFile("supabase/migrations/20260713210000_harden_garmin_pairing_and_plans.sql", "utf8"),
-    readFile("supabase/migrations/20260714010000_add_garmin_device_rate_limits.sql", "utf8"),
+    readFile("supabase/migrations/20260721142935_harden_garmin_pairing_and_plans.sql", "utf8"),
+    readFile("supabase/migrations/20260721142951_add_garmin_device_rate_limits.sql", "utf8"),
     readFile("supabase/functions/garmin-sync/deno.json", "utf8"),
     readFile("supabase/functions/garmin-sync/deno.lock", "utf8"),
     readFile("garmin/source/GymComm.mc", "utf8"),
@@ -207,8 +207,8 @@ test("PWA, Supabase, and Garmin code are wired to the same cloud sync contract",
     readFile("scripts/build-garmin.ps1", "utf8")
   ]);
 
-  assert.match(indexHtml, /garmin-cloud-sync\.v50\.js/);
-  assert.match(swJs, /garmin-cloud-sync\.v50\.js/);
+  assert.match(indexHtml, /garmin-cloud-sync\.v52\.js/);
+  assert.match(swJs, /garmin-cloud-sync\.v52\.js/);
   assert.match(appJs, /\/functions\/v1\/garmin-sync/);
   assert.match(appJs, /\/rest\/v1\/rpc\/garmin_enqueue_plan/);
   assert.doesNotMatch(appJs, /supabaseRequest\("\/rest\/v1\/garmin_plans"/);

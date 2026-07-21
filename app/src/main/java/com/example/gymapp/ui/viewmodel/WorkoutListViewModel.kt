@@ -11,6 +11,7 @@ import com.example.gymapp.data.entity.ExerciseMuscleMappingEntity
 import com.example.gymapp.data.entity.WorkoutSessionSummary
 import com.example.gymapp.data.repository.DashboardStats
 import com.example.gymapp.data.repository.GamificationEngine
+import com.example.gymapp.data.repository.BadgeRarity
 import com.example.gymapp.data.repository.GymRepository
 import com.example.gymapp.data.repository.MUSCLE_DEFINITIONS
 import com.example.gymapp.data.repository.RANK_DEFINITIONS
@@ -179,6 +180,9 @@ data class AchievementPreviewUiModel(
     val id: String,
     val title: String,
     val description: String,
+    val badgeName: String,
+    val badgeRarity: BadgeRarity,
+    val rewardXp: Int,
     val progressLabel: String,
     val statusLabel: String,
     val progress: Int,
@@ -294,7 +298,7 @@ class WorkoutListViewModel(
             weeklyMissions = weeklyMissions,
             monthlyMissions = monthlyMissions,
             rankLadder = buildRankLadder(soloProgress.totalXp),
-            achievements = buildAchievements(allSessions, dashboardStats.streakDays)
+            achievements = buildAchievements(allSessions)
         )
     }.stateIn(
         scope = viewModelScope,
@@ -1810,104 +1814,62 @@ class WorkoutListViewModel(
     }
 
     private fun buildAchievements(
-        allSessions: List<WorkoutSessionSummary>,
-        streakDays: Int
+        allSessions: List<WorkoutSessionSummary>
     ): List<AchievementPreviewUiModel> {
-        val totalWorkouts = allSessions.size
-        val totalSets = allSessions.sumOf { it.setCount }
-        val totalVolume = allSessions.sumOf { it.totalVolume }.roundToInt()
-
-        val definitions = listOf(
-            achievement(
-                id = "first-session",
-                title = t(en = "First session", uk = "Перша сесія"),
-                description = t(
-                    en = "Log your first workout.",
-                    uk = "Запиши своє перше тренування."
-                ),
-                value = totalWorkouts,
-                goal = 1,
-                unit = t(en = "workout", uk = "тренування")
-            ),
-            achievement(
-                id = "ten-sessions",
-                title = t(en = "Ten sessions", uk = "Десять сесій"),
-                description = t(
-                    en = "Reach ten logged workouts.",
-                    uk = "Набери 10 записаних тренувань."
-                ),
-                value = totalWorkouts,
-                goal = 10,
-                unit = t(en = "workouts", uk = "тренувань")
-            ),
-            achievement(
-                id = "seven-day-streak",
-                title = t(en = "Streak keeper", uk = "Тримай серію"),
-                description = t(
-                    en = "Hold a 7-day streak.",
-                    uk = "Втримай серію 7 днів."
-                ),
-                value = streakDays,
-                goal = 7,
-                unit = t(en = "days", uk = "днів")
-            ),
-            achievement(
-                id = "set-century",
-                title = t(en = "Set century", uk = "Сотня підходів"),
-                description = t(
-                    en = "Finish 100 total sets.",
-                    uk = "Виконай загалом 100 підходів."
-                ),
-                value = totalSets,
-                goal = 100,
-                unit = t(en = "sets", uk = "підходів")
-            ),
-            achievement(
-                id = "volume-builder",
-                title = t(en = "Volume builder", uk = "Будівник обсягу"),
-                description = t(
-                    en = "Accumulate 10000 total volume.",
-                    uk = "Накопич загалом 10000 обсягу."
-                ),
-                value = totalVolume,
-                goal = 10_000,
-                unit = t(en = "volume", uk = "обсягу")
-            )
+        val snapshot = GamificationEngine.buildSnapshot(
+            sessions = allSessions,
+            nowMillis = System.currentTimeMillis(),
+            zoneId = zoneId
         )
-
-        return definitions
-            .sortedWith(
-                compareByDescending<AchievementPreviewUiModel> { it.isUnlocked }
-                    .thenByDescending { it.progressFraction }
-                    .thenBy { it.goal }
+        return snapshot.achievements.map { achievement ->
+            val translation = POST_WORKOUT_ACHIEVEMENT_UK[achievement.id]
+            val progress = achievement.progress
+                .coerceAtLeast(0.0)
+                .coerceAtMost(Int.MAX_VALUE.toDouble())
+                .roundToInt()
+            val goal = achievement.target
+                .coerceAtLeast(1.0)
+                .coerceAtMost(Int.MAX_VALUE.toDouble())
+                .roundToInt()
+            val unit = when {
+                achievement.id.startsWith("streak_") || achievement.id == "comeback" ->
+                    t(en = "days", uk = "днів")
+                achievement.id.startsWith("volume_") ->
+                    t(en = "volume", uk = "обсягу")
+                else -> t(en = "workouts", uk = "тренувань")
+            }
+            AchievementPreviewUiModel(
+                id = achievement.id,
+                title = t(
+                    en = achievement.title,
+                    uk = translation?.title ?: achievement.title
+                ),
+                description = t(
+                    en = achievement.description,
+                    uk = translation?.description ?: achievement.description
+                ),
+                badgeName = t(
+                    en = achievement.badge.name,
+                    uk = translation?.badgeName ?: achievement.badge.name
+                ),
+                badgeRarity = achievement.badge.rarity,
+                rewardXp = achievement.rewardXp,
+                progressLabel = "${progress.coerceAtMost(goal)} / $goal $unit",
+                statusLabel = if (achievement.unlocked) {
+                    t(en = "Unlocked", uk = "Відкрито")
+                } else {
+                    t(en = "In progress", uk = "У процесі")
+                },
+                progress = progress,
+                goal = goal,
+                progressFraction = (achievement.progress / achievement.target)
+                    .takeIf(Double::isFinite)
+                    ?.coerceIn(0.0, 1.0)
+                    ?.toFloat()
+                    ?: 0f,
+                isUnlocked = achievement.unlocked
             )
-            .take(4)
-    }
-
-    private fun achievement(
-        id: String,
-        title: String,
-        description: String,
-        value: Int,
-        goal: Int,
-        unit: String
-    ): AchievementPreviewUiModel {
-        val unlocked = value >= goal
-        return AchievementPreviewUiModel(
-            id = id,
-            title = title,
-            description = description,
-            progressLabel = "${value.coerceAtMost(goal)} / $goal $unit",
-            statusLabel = if (unlocked) {
-                t(en = "Unlocked", uk = "Відкрито")
-            } else {
-                t(en = "In progress", uk = "У процесі")
-            },
-            progress = value,
-            goal = goal,
-            progressFraction = progressFraction(value, goal),
-            isUnlocked = unlocked
-        )
+        }
     }
 
     private fun sessionXp(session: WorkoutSessionSummary): Int {

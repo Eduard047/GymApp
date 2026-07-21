@@ -1,5 +1,12 @@
 project_id = "gymapp"
 
+# Local Auth email preview/source of truth. Hosted Supabase projects keep their
+# own Auth template settings; review and copy this template in the Dashboard
+# only as an explicit release action.
+[auth.email.template.confirmation]
+subject = "Confirm your GymApp email"
+content_path = "./supabase/templates/confirmation.html"
+
 # Garmin fetch/ack uses a high-entropy device capability instead of a Supabase
 # user JWT. createDevice/revokeDevice still authenticate explicitly in code.
 [functions.garmin-sync]

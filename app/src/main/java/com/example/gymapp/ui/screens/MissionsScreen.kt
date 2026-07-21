@@ -49,6 +49,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
 import com.example.gymapp.ui.components.AppPanel
+import com.example.gymapp.ui.components.AchievementPreviewCard
 import com.example.gymapp.ui.components.EmptyStatePanel
 import com.example.gymapp.ui.components.HeroPanel
 import com.example.gymapp.ui.components.InfoPill
@@ -188,6 +189,10 @@ fun MissionsScreen(
             ) { mission ->
                 MissionCard(mission = mission)
             }
+        }
+
+        item {
+            AchievementPreviewCard(achievements = uiState.achievements)
         }
     }
 }

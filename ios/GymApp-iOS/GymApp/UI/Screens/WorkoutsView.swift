@@ -189,7 +189,6 @@ public struct WorkoutsView: View {
 
         WorkoutRecommendationsCard(recommendations: trainingRecommendations)
 
-        WorkoutAchievementsCard(achievements: gamification.achievements)
     }
 
     @ViewBuilder

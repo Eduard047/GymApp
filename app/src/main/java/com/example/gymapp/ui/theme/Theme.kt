@@ -12,49 +12,49 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 
 private val DarkColorScheme = darkColorScheme(
-    primary = SageGlow,
+    primary = CobaltNight,
     onPrimary = Night,
-    primaryContainer = Color(0xFF214C40),
+    primaryContainer = Color(0xFF203A78),
     onPrimaryContainer = Frost,
-    secondary = SkyGlow,
+    secondary = Color(0xFFB8C8E8),
     onSecondary = Night,
-    secondaryContainer = Color(0xFF183D5E),
+    secondaryContainer = Color(0xFF26334A),
     onSecondaryContainer = Frost,
-    tertiary = ClayGlow,
+    tertiary = AmberNight,
     onTertiary = Night,
-    tertiaryContainer = Color(0xFF4A2B1A),
+    tertiaryContainer = Color(0xFF4D3518),
     onTertiaryContainer = Frost,
     background = Night,
-    surface = NightSurface.copy(alpha = 0.92f),
-    surfaceVariant = NightSurfaceAlt.copy(alpha = 0.9f),
+    surface = NightSurface,
+    surfaceVariant = NightSurfaceAlt,
     onSurfaceVariant = FrostMuted,
     onSurface = Frost,
     onBackground = Frost,
-    outline = Color(0xFF4E6A7A),
-    outlineVariant = Color(0xFF304354)
+    outline = Color(0xFF455368),
+    outlineVariant = Color(0xFF2D3A4D)
 )
 
 private val LightColorScheme = lightColorScheme(
-    primary = SageGreen,
+    primary = Cobalt,
     onPrimary = Color.White,
-    primaryContainer = Color(0xFFDDF4EB),
-    onPrimaryContainer = InkBlue,
-    secondary = SlateBlue,
+    primaryContainer = CobaltSoft,
+    onPrimaryContainer = Navy,
+    secondary = Navy,
     onSecondary = Color.White,
-    secondaryContainer = Color(0xFFDDEEF7),
+    secondaryContainer = Color(0xFFE7EBF2),
     onSecondaryContainer = Ink,
-    tertiary = ClayOrange,
+    tertiary = Amber,
     onTertiary = Color.White,
-    tertiaryContainer = Color(0xFFF7DDCF),
+    tertiaryContainer = Color(0xFFFFE8C9),
     onTertiaryContainer = Ink,
-    background = Color(0xFFEAF1F5),
-    surface = Cloud.copy(alpha = 0.94f),
-    surfaceVariant = Sand.copy(alpha = 0.88f),
-    onSurfaceVariant = Color(0xFF5B6975),
+    background = Canvas,
+    surface = Paper,
+    surfaceVariant = Mist,
+    onSurfaceVariant = InkMuted,
     onSurface = Ink,
     onBackground = Ink,
-    outline = Color(0xFFB3C2CB),
-    outlineVariant = Color.White
+    outline = Color(0xFFC8C2B6),
+    outlineVariant = Color(0xFFDDD7CB)
 )
 
 @Composable

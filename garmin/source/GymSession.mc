@@ -61,7 +61,9 @@ class GymSession {
         pausedAt = 0;
         pausedAccumSeconds = 0;
         elapsedSeconds = 0;
+        hr = null;
         gymCalories = 0.0;
+        garminCalories = null;
         lastCalorieSeconds = 0;
         lastMet = 0.0;
         lastKcalPerMinute = 0.0;
@@ -260,8 +262,13 @@ class GymSession {
         if (paused) {
             return;
         }
-        updateHeartRateFromSensor();
-        updateGarminActivityInfo();
+        // ActivityInfo and SensorInfo can expose the same watch sample. Prefer the
+        // activity value so a single tick cannot count one reading twice, then fall
+        // back to the sensor when ActivityInfo has no valid heart-rate value.
+        var appliedActivityHeartRate = updateGarminActivityInfo();
+        if (!appliedActivityHeartRate) {
+            updateHeartRateFromSensor();
+        }
         updateCalories();
     }
 
@@ -296,12 +303,13 @@ class GymSession {
     }
 
     static function updateGarminActivityInfo() {
+        var appliedHeartRate = false;
         if (Toybox has :Activity) {
             try {
                 var info = Activity.getActivityInfo();
                 if (info != null) {
                     if (info.currentHeartRate != null) {
-                        applyHeartRate(info.currentHeartRate);
+                        appliedHeartRate = applyHeartRate(info.currentHeartRate);
                     }
                     if (info.calories != null) {
                         garminCalories = info.calories;
@@ -310,11 +318,12 @@ class GymSession {
             } catch (ex) {
             }
         }
+        return appliedHeartRate;
     }
 
     static function applyHeartRate(value) {
         if (!(value instanceof Lang.Number) || value <= 0 || value > 240) {
-            return;
+            return false;
         }
         hr = value;
         hrSamples += 1;
@@ -325,6 +334,7 @@ class GymSession {
         trackMinuteHeartRate(value);
         zone = zoneFor(value);
         updateEffortState(value);
+        return true;
     }
 
     static function trackMinuteHeartRate(value) {

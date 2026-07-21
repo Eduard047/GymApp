@@ -28,6 +28,8 @@ struct MissionsView: View {
                     ForEach(missions) { mission in
                         missionCard(mission)
                     }
+
+                    AchievementGallery(achievements: snapshot.achievements)
                 }
                 .padding(16)
                 .padding(.bottom, 20)

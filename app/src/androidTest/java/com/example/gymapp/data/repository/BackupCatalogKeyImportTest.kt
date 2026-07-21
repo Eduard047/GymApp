@@ -18,6 +18,45 @@ import org.json.JSONObject
 @RunWith(AndroidJUnit4::class)
 class BackupCatalogKeyImportTest {
     @Test
+    fun favoriteRoundTripsInManualBackupButIsExcludedFromCloudProjection() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "favorite-backup-${UUID.randomUUID()}"
+        val database = GymDatabase.getInstance(context, databaseName)
+        val userId = "123e4567-e89b-12d3-a456-426614174000"
+
+        try {
+            val repository = GymRepository(database)
+            val exerciseId = repository.addExercise("Favorite row")
+            repository.setExerciseFavorite(exerciseId, true)
+
+            val manual = repository.buildBackupJson()
+            assertTrue(manual.getJSONArray("exercises").getJSONObject(0).getBoolean("favorite"))
+
+            val cloud = repository.buildCloudBackupJson(
+                BackupOwner(
+                    accountId = userId,
+                    userId = userId,
+                    remote = true
+                )
+            )
+            assertFalse(cloud.getJSONArray("exercises").getJSONObject(0).has("favorite"))
+
+            repository.setExerciseFavorite(exerciseId, false)
+            repository.importBackupJsonObject(manual)
+            assertTrue(database.exerciseDao().getById(exerciseId)?.isFavorite == true)
+
+            val legacyManual = JSONObject(manual.toString()).apply {
+                getJSONArray("exercises").getJSONObject(0).remove("favorite")
+            }
+            repository.importBackupJsonObject(legacyManual)
+            assertTrue(database.exerciseDao().getById(exerciseId)?.isFavorite == true)
+        } finally {
+            database.close()
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
     fun catalogSeedMarkerPreservesDeletedBuiltInExercise() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val databaseName = "catalog-seed-once-${UUID.randomUUID()}"

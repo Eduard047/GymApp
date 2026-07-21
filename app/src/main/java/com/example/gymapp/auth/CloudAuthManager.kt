@@ -750,7 +750,7 @@ class CloudAuthManager(context: Context) {
                     workouts = row.optInt("workouts"),
                     isCurrentUser = row.optBoolean("is_current_user")
                 )
-            }
+            }.filter(LeaderboardRow::isCurrentUser)
         }
 
     private fun beginAuthAttempt(): Long = synchronized(authStateLock) {

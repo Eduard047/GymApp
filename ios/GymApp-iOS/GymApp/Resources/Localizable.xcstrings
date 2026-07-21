@@ -1529,7 +1529,6 @@
       }
     },
     "Cloud account" : {
-      "extractionState" : "stale",
       "localizations" : {
         "uk" : {
           "stringUnit" : {
@@ -2229,18 +2228,18 @@
         }
       }
     },
-    "Create a local profile without signing in. Cloud rating and multi-device sync will remain unavailable." : {
+    "Create a local profile without signing in. Protected cloud progress and multi-device sync will remain unavailable." : {
       "localizations" : {
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Створи локальний профіль без входу. Хмарний рейтинг і синхронізація між пристроями будуть недоступні."
+            "value" : "Створи локальний профіль без входу. Захищений хмарний прогрес і синхронізація між пристроями будуть недоступні."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Создай локальный профиль без входа. Облачный рейтинг и синхронизация между устройствами недоступны."
+            "value" : "Создай локальный профиль без входа. Защищённый облачный прогресс и синхронизация между устройствами будут недоступны."
           }
         }
       }
@@ -4579,7 +4578,6 @@
       }
     },
     "Local profile" : {
-      "extractionState" : "stale",
       "localizations" : {
         "uk" : {
           "stringUnit" : {
@@ -6239,19 +6237,19 @@
         }
       }
     },
-    "Permanently removes this Supabase account, cloud workout state, rating profile, Garmin connection data, and this profile’s local workout store." : {
+    "Permanently removes this Supabase account, cloud workout state, protected-progress profile, Garmin connection data, and this profile’s local workout store." : {
       "extractionState" : "stale",
       "localizations" : {
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Остаточно видаляє цей акаунт Supabase, стан тренувань у хмарі, профіль рейтингу, дані підключення Garmin і локальне сховище тренувань цього профілю."
+            "value" : "Остаточно видаляє цей акаунт Supabase, стан тренувань у хмарі, профіль захищеного прогресу, дані підключення Garmin і локальне сховище тренувань цього профілю."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Окончательно удаляет этот аккаунт Supabase, состояние тренировок в облаке, профиль рейтинга, данные подключения Garmin и локальное хранилище тренировок этого профиля."
+            "value" : "Окончательно удаляет этот аккаунт Supabase, состояние тренировок в облаке, профиль защищённого прогресса, данные подключения Garmin и локальное хранилище тренировок этого профиля."
           }
         }
       }
@@ -6456,7 +6454,6 @@
       }
     },
     "Profile" : {
-      "extractionState" : "stale",
       "localizations" : {
         "uk" : {
           "stringUnit" : {
@@ -8840,19 +8837,19 @@
         }
       }
     },
-    "This profile does not upload workouts or appear in the cloud rating." : {
+    "This profile keeps workouts on this device and does not synchronize protected progress." : {
       "extractionState" : "stale",
       "localizations" : {
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Цей профіль не завантажує тренування й не відображається у хмарному рейтингу."
+            "value" : "Цей профіль зберігає тренування на цьому пристрої та не синхронізує захищений прогрес."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Этот профиль не загружает тренировки и не отображается в облачном рейтинге."
+            "value" : "Этот профиль хранит тренировки на этом устройстве и не синхронизирует защищённый прогресс."
           }
         }
       }
@@ -10153,8 +10150,167 @@
         }
       }
     },
+    "Account controls, private data tools, and protected progress." : {
+      "localizations" : {
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Керування акаунтом, приватними даними та захищеним прогресом."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Управление аккаунтом, личными данными и защищённым прогрессом."
+          }
+        }
+      }
+    },
+    "Add an exercise now or import a backup from Profile." : {
+      "localizations" : {
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Додай вправу зараз або імпортуй резервну копію у Профілі."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Добавь упражнение сейчас или импортируй резервную копию в Профиле."
+          }
+        }
+      }
+    },
+    "Clear filters" : {
+      "localizations" : {
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Очистити фільтри"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Очистить фильтры"
+          }
+        }
+      }
+    },
+    "Every canonical milestone, its progress, rarity, and unlock date." : {
+      "localizations" : {
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Усі основні цілі, їхній прогрес, рідкість і дата відкриття."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Все основные цели, их прогресс, редкость и дата открытия."
+          }
+        }
+      }
+    },
+    "Favorites" : {
+      "localizations" : {
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Улюблені"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Избранное"
+          }
+        }
+      }
+    },
+    "Manage your library, history, muscle groups, and favorites." : {
+      "localizations" : {
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Керуй бібліотекою, історією, групами м’язів і улюбленими вправами."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Управляй библиотекой, историей, группами мышц и избранными упражнениями."
+          }
+        }
+      }
+    },
+    "Opens account settings, Garmin, support, sign out, and account deletion" : {
+      "localizations" : {
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Відкриває налаштування акаунта, Garmin, підтримку, вихід і видалення акаунта"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Открывает настройки аккаунта, Garmin, поддержку, выход и удаление аккаунта"
+          }
+        }
+      }
+    },
+    "Shows only favorite exercises" : {
+      "localizations" : {
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Показує лише улюблені вправи"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Показывает только избранные упражнения"
+          }
+        }
+      }
+    },
+    "Try another name or clear the filters." : {
+      "localizations" : {
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Спробуй іншу назву або очисть фільтри."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Попробуй другое название или очисти фильтры."
+          }
+        }
+      }
+    },
+    "Your badge collection" : {
+      "localizations" : {
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Твоя колекція відзнак"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Твоя коллекция значков"
+          }
+        }
+      }
+    },
     "Your data" : {
-      "extractionState" : "stale",
       "localizations" : {
         "uk" : {
           "stringUnit" : {

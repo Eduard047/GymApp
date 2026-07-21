@@ -33,7 +33,10 @@ test("Android Russian resources cover every English string with compatible place
   assert.match(manager, /RU\("ru"\)/);
   assert.match(navigation, /onLanguageSelected\(AppLanguage\.RU\)/);
   assert.match(dynamic, /"Barbell Row" to "Тяга штанги в наклоне"/);
-  assert.match(workoutDetail, /\^Garmin\(\?: Fenix 8\)\?\(\?: ·\|\$\)/);
+  assert.match(
+    workoutDetail,
+    /parseGarminWorkoutMetrics\(details\.session\.note\.orEmpty\(\)\)/
+  );
   assert.equal(russian.get("action_add_set"), "Добавить подход");
 });
 
@@ -108,13 +111,13 @@ test("PWA accepts Russian state and renders Russian runtime text before app star
     ["Latest max", "Последний максимум"],
     ["Least frequent", "Реже всего"],
     ["Load", "Нагрузка"],
-    ["Local mode. Sign in to a cloud account to join the rating.", "Локальный режим. Войди в облачный аккаунт, чтобы присоединиться к рейтингу."],
+    ["Local mode. Sign in to protect and synchronize your progress.", "Локальный режим. Войди, чтобы защитить и синхронизировать прогресс."],
     ["Log in instead", "Войти вместо регистрации"],
     ["Log your plan fast and keep momentum with smart set shortcuts.", "Быстро запиши план и сохраняй темп с помощью удобных действий для подходов."],
     ["Momentum", "Темп"],
     ["Name in English, Ukrainian, or Russian", "Название на английском, украинском или русском"],
     ["Next", "Далее"],
-    ["No leaderboard rows yet.", "В рейтинге пока никого нет."],
+    ["No synced progress yet.", "Синхронизированного прогресса пока нет."],
     ["This backup belongs to another account.", "Эта резервная копия принадлежит другому аккаунту."],
     ["This full backup contains private workout history and account metadata. Copy it to the system clipboard? Other apps may be able to read it.", "Полная резервная копия содержит личную историю тренировок и данные аккаунта. Скопировать её в системный буфер обмена? Другие приложения могут получить к ней доступ."],
     ["This report will include the full private backup. Continue to the print dialog?", "Отчёт будет содержать полную личную резервную копию. Перейти к диалогу печати?"],
@@ -176,8 +179,8 @@ test("PWA accepts Russian state and renders Russian runtime text before app star
   assert.match(appSource, /tx\("synced from Garmin", "синхронізовано з Garmin"\)/);
   assert.match(appSource, /txAttr\("Name in English, Ukrainian, or Russian", "Назва англійською, українською або російською"\)/);
   assert.doesNotMatch(appSource, /Name in English, Ukrainian or Russian/);
-  assert.ok(indexSource.indexOf("russian-text.v50.js") < indexSource.indexOf("app.v50.js"));
-  assert.match(workerSource, /"\.\/russian-text\.v50\.js"/);
+  assert.ok(indexSource.indexOf("russian-text.v52.js") < indexSource.indexOf("app.v52.js"));
+  assert.match(workerSource, /"\.\/russian-text\.v52\.js"/);
 });
 
 test("Garmin accepts Russian language sync and uses direct touch hit targets", async () => {

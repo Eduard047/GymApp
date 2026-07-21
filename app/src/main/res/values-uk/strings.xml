@@ -5,7 +5,7 @@
     <string name="tab_missions">Завдання</string>
     <string name="tab_exercises">Вправи</string>
     <string name="tab_progress">Прогрес</string>
-    <string name="tab_rating">Рейтинг</string>
+    <string name="tab_profile">Профіль</string>
 
     <string name="title_workouts">Тренування</string>
     <string name="workouts_screen_subtitle">Твоя історія тренувань і наступний найкращий крок.</string>
@@ -15,18 +15,19 @@
     <string name="title_post_workout_summary">Підсумок тренування</string>
     <string name="title_ranks">Титули</string>
     <string name="title_exercises">Вправи</string>
-    <string name="exercises_screen_subtitle">Керуй бібліотекою, історією, групами м’язів і резервними копіями.</string>
+    <string name="exercises_screen_subtitle">Керуй бібліотекою, обраним, історією та групами м’язів.</string>
     <string name="title_progress">Прогрес</string>
-    <string name="title_rating">Рейтинг</string>
-    <string name="leaderboard_hero_title">Рейтинг</string>
-    <string name="leaderboard_hero_supporting">Топ користувачів за XP, рівнем і збереженими тренуваннями.</string>
+    <string name="title_profile">Профіль</string>
+    <string name="profile_screen_subtitle">Акаунт, Garmin, приватні резервні копії, діагностика та захищений прогрес.</string>
+    <string name="leaderboard_hero_title">Захищений прогрес</string>
+    <string name="leaderboard_hero_supporting">Змагальний рейтинг призупинено, доки сервер не зможе перевіряти тренувальні бали. Твій приватний прогрес залишається доступним.</string>
     <string name="leaderboard_your_xp">Твої XP</string>
-    <string name="leaderboard_title">Таблиця рейтингу</string>
-    <string name="leaderboard_loading_supporting">Завантажуємо хмарний рейтинг...</string>
-    <string name="leaderboard_synced_supporting">Синхронізовано через Supabase.</string>
+    <string name="leaderboard_title">Твій синхронізований прогрес</string>
+    <string name="leaderboard_loading_supporting">Завантажуємо захищений хмарний прогрес...</string>
+    <string name="leaderboard_synced_supporting">Показано лише твій профіль, поки ми створюємо перевірений рейтинг.</string>
     <string name="leaderboard_loading_action">Завантаження</string>
     <string name="leaderboard_refresh_action">Оновити</string>
-    <string name="leaderboard_empty">У рейтингу ще немає користувачів.</string>
+    <string name="leaderboard_empty">Синхронізованого прогресу ще немає.</string>
     <string name="leaderboard_row_detail">Рівень %1$d - %2$d тренувань</string>
 
     <string name="action_add_workout">Додати тренування</string>
@@ -321,7 +322,12 @@
         <item>Н</item>
     </string-array>
     <string name="achievements_title">Досягнення</string>
-    <string name="achievements_supporting">Останні відкриття та найближчі соло-цілі.</string>
+    <string name="achievements_supporting">Повна галерея значків, прогрес і нагороди за відкриття.</string>
+    <string name="achievement_rarity_common">Звичайний</string>
+    <string name="achievement_rarity_uncommon">Незвичайний</string>
+    <string name="achievement_rarity_rare">Рідкісний</string>
+    <string name="achievement_rarity_epic">Епічний</string>
+    <string name="achievement_rarity_legendary">Легендарний</string>
     <string name="muscle_heatmap_title">Карта мʼязів</string>
     <string name="muscle_heatmap_supporting">Кольори показують, які групи мʼязів отримали найбільше навантаження за всю історію тренувань.</string>
     <string name="muscle_heatmap_sets">Підходи</string>
@@ -468,8 +474,8 @@
     <string name="backup_report_more_workouts">Ще тренувань: %1$d</string>
     <string name="backup_report_truncated">Звіт скорочено на безпечній межі приватного PDF.</string>
 
-    <string name="leaderboard_login_required">Увійди, щоб завантажити хмарний рейтинг.</string>
-    <string name="leaderboard_load_failed">Не вдалося завантажити хмарний рейтинг.</string>
+    <string name="leaderboard_login_required">Увійди, щоб завантажити захищений хмарний прогрес.</string>
+    <string name="leaderboard_load_failed">Не вдалося завантажити захищений хмарний прогрес.</string>
     <string name="leaderboard_unknown_user">Користувач GymApp</string>
     <string name="set_weight_reps_value">%1$s кг × %2$s</string>
 
@@ -497,10 +503,14 @@
     <string name="garmin_metric_avg_hr">Сер пульс</string>
     <string name="garmin_metric_max_hr">Макс пульс</string>
     <string name="garmin_metric_bpm_value">%1$d уд/хв</string>
+    <string name="garmin_metric_bpm_unit">уд/хв</string>
     <string name="garmin_metric_duration_value">тривалість %1$s</string>
     <string name="garmin_metric_heart_rate">пульс</string>
     <string name="garmin_metric_peak">пік</string>
-    <string name="garmin_hr_chart_title">Форма пульсу</string>
+    <string name="garmin_metric_ending_zone">Кінцева зона</string>
+    <string name="garmin_metric_ending_zone_helper">зона за останнім коректним виміром</string>
+    <string name="garmin_hr_chart_title">Збережені позначки пульсу</string>
+    <string name="garmin_hr_chart_helper">Показано лише збережені середнє та максимальне значення; Garmin не передав часовий ряд.</string>
     <string name="garmin_metric_avg_short">Сер %1$d</string>
     <string name="garmin_metric_max_short">Макс %1$d</string>
     <string name="garmin_metric_hr_intensity">Інтенсивність</string>
@@ -512,6 +522,11 @@
     <string name="garmin_intensity_solid">Активно</string>
     <string name="garmin_intensity_high">Високо</string>
     <string name="garmin_kcal_explainer">Gym ккал збережені з формули силового тренування GymApp на Garmin. Garmin ккал — це системне значення, яке Garmin Connect враховує в денних калоріях.</string>
+    <string name="workout_comparison_eyebrow">Точне порівняння</string>
+    <string name="workout_comparison_title">Проти попереднього схожого тренування</string>
+    <string name="workout_comparison_supporting">%1$d однакових вправ • попереднє тренування %2$s</string>
+    <string name="workout_comparison_previous_delta">Було %1$s · %2$s</string>
+    <string name="workout_comparison_no_change">без змін</string>
 
     <string name="dialog_edit_set_title">Редагувати підхід</string>
     <string name="dialog_delete_workout_title">Видалити тренування?</string>
@@ -567,6 +582,8 @@
     <string name="cd_language">Змінити мову</string>
     <string name="cd_add_workout">Додати тренування</string>
     <string name="cd_delete">Видалити</string>
+    <string name="exercise_favorite_add">Додати до обраного</string>
+    <string name="exercise_favorite_remove">Прибрати з обраного</string>
     <string name="cd_edit">Редагувати</string>
     <string name="cd_remove_set">Видалити підхід</string>
     <string name="cd_remove_exercise">Видалити вправу</string>
@@ -586,6 +603,7 @@
     <string name="exercise_card_auto_mapping">Автозіставлення</string>
     <string name="exercise_card_muscle_groups">Групи м’язів</string>
     <string name="exercise_filter_all">Усі</string>
+    <string name="exercise_filter_favorites">Улюблені</string>
     <string name="exercise_filter_upper">Верх тіла</string>
     <string name="exercise_filter_lower">Низ тіла</string>
     <string name="exercise_filter_core">Кор</string>

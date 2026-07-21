@@ -268,6 +268,20 @@ class GymRepository(
         }
     }
 
+    suspend fun setExerciseFavorite(exerciseId: Long, isFavorite: Boolean) {
+        require(exerciseId > 0) { "Exercise identifier is invalid." }
+        check(exerciseDao.setFavorite(exerciseId, isFavorite) == 1) {
+            "Exercise no longer exists."
+        }
+    }
+
+    suspend fun toggleExerciseFavorite(exerciseId: Long) {
+        require(exerciseId > 0) { "Exercise identifier is invalid." }
+        check(exerciseDao.toggleFavorite(exerciseId) == 1) {
+            "Exercise no longer exists."
+        }
+    }
+
     suspend fun deleteExercise(exercise: ExerciseEntity) {
         exerciseDao.delete(exercise)
     }
@@ -518,7 +532,10 @@ class GymRepository(
             })
             .put("exercises", JSONArray().apply {
                 exercises.forEach { exercise ->
-                    put(exerciseBackupJson(exercise.name))
+                    put(
+                        exerciseBackupJson(exercise.name)
+                            .put("favorite", exercise.isFavorite)
+                    )
                 }
             })
             .put("sessions", JSONArray().apply {
@@ -581,6 +598,11 @@ class GymRepository(
     suspend fun buildCloudBackupJson(owner: BackupOwner): JSONObject =
         buildBackupJson(owner = owner).apply {
             remove("catalogSeedVersion")
+            optJSONArray("exercises")?.let { cloudExercises ->
+                repeat(cloudExercises.length()) { index ->
+                    cloudExercises.optJSONObject(index)?.remove("favorite")
+                }
+            }
         }
 
     suspend fun getSyncProfileStats(): SyncProfileStats {
@@ -752,17 +774,32 @@ class GymRepository(
             suspend fun resolveImportedExercise(exercise: ValidatedBackupExercise): Long {
                 val rawName = exercise.name
                 val nameKey = rawName.normalizedExerciseName()
-                exerciseIdByNameKey[nameKey]?.let { return it }
+                exerciseIdByNameKey[nameKey]?.let { existingId ->
+                    exercise.isFavorite?.let { favorite ->
+                        check(exerciseDao.setFavorite(existingId, favorite) == 1)
+                    }
+                    return existingId
+                }
 
                 val catalogKey = BuiltInExerciseCatalog.resolvedKey(
                     catalogKey = exercise.catalogKey,
                     rawName = rawName
                 )
                 if (catalogKey != null) {
-                    exerciseIdByCatalogKey[catalogKey]?.let { return it }
+                    exerciseIdByCatalogKey[catalogKey]?.let { existingId ->
+                        exercise.isFavorite?.let { favorite ->
+                            check(exerciseDao.setFavorite(existingId, favorite) == 1)
+                        }
+                        return existingId
+                    }
                 }
 
-                val exerciseId = exerciseDao.insert(ExerciseEntity(name = rawName))
+                val exerciseId = exerciseDao.insert(
+                    ExerciseEntity(
+                        name = rawName,
+                        isFavorite = exercise.isFavorite == true
+                    )
+                )
                 exerciseIdByNameKey[nameKey] = exerciseId
                 if (catalogKey != null) {
                     exerciseIdByCatalogKey.putIfAbsent(catalogKey, exerciseId)

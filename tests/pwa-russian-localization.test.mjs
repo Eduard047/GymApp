@@ -3,10 +3,11 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import vm from "node:vm";
 
-const [appSource, russianSource, stateContractSource] = await Promise.all([
+const [appSource, russianSource, stateContractSource, progressionRulesSource] = await Promise.all([
   readFile("pwa/app.js", "utf8"),
   readFile("pwa/russian-text.js", "utf8"),
-  readFile("pwa/state-contract.js", "utf8")
+  readFile("pwa/state-contract.js", "utf8"),
+  readFile("pwa/progression-rules.js", "utf8")
 ]);
 
 function createStorage() {
@@ -59,6 +60,8 @@ function loadPwaContext() {
   vm.createContext(context);
   vm.runInContext(stateContractSource, context);
   context.window.GymStateContract = context.GymStateContract;
+  vm.runInContext(progressionRulesSource, context);
+  context.window.GymProgressionRules = context.GymProgressionRules;
   vm.runInContext(russianSource, context);
   vm.runInContext(appSource, context);
   vm.runInContext('state.language = "ru"', context);
@@ -144,7 +147,7 @@ test("audited Ukrainian runtime labels keep their intended workout, progress, au
     ["Open the full rank list and check the next unlocks.", "Відкрий повний список рангів і подивися, що відкриється далі."],
     ["Paste exported GymApp JSON here", "Встав сюди експортований JSON GymApp"],
     ["Plateau plan: change the rep target to break the flat trend.", "План виходу з плато: зміни ціль за повторами, щоб подолати застій."],
-    ["Recent reps or volume dipped, so the plan stays conservative.", "Повтори або обсяг знизилися, тому план залишається обережним."],
+    ["One softer session is held steady; a deload needs two comparable regressions.", "Одне слабше тренування утримує навантаження; для розвантаження потрібні два порівнювані спади."],
     ["Recent volume dropped compared with the previous session.", "Обсяг останнього тренування нижчий за обсяг попереднього."],
     ["Sign in to sync workouts across devices.", "Увійди, щоб синхронізувати тренування між пристроями."],
     ["Smart Coach uses this to match your plan, goal and recovery.", "Розумний тренер використовує ці дані, щоб підібрати план з урахуванням цілі та відновлення."],
@@ -210,6 +213,20 @@ test("PWA Russian dynamic Garmin, workout, exercise, and mission text never fall
     assert.notEqual(item.titleRu, item.titleEn, item.titleEn);
     assert.notEqual(item.unitRu, item.unitEn, item.unitEn);
     assert.doesNotMatch(item.titleRu, /\b(?:check-in|days|sessions)\b/i, item.titleEn);
+  }
+});
+
+test("missions render one accessible daily, weekly, or monthly panel at a time", () => {
+  const context = loadPwaContext();
+
+  for (const period of ["daily", "weekly", "monthly"]) {
+    vm.runInContext(`missionPeriod = ${JSON.stringify(period)}`, context);
+    const markup = vm.runInContext("missionsScreen()", context);
+    assert.match(markup, /role="tablist"/);
+    assert.equal((markup.match(/role="tab"/g) || []).length, 3);
+    assert.equal((markup.match(/role="tabpanel"/g) || []).length, 1);
+    assert.match(markup, new RegExp(`id="mission-panel-${period}"`));
+    assert.match(markup, new RegExp(`id="mission-tab-${period}"[^>]+aria-selected="true"`));
   }
 });
 

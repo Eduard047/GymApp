@@ -114,7 +114,32 @@ class GymDatabaseRoomMigrationTest {
         }
     }
 
+    @Test
+    fun migrationEightToNineAddsFavoriteWithoutChangingExistingRows() {
+        migrationHelper.createDatabase(FAVORITE_TEST_DATABASE, 8).apply {
+            execSQL("INSERT INTO exercises(id, name) VALUES (1, 'Keep exercise')")
+            close()
+        }
+
+        val migrated = migrationHelper.runMigrationsAndValidate(
+            FAVORITE_TEST_DATABASE,
+            9,
+            true,
+            *GymDatabase.REGISTERED_MIGRATIONS
+        )
+        try {
+            migrated.query("SELECT name, isFavorite FROM exercises WHERE id = 1").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("Keep exercise", cursor.getString(0))
+                assertEquals(0, cursor.getInt(1))
+            }
+        } finally {
+            migrated.close()
+        }
+    }
+
     private companion object {
         const val TEST_DATABASE = "room-migration-7-to-8"
+        const val FAVORITE_TEST_DATABASE = "room-migration-8-to-9"
     }
 }

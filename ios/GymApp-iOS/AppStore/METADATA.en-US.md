@@ -42,7 +42,7 @@ PROGRESS THAT STAYS USEFUL
 MOTIVATION
 • Complete daily, weekly, and monthly missions
 • Earn XP, levels, titles, achievements, and badges
-• Compare public display names, XP, levels, and workout counts on the GymApp leaderboard
+• Keep XP, levels, and workout counts in an owner-only protected progress view
 
 CLOUD AND GARMIN
 • Sign in with email to sync your GymApp state securely through Supabase
@@ -65,7 +65,7 @@ Adds full Russian localization and improved Garmin controls for touch devices an
 5. Turn consistency into progress
 6. Track strength and volume over time
 7. Complete missions and earn ranks
-8. Compare progress on the leaderboard
+8. Review protected progress in your profile
 
 ## Final metadata checks
 

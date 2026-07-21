@@ -3,37 +3,40 @@ import UIKit
 
 /// Shared visual tokens for the native GymApp interface.
 ///
-/// The palette mirrors the Android Material 3 implementation while using
-/// dynamic system colors so every token responds to light and dark mode.
+/// Warm paper surfaces keep the light appearance calm and editorial, while the
+/// dark appearance uses deep ink-blue layers. Cobalt is reserved for actions,
+/// selection, and progress instead of tinting every surface.
 public enum GymTheme {
-    public static let primary = adaptive(light: 0x3F806A, dark: 0x95D6BD)
-    public static let secondary = adaptive(light: 0x35627E, dark: 0x79B8FF)
-    public static let tertiary = adaptive(light: 0xC26E45, dark: 0xF2B183)
+    public static let primary = adaptive(light: 0x315BD9, dark: 0x89A2FF)
+    public static let primaryAction = adaptive(light: 0x294FC2, dark: 0x3D5FCB)
+    public static let onPrimary = Color.white
+    public static let secondary = adaptive(light: 0x49677E, dark: 0x9AB8CC)
+    public static let tertiary = adaptive(light: 0xA7602A, dark: 0xE7A46D)
 
-    public static let background = adaptive(light: 0xEAF1F5, dark: 0x04070C)
-    public static let backgroundRaised = adaptive(light: 0xF4F7F8, dark: 0x09111B)
-    public static let surface = adaptive(light: 0xFFFFFF, dark: 0x101824)
-    public static let surfaceVariant = adaptive(light: 0xDDE7EB, dark: 0x182534)
+    public static let background = adaptive(light: 0xF3F0E8, dark: 0x080F1B)
+    public static let backgroundRaised = adaptive(light: 0xF8F6F0, dark: 0x0B1422)
+    public static let surface = adaptive(light: 0xFFFEFA, dark: 0x111C2B)
+    public static let surfaceVariant = adaptive(light: 0xECE8DE, dark: 0x1A2738)
 
-    public static let textPrimary = adaptive(light: 0x14212D, dark: 0xF6FBFF)
-    public static let textSecondary = adaptive(light: 0x5B6975, dark: 0xB9C8D4)
-    public static let outline = adaptive(light: 0xB3C2CB, dark: 0x4E6A7A)
-    public static let outlineSoft = adaptive(light: 0xFFFFFF, dark: 0x304354)
-    public static let error = adaptive(light: 0xB3261E, dark: 0xFFB4AB)
+    public static let textPrimary = adaptive(light: 0x18212C, dark: 0xF5F2EA)
+    public static let textSecondary = adaptive(light: 0x626B75, dark: 0xB8C1CD)
+    public static let outline = adaptive(light: 0xC8C2B6, dark: 0x455368)
+    public static let outlineSoft = adaptive(light: 0xDDD7CB, dark: 0x2B394D)
+    public static let error = adaptive(light: 0xB42318, dark: 0xFFB4AC)
 
-    public static let heroLeading = adaptive(light: 0x102A42, dark: 0x132636)
-    public static let heroTrailing = adaptive(light: 0x35627E, dark: 0x214C40)
+    public static let heroLeading = adaptive(light: 0x17284A, dark: 0x182846)
+    public static let heroTrailing = adaptive(light: 0x254CB3, dark: 0x294DA6)
     public static let onHero = Color.white
 
-    public static let panelCornerRadius: CGFloat = 28
-    public static let compactCornerRadius: CGFloat = 18
-    public static let controlCornerRadius: CGFloat = 16
+    public static let panelCornerRadius: CGFloat = 20
+    public static let compactCornerRadius: CGFloat = 16
+    public static let controlCornerRadius: CGFloat = 14
 
     public static var backgroundGradient: LinearGradient {
         LinearGradient(
-            colors: [backgroundRaised, background, surfaceVariant.opacity(0.72)],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
+            colors: [backgroundRaised, background],
+            startPoint: .top,
+            endPoint: .bottom
         )
     }
 
@@ -54,7 +57,7 @@ public enum GymTheme {
     }
 }
 
-/// Full-screen adaptive gradient and glass glow used behind GymApp screens.
+/// Quiet full-screen canvas shared by GymApp screens.
 public struct GymBackground<Content: View>: View {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
@@ -66,36 +69,14 @@ public struct GymBackground<Content: View>: View {
 
     public var body: some View {
         ZStack {
-            Rectangle()
-                .fill(GymTheme.backgroundGradient)
-                .ignoresSafeArea()
-
-            if !reduceTransparency {
-                GeometryReader { proxy in
-                    ZStack {
-                        Circle()
-                            .fill(GymTheme.primary.opacity(0.17))
-                            .frame(width: min(proxy.size.width * 0.92, 420))
-                            .blur(radius: 68)
-                            .offset(x: proxy.size.width * 0.34, y: -proxy.size.height * 0.28)
-
-                        Circle()
-                            .fill(GymTheme.secondary.opacity(0.13))
-                            .frame(width: min(proxy.size.width * 0.82, 360))
-                            .blur(radius: 74)
-                            .offset(x: -proxy.size.width * 0.36, y: proxy.size.height * 0.32)
-
-                        Circle()
-                            .fill(GymTheme.tertiary.opacity(0.09))
-                            .frame(width: min(proxy.size.width * 0.64, 290))
-                            .blur(radius: 62)
-                            .offset(x: proxy.size.width * 0.36, y: proxy.size.height * 0.42)
-                    }
+            Group {
+                if reduceTransparency {
+                    Rectangle().fill(GymTheme.background)
+                } else {
+                    Rectangle().fill(GymTheme.backgroundGradient)
                 }
-                .ignoresSafeArea()
-                .accessibilityHidden(true)
-                .allowsHitTesting(false)
             }
+            .ignoresSafeArea()
 
             content
         }

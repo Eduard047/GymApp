@@ -1,13 +1,30 @@
 # Supabase deployment notes
 
-## Production deployment record — 2026-07-11
+## Production deployment record — updated 2026-07-21
+
+> The canonical current migrations live in the repository-root
+> `supabase/migrations/` directory. On 2026-07-21 all eight previously missing
+> migrations were applied to production in deployment order, through
+> `20260721143853_retire_legacy_garmin_table_grants.sql`. Structural/ACL
+> checks and rollback-only runtime probes passed, and the Supabase advisors were
+> run. This verification did not include a valid-device Edge Function fetch/ack
+> smoke.
 
 GymApp production project `owrcbsrectdgaotndtxy` has the required database,
 RLS, and account-deletion server changes deployed and verified:
 
 - `20260711084556` — `create_leaderboard_public`;
 - `20260711084559` — `harden_gymapp_production_access`;
-- `20260711090358` — `fix_user_state_revision_trigger`; and
+- `20260711090358` — `fix_user_state_revision_trigger`;
+- `20260721142924` — `canonical_profile_progression`;
+- `20260721142935` — `harden_garmin_pairing_and_plans`;
+- `20260721142942` — `reconcile_canonical_progression`;
+- `20260721142951` — `add_garmin_device_rate_limits`;
+- `20260721143010` — `create_exercise_catalog`;
+- `20260721143038` — `restrict_leaderboard_to_owner_until_verified_ingestion`;
+- `20260721143058` — `add_bounded_garmin_preauth_rate_limits`;
+- `20260721143853` — `retire_legacy_garmin_table_grants`; and
+- Edge Function `garmin-sync` version 4 is `ACTIVE` with `verify_jwt=false` by design: account-management actions validate the bearer user inside the function, while watch fetch/ack actions authenticate a bounded device capability;
 - Edge Function `delete-account` version 1 is `ACTIVE` with `verify_jwt=true`.
 
 A live two-user E2E run passed authenticated leaderboard access, own-row RLS,
@@ -19,20 +36,24 @@ test row were removed. The repeatable evidence record is
 The iOS Auth callback is also allowlisted; same-device confirmation/recovery still
 requires final testing on a physical iPhone.
 
-The iOS client expects the existing Android backend tables plus all migrations in
-the local [migrations](migrations/) directory. Apply them in numeric order in any
-new environment:
+The files in this local [migrations](migrations/) directory preserve the iOS
+deployment history from 2026-07-11. They are not the current canonical migration
+set. For any new environment, apply every migration in the repository-root
+`supabase/migrations/` directory in timestamp order, including the owner-only
+compatibility migration.
+
+The historical iOS copies are:
 
 1. [202607100001_create_leaderboard_public.sql](migrations/202607100001_create_leaderboard_public.sql)
 2. [202607100002_harden_profile_reads.sql](migrations/202607100002_harden_profile_reads.sql)
 3. [202607110003_fix_user_state_revision.sql](migrations/202607110003_fix_user_state_revision.sql)
 
-All three migrations are required release gates. The third corrects the
-server-owned revision trigger and must not be omitted from a fresh deployment.
-Use the normal Supabase migration workflow and never put a service-role/secret
-key in either native app or this repository.
+The third corrects the server-owned revision trigger and must not be omitted.
+Do not treat this three-file list as sufficient for a fresh deployment. Use the
+normal Supabase migration workflow from the repository root and never put a
+service-role/secret key in either native app or this repository.
 
-## Leaderboard privacy and moderation migration
+## Historical leaderboard privacy and moderation migration
 
 `202607100001_create_leaderboard_public.sql` adds the server pieces needed for a
 UUID-free, reportable leaderboard, and
@@ -144,35 +165,33 @@ public ID and bypass reports or local hides. Account deletion must use the exist
 privileged server flow; deleting `auth.users` still cascades through profile and
 report foreign keys.
 
-### Repeat deployment and verification
+### Historical deployment and verification
 
 1. Back up production and inspect the migration command supported by the installed
    CLI (`supabase --version` and `supabase db push --help`).
-2. Apply `202607100001_create_leaderboard_public.sql`,
-   `202607100002_harden_profile_reads.sql`, and
-   `202607110003_fix_user_state_revision.sql` in that order with the project's
-   normal migration workflow. Do not ship a partial sequence. Reload the
-   PostgREST schema cache if the project does not do so automatically.
+2. Apply every canonical migration from the repository-root
+   `supabase/migrations/` directory in timestamp order with the project's normal
+   migration workflow. Do not deploy only these historical iOS copies. Reload
+   the PostgREST schema cache if the project does not do so automatically.
 3. Verify every existing profile has a unique `p_` public ID and the view exposes
    exactly: `profile_id`, `display_name`, `xp`, `level`, `workouts`, and
    `is_current_user`.
-4. With two disposable users, verify each sees the complete sanitized leaderboard
-   through `leaderboard_public`, only its own row has `is_current_user = true`,
-   and a direct `profiles` request returns only that caller's own row. Also verify
-   each can report the other with reason `inappropriate_name` and
-   `return=minimal`, cannot report itself, cannot read report rows, cannot change
-   either public ID, and cannot directly delete its profile. With an anonymous
-   token, verify `SELECT`, `INSERT`, `UPDATE`, and `DELETE` against `profiles` are
-   all denied at the table privilege layer.
+4. With two disposable users, verify `leaderboard_public` returns only the
+   caller's own row with `is_current_user = true`; neither user can discover the
+   other's row through the view or direct `profiles` reads. Verify legacy report
+   rows remain private, neither user can change either public ID or directly
+   delete its profile, and anonymous `SELECT`, `INSERT`, `UPDATE`, and `DELETE`
+   against `profiles` remain denied at the table privilege layer.
 5. Verify unsafe names are rejected on insert/update and legacy unsafe names are
    replaced by `GymApp user` in the view. Add and remove a harmless test term with
    trusted SQL to verify blocklist updates take effect.
 6. Delete each disposable account in turn and confirm related report rows cascade.
-7. Test the iOS app's ordering, 1–100 limit, report, local-hide, and moderation
-   paths. Confirm a legacy Android build can still read/upsert its own profile but
-   its old direct-table leaderboard now contains only the signed-in user's row.
-   Production passed this backend runbook on 2026-07-11; repeat it after any
-   schema, policy, Auth, Edge Function, or Storage change.
+7. Test iOS protected progress and confirm a legacy Android build can still
+   read/upsert its own profile while the compatibility view returns only the
+   signed-in user's row. The public-leaderboard behavior described earlier in
+   this document passed production testing on 2026-07-11. The owner-only
+   structural/ACL and rollback-only runtime checks passed on 2026-07-21; native
+   client end-to-end coverage remains a separate release check.
 
 Useful database checks:
 
@@ -209,7 +228,8 @@ curl --fail-with-body \
   -H "Authorization: Bearer $DISPOSABLE_USER_ACCESS_TOKEN"
 ```
 
-Expected report smoke test:
+Legacy-only report smoke test for unresolved rows created before cross-account
+standings were disabled; this is not part of the current client acceptance flow:
 
 ```sh
 curl --fail-with-body \
@@ -234,7 +254,9 @@ column-level grants are revoked too; effective-privilege checks also fail the
 migration if `anon` or `authenticated` inherits a forbidden capability through
 an unexpected group role.
 
-After `001`, `002`, and `003` are deployed:
+### Behavior before the owner-only forward migration
+
+After only historical migrations `001`, `002`, and `003` are deployed:
 
 - iOS reads the complete sanitized cross-user leaderboard from
   `leaderboard_public`, keyed by random `profile_id`; it never needs another
@@ -251,6 +273,13 @@ Android source now reads `leaderboard_public` and uses `profile_id` plus
 `a3d9a7b9…`. Until an updated Android release is distributed, the one-row
 installed-client leaderboard is an intentional privacy-safe degradation. Do not
 restore broad profile reads as a compatibility workaround.
+
+After the canonical forward migration
+`20260721143038_restrict_leaderboard_to_owner_until_verified_ingestion.sql` is
+deployed, `leaderboard_public` preserves the same six fields but returns only the
+authenticated owner's row. Current Android, iOS, and PWA clients additionally
+filter out any non-owner row. Competitive standings remain disabled until GymApp
+has a trusted append-only award source.
 
 Before any deployment or release, verify that authenticated profile writes remain limited to
 `auth.uid() = user_id`, with both `USING` and `WITH CHECK` on the update policy,

@@ -134,7 +134,7 @@ struct AccountSettingsView: View {
                     title: isCloudAccount ? "Cloud sync" : "Local storage",
                     supporting: isCloudAccount
                         ? "Workout changes sync automatically while you are signed in."
-                        : "This profile does not upload workouts or appear in the cloud rating."
+                        : "This profile keeps workouts on this device and does not synchronize protected progress."
                 )
 
                 if isCloudAccount {
@@ -279,7 +279,7 @@ struct AccountSettingsView: View {
 
     private var deletionSupportingText: String {
         if isCloudAccount {
-            return "Permanently removes this Supabase account, cloud workout state, rating profile, Garmin connection data, and this profile’s local workout store."
+            return "Permanently removes this Supabase account, cloud workout state, protected-progress profile, Garmin connection data, and this profile’s local workout store."
         }
         return "Permanently removes this profile’s exercises, workouts, notes, mappings, and local timers from this device."
     }

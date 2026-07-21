@@ -51,9 +51,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -64,11 +62,14 @@ import com.example.gymapp.R
 import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.entity.SetEntryEntity
 import com.example.gymapp.data.repository.defaultContributionsForExercise
+import com.example.gymapp.garmin.GarminWorkoutMetrics
+import com.example.gymapp.garmin.parseGarminWorkoutMetrics
 import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.ExerciseMuscleMap
 import com.example.gymapp.ui.components.HeroPanel
 import com.example.gymapp.ui.components.InfoPill
 import com.example.gymapp.ui.components.MetricTile
+import com.example.gymapp.ui.components.WorkoutComparisonCard
 import com.example.gymapp.ui.theme.GymCompactShape
 import com.example.gymapp.ui.theme.GymControlShape
 import com.example.gymapp.ui.util.localizedExerciseName
@@ -225,6 +226,12 @@ fun WorkoutDetailScreen(
                 if (garminMetrics != null) {
                     item {
                         GarminWorkoutMetricsCard(metrics = garminMetrics)
+                    }
+                }
+
+                uiState.workoutComparison?.let { comparison ->
+                    item {
+                        WorkoutComparisonCard(comparison = comparison)
                     }
                 }
 
@@ -698,7 +705,7 @@ private fun GarminWorkoutHeaderCard(
             ) {
                 MetricTile(
                     label = stringResource(R.string.garmin_metric_duration),
-                    value = metrics.duration ?: "—",
+                    value = metrics.durationSeconds?.let(::formatGarminDuration) ?: "—",
                     modifier = Modifier.weight(1f),
                     onHero = true
                 )
@@ -754,16 +761,29 @@ private fun GarminWorkoutMetricsCard(metrics: GarminWorkoutMetrics) {
             ) {
                 GarminMetricCell(
                     label = stringResource(R.string.garmin_metric_avg_hr),
-                    value = metrics.avgHeartRate?.let { stringResource(R.string.garmin_metric_bpm_value, it) } ?: "—",
-                    helper = metrics.duration?.let { stringResource(R.string.garmin_metric_duration_value, it) }
+                    value = metrics.averageHeartRate?.let {
+                        stringResource(R.string.garmin_metric_bpm_value, it)
+                    } ?: "—",
+                    helper = metrics.durationSeconds?.let(::formatGarminDuration)
+                        ?.let { stringResource(R.string.garmin_metric_duration_value, it) }
                         ?: stringResource(R.string.garmin_metric_heart_rate),
                     modifier = Modifier.weight(1f)
                 )
                 GarminMetricCell(
                     label = stringResource(R.string.garmin_metric_max_hr),
-                    value = metrics.maxHeartRate?.let { stringResource(R.string.garmin_metric_bpm_value, it) } ?: "—",
-                    helper = metrics.heartRateZone ?: stringResource(R.string.garmin_metric_peak),
+                    value = metrics.maximumHeartRate?.let {
+                        stringResource(R.string.garmin_metric_bpm_value, it)
+                    } ?: "—",
+                    helper = stringResource(R.string.garmin_metric_heart_rate),
                     modifier = Modifier.weight(1f)
+                )
+            }
+            metrics.endingHeartRateZone?.let { endingZone ->
+                GarminMetricCell(
+                    label = stringResource(R.string.garmin_metric_ending_zone),
+                    value = "Z$endingZone",
+                    helper = stringResource(R.string.garmin_metric_ending_zone_helper),
+                    modifier = Modifier.fillMaxWidth()
                 )
             }
             GarminHeartRateVisual(metrics = metrics)
@@ -774,7 +794,7 @@ private fun GarminWorkoutMetricsCard(metrics: GarminWorkoutMetrics) {
                 GarminMetricCell(
                     label = stringResource(R.string.garmin_metric_hr_intensity),
                     value = metrics.intensityLabelRes()?.let { stringResource(it) } ?: "—",
-                    helper = metrics.avgHeartRate?.let {
+                    helper = metrics.averageHeartRate?.let {
                         stringResource(R.string.garmin_metric_from_avg_hr)
                     } ?: stringResource(R.string.garmin_metric_heart_rate),
                     modifier = Modifier.weight(1f)
@@ -797,8 +817,12 @@ private fun GarminWorkoutMetricsCard(metrics: GarminWorkoutMetrics) {
 
 @Composable
 private fun GarminHeartRateVisual(metrics: GarminWorkoutMetrics) {
-    val avg = metrics.avgHeartRate
-    val max = metrics.maxHeartRate
+    val average = metrics.averageHeartRate
+    val maximum = metrics.maximumHeartRate
+    val trackColor = MaterialTheme.colorScheme.outlineVariant
+    val rangeColor = MaterialTheme.colorScheme.primary
+    val averageColor = MaterialTheme.colorScheme.secondary
+    val maximumColor = MaterialTheme.colorScheme.tertiary
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -810,17 +834,19 @@ private fun GarminHeartRateVisual(metrics: GarminWorkoutMetrics) {
                 style = MaterialTheme.typography.labelLarge,
                 modifier = Modifier.weight(1f)
             )
-            Text(
-                text = metrics.heartRateZone ?: stringResource(R.string.garmin_metric_peak),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary,
-                fontWeight = FontWeight.SemiBold
-            )
+            metrics.endingHeartRateZone?.let { endingZone ->
+                Text(
+                    text = stringResource(R.string.garmin_metric_ending_zone) + " Z$endingZone",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
         }
         Canvas(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(96.dp)
+                .height(68.dp)
                 .clip(GymCompactShape)
                 .background(
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
@@ -828,51 +854,34 @@ private fun GarminHeartRateVisual(metrics: GarminWorkoutMetrics) {
                 )
                 .padding(horizontal = 10.dp, vertical = 12.dp)
         ) {
-            val zoneColors = listOf(
-                Color(0xFF4EA3FF),
-                Color(0xFF3DDC84),
-                Color(0xFFFFD23F),
-                Color(0xFFFF8A34),
-                Color(0xFFFF4D5E)
+            val startX = 8f
+            val endX = size.width - 8f
+            val centerY = size.height / 2f
+            fun xFor(value: Int): Float {
+                val normalized = ((value - 40f) / 200f).coerceIn(0f, 1f)
+                return startX + normalized * (endX - startX)
+            }
+            drawLine(
+                color = trackColor,
+                start = Offset(startX, centerY),
+                end = Offset(endX, centerY),
+                strokeWidth = 6f,
+                cap = StrokeCap.Round
             )
-            val segmentWidth = size.width / zoneColors.size
-            zoneColors.forEachIndexed { index, color ->
+            if (average != null && maximum != null) {
                 drawLine(
-                    color = color,
-                    start = Offset(index * segmentWidth + 4f, size.height - 8f),
-                    end = Offset((index + 1) * segmentWidth - 4f, size.height - 8f),
-                    strokeWidth = 10f,
+                    color = rangeColor,
+                    start = Offset(xFor(average), centerY),
+                    end = Offset(xFor(maximum), centerY),
+                    strokeWidth = 8f,
                     cap = StrokeCap.Round
                 )
             }
-
-            if (avg != null || max != null) {
-                val low = 80f
-                val high = 190f
-                fun yFor(value: Int): Float {
-                    val normalized = ((value - low) / (high - low)).coerceIn(0f, 1f)
-                    return size.height - 22f - normalized * (size.height - 34f)
-                }
-                val avgValue = avg ?: max ?: 110
-                val maxValue = max ?: avgValue
-                val path = Path().apply {
-                    moveTo(8f, yFor((avgValue * 0.92f).toInt()))
-                    cubicTo(
-                        size.width * 0.28f,
-                        yFor(avgValue),
-                        size.width * 0.58f,
-                        yFor(((avgValue + maxValue) / 2f).toInt()),
-                        size.width - 8f,
-                        yFor(maxValue)
-                    )
-                }
-                drawPath(
-                    path = path,
-                    color = Color(0xFFE84A5F),
-                    style = Stroke(width = 6f, cap = StrokeCap.Round)
-                )
-                drawCircle(Color.White, radius = 6f, center = Offset(size.width - 8f, yFor(maxValue)))
-                drawCircle(Color(0xFFE84A5F), radius = 4f, center = Offset(size.width - 8f, yFor(maxValue)))
+            average?.let { value ->
+                drawCircle(averageColor, radius = 8f, center = Offset(xFor(value), centerY))
+            }
+            maximum?.let { value ->
+                drawCircle(maximumColor, radius = 8f, center = Offset(xFor(value), centerY))
             }
         }
         Row(
@@ -880,16 +889,21 @@ private fun GarminHeartRateVisual(metrics: GarminWorkoutMetrics) {
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text(
-                text = avg?.let { stringResource(R.string.garmin_metric_avg_short, it) } ?: "—",
+                text = average?.let { stringResource(R.string.garmin_metric_avg_short, it) } ?: "—",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Text(
-                text = max?.let { stringResource(R.string.garmin_metric_max_short, it) } ?: "—",
+                text = maximum?.let { stringResource(R.string.garmin_metric_max_short, it) } ?: "—",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
+        Text(
+            text = stringResource(R.string.garmin_hr_chart_helper),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
@@ -1129,17 +1143,8 @@ private fun formatCompactWeight(weight: Double): String {
     }
 }
 
-private data class GarminWorkoutMetrics(
-    val duration: String?,
-    val gymCalories: Int?,
-    val garminCalories: Int?,
-    val avgHeartRate: Int?,
-    val maxHeartRate: Int?,
-    val heartRateZone: String?
-)
-
 private fun GarminWorkoutMetrics.intensityLabelRes(): Int? {
-    val avg = avgHeartRate ?: return null
+    val avg = averageHeartRate ?: return null
     return when {
         avg >= 155 -> R.string.garmin_intensity_high
         avg >= 135 -> R.string.garmin_intensity_solid
@@ -1158,45 +1163,14 @@ private fun GarminWorkoutMetrics.calorieGapLabel(): String {
     }
 }
 
-private fun parseGarminWorkoutMetrics(note: String): GarminWorkoutMetrics? {
-    // Keep parsing legacy "Garmin Fenix 8" notes while using a device-neutral marker for new watches.
-    if (!Regex("""^Garmin(?: Fenix 8)?(?: ·|$)""", RegexOption.IGNORE_CASE).containsMatchIn(note)) return null
-
-    val duration = Regex("""(?:Duration|Тривалість|Длительность)\s+([0-9]+:[0-9]{2}(?::[0-9]{2})?)""")
-        .find(note)
-        ?.groupValues
-        ?.getOrNull(1)
-    val gymCalories = Regex("""Gym\s+(?:kcal|ккал)\s+([0-9]+)""")
-        .find(note)
-        ?.groupValues
-        ?.getOrNull(1)
-        ?.toIntOrNull()
-    val garminCalories = Regex("""Garmin\s+(?:kcal|ккал)\s+([0-9]+)""")
-        .find(note)
-        ?.groupValues
-        ?.getOrNull(1)
-        ?.toIntOrNull()
-    val avgHeartRate = Regex("""(?:Avg HR|Сер пульс|Средний пульс)\s+([0-9]+)""")
-        .find(note)
-        ?.groupValues
-        ?.getOrNull(1)
-        ?.toIntOrNull()
-    val maxHeartRate = Regex("""(?:Max HR|Макс пульс|Макс\. пульс)\s+([0-9]+)""")
-        .find(note)
-        ?.groupValues
-        ?.getOrNull(1)
-        ?.toIntOrNull()
-    val zone = Regex("""(?:HR zone|Зона пульсу|Зона пульса)\s+(Z[0-9]+)""")
-        .find(note)
-        ?.groupValues
-        ?.getOrNull(1)
-
-    return GarminWorkoutMetrics(
-        duration = duration,
-        gymCalories = gymCalories,
-        garminCalories = garminCalories,
-        avgHeartRate = avgHeartRate,
-        maxHeartRate = maxHeartRate,
-        heartRateZone = zone
-    )
+private fun formatGarminDuration(totalSeconds: Long): String {
+    val safeSeconds = totalSeconds.coerceAtLeast(0L)
+    val hours = safeSeconds / 3_600L
+    val minutes = (safeSeconds % 3_600L) / 60L
+    val seconds = safeSeconds % 60L
+    return if (hours > 0L) {
+        String.format(Locale.ROOT, "%d:%02d:%02d", hours, minutes, seconds)
+    } else {
+        String.format(Locale.ROOT, "%d:%02d", minutes, seconds)
+    }
 }

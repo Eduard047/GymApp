@@ -10,7 +10,9 @@ import org.json.JSONObject
 
 internal data class ValidatedBackupExercise(
     val name: String,
-    val catalogKey: String?
+    val catalogKey: String?,
+    /** Null means the legacy/manual backup did not carry this device-local preference. */
+    val isFavorite: Boolean? = null
 ) {
     val identityKey: String =
         BuiltInExerciseCatalog.resolvedKey(catalogKey = catalogKey, rawName = name)
@@ -67,7 +69,11 @@ internal object BackupImportValidator {
 
         val allExerciseIdentities = linkedSetOf<String>()
         val exercises = List(exerciseArray.length()) { index ->
-            val exercise = validateExercise(exerciseArray.requiredObject(index), "name")
+            val exercise = validateExercise(
+                exerciseArray.requiredObject(index),
+                true,
+                "name"
+            )
             allExerciseIdentities += exercise.identityKey
             exercise
         }
@@ -96,7 +102,7 @@ internal object BackupImportValidator {
                 }
                 List(nestedExercises.length()) { exerciseIndex ->
                     val exerciseJson = nestedExercises.requiredObject(exerciseIndex)
-                    val exercise = validateExercise(exerciseJson, "name")
+                    val exercise = validateExercise(exerciseJson, false, "name")
                     val sets = validateSets(exerciseJson.optionalArray("sets"))
                     totalSets += sets.size
                     require(totalSets <= WorkoutDataLimits.MAX_TOTAL_SETS) {
@@ -113,7 +119,12 @@ internal object BackupImportValidator {
                 val grouped = linkedMapOf<String, Pair<ValidatedBackupExercise, MutableList<ValidatedBackupSet>>>()
                 repeat(flatSets.length()) { setIndex ->
                     val setJson = flatSets.requiredObject(setIndex)
-                    val exercise = validateExercise(setJson, "exerciseName", "name")
+                    val exercise = validateExercise(
+                        setJson,
+                        false,
+                        "exerciseName",
+                        "name"
+                    )
                     val set = validateSet(setJson)
                     val entry = grouped.getOrPut(exercise.identityKey) { exercise to mutableListOf() }
                     entry.second += set
@@ -272,7 +283,11 @@ internal object BackupImportValidator {
         }
     }
 
-    private fun validateExercise(json: JSONObject, vararg nameFields: String): ValidatedBackupExercise {
+    private fun validateExercise(
+        json: JSONObject,
+        allowFavorite: Boolean,
+        vararg nameFields: String
+    ): ValidatedBackupExercise {
         var rawName: String? = null
         nameFields.forEach { field ->
             if (json.has(field) && !json.isNull(field)) {
@@ -297,7 +312,17 @@ internal object BackupImportValidator {
         require(WorkoutDataLimits.isValidExerciseName(name)) {
             "Exercise name is outside the supported length."
         }
-        return ValidatedBackupExercise(name = name, catalogKey = catalogKey)
+        val isFavorite = if (allowFavorite && json.has("favorite") && !json.isNull("favorite")) {
+            (json.opt("favorite") as? Boolean)
+                ?: throw IllegalArgumentException("Exercise favorite flag must be a boolean.")
+        } else {
+            null
+        }
+        return ValidatedBackupExercise(
+            name = name,
+            catalogKey = catalogKey,
+            isFavorite = isFavorite
+        )
     }
 
     private fun validateSets(array: JSONArray): List<ValidatedBackupSet> {
@@ -323,8 +348,13 @@ internal object BackupImportValidator {
 
 internal fun canonicalWorkoutPayloadMatches(left: JSONObject, right: JSONObject): Boolean =
     runCatching {
-        BackupImportValidator.validate(left) == BackupImportValidator.validate(right)
+        BackupImportValidator.validate(left).withoutLocalExercisePreferences() ==
+            BackupImportValidator.validate(right).withoutLocalExercisePreferences()
     }.getOrDefault(false)
+
+private fun ValidatedBackup.withoutLocalExercisePreferences(): ValidatedBackup = copy(
+    exercises = exercises.map { exercise -> exercise.copy(isFavorite = null) }
+)
 
 internal fun canonicalWorkoutPayloadDigest(root: JSONObject): String? = runCatching {
     canonicalWorkoutPayloadDigest(BackupImportValidator.validate(root))
