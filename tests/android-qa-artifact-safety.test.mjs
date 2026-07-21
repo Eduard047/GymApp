@@ -11,6 +11,7 @@ const [
   phoneReleaseScript,
   playReleaseScript,
   gradleProperties,
+  securityWorkflow,
 ] = await Promise.all([
   readFile("app/build.gradle.kts", "utf8"),
   readFile("app/src/main/AndroidManifest.xml", "utf8"),
@@ -20,6 +21,7 @@ const [
   readFile("scripts/build-phone-release-apk.ps1", "utf8"),
   readFile("scripts/build-play-release-aab.ps1", "utf8"),
   readFile("gradle.properties", "utf8"),
+  readFile(".github/workflows/security.yml", "utf8"),
 ]);
 
 function qaBlock(build) {
@@ -109,8 +111,13 @@ test("production APK is verified before it is copied for publication", () => {
   assert.match(phoneReleaseScript, /APK Signature Scheme v2/);
   assert.match(
     phoneReleaseScript,
-    /V\[0-9\.\]\+ Signer/,
-    "production APK verification must accept modern apksigner signer labels"
+    /Signer #\[0-9\]\+\|V\[0-9\.\]\+ Signer:/,
+    "production APK verification must accept legacy and modern apksigner signer labels"
+  );
+  assert.match(
+    securityWorkflow,
+    /Signer #\[0-9\]\+\|V\[0-9\.\]\+ Signer:/,
+    "CI APK verification must accept legacy and modern apksigner signer labels"
   );
   assert.match(phoneReleaseScript, /signer does not match the configured release keystore/i);
 });

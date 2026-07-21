@@ -489,7 +489,7 @@ jobs:
           phone_manifest="$("$build_tools/aapt2" dump xmltree "$phone_apk" --file AndroidManifest.xml)"
           grep -q ':scheme.*="com.setforge.gymapp.dev"' <<<"$phone_manifest"
           phone_cert="$("$build_tools/apksigner" verify --print-certs "$phone_apk" \
-            | sed -nE 's/^(Signer #[0-9]+|V[0-9.]+ Signer): certificate SHA-256 digest: //p' \
+            | sed -nE 's/^(Signer #[0-9]+|V[0-9.]+ Signer:) certificate SHA-256 digest: //p' \
             | sort -u)"
           [[ "$phone_cert" =~ ^[0-9a-f]{64}$ ]]
 
