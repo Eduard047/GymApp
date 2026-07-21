@@ -4,177 +4,200 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
+  <meta name="description" content="Official GymApp help for accounts, workouts, sync, Garmin, backups, notifications, and privacy.">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' data:; connect-src 'none'; font-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'">
   <title>GymApp Support / Підтримка GymApp / Поддержка GymApp</title>
-  <style>
-    :root { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.55; color-scheme: light dark; }
-    body { margin: 0; background: Canvas; color: CanvasText; }
-    main { width: min(860px, calc(100% - 32px)); margin: 0 auto; padding: 32px 0 64px; }
-    h1 { line-height: 1.15; margin-bottom: 8px; }
-    h2 { margin-top: 36px; }
-    h3 { margin: 0 0 8px; }
-    nav { display: flex; gap: 12px; flex-wrap: wrap; margin: 20px 0; }
-    a { color: LinkText; }
-    .card { border: 1px solid color-mix(in srgb, CanvasText 22%, transparent); border-radius: 14px; padding: 18px; margin: 14px 0; }
-    .contact { background: color-mix(in srgb, #2f80ed 10%, Canvas); }
-    .meta { color: color-mix(in srgb, CanvasText 70%, transparent); }
-    footer { border-top: 1px solid color-mix(in srgb, CanvasText 20%, transparent); margin-top: 40px; padding-top: 24px; }
-  </style>
+  <link rel="canonical" href="https://gymapptracker.com/support.html">
+  <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180">
+  <link rel="stylesheet" href="./legal.css">
+  <script src="./legal-language.js" defer></script>
 </head>
-<body>
-<main>
-  <header>
-    <h1>GymApp Support</h1>
-    <p class="meta">Help with accounts, workouts, sync, Garmin, backups, notifications, and privacy.</p>
-    <nav aria-label="Language navigation">
-      <a href="#english">English</a>
-      <a href="#ukrainian" lang="uk">Українська</a>
-      <a href="#russian" lang="ru">Русский</a>
-      <a href="https://gymapptracker.com/privacy-policy.html">Privacy / Конфіденційність / Конфиденциальность</a>
-    </nav>
-    <div class="card contact">
-      <strong>Contact support:</strong>
-      <a href="mailto:support@gymapptracker.com">support@gymapptracker.com</a>
-      <p>Please include the app version, iOS version, device model, what you expected, and exact steps to reproduce. Never send your password, access token, refresh token, or full private workout export.</p>
+<body id="top">
+  <a class="skip-link" href="#content">Skip to support content</a>
+  <main id="content" class="page-shell">
+    <header class="site-header">
+      <a class="brand" href="https://gymapptracker.com/" aria-label="GymApp home">
+        <span class="brand-mark" aria-hidden="true">G</span>
+        <span>GYMAPP</span>
+      </a>
+      <a class="site-header-link" href="https://gymapptracker.com/privacy-policy.html">Privacy policy</a>
+    </header>
+
+    <header class="hero">
+      <p class="eyebrow">Official support</p>
+      <h1>Answers that get you moving again.</h1>
+      <p class="hero-copy">Help with your account, workout history, cloud sync, Garmin, backups, notifications, and privacy.</p>
+    </header>
+
+    <div class="language-bar">
+      <div class="language-switcher" aria-label="Choose page language">
+        <button class="language-button" type="button" data-language="en" aria-controls="english" aria-pressed="true">English</button>
+        <button class="language-button" type="button" data-language="uk" aria-controls="ukrainian" aria-pressed="false" lang="uk">Українська</button>
+        <button class="language-button" type="button" data-language="ru" aria-controls="russian" aria-pressed="false" lang="ru">Русский</button>
+      </div>
+      <a class="utility-link" href="https://gymapptracker.com/privacy-policy.html">Privacy / Конфіденційність / Конфиденциальность</a>
     </div>
-  </header>
+    <noscript><p class="noscript-note">Language switching needs JavaScript. The English version remains available below.</p></noscript>
 
-  <section id="english" lang="en" aria-labelledby="english-title">
-    <h2 id="english-title">English</h2>
+    <article id="english" class="locale-panel locale-en" lang="en" aria-labelledby="english-title">
+      <h2 id="english-title" class="section-heading">How can we help?</h2>
+      <p class="section-intro">Start with the quick answers below. If something still looks wrong, send a focused report and we will help trace it.</p>
 
-    <div class="card">
-      <h3>I can't sign in</h3>
-      <p>Check the email address and password, confirm that your device is online, and use Resend confirmation if the account email has not been confirmed. If the problem continues, contact support from the address associated with the account. Do not send your password.</p>
-    </div>
+      <section class="contact-card" aria-labelledby="contact-en-title">
+        <div>
+          <h3 id="contact-en-title">Contact support</h3>
+          <p class="meta">Include the app version, iOS version, device model, what you expected, and the exact steps that produced the issue.</p>
+        </div>
+        <a class="contact-action" href="mailto:support@gymapptracker.com">Email support</a>
+      </section>
+      <p class="security-note"><strong>Protect your account:</strong> never send your password, access token, refresh token, Garmin device token, or a full private workout export in a support email.</p>
 
-    <div class="card">
-      <h3>My cloud data isn't current</h3>
-      <p>Keep GymApp open and online briefly after editing a workout, then refresh the relevant screen. If another device changed the cloud revision first, GymApp rejects the stale write instead of restoring deleted data; reopen the account to load the authoritative state. Include the approximate time of the failed sync in a support request.</p>
-    </div>
+      <div class="faq-list">
+        <details class="faq-item" open>
+          <summary>I can't sign in</summary>
+          <div class="faq-answer"><p>Check the email address and password, confirm that your device is online, and use Resend confirmation if the account email has not been confirmed. If the problem continues, contact support from the address associated with the account. Do not send your password.</p></div>
+        </details>
+        <details class="faq-item">
+          <summary>My cloud data isn't current</summary>
+          <div class="faq-answer"><p>Keep GymApp open and online briefly after editing a workout, then refresh the relevant screen. If another device changed the cloud revision first, GymApp rejects the stale write instead of restoring deleted data; reopen the account to load the authoritative state. Include the approximate time of the failed sync in a support request.</p></div>
+        </details>
+        <details class="faq-item">
+          <summary>How do I delete my account?</summary>
+          <div class="faq-answer"><p>Open <strong>Profile → Account, privacy &amp; deletion → Delete Account</strong>, review the warning, and confirm the irreversible deletion. This removes the Auth account and associated active cloud profile, workout state, and Garmin cloud records, then clears local account data. Deleting the app alone does not delete the cloud account. If in-app deletion fails, contact support.</p></div>
+        </details>
+        <details class="faq-item">
+          <summary>How do backups work?</summary>
+          <div class="faq-answer"><p>Open <strong>Profile → Backup &amp; diagnostics</strong> to export or import workout JSON, or share a diagnostics PDF. Review a file before sharing it because workout notes may contain personal information. GymApp backups must not contain your password or authentication tokens.</p></div>
+        </details>
+        <details class="faq-item">
+          <summary>Why is the community leaderboard paused?</summary>
+          <div class="faq-answer"><p>Workout history is synchronized from user devices, so it cannot safely be treated as verified competitive scoring. GymApp currently shows protected progress only to its signed-in owner and does not expose another athlete’s name or score. Existing moderation reports remain private and are still reviewed; new cross-account reporting is unavailable until a trusted server-side scoring source is ready.</p></div>
+        </details>
+        <details class="faq-item">
+          <summary>Why didn't the rest timer alert me?</summary>
+          <div class="faq-answer"><p>GymApp requests local notification permission only when you choose timer alerts. Check Settings → Notifications → GymApp. Workout logging still works if notifications are denied. GymApp does not use remote promotional push notifications.</p></div>
+        </details>
+        <details class="faq-item">
+          <summary>Garmin won't sync</summary>
+          <div class="faq-answer"><p>Confirm the Garmin device is paired, online, and using the matching GymApp companion experience. Retry the plan transfer, then check sync status. Garmin is optional; workout logging and progress work without a Garmin device. Do not send the opaque device token to support unless specifically requested through a secure channel.</p></div>
+        </details>
+        <details class="faq-item">
+          <summary>Health and safety</summary>
+          <div class="faq-answer"><p>GymApp is a workout log and planning tool, not a medical device. Stop exercising if you feel unwell and seek qualified medical advice for health decisions or emergencies.</p></div>
+        </details>
+      </div>
+    </article>
 
-    <div class="card">
-      <h3>How do I delete my account?</h3>
-      <p>Open <strong>Exercises → Account → Delete Account</strong>, review the warning, and confirm the irreversible deletion. This removes the Auth account and associated active cloud profile, workout state, and Garmin cloud records, then clears local account data. Deleting the app alone does not delete the cloud account. If in-app deletion fails, contact support.</p>
-    </div>
+    <article id="ukrainian" class="locale-panel locale-uk" lang="uk" aria-labelledby="ukrainian-title" hidden>
+      <h2 id="ukrainian-title" class="section-heading">Як ми можемо допомогти?</h2>
+      <p class="section-intro">Почніть із коротких відповідей нижче. Якщо проблема лишилася, надішліть конкретний опис — ми допоможемо знайти причину.</p>
 
-    <div class="card">
-      <h3>How do backups work?</h3>
-      <p>Open the backup tools under Exercises to export or import workout JSON, or share a diagnostics PDF. Review a file before sharing it because workout notes may contain personal information. GymApp backups must not contain your password or authentication tokens.</p>
-    </div>
+      <section class="contact-card" aria-labelledby="contact-uk-title">
+        <div>
+          <h3 id="contact-uk-title">Зв’язатися з підтримкою</h3>
+          <p class="meta">Вкажіть версію застосунку й iOS, модель пристрою, очікуваний результат і точні кроки, після яких виникла проблема.</p>
+        </div>
+        <a class="contact-action" href="mailto:support@gymapptracker.com">Написати підтримці</a>
+      </section>
+      <p class="security-note"><strong>Захистіть акаунт:</strong> ніколи не надсилайте пароль, access/refresh token, токен Garmin-пристрою або повний приватний експорт тренувань електронною поштою.</p>
 
-    <div class="card">
-      <h3>Leaderboard safety and moderation</h3>
-      <p>Display names are the only public user-created content. GymApp restricts name characters and applies a server safety filter. Open <strong>Safety options</strong> on another athlete to report an offensive name or block that athlete from your leaderboard. Reports use a fixed category and enter a private moderation queue. Support reviews valid reports promptly, normally within 24 hours, and may hide the profile or suspend the account. You can also contact support above.</p>
-    </div>
+      <div class="faq-list">
+        <details class="faq-item" open>
+          <summary>Не вдається увійти</summary>
+          <div class="faq-answer"><p>Перевірте email і пароль, з’єднання з інтернетом та скористайтеся повторним надсиланням листа, якщо email ще не підтверджено. Якщо проблема лишилася, напишіть із адреси, пов’язаної з обліковим записом. Не надсилайте пароль.</p></div>
+        </details>
+        <details class="faq-item">
+          <summary>Хмарні дані не оновилися</summary>
+          <div class="faq-answer"><p>Після редагування тренування ненадовго залиште GymApp відкритим із доступом до мережі та оновіть відповідний екран. Якщо інший пристрій першим змінив ревізію, GymApp відхилить застарілий запис і не відновить видалені дані; повторно відкрийте обліковий запис, щоб завантажити авторитетний стан. У зверненні вкажіть приблизний час помилки.</p></div>
+        </details>
+        <details class="faq-item">
+          <summary>Як видалити обліковий запис?</summary>
+          <div class="faq-answer"><p>Відкрийте <strong>Профіль → Обліковий запис, конфіденційність і видалення → Видалити обліковий запис</strong>, прочитайте попередження й підтвердьте незворотне видалення. Буде видалено Auth-акаунт і пов’язані активні хмарні профіль, стан тренувань та Garmin-записи, після чого застосунок очистить локальні дані акаунта. Саме видалення застосунку не видаляє хмарний акаунт. Якщо дія не завершується, зверніться до підтримки.</p></div>
+        </details>
+        <details class="faq-item">
+          <summary>Як працюють резервні копії?</summary>
+          <div class="faq-answer"><p>Відкрийте <strong>Профіль → Резервні копії та діагностика</strong>, щоб експортувати чи імпортувати JSON або поділитися PDF із діагностикою. Перегляньте файл перед надсиланням: нотатки можуть містити особисту інформацію. Резервна копія GymApp не повинна містити пароль або токени автентифікації.</p></div>
+        </details>
+        <details class="faq-item">
+          <summary>Чому рейтинг спільноти призупинено?</summary>
+          <div class="faq-answer"><p>Історія тренувань синхронізується з пристроїв користувачів, тому її не можна безпечно вважати перевіреними змагальними балами. Зараз GymApp показує захищений прогрес лише авторизованому власнику й не розкриває ім’я або бали іншого атлета. Старі скарги залишаються приватними та проходять перевірку; нові скарги між акаунтами недоступні до появи довіреного серверного джерела балів.</p></div>
+        </details>
+        <details class="faq-item">
+          <summary>Чому таймер не сповістив?</summary>
+          <div class="faq-answer"><p>GymApp запитує дозвіл на локальні сповіщення, лише коли ви обираєте сигнали таймера. Перевірте Параметри → Сповіщення → GymApp. Щоденник працює і без дозволу. GymApp не надсилає віддалені рекламні push-сповіщення.</p></div>
+        </details>
+        <details class="faq-item">
+          <summary>Garmin не синхронізується</summary>
+          <div class="faq-answer"><p>Перевірте, що Garmin під’єднаний, має мережу та сумісний застосунок GymApp. Повторіть передавання плану й перевірте статус. Garmin необов’язковий: щоденник і прогрес працюють без нього. Не надсилайте токен пристрою, якщо підтримка не запросила його через захищений канал.</p></div>
+        </details>
+        <details class="faq-item">
+          <summary>Здоров’я та безпека</summary>
+          <div class="faq-answer"><p>GymApp — щоденник і планувальник, а не медичний пристрій. Припиніть тренування, якщо почуваєтеся зле, і звертайтеся до медичного фахівця щодо здоров’я чи невідкладних станів.</p></div>
+        </details>
+      </div>
+    </article>
 
-    <div class="card">
-      <h3>Why didn't the rest timer alert me?</h3>
-      <p>GymApp requests local notification permission only when you choose timer alerts. Check Settings → Notifications → GymApp. Workout logging still works if notifications are denied. GymApp does not use remote promotional push notifications.</p>
-    </div>
+    <article id="russian" class="locale-panel locale-ru" lang="ru" aria-labelledby="russian-title" hidden>
+      <h2 id="russian-title" class="section-heading">Как мы можем помочь?</h2>
+      <p class="section-intro">Начните с коротких ответов ниже. Если проблема осталась, отправьте точное описание — мы поможем найти причину.</p>
 
-    <div class="card">
-      <h3>Garmin won't sync</h3>
-      <p>Confirm the Garmin device is paired, online, and using the matching GymApp companion experience. Retry the plan transfer, then check sync status. Garmin is optional; workout logging and progress work without a Garmin device. Do not send the opaque device token to support unless specifically requested through a secure channel.</p>
-    </div>
+      <section class="contact-card" aria-labelledby="contact-ru-title">
+        <div>
+          <h3 id="contact-ru-title">Связаться с поддержкой</h3>
+          <p class="meta">Укажите версию приложения и iOS, модель устройства, ожидаемый результат и точные шаги, после которых возникла проблема.</p>
+        </div>
+        <a class="contact-action" href="mailto:support@gymapptracker.com">Написать поддержке</a>
+      </section>
+      <p class="security-note"><strong>Защитите аккаунт:</strong> никогда не отправляйте пароль, access/refresh token, токен устройства Garmin или полный приватный экспорт тренировок по электронной почте.</p>
 
-    <div class="card">
-      <h3>Health and safety</h3>
-      <p>GymApp is a workout log and planning tool, not a medical device. Stop exercising if you feel unwell and seek qualified medical advice for health decisions or emergencies.</p>
-    </div>
-  </section>
+      <div class="faq-list">
+        <details class="faq-item" open>
+          <summary>Не удаётся войти</summary>
+          <div class="faq-answer"><p>Проверьте адрес электронной почты и пароль, убедитесь, что устройство подключено к интернету, и воспользуйтесь повторной отправкой подтверждения, если адрес учётной записи ещё не подтверждён. Если проблема не исчезла, обратитесь в службу поддержки с адреса, связанного с учётной записью. Не отправляйте свой пароль.</p></div>
+        </details>
+        <details class="faq-item">
+          <summary>Облачные данные не обновились</summary>
+          <div class="faq-answer"><p>После редактирования тренировки ненадолго оставьте GymApp открытым с подключением к интернету, а затем обновите соответствующий экран. Если другое устройство первым изменило облачную ревизию, GymApp отклонит устаревшую запись вместо восстановления удалённых данных; повторно откройте учётную запись, чтобы загрузить актуальное состояние. В обращении в службу поддержки укажите примерное время ошибки синхронизации.</p></div>
+        </details>
+        <details class="faq-item">
+          <summary>Как удалить учётную запись?</summary>
+          <div class="faq-answer"><p>Откройте <strong>Профиль → Аккаунт, конфиденциальность и удаление → Удалить учётную запись</strong>, прочитайте предупреждение и подтвердите необратимое удаление. При этом удаляются учётная запись Auth и связанные активные облачные профиль, состояние тренировок и записи Garmin, а затем локальные данные учётной записи. Удаление только приложения не удаляет облачную учётную запись. Если удаление в приложении не удаётся завершить, обратитесь в службу поддержки.</p></div>
+        </details>
+        <details class="faq-item">
+          <summary>Как работают резервные копии?</summary>
+          <div class="faq-answer"><p>Откройте <strong>Профиль → Резервные копии и диагностика</strong>, чтобы экспортировать или импортировать JSON с данными тренировок либо поделиться диагностическим PDF. Проверьте файл перед отправкой, поскольку заметки к тренировкам могут содержать личную информацию. Резервные копии GymApp не должны содержать ваш пароль или токены аутентификации.</p></div>
+        </details>
+        <details class="faq-item">
+          <summary>Почему рейтинг сообщества приостановлен?</summary>
+          <div class="faq-answer"><p>История тренировок синхронизируется с устройств пользователей, поэтому её нельзя безопасно считать проверенными соревновательными баллами. Сейчас GymApp показывает защищённый прогресс только авторизованному владельцу и не раскрывает имя или баллы другого спортсмена. Старые жалобы остаются приватными и проходят проверку; новые жалобы между аккаунтами недоступны до появления доверенного серверного источника баллов.</p></div>
+        </details>
+        <details class="faq-item">
+          <summary>Почему таймер отдыха не уведомил меня?</summary>
+          <div class="faq-answer"><p>GymApp запрашивает разрешение на локальные уведомления только тогда, когда вы включаете сигналы таймера. Проверьте Настройки → Уведомления → GymApp. Ведение журнала тренировок работает, даже если уведомления запрещены. GymApp не использует удалённые рекламные push-уведомления.</p></div>
+        </details>
+        <details class="faq-item">
+          <summary>Garmin не синхронизируется</summary>
+          <div class="faq-answer"><p>Убедитесь, что устройство Garmin сопряжено, подключено к интернету и использует соответствующее сопутствующее приложение GymApp. Повторите передачу плана, а затем проверьте статус синхронизации. Garmin является необязательным: журнал тренировок и отслеживание прогресса работают без устройства Garmin. Не отправляйте непрозрачный токен устройства в службу поддержки, если она специально не запросила его через защищённый канал.</p></div>
+        </details>
+        <details class="faq-item">
+          <summary>Здоровье и безопасность</summary>
+          <div class="faq-answer"><p>GymApp — это журнал тренировок и инструмент планирования, а не медицинское устройство. Прекратите тренировку, если почувствуете себя плохо, и обращайтесь к квалифицированному медицинскому специалисту по вопросам здоровья или в экстренных ситуациях.</p></div>
+        </details>
+      </div>
+    </article>
 
-  <section id="ukrainian" lang="uk" aria-labelledby="ukrainian-title">
-    <h2 id="ukrainian-title">Українська</h2>
-
-    <div class="card">
-      <h3>Не вдається увійти</h3>
-      <p>Перевірте email і пароль, з’єднання з інтернетом та скористайтеся повторним надсиланням листа, якщо email ще не підтверджено. Якщо проблема лишилася, напишіть із адреси, пов’язаної з обліковим записом. Не надсилайте пароль.</p>
-    </div>
-
-    <div class="card">
-      <h3>Хмарні дані не оновилися</h3>
-      <p>Після редагування тренування ненадовго залиште GymApp відкритим із доступом до мережі та оновіть відповідний екран. Якщо інший пристрій першим змінив ревізію, GymApp відхилить застарілий запис і не відновить видалені дані; повторно відкрийте обліковий запис, щоб завантажити авторитетний стан. У зверненні вкажіть приблизний час помилки.</p>
-    </div>
-
-    <div class="card">
-      <h3>Як видалити обліковий запис?</h3>
-      <p>Відкрийте <strong>Вправи → Обліковий запис → Видалити обліковий запис</strong>, прочитайте попередження й підтвердьте незворотне видалення. Буде видалено Auth-акаунт і пов’язані активні хмарні профіль, стан тренувань та Garmin-записи, після чого застосунок очистить локальні дані акаунта. Саме видалення застосунку не видаляє хмарний акаунт. Якщо дія не завершується, зверніться до підтримки.</p>
-    </div>
-
-    <div class="card">
-      <h3>Як працюють резервні копії?</h3>
-      <p>Відкрийте інструменти резервування в розділі Вправи, щоб експортувати чи імпортувати JSON або поділитися PDF із діагностикою. Перегляньте файл перед надсиланням: нотатки можуть містити особисту інформацію. Резервна копія GymApp не повинна містити пароль або токени автентифікації.</p>
-    </div>
-
-    <div class="card">
-      <h3>Безпека рейтингу та модерація</h3>
-      <p>Відображувані імена — єдиний публічний користувацький вміст. GymApp обмежує символи та застосовує серверний фільтр. Відкрийте <strong>Параметри безпеки</strong> біля іншого атлета, щоб поскаржитися на неприйнятне ім’я або заблокувати атлета у своєму рейтингу. Скарга має фіксовану категорію й потрапляє до приватної черги. Підтримка оперативно перевіряє обґрунтовані скарги, зазвичай упродовж 24 годин, і може приховати профіль або призупинити акаунт.</p>
-    </div>
-
-    <div class="card">
-      <h3>Чому таймер не сповістив?</h3>
-      <p>GymApp запитує дозвіл на локальні сповіщення, лише коли ви обираєте сигнали таймера. Перевірте Параметри → Сповіщення → GymApp. Щоденник працює і без дозволу. GymApp не надсилає віддалені рекламні push-сповіщення.</p>
-    </div>
-
-    <div class="card">
-      <h3>Garmin не синхронізується</h3>
-      <p>Перевірте, що Garmin під’єднаний, має мережу та сумісний застосунок GymApp. Повторіть передавання плану й перевірте статус. Garmin необов’язковий: щоденник і прогрес працюють без нього. Не надсилайте токен пристрою, якщо підтримка не запросила його через захищений канал.</p>
-    </div>
-
-    <div class="card">
-      <h3>Здоров’я та безпека</h3>
-      <p>GymApp — щоденник і планувальник, а не медичний пристрій. Припиніть тренування, якщо почуваєтеся зле, і звертайтеся до медичного фахівця щодо здоров’я чи невідкладних станів.</p>
-    </div>
-  </section>
-
-  <section id="russian" lang="ru" aria-labelledby="russian-title">
-    <h2 id="russian-title">Русский</h2>
-
-    <div class="card">
-      <h3>Не удаётся войти</h3>
-      <p>Проверьте адрес электронной почты и пароль, убедитесь, что устройство подключено к интернету, и воспользуйтесь повторной отправкой подтверждения, если адрес учётной записи ещё не подтверждён. Если проблема не исчезла, обратитесь в службу поддержки с адреса, связанного с учётной записью. Не отправляйте свой пароль.</p>
-    </div>
-
-    <div class="card">
-      <h3>Облачные данные не обновились</h3>
-      <p>После редактирования тренировки ненадолго оставьте GymApp открытым с подключением к интернету, а затем обновите соответствующий экран. Если другое устройство первым изменило облачную ревизию, GymApp отклонит устаревшую запись вместо восстановления удалённых данных; повторно откройте учётную запись, чтобы загрузить актуальное состояние. В обращении в службу поддержки укажите примерное время ошибки синхронизации.</p>
-    </div>
-
-    <div class="card">
-      <h3>Как удалить учётную запись?</h3>
-      <p>Откройте <strong>Упражнения → Учётная запись → Удалить учётную запись</strong>, прочитайте предупреждение и подтвердите необратимое удаление. При этом удаляются учётная запись Auth и связанные активные облачные профиль, состояние тренировок и записи Garmin, а затем локальные данные учётной записи. Удаление только приложения не удаляет облачную учётную запись. Если удаление в приложении не удаётся завершить, обратитесь в службу поддержки.</p>
-    </div>
-
-    <div class="card">
-      <h3>Как работают резервные копии?</h3>
-      <p>Откройте инструменты резервного копирования в разделе «Упражнения», чтобы экспортировать или импортировать JSON с данными тренировок либо поделиться диагностическим PDF. Проверьте файл перед отправкой, поскольку заметки к тренировкам могут содержать личную информацию. Резервные копии GymApp не должны содержать ваш пароль или токены аутентификации.</p>
-    </div>
-
-    <div class="card">
-      <h3>Безопасность рейтинга и модерация</h3>
-      <p>Отображаемые имена — единственный общедоступный контент, созданный пользователями. GymApp ограничивает допустимые символы в именах и применяет серверный фильтр безопасности. Откройте <strong>Параметры безопасности</strong> у другого спортсмена, чтобы пожаловаться на оскорбительное имя или заблокировать этого спортсмена в своём рейтинге. Жалобы используют фиксированную категорию и поступают в закрытую очередь модерации. Служба поддержки оперативно рассматривает обоснованные жалобы, обычно в течение 24 часов, и может скрыть профиль или приостановить действие учётной записи. Вы также можете обратиться в службу поддержки по указанному выше адресу.</p>
-    </div>
-
-    <div class="card">
-      <h3>Почему таймер отдыха не уведомил меня?</h3>
-      <p>GymApp запрашивает разрешение на локальные уведомления только тогда, когда вы включаете сигналы таймера. Проверьте Настройки → Уведомления → GymApp. Ведение журнала тренировок работает, даже если уведомления запрещены. GymApp не использует удалённые рекламные push-уведомления.</p>
-    </div>
-
-    <div class="card">
-      <h3>Garmin не синхронизируется</h3>
-      <p>Убедитесь, что устройство Garmin сопряжено, подключено к интернету и использует соответствующее сопутствующее приложение GymApp. Повторите передачу плана, а затем проверьте статус синхронизации. Garmin является необязательным: журнал тренировок и отслеживание прогресса работают без устройства Garmin. Не отправляйте непрозрачный токен устройства в службу поддержки, если она специально не запросила его через защищённый канал.</p>
-    </div>
-
-    <div class="card">
-      <h3>Здоровье и безопасность</h3>
-      <p>GymApp — это журнал тренировок и инструмент планирования, а не медицинское устройство. Прекратите тренировку, если почувствуете себя плохо, и обращайтесь к квалифицированному медицинскому специалисту по вопросам здоровья или в экстренных ситуациях.</p>
-    </div>
-  </section>
-
-  <footer>
-    <p><strong>Provider / Постачальник / Поставщик:</strong> Martynenko Eduard</p>
-    <p><strong>Email:</strong> <a href="mailto:support@gymapptracker.com">support@gymapptracker.com</a></p>
-    <p><a href="https://gymapptracker.com/privacy-policy.html">Privacy Policy / Політика конфіденційності / Политика конфиденциальности</a></p>
-  </footer>
-</main>
+    <footer class="page-footer">
+      <div>
+        <p><strong>Provider / Постачальник / Поставщик:</strong> Martynenko Eduard</p>
+        <p><a href="mailto:support@gymapptracker.com">support@gymapptracker.com</a></p>
+      </div>
+      <div class="footer-links">
+        <a href="https://gymapptracker.com/privacy-policy.html">Privacy policy</a>
+        <a class="back-to-top" href="#top">Back to top ↑</a>
+      </div>
+    </footer>
+  </main>
 </body>
 </html>
