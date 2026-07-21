@@ -14,7 +14,7 @@
     <img src="https://github.com/Eduard047/GymApp/actions/workflows/security.yml/badge.svg?branch=master" alt="Security workflow">
   </a>
   <a href="https://github.com/Eduard047/GymApp/releases/latest">
-    <img src="https://img.shields.io/github/v/release/Eduard047/GymApp?display_name=tag&sort=semver" alt="Latest release">
+    <img src="https://img.shields.io/github/v/release/Eduard047/GymApp?display_name=tag" alt="Latest release">
   </a>
   <a href="LICENSE">
     <img src="https://img.shields.io/github/license/Eduard047/GymApp" alt="Apache 2.0 license">
@@ -69,7 +69,6 @@ dark appearance across supported clients.
 | Path | Purpose |
 | --- | --- |
 | [`app/`](app/) | Android phone application |
-| [`wear/`](wear/) | Wear OS companion |
 | [`ios/GymApp-iOS/`](ios/GymApp-iOS/) | Native iOS application |
 | [`garmin/`](garmin/) | Garmin Connect IQ application |
 | [`pwa/`](pwa/) | Public website and installable PWA |
