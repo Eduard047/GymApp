@@ -292,13 +292,13 @@ test("unknown platform never becomes a custom-scheme redirect", () => {
 });
 
 test("client auth, public metadata, and compatibility docs use the intended domains", async () => {
-  const [android, pwa, index, confirmation, cname, readme] = await Promise.all([
+  const [android, pwa, index, confirmation, cname, operations] = await Promise.all([
     readFile("app/src/main/java/com/example/gymapp/auth/CloudAuthManager.kt", "utf8"),
     readFile("pwa/app.js", "utf8"),
     readFile("pwa/index.html", "utf8"),
     readFile("pwa/confirmed.html", "utf8"),
     readFile("pwa/CNAME", "utf8"),
-    readFile("README.md", "utf8")
+    readFile("docs/OPERATIONS.md", "utf8")
   ]);
   const signUpSource = android.slice(
     android.indexOf("suspend fun signUp"),
@@ -328,5 +328,5 @@ test("client auth, public metadata, and compatibility docs use the intended doma
   assert.match(confirmation, /name="referrer" content="no-referrer"/);
   assert.doesNotMatch(confirmation, /<script[^>]+src="https?:\/\//i);
   assert.equal(cname, "gymapptracker.com\n");
-  assert.ok(readme.includes("https://eduard047.github.io/GymApp/confirmed.html"));
+  assert.ok(operations.includes("https://eduard047.github.io/GymApp/confirmed.html"));
 });

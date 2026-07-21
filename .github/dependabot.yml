@@ -4,38 +4,57 @@ updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
-      day: monday
+      interval: monthly
       time: "06:00"
-      timezone: Europe/Riga
-    open-pull-requests-limit: 5
+      timezone: Europe/Kyiv
+    open-pull-requests-limit: 1
+    cooldown:
+      default-days: 14
     groups:
-      actions-minor-and-patch:
+      actions-versions:
+        applies-to: version-updates
         patterns: ["*"]
-        update-types: [minor, patch]
+        update-types: [major, minor, patch]
+      actions-security:
+        applies-to: security-updates
+        patterns: ["*"]
 
   - package-ecosystem: gradle
     directory: /
     schedule:
-      interval: weekly
-      day: monday
+      interval: monthly
       time: "06:15"
-      timezone: Europe/Riga
-    open-pull-requests-limit: 5
+      timezone: Europe/Kyiv
+    open-pull-requests-limit: 2
+    cooldown:
+      default-days: 14
     groups:
-      gradle-minor-and-patch:
+      gradle-routine:
+        applies-to: version-updates
         patterns: ["*"]
         update-types: [minor, patch]
+      gradle-major:
+        applies-to: version-updates
+        patterns: ["*"]
+        update-types: [major]
+      gradle-security:
+        applies-to: security-updates
+        patterns: ["*"]
 
   - package-ecosystem: deno
     directory: /supabase/functions/garmin-sync
     schedule:
-      interval: weekly
-      day: monday
+      interval: monthly
       time: "06:30"
-      timezone: Europe/Riga
-    open-pull-requests-limit: 5
+      timezone: Europe/Kyiv
+    open-pull-requests-limit: 1
+    cooldown:
+      default-days: 14
     groups:
-      deno-minor-and-patch:
+      edge-versions:
+        applies-to: version-updates
         patterns: ["*"]
-        update-types: [minor, patch]
+        update-types: [major, minor, patch]
+      edge-security:
+        applies-to: security-updates
+        patterns: ["*"]

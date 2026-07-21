@@ -2,9 +2,10 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const [script, gitignore] = await Promise.all([
+const [script, gitignore, dependabot] = await Promise.all([
   readFile("scripts/publish-debug-release.ps1", "utf8"),
   readFile(".gitignore", "utf8"),
+  readFile(".github/dependabot.yml", "utf8"),
 ]);
 
 test("debug artifact publication fails closed at the script entry point", () => {
@@ -62,4 +63,29 @@ test("Git ignores local context, secrets, diagnostics, and distributable archive
   ]) {
     assert.match(gitignore, required);
   }
+});
+
+test("Dependabot stays low-noise without delaying security updates", () => {
+  const ecosystems = dependabot
+    .split(/\n  - package-ecosystem: /)
+    .slice(1);
+
+  assert.equal(ecosystems.length, 3, "only the three maintained ecosystems belong here");
+
+  let routinePullRequestLimit = 0;
+  for (const ecosystem of ecosystems) {
+    assert.match(ecosystem, /\n\s+interval: monthly\s*$/m);
+    assert.match(ecosystem, /\n\s+timezone: Europe\/Kyiv\s*$/m);
+    assert.match(ecosystem, /\n\s+applies-to: security-updates\s*$/m);
+    assert.match(ecosystem, /\n\s+cooldown:\s*\n\s+default-days: 14\s*$/m);
+
+    const limit = Number(ecosystem.match(/\n\s+open-pull-requests-limit: (\d+)\s*$/m)?.[1]);
+    assert.ok(Number.isInteger(limit) && limit > 0, "routine update limit must be bounded");
+    routinePullRequestLimit += limit;
+  }
+
+  assert.ok(
+    routinePullRequestLimit <= 4,
+    "routine dependency updates must not flood the branch and pull-request lists"
+  );
 });
