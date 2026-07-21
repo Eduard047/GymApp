@@ -107,6 +107,11 @@ test("production APK is verified before it is copied for publication", () => {
   assert.match(phoneReleaseScript, /application-testOnly/);
   assert.match(phoneReleaseScript, /apksigner[\s\S]*?verify --verbose --print-certs/i);
   assert.match(phoneReleaseScript, /APK Signature Scheme v2/);
+  assert.match(
+    phoneReleaseScript,
+    /V\[0-9\.\]\+ Signer/,
+    "production APK verification must accept modern apksigner signer labels"
+  );
   assert.match(phoneReleaseScript, /signer does not match the configured release keystore/i);
 });
 

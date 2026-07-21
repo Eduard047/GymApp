@@ -314,7 +314,7 @@ function Assert-ApkSignature {
     }
     $certificateMatches = [regex]::Matches(
         $signatureText,
-        '(?im)^Signer #[0-9]+ certificate SHA-256 digest:\s*(?<digest>[0-9a-f]{64})\s*$'
+        '(?im)^(?:Signer #[0-9]+|V[0-9.]+ Signer): certificate SHA-256 digest:\s*(?<digest>[0-9a-f]{64})\s*$'
     )
     $artifactDigests = @(
         $certificateMatches |
