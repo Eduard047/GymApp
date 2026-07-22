@@ -10,6 +10,43 @@ internal enum class CloudSnapshotApplyDecision {
     Conflict
 }
 
+internal data class CloudSyncConflictSnapshot(
+    val userId: String,
+    val sessionGeneration: String,
+    val localDigest: String,
+    val remoteDigest: String?
+)
+
+internal fun isCurrentCloudSyncConflict(
+    conflict: CloudSyncConflictSnapshot,
+    userId: String,
+    sessionGeneration: String,
+    localDigest: String,
+    remoteDigest: String?
+): Boolean = conflict.userId == userId &&
+    conflict.sessionGeneration == sessionGeneration &&
+    conflict.localDigest == localDigest &&
+    conflict.remoteDigest == remoteDigest
+
+/** Runs a destructive choice only for the exact account and local/remote pair the user reviewed. */
+internal suspend fun <T> runCurrentCloudSyncConflictAction(
+    conflict: CloudSyncConflictSnapshot,
+    userId: String,
+    sessionGeneration: String,
+    localDigest: String,
+    remoteDigest: String?,
+    action: suspend () -> T
+): T {
+    check(isCurrentCloudSyncConflict(
+        conflict = conflict,
+        userId = userId,
+        sessionGeneration = sessionGeneration,
+        localDigest = localDigest,
+        remoteDigest = remoteDigest
+    )) { "Cloud data changed on another device. Reload it before syncing again." }
+    return action()
+}
+
 internal fun cloudSnapshotApplyDecision(
     localDigest: String?,
     remoteDigest: String?,

@@ -166,11 +166,23 @@
     <string name="account_delete_failed">Не вдалося видалити обліковий запис. З цього пристрою нічого не видалено.</string>
     <string name="account_delete_local_cleanup_failed">Хмарний обліковий запис видалено, але частину локальних даних не вдалося очистити з цього пристрою.</string>
     <string name="cloud_sync_load_failed">Не вдалося безпечно завантажити хмарні дані. Автоматичне вивантаження призупинено.</string>
-    <string name="cloud_sync_conflict">Хмарні дані конфліктують із несинхронізованими локальними змінами. Автоматичне вивантаження призупинено.</string>
+    <string name="cloud_sync_conflict">Синхронізацію призупинено до вибору версії тренувань.</string>
     <string name="cloud_sync_save_failed">Не вдалося безпечно зберегти хмарні зміни. Автоматичне вивантаження призупинено.</string>
     <string name="cloud_sync_account_changed">Хмарний обліковий запис змінився під час підтвердження синхронізації. Автоматичне вивантаження призупинено.</string>
     <string name="cloud_sync_baseline_failed">Не вдалося зберегти базовий стан хмарної синхронізації. Автоматичне вивантаження призупинено.</string>
     <string name="cloud_sync_round_trip_failed">Не вдалося безпечно перевірити хмарний стан. Автоматичне вивантаження призупинено.</string>
+    <string name="cloud_sync_conflict_title">Вибери версію тренувань</string>
+    <string name="cloud_sync_conflict_description">Дані на цьому пристрої та в хмарі змінилися незалежно. Синхронізацію призупинено, жодну версію не перезаписано. Версія пристрою замінить хмарну, а хмарна версія замінить дані тренувань на пристрої.</string>
+    <string name="cloud_sync_conflict_backup_hint">Перед вибором можна закрити це вікно й експортувати приватну резервну копію: Профіль → Бекап і діагностика.</string>
+    <string name="cloud_sync_conflict_cloud_missing">Хмарну версію видалено. У хмару можна відновити лише версію з цього пристрою.</string>
+    <string name="cloud_sync_conflict_keep_device">Залишити версію пристрою</string>
+    <string name="cloud_sync_conflict_use_cloud">Використати хмарну версію</string>
+    <string name="cloud_sync_conflict_resolving">Перевіряємо обидві версії…</string>
+    <string name="cloud_sync_conflict_not_now">Не зараз</string>
+    <string name="cloud_sync_resolve_action">Вирішити</string>
+    <string name="cloud_sync_resolution_failed">Конфлікт змінився або його не вдалося вирішити безпечно. Завантаж обидві версії знову й повтори спробу.</string>
+    <string name="cloud_sync_kept_device">Версію з цього пристрою збережено в хмарі.</string>
+    <string name="cloud_sync_used_cloud">Перевірену хмарну версію завантажено на цей пристрій.</string>
 
     <string name="label_note">Нотатка</string>
     <string name="hint_note">Нотатка до сесії</string>

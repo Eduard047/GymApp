@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.LocalContentColor
@@ -74,7 +75,18 @@ fun HeroPanel(
     content: @Composable () -> Unit
 ) {
     val shape = GymPanelShape
-    val container = MaterialTheme.colorScheme.secondary
+    // Secondary is intentionally a light accent in the dark palette, not a card background.
+    val darkTheme = isSystemInDarkTheme()
+    val container = if (darkTheme) {
+        MaterialTheme.colorScheme.secondaryContainer
+    } else {
+        MaterialTheme.colorScheme.secondary
+    }
+    val heroContentColor = if (darkTheme) {
+        MaterialTheme.colorScheme.onSecondaryContainer
+    } else {
+        MaterialTheme.colorScheme.onSecondary
+    }
     Box(
         modifier = modifier
             .shadow(
@@ -87,11 +99,11 @@ fun HeroPanel(
             .clip(shape)
             .background(container, shape)
             .border(
-                BorderStroke(1.dp, Color.White.copy(alpha = 0.18f)),
+                BorderStroke(1.dp, heroContentColor.copy(alpha = 0.18f)),
                 shape
             )
     ) {
-        CompositionLocalProvider(LocalContentColor provides Color.White) {
+        CompositionLocalProvider(LocalContentColor provides heroContentColor) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()

@@ -9,7 +9,10 @@ import com.example.gymapp.util.LocalizedText
 import com.example.gymapp.data.repository.canonicalWorkoutPayloadMatches
 import com.example.gymapp.data.repository.canonicalWorkoutPayloadDigest
 import com.example.gymapp.sync.CloudSnapshotApplyDecision
+import com.example.gymapp.sync.CloudSyncConflictSnapshot
 import com.example.gymapp.sync.cloudSnapshotApplyDecision
+import com.example.gymapp.sync.isCurrentCloudSyncConflict
+import com.example.gymapp.sync.runCurrentCloudSyncConflictAction
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertFalse
@@ -207,6 +210,80 @@ class GymNavGraphSecurityTest {
         )
         assertTrue(shouldInitializeMissingRemoteState(localProjectionEmpty = true))
         assertFalse(shouldInitializeMissingRemoteState(localProjectionEmpty = false))
+        assertTrue(shouldSeedCatalogAfterCloudPull(canonicalRoundTripSafe = true))
+        assertFalse(shouldSeedCatalogAfterCloudPull(canonicalRoundTripSafe = false))
+    }
+
+    @Test
+    fun `cloud conflict choice rejects stale context without side effects`() {
+        val local = "a".repeat(64)
+        val remote = "b".repeat(64)
+        val conflict = CloudSyncConflictSnapshot(
+            userId = userId,
+            sessionGeneration = session.sessionGeneration,
+            localDigest = local,
+            remoteDigest = remote
+        )
+
+        assertTrue(isCurrentCloudSyncConflict(
+            conflict, userId, session.sessionGeneration, local, remote
+        ))
+        assertFalse(isCurrentCloudSyncConflict(
+            conflict,
+            "223e4567-e89b-12d3-a456-426614174000",
+            session.sessionGeneration,
+            local,
+            remote
+        ))
+        assertFalse(isCurrentCloudSyncConflict(
+            conflict, userId, "new-generation", local, remote
+        ))
+        assertFalse(isCurrentCloudSyncConflict(
+            conflict, userId, session.sessionGeneration, "c".repeat(64), remote
+        ))
+        assertFalse(isCurrentCloudSyncConflict(
+            conflict, userId, session.sessionGeneration, local, "d".repeat(64)
+        ))
+
+        var sideEffects = 0
+        val accepted = runBlocking {
+            runCurrentCloudSyncConflictAction(
+                conflict,
+                userId,
+                session.sessionGeneration,
+                local,
+                remote
+            ) {
+                sideEffects += 1
+                "accepted"
+            }
+        }
+        assertEquals("accepted", accepted)
+        assertEquals(1, sideEffects)
+
+        val staleResult = runBlocking {
+            runCatching {
+                runCurrentCloudSyncConflictAction(
+                    conflict,
+                    userId,
+                    session.sessionGeneration,
+                    local,
+                    "e".repeat(64)
+                ) {
+                    sideEffects += 1
+                }
+            }
+        }
+        assertTrue(staleResult.isFailure)
+        assertEquals(1, sideEffects)
+
+        val missingRemote = conflict.copy(remoteDigest = null)
+        assertTrue(isCurrentCloudSyncConflict(
+            missingRemote, userId, session.sessionGeneration, local, null
+        ))
+        assertFalse(isCurrentCloudSyncConflict(
+            missingRemote, userId, session.sessionGeneration, local, remote
+        ))
     }
 
     @Test

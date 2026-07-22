@@ -82,6 +82,7 @@ import com.example.gymapp.data.repository.GymRepository
 import com.example.gymapp.ui.screens.AddWorkoutScreen
 import com.example.gymapp.ui.screens.AppIntroSplash
 import com.example.gymapp.ui.screens.AuthScreen
+import com.example.gymapp.ui.screens.CloudSyncConflictDialog
 import com.example.gymapp.ui.screens.ExerciseListScreen
 import com.example.gymapp.ui.screens.ExerciseProgressScreen
 import com.example.gymapp.ui.screens.GymBackground
@@ -100,8 +101,10 @@ import com.example.gymapp.ui.viewmodel.WorkoutDetailViewModel
 import com.example.gymapp.ui.viewmodel.WorkoutListViewModel
 import com.example.gymapp.sync.PhoneSyncClient
 import com.example.gymapp.sync.CloudSnapshotApplyDecision
+import com.example.gymapp.sync.CloudSyncConflictSnapshot
 import com.example.gymapp.sync.CloudSyncBaselineStore
 import com.example.gymapp.sync.cloudSnapshotApplyDecision
+import com.example.gymapp.sync.runCurrentCloudSyncConflictAction
 import com.example.gymapp.util.AppLanguage
 import com.example.gymapp.util.LanguageManager
 import com.example.gymapp.util.LocalizedText
@@ -157,6 +160,9 @@ internal fun accountActionsEnabled(
 internal fun shouldInitializeMissingRemoteState(localProjectionEmpty: Boolean): Boolean =
     localProjectionEmpty
 
+internal fun shouldSeedCatalogAfterCloudPull(canonicalRoundTripSafe: Boolean): Boolean =
+    canonicalRoundTripSafe
+
 internal enum class CloudSyncRetryMode {
     Pull,
     ResumeAutosave
@@ -171,7 +177,8 @@ internal fun isRetryableCloudSyncMessage(message: LocalizedText?): Boolean =
         R.string.cloud_sync_save_failed,
         R.string.cloud_sync_account_changed,
         R.string.cloud_sync_baseline_failed,
-        R.string.cloud_sync_round_trip_failed
+        R.string.cloud_sync_round_trip_failed,
+        R.string.cloud_sync_resolution_failed
     )
 
 internal fun cloudSyncRetryModeForSaveFailure(message: LocalizedText): CloudSyncRetryMode =
@@ -307,6 +314,18 @@ fun GymAppRoot(
     var cloudSyncRetryMode by key(uiIsolationKey) {
         remember { mutableStateOf<CloudSyncRetryMode?>(null) }
     }
+    var cloudSyncConflict by key(uiIsolationKey) {
+        remember { mutableStateOf<CloudSyncConflictSnapshot?>(null) }
+    }
+    var showCloudSyncConflictDialog by key(uiIsolationKey) {
+        remember { mutableStateOf(false) }
+    }
+    var cloudConflictResolutionInProgress by key(uiIsolationKey) {
+        remember { mutableStateOf(false) }
+    }
+    var cloudSyncConflictNoticeVersion by key(uiIsolationKey) {
+        remember { mutableStateOf(0) }
+    }
     val snackbarHostState = key(uiIsolationKey) { remember { SnackbarHostState() } }
 
     LaunchedEffect(Unit) {
@@ -357,7 +376,18 @@ fun GymAppRoot(
                         lastSyncedDigest = cloudSyncBaselineStore.read(session.userId),
                         localProjectionEmpty = localState.isEmpty
                     )) {
-                        CloudSnapshotApplyDecision.Conflict -> false
+                        CloudSnapshotApplyDecision.Conflict -> {
+                            if (remoteDigest != null) {
+                                cloudSyncConflict = CloudSyncConflictSnapshot(
+                                    userId = session.userId,
+                                    sessionGeneration = session.sessionGeneration,
+                                    localDigest = localState.digest,
+                                    remoteDigest = remoteDigest
+                                )
+                                showCloudSyncConflictDialog = true
+                            }
+                            false
+                        }
 
                         CloudSnapshotApplyDecision.AlreadyCurrent -> {
                             check(isSameCloudSessionGeneration(
@@ -415,9 +445,18 @@ fun GymAppRoot(
             } else {
                 // Missing remote state may initialize only a genuinely empty account database.
                 // A non-empty projection could be stale data from a deleted remote row.
-                shouldInitializeMissingRemoteState(
-                    repository.getCloudWorkoutProjectionState().isEmpty
-                )
+                val localState = repository.getCloudWorkoutProjectionState()
+                shouldInitializeMissingRemoteState(localState.isEmpty).also { safeToInitialize ->
+                    if (!safeToInitialize) {
+                        cloudSyncConflict = CloudSyncConflictSnapshot(
+                            userId = session.userId,
+                            sessionGeneration = session.sessionGeneration,
+                            localDigest = localState.digest,
+                            remoteDigest = null
+                        )
+                        showCloudSyncConflictDialog = true
+                    }
+                }
             }
         }
         pullResult.onFailure { throwable ->
@@ -430,15 +469,27 @@ fun GymAppRoot(
             }
         }
         pullResult.onSuccess { canonicalRoundTripSafe ->
-            // A successful authoritative pull may have replaced the local rows. Re-apply the
-            // public built-in catalog before autosave starts so every account gets the same list.
-            repository.seedBuiltInExercises()
-            repository.seedDefaultExerciseMuscleMappings()
-            if (
-                !canonicalRoundTripSafe &&
+            if (shouldSeedCatalogAfterCloudPull(canonicalRoundTripSafe) &&
                 isSameCloudSessionGeneration(session, authManager.authState.value.session)
             ) {
-                cloudSyncRetryMode = CloudSyncRetryMode.Pull
+                // A conflict must not mutate the reviewed local snapshot. Seed only after a safe
+                // pull or after the user explicitly resolves the conflict below.
+                repository.seedBuiltInExercises()
+                repository.seedDefaultExerciseMuscleMappings()
+                cloudSyncConflict = null
+                showCloudSyncConflictDialog = false
+                if (authManager.authState.value.message?.resourceId == R.string.cloud_sync_conflict) {
+                    authManager.setMessage(null, isError = false)
+                }
+            }
+            if (!canonicalRoundTripSafe &&
+                isSameCloudSessionGeneration(session, authManager.authState.value.session)
+            ) {
+                cloudSyncRetryMode = if (cloudSyncConflict == null) {
+                    CloudSyncRetryMode.Pull
+                } else {
+                    null
+                }
                 authManager.setMessage(
                     LocalizedText(R.string.cloud_sync_conflict)
                 )
@@ -514,6 +565,149 @@ fun GymAppRoot(
                 }
             }
     }
+
+    val resolveCloudSyncConflict: (Boolean) -> Unit = resolve@{ useCloudVersion ->
+        if (cloudConflictResolutionInProgress) return@resolve
+        val conflict = cloudSyncConflict ?: return@resolve
+        val session = cloudSession ?: return@resolve
+        if (conflict.userId != session.userId ||
+            conflict.sessionGeneration != session.sessionGeneration
+        ) return@resolve
+
+        cloudConflictResolutionInProgress = true
+        coroutineScope.launch {
+            val result = runCatching {
+                check(isSameCloudSessionGeneration(
+                    session,
+                    authManager.authState.value.session
+                )) { "Cloud account changed while confirming the sync baseline." }
+
+                // Reload immediately before the choice so the cached server revision can protect
+                // a local upload and both reviewed digests can be checked again.
+                val remoteState = authManager.loadRemoteState(session)
+                    ?.takeIf { it.length() > 0 }
+                val remoteDigest = if (remoteState == null) {
+                    null
+                } else {
+                    check(isCanonicalAndroidCloudEnvelope(remoteState, session.userId)) {
+                        "Cloud state did not round-trip safely. Automatic upload is paused."
+                    }
+                    withContext(Dispatchers.Default) {
+                        checkNotNull(canonicalWorkoutPayloadDigest(remoteState))
+                    }
+                }
+                val localState = repository.getCloudWorkoutProjectionState()
+
+                runCurrentCloudSyncConflictAction(
+                    conflict = conflict,
+                    userId = session.userId,
+                    sessionGeneration = session.sessionGeneration,
+                    localDigest = localState.digest,
+                    remoteDigest = remoteDigest
+                ) {
+                    if (useCloudVersion) {
+                        val acceptedRemote = checkNotNull(remoteState) {
+                            "Cloud data changed on another device. Reload it before syncing again."
+                        }
+                        val acceptedDigest = checkNotNull(remoteDigest)
+                        repository.replaceWithBackupJsonObject(
+                            root = acceptedRemote,
+                            expectedLocalState = localState,
+                            activeUserId = session.userId,
+                            activeRemote = true
+                        )
+                        val replacedState = repository.getCloudWorkoutProjectionState()
+                        check(replacedState.digest == acceptedDigest) {
+                            "Cloud state did not round-trip safely. Automatic upload is paused."
+                        }
+                        check(isSameCloudSessionGeneration(
+                            session,
+                            authManager.authState.value.session
+                        )) { "Cloud account changed while confirming the sync baseline." }
+                        check(cloudSyncBaselineStore.write(session.userId, acceptedDigest)) {
+                            "Could not persist the cloud sync baseline. Automatic upload is paused."
+                        }
+                    } else {
+                        val owner = BackupOwner(
+                            accountId = session.userId,
+                            userId = session.userId,
+                            email = session.email,
+                            remote = true
+                        )
+                        val localBackup = repository.buildCloudBackupJson(owner = owner)
+                        val localDigest = withContext(Dispatchers.Default) {
+                            checkNotNull(canonicalWorkoutPayloadDigest(localBackup))
+                        }
+                        check(localDigest == localState.digest) {
+                            "Local workout data changed while cloud state was loading. Automatic replacement is paused."
+                        }
+                        val stats = repository.getSyncProfileStats()
+                        check(isSameCloudSessionGeneration(
+                            session,
+                            authManager.authState.value.session
+                        )) { "Cloud account changed while confirming the sync baseline." }
+                        authManager.saveRemoteState(
+                            session = session,
+                            state = localBackup,
+                            xp = stats.xp,
+                            level = stats.level,
+                            workouts = stats.workouts
+                        )
+                        check(isSameCloudSessionGeneration(
+                            session,
+                            authManager.authState.value.session
+                        )) { "Cloud account changed while confirming the sync baseline." }
+                        check(cloudSyncBaselineStore.write(session.userId, localDigest)) {
+                            "Could not persist the cloud sync baseline. Automatic upload is paused."
+                        }
+                    }
+                    // Apply additive public-catalog migrations only after the selected version is
+                    // safely accepted; autosave will then publish the additive change if needed.
+                    repository.seedBuiltInExercises()
+                    repository.seedDefaultExerciseMuscleMappings()
+                }
+            }
+
+            result.exceptionOrNull()?.let { throwable ->
+                if (throwable is CancellationException) throw throwable
+            }
+            cloudConflictResolutionInProgress = false
+            result.onSuccess {
+                if (isSameCloudSessionGeneration(
+                        session,
+                        authManager.authState.value.session
+                    )
+                ) {
+                    cloudSyncConflict = null
+                    showCloudSyncConflictDialog = false
+                    cloudSyncRetryMode = null
+                    cloudPullGeneration = session.sessionGeneration
+                    authManager.setMessage(
+                        LocalizedText(
+                            if (useCloudVersion) R.string.cloud_sync_used_cloud
+                            else R.string.cloud_sync_kept_device
+                        ),
+                        isError = false
+                    )
+                }
+            }.onFailure { throwable ->
+                if (isSameCloudSessionGeneration(
+                        session,
+                        authManager.authState.value.session
+                    )
+                ) {
+                    cloudSyncConflict = null
+                    showCloudSyncConflictDialog = false
+                    cloudPullGeneration = null
+                    cloudSyncRetryMode = CloudSyncRetryMode.Pull
+                    authManager.setMessage(
+                        authErrorText(throwable, R.string.cloud_sync_resolution_failed)
+                    )
+                }
+            }
+        }
+    }
+
     val titleRes = when {
         currentRoute == AppDestination.Workouts.route -> R.string.title_workouts
         currentRoute == AppDestination.Missions.route -> R.string.title_missions
@@ -658,11 +852,14 @@ fun GymAppRoot(
 
             val signedInMessage = authState.message?.asString()
             val retryLabel = stringResource(R.string.action_retry)
+            val resolveLabel = stringResource(R.string.cloud_sync_resolve_action)
             val closeLabel = stringResource(R.string.action_close)
             LaunchedEffect(
                 signedInMessage,
                 authState.messageIsError,
-                authState.message?.resourceId
+                authState.message?.resourceId,
+                cloudSyncConflict,
+                cloudSyncConflictNoticeVersion
             ) {
                 if (signedInMessage == null) {
                     cloudSyncRetryMode = null
@@ -670,11 +867,15 @@ fun GymAppRoot(
                     return@LaunchedEffect
                 }
                 val retryMode = cloudSyncRetryMode
+                val resolvableConflict =
+                    authState.message?.resourceId == R.string.cloud_sync_conflict &&
+                        cloudSyncConflict != null
                 val retryable = retryMode != null &&
                     isRetryableCloudSyncMessage(authState.message)
                 val result = snackbarHostState.showSnackbar(
                     message = signedInMessage,
                     actionLabel = when {
+                        resolvableConflict -> resolveLabel
                         retryable -> retryLabel
                         authState.messageIsError -> closeLabel
                         else -> null
@@ -686,6 +887,10 @@ fun GymAppRoot(
                     }
                 )
                 if (result == SnackbarResult.ActionPerformed) {
+                    if (resolvableConflict) {
+                        showCloudSyncConflictDialog = true
+                        return@LaunchedEffect
+                    }
                     if (retryable) {
                         when (retryMode) {
                             CloudSyncRetryMode.Pull -> cloudSyncRetryVersion += 1
@@ -1270,6 +1475,20 @@ fun GymAppRoot(
                         }
                     }
                 }
+            }
+
+            val conflict = cloudSyncConflict
+            if (showCloudSyncConflictDialog && conflict != null) {
+                CloudSyncConflictDialog(
+                    cloudVersionAvailable = conflict.remoteDigest != null,
+                    resolving = cloudConflictResolutionInProgress,
+                    onKeepDeviceVersion = { resolveCloudSyncConflict(false) },
+                    onUseCloudVersion = { resolveCloudSyncConflict(true) },
+                    onDismiss = {
+                        showCloudSyncConflictDialog = false
+                        cloudSyncConflictNoticeVersion += 1
+                    }
+                )
             }
 
             AnimatedVisibility(

@@ -166,11 +166,23 @@
     <string name="account_delete_failed">Account could not be deleted. Nothing was removed from this device.</string>
     <string name="account_delete_local_cleanup_failed">The cloud account was deleted, but some local account data could not be cleared from this device.</string>
     <string name="cloud_sync_load_failed">Cloud data could not be loaded safely. Automatic upload is paused.</string>
-    <string name="cloud_sync_conflict">Cloud data conflicts with unsynced local changes. Automatic upload is paused.</string>
+    <string name="cloud_sync_conflict">Cloud sync is paused until you choose a workout version.</string>
     <string name="cloud_sync_save_failed">Cloud changes could not be saved safely. Automatic upload is paused.</string>
     <string name="cloud_sync_account_changed">Cloud account changed while confirming synchronization. Automatic upload is paused.</string>
     <string name="cloud_sync_baseline_failed">The cloud synchronization baseline could not be saved. Automatic upload is paused.</string>
     <string name="cloud_sync_round_trip_failed">Cloud state could not be verified safely. Automatic upload is paused.</string>
+    <string name="cloud_sync_conflict_title">Choose which workout version to keep</string>
+    <string name="cloud_sync_conflict_description">This device and the cloud changed independently. Synchronization is paused and neither version has been overwritten. Keeping this device replaces the cloud version; using the cloud replaces this device’s workout data.</string>
+    <string name="cloud_sync_conflict_backup_hint">Before choosing, you can close this dialog and export a private backup from Profile → Backup and diagnostics.</string>
+    <string name="cloud_sync_conflict_cloud_missing">The cloud version was removed. Only this device’s version can be restored to the cloud.</string>
+    <string name="cloud_sync_conflict_keep_device">Keep this device’s version</string>
+    <string name="cloud_sync_conflict_use_cloud">Use cloud version</string>
+    <string name="cloud_sync_conflict_resolving">Checking both versions…</string>
+    <string name="cloud_sync_conflict_not_now">Not now</string>
+    <string name="cloud_sync_resolve_action">Resolve</string>
+    <string name="cloud_sync_resolution_failed">The conflict changed or could not be resolved safely. Reload both versions and try again.</string>
+    <string name="cloud_sync_kept_device">This device’s version was saved to the cloud.</string>
+    <string name="cloud_sync_used_cloud">The verified cloud version was loaded on this device.</string>
 
     <string name="label_note">Note</string>
     <string name="hint_note">Session note</string>
