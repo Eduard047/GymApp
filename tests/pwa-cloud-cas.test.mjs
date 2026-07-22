@@ -2316,6 +2316,38 @@ test("web auth callback state mismatch does not exchange a code or erase the act
   assert.deepEqual(JSON.parse(context.localStorage.getItem("gym-pwa-auth-transaction-v1")), stored);
 });
 
+test("web auth callback purpose and error fields cannot clear or redirect the stored transaction", async () => {
+  const requests = [];
+  const context = loadContext(async (url, options) => {
+    requests.push({ url, options });
+    throw new Error("rejected callback must not use the network");
+  });
+  const stored = {
+    version: 1,
+    purpose: "recovery",
+    state: "R".repeat(32),
+    verifier: "v".repeat(43),
+    email: "owner@example.com",
+    createdAt: Date.now()
+  };
+  context.localStorage.setItem("gym-pwa-auth-transaction-v1", JSON.stringify(stored));
+  vm.runInContext("activeAccount = null; clearRemoteSession();", context);
+
+  await vm.runInContext(
+    `completeAuthCallback(new URLSearchParams(${JSON.stringify(`platform=web&state=${stored.state}&purpose=signup&error=access_denied`)}))`,
+    context
+  );
+  assert.equal(vm.runInContext("authMode", context), "forgot");
+  assert.deepEqual(JSON.parse(context.localStorage.getItem("gym-pwa-auth-transaction-v1")), stored);
+
+  await vm.runInContext(
+    `completeAuthCallback(new URLSearchParams(${JSON.stringify(`platform=web&state=${stored.state}&purpose=recovery&error=access_denied&error_description=Expired`)}))`,
+    context
+  );
+  assert.equal(requests.length, 0);
+  assert.deepEqual(JSON.parse(context.localStorage.getItem("gym-pwa-auth-transaction-v1")), stored);
+});
+
 test("web password recovery keeps redirect_to on the exact production allowlist and exchanges PKCE locally", async () => {
   const requests = [];
   let recoveryState = "";
