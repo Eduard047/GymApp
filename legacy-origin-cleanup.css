@@ -61,6 +61,28 @@ p {
   font-weight: 700;
 }
 
+button.button {
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+}
+
+.cleanup-actions {
+  display: grid;
+  gap: 10px;
+}
+
+.button.danger {
+  background: #9a342e;
+}
+
+.button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+[hidden] { display: none !important; }
+
 @media (prefers-color-scheme: dark) {
   :root {
     color: #f6fbff;
@@ -78,5 +100,9 @@ p {
   .button {
     color: #04070c;
     background: #95d6bd;
+  }
+  .button.danger {
+    color: #fff;
+    background: #b6423b;
   }
 }

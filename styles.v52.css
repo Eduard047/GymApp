@@ -869,6 +869,82 @@ svg.filled-icon.small-icon {
   gap: 10px;
 }
 
+.auth-confirmation-preview {
+  margin: 12px 0 0;
+  text-align: center;
+}
+
+.email-confirmation-panel {
+  display: grid;
+  gap: 16px;
+  border-color: color-mix(in srgb, var(--sage) 34%, var(--outline));
+  background: color-mix(in srgb, var(--primary-container) 58%, var(--surface-highlight));
+}
+
+.email-confirmation-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.email-confirmation-heading > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.email-confirmation-heading span:not(.email-confirmation-icon) {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.email-confirmation-heading strong {
+  overflow-wrap: anywhere;
+  font-size: 16px;
+}
+
+.email-confirmation-icon {
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  color: var(--sage);
+  background: color-mix(in srgb, var(--sage) 14%, transparent);
+  font-size: 21px;
+}
+
+.email-confirmation-copy {
+  display: grid;
+  gap: 8px;
+}
+
+.email-confirmation-copy h2,
+.email-confirmation-copy p {
+  margin: 0;
+}
+
+.email-confirmation-status {
+  padding: 11px 12px;
+  border: 1px solid color-mix(in srgb, var(--sage) 30%, var(--outline));
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--sage) 10%, var(--surface));
+}
+
+.email-confirmation-status.error {
+  border-color: color-mix(in srgb, var(--danger) 38%, var(--outline));
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 9%, var(--surface));
+}
+
+.email-confirmation-actions {
+  display: grid;
+  gap: 8px;
+}
+
 .local-account-details {
   width: 100%;
 }

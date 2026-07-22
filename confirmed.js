@@ -12,6 +12,8 @@ const ANDROID_AUTH_CALLBACK_URLS = Object.freeze({
 const IOS_AUTH_CALLBACK_URL = "com.setforge.gymapp.ios://auth/callback";
 const AUTH_STATE_PATTERN = /^[A-Za-z0-9_-]{32}$/;
 const AUTH_CODE_PATTERN = /^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$/;
+const WEB_AUTH_TRANSACTION_KEY = "gym-pwa-auth-transaction-v1";
+const WEB_AUTH_TRANSACTION_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const button = document.querySelector("#open-app");
 const title = document.querySelector("#confirmation-title");
 const message = document.querySelector("#confirmation-message");
@@ -24,7 +26,8 @@ const BRIDGE_QUERY_KEYS = new Set([
   "purpose",
   "code",
   "error",
-  "error_description"
+  "error_description",
+  "error_code"
 ]);
 
 function setContent(nextTitle, nextMessage, buttonText, href) {
@@ -47,12 +50,12 @@ function decodeQueryComponent(value) {
   return decodeURIComponent(value.replace(/\+/g, " "));
 }
 
-function parseBridgeQuery() {
+function parseBridgeParameters(rawValue) {
   const values = new Map();
   let malformed = false;
   let tokenLike = false;
 
-  for (const pair of rawSearch.split("&").filter(Boolean)) {
+  for (const pair of rawValue.split("&").filter(Boolean)) {
     const separator = pair.indexOf("=");
     const rawKey = separator >= 0 ? pair.slice(0, separator) : pair;
     const rawValue = separator >= 0 ? pair.slice(separator + 1) : "";
@@ -88,7 +91,33 @@ function parseBridgeQuery() {
   };
 }
 
-const bridgeQuery = parseBridgeQuery();
+const bridgeQuery = parseBridgeParameters(rawSearch);
+const bridgeFragment = parseBridgeParameters(rawHash);
+
+function loadWebAuthTransaction() {
+  try {
+    const raw = window.localStorage?.getItem(WEB_AUTH_TRANSACTION_KEY);
+    if (!raw || new TextEncoder().encode(raw).byteLength > 4096) {
+      window.localStorage?.removeItem(WEB_AUTH_TRANSACTION_KEY);
+      return null;
+    }
+    const value = JSON.parse(raw);
+    if (!value || typeof value !== "object" || Array.isArray(value) || value.version !== 1 ||
+        !["signup", "recovery"].includes(value.purpose) ||
+        !AUTH_STATE_PATTERN.test(value.state || "") ||
+        !/^[A-Za-z0-9_-]{43,128}$/.test(value.verifier || "") ||
+        typeof value.email !== "string" || value.email.length > 254 ||
+        !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(value.email) ||
+        !Number.isSafeInteger(value.createdAt) || value.createdAt > Date.now() + 60_000 ||
+        Date.now() - value.createdAt > WEB_AUTH_TRANSACTION_MAX_AGE_MS) {
+      window.localStorage?.removeItem(WEB_AUTH_TRANSACTION_KEY);
+      return null;
+    }
+    return value;
+  } catch {
+    return null;
+  }
+}
 
 function configureIOSBridge() {
   const platforms = bridgeQuery.getAll("platform");
@@ -267,22 +296,92 @@ function configureAndroidBridge() {
 }
 
 function configureWebReturn() {
-  if (bridgeQuery.getAll("variant").length > 0) {
+  const platforms = bridgeQuery.getAll("platform");
+  const variants = bridgeQuery.getAll("variant");
+  const states = bridgeQuery.getAll("state");
+  const purposes = bridgeQuery.getAll("purpose");
+  const codes = bridgeQuery.getAll("code");
+  const errors = [...bridgeQuery.getAll("error"), ...bridgeFragment.getAll("error")];
+  const descriptions = [...bridgeQuery.getAll("error_description"), ...bridgeFragment.getAll("error_description")];
+  const errorCodes = [...bridgeQuery.getAll("error_code"), ...bridgeFragment.getAll("error_code")];
+  const hasError = errors.length === 1 && isSafeValue(errors[0], 128);
+  const hasDescription = descriptions.length === 1 && isSafeValue(descriptions[0], 1024);
+  const hasErrorCode = errorCodes.length === 1 && isSafeValue(errorCodes[0], 128);
+  const storedTransaction = loadWebAuthTransaction();
+  const callbackMalformed = platforms.length !== 1 || platforms[0] !== "web" ||
+    variants.length > 0 || bridgeQuery.malformed || bridgeQuery.tokenLike ||
+    bridgeFragment.malformed || bridgeFragment.tokenLike ||
+    states.length > 0 || purposes.length > 0 || codes.length > 1 ||
+    errors.length > 1 || descriptions.length > 1 || errorCodes.length > 1 ||
+    (errors.length === 1 && !hasError) || (descriptions.length > 0 && !hasDescription) ||
+    (errorCodes.length > 0 && !hasErrorCode) ||
+    ((descriptions.length > 0 || errorCodes.length > 0) && !hasError) ||
+    (hasError && codes.length > 0);
+
+  if (callbackMalformed) {
     setContent(
       "Confirmation link unavailable",
-      "This web confirmation link contains an unsupported app variant.",
+      "This web confirmation link is invalid or uses an unsupported authentication flow.",
+      "Return to GymApp website",
+      PUBLIC_SITE_URL
+    );
+    return false;
+  }
+
+  if (hasError) {
+    const recoveryError = storedTransaction?.purpose === "recovery";
+    setContent(
+      recoveryError ? "Password reset could not be verified" : "Confirmation could not be completed",
+      recoveryError
+        ? "This password reset link expired or is unavailable. Return to GymApp and request a new reset email."
+        : "This confirmation link expired or is unavailable. Return to GymApp and request a new confirmation email.",
+      "Return to GymApp",
+      PUBLIC_SITE_URL
+    );
+    return false;
+  }
+
+  if (codes.length === 1 && AUTH_CODE_PATTERN.test(codes[0]) && rawHash.length === 0 && storedTransaction) {
+    const appUrl = new URL(PUBLIC_SITE_URL);
+    appUrl.searchParams.set("platform", "web");
+    appUrl.searchParams.set("state", storedTransaction.state);
+    appUrl.searchParams.set("purpose", storedTransaction.purpose);
+    appUrl.searchParams.set("code", codes[0]);
+    if (storedTransaction.purpose === "recovery") {
+      setContent(
+        "Password reset verified",
+        "Continue to GymApp in this browser to choose a new password.",
+        "Continue to reset password",
+        appUrl.toString()
+      );
+    } else {
+      setContent(
+        "Email confirmed",
+        "Continue to GymApp in this browser to finish signing in.",
+        "Continue to GymApp",
+        appUrl.toString()
+      );
+    }
+    return true;
+  }
+
+  if (codes.length > 0 || bridgeQuery.getAll("error_code").length > 0 ||
+      bridgeFragment.getAll("error_code").length > 0) {
+    setContent(
+      "Confirmation link unavailable",
+      "Return to GymApp and request a new confirmation or password reset email in this browser.",
       "Return to GymApp website",
       PUBLIC_SITE_URL
     );
     return false;
   }
   setContent(
-    "Email confirmed",
-    "Your account is ready. Return to GymApp and log in with your password.",
-    "Return to GymApp",
+    "Confirmation link unavailable",
+    "Request a new confirmation or password reset email from GymApp in this browser.",
+    "Return to GymApp website",
     PUBLIC_SITE_URL
   );
-  return true;
+  return false;
 }
 
 const platform = bridgeQuery.getAll("platform")[0] || null;
@@ -290,7 +389,7 @@ let preserveCallbackURL = false;
 if (platform === "ios") {
   preserveCallbackURL = configureIOSBridge();
 } else if (platform === "web") {
-  configureWebReturn();
+  preserveCallbackURL = configureWebReturn();
 } else if (platform === null || platform === "android") {
   preserveCallbackURL = configureAndroidBridge();
 } else {

@@ -1,11 +1,14 @@
 "use strict";
 
 const CACHE_PREFIX = "gym-pwa-";
-const CACHE_VERSION = "v57";
+const CACHE_VERSION = "v64";
 const CACHE_NAME = `${CACHE_PREFIX}${CACHE_VERSION}`;
 const LEGACY_GITHUB_ORIGIN = "https://eduard047.github.io";
-const IS_LEGACY_GITHUB_ORIGIN = self.location.origin === LEGACY_GITHUB_ORIGIN;
-const LEGACY_CLEANUP_URL = new URL("./legacy-origin-cleanup.html", self.registration.scope);
+const LEGACY_GITHUB_SCOPE = `${LEGACY_GITHUB_ORIGIN}/GymApp/`;
+const LEGACY_GITHUB_SCOPE_URL = new URL(LEGACY_GITHUB_SCOPE);
+const IS_LEGACY_GITHUB_ORIGIN = self.location.origin === LEGACY_GITHUB_ORIGIN &&
+  self.registration.scope === LEGACY_GITHUB_SCOPE;
+const LEGACY_CLEANUP_URL = new URL("./legacy-origin-cleanup-v61.html", self.registration.scope);
 const LEGACY_CONFIRMATION_URL = new URL("./confirmed.html", self.registration.scope);
 const ASSETS = [
   "./",
@@ -135,6 +138,32 @@ async function cachedCanonicalDocument(url) {
   return cache.match(canonical.href);
 }
 
+function isWithinLegacyGithubScope(rawUrl) {
+  try {
+    const url = new URL(rawUrl);
+    return url.origin === LEGACY_GITHUB_SCOPE_URL.origin &&
+      url.pathname.startsWith(LEGACY_GITHUB_SCOPE_URL.pathname);
+  } catch {
+    return false;
+  }
+}
+
+async function deleteLegacyGithubScopeCacheEntries() {
+  const names = (await caches.keys()).filter(name => name.startsWith(CACHE_PREFIX));
+  await Promise.all(names.map(async name => {
+    const cache = await caches.open(name);
+    const requests = await cache.keys();
+    const results = await Promise.all(
+      requests
+        .filter(request => isWithinLegacyGithubScope(request.url))
+        .map(request => cache.delete(request))
+    );
+    if (!results.every(result => result === true)) {
+      throw new Error("Legacy GymApp cache cleanup was incomplete.");
+    }
+  }));
+}
+
 if (IS_LEGACY_GITHUB_ORIGIN) {
   self.addEventListener("install", event => {
     event.waitUntil(Promise.resolve(self.skipWaiting()));
@@ -142,13 +171,14 @@ if (IS_LEGACY_GITHUB_ORIGIN) {
 
   self.addEventListener("activate", event => {
     event.waitUntil(
-      caches.keys()
-        .then(keys => Promise.all(keys.filter(key => key.startsWith(CACHE_PREFIX)).map(key => caches.delete(key))))
+      deleteLegacyGithubScopeCacheEntries()
         .then(() => Promise.resolve(self.clients.claim()))
         .then(() => self.clients.matchAll({ type: "window", includeUncontrolled: true }))
         .then(clients => Promise.all(clients.map(client => {
           const clientUrl = new URL(client.url);
-          if (clientUrl.pathname === LEGACY_CONFIRMATION_URL.pathname) return null;
+          if (!isWithinLegacyGithubScope(clientUrl.href) ||
+              clientUrl.pathname === LEGACY_CONFIRMATION_URL.pathname ||
+              clientUrl.pathname === LEGACY_CLEANUP_URL.pathname) return null;
           return client.navigate(LEGACY_CLEANUP_URL.href).catch(() => null);
         })))
     );
@@ -159,12 +189,7 @@ if (IS_LEGACY_GITHUB_ORIGIN) {
     if (event.request.method !== "GET" || event.request.mode !== "navigate" ||
         url.origin !== self.location.origin || url.pathname === LEGACY_CLEANUP_URL.pathname ||
         url.pathname === LEGACY_CONFIRMATION_URL.pathname) return;
-    event.respondWith(fetch(LEGACY_CLEANUP_URL.href, {
-      cache: "no-store",
-      credentials: "omit",
-      redirect: "error",
-      referrerPolicy: "no-referrer"
-    }));
+    event.respondWith(Promise.resolve(Response.redirect(LEGACY_CLEANUP_URL.href, 302)));
   });
 } else {
   self.addEventListener("install", event => {
