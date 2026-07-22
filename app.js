@@ -5352,6 +5352,7 @@ async function retryPendingRemoteActivation() {
 }
 
 async function completeAuthCallback(query) {
+  const platforms = query.getAll("platform");
   const purposes = query.getAll("purpose");
   const states = query.getAll("state");
   const codes = query.getAll("code");
@@ -5360,26 +5361,36 @@ async function completeAuthCallback(query) {
   const allowedKeys = new Set(["platform", "purpose", "state", "code", "error", "error_description"]);
   const hasUnknownKey = [...query.keys()].some(key => !allowedKeys.has(key) || key.toLowerCase().includes("token"));
   const transaction = loadAuthTransaction();
-  const purpose = purposes[0] || "";
+  const callbackPurpose = purposes[0] || "";
   const stateValue = states[0] || "";
   const code = codes[0] || "";
   const callbackError = errors[0] || "";
-  const invalid = query.getAll("platform").length !== 1 || query.get("platform") !== "web" ||
-    purposes.length !== 1 || !["signup", "recovery"].includes(purpose) ||
-    states.length !== 1 || !/^[A-Za-z0-9_-]{32}$/.test(stateValue) ||
-    codes.length > 1 || errors.length > 1 || descriptions.length > 1 ||
-    (codes.length === 1) === (errors.length === 1) ||
-    (codes.length === 1 && !UUID_PATTERN.test(code)) ||
-    (errors.length === 1 && (!isSafeAuthCallbackValue(callbackError, 128) ||
-      (descriptions.length === 1 && !isSafeAuthCallbackValue(descriptions[0], 1024)))) ||
-    window.location.hash.length > 0 || hasUnknownKey ||
-    !transaction || transaction.state !== stateValue || transaction.purpose !== purpose;
+  const callbackDescription = descriptions[0] || "";
+  const callbackErrorIsSafe = isSafeAuthCallbackValue(callbackError, 128);
+  const callbackDescriptionIsSafe = isSafeAuthCallbackValue(callbackDescription, 1024);
+  const codePayloadIsValid = codes.length === 1 && errors.length === 0 &&
+    descriptions.length === 0 && UUID_PATTERN.test(code);
+  const errorPayloadIsValid = codes.length === 0 && errors.length === 1 &&
+    callbackErrorIsSafe && (descriptions.length === 0 ||
+      (descriptions.length === 1 && callbackDescriptionIsSafe));
+  const transactionMatchesCallback = Boolean(transaction &&
+    transaction.state === stateValue && transaction.purpose === callbackPurpose);
+  const callbackIsValid = [
+    platforms.length === 1 && platforms[0] === "web",
+    purposes.length === 1 && ["signup", "recovery"].includes(callbackPurpose),
+    states.length === 1 && /^[A-Za-z0-9_-]{32}$/.test(stateValue),
+    codePayloadIsValid || errorPayloadIsValid,
+    !hasUnknownKey,
+    window.location.hash.length === 0,
+    transactionMatchesCallback
+  ].every(Boolean);
+  const activationPurpose = transaction?.purpose === "recovery" ? "recovery" : "signup";
+  const isRecovery = activationPurpose === "recovery";
 
   window.history.replaceState(null, "", window.location.pathname || "/");
-  authMode = purpose === "recovery" ? "forgot" : "login";
-  if (invalid || callbackError) {
-    if (!invalid && callbackError) clearAuthTransaction(stateValue, purpose);
-    if (purpose === "recovery") {
+  authMode = isRecovery ? "forgot" : "login";
+  if (!callbackIsValid || callbackError) {
+    if (isRecovery) {
       showAuthNotice(callbackError
         ? tx(
           "This password reset link expired or could not be verified. Request a new email.",
@@ -5406,7 +5417,7 @@ async function completeAuthCallback(query) {
   authRequestInProgress = true;
   let activationHandoff = null;
   let exchangeSucceeded = false;
-  showAuthNotice(purpose === "recovery"
+  showAuthNotice(isRecovery
     ? tx("Verifying password reset…", "Перевіряємо скидання пароля…")
     : tx("Verifying email confirmation…", "Перевіряємо підтвердження електронної пошти…"), false);
   try {
@@ -5427,12 +5438,12 @@ async function completeAuthCallback(query) {
     }
     exchangeSucceeded = true;
     activationHandoff = beginRemoteActivation(session, {
-      requirePasswordUpdate: purpose === "recovery",
-      activationPurpose: purpose
+      requirePasswordUpdate: isRecovery,
+      activationPurpose
     });
-    clearAuthTransaction(stateValue, purpose);
+    clearAuthTransaction(transaction.state, activationPurpose);
     await finishRemoteActivation(activationHandoff.session, activationHandoff.account);
-    showToast(purpose === "recovery"
+    showToast(isRecovery
       ? tx(
         "Password reset verified. Choose a new password to continue.",
         "Скидання пароля підтверджено. Вибери новий пароль, щоб продовжити."
@@ -5444,7 +5455,7 @@ async function completeAuthCallback(query) {
   } catch (error) {
     if (!activationHandoff && (!exchangeSucceeded &&
         (deterministicAuthRequestFailure(error) || error?.malformedAuthSession === true))) {
-      clearAuthTransaction(stateValue, purpose);
+      clearAuthTransaction(transaction.state, activationPurpose);
     }
     if (!transitionToReauthentication(error)) {
       if (activationHandoff && retryableRemoteActivationError(error)) {
@@ -5456,7 +5467,7 @@ async function completeAuthCallback(query) {
         return;
       }
       if (activationHandoff) completePendingActivationMarker();
-      showAuthNotice(purpose === "recovery"
+      showAuthNotice(isRecovery
         ? tx(
           "Password reset could not be completed. Request a new reset email and try again.",
           "Не вдалося завершити скидання пароля. Запроси новий лист і спробуй ще раз."
