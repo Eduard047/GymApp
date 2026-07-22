@@ -38,8 +38,8 @@
     <string name="action_copy_last_plus">Копіювати +2.5 кг</string>
     <string name="action_save_workout">Зберегти тренування</string>
     <string name="action_delete">Видалити</string>
+    <string name="action_deleting">Видалення…</string>
     <string name="action_edit">Редагувати</string>
-    <string name="action_undo">Скасувати</string>
     <string name="action_cancel">Скасувати</string>
     <string name="action_save">Зберегти</string>
     <string name="action_close">Закрити</string>
@@ -268,6 +268,8 @@
     <string name="message_garmin_send_failed">Не вдалося надіслати план на Garmin. Перевір Bluetooth і спробуй ще раз.</string>
     <string name="smart_coach_plan_note">План Розумного тренера</string>
     <string name="message_set_deleted">Підхід видалено</string>
+    <string name="message_delete_target_changed">Видалення зупинено: збережені дані змінилися. Перевір їх і спробуй ще раз.</string>
+    <string name="message_delete_failed">Не вдалося видалити збережені дані. Цей запит нічого не видалив.</string>
     <string name="message_invalid_set_input">Введіть коректні повтори та необовʼязкову вагу.</string>
     <string name="message_exercise_error">Не вдалося зберегти вправу. Назва може вже існувати.</string>
 
@@ -567,6 +569,14 @@
     <string name="dialog_edit_set_title">Редагувати підхід</string>
     <string name="dialog_delete_workout_title">Видалити тренування?</string>
     <string name="dialog_delete_workout_message">Буде видалено тренування за %1$s з усіма вправами й підходами.</string>
+    <string name="dialog_delete_exercise_title">Видалити вправу?</string>
+    <string name="dialog_delete_exercise_message">Видалити «%1$s» із бібліотеки вправ?</string>
+    <string name="dialog_delete_exercise_impact">Зачеплено тренувань: %1$d. Буде видалено блоків вправи: %2$d. Підходів: %3$d. Цю дію не можна скасувати.</string>
+    <string name="dialog_delete_set_title">Видалити підхід?</string>
+    <string name="dialog_delete_set_message">Видалити підхід %1$d для вправи «%2$s» із тренування за %3$s? Записано: %4$s кг × %5$d.</string>
+    <string name="dialog_delete_set_impact_set_only">Буде видалено лише цей підхід.</string>
+    <string name="dialog_delete_set_impact_exercise">Це останній підхід у цьому блоці вправи. Блок вправи також буде видалено з тренування.</string>
+    <string name="dialog_delete_set_impact_workout">Це останній підхід у тренуванні. Усе тренування також буде видалено.</string>
     <string name="post_workout_unavailable_title">Підсумок тренування недоступний</string>
     <string name="post_workout_unavailable_supporting">Не вдалося завантажити це тренування.</string>
     <string name="post_workout_rewards_eyebrow">Нагороди</string>
@@ -618,6 +628,10 @@
     <string name="cd_language">Змінити мову</string>
     <string name="cd_add_workout">Додати тренування</string>
     <string name="cd_delete">Видалити</string>
+    <string name="cd_delete_exercise_named">Видалити вправу %1$s</string>
+    <string name="cd_delete_set_named">Видалити підхід %1$d для %2$s</string>
+    <string name="cd_delete_history_set_named">Видалити підхід %1$d для %2$s із тренування за %3$s</string>
+    <string name="cd_delete_workout_on">Видалити тренування за %1$s</string>
     <string name="exercise_favorite_add">Додати до обраного</string>
     <string name="exercise_favorite_remove">Прибрати з обраного</string>
     <string name="cd_edit">Редагувати</string>

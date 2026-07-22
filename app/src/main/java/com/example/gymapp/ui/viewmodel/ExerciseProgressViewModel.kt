@@ -6,15 +6,21 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.appcompat.app.AppCompatDelegate
+import com.example.gymapp.R
 import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.entity.ExerciseHistoryEntry
 import com.example.gymapp.data.repository.GymRepository
+import com.example.gymapp.data.repository.SetDeletionSnapshot
 import com.example.gymapp.util.DateTimeUtils
+import com.example.gymapp.util.LocalizedText
 import com.example.gymapp.util.RussianText
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
@@ -83,8 +89,23 @@ data class ExerciseProgressUiState(
     val bestWeight: Double? = null,
     val averageWeight: Double? = null,
     val spotlight: ExerciseProgressSpotlightUiModel = ExerciseProgressSpotlightUiModel(),
-    val trendChart: ExerciseTrendChartUiModel = ExerciseTrendChartUiModel()
+    val trendChart: ExerciseTrendChartUiModel = ExerciseTrendChartUiModel(),
+    val pendingSetDeletion: SetDeletionSnapshot? = null,
+    val isSetDeletionInProgress: Boolean = false,
+    val setDeletionError: LocalizedText? = null
 )
+
+private data class ExerciseProgressDeletionState(
+    val pending: SetDeletionSnapshot?,
+    val isInProgress: Boolean,
+    val error: LocalizedText?
+)
+
+sealed interface ExerciseProgressEvent {
+    data object SetDeleted : ExerciseProgressEvent
+    data object DeleteTargetChanged : ExerciseProgressEvent
+    data object DeleteFailed : ExerciseProgressEvent
+}
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ExerciseProgressViewModel(
@@ -99,6 +120,11 @@ class ExerciseProgressViewModel(
     private val shortDateFormatter = DateTimeFormatter.ofPattern("d MMM", locale)
     private val monthOffset = MutableStateFlow(0)
     private val selectedExerciseId = MutableStateFlow<Long?>(null)
+    private val pendingSetDeletion = MutableStateFlow<SetDeletionSnapshot?>(null)
+    private val isSetDeletionInProgress = MutableStateFlow(false)
+    private val setDeletionError = MutableStateFlow<LocalizedText?>(null)
+    private val _events = MutableSharedFlow<ExerciseProgressEvent>()
+    val events = _events.asSharedFlow()
 
     private val exercises = repository.observeExercises().stateIn(
         scope = viewModelScope,
@@ -124,7 +150,7 @@ class ExerciseProgressViewModel(
         }
     }
 
-    val uiState: StateFlow<ExerciseProgressUiState> = combine(
+    private val progressState = combine(
         monthOffset,
         exercises,
         selectedExerciseId,
@@ -155,6 +181,29 @@ class ExerciseProgressViewModel(
                 allTimePoints = allTimePoints
             ),
             trendChart = buildTrendChart(progressPoints)
+        )
+    }
+
+    private val deletionState = combine(
+        pendingSetDeletion,
+        isSetDeletionInProgress,
+        setDeletionError
+    ) { pending, isInProgress, error ->
+        ExerciseProgressDeletionState(
+            pending = pending,
+            isInProgress = isInProgress,
+            error = error
+        )
+    }
+
+    val uiState: StateFlow<ExerciseProgressUiState> = combine(
+        progressState,
+        deletionState
+    ) { progress, deletion ->
+        progress.copy(
+            pendingSetDeletion = deletion.pending,
+            isSetDeletionInProgress = deletion.isInProgress,
+            setDeletionError = deletion.error
         )
     }.stateIn(
         scope = viewModelScope,
@@ -194,9 +243,59 @@ class ExerciseProgressViewModel(
         monthOffset.value = 0
     }
 
-    fun deleteHistoryEntry(setId: Long) {
+    fun requestDeleteHistoryEntry(setId: Long) {
+        if (isSetDeletionInProgress.value || pendingSetDeletion.value != null) return
+        val expectedEntry = uiState.value.history.firstOrNull { it.setId == setId }
+        if (expectedEntry == null) {
+            viewModelScope.launch { _events.emit(ExerciseProgressEvent.DeleteTargetChanged) }
+            return
+        }
+        isSetDeletionInProgress.value = true
+        setDeletionError.value = null
         viewModelScope.launch {
-            repository.deleteSetById(setId)
+            try {
+                val snapshot = repository.getSetDeletionSnapshot(setId)
+                if (snapshot != null && snapshot.matchesRequestedHistoryEntry(expectedEntry)) {
+                    pendingSetDeletion.value = snapshot
+                } else {
+                    _events.emit(ExerciseProgressEvent.DeleteTargetChanged)
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {
+                _events.emit(ExerciseProgressEvent.DeleteFailed)
+            } finally {
+                isSetDeletionInProgress.value = false
+            }
+        }
+    }
+
+    fun dismissSetDeletion() {
+        if (isSetDeletionInProgress.value) return
+        pendingSetDeletion.value = null
+        setDeletionError.value = null
+    }
+
+    fun confirmSetDeletion() {
+        val expected = pendingSetDeletion.value ?: return
+        if (isSetDeletionInProgress.value || setDeletionError.value != null) return
+        isSetDeletionInProgress.value = true
+        viewModelScope.launch {
+            try {
+                if (repository.deleteSetIfUnchanged(expected)) {
+                    pendingSetDeletion.value = null
+                    setDeletionError.value = null
+                    _events.emit(ExerciseProgressEvent.SetDeleted)
+                } else {
+                    setDeletionError.value = LocalizedText(R.string.message_delete_target_changed)
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {
+                setDeletionError.value = LocalizedText(R.string.message_delete_failed)
+            } finally {
+                isSetDeletionInProgress.value = false
+            }
         }
     }
 

@@ -199,6 +199,8 @@ fun ExerciseListScreen(
     onSaveRenameExercise: () -> Unit,
     onDismissRenameExercise: () -> Unit,
     onDeleteExercise: (ExerciseEntity) -> Unit,
+    onConfirmDeleteExercise: () -> Unit,
+    onDismissDeleteExercise: () -> Unit,
     onEditExerciseMapping: (String) -> Unit,
     onToggleExerciseMappingMuscle: (String) -> Unit,
     onSaveExerciseMapping: () -> Unit,
@@ -327,6 +329,25 @@ fun ExerciseListScreen(
             }
         }
 
+        if (
+            uiState.exerciseDeletionError != null &&
+            uiState.pendingExerciseDeletion == null
+        ) {
+            item {
+                AppPanel(
+                    modifier = Modifier.fillMaxWidth(),
+                    containerColor = MaterialTheme.colorScheme.errorContainer
+                ) {
+                    Text(
+                        text = uiState.exerciseDeletionError.asString(),
+                        modifier = Modifier.padding(14.dp),
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            }
+        }
+
         item {
             ExerciseSearchAndFilters(
                 query = searchQuery,
@@ -366,6 +387,7 @@ fun ExerciseListScreen(
                 val mappingCount = musclesByExercise[exercise.name].orEmpty().size
                 val workoutCount = uiState.exerciseWorkoutCounts[exercise.id] ?: 0
                 val isBuiltIn = BuiltInExerciseCatalog.definitionForName(exercise.name) != null
+                val displayExerciseName = localizedExerciseName(exercise.name)
                 AppPanel(
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -381,7 +403,7 @@ fun ExerciseListScreen(
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Text(
-                                text = localizedExerciseName(exercise.name),
+                                text = displayExerciseName,
                                 modifier = Modifier.weight(1f),
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
@@ -422,8 +444,11 @@ fun ExerciseListScreen(
                             IconButton(onClick = { onDeleteExercise(exercise) }) {
                                 Icon(
                                     imageVector = Icons.Default.Delete,
-                                    contentDescription = stringResource(R.string.cd_delete),
-                                    tint = MaterialTheme.colorScheme.onSurface
+                                    contentDescription = stringResource(
+                                        R.string.cd_delete_exercise_named,
+                                        displayExerciseName
+                                    ),
+                                    tint = MaterialTheme.colorScheme.error
                                 )
                             }
                         }
@@ -481,6 +506,16 @@ fun ExerciseListScreen(
                 }
             }
         }
+    }
+
+    uiState.pendingExerciseDeletion?.let { snapshot ->
+        ExerciseDeleteConfirmationDialog(
+            snapshot = snapshot,
+            isDeleting = uiState.isExerciseDeletionInProgress,
+            error = uiState.exerciseDeletionError,
+            onDismiss = onDismissDeleteExercise,
+            onConfirm = onConfirmDeleteExercise
+        )
     }
 
     if (isAddExerciseOpen) {

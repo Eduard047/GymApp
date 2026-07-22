@@ -35,7 +35,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -92,10 +91,11 @@ fun WorkoutDetailScreen(
     onAddExerciseToWorkout: (Long) -> Unit,
     onAddSet: (Long) -> Unit,
     onDeleteSet: (SetEntryEntity) -> Unit,
+    onConfirmDeleteSet: () -> Unit,
+    onDismissDeleteSet: () -> Unit,
     onDeleteSession: () -> Unit,
     onSessionDeleted: () -> Unit,
     onUpdateSet: (SetEntryEntity, String, String) -> Unit,
-    onUndoDelete: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
@@ -144,14 +144,10 @@ fun WorkoutDetailScreen(
         events.collect { event ->
             when (event) {
                 WorkoutDetailEvent.SetDeleted -> {
-                    val result = snackbarHostState.showSnackbar(
+                    snackbarHostState.showSnackbar(
                         message = context.getString(R.string.message_set_deleted),
-                        actionLabel = context.getString(R.string.action_undo),
                         duration = SnackbarDuration.Short
                     )
-                    if (result == SnackbarResult.ActionPerformed) {
-                        onUndoDelete()
-                    }
                 }
 
                 WorkoutDetailEvent.SessionDeleted -> {
@@ -161,6 +157,20 @@ fun WorkoutDetailScreen(
                 WorkoutDetailEvent.InvalidInput -> {
                     snackbarHostState.showSnackbar(
                         message = context.getString(R.string.message_invalid_set_input),
+                        duration = SnackbarDuration.Short
+                    )
+                }
+
+                WorkoutDetailEvent.DeleteTargetChanged -> {
+                    snackbarHostState.showSnackbar(
+                        message = context.getString(R.string.message_delete_target_changed),
+                        duration = SnackbarDuration.Short
+                    )
+                }
+
+                WorkoutDetailEvent.DeleteFailed -> {
+                    snackbarHostState.showSnackbar(
+                        message = context.getString(R.string.message_delete_failed),
                         duration = SnackbarDuration.Short
                     )
                 }
@@ -251,6 +261,7 @@ fun WorkoutDetailScreen(
                 ) { exerciseDetails ->
                     val workoutExerciseId = exerciseDetails.workoutExercise.id
                     val localRestSecondsRemaining = remainingExerciseTimerSeconds(workoutExerciseId)
+                    val displayExerciseName = localizedExerciseName(exerciseDetails.exercise.name)
                     var isExpanded by rememberSaveable(workoutExerciseId, isGarminWorkout) {
                         mutableStateOf(!isGarminWorkout)
                     }
@@ -285,7 +296,7 @@ fun WorkoutDetailScreen(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 Text(
-                                    text = localizedExerciseName(exerciseDetails.exercise.name),
+                                    text = displayExerciseName,
                                     style = MaterialTheme.typography.titleMedium,
                                     modifier = Modifier.weight(1f),
                                     maxLines = 1,
@@ -477,7 +488,11 @@ fun WorkoutDetailScreen(
                                             IconButton(onClick = { onDeleteSet(setEntry) }) {
                                                 Icon(
                                                     imageVector = Icons.Default.Delete,
-                                                    contentDescription = stringResource(R.string.cd_delete),
+                                                    contentDescription = stringResource(
+                                                        R.string.cd_delete_set_named,
+                                                        setIndex + 1,
+                                                        displayExerciseName
+                                                    ),
                                                     tint = MaterialTheme.colorScheme.error
                                                 )
                                             }
@@ -566,6 +581,16 @@ fun WorkoutDetailScreen(
         )
     }
 
+    uiState.pendingSetDeletion?.let { snapshot ->
+        SetDeleteConfirmationDialog(
+            snapshot = snapshot,
+            isDeleting = uiState.isSetDeletionInProgress,
+            error = uiState.setDeletionError,
+            onDismiss = onDismissDeleteSet,
+            onConfirm = onConfirmDeleteSet
+        )
+    }
+
     if (confirmDeleteSession) {
         val details = uiState.sessionDetails
         AlertDialog(
@@ -625,7 +650,10 @@ private fun WorkoutHeaderCard(
                 IconButton(onClick = onDelete) {
                     Icon(
                         imageVector = Icons.Default.Delete,
-                        contentDescription = stringResource(R.string.cd_delete)
+                        contentDescription = stringResource(
+                            R.string.cd_delete_workout_on,
+                            date
+                        )
                     )
                 }
             }
@@ -698,7 +726,10 @@ private fun GarminWorkoutHeaderCard(
                 IconButton(onClick = onDelete) {
                     Icon(
                         imageVector = Icons.Default.Delete,
-                        contentDescription = stringResource(R.string.cd_delete)
+                        contentDescription = stringResource(
+                            R.string.cd_delete_workout_on,
+                            date
+                        )
                     )
                 }
             }

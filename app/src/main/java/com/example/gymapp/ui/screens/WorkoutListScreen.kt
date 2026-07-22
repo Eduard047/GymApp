@@ -201,6 +201,7 @@ fun WorkoutListScreen(
                     items = uiState.sessions,
                     key = { it.session.id }
                 ) { sessionSummary ->
+                    val displayDate = DateTimeUtils.formatDate(sessionSummary.session.date)
                     AppPanel(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -218,7 +219,7 @@ fun WorkoutListScreen(
                                 Text(
                                     text = stringResource(
                                         R.string.session_item_title,
-                                        DateTimeUtils.formatDate(sessionSummary.session.date)
+                                        displayDate
                                     ),
                                     style = MaterialTheme.typography.titleMedium,
                                     maxLines = 1,
@@ -231,7 +232,10 @@ fun WorkoutListScreen(
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.Delete,
-                                        contentDescription = stringResource(R.string.cd_delete)
+                                        contentDescription = stringResource(
+                                            R.string.cd_delete_workout_on,
+                                            displayDate
+                                        )
                                     )
                                 }
                             }

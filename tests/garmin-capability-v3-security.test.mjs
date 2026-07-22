@@ -157,7 +157,7 @@ test("PWA preserves released watches while the future binary binds v3 to account
   assert.match(app, /replacementNonce/);
   assert.match(app, /capabilityVersion: GARMIN_CAPABILITY_VERSION/);
   assert.match(app, /GARMIN_CAPABILITY_PATTERN\.exec\(token\)/);
-  assert.match(worker, /CACHE_VERSION = "v65"/);
+  assert.match(worker, /CACHE_VERSION = "v66"/);
 
   assert.match(comm, /cloudCapabilityLength = 234/);
   assert.match(comm, /legacyCapabilityLength = 64/);

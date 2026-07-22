@@ -1011,11 +1011,12 @@ fun GymAppRoot(
                                 events = viewModel.events,
                                 onAddExerciseToWorkout = viewModel::addExerciseToWorkout,
                                 onAddSet = viewModel::addSet,
-                                onDeleteSet = viewModel::deleteSet,
+                                onDeleteSet = viewModel::requestDeleteSet,
+                                onConfirmDeleteSet = viewModel::confirmSetDeletion,
+                                onDismissDeleteSet = viewModel::dismissSetDeletion,
                                 onDeleteSession = viewModel::deleteSession,
                                 onSessionDeleted = { navController.popBackStack() },
                                 onUpdateSet = viewModel::updateSet,
-                                onUndoDelete = viewModel::undoDeleteSet,
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
@@ -1035,7 +1036,9 @@ fun GymAppRoot(
                                 onRenameExerciseNameChange = viewModel::updateEditingExerciseName,
                                 onSaveRenameExercise = viewModel::saveRenameExercise,
                                 onDismissRenameExercise = viewModel::closeRenameExercise,
-                                onDeleteExercise = viewModel::deleteExercise,
+                                onDeleteExercise = viewModel::requestDeleteExercise,
+                                onConfirmDeleteExercise = viewModel::confirmExerciseDeletion,
+                                onDismissDeleteExercise = viewModel::dismissExerciseDeletion,
                                 onEditExerciseMapping = viewModel::openExerciseMapping,
                                 onToggleExerciseMappingMuscle = viewModel::toggleExerciseMappingMuscle,
                                 onSaveExerciseMapping = viewModel::saveExerciseMapping,
@@ -1054,8 +1057,11 @@ fun GymAppRoot(
 
                             ExerciseProgressScreen(
                                 uiState = uiState,
+                                events = viewModel.events,
                                 onSelectExercise = viewModel::selectExercise,
-                                onDeleteHistoryEntry = viewModel::deleteHistoryEntry,
+                                onDeleteHistoryEntry = viewModel::requestDeleteHistoryEntry,
+                                onConfirmDeleteHistoryEntry = viewModel::confirmSetDeletion,
+                                onDismissDeleteHistoryEntry = viewModel::dismissSetDeletion,
                                 onPreviousMonth = viewModel::previousMonth,
                                 onCurrentMonth = viewModel::currentMonth,
                                 onNextMonth = viewModel::nextMonth,

@@ -9,6 +9,7 @@ import com.example.gymapp.R
 import com.example.gymapp.auth.AccountSession
 import com.example.gymapp.auth.CloudAuthManager
 import com.example.gymapp.data.repository.BackupOwner
+import com.example.gymapp.data.repository.ExerciseDeletionSnapshot
 import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.entity.ExerciseHistoryEntry
 import com.example.gymapp.data.repository.GymRepository
@@ -18,6 +19,7 @@ import com.example.gymapp.data.repository.defaultContributionsForExercise
 import com.example.gymapp.data.repository.normalizedExerciseName
 import com.example.gymapp.data.repository.toManualContributionMap
 import com.example.gymapp.util.LocalizedText
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -41,6 +43,9 @@ data class ExerciseListUiState(
     val selectedExerciseId: Long? = null,
     val selectedExerciseName: String? = null,
     val selectedExerciseHistory: List<ExerciseHistoryEntry> = emptyList(),
+    val pendingExerciseDeletion: ExerciseDeletionSnapshot? = null,
+    val isExerciseDeletionInProgress: Boolean = false,
+    val exerciseDeletionError: LocalizedText? = null,
     val backupJson: String? = null,
     val backupIsDiagnostics: Boolean = false,
     val backupMessage: LocalizedText? = null,
@@ -108,6 +113,12 @@ private data class ExerciseMappingState(
     val editorMuscles: List<ExerciseMuscleOptionUiModel>
 )
 
+private data class ExerciseDeletionState(
+    val pending: ExerciseDeletionSnapshot?,
+    val isInProgress: Boolean,
+    val error: LocalizedText?
+)
+
 @OptIn(ExperimentalCoroutinesApi::class)
 class ExerciseListViewModel(
     private val repository: GymRepository,
@@ -124,6 +135,9 @@ class ExerciseListViewModel(
     private val importMessage = MutableStateFlow<LocalizedText?>(null)
     private val isImportOpen = MutableStateFlow(false)
     private val mappingEditorExerciseName = MutableStateFlow<String?>(null)
+    private val pendingExerciseDeletion = MutableStateFlow<ExerciseDeletionSnapshot?>(null)
+    private val isExerciseDeletionInProgress = MutableStateFlow(false)
+    private val exerciseDeletionError = MutableStateFlow<LocalizedText?>(null)
 
     private val selectedExerciseHistory = selectedExerciseId.flatMapLatest { exerciseId ->
         if (exerciseId == null) {
@@ -227,12 +241,25 @@ class ExerciseListViewModel(
         )
     }
 
+    private val deletionState = combine(
+        pendingExerciseDeletion,
+        isExerciseDeletionInProgress,
+        exerciseDeletionError
+    ) { pending, isInProgress, error ->
+        ExerciseDeletionState(
+            pending = pending,
+            isInProgress = isInProgress,
+            error = error
+        )
+    }
+
     val uiState: StateFlow<ExerciseListUiState> = combine(
         baseState,
         editState,
         backupState,
-        mappingState
-    ) { base, edit, backup, mapping ->
+        mappingState,
+        deletionState
+    ) { base, edit, backup, mapping, deletion ->
         ExerciseListUiState(
             exercises = base.exercises,
             exerciseWorkoutCounts = base.exerciseWorkoutCounts,
@@ -246,6 +273,9 @@ class ExerciseListViewModel(
             selectedExerciseId = base.selectedExerciseId,
             selectedExerciseName = base.exercises.firstOrNull { it.id == base.selectedExerciseId }?.name,
             selectedExerciseHistory = base.selectedExerciseHistory,
+            pendingExerciseDeletion = deletion.pending,
+            isExerciseDeletionInProgress = deletion.isInProgress,
+            exerciseDeletionError = deletion.error,
             backupJson = backup.generatedExport?.json,
             backupIsDiagnostics = backup.generatedExport?.diagnosticsOnly == true,
             backupMessage = backup.backupMessage,
@@ -293,9 +323,53 @@ class ExerciseListViewModel(
         }
     }
 
-    fun deleteExercise(exercise: ExerciseEntity) {
+    fun requestDeleteExercise(exercise: ExerciseEntity) {
+        if (isExerciseDeletionInProgress.value || pendingExerciseDeletion.value != null) return
+        isExerciseDeletionInProgress.value = true
+        exerciseDeletionError.value = null
         viewModelScope.launch {
-            repository.deleteExercise(exercise)
+            try {
+                val snapshot = repository.getExerciseDeletionSnapshot(exercise.id)
+                if (snapshot != null && snapshot.matchesRequestedExercise(exercise)) {
+                    pendingExerciseDeletion.value = snapshot
+                } else {
+                    exerciseDeletionError.value = LocalizedText(R.string.message_delete_target_changed)
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {
+                exerciseDeletionError.value = LocalizedText(R.string.message_delete_failed)
+            } finally {
+                isExerciseDeletionInProgress.value = false
+            }
+        }
+    }
+
+    fun dismissExerciseDeletion() {
+        if (isExerciseDeletionInProgress.value) return
+        pendingExerciseDeletion.value = null
+        exerciseDeletionError.value = null
+    }
+
+    fun confirmExerciseDeletion() {
+        val expected = pendingExerciseDeletion.value ?: return
+        if (isExerciseDeletionInProgress.value || exerciseDeletionError.value != null) return
+        isExerciseDeletionInProgress.value = true
+        viewModelScope.launch {
+            try {
+                if (repository.deleteExerciseIfUnchanged(expected)) {
+                    pendingExerciseDeletion.value = null
+                    exerciseDeletionError.value = null
+                } else {
+                    exerciseDeletionError.value = LocalizedText(R.string.message_delete_target_changed)
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {
+                exerciseDeletionError.value = LocalizedText(R.string.message_delete_failed)
+            } finally {
+                isExerciseDeletionInProgress.value = false
+            }
         }
     }
 

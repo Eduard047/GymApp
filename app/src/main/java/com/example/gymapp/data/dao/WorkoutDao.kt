@@ -12,6 +12,18 @@ import com.example.gymapp.data.entity.WorkoutSessionEntity
 import com.example.gymapp.data.entity.WorkoutSessionSummary
 import kotlinx.coroutines.flow.Flow
 
+data class ExerciseDeletionCascadeRow(
+    val workoutExerciseId: Long,
+    val workoutSessionId: Long,
+    val workoutExerciseExerciseId: Long,
+    val workoutExerciseOrderIndex: Int,
+    val setId: Long?,
+    val setWorkoutExerciseId: Long?,
+    val setWeight: Double?,
+    val setReps: Int?,
+    val setOrderIndex: Int?
+)
+
 @Dao
 interface WorkoutDao {
     @Query("SELECT COUNT(*) FROM workout_sessions")
@@ -19,6 +31,28 @@ interface WorkoutDao {
 
     @Query("SELECT COUNT(*) FROM workout_exercises")
     suspend fun getTotalWorkoutExerciseCount(): Int
+
+    @Query(
+        """
+        SELECT
+            we.id AS workoutExerciseId,
+            we.sessionId AS workoutSessionId,
+            we.exerciseId AS workoutExerciseExerciseId,
+            we.orderIndex AS workoutExerciseOrderIndex,
+            se.id AS setId,
+            se.workoutExerciseId AS setWorkoutExerciseId,
+            se.weight AS setWeight,
+            se.reps AS setReps,
+            se.orderIndex AS setOrderIndex
+        FROM workout_exercises we
+        LEFT JOIN set_entries se ON se.workoutExerciseId = we.id
+        WHERE we.exerciseId = :exerciseId
+        ORDER BY we.id ASC, se.id ASC
+        """
+    )
+    suspend fun getExerciseDeletionCascadeRows(
+        exerciseId: Long
+    ): List<ExerciseDeletionCascadeRow>
 
     @Query(
         """

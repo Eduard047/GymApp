@@ -3786,26 +3786,308 @@ final class CoreParityTests: XCTestCase {
             urlSession.invalidateAndCancel()
         }
 
+        var requestDispositions: [AccountDeletionRequestDisposition] = []
         do {
-            try await auth.deleteCloudAccountOnServer(expectedUserID: "original-user")
+            try await auth.deleteCloudAccountOnServer(
+                expectedUserID: "original-user",
+                onRequestDispositionChange: { disposition in
+                    requestDispositions.append(disposition)
+                }
+            )
             XCTFail("Deletion must not follow a replacement authenticated session.")
         } catch AuthServiceError.sessionChanged {
             // Expected.
         } catch {
             XCTFail("Unexpected deletion error: \(error)")
         }
+        XCTAssertTrue(requestDispositions.isEmpty)
         XCTAssertTrue(recorder.requests.isEmpty)
         XCTAssertEqual(auth.session?.cloud?.userID, "replacement-user")
     }
 
-    func testMalformedDeleteSuccessDoesNotEraseLocalAccount() async throws {
-        let directory = try temporaryDirectory(named: "malformed-delete-success")
-        let defaults = temporaryDefaults(named: "malformed-delete-success")
+    func testAppStateDeletionRequiresTheConfirmedStorageKeyAndCloudUserID() async throws {
+        let directory = try temporaryDirectory(named: "delete-confirmed-identity")
+        let defaults = temporaryDefaults(named: "delete-confirmed-identity")
+        let recorder = AuthRequestRecorder()
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [AuthURLProtocolStub.self]
         let urlSession = URLSession(configuration: configuration)
         let auth = AuthService(
             keychain: InMemoryKeychainStore(),
+            urlSession: urlSession,
+            defaults: defaults
+        )
+        let cloud = cloudSession(userID: "confirmed-delete-user")
+        let accountSession = AppAccountSession.cloud(cloud)
+        let owner = BackupOwner(
+            accountID: accountSession.storageKey,
+            userID: cloud.userID,
+            email: cloud.email,
+            remote: true
+        )
+        let remote = try remoteBackupData(exerciseName: "Confirmed Account Data", owner: owner)
+        try auth.installSessionForTesting(accountSession)
+        AuthURLProtocolStub.handler = { request in
+            recorder.append(request)
+            return try AuthURLProtocolStub.response(
+                for: request,
+                json: #"{"deleted":true}"#
+            )
+        }
+        defer {
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+        }
+
+        let appState = try AppState(
+            auth: auth,
+            defaults: defaults,
+            workoutDirectoryURL: directory,
+            remoteStateLoader: { requestedUserID in
+                XCTAssertEqual(requestedUserID, cloud.userID)
+                return remote
+            }
+        )
+        let accountReady = await waitUntil { appState.isAccountReady }
+        XCTAssertTrue(accountReady)
+        let storageURL = appState.workoutStore.storageURL
+        let unconfirmedTargets: [(storageKey: String, cloudUserID: String?)] = [
+            (accountSession.storageKey, "different-cloud-user"),
+            ("cloud_different-storage-key", cloud.userID)
+        ]
+
+        for target in unconfirmedTargets {
+            do {
+                try await appState.deleteCurrentAccountAndData(
+                    expectedStorageKey: target.storageKey,
+                    expectedCloudUserID: target.cloudUserID
+                )
+                XCTFail("Deletion must not follow an identity that was not confirmed.")
+            } catch AuthServiceError.sessionChanged {
+                // Expected.
+            } catch {
+                XCTFail("Unexpected confirmed-identity error: \(error)")
+            }
+        }
+
+        XCTAssertTrue(recorder.requests.isEmpty)
+        XCTAssertEqual(auth.session, accountSession)
+        XCTAssertTrue(appState.isAccountReady)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: storageURL.path))
+        XCTAssertNil(defaults.string(forKey: "gymapp.pending-account-deletion-storage-key"))
+    }
+
+    func testAppStateDeletionStopsLocalCleanupWhenAccountChangesDuringServerAwait() async throws {
+        let directory = try temporaryDirectory(named: "delete-account-switch")
+        let defaults = temporaryDefaults(named: "delete-account-switch")
+        let recorder = AuthRequestRecorder()
+        let requestStarted = expectation(description: "delete request started")
+        let releaseRequest = DispatchSemaphore(value: 0)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        let auth = AuthService(
+            keychain: InMemoryKeychainStore(),
+            urlSession: urlSession,
+            defaults: defaults
+        )
+        let originalCloud = cloudSession(userID: "delete-original-user")
+        let replacementCloud = cloudSession(userID: "delete-replacement-user")
+        let originalSession = AppAccountSession.cloud(originalCloud)
+        let replacementSession = AppAccountSession.cloud(replacementCloud)
+        let originalOwner = BackupOwner(
+            accountID: originalSession.storageKey,
+            userID: originalCloud.userID,
+            email: originalCloud.email,
+            remote: true
+        )
+        let replacementOwner = BackupOwner(
+            accountID: replacementSession.storageKey,
+            userID: replacementCloud.userID,
+            email: replacementCloud.email,
+            remote: true
+        )
+        let remoteByUserID = [
+            originalCloud.userID: try remoteBackupData(
+                exerciseName: "Original Account Data",
+                owner: originalOwner
+            ),
+            replacementCloud.userID: try remoteBackupData(
+                exerciseName: "Replacement Account Data",
+                owner: replacementOwner
+            )
+        ]
+        try auth.installSessionForTesting(originalSession)
+        AuthURLProtocolStub.handler = { request in
+            recorder.append(request)
+            requestStarted.fulfill()
+            _ = releaseRequest.wait(timeout: .now() + 5)
+            return try AuthURLProtocolStub.response(
+                for: request,
+                json: #"{"deleted":true}"#
+            )
+        }
+        defer {
+            releaseRequest.signal()
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+        }
+
+        let appState = try AppState(
+            auth: auth,
+            defaults: defaults,
+            workoutDirectoryURL: directory,
+            remoteStateLoader: { requestedUserID in
+                try XCTUnwrap(remoteByUserID[requestedUserID])
+            }
+        )
+        let originalReady = await waitUntil { appState.isAccountReady }
+        XCTAssertTrue(originalReady)
+        let originalStorageURL = appState.workoutStore.storageURL
+
+        let deletion = Task {
+            try await appState.deleteCurrentAccountAndData(
+                expectedStorageKey: originalSession.storageKey,
+                expectedCloudUserID: originalCloud.userID
+            )
+        }
+        await fulfillment(of: [requestStarted], timeout: 2)
+        try auth.installSessionForTesting(replacementSession)
+        releaseRequest.signal()
+
+        do {
+            try await deletion.value
+            XCTFail("A response for the old account must not continue local cleanup.")
+        } catch AuthServiceError.sessionChanged {
+            // Expected.
+        } catch {
+            XCTFail("Unexpected account-switch deletion error: \(error)")
+        }
+
+        let replacementReady = await waitUntil {
+            appState.isAccountReady
+                && appState.workoutStore.accountStorageKey == replacementSession.storageKey
+        }
+        XCTAssertTrue(replacementReady)
+        XCTAssertEqual(auth.session, replacementSession)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: originalStorageURL.path))
+        XCTAssertTrue(
+            customExerciseNames(in: appState.workoutStore).contains("Replacement Account Data")
+        )
+        XCTAssertEqual(recorder.requests.count, 1)
+        XCTAssertEqual(
+            defaults.string(forKey: "gymapp.pending-account-deletion-storage-key"),
+            originalSession.storageKey
+        )
+    }
+
+    func testAppStateDeletionCoalescesDuplicateTasksForTheConfirmedAccount() async throws {
+        let directory = try temporaryDirectory(named: "delete-single-flight")
+        let defaults = temporaryDefaults(named: "delete-single-flight")
+        let recorder = AuthRequestRecorder()
+        let requestStarted = expectation(description: "delete request started")
+        let releaseRequest = DispatchSemaphore(value: 0)
+        let gateLock = NSLock()
+        var hasBlockedRequest = false
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        let auth = AuthService(
+            keychain: InMemoryKeychainStore(),
+            urlSession: urlSession,
+            defaults: defaults
+        )
+        let cloud = cloudSession(userID: "single-flight-delete-user")
+        let accountSession = AppAccountSession.cloud(cloud)
+        let owner = BackupOwner(
+            accountID: accountSession.storageKey,
+            userID: cloud.userID,
+            email: cloud.email,
+            remote: true
+        )
+        let remote = try remoteBackupData(exerciseName: "Single Flight Data", owner: owner)
+        try auth.installSessionForTesting(accountSession)
+        AuthURLProtocolStub.handler = { request in
+            recorder.append(request)
+            let shouldBlock = gateLock.withLock {
+                guard !hasBlockedRequest else { return false }
+                hasBlockedRequest = true
+                return true
+            }
+            if shouldBlock {
+                requestStarted.fulfill()
+                _ = releaseRequest.wait(timeout: .now() + 5)
+            }
+            return try AuthURLProtocolStub.response(
+                for: request,
+                json: #"{"deleted":true}"#
+            )
+        }
+        defer {
+            releaseRequest.signal()
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+        }
+
+        let appState = try AppState(
+            auth: auth,
+            defaults: defaults,
+            workoutDirectoryURL: directory,
+            remoteStateLoader: { requestedUserID in
+                XCTAssertEqual(requestedUserID, cloud.userID)
+                return remote
+            }
+        )
+        let accountReady = await waitUntil { appState.isAccountReady }
+        XCTAssertTrue(accountReady)
+        let storageURL = appState.workoutStore.storageURL
+
+        let firstDeletion = Task {
+            try await appState.deleteCurrentAccountAndData(
+                expectedStorageKey: accountSession.storageKey,
+                expectedCloudUserID: cloud.userID
+            )
+        }
+        await fulfillment(of: [requestStarted], timeout: 2)
+
+        do {
+            try await appState.deleteCurrentAccountAndData(
+                expectedStorageKey: "cloud_unconfirmed-replacement",
+                expectedCloudUserID: "unconfirmed-replacement"
+            )
+            XCTFail("An in-flight deletion must not be reused for another target.")
+        } catch AuthServiceError.sessionChanged {
+            // Expected.
+        } catch {
+            XCTFail("Unexpected in-flight target error: \(error)")
+        }
+
+        let duplicateDeletion = Task {
+            try await appState.deleteCurrentAccountAndData(
+                expectedStorageKey: accountSession.storageKey,
+                expectedCloudUserID: cloud.userID
+            )
+        }
+        await Task.yield()
+        releaseRequest.signal()
+
+        try await firstDeletion.value
+        try await duplicateDeletion.value
+        XCTAssertEqual(recorder.requests.count, 1)
+        XCTAssertNil(auth.session)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: storageURL.path))
+        XCTAssertNil(defaults.string(forKey: "gymapp.pending-account-deletion-storage-key"))
+    }
+
+    func testMalformedDeleteSuccessPreservesPendingCleanupMarker() async throws {
+        let directory = try temporaryDirectory(named: "malformed-delete-success")
+        let defaults = temporaryDefaults(named: "malformed-delete-success")
+        let keychain = InMemoryKeychainStore()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        let auth = AuthService(
+            keychain: keychain,
             urlSession: urlSession,
             defaults: defaults
         )
@@ -3842,8 +4124,11 @@ final class CoreParityTests: XCTestCase {
         let storageURL = appState.workoutStore.storageURL
 
         do {
-            try await appState.deleteCurrentAccountAndData()
-            XCTFail("A 2xx response without {deleted:true} must not erase local account data.")
+            try await appState.deleteCurrentAccountAndData(
+                expectedStorageKey: accountSession.storageKey,
+                expectedCloudUserID: cloud.userID
+            )
+            XCTFail("A 2xx response without {deleted:true} must be treated as outcome unknown.")
         } catch AuthServiceError.malformedResponse {
             // Expected.
         } catch {
@@ -3854,7 +4139,654 @@ final class CoreParityTests: XCTestCase {
         XCTAssertTrue(appState.isAccountReady)
         XCTAssertTrue(FileManager.default.fileExists(atPath: storageURL.path))
         XCTAssertTrue(customExerciseNames(in: appState.workoutStore).contains("Local Before Delete"))
+        XCTAssertEqual(
+            defaults.string(forKey: "gymapp.pending-account-deletion-storage-key"),
+            accountSession.storageKey
+        )
+
+        let relaunchedAuth = AuthService(
+            keychain: keychain,
+            urlSession: urlSession,
+            defaults: defaults
+        )
+        _ = try AppState(
+            auth: relaunchedAuth,
+            defaults: defaults,
+            workoutDirectoryURL: directory
+        )
+
+        XCTAssertNil(relaunchedAuth.session)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: storageURL.path))
         XCTAssertNil(defaults.string(forKey: "gymapp.pending-account-deletion-storage-key"))
+    }
+
+    func testLostDeleteResponsePreservesPendingCleanupMarker() async throws {
+        let directory = try temporaryDirectory(named: "lost-delete-response")
+        let defaults = temporaryDefaults(named: "lost-delete-response")
+        let recorder = AuthRequestRecorder()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        let auth = AuthService(
+            keychain: InMemoryKeychainStore(),
+            urlSession: urlSession,
+            defaults: defaults
+        )
+        let cloud = cloudSession(userID: "lost-delete-response-user")
+        let accountSession = AppAccountSession.cloud(cloud)
+        let owner = BackupOwner(
+            accountID: accountSession.storageKey,
+            userID: cloud.userID,
+            email: cloud.email,
+            remote: true
+        )
+        let remote = try remoteBackupData(exerciseName: "Remote Before Lost Delete", owner: owner)
+        try auth.installSessionForTesting(accountSession)
+        AuthURLProtocolStub.handler = { request in
+            recorder.append(request)
+            XCTAssertEqual(request.url?.path, "/functions/v1/delete-account")
+            throw URLError(.networkConnectionLost)
+        }
+        defer {
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+        }
+
+        let appState = try AppState(
+            auth: auth,
+            defaults: defaults,
+            workoutDirectoryURL: directory,
+            remoteStateLoader: { requestedUserID in
+                XCTAssertEqual(requestedUserID, cloud.userID)
+                return remote
+            }
+        )
+        let accountReady = await waitUntil { appState.isAccountReady }
+        XCTAssertTrue(accountReady)
+        let storageURL = appState.workoutStore.storageURL
+
+        do {
+            try await appState.deleteCurrentAccountAndData(
+                expectedStorageKey: accountSession.storageKey,
+                expectedCloudUserID: cloud.userID
+            )
+            XCTFail("A lost response must not be interpreted as a failed server deletion.")
+        } catch {
+            XCTAssertEqual((error as? URLError)?.code, .networkConnectionLost)
+        }
+
+        XCTAssertEqual(recorder.requests.count, 1)
+        XCTAssertEqual(auth.session, accountSession)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: storageURL.path))
+        XCTAssertEqual(
+            defaults.string(forKey: "gymapp.pending-account-deletion-storage-key"),
+            accountSession.storageKey
+        )
+    }
+
+    func testDefinitiveDeleteRejectionClearsPendingMarkerWithoutErasingLocalData() async throws {
+        let directory = try temporaryDirectory(named: "definitive-delete-rejection")
+        let defaults = temporaryDefaults(named: "definitive-delete-rejection")
+        let recorder = AuthRequestRecorder()
+        let keychain = InMemoryKeychainStore()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        let auth = AuthService(
+            keychain: keychain,
+            urlSession: urlSession,
+            defaults: defaults
+        )
+        let cloud = cloudSession(userID: "definitive-delete-rejection-user")
+        let accountSession = AppAccountSession.cloud(cloud)
+        let owner = BackupOwner(
+            accountID: accountSession.storageKey,
+            userID: cloud.userID,
+            email: cloud.email,
+            remote: true
+        )
+        let remote = try remoteBackupData(exerciseName: "Rejected Delete Data", owner: owner)
+        try auth.installSessionForTesting(accountSession)
+        AuthURLProtocolStub.handler = { request in
+            recorder.append(request)
+            XCTAssertEqual(request.url?.path, "/functions/v1/delete-account")
+            return try AuthURLProtocolStub.response(
+                for: request,
+                statusCode: 422,
+                json: #"{"message":"Deletion confirmation was rejected."}"#
+            )
+        }
+        defer {
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+        }
+
+        let appState = try AppState(
+            auth: auth,
+            defaults: defaults,
+            workoutDirectoryURL: directory,
+            remoteStateLoader: { requestedUserID in
+                XCTAssertEqual(requestedUserID, cloud.userID)
+                return remote
+            }
+        )
+        let accountReady = await waitUntil { appState.isAccountReady }
+        XCTAssertTrue(accountReady)
+        _ = try appState.workoutStore.addExercise(name: "Local Rejected Delete Data")
+        let storageURL = appState.workoutStore.storageURL
+
+        do {
+            try await appState.deleteCurrentAccountAndData(
+                expectedStorageKey: accountSession.storageKey,
+                expectedCloudUserID: cloud.userID
+            )
+            XCTFail("An authoritative 4xx must reject account deletion.")
+        } catch AuthServiceError.requestFailed(let status, _) {
+            XCTAssertEqual(status, 422)
+        } catch {
+            XCTFail("Unexpected definitive deletion rejection: \(error)")
+        }
+
+        XCTAssertEqual(recorder.requests.count, 1)
+        XCTAssertEqual(auth.session, accountSession)
+        XCTAssertTrue(appState.isAccountReady)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: storageURL.path))
+        XCTAssertTrue(
+            customExerciseNames(in: appState.workoutStore).contains(
+                "Local Rejected Delete Data"
+            )
+        )
+        XCTAssertNil(defaults.string(forKey: "gymapp.pending-account-deletion-storage-key"))
+
+        let relaunchRemote = try appState.workoutStore.exportCloudBackupData(owner: owner)
+        let relaunchedAuth = AuthService(
+            keychain: keychain,
+            urlSession: urlSession,
+            defaults: defaults
+        )
+        let relaunchedState = try AppState(
+            auth: relaunchedAuth,
+            defaults: defaults,
+            workoutDirectoryURL: directory,
+            remoteStateLoader: { requestedUserID in
+                XCTAssertEqual(requestedUserID, cloud.userID)
+                return relaunchRemote
+            }
+        )
+        let relaunchedReady = await waitUntil {
+            relaunchedState.isAccountReady
+                && relaunchedState.workoutStore.accountStorageKey == accountSession.storageKey
+        }
+
+        XCTAssertTrue(relaunchedReady)
+        XCTAssertEqual(relaunchedAuth.session, accountSession)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: storageURL.path))
+        XCTAssertTrue(
+            customExerciseNames(in: relaunchedState.workoutStore).contains(
+                "Local Rejected Delete Data"
+            )
+        )
+    }
+
+    func testDelete401WithFailedRefreshClearsPendingMarkerAndKeepsLocalData() async throws {
+        let directory = try temporaryDirectory(named: "delete-401-refresh-failure")
+        let defaults = temporaryDefaults(named: "delete-401-refresh-failure")
+        let recorder = AuthRequestRecorder()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        let auth = AuthService(
+            keychain: InMemoryKeychainStore(),
+            urlSession: urlSession,
+            defaults: defaults
+        )
+        let cloud = cloudSession(userID: "delete-401-refresh-failure-user")
+        let accountSession = AppAccountSession.cloud(cloud)
+        let owner = BackupOwner(
+            accountID: accountSession.storageKey,
+            userID: cloud.userID,
+            email: cloud.email,
+            remote: true
+        )
+        let remote = try remoteBackupData(
+            exerciseName: "401 Refresh Failure Data",
+            owner: owner
+        )
+        try auth.installSessionForTesting(accountSession)
+        AuthURLProtocolStub.handler = { request in
+            recorder.append(request)
+            switch request.url?.path {
+            case "/functions/v1/delete-account":
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    statusCode: 401,
+                    json: #"{"message":"JWT expired"}"#
+                )
+            case "/auth/v1/token":
+                throw URLError(.notConnectedToInternet)
+            default:
+                XCTFail("Unexpected 401-refresh request: \(request.url?.absoluteString ?? "nil")")
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    statusCode: 404,
+                    json: "{}"
+                )
+            }
+        }
+        defer {
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+        }
+
+        let appState = try AppState(
+            auth: auth,
+            defaults: defaults,
+            workoutDirectoryURL: directory,
+            remoteStateLoader: { requestedUserID in
+                XCTAssertEqual(requestedUserID, cloud.userID)
+                return remote
+            }
+        )
+        let accountReady = await waitUntil { appState.isAccountReady }
+        XCTAssertTrue(accountReady)
+        _ = try appState.workoutStore.addExercise(name: "Local 401 Refresh Failure Data")
+        let storageURL = appState.workoutStore.storageURL
+
+        do {
+            try await appState.deleteCurrentAccountAndData(
+                expectedStorageKey: accountSession.storageKey,
+                expectedCloudUserID: cloud.userID
+            )
+            XCTFail("A failed refresh must not dispatch or imply a second delete attempt.")
+        } catch {
+            XCTAssertEqual((error as? URLError)?.code, .notConnectedToInternet)
+        }
+
+        XCTAssertEqual(
+            recorder.requests.map(\.url?.path),
+            ["/functions/v1/delete-account", "/auth/v1/token"]
+        )
+        XCTAssertEqual(auth.session, accountSession)
+        XCTAssertTrue(appState.isAccountReady)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: storageURL.path))
+        XCTAssertTrue(
+            customExerciseNames(in: appState.workoutStore).contains(
+                "Local 401 Refresh Failure Data"
+            )
+        )
+        XCTAssertNil(defaults.string(forKey: "gymapp.pending-account-deletion-storage-key"))
+    }
+
+    func testInitialTokenRefreshDoesNotCreateDeletionMarkerBeforeDispatch() async throws {
+        let directory = try temporaryDirectory(named: "delete-initial-refresh-window")
+        let defaults = temporaryDefaults(named: "delete-initial-refresh-window")
+        let keychain = InMemoryKeychainStore()
+        let recorder = AuthRequestRecorder()
+        let refreshStarted = expectation(description: "initial delete token refresh started")
+        let releaseRefresh = DispatchSemaphore(value: 0)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        let auth = AuthService(
+            keychain: keychain,
+            urlSession: urlSession,
+            defaults: defaults
+        )
+        var cloud = cloudSession(userID: "delete-initial-refresh-window-user")
+        cloud.expiresAt = Date(timeIntervalSince1970: 0)
+        let accountSession = AppAccountSession.cloud(cloud)
+        let owner = BackupOwner(
+            accountID: accountSession.storageKey,
+            userID: cloud.userID,
+            email: cloud.email,
+            remote: true
+        )
+        let remote = try remoteBackupData(
+            exerciseName: "Initial Refresh Preserved Data",
+            owner: owner
+        )
+        try auth.installSessionForTesting(accountSession)
+        AuthURLProtocolStub.handler = { request in
+            recorder.append(request)
+            guard request.url?.path == "/auth/v1/token" else {
+                XCTFail("Delete must not dispatch before the initial refresh: \(request.url?.absoluteString ?? "nil")")
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    statusCode: 404,
+                    json: "{}"
+                )
+            }
+            refreshStarted.fulfill()
+            _ = releaseRefresh.wait(timeout: .now() + 5)
+            throw URLError(.notConnectedToInternet)
+        }
+        defer {
+            releaseRefresh.signal()
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+        }
+
+        let appState = try AppState(
+            auth: auth,
+            defaults: defaults,
+            workoutDirectoryURL: directory,
+            remoteStateLoader: { requestedUserID in
+                XCTAssertEqual(requestedUserID, cloud.userID)
+                return remote
+            }
+        )
+        let accountReady = await waitUntil { appState.isAccountReady }
+        XCTAssertTrue(accountReady)
+        let storageURL = appState.workoutStore.storageURL
+        let relaunchRemote = try appState.workoutStore.exportCloudBackupData(owner: owner)
+
+        let deletion = Task {
+            try await appState.deleteCurrentAccountAndData(
+                expectedStorageKey: accountSession.storageKey,
+                expectedCloudUserID: cloud.userID
+            )
+        }
+        await fulfillment(of: [refreshStarted], timeout: 2)
+
+        // No delete attempt exists yet, so relaunch must not interpret the refresh as an
+        // outcome-unknown account deletion.
+        XCTAssertNil(defaults.string(forKey: "gymapp.pending-account-deletion-storage-key"))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: storageURL.path))
+
+        let relaunchedAuth = AuthService(
+            keychain: keychain,
+            urlSession: urlSession,
+            defaults: defaults
+        )
+        let relaunchedState = try AppState(
+            auth: relaunchedAuth,
+            defaults: defaults,
+            workoutDirectoryURL: directory,
+            remoteStateLoader: { requestedUserID in
+                XCTAssertEqual(requestedUserID, cloud.userID)
+                return relaunchRemote
+            }
+        )
+        let relaunchedReady = await waitUntil {
+            relaunchedState.isAccountReady
+                && relaunchedState.workoutStore.accountStorageKey == accountSession.storageKey
+        }
+
+        XCTAssertTrue(relaunchedReady)
+        XCTAssertEqual(relaunchedAuth.session, accountSession)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: storageURL.path))
+        XCTAssertTrue(
+            customExerciseNames(in: relaunchedState.workoutStore).contains(
+                "Initial Refresh Preserved Data"
+            )
+        )
+
+        releaseRefresh.signal()
+        do {
+            try await deletion.value
+            XCTFail("A failed initial refresh must not complete account deletion.")
+        } catch {
+            XCTAssertEqual((error as? URLError)?.code, .notConnectedToInternet)
+        }
+
+        XCTAssertEqual(recorder.requests.map(\.url?.path), ["/auth/v1/token"])
+        XCTAssertNil(defaults.string(forKey: "gymapp.pending-account-deletion-storage-key"))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: storageURL.path))
+    }
+
+    func testDefinitive401ClearsMarkerWhileRefreshIsStillSuspended() async throws {
+        let directory = try temporaryDirectory(named: "delete-refresh-crash-window")
+        let defaults = temporaryDefaults(named: "delete-refresh-crash-window")
+        let keychain = InMemoryKeychainStore()
+        let recorder = AuthRequestRecorder()
+        let refreshStarted = expectation(description: "delete token refresh started")
+        let releaseRefresh = DispatchSemaphore(value: 0)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        let auth = AuthService(
+            keychain: keychain,
+            urlSession: urlSession,
+            defaults: defaults
+        )
+        let cloud = cloudSession(userID: "delete-refresh-crash-window-user")
+        let accountSession = AppAccountSession.cloud(cloud)
+        let owner = BackupOwner(
+            accountID: accountSession.storageKey,
+            userID: cloud.userID,
+            email: cloud.email,
+            remote: true
+        )
+        let remote = try remoteBackupData(
+            exerciseName: "Refresh Crash Window Remote Data",
+            owner: owner
+        )
+        try auth.installSessionForTesting(accountSession)
+        AuthURLProtocolStub.handler = { request in
+            recorder.append(request)
+            switch request.url?.path {
+            case "/functions/v1/delete-account":
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    statusCode: 401,
+                    json: #"{"message":"JWT expired"}"#
+                )
+            case "/auth/v1/token":
+                refreshStarted.fulfill()
+                _ = releaseRefresh.wait(timeout: .now() + 5)
+                throw URLError(.notConnectedToInternet)
+            default:
+                XCTFail("Unexpected crash-window request: \(request.url?.absoluteString ?? "nil")")
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    statusCode: 404,
+                    json: "{}"
+                )
+            }
+        }
+        defer {
+            releaseRefresh.signal()
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+        }
+
+        let appState = try AppState(
+            auth: auth,
+            defaults: defaults,
+            workoutDirectoryURL: directory,
+            remoteStateLoader: { requestedUserID in
+                XCTAssertEqual(requestedUserID, cloud.userID)
+                return remote
+            }
+        )
+        let accountReady = await waitUntil { appState.isAccountReady }
+        XCTAssertTrue(accountReady)
+        _ = try appState.workoutStore.addExercise(name: "Refresh Crash Window Local Data")
+        try appState.workoutStore.saveNow()
+        let storageURL = appState.workoutStore.storageURL
+
+        let deletion = Task {
+            try await appState.deleteCurrentAccountAndData(
+                expectedStorageKey: accountSession.storageKey,
+                expectedCloudUserID: cloud.userID
+            )
+        }
+        await fulfillment(of: [refreshStarted], timeout: 2)
+
+        // The first delete was rejected. This must already be durable before the refresh
+        // completes, otherwise a termination in this window would erase valid local data.
+        XCTAssertNil(defaults.string(forKey: "gymapp.pending-account-deletion-storage-key"))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: storageURL.path))
+
+        let relaunchRemote = try appState.workoutStore.exportCloudBackupData(owner: owner)
+        let relaunchedAuth = AuthService(
+            keychain: keychain,
+            urlSession: urlSession,
+            defaults: defaults
+        )
+        let relaunchedState = try AppState(
+            auth: relaunchedAuth,
+            defaults: defaults,
+            workoutDirectoryURL: directory,
+            remoteStateLoader: { requestedUserID in
+                XCTAssertEqual(requestedUserID, cloud.userID)
+                return relaunchRemote
+            }
+        )
+        let relaunchedReady = await waitUntil {
+            relaunchedState.isAccountReady
+                && relaunchedState.workoutStore.accountStorageKey == accountSession.storageKey
+        }
+
+        XCTAssertTrue(relaunchedReady)
+        XCTAssertEqual(relaunchedAuth.session, accountSession)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: storageURL.path))
+        XCTAssertTrue(
+            customExerciseNames(in: relaunchedState.workoutStore).contains(
+                "Refresh Crash Window Local Data"
+            )
+        )
+
+        releaseRefresh.signal()
+        do {
+            try await deletion.value
+            XCTFail("A failed refresh must not complete account deletion.")
+        } catch {
+            XCTAssertEqual((error as? URLError)?.code, .notConnectedToInternet)
+        }
+
+        XCTAssertEqual(
+            recorder.requests.map(\.url?.path),
+            ["/functions/v1/delete-account", "/auth/v1/token"]
+        )
+        XCTAssertNil(defaults.string(forKey: "gymapp.pending-account-deletion-storage-key"))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: storageURL.path))
+    }
+
+    func testDeleteDispositionReturnsToUnknownWhenRefreshedRequestIsDispatched() async throws {
+        let recorder = AuthRequestRecorder()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        let auth = AuthService(
+            keychain: InMemoryKeychainStore(),
+            urlSession: urlSession,
+            defaults: temporaryDefaults(named: "delete-retry-disposition")
+        )
+        let cloud = cloudSession(userID: "delete-retry-disposition-user")
+        try auth.installSessionForTesting(.cloud(cloud))
+        AuthURLProtocolStub.handler = { request in
+            recorder.append(request)
+            switch request.url?.path {
+            case "/functions/v1/delete-account"
+                    where request.value(forHTTPHeaderField: "Authorization")
+                        == "Bearer \(cloud.accessToken)":
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    statusCode: 401,
+                    json: #"{"message":"JWT expired"}"#
+                )
+            case "/auth/v1/token":
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    json: #"{"access_token":"refreshed-delete-access","refresh_token":"refreshed-delete-refresh","expires_in":3600,"user":{"id":"delete-retry-disposition-user","email":"delete-retry-disposition-user@example.com","user_metadata":{"display_name":"Delete"}}}"#
+                )
+            case "/functions/v1/delete-account":
+                throw URLError(.networkConnectionLost)
+            default:
+                XCTFail("Unexpected delete retry request: \(request.url?.absoluteString ?? "nil")")
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    statusCode: 404,
+                    json: "{}"
+                )
+            }
+        }
+        defer {
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+        }
+
+        var dispositions: [AccountDeletionRequestDisposition] = []
+        do {
+            try await auth.deleteCloudAccountOnServer(
+                expectedUserID: cloud.userID,
+                onRequestDispositionChange: { dispositions.append($0) }
+            )
+            XCTFail("A lost refreshed deletion response must remain outcome-unknown.")
+        } catch {
+            XCTAssertEqual((error as? URLError)?.code, .networkConnectionLost)
+        }
+
+        XCTAssertEqual(
+            recorder.requests.map(\.url?.path),
+            [
+                "/functions/v1/delete-account",
+                "/auth/v1/token",
+                "/functions/v1/delete-account"
+            ]
+        )
+        XCTAssertEqual(
+            dispositions,
+            [.outcomeUnknown, .definitivelyRejected, .outcomeUnknown]
+        )
+        XCTAssertEqual(auth.session?.cloud?.accessToken, "refreshed-delete-access")
+    }
+
+    func testDeleteDispositionStaysRejectedWhenRefreshFailsBeforeRetry() async throws {
+        let recorder = AuthRequestRecorder()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        let auth = AuthService(
+            keychain: InMemoryKeychainStore(),
+            urlSession: urlSession,
+            defaults: temporaryDefaults(named: "delete-refresh-failure-disposition")
+        )
+        let cloud = cloudSession(userID: "delete-refresh-failure-user")
+        try auth.installSessionForTesting(.cloud(cloud))
+        AuthURLProtocolStub.handler = { request in
+            recorder.append(request)
+            switch request.url?.path {
+            case "/functions/v1/delete-account":
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    statusCode: 401,
+                    json: #"{"message":"JWT expired"}"#
+                )
+            case "/auth/v1/token":
+                throw URLError(.notConnectedToInternet)
+            default:
+                XCTFail("Unexpected refresh-failure request: \(request.url?.absoluteString ?? "nil")")
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    statusCode: 404,
+                    json: "{}"
+                )
+            }
+        }
+        defer {
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+        }
+
+        var dispositions: [AccountDeletionRequestDisposition] = []
+        do {
+            try await auth.deleteCloudAccountOnServer(
+                expectedUserID: cloud.userID,
+                onRequestDispositionChange: { dispositions.append($0) }
+            )
+            XCTFail("A failed refresh must not dispatch a second deletion request.")
+        } catch {
+            XCTAssertEqual((error as? URLError)?.code, .notConnectedToInternet)
+        }
+
+        XCTAssertEqual(
+            recorder.requests.map(\.url?.path),
+            ["/functions/v1/delete-account", "/auth/v1/token"]
+        )
+        XCTAssertEqual(dispositions, [.outcomeUnknown, .definitivelyRejected])
+        XCTAssertEqual(auth.session?.cloud, cloud)
     }
 
     func testDeleteAccountAcceptsExactServerContract() async throws {

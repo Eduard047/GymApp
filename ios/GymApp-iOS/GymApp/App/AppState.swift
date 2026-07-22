@@ -34,6 +34,9 @@ final class AppState: ObservableObject {
     private var cloudSaveGeneration: UInt64 = 0
     private var accountActivationTask: Task<Void, Never>?
     private var accountActivationGeneration: UInt64 = 0
+    private var accountDeletionTask: Task<Void, Error>?
+    private var accountDeletionTarget: AccountDeletionTarget?
+    private var accountDeletionGeneration: UInt64 = 0
     private var restTimerOwnerFingerprint: String?
     private var applyingRemoteState = false
     private var cloudWritableAccountStorageKey: String?
@@ -46,6 +49,11 @@ final class AppState: ObservableObject {
         "gymapp.pending-account-deletion-garmin-user-id"
     private static let trainingProfileKeyPrefix = "gymapp.training-profile.v1."
     private static let hiddenLeaderboardProfilesKey = "leaderboard-hidden-profile-ids"
+
+    private struct AccountDeletionTarget: Equatable {
+        let storageKey: String
+        let cloudUserID: String?
+    }
 
     init(
         auth: AuthService,
@@ -111,6 +119,7 @@ final class AppState: ObservableObject {
     deinit {
         pendingCloudSave?.cancel()
         accountActivationTask?.cancel()
+        accountDeletionTask?.cancel()
     }
 
     var isAccountReady: Bool {
@@ -497,29 +506,97 @@ final class AppState: ObservableObject {
         )
     }
 
-    func deleteCurrentAccountAndData() async throws {
+    func deleteCurrentAccountAndData(
+        expectedStorageKey: String,
+        expectedCloudUserID: String?
+    ) async throws {
+        let target = AccountDeletionTarget(
+            storageKey: expectedStorageKey,
+            cloudUserID: expectedCloudUserID
+        )
+        if let accountDeletionTask {
+            guard accountDeletionTarget == target else {
+                throw AuthServiceError.sessionChanged
+            }
+            try await accountDeletionTask.value
+            return
+        }
+
+        try ensureDeletionTargetIsCurrent(target)
+        accountDeletionGeneration &+= 1
+        let generation = accountDeletionGeneration
+        let task = Task { @MainActor [weak self] in
+            guard let self else { throw CancellationError() }
+            try await self.performAccountDeletion(target)
+        }
+        accountDeletionTarget = target
+        accountDeletionTask = task
+
+        do {
+            try await task.value
+            finishAccountDeletion(generation: generation)
+        } catch {
+            finishAccountDeletion(generation: generation)
+            throw error
+        }
+    }
+
+    private func performAccountDeletion(_ target: AccountDeletionTarget) async throws {
+        try ensureDeletionTargetIsCurrent(target)
+        let deletingStore = workoutStore
         let scheduledSave = pendingCloudSave
         if cloudSavePhase == .debouncing {
             scheduledSave?.cancel()
         }
         await scheduledSave?.value
-        guard isAccountReady, let session = auth.session else {
-            throw WorkoutStoreError.storageAccountMismatch
-        }
-        let storageKey = session.storageKey
-        let deletingStore = workoutStore
-        defaults.set(storageKey, forKey: Self.pendingDeletionStorageKey)
+        try ensureDeletionTargetIsCurrent(target, deletingStore: deletingStore)
+        guard let session = auth.session else { throw AuthServiceError.sessionChanged }
+        let storageKey = target.storageKey
         defaults.removeObject(forKey: Self.legacyPendingDeletionGarminUserIDKey)
+        if target.cloudUserID == nil {
+            // Local profiles have no server boundary. Persist before local cleanup so a
+            // termination can safely resume deletion on the next launch.
+            defaults.set(storageKey, forKey: Self.pendingDeletionStorageKey)
+            _ = defaults.synchronize()
+        }
 
+        var requestDisposition = AccountDeletionRequestDisposition.notDispatched
         do {
-            if let cloud = session.cloud {
-                try await auth.deleteCloudAccountOnServer(expectedUserID: cloud.userID)
+            try ensureDeletionTargetIsCurrent(target, deletingStore: deletingStore)
+            if let cloudUserID = target.cloudUserID {
+                try await auth.deleteCloudAccountOnServer(
+                    expectedUserID: cloudUserID,
+                    onRequestDispositionChange: { disposition in
+                        requestDisposition = disposition
+                        switch disposition {
+                        case .outcomeUnknown:
+                            // Persist before each delete attempt can cross the network
+                            // boundary. A relaunch must finish cleanup if that attempt's
+                            // response is lost or malformed.
+                            self.defaults.set(storageKey, forKey: Self.pendingDeletionStorageKey)
+                        case .notDispatched, .definitivelyRejected:
+                            // A bounded 4xx proves that this attempt did not delete the
+                            // account. Remove the marker before a refresh/retry await so an
+                            // intervening termination cannot erase valid local data.
+                            self.defaults.removeObject(forKey: Self.pendingDeletionStorageKey)
+                        }
+                        _ = self.defaults.synchronize()
+                    }
+                )
             }
         } catch {
-            // The server account still exists, so retain the local account and let the user retry.
-            defaults.removeObject(forKey: Self.pendingDeletionStorageKey)
+            if requestDisposition != .outcomeUnknown {
+                // No delete request crossed the network boundary, or the server returned an
+                // authoritative 4xx rejection. The local account remains authoritative.
+                defaults.removeObject(forKey: Self.pendingDeletionStorageKey)
+                _ = defaults.synchronize()
+            }
+            // For a lost/malformed response, 5xx, cancellation, or a stale result after a
+            // successful response, the outcome remains unknown. Keep the marker so startup
+            // finishes secure local cleanup before exposing this account again.
             throw error
         }
+        try ensureDeletionTargetIsCurrent(target, deletingStore: deletingStore)
 
         let deletingSessionIsStillCurrent = auth.session?.storageKey == storageKey
         if deletingSessionIsStillCurrent {
@@ -584,6 +661,29 @@ final class AppState: ObservableObject {
         defaults.removeObject(forKey: Self.pendingDeletionStorageKey)
         defaults.removeObject(forKey: Self.legacyPendingDeletionGarminUserIDKey)
         if deletingSessionIsStillCurrent { statusMessage = nil }
+    }
+
+    private func ensureDeletionTargetIsCurrent(
+        _ target: AccountDeletionTarget,
+        deletingStore: WorkoutStore? = nil
+    ) throws {
+        try Task.checkCancellation()
+        guard let session = auth.session,
+              session.storageKey == target.storageKey,
+              session.cloud?.userID == target.cloudUserID else {
+            throw AuthServiceError.sessionChanged
+        }
+        guard isAccountReady,
+              workoutStore.accountStorageKey == target.storageKey,
+              deletingStore.map({ workoutStore === $0 }) ?? true else {
+            throw WorkoutStoreError.storageAccountMismatch
+        }
+    }
+
+    private func finishAccountDeletion(generation: UInt64) {
+        guard accountDeletionGeneration == generation else { return }
+        accountDeletionTask = nil
+        accountDeletionTarget = nil
     }
 
     func saveBeforeBackgrounding() {

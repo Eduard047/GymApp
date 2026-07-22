@@ -1,15 +1,227 @@
 import SwiftUI
 
+struct WorkoutDetailWorkoutDeletionTarget: Equatable, Identifiable {
+    let accountStorageKey: String
+    let storeIdentifier: ObjectIdentifier
+    let workoutSnapshot: WorkoutSession
+
+    var id: UUID { workoutSnapshot.id }
+
+    @MainActor
+    init(store: WorkoutStore, workout: WorkoutSession) {
+        accountStorageKey = store.accountStorageKey
+        storeIdentifier = ObjectIdentifier(store)
+        workoutSnapshot = workout
+    }
+
+    @MainActor
+    func isCurrent(in store: WorkoutStore, expectedWorkoutID: UUID) -> Bool {
+        storeIdentifier == ObjectIdentifier(store)
+            && accountStorageKey == store.accountStorageKey
+            && workoutSnapshot.id == expectedWorkoutID
+            && store.workout(id: expectedWorkoutID) == workoutSnapshot
+    }
+}
+
+enum WorkoutDetailDeletionTarget: Equatable, Identifiable {
+    struct Context: Equatable {
+        let accountStorageKey: String
+        let storeIdentifier: ObjectIdentifier
+        let workoutSnapshot: WorkoutSession
+
+        var workoutID: UUID { workoutSnapshot.id }
+        var workoutExerciseIDs: [UUID] { workoutSnapshot.exercises.map(\.id) }
+    }
+
+    enum Impact: Equatable {
+        case setOnly
+        case setAndExercise
+        case setExerciseAndWorkout
+        case exerciseOnly
+        case exerciseAndWorkout
+    }
+
+    case set(
+        context: Context,
+        block: WorkoutExercise,
+        set: WorkoutSet,
+        position: Int,
+        exerciseName: String
+    )
+    case exercise(
+        context: Context,
+        block: WorkoutExercise,
+        exerciseName: String
+    )
+
+    var id: String {
+        switch self {
+        case let .set(context, block, set, _, _):
+            "set-\(context.workoutID.uuidString)-\(block.id.uuidString)-\(set.id.uuidString)"
+        case let .exercise(context, block, _):
+            "exercise-\(context.workoutID.uuidString)-\(block.id.uuidString)"
+        }
+    }
+
+    var workoutID: UUID { context.workoutID }
+    var blockID: UUID { expectedBlock.id }
+
+    var setID: UUID? {
+        guard case let .set(_, _, set, _, _) = self else { return nil }
+        return set.id
+    }
+
+    var undoMessage: String {
+        switch self {
+        case .set: "Set deleted"
+        case .exercise: "Exercise deleted"
+        }
+    }
+
+    var impact: Impact {
+        switch self {
+        case let .set(context, block, _, _, _):
+            if block.sets.count > 1 { return .setOnly }
+            return context.workoutExerciseIDs.count > 1
+                ? .setAndExercise
+                : .setExerciseAndWorkout
+        case let .exercise(context, _, _):
+            return context.workoutExerciseIDs.count > 1
+                ? .exerciseOnly
+                : .exerciseAndWorkout
+        }
+    }
+
+    @MainActor
+    static func set(
+        store: WorkoutStore,
+        workout: WorkoutSession,
+        block: WorkoutExercise,
+        set: WorkoutSet,
+        position: Int,
+        exerciseName: String
+    ) -> Self {
+        .set(
+            context: context(store: store, workout: workout),
+            block: block,
+            set: set,
+            position: position,
+            exerciseName: exerciseName
+        )
+    }
+
+    @MainActor
+    static func exercise(
+        store: WorkoutStore,
+        workout: WorkoutSession,
+        block: WorkoutExercise,
+        exerciseName: String
+    ) -> Self {
+        .exercise(
+            context: context(store: store, workout: workout),
+            block: block,
+            exerciseName: exerciseName
+        )
+    }
+
+    @MainActor
+    func isCurrent(in store: WorkoutStore, expectedWorkoutID: UUID) -> Bool {
+        guard context.storeIdentifier == ObjectIdentifier(store),
+              context.accountStorageKey == store.accountStorageKey,
+              context.workoutID == expectedWorkoutID,
+              let workout = store.workout(id: context.workoutID),
+              workout == context.workoutSnapshot,
+              let currentBlock = workout.exercises.first(where: { $0.id == expectedBlock.id }),
+              currentBlock == expectedBlock else {
+            return false
+        }
+
+        switch self {
+        case let .set(_, _, expectedSet, _, _):
+            return currentBlock.sets.contains(expectedSet)
+        case .exercise:
+            return true
+        }
+    }
+
+    func confirmationTitle(languageCode: String) -> String {
+        switch self {
+        case let .set(_, _, _, position, exerciseName):
+            return localizedFormat(
+                "Delete set %1$lld from “%2$@”?",
+                languageCode: languageCode,
+                arguments: [Int64(position + 1), exerciseName]
+            )
+        case let .exercise(_, _, exerciseName):
+            return localizedFormat(
+                "Delete “%@” from this workout?",
+                languageCode: languageCode,
+                arguments: [exerciseName]
+            )
+        }
+    }
+
+    func confirmationMessage(languageCode: String) -> String {
+        let key: String
+        switch impact {
+        case .setOnly:
+            key = "Only this set will be deleted. Undo is available briefly while you stay on this screen."
+        case .setAndExercise:
+            key = "This is the final set for the exercise, so the exercise will also be deleted from the workout. Undo is available briefly while you stay on this screen."
+        case .setExerciseAndWorkout:
+            key = "This is the final set in the workout, so the exercise and the entire workout will also be deleted. Undo is available briefly while you stay on this screen."
+        case .exerciseOnly:
+            key = "This exercise and all of its sets will be deleted from the workout. Undo is available briefly while you stay on this screen."
+        case .exerciseAndWorkout:
+            key = "This is the last exercise, so deleting it will also delete the entire workout. Undo is available briefly while you stay on this screen."
+        }
+        return gymLocalized(key, languageCode: languageCode)
+    }
+
+    private var context: Context {
+        switch self {
+        case let .set(context, _, _, _, _), let .exercise(context, _, _): context
+        }
+    }
+
+    private var expectedBlock: WorkoutExercise {
+        switch self {
+        case let .set(_, block, _, _, _), let .exercise(_, block, _): block
+        }
+    }
+
+    @MainActor
+    private static func context(store: WorkoutStore, workout: WorkoutSession) -> Context {
+        Context(
+            accountStorageKey: store.accountStorageKey,
+            storeIdentifier: ObjectIdentifier(store),
+            workoutSnapshot: workout
+        )
+    }
+
+    private func localizedFormat(
+        _ key: String,
+        languageCode: String,
+        arguments: [CVarArg]
+    ) -> String {
+        String(
+            format: gymLocalized(key, languageCode: languageCode),
+            locale: AppLanguage(rawValue: languageCode)?.locale ?? AppLanguage.english.locale,
+            arguments: arguments
+        )
+    }
+}
+
 @MainActor
 struct WorkoutDetailView: View {
-    private enum PendingDeletion: Equatable {
-        case set(blockID: UUID, setID: UUID)
-        case exercise(blockID: UUID)
+    private enum ActiveAlert: Identifiable {
+        case deleteWorkout(WorkoutDetailWorkoutDeletionTarget)
+        case deleteItem(WorkoutDetailDeletionTarget)
 
-        var message: String {
+        var id: String {
             switch self {
-            case .set: "Set deleted"
-            case .exercise: "Exercise deleted"
+            case let .deleteWorkout(target): "delete-workout-\(target.id.uuidString)"
+            case let .deleteItem(target): "delete-\(target.id)"
             }
         }
     }
@@ -20,15 +232,16 @@ struct WorkoutDetailView: View {
     @State private var date: Date
     @State private var note: String
     @State private var showingExercisePicker = false
-    @State private var showingDeleteWorkout = false
+    @State private var activeAlert: ActiveAlert?
     @State private var statusMessage: String?
-    @State private var pendingDeletion: PendingDeletion?
+    @State private var pendingDeletion: WorkoutDetailDeletionTarget?
     @State private var deletionTask: Task<Void, Never>?
 
     private let workoutID: UUID
     private let onFinish: (UUID) -> Void
     private let onDeleted: () -> Void
     private let reportStatus: (String, Bool) -> Void
+    private let isStoreContextCurrent: () -> Bool
 
     init(
         appState: AppState,
@@ -44,6 +257,12 @@ struct WorkoutDetailView: View {
             onDeleted: onDeleted,
             onStatus: { [weak appState] message, isError in
                 appState?.show(message: message, isError: isError)
+            },
+            isStoreContextCurrent: { [weak appState, weak store = appState.workoutStore] in
+                guard let appState, let store else { return false }
+                return appState.isAccountReady
+                    && appState.workoutStore === store
+                    && appState.activeAccountStorageKey == store.accountStorageKey
             }
         )
     }
@@ -54,7 +273,8 @@ struct WorkoutDetailView: View {
         workoutID: UUID,
         onFinish: @escaping (UUID) -> Void,
         onDeleted: @escaping () -> Void = {},
-        onStatus: @escaping (String, Bool) -> Void = { _, _ in }
+        onStatus: @escaping (String, Bool) -> Void = { _, _ in },
+        isStoreContextCurrent: @escaping () -> Bool = { true }
     ) {
         _store = ObservedObject(wrappedValue: store)
         _restTimers = ObservedObject(wrappedValue: restTimers)
@@ -62,6 +282,7 @@ struct WorkoutDetailView: View {
         self.onFinish = onFinish
         self.onDeleted = onDeleted
         self.reportStatus = onStatus
+        self.isStoreContextCurrent = isStoreContextCurrent
         let workout = store.workout(id: workoutID)
         _date = State(initialValue: workout?.date ?? Date())
         _note = State(initialValue: workout?.note ?? "")
@@ -100,10 +321,11 @@ struct WorkoutDetailView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button(role: .destructive) {
-                    showingDeleteWorkout = true
+                    presentWorkoutDeletionConfirmation()
                 } label: {
                     Label("Delete workout", systemImage: "trash")
                 }
+                .disabled(pendingDeletion != nil)
             }
         }
         .sheet(isPresented: $showingExercisePicker) {
@@ -115,12 +337,7 @@ struct WorkoutDetailView: View {
             )
             .presentationDetents([.medium, .large])
         }
-        .alert("Delete workout?", isPresented: $showingDeleteWorkout) {
-            Button("Cancel", role: .cancel) {}
-            Button("Delete", role: .destructive, action: deleteWorkout)
-        } message: {
-            Text("This removes the workout and every set. This action cannot be undone.")
-        }
+        .alert(item: $activeAlert, content: makeAlert)
         .safeAreaInset(edge: .bottom) {
             if let pendingDeletion {
                 undoBar(pendingDeletion)
@@ -230,7 +447,14 @@ struct WorkoutDetailView: View {
                     }
                     Spacer(minLength: 8)
                     Button(role: .destructive) {
-                        stageDeletion(.exercise(blockID: block.id))
+                        presentDeletionConfirmation(
+                            .exercise(
+                                store: store,
+                                workout: workout,
+                                block: block,
+                                exerciseName: name
+                            )
+                        )
                     } label: {
                         Image(systemName: "trash")
                             .frame(width: 44, height: 44)
@@ -242,6 +466,7 @@ struct WorkoutDetailView: View {
                             languageCode: gymCurrentLanguageCode()
                         )
                     )
+                    .disabled(pendingDeletion != nil)
                 }
 
                 WorkoutRestTimerControls(
@@ -274,9 +499,19 @@ struct WorkoutDetailView: View {
                             }
                         },
                         onDelete: {
-                            stageDeletion(.set(blockID: block.id, setID: set.id))
+                            presentDeletionConfirmation(
+                                .set(
+                                    store: store,
+                                    workout: workout,
+                                    block: block,
+                                    set: set,
+                                    position: index,
+                                    exerciseName: name
+                                )
+                            )
                         }
                     )
+                    .disabled(pendingDeletion != nil)
                 }
 
                 Button {
@@ -308,12 +543,12 @@ struct WorkoutDetailView: View {
         }
     }
 
-    private func undoBar(_ pending: PendingDeletion) -> some View {
+    private func undoBar(_ pending: WorkoutDetailDeletionTarget) -> some View {
         HStack(spacing: 12) {
             Image(systemName: "trash")
                 .foregroundStyle(GymTheme.error)
                 .accessibilityHidden(true)
-            Text(gymLocalized(pending.message))
+            Text(gymLocalized(pending.undoMessage))
                 .font(.subheadline.weight(.semibold))
             Spacer(minLength: 8)
             Button("Undo", action: undoDeletion)
@@ -328,16 +563,16 @@ struct WorkoutDetailView: View {
 
     private func visibleExercises(_ workout: WorkoutSession) -> [WorkoutExercise] {
         workout.exercises.filter { block in
-            guard case .exercise(let hiddenID) = pendingDeletion else { return true }
-            return block.id != hiddenID
+            guard case let .exercise(_, hiddenBlock, _) = pendingDeletion else { return true }
+            return block.id != hiddenBlock.id
         }
     }
 
     private func visibleSets(_ block: WorkoutExercise) -> [WorkoutSet] {
         block.sets.filter { set in
-            guard case .set(let pendingBlockID, let hiddenSetID) = pendingDeletion,
-                  pendingBlockID == block.id else { return true }
-            return set.id != hiddenSetID
+            guard case let .set(_, pendingBlock, hiddenSet, _, _) = pendingDeletion,
+                  pendingBlock.id == block.id else { return true }
+            return set.id != hiddenSet.id
         }
     }
 
@@ -400,8 +635,68 @@ struct WorkoutDetailView: View {
         }
     }
 
+    private func makeAlert(_ alert: ActiveAlert) -> Alert {
+        switch alert {
+        case let .deleteWorkout(target):
+            return Alert(
+                title: Text("Delete workout?"),
+                message: Text("This removes the workout and every set. This action cannot be undone."),
+                primaryButton: .destructive(Text("Delete")) {
+                    deleteWorkout(target)
+                },
+                secondaryButton: .cancel(Text("Cancel"))
+            )
+        case let .deleteItem(target):
+            let languageCode = gymCurrentLanguageCode()
+            return Alert(
+                title: Text(target.confirmationTitle(languageCode: languageCode)),
+                message: Text(target.confirmationMessage(languageCode: languageCode)),
+                primaryButton: .destructive(Text(gymLocalized("Delete", languageCode: languageCode))) {
+                    confirmDeletion(target)
+                },
+                secondaryButton: .cancel(Text(gymLocalized("Cancel", languageCode: languageCode)))
+            )
+        }
+    }
+
+    private func presentWorkoutDeletionConfirmation() {
+        guard pendingDeletion == nil,
+              isStoreContextCurrent(),
+              let workout = store.workout(id: workoutID) else {
+            showStaleDeletion()
+            return
+        }
+        activeAlert = .deleteWorkout(
+            WorkoutDetailWorkoutDeletionTarget(store: store, workout: workout)
+        )
+    }
+
+    private func presentDeletionConfirmation(_ target: WorkoutDetailDeletionTarget) {
+        guard pendingDeletion == nil,
+              isStoreContextCurrent(),
+              target.isCurrent(in: store, expectedWorkoutID: workoutID) else {
+            showStaleDeletion()
+            return
+        }
+        activeAlert = .deleteItem(target)
+    }
+
+    private func confirmDeletion(_ target: WorkoutDetailDeletionTarget) {
+        guard pendingDeletion == nil,
+              isStoreContextCurrent(),
+              target.isCurrent(in: store, expectedWorkoutID: workoutID) else {
+            showStaleDeletion()
+            return
+        }
+        stageDeletion(target)
+    }
+
     private func finish(_ workout: WorkoutSession) {
-        commitPendingDeletion()
+        guard isStoreContextCurrent() else {
+            showStaleDeletion()
+            return
+        }
+        if commitPendingDeletion() { return }
         guard store.workout(id: workout.id) != nil else {
             onDeleted()
             return
@@ -414,14 +709,19 @@ struct WorkoutDetailView: View {
         }
     }
 
-    private func deleteWorkout() {
-        deletionTask?.cancel()
-        pendingDeletion = nil
+    private func deleteWorkout(_ target: WorkoutDetailWorkoutDeletionTarget) {
+        guard pendingDeletion == nil,
+              isStoreContextCurrent(),
+              target.isCurrent(in: store, expectedWorkoutID: workoutID) else {
+            showStaleDeletion()
+            return
+        }
         do {
-            if let workout = store.workout(id: workoutID) {
-                workout.exercises.forEach { restTimers.cancel(id: timerKey(blockID: $0.id)) }
-            }
+            let timerIDs = target.workoutSnapshot.exercises.map { timerKey(blockID: $0.id) }
             try store.deleteWorkout(id: workoutID)
+            deletionTask?.cancel()
+            pendingDeletion = nil
+            timerIDs.forEach { restTimers.cancel(id: $0) }
             reportStatus("Workout deleted.", false)
             onDeleted()
         } catch {
@@ -429,8 +729,8 @@ struct WorkoutDetailView: View {
         }
     }
 
-    private func stageDeletion(_ deletion: PendingDeletion) {
-        if pendingDeletion != nil { commitPendingDeletion() }
+    private func stageDeletion(_ deletion: WorkoutDetailDeletionTarget) {
+        guard pendingDeletion == nil else { return }
         pendingDeletion = deletion
         deletionTask?.cancel()
         deletionTask = Task { @MainActor in
@@ -452,30 +752,40 @@ struct WorkoutDetailView: View {
         pendingDeletion = nil
     }
 
-    private func commitPendingDeletion() {
+    @discardableResult
+    private func commitPendingDeletion() -> Bool {
         deletionTask?.cancel()
         deletionTask = nil
-        guard let deletion = pendingDeletion else { return }
+        guard let deletion = pendingDeletion else { return false }
         pendingDeletion = nil
+        guard isStoreContextCurrent(),
+              deletion.isCurrent(in: store, expectedWorkoutID: workoutID) else {
+            showStaleDeletion()
+            return false
+        }
         do {
             switch deletion {
-            case .set(let blockID, let setID):
+            case let .set(_, block, set, _, _):
                 try store.deleteSet(
                     workoutID: workoutID,
-                    workoutExerciseID: blockID,
-                    setID: setID
+                    workoutExerciseID: block.id,
+                    setID: set.id
                 )
-                if store.workout(id: workoutID)?.exercises.contains(where: { $0.id == blockID }) != true {
-                    restTimers.cancel(id: timerKey(blockID: blockID))
+                if store.workout(id: workoutID)?.exercises.contains(where: { $0.id == block.id }) != true {
+                    restTimers.cancel(id: timerKey(blockID: block.id))
                 }
-            case .exercise(let blockID):
-                restTimers.cancel(id: timerKey(blockID: blockID))
-                try store.removeExercise(fromWorkout: workoutID, workoutExerciseID: blockID)
+            case let .exercise(_, block, _):
+                try store.removeExercise(fromWorkout: workoutID, workoutExerciseID: block.id)
+                restTimers.cancel(id: timerKey(blockID: block.id))
             }
-            if store.workout(id: workoutID) == nil { onDeleted() }
+            if store.workout(id: workoutID) == nil {
+                onDeleted()
+                return true
+            }
         } catch {
             show(error)
         }
+        return false
     }
 
     private func timerKey(blockID: UUID) -> String {
@@ -484,6 +794,12 @@ struct WorkoutDetailView: View {
 
     private func show(_ error: Error) {
         statusMessage = gymErrorMessage(error)
+    }
+
+    private func showStaleDeletion() {
+        statusMessage = gymLocalized(
+            "The workout changed before deletion. Review it and try again."
+        )
     }
 }
 

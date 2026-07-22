@@ -197,6 +197,12 @@ enum AuthServiceError: LocalizedError {
     }
 }
 
+enum AccountDeletionRequestDisposition: Equatable {
+    case notDispatched
+    case outcomeUnknown
+    case definitivelyRejected
+}
+
 enum GymPasswordPolicy {
     static let errorMessage = "Password must contain at least 12 characters, fit within 72 UTF-8 bytes, and include a lowercase Latin letter, an uppercase Latin letter, a number, and a supported symbol."
 
@@ -605,7 +611,10 @@ final class AuthService: ObservableObject {
 
     /// Server function deletes auth user and rows cascading from auth.users.
     /// The caller must erase the matching local store after this returns.
-    func deleteCloudAccountOnServer(expectedUserID: String) async throws {
+    func deleteCloudAccountOnServer(
+        expectedUserID: String,
+        onRequestDispositionChange: ((AccountDeletionRequestDisposition) -> Void)? = nil
+    ) async throws {
         isLoading = true
         defer { isLoading = false }
         let cloud = try await validCloudSession(expectedUserID: expectedUserID)
@@ -614,7 +623,8 @@ final class AuthService: ObservableObject {
             method: "POST",
             initialSession: cloud,
             headers: ["X-GymApp-Delete": "confirmed"],
-            body: ["confirmation": "DELETE"]
+            body: ["confirmation": "DELETE"],
+            onRequestDispositionChange: onRequestDispositionChange
         )
         guard object.count == 1, object["deleted"] as? Bool == true else {
             throw AuthServiceError.malformedResponse
@@ -807,7 +817,8 @@ final class AuthService: ObservableObject {
         method: String,
         token: String? = nil,
         headers: [String: String] = [:],
-        body: [String: Any]? = nil
+        body: [String: Any]? = nil,
+        onRequestDispositionChange: ((AccountDeletionRequestDisposition) -> Void)? = nil
     ) async throws -> [String: Any] {
         guard let url = URL(string: path, relativeTo: GymAppConfiguration.supabaseURL) else {
             throw AuthServiceError.malformedResponse
@@ -831,6 +842,8 @@ final class AuthService: ObservableObject {
             request.httpBody = encoded
         }
 
+        onRequestDispositionChange?(.outcomeUnknown)
+
         let data: Data
         let http: HTTPURLResponse
         do {
@@ -842,6 +855,9 @@ final class AuthService: ObservableObject {
             )
         } catch BoundedURLSessionError.responseTooLarge(let status?)
                     where !(200 ..< 300).contains(status) {
+            if (400 ..< 500).contains(status) {
+                onRequestDispositionChange?(.definitivelyRejected)
+            }
             throw AuthServiceError.requestFailed(
                 status: status,
                 message: "Authentication failed (HTTP \(status))."
@@ -851,6 +867,9 @@ final class AuthService: ObservableObject {
         }
         let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
         guard (200..<300).contains(http.statusCode) else {
+            if (400 ..< 500).contains(http.statusCode) {
+                onRequestDispositionChange?(.definitivelyRejected)
+            }
             throw AuthServiceError.requestFailed(
                 status: http.statusCode,
                 message: Self.errorMessage(status: http.statusCode, object: object)
@@ -864,7 +883,8 @@ final class AuthService: ObservableObject {
         method: String,
         initialSession: CloudAccountSession,
         headers: [String: String] = [:],
-        body: [String: Any]? = nil
+        body: [String: Any]? = nil,
+        onRequestDispositionChange: ((AccountDeletionRequestDisposition) -> Void)? = nil
     ) async throws -> [String: Any] {
         let expectedUserID = initialSession.userID
         let firstRevision = sessionRevision
@@ -878,7 +898,8 @@ final class AuthService: ObservableObject {
                 method: method,
                 token: initialSession.accessToken,
                 headers: headers,
-                body: body
+                body: body,
+                onRequestDispositionChange: onRequestDispositionChange
             )
             guard sessionRevision == firstRevision,
                   session?.cloud == initialSession else {
@@ -904,7 +925,8 @@ final class AuthService: ObservableObject {
                 method: method,
                 token: refreshed.accessToken,
                 headers: headers,
-                body: body
+                body: body,
+                onRequestDispositionChange: onRequestDispositionChange
             )
             guard sessionRevision == retryRevision,
                   session?.cloud == refreshed else {

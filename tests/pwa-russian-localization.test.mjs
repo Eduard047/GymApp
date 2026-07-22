@@ -217,6 +217,32 @@ test("PWA Russian dynamic Garmin, workout, exercise, and mission text never fall
   }
 });
 
+test("destructive confirmations have explicit Russian labels and escaped previews", () => {
+  const context = loadPwaContext();
+  const cases = new Map([
+    ["Cancel", "Отмена"],
+    ["Delete set", "Удалить подход"],
+    ["Delete this exercise from your library? This cannot be undone in GymApp.", "Удалить это упражнение из каталога? В GymApp это действие нельзя отменить."],
+    ["Replace profile with backup?", "Заменить профиль резервной копией?"],
+    ["Replace with backup", "Заменить резервной копией"],
+    ["This confirmation is no longer current. Nothing was changed.", "Это подтверждение уже неактуально. Ничего не изменено."]
+  ]);
+  for (const [english, expected] of cases) {
+    assert.equal(context.window.GymRussianText.translate(english), expected, english);
+  }
+
+  vm.runInContext(`modal = {
+    type: "confirm-delete-exercise",
+    intent: { preview: { name: '<img src=x onerror="alert(1)">' } }
+  }`, context);
+  const markup = vm.runInContext("modalMarkup()", context);
+  assert.match(markup, /role="alertdialog"/);
+  assert.match(markup, />Отмена</);
+  assert.match(markup, />Удалить упражнение</);
+  assert.doesNotMatch(markup, /<img|onerror="alert/);
+  assert.match(markup, /&lt;img src=x onerror=&quot;alert\(1\)&quot;&gt;/);
+});
+
 test("missions render one accessible daily, weekly, or monthly panel at a time", () => {
   const context = loadPwaContext();
 

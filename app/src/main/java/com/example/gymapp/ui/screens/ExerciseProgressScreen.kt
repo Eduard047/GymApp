@@ -20,17 +20,19 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -48,8 +50,9 @@ import com.example.gymapp.ui.util.currentAppLanguageTag
 import com.example.gymapp.ui.util.localizedExerciseName
 import com.example.gymapp.ui.util.localizedMuscleName
 import com.example.gymapp.ui.viewmodel.ExerciseProgressUiState
+import com.example.gymapp.ui.viewmodel.ExerciseProgressEvent
 import com.example.gymapp.util.DateTimeUtils
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.Flow
 import java.util.Locale
 
 private data class ProgressSessionHistoryGroup(
@@ -67,16 +70,18 @@ private data class ProgressMetricUi(
 @Composable
 fun ExerciseProgressScreen(
     uiState: ExerciseProgressUiState,
+    events: Flow<ExerciseProgressEvent>,
     onSelectExercise: (Long) -> Unit,
     onDeleteHistoryEntry: (Long) -> Unit,
+    onConfirmDeleteHistoryEntry: () -> Unit,
+    onDismissDeleteHistoryEntry: () -> Unit,
     onPreviousMonth: () -> Unit,
     onCurrentMonth: () -> Unit,
     onNextMonth: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
-    val coroutineScope = rememberCoroutineScope()
-    val setDeletedMessage = stringResource(R.string.message_set_deleted)
+    val context = LocalContext.current
     val selectedRawExerciseName = uiState.selectedExerciseName
     val selectedDisplayExerciseName = if (selectedRawExerciseName != null) {
         localizedExerciseName(selectedRawExerciseName)
@@ -96,6 +101,20 @@ fun ExerciseProgressScreen(
             ?.let { defaultContributionsForExercise(it) }
             .orEmpty()
             .associate { contribution -> contribution.muscleId to contribution.weight.toFloat() }
+    }
+
+    LaunchedEffect(events, context) {
+        events.collect { event ->
+            val message = when (event) {
+                ExerciseProgressEvent.SetDeleted -> R.string.message_set_deleted
+                ExerciseProgressEvent.DeleteTargetChanged -> R.string.message_delete_target_changed
+                ExerciseProgressEvent.DeleteFailed -> R.string.message_delete_failed
+            }
+            snackbarHostState.showSnackbar(
+                message = context.getString(message),
+                duration = SnackbarDuration.Short
+            )
+        }
     }
 
     val sessionGroups = remember(uiState.history) {
@@ -204,12 +223,8 @@ fun ExerciseProgressScreen(
                     ) { sessionGroup ->
                         ProgressSessionHistoryCard(
                             sessionGroup = sessionGroup,
-                            onDeleteHistoryEntry = { setId ->
-                                onDeleteHistoryEntry(setId)
-                                coroutineScope.launch {
-                                    snackbarHostState.showSnackbar(message = setDeletedMessage)
-                                }
-                            }
+                            exerciseName = selectedDisplayExerciseName,
+                            onDeleteHistoryEntry = onDeleteHistoryEntry
                         )
                     }
                 }
@@ -221,6 +236,16 @@ fun ExerciseProgressScreen(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(12.dp)
+        )
+    }
+
+    uiState.pendingSetDeletion?.let { snapshot ->
+        SetDeleteConfirmationDialog(
+            snapshot = snapshot,
+            isDeleting = uiState.isSetDeletionInProgress,
+            error = uiState.setDeletionError,
+            onDismiss = onDismissDeleteHistoryEntry,
+            onConfirm = onConfirmDeleteHistoryEntry
         )
     }
 }
@@ -431,6 +456,7 @@ private fun ProgressSummaryCard(
 @Composable
 private fun ProgressSessionHistoryCard(
     sessionGroup: ProgressSessionHistoryGroup,
+    exerciseName: String,
     onDeleteHistoryEntry: (Long) -> Unit
 ) {
     val totalVolume = sessionGroup.sets.sumOf { it.weight * it.reps }
@@ -517,7 +543,12 @@ private fun ProgressSessionHistoryCard(
                     ) {
                         Icon(
                             imageVector = Icons.Default.Delete,
-                            contentDescription = stringResource(R.string.cd_delete),
+                            contentDescription = stringResource(
+                                R.string.cd_delete_history_set_named,
+                                setIndex + 1,
+                                exerciseName,
+                                DateTimeUtils.formatDate(sessionGroup.sessionDate)
+                            ),
                             tint = MaterialTheme.colorScheme.error
                         )
                     }

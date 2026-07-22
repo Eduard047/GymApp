@@ -1,5 +1,151 @@
 import SwiftUI
 
+struct ExerciseLibraryDeletionTarget: Equatable, Identifiable {
+    struct LinkedImpact: Equatable {
+        let workoutSnapshot: WorkoutSession
+        let matchingBlocks: [WorkoutExercise]
+
+        var workoutID: UUID { workoutSnapshot.id }
+        var workoutExerciseIDs: [UUID] { workoutSnapshot.exercises.map(\.id) }
+    }
+
+    let accountStorageKey: String
+    let storeIdentifier: ObjectIdentifier
+    let exerciseSnapshot: Exercise
+    let displayName: String
+    let muscleMappingSnapshot: [ExerciseMuscleMapping]
+    let linkedImpact: [LinkedImpact]
+
+    var exerciseID: UUID { exerciseSnapshot.id }
+    var id: UUID { exerciseID }
+    var linkedWorkoutCount: Int { linkedImpact.count }
+    var linkedSetCount: Int {
+        linkedImpact
+            .flatMap(\.matchingBlocks)
+            .reduce(0) { $0 + $1.sets.count }
+    }
+    var deletedWorkoutCount: Int {
+        linkedImpact.filter { impact in
+            Set(impact.workoutExerciseIDs) == Set(impact.matchingBlocks.map(\.id))
+        }.count
+    }
+    var restTimerIDs: [String] {
+        linkedImpact.flatMap { impact in
+            impact.matchingBlocks.map { block in
+                "workout-\(impact.workoutID.uuidString)-exercise-\(block.id.uuidString)"
+            }
+        }
+    }
+
+    @MainActor
+    init(store: WorkoutStore, exercise: Exercise, displayName: String) {
+        accountStorageKey = store.accountStorageKey
+        storeIdentifier = ObjectIdentifier(store)
+        exerciseSnapshot = exercise
+        self.displayName = displayName
+        muscleMappingSnapshot = Self.captureMuscleMappings(
+            in: store,
+            exerciseName: exercise.name
+        )
+        linkedImpact = Self.captureLinkedImpact(in: store, exerciseID: exercise.id)
+    }
+
+    @MainActor
+    func isCurrent(in store: WorkoutStore) -> Bool {
+        guard storeIdentifier == ObjectIdentifier(store),
+              accountStorageKey == store.accountStorageKey,
+              let current = store.exercise(id: exerciseID),
+              current == exerciseSnapshot,
+              Self.captureMuscleMappings(
+                  in: store,
+                  exerciseName: exerciseSnapshot.name
+              ) == muscleMappingSnapshot else {
+            return false
+        }
+        return Self.captureLinkedImpact(in: store, exerciseID: exerciseID) == linkedImpact
+    }
+
+    @MainActor
+    func isCurrent(
+        in store: WorkoutStore,
+        activeStore: WorkoutStore,
+        activeAccountStorageKey: String?,
+        isAccountReady: Bool
+    ) -> Bool {
+        isAccountReady
+            && activeStore === store
+            && activeAccountStorageKey == accountStorageKey
+            && isCurrent(in: store)
+    }
+
+    func confirmationMessage(languageCode: String) -> String {
+        let workouts = gymCount(
+            linkedWorkoutCount,
+            englishOne: "workout",
+            englishMany: "workouts",
+            ukrainianOne: "тренування",
+            ukrainianFew: "тренування",
+            ukrainianMany: "тренувань",
+            languageCode: languageCode
+        )
+        let sets = gymCount(
+            linkedSetCount,
+            englishOne: "set",
+            englishMany: "sets",
+            ukrainianOne: "підхід",
+            ukrainianFew: "підходи",
+            ukrainianMany: "підходів",
+            languageCode: languageCode
+        )
+        let deletedWorkouts = gymCount(
+            deletedWorkoutCount,
+            englishOne: "workout",
+            englishMany: "workouts",
+            ukrainianOne: "тренування",
+            ukrainianFew: "тренування",
+            ukrainianMany: "тренувань",
+            languageCode: languageCode
+        )
+        return String(
+            format: gymLocalized(
+                "The exercise will be permanently deleted. Linked impact: %1$@; %2$@; empty workouts deleted: %3$@. This cannot be undone.",
+                languageCode: languageCode
+            ),
+            locale: AppLanguage(rawValue: languageCode)?.locale ?? AppLanguage.english.locale,
+            arguments: [workouts, sets, deletedWorkouts]
+        )
+    }
+
+    @MainActor
+    private static func captureMuscleMappings(
+        in store: WorkoutStore,
+        exerciseName: String
+    ) -> [ExerciseMuscleMapping] {
+        let exerciseNameKey = MuscleMappingEngine.normalizeExerciseName(exerciseName)
+        return store.muscleMappings
+            .filter { $0.exerciseNameKey == exerciseNameKey }
+            .sorted { $0.id < $1.id }
+    }
+
+    @MainActor
+    private static func captureLinkedImpact(
+        in store: WorkoutStore,
+        exerciseID: UUID
+    ) -> [LinkedImpact] {
+        store.workouts.compactMap { workout in
+            let matching = workout.exercises
+                .filter { $0.exerciseID == exerciseID }
+                .sorted { $0.id.uuidString < $1.id.uuidString }
+            guard !matching.isEmpty else { return nil }
+            return LinkedImpact(
+                workoutSnapshot: workout,
+                matchingBlocks: matching
+            )
+        }
+        .sorted { $0.workoutID.uuidString < $1.workoutID.uuidString }
+    }
+}
+
 @MainActor
 struct ExercisesView: View {
     private enum BodyFilter: String, CaseIterable, Identifiable {
@@ -49,19 +195,20 @@ struct ExercisesView: View {
     }
 
     private enum ActiveAlert: Identifiable {
-        case delete(Exercise)
+        case delete(ExerciseLibraryDeletionTarget)
         case error(String)
 
         var id: String {
             switch self {
-            case let .delete(exercise):
-                return "delete-\(exercise.id.uuidString)"
+            case let .delete(target):
+                return "delete-\(target.id.uuidString)"
             case let .error(message):
                 return "error-\(message)"
             }
         }
     }
 
+    @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var store: WorkoutStore
 
     @State private var searchText = ""
@@ -72,6 +219,7 @@ struct ExercisesView: View {
     @State private var presentedSheet: PresentedSheet?
     @State private var activeAlert: ActiveAlert?
     @State private var resultMessage: String?
+    @State private var resultIsError = false
 
     var body: some View {
         GymBackground {
@@ -80,7 +228,7 @@ struct ExercisesView: View {
                     header
 
                     if let resultMessage {
-                        GymStatusBanner(message: resultMessage, isError: false)
+                        GymStatusBanner(message: resultMessage, isError: resultIsError)
                             .transition(.opacity.combined(with: .move(edge: .top)))
                     }
 
@@ -313,7 +461,13 @@ struct ExercisesView: View {
                                 systemImage: "checkmark.seal"
                             )
                             Button(role: .destructive) {
-                                activeAlert = .delete(exercise)
+                                activeAlert = .delete(
+                                    ExerciseLibraryDeletionTarget(
+                                        store: store,
+                                        exercise: exercise,
+                                        displayName: displayName
+                                    )
+                                )
                             } label: {
                                 Image(systemName: "trash")
                                     .frame(minWidth: 44, minHeight: 44)
@@ -335,7 +489,13 @@ struct ExercisesView: View {
                             }
 
                             Button(role: .destructive) {
-                                activeAlert = .delete(exercise)
+                                activeAlert = .delete(
+                                    ExerciseLibraryDeletionTarget(
+                                        store: store,
+                                        exercise: exercise,
+                                        displayName: displayName
+                                    )
+                                )
                             } label: {
                                 Label("Delete", systemImage: "trash")
                             }
@@ -541,6 +701,7 @@ struct ExercisesView: View {
                 ExerciseEditorSheet(title: "Add exercise", initialName: "") { name in
                     _ = try store.addExercise(name: name)
                     resultMessage = "Exercise added."
+                    resultIsError = false
                 }
             }
 
@@ -553,6 +714,7 @@ struct ExercisesView: View {
                         : name
                     try store.renameExercise(id: exercise.id, to: persistedName)
                     resultMessage = "Exercise renamed."
+                    resultIsError = false
                 }
             }
 
@@ -578,6 +740,7 @@ struct ExercisesView: View {
                     resultMessage = selection.isEmpty
                         ? "Automatic muscle mapping restored."
                         : "Muscle groups saved."
+                    resultIsError = false
                 }
             }
         }
@@ -585,26 +748,41 @@ struct ExercisesView: View {
 
     private func makeAlert(_ alert: ActiveAlert) -> Alert {
         switch alert {
-        case let .delete(exercise):
-            let displayName = gymExerciseName(exercise)
+        case let .delete(target):
+            let languageCode = gymCurrentLanguageCode()
             return Alert(
                 title: Text(
                     gymText(
-                        "Delete \(displayName)?",
-                        "Видалити «\(displayName)»?",
-                        languageCode: gymCurrentLanguageCode()
+                        "Delete \(target.displayName)?",
+                        "Видалити «\(target.displayName)»?",
+                        languageCode: languageCode
                     )
                 ),
-                message: Text("This also removes the exercise from saved workouts. Empty workouts are removed. This cannot be undone."),
-                primaryButton: .destructive(Text("Delete")) {
+                message: Text(target.confirmationMessage(languageCode: languageCode)),
+                primaryButton: .destructive(Text(gymLocalized("Delete", languageCode: languageCode))) {
+                    guard target.isCurrent(
+                        in: store,
+                        activeStore: appState.workoutStore,
+                        activeAccountStorageKey: appState.activeAccountStorageKey,
+                        isAccountReady: appState.isAccountReady
+                    ) else {
+                        resultMessage = gymLocalized(
+                            "The exercise or its linked workout data changed before deletion. Review it and try again.",
+                            languageCode: languageCode
+                        )
+                        resultIsError = true
+                        return
+                    }
                     do {
-                        try store.deleteExercise(id: exercise.id, cascadeFromWorkouts: true)
+                        try store.deleteExercise(id: target.exerciseID, cascadeFromWorkouts: true)
+                        target.restTimerIDs.forEach { appState.restTimers.cancel(id: $0) }
                         resultMessage = "Exercise and linked workout entries deleted."
+                        resultIsError = false
                     } catch {
                         activeAlert = .error(errorMessage(error))
                     }
                 },
-                secondaryButton: .cancel()
+                secondaryButton: .cancel(Text(gymLocalized("Cancel", languageCode: languageCode)))
             )
 
         case let .error(message):

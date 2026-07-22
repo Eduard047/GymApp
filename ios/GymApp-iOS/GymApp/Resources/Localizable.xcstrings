@@ -2606,6 +2606,229 @@
         }
       }
     },
+    "Delete set %1$lld from “%2$@”?" : {
+      "comment" : "A confirmation title for deleting an exact saved set from an exercise in a workout.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete set %1$lld from “%2$@”?"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Видалити підхід %1$lld із «%2$@»?"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Удалить подход %1$lld из «%2$@»?"
+          }
+        }
+      }
+    },
+    "Delete “%@” from this workout?" : {
+      "comment" : "A confirmation title for deleting an exact exercise block from a saved workout.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete “%@” from this workout?"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Видалити «%@» із цього тренування?"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Удалить «%@» из этой тренировки?"
+          }
+        }
+      }
+    },
+    "Only this set will be deleted. Undo is available briefly while you stay on this screen." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Only this set will be deleted. Undo is available briefly while you stay on this screen."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Буде видалено лише цей підхід. Скасування доступне протягом короткого часу, поки ти залишаєшся на цьому екрані."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Будет удалён только этот подход. Отмена доступна в течение короткого времени, пока ты остаёшься на этом экране."
+          }
+        }
+      }
+    },
+    "This is the final set for the exercise, so the exercise will also be deleted from the workout. Undo is available briefly while you stay on this screen." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This is the final set for the exercise, so the exercise will also be deleted from the workout. Undo is available briefly while you stay on this screen."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Це останній підхід вправи, тому вправу також буде видалено з тренування. Скасування доступне протягом короткого часу, поки ти залишаєшся на цьому екрані."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Это последний подход упражнения, поэтому упражнение также будет удалено из тренировки. Отмена доступна в течение короткого времени, пока ты остаёшься на этом экране."
+          }
+        }
+      }
+    },
+    "This is the final set in the workout, so the exercise and the entire workout will also be deleted. Undo is available briefly while you stay on this screen." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This is the final set in the workout, so the exercise and the entire workout will also be deleted. Undo is available briefly while you stay on this screen."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Це останній підхід у тренуванні, тому вправу й усе тренування також буде видалено. Скасування доступне протягом короткого часу, поки ти залишаєшся на цьому екрані."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Это последний подход в тренировке, поэтому упражнение и вся тренировка также будут удалены. Отмена доступна в течение короткого времени, пока ты остаёшься на этом экране."
+          }
+        }
+      }
+    },
+    "This exercise and all of its sets will be deleted from the workout. Undo is available briefly while you stay on this screen." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This exercise and all of its sets will be deleted from the workout. Undo is available briefly while you stay on this screen."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Цю вправу та всі її підходи буде видалено з тренування. Скасування доступне протягом короткого часу, поки ти залишаєшся на цьому екрані."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Это упражнение и все его подходы будут удалены из тренировки. Отмена доступна в течение короткого времени, пока ты остаёшься на этом экране."
+          }
+        }
+      }
+    },
+    "This is the last exercise, so deleting it will also delete the entire workout. Undo is available briefly while you stay on this screen." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This is the last exercise, so deleting it will also delete the entire workout. Undo is available briefly while you stay on this screen."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Це остання вправа, тому разом із нею буде видалено все тренування. Скасування доступне протягом короткого часу, поки ти залишаєшся на цьому екрані."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Это последнее упражнение, поэтому вместе с ним будет удалена вся тренировка. Отмена доступна в течение короткого времени, пока ты остаёшься на этом экране."
+          }
+        }
+      }
+    },
+    "The workout changed before deletion. Review it and try again." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The workout changed before deletion. Review it and try again."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Тренування змінилося перед видаленням. Перевір його та спробуй ще раз."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Тренировка изменилась перед удалением. Проверь её и попробуй ещё раз."
+          }
+        }
+      }
+    },
+    "The exercise will be permanently deleted. Linked impact: %1$@; %2$@; empty workouts deleted: %3$@. This cannot be undone." : {
+      "comment" : "An exercise deletion warning. The arguments are localized counts of linked workouts, linked sets, and workouts that become empty.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The exercise will be permanently deleted. Linked impact: %1$@; %2$@; empty workouts deleted: %3$@. This cannot be undone."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Вправу буде остаточно видалено. Пов’язані дані: %1$@; %2$@; порожніх тренувань буде видалено: %3$@. Цю дію не можна скасувати."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Упражнение будет удалено навсегда. Связанные данные: %1$@; %2$@; пустых тренировок будет удалено: %3$@. Это действие нельзя отменить."
+          }
+        }
+      }
+    },
+    "The exercise or its linked workout data changed before deletion. Review it and try again." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The exercise or its linked workout data changed before deletion. Review it and try again."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Вправа або пов’язані з нею дані тренувань змінилися перед видаленням. Перевір їх і спробуй ще раз."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Упражнение или связанные с ним данные тренировок изменились перед удалением. Проверь их и попробуй ещё раз."
+          }
+        }
+      }
+    },
     "DELETE" : {
       "comment" : "A text field for confirming account deletion.",
       "isCommentAutoGenerated" : true,

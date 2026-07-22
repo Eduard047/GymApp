@@ -213,7 +213,9 @@ test("Garmin accepts Russian language sync and uses direct touch hit targets", a
   assert.match(view, /function onMenu\(\)/);
   assert.match(view, /function onNextMode\(\)/);
   assert.match(view, /function onPreviousMode\(\)/);
-  assert.match(view, /pauseRow == 2 && view\.pauseSelected != 2/);
+  assert.match(view, /function drawDiscardConfirmation\(/);
+  assert.match(view, /GymStore\.tr\("KEEP WORKOUT", "ЗАЛИШИТИ", "ОСТАВИТЬ"\)/);
+  assert.match(view, /GymStore\.tr\("YES, DISCARD", "ТАК, СКАСУВАТИ", "ДА, СБРОСИТЬ"\)/);
   assert.match(view, /GymStore\.currentExerciseLabel\(\)/);
   assert.match(view, /function localizedDecimal\(value\)/);
   assert.match(view, /GymStore\.tr\("kg x ", " кг × ", " кг × "\)/);

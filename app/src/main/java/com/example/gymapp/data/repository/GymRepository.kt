@@ -2,6 +2,7 @@
 
 import androidx.room.withTransaction
 import com.example.gymapp.data.catalog.BuiltInExerciseCatalog
+import com.example.gymapp.data.dao.ExerciseDeletionCascadeRow
 import com.example.gymapp.data.database.GymDatabase
 import com.example.gymapp.data.entity.AppMetadataEntity
 import com.example.gymapp.data.entity.ExerciseEntity
@@ -23,6 +24,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.temporal.TemporalAdjusters
+import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
@@ -145,6 +147,46 @@ data class SyncProfileStats(
     val workouts: Int
 )
 
+/** Exact exercise identity and cascade impact shown to the user before deletion. */
+data class ExerciseDeletionSnapshot(
+    val exerciseId: Long,
+    val exerciseName: String,
+    val isFavorite: Boolean,
+    val workoutCount: Int,
+    val exerciseBlockCount: Int,
+    val setCount: Int,
+    val cascadeFingerprint: String,
+    val deletionStoreToken: String
+)
+
+/** Highest-level row that cleanup removes after deleting the selected set. */
+enum class SetDeletionImpact {
+    SetOnly,
+    ExerciseBlock,
+    WorkoutSession
+}
+
+/** Exact set identity, display context, and cleanup impact shown before deletion. */
+data class SetDeletionSnapshot(
+    val setId: Long,
+    val workoutExerciseId: Long,
+    val workoutSessionId: Long,
+    val exerciseId: Long,
+    val exerciseName: String,
+    val sessionDate: Long,
+    val weight: Double,
+    val reps: Int,
+    val orderIndex: Int,
+    val displayOrdinal: Int,
+    val setsInExerciseBlock: Int,
+    val exerciseBlocksInWorkout: Int,
+    val impact: SetDeletionImpact,
+    val removedWorkoutExercise: WorkoutExerciseEntity?,
+    val removedWorkoutSession: WorkoutSessionEntity?,
+    val removedGarminProvenance: GarminWorkoutProvenanceEntity?,
+    val deletionStoreToken: String
+)
+
 data class CloudWorkoutProjectionState internal constructor(
     val digest: String,
     val catalogSeedVersion: Int,
@@ -170,6 +212,8 @@ class GymRepository(
     private val workoutDao = database.workoutDao()
     private val setDao = database.setDao()
     private val muscleMappingDao = database.muscleMappingDao()
+    private val garminWorkoutReceiptDao = database.garminWorkoutReceiptDao()
+    private val deletionStoreToken = UUID.randomUUID().toString()
 
     fun observeExercises(): Flow<List<ExerciseEntity>> = exerciseDao.getExercises()
         .catch { emit(emptyList()) }
@@ -311,6 +355,102 @@ class GymRepository(
 
     suspend fun deleteExercise(exercise: ExerciseEntity) {
         exerciseDao.delete(exercise)
+    }
+
+    suspend fun getExerciseDeletionSnapshot(exerciseId: Long): ExerciseDeletionSnapshot? {
+        if (exerciseId <= 0) return null
+        return database.withTransaction {
+            exerciseDeletionSnapshot(exerciseId)
+        }
+    }
+
+    suspend fun deleteExerciseIfUnchanged(expected: ExerciseDeletionSnapshot): Boolean {
+        if (expected.exerciseId <= 0 || expected.deletionStoreToken != deletionStoreToken) {
+            return false
+        }
+        return database.withTransaction {
+            if (exerciseDeletionSnapshot(expected.exerciseId) != expected) {
+                return@withTransaction false
+            }
+            val deletedRows = exerciseDao.deleteIfUnchanged(
+                exerciseId = expected.exerciseId,
+                expectedName = expected.exerciseName,
+                expectedFavorite = expected.isFavorite
+            )
+            deletedRows == 1 && exerciseDao.getById(expected.exerciseId) == null
+        }
+    }
+
+    private suspend fun exerciseDeletionSnapshot(exerciseId: Long): ExerciseDeletionSnapshot? {
+        val exercise = exerciseDao.getById(exerciseId) ?: return null
+        val cascadeRows = workoutDao.getExerciseDeletionCascadeRows(exercise.id)
+        return ExerciseDeletionSnapshot(
+            exerciseId = exercise.id,
+            exerciseName = exercise.name,
+            isFavorite = exercise.isFavorite,
+            workoutCount = cascadeRows.mapTo(linkedSetOf()) { it.workoutSessionId }.size,
+            exerciseBlockCount = cascadeRows.mapTo(linkedSetOf()) { it.workoutExerciseId }.size,
+            setCount = cascadeRows.count { it.setId != null },
+            cascadeFingerprint = exerciseDeletionCascadeFingerprint(cascadeRows),
+            deletionStoreToken = deletionStoreToken
+        )
+    }
+
+    private fun exerciseDeletionCascadeFingerprint(
+        rows: List<ExerciseDeletionCascadeRow>
+    ): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        val buffer = ByteBuffer.allocate(Long.SIZE_BYTES)
+
+        fun updateLong(value: Long) {
+            buffer.clear()
+            buffer.putLong(value)
+            digest.update(buffer.array())
+        }
+
+        fun updateInt(value: Int) = updateLong(value.toLong())
+
+        fun updateNullableLong(value: Long?) {
+            if (value == null) {
+                digest.update(0.toByte())
+            } else {
+                digest.update(1.toByte())
+                updateLong(value)
+            }
+        }
+
+        fun updateNullableInt(value: Int?) {
+            if (value == null) {
+                digest.update(0.toByte())
+            } else {
+                digest.update(1.toByte())
+                updateInt(value)
+            }
+        }
+
+        fun updateNullableDouble(value: Double?) {
+            if (value == null) {
+                digest.update(0.toByte())
+            } else {
+                digest.update(1.toByte())
+                updateLong(java.lang.Double.doubleToRawLongBits(value))
+            }
+        }
+
+        digest.update("GymAppExerciseDeletionCascadeV2".toByteArray(Charsets.UTF_8))
+        updateInt(rows.size)
+        rows.forEach { row ->
+            updateLong(row.workoutExerciseId)
+            updateLong(row.workoutSessionId)
+            updateLong(row.workoutExerciseExerciseId)
+            updateInt(row.workoutExerciseOrderIndex)
+            updateNullableLong(row.setId)
+            updateNullableLong(row.setWorkoutExerciseId)
+            updateNullableDouble(row.setWeight)
+            updateNullableInt(row.setReps)
+            updateNullableInt(row.setOrderIndex)
+        }
+        return digest.digest().joinToString(separator = "") { byte -> "%02x".format(byte) }
     }
 
     fun observeSessions(): Flow<List<WorkoutSessionSummary>> = workoutDao.getSessions()
@@ -1296,6 +1436,94 @@ class GymRepository(
             setDao.deleteById(setId)
             cleanupAfterSetDeletion(workoutExerciseId)
         }
+    }
+
+    suspend fun getSetDeletionSnapshot(setId: Long): SetDeletionSnapshot? {
+        if (setId <= 0) return null
+        return database.withTransaction {
+            setDeletionSnapshot(setId)
+        }
+    }
+
+    suspend fun deleteSetIfUnchanged(expected: SetDeletionSnapshot): Boolean {
+        if (expected.setId <= 0 || expected.deletionStoreToken != deletionStoreToken) {
+            return false
+        }
+        return database.withTransaction {
+            if (setDeletionSnapshot(expected.setId) != expected) {
+                return@withTransaction false
+            }
+            val deletedRows = setDao.deleteIfUnchanged(
+                setId = expected.setId,
+                expectedWorkoutExerciseId = expected.workoutExerciseId,
+                expectedWeight = expected.weight,
+                expectedReps = expected.reps,
+                expectedOrderIndex = expected.orderIndex
+            )
+            if (deletedRows != 1 || setDao.getById(expected.setId) != null) {
+                return@withTransaction false
+            }
+            cleanupAfterSetDeletion(expected.workoutExerciseId)
+            true
+        }
+    }
+
+    private suspend fun setDeletionSnapshot(setId: Long): SetDeletionSnapshot? {
+        val set = setDao.getById(setId) ?: return null
+        val sessionId = workoutDao.getSessionIdByWorkoutExerciseId(set.workoutExerciseId)
+            ?: return null
+        val details = workoutDao.getSessionDetailsSnapshot(sessionId) ?: return null
+        val exerciseBlock = details.workoutExercises
+            .singleOrNull { it.workoutExercise.id == set.workoutExerciseId }
+            ?: return null
+        val currentSet = exerciseBlock.sets.singleOrNull { it.id == set.id } ?: return null
+        if (currentSet != set) return null
+
+        val displayOrdinal = exerciseBlock.sets
+            .sortedBy { it.orderIndex }
+            .indexOfFirst { it.id == set.id }
+            .takeIf { it >= 0 }
+            ?.plus(1)
+            ?: return null
+
+        val setsInExerciseBlock = exerciseBlock.sets.size
+        val exerciseBlocksInWorkout = details.workoutExercises.size
+        if (setsInExerciseBlock <= 0 || exerciseBlocksInWorkout <= 0) return null
+        val impact = when {
+            setsInExerciseBlock > 1 -> SetDeletionImpact.SetOnly
+            exerciseBlocksInWorkout > 1 -> SetDeletionImpact.ExerciseBlock
+            else -> SetDeletionImpact.WorkoutSession
+        }
+        val removedWorkoutExercise = exerciseBlock.workoutExercise.takeIf {
+            impact != SetDeletionImpact.SetOnly
+        }
+        val removedWorkoutSession = details.session.takeIf {
+            impact == SetDeletionImpact.WorkoutSession
+        }
+        val removedGarminProvenance = if (impact == SetDeletionImpact.WorkoutSession) {
+            garminWorkoutReceiptDao.getProvenance(details.session.id)
+        } else {
+            null
+        }
+        return SetDeletionSnapshot(
+            setId = set.id,
+            workoutExerciseId = set.workoutExerciseId,
+            workoutSessionId = details.session.id,
+            exerciseId = exerciseBlock.exercise.id,
+            exerciseName = exerciseBlock.exercise.name,
+            sessionDate = details.session.date,
+            weight = set.weight,
+            reps = set.reps,
+            orderIndex = set.orderIndex,
+            displayOrdinal = displayOrdinal,
+            setsInExerciseBlock = setsInExerciseBlock,
+            exerciseBlocksInWorkout = exerciseBlocksInWorkout,
+            impact = impact,
+            removedWorkoutExercise = removedWorkoutExercise,
+            removedWorkoutSession = removedWorkoutSession,
+            removedGarminProvenance = removedGarminProvenance,
+            deletionStoreToken = deletionStoreToken
+        )
     }
 
     private suspend fun cleanupAfterSetDeletion(workoutExerciseId: Long) {

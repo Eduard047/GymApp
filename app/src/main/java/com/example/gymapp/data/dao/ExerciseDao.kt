@@ -23,6 +23,20 @@ interface ExerciseDao {
     @Delete
     suspend fun delete(exercise: ExerciseEntity)
 
+    @Query(
+        """
+        DELETE FROM exercises
+        WHERE id = :exerciseId
+            AND name = :expectedName
+            AND isFavorite = :expectedFavorite
+        """
+    )
+    suspend fun deleteIfUnchanged(
+        exerciseId: Long,
+        expectedName: String,
+        expectedFavorite: Boolean
+    ): Int
+
     @Query("DELETE FROM exercises")
     suspend fun deleteAllExercises()
 

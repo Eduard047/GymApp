@@ -8,6 +8,7 @@ class WorkoutView extends Ui.View {
     var selected = 0;
     var page = 0;
     var pauseSelected = 0;
+    var discardSelected = 0;
     var settingsSelected = 0;
     var settingsCount = 6;
     var ticker;
@@ -235,8 +236,12 @@ class WorkoutView extends Ui.View {
             drawSummary(dc, w, h);
         } else if (page == 4) {
             drawDebug(dc, w, h);
-        } else {
+        } else if (page == 5) {
             drawSettings(dc, w, h);
+        } else if (page == 6) {
+            drawDiscardConfirmation(dc, w, h);
+        } else {
+            drawDashboard(dc, w, h);
         }
         drawPageDots(dc, w, h);
 
@@ -412,6 +417,19 @@ class WorkoutView extends Ui.View {
         drawMenuRow(dc, w, h, 2, 170, GymStore.tr("DISCARD", "СКАСУВ", "СБРОСИТЬ"));
     }
 
+    function drawDiscardConfirmation(dc, w, h) {
+        dc.setColor(Gfx.COLOR_RED, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(w / 2, sy(h, 34), Gfx.FONT_XTINY, GymStore.tr("DISCARD WORKOUT?", "СКАСУВАТИ?", "СБРОСИТЬ?"), Gfx.TEXT_JUSTIFY_CENTER);
+
+        dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(w / 2, sy(h, 64), Gfx.FONT_XTINY, GymStore.tr("SETS + ACTIVITY", "ПІДХОДИ + ЗАПИС", "ПОДХОДЫ + ЗАПИСЬ"), Gfx.TEXT_JUSTIFY_CENTER);
+        dc.drawText(w / 2, sy(h, 86), Gfx.FONT_XTINY, GymStore.tr("WILL BE LOST", "БУДЕ ВТРАЧЕНО", "БУДУТ УДАЛЕНЫ"), Gfx.TEXT_JUSTIFY_CENTER);
+        dc.drawText(w / 2, sy(h, 108), Gfx.FONT_XTINY, GymStore.tr("CANNOT BE UNDONE", "НЕ МОЖНА СКАСУВАТИ", "НЕЛЬЗЯ ОТМЕНИТЬ"), Gfx.TEXT_JUSTIFY_CENTER);
+
+        drawDiscardRow(dc, w, h, 0, 144, GymStore.tr("KEEP WORKOUT", "ЗАЛИШИТИ", "ОСТАВИТЬ"), false);
+        drawDiscardRow(dc, w, h, 1, 192, GymStore.tr("YES, DISCARD", "ТАК, СКАСУВАТИ", "ДА, СБРОСИТЬ"), true);
+    }
+
     function drawSummary(dc, w, h) {
         dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
         dc.drawText(w / 2, sy(h, 30), Gfx.FONT_XTINY, GymStore.tr("SUMMARY", "ПІДСУМ", "ИТОГ"), Gfx.TEXT_JUSTIFY_CENTER);
@@ -544,6 +562,20 @@ class WorkoutView extends Ui.View {
         dc.drawText(w / 2, sy(h, baseY + 9), Gfx.FONT_XTINY, label, Gfx.TEXT_JUSTIFY_CENTER);
     }
 
+    function drawDiscardRow(dc, w, h, index, baseY, label, destructive) {
+        var selectedRow = index == discardSelected;
+        var actionColor = destructive ? Gfx.COLOR_RED : Gfx.COLOR_WHITE;
+        var y = sy(h, baseY);
+        if (selectedRow) {
+            dc.setColor(actionColor, Gfx.COLOR_BLACK);
+            dc.fillRoundedRectangle(sx(w, 42), y - sr(w, h, 2), sr(w, h, 176), sr(w, h, 38), sr(w, h, 9));
+            dc.setColor(Gfx.COLOR_BLACK, Gfx.COLOR_TRANSPARENT);
+        } else {
+            dc.setColor(actionColor, Gfx.COLOR_TRANSPARENT);
+        }
+        dc.drawText(w / 2, sy(h, baseY + 9), Gfx.FONT_XTINY, fitText(label, 18), Gfx.TEXT_JUSTIFY_CENTER);
+    }
+
     function drawRow(dc, w, h, index, baseY, label, value) {
         var selectedRow = index == selected;
         var y = sy(h, baseY);
@@ -653,6 +685,8 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
             view.saveAndExit();
         } else if (view.page == 2) {
             handlePauseMenu();
+        } else if (view.page == 6) {
+            handleDiscardConfirmation();
         } else if (view.page == 5) {
             handleSettings(1);
         } else if (view.page == 4) {
@@ -673,6 +707,8 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
     function onNextPage() {
         if (view.page == 2) {
             view.pauseSelected = (view.pauseSelected + 1) % 3;
+        } else if (view.page == 6) {
+            moveDiscardSelection(1);
         } else if (view.page == 1) {
             view.selected = (view.selected + 1) % 4;
         } else if (view.page == 5) {
@@ -693,6 +729,8 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
             view.page = 2;
         } else if (view.page == 2) {
             view.pauseSelected = (view.pauseSelected + 2) % 3;
+        } else if (view.page == 6) {
+            moveDiscardSelection(-1);
         } else if (view.page == 1) {
             view.selected = (view.selected + 3) % 4;
         } else if (view.page == 4) {
@@ -707,24 +745,41 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
     }
 
     function onNextMode() {
-        navigateContent(1);
+        if (view.page == 6) {
+            moveDiscardSelection(1);
+        } else {
+            navigateContent(1);
+        }
         Ui.requestUpdate();
         return true;
     }
 
     function onPreviousMode() {
-        navigateContent(-1);
+        if (view.page == 6) {
+            moveDiscardSelection(-1);
+        } else {
+            navigateContent(-1);
+        }
         Ui.requestUpdate();
         return true;
     }
 
     function onMenu() {
-        openPauseMenu();
+        if (view.page == 6) {
+            cancelDiscardConfirmation();
+        } else {
+            openPauseMenu();
+        }
         Ui.requestUpdate();
         return true;
     }
 
     function onBack() {
+        if (view.page == 6) {
+            cancelDiscardConfirmation();
+            Ui.requestUpdate();
+            return true;
+        }
         if (view.page == 3) {
             view.page = 2;
             view.pauseSelected = 1;
@@ -755,16 +810,17 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
             if (rowAt(y, 210, 44, 1) == 0) {
                 view.saveAndExit();
             }
+        } else if (view.page == 6) {
+            var discardRow = rowAt(y, 144, 48, 2);
+            if (discardRow >= 0) {
+                view.discardSelected = discardRow;
+                handleDiscardConfirmation();
+            }
         } else if (view.page == 2) {
             var pauseRow = rowAt(y, 82, 44, 3);
             if (pauseRow >= 0) {
-                // Discard is deliberately two-step on touch to avoid losing an active workout.
-                if (pauseRow == 2 && view.pauseSelected != 2) {
-                    view.pauseSelected = pauseRow;
-                } else {
-                    view.pauseSelected = pauseRow;
-                    handlePauseMenu();
-                }
+                view.pauseSelected = pauseRow;
+                handlePauseMenu();
             }
         } else if (view.page == 5) {
             var settingsRow = rowAt(y, 42, 34, view.settingsCount);
@@ -833,6 +889,8 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
                 activate(-1);
             } else if (view.page == 5) {
                 handleSettings(-1);
+            } else if (view.page == 6) {
+                moveDiscardSelection(-1);
             } else {
                 navigateContent(-1);
             }
@@ -841,6 +899,8 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
                 activate(1);
             } else if (view.page == 5) {
                 handleSettings(1);
+            } else if (view.page == 6) {
+                moveDiscardSelection(1);
             } else {
                 navigateContent(1);
             }
@@ -878,7 +938,7 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
     }
 
     function navigateContent(delta) {
-        if (view.page == 2 || view.page == 3) {
+        if (view.page == 2 || view.page == 3 || view.page == 6) {
             return;
         }
         if (delta > 0) {
@@ -909,10 +969,36 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         } else if (view.pauseSelected == 1) {
             view.page = 3;
         } else {
-            GymStore.clearWorkout();
-            GymSession.discard();
-            System.exit();
+            openDiscardConfirmation();
         }
+    }
+
+    function openDiscardConfirmation() {
+        // The safe action is always focused first, regardless of how DISCARD was reached.
+        view.discardSelected = 0;
+        view.page = 6;
+    }
+
+    function cancelDiscardConfirmation() {
+        view.discardSelected = 0;
+        view.pauseSelected = 0;
+        view.page = 2;
+    }
+
+    function moveDiscardSelection(delta) {
+        if (delta != 0) {
+            view.discardSelected = view.discardSelected == 0 ? 1 : 0;
+        }
+    }
+
+    function handleDiscardConfirmation() {
+        if (view.discardSelected == 0) {
+            cancelDiscardConfirmation();
+            return;
+        }
+        GymStore.clearWorkout();
+        GymSession.discard();
+        System.exit();
     }
 
     function activate(delta) {

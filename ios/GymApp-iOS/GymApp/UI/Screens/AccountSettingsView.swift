@@ -2,11 +2,26 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
+private struct AccountDeletionConfirmationTarget: Hashable, Identifiable {
+    let storageKey: String
+    let cloudUserID: String?
+    let accountName: String
+
+    init(session: AppAccountSession) {
+        storageKey = session.storageKey
+        cloudUserID = session.cloud?.userID
+        accountName = session.displayName
+    }
+
+    var id: String { "\(storageKey)|\(cloudUserID ?? "local")" }
+    var isCloudAccount: Bool { cloudUserID != nil }
+}
+
 @MainActor
 struct AccountSettingsView: View {
     private enum Prompt: Hashable, Identifiable {
         case signOut
-        case beginDeletion
+        case beginDeletion(AccountDeletionConfirmationTarget)
 
         var id: Self { self }
     }
@@ -16,7 +31,7 @@ struct AccountSettingsView: View {
     @EnvironmentObject private var auth: AuthService
 
     @State private var prompt: Prompt?
-    @State private var showsDeletionConfirmation = false
+    @State private var deletionConfirmationTarget: AccountDeletionConfirmationTarget?
     @State private var showsPasswordChange = false
     @State private var isSyncing = false
 
@@ -65,13 +80,12 @@ struct AccountSettingsView: View {
                 showsPasswordChange = false
             }
         }
-        .sheet(isPresented: $showsDeletionConfirmation) {
+        .sheet(item: $deletionConfirmationTarget) { target in
             NavigationStack {
                 AccountDeletionConfirmationView(
-                    isCloudAccount: isCloudAccount,
-                    accountName: auth.session?.displayName ?? "this profile"
+                    target: target
                 ) {
-                    showsDeletionConfirmation = false
+                    deletionConfirmationTarget = nil
                 }
             }
             .environmentObject(appState)
@@ -255,7 +269,10 @@ struct AccountSettingsView: View {
                 )
 
                 Button(role: .destructive) {
-                    prompt = .beginDeletion
+                    guard let session = auth.session else { return }
+                    prompt = .beginDeletion(
+                        AccountDeletionConfirmationTarget(session: session)
+                    )
                 } label: {
                     Label(
                         gymLocalized(isCloudAccount ? "Delete account and data" : "Delete local profile and data"),
@@ -347,13 +364,13 @@ struct AccountSettingsView: View {
                 secondaryButton: .cancel()
             )
 
-        case .beginDeletion:
+        case .beginDeletion(let target):
             return Alert(
-                title: Text(gymLocalized(isCloudAccount ? "Permanently delete this account?" : "Permanently delete this local profile?")),
+                title: Text(gymLocalized(target.isCloudAccount ? "Permanently delete this account?" : "Permanently delete this local profile?")),
                 message: Text("This cannot be undone. Export a backup first if you want to retain your workout history."),
                 primaryButton: .destructive(Text("Continue")) {
                     Task { @MainActor in
-                        showsDeletionConfirmation = true
+                        deletionConfirmationTarget = target
                     }
                 },
                 secondaryButton: .cancel()
@@ -764,8 +781,7 @@ private struct AccountDeletionConfirmationView: View {
     @EnvironmentObject private var appState: AppState
     @FocusState private var confirmationFocused: Bool
 
-    let isCloudAccount: Bool
-    let accountName: String
+    let target: AccountDeletionConfirmationTarget
     let onDeleted: () -> Void
 
     @State private var confirmation = ""
@@ -783,13 +799,13 @@ private struct AccountDeletionConfirmationView: View {
 
                     GymSectionTitle(
                         eyebrow: "Final confirmation",
-                        title: isCloudAccount ? "Delete account and data" : "Delete local profile and data",
+                        title: target.isCloudAccount ? "Delete account and data" : "Delete local profile and data",
                         supporting: confirmationExplanation
                     )
 
                     GymPanel(highlighted: true) {
                         VStack(alignment: .leading, spacing: 8) {
-                            Text(gymLocalized(accountName))
+                            Text(gymLocalized(target.accountName))
                                 .font(.headline)
                             Text("Type DELETE exactly to enable permanent deletion.")
                                 .font(.subheadline)
@@ -866,11 +882,11 @@ private struct AccountDeletionConfirmationView: View {
     }
 
     private var finalButtonTitle: String {
-        isCloudAccount ? "Permanently delete account" : "Permanently delete local profile"
+        target.isCloudAccount ? "Permanently delete account" : "Permanently delete local profile"
     }
 
     private var confirmationExplanation: String {
-        if isCloudAccount {
+        if target.isCloudAccount {
             return "GymApp will ask the authenticated delete-account service to remove your Supabase user, cascade-delete related cloud rows, clear this profile’s local data, and sign you out."
         }
         return "GymApp will erase this profile’s local workout data and sign you out. This action cannot be undone."
@@ -882,7 +898,10 @@ private struct AccountDeletionConfirmationView: View {
         errorMessage = nil
         Task {
             do {
-                try await appState.deleteCurrentAccountAndData()
+                try await appState.deleteCurrentAccountAndData(
+                    expectedStorageKey: target.storageKey,
+                    expectedCloudUserID: target.cloudUserID
+                )
                 isDeleting = false
                 onDeleted()
                 dismiss()

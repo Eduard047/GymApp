@@ -5,17 +5,21 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.example.gymapp.R
 import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.entity.SetEntryEntity
 import com.example.gymapp.data.entity.WorkoutSessionDetails
 import com.example.gymapp.data.repository.GymRepository
+import com.example.gymapp.data.repository.SetDeletionSnapshot
 import com.example.gymapp.data.repository.WorkoutDataLimits
 import com.example.gymapp.garmin.WorkoutComparison
 import com.example.gymapp.garmin.buildWorkoutComparisonForSession
 import com.example.gymapp.garmin.isWorkoutEarlier
 import com.example.gymapp.garmin.toExerciseHistoryEntries
 import com.example.gymapp.util.RestTimerController
+import com.example.gymapp.util.LocalizedText
 import com.example.gymapp.util.parseWeightInputOrNull
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -29,7 +33,9 @@ import kotlinx.coroutines.launch
 data class WorkoutDetailUiState(
     val sessionDetails: WorkoutSessionDetails? = null,
     val hasGarminReceipt: Boolean = false,
-    val canUndoDelete: Boolean = false,
+    val pendingSetDeletion: SetDeletionSnapshot? = null,
+    val isSetDeletionInProgress: Boolean = false,
+    val setDeletionError: LocalizedText? = null,
     val personalRecordFlags: Map<Long, Boolean> = emptyMap(),
     val restSecondsRemaining: Int = 0,
     val availableExercisesToAdd: List<ExerciseEntity> = emptyList(),
@@ -42,10 +48,18 @@ private data class WorkoutDetailSessionContext(
     val hasGarminReceipt: Boolean
 )
 
+private data class SetDeletionState(
+    val pending: SetDeletionSnapshot?,
+    val isInProgress: Boolean,
+    val error: LocalizedText?
+)
+
 sealed interface WorkoutDetailEvent {
     data object SetDeleted : WorkoutDetailEvent
     data object SessionDeleted : WorkoutDetailEvent
     data object InvalidInput : WorkoutDetailEvent
+    data object DeleteTargetChanged : WorkoutDetailEvent
+    data object DeleteFailed : WorkoutDetailEvent
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -81,7 +95,20 @@ class WorkoutDetailViewModel(
             hasGarminReceipt = hasGarminReceipt
         )
     }
-    private val deletedSetForUndo = MutableStateFlow<SetEntryEntity?>(null)
+    private val pendingSetDeletion = MutableStateFlow<SetDeletionSnapshot?>(null)
+    private val isSetDeletionInProgress = MutableStateFlow(false)
+    private val setDeletionError = MutableStateFlow<LocalizedText?>(null)
+    private val setDeletionState = combine(
+        pendingSetDeletion,
+        isSetDeletionInProgress,
+        setDeletionError
+    ) { pending, isInProgress, error ->
+        SetDeletionState(
+            pending = pending,
+            isInProgress = isInProgress,
+            error = error
+        )
+    }
     private val personalRecordFlags = combine(
         sessionDetailsFlow,
         allExerciseHistoryFlow
@@ -122,11 +149,11 @@ class WorkoutDetailViewModel(
 
     val uiState: StateFlow<WorkoutDetailUiState> = combine(
         sessionContextFlow,
-        deletedSetForUndo,
+        setDeletionState,
         personalRecordFlags,
         restTimerController.remainingSeconds,
         allExercisesFlow
-    ) { sessionContext, deletedSet, prFlags, restSeconds, allExercises ->
+    ) { sessionContext, deletion, prFlags, restSeconds, allExercises ->
         val details = sessionContext.details
         val selectedExerciseIds = details
             ?.workoutExercises
@@ -136,7 +163,9 @@ class WorkoutDetailViewModel(
         WorkoutDetailUiState(
             sessionDetails = details,
             hasGarminReceipt = sessionContext.hasGarminReceipt,
-            canUndoDelete = deletedSet != null,
+            pendingSetDeletion = deletion.pending,
+            isSetDeletionInProgress = deletion.isInProgress,
+            setDeletionError = deletion.error,
             personalRecordFlags = prFlags,
             restSecondsRemaining = restSeconds,
             availableExercisesToAdd = allExercises.filterNot { it.id in selectedExerciseIds },
@@ -213,19 +242,54 @@ class WorkoutDetailViewModel(
         }
     }
 
-    fun deleteSet(setEntry: SetEntryEntity) {
+    fun requestDeleteSet(setEntry: SetEntryEntity) {
+        if (isSetDeletionInProgress.value || pendingSetDeletion.value != null) return
+        isSetDeletionInProgress.value = true
+        setDeletionError.value = null
         viewModelScope.launch {
-            deletedSetForUndo.value = setEntry
-            repository.deleteSet(setEntry)
-            _events.emit(WorkoutDetailEvent.SetDeleted)
+            try {
+                val snapshot = repository.getSetDeletionSnapshot(setEntry.id)
+                if (snapshot != null && snapshot.matchesRequestedSet(sessionId, setEntry)) {
+                    pendingSetDeletion.value = snapshot
+                } else {
+                    _events.emit(WorkoutDetailEvent.DeleteTargetChanged)
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {
+                _events.emit(WorkoutDetailEvent.DeleteFailed)
+            } finally {
+                isSetDeletionInProgress.value = false
+            }
         }
     }
 
-    fun undoDeleteSet() {
-        val setToRestore = deletedSetForUndo.value ?: return
+    fun dismissSetDeletion() {
+        if (isSetDeletionInProgress.value) return
+        pendingSetDeletion.value = null
+        setDeletionError.value = null
+    }
+
+    fun confirmSetDeletion() {
+        val expected = pendingSetDeletion.value ?: return
+        if (isSetDeletionInProgress.value || setDeletionError.value != null) return
+        isSetDeletionInProgress.value = true
         viewModelScope.launch {
-            repository.insertSet(setToRestore)
-            deletedSetForUndo.value = null
+            try {
+                if (repository.deleteSetIfUnchanged(expected)) {
+                    pendingSetDeletion.value = null
+                    setDeletionError.value = null
+                    _events.emit(WorkoutDetailEvent.SetDeleted)
+                } else {
+                    setDeletionError.value = LocalizedText(R.string.message_delete_target_changed)
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {
+                setDeletionError.value = LocalizedText(R.string.message_delete_failed)
+            } finally {
+                isSetDeletionInProgress.value = false
+            }
         }
     }
 

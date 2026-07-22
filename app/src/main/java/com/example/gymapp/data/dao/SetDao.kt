@@ -25,6 +25,24 @@ interface SetDao {
     @Delete
     suspend fun delete(setEntry: SetEntryEntity)
 
+    @Query(
+        """
+        DELETE FROM set_entries
+        WHERE id = :setId
+            AND workoutExerciseId = :expectedWorkoutExerciseId
+            AND weight = :expectedWeight
+            AND reps = :expectedReps
+            AND orderIndex = :expectedOrderIndex
+        """
+    )
+    suspend fun deleteIfUnchanged(
+        setId: Long,
+        expectedWorkoutExerciseId: Long,
+        expectedWeight: Double,
+        expectedReps: Int,
+        expectedOrderIndex: Int
+    ): Int
+
     @Query("SELECT workoutExerciseId FROM set_entries WHERE id = :setId LIMIT 1")
     suspend fun getWorkoutExerciseIdBySetId(setId: Long): Long?
 

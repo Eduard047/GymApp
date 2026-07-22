@@ -38,8 +38,8 @@
     <string name="action_copy_last_plus">Copy Last +2.5 kg</string>
     <string name="action_save_workout">Save Workout</string>
     <string name="action_delete">Delete</string>
+    <string name="action_deleting">Deleting…</string>
     <string name="action_edit">Edit</string>
-    <string name="action_undo">Undo</string>
     <string name="action_cancel">Cancel</string>
     <string name="action_save">Save</string>
     <string name="action_close">Close</string>
@@ -268,6 +268,8 @@
     <string name="message_garmin_send_failed">The plan could not be sent to Garmin. Check Bluetooth and try again.</string>
     <string name="smart_coach_plan_note">Smart Coach plan</string>
     <string name="message_set_deleted">Set deleted</string>
+    <string name="message_delete_target_changed">Deletion stopped because the saved data changed. Review it and try again.</string>
+    <string name="message_delete_failed">Could not delete the saved data. Nothing was removed by this request.</string>
     <string name="message_invalid_set_input">Enter valid reps and optional weight.</string>
     <string name="message_exercise_error">Unable to save exercise. Name may already exist.</string>
 
@@ -567,6 +569,14 @@
     <string name="dialog_edit_set_title">Edit Set</string>
     <string name="dialog_delete_workout_title">Delete workout?</string>
     <string name="dialog_delete_workout_message">This will delete the workout from %1$s with all exercises and sets.</string>
+    <string name="dialog_delete_exercise_title">Delete exercise?</string>
+    <string name="dialog_delete_exercise_message">Delete “%1$s” from the exercise library?</string>
+    <string name="dialog_delete_exercise_impact">Workouts affected: %1$d. Exercise blocks removed: %2$d. Sets deleted: %3$d. This cannot be undone.</string>
+    <string name="dialog_delete_set_title">Delete set?</string>
+    <string name="dialog_delete_set_message">Delete set %1$d for “%2$s” from the workout on %3$s? Recorded load: %4$s kg × %5$d.</string>
+    <string name="dialog_delete_set_impact_set_only">Only this set will be deleted.</string>
+    <string name="dialog_delete_set_impact_exercise">This is the last set in this exercise block. The exercise block will also be removed from the workout.</string>
+    <string name="dialog_delete_set_impact_workout">This is the last set in the workout. The entire workout will also be deleted.</string>
     <string name="post_workout_unavailable_title">Workout summary unavailable</string>
     <string name="post_workout_unavailable_supporting">This workout could not be loaded.</string>
     <string name="post_workout_rewards_eyebrow">Rewards</string>
@@ -618,6 +628,10 @@
     <string name="cd_language">Change language</string>
     <string name="cd_add_workout">Add workout</string>
     <string name="cd_delete">Delete</string>
+    <string name="cd_delete_exercise_named">Delete exercise %1$s</string>
+    <string name="cd_delete_set_named">Delete set %1$d for %2$s</string>
+    <string name="cd_delete_history_set_named">Delete set %1$d for %2$s from workout on %3$s</string>
+    <string name="cd_delete_workout_on">Delete workout on %1$s</string>
     <string name="exercise_favorite_add">Add to favorites</string>
     <string name="exercise_favorite_remove">Remove from favorites</string>
     <string name="cd_edit">Edit</string>

@@ -51,6 +51,14 @@ interface GarminWorkoutReceiptDao {
     suspend fun getProvenanceSessionIds(): List<Long>
 
     @Query(
+        "SELECT * FROM garmin_workout_provenance " +
+            "WHERE workoutSessionId = :workoutSessionId LIMIT 1"
+    )
+    suspend fun getProvenance(
+        workoutSessionId: Long
+    ): GarminWorkoutProvenanceEntity?
+
+    @Query(
         """
         SELECT COUNT(*)
         FROM garmin_workout_receipts

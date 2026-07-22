@@ -68,7 +68,7 @@ function loadWorker(scope = "https://example.test/GymApp/", options = {}) {
   };
   const caches = {
     async keys() {
-      return ["gym-pwa-v39", "gym-pwa-v44", "gym-pwa-v59", "gym-pwa-v60", "gym-pwa-v61", "gym-pwa-v62", "gym-pwa-v64", "another-app-v4"];
+      return ["gym-pwa-v39", "gym-pwa-v44", "gym-pwa-v59", "gym-pwa-v60", "gym-pwa-v61", "gym-pwa-v62", "gym-pwa-v64", "gym-pwa-v65", "another-app-v4"];
     },
     async open(name) {
       openedCaches.push(name);
@@ -315,7 +315,7 @@ test("cached documents receive the same anti-framing policy", async () => {
   const response = await responsePromiseFor(handler, "https://example.test/GymApp/");
 
   assert.equal(await response.text(), "cached");
-  assert.deepEqual(worker.openedCaches, ["gym-pwa-v65"]);
+  assert.deepEqual(worker.openedCaches, ["gym-pwa-v66"]);
   assert.match(response.headers.get("Content-Security-Policy"), /style-src 'self'/);
   assert.match(response.headers.get("Content-Security-Policy"), /frame-ancestors 'none'/);
   assert.doesNotMatch(response.headers.get("Content-Security-Policy"), /unsafe-inline/);
@@ -331,7 +331,7 @@ test("install reloads one internally consistent version without taking over old 
   handler({ waitUntil(value) { installPromise = value; } });
   await installPromise;
 
-  assert.deepEqual(worker.openedCaches, ["gym-pwa-v65"]);
+  assert.deepEqual(worker.openedCaches, ["gym-pwa-v66"]);
   assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/app.v52.js")));
   assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/styles.v52.css")));
   assert.equal(worker.addedAssets.every(asset => asset instanceof Request && asset.cache === "reload"), true);
@@ -348,7 +348,7 @@ test("activation deletes only stale GymApp caches and does not claim old clients
 
   assert.deepEqual(
     worker.deletedCaches,
-    ["gym-pwa-v39", "gym-pwa-v44", "gym-pwa-v59", "gym-pwa-v60", "gym-pwa-v61", "gym-pwa-v62", "gym-pwa-v64"]
+    ["gym-pwa-v39", "gym-pwa-v44", "gym-pwa-v59", "gym-pwa-v60", "gym-pwa-v61", "gym-pwa-v62", "gym-pwa-v64", "gym-pwa-v65"]
   );
   assert.equal(worker.claimCount(), 0);
   assert.equal(worker.matchAllCount(), 0);
@@ -426,7 +426,7 @@ test("a sibling github.io project scope never enters GymApp legacy cleanup", asy
   await installPromise;
 
   assert.equal(worker.skipWaitingCount(), 0);
-  assert.deepEqual(worker.openedCaches, ["gym-pwa-v65"]);
+  assert.deepEqual(worker.openedCaches, ["gym-pwa-v66"]);
   assert.equal(worker.claimCount(), 0);
   assert.equal(isIntercepted(worker.listeners.get("fetch"), scope), true);
 });
