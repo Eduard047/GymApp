@@ -28,6 +28,7 @@ import kotlinx.coroutines.launch
 
 data class WorkoutDetailUiState(
     val sessionDetails: WorkoutSessionDetails? = null,
+    val hasGarminReceipt: Boolean = false,
     val canUndoDelete: Boolean = false,
     val personalRecordFlags: Map<Long, Boolean> = emptyMap(),
     val restSecondsRemaining: Int = 0,
@@ -37,7 +38,8 @@ data class WorkoutDetailUiState(
 
 private data class WorkoutDetailSessionContext(
     val details: WorkoutSessionDetails?,
-    val comparison: WorkoutComparison?
+    val comparison: WorkoutComparison?,
+    val hasGarminReceipt: Boolean
 )
 
 sealed interface WorkoutDetailEvent {
@@ -60,6 +62,9 @@ class WorkoutDetailViewModel(
         repository.observeSessions(),
         allExerciseHistoryFlow
     ) { details, sessions, exerciseHistory ->
+        val hasGarminReceipt = sessions
+            .firstOrNull { summary -> summary.session.id == sessionId }
+            ?.hasGarminReceipt == true
         WorkoutDetailSessionContext(
             details = details,
             comparison = details?.let { current ->
@@ -67,11 +72,13 @@ class WorkoutDetailViewModel(
                     currentSessionId = current.session.id,
                     currentSessionDate = current.session.date,
                     currentNote = current.session.note,
+                    currentHasGarminReceipt = hasGarminReceipt,
                     currentEntries = current.toExerciseHistoryEntries(),
                     allSessions = sessions,
                     allHistory = exerciseHistory
                 )
-            }
+            },
+            hasGarminReceipt = hasGarminReceipt
         )
     }
     private val deletedSetForUndo = MutableStateFlow<SetEntryEntity?>(null)
@@ -128,6 +135,7 @@ class WorkoutDetailViewModel(
             .orEmpty()
         WorkoutDetailUiState(
             sessionDetails = details,
+            hasGarminReceipt = sessionContext.hasGarminReceipt,
             canUndoDelete = deletedSet != null,
             personalRecordFlags = prFlags,
             restSecondsRemaining = restSeconds,

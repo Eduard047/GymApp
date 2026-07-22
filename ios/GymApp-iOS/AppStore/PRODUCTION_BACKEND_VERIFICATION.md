@@ -1,14 +1,13 @@
 # GymApp production backend verification
 
-Status: **baseline passed on 2026-07-11; migration update verified on 2026-07-21**
+Status: **production backend update and disposable-account E2E passed on
+2026-07-22**
 Supabase project: `owrcbsrectdgaotndtxy` (`GymApp`, `eu-west-1`)
 
-> The live two-user E2E evidence below remains the 2026-07-11 baseline. On
-> 2026-07-21 all eight previously missing canonical migrations were applied in
-> deployment order. Structural/ACL checks and rollback-only runtime probes passed,
-> and the Supabase advisors were run after deployment. The 2026-07-21 verification
-> did not include a valid-device Edge Function fetch/ack smoke; do not infer that
-> end-to-end result from the database checks.
+> On 2026-07-22 all 22 repository migrations were reconciled with production,
+> the two canonical Edge Functions were deployed, and live Auth, state, Garmin,
+> and account-deletion paths were exercised with disposable data. No customer
+> account or customer row was changed by the E2E.
 
 This record contains no access tokens, passwords, secret/service-role keys, real
 user identifiers, or customer data. All destructive tests used two generated
@@ -32,25 +31,30 @@ both accounts and every dependent test row were removed.
 | Owner-only protected progress | `20260721143038` — `restrict_leaderboard_to_owner_until_verified_ingestion` | Applied 2026-07-21 |
 | Bounded Garmin pre-auth limits | `20260721143058` — `add_bounded_garmin_preauth_rate_limits` | Applied 2026-07-21 |
 | Retired anonymous Garmin table grants | `20260721143853` — `retire_legacy_garmin_table_grants` | Applied 2026-07-21 |
-| Garmin bridge | `garmin-sync` version 4 | `ACTIVE`; mixed user-JWT/device-capability authentication is enforced in function/RPC code |
-| Account deletion | `delete-account` version 1 | `ACTIVE`, `verify_jwt=true` |
-| iOS Auth redirect | `com.setforge.gymapp.ios://auth/callback/*` | Allowlisted in Dashboard |
+| Hip-abduction catalog entry | `20260721201016` — `add_hip_abduction_to_exercise_catalog` | Applied; 52 catalog rows |
+| Fail-closed RLS guard | `20260722005900` — `fail_closed_public_rls_guard` | Applied and live-probed |
+| Live-session deletion gate | `20260722010000` — `require_live_session_for_account_deletion` | Applied and live-probed |
+| Bounded leaderboard reports | `20260722011000` — `bound_leaderboard_reports` | Applied |
+| Garmin capability gateway cutover | `20260722012000` — `secure_garmin_capability_gateway` | Applied; v2 continuity smoke passed |
+| Bounded state projection | `20260722013000` through `20260722013200` | Applied; 37/37 projected, zero quarantine/mismatch |
+| Garmin bridge | `garmin-sync` version 6 | `ACTIVE`, `verify_jwt=false`; user JWTs and device capabilities are validated by the function's explicit request paths |
+| Account deletion | `delete-account` version 3 | `ACTIVE`, `verify_jwt=true`; repository contract v2 and live-session RPC verified |
+| Auth redirects | Seven production URLs | Web, legacy Android/GitHub, iOS custom scheme, and state-bound iOS/Android production/QA entries read back from Dashboard |
 
-The local migration files are, in deployment order:
-
-1. [202607100001_create_leaderboard_public.sql](../supabase/migrations/202607100001_create_leaderboard_public.sql)
-2. [202607100002_harden_profile_reads.sql](../supabase/migrations/202607100002_harden_profile_reads.sql)
-3. [202607110003_fix_user_state_revision.sql](../supabase/migrations/202607110003_fix_user_state_revision.sql)
-
-Migration `003` fixes a runtime issue found by E2E testing in the original
-server-owned revision trigger. The corrected function was first tested inside a
-rolled-back transaction, then deployed, then exercised again through the live
-PostgREST conditional-update path.
+The authoritative ordered migration source is the repository-root
+`supabase/migrations/` directory. The linked migration list was read back after
+deployment and contains the same 22 versions through `20260722013200`. The
+current account-deletion evidence and release gate are pinned in
+[deployment-contract.json](../../../supabase/functions/delete-account/deployment-contract.json).
 
 ## Live E2E coverage
 
 The production run verified:
 
+- public email signup acceptance with a state-bound Android PKCE redirect;
+- wrong-password rejection, password login, refresh-token rotation, password
+  change with the current password, local-session logout/revocation, and
+  survival of a separate live session;
 - password login for two isolated disposable Auth users;
 - own profile/state creation and Garmin device/plan creation;
 - own-row direct `profiles` reads and empty cross-user direct reads;
@@ -79,22 +83,29 @@ The production run verified:
 | `GET /rest/v1/leaderboard_public` | `401` |
 | `GET /rest/v1/leaderboard_reports` | `401` |
 | `GET /rest/v1/leaderboard` (removed legacy view) | `404` |
-| `GET /functions/v1/delete-account` | `405` |
+| `GET /functions/v1/delete-account` without JWT | `401` |
 | `POST /functions/v1/delete-account` without JWT | `401` |
 | `OPTIONS /functions/v1/garmin-sync` | `200` |
 | `POST /functions/v1/garmin-sync` with unknown action | `400` |
 | `POST /functions/v1/garmin-sync` with malformed device token | `400` |
 | `POST /functions/v1/garmin-sync` fetch/ack with a random format-valid token | `401` |
 
-The Garmin HTTP smoke used a generated non-persistent token and no real device
-or plan. It verifies gateway reachability, input mapping, and invalid-capability
-denial, but it does not replace the outstanding valid-device fetch/ack smoke.
+The negative Garmin smoke used a generated non-persistent token. A separate
+disposable authenticated user then created and rotated a real v2 device
+capability, queued two plans, fetched and acknowledged them through the Edge
+Function, replayed the acknowledgement idempotently, and fetched/acknowledged a
+plan across the capability-gateway migration cutover.
 
 ## Auth and App Review account
 
-- Supabase Dashboard showed the existing web confirmation URL plus the iOS
-  callback wildcard, with a successful-save notification and total URL count of
-  two on 2026-07-11.
+- Supabase Dashboard readback showed the expected seven-entry redirect
+  allowlist on 2026-07-22. The Site URL remains
+  `https://gymapptracker.com/`.
+- Email confirmation is enabled, anonymous sign-in is disabled, and the server
+  minimum password length is eight to match the currently hosted PWA. The
+  repository clients already enforce the next twelve-character mixed-character
+  policy; the server policy must be raised in the same release window as those
+  clients are published.
 - A non-expiring, email-confirmed App Review account was created in production
   with three fictional exercises and two fictional workouts.
 - Password login, own profile, cloud state, and exactly one
@@ -107,9 +118,10 @@ denial, but it does not replace the outstanding valid-device fetch/ack smoke.
 
 ## Existing Android/PWA compatibility
 
-The RLS hardening intentionally prevents legacy direct cross-user
-`profiles` reads. Existing source clients were updated so this privacy change
-does not remain a product regression:
+The RLS hardening intentionally prevents legacy direct cross-user `profiles`
+reads. Repository clients use the owner-only protected-progress contract and
+the canonical Edge Function paths. The source changes in this verification are
+not a PWA or mobile publication:
 
 - repository `Eduard047/GymApp` master commit
   `63e47f3ebfb0d4a6db969375b1b6b26fa24e0749` updates Android and PWA to
@@ -118,13 +130,12 @@ does not remain a product regression:
 - master commit `2729f4dc2e601be1e4c369c4638d889e9c9fa5f9` moves the
   Android/PWA auth callbacks and public legal URLs to the verified custom domain
   while retaining platform-specific redirect behavior;
-- the three migrations copied into that repository use the exact versions from
-  production history, preventing migration drift;
-- GitHub Pages commit `0147badeb5e8a4d140236af22c8911e699a3429b`
-  publishes the current PWA/auth bridge with `app.js?v=28`, `styles.css?v=27`,
-  and cache `v37`; and
-- the live PWA was verified to contain the new endpoint/tie-break and no old
-  direct leaderboard query. Node regression/syntax checks passed 23/23.
+- production and repository migration histories now match exactly through
+  `20260722013200`; and
+- the live site still serves its previously published `app.v52.js`, whose hash
+  differs from the updated repository copy. Publish and reverify the PWA in a
+  separate authorized release before raising the server password policy to the
+  repository's twelve-character contract.
 
 Already-installed legacy Android builds remain privacy-safe but show only their
 own leaderboard row until an updated APK/AAB is built and distributed. Android
@@ -141,9 +152,9 @@ reviewed exceptions or owner-level configuration:
 - `leaderboard_blocked_terms`: RLS is enabled with no policies intentionally;
   all client grants are revoked and only trusted server/moderation access is
   allowed. [Advisor reference](https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy)
-- `garmin_fetch_pending_plan(text)`: anonymous execution is intentional for the
-  Garmin bridge and is gated by an opaque 256-bit device token; the function has
-  a fixed empty search path and does not expose broad table access. [Advisor reference](https://supabase.com/docs/guides/database/database-linter?lint=0028_anon_security_definer_function_executable)
+- The former anonymous `garmin_fetch_pending_plan(text)` exception is resolved:
+  direct anonymous/authenticated execution is revoked and only the Edge backend
+  role may call the delivery RPCs.
 - `leaderboard_public_rows()`: authenticated execution is intentional and
   returns only the reviewed six-field sanitized leaderboard projection, with no
   UUID or dynamic SQL. [Advisor reference](https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable)
@@ -178,6 +189,7 @@ before submission.
 - The current legal pages were deployed from `gh-pages` commit
   `f3edd58cbe1a255f1335c868ece6dafa7244b33c`; the first-party confirmation
   bridge remains part of the same hosted site.
-- Supabase Auth Site URL is `https://gymapptracker.com/`. Its five-entry
-  redirect allowlist retains the previous GitHub callback and iOS custom-scheme
-  fallback alongside the Android, Web, and state-bound iOS HTTPS callbacks.
+- Supabase Auth Site URL is `https://gymapptracker.com/`. Its seven-entry
+  redirect allowlist retains the previous GitHub callback and legacy Android
+  exact URL alongside the web, iOS custom-scheme, and state-bound iOS/Android
+  production/QA callbacks.

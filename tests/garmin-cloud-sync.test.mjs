@@ -229,9 +229,9 @@ test("PWA, Supabase, and Garmin code are wired to the same cloud sync contract",
   assert.match(edgeFunction, /action === "listDevices"/);
   assert.match(edgeFunction, /action === "rotateDeviceToken"/);
   assert.match(edgeFunction, /SUPABASE_ANON_KEY/);
-  assert.match(edgeFunction, /rpc\(\s*"garmin_fetch_pending_plan"/);
+  assert.match(edgeFunction, /"garmin_fetch_pending_plan"/);
   assert.match(edgeFunction, /action === "ackPlan"/);
-  assert.match(edgeFunction, /rpc\(\s*"garmin_ack_plan"/);
+  assert.match(edgeFunction, /"garmin_ack_plan"/);
   assert.doesNotMatch(edgeFunction.slice(
     edgeFunction.indexOf('if (body.action === "fetchPlan")'),
     edgeFunction.indexOf('if (body.action === "ackPlan")')
@@ -239,6 +239,9 @@ test("PWA, Supabase, and Garmin code are wired to the same cloud sync contract",
   assert.match(edgeConfig, /\[functions\.garmin-sync\][\s\S]*verify_jwt = false/);
   assert.doesNotMatch(edgeFunction, /https:\/\/esm\.sh/);
   assert.match(edgeFunction, /"Cache-Control": "no-store"/);
+  assert.match(edgeFunction, /verifyGarminCapability/);
+  assert.match(edgeFunction, /SUPABASE_SERVICE_ROLE_KEY/);
+  assert.match(edgeFunction, /GARMIN_CAPABILITY_HMAC_SECRET/);
   assert.match(denoConfig, /npm:@supabase\/supabase-js@2\.110\.2/);
   assert.match(denoConfig, /"frozen": true/);
   assert.match(denoLock, /"integrity": "sha512-/);
@@ -257,11 +260,14 @@ test("PWA, Supabase, and Garmin code are wired to the same cloud sync contract",
   assert.match(rateLimitMigration, /grant execute on function public\.garmin_ack_plan\(text, uuid, bigint\)\s+to anon/);
 
   assert.match(settingsXml, /@Properties\.CloudDeviceToken/);
+  assert.match(settingsXml, /<settingConfig\s+type="password"\s*\/>/);
+  assert.doesNotMatch(settingsXml, /<settingConfig\s+type="alphaNumeric"\s*\/>/);
   assert.match(gymComm, /CloudDeviceToken/);
   assert.match(gymComm, /Comm\.makeWebRequest/);
   assert.match(gymComm, /\/functions\/v1\/garmin-sync/);
   assert.match(workoutView, /requestCloudSyncNow/);
   assert.match(workoutView, /GymStore\.applyCloudSync\(message\)/);
+  assert.match(workoutView, /if \(ok && message == null\) \{[\s\S]*cloudAutoSyncActive = false/);
   assert.match(workoutView, /function sx\(w, baseX\)/);
   assert.match(workoutView, /function sy\(h, baseY\)/);
   assert.match(workoutView, /function sr\(w, h, value\)/);

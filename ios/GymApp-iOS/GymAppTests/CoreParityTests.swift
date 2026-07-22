@@ -173,7 +173,7 @@ final class CoreParityTests: XCTestCase {
         XCTAssertTrue(afterRefreshRelaunch.needsPasswordUpdate)
         XCTAssertEqual(afterRefreshRelaunch.session?.cloud?.accessToken, "refreshed-access")
 
-        await afterRefreshRelaunch.updatePassword("UpdatedPass9")
+        await afterRefreshRelaunch.updatePassword("UpdatedPass9!")
 
         XCTAssertFalse(afterRefreshRelaunch.needsPasswordUpdate)
         XCTAssertEqual(afterRefreshRelaunch.message, "Password updated.")
@@ -187,7 +187,142 @@ final class CoreParityTests: XCTestCase {
         let updateRequest = try XCTUnwrap(recorder.requests.first(where: { $0.url?.path == "/auth/v1/user" }))
         XCTAssertEqual(updateRequest.httpMethod, "PUT")
         XCTAssertEqual(updateRequest.value(forHTTPHeaderField: "Authorization"), "Bearer refreshed-access")
-        XCTAssertEqual(try jsonObject(from: updateRequest)["password"] as? String, "UpdatedPass9")
+        let updateBody = try jsonObject(from: updateRequest)
+        XCTAssertEqual(updateBody["password"] as? String, "UpdatedPass9!")
+        XCTAssertNil(updateBody["current_password"])
+    }
+
+    func testSignedInPasswordChangeSendsCurrentPasswordAndKeepsSession() async throws {
+        let recorder = AuthRequestRecorder()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        let auth = AuthService(
+            keychain: InMemoryKeychainStore(),
+            urlSession: urlSession,
+            defaults: temporaryDefaults(named: "signed-in-password-change")
+        )
+        let cloud = cloudSession(userID: "password-change-user")
+        try auth.installSessionForTesting(.cloud(cloud))
+        AuthURLProtocolStub.handler = { request in
+            recorder.append(request)
+            return try AuthURLProtocolStub.response(
+                for: request,
+                json: #"{"id":"password-change-user"}"#
+            )
+        }
+        defer {
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+        }
+
+        let updated = await auth.updatePassword(
+            "UpdatedSecurePass9!",
+            currentPassword: "CurrentSecurePass8!"
+        )
+
+        XCTAssertTrue(updated)
+        XCTAssertEqual(auth.session?.cloud?.userID, cloud.userID)
+        XCTAssertEqual(auth.message, "Password updated.")
+        let request = try XCTUnwrap(recorder.requests.first)
+        XCTAssertEqual(request.url?.path, "/auth/v1/user")
+        XCTAssertEqual(request.httpMethod, "PUT")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer \(cloud.accessToken)")
+        let body = try jsonObject(from: request)
+        XCTAssertEqual(body["password"] as? String, "UpdatedSecurePass9!")
+        XCTAssertEqual(body["current_password"] as? String, "CurrentSecurePass8!")
+    }
+
+    func testPasswordChangeForcesOneRefreshAfterDirectUnauthorized() async throws {
+        let recorder = AuthRequestRecorder()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        let auth = AuthService(
+            keychain: InMemoryKeychainStore(),
+            urlSession: urlSession,
+            defaults: temporaryDefaults(named: "password-forced-refresh")
+        )
+        let cloud = cloudSession(userID: "password-forced-refresh-user")
+        try auth.installSessionForTesting(.cloud(cloud))
+        AuthURLProtocolStub.handler = { request in
+            recorder.append(request)
+            switch request.url?.path {
+            case "/auth/v1/user":
+                let bearer = request.value(forHTTPHeaderField: "Authorization")
+                if bearer == "Bearer \(cloud.accessToken)" {
+                    return try AuthURLProtocolStub.response(
+                        for: request,
+                        statusCode: 401,
+                        json: #"{"message":"JWT expired"}"#
+                    )
+                }
+                XCTAssertEqual(bearer, "Bearer refreshed-password-access")
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    json: #"{"id":"password-forced-refresh-user"}"#
+                )
+            case "/auth/v1/token":
+                XCTAssertTrue(request.url?.query?.contains("grant_type=refresh_token") == true)
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    json: #"{"access_token":"refreshed-password-access","refresh_token":"refreshed-password-refresh","expires_in":3600,"user":{"id":"password-forced-refresh-user","email":"password-forced-refresh-user@example.com","user_metadata":{"display_name":"Password"}}}"#
+                )
+            default:
+                XCTFail("Unexpected forced-refresh request: \(request.url?.absoluteString ?? "nil")")
+                return try AuthURLProtocolStub.response(for: request, statusCode: 404, json: "{}")
+            }
+        }
+        defer {
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+        }
+
+        let updated = await auth.updatePassword(
+            "UpdatedSecurePass9!",
+            currentPassword: "CurrentSecurePass8!"
+        )
+
+        XCTAssertTrue(updated)
+        XCTAssertEqual(
+            recorder.requests.map(\.url?.path),
+            ["/auth/v1/user", "/auth/v1/token", "/auth/v1/user"]
+        )
+        XCTAssertEqual(auth.session?.cloud?.accessToken, "refreshed-password-access")
+    }
+
+    func testSignOutRevokesOnlyCurrentSupabaseSession() async throws {
+        let recorder = AuthRequestRecorder()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        let auth = AuthService(
+            keychain: InMemoryKeychainStore(),
+            urlSession: urlSession,
+            defaults: temporaryDefaults(named: "local-scope-sign-out")
+        )
+        let cloud = cloudSession(userID: "local-sign-out-user")
+        try auth.installSessionForTesting(.cloud(cloud))
+        AuthURLProtocolStub.handler = { request in
+            recorder.append(request)
+            return try AuthURLProtocolStub.response(for: request, json: "{}")
+        }
+        defer {
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+        }
+
+        await auth.signOut()
+
+        XCTAssertNil(auth.session)
+        let request = try XCTUnwrap(recorder.requests.first)
+        XCTAssertEqual(request.url?.path, "/auth/v1/logout")
+        XCTAssertEqual(
+            URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)?
+                .queryItems?.first(where: { $0.name == "scope" })?.value,
+            "local"
+        )
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer \(cloud.accessToken)")
     }
 
     func testAndroidBackupRoundTripAndDuplicateProtection() throws {
@@ -624,7 +759,54 @@ final class CoreParityTests: XCTestCase {
         XCTAssertFalse(auth.message?.contains(marker) == true)
     }
 
-    func testSignUpShowsPersistentEmailConfirmationState() async {
+    func testNewPasswordPolicyMatchesSupabaseCharacterGroupsAndBounds() {
+        XCTAssertTrue(GymPasswordPolicy.accepts("SecurePass9!"))
+        XCTAssertTrue(GymPasswordPolicy.accepts("Aa1!" + String(repeating: "x", count: 68)))
+        XCTAssertTrue(GymPasswordPolicy.accepts("Aa1!" + String(repeating: "x", count: 8) + String(repeating: "🙂", count: 15)))
+        XCTAssertFalse(GymPasswordPolicy.accepts("Short1!Aa"))
+        XCTAssertFalse(GymPasswordPolicy.accepts("Aa1!" + String(repeating: "x", count: 69)))
+        XCTAssertFalse(GymPasswordPolicy.accepts("Aa1!" + String(repeating: "x", count: 8) + String(repeating: "🙂", count: 16)))
+        XCTAssertFalse(GymPasswordPolicy.accepts("SECUREPASS9!"))
+        XCTAssertFalse(GymPasswordPolicy.accepts("securepass9!"))
+        XCTAssertFalse(GymPasswordPolicy.accepts("SecurePass!!"))
+        XCTAssertFalse(GymPasswordPolicy.accepts("SecurePass9🙂"))
+
+        for symbol in "!@#$%^&*()_+-=[]{};'\\:\"|<>?,./`~" {
+            XCTAssertTrue(GymPasswordPolicy.accepts("SecurePass9\(symbol)"), "Expected \(symbol) to be supported")
+        }
+    }
+
+    func testSignInAllowsLegacyPasswordWithoutApplyingNewPasswordPolicy() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let session = URLSession(configuration: configuration)
+        let auth = AuthService(
+            keychain: InMemoryKeychainStore(),
+            urlSession: session,
+            defaults: temporaryDefaults(named: "legacy-password-sign-in")
+        )
+        AuthURLProtocolStub.handler = { request in
+            let bodyData = try XCTUnwrap(request.httpBody)
+            let body = try XCTUnwrap(JSONSerialization.jsonObject(with: bodyData) as? [String: Any])
+            XCTAssertEqual(body["password"] as? String, "legacy1")
+            return try AuthURLProtocolStub.response(
+                for: request,
+                json: #"{"access_token":"legacy-access","refresh_token":"legacy-refresh","expires_in":3600,"user":{"id":"00000000-0000-0000-0000-000000000001","email":"athlete@example.com","user_metadata":{"display_name":"Athlete"}}}"#
+            )
+        }
+        defer {
+            AuthURLProtocolStub.handler = nil
+            session.invalidateAndCancel()
+        }
+
+        await auth.signIn(email: "athlete@example.com", password: "legacy1")
+
+        XCTAssertEqual(auth.session?.cloud?.email, "athlete@example.com")
+        XCTAssertNil(auth.message)
+    }
+
+    func testSignUpShowsPersistentEmailConfirmationStateAndResendKeepsPKCE() async throws {
+        let recorder = AuthRequestRecorder()
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [AuthURLProtocolStub.self]
         let session = URLSession(configuration: configuration)
@@ -634,11 +816,25 @@ final class CoreParityTests: XCTestCase {
             defaults: temporaryDefaults(named: "pending-email-confirmation")
         )
         AuthURLProtocolStub.handler = { request in
-            XCTAssertEqual(request.url?.path, "/auth/v1/signup")
-            return try AuthURLProtocolStub.response(
-                for: request,
-                json: #"{"id":"00000000-0000-0000-0000-000000000001","email":"athlete@example.com"}"#
-            )
+            recorder.append(request)
+            switch request.url?.path {
+            case "/auth/v1/signup":
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    json: #"{"id":"00000000-0000-0000-0000-000000000001","email":"athlete@example.com"}"#
+                )
+            case "/auth/v1/token":
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    statusCode: 400,
+                    json: #"{"message":"Email not confirmed"}"#
+                )
+            case "/auth/v1/resend":
+                return try AuthURLProtocolStub.response(for: request, json: "{}")
+            default:
+                XCTFail("Unexpected auth request: \(request.url?.absoluteString ?? "nil")")
+                return try AuthURLProtocolStub.response(for: request, statusCode: 404, json: "{}")
+            }
         }
         defer {
             AuthURLProtocolStub.handler = nil
@@ -647,35 +843,83 @@ final class CoreParityTests: XCTestCase {
 
         let signedIn = await auth.signUp(
             email: " Athlete@Example.com ",
-            password: "Password9",
+            password: "SecurePass9!",
             displayName: "Athlete"
         )
 
         XCTAssertFalse(signedIn)
         XCTAssertNil(auth.session)
-        XCTAssertNil(auth.message)
+        XCTAssertEqual(auth.message, "Account created. Check your email, then return to GymApp.")
         XCTAssertFalse(auth.messageIsError)
         XCTAssertEqual(auth.pendingConfirmationEmail, "athlete@example.com")
+        XCTAssertTrue(auth.pendingConfirmationEmailWasSent)
+
+        let signupRequest = try XCTUnwrap(
+            recorder.requests.first(where: { $0.url?.path == "/auth/v1/signup" })
+        )
+        let signupBody = try jsonObject(from: signupRequest)
+        let signupChallenge = try XCTUnwrap(signupBody["code_challenge"] as? String)
+        XCTAssertEqual(signupBody["code_challenge_method"] as? String, "s256")
+
+        await auth.signIn(email: "athlete@example.com", password: "SecurePass9!")
+
+        XCTAssertEqual(
+            recorder.requests.filter { $0.url?.path == "/auth/v1/resend" }.count,
+            0,
+            "An unconfirmed sign-in must not silently consume the email-send rate limit."
+        )
+        XCTAssertEqual(auth.pendingConfirmationEmail, "athlete@example.com")
+        XCTAssertTrue(auth.pendingConfirmationEmailWasSent)
+        XCTAssertNil(auth.message)
+
+        await auth.resendConfirmation(email: "athlete@example.com")
+
+        let resendRequest = try XCTUnwrap(
+            recorder.requests.first(where: { $0.url?.path == "/auth/v1/resend" })
+        )
+        let resendBody = try jsonObject(from: resendRequest)
+        XCTAssertEqual(resendBody["type"] as? String, "signup")
+        XCTAssertEqual(resendBody["email"] as? String, "athlete@example.com")
+        XCTAssertEqual(resendBody["code_challenge"] as? String, signupChallenge)
+        XCTAssertEqual(resendBody["code_challenge_method"] as? String, "s256")
+        XCTAssertFalse(auth.messageIsError)
 
         auth.dismissEmailConfirmation(clearPendingRequest: false)
         XCTAssertNil(auth.pendingConfirmationEmail)
     }
 
-    func testUnconfirmedSignInShowsEmailConfirmationState() async {
+    func testUnconfirmedSignInPersistsExplicitResendStateAndCompletesPKCE() async throws {
+        let recorder = AuthRequestRecorder()
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [AuthURLProtocolStub.self]
         let session = URLSession(configuration: configuration)
+        let keychain = InMemoryKeychainStore()
+        let defaults = temporaryDefaults(named: "unconfirmed-sign-in")
         let auth = AuthService(
-            keychain: InMemoryKeychainStore(),
+            keychain: keychain,
             urlSession: session,
-            defaults: temporaryDefaults(named: "unconfirmed-sign-in")
+            defaults: defaults
         )
         AuthURLProtocolStub.handler = { request in
-            try AuthURLProtocolStub.response(
-                for: request,
-                statusCode: 400,
-                json: #"{"message":"Email not confirmed"}"#
-            )
+            recorder.append(request)
+            switch request.url?.path {
+            case "/auth/v1/token" where request.url?.query?.contains("grant_type=password") == true:
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    statusCode: 400,
+                    json: #"{"message":"Email not confirmed"}"#
+                )
+            case "/auth/v1/resend":
+                return try AuthURLProtocolStub.response(for: request, json: "{}")
+            case "/auth/v1/token" where request.url?.query?.contains("grant_type=pkce") == true:
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    json: #"{"access_token":"confirmed-access","refresh_token":"confirmed-refresh","expires_in":3600,"user":{"id":"00000000-0000-0000-0000-000000000001","email":"athlete@example.com","user_metadata":{"display_name":"Athlete"}}}"#
+                )
+            default:
+                XCTFail("Unexpected auth request: \(request.url?.absoluteString ?? "nil")")
+                return try AuthURLProtocolStub.response(for: request, statusCode: 404, json: "{}")
+            }
         }
         defer {
             AuthURLProtocolStub.handler = nil
@@ -688,6 +932,160 @@ final class CoreParityTests: XCTestCase {
         XCTAssertNil(auth.message)
         XCTAssertFalse(auth.messageIsError)
         XCTAssertEqual(auth.pendingConfirmationEmail, "athlete@example.com")
+        XCTAssertFalse(auth.pendingConfirmationEmailWasSent)
+        XCTAssertEqual(recorder.requests.count, 1)
+        XCTAssertEqual(
+            recorder.requests.filter { $0.url?.path == "/auth/v1/resend" }.count,
+            0,
+            "Sign-in must expose an explicit resend action instead of sending duplicate email."
+        )
+
+        let relaunched = AuthService(keychain: keychain, urlSession: session, defaults: defaults)
+        XCTAssertEqual(relaunched.pendingConfirmationEmail, "athlete@example.com")
+        XCTAssertFalse(relaunched.pendingConfirmationEmailWasSent)
+
+        await relaunched.resendConfirmation(email: "athlete@example.com")
+
+        let resendRequest = try XCTUnwrap(
+            recorder.requests.first(where: { $0.url?.path == "/auth/v1/resend" })
+        )
+        let resendBody = try jsonObject(from: resendRequest)
+        let challenge = try XCTUnwrap(resendBody["code_challenge"] as? String)
+        XCTAssertEqual(challenge.count, 43)
+        XCTAssertEqual(resendBody["code_challenge_method"] as? String, "s256")
+        XCTAssertEqual(resendBody["email"] as? String, "athlete@example.com")
+        XCTAssertEqual(resendBody["type"] as? String, "signup")
+        XCTAssertTrue(relaunched.pendingConfirmationEmailWasSent)
+        XCTAssertEqual(relaunched.message, "Confirmation email sent. Check inbox and spam.")
+
+        let afterResendRelaunch = AuthService(
+            keychain: keychain,
+            urlSession: session,
+            defaults: defaults
+        )
+        XCTAssertEqual(afterResendRelaunch.pendingConfirmationEmail, "athlete@example.com")
+        XCTAssertTrue(afterResendRelaunch.pendingConfirmationEmailWasSent)
+
+        let resendURL = try XCTUnwrap(resendRequest.url)
+        let resendQuery = try XCTUnwrap(URLComponents(url: resendURL, resolvingAgainstBaseURL: false))
+        let redirect = try XCTUnwrap(
+            resendQuery.queryItems?.first(where: { $0.name == "redirect_to" })?.value
+        )
+        let redirectComponents = try XCTUnwrap(URLComponents(string: redirect))
+        let state = try XCTUnwrap(
+            redirectComponents.queryItems?.first(where: { $0.name == "state" })?.value
+        )
+        let callback = try XCTUnwrap(
+            URL(string: "com.setforge.gymapp.ios://auth/callback/\(state)?code=confirmation-code")
+        )
+
+        await afterResendRelaunch.handleOpenURL(callback)
+
+        let tokenRequest = try XCTUnwrap(recorder.requests.first(where: {
+            $0.url?.path == "/auth/v1/token"
+                && $0.url?.query?.contains("grant_type=pkce") == true
+        }))
+        let tokenBody = try jsonObject(from: tokenRequest)
+        let verifier = try XCTUnwrap(tokenBody["code_verifier"] as? String)
+        XCTAssertEqual(tokenBody["auth_code"] as? String, "confirmation-code")
+        XCTAssertEqual(pkceChallenge(for: verifier), challenge)
+        XCTAssertEqual(afterResendRelaunch.session?.cloud?.email, "athlete@example.com")
+        XCTAssertNil(afterResendRelaunch.pendingConfirmationEmail)
+    }
+
+    func testLostSignupResponsePreservesPKCETransactionForExplicitResend() async throws {
+        let recorder = AuthRequestRecorder()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        let keychain = InMemoryKeychainStore()
+        let defaults = temporaryDefaults(named: "signup-outcome-unknown")
+        let auth = AuthService(keychain: keychain, urlSession: urlSession, defaults: defaults)
+        AuthURLProtocolStub.handler = { request in
+            recorder.append(request)
+            switch request.url?.path {
+            case "/auth/v1/signup":
+                throw URLError(.networkConnectionLost)
+            case "/auth/v1/resend":
+                return try AuthURLProtocolStub.response(for: request, json: "{}")
+            default:
+                XCTFail("Unexpected signup recovery request: \(request.url?.absoluteString ?? "nil")")
+                return try AuthURLProtocolStub.response(for: request, statusCode: 404, json: "{}")
+            }
+        }
+        defer {
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+        }
+
+        let signedIn = await auth.signUp(
+            email: "athlete@example.com",
+            password: "SecurePass9!",
+            displayName: "Athlete"
+        )
+
+        XCTAssertFalse(signedIn)
+        XCTAssertEqual(auth.pendingConfirmationEmail, "athlete@example.com")
+        XCTAssertFalse(auth.pendingConfirmationEmailWasSent)
+        let signupRequest = try XCTUnwrap(
+            recorder.requests.first(where: { $0.url?.path == "/auth/v1/signup" })
+        )
+        let signupChallenge = try XCTUnwrap(
+            try jsonObject(from: signupRequest)["code_challenge"] as? String
+        )
+
+        let relaunched = AuthService(
+            keychain: keychain,
+            urlSession: urlSession,
+            defaults: defaults
+        )
+        XCTAssertEqual(relaunched.pendingConfirmationEmail, "athlete@example.com")
+        await relaunched.resendConfirmation(email: "athlete@example.com")
+
+        let resendRequest = try XCTUnwrap(
+            recorder.requests.first(where: { $0.url?.path == "/auth/v1/resend" })
+        )
+        let resendBody = try jsonObject(from: resendRequest)
+        XCTAssertEqual(resendBody["code_challenge"] as? String, signupChallenge)
+        XCTAssertEqual(resendBody["code_challenge_method"] as? String, "s256")
+        XCTAssertTrue(relaunched.pendingConfirmationEmailWasSent)
+    }
+
+    func testLostRecoveryResponseReusesSamePKCETransactionOnRetry() async throws {
+        let recorder = AuthRequestRecorder()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        let auth = AuthService(
+            keychain: InMemoryKeychainStore(),
+            urlSession: urlSession,
+            defaults: temporaryDefaults(named: "recovery-outcome-unknown")
+        )
+        AuthURLProtocolStub.handler = { request in
+            recorder.append(request)
+            let recoveryRequests = recorder.requests.filter { $0.url?.path == "/auth/v1/recover" }
+            if recoveryRequests.count == 1 {
+                throw URLError(.networkConnectionLost)
+            }
+            return try AuthURLProtocolStub.response(for: request, json: "{}")
+        }
+        defer {
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+        }
+
+        await auth.requestPasswordReset(email: "athlete@example.com")
+        XCTAssertTrue(auth.messageIsError)
+        await auth.requestPasswordReset(email: "athlete@example.com")
+
+        let requests = recorder.requests.filter { $0.url?.path == "/auth/v1/recover" }
+        XCTAssertEqual(requests.count, 2)
+        let first = try jsonObject(from: try XCTUnwrap(requests.first))
+        let second = try jsonObject(from: try XCTUnwrap(requests.last))
+        XCTAssertEqual(first["code_challenge"] as? String, second["code_challenge"] as? String)
+        XCTAssertEqual(first["code_challenge_method"] as? String, "s256")
+        XCTAssertFalse(auth.messageIsError)
+        XCTAssertTrue(auth.message?.contains("Password reset email sent") == true)
     }
 
     func testCloudSyncIndicatorPublishesSafeMessageAndRethrowsOriginalError() async {
@@ -712,6 +1110,133 @@ final class CoreParityTests: XCTestCase {
         XCTAssertFalse(cloud.isSyncing)
         XCTAssertEqual(cloud.lastError, "Something went wrong. Try again.")
         XCTAssertFalse(cloud.lastError?.contains(marker) == true)
+    }
+
+    func testCloudSaveForcesOneRefreshAndReusesNewBearer() async throws {
+        let recorder = AuthRequestRecorder()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        let auth = AuthService(
+            keychain: InMemoryKeychainStore(),
+            urlSession: urlSession,
+            defaults: temporaryDefaults(named: "cloud-forced-refresh")
+        )
+        let account = cloudSession(userID: "cloud-forced-refresh-user")
+        try auth.installSessionForTesting(.cloud(account))
+        let cloud = CloudSyncService(auth: auth, urlSession: urlSession)
+        AuthURLProtocolStub.handler = { request in
+            recorder.append(request)
+            let bearer = request.value(forHTTPHeaderField: "Authorization")
+            switch (request.url?.path, request.httpMethod) {
+            case ("/rest/v1/user_states", "GET"):
+                XCTAssertEqual(bearer, "Bearer \(account.accessToken)")
+                return try AuthURLProtocolStub.response(for: request, json: "[]")
+            case ("/rest/v1/user_states", "POST") where bearer == "Bearer \(account.accessToken)":
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    statusCode: 401,
+                    json: #"{"message":"JWT expired"}"#
+                )
+            case ("/auth/v1/token", "POST"):
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    json: #"{"access_token":"refreshed-cloud-access","refresh_token":"refreshed-cloud-refresh","expires_in":3600,"user":{"id":"cloud-forced-refresh-user","email":"cloud-forced-refresh-user@example.com","user_metadata":{"display_name":"Cloud"}}}"#
+                )
+            case ("/rest/v1/user_states", "POST"):
+                XCTAssertEqual(bearer, "Bearer refreshed-cloud-access")
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    json: #"[{"updated_at":"2026-07-22T12:00:00.000000Z"}]"#
+                )
+            case ("/rest/v1/profiles", "POST"):
+                XCTAssertEqual(bearer, "Bearer refreshed-cloud-access")
+                return try AuthURLProtocolStub.response(for: request, json: "{}")
+            default:
+                XCTFail("Unexpected cloud forced-refresh request: \(request.url?.absoluteString ?? "nil")")
+                return try AuthURLProtocolStub.response(for: request, statusCode: 404, json: "{}")
+            }
+        }
+        defer {
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+        }
+
+        let initialState = try await cloud.loadRemoteState(expectedUserID: account.userID)
+        XCTAssertNil(initialState)
+        try await cloud.saveRemoteState(
+            backupData: Data("{}".utf8),
+            xp: 10,
+            level: 2,
+            workouts: 1,
+            expectedUserID: account.userID
+        )
+
+        XCTAssertEqual(
+            recorder.requests.filter {
+                $0.url?.path == "/auth/v1/token"
+                    && $0.url?.query?.contains("grant_type=refresh_token") == true
+            }.count,
+            1
+        )
+        XCTAssertEqual(auth.session?.cloud?.accessToken, "refreshed-cloud-access")
+        XCTAssertEqual(
+            recorder.requests.last?.value(forHTTPHeaderField: "Authorization"),
+            "Bearer refreshed-cloud-access"
+        )
+    }
+
+    func testCloudRepeatedForbiddenRefreshesOnceAndKeepsSession() async throws {
+        let recorder = AuthRequestRecorder()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        let auth = AuthService(
+            keychain: InMemoryKeychainStore(),
+            urlSession: urlSession,
+            defaults: temporaryDefaults(named: "cloud-repeated-forbidden")
+        )
+        let account = cloudSession(userID: "cloud-repeated-forbidden-user")
+        try auth.installSessionForTesting(.cloud(account))
+        let cloud = CloudSyncService(auth: auth, urlSession: urlSession)
+        AuthURLProtocolStub.handler = { request in
+            recorder.append(request)
+            if request.url?.path == "/auth/v1/token" {
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    json: #"{"access_token":"forbidden-refreshed-access","refresh_token":"forbidden-refreshed-refresh","expires_in":3600,"user":{"id":"cloud-repeated-forbidden-user","email":"cloud-repeated-forbidden-user@example.com","user_metadata":{"display_name":"Cloud"}}}"#
+                )
+            }
+            XCTAssertEqual(request.url?.path, "/rest/v1/user_states")
+            return try AuthURLProtocolStub.response(
+                for: request,
+                statusCode: 403,
+                json: #"{"message":"policy denied"}"#
+            )
+        }
+        defer {
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+        }
+
+        do {
+            _ = try await cloud.loadRemoteState(expectedUserID: account.userID)
+            XCTFail("A repeated 403 must surface after one refresh and one retry.")
+        } catch CloudSyncError.requestFailed(let message) {
+            XCTAssertEqual(message, "policy denied")
+        } catch {
+            XCTFail("Unexpected repeated-forbidden error: \(error)")
+        }
+
+        XCTAssertEqual(
+            recorder.requests.filter { $0.url?.path == "/rest/v1/user_states" }.count,
+            2
+        )
+        XCTAssertEqual(
+            recorder.requests.filter { $0.url?.path == "/auth/v1/token" }.count,
+            1
+        )
+        XCTAssertEqual(auth.session?.cloud?.accessToken, "forbidden-refreshed-access")
     }
 
     func testCatalogSeedMarkerPreservesDeletedBuiltInExercise() throws {
@@ -2186,6 +2711,64 @@ final class CoreParityTests: XCTestCase {
         XCTAssertThrowsError(try GarminPlanValidator.validate(oversizedMetadata))
     }
 
+    func testGarminRequestForcesOneRefreshAfterDirectUnauthorized() async throws {
+        let userID = "00000000-0000-4000-8000-0000000000f1"
+        let recorder = AuthRequestRecorder()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        let auth = AuthService(
+            keychain: InMemoryKeychainStore(),
+            urlSession: urlSession,
+            defaults: temporaryDefaults(named: "garmin-forced-refresh")
+        )
+        let account = cloudSession(userID: userID)
+        try auth.installSessionForTesting(.cloud(account))
+        let garmin = GarminCloudService(
+            auth: auth,
+            urlSession: urlSession,
+            bindingStore: GarminDeviceBindingStore(keychain: InMemoryKeychainStore())
+        )
+        AuthURLProtocolStub.handler = { request in
+            recorder.append(request)
+            switch request.url?.path {
+            case "/functions/v1/garmin-sync":
+                let bearer = request.value(forHTTPHeaderField: "Authorization")
+                if bearer == "Bearer \(account.accessToken)" {
+                    return try AuthURLProtocolStub.response(
+                        for: request,
+                        statusCode: 401,
+                        json: #"{"error":"JWT expired"}"#
+                    )
+                }
+                XCTAssertEqual(bearer, "Bearer refreshed-garmin-access")
+                return try AuthURLProtocolStub.response(for: request, json: #"{"devices":[]}"#)
+            case "/auth/v1/token":
+                XCTAssertTrue(request.url?.query?.contains("grant_type=refresh_token") == true)
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    json: #"{"access_token":"refreshed-garmin-access","refresh_token":"refreshed-garmin-refresh","expires_in":3600,"user":{"id":"00000000-0000-4000-8000-0000000000f1","email":"garmin@example.com","user_metadata":{"display_name":"Garmin"}}}"#
+                )
+            default:
+                XCTFail("Unexpected Garmin forced-refresh request: \(request.url?.absoluteString ?? "nil")")
+                return try AuthURLProtocolStub.response(for: request, statusCode: 404, json: "{}")
+            }
+        }
+        defer {
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+        }
+
+        try await garmin.refreshDevices()
+
+        XCTAssertTrue(garmin.availableDevices.isEmpty)
+        XCTAssertEqual(
+            recorder.requests.map(\.url?.path),
+            ["/functions/v1/garmin-sync", "/auth/v1/token", "/functions/v1/garmin-sync"]
+        )
+        XCTAssertEqual(auth.session?.cloud?.accessToken, "refreshed-garmin-access")
+    }
+
     func testGarminSubmitRequiresAndUsesPersistedAccountDeviceBinding() async throws {
         let userID = "00000000-0000-4000-8000-0000000000a1"
         let deviceID = "00000000-0000-4000-8000-0000000000d1"
@@ -2216,6 +2799,7 @@ final class CoreParityTests: XCTestCase {
                 )
                 XCTAssertEqual(body["action"] as? String, "createDevice")
                 XCTAssertEqual(body["displayName"] as? String, "Gym Watch")
+                XCTAssertEqual(body["capabilityVersion"] as? Int, 2)
                 return try AuthURLProtocolStub.response(
                     for: request,
                     json: """
@@ -2708,6 +3292,7 @@ final class CoreParityTests: XCTestCase {
             XCTAssertEqual(body["action"] as? String, "rotateDeviceToken")
             XCTAssertEqual(body["deviceId"] as? String, deviceID)
             XCTAssertEqual(body["expectedTokenRevision"] as? Int, 7)
+            XCTAssertEqual(body["capabilityVersion"] as? Int, 2)
             let replacement = try XCTUnwrap(body["replacementToken"] as? String)
             let rotationCount = recorder.requests.filter { request in
                 guard let data = request.httpBody,
@@ -3045,6 +3630,142 @@ final class CoreParityTests: XCTestCase {
         XCTAssertNil(try keychain.read(account: "current-session"))
     }
 
+    func testTerminalRefreshFailureClearsMatchingPersistedSession() async throws {
+        for statusCode in [400, 401] {
+            let keychain = InMemoryKeychainStore()
+            let defaults = temporaryDefaults(named: "terminal-refresh-\(statusCode)")
+            var expired = cloudSession(userID: "terminal-refresh-user")
+            expired.expiresAt = Date(timeIntervalSince1970: 0)
+
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.protocolClasses = [AuthURLProtocolStub.self]
+            let urlSession = URLSession(configuration: configuration)
+            let auth = AuthService(keychain: keychain, urlSession: urlSession, defaults: defaults)
+            try auth.installSessionForTesting(.cloud(expired))
+            AuthURLProtocolStub.handler = { request in
+                XCTAssertTrue(request.url?.query?.contains("grant_type=refresh_token") == true)
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    statusCode: statusCode,
+                    json: #"{"error_code":"refresh_token_not_found","message":"Invalid Refresh Token"}"#
+                )
+            }
+
+            do {
+                _ = try await auth.validCloudSession()
+                XCTFail("A terminal refresh rejection must require a new sign-in.")
+            } catch AuthServiceError.sessionExpired {
+                // Expected.
+            } catch {
+                XCTFail("Unexpected terminal refresh error: \(error)")
+            }
+
+            XCTAssertNil(auth.session)
+            XCTAssertEqual(auth.message, "Your session expired. Sign in again.")
+            XCTAssertTrue(auth.messageIsError)
+            XCTAssertNil(try keychain.read(account: "current-session"))
+            XCTAssertNil(
+                AuthService(keychain: keychain, urlSession: urlSession, defaults: defaults).session
+            )
+
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+        }
+    }
+
+    func testTransientRefreshFailurePreservesPersistedSession() async throws {
+        for offline in [false, true] {
+            let keychain = InMemoryKeychainStore()
+            let defaults = temporaryDefaults(named: "transient-refresh-\(offline)")
+            var expired = cloudSession(userID: "transient-refresh-user")
+            expired.expiresAt = Date(timeIntervalSince1970: 0)
+
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.protocolClasses = [AuthURLProtocolStub.self]
+            let urlSession = URLSession(configuration: configuration)
+            let auth = AuthService(keychain: keychain, urlSession: urlSession, defaults: defaults)
+            try auth.installSessionForTesting(.cloud(expired))
+            AuthURLProtocolStub.handler = { request in
+                if offline { throw URLError(.notConnectedToInternet) }
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    statusCode: 503,
+                    json: #"{"message":"temporarily unavailable"}"#
+                )
+            }
+
+            do {
+                _ = try await auth.validCloudSession()
+                XCTFail("A failed refresh must not return a usable refreshed session.")
+            } catch {
+                // Expected; only terminal 400/401 responses clear the session.
+            }
+
+            XCTAssertEqual(auth.session?.cloud, expired)
+            let relaunched = AuthService(
+                keychain: keychain,
+                urlSession: urlSession,
+                defaults: defaults
+            )
+            XCTAssertEqual(relaunched.session?.cloud, expired)
+
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+        }
+    }
+
+    func testLateTerminalRefreshCannotClearReplacementSession() async throws {
+        let keychain = InMemoryKeychainStore()
+        let defaults = temporaryDefaults(named: "late-terminal-refresh")
+        var expired = cloudSession(userID: "same-refresh-user")
+        expired.expiresAt = Date(timeIntervalSince1970: 0)
+
+        let started = expectation(description: "terminal refresh started")
+        let release = DispatchSemaphore(value: 0)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        let auth = AuthService(keychain: keychain, urlSession: urlSession, defaults: defaults)
+        try auth.installSessionForTesting(.cloud(expired))
+        AuthURLProtocolStub.handler = { request in
+            started.fulfill()
+            _ = release.wait(timeout: .now() + 5)
+            return try AuthURLProtocolStub.response(
+                for: request,
+                statusCode: 400,
+                json: #"{"error_code":"refresh_token_not_found","message":"Invalid Refresh Token"}"#
+            )
+        }
+        defer {
+            release.signal()
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+        }
+
+        let refresh = Task { try await auth.validCloudSession() }
+        await fulfillment(of: [started], timeout: 2)
+        var replacement = cloudSession(userID: expired.userID)
+        replacement.accessToken = "replacement-access"
+        replacement.refreshToken = "replacement-refresh"
+        try auth.installSessionForTesting(.cloud(replacement))
+        release.signal()
+
+        do {
+            _ = try await refresh.value
+            XCTFail("A stale terminal response must not clear the replacement session.")
+        } catch AuthServiceError.sessionChanged {
+            // Expected.
+        } catch {
+            XCTFail("Unexpected late terminal refresh error: \(error)")
+        }
+
+        XCTAssertEqual(auth.session?.cloud, replacement)
+        XCTAssertEqual(
+            AuthService(keychain: keychain, defaults: defaults).session?.cloud,
+            replacement
+        )
+    }
+
     func testCloudAccountDeletionCannotTargetAReplacementSession() async throws {
         let recorder = AuthRequestRecorder()
         let configuration = URLSessionConfiguration.ephemeral
@@ -3075,6 +3796,94 @@ final class CoreParityTests: XCTestCase {
         }
         XCTAssertTrue(recorder.requests.isEmpty)
         XCTAssertEqual(auth.session?.cloud?.userID, "replacement-user")
+    }
+
+    func testMalformedDeleteSuccessDoesNotEraseLocalAccount() async throws {
+        let directory = try temporaryDirectory(named: "malformed-delete-success")
+        let defaults = temporaryDefaults(named: "malformed-delete-success")
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        let auth = AuthService(
+            keychain: InMemoryKeychainStore(),
+            urlSession: urlSession,
+            defaults: defaults
+        )
+        let cloud = cloudSession(userID: "delete-contract-user")
+        let accountSession = AppAccountSession.cloud(cloud)
+        let owner = BackupOwner(
+            accountID: accountSession.storageKey,
+            userID: cloud.userID,
+            email: cloud.email,
+            remote: true
+        )
+        let remote = try remoteBackupData(exerciseName: "Remote Before Delete", owner: owner)
+        try auth.installSessionForTesting(accountSession)
+        AuthURLProtocolStub.handler = { request in
+            XCTAssertEqual(request.url?.path, "/functions/v1/delete-account")
+            return try AuthURLProtocolStub.response(for: request, json: "{}")
+        }
+        defer {
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+        }
+        let appState = try AppState(
+            auth: auth,
+            defaults: defaults,
+            workoutDirectoryURL: directory,
+            remoteStateLoader: { requestedUserID in
+                XCTAssertEqual(requestedUserID, cloud.userID)
+                return remote
+            }
+        )
+        let accountReady = await waitUntil { appState.isAccountReady }
+        XCTAssertTrue(accountReady)
+        _ = try appState.workoutStore.addExercise(name: "Local Before Delete")
+        let storageURL = appState.workoutStore.storageURL
+
+        do {
+            try await appState.deleteCurrentAccountAndData()
+            XCTFail("A 2xx response without {deleted:true} must not erase local account data.")
+        } catch AuthServiceError.malformedResponse {
+            // Expected.
+        } catch {
+            XCTFail("Unexpected deletion error: \(error)")
+        }
+
+        XCTAssertEqual(auth.session?.cloud?.userID, cloud.userID)
+        XCTAssertTrue(appState.isAccountReady)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: storageURL.path))
+        XCTAssertTrue(customExerciseNames(in: appState.workoutStore).contains("Local Before Delete"))
+        XCTAssertNil(defaults.string(forKey: "gymapp.pending-account-deletion-storage-key"))
+    }
+
+    func testDeleteAccountAcceptsExactServerContract() async throws {
+        let recorder = AuthRequestRecorder()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        let auth = AuthService(
+            keychain: InMemoryKeychainStore(),
+            urlSession: urlSession,
+            defaults: temporaryDefaults(named: "valid-delete-contract")
+        )
+        let cloud = cloudSession(userID: "valid-delete-user")
+        try auth.installSessionForTesting(.cloud(cloud))
+        AuthURLProtocolStub.handler = { request in
+            recorder.append(request)
+            return try AuthURLProtocolStub.response(for: request, json: #"{"deleted":true}"#)
+        }
+        defer {
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+        }
+
+        try await auth.deleteCloudAccountOnServer(expectedUserID: cloud.userID)
+
+        let request = try XCTUnwrap(recorder.requests.first)
+        XCTAssertEqual(request.url?.path, "/functions/v1/delete-account")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "X-GymApp-Delete"), "confirmed")
+        XCTAssertEqual(try jsonObject(from: request)["confirmation"] as? String, "DELETE")
     }
 
     func testPendingDeletionCleanupDoesNotClearAReplacementAccount() async throws {
@@ -3156,8 +3965,425 @@ final class CoreParityTests: XCTestCase {
 
         XCTAssertNil(defaults.string(forKey: "gymapp.pending-account-deletion-garmin-user-id"))
         XCTAssertEqual(try bindingStore.binding(for: userID)?.deviceID, deviceID)
+        let activationFailed = await waitUntil { appState.accountPreparationError != nil }
+        XCTAssertTrue(activationFailed)
+        XCTAssertFalse(appState.isAccountReady)
+    }
+
+    func testTransientCloudLoadFailureRequiresRetryBeforePublishingAccount() async throws {
+        let directory = try temporaryDirectory(named: "transient-cloud-activation")
+        let defaults = temporaryDefaults(named: "transient-cloud-activation")
+        let auth = AuthService(
+            keychain: InMemoryKeychainStore(),
+            defaults: defaults
+        )
+        let cloud = cloudSession(userID: "transient-cloud-user")
+        let session = AppAccountSession.cloud(cloud)
+        let owner = BackupOwner(
+            accountID: session.storageKey,
+            userID: cloud.userID,
+            email: cloud.email,
+            remote: true
+        )
+        let remote = try remoteBackupData(exerciseName: "Remote After Retry", owner: owner)
+        let firstLoad = expectation(description: "first remote load failed")
+        var loadAttempts = 0
+        let appState = try AppState(
+            auth: auth,
+            defaults: defaults,
+            workoutDirectoryURL: directory,
+            remoteStateLoader: { requestedUserID in
+                XCTAssertEqual(requestedUserID, cloud.userID)
+                loadAttempts += 1
+                if loadAttempts == 1 {
+                    firstLoad.fulfill()
+                    throw URLError(.notConnectedToInternet)
+                }
+                return remote
+            }
+        )
+
+        try auth.installSessionForTesting(session)
+        await fulfillment(of: [firstLoad], timeout: 2)
+        let activationFailed = await waitUntil { appState.accountPreparationError != nil }
+
+        XCTAssertTrue(activationFailed)
+        XCTAssertFalse(appState.isAccountReady)
+        XCTAssertNil(appState.activeAccountStorageKey)
+        XCTAssertNotEqual(appState.workoutStore.accountStorageKey, session.storageKey)
+
+        appState.retryAccountActivation()
+        let accountReady = await waitUntil {
+            appState.isAccountReady &&
+                self.customExerciseNames(in: appState.workoutStore) == ["Remote After Retry"]
+        }
+
+        XCTAssertTrue(accountReady)
+        XCTAssertEqual(loadAttempts, 2)
+        XCTAssertNil(appState.accountPreparationError)
+        XCTAssertFalse(appState.isCloudWritePaused)
+    }
+
+    func testSignOutFlushesPendingWritableCloudStateBeforeLogout() async throws {
+        let directory = try temporaryDirectory(named: "signout-cloud-flush")
+        let defaults = temporaryDefaults(named: "signout-cloud-flush")
+        let recorder = AuthRequestRecorder()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        let auth = AuthService(
+            keychain: InMemoryKeychainStore(),
+            urlSession: urlSession,
+            defaults: defaults
+        )
+        let cloud = cloudSession(userID: "signout-flush-user")
+        AuthURLProtocolStub.handler = { request in
+            recorder.append(request)
+            switch (request.url?.path, request.httpMethod) {
+            case ("/rest/v1/user_states", "GET"):
+                return try AuthURLProtocolStub.response(for: request, json: "[]")
+            case ("/rest/v1/user_states", "POST"):
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    json: #"[{"updated_at":"2026-07-22T12:00:00.000000Z"}]"#
+                )
+            case ("/rest/v1/user_states", "PATCH"):
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    json: #"[{"updated_at":"2026-07-22T12:00:01.000000Z"}]"#
+                )
+            case ("/rest/v1/profiles", "POST"), ("/auth/v1/logout", "POST"):
+                return try AuthURLProtocolStub.response(for: request, json: "{}")
+            default:
+                XCTFail("Unexpected cloud/logout request: \(request.httpMethod ?? "nil") \(request.url?.absoluteString ?? "nil")")
+                return try AuthURLProtocolStub.response(for: request, statusCode: 404, json: "{}")
+            }
+        }
+        defer {
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+        }
+
+        let appState = try AppState(
+            auth: auth,
+            defaults: defaults,
+            workoutDirectoryURL: directory,
+            cloudURLSession: urlSession
+        )
+        try auth.installSessionForTesting(.cloud(cloud))
         let accountReady = await waitUntil { appState.isAccountReady }
         XCTAssertTrue(accountReady)
+        let baselineRequestCount = recorder.requests.count
+
+        _ = try appState.workoutStore.addExercise(name: "Last-second cloud edit")
+        await Task.yield()
+        let signedOut = await appState.signOut()
+
+        XCTAssertTrue(signedOut)
+        XCTAssertNil(auth.session)
+        let finalRequests = Array(recorder.requests.dropFirst(baselineRequestCount))
+        let stateWrites = finalRequests.filter {
+            $0.url?.path == "/rest/v1/user_states" && $0.httpMethod == "PATCH"
+        }
+        XCTAssertFalse(stateWrites.isEmpty)
+        let finalStateWrite = try XCTUnwrap(stateWrites.last)
+        let finalBody = String(decoding: try XCTUnwrap(finalStateWrite.httpBody), as: UTF8.self)
+        XCTAssertTrue(finalBody.contains("Last-second cloud edit"))
+
+        let patchIndex = try XCTUnwrap(finalRequests.lastIndex(where: {
+            $0.url?.path == "/rest/v1/user_states" && $0.httpMethod == "PATCH"
+        }))
+        let profileIndex = try XCTUnwrap(finalRequests.lastIndex(where: {
+            $0.url?.path == "/rest/v1/profiles" && $0.httpMethod == "POST"
+        }))
+        let logoutIndex = try XCTUnwrap(finalRequests.firstIndex(where: {
+            $0.url?.path == "/auth/v1/logout" && $0.httpMethod == "POST"
+        }))
+        XCTAssertLessThan(patchIndex, profileIndex)
+        XCTAssertLessThan(profileIndex, logoutIndex)
+    }
+
+    func testSignOutUploadFailureKeepsCurrentAccountForRetry() async throws {
+        let directory = try temporaryDirectory(named: "signout-cloud-failure")
+        let defaults = temporaryDefaults(named: "signout-cloud-failure")
+        let recorder = AuthRequestRecorder()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        let auth = AuthService(
+            keychain: InMemoryKeychainStore(),
+            urlSession: urlSession,
+            defaults: defaults
+        )
+        let cloud = cloudSession(userID: "signout-failure-user")
+        AuthURLProtocolStub.handler = { request in
+            recorder.append(request)
+            switch (request.url?.path, request.httpMethod) {
+            case ("/rest/v1/user_states", "GET"):
+                return try AuthURLProtocolStub.response(for: request, json: "[]")
+            case ("/rest/v1/user_states", "POST"):
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    json: #"[{"updated_at":"2026-07-22T12:00:00.000000Z"}]"#
+                )
+            case ("/rest/v1/user_states", "PATCH"):
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    statusCode: 503,
+                    json: #"{"message":"temporarily unavailable"}"#
+                )
+            case ("/rest/v1/profiles", "POST"):
+                return try AuthURLProtocolStub.response(for: request, json: "{}")
+            default:
+                XCTFail("Logout must not be requested after a failed final upload: \(request.url?.absoluteString ?? "nil")")
+                return try AuthURLProtocolStub.response(for: request, statusCode: 404, json: "{}")
+            }
+        }
+        defer {
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+        }
+
+        let appState = try AppState(
+            auth: auth,
+            defaults: defaults,
+            workoutDirectoryURL: directory,
+            cloudURLSession: urlSession
+        )
+        try auth.installSessionForTesting(.cloud(cloud))
+        let accountReady = await waitUntil { appState.isAccountReady }
+        XCTAssertTrue(accountReady)
+        let baselineRequestCount = recorder.requests.count
+
+        _ = try appState.workoutStore.addExercise(name: "Unsynced logout edit")
+        await Task.yield()
+        let signedOut = await appState.signOut()
+
+        XCTAssertFalse(signedOut)
+        XCTAssertEqual(auth.session?.cloud?.userID, cloud.userID)
+        XCTAssertTrue(appState.isAccountReady)
+        XCTAssertTrue(customExerciseNames(in: appState.workoutStore).contains("Unsynced logout edit"))
+        XCTAssertTrue(appState.statusIsError)
+        XCTAssertNotNil(appState.statusMessage)
+        let finalRequests = Array(recorder.requests.dropFirst(baselineRequestCount))
+        let failedStateWrites = finalRequests.filter {
+            $0.url?.path == "/rest/v1/user_states" && $0.httpMethod == "PATCH"
+        }
+        XCTAssertFalse(failedStateWrites.isEmpty)
+        let finalFailedBody = String(
+            decoding: try XCTUnwrap(failedStateWrites.last?.httpBody),
+            as: UTF8.self
+        )
+        XCTAssertTrue(finalFailedBody.contains("Unsynced logout edit"))
+        XCTAssertFalse(finalRequests.contains(where: { $0.url?.path == "/auth/v1/logout" }))
+    }
+
+    func testSignOutRepeatsFinalUploadWhenStoreChangesDuringAwait() async throws {
+        let directory = try temporaryDirectory(named: "signout-stable-snapshot")
+        let defaults = temporaryDefaults(named: "signout-stable-snapshot")
+        let recorder = AuthRequestRecorder()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        let auth = AuthService(
+            keychain: InMemoryKeychainStore(),
+            urlSession: urlSession,
+            defaults: defaults
+        )
+        let account = cloudSession(userID: "signout-stable-snapshot-user")
+        let accountSession = AppAccountSession.cloud(account)
+        let seededStore = try WorkoutStore(
+            accountStorageKey: accountSession.storageKey,
+            directoryURL: directory
+        )
+        _ = try seededStore.seedBuiltInExercises()
+        _ = try seededStore.seedDefaultMuscleMappings()
+
+        let firstFinalPatchStarted = expectation(description: "first final PATCH started")
+        let firstFinalPatchGate = DispatchSemaphore(value: 0)
+        let revision0 = "2026-07-22T12:10:00.000000Z"
+        let revision1 = "2026-07-22T12:10:01.000000Z"
+        let revision2 = "2026-07-22T12:10:02.000000Z"
+        AuthURLProtocolStub.handler = { request in
+            recorder.append(request)
+            switch (request.url?.path, request.httpMethod) {
+            case ("/rest/v1/user_states", "GET"):
+                return try AuthURLProtocolStub.response(for: request, json: "[]")
+            case ("/rest/v1/user_states", "POST"):
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    json: #"[{"updated_at":"\#(revision0)"}]"#
+                )
+            case ("/rest/v1/user_states", "PATCH"):
+                let patchCount = recorder.requests.filter {
+                    $0.url?.path == "/rest/v1/user_states" && $0.httpMethod == "PATCH"
+                }.count
+                if patchCount == 1 {
+                    firstFinalPatchStarted.fulfill()
+                    _ = firstFinalPatchGate.wait(timeout: .now() + 5)
+                }
+                let revision = patchCount == 1 ? revision1 : revision2
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    json: #"[{"updated_at":"\#(revision)"}]"#
+                )
+            case ("/rest/v1/profiles", "POST"), ("/auth/v1/logout", "POST"):
+                return try AuthURLProtocolStub.response(for: request, json: "{}")
+            default:
+                XCTFail("Unexpected stable-signout request: \(request.url?.absoluteString ?? "nil")")
+                return try AuthURLProtocolStub.response(for: request, statusCode: 404, json: "{}")
+            }
+        }
+        defer {
+            firstFinalPatchGate.signal()
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+        }
+
+        let appState = try AppState(
+            auth: auth,
+            defaults: defaults,
+            workoutDirectoryURL: directory,
+            cloudURLSession: urlSession
+        )
+        try auth.installSessionForTesting(accountSession)
+        let accountReady = await waitUntil { appState.isAccountReady }
+        XCTAssertTrue(accountReady)
+        let baselineRequestCount = recorder.requests.count
+
+        _ = try appState.workoutStore.addExercise(name: "Before final sign-out upload")
+        let signOutTask = Task { await appState.signOut() }
+        await fulfillment(of: [firstFinalPatchStarted], timeout: 3)
+        _ = try appState.workoutStore.addExercise(name: "Added during final upload")
+        firstFinalPatchGate.signal()
+
+        let signedOut = await signOutTask.value
+        XCTAssertTrue(signedOut)
+        let finalRequests = Array(recorder.requests.dropFirst(baselineRequestCount))
+        let patches = finalRequests.filter {
+            $0.url?.path == "/rest/v1/user_states" && $0.httpMethod == "PATCH"
+        }
+        XCTAssertGreaterThanOrEqual(patches.count, 2)
+        let firstBody = String(decoding: try XCTUnwrap(patches.first?.httpBody), as: UTF8.self)
+        let lastBody = String(decoding: try XCTUnwrap(patches.last?.httpBody), as: UTF8.self)
+        XCTAssertFalse(firstBody.contains("Added during final upload"))
+        XCTAssertTrue(lastBody.contains("Added during final upload"))
+        let lastPatchIndex = try XCTUnwrap(finalRequests.lastIndex(where: {
+            $0.url?.path == "/rest/v1/user_states" && $0.httpMethod == "PATCH"
+        }))
+        let logoutIndex = try XCTUnwrap(finalRequests.firstIndex(where: {
+            $0.url?.path == "/auth/v1/logout"
+        }))
+        XCTAssertLessThan(lastPatchIndex, logoutIndex)
+    }
+
+    func testSignOutWaitsForInFlightAutosaveAndUsesReturnedRevision() async throws {
+        let directory = try temporaryDirectory(named: "signout-inflight-cas")
+        let defaults = temporaryDefaults(named: "signout-inflight-cas")
+        let recorder = AuthRequestRecorder()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        let auth = AuthService(
+            keychain: InMemoryKeychainStore(),
+            urlSession: urlSession,
+            defaults: defaults
+        )
+        let account = cloudSession(userID: "signout-inflight-cas-user")
+        let accountSession = AppAccountSession.cloud(account)
+        let seededStore = try WorkoutStore(
+            accountStorageKey: accountSession.storageKey,
+            directoryURL: directory
+        )
+        _ = try seededStore.seedBuiltInExercises()
+        _ = try seededStore.seedDefaultMuscleMappings()
+
+        let inFlightPatchStarted = expectation(description: "autosave PATCH started")
+        let inFlightPatchGate = DispatchSemaphore(value: 0)
+        let revision0 = "2026-07-22T12:20:00.000000Z"
+        let revision1 = "2026-07-22T12:20:01.000000Z"
+        let revision2 = "2026-07-22T12:20:02.000000Z"
+        AuthURLProtocolStub.handler = { request in
+            recorder.append(request)
+            switch (request.url?.path, request.httpMethod) {
+            case ("/rest/v1/user_states", "GET"):
+                return try AuthURLProtocolStub.response(for: request, json: "[]")
+            case ("/rest/v1/user_states", "POST"):
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    json: #"[{"updated_at":"\#(revision0)"}]"#
+                )
+            case ("/rest/v1/user_states", "PATCH"):
+                let patchCount = recorder.requests.filter {
+                    $0.url?.path == "/rest/v1/user_states" && $0.httpMethod == "PATCH"
+                }.count
+                let revisionFilter = URLComponents(
+                    url: try XCTUnwrap(request.url),
+                    resolvingAgainstBaseURL: false
+                )?.queryItems?.first(where: { $0.name == "updated_at" })?.value
+                if patchCount == 1 {
+                    XCTAssertEqual(revisionFilter, "eq.\(revision0)")
+                    inFlightPatchStarted.fulfill()
+                    _ = inFlightPatchGate.wait(timeout: .now() + 5)
+                    return try AuthURLProtocolStub.response(
+                        for: request,
+                        json: #"[{"updated_at":"\#(revision1)"}]"#
+                    )
+                }
+                guard revisionFilter == "eq.\(revision1)" else {
+                    return try AuthURLProtocolStub.response(for: request, json: "[]")
+                }
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    json: #"[{"updated_at":"\#(revision2)"}]"#
+                )
+            case ("/rest/v1/profiles", "POST"), ("/auth/v1/logout", "POST"):
+                return try AuthURLProtocolStub.response(for: request, json: "{}")
+            default:
+                XCTFail("Unexpected in-flight-signout request: \(request.url?.absoluteString ?? "nil")")
+                return try AuthURLProtocolStub.response(for: request, statusCode: 404, json: "{}")
+            }
+        }
+        defer {
+            inFlightPatchGate.signal()
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+        }
+
+        let appState = try AppState(
+            auth: auth,
+            defaults: defaults,
+            workoutDirectoryURL: directory,
+            cloudURLSession: urlSession
+        )
+        try auth.installSessionForTesting(accountSession)
+        let accountReady = await waitUntil { appState.isAccountReady }
+        XCTAssertTrue(accountReady)
+        let baselineRequestCount = recorder.requests.count
+
+        _ = try appState.workoutStore.addExercise(name: "In-flight autosave")
+        await Task.yield()
+        appState.saveBeforeBackgrounding()
+        await fulfillment(of: [inFlightPatchStarted], timeout: 3)
+        _ = try appState.workoutStore.addExercise(name: "Queued behind autosave")
+        let signOutTask = Task { await appState.signOut() }
+        let signOutStarted = await waitUntil { appState.isSigningOut }
+        XCTAssertTrue(signOutStarted)
+        inFlightPatchGate.signal()
+
+        let signedOut = await signOutTask.value
+        XCTAssertTrue(signedOut)
+        let finalRequests = Array(recorder.requests.dropFirst(baselineRequestCount))
+        let patches = finalRequests.filter {
+            $0.url?.path == "/rest/v1/user_states" && $0.httpMethod == "PATCH"
+        }
+        XCTAssertEqual(patches.count, 2)
+        let firstBody = String(decoding: try XCTUnwrap(patches.first?.httpBody), as: UTF8.self)
+        let lastBody = String(decoding: try XCTUnwrap(patches.last?.httpBody), as: UTF8.self)
+        XCTAssertTrue(firstBody.contains("In-flight autosave"))
+        XCTAssertFalse(firstBody.contains("Queued behind autosave"))
+        XCTAssertTrue(lastBody.contains("Queued behind autosave"))
+        XCTAssertNil(auth.session)
     }
 
     func testPWACloudActivationPausesAutomaticAndManualNativeWrites() async throws {

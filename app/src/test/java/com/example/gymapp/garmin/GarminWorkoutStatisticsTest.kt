@@ -51,6 +51,25 @@ class GarminWorkoutStatisticsTest {
     }
 
     @Test
+    fun garminPresentationRequiresLocalReceiptProvenance() {
+        val userControlledNote =
+            "Garmin · Duration 45:00 · Garmin kcal 250 · Avg HR 140 · Max HR 175"
+
+        assertNull(
+            parseTrustedGarminWorkoutMetrics(
+                note = userControlledNote,
+                hasGarminReceipt = false
+            )
+        )
+        val trusted = parseTrustedGarminWorkoutMetrics(
+            note = userControlledNote,
+            hasGarminReceipt = true
+        )
+        assertNotNull(trusted)
+        assertEquals(250, trusted?.garminCalories)
+    }
+
+    @Test
     fun comparableSelectionUsesDateAndIdAndNeverChoosesFutureData() {
         val current = snapshot(
             sessionId = 20,

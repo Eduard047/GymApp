@@ -82,12 +82,16 @@ public struct AuthView: View {
                     eyebrow: "Secure account",
                     title: authService.pendingConfirmationEmail == nil
                         ? (mode == .signIn ? "Welcome back" : "Create account")
-                        : "Check your email",
+                        : (authService.pendingConfirmationEmailWasSent
+                            ? "Check your email"
+                            : "Confirm your email first, then sign in."),
                     supporting: authService.pendingConfirmationEmail == nil
                         ? (mode == .signIn
                             ? "Sign in to keep workouts synchronized across your devices."
                             : "Create a cloud account, then confirm your email to start syncing.")
-                        : "We sent a confirmation link to the address below. Open the newest email from GymApp and tap “Confirm email”. Then return to GymApp and sign in."
+                        : (authService.pendingConfirmationEmailWasSent
+                            ? "We sent a confirmation link to the address below. Open the newest email from GymApp and tap “Confirm email”. Then return to GymApp and sign in."
+                            : "Confirm your email first, then sign in.")
                 )
 
                 if let pendingEmail = authService.pendingConfirmationEmail {
@@ -129,10 +133,12 @@ public struct AuthView: View {
                         )
                     }
 
-                    Text("Use 8–72 characters with at least one letter and one number.")
-                        .font(.caption)
-                        .foregroundStyle(GymTheme.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    if mode == .signUp {
+                        Text("Use at least 12 characters (up to 72 UTF-8 bytes) with lowercase and uppercase Latin letters, a number, and a supported symbol such as !, @, #, or $.")
+                            .font(.caption)
+                            .foregroundStyle(GymTheme.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
 
                 if let localMessage {
@@ -317,7 +323,7 @@ public struct AuthView: View {
                     .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Confirmation link sent to")
+                    Text(authService.pendingConfirmationEmailWasSent ? "Confirmation link sent to" : "Email")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(GymTheme.textSecondary)
                     Text(pendingEmail)
@@ -327,9 +333,11 @@ public struct AuthView: View {
                 }
             }
 
-            Text("If you cannot find it, check your Spam folder.")
-                .font(.caption)
-                .foregroundStyle(GymTheme.textSecondary)
+            if authService.pendingConfirmationEmailWasSent {
+                Text("If you cannot find it, check your Spam folder.")
+                    .font(.caption)
+                    .foregroundStyle(GymTheme.textSecondary)
+            }
 
             if let localMessage {
                 GymStatusBanner(message: localMessage, isError: true)
@@ -337,7 +345,7 @@ public struct AuthView: View {
                 GymStatusBanner(message: message, isError: authService.messageIsError)
             }
 
-            Button("Send email again") {
+            Button(authService.pendingConfirmationEmailWasSent ? "Send email again" : "Send confirmation email") {
                 localMessage = nil
                 focusedField = nil
                 Task { await authService.resendConfirmation(email: pendingEmail) }
@@ -519,7 +527,7 @@ public struct AuthView: View {
             let cleanEmail = normalizedEmail(email)
             guard cleanEmail == normalizedEmail(repeatedEmail) else { return gymLocalized("Email addresses do not match.") }
             guard validPassword(password) else {
-                return gymLocalized("Password must be 8–72 characters and include letters and numbers.")
+                return gymLocalized(GymPasswordPolicy.errorMessage)
             }
             guard password == repeatedPassword else { return gymLocalized("Passwords do not match.") }
 
@@ -540,9 +548,7 @@ public struct AuthView: View {
     }
 
     private func validPassword(_ value: String) -> Bool {
-        (8...72).contains(value.count)
-            && value.contains(where: \.isLetter)
-            && value.contains(where: \.isNumber)
+        GymPasswordPolicy.accepts(value)
     }
 }
 

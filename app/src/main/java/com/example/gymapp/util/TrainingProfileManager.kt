@@ -91,6 +91,22 @@ class TrainingProfileManager(
         }
     }
 
+    fun clearAccount(session: AccountSession): Boolean {
+        val accountKey = checkNotNull(trainingProfileAccountKey(session))
+        synchronized(lock) {
+            val cleared = preferences.edit()
+                .remove(scopedKey(accountKey, KEY_SPLIT))
+                .remove(scopedKey(accountKey, KEY_WORKOUTS_PER_WEEK))
+                .remove(scopedKey(accountKey, KEY_GOAL))
+                .remove(scopedKey(accountKey, KEY_CALORIE_MODE))
+                .commit()
+            if (cleared && activeAccountKey == accountKey) {
+                _profile.value = TrainingProfile()
+            }
+            return cleared
+        }
+    }
+
     private fun updateProfileLocked(profile: TrainingProfile) {
         val accountKey = activeAccountKey ?: return
         preferences.edit()

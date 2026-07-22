@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "functionName": "delete-account",
+  "repositoryContractVersion": 2,
+  "repositorySource": "supabase/functions/delete-account/index.ts",
+  "repositorySourceSha256": "e622cdcd640e726578ffd6ccea955186360a3afa0fda35dd70cc903068642f6d",
+  "requiredMigration": "supabase/migrations/20260722010000_require_live_session_for_account_deletion.sql",
+  "knownProduction": {
+    "projectRef": "owrcbsrectdgaotndtxy",
+    "observedAt": "2026-07-22",
+    "functionVersion": 3,
+    "implementsRepositoryContractVersion": 2,
+    "sourceSha256": "e622cdcd640e726578ffd6ccea955186360a3afa0fda35dd70cc903068642f6d",
+    "verifyJwt": true,
+    "requiredMigrationApplied": true
+  },
+  "releaseGate": {
+    "deploymentRequired": false,
+    "minimumProductionFunctionVersion": 2,
+    "reason": "Production version 3 matches repository contract v2, requires a live Auth session, and was verified with a disposable-account deletion E2E."
+  }
+}

@@ -16,6 +16,7 @@ import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.entity.AppMetadataEntity
 import com.example.gymapp.data.entity.ExerciseMuscleMappingEntity
 import com.example.gymapp.data.entity.GarminWorkoutReceiptEntity
+import com.example.gymapp.data.entity.GarminWorkoutProvenanceEntity
 import com.example.gymapp.data.entity.SetEntryEntity
 import com.example.gymapp.data.entity.WorkoutExerciseEntity
 import com.example.gymapp.data.entity.WorkoutSessionEntity
@@ -29,9 +30,10 @@ import java.util.concurrent.ConcurrentHashMap
         WorkoutExerciseEntity::class,
         SetEntryEntity::class,
         ExerciseMuscleMappingEntity::class,
-        GarminWorkoutReceiptEntity::class
+        GarminWorkoutReceiptEntity::class,
+        GarminWorkoutProvenanceEntity::class
     ],
-    version = 9,
+    version = 11,
     exportSchema = true
 )
 abstract class GymDatabase : RoomDatabase() {
@@ -290,6 +292,79 @@ abstract class GymDatabase : RoomDatabase() {
             }
         }
 
+        internal val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE INDEX IF NOT EXISTS index_garmin_workout_receipts_workoutSessionId
+                    ON garmin_workout_receipts(workoutSessionId)
+                    """.trimIndent()
+                )
+            }
+        }
+
+        internal val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS garmin_workout_provenance (
+                        workoutSessionId INTEGER NOT NULL,
+                        PRIMARY KEY(workoutSessionId),
+                        FOREIGN KEY(workoutSessionId) REFERENCES workout_sessions(id)
+                            ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    INSERT OR IGNORE INTO garmin_workout_provenance(workoutSessionId)
+                    SELECT DISTINCT receipt.workoutSessionId
+                    FROM garmin_workout_receipts receipt
+                    INNER JOIN workout_sessions session
+                        ON session.id = receipt.workoutSessionId
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE garmin_workout_receipts_v11 (
+                        ownerBinding TEXT NOT NULL,
+                        deviceBinding TEXT NOT NULL,
+                        pairingGeneration TEXT NOT NULL,
+                        requestId TEXT NOT NULL,
+                        payloadDigest TEXT NOT NULL,
+                        createdAt INTEGER NOT NULL,
+                        PRIMARY KEY(ownerBinding, deviceBinding, pairingGeneration, requestId)
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    INSERT INTO garmin_workout_receipts_v11(
+                        ownerBinding, deviceBinding, pairingGeneration, requestId,
+                        payloadDigest, createdAt
+                    )
+                    SELECT ownerBinding, deviceBinding, '$LEGACY_GARMIN_PAIRING_GENERATION',
+                        requestId, payloadDigest, createdAt
+                    FROM garmin_workout_receipts
+                    ORDER BY createdAt DESC, rowid DESC
+                    LIMIT $LEGACY_GARMIN_RECEIPT_LIMIT
+                    """.trimIndent()
+                )
+                db.execSQL("DROP TABLE garmin_workout_receipts")
+                db.execSQL(
+                    "ALTER TABLE garmin_workout_receipts_v11 RENAME TO garmin_workout_receipts"
+                )
+                db.execSQL(
+                    """
+                    CREATE INDEX index_garmin_workout_receipts_ownerBinding_deviceBinding_pairingGeneration_createdAt
+                    ON garmin_workout_receipts(
+                        ownerBinding, deviceBinding, pairingGeneration, createdAt
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
+
         internal val REGISTERED_MIGRATIONS: Array<Migration> = arrayOf(
             MIGRATION_1_2,
             MIGRATION_2_3,
@@ -298,7 +373,9 @@ abstract class GymDatabase : RoomDatabase() {
             MIGRATION_5_6,
             MIGRATION_6_7,
             MIGRATION_7_8,
-            MIGRATION_8_9
+            MIGRATION_8_9,
+            MIGRATION_9_10,
+            MIGRATION_10_11
         )
 
         fun getInstance(context: Context, databaseName: String = "gym_database"): GymDatabase {
@@ -326,5 +403,9 @@ abstract class GymDatabase : RoomDatabase() {
         }
 
         private fun String.sqlEscaped(): String = replace("'", "''")
+
+        internal const val LEGACY_GARMIN_PAIRING_GENERATION =
+            "0000000000000000000000000000000000000000000000000000000000000000"
+        internal const val LEGACY_GARMIN_RECEIPT_LIMIT = 512
     }
 }

@@ -35,7 +35,7 @@ test("Android Russian resources cover every English string with compatible place
   assert.match(dynamic, /"Barbell Row" to "Тяга штанги в наклоне"/);
   assert.match(
     workoutDetail,
-    /parseGarminWorkoutMetrics\(details\.session\.note\.orEmpty\(\)\)/
+    /parseTrustedGarminWorkoutMetrics\([\s\S]*note = details\.session\.note\.orEmpty\(\),[\s\S]*hasGarminReceipt = uiState\.hasGarminReceipt/
   );
   assert.equal(russian.get("action_add_set"), "Добавить подход");
 });
@@ -162,7 +162,8 @@ test("PWA accepts Russian state and renders Russian runtime text before app star
     ["into this level", "на этом уровне"],
     ["A one-time Garmin token will be shown. It works like a password: paste it only into this watch's Connect IQ settings. GymApp will not store or show it again. Continue?", "Будет показан одноразовый токен Garmin. Он работает как пароль: вставь его только в настройки Connect IQ этих часов. GymApp не сохранит и больше не покажет его. Продолжить?"],
     ["Last session was stable across the sets.", "Результаты последней тренировки были стабильными во всех подходах."],
-    ["Password must be 8+ characters and include letters and numbers.", "Пароль должен содержать не менее 8 символов, включая буквы и цифры."],
+    ["Use at least 12 characters (up to 72 UTF-8 bytes) with lowercase and uppercase Latin letters, a number, and a supported symbol such as !, @, #, or $.", "Используй не менее 12 символов (до 72 байт UTF-8): строчную и заглавную латинские буквы, цифру и поддерживаемый спецсимвол, например !, @, # или $."],
+    ["Password must contain at least 12 characters, fit within 72 UTF-8 bytes, and include a lowercase Latin letter, an uppercase Latin letter, a number, and a supported symbol.", "Пароль должен содержать не менее 12 символов, занимать не более 72 байт в UTF-8 и включать строчную и заглавную латинские буквы, цифру и поддерживаемый спецсимвол."],
     ["Repeat email", "Повтори адрес электронной почты"],
     ["Resend confirmation email", "Повторно отправить письмо для подтверждения"],
     ["The unseen Garmin token could not be persisted or revoked. Keep this page open and retry Garmin sync or sign-out to revoke it.", "Непоказанный токен Garmin не удалось ни сохранить, ни отозвать. Не закрывай эту страницу: повтори синхронизацию с Garmin или выйди из аккаунта, чтобы отозвать токен."],

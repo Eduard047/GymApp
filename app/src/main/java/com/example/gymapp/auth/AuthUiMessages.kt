@@ -30,7 +30,7 @@ internal fun authErrorText(
             R.string.auth_error_cloud_unavailable
         message == "Cloud request failed. Check your connection and try again." ->
             R.string.auth_error_connection
-        message == "Password must be 8-72 characters and include letters and numbers." ->
+        message == NEW_PASSWORD_POLICY_ERROR ->
             R.string.auth_error_password_policy
         message == "Display name can use letters, numbers, spaces, dot, dash and underscore." ->
             R.string.auth_error_display_name_characters

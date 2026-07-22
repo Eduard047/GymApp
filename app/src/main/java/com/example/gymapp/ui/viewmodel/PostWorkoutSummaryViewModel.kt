@@ -234,6 +234,9 @@ class PostWorkoutSummaryViewModel(
                 currentSessionId = sessionDetails.session.id,
                 currentSessionDate = sessionDetails.session.date,
                 currentNote = sessionDetails.session.note,
+                currentHasGarminReceipt = sessions
+                    .firstOrNull { summary -> summary.session.id == sessionId }
+                    ?.hasGarminReceipt == true,
                 currentEntries = sessionHistoryEntries,
                 allSessions = sessions,
                 allHistory = exerciseHistory

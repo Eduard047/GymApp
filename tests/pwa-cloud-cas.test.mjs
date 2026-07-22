@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { webcrypto } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import vm from "node:vm";
@@ -10,6 +11,22 @@ const [appSource, stateContractSource, garminCloudSource] = await Promise.all([
 ]);
 const ACTIVE_USER_ID = "00000000-0000-4000-8000-000000000001";
 const UUID_V4_PATTERN_FOR_TEST = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function garminTestCapability(_deviceId, nonce = "b".repeat(64)) {
+  return nonce;
+}
+
+function garminTestCreatedDevice(deviceId, deviceToken) {
+  return {
+    id: deviceId,
+    device_token: deviceToken,
+    display_name: "Garmin watch",
+    created_at: "2026-07-14T00:00:00+00:00",
+    last_seen_at: null,
+    binding_version: 2,
+    token_revision: 1,
+  };
+}
 
 function unsignedJwtFor(userId, exp = 4102444800) {
   const header = Buffer.from(JSON.stringify({ alg: "none", typ: "JWT" })).toString("base64url");
@@ -29,18 +46,27 @@ function validGarminPlan(createdAt = "2026-07-14T00:00:00.000Z") {
   };
 }
 
-function loadContext(fetchImpl, { randomSeed = 1, sharedValues = null, lockManager = null } = {}) {
+function loadContext(fetchImpl, {
+  randomSeed = 1,
+  sharedValues = null,
+  sharedSessionValues = null,
+  lockManager = null,
+  seedActiveSession = true,
+  locationSearch = "?access_token=test"
+} = {}) {
   const values = sharedValues || new Map();
-  const sessionValues = new Map();
+  const sessionValues = sharedSessionValues || new Map();
   let randomCall = 0;
   const appNode = {
     innerHTML: "",
     querySelectorAll: () => [],
     querySelector: () => null
   };
+  const runtimeNodes = new Map();
   const context = {
     AbortController,
     atob,
+    btoa,
     clearInterval,
     clearTimeout,
     console,
@@ -57,6 +83,7 @@ function loadContext(fetchImpl, { randomSeed = 1, sharedValues = null, lockManag
     URL,
     URLSearchParams,
     crypto: {
+      subtle: webcrypto.subtle,
       getRandomValues(target) {
         for (let index = 0; index < target.length; index += 1) {
           target[index] = (randomSeed + randomCall * 37 + index) & 0xff;
@@ -69,7 +96,7 @@ function loadContext(fetchImpl, { randomSeed = 1, sharedValues = null, lockManag
     history: { replaceState() {}, pushState() {}, state: null },
     document: {
       documentElement: { lang: "en" },
-      querySelector: selector => selector === "#app" ? appNode : null
+      querySelector: selector => selector === "#app" ? appNode : (runtimeNodes.get(selector) || null)
     },
     navigator: {
       locks: lockManager || {
@@ -97,7 +124,7 @@ function loadContext(fetchImpl, { randomSeed = 1, sharedValues = null, lockManag
         cumulativeXPForLevel: () => 0,
         levelProgress: () => ({ level: 1, currentLevelXp: 0, xpForNextLevel: 200, progressFraction: 0 })
       },
-      location: { search: "?access_token=test", hash: "", replace() {} },
+      location: { search: locationSearch, hash: "", pathname: "/", replace() {} },
       addEventListener() {}
     }
   };
@@ -116,21 +143,27 @@ function loadContext(fetchImpl, { randomSeed = 1, sharedValues = null, lockManag
   context.window.GymStateContract = context.GymStateContract;
   context.window.GymGarminCloud = context.GymGarminCloud;
   vm.runInContext(appSource, context);
-  vm.runInContext(`
-    activeAccount = {
-      id: "remote-${ACTIVE_USER_ID}",
-      name: "Owner",
-      userId: ${JSON.stringify(ACTIVE_USER_ID)},
-      remote: "supabase"
-    };
-    sessionStorage.setItem(REMOTE_SESSION_KEY, JSON.stringify({
-      access_token: ${JSON.stringify(unsignedJwtFor(ACTIVE_USER_ID))},
-      refresh_token: "opaque-refresh-token",
-      user: { id: activeAccount.userId }
-    }));
-    state = defaultAppState();
-    accountEpoch = 7;
-  `, context);
+  if (seedActiveSession) {
+    vm.runInContext(`
+      activeAccount = {
+        id: "remote-${ACTIVE_USER_ID}",
+        name: "Owner",
+        userId: ${JSON.stringify(ACTIVE_USER_ID)},
+        remote: "supabase"
+      };
+      sessionStorage.setItem(REMOTE_SESSION_KEY, JSON.stringify({
+        access_token: ${JSON.stringify(unsignedJwtFor(ACTIVE_USER_ID))},
+        refresh_token: "opaque-refresh-token",
+        user: { id: activeAccount.userId }
+      }));
+      state = defaultAppState();
+      accountEpoch = 7;
+    `, context);
+  }
+  context.appNode = appNode;
+  context.runtimeNodes = runtimeNodes;
+  context.storageValues = values;
+  context.sessionValues = sessionValues;
   return context;
 }
 
@@ -203,6 +236,392 @@ test("first cloud save inserts only when the loaded state was absent", async () 
   assert.equal(requests[0].options.method, "POST");
   assert.match(requests[0].url, /\/rest\/v1\/user_states\?select=updated_at$/);
   assert.doesNotMatch(requests[0].url, /on_conflict/);
+});
+
+test("cloud fingerprints are stable across equivalent object key order", () => {
+  const context = loadContext(async () => {
+    throw new Error("network is not used");
+  });
+  assert.equal(vm.runInContext(`(() => {
+    const original = defaultAppState();
+    const reordered = {
+      profile: {
+        calories: original.profile.calories,
+        goal: original.profile.goal,
+        days: original.profile.days,
+        split: original.profile.split
+      },
+      mappings: Object.fromEntries(Object.entries(original.mappings).reverse()),
+      sessions: original.sessions,
+      exercises: original.exercises,
+      catalogSeedVersion: original.catalogSeedVersion,
+      language: original.language
+    };
+    return remoteStateFingerprint(original, activeAccount.userId) ===
+      remoteStateFingerprint(reordered, activeAccount.userId);
+  })()`, context), true);
+});
+
+test("a clean missing-cloud baseline accepts a later cloud creation", async () => {
+  const requests = [];
+  let remotePayload;
+  const context = loadContext(async (url, options) => {
+    requests.push({ url, options });
+    return new Response(JSON.stringify([{
+      state: remotePayload,
+      updated_at: "2026-07-20T10:00:00.000001+00:00"
+    }]), { status: 200, headers: { "Content-Type": "application/json" } });
+  });
+  vm.runInContext(`
+    state = defaultAppState();
+    localStorage.setItem(AUTH_KEY, JSON.stringify(activeAccount));
+    saveState({ queueRemote: false, markDirty: false });
+    saveSyncBaseline({
+      version: 1,
+      userId: activeAccount.userId,
+      remoteExists: false,
+      revision: null,
+      syncedFingerprint: null,
+      localFingerprint: remoteStateFingerprint(state, activeAccount.userId),
+      dirty: false,
+      pending: null,
+      updatedAt: Date.now()
+    });
+  `, context);
+  remotePayload = JSON.parse(vm.runInContext(`JSON.stringify((() => {
+    const remote = defaultAppState();
+    remote.profile.goal = "Strength";
+    return remoteStatePayload(activeAccount.userId, remote);
+  })())`, context));
+
+  await vm.runInContext("pullRemoteState()", context);
+
+  assert.equal(requests.length, 1);
+  assert.equal(vm.runInContext("state.profile.goal", context), "Strength");
+  assert.equal(vm.runInContext("cloudSyncConflict", context), null);
+  assert.equal(vm.runInContext("loadSyncBaseline(activeAccount.userId).dirty", context), false);
+});
+
+test("an outcome-unknown write reconciles both applied and not-applied server outcomes", async () => {
+  const runCase = async applied => {
+    const requests = [];
+    let basePayload;
+    let attemptPayload;
+    const context = loadContext(async (url, options) => {
+      requests.push({ url, options });
+      if ((options?.method || "GET") === "GET") {
+        return new Response(JSON.stringify([{
+          state: applied ? attemptPayload : basePayload,
+          updated_at: applied
+            ? "2026-07-20T11:00:00.000001+00:00"
+            : "2026-07-20T11:00:00.000000+00:00"
+        }]), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (options.method === "PATCH") {
+        return new Response(JSON.stringify([{ updated_at: "2026-07-20T11:00:00.000002+00:00" }]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+      return new Response(null, { status: 204 });
+    });
+    basePayload = JSON.parse(vm.runInContext(
+      "JSON.stringify(remoteStatePayload(activeAccount.userId, defaultAppState()))",
+      context
+    ));
+    attemptPayload = JSON.parse(vm.runInContext(`JSON.stringify((() => {
+      const attempted = defaultAppState();
+      attempted.profile.goal = "Strength";
+      return remoteStatePayload(activeAccount.userId, attempted);
+    })())`, context));
+    context.__basePayload = basePayload;
+    context.__attemptPayload = attemptPayload;
+    vm.runInContext(`
+      const baseStateForPending = normalizeImportedState(globalThis.__basePayload, defaultAppState());
+      state = normalizeImportedState(globalThis.__attemptPayload, defaultAppState());
+      localStorage.setItem(AUTH_KEY, JSON.stringify(activeAccount));
+      saveState({ queueRemote: false, markDirty: false });
+      bindRemoteStateRevision({
+        userId: activeAccount.userId,
+        exists: true,
+        revision: "2026-07-20T11:00:00.000000+00:00"
+      });
+      saveSyncBaseline({
+        version: 1,
+        userId: activeAccount.userId,
+        remoteExists: true,
+        revision: remoteStateSync.revision,
+        syncedFingerprint: remoteStateFingerprint(baseStateForPending, activeAccount.userId),
+        localFingerprint: remoteStateFingerprint(state, activeAccount.userId),
+        dirty: true,
+        pending: {
+          payloadFingerprint: remoteStateFingerprint(state, activeAccount.userId),
+          baseExists: true,
+          baseRevision: remoteStateSync.revision,
+          baseFingerprint: remoteStateFingerprint(baseStateForPending, activeAccount.userId),
+          startedAt: Date.now()
+        },
+        updatedAt: Date.now()
+      });
+    `, context);
+
+    await vm.runInContext("startRemoteSave()", context);
+    return { context, requests };
+  };
+
+  const applied = await runCase(true);
+  assert.equal(applied.requests.filter(request => request.options?.method === "PATCH").length, 0);
+  assert.equal(vm.runInContext("loadSyncBaseline(activeAccount.userId).pending", applied.context), null);
+  assert.equal(vm.runInContext("loadSyncBaseline(activeAccount.userId).dirty", applied.context), false);
+
+  const notApplied = await runCase(false);
+  assert.equal(notApplied.requests.filter(request => request.options?.method === "PATCH").length, 1);
+  assert.equal(vm.runInContext("loadSyncBaseline(activeAccount.userId).pending", notApplied.context), null);
+  assert.equal(vm.runInContext("loadSyncBaseline(activeAccount.userId).dirty", notApplied.context), false);
+});
+
+test("a mutation during an in-flight cloud write remains durably dirty", async () => {
+  const requests = [];
+  let resolvePatch;
+  const patchResponse = new Promise(resolve => { resolvePatch = resolve; });
+  const context = loadContext(async (url, options) => {
+    requests.push({ url, options });
+    if (options?.method === "PATCH") return patchResponse;
+    return new Response(null, { status: 204 });
+  });
+  vm.runInContext(`
+    state = defaultAppState();
+    bindRemoteStateRevision({
+      userId: activeAccount.userId,
+      exists: true,
+      revision: "2026-07-20T12:00:00.000000+00:00"
+    });
+    saveSyncBaseline(syncedBaseline(
+      activeAccount.userId,
+      remoteStateSync,
+      remoteStateFingerprint(state, activeAccount.userId)
+    ));
+  `, context);
+
+  const savePromise = vm.runInContext("saveRemoteState()", context);
+  await new Promise(resolve => setImmediate(resolve));
+  vm.runInContext(`
+    state.profile.goal = "Strength";
+    saveState({ queueRemote: false });
+  `, context);
+  resolvePatch(new Response(JSON.stringify([{ updated_at: "2026-07-20T12:00:00.000001+00:00" }]), {
+    status: 200,
+    headers: { "Content-Type": "application/json" }
+  }));
+  await savePromise;
+
+  assert.equal(requests.filter(request => request.options?.method === "PATCH").length, 1);
+  assert.equal(vm.runInContext("loadSyncBaseline(activeAccount.userId).dirty", context), true);
+  assert.equal(vm.runInContext(`(() => {
+    const baseline = loadSyncBaseline(activeAccount.userId);
+    return baseline.syncedFingerprint !== baseline.localFingerprint;
+  })()`, context), true);
+});
+
+test("browser and cloud edits since the confirmed baseline require an explicit choice", async () => {
+  const requests = [];
+  let remotePayload;
+  const context = loadContext(async (url, options) => {
+    requests.push({ url, options });
+    return new Response(JSON.stringify([{
+      state: remotePayload,
+      updated_at: "2026-07-20T13:00:00.000001+00:00"
+    }]), { status: 200, headers: { "Content-Type": "application/json" } });
+  });
+  const basePayload = JSON.parse(vm.runInContext(
+    "JSON.stringify(remoteStatePayload(activeAccount.userId, defaultAppState()))",
+    context
+  ));
+  remotePayload = JSON.parse(vm.runInContext(`JSON.stringify((() => {
+    const remote = defaultAppState();
+    remote.profile.days = 6;
+    return remoteStatePayload(activeAccount.userId, remote);
+  })())`, context));
+  context.__basePayload = basePayload;
+  vm.runInContext(`
+    const confirmed = normalizeImportedState(globalThis.__basePayload, defaultAppState());
+    const confirmedFingerprint = remoteStateFingerprint(confirmed, activeAccount.userId);
+    state = confirmed;
+    state.profile.goal = "Strength";
+    saveState({ queueRemote: false, markDirty: false });
+    saveSyncBaseline({
+      version: 1,
+      userId: activeAccount.userId,
+      remoteExists: true,
+      revision: "2026-07-20T13:00:00.000000+00:00",
+      syncedFingerprint: confirmedFingerprint,
+      localFingerprint: remoteStateFingerprint(state, activeAccount.userId),
+      dirty: true,
+      pending: null,
+      updatedAt: Date.now()
+    });
+  `, context);
+
+  await vm.runInContext("pullRemoteState()", context);
+
+  assert.equal(requests.length, 1, "conflict detection must not write either version");
+  assert.equal(vm.runInContext("state.profile.goal", context), "Strength");
+  assert.equal(vm.runInContext("cloudSyncConflict.userId", context), ACTIVE_USER_ID);
+  assert.match(vm.runInContext("cloudSyncConflictScreen()", context), /Keep browser version/);
+  assert.match(vm.runInContext("cloudSyncConflictScreen()", context), /Use cloud version/);
+});
+
+test("a dirty edit survives reload before debounce and uploads after reconciliation", async () => {
+  const sharedValues = new Map();
+  const sharedSessionValues = new Map();
+  let basePayload;
+  const first = loadContext(async () => {
+    throw new Error("the first page must not sync before simulated reload");
+  }, { sharedValues, sharedSessionValues });
+  basePayload = JSON.parse(vm.runInContext(
+    "JSON.stringify(remoteStatePayload(activeAccount.userId, defaultAppState()))",
+    first
+  ));
+  vm.runInContext(`
+    localStorage.setItem(AUTH_KEY, JSON.stringify(activeAccount));
+    state = defaultAppState();
+    saveState({ queueRemote: false, markDirty: false });
+    bindRemoteStateRevision({
+      userId: activeAccount.userId,
+      exists: true,
+      revision: "2026-07-20T14:00:00.000000+00:00"
+    });
+    saveSyncBaseline(syncedBaseline(
+      activeAccount.userId,
+      remoteStateSync,
+      remoteStateFingerprint(state, activeAccount.userId)
+    ));
+    state.profile.goal = "Strength";
+    saveState();
+    clearTimeout(remoteSaveTimer);
+    remoteSaveTimer = null;
+  `, first);
+  assert.equal(vm.runInContext("loadSyncBaseline(activeAccount.userId).dirty", first), true);
+
+  const requests = [];
+  const second = loadContext(async (url, options) => {
+    requests.push({ url, options });
+    if ((options?.method || "GET") === "GET") {
+      return new Response(JSON.stringify([{
+        state: basePayload,
+        updated_at: "2026-07-20T14:00:00.000000+00:00"
+      }]), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    if (options.method === "PATCH") {
+      return new Response(JSON.stringify([{ updated_at: "2026-07-20T14:00:00.000001+00:00" }]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+    return new Response(null, { status: 204 });
+  }, {
+    sharedValues,
+    sharedSessionValues,
+    seedActiveSession: false,
+    locationSearch: ""
+  });
+  await new Promise(resolve => setTimeout(resolve, 100));
+
+  assert.equal(requests.filter(request => request.options?.method === "PATCH").length, 1);
+  assert.equal(vm.runInContext("state.profile.goal", second), "Strength");
+  assert.equal(vm.runInContext("loadSyncBaseline(activeAccount.userId).dirty", second), false);
+});
+
+test("terminal reauthentication preserves a dirty baseline for the next login", async () => {
+  const requests = [];
+  let basePayload;
+  const context = loadContext(async (url, options) => {
+    requests.push({ url, options });
+    if ((options?.method || "GET") === "GET") {
+      return new Response(JSON.stringify([{
+        state: basePayload,
+        updated_at: "2026-07-20T15:00:00.000000+00:00"
+      }]), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    if (options.method === "PATCH") {
+      return new Response(JSON.stringify([{ updated_at: "2026-07-20T15:00:00.000001+00:00" }]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+    return new Response(null, { status: 204 });
+  });
+  basePayload = JSON.parse(vm.runInContext(
+    "JSON.stringify(remoteStatePayload(activeAccount.userId, defaultAppState()))",
+    context
+  ));
+  vm.runInContext(`
+    localStorage.setItem(AUTH_KEY, JSON.stringify(activeAccount));
+    state = defaultAppState();
+    saveState({ queueRemote: false, markDirty: false });
+    bindRemoteStateRevision({
+      userId: activeAccount.userId,
+      exists: true,
+      revision: "2026-07-20T15:00:00.000000+00:00"
+    });
+    saveSyncBaseline(syncedBaseline(
+      activeAccount.userId,
+      remoteStateSync,
+      remoteStateFingerprint(state, activeAccount.userId)
+    ));
+    state.profile.goal = "Strength";
+    saveState({ queueRemote: false });
+    const terminal = new Error("revoked");
+    terminal.status = 401;
+    terminal.terminalAuth = true;
+    transitionToReauthentication(terminal);
+  `, context);
+  assert.equal(vm.runInContext(`loadSyncBaseline(${JSON.stringify(ACTIVE_USER_ID)}).dirty`, context), true);
+  context.__reloginSession = {
+    access_token: unsignedJwtFor(ACTIVE_USER_ID),
+    refresh_token: "relogin-refresh-token",
+    user: { id: ACTIVE_USER_ID, email: "owner@example.com" }
+  };
+
+  await vm.runInContext("activateRemoteSession(globalThis.__reloginSession)", context);
+
+  assert.equal(requests.filter(request => request.options?.method === "PATCH").length, 1);
+  assert.equal(vm.runInContext("state.profile.goal", context), "Strength");
+  assert.equal(vm.runInContext("loadSyncBaseline(activeAccount.userId).dirty", context), false);
+});
+
+test("cloud sync baselines remain isolated by authenticated account", () => {
+  const context = loadContext(async () => {
+    throw new Error("network is not used");
+  });
+  const otherUserId = "00000000-0000-4000-8000-000000000099";
+  vm.runInContext(`
+    state = defaultAppState();
+    state.profile.goal = "Strength";
+    markRemoteStateDirtyBeforeWrite(state);
+  `, context);
+  const firstKey = `gym-pwa-sync-baseline-v1:${ACTIVE_USER_ID}`;
+  const firstBaseline = context.localStorage.getItem(firstKey);
+  vm.runInContext(`
+    activeAccount = {
+      id: "remote-${otherUserId}",
+      name: "Other",
+      userId: ${JSON.stringify(otherUserId)},
+      remote: "supabase"
+    };
+    saveRemoteSession({
+      access_token: ${JSON.stringify(unsignedJwtFor(otherUserId))},
+      refresh_token: "other-account-refresh-token",
+      user: { id: activeAccount.userId }
+    });
+    state = defaultAppState();
+    state.profile.days = 5;
+    markRemoteStateDirtyBeforeWrite(state);
+  `, context);
+
+  assert.equal(context.localStorage.getItem(firstKey), firstBaseline);
+  assert.notEqual(context.localStorage.getItem(`gym-pwa-sync-baseline-v1:${otherUserId}`), null);
+  assert.equal(vm.runInContext("loadSyncBaseline(activeAccount.userId).userId", context), otherUserId);
 });
 
 test("cloud responses are byte-bounded before JSON parsing", async () => {
@@ -517,6 +936,33 @@ test("ordinary sign-out preserves a working Garmin device identity for the next 
   assert.equal(requests.length, 1, "durable binding reuse must not create or rotate a device");
 });
 
+test("production v2 Garmin bindings stay paired while embedded legacy secrets are stripped", () => {
+  const context = loadContext(async () => {
+    throw new Error("binding migration must not use the network");
+  });
+  const deviceId = "00000000-0000-4000-8000-000000000076";
+  context.localStorage.setItem("gym-pwa-garmin-device-bindings-v2", JSON.stringify({
+    [ACTIVE_USER_ID]: {
+      version: 2,
+      userId: ACTIVE_USER_ID,
+      deviceId,
+      deviceToken: "legacy-secret-must-not-survive",
+    },
+  }));
+
+  const migrated = vm.runInContext(
+    `garminBindingForUser(${JSON.stringify(ACTIVE_USER_ID)})`,
+    context,
+  );
+  assert.equal(migrated.version, 2);
+  assert.equal(migrated.deviceId, deviceId);
+  assert.equal(Object.hasOwn(migrated, "recoveryPending"), false);
+  const persisted = context.localStorage.getItem(
+    "gym-pwa-garmin-device-bindings-v2",
+  );
+  assert.equal(persisted.includes("legacy-secret-must-not-survive"), false);
+});
+
 test("remote sign-out without a Garmin binding does not require a cloud request", async () => {
   const context = loadContext(async () => {
     throw new Error("network must not be used during ordinary sign-out");
@@ -537,6 +983,26 @@ test("remote sign-out without a Garmin binding does not require a cloud request"
   assert.equal(vm.runInContext("activeAccount", context), null);
   assert.notEqual(context.localStorage.getItem("gym-pwa-active-account-v1"), null);
   assert.equal(vm.runInContext("loadActiveAccount()", context), null);
+});
+
+test("pending cloud activation can sign out without a cloud-state flush", async () => {
+  const requests = [];
+  const context = loadContext(async (url, options) => {
+    requests.push({ url, options });
+    return new Response(null, { status: 204 });
+  });
+  vm.runInContext(`
+    localStorage.setItem(AUTH_KEY, JSON.stringify(activeAccount));
+    const pendingSession = { ...loadRemoteSession(), activation_pending: "signup" };
+    saveRemoteSession(pendingSession);
+  `, context);
+
+  await vm.runInContext("logoutAccount()", context);
+
+  assert.equal(requests.some(request => request.url.includes("/rest/v1/user_states")), false);
+  assert.equal(requests.filter(request => request.url.includes("/auth/v1/logout")).length, 1);
+  assert.equal(vm.runInContext("activeAccount", context), null);
+  assert.equal(context.sessionStorage.getItem("gym-pwa-supabase-session-v1"), null);
 });
 
 test("failed server-side session revocation cannot prevent local sign-out", async () => {
@@ -875,12 +1341,12 @@ test("cloud recovery reset is explicit and uses the quarantined row revision as 
 
 test("Garmin binding is persisted before the one-time token is shown", async () => {
   const deviceId = "00000000-0000-4000-8000-000000000081";
-  const token = "a".repeat(64);
+  const token = garminTestCapability(deviceId, "a".repeat(64));
   const context = loadContext(async (_url, options) => {
     const action = JSON.parse(options.body).action;
     const payload = action === "listDevices"
       ? { devices: [] }
-      : { device: { id: deviceId, device_token: token, binding_version: 2, token_revision: 1 } };
+      : { device: garminTestCreatedDevice(deviceId, token) };
     return new Response(JSON.stringify(payload), {
       status: 200,
       headers: { "Content-Type": "application/json" }
@@ -911,7 +1377,7 @@ test("Garmin binding is persisted before the one-time token is shown", async () 
 
 test("Garmin storage failure revokes the unseen token before any prompt", async () => {
   const deviceId = "00000000-0000-4000-8000-000000000082";
-  const token = "b".repeat(64);
+  const token = garminTestCapability(deviceId, "b".repeat(64));
   const actions = [];
   const context = loadContext(async (_url, options) => {
     const body = JSON.parse(options.body);
@@ -924,7 +1390,7 @@ test("Garmin storage failure revokes the unseen token before any prompt", async 
     }
     if (body.action === "createDevice") {
       return new Response(JSON.stringify({
-        device: { id: deviceId, device_token: token, binding_version: 2, token_revision: 1 }
+        device: garminTestCreatedDevice(deviceId, token)
       }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
     return new Response(JSON.stringify({ status: "revoked" }), {
@@ -955,7 +1421,7 @@ test("Garmin storage failure revokes the unseen token before any prompt", async 
 
 test("cancelled Garmin token prompt stays recoverable when revocation fails", async () => {
   const deviceId = "00000000-0000-4000-8000-000000000085";
-  const token = "e".repeat(64);
+  const token = garminTestCapability(deviceId, "e".repeat(64));
   const actions = [];
   const context = loadContext(async (_url, options) => {
     const body = JSON.parse(options.body);
@@ -968,7 +1434,7 @@ test("cancelled Garmin token prompt stays recoverable when revocation fails", as
     }
     if (body.action === "createDevice") {
       return new Response(JSON.stringify({
-        device: { id: deviceId, device_token: token, binding_version: 2, token_revision: 1 }
+        device: garminTestCreatedDevice(deviceId, token)
       }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
     throw new Error("revocation offline");
@@ -1009,13 +1475,14 @@ test("lost browser binding recovers an existing watch by rotating its token with
     }
     assert.equal(body.deviceId, deviceId);
     assert.equal(body.expectedTokenRevision, 7);
+    assert.equal(body.capabilityVersion, 2);
     assert.match(body.replacementToken, /^[a-f0-9]{64}$/);
     replacementToken = body.replacementToken;
     return new Response(JSON.stringify({
       status: "rotated",
       device: {
         id: deviceId,
-        device_token: body.replacementToken,
+        device_token: replacementToken,
         display_name: "Fenix 8",
         created_at: "2026-07-14T00:00:00+00:00",
         last_seen_at: null,
@@ -1087,7 +1554,10 @@ test("lost Garmin rotation response remains retryable for the same UUID", async 
   });
   context.window.confirm = () => true;
   context.window.prompt = (_message, shownToken) => {
-    assert.equal(shownToken, rotationBodies[2].replacementToken);
+    assert.equal(
+      shownToken,
+      rotationBodies[2].replacementToken,
+    );
     return "saved";
   };
 
@@ -1153,7 +1623,10 @@ test("outcome-unknown Garmin rotation accepts exact already_rotated replay", asy
   context.window.confirm = () => true;
   context.window.prompt = (_message, shownToken) => {
     promptCalls += 1;
-    assert.equal(shownToken, rotationBodies[0].replacementToken);
+    assert.equal(
+      shownToken,
+      rotationBodies[0].replacementToken,
+    );
     return "saved";
   };
 
@@ -1300,7 +1773,7 @@ test("Garmin token revision conflict refreshes metadata and fails closed", async
 
 test("concurrent Garmin sync clicks run one list-create-queue path", async () => {
   const deviceId = "00000000-0000-4000-8000-000000000087";
-  const token = "1".repeat(64);
+  const token = garminTestCapability(deviceId, "1".repeat(64));
   const actions = [];
   let releaseList;
   const listGate = new Promise(resolve => {
@@ -1318,7 +1791,7 @@ test("concurrent Garmin sync clicks run one list-create-queue path", async () =>
         });
       }
       return new Response(JSON.stringify({
-        device: { id: deviceId, device_token: token, binding_version: 2, token_revision: 1 }
+        device: garminTestCreatedDevice(deviceId, token)
       }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
     actions.push("queuePlan");
@@ -1366,7 +1839,7 @@ test("concurrent Garmin sync clicks run one list-create-queue path", async () =>
 
 test("a shared Web Lock allows only one cross-tab Garmin create and enqueue path", async () => {
   const deviceId = "00000000-0000-4000-8000-000000000086";
-  const token = "2".repeat(64);
+  const token = garminTestCapability(deviceId, "2".repeat(64));
   const actions = [];
   const heldLocks = new Set();
   const lockManager = {
@@ -1393,7 +1866,7 @@ test("a shared Web Lock allows only one cross-tab Garmin create and enqueue path
         });
       }
       return new Response(JSON.stringify({
-        device: { id: deviceId, device_token: token, binding_version: 2, token_revision: 1 }
+        device: garminTestCreatedDevice(deviceId, token)
       }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
     actions.push("queuePlan");
@@ -1558,4 +2031,539 @@ test("invalid Garmin recovery metadata fails closed before create or rotation", 
   );
   assert.deepEqual(actions, ["listDevices"]);
   assert.equal(vm.runInContext(`garminBindingForUser(${JSON.stringify(ACTIVE_USER_ID)})`, context), null);
+});
+
+test("remote recovery mode renders for the normalized Supabase account discriminator", () => {
+  const context = loadContext(async () => {
+    throw new Error("network is not used");
+  });
+  vm.runInContext(`
+    cloudStateRecovery = {
+      userId: activeAccount.userId,
+      revision: "2026-07-13T20:00:00.000000+00:00",
+      rawState: { schemaVersion: 1 }
+    };
+    render();
+  `, context);
+
+  assert.match(context.appNode.innerHTML, /Cloud data recovery/);
+  assert.match(context.appNode.innerHTML, /Download original private JSON/);
+});
+
+test("logout flushes the debounced cloud state before revoking only the local Supabase session", async () => {
+  const requests = [];
+  const context = loadContext(async (url, options) => {
+    requests.push({ url, options });
+    if (url.includes("/rest/v1/user_states")) {
+      return new Response(JSON.stringify([{ updated_at: "2026-07-13T20:00:00.000001+00:00" }]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+    return new Response(null, { status: 204 });
+  });
+  vm.runInContext(`
+    remoteStateSync = {
+      userId: activeAccount.userId,
+      exists: true,
+      revision: "2026-07-13T20:00:00.000000+00:00"
+    };
+    localStorage.setItem(AUTH_KEY, JSON.stringify(activeAccount));
+    state.profile.goal = "strength";
+    saveState();
+  `, context);
+
+  await vm.runInContext("logoutAccount()", context);
+
+  assert.equal(requests.length, 3);
+  assert.match(requests[0].url, /\/rest\/v1\/user_states/);
+  assert.match(requests[1].url, /\/rest\/v1\/profiles/);
+  const logoutUrl = new URL(requests[2].url);
+  assert.equal(logoutUrl.pathname, "/auth/v1/logout");
+  assert.equal(logoutUrl.searchParams.get("scope"), "local");
+  assert.notEqual(logoutUrl.searchParams.get("scope"), "global");
+  assert.equal(vm.runInContext("activeAccount", context), null);
+});
+
+test("a profile publication failure reports a partial result after the workout state commits", async () => {
+  const requests = [];
+  const context = loadContext(async (url, options) => {
+    requests.push({ url, options });
+    if (url.includes("/user_states")) {
+      return new Response(JSON.stringify([{ updated_at: "2026-07-13T20:00:00.000001+00:00" }]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+    return new Response(JSON.stringify({ message: "profile unavailable" }), {
+      status: 503,
+      headers: { "Content-Type": "application/json" }
+    });
+  });
+  vm.runInContext(`remoteStateSync = {
+    userId: activeAccount.userId,
+    exists: true,
+    revision: "2026-07-13T20:00:00.000000+00:00"
+  };`, context);
+
+  const result = await vm.runInContext("saveRemoteState()", context);
+  assert.equal(result.stateSaved, true);
+  assert.equal(result.profileUpdated, false);
+  assert.equal(requests.length, 2);
+  assert.equal(
+    vm.runInContext("remoteStateSync.revision", context),
+    "2026-07-13T20:00:00.000001+00:00"
+  );
+});
+
+test("terminal refresh rejection clears the tab session and presents explicit reauthentication", async () => {
+  const context = loadContext(async () => new Response(JSON.stringify({ error: "invalid_grant" }), {
+    status: 401,
+    headers: { "Content-Type": "application/json" }
+  }));
+  vm.runInContext("localStorage.setItem(AUTH_KEY, JSON.stringify(activeAccount));", context);
+
+  const error = await vm.runInContext("refreshRemoteSession(loadRemoteSession()).catch(error => error)", context);
+  assert.equal(error.terminalAuth, true);
+  assert.equal(error.status, 401);
+  context.__terminalError = error;
+  assert.equal(vm.runInContext("transitionToReauthentication(globalThis.__terminalError)", context), true);
+  assert.equal(vm.runInContext("activeAccount", context), null);
+  assert.equal(context.sessionStorage.getItem("gym-pwa-supabase-session-v1"), null);
+  assert.match(vm.runInContext("authNotice.text", context), /session expired or was revoked/i);
+});
+
+test("web signup and confirmation resend reuse the same PKCE transaction on the exact redirect", async () => {
+  const requests = [];
+  const context = loadContext(async (url, options) => {
+    requests.push({ url, options });
+    if (url.includes("/auth/v1/signup")) {
+      return new Response(JSON.stringify({ user: { id: ACTIVE_USER_ID, email: "new-owner@example.com" } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+    if (url.includes("/auth/v1/resend")) {
+      return new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    throw new Error(`unexpected request: ${url}`);
+  });
+  vm.runInContext("activeAccount = null; clearRemoteSession(); state = defaultAppState();", context);
+  context.runtimeNodes.set("#signup-name", { value: "New Owner" });
+  context.runtimeNodes.set("#signup-email", { value: "new-owner@example.com" });
+  context.runtimeNodes.set("#signup-email-confirm", { value: "new-owner@example.com" });
+  context.runtimeNodes.set("#signup-password", { value: "StrongPass123!" });
+  context.runtimeNodes.set("#signup-password-confirm", { value: "StrongPass123!" });
+
+  await vm.runInContext("remoteLogin(true)", context);
+  const signupUrl = new URL(requests[0].url);
+  const signupBody = JSON.parse(requests[0].options.body);
+  const initialTransaction = JSON.parse(context.localStorage.getItem("gym-pwa-auth-transaction-v1"));
+  assert.equal(signupUrl.pathname, "/auth/v1/signup");
+  assert.equal(signupUrl.searchParams.get("redirect_to"), "https://gymapptracker.com/confirmed.html?platform=web");
+  assert.equal(signupBody.code_challenge_method, "s256");
+  assert.match(signupBody.code_challenge, /^[A-Za-z0-9_-]{43}$/);
+  assert.equal(Object.hasOwn(signupBody, "code_verifier"), false);
+  assert.equal(initialTransaction.purpose, "signup");
+  assert.equal(initialTransaction.email, "new-owner@example.com");
+
+  await vm.runInContext("resendRemoteConfirmation()", context);
+  const resendUrl = new URL(requests[1].url);
+  const resendBody = JSON.parse(requests[1].options.body);
+  const resentTransaction = JSON.parse(context.localStorage.getItem("gym-pwa-auth-transaction-v1"));
+  assert.equal(resendUrl.pathname, "/auth/v1/resend");
+  assert.equal(resendUrl.searchParams.get("redirect_to"), "https://gymapptracker.com/confirmed.html?platform=web");
+  assert.deepEqual(Object.keys(resendBody).sort(), ["code_challenge", "code_challenge_method", "email", "type"]);
+  assert.equal(resendBody.type, "signup");
+  assert.equal(resendBody.code_challenge_method, "s256");
+  assert.match(resendBody.code_challenge, /^[A-Za-z0-9_-]{43}$/);
+  assert.equal(resentTransaction.purpose, "signup");
+  assert.equal(resentTransaction.state, initialTransaction.state);
+  assert.equal(resentTransaction.verifier, initialTransaction.verifier);
+  assert.equal(resendBody.code_challenge, signupBody.code_challenge);
+});
+
+test("web signup callback exchanges its PKCE code and activates the confirmed cloud account", async () => {
+  const requests = [];
+  const context = loadContext(async (url, options) => {
+    requests.push({ url, options });
+    if (url.includes("/auth/v1/signup")) {
+      return new Response(JSON.stringify({ user: { id: ACTIVE_USER_ID, email: "new-owner@example.com" } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+    if (url.includes("grant_type=pkce")) {
+      return new Response(JSON.stringify({
+        access_token: unsignedJwtFor(ACTIVE_USER_ID),
+        refresh_token: "signup-replacement-refresh-token",
+        user: { id: ACTIVE_USER_ID, email: "new-owner@example.com", user_metadata: { display_name: "New Owner" } }
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    if (url.includes("/rest/v1/user_states")) {
+      return new Response("[]", { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    throw new Error(`unexpected request: ${url}`);
+  });
+  vm.runInContext("activeAccount = null; clearRemoteSession(); state = defaultAppState();", context);
+  context.runtimeNodes.set("#signup-name", { value: "New Owner" });
+  context.runtimeNodes.set("#signup-email", { value: "new-owner@example.com" });
+  context.runtimeNodes.set("#signup-email-confirm", { value: "new-owner@example.com" });
+  context.runtimeNodes.set("#signup-password", { value: "StrongPass123!" });
+  context.runtimeNodes.set("#signup-password-confirm", { value: "StrongPass123!" });
+
+  await vm.runInContext("remoteLogin(true)", context);
+  const stored = JSON.parse(context.localStorage.getItem("gym-pwa-auth-transaction-v1"));
+  const code = "34e770dd-9ff9-416c-87fa-43b31d7ef225";
+  await vm.runInContext(
+    `completeAuthCallback(new URLSearchParams(${JSON.stringify(`platform=web&state=${stored.state}&purpose=signup&code=${code}`)}))`,
+    context
+  );
+
+  const tokenRequest = requests.find(request => request.url.includes("grant_type=pkce"));
+  assert.deepEqual(JSON.parse(tokenRequest.options.body), { auth_code: code, code_verifier: stored.verifier });
+  assert.equal(vm.runInContext("activeAccount.userId", context), ACTIVE_USER_ID);
+  assert.equal(vm.runInContext("loadRemoteSession().password_update_required", context), undefined);
+  assert.equal(context.localStorage.getItem("gym-pwa-auth-transaction-v1"), null);
+  vm.runInContext("clearTimeout(remoteSaveTimer); remoteSaveTimer = null;", context);
+});
+
+test("a verified PKCE session survives a transient cloud-load failure and resumes after reload", async () => {
+  const sharedValues = new Map();
+  const sharedSessionValues = new Map();
+  const firstRequests = [];
+  const first = loadContext(async (url, options) => {
+    firstRequests.push({ url, options });
+    if (url.includes("grant_type=pkce")) {
+      return new Response(JSON.stringify({
+        access_token: unsignedJwtFor(ACTIVE_USER_ID),
+        refresh_token: "durable-activation-refresh-token",
+        user: { id: ACTIVE_USER_ID, email: "owner@example.com" }
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    return new Response(JSON.stringify({ message: "temporarily unavailable" }), {
+      status: 503,
+      headers: { "Content-Type": "application/json" }
+    });
+  }, { sharedValues, sharedSessionValues });
+  const transaction = {
+    version: 1,
+    purpose: "signup",
+    state: "D".repeat(32),
+    verifier: "v".repeat(43),
+    email: "owner@example.com",
+    createdAt: Date.now()
+  };
+  first.localStorage.setItem("gym-pwa-auth-transaction-v1", JSON.stringify(transaction));
+  vm.runInContext("activeAccount = null; clearRemoteSession(); state = defaultAppState();", first);
+  const remotePayload = JSON.parse(vm.runInContext(
+    `JSON.stringify(remoteStatePayload(${JSON.stringify(ACTIVE_USER_ID)}, defaultAppState()))`,
+    first
+  ));
+  const code = "24e770dd-9ff9-416c-87fa-43b31d7ef225";
+
+  await vm.runInContext(
+    `completeAuthCallback(new URLSearchParams(${JSON.stringify(`platform=web&state=${transaction.state}&purpose=signup&code=${code}`)}))`,
+    first
+  );
+  assert.equal(first.localStorage.getItem("gym-pwa-auth-transaction-v1"), null);
+  assert.equal(vm.runInContext("loadRemoteSession().activation_pending", first), "signup");
+  assert.equal(vm.runInContext("activeAccount.userId", first), ACTIVE_USER_ID);
+
+  const secondRequests = [];
+  const second = loadContext(async (url, options) => {
+    secondRequests.push({ url, options });
+    return new Response(JSON.stringify([{
+      state: remotePayload,
+      updated_at: "2026-07-20T16:00:00.000000+00:00"
+    }]), { status: 200, headers: { "Content-Type": "application/json" } });
+  }, {
+    sharedValues,
+    sharedSessionValues,
+    seedActiveSession: false,
+    locationSearch: ""
+  });
+  await new Promise(resolve => setTimeout(resolve, 100));
+
+  assert.equal(secondRequests.filter(request => request.url.includes("grant_type=pkce")).length, 0);
+  assert.equal(vm.runInContext("loadRemoteSession().activation_pending", second), undefined);
+  assert.equal(vm.runInContext("activeAccount.userId", second), ACTIVE_USER_ID);
+});
+
+test("web auth callback state mismatch does not exchange a code or erase the active transaction", async () => {
+  const requests = [];
+  const context = loadContext(async (url, options) => {
+    requests.push({ url, options });
+    throw new Error("mismatched callback must not use the network");
+  });
+  const stored = {
+    version: 1,
+    purpose: "signup",
+    state: "S".repeat(32),
+    verifier: "v".repeat(43),
+    email: "owner@example.com",
+    createdAt: Date.now()
+  };
+  context.localStorage.setItem("gym-pwa-auth-transaction-v1", JSON.stringify(stored));
+  vm.runInContext("activeAccount = null; clearRemoteSession();", context);
+  const code = "dd8af18b-ffb8-4f1e-8552-972ccf840d9f";
+  await vm.runInContext(
+    `completeAuthCallback(new URLSearchParams(${JSON.stringify(`platform=web&state=${"M".repeat(32)}&purpose=signup&code=${code}`)}))`,
+    context
+  );
+
+  assert.equal(requests.length, 0);
+  assert.deepEqual(JSON.parse(context.localStorage.getItem("gym-pwa-auth-transaction-v1")), stored);
+});
+
+test("web password recovery keeps redirect_to on the exact production allowlist and exchanges PKCE locally", async () => {
+  const requests = [];
+  let recoveryState = "";
+  const context = loadContext(async (url, options) => {
+    requests.push({ url, options });
+    if (url.includes("/auth/v1/recover")) {
+      return new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    if (url.includes("grant_type=pkce")) {
+      return new Response(JSON.stringify({
+        access_token: unsignedJwtFor(ACTIVE_USER_ID),
+        refresh_token: "replacement-refresh-token",
+        user: { id: ACTIVE_USER_ID, email: "owner@example.com" }
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    if (url.includes("/rest/v1/user_states")) {
+      return new Response("[]", { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    throw new Error(`unexpected request: ${url}`);
+  });
+  vm.runInContext("activeAccount = null; clearRemoteSession(); state = defaultAppState();", context);
+
+  await vm.runInContext('requestPasswordReset("owner@example.com")', context);
+  const stored = JSON.parse(context.localStorage.getItem("gym-pwa-auth-transaction-v1"));
+  recoveryState = stored.state;
+  const recoverUrl = new URL(requests[0].url);
+  assert.equal(
+    recoverUrl.searchParams.get("redirect_to"),
+    "https://gymapptracker.com/confirmed.html?platform=web"
+  );
+  assert.equal(recoverUrl.searchParams.get("redirect_to").includes("state="), false);
+  const recoverBody = JSON.parse(requests[0].options.body);
+  assert.equal(recoverBody.code_challenge_method, "s256");
+  assert.match(recoverBody.code_challenge, /^[A-Za-z0-9_-]{43}$/);
+
+  const code = "4be36bc9-5ee4-40f3-a674-5ebf01b53ac8";
+  await vm.runInContext(
+    `completeAuthCallback(new URLSearchParams(${JSON.stringify(`platform=web&state=${recoveryState}&purpose=recovery&code=${code}`)}))`,
+    context
+  );
+  const tokenRequest = requests.find(request => request.url.includes("grant_type=pkce"));
+  assert.ok(tokenRequest);
+  const tokenBody = JSON.parse(tokenRequest.options.body);
+  assert.equal(tokenBody.auth_code, code);
+  assert.equal(tokenBody.code_verifier, stored.verifier);
+  assert.equal(vm.runInContext("activeAccount.userId", context), ACTIVE_USER_ID);
+  assert.equal(vm.runInContext("loadRemoteSession().password_update_required", context), true);
+  assert.equal(context.localStorage.getItem("gym-pwa-auth-transaction-v1"), null);
+  vm.runInContext("clearTimeout(remoteSaveTimer); remoteSaveTimer = null;", context);
+});
+
+test("signed-in password change requires the current password while recovery does not", async () => {
+  const requests = [];
+  const context = loadContext(async (url, options) => {
+    requests.push({ url, options });
+    if (url.endsWith("/auth/v1/user")) {
+      return new Response(JSON.stringify({ id: ACTIVE_USER_ID }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+    throw new Error(`unexpected request: ${url}`);
+  });
+  context.runtimeNodes.set("#change-current-password", { value: "OldPassword123!" });
+  context.runtimeNodes.set("#change-new-password", { value: "NewPassword123!" });
+  context.runtimeNodes.set("#change-repeat-password", { value: "NewPassword123!" });
+  vm.runInContext('modal = { type: "change-password" };', context);
+
+  const markup = vm.runInContext("modalMarkup()", context);
+  assert.match(markup, /id="change-current-password"/);
+  assert.match(markup, /autocomplete="current-password"/);
+  await vm.runInContext("updateRemotePassword()", context);
+
+  assert.equal(requests.length, 1);
+  assert.deepEqual(JSON.parse(requests[0].options.body), {
+    password: "NewPassword123!",
+    current_password: "OldPassword123!"
+  });
+});
+
+test("password change refreshes an expired access token before the authenticated user request", async () => {
+  const requests = [];
+  const freshAccessToken = unsignedJwtFor(ACTIVE_USER_ID);
+  const context = loadContext(async (url, options) => {
+    requests.push({ url, options });
+    if (url.includes("grant_type=refresh_token")) {
+      return new Response(JSON.stringify({
+        access_token: freshAccessToken,
+        refresh_token: "password-rotated-refresh-token",
+        user: { id: ACTIVE_USER_ID }
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    return new Response(JSON.stringify({ id: ACTIVE_USER_ID }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" }
+    });
+  });
+  vm.runInContext(`saveRemoteSession({
+    access_token: ${JSON.stringify(unsignedJwtFor(ACTIVE_USER_ID, 1))},
+    refresh_token: "password-expired-refresh-token",
+    user: { id: activeAccount.userId }
+  });`, context);
+  context.runtimeNodes.set("#change-current-password", { value: "OldPassword123!" });
+  context.runtimeNodes.set("#change-new-password", { value: "NewPassword123!" });
+  context.runtimeNodes.set("#change-repeat-password", { value: "NewPassword123!" });
+  vm.runInContext('modal = { type: "change-password" };', context);
+
+  await vm.runInContext("updateRemotePassword()", context);
+
+  assert.equal(requests.length, 2);
+  assert.match(requests[0].url, /grant_type=refresh_token/);
+  assert.match(requests[1].url, /\/auth\/v1\/user$/);
+  assert.equal(requests[1].options.headers.Authorization, `Bearer ${freshAccessToken}`);
+});
+
+test("signed-in password change keeps the email nonce reauthentication fallback", async () => {
+  const requests = [];
+  let updateCount = 0;
+  const context = loadContext(async (url, options) => {
+    requests.push({ url, options });
+    if (url.endsWith("/auth/v1/user")) {
+      updateCount += 1;
+      if (updateCount === 1) {
+        return new Response(JSON.stringify({ code: "reauthentication_needed" }), {
+          status: 422,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+      return new Response(JSON.stringify({ id: ACTIVE_USER_ID }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+    if (url.endsWith("/auth/v1/reauthenticate")) {
+      return new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    throw new Error(`unexpected request: ${url}`);
+  });
+  const fillPasswordFields = nonce => {
+    context.runtimeNodes.set("#change-current-password", { value: "OldPassword123!" });
+    context.runtimeNodes.set("#change-new-password", { value: "NewPassword123!" });
+    context.runtimeNodes.set("#change-repeat-password", { value: "NewPassword123!" });
+    context.runtimeNodes.set("#change-password-nonce", { value: nonce });
+  };
+  fillPasswordFields("");
+  vm.runInContext('modal = { type: "change-password" };', context);
+
+  await vm.runInContext("updateRemotePassword()", context);
+  assert.equal(vm.runInContext("modal.reauthRequired", context), true);
+  const reauthenticateRequests = requests.filter(request => request.url.endsWith("/auth/v1/reauthenticate"));
+  assert.equal(reauthenticateRequests.length, 1);
+  assert.equal(reauthenticateRequests[0].options.method, "GET");
+  assert.equal(reauthenticateRequests[0].options.body, undefined);
+
+  fillPasswordFields("123456");
+  await vm.runInContext("updateRemotePassword()", context);
+  const updateBodies = requests
+    .filter(request => request.url.endsWith("/auth/v1/user"))
+    .map(request => JSON.parse(request.options.body));
+  assert.deepEqual(updateBodies, [
+    { password: "NewPassword123!", current_password: "OldPassword123!" },
+    { password: "NewPassword123!", current_password: "OldPassword123!", nonce: "123456" }
+  ]);
+});
+
+test("mandatory password update and cloud deletion validate Supabase responses before cleanup", async () => {
+  const requests = [];
+  const context = loadContext(async (url, options) => {
+    requests.push({ url, options });
+    if (url.endsWith("/auth/v1/user")) {
+      return new Response(JSON.stringify({ id: ACTIVE_USER_ID }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+    if (url.endsWith("/functions/v1/delete-account")) {
+      return new Response(JSON.stringify({ deleted: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+    throw new Error(`unexpected request: ${url}`);
+  });
+  vm.runInContext(`
+    const pendingPasswordSession = { ...loadRemoteSession(), password_update_required: true };
+    saveRemoteSession(pendingPasswordSession);
+    localStorage.setItem(AUTH_KEY, JSON.stringify(activeAccount));
+    saveAccountList([activeAccount]);
+    saveState({ queueRemote: false });
+  `, context);
+  context.runtimeNodes.set("#recovery-new-password", { value: "StrongPass123!" });
+  context.runtimeNodes.set("#recovery-repeat-password", { value: "StrongPass123!" });
+
+  await vm.runInContext("updateRemotePassword({ required: true })", context);
+  assert.equal(vm.runInContext("loadRemoteSession().password_update_required", context), undefined);
+  assert.deepEqual(JSON.parse(requests[0].options.body), { password: "StrongPass123!" });
+
+  context.window.confirm = () => true;
+  context.window.prompt = () => "DELETE";
+  await vm.runInContext("deleteCloudAccount()", context);
+  const deleteRequest = requests.find(request => request.url.endsWith("/functions/v1/delete-account"));
+  assert.deepEqual(JSON.parse(deleteRequest.options.body), { confirmation: "DELETE" });
+  assert.equal(vm.runInContext("activeAccount", context), null);
+  assert.equal(context.sessionStorage.getItem("gym-pwa-supabase-session-v1"), null);
+  assert.equal(context.localStorage.getItem(`gym-pwa-account:remote-${ACTIVE_USER_ID}`), null);
+  assert.equal(JSON.parse(context.localStorage.getItem("gym-pwa-account-list-v1")).length, 0);
+});
+
+test("cloud deletion rejects an expanded response contract before browser cleanup", async () => {
+  const context = loadContext(async url => {
+    if (url.endsWith("/functions/v1/delete-account")) {
+      return new Response(JSON.stringify({ deleted: true, unexpected: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+    throw new Error(`unexpected request: ${url}`);
+  });
+  vm.runInContext(`
+    localStorage.setItem(AUTH_KEY, JSON.stringify(activeAccount));
+    saveAccountList([activeAccount]);
+    saveState({ queueRemote: false });
+  `, context);
+  const sessionBefore = context.sessionStorage.getItem("gym-pwa-supabase-session-v1");
+  context.window.confirm = () => true;
+  context.window.prompt = () => "DELETE";
+
+  await vm.runInContext("deleteCloudAccount()", context);
+
+  assert.equal(vm.runInContext("activeAccount.userId", context), ACTIVE_USER_ID);
+  assert.equal(context.sessionStorage.getItem("gym-pwa-supabase-session-v1"), sessionBefore);
+  assert.equal(JSON.parse(context.localStorage.getItem("gym-pwa-account-list-v1")).length, 1);
+});
+
+test("local account deletion removes only the confirmed local profile", () => {
+  const context = loadContext(async () => {
+    throw new Error("local deletion must not use the network");
+  });
+  vm.runInContext("activeAccount = null; clearRemoteSession(); loginAccount('Local Owner');", context);
+  const localId = vm.runInContext("activeAccount.id", context);
+  const localKey = `gym-pwa-account:${localId}`;
+  context.window.confirm = () => true;
+  context.window.prompt = () => "DELETE";
+
+  vm.runInContext("deleteLocalAccount()", context);
+
+  assert.equal(vm.runInContext("activeAccount", context), null);
+  assert.equal(context.localStorage.getItem(localKey), null);
+  assert.equal(JSON.parse(context.localStorage.getItem("gym-pwa-account-list-v1")).length, 0);
+  assert.equal(context.localStorage.getItem("gym-pwa-active-account-v1"), null);
 });

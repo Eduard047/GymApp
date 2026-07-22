@@ -463,6 +463,22 @@
         }
       }
     },
+    "Send confirmation email" : {
+      "localizations" : {
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Надіслати лист для підтвердження"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Отправить письмо для подтверждения"
+          }
+        }
+      }
+    },
     "Use a different address" : {
       "localizations" : {
         "uk" : {
@@ -6163,19 +6179,18 @@
         }
       }
     },
-    "Password must be 8–72 characters and include letters and numbers." : {
-      "extractionState" : "stale",
+    "Password must contain at least 12 characters, fit within 72 UTF-8 bytes, and include a lowercase Latin letter, an uppercase Latin letter, a number, and a supported symbol." : {
       "localizations" : {
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Пароль має містити 8–72 символи, літери й цифри."
+            "value" : "Пароль має містити щонайменше 12 символів, займати не більше 72 байтів у UTF-8 та включати малу й велику латинські літери, цифру й підтримуваний спецсимвол."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Пароль должен содержать 8–72 символа, буквы и цифры."
+            "value" : "Пароль должен содержать не менее 12 символов, занимать не более 72 байт в UTF-8 и включать строчную и заглавную латинские буквы, цифру и поддерживаемый спецсимвол."
           }
         }
       }
@@ -9550,18 +9565,18 @@
         }
       }
     },
-    "Use 8–72 characters with at least one letter and one number." : {
+    "Use at least 12 characters (up to 72 UTF-8 bytes) with lowercase and uppercase Latin letters, a number, and a supported symbol such as !, @, #, or $." : {
       "localizations" : {
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Використай 8–72 символи, принаймні одну літеру й одну цифру."
+            "value" : "Використай щонайменше 12 символів (до 72 байтів UTF-8): малу й велику латинські літери, цифру та підтримуваний спецсимвол, наприклад !, @, # або $."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Используй 8–72 символа, по крайней мере, одну букву и одну цифру."
+            "value" : "Используй не менее 12 символов (до 72 байт UTF-8): строчную и заглавную латинские буквы, цифру и поддерживаемый спецсимвол, например !, @, # или $."
           }
         }
       }
@@ -11503,6 +11518,22 @@
       "localizations" : {
         "uk" : { "stringUnit" : { "state" : "translated", "value" : "Продовжуй, лише якщо одразу вставиш його в налаштування Garmin Connect IQ цього годинника. Не надсилай і не зберігай його деінде." } },
         "ru" : { "stringUnit" : { "state" : "translated", "value" : "Продолжай, только если сразу вставишь его в настройки Garmin Connect IQ на этих часах. Не отправляй и не сохраняй его в других местах." } }
+      }
+    },
+    "Your session expired. Sign in again." : {
+      "localizations" : {
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Термін дії сеансу минув. Увійдіть знову."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Срок действия сеанса истёк. Войдите снова."
+          }
+        }
       }
     },
     "Front" : {

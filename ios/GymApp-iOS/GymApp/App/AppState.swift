@@ -7,6 +7,12 @@ func leaderboardHiddenProfilesDefaultsKey(for accountStorageKey: String) -> Stri
 
 @MainActor
 final class AppState: ObservableObject {
+    private enum CloudSavePhase {
+        case idle
+        case debouncing
+        case uploading
+    }
+
     let auth: AuthService
     let restTimers: RestTimerManager
     let cloudSync: CloudSyncService
@@ -18,10 +24,14 @@ final class AppState: ObservableObject {
     @Published private(set) var isPreparingAccount = false
     @Published private(set) var activeAccountStorageKey: String?
     @Published private(set) var accountPreparationError: String?
+    @Published private(set) var isSigningOut = false
 
     private var sessionSubscription: AnyCancellable?
     private var storeSubscription: AnyCancellable?
     private var pendingCloudSave: Task<Void, Never>?
+    private var cloudSavePhase = CloudSavePhase.idle
+    private var cloudSaveQueued = false
+    private var cloudSaveGeneration: UInt64 = 0
     private var accountActivationTask: Task<Void, Never>?
     private var accountActivationGeneration: UInt64 = 0
     private var applyingRemoteState = false
@@ -142,6 +152,75 @@ final class AppState: ObservableObject {
         scheduleActivation(auth.session)
     }
 
+    @discardableResult
+    func signOut() async -> Bool {
+        guard !isSigningOut else { return false }
+        isSigningOut = true
+        var shouldRescheduleCloudSave = false
+        defer {
+            isSigningOut = false
+            if shouldRescheduleCloudSave {
+                scheduleCloudSave()
+            }
+        }
+
+        if isAccountReady,
+           let session = auth.session,
+           let cloud = session.cloud,
+           cloudWritableAccountStorageKey == session.storageKey {
+            let scheduledSave = pendingCloudSave
+            // Cancelling a PATCH after it reaches the server leaves its outcome
+            // unknown and our CAS revision stale. Only cancel the debounce sleep;
+            // an upload that already started must finish before the final flush.
+            if cloudSavePhase == .debouncing {
+                scheduledSave?.cancel()
+            }
+            await scheduledSave?.value
+
+            let store = workoutStore
+            let owner = Self.backupOwner(for: session, fallbackStorageKey: session.storageKey)
+            do {
+                try await cloudSync.withSyncIndicator {
+                    // UI interaction is frozen while signing out, and the snapshot
+                    // check also catches any programmatic mutation during the await.
+                    // Do not clear the session until the uploaded snapshot is stable.
+                    for attempt in 1 ... 3 {
+                        let uploadedSnapshot = store.snapshot
+                        try store.saveNow()
+                        try await self.uploadCurrentState(
+                            from: store,
+                            owner: owner,
+                            expectedStorageKey: session.storageKey,
+                            expectedUserID: cloud.userID
+                        )
+                        guard self.workoutStore === store,
+                              self.auth.session?.storageKey == session.storageKey else {
+                            throw AuthServiceError.sessionChanged
+                        }
+                        if store.snapshot == uploadedSnapshot { break }
+                        if attempt == 3 {
+                            throw CloudSyncError.requestFailed(
+                                "Workout data kept changing during sign-out. Try again."
+                            )
+                        }
+                    }
+                }
+            } catch {
+                // Keep the authenticated account and writable store intact. The user
+                // can retry sign-out after connectivity or cloud state is repaired.
+                shouldRescheduleCloudSave = isAccountReady
+                    && auth.session?.storageKey == session.storageKey
+                    && workoutStore === store
+                    && cloudWritableAccountStorageKey == session.storageKey
+                show(error: error)
+                return false
+            }
+        }
+        restTimers.cancelAll()
+        await auth.signOut()
+        return auth.session == nil
+    }
+
     private func scheduleActivation(_ session: AppAccountSession?) {
         accountActivationTask?.cancel()
         let generation = beginAccountTransition(session)
@@ -152,8 +231,7 @@ final class AppState: ObservableObject {
 
     private func beginAccountTransition(_ session: AppAccountSession?) -> UInt64 {
         accountActivationGeneration &+= 1
-        pendingCloudSave?.cancel()
-        pendingCloudSave = nil
+        abandonPendingCloudSave()
         cloudSync.resetForAccountTransition()
         cloudWritableAccountStorageKey = nil
         activeAccountStorageKey = nil
@@ -216,8 +294,8 @@ final class AppState: ObservableObject {
             var cloudWritesAllowed = false
             var loadedReadOnlyPWAState = false
             if let expectedUserID {
+                let remoteData: Data?
                 do {
-                    let remoteData: Data?
                     if let remoteStateLoader {
                         remoteData = try await remoteStateLoader(expectedUserID)
                     } else {
@@ -225,7 +303,17 @@ final class AppState: ObservableObject {
                             try await self.cloudSync.loadRemoteState(expectedUserID: expectedUserID)
                         })
                     }
-                    if let remoteData {
+                } catch is CancellationError {
+                    return
+                } catch {
+                    // Do not publish an editable account from an unverified local snapshot when
+                    // the authoritative cloud read itself failed. The retry screen must reload
+                    // the current remote revision before this account can become active.
+                    throw error
+                }
+
+                if let remoteData {
+                    do {
                         try ensureActivationIsCurrent(
                             generation: generation,
                             expectedStorageKey: expectedStorageKey
@@ -241,21 +329,23 @@ final class AppState: ObservableObject {
                         )
                         cloudWritesAllowed = preparedBackup.roundTripSafe
                         loadedReadOnlyPWAState = !preparedBackup.roundTripSafe
-                    } else {
-                        try await uploadCurrentState(
-                            from: candidate,
-                            owner: expectedOwner,
-                            expectedStorageKey: expectedStorageKey,
-                            expectedUserID: expectedUserID
-                        )
-                        cloudWritesAllowed = true
+                    } catch is CancellationError {
+                        return
+                    } catch {
+                        guard accountActivationGeneration == generation,
+                              auth.session?.storageKey == expectedStorageKey else { return }
+                        // A payload that was fetched successfully but cannot be accepted for
+                        // this owner remains readable only from the existing local snapshot.
+                        cloudError = error
                     }
-                } catch is CancellationError {
-                    return
-                } catch {
-                    guard accountActivationGeneration == generation,
-                          auth.session?.storageKey == expectedStorageKey else { return }
-                    cloudError = error
+                } else {
+                    try await uploadCurrentState(
+                        from: candidate,
+                        owner: expectedOwner,
+                        expectedStorageKey: expectedStorageKey,
+                        expectedUserID: expectedUserID
+                    )
+                    cloudWritesAllowed = true
                 }
             }
             // A remote restore may replace local rows. Accounts without a seed marker receive
@@ -389,7 +479,11 @@ final class AppState: ObservableObject {
     }
 
     func deleteCurrentAccountAndData() async throws {
-        pendingCloudSave?.cancel()
+        let scheduledSave = pendingCloudSave
+        if cloudSavePhase == .debouncing {
+            scheduledSave?.cancel()
+        }
+        await scheduledSave?.value
         guard isAccountReady, let session = auth.session else {
             throw WorkoutStoreError.storageAccountMismatch
         }
@@ -413,8 +507,7 @@ final class AppState: ObservableObject {
             accountActivationTask?.cancel()
             accountActivationTask = nil
             accountActivationGeneration &+= 1
-            pendingCloudSave?.cancel()
-            pendingCloudSave = nil
+            abandonPendingCloudSave()
             cloudSync.resetForAccountTransition()
             cloudWritableAccountStorageKey = nil
             activeAccountStorageKey = nil
@@ -514,6 +607,7 @@ final class AppState: ObservableObject {
             guard let self else { return }
             Task { @MainActor in
                 guard !self.applyingRemoteState,
+                      !self.isSigningOut,
                       self.isAccountReady,
                       self.auth.session?.cloud != nil else { return }
                 self.scheduleCloudSave()
@@ -522,21 +616,36 @@ final class AppState: ObservableObject {
     }
 
     private func scheduleCloudSave(delay: Duration = .milliseconds(1_500)) {
-        pendingCloudSave?.cancel()
-        guard isAccountReady,
+        guard !isSigningOut,
+              isAccountReady,
               let session = auth.session,
               let cloud = session.cloud,
               cloudWritableAccountStorageKey == session.storageKey else { return }
+        if cloudSavePhase == .uploading {
+            // Let the in-flight request establish its returned CAS revision, then
+            // serialize the newer snapshot behind it.
+            cloudSaveQueued = true
+            return
+        }
+        if cloudSavePhase == .debouncing {
+            pendingCloudSave?.cancel()
+        }
+        cloudSaveGeneration &+= 1
+        let generation = cloudSaveGeneration
+        cloudSavePhase = .debouncing
         let store = workoutStore
         let owner = Self.backupOwner(for: session, fallbackStorageKey: session.storageKey)
         pendingCloudSave = Task { [weak self] in
+            guard let self else { return }
+            defer { self.finishCloudSave(generation: generation) }
             do {
                 try await Task.sleep(for: delay)
-                guard !Task.isCancelled, let self else { return }
+                guard !Task.isCancelled else { return }
                 guard self.isAccountReady,
                       self.workoutStore === store,
                       self.auth.session?.cloud?.userID == cloud.userID,
                       self.cloudWritableAccountStorageKey == session.storageKey else { return }
+                self.cloudSavePhase = .uploading
                 try await self.uploadCurrentState(
                     from: store,
                     owner: owner,
@@ -544,12 +653,34 @@ final class AppState: ObservableObject {
                     expectedUserID: cloud.userID
                 )
             } catch is CancellationError {
-                return
+                // Cancelling is allowed only during the debounce phase.
             } catch {
-                guard let self else { return }
                 self.show(error: error)
             }
         }
+    }
+
+    private func finishCloudSave(generation: UInt64) {
+        guard generation == cloudSaveGeneration else { return }
+        pendingCloudSave = nil
+        cloudSavePhase = .idle
+        let shouldRunQueuedSave = cloudSaveQueued
+        cloudSaveQueued = false
+        if shouldRunQueuedSave && !isSigningOut {
+            scheduleCloudSave(delay: .zero)
+        }
+    }
+
+    private func abandonPendingCloudSave() {
+        cloudSaveGeneration &+= 1
+        cloudSaveQueued = false
+        if cloudSavePhase == .debouncing {
+            pendingCloudSave?.cancel()
+        }
+        // A network-phase save is deliberately left alive. Its generation is now
+        // stale, so it cannot overwrite scheduling state for the replacement owner.
+        pendingCloudSave = nil
+        cloudSavePhase = .idle
     }
 
     private func uploadCurrentState(

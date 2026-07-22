@@ -8,6 +8,7 @@ import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.entity.ExerciseHistoryEntry
 import com.example.gymapp.data.entity.ExerciseMuscleMappingEntity
 import com.example.gymapp.data.entity.GarminWorkoutReceiptEntity
+import com.example.gymapp.data.entity.GarminWorkoutProvenanceEntity
 import com.example.gymapp.data.entity.SetEntryEntity
 import com.example.gymapp.data.entity.WorkoutExerciseEntity
 import com.example.gymapp.data.entity.WorkoutSessionDetails
@@ -51,8 +52,24 @@ data class WorkoutExerciseDraft(
 enum class GarminWorkoutApplyResult {
     Applied,
     AlreadyApplied,
+    RateLimited,
+    PairingLimitReached,
     Rejected
 }
+
+internal const val MAX_GARMIN_WORKOUTS_PER_PAIRING_GENERATION = 256
+internal const val MAX_GARMIN_WORKOUTS_PER_ROLLING_DAY = 6
+internal const val MAX_LEGACY_GARMIN_RECEIPTS_WITHIN_HORIZON =
+    MAX_GARMIN_WORKOUTS_PER_ROLLING_DAY * 90
+internal const val MAX_GARMIN_DURABLE_RECEIPTS =
+    GymDatabase.LEGACY_GARMIN_RECEIPT_LIMIT + MAX_LEGACY_GARMIN_RECEIPTS_WITHIN_HORIZON +
+        MAX_GARMIN_WORKOUTS_PER_PAIRING_GENERATION
+internal const val GARMIN_WORKOUT_RATE_WINDOW_MS = 24L * 60L * 60L * 1_000L
+internal const val LEGACY_GARMIN_RECEIPT_HORIZON_MS = 90L * GARMIN_WORKOUT_RATE_WINDOW_MS
+private const val MIGRATED_LEGACY_GARMIN_GENERATION =
+    "0000000000000000000000000000000000000000000000000000000000000000"
+private const val LEGACY_GARMIN_FALLBACK_GENERATION =
+    "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
 
 /**
  * Collision-resistant identity for import de-duplication.
@@ -145,7 +162,8 @@ data class CloudWorkoutProjectionState internal constructor(
 }
 
 class GymRepository(
-    private val database: GymDatabase
+    private val database: GymDatabase,
+    private val currentTimeMillis: () -> Long = System::currentTimeMillis
 ) {
     private val exerciseDao = database.exerciseDao()
     private val appMetadataDao = database.appMetadataDao()
@@ -155,6 +173,11 @@ class GymRepository(
 
     fun observeExercises(): Flow<List<ExerciseEntity>> = exerciseDao.getExercises()
         .catch { emit(emptyList()) }
+
+    /** Clears every Room table only after the matching remote account deletion succeeded. */
+    suspend fun clearAllAccountData() = withContext(Dispatchers.IO) {
+        database.clearAllTables()
+    }
 
     /**
      * Makes the versioned app catalog available in every account database without replacing
@@ -700,14 +723,28 @@ class GymRepository(
         var importedSessions = 0
 
         database.withTransaction {
+            val retainedGarminProvenance = mutableMapOf<String, Int>()
             if (replaceExisting) {
                 require(expectedLocalState != null)
                 require(currentCloudWorkoutProjectionState() == expectedLocalState) {
                     "Local workout data changed while cloud state was loading. Automatic replacement is paused."
                 }
+                val provenanceSessionIds = database.garminWorkoutReceiptDao()
+                    .getProvenanceSessionIds()
+                    .toSet()
+                workoutDao.getAllSessionDetailsForBackup()
+                    .asSequence()
+                    .filter { details -> details.session.id in provenanceSessionIds }
+                    .map(::sortSessionDetails)
+                    .map(::garminProvenanceSignature)
+                    .forEach { signature ->
+                        retainedGarminProvenance[signature] =
+                            retainedGarminProvenance.getOrDefault(signature, 0) + 1
+                    }
                 // Foreign-key cascades remove workout_exercises and set_entries. Garmin replay
                 // receipts deliberately remain intact so cloud replacement cannot reopen an old
-                // request ID.
+                // request ID. Trusted provenance is reassociated below only when the authoritative
+                // session is exactly equivalent under the canonical workout projection.
                 workoutDao.deleteAllSessions()
                 exerciseDao.deleteAllExercises()
             }
@@ -865,11 +902,29 @@ class GymRepository(
                         require(WorkoutDataLimits.canAddSets(accountSetCount, incomingSetCount)) {
                             "Backup exceeds the total set limit for this account."
                         }
-                        insertValidatedWorkoutSession(
+                        val insertedSessionId = insertValidatedWorkoutSession(
                             date = session.date,
                             note = session.note,
                             workoutExercises = drafts
                         )
+                        if (replaceExisting) {
+                            val provenanceSignature = garminProvenanceSignature(session)
+                            val remainingMatches =
+                                retainedGarminProvenance[provenanceSignature] ?: 0
+                            if (remainingMatches > 0) {
+                                database.garminWorkoutReceiptDao().insertProvenance(
+                                    GarminWorkoutProvenanceEntity(
+                                        workoutSessionId = insertedSessionId
+                                    )
+                                )
+                                if (remainingMatches == 1) {
+                                    retainedGarminProvenance.remove(provenanceSignature)
+                                } else {
+                                    retainedGarminProvenance[provenanceSignature] =
+                                        remainingMatches - 1
+                                }
+                            }
+                        }
                         accountSetCount += incomingSetCount
                         sessionCount += 1
                         importedSessions += 1
@@ -1279,13 +1334,16 @@ class GymRepository(
     /**
      * Atomically persists a bound Garmin workout and its durable idempotency receipt.
      *
-     * The stable protocol scope deliberately excludes the auth session generation: a watch may
-     * retry the same queued request after the same account signs out and back in. Receipts have no
-     * count/time eviction because eviction would make an old request reachable again.
+     * The pairing generation is issued by the phone and persisted by the watch before it can send
+     * a workout. Duplicate IDs are checked before the admission budgets so delivery retries remain
+     * idempotent even when the current generation has reached a limit. Generationless released
+     * watches use a bounded 90-day receipt horizon so they do not become permanently unusable;
+     * replay protection for those legacy messages intentionally ends when that horizon expires.
      */
     suspend fun applyGarminCreateWorkout(
         ownerBinding: String,
         deviceBinding: String,
+        pairingGeneration: String,
         requestId: String,
         payloadDigest: String,
         date: Long,
@@ -1297,18 +1355,63 @@ class GymRepository(
             deviceBinding.matches(GARMIN_DEVICE_BINDING_PATTERN) &&
                 deviceBinding.toLongOrNull() != null
         )
+        require(pairingGeneration.matches(GARMIN_OWNER_BINDING_PATTERN))
         require(requestId.matches(GARMIN_REQUEST_ID_PATTERN))
         require(payloadDigest.matches(SHA256_HEX_PATTERN))
 
         return database.withTransaction {
             val receiptDao = database.garminWorkoutReceiptDao()
-            val existing = receiptDao.get(ownerBinding, deviceBinding, requestId)
+            val now = currentTimeMillis()
+            if (now !in 1L..WorkoutDataLimits.MAX_TIMESTAMP_MILLIS) {
+                return@withTransaction GarminWorkoutApplyResult.Rejected
+            }
+            val legacyExpiresBefore =
+                (now - LEGACY_GARMIN_RECEIPT_HORIZON_MS).coerceAtLeast(0L)
+            receiptDao.deleteExpiredLegacyReceipts(
+                migratedLegacyGeneration = MIGRATED_LEGACY_GARMIN_GENERATION,
+                generationlessFallbackGeneration = LEGACY_GARMIN_FALLBACK_GENERATION,
+                expiresBefore = legacyExpiresBefore
+            )
+            val existing = receiptDao.getAcrossGenerations(
+                ownerBinding = ownerBinding,
+                deviceBinding = deviceBinding,
+                requestId = requestId
+            )
             if (existing != null) {
                 return@withTransaction if (existing.payloadDigest == payloadDigest) {
                     GarminWorkoutApplyResult.AlreadyApplied
                 } else {
                     GarminWorkoutApplyResult.Rejected
                 }
+            }
+
+            if (receiptDao.count() >= MAX_GARMIN_DURABLE_RECEIPTS) {
+                return@withTransaction GarminWorkoutApplyResult.PairingLimitReached
+            }
+            val generationLimit = if (pairingGeneration == LEGACY_GARMIN_FALLBACK_GENERATION) {
+                MAX_LEGACY_GARMIN_RECEIPTS_WITHIN_HORIZON
+            } else {
+                MAX_GARMIN_WORKOUTS_PER_PAIRING_GENERATION
+            }
+            if (
+                receiptDao.countForPairingGeneration(
+                    ownerBinding,
+                    deviceBinding,
+                    pairingGeneration
+                ) >= generationLimit
+            ) {
+                return@withTransaction GarminWorkoutApplyResult.PairingLimitReached
+            }
+            val notBefore = (now - GARMIN_WORKOUT_RATE_WINDOW_MS).coerceAtLeast(0L)
+            if (
+                receiptDao.countForPairingGenerationSince(
+                    ownerBinding,
+                    deviceBinding,
+                    pairingGeneration,
+                    notBefore
+                ) >= MAX_GARMIN_WORKOUTS_PER_ROLLING_DAY
+            ) {
+                return@withTransaction GarminWorkoutApplyResult.RateLimited
             }
 
             val sessionId = createWorkoutSessionFromNamedSets(
@@ -1320,13 +1423,40 @@ class GymRepository(
                 GarminWorkoutReceiptEntity(
                     ownerBinding = ownerBinding,
                     deviceBinding = deviceBinding,
+                    pairingGeneration = pairingGeneration,
                     requestId = requestId,
                     payloadDigest = payloadDigest,
-                    workoutSessionId = sessionId,
-                    createdAt = System.currentTimeMillis()
+                    createdAt = now
                 )
             )
+            receiptDao.insertProvenance(
+                GarminWorkoutProvenanceEntity(workoutSessionId = sessionId)
+            )
             GarminWorkoutApplyResult.Applied
+        }
+    }
+
+    /**
+     * Retires replay state only after the watch acknowledged a destructive generation reset.
+     * Old-generation messages are rejected by the protocol before reaching this database.
+     */
+    suspend fun activateGarminPairingGeneration(
+        ownerBinding: String,
+        deviceBinding: String,
+        pairingGeneration: String
+    ) {
+        require(ownerBinding.matches(GARMIN_OWNER_BINDING_PATTERN))
+        require(
+            deviceBinding.matches(GARMIN_DEVICE_BINDING_PATTERN) &&
+                deviceBinding.toLongOrNull() != null
+        )
+        require(pairingGeneration.matches(GARMIN_OWNER_BINDING_PATTERN))
+        database.withTransaction {
+            database.garminWorkoutReceiptDao().deleteOtherPairingGenerations(
+                ownerBinding = ownerBinding,
+                deviceBinding = deviceBinding,
+                activePairingGeneration = pairingGeneration
+            )
         }
     }
 
@@ -1393,6 +1523,37 @@ class GymRepository(
                         }
                     )
                 }
+        )
+    }
+
+    private fun garminProvenanceSignature(details: WorkoutSessionDetails): String {
+        return garminProvenanceSignature(
+            ValidatedBackupSession(
+                date = details.session.date,
+                note = details.session.note,
+                blocks = details.workoutExercises.map { workoutExercise ->
+                    ValidatedBackupBlock(
+                        exercise = ValidatedBackupExercise(
+                            name = workoutExercise.exercise.name,
+                            catalogKey = BuiltInExerciseCatalog.inferKey(
+                                workoutExercise.exercise.name
+                            )
+                        ),
+                        sets = workoutExercise.sets.map { set ->
+                            ValidatedBackupSet(weight = set.weight, reps = set.reps)
+                        }
+                    )
+                }
+            )
+        )
+    }
+
+    private fun garminProvenanceSignature(session: ValidatedBackupSession): String {
+        return canonicalWorkoutPayloadDigest(
+            ValidatedBackup(
+                exercises = emptyList(),
+                sessions = listOf(session)
+            )
         )
     }
 

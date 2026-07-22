@@ -23,14 +23,14 @@ Current upload minimum: builds uploaded after 2026-04-28 must use **Xcode 26 or 
 - [x] Source/archive audit found no protected-resource API references. Local rest-timer notifications use the system notification authorization flow but no Info.plist purpose string. If another protected resource is added, provide specific, localized purpose strings and just-in-time permission handling: [Protected resources](https://developer.apple.com/documentation/uikit/requesting-access-to-protected-resources).
 - [x] Network traffic uses HTTPS/ATS and the production Supabase/support/privacy endpoints; no privileged secret is embedded in the app.
 - [x] Supabase Auth uses `https://gymapptracker.com/` as Site URL. The redirect
-  allowlist contains the Android, Web, and state-bound iOS HTTPS callbacks, the
-  iOS custom-scheme fallback, and the previous GitHub callback for legacy
-  clients/already-sent messages; Dashboard readback confirmed all five entries
-  on 2026-07-11.
+  allowlist contains exact web/legacy Android, state-bound iOS/Android
+  production/QA, the iOS custom-scheme fallback, and the previous GitHub
+  callback for legacy clients/already-sent messages; Dashboard readback
+  confirmed all seven entries on 2026-07-22.
 - [ ] Test signup and recovery PKCE exchange on the same physical device, an expired link, an unsolicited callback, and a callback containing raw access/refresh tokens (which the app must reject).
-- [x] Production Supabase migrations are recorded through `20260721143853_retire_legacy_garmin_table_grants.sql`. All eight previously missing canonical migrations were applied in deployment order on 2026-07-21; structural/ACL and rollback-only runtime checks passed and the Supabase advisors were rerun. Evidence and exact scope: [PRODUCTION_BACKEND_VERIFICATION.md](PRODUCTION_BACKEND_VERIFICATION.md).
-- [x] Production `garmin-sync` version 4 is `ACTIVE`; OPTIONS, invalid JSON shape, malformed token, and random format-valid fetch/ack denial passed HTTP smoke checks on 2026-07-21.
-- [ ] Before submission, run a valid-device Edge Function fetch/ack smoke with a real paired capability and confirm the existing per-device second limiter. The 2026-07-21 database verification did not perform this end-to-end check; upstream gateway throttling remains recommended for volumetric traffic.
+- [x] Production Supabase history matches all 22 repository migrations through `20260722013200`. The bounded state backfill produced 37/37 projections with zero quarantine or mismatch. Evidence and exact scope: [PRODUCTION_BACKEND_VERIFICATION.md](PRODUCTION_BACKEND_VERIFICATION.md).
+- [x] Production `garmin-sync` version 6 is `ACTIVE`; OPTIONS, invalid input/token denial, valid-device fetch/ack/replay, token rotation, and post-cutover v2 continuity passed on 2026-07-22.
+- [x] A disposable valid-device Edge Function fetch/ack smoke confirmed the existing per-device limiter path. Upstream gateway throttling remains recommended for volumetric traffic.
 - [x] No separate staging project is currently used. If one is introduced, apply every canonical migration from the repository-root `supabase/migrations/` directory in order and repeat the verification runbook there.
 - [ ] Complete the physical two-device client test: delete/edit on device A, then attempt a stale save from device B. The backend stale conditional `PATCH` and Android-style upsert contract passed on 2026-07-11, but the full device flow must still prove that removed workouts are not resurrected.
 - [ ] Test Release on physical iPhone(s), supported iOS versions, dark/light appearance, Dynamic Type, VoiceOver basics, offline/slow network, fresh install, upgrade, login/logout, and account deletion.
@@ -45,7 +45,12 @@ Current upload minimum: builds uploaded after 2026-04-28 must use **Xcode 26 or 
 - [x] Owner, support email, support URL, and privacy URL placeholders are resolved in both local HTML deliverables.
 - [ ] In App Store Connect, answer App Privacy exactly as documented in `APP_PRIVACY.md`; reconcile it with the final binary, server, Supabase project, and all processors: [Manage app privacy](https://developer.apple.com/help/app-store-connect/manage-app-information/manage-app-privacy/).
 - [x] Account deletion is exposed at **Profile → Account, privacy & deletion → Delete Account** and uses irreversible confirmation: [Apple account deletion](https://developer.apple.com/support/offering-account-deletion-in-your-app).
-- [x] Production `delete-account` version 1 is `ACTIVE` with `verify_jwt=true`. On 2026-07-11, two disposable users were hard-deleted and SQL verification found no remaining Auth identity, profile, state, Garmin, or report rows; production Storage contained no objects.
+- [x] `20260722010000_require_live_session_for_account_deletion.sql` and the
+  canonical repository-root `delete-account` function are deployed. Production
+  version 3 is `ACTIVE` with `verify_jwt=true`; the refreshed
+  `deployment-contract.json`, enforced release gate, disposable-account
+  deletion, terminal-session rejection, and cascade verification passed on
+  2026-07-22.
 - [x] `deleteCurrentAccountAndData` clears the local account database, Supabase Keychain session, and account-specific preferences, then returns to signed-out state after successful server deletion.
 - [ ] Repeat that complete cleanup path from the final signed build on a physical iPhone.
 - [x] Sign in with Apple is not present, so token revocation is not applicable. If it is added later, implement revocation during deletion: [Apple TN3194](https://developer.apple.com/documentation/technotes/tn3194-handling-account-deletions-and-revoking-tokens-for-sign-in-with-apple).

@@ -1,6 +1,7 @@
 package com.example.gymapp.data.entity
 
 import androidx.room.Entity
+import androidx.room.Index
 
 /**
  * Durable idempotency receipt for a workout received from a bound Connect IQ device.
@@ -10,13 +11,18 @@ import androidx.room.Entity
  */
 @Entity(
     tableName = "garmin_workout_receipts",
-    primaryKeys = ["ownerBinding", "deviceBinding", "requestId"]
+    primaryKeys = ["ownerBinding", "deviceBinding", "pairingGeneration", "requestId"],
+    indices = [
+        Index(
+            value = ["ownerBinding", "deviceBinding", "pairingGeneration", "createdAt"]
+        )
+    ]
 )
 data class GarminWorkoutReceiptEntity(
     val ownerBinding: String,
     val deviceBinding: String,
+    val pairingGeneration: String,
     val requestId: String,
     val payloadDigest: String,
-    val workoutSessionId: Long,
     val createdAt: Long
 )

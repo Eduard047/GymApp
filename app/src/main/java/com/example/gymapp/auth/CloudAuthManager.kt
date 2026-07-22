@@ -35,7 +35,6 @@ private const val SUPABASE_URL = "https://owrcbsrectdgaotndtxy.supabase.co"
 private const val SUPABASE_KEY = "sb_publishable_vvOMzx6V_sPBpD-b3VZfzg_y14u8kIg"
 private val AUTH_REDIRECT_URL =
     "https://gymapptracker.com/confirmed.html?platform=android${BuildConfig.AUTH_BRIDGE_VARIANT_QUERY}"
-private const val WEB_AUTH_REDIRECT_URL = "https://gymapptracker.com/confirmed.html?platform=web"
 private const val NEEDS_PASSWORD_UPDATE_KEY = "needs_password_update"
 private const val PENDING_SIGNUP_KEY = "pending_signup_confirmation"
 private const val PENDING_RECOVERY_KEY = "pending_password_recovery"
@@ -44,6 +43,8 @@ private const val MAX_CLOUD_RESPONSE_BYTES = 256 * 1_024
 private const val MAX_CLOUD_STATE_RESPONSE_BYTES = 10 * 1_024 * 1_024
 private const val MAX_CLOUD_REQUEST_BYTES = 10 * 1_024 * 1_024
 private const val MAX_CLOUD_ERROR_RESPONSE_BYTES = 64 * 1_024
+private const val MAX_STORED_SESSION_BYTES = 64 * 1_024
+private const val MAX_AUTH_TOKEN_CHARS = 16 * 1_024
 private const val INACTIVE_CLOUD_SESSION_MESSAGE =
     "This cloud session is no longer active. Sign in again before syncing."
 private const val STALE_REMOTE_STATE_MESSAGE =
@@ -98,7 +99,7 @@ data class AuthCallbackResult(
     val kind: AuthCallbackKind
 )
 
-private data class PendingAuthTransaction(
+internal data class PendingAuthTransaction(
     val state: String,
     val codeVerifier: String,
     val email: String,
@@ -107,6 +108,20 @@ private data class PendingAuthTransaction(
     fun isFresh(nowMillis: Long = System.currentTimeMillis()): Boolean {
         return createdAtMillis in (nowMillis - AUTH_TRANSACTION_MAX_AGE_MILLIS)..nowMillis
     }
+}
+
+internal fun reusablePendingSignupTransaction(
+    existing: PendingAuthTransaction?,
+    email: String,
+    nowMillis: Long = System.currentTimeMillis()
+): PendingAuthTransaction? = existing?.takeIf { transaction ->
+    transaction.email == email && transaction.isFresh(nowMillis)
+}
+
+internal fun isDeterministicAuthInitiationHttpFailure(responseCode: Int?): Boolean {
+    return responseCode != null &&
+        responseCode in 400..499 &&
+        responseCode !in setOf(408, 425)
 }
 
 internal fun authCallbackKind(purpose: String?): AuthCallbackKind {
@@ -192,6 +207,22 @@ internal fun activeCloudSessionFor(
     }
 }
 
+internal enum class CloudAccountDeletionSessionDisposition {
+    ClearCapturedSession,
+    AlreadySignedOut,
+    PreserveDifferentSession
+}
+
+internal fun cloudAccountDeletionSessionDisposition(
+    current: AccountSession?,
+    deletedSession: AccountSession.Cloud
+): CloudAccountDeletionSessionDisposition = when {
+    activeCloudSessionFor(current, deletedSession) != null ->
+        CloudAccountDeletionSessionDisposition.ClearCapturedSession
+    current == null -> CloudAccountDeletionSessionDisposition.AlreadySignedOut
+    else -> CloudAccountDeletionSessionDisposition.PreserveDifferentSession
+}
+
 internal class CloudLogoutRequest(
     val path: String,
     val method: String,
@@ -208,6 +239,115 @@ internal fun localCloudLogoutRequest(session: AccountSession?): CloudLogoutReque
             sessionGeneration = it.sessionGeneration
         )
     }
+}
+
+internal data class CloudAccountDeletionRequest(
+    val path: String,
+    val method: String,
+    val headers: Map<String, String>,
+    val body: String
+)
+
+internal fun cloudAccountDeletionRequest(): CloudAccountDeletionRequest =
+    CloudAccountDeletionRequest(
+        path = "/functions/v1/delete-account",
+        method = "POST",
+        headers = mapOf("X-GymApp-Delete" to "confirmed"),
+        body = JSONObject().put("confirmation", "DELETE").toString()
+    )
+
+internal fun isSuccessfulCloudAccountDeletionResponse(response: String): Boolean = runCatching {
+    val json = JSONObject(response)
+    val keys = buildSet {
+        val iterator = json.keys()
+        while (iterator.hasNext()) add(iterator.next())
+    }
+    keys == setOf("deleted") && json.opt("deleted") == true
+}.getOrDefault(false)
+
+internal fun passwordUpdateBody(
+    newPassword: String,
+    currentPassword: String? = null
+): String = JSONObject()
+    .put("password", newPassword)
+    .apply {
+        if (currentPassword != null) put("current_password", currentPassword)
+    }
+    .toString()
+
+internal fun isTerminalRefreshFailure(
+    responseCode: Int,
+    errorCode: String?,
+    providerMessage: String?
+): Boolean {
+    val normalizedCode = errorCode.orEmpty().lowercase()
+    val normalizedMessage = providerMessage.orEmpty().lowercase()
+    return responseCode == 401 ||
+        normalizedCode in setOf(
+            "bad_jwt",
+            "refresh_token_already_used",
+            "refresh_token_not_found",
+            "invalid_refresh_token"
+        ) ||
+        normalizedMessage.contains("invalid refresh token") ||
+        normalizedMessage.contains("refresh token not found") ||
+        normalizedMessage.contains("refresh token already used")
+}
+
+internal fun parseStoredCloudSession(raw: String?): AccountSession.Cloud? = runCatching {
+    require(!raw.isNullOrBlank())
+    require(raw.toByteArray(Charsets.UTF_8).size <= MAX_STORED_SESSION_BYTES)
+    val json = JSONObject(raw)
+    val userId = json.getString("userId")
+    require(isCanonicalUuid(userId))
+
+    val email = json.getString("email").trim().lowercase()
+    require(isStructurallyValidEmail(email))
+
+    val displayName = json.getString("displayName").trim()
+    require(displayName.codePointCount(0, displayName.length) in 1..128)
+    require(displayName.toByteArray(Charsets.UTF_8).size <= 512)
+    require(displayName.none { it.isISOControl() })
+
+    val accessToken = json.getString("accessToken")
+    require(isStructurallyValidSupabaseAccessToken(accessToken, userId))
+
+    val refreshToken = json.optString("refreshToken")
+        .takeIf { it.isNotBlank() && it != "null" }
+    require(refreshToken == null || isStructurallyValidAuthToken(refreshToken))
+
+    AccountSession.Cloud(
+        userId = userId,
+        email = email,
+        displayName = displayName,
+        accessToken = accessToken,
+        refreshToken = refreshToken,
+        sessionGeneration = json.optString("sessionGeneration")
+            .takeIf(::isCanonicalUuid)
+            ?: newCloudSessionGeneration()
+    )
+}.getOrNull()
+
+private fun isCanonicalUuid(value: String): Boolean = runCatching {
+    UUID.fromString(value).toString().equals(value, ignoreCase = true)
+}.getOrDefault(false)
+
+private fun isStructurallyValidEmail(value: String): Boolean =
+    value.length <= 254 && Regex("^[^\\s@]+@[^\\s@]+\\.[^\\s@]{2,}$").matches(value)
+
+private fun isStructurallyValidAuthToken(value: String): Boolean =
+    value.length in 1..MAX_AUTH_TOKEN_CHARS && value.none(Char::isWhitespace) &&
+        value.none(Char::isISOControl)
+
+private fun isStructurallyValidSupabaseAccessToken(value: String, expectedUserId: String): Boolean {
+    if (!isStructurallyValidAuthToken(value)) return false
+    val parts = value.split('.')
+    if (parts.size != 3 || parts.any { it.isBlank() }) return false
+    return runCatching {
+        val payload = JSONObject(String(Base64.getUrlDecoder().decode(parts[1]), Charsets.UTF_8))
+        payload.optString("sub").equals(expectedUserId, ignoreCase = true) &&
+            payload.optLong("exp") > 0L
+    }.getOrDefault(false)
 }
 
 internal fun clearAuthPreferencesSynchronously(preferences: SharedPreferences): Boolean =
@@ -284,9 +424,26 @@ private fun encodePostgrestQueryValue(value: String): String {
 private fun newCloudSessionGeneration(): String = UUID.randomUUID().toString()
 
 class CloudAuthManager(context: Context) {
+    private class SupabaseHttpException(
+        val responseCode: Int,
+        val errorCode: String?,
+        val providerMessage: String?,
+        safeMessage: String
+    ) : IllegalStateException(safeMessage)
+
+    private data class SupabaseErrorFields(
+        val code: String?,
+        val message: String?
+    )
+
     private data class StoredSessionRead(
         val session: AccountSession? = null,
         val recoveryMessage: LocalizedText? = null
+    )
+
+    private data class PendingAuthTransactionSelection(
+        val transaction: PendingAuthTransaction,
+        val wasCreated: Boolean
     )
 
     private data class RemoteRevisionKey(
@@ -322,7 +479,8 @@ class CloudAuthManager(context: Context) {
 
     suspend fun login(email: String, password: String): AccountSession.Cloud {
         val cleanEmail = normalizeEmail(email)
-        validateAuthInput(email = cleanEmail, password = password)
+        validateEmail(cleanEmail)
+        require(password.isNotEmpty()) { "Enter your password." }
         val authAttempt = beginAuthAttempt()
         return requireNotNull(
             authenticate(
@@ -338,7 +496,13 @@ class CloudAuthManager(context: Context) {
     suspend fun signUp(email: String, password: String, displayName: String): AccountSession.Cloud? {
         val cleanEmail = normalizeEmail(email)
         val cleanName = sanitizeDisplayName(displayName.ifBlank { cleanEmail.substringBefore("@") })
-        validateAuthInput(email = cleanEmail, password = password, displayName = cleanName)
+        validateEmail(cleanEmail)
+        validateNewPassword(password)
+        if (cleanName.isNotBlank()) {
+            require(cleanName.length in 2..32 && cleanName.all { it.isLetterOrDigit() || it == ' ' || it == '.' || it == '-' || it == '_' }) {
+                "Display name can use letters, numbers, spaces, dot, dash and underscore."
+            }
+        }
         val authAttempt = beginAuthAttempt()
         val transaction = beginAuthTransaction(
             key = PENDING_SIGNUP_KEY,
@@ -362,7 +526,9 @@ class CloudAuthManager(context: Context) {
                 expectedAuthMutationVersion = authAttempt
             )
         } catch (error: Throwable) {
-            clearPendingAuthTransaction(PENDING_SIGNUP_KEY, transaction.state)
+            if (isDeterministicAuthInitiationFailure(error)) {
+                clearPendingAuthTransaction(PENDING_SIGNUP_KEY, transaction.state)
+            }
             throw error
         }
     }
@@ -370,18 +536,29 @@ class CloudAuthManager(context: Context) {
     suspend fun resendSignUpConfirmation(email: String) = withContext(Dispatchers.IO) {
         val cleanEmail = normalizeEmail(email)
         validateEmail(cleanEmail)
-        // Supabase resend does not reliably recreate the original PKCE transaction.
-        // Invalidate its verifier and finish resend confirmations on HTTPS instead;
-        // the user then returns to Android and signs in with the confirmed password.
-        clearPendingAuthTransaction(PENDING_SIGNUP_KEY)
-        request(
-            path = "/auth/v1/resend?redirect_to=${java.net.URLEncoder.encode(WEB_AUTH_REDIRECT_URL, "UTF-8")}",
-            method = "POST",
-            body = JSONObject()
-                .put("type", "signup")
-                .put("email", cleanEmail)
-                .toString()
+        val transactionSelection = reusableSignupAuthTransaction(
+            email = cleanEmail,
+            expectedAuthMutationVersion = authMutationSnapshot()
         )
+        val transaction = transactionSelection.transaction
+        val redirectURL = "$AUTH_REDIRECT_URL&state=${transaction.state}&purpose=signup"
+        try {
+            request(
+                path = "/auth/v1/resend?redirect_to=${java.net.URLEncoder.encode(redirectURL, "UTF-8")}",
+                method = "POST",
+                body = JSONObject()
+                    .put("type", "signup")
+                    .put("email", cleanEmail)
+                    .put("code_challenge", codeChallenge(transaction.codeVerifier))
+                    .put("code_challenge_method", "s256")
+                    .toString()
+            )
+        } catch (error: Throwable) {
+            if (transactionSelection.wasCreated && isDeterministicAuthInitiationFailure(error)) {
+                clearPendingAuthTransaction(PENDING_SIGNUP_KEY, transaction.state)
+            }
+            throw error
+        }
     }
 
     suspend fun requestPasswordReset(email: String) = withContext(Dispatchers.IO) {
@@ -404,7 +581,9 @@ class CloudAuthManager(context: Context) {
                     .toString()
             )
         } catch (error: Throwable) {
-            clearPendingAuthTransaction(PENDING_RECOVERY_KEY, transaction.state)
+            if (isDeterministicAuthInitiationFailure(error)) {
+                clearPendingAuthTransaction(PENDING_RECOVERY_KEY, transaction.state)
+            }
             throw error
         }
     }
@@ -600,11 +779,11 @@ class CloudAuthManager(context: Context) {
             _authState.value.session as? AccountSession.Cloud
         } ?: error("Password recovery session is no longer available. Request a new reset email.")
         val freshSession = freshCloudSession(session)
-        request(
+        authenticatedRequest(
+            session = freshSession,
             path = "/auth/v1/user",
             method = "PUT",
-            token = freshSession.accessToken,
-            body = JSONObject().put("password", password).toString()
+            body = passwordUpdateBody(newPassword = password)
         )
         synchronized(authStateLock) {
             val activeSession = activeCloudSessionFor(_authState.value.session, freshSession)
@@ -620,14 +799,110 @@ class CloudAuthManager(context: Context) {
         }
     }
 
+    suspend fun changePassword(
+        currentPassword: String,
+        newPassword: String
+    ) = withContext(Dispatchers.IO) {
+        require(currentPassword.isNotEmpty()) { "Enter your current password." }
+        require(currentPassword.toByteArray(Charsets.UTF_8).size <= 1_024) {
+            "Current password is too long."
+        }
+        validateNewPassword(newPassword)
+        require(currentPassword != newPassword) {
+            "Choose a new password that differs from the current password."
+        }
+        val session = synchronized(authStateLock) {
+            _authState.value.session as? AccountSession.Cloud
+        } ?: error(INACTIVE_CLOUD_SESSION_MESSAGE)
+        val freshSession = freshCloudSession(session)
+        authenticatedRequest(
+            session = freshSession,
+            path = "/auth/v1/user",
+            method = "PUT",
+            body = passwordUpdateBody(
+                newPassword = newPassword,
+                currentPassword = currentPassword
+            )
+        )
+        synchronized(authStateLock) {
+            val activeSession = activeCloudSessionFor(_authState.value.session, freshSession)
+                ?: error(INACTIVE_CLOUD_SESSION_MESSAGE)
+            _authState.value = _authState.value.copy(
+                session = activeSession,
+                isLoading = false,
+                message = LocalizedText(R.string.auth_message_password_updated),
+                messageIsError = false
+            )
+        }
+    }
+
+    /** Deletes the authenticated Supabase account. Local account data is cleared by the caller. */
+    suspend fun deleteCloudAccount(
+        expectedSession: AccountSession.Cloud
+    ): AccountSession.Cloud = withContext(Dispatchers.IO) {
+        val session = synchronized(authStateLock) {
+            activeCloudSessionFor(_authState.value.session, expectedSession)
+        } ?: error(INACTIVE_CLOUD_SESSION_MESSAGE)
+        val freshSession = freshCloudSession(session)
+        val deletionRequest = cloudAccountDeletionRequest()
+        val response = authenticatedRequest(
+            session = freshSession,
+            path = deletionRequest.path,
+            method = deletionRequest.method,
+            body = deletionRequest.body,
+            additionalHeaders = deletionRequest.headers
+        )
+        check(isSuccessfulCloudAccountDeletionResponse(response)) {
+            "Cloud account deletion returned an invalid response."
+        }
+        // The exact success response is the commit point. A concurrent local logout must
+        // not turn a completed remote deletion into an apparent failure or skip cleanup.
+        freshSession
+    }
+
+    internal fun completeCloudAccountDeletion(
+        expectedSession: AccountSession.Cloud
+    ): CloudAccountDeletionSessionDisposition = synchronized(authStateLock) {
+        val disposition = cloudAccountDeletionSessionDisposition(
+            current = _authState.value.session,
+            deletedSession = expectedSession
+        )
+        if (disposition == CloudAccountDeletionSessionDisposition.ClearCapturedSession) {
+            authMutationVersion += 1
+            remoteStateRevisions.clear()
+            val preferencesCleared = clearAuthPreferencesSynchronously(prefs)
+            if (!preferencesCleared) {
+                // The server-side account is already gone. Keep the process signed out and
+                // schedule a second best-effort disk clear instead of reviving a dead session.
+                prefs.edit().clear().apply()
+            }
+            _authState.value = AuthUiState(
+                message = if (preferencesCleared) {
+                    null
+                } else {
+                    LocalizedText(R.string.auth_message_logout_failed)
+                },
+                messageIsError = !preferencesCleared
+            )
+        }
+        disposition
+    }
+
     suspend fun freshCloudSession(session: AccountSession.Cloud): AccountSession.Cloud {
         val currentSession = requireActiveCloudSession(session)
         if (!currentSession.needsRefresh()) return currentSession
-        if (currentSession.refreshToken.isNullOrBlank()) return currentSession
+        if (currentSession.refreshToken.isNullOrBlank()) {
+            expireCloudSession(currentSession)
+            error(INACTIVE_CLOUD_SESSION_MESSAGE)
+        }
 
         return refreshMutex.withLock {
             val latestSession = requireActiveCloudSession(session)
             if (!latestSession.needsRefresh() || latestSession.refreshToken.isNullOrBlank()) {
+                if (latestSession.needsRefresh()) {
+                    expireCloudSession(latestSession)
+                    error(INACTIVE_CLOUD_SESSION_MESSAGE)
+                }
                 latestSession
             } else {
                 refreshSession(latestSession)
@@ -693,10 +968,10 @@ class CloudAuthManager(context: Context) {
 
                 RemoteStateRevision.Conflicted -> error(STALE_REMOTE_STATE_MESSAGE)
             }
-            val revisionResponse = request(
+            val revisionResponse = authenticatedRequest(
+                session = freshSession,
                 path = writeRequest.path,
                 method = writeRequest.method,
-                token = freshSession.accessToken,
                 prefer = writeRequest.prefer,
                 body = writeBody
             )
@@ -717,10 +992,10 @@ class CloudAuthManager(context: Context) {
             )
 
             requireActiveCloudSession(freshSession)
-            request(
+            authenticatedRequest(
+                session = freshSession,
                 path = "/rest/v1/profiles?on_conflict=user_id",
                 method = "POST",
-                token = freshSession.accessToken,
                 prefer = "resolution=merge-duplicates,missing=default",
                 body = JSONArray()
                     .put(
@@ -739,11 +1014,11 @@ class CloudAuthManager(context: Context) {
 
     suspend fun loadOwnProfile(session: AccountSession.Cloud): CloudProfile? = withContext(Dispatchers.IO) {
         val freshSession = freshCloudSession(session)
-        val response = request(
+        val response = authenticatedRequest(
+            session = freshSession,
             path = "/rest/v1/profiles?select=user_id,display_name,xp,level,workouts" +
                 "&user_id=eq.${encodePostgrestQueryValue(freshSession.userId)}&limit=1",
-            method = "GET",
-            token = freshSession.accessToken
+            method = "GET"
         )
         requireActiveCloudSession(freshSession)
         val row = JSONArray(response).optJSONObject(0) ?: return@withContext null
@@ -760,10 +1035,10 @@ class CloudAuthManager(context: Context) {
         withContext(Dispatchers.IO) {
             val freshSession = freshCloudSession(session)
             val safeLimit = limit.coerceIn(1, 100)
-            val response = request(
+            val response = authenticatedRequest(
+                session = freshSession,
                 path = "/rest/v1/leaderboard_public?select=profile_id,display_name,xp,level,workouts,is_current_user&order=xp.desc,workouts.desc,profile_id.asc&limit=$safeLimit",
-                method = "GET",
-                token = freshSession.accessToken
+                method = "GET"
             )
             requireActiveCloudSession(freshSession)
             val rows = JSONArray(response)
@@ -833,11 +1108,11 @@ class CloudAuthManager(context: Context) {
     }
 
     private fun fetchRemoteStateRow(session: AccountSession.Cloud): RemoteStateRow? {
-        val response = request(
+        val response = authenticatedRequest(
+            session = session,
             path = "/rest/v1/user_states?select=state,updated_at" +
                 "&user_id=eq.${encodePostgrestQueryValue(session.userId)}&limit=1",
             method = "GET",
-            token = session.accessToken,
             maxResponseBytes = MAX_CLOUD_STATE_RESPONSE_BYTES
         )
         requireActiveCloudSession(session)
@@ -867,21 +1142,38 @@ class CloudAuthManager(context: Context) {
 
     private suspend fun refreshSession(session: AccountSession.Cloud): AccountSession.Cloud = withContext(Dispatchers.IO) {
         val refreshToken = session.refreshToken ?: return@withContext session
-        val json = JSONObject(
+        val refreshResponse = try {
             request(
                 path = "/auth/v1/token?grant_type=refresh_token",
                 method = "POST",
                 body = JSONObject().put("refresh_token", refreshToken).toString()
             )
-        )
+        } catch (error: SupabaseHttpException) {
+            if (isTerminalRefreshFailure(
+                    responseCode = error.responseCode,
+                    errorCode = error.errorCode,
+                    providerMessage = error.providerMessage
+                )
+            ) {
+                expireCloudSession(session)
+                error(INACTIVE_CLOUD_SESSION_MESSAGE)
+            }
+            throw error
+        }
+        val json = JSONObject(refreshResponse)
         val accessToken = json.optString("access_token")
-        if (accessToken.isBlank()) {
-            requireActiveCloudSession(session)
-            return@withContext session
+        require(isStructurallyValidSupabaseAccessToken(accessToken, session.userId)) {
+            "Authentication returned an invalid session. Request a new email."
+        }
+        val refreshedToken = json.optString("refresh_token")
+            .takeIf { it.isNotBlank() }
+            ?: session.refreshToken
+        require(isStructurallyValidAuthToken(refreshedToken)) {
+            "Authentication returned an invalid session. Request a new email."
         }
         val refreshed = session.copy(
             accessToken = accessToken,
-            refreshToken = json.optString("refresh_token").takeIf { it.isNotBlank() } ?: session.refreshToken
+            refreshToken = refreshedToken
         )
         synchronized(authStateLock) {
             activeCloudSessionFor(_authState.value.session, session)
@@ -929,6 +1221,9 @@ class CloudAuthManager(context: Context) {
             accessToken = accessToken,
             refreshToken = json.optString("refresh_token").takeIf { it.isNotBlank() }
         )
+        require(isStructurallyValidCloudSession(session)) {
+            "Authentication returned an invalid session. Request a new email."
+        }
         synchronized(authStateLock) {
             check(authMutationVersion == expectedAuthMutationVersion) {
                 INACTIVE_CLOUD_SESSION_MESSAGE
@@ -962,7 +1257,11 @@ class CloudAuthManager(context: Context) {
             displayName = displayName,
             accessToken = accessToken,
             refreshToken = json.optString("refresh_token").takeIf { it.isNotBlank() }
-        )
+        ).also { session ->
+            require(isStructurallyValidCloudSession(session)) {
+                "Authentication returned an invalid session. Request a new email."
+            }
+        }
     }
 
     private fun beginAuthTransaction(
@@ -991,6 +1290,34 @@ class CloudAuthManager(context: Context) {
                 )
                 .apply()
         }
+    }
+
+    private fun reusableSignupAuthTransaction(
+        email: String,
+        expectedAuthMutationVersion: Long
+    ): PendingAuthTransactionSelection = synchronized(authStateLock) {
+        check(authMutationVersion == expectedAuthMutationVersion) {
+            INACTIVE_CLOUD_SESSION_MESSAGE
+        }
+        reusablePendingSignupTransaction(
+            existing = pendingAuthTransaction(PENDING_SIGNUP_KEY),
+            email = email
+        )?.let { existing ->
+            PendingAuthTransactionSelection(existing, wasCreated = false)
+        } ?: PendingAuthTransactionSelection(
+            transaction = beginAuthTransaction(
+                key = PENDING_SIGNUP_KEY,
+                email = email,
+                expectedAuthMutationVersion = expectedAuthMutationVersion
+            ),
+            wasCreated = true
+        )
+    }
+
+    private fun isDeterministicAuthInitiationFailure(error: Throwable): Boolean {
+        return isDeterministicAuthInitiationHttpFailure(
+            (error as? SupabaseHttpException)?.responseCode
+        )
     }
 
     private fun pendingAuthTransaction(key: String): PendingAuthTransaction? {
@@ -1067,26 +1394,73 @@ class CloudAuthManager(context: Context) {
                     }
                 }
             }
-            "cloud" -> runCatching {
-                val json = JSONObject(prefs.getString("cloud", null).orEmpty())
-                StoredSessionRead(
-                    session = AccountSession.Cloud(
-                        userId = json.optString("userId"),
-                        email = json.optString("email"),
-                        displayName = json.optString("displayName"),
-                        accessToken = json.optString("accessToken"),
-                        refreshToken = json.optString("refreshToken").takeIf { it.isNotBlank() },
-                        sessionGeneration = json.optString("sessionGeneration")
-                            .takeIf { it.length in 16..128 }
-                            ?: newCloudSessionGeneration()
+            "cloud" -> parseStoredCloudSession(prefs.getString("cloud", null))
+                ?.let { StoredSessionRead(session = it) }
+                ?: run {
+                    prefs.edit()
+                        .remove("mode")
+                        .remove("cloud")
+                        .remove(NEEDS_PASSWORD_UPDATE_KEY)
+                        .commit()
+                    StoredSessionRead(
+                        recoveryMessage = LocalizedText(R.string.auth_error_saved_cloud_invalid)
                     )
-                )
-            }.getOrElse {
-                StoredSessionRead(
-                    recoveryMessage = LocalizedText(R.string.auth_error_saved_cloud_invalid)
-                )
-            }
+                }
             else -> StoredSessionRead()
+        }
+    }
+
+    private fun isStructurallyValidCloudSession(session: AccountSession.Cloud): Boolean =
+        isCanonicalUuid(session.userId) &&
+            isStructurallyValidEmail(session.email.trim().lowercase()) &&
+            session.displayName.isNotBlank() &&
+            session.displayName.codePointCount(0, session.displayName.length) <= 128 &&
+            session.displayName.toByteArray(Charsets.UTF_8).size <= 512 &&
+            session.displayName.none(Char::isISOControl) &&
+            isStructurallyValidSupabaseAccessToken(session.accessToken, session.userId) &&
+            (session.refreshToken == null || isStructurallyValidAuthToken(session.refreshToken))
+
+    private fun expireCloudSession(expectedSession: AccountSession.Cloud) {
+        synchronized(authStateLock) {
+            if (activeCloudSessionFor(_authState.value.session, expectedSession) == null) return
+            authMutationVersion += 1
+            remoteStateRevisions.clear()
+            if (!clearAuthPreferencesSynchronously(prefs)) {
+                prefs.edit().clear().apply()
+            }
+            _authState.value = AuthUiState(
+                message = LocalizedText(R.string.auth_error_session_inactive),
+                messageIsError = true
+            )
+        }
+    }
+
+    private fun authenticatedRequest(
+        session: AccountSession.Cloud,
+        path: String,
+        method: String,
+        prefer: String? = null,
+        body: String? = null,
+        additionalHeaders: Map<String, String> = emptyMap(),
+        maxResponseBytes: Int = MAX_CLOUD_RESPONSE_BYTES
+    ): String {
+        requireActiveCloudSession(session)
+        return try {
+            request(
+                path = path,
+                method = method,
+                token = session.accessToken,
+                prefer = prefer,
+                body = body,
+                additionalHeaders = additionalHeaders,
+                maxResponseBytes = maxResponseBytes
+            )
+        } catch (error: SupabaseHttpException) {
+            if (error.responseCode == 401) {
+                expireCloudSession(session)
+                error(INACTIVE_CLOUD_SESSION_MESSAGE)
+            }
+            throw error
         }
     }
 
@@ -1096,6 +1470,7 @@ class CloudAuthManager(context: Context) {
         token: String? = null,
         prefer: String? = null,
         body: String? = null,
+        additionalHeaders: Map<String, String> = emptyMap(),
         maxResponseBytes: Int = MAX_CLOUD_RESPONSE_BYTES
     ): String {
         require(maxResponseBytes in 1..MAX_CLOUD_STATE_RESPONSE_BYTES) {
@@ -1114,6 +1489,15 @@ class CloudAuthManager(context: Context) {
             setRequestProperty("Content-Type", "application/json")
             token?.let { setRequestProperty("Authorization", "Bearer $it") }
             prefer?.let { setRequestProperty("Prefer", it) }
+            additionalHeaders.forEach { (name, value) ->
+                require(name.matches(Regex("^[A-Za-z0-9-]{1,64}$"))) {
+                    "Cloud request header name is invalid."
+                }
+                require(value.length <= 1_024 && value.none(Char::isISOControl)) {
+                    "Cloud request header value is invalid."
+                }
+                setRequestProperty(name, value)
+            }
             if (bodyBytes != null) {
                 doOutput = true
             }
@@ -1138,7 +1522,13 @@ class CloudAuthManager(context: Context) {
                 readUtf8ResponseBody(input, maxBytes = responseLimit)
             }.orEmpty()
             if (!isSuccess) {
-                error(friendlySupabaseError(responseCode, text))
+                val fields = parseSupabaseError(text)
+                throw SupabaseHttpException(
+                    responseCode = responseCode,
+                    errorCode = fields.code,
+                    providerMessage = fields.message,
+                    safeMessage = friendlySupabaseError(responseCode, text)
+                )
             }
             text.ifBlank { "[]" }
         } finally {
@@ -1147,15 +1537,9 @@ class CloudAuthManager(context: Context) {
     }
 
     private fun friendlySupabaseError(responseCode: Int, text: String): String {
-        val parsed = runCatching { JSONObject(text) }.getOrNull()
-        val code = parsed?.optString("error_code")
-            ?.takeIf { it.isNotBlank() }
-            ?: parsed?.optString("code")?.takeIf { it.isNotBlank() }
-        val message = parsed?.optString("msg")
-            ?.takeIf { it.isNotBlank() }
-            ?: parsed?.optString("message")?.takeIf { it.isNotBlank() }
-            ?: parsed?.optString("error_description")?.takeIf { it.isNotBlank() }
-            ?: parsed?.optString("error")?.takeIf { it.isNotBlank() }
+        val fields = parseSupabaseError(text)
+        val code = fields.code
+        val message = fields.message
 
         return when {
             responseCode == 429 || code == "over_email_send_rate_limit" || message?.contains("rate limit", ignoreCase = true) == true ->
@@ -1167,11 +1551,14 @@ class CloudAuthManager(context: Context) {
             responseCode == 400 && message?.contains("invalid login", ignoreCase = true) == true ->
                 "Email or password is incorrect."
 
-            responseCode == 401 || message?.contains("invalid login credentials", ignoreCase = true) == true ->
+            message?.contains("invalid login credentials", ignoreCase = true) == true ->
                 "Email or password is incorrect."
 
             message?.contains("email not confirmed", ignoreCase = true) == true ->
                 "Confirm your email first, then log in."
+
+            responseCode == 401 ->
+                "Cloud request failed. Check your connection and try again."
 
             responseCode in 500..599 ->
                 "Cloud login is temporarily unavailable. Try again later."
@@ -1184,16 +1571,18 @@ class CloudAuthManager(context: Context) {
         }
     }
 
-    private fun validateAuthInput(email: String, password: String, displayName: String = "") {
-        validateEmail(email)
-        require(password.length in 8..72 && password.any { it.isLetter() } && password.any { it.isDigit() }) {
-            "Password must be 8-72 characters and include letters and numbers."
-        }
-        if (displayName.isNotBlank()) {
-            require(displayName.length in 2..32 && displayName.all { it.isLetterOrDigit() || it == ' ' || it == '.' || it == '-' || it == '_' }) {
-                "Display name can use letters, numbers, spaces, dot, dash and underscore."
-            }
-        }
+    private fun parseSupabaseError(text: String): SupabaseErrorFields {
+        val parsed = runCatching { JSONObject(text) }.getOrNull()
+        return SupabaseErrorFields(
+            code = parsed?.optString("error_code")
+                ?.takeIf { it.isNotBlank() }
+                ?: parsed?.optString("code")?.takeIf { it.isNotBlank() },
+            message = parsed?.optString("msg")
+                ?.takeIf { it.isNotBlank() }
+                ?: parsed?.optString("message")?.takeIf { it.isNotBlank() }
+                ?: parsed?.optString("error_description")?.takeIf { it.isNotBlank() }
+                ?: parsed?.optString("error")?.takeIf { it.isNotBlank() }
+        )
     }
 
     private fun validateEmail(email: String) {
@@ -1204,9 +1593,7 @@ class CloudAuthManager(context: Context) {
     }
 
     private fun validateNewPassword(password: String) {
-        require(password.length in 8..72 && password.any { it.isLetter() } && password.any { it.isDigit() }) {
-            "Password must be 8-72 characters and include letters and numbers."
-        }
+        require(isValidNewPassword(password)) { NEW_PASSWORD_POLICY_ERROR }
     }
 
     private fun normalizeEmail(email: String): String {

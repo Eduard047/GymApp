@@ -20,7 +20,7 @@ class AuthUiMessagesTest {
                 R.string.auth_error_cloud_unavailable,
             "Cloud request failed. Check your connection and try again." to
                 R.string.auth_error_connection,
-            "Password must be 8-72 characters and include letters and numbers." to
+            NEW_PASSWORD_POLICY_ERROR to
                 R.string.auth_error_password_policy,
             "Display name can use letters, numbers, spaces, dot, dash and underscore." to
                 R.string.auth_error_display_name_characters,

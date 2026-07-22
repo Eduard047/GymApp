@@ -845,8 +845,10 @@ internal fun AccountStatusCard(
     supporting: String,
     isCloudAccount: Boolean,
     canLogout: Boolean,
+    logoutEnabled: Boolean,
     onLogout: () -> Unit,
-    onOpenGarminApp: () -> Unit
+    onOpenGarminApp: () -> Unit,
+    onResetGarminPairing: () -> Unit
 ) {
     AppPanel(
         modifier = Modifier.fillMaxWidth(),
@@ -890,6 +892,7 @@ internal fun AccountStatusCard(
             if (canLogout) {
                 OutlinedButton(
                     onClick = onLogout,
+                    enabled = logoutEnabled,
                     modifier = Modifier.fillMaxWidth(),
                     shape = MaterialTheme.shapes.small
                 ) {
@@ -902,6 +905,13 @@ internal fun AccountStatusCard(
                 shape = MaterialTheme.shapes.small
             ) {
                 Text(stringResource(R.string.garmin_open_app))
+            }
+            OutlinedButton(
+                onClick = onResetGarminPairing,
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.small
+            ) {
+                Text(stringResource(R.string.garmin_reset_pairing_action))
             }
         }
     }

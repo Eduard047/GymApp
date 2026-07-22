@@ -61,6 +61,10 @@ enum CloudSyncError: LocalizedError {
 
 @MainActor
 final class CloudSyncService: ObservableObject {
+    private enum RequestFailure: Error {
+        case http(statusCode: Int, message: String)
+    }
+
     private enum StateRevision {
         case unknown
         case missing(userID: String)
@@ -106,7 +110,7 @@ final class CloudSyncService: ObservableObject {
         let data = try await request(
             path: path,
             method: "GET",
-            token: session.accessToken,
+            expectedUserID: userID,
             maximumResponseBytes: Self.maximumCloudStateResponseBytes
         )
         guard operationRevision == expectedOperation,
@@ -164,7 +168,7 @@ final class CloudSyncService: ObservableObject {
             revisionData = try await request(
                 path: "/rest/v1/user_states?user_id=eq.\(Self.queryValue(userID))&updated_at=eq.\(Self.queryValue(priorRevision))&select=updated_at",
                 method: "PATCH",
-                token: session.accessToken,
+                expectedUserID: userID,
                 prefer: "return=representation",
                 body: ["state": state, "updated_at": timestamp]
             )
@@ -172,7 +176,7 @@ final class CloudSyncService: ObservableObject {
             revisionData = try await request(
                 path: "/rest/v1/user_states?select=updated_at",
                 method: "POST",
-                token: session.accessToken,
+                expectedUserID: userID,
                 prefer: "return=representation",
                 conflictMeansStaleState: true,
                 body: [[
@@ -203,7 +207,7 @@ final class CloudSyncService: ObservableObject {
         _ = try await request(
             path: "/rest/v1/profiles?on_conflict=user_id",
             method: "POST",
-            token: session.accessToken,
+            expectedUserID: userID,
             prefer: "resolution=merge-duplicates,return=minimal",
             body: profileBody
         )
@@ -226,7 +230,7 @@ final class CloudSyncService: ObservableObject {
         let data = try await request(
             path: "/rest/v1/leaderboard_public?select=profile_id,display_name,xp,level,workouts,is_current_user&order=xp.desc,workouts.desc,display_name.asc&limit=\(safeLimit)",
             method: "GET",
-            token: session.accessToken
+            expectedUserID: userID
         )
         guard auth.session?.cloud?.userID == userID else {
             throw AuthServiceError.sessionChanged
@@ -263,7 +267,7 @@ final class CloudSyncService: ObservableObject {
             _ = try await request(
                 path: "/rest/v1/leaderboard_reports",
                 method: "POST",
-                token: session.accessToken,
+                expectedUserID: session.userID,
                 prefer: "return=minimal",
                 body: [[
                     "reported_profile_id": profileID,
@@ -288,6 +292,56 @@ final class CloudSyncService: ObservableObject {
     }
 
     private func request(
+        path: String,
+        method: String,
+        expectedUserID: String,
+        prefer: String? = nil,
+        conflictMeansStaleState: Bool = false,
+        maximumResponseBytes: Int? = nil,
+        body: Any? = nil
+    ) async throws -> Data {
+        guard let initialSession = auth.session?.cloud,
+              initialSession.userID == expectedUserID else {
+            throw AuthServiceError.sessionChanged
+        }
+        do {
+            return try await requestOnce(
+                path: path,
+                method: method,
+                token: initialSession.accessToken,
+                prefer: prefer,
+                conflictMeansStaleState: conflictMeansStaleState,
+                maximumResponseBytes: maximumResponseBytes,
+                body: body
+            )
+        } catch RequestFailure.http(let statusCode, _)
+                    where statusCode == 401 || statusCode == 403 {
+            guard auth.session?.cloud == initialSession else {
+                throw AuthServiceError.sessionChanged
+            }
+            let refreshed = try await auth.validCloudSession(
+                expectedUserID: expectedUserID,
+                forceRefresh: true
+            )
+            do {
+                return try await requestOnce(
+                    path: path,
+                    method: method,
+                    token: refreshed.accessToken,
+                    prefer: prefer,
+                    conflictMeansStaleState: conflictMeansStaleState,
+                    maximumResponseBytes: maximumResponseBytes,
+                    body: body
+                )
+            } catch RequestFailure.http(_, let message) {
+                throw CloudSyncError.requestFailed(message)
+            }
+        } catch RequestFailure.http(_, let message) {
+            throw CloudSyncError.requestFailed(message)
+        }
+    }
+
+    private func requestOnce(
         path: String,
         method: String,
         token: String,
@@ -330,6 +384,12 @@ final class CloudSyncService: ObservableObject {
                 successLimit: responseLimit,
                 errorLimit: Self.maximumCloudErrorResponseBytes
             )
+        } catch BoundedURLSessionError.responseTooLarge(let statusCode?)
+                    where statusCode == 401 || statusCode == 403 {
+            throw RequestFailure.http(
+                statusCode: statusCode,
+                message: "Cloud sync failed (HTTP \(statusCode))."
+            )
         } catch is BoundedURLSessionError {
             throw CloudSyncError.invalidResponse
         }
@@ -341,7 +401,7 @@ final class CloudSyncService: ObservableObject {
             let message = object?["message"] as? String
                 ?? object?["error"] as? String
                 ?? "Cloud sync failed (HTTP \(http.statusCode))."
-            throw CloudSyncError.requestFailed(message)
+            throw RequestFailure.http(statusCode: http.statusCode, message: message)
         }
         return data
     }

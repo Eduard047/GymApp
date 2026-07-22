@@ -111,6 +111,7 @@ private struct PendingAuthTransaction: Codable, Equatable, Sendable {
     let email: String
     let kind: Kind
     let createdAt: Date
+    var confirmationEmailSentAt: Date?
 
     var redirectURL: String {
         AuthCallbackRouting.webRedirectURL(
@@ -121,6 +122,10 @@ private struct PendingAuthTransaction: Codable, Equatable, Sendable {
 
     var isFresh: Bool {
         createdAt.timeIntervalSinceNow > -(24 * 60 * 60)
+    }
+
+    var confirmationEmailWasSent: Bool {
+        confirmationEmailSentAt != nil
     }
 }
 
@@ -171,20 +176,42 @@ enum AuthServiceError: LocalizedError {
     case callbackNotExpected
     case notCloudAccount
     case sessionChanged
+    case sessionExpired
+    case requestFailed(status: Int, message: String)
     case server(String)
 
     var errorDescription: String? {
         switch self {
         case .invalidEmail: return "Enter a valid email address."
-        case .invalidPassword: return "Password must be 8–72 characters and include letters and numbers."
+        case .invalidPassword: return GymPasswordPolicy.errorMessage
         case .invalidDisplayName: return "Display name must be 2–32 characters and use letters, numbers, spaces, dot, dash or underscore."
         case .malformedResponse: return "The cloud returned an invalid response. Try again."
         case .callbackMissingSession: return "The confirmation link did not contain a valid session."
         case .callbackNotExpected: return "This sign-in link was not requested on this device or has expired. Start the flow again."
         case .notCloudAccount: return "This action requires a cloud account."
         case .sessionChanged: return "The account changed while the request was running. Try again."
+        case .sessionExpired: return "Your session expired. Sign in again."
+        case .requestFailed(_, let message): return message
         case .server(let message): return message
         }
+    }
+}
+
+enum GymPasswordPolicy {
+    static let errorMessage = "Password must contain at least 12 characters, fit within 72 UTF-8 bytes, and include a lowercase Latin letter, an uppercase Latin letter, a number, and a supported symbol."
+
+    private static let supportedSymbols = CharacterSet(
+        charactersIn: "!@#$%^&*()_+-=[]{};'\\:\"|<>?,./`~"
+    )
+
+    static func accepts(_ password: String) -> Bool {
+        let scalars = password.unicodeScalars
+        return scalars.count >= 12
+            && password.utf8.count <= 72
+            && scalars.contains(where: { (97...122).contains($0.value) })
+            && scalars.contains(where: { (65...90).contains($0.value) })
+            && scalars.contains(where: { (48...57).contains($0.value) })
+            && scalars.contains(where: { supportedSymbols.contains($0) })
     }
 }
 
@@ -195,6 +222,7 @@ final class AuthService: ObservableObject {
     @Published var message: String?
     @Published private(set) var messageIsError = true
     @Published private(set) var pendingConfirmationEmail: String?
+    @Published private(set) var pendingConfirmationEmailWasSent = false
     @Published private(set) var needsPasswordUpdate = false
 
     private let keychain: any KeychainStoring
@@ -255,6 +283,10 @@ final class AuthService: ObservableObject {
                 self.needsPasswordUpdate = false
             }
         }
+
+        if session == nil, !defaults.bool(forKey: Self.pendingSecureDeletionKey) {
+            restorePendingSignupTransaction()
+        }
     }
 
     func signIn(email: String, password: String) async {
@@ -262,7 +294,7 @@ final class AuthService: ObservableObject {
         await perform {
             let cleanEmail = try self.validatedEmail(email)
             submittedEmail = cleanEmail
-            try self.validatePassword(password)
+            guard !password.isEmpty else { throw AuthServiceError.invalidPassword }
             let object = try await self.requestJSON(
                 path: "/auth/v1/token?grant_type=password",
                 method: "POST",
@@ -275,10 +307,19 @@ final class AuthService: ObservableObject {
         if session == nil,
            message == "Confirm your email first, then sign in.",
            let submittedEmail {
-            _ = try? beginAuthTransaction(email: submittedEmail, kind: .signup)
-            pendingConfirmationEmail = submittedEmail
-            messageIsError = false
-            message = nil
+            do {
+                // Do not automatically request another email here. Supabase limits
+                // confirmation sends, and a matching link may already be in flight.
+                // Preserve its verifier so that opening that link still completes PKCE.
+                let transaction = try reusableSignupTransaction(for: submittedEmail)
+                pendingConfirmationEmail = submittedEmail
+                pendingConfirmationEmailWasSent = transaction.confirmationEmailWasSent
+                messageIsError = false
+                message = nil
+            } catch {
+                messageIsError = true
+                message = friendlyMessage(error)
+            }
         }
     }
 
@@ -290,7 +331,10 @@ final class AuthService: ObservableObject {
             let cleanEmail = try self.validatedEmail(email)
             try self.validatePassword(password)
             let cleanName = try self.validatedDisplayName(displayName, fallbackEmail: cleanEmail)
-            let transaction = try self.beginAuthTransaction(email: cleanEmail, kind: .signup)
+            let transaction = try self.reusableAuthTransaction(
+                for: cleanEmail,
+                kind: .signup
+            )
             do {
                 let redirect = AuthCallbackRouting.percentEncodedQueryValue(transaction.redirectURL)
                 let object = try await self.requestJSON(
@@ -311,12 +355,22 @@ final class AuthService: ObservableObject {
                     signedIn = true
                     self.message = nil
                 } else {
+                    let sentTransaction = try self.markConfirmationEmailSent(transaction)
                     self.pendingConfirmationEmail = cleanEmail
+                    self.pendingConfirmationEmailWasSent = sentTransaction.confirmationEmailWasSent
                     self.messageIsError = false
-                    self.message = nil
+                    self.message = "Account created. Check your email, then return to GymApp."
                 }
             } catch {
-                try? self.clearPendingAuthTransaction()
+                if Self.authDeliveryOutcomeMayBeUnknown(error) {
+                    // A timeout, lost response or malformed success can happen after
+                    // Supabase sent the email. Keep the matching PKCE verifier so
+                    // that link remains usable and an explicit resend reuses it.
+                    self.pendingConfirmationEmail = cleanEmail
+                    self.pendingConfirmationEmailWasSent = transaction.confirmationEmailWasSent
+                } else {
+                    try? self.clearPendingAuthTransaction()
+                }
                 throw error
             }
         }
@@ -336,8 +390,15 @@ final class AuthService: ObservableObject {
             _ = try await self.requestJSON(
                 path: "/auth/v1/resend?redirect_to=\(redirect)",
                 method: "POST",
-                body: ["type": "signup", "email": cleanEmail]
+                body: [
+                    "type": "signup",
+                    "email": cleanEmail,
+                    "code_challenge": Self.codeChallenge(for: transaction.codeVerifier),
+                    "code_challenge_method": "s256"
+                ]
             )
+            _ = try self.markConfirmationEmailSent(transaction)
+            self.pendingConfirmationEmailWasSent = true
             self.messageIsError = false
             self.message = "Confirmation email sent. Check inbox and spam."
         }
@@ -348,6 +409,7 @@ final class AuthService: ObservableObject {
             try? clearPendingAuthTransaction()
         }
         pendingConfirmationEmail = nil
+        pendingConfirmationEmailWasSent = false
         message = nil
         messageIsError = false
     }
@@ -355,7 +417,10 @@ final class AuthService: ObservableObject {
     func requestPasswordReset(email: String) async {
         await perform {
             let cleanEmail = try self.validatedEmail(email)
-            let transaction = try self.beginAuthTransaction(email: cleanEmail, kind: .recovery)
+            let transaction = try self.reusableAuthTransaction(
+                for: cleanEmail,
+                kind: .recovery
+            )
             do {
                 let redirect = AuthCallbackRouting.percentEncodedQueryValue(transaction.redirectURL)
                 _ = try await self.requestJSON(
@@ -370,32 +435,41 @@ final class AuthService: ObservableObject {
                 self.messageIsError = false
                 self.message = "Password reset email sent. Open the newest email on this iPhone, then tap Open GymApp to choose a new password."
             } catch {
-                try? self.clearPendingAuthTransaction()
+                if !Self.authDeliveryOutcomeMayBeUnknown(error) {
+                    try? self.clearPendingAuthTransaction()
+                }
                 throw error
             }
         }
     }
 
-    func updatePassword(_ password: String) async {
+    @discardableResult
+    func updatePassword(_ password: String, currentPassword: String? = nil) async -> Bool {
+        var updated = false
         await perform {
             try self.validatePassword(password)
             let cloud = try await self.validCloudSession()
-            let expectedRevision = self.sessionRevision
-            _ = try await self.requestJSON(
+            var body: [String: Any] = ["password": password]
+            if let currentPassword {
+                guard !currentPassword.isEmpty else { throw AuthServiceError.invalidPassword }
+                body["current_password"] = currentPassword
+            }
+            _ = try await self.requestAuthenticatedJSON(
                 path: "/auth/v1/user",
                 method: "PUT",
-                token: cloud.accessToken,
-                body: ["password": password]
+                initialSession: cloud,
+                body: body
             )
-            guard self.sessionRevision == expectedRevision,
-                  let currentSession = self.session,
+            guard let currentSession = self.session,
                   currentSession.cloud?.userID == cloud.userID else {
                 throw AuthServiceError.sessionChanged
             }
             try self.persist(currentSession, requiresPasswordUpdate: false)
             self.messageIsError = false
             self.message = "Password updated."
+            updated = true
         }
+        return updated
     }
 
     func continueOffline(displayName: String) throws {
@@ -456,7 +530,10 @@ final class AuthService: ObservableObject {
         }
     }
 
-    func validCloudSession(expectedUserID: String? = nil) async throws -> CloudAccountSession {
+    func validCloudSession(
+        expectedUserID: String? = nil,
+        forceRefresh: Bool = false
+    ) async throws -> CloudAccountSession {
         guard var cloud = session?.cloud else { throw AuthServiceError.notCloudAccount }
         guard expectedUserID == nil || expectedUserID == cloud.userID else {
             throw AuthServiceError.sessionChanged
@@ -466,17 +543,34 @@ final class AuthService: ObservableObject {
             throw AuthServiceError.malformedResponse
         }
         let expectedRevision = sessionRevision
-        if let expiresAt = cloud.expiresAt,
+        if !forceRefresh,
+           let expiresAt = cloud.expiresAt,
            expiresAt.timeIntervalSinceNow > 60 {
             return cloud
         }
         guard let refreshToken = cloud.refreshToken, !refreshToken.isEmpty else { return cloud }
 
-        let object = try await requestJSON(
-            path: "/auth/v1/token?grant_type=refresh_token",
-            method: "POST",
-            body: ["refresh_token": refreshToken]
-        )
+        let object: [String: Any]
+        do {
+            object = try await requestJSON(
+                path: "/auth/v1/token?grant_type=refresh_token",
+                method: "POST",
+                body: ["refresh_token": refreshToken]
+            )
+        } catch AuthServiceError.requestFailed(let status, _)
+                    where status == 400 || status == 401 {
+            // A rejected refresh token is terminal for this exact session. Check
+            // revision and owner before clearing so a late response cannot remove
+            // a replacement account that signed in while refresh was in flight.
+            guard sessionRevision == expectedRevision,
+                  session?.cloud == cloud else {
+                throw AuthServiceError.sessionChanged
+            }
+            try clearSession()
+            messageIsError = true
+            message = AuthServiceError.sessionExpired.errorDescription
+            throw AuthServiceError.sessionExpired
+        }
         let refreshed = try parseCloudSession(object, fallback: cloud)
         guard sessionRevision == expectedRevision,
               session?.cloud?.userID == cloud.userID,
@@ -500,7 +594,7 @@ final class AuthService: ObservableObject {
         }
         if let token {
             _ = try? await requestJSON(
-                path: "/auth/v1/logout?scope=global",
+                path: "/auth/v1/logout?scope=local",
                 method: "POST",
                 token: token,
                 body: [:]
@@ -515,13 +609,16 @@ final class AuthService: ObservableObject {
         isLoading = true
         defer { isLoading = false }
         let cloud = try await validCloudSession(expectedUserID: expectedUserID)
-        _ = try await requestJSON(
+        let object = try await requestAuthenticatedJSON(
             path: "/functions/v1/delete-account",
             method: "POST",
-            token: cloud.accessToken,
+            initialSession: cloud,
             headers: ["X-GymApp-Delete": "confirmed"],
             body: ["confirmation": "DELETE"]
         )
+        guard object.count == 1, object["deleted"] as? Bool == true else {
+            throw AuthServiceError.malformedResponse
+        }
     }
 
     func clearSession() throws {
@@ -531,6 +628,7 @@ final class AuthService: ObservableObject {
         session = nil
         message = nil
         pendingConfirmationEmail = nil
+        pendingConfirmationEmailWasSent = false
         needsPasswordUpdate = false
 
         var deletionError: Error?
@@ -583,6 +681,7 @@ final class AuthService: ObservableObject {
         sessionRevision &+= 1
         session = value
         pendingConfirmationEmail = nil
+        pendingConfirmationEmailWasSent = false
         needsPasswordUpdate = protectedState
         defaults.removeObject(forKey: Self.pendingSecureDeletionKey)
     }
@@ -596,10 +695,71 @@ final class AuthService: ObservableObject {
             codeVerifier: try Self.randomURLSafeString(byteCount: 64),
             email: email,
             kind: kind,
-            createdAt: Date()
+            createdAt: Date(),
+            confirmationEmailSentAt: nil
         )
         try keychain.save(encoder.encode(transaction), account: authTransactionAccount)
         return transaction
+    }
+
+    private func reusableAuthTransaction(
+        for email: String,
+        kind: PendingAuthTransaction.Kind
+    ) throws -> PendingAuthTransaction {
+        if let transaction = try pendingAuthTransaction(),
+           transaction.kind == kind,
+           transaction.email == email,
+           transaction.isFresh {
+            return transaction
+        }
+        return try beginAuthTransaction(email: email, kind: kind)
+    }
+
+    private func reusableSignupTransaction(for email: String) throws -> PendingAuthTransaction {
+        try reusableAuthTransaction(for: email, kind: .signup)
+    }
+
+    private static func authDeliveryOutcomeMayBeUnknown(_ error: Error) -> Bool {
+        switch error {
+        case AuthServiceError.requestFailed(let status, _):
+            return status == 408 || (500 ... 599).contains(status)
+        case AuthServiceError.invalidEmail,
+             AuthServiceError.invalidPassword,
+             AuthServiceError.invalidDisplayName,
+             AuthServiceError.callbackMissingSession,
+             AuthServiceError.callbackNotExpected,
+             AuthServiceError.notCloudAccount,
+             AuthServiceError.sessionChanged,
+             AuthServiceError.sessionExpired:
+            return false
+        default:
+            // Transport cancellation/loss and bounded or malformed responses do
+            // not prove that the provider failed before sending the email.
+            return true
+        }
+    }
+
+    private func markConfirmationEmailSent(
+        _ transaction: PendingAuthTransaction
+    ) throws -> PendingAuthTransaction {
+        var updated = transaction
+        updated.confirmationEmailSentAt = Date()
+        try keychain.save(encoder.encode(updated), account: authTransactionAccount)
+        return updated
+    }
+
+    private func restorePendingSignupTransaction() {
+        guard let transaction = try? pendingAuthTransaction(),
+              transaction.kind == .signup else {
+            return
+        }
+        guard transaction.isFresh else {
+            try? clearPendingAuthTransaction()
+            return
+        }
+        pendingConfirmationEmail = transaction.email
+        pendingConfirmationEmailWasSent = transaction.confirmationEmailWasSent
+        messageIsError = false
     }
 
     private func pendingAuthTransaction() throws -> PendingAuthTransaction? {
@@ -680,14 +840,78 @@ final class AuthService: ObservableObject {
                 successLimit: Self.maximumAuthResponseBytes,
                 errorLimit: Self.maximumAuthErrorResponseBytes
             )
+        } catch BoundedURLSessionError.responseTooLarge(let status?)
+                    where !(200 ..< 300).contains(status) {
+            throw AuthServiceError.requestFailed(
+                status: status,
+                message: "Authentication failed (HTTP \(status))."
+            )
         } catch is BoundedURLSessionError {
             throw AuthServiceError.malformedResponse
         }
         let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
         guard (200..<300).contains(http.statusCode) else {
-            throw AuthServiceError.server(Self.errorMessage(status: http.statusCode, object: object))
+            throw AuthServiceError.requestFailed(
+                status: http.statusCode,
+                message: Self.errorMessage(status: http.statusCode, object: object)
+            )
         }
         return object
+    }
+
+    private func requestAuthenticatedJSON(
+        path: String,
+        method: String,
+        initialSession: CloudAccountSession,
+        headers: [String: String] = [:],
+        body: [String: Any]? = nil
+    ) async throws -> [String: Any] {
+        let expectedUserID = initialSession.userID
+        let firstRevision = sessionRevision
+        guard session?.cloud == initialSession else {
+            throw AuthServiceError.sessionChanged
+        }
+
+        do {
+            let object = try await requestJSON(
+                path: path,
+                method: method,
+                token: initialSession.accessToken,
+                headers: headers,
+                body: body
+            )
+            guard sessionRevision == firstRevision,
+                  session?.cloud == initialSession else {
+                throw AuthServiceError.sessionChanged
+            }
+            return object
+        } catch AuthServiceError.requestFailed(let status, _)
+                    where status == 401 || status == 403 {
+            // The access JWT can be revoked before its local expiry. Refresh once,
+            // then retry once. The direct 401/403 never clears the local session;
+            // only validCloudSession's terminal refresh response can do that.
+            guard sessionRevision == firstRevision,
+                  session?.cloud == initialSession else {
+                throw AuthServiceError.sessionChanged
+            }
+            let refreshed = try await validCloudSession(
+                expectedUserID: expectedUserID,
+                forceRefresh: true
+            )
+            let retryRevision = sessionRevision
+            let object = try await requestJSON(
+                path: path,
+                method: method,
+                token: refreshed.accessToken,
+                headers: headers,
+                body: body
+            )
+            guard sessionRevision == retryRevision,
+                  session?.cloud == refreshed else {
+                throw AuthServiceError.sessionChanged
+            }
+            return object
+        }
     }
 
     private func validatedEmail(_ email: String) throws -> String {
@@ -700,9 +924,7 @@ final class AuthService: ObservableObject {
     }
 
     private func validatePassword(_ password: String) throws {
-        guard (8...72).contains(password.count),
-              password.contains(where: { $0.isLetter }),
-              password.contains(where: { $0.isNumber }) else {
+        guard GymPasswordPolicy.accepts(password) else {
             throw AuthServiceError.invalidPassword
         }
     }

@@ -6,6 +6,7 @@ import java.security.MessageDigest
 internal enum class CloudSnapshotApplyDecision {
     AlreadyCurrent,
     ReplaceAuthoritatively,
+    UploadLocal,
     Conflict
 }
 
@@ -19,6 +20,9 @@ internal fun cloudSnapshotApplyDecision(
     if (localDigest == remoteDigest) return CloudSnapshotApplyDecision.AlreadyCurrent
     if (localProjectionEmpty || (lastSyncedDigest != null && localDigest == lastSyncedDigest)) {
         return CloudSnapshotApplyDecision.ReplaceAuthoritatively
+    }
+    if (lastSyncedDigest != null && remoteDigest == lastSyncedDigest) {
+        return CloudSnapshotApplyDecision.UploadLocal
     }
     return CloudSnapshotApplyDecision.Conflict
 }
@@ -43,6 +47,8 @@ internal class CloudSyncBaselineStore(context: Context) {
         require(digest.matches(SHA256_PATTERN))
         return preferences.edit().putString(key(userId), digest).commit()
     }
+
+    fun clear(userId: String): Boolean = preferences.edit().remove(key(userId)).commit()
 
     private fun key(userId: String): String {
         require(userId.isNotBlank() && userId.length <= 256)

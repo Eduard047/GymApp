@@ -1,17 +1,23 @@
 # Supabase deployment notes
 
-## Production deployment record — updated 2026-07-21
+## Canonical repository sources
+
+The iOS subtree contains historical migrations only. The canonical account
+deletion Edge Function now lives at the repository root:
+[delete-account](../../../supabase/functions/delete-account/README.md). Do not
+restore a platform-local function copy.
+
+## Production deployment record — updated 2026-07-22
 
 > The canonical current migrations live in the repository-root
-> `supabase/migrations/` directory. On 2026-07-21 all eight previously missing
-> migrations were applied to production in deployment order, through
-> `20260721143853_retire_legacy_garmin_table_grants.sql`. Structural/ACL
-> checks and rollback-only runtime probes passed, and the Supabase advisors were
-> run. This verification did not include a valid-device Edge Function fetch/ack
-> smoke.
+> `supabase/migrations/` directory. On 2026-07-22 production history was
+> reconciled and read back with all 22 repository versions through
+> `20260722013200_activate_bounded_user_state_projection.sql`. The live Auth,
+> state projection, Garmin delivery, and account-deletion E2E passed with
+> disposable data.
 
-GymApp production project `owrcbsrectdgaotndtxy` has the required database,
-RLS, and account-deletion server changes deployed and verified:
+GymApp production project `owrcbsrectdgaotndtxy` has the verified baseline
+below:
 
 - `20260711084556` — `create_leaderboard_public`;
 - `20260711084559` — `harden_gymapp_production_access`;
@@ -23,9 +29,17 @@ RLS, and account-deletion server changes deployed and verified:
 - `20260721143010` — `create_exercise_catalog`;
 - `20260721143038` — `restrict_leaderboard_to_owner_until_verified_ingestion`;
 - `20260721143058` — `add_bounded_garmin_preauth_rate_limits`;
-- `20260721143853` — `retire_legacy_garmin_table_grants`; and
-- Edge Function `garmin-sync` version 4 is `ACTIVE` with `verify_jwt=false` by design: account-management actions validate the bearer user inside the function, while watch fetch/ack actions authenticate a bounded device capability;
-- Edge Function `delete-account` version 1 is `ACTIVE` with `verify_jwt=true`.
+- `20260721143853` — `retire_legacy_garmin_table_grants`;
+- `20260721201016` through `20260722013200` — catalog, RLS guard,
+  live-session deletion, bounded reports, Garmin capability gateway, and
+  bounded state-projection updates;
+- Edge Function `garmin-sync` version 6 is `ACTIVE` with `verify_jwt=false` by
+  design: account-management actions validate the bearer user inside the
+  function, while watch fetch/ack actions authenticate a bounded device
+  capability; and
+- Edge Function `delete-account` version 3 is `ACTIVE` with `verify_jwt=true`;
+  its live-session migration and canonical deployment are verified and the
+  repository release gate passes.
 
 A live two-user E2E run passed authenticated leaderboard access, own-row RLS,
 cross-user mutation denial, display-name/public-ID guards, report isolation,
@@ -42,7 +56,7 @@ set. For any new environment, apply every migration in the repository-root
 `supabase/migrations/` directory in timestamp order, including the owner-only
 compatibility migration.
 
-The historical iOS copies are:
+The historical iOS migration copies are:
 
 1. [202607100001_create_leaderboard_public.sql](migrations/202607100001_create_leaderboard_public.sql)
 2. [202607100002_harden_profile_reads.sql](migrations/202607100002_harden_profile_reads.sql)

@@ -89,6 +89,38 @@ class BackupOwnerCompatibilityTest {
         }
     }
 
+    @Test
+    fun `portable Garmin provenance marker is ignored and cannot change canonical identity`() {
+        val ordinary = JSONObject(
+            """
+            {
+              "schemaVersion": 2,
+              "sessions": [{
+                "date": 1750000030000,
+                "note": "Garmin · Duration 45:00 · Garmin kcal 250 · Avg HR 140",
+                "exercises": [{
+                  "name": "Bench Press",
+                  "catalogKey": "bench_press",
+                  "sets": [{"weight": 80.0, "reps": 8}]
+                }]
+              }]
+            }
+            """.trimIndent()
+        )
+        val marked = JSONObject(ordinary.toString()).apply {
+            getJSONArray("sessions").getJSONObject(0).put("garminProvenance", true)
+        }
+
+        assertEquals(
+            BackupImportValidator.validate(ordinary),
+            BackupImportValidator.validate(marked)
+        )
+        assertEquals(
+            canonicalWorkoutPayloadDigest(ordinary),
+            canonicalWorkoutPayloadDigest(marked)
+        )
+    }
+
     private fun backupWithOwner(
         accountId: String,
         ownerUserId: String?,

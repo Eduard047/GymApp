@@ -7,7 +7,8 @@ data class WorkoutSessionSummary(
     @Embedded val session: WorkoutSessionEntity,
     val exerciseCount: Int,
     val setCount: Int,
-    val totalVolume: Double
+    val totalVolume: Double,
+    val hasGarminReceipt: Boolean = false
 )
 
 data class WorkoutExerciseWithDetails(
@@ -44,4 +45,3 @@ data class ExerciseHistoryEntry(
     val reps: Int,
     val setOrderIndex: Int
 )
-

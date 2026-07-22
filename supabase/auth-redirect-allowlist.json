@@ -1,0 +1,12 @@
+{
+  "siteUrl": "https://gymapptracker.com/",
+  "redirectUrls": [
+    "https://eduard047.github.io/GymApp/confirmed.html",
+    "https://gymapptracker.com/confirmed.html?platform=web",
+    "https://gymapptracker.com/confirmed.html?platform=android",
+    "https://gymapptracker.com/confirmed.html?platform=android&state=*",
+    "https://gymapptracker.com/confirmed.html?platform=android&variant=qa&state=*",
+    "https://gymapptracker.com/confirmed.html?platform=ios&state=*",
+    "com.setforge.gymapp.ios://auth/callback/*"
+  ]
+}

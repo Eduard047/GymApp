@@ -19,7 +19,7 @@ function element() {
   };
 }
 
-function runCallback(url) {
+function runCallback(url, { localValues = new Map() } = {}) {
   const parsed = new URL(url);
   const nodes = new Map([
     ["#open-app", element()],
@@ -30,6 +30,7 @@ function runCallback(url) {
   const assigned = [];
   const context = {
     DOMException,
+    TextEncoder,
     URL,
     URLSearchParams,
     document: {
@@ -38,6 +39,11 @@ function runCallback(url) {
       }
     },
     window: {
+      localStorage: {
+        getItem(key) { return localValues.get(key) ?? null; },
+        setItem(key, value) { localValues.set(key, String(value)); },
+        removeItem(key) { localValues.delete(key); }
+      },
       location: {
         search: parsed.search,
         hash: parsed.hash,
@@ -192,14 +198,107 @@ test("Android PKCE recovery fails closed for state mismatch shapes and token inj
   }
 });
 
-test("web confirmation discards implicit credentials and returns to the canonical site", () => {
+test("web confirmation rejects and discards implicit credentials", () => {
   const result = runCallback(
     "https://gymapptracker.com/confirmed.html?platform=web#access_token=secret&refresh_token=secret"
   );
 
   assert.equal(result.button.getAttribute("href"), "https://gymapptracker.com/");
   assert.doesNotMatch(result.button.getAttribute("href"), /secret|token/i);
-  assert.match(result.message.textContent, /log in with your password/i);
+  assert.match(result.title.textContent, /unavailable/i);
+  assert.doesNotMatch(result.title.textContent, /email confirmed/i);
+  assert.deepEqual(result.scrubbed, ["/confirmed.html"]);
+});
+
+test("web confirmation reports query and fragment failures instead of claiming success", () => {
+  const cases = [
+    "?platform=web&error=access_denied&error_description=expired",
+    "?platform=web#error=access_denied&error_code=otp_expired&error_description=expired"
+  ];
+  for (const suffix of cases) {
+    const result = runCallback(`https://gymapptracker.com/confirmed.html${suffix}`);
+    assert.match(result.title.textContent, /could not be completed/i, suffix);
+    assert.doesNotMatch(result.title.textContent, /email confirmed/i, suffix);
+    assert.match(result.message.textContent, /expired|unavailable/i, suffix);
+    assert.equal(result.button.getAttribute("href"), "https://gymapptracker.com/", suffix);
+    assert.deepEqual(result.scrubbed, ["/confirmed.html"], suffix);
+  }
+});
+
+test("web PKCE recovery derives state from the same-browser transaction while Supabase redirect stays exact", () => {
+  const state = "W".repeat(32);
+  const code = "4be36bc9-5ee4-40f3-a674-5ebf01b53ac8";
+  const localValues = new Map([["gym-pwa-auth-transaction-v1", JSON.stringify({
+    version: 1,
+    purpose: "recovery",
+    state,
+    verifier: "v".repeat(43),
+    email: "owner@example.com",
+    createdAt: Date.now()
+  })]]);
+  const result = runCallback(
+    `https://gymapptracker.com/confirmed.html?platform=web&code=${code}`,
+    { localValues }
+  );
+  const expected = new URL("https://gymapptracker.com/");
+  expected.searchParams.set("platform", "web");
+  expected.searchParams.set("state", state);
+  expected.searchParams.set("purpose", "recovery");
+  expected.searchParams.set("code", code);
+
+  assert.equal(result.title.textContent, "Password reset verified");
+  assert.equal(result.button.getAttribute("href"), expected.toString());
+  assert.doesNotMatch(result.button.getAttribute("href"), /verifier|access_token|refresh_token/i);
+  assert.deepEqual(result.scrubbed, []);
+});
+
+test("web PKCE signup bridges the single-use code through the same-browser transaction", () => {
+  const state = "X".repeat(32);
+  const code = "34e770dd-9ff9-416c-87fa-43b31d7ef225";
+  const localValues = new Map([["gym-pwa-auth-transaction-v1", JSON.stringify({
+    version: 1,
+    purpose: "signup",
+    state,
+    verifier: "s".repeat(43),
+    email: "new-owner@example.com",
+    createdAt: Date.now()
+  })]]);
+  const result = runCallback(
+    `https://gymapptracker.com/confirmed.html?platform=web&code=${code}`,
+    { localValues }
+  );
+  const expected = new URL("https://gymapptracker.com/");
+  expected.searchParams.set("platform", "web");
+  expected.searchParams.set("state", state);
+  expected.searchParams.set("purpose", "signup");
+  expected.searchParams.set("code", code);
+
+  assert.equal(result.title.textContent, "Email confirmed");
+  assert.equal(result.button.textContent, "Continue to GymApp");
+  assert.equal(result.button.getAttribute("href"), expected.toString());
+  assert.doesNotMatch(result.button.getAttribute("href"), /verifier|access_token|refresh_token/i);
+  assert.deepEqual(result.scrubbed, []);
+});
+
+test("web PKCE bridge discards expired browser transactions and never forwards their code", () => {
+  const key = "gym-pwa-auth-transaction-v1";
+  const localValues = new Map([[key, JSON.stringify({
+    version: 1,
+    purpose: "signup",
+    state: "E".repeat(32),
+    verifier: "e".repeat(43),
+    email: "expired@example.com",
+    createdAt: Date.now() - 24 * 60 * 60 * 1000 - 1
+  })]]);
+  const code = "dd8af18b-ffb8-4f1e-8552-972ccf840d9f";
+  const result = runCallback(
+    `https://gymapptracker.com/confirmed.html?platform=web&code=${code}`,
+    { localValues }
+  );
+
+  assert.match(result.title.textContent, /unavailable/i);
+  assert.equal(result.button.getAttribute("href"), "https://gymapptracker.com/");
+  assert.equal(localValues.has(key), false);
   assert.deepEqual(result.scrubbed, ["/confirmed.html"]);
 });
 
@@ -292,14 +391,16 @@ test("unknown platform never becomes a custom-scheme redirect", () => {
 });
 
 test("client auth, public metadata, and compatibility docs use the intended domains", async () => {
-  const [android, pwa, index, confirmation, cname, operations] = await Promise.all([
+  const [android, pwa, index, confirmation, cname, operations, redirectContractText] = await Promise.all([
     readFile("app/src/main/java/com/example/gymapp/auth/CloudAuthManager.kt", "utf8"),
     readFile("pwa/app.js", "utf8"),
     readFile("pwa/index.html", "utf8"),
     readFile("pwa/confirmed.html", "utf8"),
     readFile("pwa/CNAME", "utf8"),
-    readFile("docs/OPERATIONS.md", "utf8")
+    readFile("docs/OPERATIONS.md", "utf8"),
+    readFile("supabase/auth-redirect-allowlist.json", "utf8")
   ]);
+  const redirectContract = JSON.parse(redirectContractText);
   const signUpSource = android.slice(
     android.indexOf("suspend fun signUp"),
     android.indexOf("suspend fun resendSignUpConfirmation")
@@ -315,9 +416,17 @@ test("client auth, public metadata, and compatibility docs use the intended doma
   assert.match(signUpSource, /purpose=signup/);
   assert.match(signUpSource, /\.put\("code_challenge", codeChallenge\(transaction\.codeVerifier\)\)/);
   assert.match(signUpSource, /\.put\("code_challenge_method", "s256"\)/);
-  assert.match(resendSource, /WEB_AUTH_REDIRECT_URL/);
-  assert.match(resendSource, /clearPendingAuthTransaction\(PENDING_SIGNUP_KEY\)/);
-  assert.doesNotMatch(resendSource, /code_challenge|beginAuthTransaction|purpose=signup/);
+  assert.match(resendSource, /reusableSignupAuthTransaction/);
+  assert.doesNotMatch(resendSource, /beginAuthTransaction/);
+  assert.match(resendSource, /purpose=signup/);
+  assert.match(resendSource, /\.put\("code_challenge", codeChallenge\(transaction\.codeVerifier\)\)/);
+  assert.match(resendSource, /\.put\("code_challenge_method", "s256"\)/);
+  assert.match(
+    resendSource,
+    /clearPendingAuthTransaction\(PENDING_SIGNUP_KEY, transaction\.state\)/
+  );
+  assert.match(resendSource, /transactionSelection\.wasCreated/);
+  assert.match(signUpSource, /isDeterministicAuthInitiationFailure\(error\)/);
   assert.ok(pwa.includes("https://gymapptracker.com/confirmed.html?platform=web"));
   assert.match(pwa, /\/auth\/v1\/resend\?redirect_to=/);
   assert.match(pwa, /if \(!query\.has\("platform"\)\) query\.set\("platform", "web"\)/);
@@ -329,4 +438,30 @@ test("client auth, public metadata, and compatibility docs use the intended doma
   assert.doesNotMatch(confirmation, /<script[^>]+src="https?:\/\//i);
   assert.equal(cname, "gymapptracker.com\n");
   assert.ok(operations.includes("https://eduard047.github.io/GymApp/confirmed.html"));
+  assert.equal(redirectContract.siteUrl, "https://gymapptracker.com/");
+  assert.ok(
+    redirectContract.redirectUrls.includes(
+      "https://gymapptracker.com/confirmed.html?platform=android"
+    )
+  );
+  assert.ok(
+    redirectContract.redirectUrls.includes(
+      "https://gymapptracker.com/confirmed.html?platform=android&state=*"
+    )
+  );
+  assert.ok(
+    redirectContract.redirectUrls.includes(
+      "https://gymapptracker.com/confirmed.html?platform=android&variant=qa&state=*"
+    )
+  );
+  assert.ok(
+    operations.includes(
+      "https://gymapptracker.com/confirmed.html?platform=android&state=*"
+    )
+  );
+  assert.ok(
+    operations.includes(
+      "https://gymapptracker.com/confirmed.html?platform=android&variant=qa&state=*"
+    )
+  );
 });

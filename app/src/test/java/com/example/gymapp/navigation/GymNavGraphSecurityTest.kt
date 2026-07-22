@@ -1,6 +1,11 @@
 package com.example.gymapp.navigation
 
 import com.example.gymapp.auth.AccountSession
+import com.example.gymapp.auth.CloudAccountDeletionSessionDisposition
+import com.example.gymapp.auth.cloudAccountDeletionSessionDisposition
+import com.example.gymapp.auth.databaseName
+import com.example.gymapp.R
+import com.example.gymapp.util.LocalizedText
 import com.example.gymapp.data.repository.canonicalWorkoutPayloadMatches
 import com.example.gymapp.data.repository.canonicalWorkoutPayloadDigest
 import com.example.gymapp.sync.CloudSnapshotApplyDecision
@@ -12,6 +17,7 @@ import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlinx.coroutines.runBlocking
 
 class GymNavGraphSecurityTest {
     private val userId = "123e4567-e89b-12d3-a456-426614174000"
@@ -82,6 +88,10 @@ class GymNavGraphSecurityTest {
         )
 
         assertTrue(isCanonicalAndroidCloudEnvelope(canonical, userId))
+        val forgedPortableProvenance = JSONObject(canonical.toString()).apply {
+            getJSONArray("sessions").getJSONObject(0).put("garminProvenance", true)
+        }
+        assertFalse(isCanonicalAndroidCloudEnvelope(forgedPortableProvenance, userId))
         canonical.put("catalogSeedVersion", 1)
         assertTrue(isCanonicalAndroidCloudEnvelope(canonical, userId))
         canonical.put("catalogSeedVersion", 2)
@@ -146,6 +156,27 @@ class GymNavGraphSecurityTest {
     }
 
     @Test
+    fun `only recoverable cloud synchronization notices expose retry`() {
+        assertTrue(isRetryableCloudSyncMessage(LocalizedText(R.string.cloud_sync_load_failed)))
+        assertTrue(isRetryableCloudSyncMessage(LocalizedText(R.string.cloud_sync_save_failed)))
+        assertTrue(isRetryableCloudSyncMessage(LocalizedText(R.string.cloud_sync_conflict)))
+        assertTrue(isRetryableCloudSyncMessage(LocalizedText(R.string.auth_error_connection)))
+        assertTrue(isRetryableCloudSyncMessage(LocalizedText(R.string.auth_error_cloud_unavailable)))
+        assertFalse(
+            isRetryableCloudSyncMessage(LocalizedText(R.string.auth_message_password_updated))
+        )
+        assertFalse(isRetryableCloudSyncMessage(null))
+        assertEquals(
+            CloudSyncRetryMode.ResumeAutosave,
+            cloudSyncRetryModeForSaveFailure(LocalizedText(R.string.cloud_sync_save_failed))
+        )
+        assertEquals(
+            CloudSyncRetryMode.Pull,
+            cloudSyncRetryModeForSaveFailure(LocalizedText(R.string.cloud_sync_conflict))
+        )
+    }
+
+    @Test
     fun `cloud baseline allows replace only for clean or empty local state`() {
         val baseline = "a".repeat(64)
         val remote = "b".repeat(64)
@@ -157,6 +188,10 @@ class GymNavGraphSecurityTest {
         assertEquals(
             CloudSnapshotApplyDecision.ReplaceAuthoritatively,
             cloudSnapshotApplyDecision(baseline, remote, baseline, localProjectionEmpty = false)
+        )
+        assertEquals(
+            CloudSnapshotApplyDecision.UploadLocal,
+            cloudSnapshotApplyDecision(remote, baseline, baseline, localProjectionEmpty = false)
         )
         assertEquals(
             CloudSnapshotApplyDecision.ReplaceAuthoritatively,
@@ -173,6 +208,68 @@ class GymNavGraphSecurityTest {
         assertTrue(shouldInitializeMissingRemoteState(localProjectionEmpty = true))
         assertFalse(shouldInitializeMissingRemoteState(localProjectionEmpty = false))
     }
+
+    @Test
+    fun `logout during debounce preserves Room data and resumes only against an unchanged remote`() {
+        val remoteBaseline = "a".repeat(64)
+        val unsyncedLocal = "b".repeat(64)
+        val reloggedSession = session.copy(sessionGeneration = "generation-b")
+
+        assertEquals(session.databaseName(), reloggedSession.databaseName())
+        assertEquals(
+            CloudSnapshotApplyDecision.UploadLocal,
+            cloudSnapshotApplyDecision(
+                localDigest = unsyncedLocal,
+                remoteDigest = remoteBaseline,
+                lastSyncedDigest = remoteBaseline,
+                localProjectionEmpty = false
+            )
+        )
+        assertEquals(
+            CloudSnapshotApplyDecision.Conflict,
+            cloudSnapshotApplyDecision(
+                localDigest = unsyncedLocal,
+                remoteDigest = "c".repeat(64),
+                lastSyncedDigest = remoteBaseline,
+                localProjectionEmpty = false
+            )
+        )
+        assertFalse(shouldInitializeMissingRemoteState(localProjectionEmpty = false))
+    }
+
+    @Test
+    fun `confirmed account deletion cleanup survives logout race and remains idempotent`() =
+        runBlocking {
+            assertTrue(accountActionsEnabled(authLoading = false, deletionInProgress = false))
+            assertFalse(accountActionsEnabled(authLoading = true, deletionInProgress = false))
+            assertFalse(accountActionsEnabled(authLoading = false, deletionInProgress = true))
+            var roomRows = 3
+            var baselinePresent = true
+            var trainingProfilePresent = true
+
+            repeat(2) {
+                val failures = runConfirmedAccountDeletionLocalCleanup(
+                    clearRoom = { roomRows = 0 },
+                    clearBaseline = {
+                        baselinePresent = false
+                        true
+                    },
+                    clearTrainingProfile = {
+                        trainingProfilePresent = false
+                        true
+                    }
+                )
+                assertEquals(0, failures)
+            }
+
+            assertEquals(0, roomRows)
+            assertFalse(baselinePresent)
+            assertFalse(trainingProfilePresent)
+            assertEquals(
+                CloudAccountDeletionSessionDisposition.AlreadySignedOut,
+                cloudAccountDeletionSessionDisposition(null, session)
+            )
+        }
 
     @Test
     fun `canonical workout digest ignores envelope metadata but detects data changes`() {

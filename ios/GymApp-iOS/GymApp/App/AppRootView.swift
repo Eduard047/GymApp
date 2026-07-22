@@ -28,11 +28,25 @@ struct AppRootView: View {
                     isWorking: appState.isPreparingAccount,
                     message: appState.accountPreparationError,
                     retry: appState.retryAccountActivation,
-                    signOut: { Task { await auth.signOut() } }
+                    signOut: { Task { _ = await appState.signOut() } }
                 )
             }
         }
         .environment(\.locale, AppLanguage(rawValue: languageCode)?.locale ?? Locale(identifier: "en"))
+        .allowsHitTesting(!appState.isSigningOut)
+        .overlay {
+            if appState.isSigningOut {
+                ZStack {
+                    Rectangle()
+                        .fill(.ultraThinMaterial)
+                        .ignoresSafeArea()
+                    ProgressView()
+                        .controlSize(.large)
+                        .accessibilityLabel("Please wait…")
+                }
+                .zIndex(30)
+            }
+        }
         .overlay {
             if showsIntro {
                 IntroSplashView()

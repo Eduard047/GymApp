@@ -17,6 +17,7 @@ struct AccountSettingsView: View {
 
     @State private var prompt: Prompt?
     @State private var showsDeletionConfirmation = false
+    @State private var showsPasswordChange = false
     @State private var isSyncing = false
 
     private let showsCloseButton: Bool
@@ -59,6 +60,11 @@ struct AccountSettingsView: View {
             }
         }
         .alert(item: $prompt, content: makePrompt)
+        .sheet(isPresented: $showsPasswordChange) {
+            PasswordUpdateView(auth: auth, mode: .signedIn) {
+                showsPasswordChange = false
+            }
+        }
         .sheet(isPresented: $showsDeletionConfirmation) {
             NavigationStack {
                 AccountDeletionConfirmationView(
@@ -215,6 +221,16 @@ struct AccountSettingsView: View {
                     supporting: signOutSupportingText
                 )
 
+                if isCloudAccount {
+                    Button {
+                        showsPasswordChange = true
+                    } label: {
+                        Label(gymLocalized("Change password"), systemImage: "key")
+                    }
+                    .buttonStyle(GymSecondaryButtonStyle())
+                    .accessibilityHint("Opens a form that requires the current password")
+                }
+
                 Button {
                     prompt = .signOut
                 } label: {
@@ -323,9 +339,9 @@ struct AccountSettingsView: View {
                 message: Text(gymLocalized(signOutSupportingText)),
                 primaryButton: .default(Text(gymLocalized(isCloudAccount ? "Sign out" : "Leave profile"))) {
                     Task {
-                        appState.restTimers.cancelAll()
-                        await auth.signOut()
-                        dismiss()
+                        if await appState.signOut() {
+                            dismiss()
+                        }
                     }
                 },
                 secondaryButton: .cancel()

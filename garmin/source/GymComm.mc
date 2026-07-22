@@ -5,9 +5,15 @@ using Toybox.PersistedContent as PersistedContent;
 
 class GymCloudPlanListener {
     hidden var callback;
+    hidden var expectedAccountBinding;
+    hidden var expectedDeviceBinding;
+    hidden var legacyCapability;
 
-    function initialize(resultCallback) {
+    function initialize(resultCallback, tokenAccountBinding, tokenDeviceBinding, isLegacyCapability) {
         callback = resultCallback;
+        expectedAccountBinding = tokenAccountBinding;
+        expectedDeviceBinding = tokenDeviceBinding;
+        legacyCapability = isLegacyCapability;
     }
 
     function onReceive(responseCode as Lang.Number, data as Lang.Dictionary or Lang.String or PersistedContent.Iterator or Null) as Void {
@@ -31,6 +37,27 @@ class GymCloudPlanListener {
         if (!statusText.equals("ok")) {
             var error = data.get("error");
             callback.invoke(false, error == null ? "CLOUD ERR" : error.toString(), null);
+            return;
+        }
+        var responseAccountBinding = data.get("accountBinding");
+        var responseDeviceBinding = data.get("deviceBinding");
+        if (!GymStore.isValidAccountBinding(responseAccountBinding) ||
+            expectedAccountBinding == null ||
+            !expectedAccountBinding.toString().equals(responseAccountBinding.toString()) ||
+            !GymComm.isValidCloudDeviceId(responseDeviceBinding) ||
+            (expectedDeviceBinding != null &&
+                !expectedDeviceBinding.toString().equals(responseDeviceBinding.toString()))) {
+            if (legacyCapability) {
+                GymComm.clearCloudDeviceToken();
+            }
+            callback.invoke(false, "TOKEN OWNER", null);
+            return;
+        }
+        if (legacyCapability && !GymComm.rememberLegacyCloudTokenBinding(
+                responseAccountBinding,
+                responseDeviceBinding
+            )) {
+            callback.invoke(false, "TOKEN SAVE", null);
             return;
         }
         var message = GymComm.syncMessageFromCloudData(data);
@@ -89,6 +116,9 @@ class GymCommListener extends Comm.ConnectionListener {
 class GymComm {
     static var watchVersion = "2026.06.29.1205";
     static var cloudSyncUrl = "https://owrcbsrectdgaotndtxy.supabase.co/functions/v1/garmin-sync";
+    static var legacyCapabilityLength = 64;
+    static var cloudCapabilityLength = 234;
+    static var signedOutAccountBinding = "ce5a39150e5fd2bd1a1adeb786fb05b39ee4e0395443a87ed7e2309796124d29";
 
     static function send(message, callback) {
         Comm.transmit(message, null, new GymCommListener(callback));
@@ -100,24 +130,53 @@ class GymComm {
             return;
         }
         var requestId = GymStore.nextRequestId("sync");
-        send({
+        var request = {
             "type" => "request_sync",
             "bindingVersion" => GymStore.bindingVersion,
             "requestId" => requestId,
             "accountBinding" => GymStore.accountBinding,
             "deviceBinding" => GymStore.deviceBinding,
+            "pairingGenerationSupported" => true,
             "watchVersion" => watchVersion,
             "status" => GymStore.status
-        }, callback);
+        };
+        if (GymStore.isValidAccountBinding(GymStore.pairingGeneration)) {
+            request.put("pairingGeneration", GymStore.pairingGeneration.toString());
+        }
+        send(request, callback);
     }
 
     static function requestCloudPlan(callback) {
         var token = Properties.getValue("CloudDeviceToken");
-        if (!GymStore.isValidAccountBinding(token)) {
+        if (!GymStore.hasAccountBinding()) {
+            callback.invoke(false, "TOKEN OWNER", null);
+            return;
+        }
+        var tokenVersion = cloudTokenVersion(token);
+        if (tokenVersion == null) {
             callback.invoke(false, "NO TOKEN", null);
             return;
         }
-        var listener = new GymCloudPlanListener(callback);
+        var tokenAccountBinding = tokenVersion == 3 ?
+            cloudTokenAccountBinding(token) : legacyTokenAccountBinding();
+        var tokenDeviceBinding = tokenVersion == 3 ?
+            cloudTokenDeviceBinding(token) : legacyTokenDeviceBinding();
+        if (tokenAccountBinding == null && tokenVersion == 2) {
+            tokenAccountBinding = GymStore.accountBinding;
+        }
+        if (!GymStore.accountBinding.toString().equals(tokenAccountBinding.toString())) {
+            if (tokenVersion == 2) {
+                clearCloudDeviceToken();
+            }
+            callback.invoke(false, "TOKEN OWNER", null);
+            return;
+        }
+        var listener = new GymCloudPlanListener(
+            callback,
+            tokenAccountBinding,
+            tokenDeviceBinding,
+            tokenVersion == 2
+        );
         Comm.makeWebRequest(
             cloudSyncUrl,
             {
@@ -137,9 +196,23 @@ class GymComm {
 
     static function acknowledgeCloudPlan(message, callback) {
         var token = Properties.getValue("CloudDeviceToken");
+        var tokenVersion = cloudTokenVersion(token);
+        var tokenAccountBinding = tokenVersion == 3 ?
+            cloudTokenAccountBinding(token) : legacyTokenAccountBinding();
+        var tokenDeviceBinding = tokenVersion == 3 ?
+            cloudTokenDeviceBinding(token) : legacyTokenDeviceBinding();
+        var messageDeviceBinding = message instanceof Lang.Dictionary ?
+            message.get("deviceBinding") : null;
         var planId = message instanceof Lang.Dictionary ? message.get("planId") : null;
         var planRevision = message instanceof Lang.Dictionary ? message.get("planRevision") : null;
-        if (!GymStore.isValidAccountBinding(token) ||
+        if (tokenVersion == null || tokenAccountBinding == null ||
+            tokenDeviceBinding == null ||
+            !GymStore.hasAccountBinding() ||
+            !GymStore.accountBinding.toString().equals(tokenAccountBinding.toString()) ||
+            !GymStore.isBoundedText(messageDeviceBinding, 36) ||
+            !tokenDeviceBinding.toString().equals(
+                messageDeviceBinding.toString()
+            ) ||
             !GymStore.syncBindingsMatch(message) ||
             !GymStore.isBoundedText(planId, 36) || planId.toString().length() != 36 ||
             !GymStore.isValidCounter(planRevision, GymStore.maxCloudPlanRevision)) {
@@ -168,7 +241,146 @@ class GymComm {
 
     static function hasCloudDeviceToken() {
         var token = Properties.getValue("CloudDeviceToken");
-        return GymStore.isValidAccountBinding(token);
+        var tokenVersion = cloudTokenVersion(token);
+        if (tokenVersion == null || !GymStore.hasAccountBinding()) {
+            return false;
+        }
+        var tokenAccountBinding = tokenVersion == 3 ?
+            cloudTokenAccountBinding(token) : legacyTokenAccountBinding();
+        return tokenAccountBinding == null ||
+            GymStore.accountBinding.toString().equals(tokenAccountBinding.toString());
+    }
+
+    static function reconcileCloudDeviceToken(nextAccountBinding) {
+        if (!GymStore.isValidAccountBinding(nextAccountBinding)) {
+            return false;
+        }
+        var token = Properties.getValue("CloudDeviceToken");
+        if (token == null || token.toString().length() == 0) {
+            return true;
+        }
+        var tokenVersion = cloudTokenVersion(token);
+        var tokenAccountBinding = tokenVersion == 3 ?
+            cloudTokenAccountBinding(token) : legacyTokenAccountBinding();
+        if (tokenVersion == 2 && tokenAccountBinding == null) {
+            var currentAccountBinding = GymStore.accountBinding;
+            if (GymStore.isValidAccountBinding(currentAccountBinding) &&
+                !currentAccountBinding.toString().equals(nextAccountBinding.toString())) {
+                // An unowned released v2 capability can be adopted only during the
+                // watch's first account binding. Once an owner exists, every account
+                // transition clears it so an empty response cannot silently rebind it.
+                return clearCloudDeviceToken();
+            }
+            return true;
+        }
+        if (nextAccountBinding.toString().equals(signedOutAccountBinding) ||
+            (tokenVersion != null && tokenAccountBinding != null &&
+                tokenAccountBinding.toString().equals(nextAccountBinding.toString()))) {
+            return true;
+        }
+        return clearCloudDeviceToken();
+    }
+
+    static function clearCloudDeviceToken() {
+        try {
+            Properties.setValue("CloudDeviceToken", "");
+            Properties.setValue("CloudLegacyTokenOwner", "");
+            Properties.setValue("CloudLegacyTokenDevice", "");
+            return true;
+        } catch (e) {
+            return false;
+        }
+    }
+
+    static function rememberLegacyCloudTokenBinding(accountBinding, deviceBinding) {
+        if (!GymStore.isValidAccountBinding(accountBinding) ||
+            !isValidCloudDeviceId(deviceBinding) ||
+            !GymStore.hasAccountBinding() ||
+            !GymStore.accountBinding.toString().equals(accountBinding.toString())) {
+            return false;
+        }
+        try {
+            Properties.setValue("CloudLegacyTokenOwner", accountBinding.toString());
+            Properties.setValue("CloudLegacyTokenDevice", deviceBinding.toString());
+            return true;
+        } catch (e) {
+            return false;
+        }
+    }
+
+    static function legacyTokenAccountBinding() {
+        var value = Properties.getValue("CloudLegacyTokenOwner");
+        return GymStore.isValidAccountBinding(value) ? value.toString() : null;
+    }
+
+    static function legacyTokenDeviceBinding() {
+        var value = Properties.getValue("CloudLegacyTokenDevice");
+        return isValidCloudDeviceId(value) ? value.toString() : null;
+    }
+
+    static function cloudTokenVersion(value) {
+        if (value instanceof Lang.String &&
+            value.toString().length() == legacyCapabilityLength &&
+            GymStore.isValidAccountBinding(value)) {
+            return 2;
+        }
+        return cloudTokenAccountBinding(value) == null ? null : 3;
+    }
+
+    static function cloudTokenAccountBinding(value) {
+        if (!(value instanceof Lang.String)) {
+            return null;
+        }
+        var token = value.toString();
+        if (token.length() != cloudCapabilityLength ||
+            !token.substring(0, 3).equals("g3.") ||
+            !token.substring(67, 68).equals(".") ||
+            !token.substring(104, 105).equals(".") ||
+            !token.substring(169, 170).equals(".")) {
+            return null;
+        }
+        var account = token.substring(3, 67);
+        var device = token.substring(68, 104);
+        var nonce = token.substring(105, 169);
+        var tag = token.substring(170, 234);
+        if (!GymStore.isValidAccountBinding(account) ||
+            !isValidCloudDeviceId(device) ||
+            !GymStore.isValidAccountBinding(nonce) ||
+            !GymStore.isValidAccountBinding(tag)) {
+            return null;
+        }
+        return account;
+    }
+
+    static function cloudTokenDeviceBinding(value) {
+        if (cloudTokenAccountBinding(value) == null) {
+            return null;
+        }
+        return value.toString().substring(68, 104);
+    }
+
+    static function isValidCloudDeviceId(value) {
+        if (!(value instanceof Lang.String) || value.toString().length() != 36) {
+            return false;
+        }
+        var text = value.toString();
+        var version = text.substring(14, 15);
+        var variant = text.substring(19, 20);
+        if (!text.substring(8, 9).equals("-") ||
+            !text.substring(13, 14).equals("-") ||
+            !text.substring(18, 19).equals("-") ||
+            !text.substring(23, 24).equals("-") ||
+            !(version.equals("1") || version.equals("2") ||
+                version.equals("3") || version.equals("4") ||
+                version.equals("5")) ||
+            !(variant.equals("8") || variant.equals("9") ||
+                variant.equals("a") || variant.equals("b"))) {
+            return false;
+        }
+        var compact = text.substring(0, 8) + text.substring(9, 13) +
+            text.substring(14, 18) + text.substring(19, 23) +
+            text.substring(24, 36);
+        return GymStore.isValidAccountBinding(compact + compact);
     }
 
     static function syncMessageFromCloudData(data) {

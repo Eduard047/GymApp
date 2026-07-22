@@ -6,10 +6,13 @@ const migrationPath =
   "supabase/migrations/20260721142951_add_garmin_device_rate_limits.sql";
 const preauthMigrationPath =
   "supabase/migrations/20260721143058_add_bounded_garmin_preauth_rate_limits.sql";
+const capabilityGatewayMigrationPath =
+  "supabase/migrations/20260722012000_secure_garmin_capability_gateway.sql";
 
-test("format-valid unknown Garmin tokens are bounded before device lookup", async () => {
-  const [sql, edge] = await Promise.all([
+test("the historical fixed pre-auth limiter is private and retired by the v3 gateway", async () => {
+  const [sql, retirement, edge] = await Promise.all([
     readFile(preauthMigrationPath, "utf8"),
+    readFile(capabilityGatewayMigrationPath, "utf8"),
     readFile("supabase/functions/garmin-sync/index.ts", "utf8"),
   ]);
 
@@ -67,6 +70,9 @@ test("format-valid unknown Garmin tokens are bounded before device lookup", asyn
 
   assert.match(sql, /revoke all on function gymapp_private\.consume_garmin_preauth_rate_limit\(text, text\)[\s\S]*from public, anon, authenticated, service_role/);
   assert.match(sql, /notify pgrst, 'reload schema'/);
+  assert.match(retirement, /drop table if exists gymapp_private\.garmin_preauth_rate_limits/);
+  assert.match(retirement, /grant execute on function public\.garmin_fetch_pending_plan\(text\)[\s\S]*to service_role/);
+  assert.match(retirement, /has_function_privilege\([\s\S]*'anon'[\s\S]*garmin_fetch_pending_plan\(text\)/);
   assert.match(edge, /value\.status !== "rate_limited"/);
   assert.match(edge, /"Retry-After": String\(retryAfter\)/);
 });
@@ -211,7 +217,8 @@ test("device revocation retires queued work and token rotation preserves the sta
   assert.match(edge, /action === "rotateDeviceToken"/);
   assert.match(edge, /"garmin_list_devices"/);
   assert.match(edge, /"garmin_rotate_device_token"/);
-  assert.match(edge, /p_replacement_token: replacementToken/);
+  assert.match(edge, /p_replacement_token: replacementNonce/);
+  assert.match(edge, /createGarminCapability/);
   assert.match(edge, /p_expected_token_revision: expectedTokenRevision/);
   assert.match(edge, /Device token rotation conflict/);
   assert.match(edge, /\.trim\(\)\.toLowerCase\(\)/);

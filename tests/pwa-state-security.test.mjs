@@ -233,7 +233,7 @@ test("recommendation content is hydrated with textContent and profile labels fai
   assert.match(source, /const nextState = imported\.state;/);
   assert.match(source, /preserveExerciseFavorites\(nextState, state\);/);
   assert.match(source, /if \(imported\.diagnostics\)/);
-  assert.match(source, /activeAccount\.remote === true &&[\s\S]*cloudStateRecovery\?\.userId === activeAccount\.userId/);
+  assert.match(source, /activeAccount\.remote === "supabase" &&\s*cloudStateRecovery\?\.userId === activeAccount\.userId/);
   assert.match(source, /session\.note \? escapeHtml\(session\.note\)/);
   assert.doesNotMatch(source, /document\.write\(/);
   assert.match(source, /window\.location\.replace\("\.\/confirmed\.html\?platform=web"\)/);

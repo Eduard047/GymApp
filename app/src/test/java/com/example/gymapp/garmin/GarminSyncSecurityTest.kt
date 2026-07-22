@@ -39,15 +39,46 @@ class GarminSyncSecurityTest {
     }
 
     @Test
+    fun stalePairingPreferenceCleanupKeepsOnlyTheCurrentScopedKeys() {
+        val prefixes = listOf(
+            "pairing_generation_v1_",
+            "pairing_generation_pending_v1_",
+            "pairing_generation_capable_v1_"
+        )
+        val retained = setOf(
+            "pairing_generation_v1_current",
+            "pairing_generation_pending_v1_current",
+            "pairing_generation_capable_v1_current"
+        )
+        val unrelated = "pairing_generation_v10_not-this-prefix"
+        val stale = setOf(
+            "pairing_generation_v1_old",
+            "pairing_generation_pending_v1_old",
+            "pairing_generation_capable_v1_old"
+        )
+
+        assertEquals(
+            stale,
+            garminScopedPreferenceKeysToRemove(
+                existingKeys = retained + stale + unrelated,
+                retainedKeys = retained,
+                scopedPrefixes = prefixes
+            )
+        )
+    }
+
+    @Test
     fun boundCommandsRequireBothCurrentAccountAndTransportDevice() {
         val expected = GarminBinding(
             account = "a".repeat(64),
-            device = "123456789"
+            device = "123456789",
+            pairingGeneration = "1".repeat(64)
         )
         val bound = mapOf<Any?, Any?>(
             "bindingVersion" to GARMIN_BINDING_VERSION,
             "accountBinding" to expected.account,
-            "deviceBinding" to expected.device
+            "deviceBinding" to expected.device,
+            "pairingGeneration" to expected.pairingGeneration
         )
 
         assertEquals(
@@ -57,6 +88,10 @@ class GarminSyncSecurityTest {
         assertEquals(
             GarminBindingDecision.Rejected,
             garminBindingDecision(bound - "deviceBinding", expected)
+        )
+        assertEquals(
+            GarminBindingDecision.Rejected,
+            garminBindingDecision(bound - "pairingGeneration", expected)
         )
         assertEquals(
             GarminBindingDecision.Rejected,
@@ -72,14 +107,26 @@ class GarminSyncSecurityTest {
                 expected
             )
         )
+        assertEquals(
+            GarminBindingDecision.Rejected,
+            garminBindingDecision(
+                bound + ("pairingGeneration" to "2".repeat(64)),
+                expected
+            )
+        )
     }
 
     @Test
     fun protocolDowngradesMissingVersionsAndWrongTypesAreRejected() {
-        val expected = GarminBinding(account = "a".repeat(64), device = "123456789")
+        val expected = GarminBinding(
+            account = "a".repeat(64),
+            device = "123456789",
+            pairingGeneration = "1".repeat(64)
+        )
         val base = mapOf<Any?, Any?>(
             "accountBinding" to expected.account,
-            "deviceBinding" to expected.device
+            "deviceBinding" to expected.device,
+            "pairingGeneration" to expected.pairingGeneration
         )
 
         assertEquals(GarminBindingDecision.Rejected, garminBindingDecision(base, expected))
@@ -107,6 +154,7 @@ class GarminSyncSecurityTest {
         assertEquals(GARMIN_BINDING_VERSION, outbound["bindingVersion"])
         assertEquals(expected.account, outbound["accountBinding"])
         assertEquals(expected.device, outbound["deviceBinding"])
+        assertEquals(expected.pairingGeneration, outbound["pairingGeneration"])
     }
 
     @Test
@@ -161,7 +209,11 @@ class GarminSyncSecurityTest {
 
     @Test
     fun retriesKeepOneLongRevisionDistinctFromSyncId() {
-        val binding = GarminBinding(account = "a".repeat(64), device = "123456789")
+        val binding = GarminBinding(
+            account = "a".repeat(64),
+            device = "123456789",
+            pairingGeneration = "1".repeat(64)
+        )
         val syncId = "sync-request-1234567890"
         val base = mapOf<String, Any>(
             "type" to "sync",
@@ -235,7 +287,11 @@ class GarminSyncSecurityTest {
 
     @Test
     fun watchOriginatedSyncNeverBootstrapsAnUnboundDevice() {
-        val expected = GarminBinding(account = "a".repeat(64), device = "123456789")
+        val expected = GarminBinding(
+            account = "a".repeat(64),
+            device = "123456789",
+            pairingGeneration = "1".repeat(64)
+        )
 
         assertEquals(
             GarminBindingDecision.Rejected,
@@ -259,6 +315,68 @@ class GarminSyncSecurityTest {
             GarminBindingDecision.Rejected,
             garminBindingDecision(mapOf("accountBinding" to expected.account), expected)
         )
+    }
+
+    @Test
+    fun readOnlySyncCanUpgradeMissingGenerationButWorkoutBindingCannot() {
+        val expected = GarminBinding(
+            account = "a".repeat(64),
+            device = "123456789",
+            pairingGeneration = "1".repeat(64)
+        )
+        val legacySyncRequest = mapOf<Any?, Any?>(
+            "bindingVersion" to GARMIN_BINDING_VERSION,
+            "accountBinding" to expected.account,
+            "deviceBinding" to expected.device
+        )
+
+        assertEquals(
+            GarminBindingDecision.Bound,
+            garminSyncRequestBindingDecision(legacySyncRequest, expected)
+        )
+        assertEquals(
+            GarminBindingDecision.Rejected,
+            garminBindingDecision(legacySyncRequest, expected)
+        )
+        assertEquals(
+            GarminBindingDecision.Rejected,
+            garminSyncRequestBindingDecision(
+                legacySyncRequest + ("pairingGeneration" to "2".repeat(64)),
+                expected
+            )
+        )
+    }
+
+    @Test
+    fun releasedWatchFallbackIsExplicitAndGenerationlessOnly() {
+        val fallback = GarminBinding(
+            account = "a".repeat(64),
+            device = "123456789",
+            pairingGeneration = LEGACY_GARMIN_FALLBACK_GENERATION
+        )
+        val releasedWatchCommand = mapOf<Any?, Any?>(
+            "bindingVersion" to GARMIN_BINDING_VERSION,
+            "accountBinding" to fallback.account,
+            "deviceBinding" to fallback.device
+        )
+
+        assertEquals(
+            GarminBindingDecision.Bound,
+            garminBindingDecision(releasedWatchCommand, fallback)
+        )
+        assertEquals(
+            GarminBindingDecision.Rejected,
+            garminBindingDecision(
+                releasedWatchCommand + ("pairingGeneration" to "1".repeat(64)),
+                fallback
+            )
+        )
+        val payload = boundGarminPayload(
+            payload = mapOf("type" to "ack"),
+            binding = fallback,
+            includePairingGeneration = false
+        )
+        assertFalse(payload.containsKey("pairingGeneration"))
     }
 
     @Test

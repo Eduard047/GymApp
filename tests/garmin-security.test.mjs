@@ -47,7 +47,9 @@ test("Garmin messages are bounded, account-bound, replay-aware, and acked by id"
   assert.match(store, /isValidCounter\(message\.get\("syncRevision"\), maxPhoneSyncRevision\)/);
   assert.match(store, /deferredSync = safeMessage/);
   assert.match(store, /hasOnlySyncKeys\(message, trustedSource\)/);
-  assert.match(store, /message\.size\(\) > 14/);
+  assert.match(store, /message\.size\(\) > 15/);
+  assert.match(store, /key\.equals\("pairingGeneration"\)/);
+  assert.match(comm, /"pairingGenerationSupported" => true/);
   assert.match(store, /var safeMessage = normalizedSyncMessage\(message, bindingSource\)/);
   assert.match(store, /"planNames" => copySyncArray\(message\.get\("planNames"\)\)/);
   assert.match(store, /legacyUnboundState/);

@@ -13,10 +13,13 @@ function baseHeaders(extra: HeadersInit = {}): Headers {
 }
 
 function corsHeaders(req: Request): HeadersInit {
-  const configuredOrigin = Deno.env.get("DELETE_ACCOUNT_ALLOWED_ORIGIN")?.trim();
+  const configuredOrigin = Deno.env.get("DELETE_ACCOUNT_ALLOWED_ORIGIN")
+    ?.trim();
   const requestOrigin = req.headers.get("origin");
 
-  if (!configuredOrigin || !requestOrigin || requestOrigin !== configuredOrigin) {
+  if (
+    !configuredOrigin || !requestOrigin || requestOrigin !== configuredOrigin
+  ) {
     return {};
   }
 
@@ -45,7 +48,9 @@ function parseNamedKeySet(raw: string | undefined): string | null {
 
   try {
     const parsed = JSON.parse(raw) as unknown;
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return null;
+    }
 
     const keys = parsed as Record<string, unknown>;
     if (typeof keys.default === "string" && keys.default.trim()) {
@@ -53,7 +58,8 @@ function parseNamedKeySet(raw: string | undefined): string | null {
     }
 
     const firstKey = Object.values(keys).find(
-      (value): value is string => typeof value === "string" && value.trim().length > 0,
+      (value): value is string =>
+        typeof value === "string" && value.trim().length > 0,
     );
     return firstKey?.trim() ?? null;
   } catch {
@@ -82,7 +88,10 @@ function getSecretOrServiceRoleKey(): string | null {
 function normalizeProjectUrl(raw: string): string | null {
   try {
     const url = new URL(raw);
-    if (url.protocol !== "https:" && url.hostname !== "127.0.0.1" && url.hostname !== "localhost") {
+    if (
+      url.protocol !== "https:" && url.hostname !== "127.0.0.1" &&
+      url.hostname !== "localhost"
+    ) {
       return null;
     }
     return url.origin;
@@ -101,14 +110,20 @@ function bearerAuthorization(req: Request): string | null {
 
 function isUuid(value: unknown): value is string {
   return typeof value === "string" &&
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+      .test(value);
 }
 
-async function readConfirmation(req: Request): Promise<"confirmed" | "invalid" | "too_large"> {
+async function readConfirmation(
+  req: Request,
+): Promise<"confirmed" | "invalid" | "too_large"> {
   const contentLength = req.headers.get("content-length");
   if (contentLength) {
     const declaredLength = Number(contentLength);
-    if (!Number.isFinite(declaredLength) || declaredLength < 0 || declaredLength > MAX_BODY_BYTES) {
+    if (
+      !Number.isFinite(declaredLength) || declaredLength < 0 ||
+      declaredLength > MAX_BODY_BYTES
+    ) {
       return "too_large";
     }
   }
@@ -151,11 +166,14 @@ async function readConfirmation(req: Request): Promise<"confirmed" | "invalid" |
 
   try {
     const parsed = JSON.parse(text) as unknown;
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return "invalid";
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return "invalid";
+    }
 
     const body = parsed as JsonRecord;
     const keys = Object.keys(body);
-    return keys.length === 1 && keys[0] === "confirmation" && body.confirmation === "DELETE"
+    return keys.length === 1 && keys[0] === "confirmation" &&
+        body.confirmation === "DELETE"
       ? "confirmed"
       : "invalid";
   } catch {
@@ -165,26 +183,37 @@ async function readConfirmation(req: Request): Promise<"confirmed" | "invalid" |
 
 Deno.serve(async (req: Request): Promise<Response> => {
   const requestOrigin = req.headers.get("origin");
-  const configuredOrigin = Deno.env.get("DELETE_ACCOUNT_ALLOWED_ORIGIN")?.trim();
+  const configuredOrigin = Deno.env.get("DELETE_ACCOUNT_ALLOWED_ORIGIN")
+    ?.trim();
 
   if (req.method === "OPTIONS") {
     if (!configuredOrigin || requestOrigin !== configuredOrigin) {
       return jsonResponse(req, 403, { error: "origin_not_allowed" });
     }
-    return new Response(null, { status: 204, headers: baseHeaders(corsHeaders(req)) });
+    return new Response(null, {
+      status: 204,
+      headers: baseHeaders(corsHeaders(req)),
+    });
   }
 
-  if (requestOrigin && (!configuredOrigin || requestOrigin !== configuredOrigin)) {
+  if (
+    requestOrigin && (!configuredOrigin || requestOrigin !== configuredOrigin)
+  ) {
     return jsonResponse(req, 403, { error: "origin_not_allowed" });
   }
 
   if (req.method !== "POST") {
-    return jsonResponse(req, 405, { error: "method_not_allowed" }, { Allow: "POST, OPTIONS" });
+    return jsonResponse(req, 405, { error: "method_not_allowed" }, {
+      Allow: "POST, OPTIONS",
+    });
   }
 
-  const mediaType = req.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase();
+  const mediaType = req.headers.get("content-type")?.split(";", 1)[0].trim()
+    .toLowerCase();
   if (mediaType !== "application/json") {
-    return jsonResponse(req, 415, { error: "content_type_must_be_application_json" });
+    return jsonResponse(req, 415, {
+      error: "content_type_must_be_application_json",
+    });
   }
 
   const authorization = bearerAuthorization(req);
@@ -203,7 +232,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
     });
   }
 
-  const projectUrl = normalizeProjectUrl(Deno.env.get("SUPABASE_URL")?.trim() ?? "");
+  const projectUrl = normalizeProjectUrl(
+    Deno.env.get("SUPABASE_URL")?.trim() ?? "",
+  );
   const publishableOrAnonKey = getPublishableOrAnonKey();
   const administrativeKey = getSecretOrServiceRoleKey();
 
@@ -230,6 +261,32 @@ Deno.serve(async (req: Request): Promise<Response> => {
       return jsonResponse(req, 401, { error: "invalid_or_expired_token" });
     }
 
+    const liveSessionResponse = await fetch(
+      `${projectUrl}/rest/v1/rpc/require_live_session_for_account_deletion`,
+      {
+        method: "POST",
+        headers: {
+          apikey: publishableOrAnonKey,
+          Authorization: authorization,
+          "Content-Type": "application/json",
+        },
+        body: "{}",
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      },
+    );
+
+    if (!liveSessionResponse.ok) {
+      return jsonResponse(req, 401, { error: "invalid_or_expired_token" });
+    }
+
+    const liveSessionUserId = await liveSessionResponse.json() as unknown;
+    if (
+      !isUuid(liveSessionUserId) ||
+      liveSessionUserId.toLowerCase() !== authenticatedUser.id.toLowerCase()
+    ) {
+      return jsonResponse(req, 401, { error: "invalid_or_expired_token" });
+    }
+
     const adminHeaders: Record<string, string> = {
       apikey: administrativeKey,
       "Content-Type": "application/json",
@@ -241,7 +298,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
     }
 
     const deleteResponse = await fetch(
-      `${projectUrl}/auth/v1/admin/users/${encodeURIComponent(authenticatedUser.id)}`,
+      `${projectUrl}/auth/v1/admin/users/${
+        encodeURIComponent(authenticatedUser.id)
+      }`,
       {
         method: "DELETE",
         headers: adminHeaders,

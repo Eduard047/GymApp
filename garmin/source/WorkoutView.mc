@@ -120,7 +120,10 @@ class WorkoutView extends Ui.View {
     }
 
     function onCloudPlanFetched(ok, status, message) {
-        if (ok && message != null) {
+        if (ok && message == null) {
+            GymStore.status = status;
+            cloudAutoSyncActive = false;
+        } else if (ok && message != null) {
             try {
                 var applied = GymStore.applyCloudSync(message);
                 if (!applied) {

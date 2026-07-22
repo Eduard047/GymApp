@@ -35,7 +35,7 @@ class AuthScreenTest {
         assertNull(
             validateLoginInput(
                 email = "ed@example.com",
-                password = "Password1"
+                password = "legacy1"
             )
         )
     }
@@ -63,7 +63,7 @@ class AuthScreenTest {
             )
         )
         assertEquals(
-            "Password must be at least 8 characters.",
+            "Password must contain at least 12 characters and fit within 72 UTF-8 bytes.",
             validateSignUpInput(
                 email = "ed@example.com",
                 emailConfirm = "ed@example.com",
@@ -73,12 +73,12 @@ class AuthScreenTest {
             )
         )
         assertEquals(
-            "Password must include letters and numbers.",
+            "Password must include a lowercase Latin letter, an uppercase Latin letter, a number, and a supported symbol.",
             validateSignUpInput(
                 email = "ed@example.com",
                 emailConfirm = "ed@example.com",
-                password = "Password",
-                passwordConfirm = "Password",
+                password = "PasswordOnly",
+                passwordConfirm = "PasswordOnly",
                 displayName = "Ed"
             )
         )
@@ -87,8 +87,8 @@ class AuthScreenTest {
             validateSignUpInput(
                 email = "ed@example.com",
                 emailConfirm = "ed@example.com",
-                password = "Password1",
-                passwordConfirm = "Password2",
+                password = "SecurePass9!",
+                passwordConfirm = "SecurePass8!",
                 displayName = "Ed"
             )
         )
@@ -97,8 +97,8 @@ class AuthScreenTest {
             validateSignUpInput(
                 email = "ed@example.com",
                 emailConfirm = "other@example.com",
-                password = "Password1",
-                passwordConfirm = "Password1",
+                password = "SecurePass9!",
+                passwordConfirm = "SecurePass9!",
                 displayName = "Ed"
             )
         )
@@ -110,8 +110,8 @@ class AuthScreenTest {
             validateSignUpInput(
                 email = " Ed@Example.COM ",
                 emailConfirm = "ed@example.com",
-                password = "Password1",
-                passwordConfirm = "Password1",
+                password = "SecurePass9!",
+                passwordConfirm = "SecurePass9!",
                 displayName = "Ed"
             )
         )
@@ -138,23 +138,57 @@ class AuthScreenTest {
     }
 
     @Test
+    fun localProfileValidationAllowsTheDefaultAndRejectsUnsafeNames() {
+        assertNull(validateLocalAccountInput(""))
+        assertNull(validateLocalAccountInput("Local Athlete"))
+        assertEquals(
+            "Local profile name is invalid or too long.",
+            validateLocalAccountInput("bad\u0000name")
+        )
+    }
+
+    @Test
     fun passwordUpdateValidationRequiresMatchingStrongPasswords() {
         assertEquals(
             "Enter a new password.",
             validatePasswordUpdateInput("", "")
         )
         assertEquals(
-            "Password must be 8-72 characters.",
+            "Password must contain at least 12 characters and fit within 72 UTF-8 bytes.",
             validatePasswordUpdateInput("Pass1", "Pass1")
         )
         assertEquals(
-            "Password must include letters and numbers.",
-            validatePasswordUpdateInput("Password", "Password")
+            "Password must include a lowercase Latin letter, an uppercase Latin letter, a number, and a supported symbol.",
+            validatePasswordUpdateInput("PasswordOnly", "PasswordOnly")
         )
         assertEquals(
             "Passwords do not match.",
-            validatePasswordUpdateInput("Password1", "Password2")
+            validatePasswordUpdateInput("SecurePass9!", "SecurePass8!")
         )
-        assertNull(validatePasswordUpdateInput("Password1", "Password1"))
+        assertNull(validatePasswordUpdateInput("SecurePass9!", "SecurePass9!"))
+    }
+
+
+    @Test
+    fun signedInPasswordChangeRequiresCurrentAndDifferentNewPassword() {
+        assertEquals(
+            "Enter your current password.",
+            validateSignedInPasswordChange("", "SecurePass9!", "SecurePass9!")
+        )
+        assertEquals(
+            "Choose a new password that differs from the current password.",
+            validateSignedInPasswordChange(
+                "SecurePass9!",
+                "SecurePass9!",
+                "SecurePass9!"
+            )
+        )
+        assertNull(
+            validateSignedInPasswordChange(
+                "CurrentPass8!",
+                "NewSecurePass9!",
+                "NewSecurePass9!"
+            )
+        )
     }
 }

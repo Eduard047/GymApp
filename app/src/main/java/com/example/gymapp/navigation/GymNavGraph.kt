@@ -29,6 +29,10 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -63,7 +67,9 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.example.gymapp.R
 import com.example.gymapp.auth.AccountSession
+import com.example.gymapp.auth.CloudAccountDeletionSessionDisposition
 import com.example.gymapp.auth.CloudAuthManager
+import com.example.gymapp.auth.activeCloudSessionFor
 import com.example.gymapp.auth.authErrorText
 import com.example.gymapp.auth.databaseName
 import com.example.gymapp.auth.LeaderboardRow
@@ -100,9 +106,11 @@ import com.example.gymapp.util.AppLanguage
 import com.example.gymapp.util.LanguageManager
 import com.example.gymapp.util.LocalizedText
 import com.example.gymapp.util.RestTimerController
+import com.example.gymapp.util.asString
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
@@ -129,8 +137,49 @@ internal fun isSameCloudSessionGeneration(
     active.userId == expected.userId &&
     active.sessionGeneration == expected.sessionGeneration
 
+internal suspend fun runConfirmedAccountDeletionLocalCleanup(
+    clearRoom: suspend () -> Unit,
+    clearBaseline: () -> Boolean,
+    clearTrainingProfile: () -> Boolean
+): Int {
+    var failures = 0
+    if (runCatching { clearRoom() }.isFailure) failures += 1
+    if (runCatching { check(clearBaseline()) }.isFailure) failures += 1
+    if (runCatching { check(clearTrainingProfile()) }.isFailure) failures += 1
+    return failures
+}
+
+internal fun accountActionsEnabled(
+    authLoading: Boolean,
+    deletionInProgress: Boolean
+): Boolean = !authLoading && !deletionInProgress
+
 internal fun shouldInitializeMissingRemoteState(localProjectionEmpty: Boolean): Boolean =
     localProjectionEmpty
+
+internal enum class CloudSyncRetryMode {
+    Pull,
+    ResumeAutosave
+}
+
+internal fun isRetryableCloudSyncMessage(message: LocalizedText?): Boolean =
+    message?.resourceId in setOf(
+        R.string.auth_error_connection,
+        R.string.auth_error_cloud_unavailable,
+        R.string.cloud_sync_load_failed,
+        R.string.cloud_sync_conflict,
+        R.string.cloud_sync_save_failed,
+        R.string.cloud_sync_account_changed,
+        R.string.cloud_sync_baseline_failed,
+        R.string.cloud_sync_round_trip_failed
+    )
+
+internal fun cloudSyncRetryModeForSaveFailure(message: LocalizedText): CloudSyncRetryMode =
+    if (message.resourceId == R.string.cloud_sync_conflict) {
+        CloudSyncRetryMode.Pull
+    } else {
+        CloudSyncRetryMode.ResumeAutosave
+    }
 
 internal fun accountUiIsolationKey(
     session: AccountSession?,
@@ -242,14 +291,23 @@ fun GymAppRoot(
     val selectedLanguage by languageManager.selectedLanguage.collectAsState()
     val repository = remember(uiIsolationKey) { repositoryProvider(authState.session) }
     val coroutineScope = key(uiIsolationKey) { rememberCoroutineScope() }
+    val accountDeletionScope = rememberCoroutineScope()
     val applicationContext = LocalContext.current.applicationContext
     val cloudSyncBaselineStore = remember(applicationContext) {
         CloudSyncBaselineStore(applicationContext)
     }
     var showIntro by rememberSaveable { mutableStateOf(true) }
+    var accountDeletionInProgress by remember { mutableStateOf(false) }
     var cloudPullGeneration by key(uiIsolationKey) {
         remember { mutableStateOf<String?>(null) }
     }
+    var cloudSyncRetryVersion by key(uiIsolationKey) {
+        remember { mutableStateOf(0) }
+    }
+    var cloudSyncRetryMode by key(uiIsolationKey) {
+        remember { mutableStateOf<CloudSyncRetryMode?>(null) }
+    }
+    val snackbarHostState = key(uiIsolationKey) { remember { SnackbarHostState() } }
 
     LaunchedEffect(Unit) {
         delay(1400)
@@ -269,9 +327,10 @@ fun GymAppRoot(
         }
     }
 
-    LaunchedEffect(cloudSession?.sessionGeneration) {
+    LaunchedEffect(cloudSession?.sessionGeneration, cloudSyncRetryVersion) {
         val session = cloudSession ?: return@LaunchedEffect
         cloudPullGeneration = null
+        cloudSyncRetryMode = null
         val pullResult = runCatching {
             val remoteState = authManager.loadRemoteState(session)
             if (remoteState != null && remoteState.length() > 0) {
@@ -339,6 +398,18 @@ fun GymAppRoot(
                             )) { "Cloud account changed while confirming the sync baseline." }
                             true
                         }
+
+                        CloudSnapshotApplyDecision.UploadLocal -> {
+                            check(isSameCloudSessionGeneration(
+                                session,
+                                authManager.authState.value.session
+                            )) { "Cloud account changed while resuming local upload." }
+                            // The remote digest is still the last confirmed baseline, so the
+                            // account-specific Room state is the only changed side. The revision
+                            // cached by loadRemoteState keeps the resumed upload compare-and-swap
+                            // protected if another device writes before it reaches the server.
+                            true
+                        }
                     }
                 }
             } else {
@@ -351,16 +422,23 @@ fun GymAppRoot(
         }
         pullResult.onFailure { throwable ->
             if (throwable is CancellationException) throw throwable
-            authManager.setMessage(
-                authErrorText(throwable, R.string.cloud_sync_load_failed)
-            )
+            if (isSameCloudSessionGeneration(session, authManager.authState.value.session)) {
+                cloudSyncRetryMode = CloudSyncRetryMode.Pull
+                authManager.setMessage(
+                    authErrorText(throwable, R.string.cloud_sync_load_failed)
+                )
+            }
         }
         pullResult.onSuccess { canonicalRoundTripSafe ->
             // A successful authoritative pull may have replaced the local rows. Re-apply the
             // public built-in catalog before autosave starts so every account gets the same list.
             repository.seedBuiltInExercises()
             repository.seedDefaultExerciseMuscleMappings()
-            if (!canonicalRoundTripSafe) {
+            if (
+                !canonicalRoundTripSafe &&
+                isSameCloudSessionGeneration(session, authManager.authState.value.session)
+            ) {
+                cloudSyncRetryMode = CloudSyncRetryMode.Pull
                 authManager.setMessage(
                     LocalizedText(R.string.cloud_sync_conflict)
                 )
@@ -424,9 +502,15 @@ fun GymAppRoot(
                 }.onFailure { throwable ->
                     if (throwable is CancellationException) throw throwable
                     cloudPullGeneration = null
-                    authManager.setMessage(
-                        authErrorText(throwable, R.string.cloud_sync_save_failed)
-                    )
+                    if (isSameCloudSessionGeneration(
+                            session,
+                            authManager.authState.value.session
+                        )
+                    ) {
+                        val message = authErrorText(throwable, R.string.cloud_sync_save_failed)
+                        cloudSyncRetryMode = cloudSyncRetryModeForSaveFailure(message)
+                        authManager.setMessage(message)
+                    }
                 }
             }
     }
@@ -547,6 +631,19 @@ fun GymAppRoot(
                             }
                         }
                     },
+                    onContinueLocal = { displayName ->
+                        authManager.setLoading(true)
+                        runCatching {
+                            authManager.setLocal(displayName)
+                        }.onFailure { throwable ->
+                            authManager.setMessage(
+                                authErrorText(
+                                    throwable,
+                                    R.string.auth_message_local_profile_failed
+                                )
+                            )
+                        }
+                    },
                     modifier = Modifier.fillMaxSize()
                 )
                 AnimatedVisibility(
@@ -559,12 +656,61 @@ fun GymAppRoot(
                 return@Box
             }
 
+            val signedInMessage = authState.message?.asString()
+            val retryLabel = stringResource(R.string.action_retry)
+            val closeLabel = stringResource(R.string.action_close)
+            LaunchedEffect(
+                signedInMessage,
+                authState.messageIsError,
+                authState.message?.resourceId
+            ) {
+                if (signedInMessage == null) {
+                    cloudSyncRetryMode = null
+                    snackbarHostState.currentSnackbarData?.dismiss()
+                    return@LaunchedEffect
+                }
+                val retryMode = cloudSyncRetryMode
+                val retryable = retryMode != null &&
+                    isRetryableCloudSyncMessage(authState.message)
+                val result = snackbarHostState.showSnackbar(
+                    message = signedInMessage,
+                    actionLabel = when {
+                        retryable -> retryLabel
+                        authState.messageIsError -> closeLabel
+                        else -> null
+                    },
+                    duration = if (authState.messageIsError) {
+                        SnackbarDuration.Indefinite
+                    } else {
+                        SnackbarDuration.Short
+                    }
+                )
+                if (result == SnackbarResult.ActionPerformed) {
+                    if (retryable) {
+                        when (retryMode) {
+                            CloudSyncRetryMode.Pull -> cloudSyncRetryVersion += 1
+                            CloudSyncRetryMode.ResumeAutosave -> {
+                                cloudPullGeneration =
+                                    (authManager.authState.value.session as? AccountSession.Cloud)
+                                        ?.sessionGeneration
+                            }
+                        }
+                    }
+                    cloudSyncRetryMode = null
+                    authManager.setMessage(null, isError = false)
+                } else if (!authState.messageIsError) {
+                    cloudSyncRetryMode = null
+                    authManager.setMessage(null, isError = false)
+                }
+            }
+
             Scaffold(
                 modifier = Modifier
                     .fillMaxSize()
                     .nestedScroll(topAppBarScrollBehavior.nestedScrollConnection),
                 containerColor = Color.Transparent,
                 contentColor = MaterialTheme.colorScheme.onBackground,
+                snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
                 topBar = {
                     AppTopBar(
                         titleRes = titleRes,
@@ -1000,7 +1146,119 @@ fun GymAppRoot(
                                 onCloseImport = profileViewModel::closeImport,
                                 onImportJsonChange = profileViewModel::updateImportJson,
                                 onImportBackup = profileViewModel::importBackup,
-                                onLogout = profileViewModel::logout,
+                                onLogout = {
+                                    if (accountActionsEnabled(
+                                            authLoading = authState.isLoading,
+                                            deletionInProgress = accountDeletionInProgress
+                                        )
+                                    ) {
+                                        profileViewModel.logout()
+                                    }
+                                },
+                                isAccountActionLoading = !accountActionsEnabled(
+                                    authLoading = authState.isLoading,
+                                    deletionInProgress = accountDeletionInProgress
+                                ),
+                                onChangePassword = changePassword@ { currentPassword, newPassword ->
+                                    if (!accountActionsEnabled(
+                                            authLoading = authState.isLoading,
+                                            deletionInProgress = accountDeletionInProgress
+                                        )
+                                    ) {
+                                        return@changePassword
+                                    }
+                                    coroutineScope.launch {
+                                        authManager.setLoading(true)
+                                        runCatching {
+                                            authManager.changePassword(
+                                                currentPassword = currentPassword,
+                                                newPassword = newPassword
+                                            )
+                                        }.onFailure { throwable ->
+                                            if (authManager.authState.value.session != null) {
+                                                authManager.setMessage(
+                                                    authErrorText(
+                                                        throwable,
+                                                        R.string.account_change_password_failed
+                                                    )
+                                                )
+                                            }
+                                        }
+                                    }
+                                },
+                                onDeleteCloudAccount = deleteAccount@ {
+                                    if (!accountActionsEnabled(
+                                            authLoading = authState.isLoading,
+                                            deletionInProgress = accountDeletionInProgress
+                                        )
+                                    ) {
+                                        return@deleteAccount
+                                    }
+                                    val capturedSession = authManager.authState.value.session
+                                        as? AccountSession.Cloud ?: return@deleteAccount
+                                    val capturedRepository = repository
+                                    accountDeletionInProgress = true
+                                    authManager.setLoading(true)
+                                    accountDeletionScope.launch {
+                                        runCatching {
+                                            withContext(NonCancellable) {
+                                                val deletedSession = authManager.deleteCloudAccount(
+                                                    capturedSession
+                                                )
+                                                val cleanupFailures =
+                                                    runConfirmedAccountDeletionLocalCleanup(
+                                                        clearRoom = {
+                                                            capturedRepository.clearAllAccountData()
+                                                        },
+                                                        clearBaseline = {
+                                                            cloudSyncBaselineStore.clear(
+                                                                deletedSession.userId
+                                                            )
+                                                        },
+                                                        clearTrainingProfile = {
+                                                            applicationContext.gymApplication
+                                                                .trainingProfileManager
+                                                                .clearAccount(deletedSession)
+                                                        }
+                                                    )
+                                                val completion = authManager
+                                                    .completeCloudAccountDeletion(deletedSession)
+                                                if (cleanupFailures > 0 &&
+                                                    completion !=
+                                                    CloudAccountDeletionSessionDisposition
+                                                        .PreserveDifferentSession
+                                                ) {
+                                                    authManager.setMessage(
+                                                        LocalizedText(
+                                                            R.string
+                                                                .account_delete_local_cleanup_failed
+                                                        )
+                                                    )
+                                                }
+                                            }
+                                        }.onFailure { throwable ->
+                                            if (activeCloudSessionFor(
+                                                    authManager.authState.value.session,
+                                                    capturedSession
+                                                ) != null
+                                            ) {
+                                                authManager.setMessage(
+                                                    authErrorText(
+                                                        throwable,
+                                                        R.string.account_delete_failed
+                                                    )
+                                                )
+                                            }
+                                        }
+                                        accountDeletionInProgress = false
+                                    }
+                                },
+                                onResetGarminPairing = {
+                                    coroutineScope.launch {
+                                        applicationContext.gymApplication.garminSyncManager
+                                            .resetSecureGarminPairing()
+                                    }
+                                },
                                 modifier = Modifier.fillMaxSize()
                             )
                         }

@@ -422,9 +422,13 @@ jobs:
           deno check \
             --config supabase/functions/garmin-sync/deno.json \
             supabase/functions/garmin-sync/index.ts \
+            supabase/functions/delete-account/index.ts \
+            supabase/functions/_shared/garmin-capability.ts \
             supabase/functions/_shared/garmin-plan-contract.ts
           deno fmt --check \
             supabase/functions/garmin-sync/index.ts \
+            supabase/functions/delete-account/index.ts \
+            supabase/functions/_shared/garmin-capability.ts \
             supabase/functions/_shared/garmin-plan-contract.ts
 
   android-tests:

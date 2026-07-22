@@ -409,9 +409,11 @@ func gymSafeEnglishErrorMessage(_ error: Error) -> String {
              .callbackMissingSession,
              .callbackNotExpected,
              .notCloudAccount,
-             .sessionChanged:
+             .sessionChanged,
+             .sessionExpired:
             return authError.errorDescription ?? gymGenericErrorMessage
-        case .server(let message):
+        case .requestFailed(_, let message),
+             .server(let message):
             return gymSafeAuthServerErrorMessage(message)
         }
     }

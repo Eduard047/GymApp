@@ -36,10 +36,10 @@ To create a session, open Workouts and tap the add button. A reviewer can use te
 
 - GymApp uses first-party email/password authentication with Supabase. It has no Google/Facebook/social login and therefore no Guideline 4.8 alternative-login requirement.
 - Email confirmation and recovery use a same-device PKCE exchange. The app rejects implicit raw-token callbacks and unsolicited/expired callback state.
-- Production backend: active; migration state and access controls were reverified on 2026-07-21.
+- Production backend: active; migration state, Auth flows, access controls, state projection, Garmin delivery, and deletion were reverified on 2026-07-22.
 - Supabase Auth allowlists `com.setforge.gymapp.ios://auth/callback/*`; the final signed build still requires same-device confirmation/recovery testing on a physical iPhone before submission.
-- Production history is verified through `20260721143853_retire_legacy_garmin_table_grants.sql`. All eight previously missing canonical migrations were applied in deployment order on 2026-07-21; structural/ACL, owner-isolation, and rollback-only pre-auth limiter checks passed. A valid-device Garmin fetch/ack smoke remains required before App Store submission.
-- Production `garmin-sync` version 4 is active. OPTIONS, malformed input, unknown action, and random format-valid fetch/ack denial were verified over HTTP on 2026-07-21 without using a real capability; the valid-device smoke remains open.
+- Production history matches all 22 repository migrations through `20260722013200`; 37/37 cloud states have revision-bound projections with zero quarantine or mismatch.
+- Production `garmin-sync` version 6 is active. OPTIONS, malformed/unknown capability denial, valid-device fetch/ack/replay, token rotation, and post-cutover v2 continuity were verified over HTTP on 2026-07-22.
 - Required reviewer hardware/sample QR/feature flags: **None**
 - Garmin sync is optional and is not required for App Review. All core workout, progress, mission, rank, backup, and owner-only protected-progress paths work without Garmin hardware.
 
@@ -47,8 +47,9 @@ To create a session, open Workouts and tap the add button. A reviewer can use te
 
 Path: **Profile → Account, privacy & deletion → Delete Account**. The app shows an irreversible-deletion confirmation and calls the authenticated `delete-account` Edge Function. The server derives the user UUID from the verified bearer token and does not accept an arbitrary user ID.
 
-- Production function deployed and tested: `delete-account` version 1, `ACTIVE`, `verify_jwt=true`, verified 2026-07-11.
-- Disposable account deletion test date/result: on 2026-07-11, two disposable users were deleted through the live function after positive and negative contract tests. SQL verification found zero remaining Auth users/identities, profiles, cloud states, Garmin devices/plans, and moderation reports for those users.
+- Production version 3 is `ACTIVE` with `verify_jwt=true` and matches repository
+  contract v2. The live-session RPC rejects revoked/terminal sessions.
+- Disposable account deletion test date/result: on 2026-07-22, a disposable user with a profile, cloud state/projection, Garmin device, and two plans was deleted through the live function after positive and negative contract tests. SQL verification found zero remaining Auth user, profile, state/projection, Garmin device/plan, or moderation-report rows for that user.
 
 Deletion removes the Supabase Auth user and cascades `user_states`, `profiles`, `garmin_devices`, `garmin_plans`, and related moderation reports; the app then clears the local account database, Keychain session, and account preferences. Recheck this flow with the final signed physical-device build immediately before submission.
 
@@ -74,9 +75,9 @@ The JSON/PDF tools under **Profile → Backup & diagnostics** intentionally invo
 
 - [ ] All placeholders above replaced.
 - [ ] Demo credentials confirmed from a clean device and remain active.
-- [x] Production backend migration state and access controls reverified on 2026-07-21; the delete function was verified live on 2026-07-11. Monitor both throughout review.
+- [x] Production backend migration state, access controls, Garmin path, Auth lifecycle, and delete function reverified live on 2026-07-22. Monitor them throughout review.
 - [x] Deployed `20260721143038_restrict_leaderboard_to_owner_until_verified_ingestion.sql`; owner-only access and anonymous denial passed structural and runtime checks. Operational moderation monitoring must remain active for legacy reports.
-- [ ] `20260721143058_add_bounded_garmin_preauth_rate_limits.sql` is deployed and its random-token limiter passed a rollback-only runtime check. Verify a real valid watch still completes fetch/ack before submission.
+- [x] The Garmin limiter/capability migrations are deployed and a disposable valid device completed fetch/ack/replay plus the v2 gateway cutover on 2026-07-22.
 - [ ] Publish the refreshed combined privacy policy/support source and shared assets to the separate `gh-pages` branch, then verify both live without login. The pre-redesign pages were last verified live on 2026-07-20; this source-only update intentionally did not deploy them.
 - [x] Non-obvious functionality and the optional Garmin limitation are described above.
 - [ ] No test, debug, staging, or hidden feature remains in the submitted build.

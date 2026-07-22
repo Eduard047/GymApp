@@ -10,6 +10,8 @@ const AUTH_KEY = "gym-pwa-active-account-v1";
 const ACCOUNT_LIST_KEY = "gym-pwa-account-list-v1";
 const ACCOUNT_PREFIX = "gym-pwa-account:";
 const REMOTE_SESSION_KEY = "gym-pwa-supabase-session-v1";
+const AUTH_TRANSACTION_KEY = "gym-pwa-auth-transaction-v1";
+const SYNC_BASELINE_PREFIX = "gym-pwa-sync-baseline-v1:";
 const LEGACY_GARMIN_DEVICE_TOKEN_KEY = "gym-pwa-garmin-device-token-v1";
 const GARMIN_DEVICE_BINDINGS_KEY = "gym-pwa-garmin-device-bindings-v2";
 const GARMIN_ENQUEUE_REQUESTS_KEY = "gym-pwa-garmin-enqueue-requests-v1";
@@ -26,6 +28,9 @@ const MAX_REMOTE_AUTH_RESPONSE_BYTES = 64 * 1024;
 const MAX_REMOTE_ERROR_RESPONSE_BYTES = 8 * 1024;
 const MAX_REMOTE_RESPONSE_CHUNKS = 4096;
 const MAX_LOCAL_ACCOUNT_STORAGE_BYTES = 64 * 1024;
+const MAX_AUTH_TRANSACTION_STORAGE_BYTES = 4 * 1024;
+const AUTH_TRANSACTION_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const MAX_SYNC_BASELINE_STORAGE_BYTES = 2 * 1024;
 const MAX_LOCAL_ACCOUNTS = 20;
 const MAX_ACCOUNT_NAME_LENGTH = 64;
 const LOCAL_ACCOUNT_ID_VERSION = 2;
@@ -35,6 +40,11 @@ const MAX_GARMIN_BINDINGS = 20;
 const MAX_GARMIN_ENQUEUE_STORAGE_BYTES = 512 * 1024;
 const MAX_GARMIN_ENQUEUE_REQUESTS = 4;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+// Keep v2 until a newly signed Connect IQ binary is actually releasable.
+// The v3 parser/request path is intentionally dormant for that coordinated cutover.
+const GARMIN_CAPABILITY_VERSION = 2;
+const GARMIN_LEGACY_CAPABILITY_PATTERN = /^[a-f0-9]{64}$/;
+const GARMIN_CAPABILITY_PATTERN = /^g3\.([a-f0-9]{64})\.([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\.([a-f0-9]{64})\.([a-f0-9]{64})$/;
 const UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const app = document.querySelector("#app");
 
@@ -76,6 +86,14 @@ const filledIcons = new Set([
 function handleEmailConfirmationRedirect() {
   const query = new URLSearchParams(window.location.search);
   const hash = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+  const isWebAuthCallback = query.getAll("platform").length === 1 &&
+    query.get("platform") === "web" &&
+    ["purpose", "state", "code", "error", "error_description"].some(key => query.has(key));
+
+  if (isWebAuthCallback) {
+    void completeAuthCallback(query);
+    return true;
+  }
   const hasAuthPayload = query.has("access_token") || query.has("refresh_token") ||
     hash.has("access_token") || hash.has("refresh_token") ||
     query.get("type") === "signup" || hash.get("type") === "signup";
@@ -1065,6 +1083,7 @@ let exerciseMuscleFilter = "all";
 let exerciseSortMode = "name";
 let exerciseFavoritesOnly = false;
 let authMode = "login";
+let authNotice = null;
 let pendingEmailConfirmation = null;
 let authRequestInProgress = false;
 let accountTransitionInProgress = false;
@@ -1072,19 +1091,23 @@ let garminSyncInProgress = false;
 let pendingRecommendations = [];
 const pendingGarminRevocations = new Map();
 let cloudStateRecovery = null;
+let cloudSyncConflict = null;
 let cloudRecoveryInProgress = false;
 const authDrafts = {
   login: { email: "", password: "" },
-  signup: { email: "", emailConfirm: "", password: "", passwordConfirm: "", name: "" }
+  signup: { email: "", emailConfirm: "", password: "", passwordConfirm: "", name: "" },
+  forgot: { email: "" }
 };
 const routeScrollPositions = new Map();
 const USER_VISIBLE_ERROR_MESSAGES = Symbol("GymAppUserVisibleErrorMessages");
 
 function clearAuthDrafts() {
   authMode = "login";
+  authNotice = null;
   pendingEmailConfirmation = null;
   authDrafts.login = { email: "", password: "" };
   authDrafts.signup = { email: "", emailConfirm: "", password: "", passwordConfirm: "", name: "" };
+  authDrafts.forgot = { email: "" };
 }
 
 function t(key) {
@@ -1282,7 +1305,9 @@ function ensureBuiltInExerciseCatalog(targetState) {
   if (pendingDefinitions.every(definition => existingKeys.has(definition.key))) {
     targetState.catalogSeedVersion = CATALOG_SEED_VERSION;
   }
-  return inserted > 0 || targetState.catalogSeedVersion === CATALOG_SEED_VERSION;
+  // Advancing the local seed marker alone does not change the portable cloud
+  // payload, so it must not trigger a redundant CAS write on every pull.
+  return inserted > 0;
 }
 
 function normalizeStoredAccount(value) {
@@ -1348,6 +1373,27 @@ function removeActiveAccountMarkerIfOwned(account) {
     if (!current) return false;
     const sameIdentity = !current?.remote && current?.id === expected.id && current?.name === expected.name &&
       current?.localIdVersion === expected.localIdVersion;
+    if (!sameIdentity) return true;
+    localStorage.removeItem(AUTH_KEY);
+    return localStorage.getItem(AUTH_KEY) === null;
+  } catch {
+    return false;
+  }
+}
+
+function removeActiveAccountMarkerForDeletion(account) {
+  const expected = normalizeStoredAccount(account);
+  if (!expected) return false;
+  try {
+    const raw = localStorage.getItem(AUTH_KEY);
+    if (!raw) return true;
+    if (new TextEncoder().encode(raw).byteLength > MAX_LOCAL_ACCOUNT_STORAGE_BYTES) return false;
+    const current = normalizeStoredAccount(JSON.parse(raw));
+    if (!current) return false;
+    const sameIdentity = expected.remote === "supabase"
+      ? current.remote === "supabase" && current.userId === expected.userId && current.id === expected.id
+      : !current.remote && current.id === expected.id && current.name === expected.name &&
+        current.localIdVersion === expected.localIdVersion;
     if (!sameIdentity) return true;
     localStorage.removeItem(AUTH_KEY);
     return localStorage.getItem(AUTH_KEY) === null;
@@ -1507,6 +1553,26 @@ function saveRemoteSession(session) {
   writeTransientRemoteSessionRaw(encoded);
 }
 
+function saveDurableRemoteSession(session) {
+  saveRemoteSession(session);
+  try {
+    const raw = window.sessionStorage?.getItem(REMOTE_SESSION_KEY);
+    if (!raw || new TextEncoder().encode(raw).byteLength > MAX_REMOTE_AUTH_RESPONSE_BYTES) {
+      throw new Error("Cloud session handoff is unavailable.");
+    }
+    const stored = JSON.parse(raw);
+    if (!validRemoteSession(stored) || stored.user.id !== session.user.id ||
+        stored.access_token !== session.access_token ||
+        stored.activation_pending !== session.activation_pending) {
+      throw new Error("Cloud session handoff could not be verified.");
+    }
+    return stored;
+  } catch (error) {
+    clearRemoteSession();
+    throw error;
+  }
+}
+
 function validRemoteSession(session) {
   const userId = session?.user?.id;
   const email = session?.user?.email;
@@ -1520,7 +1586,11 @@ function validRemoteSession(session) {
       new TextEncoder().encode(email).byteLength <= 320)) &&
     (session.refresh_token === undefined ||
       (typeof session.refresh_token === "string" && session.refresh_token.length >= 16 &&
-       session.refresh_token.length <= 8192))
+       session.refresh_token.length <= 8192)) &&
+    (session.password_update_required === undefined ||
+      typeof session.password_update_required === "boolean") &&
+    (session.activation_pending === undefined ||
+      ["login", "signup", "recovery"].includes(session.activation_pending))
   );
 }
 
@@ -1580,7 +1650,10 @@ async function refreshRemoteSession(session = loadRemoteSession()) {
   }
   if (!response.ok) {
     const errorText = await readBoundedResponseText(response, MAX_REMOTE_ERROR_RESPONSE_BYTES).catch(() => "");
-    throw new Error(errorText || `Session refresh failed: ${response.status}`);
+    const error = new Error(errorText || `Session refresh failed: ${response.status}`);
+    error.status = response.status;
+    error.terminalAuth = response.status === 400 || response.status === 401;
+    throw error;
   }
   const responseText = await readBoundedResponseText(response, MAX_REMOTE_AUTH_RESPONSE_BYTES);
   let refreshed;
@@ -1634,13 +1707,15 @@ async function supabaseRequest(path, options = {}) {
     maxResponseBytes: requestedResponseBytes = MAX_REMOTE_RESPONSE_BYTES,
     ...fetchOptions
   } = options;
-  const { session: providedSession, ...requestOptions } = fetchOptions;
+  const { session: providedSession, anonymous = false, ...requestOptions } = fetchOptions;
   const maxResponseBytes = Number.isSafeInteger(requestedResponseBytes) && requestedResponseBytes > 0
     ? Math.min(requestedResponseBytes, MAX_REMOTE_RESPONSE_BYTES)
     : MAX_REMOTE_RESPONSE_BYTES;
   const isAuthRequest = path.startsWith("/auth/v1/");
-  let requestSession = providedSession || loadRemoteSession();
-  if (!isAuthRequest && requestSession?.access_token && remoteSessionNeedsRefresh(requestSession)) {
+  const authenticatedAuthRequest = /^\/auth\/v1\/(?:user|reauthenticate)(?:[?]|$)/.test(path);
+  const refreshEligible = !anonymous && (!isAuthRequest || authenticatedAuthRequest);
+  let requestSession = anonymous ? null : (providedSession || loadRemoteSession());
+  if (refreshEligible && requestSession?.access_token && remoteSessionNeedsRefresh(requestSession)) {
     requestSession = await refreshRemoteSession(requestSession);
   }
   const controller = new AbortController();
@@ -1660,7 +1735,7 @@ async function supabaseRequest(path, options = {}) {
   let response;
   try {
     response = await request();
-    if (response.status === 401 && !isAuthRequest && requestSession?.refresh_token) {
+    if (response.status === 401 && refreshEligible && requestSession?.refresh_token) {
       requestSession = await refreshRemoteSession(requestSession);
       response = await request();
     }
@@ -1679,6 +1754,38 @@ async function supabaseRequest(path, options = {}) {
   if (response.status === 204) return null;
   const body = await readBoundedResponseText(response, maxResponseBytes);
   return body ? JSON.parse(body) : null;
+}
+
+function isTerminalRemoteAuthError(error) {
+  return error?.terminalAuth === true && (error.status === 400 || error.status === 401);
+}
+
+function transitionToReauthentication(error) {
+  if (!isTerminalRemoteAuthError(error)) return false;
+  try {
+    if (activeAccount) saveState({ queueRemote: false });
+  } catch {
+    // The already-stored local copy remains available for the next login.
+  }
+  clearTimeout(remoteSaveTimer);
+  remoteSaveTimer = null;
+  clearRemoteSession();
+  resetRemoteSyncContext();
+  clearAuthDrafts();
+  activeAccount = null;
+  state = loadState();
+  nav = [{ name: "workouts" }];
+  modal = null;
+  authNotice = {
+    text: tx(
+      "Your cloud session expired or was revoked. Sign in again; browser-saved workouts were kept.",
+      "Хмарна сесія завершилася або була відкликана. Увійди знову; тренування в браузері збережено."
+    ),
+    isError: true
+  };
+  replaceNavigationHistory();
+  render();
+  return true;
 }
 
 async function readBoundedResponseText(response, maxBytes) {
@@ -1749,56 +1856,247 @@ async function pullRemoteState() {
   const session = loadRemoteSession();
   if (!session?.user?.id) return false;
   const cloudState = await loadRemoteState(session);
-  if (!cloudState.exists) {
-    bindRemoteStateRevision(cloudState);
-    return false;
-  }
   if (activeAccount?.userId !== cloudState.userId || loadRemoteSession()?.user?.id !== cloudState.userId) {
     throw new Error("Cloud state was loaded for a stale account session.");
   }
-  let nextState;
+  return reconcileLoadedRemoteState(cloudState, state, storedAccountStateExists(activeAccount));
+}
+
+function storedAccountStateExists(account = activeAccount) {
   try {
-    nextState = normalizeImportedState(cloudState.state, defaultAppState());
-    preserveExerciseFavorites(nextState, state, { preferPrevious: true });
-    var catalogChanged = ensureBuiltInExerciseCatalog(nextState);
+    return Boolean(account?.id && localStorage.getItem(activeStorageKey(account)) !== null);
+  } catch {
+    return false;
+  }
+}
+
+async function reconcileLoadedRemoteState(cloudState, cachedState, cachedStateExists = true) {
+  const userId = activeAccount?.userId;
+  if (!UUID_PATTERN.test(userId || "") || cloudState?.userId !== userId) {
+    throw new Error("Cloud state reconciliation owner is invalid.");
+  }
+  let remoteState = defaultAppState();
+  let remoteFingerprint = null;
+  let catalogChanged = false;
+  try {
+    if (cloudState.exists) {
+      remoteState = normalizeImportedState(cloudState.state, defaultAppState());
+      remoteFingerprint = remoteStateFingerprint(remoteState, userId);
+      preserveExerciseFavorites(remoteState, cachedState, { preferPrevious: true });
+      catalogChanged = ensureBuiltInExerciseCatalog(remoteState);
+    }
     cloudStateRecovery = null;
   } catch {
-    nextState = defaultAppState();
+    state = cachedState;
+    bindRemoteStateRevision(cloudState);
     cloudStateRecovery = {
       userId: cloudState.userId,
       revision: cloudState.revision,
       rawState: cloudState.state
     };
+    cloudSyncConflict = null;
+    return true;
   }
-  state = nextState;
-  bindRemoteStateRevision(cloudState);
-  saveState({ queueRemote: catalogChanged && cloudStateRecovery === null });
-  return true;
+
+  let baseline = loadSyncBaseline(userId);
+  const localFingerprint = remoteStateFingerprint(cachedState, userId);
+  const remoteIdentityFingerprint = cloudState.exists ? remoteFingerprint : null;
+  const sameIdentity = (leftExists, leftFingerprint, rightExists, rightFingerprint) =>
+    leftExists === rightExists && (!leftExists || leftFingerprint === rightFingerprint);
+  const localMatches = fingerprint => fingerprint !== null && localFingerprint === fingerprint;
+  const remoteMatches = (exists, fingerprint) => sameIdentity(
+    Boolean(cloudState.exists),
+    remoteIdentityFingerprint,
+    Boolean(exists),
+    fingerprint
+  );
+  const persistBase = ({ syncedFingerprint, dirty, pending = null }) => {
+    baseline = saveSyncBaseline({
+      version: 1,
+      userId,
+      remoteExists: Boolean(cloudState.exists),
+      revision: cloudState.exists ? cloudState.revision : null,
+      syncedFingerprint,
+      localFingerprint,
+      dirty,
+      pending,
+      updatedAt: Date.now()
+    });
+    return baseline;
+  };
+  const keepLocalAndUpload = async baseFingerprint => {
+    state = cachedState;
+    bindRemoteStateRevision(cloudState);
+    cloudStateRecovery = null;
+    cloudSyncConflict = null;
+    persistBase({ syncedFingerprint: baseFingerprint, dirty: true });
+    await saveRemoteState();
+    return true;
+  };
+  const acceptRemote = async () => {
+    state = cloudState.exists ? remoteState : defaultAppState();
+    bindRemoteStateRevision(cloudState);
+    cloudStateRecovery = null;
+    cloudSyncConflict = null;
+    saveState({ queueRemote: false, markDirty: false });
+    const acceptedLocalFingerprint = remoteStateFingerprint(state, userId);
+    baseline = saveSyncBaseline({
+      version: 1,
+      userId,
+      remoteExists: Boolean(cloudState.exists),
+      revision: cloudState.exists ? cloudState.revision : null,
+      syncedFingerprint: remoteIdentityFingerprint,
+      localFingerprint: acceptedLocalFingerprint,
+      dirty: catalogChanged,
+      pending: null,
+      updatedAt: Date.now()
+    });
+    if (catalogChanged) await saveRemoteState();
+    return true;
+  };
+  const blockConflict = pending => {
+    state = cachedState;
+    bindRemoteStateRevision(cloudState);
+    cloudStateRecovery = null;
+    if (!baseline) {
+      baseline = saveSyncBaseline({
+        version: 1,
+        userId,
+        remoteExists: Boolean(cloudState.exists),
+        revision: cloudState.exists ? cloudState.revision : null,
+        syncedFingerprint: remoteIdentityFingerprint,
+        localFingerprint,
+        dirty: true,
+        pending: pending ?? null,
+        updatedAt: Date.now()
+      });
+    }
+    cloudSyncConflict = {
+      userId,
+      cloudState,
+      remoteState,
+      remoteFingerprint: remoteIdentityFingerprint,
+      pending: pending ?? baseline?.pending ?? null
+    };
+    return true;
+  };
+
+  if (baseline?.pending) {
+    const pending = baseline.pending;
+    const remoteMatchesPending = cloudState.exists && remoteIdentityFingerprint === pending.payloadFingerprint;
+    const remoteMatchesBase = remoteMatches(pending.baseExists, pending.baseFingerprint);
+    if (remoteMatchesPending) {
+      persistBase({
+        syncedFingerprint: pending.payloadFingerprint,
+        dirty: localFingerprint !== pending.payloadFingerprint
+      });
+      if (localFingerprint !== pending.payloadFingerprint) {
+        return keepLocalAndUpload(pending.payloadFingerprint);
+      }
+      state = cachedState;
+      bindRemoteStateRevision(cloudState);
+      cloudSyncConflict = null;
+      return true;
+    }
+    if (remoteMatchesBase) {
+      persistBase({
+        syncedFingerprint: pending.baseFingerprint,
+        dirty: !localMatches(pending.baseFingerprint)
+      });
+      if (!localMatches(pending.baseFingerprint)) {
+        return keepLocalAndUpload(pending.baseFingerprint);
+      }
+      return acceptRemote();
+    }
+    return blockConflict(pending);
+  }
+
+  if (!baseline) {
+    if (cloudState.exists && !cachedStateExists) return acceptRemote();
+    if (cloudState.exists && localFingerprint === remoteIdentityFingerprint) return acceptRemote();
+    if (cloudState.exists) return blockConflict(null);
+    state = cachedStateExists ? cachedState : defaultAppState();
+    const initialFingerprint = remoteStateFingerprint(state, userId);
+    baseline = saveSyncBaseline({
+      version: 1,
+      userId,
+      remoteExists: false,
+      revision: null,
+      syncedFingerprint: null,
+      localFingerprint: initialFingerprint,
+      dirty: true,
+      pending: null,
+      updatedAt: Date.now()
+    });
+    bindRemoteStateRevision(cloudState);
+    await saveRemoteState();
+    return true;
+  }
+
+  const localMatchesRemote = cloudState.exists && localFingerprint === remoteIdentityFingerprint;
+  const remoteMatchesBase = remoteMatches(baseline.remoteExists, baseline.syncedFingerprint);
+  const localMatchesBase = baseline.syncedFingerprint !== null
+    ? localMatches(baseline.syncedFingerprint)
+    : (baseline.remoteExists === false && baseline.dirty === false &&
+       localFingerprint === baseline.localFingerprint);
+  if (localMatchesRemote) {
+    if (catalogChanged) return acceptRemote();
+    state = cachedState;
+    bindRemoteStateRevision(cloudState);
+    cloudSyncConflict = null;
+    saveSyncBaseline(syncedBaseline(userId, cloudState, localFingerprint));
+    return true;
+  }
+  if (!cloudState.exists && baseline.remoteExists === false && !baseline.dirty) {
+    return acceptRemote();
+  }
+  if (remoteMatchesBase && !localMatchesBase) {
+    return keepLocalAndUpload(baseline.syncedFingerprint);
+  }
+  if (localMatchesBase && !remoteMatchesBase) return acceptRemote();
+  if (remoteMatchesBase && localMatchesBase) return acceptRemote();
+  return blockConflict(null);
 }
 
-function remoteStatePayload(expectedUserId = activeAccount?.userId) {
+function remoteStateCore(sourceState = state, expectedUserId = activeAccount?.userId) {
   if (!expectedUserId) throw new Error("Cloud state owner is missing.");
-  return JSON.parse(JSON.stringify({
+  return {
     schemaVersion: 2,
-    exportedAt: Date.now(),
     app: "GymApp",
     diagnostics: false,
     owner: { accountId: expectedUserId, userId: expectedUserId, remote: true },
-    language: state.language,
+    language: sourceState.language,
     // Favorites are intentionally device/account-local. Android's strict
     // cloud schema-v2 does not accept the optional PWA backup field.
-    exercises: state.exercises.map(exercise => ({
+    exercises: sourceState.exercises.map(exercise => ({
       id: exercise.id,
       name: exercise.name,
       ...(persistedExerciseCatalogKey(exercise) ? { catalogKey: persistedExerciseCatalogKey(exercise) } : {})
     })),
-    sessions: state.sessions,
-    mappings: state.mappings,
-    profile: state.profile
+    sessions: sourceState.sessions,
+    mappings: sourceState.mappings,
+    profile: sourceState.profile
+  };
+}
+
+function remoteStatePayload(expectedUserId = activeAccount?.userId, sourceState = state) {
+  const core = remoteStateCore(sourceState, expectedUserId);
+  return JSON.parse(JSON.stringify({
+    schemaVersion: core.schemaVersion,
+    exportedAt: Date.now(),
+    app: core.app,
+    diagnostics: core.diagnostics,
+    owner: core.owner,
+    language: core.language,
+    exercises: core.exercises,
+    sessions: core.sessions,
+    mappings: core.mappings,
+    profile: core.profile
   }));
 }
 
 let remoteSaveTimer = null;
+let remoteSaveInFlight = null;
 let accountEpoch = 0;
 let remoteStateSync = { userId: null, exists: false, revision: null };
 
@@ -1809,6 +2107,7 @@ function resetRemoteSyncContext() {
   remoteSaveTimer = null;
   remoteStateSync = { userId: null, exists: false, revision: null };
   cloudStateRecovery = null;
+  cloudSyncConflict = null;
   cloudRecoveryInProgress = false;
 }
 
@@ -1832,16 +2131,232 @@ function validRemoteStateRevision(value) {
     Number.isFinite(Date.parse(value));
 }
 
+function syncBaselineKey(userId) {
+  if (!UUID_PATTERN.test(userId || "")) throw new Error("Cloud baseline owner is invalid.");
+  return `${SYNC_BASELINE_PREFIX}${userId}`;
+}
+
+function remoteStateFingerprint(sourceState = state, userId = activeAccount?.userId) {
+  const canonicalJson = value => {
+    if (value === null || typeof value !== "object") return JSON.stringify(value);
+    if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+    return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
+  };
+  const bytes = new TextEncoder().encode(canonicalJson(remoteStateCore(sourceState, userId)));
+  const mask = 0xffffffffffffffffn;
+  const prime = 0x100000001b3n;
+  let forward = 0xcbf29ce484222325n;
+  let reverse = 0x84222325cbf29ce4n;
+  for (let index = 0; index < bytes.length; index += 1) {
+    forward = ((forward ^ BigInt(bytes[index])) * prime) & mask;
+    reverse = ((reverse ^ BigInt(bytes[bytes.length - index - 1])) * prime) & mask;
+  }
+  return `${bytes.length.toString(16)}:${forward.toString(16).padStart(16, "0")}:${reverse.toString(16).padStart(16, "0")}`;
+}
+
+function validStateFingerprint(value) {
+  return typeof value === "string" && /^[0-9a-f]{1,8}:[0-9a-f]{16}:[0-9a-f]{16}$/.test(value);
+}
+
+function normalizeSyncBaseline(value, userId) {
+  if (!value || typeof value !== "object" || Array.isArray(value) || value.version !== 1 ||
+      value.userId !== userId || ![true, false, null].includes(value.remoteExists) ||
+      (value.remoteExists === true ? !validRemoteStateRevision(value.revision) : value.revision !== null) ||
+      (value.syncedFingerprint !== null && !validStateFingerprint(value.syncedFingerprint)) ||
+      !validStateFingerprint(value.localFingerprint) || typeof value.dirty !== "boolean" ||
+      (value.pending !== undefined && value.pending !== null && (!value.pending || typeof value.pending !== "object" ||
+        Array.isArray(value.pending) || !validStateFingerprint(value.pending.payloadFingerprint) ||
+        typeof value.pending.baseExists !== "boolean" ||
+        (value.pending.baseExists ? !validRemoteStateRevision(value.pending.baseRevision) : value.pending.baseRevision !== null) ||
+        (value.pending.baseFingerprint !== null && !validStateFingerprint(value.pending.baseFingerprint)) ||
+        !Number.isSafeInteger(value.pending.startedAt) || value.pending.startedAt < 0)) ||
+      !Number.isSafeInteger(value.updatedAt) || value.updatedAt < 0) {
+    return null;
+  }
+  return {
+    version: 1,
+    userId,
+    remoteExists: value.remoteExists,
+    revision: value.revision,
+    syncedFingerprint: value.syncedFingerprint,
+    localFingerprint: value.localFingerprint,
+    dirty: value.dirty,
+    pending: value.pending == null ? null : {
+      payloadFingerprint: value.pending.payloadFingerprint,
+      baseExists: value.pending.baseExists,
+      baseRevision: value.pending.baseRevision,
+      baseFingerprint: value.pending.baseFingerprint,
+      startedAt: value.pending.startedAt
+    },
+    updatedAt: value.updatedAt
+  };
+}
+
+function loadSyncBaseline(userId) {
+  try {
+    const key = syncBaselineKey(userId);
+    const raw = localStorage.getItem(key);
+    if (!raw || new TextEncoder().encode(raw).byteLength > MAX_SYNC_BASELINE_STORAGE_BYTES) {
+      if (raw) localStorage.removeItem(key);
+      return null;
+    }
+    const baseline = normalizeSyncBaseline(JSON.parse(raw), userId);
+    if (!baseline) localStorage.removeItem(key);
+    return baseline;
+  } catch {
+    return null;
+  }
+}
+
+function saveSyncBaseline(baseline) {
+  const normalized = normalizeSyncBaseline(baseline, baseline?.userId);
+  if (!normalized) throw new Error("Cloud sync baseline is invalid.");
+  const encoded = JSON.stringify(normalized);
+  if (new TextEncoder().encode(encoded).byteLength > MAX_SYNC_BASELINE_STORAGE_BYTES) {
+    throw new Error("Cloud sync baseline is too large.");
+  }
+  const key = syncBaselineKey(normalized.userId);
+  localStorage.setItem(key, encoded);
+  const stored = loadSyncBaseline(normalized.userId);
+  if (!stored || stored.localFingerprint !== normalized.localFingerprint ||
+      stored.updatedAt !== normalized.updatedAt) {
+    throw new Error("Cloud sync baseline could not be saved.");
+  }
+  return stored;
+}
+
+function syncedBaseline(userId, cloudState, fingerprint) {
+  return {
+    version: 1,
+    userId,
+    remoteExists: Boolean(cloudState.exists),
+    revision: cloudState.exists ? cloudState.revision : null,
+    syncedFingerprint: fingerprint,
+    localFingerprint: fingerprint,
+    dirty: false,
+    pending: null,
+    updatedAt: Date.now()
+  };
+}
+
+function markRemoteStateDirtyBeforeWrite(nextState = state) {
+  const userId = activeAccount?.remote === "supabase" ? activeAccount.userId : null;
+  if (!userId) return null;
+  const fingerprint = remoteStateFingerprint(nextState, userId);
+  const baseline = loadSyncBaseline(userId);
+  if (baseline?.dirty && baseline.localFingerprint === fingerprint) return baseline;
+  const next = {
+    version: 1,
+    userId,
+    remoteExists: baseline?.remoteExists ?? null,
+    revision: baseline?.revision ?? null,
+    syncedFingerprint: baseline?.syncedFingerprint ?? null,
+    localFingerprint: fingerprint,
+    dirty: baseline?.dirty === true || baseline?.syncedFingerprint !== fingerprint,
+    pending: baseline?.pending ?? null,
+    updatedAt: Date.now()
+  };
+  return saveSyncBaseline(next);
+}
+
 function queueRemoteSave() {
-  if (!activeAccount?.remote || !remoteAuthEnabled() || cloudStateRecovery) return;
+  if (!activeAccount?.remote || !remoteAuthEnabled() || cloudStateRecovery || cloudSyncConflict) return;
   clearTimeout(remoteSaveTimer);
   const expectedEpoch = accountEpoch;
   const expectedUserId = activeAccount.userId;
   remoteSaveTimer = setTimeout(() => {
     remoteSaveTimer = null;
-    saveRemoteState({ expectedEpoch, expectedUserId })
-      .catch(() => showToast(tx("Cloud sync conflicted. Reload before saving again.", "Хмарні зміни конфліктують. Онови дані перед повторним збереженням.")));
+    startRemoteSave({ expectedEpoch, expectedUserId })
+      .then(showRemoteSaveResult)
+      .catch(handleRemoteSaveError);
   }, 700);
+}
+
+function startRemoteSave(options = {}) {
+  const previous = remoteSaveInFlight;
+  const operation = (previous ? previous.catch(() => {}) : Promise.resolve())
+    .then(async () => {
+      const expectedUserId = options.expectedUserId ?? activeAccount?.userId;
+      if (!expectedUserId || activeAccount?.userId !== expectedUserId) {
+        throw new Error("Cloud save belongs to a stale account session.");
+      }
+      let baseline = loadSyncBaseline(expectedUserId);
+      if (baseline?.pending || (baseline?.dirty && remoteStateSync.userId !== expectedUserId)) {
+        await pullRemoteState();
+        baseline = loadSyncBaseline(expectedUserId);
+      }
+      if (cloudStateRecovery?.userId === expectedUserId) {
+        throw new Error("Cloud state recovery must be resolved before saving.");
+      }
+      if (cloudSyncConflict?.userId === expectedUserId) {
+        throw new Error("Cloud sync conflicted and needs an explicit version choice.");
+      }
+      if (baseline?.pending) {
+        throw new Error("Cloud write outcome could not be reconciled.");
+      }
+      if (baseline && !baseline.dirty) {
+        return { stateSaved: true, profileUpdated: true, reconciled: true };
+      }
+      return saveRemoteState(options);
+    });
+  remoteSaveInFlight = operation;
+  operation.then(
+    () => { if (remoteSaveInFlight === operation) remoteSaveInFlight = null; },
+    () => { if (remoteSaveInFlight === operation) remoteSaveInFlight = null; }
+  );
+  return operation;
+}
+
+async function flushPendingRemoteSave() {
+  if (!activeAccount?.remote || !remoteAuthEnabled()) return null;
+  const expectedEpoch = accountEpoch;
+  const expectedUserId = activeAccount.userId;
+  if (cloudStateRecovery?.userId === expectedUserId || cloudSyncConflict?.userId === expectedUserId) {
+    throw new Error("Cloud sync needs an explicit recovery or conflict choice.");
+  }
+  const hadPendingTimer = remoteSaveTimer !== null;
+  clearTimeout(remoteSaveTimer);
+  remoteSaveTimer = null;
+  const inFlight = remoteSaveInFlight;
+  let inFlightError = null;
+  let result = null;
+  if (inFlight) {
+    try {
+      result = await inFlight;
+    } catch (error) {
+      if (isTerminalRemoteAuthError(error)) throw error;
+      inFlightError = error;
+    }
+  }
+  let baseline = loadSyncBaseline(expectedUserId);
+  if (hadPendingTimer || baseline?.pending || baseline?.dirty) {
+    result = await startRemoteSave({ expectedEpoch, expectedUserId });
+    baseline = loadSyncBaseline(expectedUserId);
+  }
+  if (cloudStateRecovery?.userId === expectedUserId || cloudSyncConflict?.userId === expectedUserId ||
+      baseline?.pending || baseline?.dirty) {
+    throw new Error("Cloud sync did not reach a confirmed clean state.");
+  }
+  if (inFlightError && !result) throw inFlightError;
+  return result;
+}
+
+function showRemoteSaveResult(result) {
+  if (result?.profileUpdated === false) {
+    if (transitionToReauthentication(result.profileError)) return;
+    showToast(tx(
+      "Workouts synced, but the public profile summary could not be updated.",
+      "Тренування синхронізовано, але публічний підсумок профілю не вдалося оновити."
+    ));
+  }
+}
+
+function handleRemoteSaveError(error) {
+  if (transitionToReauthentication(error)) return;
+  const conflict = /changed on another client|revision|stale account session/i.test(String(error?.message || ""));
+  showToast(conflict
+    ? tx("Cloud sync conflicted. Reload before saving again.", "Хмарні зміни конфліктують. Онови дані перед повторним збереженням.")
+    : tx("Cloud sync failed. Your latest changes remain saved in this browser.", "Хмарна синхронізація не вдалася. Останні зміни збережено в цьому браузері."));
 }
 
 async function saveRemoteState({ expectedEpoch = accountEpoch, expectedUserId = activeAccount?.userId } = {}) {
@@ -1854,7 +2369,32 @@ async function saveRemoteState({ expectedEpoch = accountEpoch, expectedUserId = 
   if (remoteStateSync.userId !== expectedUserId) {
     throw new Error("Cloud state must be loaded and validated before saving.");
   }
-  const payload = remoteStatePayload(expectedUserId);
+  const attemptState = JSON.parse(JSON.stringify(state));
+  const attemptFingerprint = remoteStateFingerprint(attemptState, expectedUserId);
+  const baseline = loadSyncBaseline(expectedUserId);
+  if (baseline?.pending) {
+    throw new Error("Cloud write outcome must be reconciled before another save.");
+  }
+  const pendingBaseline = {
+    version: 1,
+    userId: expectedUserId,
+    remoteExists: baseline?.remoteExists ?? Boolean(remoteStateSync.exists),
+    revision: baseline?.revision ?? (remoteStateSync.exists ? remoteStateSync.revision : null),
+    syncedFingerprint: baseline?.syncedFingerprint ?? null,
+    localFingerprint: remoteStateFingerprint(state, expectedUserId),
+    dirty: true,
+    pending: {
+      payloadFingerprint: attemptFingerprint,
+      baseExists: Boolean(remoteStateSync.exists),
+      baseRevision: remoteStateSync.exists ? remoteStateSync.revision : null,
+      baseFingerprint: baseline?.syncedFingerprint ?? null,
+      startedAt: Date.now()
+    },
+    updatedAt: Date.now()
+  };
+  saveSyncBaseline(pendingBaseline);
+  const payload = remoteStatePayload(expectedUserId, attemptState);
+  const attemptedXp = xpForSessions(attemptState.sessions);
   let rows;
   if (remoteStateSync.exists) {
     const revision = remoteStateSync.revision;
@@ -1883,20 +2423,43 @@ async function saveRemoteState({ expectedEpoch = accountEpoch, expectedUserId = 
       loadRemoteSession()?.user?.id !== expectedUserId) {
     throw new Error("Cloud save completed for a stale account session.");
   }
-  bindRemoteStateRevision({ userId: expectedUserId, exists: true, revision: rows[0].updated_at });
-  await supabaseRequest("/rest/v1/profiles?on_conflict=user_id", {
-    method: "POST",
-    session,
-    headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
-    body: JSON.stringify({
-      user_id: expectedUserId,
-      display_name: activeAccount.name,
-      xp: totalXp(),
-      level: levelFromXp(totalXp()),
-      workouts: state.sessions.length,
-      updated_at: new Date().toISOString()
-    })
+  const confirmedState = { userId: expectedUserId, exists: true, revision: rows[0].updated_at };
+  const currentFingerprint = remoteStateFingerprint(state, expectedUserId);
+  saveSyncBaseline({
+    version: 1,
+    userId: expectedUserId,
+    remoteExists: true,
+    revision: confirmedState.revision,
+    syncedFingerprint: attemptFingerprint,
+    localFingerprint: currentFingerprint,
+    dirty: currentFingerprint !== attemptFingerprint,
+    pending: null,
+    updatedAt: Date.now()
   });
+  bindRemoteStateRevision(confirmedState);
+  try {
+    const currentSession = loadRemoteSession();
+    const profileSession = currentSession?.user?.id === expectedUserId
+      ? currentSession
+      : (session?.user?.id === expectedUserId ? session : null);
+    if (!profileSession) throw new Error("Cloud profile update belongs to a stale account session.");
+    await supabaseRequest("/rest/v1/profiles?on_conflict=user_id", {
+      method: "POST",
+      session: profileSession,
+      headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+      body: JSON.stringify({
+        user_id: expectedUserId,
+        display_name: activeAccount.name,
+        xp: attemptedXp,
+        level: levelFromXp(attemptedXp),
+        workouts: attemptState.sessions.length,
+        updated_at: new Date().toISOString()
+      })
+    });
+    return { stateSaved: true, profileUpdated: true };
+  } catch (profileError) {
+    return { stateSaved: true, profileUpdated: false, profileError };
+  }
 }
 
 function draftToGarminPlan(draft = workoutDraft) {
@@ -1919,7 +2482,8 @@ function loadGarminBindings() {
     let storageNeedsRewrite = false;
     entries.forEach(([userId, value]) => {
       storageNeedsRewrite ||= Boolean(value && typeof value === "object" && Object.hasOwn(value, "deviceToken"));
-      if (!UUID_PATTERN.test(userId) || value?.version !== 2 || value.userId !== userId ||
+      const capabilityMigration = value?.version !== GARMIN_CAPABILITY_VERSION;
+      if (!UUID_PATTERN.test(userId) || ![2, 3].includes(value?.version) || value.userId !== userId ||
           !UUID_PATTERN.test(value.deviceId || "")) {
         storageNeedsRewrite = true;
         return;
@@ -1927,11 +2491,14 @@ function loadGarminBindings() {
       if (Object.hasOwn(value, "recoveryPending") && value.recoveryPending !== true) {
         storageNeedsRewrite = true;
       }
+      storageNeedsRewrite ||= capabilityMigration;
       sanitized[userId] = {
-        version: 2,
+        version: GARMIN_CAPABILITY_VERSION,
         userId,
         deviceId: value.deviceId,
-        ...(value.recoveryPending === true ? { recoveryPending: true } : {})
+        ...(capabilityMigration || value.recoveryPending === true
+          ? { recoveryPending: true }
+          : {})
       };
     });
     if (storageNeedsRewrite) {
@@ -1950,7 +2517,7 @@ function loadGarminBindings() {
 function garminBindingForUser(userId) {
   const bindings = loadGarminBindings();
   const value = Object.hasOwn(bindings, userId) ? bindings[userId] : null;
-  if (!value || value.version !== 2 || value.userId !== userId ||
+  if (!value || value.version !== GARMIN_CAPABILITY_VERSION || value.userId !== userId ||
       !UUID_PATTERN.test(value.deviceId || "")) {
     return null;
   }
@@ -1958,7 +2525,7 @@ function garminBindingForUser(userId) {
 }
 
 function saveGarminBinding(binding) {
-  if (!UUID_PATTERN.test(binding?.userId || "") || binding.version !== 2 ||
+  if (!UUID_PATTERN.test(binding?.userId || "") || binding.version !== GARMIN_CAPABILITY_VERSION ||
       !UUID_PATTERN.test(binding.deviceId || "") ||
       (binding.recoveryPending !== undefined && binding.recoveryPending !== true)) {
     throw new Error("Invalid Garmin device binding.");
@@ -1969,7 +2536,7 @@ function saveGarminBinding(binding) {
     throw new Error("Garmin device binding storage is full.");
   }
   bindings[binding.userId] = {
-    version: 2,
+    version: GARMIN_CAPABILITY_VERSION,
     userId: binding.userId,
     deviceId: binding.deviceId,
     ...(binding.recoveryPending === true ? { recoveryPending: true } : {})
@@ -2002,8 +2569,15 @@ function normalizedGarminDevice(value, { requireToken = false } = {}) {
     return null;
   }
   const token = value.device_token;
-  if (requireToken && (typeof token !== "string" || !/^[a-f0-9]{64}$/.test(token))) {
-    return null;
+  if (requireToken) {
+    if (GARMIN_CAPABILITY_VERSION === 2) {
+      if (typeof token !== "string" || !GARMIN_LEGACY_CAPABILITY_PATTERN.test(token)) return null;
+    } else {
+      const capability = typeof token === "string"
+        ? GARMIN_CAPABILITY_PATTERN.exec(token)
+        : null;
+      if (!capability || capability[2] !== value.id.toLowerCase()) return null;
+    }
   }
   return {
     id: value.id,
@@ -2058,8 +2632,11 @@ async function rotateGarminDeviceToken(session, device) {
   const replacementToken = newGarminReplacementToken();
   const requestBody = JSON.stringify({
     action: "rotateDeviceToken",
+    capabilityVersion: GARMIN_CAPABILITY_VERSION,
     deviceId,
-    replacementToken,
+    ...(GARMIN_CAPABILITY_VERSION === 3
+      ? { replacementNonce: replacementToken }
+      : { replacementToken }),
     expectedTokenRevision
   });
   const requestRotation = () => supabaseRequest("/functions/v1/garmin-sync", {
@@ -2083,8 +2660,14 @@ async function rotateGarminDeviceToken(session, device) {
     }
   }
   const rotated = normalizedGarminDevice(response?.device, { requireToken: true });
+  const rotatedCapability = GARMIN_CAPABILITY_VERSION === 3 && rotated
+    ? GARMIN_CAPABILITY_PATTERN.exec(rotated.deviceToken)
+    : null;
   if (!rotated || !["rotated", "already_rotated"].includes(response?.status) ||
-      rotated.id !== deviceId || rotated.deviceToken !== replacementToken ||
+      rotated.id !== deviceId ||
+      (GARMIN_CAPABILITY_VERSION === 3
+        ? rotatedCapability?.[3] !== replacementToken
+        : rotated.deviceToken !== replacementToken) ||
       rotated.tokenRevision !== expectedTokenRevision + 1) {
     throw new Error("Garmin token rotation returned an invalid device.");
   }
@@ -2120,7 +2703,7 @@ async function recoverGarminDeviceBinding(session, device) {
     throw new Error("Garmin recovery belongs to another account.");
   }
   const expectedEpoch = accountEpoch;
-  const binding = { version: 2, userId, deviceId: device.id };
+  const binding = { version: GARMIN_CAPABILITY_VERSION, userId, deviceId: device.id };
   // Persist the stable, nonsecret UUID and incomplete state before invalidating
   // the old bearer token. A lost response or closed prompt can then be retried
   // without inventing a second watch identity.
@@ -2224,15 +2807,14 @@ async function ensureGarminDeviceBinding(session) {
   const response = await supabaseRequest("/functions/v1/garmin-sync", {
     method: "POST",
     session,
-    body: JSON.stringify({ action: "createDevice", displayName: "Garmin watch" })
+    body: JSON.stringify({ action: "createDevice", capabilityVersion: GARMIN_CAPABILITY_VERSION, displayName: "Garmin watch" })
   });
   const device = response?.device;
-  if (!UUID_PATTERN.test(device?.id || "") ||
-      !/^[a-f0-9]{64}$/.test(device?.device_token || "") || device.binding_version !== 2 ||
-      device.token_revision !== 1) {
+  const normalizedDevice = normalizedGarminDevice(device, { requireToken: true });
+  if (!normalizedDevice || normalizedDevice.tokenRevision !== 1) {
     throw new Error("Garmin device binding was not created.");
   }
-  const binding = { version: 2, userId, deviceId: device.id };
+  const binding = { version: GARMIN_CAPABILITY_VERSION, userId, deviceId: device.id };
   pendingGarminRevocations.set(userId, device.id);
   if (expectedEpoch !== accountEpoch || activeAccount?.userId !== userId || loadRemoteSession()?.user?.id !== userId) {
     try {
@@ -2386,6 +2968,14 @@ function saveGarminEnqueueRequests(requests) {
     throw new Error("Garmin enqueue request storage exceeds its limit.");
   }
   localStorage.setItem(GARMIN_ENQUEUE_REQUESTS_KEY, encoded);
+}
+
+function removeGarminEnqueueRequestsForUser(userId) {
+  if (!UUID_PATTERN.test(userId || "")) return;
+  const requests = loadGarminEnqueueRequests();
+  if (!Object.hasOwn(requests, userId)) return;
+  delete requests[userId];
+  saveGarminEnqueueRequests(requests);
 }
 
 function newUuidV4() {
@@ -2755,13 +3345,14 @@ function preserveExerciseFavorites(nextState, previousState, { preferPrevious = 
   return nextState;
 }
 
-function saveState({ queueRemote = true } = {}) {
+function saveState({ queueRemote = true, markDirty = true } = {}) {
   // Treat every mutation as a security boundary, including values produced by
   // UI event handlers. This prevents a missed range/count check from reaching
   // local storage or the cloud queue.
   window.GymStateContract.validateAndNormalize({ schemaVersion: 2, ...state }, {
     fallback: defaultAppState()
   });
+  if (markDirty) markRemoteStateDirtyBeforeWrite(state);
   localStorage.setItem(activeStorageKey(), JSON.stringify(state));
   if (queueRemote) queueRemoteSave();
 }
@@ -3062,12 +3653,24 @@ function loginScreen() {
   const accounts = accountList().filter(account => !account.remote);
   const remoteEnabled = remoteAuthEnabled();
   const isSignUp = authMode === "signup";
+  const isForgot = authMode === "forgot";
+  const authNoticeMarkup = authNotice?.text
+    ? `<div class="email-confirmation-status ${authNotice.isError ? "error" : ""}" role="status">${escapeHtml(authNotice.text)}</div>`
+    : "";
+  let remotePanel = "";
+  if (remoteEnabled && pendingEmailConfirmation) {
+    remotePanel = emailConfirmationPanel();
+  } else if (remoteEnabled && isForgot) {
+    remotePanel = `<section class="panel highlighted auth-panel"><h2>${tx("Reset password", "Скинути пароль")}</h2><p class="muted">${tx("Enter the email for your cloud account. The reset link must be opened in this browser.", "Введи адресу хмарного акаунта. Посилання для скидання потрібно відкрити в цьому браузері.")}</p>${authNoticeMarkup}<div class="field-stack"><label>${tx("Email", "Email")}<input id="forgot-email" data-auth-mode="forgot" data-auth-field="email" autocomplete="email" inputmode="email" placeholder="email@example.com" value="${escapeAttr(authDrafts.forgot.email)}"></label></div><div class="auth-actions"><button class="button" data-action="request-password-reset" ${authRequestInProgress ? "disabled" : ""}>${tx("Send reset link", "Надіслати посилання")}</button><button class="button ghost" data-action="auth-mode" data-mode="login" ${authRequestInProgress ? "disabled" : ""}>${tx("Back to sign in", "Повернутися до входу")}</button></div></section>`;
+  } else if (remoteEnabled) {
+    remotePanel = `<section class="panel highlighted auth-panel"><h2>${isSignUp ? tx("Create account", "Створити акаунт") : tx("Cloud account", "Хмарний акаунт")}</h2>${authNoticeMarkup}<div class="field-stack">
+      ${isSignUp ? `<label>${tx("Email", "Email")}<input id="signup-email" data-auth-mode="signup" data-auth-field="email" autocomplete="email" inputmode="email" placeholder="email@example.com" value="${escapeAttr(authDrafts.signup.email)}"></label><label>${tx("Repeat email", "Повтори адресу електронної пошти")}<input id="signup-email-confirm" data-auth-mode="signup" data-auth-field="emailConfirm" autocomplete="email" inputmode="email" value="${escapeAttr(authDrafts.signup.emailConfirm)}"></label><label>${tx("Password", "Пароль")}<input id="signup-password" data-auth-mode="signup" data-auth-field="password" autocomplete="new-password" type="password" minlength="12" maxlength="72" value="${escapeAttr(authDrafts.signup.password)}"></label><label>${tx("Repeat password", "Повтори пароль")}<input id="signup-password-confirm" data-auth-mode="signup" data-auth-field="passwordConfirm" autocomplete="new-password" type="password" minlength="12" maxlength="72" value="${escapeAttr(authDrafts.signup.passwordConfirm)}"></label><label>${tx("Display name", "Ім’я профілю")}<input id="signup-name" data-auth-mode="signup" data-auth-field="name" autocomplete="name" maxlength="32" value="${escapeAttr(authDrafts.signup.name)}"></label>` : `<label>${tx("Email", "Email")}<input id="login-email" data-auth-mode="login" data-auth-field="email" autocomplete="email" inputmode="email" placeholder="email@example.com" value="${escapeAttr(authDrafts.login.email)}"></label><label>${tx("Password", "Пароль")}<input id="login-password" data-auth-mode="login" data-auth-field="password" autocomplete="current-password" type="password" value="${escapeAttr(authDrafts.login.password)}"></label>`}
+      </div>${isSignUp ? `<p class="muted">${tx("Use at least 12 characters (up to 72 UTF-8 bytes) with lowercase and uppercase Latin letters, a number, and a supported symbol such as !, @, #, or $.", "Використай щонайменше 12 символів (до 72 байтів UTF-8): малу й велику латинські літери, цифру та підтримуваний спецсимвол, наприклад !, @, # або $.")}</p>` : ""}<div class="auth-actions"><button class="button" data-action="${isSignUp ? "remote-signup" : "remote-login"}" ${authRequestInProgress ? "disabled" : ""}>${isSignUp ? tx("Create account", "Створити акаунт") : tx("Log in", "Увійти")}</button><button class="button ghost" data-action="auth-mode" data-mode="${isSignUp ? "login" : "signup"}" ${authRequestInProgress ? "disabled" : ""}>${isSignUp ? tx("Log in instead", "Увійти натомість") : tx("Create account", "Створити акаунт")}</button>${isSignUp ? "" : `<button class="button ghost" data-action="auth-mode" data-mode="forgot" ${authRequestInProgress ? "disabled" : ""}>${tx("Forgot password?", "Забули пароль?")}</button>`}</div>${isSignUp ? `<p class="muted auth-confirmation-preview">${tx("After creating the account, we will show where the confirmation email was sent.", "Після створення акаунта ми покажемо, на яку адресу надіслано лист для підтвердження.")}</p>` : ""}</section>`;
+  }
   return `<div class="app-shell auth-shell">
     <main class="screen auth-screen" data-scroll-key="auth">
       <section class="hero-panel auth-hero"><h2>GymApp</h2><p>${remoteEnabled ? tx("Sign in to sync workouts across devices.", "Увійди, щоб синхронізувати тренування між пристроями.") : tx("Cloud login is ready after Supabase keys are added.", "Хмарний вхід запрацює після додавання ключів Supabase.")}</p></section>
-      ${remoteEnabled ? pendingEmailConfirmation ? emailConfirmationPanel() : `<section class="panel highlighted auth-panel"><h2>${isSignUp ? tx("Create account", "Створити акаунт") : tx("Cloud account", "Хмарний акаунт")}</h2><div class="field-stack">
-        ${isSignUp ? `<label>${tx("Email", "Email")}<input id="signup-email" data-auth-mode="signup" data-auth-field="email" autocomplete="email" inputmode="email" placeholder="email@example.com" value="${escapeAttr(authDrafts.signup.email)}"></label><label>${tx("Repeat email", "Повтори адресу електронної пошти")}<input id="signup-email-confirm" data-auth-mode="signup" data-auth-field="emailConfirm" autocomplete="email" inputmode="email" value="${escapeAttr(authDrafts.signup.emailConfirm)}"></label><label>${tx("Password", "Пароль")}<input id="signup-password" data-auth-mode="signup" data-auth-field="password" autocomplete="new-password" type="password" value="${escapeAttr(authDrafts.signup.password)}"></label><label>${tx("Repeat password", "Повтори пароль")}<input id="signup-password-confirm" data-auth-mode="signup" data-auth-field="passwordConfirm" autocomplete="new-password" type="password" value="${escapeAttr(authDrafts.signup.passwordConfirm)}"></label><label>${tx("Display name", "Ім’я профілю")}<input id="signup-name" data-auth-mode="signup" data-auth-field="name" autocomplete="name" maxlength="32" value="${escapeAttr(authDrafts.signup.name)}"></label>` : `<label>${tx("Email", "Email")}<input id="login-email" data-auth-mode="login" data-auth-field="email" autocomplete="email" inputmode="email" placeholder="email@example.com" value="${escapeAttr(authDrafts.login.email)}"></label><label>${tx("Password", "Пароль")}<input id="login-password" data-auth-mode="login" data-auth-field="password" autocomplete="current-password" type="password" value="${escapeAttr(authDrafts.login.password)}"></label>`}
-      </div><p class="muted">${tx("Password must be 8+ characters and include letters and numbers.", "Пароль має містити щонайменше 8 символів, зокрема літери й цифри.")}</p><div class="auth-actions"><button class="button" data-action="${isSignUp ? "remote-signup" : "remote-login"}">${isSignUp ? tx("Create account", "Створити акаунт") : tx("Log in", "Увійти")}</button><button class="button ghost" data-action="auth-mode" data-mode="${isSignUp ? "login" : "signup"}">${isSignUp ? tx("Log in instead", "Увійти натомість") : tx("Create account", "Створити акаунт")}</button></div>${isSignUp ? `<p class="muted auth-confirmation-preview">${tx("After creating the account, we will show where the confirmation email was sent.", "Після створення акаунта ми покажемо, на яку адресу надіслано лист для підтвердження.")}</p>` : ""}</section>` : ""}
+      ${remotePanel}
       <details class="local-account-details" ${remoteEnabled ? "" : "open"}><summary>${tx("Offline local account", "Офлайн-акаунт")}</summary><section class="panel auth-panel"><p class="muted">${remoteEnabled ? tx("Fallback for this browser only.", "Запасний режим лише для цього браузера.") : tx("Paste Supabase keys into supabase-config.js to enable real network login.", "Встав ключі Supabase у supabase-config.js, щоб увімкнути справжній мережевий вхід.")}</p><div class="field-row login-row"><input id="local-login-name" autocomplete="username" maxlength="64" aria-label="${txAttr("Name", "Ім'я")}" placeholder="${txAttr("Name", "Ім'я")}"><button class="button" data-action="login-account">${tx("Enter", "Увійти")}</button></div>${accounts.length ? `<div class="saved-accounts"><span class="field-caption">${tx("Saved accounts", "Збережені акаунти")}</span><div class="chip-row">${accounts.map(account => `<button class="chip buttonlike" data-action="login-account" data-name="${escapeAttr(account.name)}">${escapeHtml(account.name)}</button>`).join("")}</div></div>` : ""}</section></details>
       <nav class="auth-links" aria-label="${txAttr("GymApp links", "Посилання GymApp")}"><a href="${PUBLIC_SITE_URL}" target="_blank" rel="noopener noreferrer">${tx("Website", "Сайт")}</a><a href="${SUPPORT_URL}" target="_blank" rel="noopener noreferrer">${tx("Support", "Підтримка")}</a><a href="${PRIVACY_URL}" target="_blank" rel="noopener noreferrer">${tx("Privacy", "Конфіденційність")}</a></nav>
       <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
@@ -3109,7 +3712,25 @@ function render() {
     requestAnimationFrame(restoreVisibleScroll);
     return;
   }
-  if (activeAccount.remote === true &&
+  if (activeAccount.remote === "supabase" && loadRemoteSession()?.activation_pending) {
+    app.innerHTML = pendingActivationScreen();
+    bindEvents();
+    requestAnimationFrame(restoreVisibleScroll);
+    return;
+  }
+  if (activeAccount.remote === "supabase" && loadRemoteSession()?.password_update_required === true) {
+    app.innerHTML = passwordUpdateScreen();
+    bindEvents();
+    requestAnimationFrame(restoreVisibleScroll);
+    return;
+  }
+  if (activeAccount.remote === "supabase" && cloudSyncConflict?.userId === activeAccount.userId) {
+    app.innerHTML = cloudSyncConflictScreen();
+    bindEvents();
+    requestAnimationFrame(restoreVisibleScroll);
+    return;
+  }
+  if (activeAccount.remote === "supabase" &&
       cloudStateRecovery?.userId === activeAccount.userId) {
     app.innerHTML = cloudRecoveryScreen();
     bindEvents();
@@ -3133,6 +3754,36 @@ function render() {
   requestAnimationFrame(restoreVisibleScroll);
   startTimerTicker();
   if (current.name === "leaderboard") refreshLeaderboard();
+}
+
+function pendingActivationScreen() {
+  return `<div class="app-shell auth-shell">
+    <main class="screen auth-screen" data-scroll-key="cloud-activation">
+      <section class="hero-panel auth-hero"><h2>${tx("Finishing cloud sign-in", "Завершуємо хмарний вхід")}</h2><p>${tx("Your email is already verified. GymApp is loading cloud data with the saved session; no new email is needed.", "Електронну пошту вже підтверджено. GymApp завантажує хмарні дані зі збереженою сесією; новий лист не потрібен.")}</p></section>
+      <section class="panel highlighted auth-panel"><div class="actions vertical"><button class="button full" data-action="retry-cloud-activation" ${authRequestInProgress ? "disabled" : ""}>${tx("Retry cloud loading", "Повторити завантаження з хмари")}</button><button class="button ghost full" data-action="logout-account" ${authRequestInProgress ? "disabled" : ""}>${tx("Sign out", "Вийти")}</button></div></section>
+      <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+    </main>
+  </div>`;
+}
+
+function cloudSyncConflictScreen() {
+  return `<div class="app-shell auth-shell">
+    <main class="screen auth-screen" data-scroll-key="cloud-conflict">
+      <section class="hero-panel auth-hero"><h2>${tx("Cloud sync needs your choice", "Хмарна синхронізація потребує твого вибору")}</h2><p>${tx("This browser and the cloud both changed since their last confirmed sync. GymApp kept the browser copy and did not overwrite either version.", "Цей браузер і хмара змінилися після останньої підтвердженої синхронізації. GymApp зберіг копію браузера й не перезаписав жодну версію.")}</p></section>
+      <section class="panel highlighted auth-panel"><p>${tx("Download a backup first, then explicitly choose which version should continue.", "Спочатку завантаж резервну копію, а потім явно вибери версію для продовження.")}</p><div class="actions vertical"><button class="button secondary full" data-action="export-sync-conflict-local">${tx("Download browser backup", "Завантажити резервну копію браузера")}</button><button class="button full" data-action="resolve-sync-conflict-local">${tx("Keep browser version", "Зберегти версію браузера")}</button><button class="button danger full" data-action="resolve-sync-conflict-cloud">${tx("Use cloud version", "Використати хмарну версію")}</button><button class="button ghost full" data-action="logout-account">${tx("Sign out without changes", "Вийти без змін")}</button></div></section>
+      <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+    </main>
+  </div>`;
+}
+
+function passwordUpdateScreen() {
+  return `<div class="app-shell auth-shell">
+    <main class="screen auth-screen" data-scroll-key="password-update">
+      <section class="hero-panel auth-hero"><h2>${tx("Choose a new password", "Вибери новий пароль")}</h2><p>${tx("Your reset link was verified. Set a new password before continuing to your cloud account.", "Посилання для скидання перевірено. Встанови новий пароль, перш ніж продовжити роботу з хмарним акаунтом.")}</p></section>
+      <section class="panel highlighted auth-panel"><div class="field-stack"><label>${tx("New password", "Новий пароль")}<input id="recovery-new-password" type="password" autocomplete="new-password" minlength="12" maxlength="72"></label><label>${tx("Repeat new password", "Повтори новий пароль")}<input id="recovery-repeat-password" type="password" autocomplete="new-password" minlength="12" maxlength="72"></label></div><p class="muted">${tx("Use at least 12 characters (up to 72 UTF-8 bytes) with lowercase and uppercase Latin letters, a number, and a supported symbol such as !, @, #, or $.", "Використай щонайменше 12 символів (до 72 байтів UTF-8): малу й велику латинські літери, цифру та підтримуваний спецсимвол, наприклад !, @, # або $.")}</p><div class="actions vertical"><button class="button full" data-action="complete-password-recovery" ${authRequestInProgress ? "disabled" : ""}>${tx("Save new password", "Зберегти новий пароль")}</button><button class="button ghost full" data-action="logout-account" ${authRequestInProgress ? "disabled" : ""}>${tx("Cancel and sign out", "Скасувати й вийти")}</button></div></section>
+      <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+    </main>
+  </div>`;
 }
 
 function cloudRecoveryScreen() {
@@ -4243,14 +4894,27 @@ function normalizeAuthEmail(value) {
   return String(value || "").trim().toLowerCase();
 }
 
-function validateAuthInput(email, password, displayName = "") {
+const SUPABASE_PASSWORD_SYMBOLS = "!@#$%^&*()_+-=[]{};'\\:\"|<>?,./`~";
+
+function validNewPassword(password) {
+  const value = String(password || "");
+  const characters = Array.from(value);
+  return characters.length >= 12 && new TextEncoder().encode(value).length <= 72 &&
+    /[a-z]/.test(value) && /[A-Z]/.test(value) && /[0-9]/.test(value) &&
+    characters.some(character => SUPABASE_PASSWORD_SYMBOLS.includes(character));
+}
+
+function validateAuthInput(email, password, displayName = "", enforceNewPasswordPolicy = false) {
   const cleanEmail = normalizeAuthEmail(email);
   const cleanPassword = String(password || "");
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(cleanEmail) || cleanEmail.length > 254) {
     return tx("Enter a valid email address.", "Введи коректну адресу електронної пошти.");
   }
-  if (cleanPassword.length < 8 || cleanPassword.length > 72 || !/[A-Za-z]/.test(cleanPassword) || !/\d/.test(cleanPassword)) {
-    return tx("Password must be 8-72 characters and include letters and numbers.", "Пароль має містити 8–72 символи, зокрема літери й цифри.");
+  if (!cleanPassword) {
+    return tx("Enter your password.", "Введи пароль.");
+  }
+  if (enforceNewPasswordPolicy && !validNewPassword(cleanPassword)) {
+    return tx("Password must contain at least 12 characters, fit within 72 UTF-8 bytes, and include a lowercase Latin letter, an uppercase Latin letter, a number, and a supported symbol.", "Пароль має містити щонайменше 12 символів, займати не більше 72 байтів у UTF-8 та включати малу й велику латинські літери, цифру й підтримуваний спецсимвол.");
   }
   if (displayName && !/^[\p{L}\p{N} ._-]{2,32}$/u.test(displayName)) {
     return tx("Display name can use letters, numbers, spaces, dot, dash and underscore.", "В імені можна використовувати літери, цифри, пробіли, крапку, дефіс і підкреслення.");
@@ -4267,7 +4931,182 @@ function validateConfirmationEmail(email) {
   return "";
 }
 
+function base64UrlEncode(bytes) {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+async function createAuthTransaction(email, purpose) {
+  if (!["signup", "recovery"].includes(purpose)) {
+    throw new Error("Authentication transaction purpose is invalid.");
+  }
+  const secureCrypto = window.crypto;
+  if (!secureCrypto || typeof secureCrypto.getRandomValues !== "function" ||
+      typeof secureCrypto.subtle?.digest !== "function") {
+    throw userVisibleError(
+      "Secure email authentication is unavailable in this browser.",
+      "Безпечна автентифікація електронною поштою недоступна в цьому браузері."
+    );
+  }
+  const stateBytes = new Uint8Array(24);
+  const verifierBytes = new Uint8Array(32);
+  secureCrypto.getRandomValues(stateBytes);
+  secureCrypto.getRandomValues(verifierBytes);
+  const stateValue = base64UrlEncode(stateBytes);
+  const verifier = base64UrlEncode(verifierBytes);
+  const challenge = await pkceChallengeForVerifier(verifier);
+  if (!/^[A-Za-z0-9_-]{32}$/.test(stateValue) || !/^[A-Za-z0-9_-]{43,128}$/.test(verifier)) {
+    throw new Error("Authentication transaction generation failed.");
+  }
+  return {
+    transaction: { version: 1, purpose, state: stateValue, verifier, email, createdAt: Date.now() },
+    challenge
+  };
+}
+
+async function pkceChallengeForVerifier(verifier) {
+  if (!/^[A-Za-z0-9_-]{43,128}$/.test(verifier || "") ||
+      typeof window.crypto?.subtle?.digest !== "function") {
+    throw new Error("PKCE verifier is invalid.");
+  }
+  const digest = await window.crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
+  return base64UrlEncode(new Uint8Array(digest));
+}
+
+async function signupAuthTransaction(email) {
+  const existing = loadAuthTransaction("signup");
+  if (existing?.email === email) {
+    return {
+      transaction: existing,
+      challenge: await pkceChallengeForVerifier(existing.verifier),
+      reused: true
+    };
+  }
+  const generated = await createAuthTransaction(email, "signup");
+  return { ...generated, reused: false };
+}
+
+function deterministicAuthRequestFailure(error) {
+  return Number.isInteger(error?.status) && error.status >= 400 && error.status < 500;
+}
+
+function validAuthTransaction(value, expectedPurpose = null) {
+  return Boolean(
+    value && typeof value === "object" && !Array.isArray(value) && value.version === 1 &&
+    ["signup", "recovery"].includes(value.purpose) &&
+    (!expectedPurpose || value.purpose === expectedPurpose) &&
+    /^[A-Za-z0-9_-]{32}$/.test(value.state || "") &&
+    /^[A-Za-z0-9_-]{43,128}$/.test(value.verifier || "") &&
+    validateConfirmationEmail(value.email) === "" && Number.isSafeInteger(value.createdAt) &&
+    value.createdAt <= Date.now() + 60_000 && Date.now() - value.createdAt <= AUTH_TRANSACTION_MAX_AGE_MS
+  );
+}
+
+function loadAuthTransaction(expectedPurpose = null) {
+  try {
+    const raw = localStorage.getItem(AUTH_TRANSACTION_KEY);
+    if (!raw || new TextEncoder().encode(raw).byteLength > MAX_AUTH_TRANSACTION_STORAGE_BYTES) {
+      localStorage.removeItem(AUTH_TRANSACTION_KEY);
+      return null;
+    }
+    const parsed = JSON.parse(raw);
+    if (!validAuthTransaction(parsed)) {
+      localStorage.removeItem(AUTH_TRANSACTION_KEY);
+      return null;
+    }
+    return validAuthTransaction(parsed, expectedPurpose) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveAuthTransaction(transaction) {
+  if (!validAuthTransaction(transaction)) throw new Error("Authentication transaction is invalid.");
+  const encoded = JSON.stringify(transaction);
+  if (new TextEncoder().encode(encoded).byteLength > MAX_AUTH_TRANSACTION_STORAGE_BYTES) {
+    throw new Error("Authentication transaction is too large.");
+  }
+  localStorage.setItem(AUTH_TRANSACTION_KEY, encoded);
+  const stored = loadAuthTransaction(transaction.purpose);
+  if (!stored || stored.state !== transaction.state || stored.verifier !== transaction.verifier) {
+    throw userVisibleError(
+      "Email authentication could not be saved in this browser.",
+      "Не вдалося зберегти автентифікацію електронною поштою в цьому браузері."
+    );
+  }
+}
+
+function clearAuthTransaction(expectedState = null, expectedPurpose = null) {
+  try {
+    const current = loadAuthTransaction();
+    if (expectedState && current?.state !== expectedState) return false;
+    if (expectedPurpose && current?.purpose !== expectedPurpose) return false;
+    localStorage.removeItem(AUTH_TRANSACTION_KEY);
+    return localStorage.getItem(AUTH_TRANSACTION_KEY) === null;
+  } catch {
+    return false;
+  }
+}
+
+function authRedirectUrl() {
+  // Keep this byte-for-byte equal to the production Supabase redirect allowlist.
+  // The PKCE verifier, purpose and state stay in same-origin local storage.
+  return AUTH_REDIRECT_URL;
+}
+
+async function requestPasswordReset(rawEmail = document.querySelector("#forgot-email")?.value) {
+  if (authRequestInProgress) return;
+  if (!remoteAuthEnabled()) return showToast(tx("Supabase is not configured.", "Supabase не налаштовано."));
+  const email = normalizeAuthEmail(rawEmail);
+  const validationError = validateConfirmationEmail(email);
+  if (validationError) return showToast(validationError);
+  authRequestInProgress = true;
+  authNotice = null;
+  render();
+  let transaction = null;
+  try {
+    const generated = await createAuthTransaction(email, "recovery");
+    transaction = generated.transaction;
+    saveAuthTransaction(transaction);
+    const redirectTo = authRedirectUrl();
+    await supabaseRequest(`/auth/v1/recover?redirect_to=${encodeURIComponent(redirectTo)}`, {
+      method: "POST",
+      anonymous: true,
+      maxResponseBytes: MAX_REMOTE_AUTH_RESPONSE_BYTES,
+      body: JSON.stringify({
+        email,
+        code_challenge: generated.challenge,
+        code_challenge_method: "s256"
+      })
+    });
+    authMode = "forgot";
+    authDrafts.forgot.email = email;
+    authNotice = {
+      text: tx(
+        "If an account exists for this email, a password reset link has been sent. Open the newest email in this browser.",
+        "Якщо акаунт із цією адресою існує, посилання для скидання пароля надіслано. Відкрий найновіший лист у цьому браузері."
+      ),
+      isError: false
+    };
+  } catch (error) {
+    // A network failure or 5xx can happen after Supabase accepted and emailed
+    // the request. Retain the verifier so that link remains usable.
+    if (transaction && deterministicAuthRequestFailure(error)) {
+      clearAuthTransaction(transaction.state, "recovery");
+    }
+    authNotice = { text: friendlyAuthError(error), isError: true };
+  } finally {
+    authRequestInProgress = false;
+    render();
+  }
+}
+
 function friendlyAuthError(error) {
+  const userMessages = error?.[USER_VISIBLE_ERROR_MESSAGES];
+  if (userMessages && typeof userMessages.en === "string" && typeof userMessages.uk === "string") {
+    return tx(userMessages.en, userMessages.uk);
+  }
   const raw = typeof error?.message === "string"
     ? error.message.slice(0, MAX_REMOTE_ERROR_RESPONSE_BYTES)
     : "";
@@ -4300,6 +5139,18 @@ function friendlyAuthError(error) {
   if (/invalid login/i.test(message) || ["invalid_credentials", "invalid_grant"].includes(code)) {
     return tx("Email or password is incorrect.", "Неправильна адреса електронної пошти або пароль.");
   }
+  if (/same password/i.test(message) || code === "same_password") {
+    return tx("Choose a password different from the current password.", "Вибери пароль, який відрізняється від поточного.");
+  }
+  if (/weak password/i.test(message) || code === "weak_password") {
+    return tx(
+      "The new password does not meet the server password policy.",
+      "Новий пароль не відповідає серверним вимогам."
+    );
+  }
+  if (/expired|otp_expired/i.test(`${code} ${message}`)) {
+    return tx("This authentication link or code has expired. Request a new one.", "Строк дії посилання або коду минув. Запроси новий.");
+  }
   return tx(
     "Cloud request failed. Check your connection and try again.",
     "Не вдалося виконати хмарний запит. Перевір з’єднання та спробуй ще раз."
@@ -4311,6 +5162,74 @@ function isEmailConfirmationError(error) {
     ? error.message.slice(0, MAX_REMOTE_ERROR_RESPONSE_BYTES)
     : "";
   return /email not confirmed|email_not_confirmed/i.test(raw);
+}
+
+function beginRemoteActivation(session, {
+  displayName = "",
+  requirePasswordUpdate = false,
+  activationPurpose = "login"
+} = {}) {
+  if (!validRemoteSession(session)) throw new Error("Cloud login returned an invalid session.");
+  if (!["login", "signup", "recovery"].includes(activationPurpose)) {
+    throw new Error("Cloud activation purpose is invalid.");
+  }
+  const account = remoteAccountFromSession(session);
+  if (displayName) account.name = displayName;
+  const storedSession = { ...session };
+  delete storedSession.password_update_required;
+  if (requirePasswordUpdate) storedSession.password_update_required = true;
+  storedSession.activation_pending = activationPurpose;
+  saveDurableRemoteSession(storedSession);
+  try {
+    localStorage.setItem(AUTH_KEY, JSON.stringify(account));
+    const marker = normalizeStoredAccount(JSON.parse(localStorage.getItem(AUTH_KEY) || "null"));
+    if (marker?.remote !== "supabase" || marker.userId !== account.userId) {
+      throw new Error("Cloud activation marker could not be verified.");
+    }
+  } catch (error) {
+    clearRemoteSession();
+    throw error;
+  }
+  resetRemoteSyncContext();
+  activeAccount = account;
+  state = loadState(account);
+  try {
+    saveAccountList([...accountList().filter(item => item.id !== account.id), account]);
+  } catch {
+    // AUTH_KEY plus the tab-scoped session are the durable handoff. The list is
+    // repaired after cloud reconciliation succeeds.
+  }
+  render();
+  return { account, session: storedSession };
+}
+
+async function finishRemoteActivation(session = loadRemoteSession(), account = activeAccount) {
+  if (!validRemoteSession(session) || !session.activation_pending ||
+      account?.remote !== "supabase" || account.userId !== session.user.id) {
+    throw new Error("Pending cloud activation is invalid.");
+  }
+  const cachedAccountState = loadState(account);
+  const cachedStateExists = storedAccountStateExists(account);
+  const cloudState = await loadRemoteState(session);
+  await reconcileLoadedRemoteState(cloudState, cachedAccountState, cachedStateExists);
+  const completedSession = { ...loadRemoteSession() };
+  if (!validRemoteSession(completedSession) || completedSession.user.id !== account.userId) {
+    throw new Error("Cloud activation session was lost.");
+  }
+  delete completedSession.activation_pending;
+  saveDurableRemoteSession(completedSession);
+  saveAccountList([...accountList().filter(item => item.id !== account.id), account]);
+  clearAuthDrafts();
+  nav = [{ name: "workouts" }];
+  replaceNavigationHistory();
+  modal = null;
+  render();
+  return { recovery: cloudStateRecovery, conflict: cloudSyncConflict };
+}
+
+async function activateRemoteSession(session, options = {}) {
+  const handoff = beginRemoteActivation(session, options);
+  return finishRemoteActivation(handoff.session, handoff.account);
 }
 
 async function remoteLogin(createAccount) {
@@ -4325,7 +5244,7 @@ async function remoteLogin(createAccount) {
     : document.querySelector("#login-password")?.value;
   const passwordConfirm = document.querySelector("#signup-password-confirm")?.value;
   const displayName = sanitizeDisplayName(document.querySelector("#signup-name")?.value.trim() || "");
-  const validationError = validateAuthInput(email, password, createAccount ? displayName : "");
+  const validationError = validateAuthInput(email, password, createAccount ? displayName : "", createAccount);
   if (validationError) return showToast(validationError);
   if (createAccount && email !== emailConfirm) {
     return showToast(tx("Email does not match.", "Адреси електронної пошти не збігаються."));
@@ -4334,14 +5253,31 @@ async function remoteLogin(createAccount) {
     return showToast(tx("Passwords do not match.", "Паролі не збігаються."));
   }
   authRequestInProgress = true;
+  let transaction = null;
+  let transactionReused = false;
   try {
+    let signupPayload = null;
+    if (createAccount) {
+      const generated = await signupAuthTransaction(email);
+      transaction = generated.transaction;
+      transactionReused = generated.reused;
+      saveAuthTransaction(transaction);
+      signupPayload = {
+        email,
+        password,
+        data: { display_name: displayName || email.split("@")[0] },
+        code_challenge: generated.challenge,
+        code_challenge_method: "s256"
+      };
+    }
     const path = createAccount
-      ? `/auth/v1/signup?redirect_to=${encodeURIComponent(AUTH_REDIRECT_URL)}`
+      ? `/auth/v1/signup?redirect_to=${encodeURIComponent(authRedirectUrl())}`
       : "/auth/v1/token?grant_type=password";
     const session = await supabaseRequest(path, {
       method: "POST",
+      anonymous: true,
       maxResponseBytes: MAX_REMOTE_AUTH_RESPONSE_BYTES,
-      body: JSON.stringify(createAccount ? { email, password, data: { display_name: displayName || email.split("@")[0] } } : { email, password })
+      body: JSON.stringify(createAccount ? signupPayload : { email, password })
     });
     if (!session?.access_token || !session?.user?.id) {
       authDrafts.signup.password = "";
@@ -4350,45 +5286,15 @@ async function remoteLogin(createAccount) {
       render();
       return;
     }
-    if (!validRemoteSession(session)) throw new Error("Cloud login returned an invalid session.");
-    const account = remoteAccountFromSession(session);
-    if (displayName) account.name = displayName;
-    const cachedAccountState = loadState(account);
-    const cloudState = await loadRemoteState(session);
-    let recovery = null;
-    let catalogChanged = false;
-    let nextState = defaultAppState();
-    if (cloudState.exists) {
-      try {
-        nextState = normalizeImportedState(cloudState.state, defaultAppState());
-        catalogChanged = ensureBuiltInExerciseCatalog(nextState);
-      } catch {
-        recovery = {
-          userId: cloudState.userId,
-          revision: cloudState.revision,
-          rawState: cloudState.state
-        };
-      }
-    }
-    preserveExerciseFavorites(nextState, cachedAccountState, { preferPrevious: true });
-    resetRemoteSyncContext();
-    saveRemoteSession(session);
-    localStorage.setItem(AUTH_KEY, JSON.stringify(account));
-    saveAccountList([...accountList().filter(item => item.id !== account.id), account]);
-    activeAccount = account;
-    bindRemoteStateRevision(cloudState);
-    cloudStateRecovery = recovery;
-    clearAuthDrafts();
-    state = nextState;
-    saveState({ queueRemote: !cloudState.exists || catalogChanged });
-    nav = [{ name: "workouts" }];
-    replaceNavigationHistory();
-    modal = null;
-    render();
+    if (transaction) clearAuthTransaction(transaction.state, "signup");
+    const { recovery } = await activateRemoteSession(session, { displayName });
     showToast(recovery
       ? tx("Cloud login complete. Recovery action is required before sync.", "Хмарний вхід виконано. Перед синхронізацією потрібна дія відновлення.")
       : tx("Cloud login complete.", "Вхід у хмарний акаунт виконано."));
   } catch (error) {
+    if (transaction && !transactionReused && deterministicAuthRequestFailure(error)) {
+      clearAuthTransaction(transaction.state, "signup");
+    }
     if (!createAccount && isEmailConfirmationError(error)) {
       authDrafts.login.password = "";
       pendingEmailConfirmation = { email, status: "", statusIsError: false };
@@ -4402,6 +5308,257 @@ async function remoteLogin(createAccount) {
   }
 }
 
+function showAuthNotice(textValue, isError = true) {
+  authNotice = { text: textValue, isError };
+  if (activeAccount) showToast(textValue);
+  else render();
+}
+
+function retryableRemoteActivationError(error) {
+  return error?.name === "AbortError" || error instanceof TypeError ||
+    error?.status === 408 || error?.status === 429 || error?.status >= 500;
+}
+
+function completePendingActivationMarker(session = loadRemoteSession()) {
+  if (!validRemoteSession(session) || !session.activation_pending) return false;
+  const completed = { ...session };
+  delete completed.activation_pending;
+  saveDurableRemoteSession(completed);
+  return true;
+}
+
+async function retryPendingRemoteActivation() {
+  if (authRequestInProgress) return;
+  const session = loadRemoteSession();
+  if (!session?.activation_pending || activeAccount?.userId !== session.user.id) return;
+  authRequestInProgress = true;
+  render();
+  try {
+    await finishRemoteActivation(session, activeAccount);
+    showToast(tx("Cloud account is ready.", "Хмарний акаунт готовий."));
+  } catch (error) {
+    if (!transitionToReauthentication(error)) {
+      if (!retryableRemoteActivationError(error)) completePendingActivationMarker();
+      render();
+      showToast(retryableRemoteActivationError(error)
+        ? tx("Cloud data is temporarily unavailable. Reload or retry without requesting a new email.", "Хмарні дані тимчасово недоступні. Онови сторінку або повтори спробу без нового листа.")
+        : friendlyAuthError(error));
+    }
+  } finally {
+    authRequestInProgress = false;
+    render();
+  }
+}
+
+async function completeAuthCallback(query) {
+  const purposes = query.getAll("purpose");
+  const states = query.getAll("state");
+  const codes = query.getAll("code");
+  const errors = query.getAll("error");
+  const descriptions = query.getAll("error_description");
+  const allowedKeys = new Set(["platform", "purpose", "state", "code", "error", "error_description"]);
+  const hasUnknownKey = [...query.keys()].some(key => !allowedKeys.has(key) || key.toLowerCase().includes("token"));
+  const transaction = loadAuthTransaction();
+  const purpose = purposes[0] || "";
+  const stateValue = states[0] || "";
+  const code = codes[0] || "";
+  const callbackError = errors[0] || "";
+  const invalid = query.getAll("platform").length !== 1 || query.get("platform") !== "web" ||
+    purposes.length !== 1 || !["signup", "recovery"].includes(purpose) ||
+    states.length !== 1 || !/^[A-Za-z0-9_-]{32}$/.test(stateValue) ||
+    codes.length > 1 || errors.length > 1 || descriptions.length > 1 ||
+    (codes.length === 1) === (errors.length === 1) ||
+    (codes.length === 1 && !UUID_PATTERN.test(code)) ||
+    (errors.length === 1 && (!isSafeAuthCallbackValue(callbackError, 128) ||
+      (descriptions.length === 1 && !isSafeAuthCallbackValue(descriptions[0], 1024)))) ||
+    window.location.hash.length > 0 || hasUnknownKey ||
+    !transaction || transaction.state !== stateValue || transaction.purpose !== purpose;
+
+  window.history.replaceState(null, "", window.location.pathname || "/");
+  authMode = purpose === "recovery" ? "forgot" : "login";
+  if (invalid || callbackError) {
+    if (!invalid && callbackError) clearAuthTransaction(stateValue, purpose);
+    if (purpose === "recovery") {
+      showAuthNotice(callbackError
+        ? tx(
+          "This password reset link expired or could not be verified. Request a new email.",
+          "Строк дії посилання для скидання пароля минув або його не вдалося перевірити. Запроси новий лист."
+        )
+        : tx(
+          "This password reset link is invalid for this browser. Request a new email here.",
+          "Це посилання для скидання пароля не підходить для цього браузера. Запроси тут новий лист."
+        ));
+    } else {
+      showAuthNotice(callbackError
+        ? tx(
+          "This confirmation link expired or could not be verified. Request a new email.",
+          "Строк дії посилання для підтвердження минув або його не вдалося перевірити. Запроси новий лист."
+        )
+        : tx(
+          "This confirmation link is invalid for this browser. Start account creation again.",
+          "Це посилання для підтвердження не підходить для цього браузера. Почни створення акаунта ще раз."
+        ));
+    }
+    return;
+  }
+
+  authRequestInProgress = true;
+  let activationHandoff = null;
+  let exchangeSucceeded = false;
+  showAuthNotice(purpose === "recovery"
+    ? tx("Verifying password reset…", "Перевіряємо скидання пароля…")
+    : tx("Verifying email confirmation…", "Перевіряємо підтвердження електронної пошти…"), false);
+  try {
+    if (activeAccount) {
+      saveState({ queueRemote: false });
+      await flushPendingRemoteSave();
+    }
+    const session = await supabaseRequest("/auth/v1/token?grant_type=pkce", {
+      method: "POST",
+      anonymous: true,
+      maxResponseBytes: MAX_REMOTE_AUTH_RESPONSE_BYTES,
+      body: JSON.stringify({ auth_code: code, code_verifier: transaction.verifier })
+    });
+    if (!validRemoteSession(session) || normalizeAuthEmail(session.user.email) !== transaction.email) {
+      const error = new Error("Email authentication returned an invalid account session.");
+      error.malformedAuthSession = true;
+      throw error;
+    }
+    exchangeSucceeded = true;
+    activationHandoff = beginRemoteActivation(session, {
+      requirePasswordUpdate: purpose === "recovery",
+      activationPurpose: purpose
+    });
+    clearAuthTransaction(stateValue, purpose);
+    await finishRemoteActivation(activationHandoff.session, activationHandoff.account);
+    showToast(purpose === "recovery"
+      ? tx(
+        "Password reset verified. Choose a new password to continue.",
+        "Скидання пароля підтверджено. Вибери новий пароль, щоб продовжити."
+      )
+      : tx(
+        "Email confirmed. Your cloud account is ready.",
+        "Електронну пошту підтверджено. Твій хмарний акаунт готовий."
+      ));
+  } catch (error) {
+    if (!activationHandoff && (!exchangeSucceeded &&
+        (deterministicAuthRequestFailure(error) || error?.malformedAuthSession === true))) {
+      clearAuthTransaction(stateValue, purpose);
+    }
+    if (!transitionToReauthentication(error)) {
+      if (activationHandoff && retryableRemoteActivationError(error)) {
+        render();
+        showToast(tx(
+          "Email verified, but cloud data is temporarily unavailable. Reload or retry without requesting a new email.",
+          "Електронну пошту підтверджено, але хмарні дані тимчасово недоступні. Онови сторінку або повтори спробу без нового листа."
+        ));
+        return;
+      }
+      if (activationHandoff) completePendingActivationMarker();
+      showAuthNotice(purpose === "recovery"
+        ? tx(
+          "Password reset could not be completed. Request a new reset email and try again.",
+          "Не вдалося завершити скидання пароля. Запроси новий лист і спробуй ще раз."
+        )
+        : tx(
+          "Email confirmation could not be completed. Request a new confirmation email and try again.",
+          "Не вдалося завершити підтвердження електронної пошти. Запроси новий лист і спробуй ще раз."
+        ));
+    }
+  } finally {
+    authRequestInProgress = false;
+    if (!activeAccount) render();
+  }
+}
+
+function isSafeAuthCallbackValue(value, maxLength) {
+  return typeof value === "string" && value.length > 0 && value.length <= maxLength &&
+    !/[\u0000-\u001F\u007F]/.test(value);
+}
+
+function passwordReauthenticationRequired(error) {
+  return /reauthentication[_ ]needed|reauthenticate|nonce/i.test(String(error?.message || ""));
+}
+
+async function updateRemotePassword({ required = false } = {}) {
+  if (authRequestInProgress || accountTransitionInProgress) return;
+  const currentPassword = required ? "" : (document.querySelector("#change-current-password")?.value || "");
+  const password = document.querySelector(required ? "#recovery-new-password" : "#change-new-password")?.value || "";
+  const confirmation = document.querySelector(required ? "#recovery-repeat-password" : "#change-repeat-password")?.value || "";
+  const nonce = required ? "" : (document.querySelector("#change-password-nonce")?.value || "").trim();
+  if (!required && !currentPassword) {
+    return showToast(tx("Enter your current password.", "Введи поточний пароль."));
+  }
+  if (!required && new TextEncoder().encode(currentPassword).byteLength > 1024) {
+    return showToast(tx("Current password is too long.", "Поточний пароль задовгий."));
+  }
+  if (!validNewPassword(password)) {
+    return showToast(tx(
+      "Password must contain at least 12 characters, fit within 72 UTF-8 bytes, and include a lowercase Latin letter, an uppercase Latin letter, a number, and a supported symbol.",
+      "Пароль має містити щонайменше 12 символів, займати не більше 72 байтів у UTF-8 та включати малу й велику латинські літери, цифру й підтримуваний спецсимвол."
+    ));
+  }
+  if (password !== confirmation) return showToast(tx("Passwords do not match.", "Паролі не збігаються."));
+  if (!required && currentPassword === password) {
+    return showToast(tx("Choose a password different from the current password.", "Вибери пароль, який відрізняється від поточного."));
+  }
+  if (!required && modal?.reauthRequired && !/^[0-9]{6,8}$/.test(nonce)) {
+    return showToast(tx("Enter the verification code from your email.", "Введи код підтвердження з електронної пошти."));
+  }
+  const session = loadRemoteSession();
+  const expectedUserId = activeAccount?.remote === "supabase" ? activeAccount.userId : null;
+  if (!expectedUserId || session?.user?.id !== expectedUserId) {
+    return showToast(tx("Sign in again before changing your password.", "Увійди знову перед зміною пароля."));
+  }
+  authRequestInProgress = true;
+  render();
+  try {
+    const response = await supabaseRequest("/auth/v1/user", {
+      method: "PUT",
+      session,
+      maxResponseBytes: MAX_REMOTE_AUTH_RESPONSE_BYTES,
+      body: JSON.stringify({
+        password,
+        ...(!required ? { current_password: currentPassword } : {}),
+        ...(nonce ? { nonce } : {})
+      })
+    });
+    const responseUserId = response?.id || response?.user?.id;
+    if (responseUserId !== expectedUserId) throw new Error("Password update returned an invalid account response.");
+    if (required) {
+      const currentSession = loadRemoteSession();
+      if (!currentSession || currentSession.user.id !== expectedUserId) throw new Error("Cloud session is missing.");
+      const nextSession = { ...currentSession };
+      delete nextSession.password_update_required;
+      saveRemoteSession(nextSession);
+    } else {
+      modal = null;
+    }
+    render();
+    showToast(tx("Password changed.", "Пароль змінено."));
+  } catch (error) {
+    if (!required && !nonce && passwordReauthenticationRequired(error)) {
+      try {
+        await supabaseRequest("/auth/v1/reauthenticate", {
+          method: "GET",
+          session: loadRemoteSession() || session,
+          maxResponseBytes: MAX_REMOTE_AUTH_RESPONSE_BYTES
+        });
+        modal = { type: "change-password", reauthRequired: true };
+        render();
+        showToast(tx("Verification code sent. Re-enter the new password with the code.", "Код підтвердження надіслано. Повторно введи новий пароль разом із кодом."));
+      } catch (reauthError) {
+        if (!transitionToReauthentication(reauthError)) showToast(friendlyAuthError(reauthError));
+      }
+    } else if (!transitionToReauthentication(error)) {
+      showToast(friendlyAuthError(error));
+    }
+  } finally {
+    authRequestInProgress = false;
+    if (activeAccount) render();
+  }
+}
+
 function exportCloudRecovery() {
   const recovery = cloudStateRecovery;
   if (!recovery || recovery.userId !== activeAccount?.userId) {
@@ -4412,6 +5569,75 @@ function exportCloudRecovery() {
   } catch {
     showToast(tx("Recovery JSON download failed.", "Не вдалося завантажити JSON для відновлення."));
   }
+}
+
+function exportSyncConflictLocal() {
+  if (cloudSyncConflict?.userId !== activeAccount?.userId) return;
+  downloadJson(exportPayload(false), false);
+}
+
+async function resolveSyncConflictWithLocal() {
+  const conflict = cloudSyncConflict;
+  if (!conflict || conflict.userId !== activeAccount?.userId ||
+      loadRemoteSession()?.user?.id !== conflict.userId) return;
+  const warning = tx(
+    "Replace the conflicting cloud version with this browser version? Download a backup first. The revision check will stop if the cloud changes again.",
+    "Замінити конфліктну хмарну версію версією з цього браузера? Спочатку завантаж резервну копію. Перевірка ревізії зупинить дію, якщо хмара знову зміниться."
+  );
+  if (typeof window.confirm !== "function" || !window.confirm(warning)) return;
+  authRequestInProgress = true;
+  render();
+  try {
+    saveSyncBaseline({
+      version: 1,
+      userId: conflict.userId,
+      remoteExists: Boolean(conflict.cloudState.exists),
+      revision: conflict.cloudState.exists ? conflict.cloudState.revision : null,
+      syncedFingerprint: conflict.remoteFingerprint,
+      localFingerprint: remoteStateFingerprint(state, conflict.userId),
+      dirty: true,
+      pending: null,
+      updatedAt: Date.now()
+    });
+    const result = await saveRemoteState();
+    cloudSyncConflict = null;
+    render();
+    showRemoteSaveResult(result);
+    showToast(tx("Browser version saved to the cloud.", "Версію браузера збережено в хмарі."));
+  } catch (error) {
+    if (!transitionToReauthentication(error)) showToast(friendlyAuthError(error));
+  } finally {
+    authRequestInProgress = false;
+    render();
+  }
+}
+
+function resolveSyncConflictWithCloud() {
+  const conflict = cloudSyncConflict;
+  if (!conflict || conflict.userId !== activeAccount?.userId ||
+      loadRemoteSession()?.user?.id !== conflict.userId) return;
+  const warning = tx(
+    "Discard this browser's conflicting changes and use the cloud version? Download a browser backup first. This cannot be undone in GymApp.",
+    "Відкинути конфліктні зміни цього браузера й використати хмарну версію? Спочатку завантаж резервну копію браузера. У GymApp це неможливо скасувати."
+  );
+  if (typeof window.confirm !== "function" || !window.confirm(warning)) return;
+  state = conflict.remoteState;
+  saveState({ queueRemote: false, markDirty: false });
+  const acceptedFingerprint = remoteStateFingerprint(state, conflict.userId);
+  saveSyncBaseline({
+    version: 1,
+    userId: conflict.userId,
+    remoteExists: Boolean(conflict.cloudState.exists),
+    revision: conflict.cloudState.exists ? conflict.cloudState.revision : null,
+    syncedFingerprint: conflict.remoteFingerprint,
+    localFingerprint: acceptedFingerprint,
+    dirty: false,
+    pending: null,
+    updatedAt: Date.now()
+  });
+  cloudSyncConflict = null;
+  render();
+  showToast(tx("Cloud version loaded.", "Хмарну версію завантажено."));
 }
 
 async function resetCloudRecovery() {
@@ -4434,17 +5660,23 @@ async function resetCloudRecovery() {
   cloudStateRecovery = null;
   state = defaultAppState();
   try {
-    await saveRemoteState({ expectedEpoch, expectedUserId });
-    saveState({ queueRemote: false });
+    const result = await saveRemoteState({ expectedEpoch, expectedUserId });
+    saveState({ queueRemote: false, markDirty: false });
     render();
-    showToast(tx("Cloud state recovery completed.", "Відновлення хмарного стану завершено."));
+    if (result?.profileUpdated === false && transitionToReauthentication(result.profileError)) return;
+    showToast(result?.profileUpdated === false
+      ? tx(
+        "Cloud state was recovered, but the public profile summary could not be updated. Try again later.",
+        "Хмарні дані відновлено, але публічний підсумок профілю не вдалося оновити. Спробуй пізніше."
+      )
+      : tx("Cloud state recovery completed.", "Відновлення хмарного стану завершено."));
   } catch (error) {
     const stateWasReplaced = remoteStateSync.userId === expectedUserId &&
       remoteStateSync.revision !== recovery.revision;
     const accountIsCurrent = expectedEpoch === accountEpoch && activeAccount?.userId === expectedUserId &&
       loadRemoteSession()?.user?.id === expectedUserId;
     if (stateWasReplaced && accountIsCurrent) {
-      saveState({ queueRemote: false });
+      saveState({ queueRemote: false, markDirty: false });
       render();
       showToast(tx(
         "Cloud state was recovered, but protected progress could not be refreshed. Try again later.",
@@ -4474,10 +5706,22 @@ async function resendRemoteConfirmation() {
   authRequestInProgress = true;
   pendingEmailConfirmation = { ...pendingEmailConfirmation, status: "", statusIsError: false };
   render();
+  let transaction = null;
+  let transactionReused = false;
   try {
-    await supabaseRequest(`/auth/v1/resend?redirect_to=${encodeURIComponent(AUTH_REDIRECT_URL)}`, {
+    const generated = await signupAuthTransaction(email);
+    transaction = generated.transaction;
+    transactionReused = generated.reused;
+    saveAuthTransaction(transaction);
+    await supabaseRequest(`/auth/v1/resend?redirect_to=${encodeURIComponent(authRedirectUrl())}`, {
       method: "POST",
-      body: JSON.stringify({ type: "signup", email })
+      anonymous: true,
+      body: JSON.stringify({
+        type: "signup",
+        email,
+        code_challenge: generated.challenge,
+        code_challenge_method: "s256"
+      })
     });
     pendingEmailConfirmation = {
       email,
@@ -4485,6 +5729,9 @@ async function resendRemoteConfirmation() {
       statusIsError: false
     };
   } catch (error) {
+    if (transaction && !transactionReused && deterministicAuthRequestFailure(error)) {
+      clearAuthTransaction(transaction.state, "signup");
+    }
     pendingEmailConfirmation = { email, status: friendlyAuthError(error), statusIsError: true };
   } finally {
     authRequestInProgress = false;
@@ -4512,6 +5759,159 @@ function returnToLoginFromConfirmation() {
   requestAnimationFrame(() => app.querySelector("#login-email")?.focus());
 }
 
+function restoreStorageValue(key, value) {
+  if (value === null) localStorage.removeItem(key);
+  else localStorage.setItem(key, value);
+}
+
+function finishRemovedAccountTransition() {
+  resetRemoteSyncContext();
+  clearAuthDrafts();
+  activeAccount = null;
+  state = loadState();
+  nav = [{ name: "workouts" }];
+  modal = null;
+  replaceNavigationHistory();
+  render();
+}
+
+function purgeDeletedCloudAccountFromBrowser(account) {
+  let complete = true;
+  const attempt = operation => {
+    try {
+      if (operation() === false) complete = false;
+    } catch {
+      complete = false;
+    }
+  };
+  attempt(() => {
+    localStorage.removeItem(activeStorageKey(account));
+    return localStorage.getItem(activeStorageKey(account)) === null;
+  });
+  attempt(() => {
+    saveAccountList(accountList().filter(item => item.id !== account.id));
+    return !accountList().some(item => item.id === account.id);
+  });
+  attempt(() => removeActiveAccountMarkerForDeletion(account));
+  attempt(() => { removeGarminBinding(account.userId); return true; });
+  attempt(() => { removeGarminEnqueueRequestsForUser(account.userId); return true; });
+  pendingGarminRevocations.delete(account.userId);
+  const pendingAuth = loadAuthTransaction();
+  if (pendingAuth?.email === normalizeAuthEmail(account.email)) {
+    attempt(() => clearAuthTransaction(pendingAuth.state, pendingAuth.purpose));
+  }
+  attempt(() => {
+    const key = syncBaselineKey(account.userId);
+    localStorage.removeItem(key);
+    return localStorage.getItem(key) === null;
+  });
+  attempt(() => clearRemoteSession());
+  finishRemovedAccountTransition();
+  return complete;
+}
+
+async function deleteCloudAccount() {
+  if (accountTransitionInProgress || authRequestInProgress) return;
+  const account = normalizeStoredAccount(activeAccount);
+  const session = loadRemoteSession();
+  if (account?.remote !== "supabase" || session?.user?.id !== account.userId) {
+    return showToast(tx("Sign in again before deleting this cloud account.", "Увійди знову перед видаленням цього хмарного акаунта."));
+  }
+  const warning = tx(
+    "Permanently delete this cloud account, its workouts, profile and connected devices? This cannot be undone. Export a backup first if you need it.",
+    "Назавжди видалити цей хмарний акаунт, тренування, профіль і підключені пристрої? Це неможливо скасувати. Спочатку експортуй резервну копію, якщо вона потрібна."
+  );
+  if (typeof window.confirm !== "function" || !window.confirm(warning)) return;
+  const typed = typeof window.prompt === "function"
+    ? window.prompt(tx("Type DELETE to permanently delete the cloud account.", "Введи DELETE, щоб назавжди видалити хмарний акаунт."), "")
+    : null;
+  if (typed !== "DELETE") return showToast(tx("Account deletion cancelled.", "Видалення акаунта скасовано."));
+
+  accountTransitionInProgress = true;
+  const hadPendingSave = remoteSaveTimer !== null;
+  clearTimeout(remoteSaveTimer);
+  remoteSaveTimer = null;
+  try {
+    if (remoteSaveInFlight) await remoteSaveInFlight.catch(() => {});
+    const response = await supabaseRequest("/functions/v1/delete-account", {
+      method: "POST",
+      session: loadRemoteSession() || session,
+      maxResponseBytes: MAX_REMOTE_AUTH_RESPONSE_BYTES,
+      body: JSON.stringify({ confirmation: "DELETE" })
+    });
+    if (!response || typeof response !== "object" || Array.isArray(response) ||
+        Object.keys(response).length !== 1 || response.deleted !== true) {
+      throw new Error("Cloud account deletion was not confirmed.");
+    }
+    const cleanupComplete = purgeDeletedCloudAccountFromBrowser(account);
+    showToast(cleanupComplete
+      ? tx("Cloud account permanently deleted.", "Хмарний акаунт назавжди видалено.")
+      : tx(
+        "Cloud account was deleted, but some browser data could not be cleared. Clear site data before using this device again.",
+        "Хмарний акаунт видалено, але деякі дані браузера не вдалося очистити. Очисть дані сайту перед повторним використанням цього пристрою."
+      ));
+  } catch (error) {
+    if (hadPendingSave && activeAccount?.userId === account.userId) queueRemoteSave();
+    if (!transitionToReauthentication(error)) {
+      showToast(friendlyOperationError(
+        error,
+        "Cloud account deletion failed. Nothing was deleted from this browser.",
+        "Не вдалося видалити хмарний акаунт. У цьому браузері нічого не видалено."
+      ));
+    }
+  } finally {
+    accountTransitionInProgress = false;
+  }
+}
+
+function deleteLocalAccount() {
+  if (accountTransitionInProgress || authRequestInProgress) return;
+  const account = normalizeStoredAccount(activeAccount);
+  if (!account || account.remote) return;
+  const warning = tx(
+    "Permanently delete this local account and every workout saved for it in this browser? This cannot be undone. Export a backup first if needed.",
+    "Назавжди видалити цей локальний акаунт і всі його тренування в цьому браузері? Це неможливо скасувати. За потреби спочатку експортуй резервну копію."
+  );
+  if (typeof window.confirm !== "function" || !window.confirm(warning)) return;
+  const typed = typeof window.prompt === "function"
+    ? window.prompt(tx("Type DELETE to permanently delete the local account.", "Введи DELETE, щоб назавжди видалити локальний акаунт."), "")
+    : null;
+  if (typed !== "DELETE") return showToast(tx("Account deletion cancelled.", "Видалення акаунта скасовано."));
+
+  const stateKey = activeStorageKey(account);
+  let snapshots;
+  try {
+    snapshots = {
+      state: localStorage.getItem(stateKey),
+      accounts: localStorage.getItem(ACCOUNT_LIST_KEY),
+      auth: localStorage.getItem(AUTH_KEY)
+    };
+    localStorage.removeItem(stateKey);
+    saveAccountList(accountList().filter(item => item.id !== account.id));
+    if (!removeActiveAccountMarkerForDeletion(account) || localStorage.getItem(stateKey) !== null ||
+        accountList().some(item => item.id === account.id)) {
+      throw new Error("Local account cleanup was not confirmed.");
+    }
+    clearRemoteSession();
+    finishRemovedAccountTransition();
+    showToast(tx("Local account permanently deleted from this browser.", "Локальний акаунт назавжди видалено з цього браузера."));
+  } catch {
+    if (snapshots) {
+      try {
+        restoreStorageValue(stateKey, snapshots.state);
+        restoreStorageValue(ACCOUNT_LIST_KEY, snapshots.accounts);
+        restoreStorageValue(AUTH_KEY, snapshots.auth);
+      } catch {
+        // Keep the account open and report the failed cleanup below.
+      }
+    }
+    showToast(tx(
+      "Local account deletion failed. The account remains open; restore browser storage access and try again.",
+      "Не вдалося видалити локальний акаунт. Він залишається відкритим; віднови доступ до сховища браузера й спробуй ще раз."
+    ));
+  }
+}
+
 async function logoutAccount() {
   if (accountTransitionInProgress) return;
   if (garminSyncInProgress) {
@@ -4520,12 +5920,29 @@ async function logoutAccount() {
   accountTransitionInProgress = true;
   let signedOutWithPendingGarminRevocation = false;
   let remoteSessionRevocationFailed = false;
-  const hadPendingRemoteSave = remoteSaveTimer !== null;
   const accountBeingLoggedOut = normalizeStoredAccount(activeAccount);
   try {
-    saveState({ queueRemote: false });
-    clearTimeout(remoteSaveTimer);
-    remoteSaveTimer = null;
+    const activationSession = loadRemoteSession();
+    const activationPending = Boolean(
+      activationSession?.activation_pending &&
+      activationSession.user?.id === accountBeingLoggedOut?.userId
+    );
+    if (!activationPending) {
+      // Every state mutation persists its dirty marker before writing account
+      // data. Sign-out only seals the already-saved snapshot; it must not turn
+      // an untouched/migration-era account into a new cloud write.
+      saveState({ queueRemote: false, markDirty: false });
+      try {
+        await flushPendingRemoteSave();
+      } catch (error) {
+        if (transitionToReauthentication(error)) return;
+        if (activeAccount?.remote) queueRemoteSave();
+        throw userVisibleError(
+          "Account switch was cancelled because the latest browser changes could not be synced. Try again when the connection is available.",
+          "Перемикання акаунта скасовано, бо останні зміни з браузера не вдалося синхронізувати. Спробуй ще раз, коли з’єднання відновиться."
+        );
+      }
+    }
     let session = loadRemoteSession();
     const remoteUserId = activeAccount?.remote ? activeAccount.userId : null;
     const pendingGarminDeviceId = remoteUserId ? pendingGarminRevocations.get(remoteUserId) : null;
@@ -4542,7 +5959,6 @@ async function logoutAccount() {
           "Не вдалося відкликати незавершене сполучення Garmin. Натисни «Скасувати», щоб зберегти хмарну сесію й повторити спробу (рекомендовано). Натисни OK лише для локального виходу; GymApp повторить очищення після входу в цей акаунт."
         );
         if (typeof window.confirm !== "function" || !window.confirm(warning)) {
-          if (hadPendingRemoteSave) queueRemoteSave();
           throw userVisibleError(
             "Sign-out was cancelled so Garmin revocation can be retried.",
             "Вихід скасовано, щоб можна було повторити відкликання Garmin."
@@ -4670,7 +6086,7 @@ function garminStoreAppLink() {
 function accountPanel() {
   const label = activeAccount?.name || tx("Local", "Локальний");
   const hasGarminBinding = Boolean(activeAccount?.remote && garminBindingForUser(activeAccount.userId));
-  return `<section class="panel highlighted account-card"><div class="row-head"><div><span class="eyebrow">${tx("Account", "Акаунт")}</span><h2>${escapeHtml(label)}</h2><p>${activeAccount?.remote ? tx("Cloud account with protected synchronization.", "Хмарний акаунт із захищеною синхронізацією.") : tx("Local account on this device.", "Локальний акаунт на цьому пристрої.")}</p></div><span class="pill">${activeAccount?.remote ? tx("Cloud", "Хмара") : tx("Local", "Локально")}</span></div><div class="actions account-actions"><a class="button ghost" href="${escapeAttr(garminStoreAppLink())}" target="_blank" rel="noopener noreferrer">${tx("Open Garmin Connect IQ", "Відкрити Garmin Connect IQ")}</a>${hasGarminBinding ? `<button class="button danger" data-action="unpair-garmin">${tx("Unpair Garmin", "Від’єднати Garmin")}</button>` : ""}<button class="button ghost" data-action="logout-account">${tx("Switch", "Змінити акаунт")}</button></div></section>`;
+  return `<section class="panel highlighted account-card"><div class="row-head"><div><span class="eyebrow">${tx("Account", "Акаунт")}</span><h2>${escapeHtml(label)}</h2><p>${activeAccount?.remote ? tx("Cloud account with protected synchronization.", "Хмарний акаунт із захищеною синхронізацією.") : tx("Local account on this device.", "Локальний акаунт на цьому пристрої.")}</p></div><span class="pill">${activeAccount?.remote ? tx("Cloud", "Хмара") : tx("Local", "Локально")}</span></div><div class="actions account-actions"><a class="button ghost" href="${escapeAttr(garminStoreAppLink())}" target="_blank" rel="noopener noreferrer">${tx("Open Garmin Connect IQ", "Відкрити Garmin Connect IQ")}</a>${activeAccount?.remote ? `<button class="button ghost" data-action="change-password">${tx("Change password", "Змінити пароль")}</button>` : ""}${hasGarminBinding ? `<button class="button danger" data-action="unpair-garmin">${tx("Unpair Garmin", "Від’єднати Garmin")}</button>` : ""}<button class="button ghost" data-action="logout-account">${tx("Switch", "Змінити акаунт")}</button><button class="button danger" data-action="delete-account">${activeAccount?.remote ? tx("Delete cloud account", "Видалити хмарний акаунт") : tx("Delete local account", "Видалити локальний акаунт")}</button></div></section>`;
 }
 
 function profileDataPanel() {
@@ -5397,6 +6813,7 @@ function ranksScreen() {
 }
 
 function modalMarkup() {
+  if (modal.type === "change-password") return bottomSheet(`<h2>${tx("Change password", "Змінити пароль")}</h2>${modal.reauthRequired ? `<p class="muted">${tx("A verification code was sent to your email. Enter it together with the new password.", "Код підтвердження надіслано на твою електронну пошту. Введи його разом із новим паролем.")}</p>` : ""}<div class="field-stack"><label>${tx("Current password", "Поточний пароль")}<input id="change-current-password" type="password" autocomplete="current-password" maxlength="1024"></label>${modal.reauthRequired ? `<label>${tx("Verification code", "Код підтвердження")}<input id="change-password-nonce" autocomplete="one-time-code" inputmode="numeric" maxlength="8"></label>` : ""}<label>${tx("New password", "Новий пароль")}<input id="change-new-password" type="password" autocomplete="new-password" minlength="12" maxlength="72"></label><label>${tx("Repeat new password", "Повтори новий пароль")}<input id="change-repeat-password" type="password" autocomplete="new-password" minlength="12" maxlength="72"></label></div><p class="muted">${tx("Use at least 12 characters (up to 72 UTF-8 bytes) with lowercase and uppercase Latin letters, a number, and a supported symbol such as !, @, #, or $.", "Використай щонайменше 12 символів (до 72 байтів UTF-8): малу й велику латинські літери, цифру та підтримуваний спецсимвол, наприклад !, @, # або $.")}</p><button class="button full" data-action="submit-password-change" ${authRequestInProgress ? "disabled" : ""}>${tx("Change password", "Змінити пароль")}</button>`);
   if (modal.type === "template") return bottomSheet(`<h2>${t("templatePicker")}</h2>${state.sessions.length ? [...state.sessions].sort((a, b) => b.startedAt - a.startedAt).map(session => `<article class="workout-item"><h3>${fmtDate(session.startedAt)}</h3><p>${sessionSummary(session).exercises} ${tx("exercises", "вправ")} - ${sessionSummary(session).sets} ${tx("sets", "підходів")} - ${Math.round(sessionSummary(session).volume)} ${tx("volume", "обсяг")}</p><button class="button full" data-action="copy-template" data-id="${session.id}">${t("copyWorkout")}</button></article>`).join("") : `<p>${tx("No previous workouts yet.", "Попередніх тренувань ще немає.")}</p>`}`);
   if (modal.type === "import") return bottomSheet(`<h2>${tx("Import backup", "Імпорт резервної копії")}</h2><textarea id="import-json" placeholder="${txAttr("Paste exported GymApp JSON here", "Встав сюди експортований JSON GymApp")}"></textarea><button class="button full" data-action="apply-import">${tx("Import", "Імпорт")}</button>`);
   if (modal.type === "add-exercise") return bottomSheet(`<h2>${tx("Add exercise", "Додати вправу")}</h2><input id="new-exercise-name" maxlength="120" aria-label="${txAttr("Exercise name", "Назва вправи")}" placeholder="${txAttr("Exercise name", "Назва вправи")}"><button class="button full" data-action="save-exercise">${tx("Add exercise", "Додати вправу")}</button>`);
@@ -5437,6 +6854,18 @@ function bindEvents() {
   const loginPassword = app.querySelector("#login-password");
   if (loginPassword) loginPassword.addEventListener("keydown", ev => {
     if (ev.key === "Enter") remoteLogin(false);
+  });
+  const forgotEmail = app.querySelector("#forgot-email");
+  if (forgotEmail) forgotEmail.addEventListener("keydown", ev => {
+    if (ev.key === "Enter") requestPasswordReset();
+  });
+  const recoveryRepeat = app.querySelector("#recovery-repeat-password");
+  if (recoveryRepeat) recoveryRepeat.addEventListener("keydown", ev => {
+    if (ev.key === "Enter") updateRemotePassword({ required: true });
+  });
+  const changeRepeat = app.querySelector("#change-repeat-password");
+  if (changeRepeat) changeRepeat.addEventListener("keydown", ev => {
+    if (ev.key === "Enter") updateRemotePassword();
   });
   app.querySelectorAll("[data-auth-mode][data-auth-field]").forEach(input => {
     input.addEventListener("input", () => {
@@ -5491,16 +6920,29 @@ function syncTopbarVisibility() {
 }
 
 function handleAction(action, el) {
-  if (action === "auth-mode") { authMode = el.dataset.mode === "signup" ? "signup" : "login"; return render(); }
+  if (action === "auth-mode") {
+    authMode = ["login", "signup", "forgot"].includes(el.dataset.mode) ? el.dataset.mode : "login";
+    authNotice = null;
+    return render();
+  }
   if (action === "remote-login") return remoteLogin(false);
   if (action === "remote-signup") return remoteLogin(true);
+  if (action === "request-password-reset") return requestPasswordReset();
+  if (action === "complete-password-recovery") return updateRemotePassword({ required: true });
+  if (action === "change-password") { modal = { type: "change-password" }; return render(); }
+  if (action === "submit-password-change") return updateRemotePassword();
   if (action === "remote-resend-confirmation") return resendRemoteConfirmation();
   if (action === "confirmation-change-address") return changePendingConfirmationAddress();
   if (action === "confirmation-back-to-login") return returnToLoginFromConfirmation();
+  if (action === "retry-cloud-activation") return retryPendingRemoteActivation();
   if (action === "login-account") return loginAccount(el.dataset.name || app.querySelector("#local-login-name")?.value);
   if (action === "export-cloud-recovery") return exportCloudRecovery();
   if (action === "reset-cloud-recovery") return resetCloudRecovery();
+  if (action === "export-sync-conflict-local") return exportSyncConflictLocal();
+  if (action === "resolve-sync-conflict-local") return resolveSyncConflictWithLocal();
+  if (action === "resolve-sync-conflict-cloud") return resolveSyncConflictWithCloud();
   if (action === "logout-account") return logoutAccount();
+  if (action === "delete-account") return activeAccount?.remote ? deleteCloudAccount() : deleteLocalAccount();
   if (action === "unpair-garmin") return unpairGarmin();
   if (action === "refresh-leaderboard") return refreshLeaderboard(true);
   if (action === "back") return back();
@@ -6629,9 +8071,16 @@ window.addEventListener("popstate", event => {
 if (!handleEmailConfirmationRedirect()) {
   replaceNavigationHistory();
   render();
-  pullRemoteState()
+  const startupSync = loadRemoteSession()?.activation_pending
+    ? retryPendingRemoteActivation().then(() => false)
+    : pullRemoteState();
+  startupSync
     .then(updated => {
       if (updated) render();
     })
-    .catch(() => showToast(tx("Cloud sync failed.", "Синхронізація не вдалася.")));
+    .catch(error => {
+      if (!transitionToReauthentication(error)) {
+        showToast(tx("Cloud sync failed.", "Синхронізація не вдалася."));
+      }
+    });
 }

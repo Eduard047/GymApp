@@ -9,6 +9,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.ByteArrayInputStream
 import java.text.Normalizer
+import java.util.Base64
+import org.json.JSONObject
 
 class CloudAuthManagerTest {
     @Test
@@ -67,6 +69,108 @@ class CloudAuthManagerTest {
     }
 
     @Test
+    fun accountDeletionRequestAndResponseUseTheExactEdgeFunctionContract() {
+        val request = cloudAccountDeletionRequest()
+        val body = JSONObject(request.body)
+
+        assertEquals("POST", request.method)
+        assertEquals("/functions/v1/delete-account", request.path)
+        assertEquals(mapOf("X-GymApp-Delete" to "confirmed"), request.headers)
+        assertEquals(setOf("confirmation"), body.keys().asSequence().toSet())
+        assertEquals("DELETE", body.getString("confirmation"))
+        assertTrue(isSuccessfulCloudAccountDeletionResponse("{\"deleted\":true}"))
+        assertFalse(isSuccessfulCloudAccountDeletionResponse("{\"deleted\":false}"))
+        assertFalse(
+            isSuccessfulCloudAccountDeletionResponse(
+                "{\"deleted\":true,\"unexpected\":true}"
+            )
+        )
+        assertFalse(isSuccessfulCloudAccountDeletionResponse("[]"))
+    }
+
+    @Test
+    fun recoveryAndSignedInPasswordUpdatesHaveDifferentRequestShapes() {
+        val recovery = JSONObject(passwordUpdateBody(newPassword = "NewSecurePass9!"))
+        val signedIn = JSONObject(
+            passwordUpdateBody(
+                newPassword = "NewSecurePass9!",
+                currentPassword = "CurrentSecurePass8!"
+            )
+        )
+
+        assertEquals(setOf("password"), recovery.keys().asSequence().toSet())
+        assertEquals("NewSecurePass9!", recovery.getString("password"))
+        assertEquals(setOf("password", "current_password"), signedIn.keys().asSequence().toSet())
+        assertEquals("CurrentSecurePass8!", signedIn.getString("current_password"))
+    }
+
+    @Test
+    fun onlyTerminalRefreshFailuresRequireAFreshLogin() {
+        assertTrue(isTerminalRefreshFailure(401, null, null))
+        assertTrue(isTerminalRefreshFailure(400, "refresh_token_not_found", null))
+        assertTrue(isTerminalRefreshFailure(400, null, "Invalid Refresh Token"))
+        assertFalse(isTerminalRefreshFailure(429, "over_request_rate_limit", "try later"))
+        assertFalse(isTerminalRefreshFailure(503, null, "temporarily unavailable"))
+    }
+
+    @Test
+    fun resendReusesOnlyTheFreshSignupTransactionForTheSameEmail() {
+        val now = 1_750_000_000_000L
+        val existing = PendingAuthTransaction(
+            state = "S".repeat(32),
+            codeVerifier = "V".repeat(64),
+            email = "athlete@example.com",
+            createdAtMillis = now - 60_000L
+        )
+
+        assertEquals(
+            existing,
+            reusablePendingSignupTransaction(existing, "athlete@example.com", now)
+        )
+        assertNull(reusablePendingSignupTransaction(existing, "other@example.com", now))
+        assertNull(
+            reusablePendingSignupTransaction(
+                existing.copy(createdAtMillis = now - 24 * 60 * 60 * 1_000L - 1),
+                "athlete@example.com",
+                now
+            )
+        )
+    }
+
+    @Test
+    fun ambiguousAuthInitiationOutcomesKeepThePendingPkceTransaction() {
+        assertTrue(isDeterministicAuthInitiationHttpFailure(400))
+        assertTrue(isDeterministicAuthInitiationHttpFailure(422))
+        assertTrue(isDeterministicAuthInitiationHttpFailure(429))
+        assertFalse(isDeterministicAuthInitiationHttpFailure(null))
+        assertFalse(isDeterministicAuthInitiationHttpFailure(408))
+        assertFalse(isDeterministicAuthInitiationHttpFailure(425))
+        assertFalse(isDeterministicAuthInitiationHttpFailure(500))
+        assertFalse(isDeterministicAuthInitiationHttpFailure(503))
+    }
+
+    @Test
+    fun storedCloudSessionMustBeBoundToAValidJwtSubject() {
+        val userId = "123e4567-e89b-42d3-a456-426614174000"
+        val raw = storedCloudSessionJson(userId, accessToken(userId))
+
+        val parsed = parseStoredCloudSession(raw)
+
+        assertEquals(userId, parsed?.userId)
+        assertEquals("user@example.test", parsed?.email)
+        assertNull(parseStoredCloudSession("{}"))
+        assertNull(
+            parseStoredCloudSession(
+                storedCloudSessionJson(
+                    userId,
+                    accessToken("223e4567-e89b-42d3-a456-426614174000")
+                )
+            )
+        )
+        assertNull(parseStoredCloudSession(storedCloudSessionJson(userId, "not-a-jwt")))
+    }
+
+    @Test
     fun activeSessionRequiresTheSameAccountGeneration() {
         val expected = cloudSession(userId = "user-a", generation = "generation-a")
         val refreshed = expected.copy(accessToken = "new-access-token")
@@ -85,6 +189,31 @@ class CloudAuthManagerTest {
                 cloudSession(userId = "user-a", generation = "generation-b"),
                 expected
             )
+        )
+    }
+
+    @Test
+    fun confirmedDeletionCompletionIsIdempotentAndGenerationBound() {
+        val deleted = cloudSession(userId = "user-a", generation = "generation-a")
+
+        assertEquals(
+            CloudAccountDeletionSessionDisposition.ClearCapturedSession,
+            cloudAccountDeletionSessionDisposition(deleted, deleted)
+        )
+        assertEquals(
+            CloudAccountDeletionSessionDisposition.AlreadySignedOut,
+            cloudAccountDeletionSessionDisposition(null, deleted)
+        )
+        assertEquals(
+            CloudAccountDeletionSessionDisposition.PreserveDifferentSession,
+            cloudAccountDeletionSessionDisposition(
+                deleted.copy(sessionGeneration = "generation-b"),
+                deleted
+            )
+        )
+        assertEquals(
+            CloudAccountDeletionSessionDisposition.PreserveDifferentSession,
+            cloudAccountDeletionSessionDisposition(AccountSession.Local("Local"), deleted)
         )
     }
 
@@ -322,5 +451,25 @@ class CloudAuthManagerTest {
             refreshToken = "refresh-token",
             sessionGeneration = generation
         )
+    }
+
+    private fun storedCloudSessionJson(userId: String, accessToken: String): String =
+        JSONObject()
+            .put("userId", userId)
+            .put("email", "User@Example.Test")
+            .put("displayName", "User")
+            .put("accessToken", accessToken)
+            .put("refreshToken", "refresh-token")
+            .put("sessionGeneration", "323e4567-e89b-42d3-a456-426614174000")
+            .toString()
+
+    private fun accessToken(userId: String): String {
+        fun encode(value: String): String = Base64.getUrlEncoder().withoutPadding()
+            .encodeToString(value.toByteArray(Charsets.UTF_8))
+        return listOf(
+            encode("{\"alg\":\"HS256\"}"),
+            encode(JSONObject().put("sub", userId).put("exp", 4_102_444_800L).toString()),
+            encode("signature")
+        ).joinToString(".")
     }
 }

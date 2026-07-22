@@ -70,6 +70,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
 import com.example.gymapp.auth.AuthUiState
+import com.example.gymapp.auth.newPasswordCharacterGroupsAreValid
+import com.example.gymapp.auth.newPasswordLengthIsValid
+import com.example.gymapp.auth.validatedLocalDisplayNameOrNull
 import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.HeroPanel
 import com.example.gymapp.ui.components.SectionTitle
@@ -83,6 +86,7 @@ fun AuthScreen(
     onResendConfirmation: (email: String) -> Unit,
     onDismissEmailConfirmation: (clearPendingRequest: Boolean) -> Unit,
     onPasswordReset: (email: String) -> Unit,
+    onContinueLocal: (displayName: String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -93,11 +97,13 @@ fun AuthScreen(
     var signUpPassword by remember { mutableStateOf("") }
     var signUpPasswordConfirm by remember { mutableStateOf("") }
     var displayName by remember { mutableStateOf("") }
+    var localDisplayName by remember { mutableStateOf("") }
     var isSignUp by remember { mutableStateOf(false) }
     var loginPasswordVisible by remember { mutableStateOf(false) }
     var signUpPasswordVisible by remember { mutableStateOf(false) }
     var signUpPasswordConfirmVisible by remember { mutableStateOf(false) }
     var localMessage by remember { mutableStateOf<String?>(null) }
+    var localProfileMessage by remember { mutableStateOf<String?>(null) }
     val pendingConfirmationEmail = uiState.pendingConfirmationEmail
 
     BoxWithConstraints(
@@ -299,17 +305,13 @@ fun AuthScreen(
                         }
                     }
 
-                    Text(
-                        text = stringResource(
-                            if (isSignUp) {
-                                R.string.auth_signup_requirements
-                            } else {
-                                R.string.auth_password_requirements
-                            }
-                        ),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    if (isSignUp) {
+                        Text(
+                            text = stringResource(R.string.auth_signup_requirements),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
 
                     localMessage?.let { message ->
                         AuthStatusBanner(message = message, isError = true)
@@ -405,6 +407,59 @@ fun AuthScreen(
                             Text(stringResource(R.string.auth_forgot_password))
                         }
                     }
+                    }
+                }
+            }
+
+            if (pendingConfirmationEmail == null) {
+                AppPanel(modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(13.dp)
+                    ) {
+                        SectionTitle(
+                            eyebrow = stringResource(R.string.auth_offline_profile),
+                            title = stringResource(R.string.auth_continue_offline),
+                            supporting = stringResource(R.string.auth_continue_offline_supporting)
+                        )
+                        OutlinedTextField(
+                            value = localDisplayName,
+                            onValueChange = {
+                                localProfileMessage = null
+                                localDisplayName = it.take(256)
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text(stringResource(R.string.auth_local_profile_name)) },
+                            supportingText = {
+                                Text(stringResource(R.string.auth_local_profile_name_hint))
+                            },
+                            singleLine = true,
+                            shape = RoundedCornerShape(16.dp)
+                        )
+                        localProfileMessage?.let { message ->
+                            AuthStatusBanner(message = message, isError = true)
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                val validation = validateLocalAccountInput(localDisplayName)
+                                if (validation == null) {
+                                    localProfileMessage = null
+                                    onContinueLocal(localDisplayName)
+                                } else {
+                                    localProfileMessage = localizedAuthValidationMessage(
+                                        context,
+                                        validation
+                                    )
+                                }
+                            },
+                            enabled = !uiState.isLoading,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 50.dp),
+                            shape = RoundedCornerShape(16.dp)
+                        ) {
+                            Text(stringResource(R.string.auth_continue_offline))
+                        }
                     }
                 }
             }
@@ -895,11 +950,14 @@ private fun localizedAuthValidationMessage(context: Context, message: String): S
         "Repeat your email." -> R.string.auth_error_repeat_email
         "Email does not match." -> R.string.auth_error_email_mismatch
         "Display name must be 2-32 characters." -> R.string.auth_error_display_name_length
-        "Password must be at least 8 characters." -> R.string.auth_error_password_minimum
-        "Password must include letters and numbers." -> R.string.auth_error_password_complexity
+        "Password must contain at least 12 characters and fit within 72 UTF-8 bytes." ->
+            R.string.auth_error_password_minimum
+        "Password must include a lowercase Latin letter, an uppercase Latin letter, a number, and a supported symbol." ->
+            R.string.auth_error_password_complexity
         "Passwords do not match." -> R.string.auth_error_password_mismatch
         "Enter a new password." -> R.string.auth_error_new_password_required
-        "Password must be 8-72 characters." -> R.string.auth_error_new_password_length
+        "Local profile name is invalid or too long." ->
+            R.string.auth_error_local_profile_name
         else -> return message
     }
     return context.getString(resource)
@@ -933,8 +991,10 @@ internal fun validateSignUpInput(
         cleanEmailConfirm.isBlank() -> "Repeat your email."
         cleanEmail != cleanEmailConfirm -> "Email does not match."
         displayName.trim().length !in 2..32 -> "Display name must be 2-32 characters."
-        password.length < 8 -> "Password must be at least 8 characters."
-        !password.any { it.isLetter() } || !password.any { it.isDigit() } -> "Password must include letters and numbers."
+        !newPasswordLengthIsValid(password) ->
+            "Password must contain at least 12 characters and fit within 72 UTF-8 bytes."
+        !newPasswordCharacterGroupsAreValid(password) ->
+            "Password must include a lowercase Latin letter, an uppercase Latin letter, a number, and a supported symbol."
         password != passwordConfirm -> "Passwords do not match."
         else -> null
     }
@@ -953,15 +1013,25 @@ internal fun validateRecoveryEmailInput(email: String): String? {
     return validateConfirmationEmailInput(email)
 }
 
+internal fun validateLocalAccountInput(displayName: String): String? {
+    val candidate = displayName.trim().ifBlank { "Local" }
+    return if (validatedLocalDisplayNameOrNull(candidate) == null) {
+        "Local profile name is invalid or too long."
+    } else {
+        null
+    }
+}
+
 internal fun validatePasswordUpdateInput(
     password: String,
     passwordConfirm: String
 ): String? {
     return when {
         password.isBlank() -> "Enter a new password."
-        password.length !in 8..72 -> "Password must be 8-72 characters."
-        !password.any { it.isLetter() } || !password.any { it.isDigit() } ->
-            "Password must include letters and numbers."
+        !newPasswordLengthIsValid(password) ->
+            "Password must contain at least 12 characters and fit within 72 UTF-8 bytes."
+        !newPasswordCharacterGroupsAreValid(password) ->
+            "Password must include a lowercase Latin letter, an uppercase Latin letter, a number, and a supported symbol."
         password != passwordConfirm -> "Passwords do not match."
         else -> null
     }

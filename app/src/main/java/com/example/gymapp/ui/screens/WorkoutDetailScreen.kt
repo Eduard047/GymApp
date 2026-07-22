@@ -63,7 +63,7 @@ import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.entity.SetEntryEntity
 import com.example.gymapp.data.repository.defaultContributionsForExercise
 import com.example.gymapp.garmin.GarminWorkoutMetrics
-import com.example.gymapp.garmin.parseGarminWorkoutMetrics
+import com.example.gymapp.garmin.parseTrustedGarminWorkoutMetrics
 import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.ExerciseMuscleMap
 import com.example.gymapp.ui.components.HeroPanel
@@ -186,8 +186,11 @@ fun WorkoutDetailScreen(
                 )
             }
         } else {
-            val garminMetrics = remember(details.session.note) {
-                parseGarminWorkoutMetrics(details.session.note.orEmpty())
+            val garminMetrics = remember(details.session.note, uiState.hasGarminReceipt) {
+                parseTrustedGarminWorkoutMetrics(
+                    note = details.session.note.orEmpty(),
+                    hasGarminReceipt = uiState.hasGarminReceipt
+                )
             }
             val isGarminWorkout = garminMetrics != null
             LazyColumn(

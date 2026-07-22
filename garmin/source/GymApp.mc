@@ -111,7 +111,7 @@ class GymApp extends App.AppBase {
         }
         GymStore.status = "ACKING";
         try {
-            GymComm.send({
+            var ack = {
                 "type" => "sync_ack",
                 "bindingVersion" => GymStore.bindingVersion,
                 "syncId" => syncId.toString(),
@@ -123,7 +123,11 @@ class GymApp extends App.AppBase {
                 "planCount" => GymStore.plan.size(),
                 "exerciseCount" => GymStore.exercises.size(),
                 "applied" => applied
-            }, method(:onSyncAckSent));
+            };
+            if (GymStore.isValidAccountBinding(GymStore.pairingGeneration)) {
+                ack.put("pairingGeneration", GymStore.pairingGeneration.toString());
+            }
+            GymComm.send(ack, method(:onSyncAckSent));
         } catch (e) {
             GymStore.status = "ACK FAIL";
         }

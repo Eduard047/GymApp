@@ -1,5 +1,11 @@
 project_id = "gymapp"
 
+# The bounded user-state projection migrations use PostgreSQL 17 JSONPath
+# features. Pin local resets to the same major version as production so a fresh
+# checkout fails neither silently nor halfway through the migration chain.
+[db]
+major_version = 17
+
 # Local Auth email preview/source of truth. Hosted Supabase projects keep their
 # own Auth template settings; review and copy this template in the Dashboard
 # only as an explicit release action.
@@ -11,3 +17,8 @@ content_path = "./supabase/templates/confirmation.html"
 # user JWT. createDevice/revokeDevice still authenticate explicitly in code.
 [functions.garmin-sync]
 verify_jwt = false
+
+# Account deletion accepts only an authenticated Supabase user bearer. The
+# function performs its additional live-session check before the admin delete.
+[functions.delete-account]
+verify_jwt = true

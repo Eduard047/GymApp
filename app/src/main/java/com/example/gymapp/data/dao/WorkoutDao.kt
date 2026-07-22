@@ -78,7 +78,12 @@ interface WorkoutDao {
             s.note,
             COUNT(DISTINCT CASE WHEN se.id IS NOT NULL THEN we.id END) AS exerciseCount,
             COUNT(se.id) AS setCount,
-            COALESCE(SUM(se.weight * se.reps), 0.0) AS totalVolume
+            COALESCE(SUM(se.weight * se.reps), 0.0) AS totalVolume,
+            CASE WHEN EXISTS (
+                SELECT 1
+                FROM garmin_workout_provenance provenance
+                WHERE provenance.workoutSessionId = s.id
+            ) THEN 1 ELSE 0 END AS hasGarminReceipt
         FROM workout_sessions s
         LEFT JOIN workout_exercises we ON we.sessionId = s.id
         LEFT JOIN set_entries se ON se.workoutExerciseId = we.id
@@ -97,7 +102,12 @@ interface WorkoutDao {
             s.note,
             COUNT(DISTINCT CASE WHEN se.id IS NOT NULL THEN we.id END) AS exerciseCount,
             COUNT(se.id) AS setCount,
-            COALESCE(SUM(se.weight * se.reps), 0.0) AS totalVolume
+            COALESCE(SUM(se.weight * se.reps), 0.0) AS totalVolume,
+            CASE WHEN EXISTS (
+                SELECT 1
+                FROM garmin_workout_provenance provenance
+                WHERE provenance.workoutSessionId = s.id
+            ) THEN 1 ELSE 0 END AS hasGarminReceipt
         FROM workout_sessions s
         LEFT JOIN workout_exercises we ON we.sessionId = s.id
         LEFT JOIN set_entries se ON se.workoutExerciseId = we.id

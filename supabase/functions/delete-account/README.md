@@ -2,16 +2,26 @@
 
 Authenticated, irreversible deletion of the caller's own Supabase Auth user. The function has no runtime package dependencies.
 
-Production deployment record: version 1 is `ACTIVE` with `verify_jwt=true` in
-project `owrcbsrectdgaotndtxy` as of 2026-07-11. Its deployed source hash is
-`aefae8ab079463f2f3b13c7267b7f3f8073198340a7ad442253e5efed97a53d7`.
+This repository-root directory is the canonical source of truth. Do not add a
+second function copy under a platform directory. The machine-readable
+[deployment contract](deployment-contract.json) pins the reviewed source hash,
+the last observed production version, and the release gate.
+
+Production deployment record: version 3 is `ACTIVE` with `verify_jwt=true` in
+project `owrcbsrectdgaotndtxy` as last observed on 2026-07-22. The deployed
+canonical repository source has SHA-256
+`e622cdcd640e726578ffd6ccea955186360a3afa0fda35dd70cc903068642f6d`.
+`20260722010000_require_live_session_for_account_deletion.sql` is applied, the
+live-session behavior passed production E2E, and the deployment contract release
+gate is open.
 
 Security properties:
 
 - accepts only `POST` with `Content-Type: application/json`;
 - requires the exact body `{ "confirmation": "DELETE" }` and rejects extra fields;
-- verifies the caller's bearer token with `GET /auth/v1/user` using a publishable/anon key;
-- obtains the user ID only from that verified response — no user ID is accepted from the client;
+- verifies the caller's bearer token and current Auth user with `GET /auth/v1/user` using a publishable/anon key;
+- then calls the authenticated `require_live_session_for_account_deletion()` RPC with the same bearer; the RPC derives `auth.uid()` and the signed JWT `session_id` only at the database boundary, requires that exact user/session row to remain in `auth.sessions`, and returns only that bound user ID — neither identifier is accepted from the client;
+- requires the Auth user UUID and live-session RPC UUID to match exactly before deletion;
 - hard-deletes that exact user through `DELETE /auth/v1/admin/users/{id}` with a new Supabase secret key or the legacy `SUPABASE_SERVICE_ROLE_KEY`;
 - never logs tokens, keys, request bodies, email addresses, or upstream error bodies;
 - returns bounded, generic errors with `Cache-Control: no-store`;
@@ -31,7 +41,11 @@ Optional:
 
 - `DELETE_ACCOUNT_ALLOWED_ORIGIN=https://your-web-app.example` enables browser preflight for exactly that origin. Native iOS requests don't require CORS. When unset, browser preflight is denied.
 
-Keep the platform's per-function `verify_jwt` setting enabled (the default). The function still performs the requested authoritative `/auth/v1/user` verification before the admin call.
+Keep the platform's per-function `verify_jwt` setting enabled (the default). The
+function retains its `/auth/v1/user` validation, then performs the authoritative
+live-session RPC immediately before the admin call. The RPC is available only to
+`authenticated`, has no arguments, uses an empty search path, and returns the same
+`auth.uid()` whose signed `session_id` still exists in `auth.sessions`.
 
 ## Request
 
@@ -61,10 +75,11 @@ This function deletes the Auth user. Before shipping the in-app deletion UI, ver
 4. A test account deletion removes Auth, profile, workout, progress, and storage records while preserving only data that law requires you to retain.
 5. The app clears its local Keychain/session and UserDefaults account data after a successful response.
 
-This production preflight passed on 2026-07-11 with two disposable accounts.
-The live function passed wrong-method, missing/invalid JWT, media-type, body-shape,
-confirmation, size, and browser-origin checks before hard deletion. SQL checks
-then confirmed zero remaining Auth identity, profile, cloud-state, Garmin, or
+This production preflight passed again on 2026-07-22 with a disposable account
+that owned a profile, cloud state/projection, Garmin device, and two plans. The
+live function passed confirmation, browser-origin, missing/terminal JWT, replay,
+login, and refresh checks before and after hard deletion. SQL checks then
+confirmed zero remaining Auth user, profile, cloud-state/projection, Garmin, or
 moderation-report rows. Production Storage contained zero objects. Repeat the
 preflight after any schema, Storage, processor, Auth, or function change.
 
@@ -81,8 +96,24 @@ Then run a type check and serve locally:
 
 ```sh
 deno check supabase/functions/delete-account/index.ts
+node --test tests/delete-account-edge-contract.test.mjs
+node --test tests/delete-account-session-security.test.mjs
 supabase functions serve delete-account
 ```
+
+The normal contract test checks the pinned production snapshot against the
+repository contract. Production version 3 was deployed on 2026-07-22 after the
+live-session migration, so the enforced release check is expected to pass:
+
+```sh
+GYMAPP_ENFORCE_SUPABASE_RELEASE_GATE=1 \
+  node --test tests/delete-account-edge-contract.test.mjs
+```
+
+After any later explicitly authorized deployment, read back the migration
+history, function version, source hash, and `verify_jwt` setting. Update
+`deployment-contract.json` only from that evidence; the enforced release check
+must keep passing.
 
 Positive request (use a disposable local test account):
 
@@ -94,4 +125,8 @@ curl -i \
   --data '{"confirmation":"DELETE"}'
 ```
 
-Also test missing/invalid bearer token, wrong method, non-JSON media type, malformed JSON, wrong confirmation, extra fields, oversized body, upstream Auth failure, Storage ownership failure, and repeat deletion. Never use a real customer account for these tests.
+Also test missing/invalid bearer token, a globally signed-out or administratively
+revoked session whose JWT has not yet expired, wrong method, non-JSON media type,
+malformed JSON, wrong confirmation, extra fields, oversized body, live-session RPC
+failure, Storage ownership failure, and repeat deletion. Never use a real customer
+account for these tests.

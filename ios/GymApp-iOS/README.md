@@ -46,7 +46,8 @@ xcodebuild \
 - Release `iphoneos` build: **passed** on 2026-07-11 as an unsigned arm64 app
   with deployment target iOS 17.0 and bundle ID `com.setforge.gymapp.ios`.
 - Strict Swift 6 complete-concurrency warnings-as-errors build: **passed**.
-- `deno check supabase/functions/delete-account/index.ts`: **passed** with
+- `deno check ../../supabase/functions/delete-account/index.ts`: **passed** against
+  the canonical repository-root source with
   Deno 2.9.2 / TypeScript 6.0.3.
 - Production Supabase RLS/deletion E2E and hosted policy/support URL checks:
   **passed**.
@@ -56,7 +57,7 @@ xcodebuild \
 ## Before a real App Store upload
 
 1. Open `GymApp.xcodeproj`, select your Apple Developer Team, and confirm the final bundle identifier.
-2. Keep every canonical migration from the repository-root `supabase/migrations/` directory and both Edge Functions synchronized in every environment. Production is recorded through `20260721143853_retire_legacy_garmin_table_grants.sql`, and `garmin-sync` version 4 is active; the 2026-07-21 structural/ACL, rollback-only runtime, and invalid-capability HTTP checks passed. Complete the valid-device Edge Function fetch/ack smoke before submission. Evidence and scope are recorded in [PRODUCTION_BACKEND_VERIFICATION.md](AppStore/PRODUCTION_BACKEND_VERIFICATION.md).
+2. Keep every canonical migration from the repository-root `supabase/migrations/` directory and both repository-root Edge Functions synchronized in every environment. Production matches all 22 migrations through `20260722013200`; `garmin-sync` version 6 and `delete-account` version 3 are active. The 2026-07-22 valid-device fetch/ack/replay/cutover smoke and disposable-account deletion/cascade E2E passed, and the [deployment gate](../../supabase/functions/delete-account/deployment-contract.json) is clear. Evidence and scope are recorded in [PRODUCTION_BACKEND_VERIFICATION.md](AppStore/PRODUCTION_BACKEND_VERIFICATION.md).
 3. Keep `https://gymapptracker.com/confirmed.html?platform=ios&state=*` and
    `com.setforge.gymapp.ios://auth/callback/*` in the Supabase Auth redirect
    allowlist. The first-party HTTPS page accepts only a PKCE `code` plus the
@@ -69,7 +70,7 @@ xcodebuild \
 5. Complete Apple Team/signing, register the configured bundle identifier, and
    add the review-contact phone listed in
    [APP_STORE_CHECKLIST.md](AppStore/APP_STORE_CHECKLIST.md).
-6. Recheck cloud login, confirmation, password recovery and deletion against production immediately before submission. The automated backend deletion/RLS contract passed on 2026-07-11; physical-device PKCE testing remains a release task.
+6. Recheck cloud login, confirmation, password recovery and deletion against production immediately before submission. The automated backend Auth/deletion/RLS contract passed on 2026-07-22; physical-device PKCE testing remains a release task.
 
 The configured support and privacy URLs are live and match the canonical source
 copies. The policy covers iOS, Android, browser/PWA, and optional Garmin features
@@ -78,26 +79,23 @@ update.
 
 ### External verification status
 
-The production database, RLS, former cross-account leaderboard, and
-account-deletion behavior below passed on 2026-07-11. On 2026-07-21 all eight
-newer canonical migrations, from `canonical_profile_progression` through
-`retire_legacy_garmin_table_grants`, were applied in deployment order;
-structural/ACL and rollback-only runtime checks passed and the Supabase advisors
-were rerun. That database verification did not include a valid-device Edge
-Function fetch/ack smoke:
+The production database, Auth, RLS, state projection, Garmin gateway, and
+account-deletion behavior were reverified on 2026-07-22:
 
 - migrations `create_leaderboard_public`, `harden_gymapp_production_access`, and
   `fix_user_state_revision_trigger` are recorded in production migration history;
-- the eight later canonical migrations through
-  `20260721143853_retire_legacy_garmin_table_grants` are also recorded in
+- all 22 repository migrations through `20260722013200` are recorded in
   production migration history;
 - authenticated users receive the sanitized `leaderboard_public` projection,
   while anonymous base-table/view/report reads return `401` and the legacy
   `leaderboard` endpoint returns `404`;
-- `delete-account` version 1 is `ACTIVE` with `verify_jwt=true`;
-- `garmin-sync` version 4 is `ACTIVE` with its explicit mixed user-JWT/device-capability boundary, and invalid-capability HTTP checks passed; and
-- a two-user production E2E run passed RLS, reporting, stale-revision, deletion,
-  and cascade checks, then confirmed zero disposable rows remained.
+- `delete-account` version 3 is `ACTIVE` with `verify_jwt=true`; the live-session
+  contract and deletion cascade passed against a disposable account;
+- `garmin-sync` version 6 is `ACTIVE`; invalid capabilities were denied and a
+  real disposable v2 capability completed fetch, acknowledge, replay, rotation,
+  and post-migration continuity; and
+- the 37 existing states have 37 revision-bound projections, zero quarantined
+  rows, and zero profile/projection mismatches.
 
 The custom-domain iOS bridge and custom-scheme fallback are allowlisted in Auth.
 The previous GitHub Pages callback remains allowlisted for older clients and

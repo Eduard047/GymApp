@@ -99,10 +99,24 @@ internal fun parseGarminWorkoutMetrics(note: String): GarminWorkoutMetrics? {
     )
 }
 
+/**
+ * A Garmin-looking note is user-controlled workout data. Only a local receipt written by the
+ * bound-device ingestion transaction upgrades those parsed values to trusted Garmin metrics.
+ */
+internal fun parseTrustedGarminWorkoutMetrics(
+    note: String,
+    hasGarminReceipt: Boolean
+): GarminWorkoutMetrics? = if (hasGarminReceipt) {
+    parseGarminWorkoutMetrics(note)
+} else {
+    null
+}
+
 internal fun buildWorkoutComparisonForSession(
     currentSessionId: Long,
     currentSessionDate: Long,
     currentNote: String?,
+    currentHasGarminReceipt: Boolean,
     currentEntries: List<ExerciseHistoryEntry>,
     allSessions: List<WorkoutSessionSummary>,
     allHistory: List<ExerciseHistoryEntry>
@@ -116,6 +130,7 @@ internal fun buildWorkoutComparisonForSession(
         sessionId = currentSessionId,
         sessionDate = currentSessionDate,
         note = currentNote,
+        hasGarminReceipt = currentHasGarminReceipt,
         entries = currentEntries
     ) ?: return null
     val entriesBySession = allHistory.groupBy(ExerciseHistoryEntry::sessionId)
@@ -126,6 +141,7 @@ internal fun buildWorkoutComparisonForSession(
             sessionId = candidateId,
             sessionDate = summary.session.date,
             note = summary.session.note,
+            hasGarminReceipt = summary.hasGarminReceipt,
             entries = entriesBySession[candidateId].orEmpty()
         )
     }
@@ -203,6 +219,7 @@ internal fun comparableWorkoutSnapshotOrNull(
     sessionId: Long,
     sessionDate: Long,
     note: String?,
+    hasGarminReceipt: Boolean = false,
     entries: List<ExerciseHistoryEntry>
 ): ComparableWorkoutSnapshot? {
     val maximumEntryCount =
@@ -245,7 +262,9 @@ internal fun comparableWorkoutSnapshotOrNull(
         setCount = entries.size,
         totalReps = entries.sumOf { entry -> entry.reps.toLong() },
         totalVolume = totalVolume,
-        garminMetrics = note?.let(::parseGarminWorkoutMetrics)
+        garminMetrics = note?.let { value ->
+            parseTrustedGarminWorkoutMetrics(value, hasGarminReceipt)
+        }
     )
 }
 

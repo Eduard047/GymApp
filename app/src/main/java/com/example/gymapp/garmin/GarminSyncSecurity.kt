@@ -27,10 +27,13 @@ internal const val MAX_GARMIN_HEART_RATE = 300
 internal const val MAX_GARMIN_HEART_RATE_ZONE = 5
 internal const val MIN_GARMIN_STARTED_AT_SECONDS = 946_684_800L // 2000-01-01 UTC
 internal const val MAX_GARMIN_FUTURE_SKEW_SECONDS = 24 * 60 * 60L
+internal const val LEGACY_GARMIN_FALLBACK_GENERATION =
+    "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
 
 internal data class GarminBinding(
     val account: String,
-    val device: String
+    val device: String,
+    val pairingGeneration: String
 )
 
 internal enum class GarminInboundCommandKind {
@@ -122,17 +125,64 @@ internal fun garminBindingDecision(
     if (!hasCurrentGarminBindingVersion(command)) return GarminBindingDecision.Rejected
     val rawAccount = command["accountBinding"]
     val rawDevice = command["deviceBinding"]
+    val rawPairingGeneration = command["pairingGeneration"]
     val account = rawAccount as? String
     val device = rawDevice as? String
+    val pairingGeneration = rawPairingGeneration as? String
 
     if (rawAccount != null && account == null) return GarminBindingDecision.Rejected
     if (rawDevice != null && device == null) return GarminBindingDecision.Rejected
-    if (account == null || device == null) return GarminBindingDecision.Rejected
+    if (rawPairingGeneration != null && pairingGeneration == null) {
+        return GarminBindingDecision.Rejected
+    }
+    if (account == null || device == null) {
+        return GarminBindingDecision.Rejected
+    }
     if (device != expected.device) return GarminBindingDecision.Rejected
     if (!isValidGarminAccountBinding(account) || account != expected.account) {
         return GarminBindingDecision.Rejected
     }
+    if (pairingGeneration == null) {
+        return if (expected.pairingGeneration == LEGACY_GARMIN_FALLBACK_GENERATION) {
+            GarminBindingDecision.Bound
+        } else {
+            GarminBindingDecision.Rejected
+        }
+    }
+    if (!isValidGarminPairingGeneration(pairingGeneration) ||
+        pairingGeneration != expected.pairingGeneration) {
+        return GarminBindingDecision.Rejected
+    }
     return GarminBindingDecision.Bound
+}
+
+/**
+ * A trusted watch with pre-generation state may request a read-only sync once. Workout creation
+ * always uses [garminBindingDecision] and therefore never receives this compatibility allowance.
+ */
+internal fun garminSyncRequestBindingDecision(
+    command: Map<Any?, Any?>,
+    expected: GarminBinding
+): GarminBindingDecision {
+    if (!hasCurrentGarminBindingVersion(command)) return GarminBindingDecision.Rejected
+    val account = command["accountBinding"] as? String ?: return GarminBindingDecision.Rejected
+    val device = command["deviceBinding"] as? String ?: return GarminBindingDecision.Rejected
+    if (
+        !isValidGarminAccountBinding(account) || account != expected.account ||
+        device != expected.device
+    ) {
+        return GarminBindingDecision.Rejected
+    }
+    val generation = command["pairingGeneration"] ?: return GarminBindingDecision.Bound
+    if (generation !is String) return GarminBindingDecision.Rejected
+    return if (
+        isValidGarminPairingGeneration(generation) &&
+        generation == expected.pairingGeneration
+    ) {
+        GarminBindingDecision.Bound
+    } else {
+        GarminBindingDecision.Rejected
+    }
 }
 
 internal fun hasCurrentGarminBindingVersion(command: Map<Any?, Any?>): Boolean {
@@ -143,25 +193,37 @@ internal fun hasCurrentGarminBindingVersion(command: Map<Any?, Any?>): Boolean {
 
 internal fun boundGarminPayload(
     payload: Map<String, Any>,
-    binding: GarminBinding
+    binding: GarminBinding,
+    includePairingGeneration: Boolean = true
 ): Map<String, Any> = payload.toMutableMap().apply {
     put("bindingVersion", GARMIN_BINDING_VERSION)
     put("accountBinding", binding.account)
     put("deviceBinding", binding.device)
+    if (includePairingGeneration) {
+        put("pairingGeneration", binding.pairingGeneration)
+    }
 }
 
 internal fun boundGarminSyncPayload(
     payload: Map<String, Any>,
     binding: GarminBinding,
-    syncRevision: Long
+    syncRevision: Long,
+    includePairingGeneration: Boolean = true
 ): Map<String, Any>? {
     if (payload["type"] != "sync" || syncRevision !in 1L..MAX_GARMIN_SYNC_REVISION) return null
-    return boundGarminPayload(payload, binding).toMutableMap().apply {
+    return boundGarminPayload(
+        payload,
+        binding,
+        includePairingGeneration = includePairingGeneration
+    ).toMutableMap().apply {
         // Keep this a Long. A floating-point revision would lose exactness and
         // could acknowledge a different sync after the IEEE-754 integer limit.
         put("syncRevision", syncRevision)
     }
 }
+
+internal fun garminCommandAdvertisesPairingGeneration(command: Map<Any?, Any?>): Boolean =
+    command["pairingGenerationSupported"] == true
 
 internal fun nextGarminSyncRevision(
     lastRevision: Long?,
@@ -242,6 +304,9 @@ internal fun <T> newBoundedGarminInboundChannel(capacity: Int): Channel<T> {
 internal fun isValidGarminAccountBinding(value: String): Boolean {
     return value.length == 64 && value.all { it in '0'..'9' || it in 'a'..'f' }
 }
+
+internal fun isValidGarminPairingGeneration(value: String): Boolean =
+    isValidGarminAccountBinding(value)
 
 internal fun isValidGarminMessageId(value: String, maxLength: Int): Boolean {
     return value.length in 16..maxLength &&
@@ -495,6 +560,9 @@ internal fun canonicalCloudGarminAccountBinding(userId: String): String? {
 
 internal fun newLocalGarminAccountBinding(randomId: String = UUID.randomUUID().toString()): String =
     sha256Hex("gymapp-local-account-binding/v1\u0000$randomId")
+
+internal fun newGarminPairingGeneration(randomId: String = UUID.randomUUID().toString()): String =
+    sha256Hex("gymapp-garmin-pairing-generation/v1\u0000$randomId")
 
 private fun sha256Hex(value: String): String = MessageDigest.getInstance("SHA-256")
     .digest(value.toByteArray(Charsets.UTF_8))
