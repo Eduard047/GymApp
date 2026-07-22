@@ -2835,6 +2835,22 @@
         }
       }
     },
+    "Diagnostics contain app metadata and aggregate counts only. They exclude authentication tokens, account identifiers, exercise names, workout dates, notes, and set values." : {
+      "localizations" : {
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Діагностика містить лише метадані застосунку та агреговані лічильники. Вона не містить токенів автентифікації, ідентифікаторів акаунта, назв вправ, дат тренувань, нотаток або значень підходів."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Диагностика содержит только метаданные приложения и агрегированные счетчики. Она не содержит токены аутентификации, идентификаторы аккаунта, названия упражнений, даты тренировок, заметки или значения подходов."
+          }
+        }
+      }
+    },
     "Diagnostics JSON" : {
       "localizations" : {
         "uk" : {

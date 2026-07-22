@@ -290,9 +290,7 @@ struct WorkoutDraftExerciseCard: View {
                             reps: source?.reps ?? 10
                         )
                     )
-                    Task {
-                        await restTimers.start(id: timerID, seconds: 90, title: exerciseName)
-                    }
+                    restTimers.start(id: timerID, seconds: 90, title: exerciseName)
                 } label: {
                     Label("Add set · start 90 sec rest", systemImage: "plus.circle.fill")
                 }
@@ -375,7 +373,7 @@ struct WorkoutRestTimerControls: View {
     private var timerButtons: some View {
         ForEach([60, 90, 180], id: \.self) { seconds in
             Button(gymText("\(seconds)s", "\(seconds) с", languageCode: gymCurrentLanguageCode())) {
-                Task { await manager.start(id: timerID, seconds: seconds, title: exerciseName) }
+                manager.start(id: timerID, seconds: seconds, title: exerciseName)
             }
             .accessibilityLabel(
                 gymText(

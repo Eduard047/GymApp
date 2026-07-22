@@ -3978,7 +3978,8 @@ function contributionFor(exercise) {
   const normalized = normalizeExerciseName(rawName);
   const manual = Object.hasOwn(state.mappings, normalized) ? state.mappings[normalized] : undefined;
   if (manual?.length) return manual.map(muscleId => ({ muscleId, weight: 1 }));
-  if (exactMuscleMap[normalized]?.length) return exactMuscleMap[normalized];
+  const exact = Object.hasOwn(exactMuscleMap, normalized) ? exactMuscleMap[normalized] : undefined;
+  if (exact?.length) return exact;
   return inferMuscleContributions(exercise);
 }
 

@@ -1,6 +1,6 @@
 # GymApp — App Store release checklist
 
-Status date: 2026-07-21. Apple changes requirements over time; recheck [Upcoming Requirements](https://developer.apple.com/news/upcoming-requirements/) and the current [App Review Guidelines](https://developer.apple.com/app-store/review/guidelines/) before every submission.
+Status date: 2026-07-22. Apple changes requirements over time; recheck [Upcoming Requirements](https://developer.apple.com/news/upcoming-requirements/) and the current [App Review Guidelines](https://developer.apple.com/app-store/review/guidelines/) before every submission.
 
 ## 1. Manual ownership, team, signing, and identifiers
 
@@ -9,7 +9,7 @@ Status date: 2026-07-21. Apple changes requirements over time; recheck [Upcoming
 - [ ] **Bundle ID:** the project uses `com.setforge.gymapp.ios`; register it in the Apple Developer account and ensure the App Store Connect record matches exactly.
 - [x] **SKU selected:** use permanent internal SKU `GYMAPP-IOS-2026` when creating the App Store Connect record.
 - [ ] **Signing:** enable Automatically manage signing for Release, or create an App Store distribution certificate and matching provisioning profile. Archive must show no signing warnings.
-- [x] **Version/build:** current source values are `2.2.0` (`6`). Increment the build before a replacement upload and never reuse a processed build number.
+- [x] **Version/build:** current source values are `2.2.1` (`7`). Increment the build before a replacement upload and never reuse a processed build number.
 - [x] **Capabilities:** the project contains no ATT, HealthKit, Location, Camera, Microphone, Contacts, Push, Sign in with Apple, or IAP entitlement. Keep the signed target limited to capabilities actually used.
 - [ ] **Agreements:** Account Holder accepts current agreements. If the app or IAP is paid, sign the Paid Apps Agreement and complete banking/tax details: [Apple agreements](https://developer.apple.com/help/app-store-connect/manage-agreements/sign-and-update-agreements/).
 

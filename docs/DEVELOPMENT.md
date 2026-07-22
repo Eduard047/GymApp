@@ -8,7 +8,7 @@ never be stored in this repository.
 
 | Surface | Primary tools |
 | --- | --- |
-| Android and Wear OS | Android Studio, JDK 21, Android SDK, Gradle wrapper |
+| Android | Android Studio, JDK 21, Android SDK, Gradle wrapper |
 | iOS | Xcode 26 with an iOS Simulator runtime |
 | PWA and contracts | Node.js 24; Python 3 or another static file server |
 | Garmin | Connect IQ SDK Manager and a developer key outside the repository |
@@ -26,12 +26,6 @@ Android phone tests and debug build:
 
 ```sh
 ./gradlew :app:testDebugUnitTest :app:assembleDebug
-```
-
-Wear OS debug build:
-
-```sh
-./gradlew :wear:assembleDebug
 ```
 
 iOS commands and release prerequisites are documented in

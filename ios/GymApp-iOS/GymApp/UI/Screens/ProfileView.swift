@@ -163,7 +163,7 @@ struct ProfileView: View {
 
                 Menu {
                     Button {
-                        prepareJSONExport(includeDiagnostics: true)
+                        prepareDiagnosticsJSON()
                     } label: {
                         Label("Diagnostics JSON", systemImage: "curlybraces")
                     }
@@ -178,9 +178,14 @@ struct ProfileView: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(GymSecondaryButtonStyle())
-                .accessibilityHint("Exports app and workout diagnostics without authentication tokens")
+                .accessibilityHint("Diagnostics contain app metadata and aggregate counts only. They exclude authentication tokens, account identifiers, exercise names, workout dates, notes, and set values.")
 
                 Text("A JSON backup contains your exercise names, workout dates, sets, notes, and account ownership metadata. Share it only with people you trust.")
+                    .font(.caption)
+                    .foregroundStyle(GymTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text("Diagnostics contain app metadata and aggregate counts only. They exclude authentication tokens, account identifiers, exercise names, workout dates, notes, and set values.")
                     .font(.caption)
                     .foregroundStyle(GymTheme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -190,7 +195,7 @@ struct ProfileView: View {
 
     private var exportBackupButton: some View {
         Button {
-            prepareJSONExport(includeDiagnostics: false)
+            prepareBackupJSON()
         } label: {
             Label("Export backup", systemImage: "square.and.arrow.up")
                 .frame(maxWidth: .infinity)
@@ -232,12 +237,47 @@ struct ProfileView: View {
         }
     }
 
-    private func prepareJSONExport(includeDiagnostics: Bool) {
+    private var diagnosticsContext: ExportService.DiagnosticsContext {
+        ExportService.DiagnosticsContext(
+            version: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? gymLocalized("Unknown"),
+            build: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? gymLocalized("Unknown"),
+            operatingSystemVersion: ProcessInfo.processInfo.operatingSystemVersionString,
+            localeIdentifier: Locale.current.identifier,
+            cloudSyncEnabled: isCloudAccount,
+            hasSuccessfulSync: appState.cloudSync.lastSyncedAt != nil,
+            hasError: appState.cloudSync.lastError != nil
+        )
+    }
+
+    private func currentDiagnosticsSnapshot() throws -> WorkoutDiagnosticsSnapshot {
+        guard appState.isAccountReady,
+              store.accountStorageKey == appState.activeAccountStorageKey else {
+            throw WorkoutStoreError.storageAccountMismatch
+        }
+        return store.diagnosticsSnapshot()
+    }
+
+    private func prepareBackupJSON() {
         do {
-            let data = try appState.exportBackup(includeDiagnostics: includeDiagnostics)
+            let data = try appState.exportBackup()
             exportDocument = ProfileExportDocument(data: data)
             exportContentType = .json
-            exportFilename = includeDiagnostics ? "GymApp-diagnostics" : "GymApp-backup"
+            exportFilename = "GymApp-backup"
+            showsExporter = true
+        } catch {
+            activeAlert = .error(gymErrorMessage(error))
+        }
+    }
+
+    private func prepareDiagnosticsJSON() {
+        do {
+            let data = try ExportService.diagnosticsJSON(
+                snapshot: try currentDiagnosticsSnapshot(),
+                context: diagnosticsContext
+            )
+            exportDocument = ProfileExportDocument(data: data)
+            exportContentType = .json
+            exportFilename = "GymApp-diagnostics"
             showsExporter = true
         } catch {
             activeAlert = .error(gymErrorMessage(error))
@@ -246,40 +286,26 @@ struct ProfileView: View {
 
     private func prepareDiagnosticsPDF() {
         do {
-            let dashboard = store.dashboardStats()
-            let sync = store.syncProfileStats()
-            let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? gymLocalized("Unknown")
-            let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? gymLocalized("Unknown")
+            let snapshot = try currentDiagnosticsSnapshot()
+            let context = diagnosticsContext
             let accountMode = gymLocalized(isCloudAccount ? "Cloud account" : "Local profile")
-            let lastSync = appState.cloudSync.lastSyncedAt.map {
-                gymFormattedDate($0, date: .abbreviated, time: .standard)
-            } ?? gymLocalized("Never")
             let pdfURL = try ExportService.writeDiagnosticsPDF(sections: [
                 (
                     heading: gymLocalized("Application"),
                     lines: [
-                        "\(gymLocalized("Version")): \(version) (\(build))",
-                        "\(gymLocalized("System")): \(ProcessInfo.processInfo.operatingSystemVersionString)",
-                        "\(gymLocalized("Locale")): \(Locale.current.identifier)",
+                        "\(gymLocalized("Version")): \(context.version) (\(context.build))",
+                        "\(gymLocalized("System")): \(context.operatingSystemVersion)",
+                        "\(gymLocalized("Locale")): \(context.localeIdentifier)",
                         "\(gymLocalized("Account mode")): \(accountMode)"
                     ]
                 ),
                 (
                     heading: gymLocalized("Workout data"),
                     lines: [
-                        "\(gymLocalized("Exercises")): \(store.exercises.count)",
-                        "\(gymLocalized("Workouts")): \(dashboard.workoutCount)",
-                        "\(gymLocalized("Total volume")): \(dashboard.totalVolume.formatted(.number.precision(.fractionLength(0 ... 1))))",
-                        "\(gymLocalized("Profile XP")): \(sync.xp)",
-                        "\(gymLocalized("Profile level")): \(sync.level)",
-                        "\(gymLocalized("Manual muscle mappings")): \(store.muscleMappings.count)"
-                    ]
-                ),
-                (
-                    heading: gymLocalized("Cloud sync"),
-                    lines: [
-                        "\(gymLocalized("Last successful sync")): \(lastSync)",
-                        "\(gymLocalized("Last error")): \(gymLocalized(appState.cloudSync.lastError ?? "None"))"
+                        "\(gymLocalized("Exercises")): \(snapshot.exerciseCount)",
+                        "\(gymLocalized("Workouts")): \(snapshot.workoutCount)",
+                        "\(gymLocalized("Sets")): \(snapshot.setCount)",
+                        "\(gymLocalized("Manual muscle mappings")): \(snapshot.manualMuscleMappingCount)"
                     ]
                 ),
                 (

@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en" class="frame-pending">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="referrer" content="no-referrer">
+    <meta name="robots" content="noindex, nofollow">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src https://owrcbsrectdgaotndtxy.supabase.co; base-uri 'none'; form-action 'none'">
+    <title>GymApp legacy cleanup</title>
+    <script src="./frame-guard.v47.js"></script>
+    <link rel="stylesheet" href="./legacy-origin-cleanup.css?v=61">
+  </head>
+  <body>
+    <main class="cleanup-panel" aria-labelledby="cleanup-title">
+      <p class="eyebrow">GymApp security migration</p>
+      <h1 id="cleanup-title">Cleaning the legacy web origin</h1>
+      <p id="cleanup-status" role="status" aria-live="polite">Preparing secure cleanup…</p>
+      <p class="detail">Credentials are removed first. Workout and account data is never deleted without a bounded offline-recovery download and explicit confirmation. The archive wrapper is not a direct GymApp import; its instructions explain how to recover one profile. Close other old GymApp tabs before finishing.</p>
+      <p id="cleanup-data-summary" class="detail" role="status" aria-live="polite" hidden></p>
+      <div class="cleanup-actions">
+        <button id="cleanup-backup" class="button" type="button" hidden>Download private backup</button>
+        <button id="cleanup-purge" class="button danger" type="button" hidden disabled>Permanently remove old local data</button>
+      </div>
+      <a id="cleanup-continue" class="button" href="https://gymapptracker.com/" hidden>Continue to gymapptracker.com</a>
+      <button id="cleanup-retry" class="button" type="button" hidden>Retry secure cleanup</button>
+    </main>
+    <script src="./supabase-config.v47.js" defer></script>
+    <script src="./legacy-origin-cleanup.js?v=61" defer></script>
+  </body>
+</html>

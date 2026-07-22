@@ -25,6 +25,7 @@ function loadWorker(scope = "https://example.test/GymApp/", options = {}) {
   const listeners = new Map();
   const openedCaches = [];
   const deletedCaches = [];
+  const deletedCacheEntries = [];
   const addedAssets = [];
   const matchedRequests = [];
   const fetchInits = [];
@@ -33,6 +34,17 @@ function loadWorker(scope = "https://example.test/GymApp/", options = {}) {
   let claimCount = 0;
   let matchAllCount = 0;
   let skipWaitingCount = 0;
+  const cacheContents = new Map();
+  const cacheFor = name => {
+    if (!cacheContents.has(name)) {
+      const entries = new Map((options.cacheEntries?.[name] || []).map(rawUrl => {
+        const request = new Request(rawUrl);
+        return [request.url, request];
+      }));
+      cacheContents.set(name, entries);
+    }
+    return cacheContents.get(name);
+  };
   const self = {
     registration: { scope },
     location: new URL(scope),
@@ -55,11 +67,22 @@ function loadWorker(scope = "https://example.test/GymApp/", options = {}) {
     }
   };
   const caches = {
-    async keys() { return ["gym-pwa-v39", "gym-pwa-v44", "another-app-v4"]; },
+    async keys() {
+      return ["gym-pwa-v39", "gym-pwa-v44", "gym-pwa-v59", "gym-pwa-v60", "gym-pwa-v61", "gym-pwa-v62", "another-app-v4"];
+    },
     async open(name) {
       openedCaches.push(name);
+      const entries = cacheFor(name);
       return {
         async addAll(assets) { addedAssets.push(...assets); },
+        async keys() { return [...entries.values()]; },
+        async delete(request) {
+          const url = typeof request === "string" ? request : request.url;
+          deletedCacheEntries.push([name, url]);
+          if (options.cacheEntryDeleteResult === false) return false;
+          entries.delete(url);
+          return true;
+        },
         async match(request) {
           matchedRequests.push(typeof request === "string" ? request : request.url);
           if (options.cacheMatch) return options.cacheMatch(request);
@@ -101,6 +124,8 @@ function loadWorker(scope = "https://example.test/GymApp/", options = {}) {
     listeners,
     openedCaches,
     deletedCaches,
+    deletedCacheEntries,
+    remainingCacheEntries(name) { return [...cacheFor(name).keys()]; },
     addedAssets,
     matchedRequests,
     fetchInits,
@@ -321,12 +346,15 @@ test("activation deletes only stale GymApp caches and does not claim old clients
   handler({ waitUntil(value) { activationPromise = value; } });
   await activationPromise;
 
-  assert.deepEqual(worker.deletedCaches, ["gym-pwa-v39", "gym-pwa-v44"]);
+  assert.deepEqual(
+    worker.deletedCaches,
+    ["gym-pwa-v39", "gym-pwa-v44", "gym-pwa-v59", "gym-pwa-v60", "gym-pwa-v61", "gym-pwa-v62"]
+  );
   assert.equal(worker.claimCount(), 0);
   assert.equal(worker.matchAllCount(), 0);
 });
 
-test("legacy-origin worker cleans its exact scope without replacing auth callbacks", async () => {
+test("legacy-origin worker cleans only its exact scope without touching sibling tabs or cache entries", async () => {
   const navigated = [];
   const client = url => ({
     url,
@@ -336,11 +364,20 @@ test("legacy-origin worker cleans its exact scope without replacing auth callbac
     }
   });
   const scope = "https://eduard047.github.io/GymApp/";
+  const siblingScope = "https://eduard047.github.io/gymapptracker-site/";
+  const legacyCachedAsset = `${scope}app.v52.js`;
+  const siblingCachedAsset = `${siblingScope}app.v52.js`;
   const worker = loadWorker(scope, {
     clients: [
       client(`${scope}index.html`),
-      client(`${scope}confirmed.html?platform=android&code=one-time`)
-    ]
+      client(`${scope}confirmed.html?platform=android&code=one-time`),
+      client(`${scope}legacy-origin-cleanup-v61.html`),
+      client(`${siblingScope}index.html`)
+    ],
+    cacheEntries: {
+      "gym-pwa-v59": [legacyCachedAsset, siblingCachedAsset],
+      "gym-pwa-v60": [`${scope}index.html`]
+    }
   });
 
   let installPromise = null;
@@ -352,27 +389,44 @@ test("legacy-origin worker cleans its exact scope without replacing auth callbac
   let activationPromise = null;
   worker.listeners.get("activate")({ waitUntil(value) { activationPromise = value; } });
   await activationPromise;
-  assert.deepEqual(worker.deletedCaches, ["gym-pwa-v39", "gym-pwa-v44"]);
+  assert.deepEqual(worker.deletedCaches, []);
+  assert.deepEqual(worker.deletedCacheEntries, [
+    ["gym-pwa-v59", legacyCachedAsset],
+    ["gym-pwa-v60", `${scope}index.html`]
+  ]);
+  assert.deepEqual(worker.remainingCacheEntries("gym-pwa-v59"), [siblingCachedAsset]);
   assert.equal(worker.claimCount(), 1);
   assert.equal(worker.matchAllCount(), 1);
   assert.deepEqual(navigated, [[
     `${scope}index.html`,
-    `${scope}legacy-origin-cleanup.html`
+    `${scope}legacy-origin-cleanup-v61.html`
   ]]);
 
   const fetchHandler = worker.listeners.get("fetch");
   assert.equal(isIntercepted(fetchHandler, `${scope}confirmed.html?platform=android&code=one-time`, {
     modeOverride: "navigate"
   }), false);
-  assert.equal(isIntercepted(fetchHandler, `${scope}legacy-origin-cleanup.html`, {
+  assert.equal(isIntercepted(fetchHandler, `${scope}legacy-origin-cleanup-v61.html`, {
     modeOverride: "navigate"
   }), false);
   const response = await responsePromiseFor(fetchHandler, `${scope}index.html`, {
     modeOverride: "navigate"
   });
-  assert.equal(await response.text(), "network");
-  assert.equal(worker.fetchRequests.at(-1), `${scope}legacy-origin-cleanup.html`);
-  assert.equal(worker.fetchInits.at(-1)?.cache, "no-store");
-  assert.equal(worker.fetchInits.at(-1)?.credentials, "omit");
-  assert.equal(worker.fetchInits.at(-1)?.redirect, "error");
+  assert.equal(response.status, 302);
+  assert.equal(response.headers.get("Location"), `${scope}legacy-origin-cleanup-v61.html`);
+  assert.deepEqual(worker.fetchRequests, []);
+});
+
+test("a sibling github.io project scope never enters GymApp legacy cleanup", async () => {
+  const scope = "https://eduard047.github.io/gymapptracker-site/";
+  const worker = loadWorker(scope);
+  let installPromise = null;
+
+  worker.listeners.get("install")({ waitUntil(value) { installPromise = value; } });
+  await installPromise;
+
+  assert.equal(worker.skipWaitingCount(), 0);
+  assert.deepEqual(worker.openedCaches, ["gym-pwa-v64"]);
+  assert.equal(worker.claimCount(), 0);
+  assert.equal(isIntercepted(worker.listeners.get("fetch"), scope), true);
 });

@@ -2,6 +2,77 @@ import Foundation
 import UIKit
 
 enum ExportService {
+    struct DiagnosticsContext: Equatable, Sendable {
+        let version: String
+        let build: String
+        let operatingSystemVersion: String
+        let localeIdentifier: String
+        let cloudSyncEnabled: Bool
+        let hasSuccessfulSync: Bool
+        let hasError: Bool
+    }
+
+    /// Explicit diagnostics allowlist. This type cannot accept owners, sessions, notes,
+    /// exercise names, set values, or authentication state.
+    private struct DiagnosticsReport: Encodable {
+        struct Application: Encodable {
+            let version: String
+            let build: String
+            let operatingSystemVersion: String
+            let localeIdentifier: String
+        }
+
+        struct WorkoutData: Encodable {
+            let exerciseCount: Int
+            let workoutCount: Int
+            let setCount: Int
+            let manualMuscleMappingCount: Int
+        }
+
+        struct CloudSync: Encodable {
+            let enabled: Bool
+            let hasSuccessfulSync: Bool
+            let hasError: Bool
+        }
+
+        let schemaVersion = 1
+        let reportType = "diagnostics"
+        let application: Application
+        let workoutData: WorkoutData
+        let cloudSync: CloudSync
+    }
+
+    static func diagnosticsJSON(
+        snapshot: WorkoutDiagnosticsSnapshot,
+        context: DiagnosticsContext,
+        prettyPrinted: Bool = true
+    ) throws -> Data {
+        let report = DiagnosticsReport(
+            application: .init(
+                version: context.version,
+                build: context.build,
+                operatingSystemVersion: context.operatingSystemVersion,
+                localeIdentifier: context.localeIdentifier
+            ),
+            workoutData: .init(
+                exerciseCount: snapshot.exerciseCount,
+                workoutCount: snapshot.workoutCount,
+                setCount: snapshot.setCount,
+                manualMuscleMappingCount: snapshot.manualMuscleMappingCount
+            ),
+            cloudSync: .init(
+                enabled: context.cloudSyncEnabled,
+                hasSuccessfulSync: context.hasSuccessfulSync,
+                hasError: context.hasError
+            )
+        )
+        let encoder = JSONEncoder()
+        var formatting: JSONEncoder.OutputFormatting = [.sortedKeys]
+        if prettyPrinted { formatting.insert(.prettyPrinted) }
+        encoder.outputFormatting = formatting
+        return try encoder.encode(report)
+    }
+
     static func writeJSON(_ data: Data, name: String = "GymApp-backup") throws -> URL {
         let url = temporaryURL(name: name, extension: "json")
         try data.write(to: url, options: [.atomic, .completeFileProtectionUnlessOpen])

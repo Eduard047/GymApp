@@ -78,6 +78,14 @@ struct PreparedCloudBackup {
     let roundTripSafe: Bool
 }
 
+/// Aggregate-only projection for support diagnostics. Keep row values and owner data out.
+struct WorkoutDiagnosticsSnapshot: Equatable, Sendable {
+    let exerciseCount: Int
+    let workoutCount: Int
+    let setCount: Int
+    let manualMuscleMappingCount: Int
+}
+
 /// Account-scoped, dependency-free workout repository.
 ///
 /// Every mutation is validated, encoded as one snapshot and written with
@@ -951,6 +959,15 @@ public final class WorkoutStore: ObservableObject {
         return SyncProfileStats(xp: xp, level: level, workouts: summaries.count)
     }
 
+    func diagnosticsSnapshot() -> WorkoutDiagnosticsSnapshot {
+        WorkoutDiagnosticsSnapshot(
+            exerciseCount: exercises.count,
+            workoutCount: workouts.lazy.filter { $0.setCount > 0 }.count,
+            setCount: workouts.reduce(0) { $0 + $1.setCount },
+            manualMuscleMappingCount: muscleMappings.count
+        )
+    }
+
     public func gamificationSnapshot(
         now: Date = Date(),
         calendar: Calendar = .current
@@ -964,8 +981,10 @@ public final class WorkoutStore: ObservableObject {
 
     // MARK: Backup v2
 
+    /// Full private backup for user-controlled migration and restore. Diagnostics use
+    /// `WorkoutDiagnosticsSnapshot` and never pass through this schema.
+
     public func makeBackup(
-        includeDiagnostics: Bool = false,
         owner: BackupOwner? = nil,
         exportedAt: Date = Date()
     ) throws -> GymBackup {
@@ -999,7 +1018,7 @@ public final class WorkoutStore: ObservableObject {
 
         return GymBackup(
             exportedAt: exportedAtMilliseconds,
-            diagnostics: includeDiagnostics,
+            diagnostics: false,
             owner: owner ?? BackupOwner(accountID: accountStorageKey),
             catalogSeedVersion: catalogSeedVersion,
             exercises: backupExercises,
@@ -1014,7 +1033,6 @@ public final class WorkoutStore: ObservableObject {
     }
 
     public func exportBackupData(
-        includeDiagnostics: Bool = false,
         owner: BackupOwner? = nil,
         prettyPrinted: Bool = true
     ) throws -> Data {
@@ -1023,9 +1041,7 @@ public final class WorkoutStore: ObservableObject {
         if prettyPrinted { formatting.insert(.prettyPrinted) }
         encoder.outputFormatting = formatting
         do {
-            return try encoder.encode(
-                try makeBackup(includeDiagnostics: includeDiagnostics, owner: owner)
-            )
+            return try encoder.encode(try makeBackup(owner: owner))
         } catch let error as WorkoutStoreError {
             throw error
         } catch {
@@ -1034,12 +1050,10 @@ public final class WorkoutStore: ObservableObject {
     }
 
     public func exportBackupJSON(
-        includeDiagnostics: Bool = false,
         owner: BackupOwner? = nil,
         prettyPrinted: Bool = true
     ) throws -> String {
         let data = try exportBackupData(
-            includeDiagnostics: includeDiagnostics,
             owner: owner,
             prettyPrinted: prettyPrinted
         )

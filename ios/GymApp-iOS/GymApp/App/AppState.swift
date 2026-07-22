@@ -34,6 +34,7 @@ final class AppState: ObservableObject {
     private var cloudSaveGeneration: UInt64 = 0
     private var accountActivationTask: Task<Void, Never>?
     private var accountActivationGeneration: UInt64 = 0
+    private var restTimerOwnerFingerprint: String?
     private var applyingRemoteState = false
     private var cloudWritableAccountStorageKey: String?
     private let defaults: UserDefaults
@@ -52,7 +53,8 @@ final class AppState: ObservableObject {
         workoutDirectoryURL: URL? = nil,
         cloudURLSession: URLSession = .shared,
         remoteStateLoader: (@MainActor (String) async throws -> Data?)? = nil,
-        garminBindingStore: GarminDeviceBindingStore = GarminDeviceBindingStore()
+        garminBindingStore: GarminDeviceBindingStore = GarminDeviceBindingStore(),
+        restTimers: RestTimerManager? = nil
     ) throws {
         self.auth = auth
         self.defaults = defaults
@@ -67,7 +69,11 @@ final class AppState: ObservableObject {
             garminBindingStore: garminBindingStore
         )
 
-        self.restTimers = RestTimerManager()
+        self.restTimers = restTimers ?? RestTimerManager()
+        let initialRestTimerOwnerFingerprint = auth.session.map {
+            RestTimerManager.ownerFingerprint(for: $0.storageKey)
+        }
+        self.restTimerOwnerFingerprint = initialRestTimerOwnerFingerprint
         self.cloudSync = CloudSyncService(auth: auth, urlSession: cloudURLSession)
         self.garminCloud = GarminCloudService(
             auth: auth,
@@ -79,7 +85,10 @@ final class AppState: ObservableObject {
             directoryURL: workoutDirectoryURL
         )
         self.workoutStore = openedStore.store
-        if hadPendingDeletion { self.restTimers.cancelAll() }
+        self.restTimers.bindToAccount(
+            ownerFingerprint: initialRestTimerOwnerFingerprint,
+            discardPersistedState: hadPendingDeletion
+        )
         observeStore()
 
         if openedStore.quarantinedFileURL != nil {
@@ -216,7 +225,7 @@ final class AppState: ObservableObject {
                 return false
             }
         }
-        restTimers.cancelAll()
+        clearRestTimersForAccountTransition(to: nil)
         await auth.signOut()
         return auth.session == nil
     }
@@ -230,6 +239,12 @@ final class AppState: ObservableObject {
     }
 
     private func beginAccountTransition(_ session: AppAccountSession?) -> UInt64 {
+        let nextOwnerFingerprint = session.map {
+            RestTimerManager.ownerFingerprint(for: $0.storageKey)
+        }
+        if restTimerOwnerFingerprint != nextOwnerFingerprint {
+            clearRestTimersForAccountTransition(to: nextOwnerFingerprint)
+        }
         accountActivationGeneration &+= 1
         abandonPendingCloudSave()
         cloudSync.resetForAccountTransition()
@@ -238,6 +253,11 @@ final class AppState: ObservableObject {
         accountPreparationError = nil
         isPreparingAccount = session != nil
         return accountActivationGeneration
+    }
+
+    private func clearRestTimersForAccountTransition(to ownerFingerprint: String?) {
+        restTimers.bindToAccount(ownerFingerprint: ownerFingerprint)
+        restTimerOwnerFingerprint = ownerFingerprint
     }
 
     private func prepareAccount(
@@ -469,10 +489,9 @@ final class AppState: ObservableObject {
         return try workoutStore.importBackup(data: data, activeOwner: backupOwner)
     }
 
-    func exportBackup(includeDiagnostics: Bool = false) throws -> Data {
+    func exportBackup() throws -> Data {
         guard isAccountReady else { throw WorkoutStoreError.storageAccountMismatch }
         return try workoutStore.exportBackupData(
-            includeDiagnostics: includeDiagnostics,
             owner: backupOwner,
             prettyPrinted: true
         )
@@ -516,7 +535,9 @@ final class AppState: ObservableObject {
         }
 
         var cleanupError: Error?
-        if deletingSessionIsStillCurrent { restTimers.cancelAll() }
+        if deletingSessionIsStillCurrent {
+            clearRestTimersForAccountTransition(to: nil)
+        }
         if let cloudUserID = session.cloud?.userID {
             do {
                 try garminCloud.clearLocalBindingData(for: cloudUserID)

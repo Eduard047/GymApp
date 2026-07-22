@@ -380,13 +380,11 @@ struct WorkoutDetailView: View {
                 weight: source?.weight ?? store.lastWeight(exerciseID: block.exerciseID) ?? 0,
                 reps: source?.reps ?? 10
             )
-            Task {
-                await restTimers.start(
-                    id: timerKey(blockID: block.id),
-                    seconds: 90,
-                    title: exerciseName
-                )
-            }
+            restTimers.start(
+                id: timerKey(blockID: block.id),
+                seconds: 90,
+                title: exerciseName
+            )
         } catch {
             show(error)
         }
