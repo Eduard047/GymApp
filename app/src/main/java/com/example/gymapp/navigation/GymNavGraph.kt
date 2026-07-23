@@ -968,7 +968,9 @@ fun GymAppRoot(
                                 )
                             ) {
                                 NavigationBar(
-                                    modifier = Modifier.height(76.dp),
+                                    modifier = Modifier
+                                        .height(76.dp)
+                                        .padding(horizontal = 8.dp),
                                     containerColor = Color.Transparent,
                                     tonalElevation = 0.dp
                                 ) {

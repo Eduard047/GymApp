@@ -7,6 +7,43 @@ import XCTest
 
 @MainActor
 final class CoreParityTests: XCTestCase {
+    func testHistoricalMonthKeepsTheBestWeeklyStreakReachedInThatMonth() throws {
+        let calendar = utcCalendar()
+        let dates = [
+            (1, 6), (2, 6), (4, 6),
+            (9, 6), (11, 6), (12, 6),
+            (15, 6), (16, 6)
+        ]
+        let sessions = try dates.map { day, month in
+            WorkoutSessionSummary(
+                workoutID: UUID(),
+                date: try utcDate(year: 2026, month: month, day: day, calendar: calendar),
+                note: nil,
+                exerciseCount: 1,
+                setCount: 1,
+                totalVolume: 100
+            )
+        }
+
+        XCTAssertEqual(
+            WeeklyStreakCalculator.bestDuringPeriod(
+                sessions: sessions,
+                from: try utcDate(year: 2026, month: 6, day: 1, calendar: calendar),
+                through: try utcDate(year: 2026, month: 6, day: 30, calendar: calendar),
+                calendar: calendar
+            ),
+            2
+        )
+        XCTAssertEqual(
+            WeeklyStreakCalculator.current(
+                sessions: sessions,
+                now: try utcDate(year: 2026, month: 7, day: 23, calendar: calendar),
+                calendar: calendar
+            ),
+            0
+        )
+    }
+
     func testIOSAuthUsesHTTPSBridgeWithStrictNestedQueryEncoding() throws {
         let state = "abcdefghijklmnopqrstuvwxyzABCDEF"
         let redirect = AuthCallbackRouting.webRedirectURL(state: state, purpose: .recovery)

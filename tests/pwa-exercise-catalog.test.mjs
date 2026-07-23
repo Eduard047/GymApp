@@ -24,7 +24,9 @@ function loadPwaContext({ userAgent = "" } = {}) {
         MAX_SUPPORTED_XP: 2147483647,
         requirementForLevel: () => 100,
         cumulativeXPForLevel: () => 0,
-        levelProgress: value => ({ level: 1, currentLevelXp: Number(value || 0), xpForNextLevel: 100, progressFraction: 0 })
+        levelProgress: value => ({ level: 1, currentLevelXp: Number(value || 0), xpForNextLevel: 100, progressFraction: 0 }),
+        currentWeeklyStreak: () => 0,
+        bestWeeklyStreakDuring: () => 0
       }
     },
     document: {

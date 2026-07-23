@@ -86,6 +86,70 @@ struct WorkoutDiagnosticsSnapshot: Equatable, Sendable {
     let manualMuscleMappingCount: Int
 }
 
+enum WeeklyStreakCalculator {
+    private static let minimumWorkoutsPerWeek = 3
+
+    static func current(
+        sessions: [WorkoutSessionSummary],
+        now: Date,
+        calendar: Calendar
+    ) -> Int {
+        let counts = weeklyCounts(sessions: sessions, calendar: calendar)
+        guard !counts.isEmpty else { return 0 }
+
+        var cursor = calendar.gymEpochDay(for: calendar.gymMondayStart(of: now))
+        if counts[cursor, default: 0] < minimumWorkoutsPerWeek { cursor -= 7 }
+
+        var streak = 0
+        while counts[cursor, default: 0] >= minimumWorkoutsPerWeek {
+            streak += 1
+            cursor -= 7
+        }
+        return streak
+    }
+
+    static func bestDuringPeriod(
+        sessions: [WorkoutSessionSummary],
+        from startDate: Date,
+        through endDate: Date,
+        calendar: Calendar
+    ) -> Int {
+        guard endDate >= startDate else { return 0 }
+        let periodWeeks = Set(
+            sessions
+                .filter { $0.date >= startDate && $0.date <= endDate }
+                .map { calendar.gymEpochDay(for: calendar.gymMondayStart(of: $0.date)) }
+        )
+        guard !periodWeeks.isEmpty else { return 0 }
+
+        let successfulWeeks = weeklyCounts(sessions: sessions, calendar: calendar)
+            .filter { $0.value >= minimumWorkoutsPerWeek }
+            .keys
+            .sorted()
+
+        var previousWeek: Int64?
+        var running = 0
+        var best = 0
+        for week in successfulWeeks {
+            running = previousWeek.map { $0 + 7 == week } == true ? running + 1 : 1
+            if periodWeeks.contains(week) {
+                best = max(best, running)
+            }
+            previousWeek = week
+        }
+        return best
+    }
+
+    private static func weeklyCounts(
+        sessions: [WorkoutSessionSummary],
+        calendar: Calendar
+    ) -> [Int64: Int] {
+        Dictionary(grouping: sessions) {
+            calendar.gymEpochDay(for: calendar.gymMondayStart(of: $0.date))
+        }.mapValues(\.count)
+    }
+}
+
 /// Account-scoped, dependency-free workout repository.
 ///
 /// Every mutation is validated, encoded as one snapshot and written with
@@ -943,11 +1007,22 @@ public final class WorkoutStore: ObservableObject {
                 now: now,
                 calendar: calendar
             ),
-            weeklyStreakWeeks: Self.weeklyStreakWeeks(
-                sessions: workoutSummaries,
-                now: now,
-                calendar: calendar
-            )
+            weeklyStreakWeeks: {
+                if let startDate, let endDate,
+                   !calendar.isDate(startDate, equalTo: now, toGranularity: .month) {
+                    return WeeklyStreakCalculator.bestDuringPeriod(
+                        sessions: workoutSummaries,
+                        from: startDate,
+                        through: endDate,
+                        calendar: calendar
+                    )
+                }
+                return WeeklyStreakCalculator.current(
+                    sessions: workoutSummaries,
+                    now: now,
+                    calendar: calendar
+                )
+            }()
         )
     }
 
@@ -2184,25 +2259,6 @@ public final class WorkoutStore: ObservableObject {
         while workoutDays.contains(cursor) {
             streak += 1
             cursor -= 1
-        }
-        return streak
-    }
-
-    private static func weeklyStreakWeeks(
-        sessions: [WorkoutSessionSummary],
-        now: Date,
-        calendar: Calendar
-    ) -> Int {
-        guard !sessions.isEmpty else { return 0 }
-        let counts = Dictionary(grouping: sessions) {
-            calendar.gymEpochDay(for: calendar.gymMondayStart(of: $0.date))
-        }.mapValues(\.count)
-        var cursor = calendar.gymEpochDay(for: calendar.gymMondayStart(of: now))
-        if counts[cursor, default: 0] < 3 { cursor -= 7 }
-        var streak = 0
-        while counts[cursor, default: 0] >= 3 {
-            streak += 1
-            cursor -= 7
         }
         return streak
     }

@@ -75,7 +75,7 @@ struct LeaderboardView: View {
                     await refreshLeaderboard()
                 }
             }
-            .navigationTitle(t("Protected progress", "Захищений прогрес"))
+            .navigationTitle(t("Rating status", "Статус рейтингу"))
         }
     }
 
@@ -125,20 +125,23 @@ struct LeaderboardView: View {
 
     private var heroCopy: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Label(t("Protected progress", "Захищений прогрес"), systemImage: "lock.shield.fill")
+            Label(
+                t("Rating not available yet", "Рейтинг поки недоступний"),
+                systemImage: "lock.shield.fill"
+            )
                 .font(.title.bold())
                 .accessibilityAddTraits(.isHeader)
             Text(
                 t(
-                    "Competitive standings are paused until workout scores can be verified server-side. Your private progress stays available.",
-                    "Змагальний рейтинг призупинено, доки сервер не зможе перевіряти тренувальні бали. Твій приватний прогрес залишається доступним."
+                    "Workouts are currently scored on your device, so public ranking is disabled, not queued for review. It will appear only after a future app and server update adds verified scoring; no release date is set. Your private progress remains available.",
+                    "Зараз тренування оцінюються на пристрої, тому публічний рейтинг вимкнено, а не поставлено в чергу на перевірку. Він з’явиться лише після майбутнього оновлення застосунку й сервера з перевіреним підрахунком; дати випуску поки немає. Твій приватний прогрес залишається доступним."
                 )
             )
                 .font(.subheadline)
                 .foregroundStyle(Color.white.opacity(0.84))
                 .fixedSize(horizontal: false, vertical: true)
 
-            Text(t("Private preview", "Приватний перегляд"))
+            Text(t("Private progress only", "Лише приватний прогрес"))
                 .font(.caption.weight(.semibold))
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
@@ -217,12 +220,20 @@ struct LeaderboardView: View {
                 Text(
                     isShowingLocalFallback
                         ? t("Showing on-device stats.", "Показано дані з цього пристрою.")
-                        : t(
-                            "Only your profile is shown while verified scoring is being built.",
-                            "Показано лише твій профіль, поки ми створюємо перевірений рейтинг."
-                        )
+                        : t("Your own cloud progress is up to date.", "Твій власний хмарний прогрес актуальний.")
                 )
                 .font(.subheadline)
+                .foregroundStyle(GymTheme.textSecondary)
+            }
+
+            if !cloudSync.isSyncing {
+                Text(
+                    t(
+                        "Refresh updates only your own cloud XP. It does not start a rating check.",
+                        "Оновлення завантажує лише твої власні XP із хмари. Воно не запускає перевірку рейтингу."
+                    )
+                )
+                .font(.caption)
                 .foregroundStyle(GymTheme.textSecondary)
             }
 
@@ -251,7 +262,11 @@ struct LeaderboardView: View {
                     Image(systemName: "arrow.clockwise")
                         .accessibilityHidden(true)
                 }
-                Text(cloudSync.isSyncing ? t("Loading", "Завантаження") : t("Refresh", "Оновити"))
+                Text(
+                    cloudSync.isSyncing
+                        ? t("Loading", "Завантаження")
+                        : t("Refresh progress", "Оновити прогрес")
+                )
             }
         }
         .buttonStyle(GymPrimaryButtonStyle())
@@ -259,7 +274,10 @@ struct LeaderboardView: View {
         .accessibilityHint(
             auth.session?.cloud == nil
                 ? t("Sign in with a cloud account to refresh", "Увійди у хмарний акаунт, щоб оновити")
-                : t("Uploads and reloads your protected progress", "Завантажує та оновлює твій захищений прогрес")
+                : t(
+                    "Refreshes only your cloud progress; it does not start a rating check",
+                    "Оновлює лише твій хмарний прогрес і не запускає перевірку рейтингу"
+                )
         )
     }
 

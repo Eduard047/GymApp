@@ -122,7 +122,9 @@ function loadContext(fetchImpl, {
         sessionXP: () => 0,
         requirementForLevel: () => 200,
         cumulativeXPForLevel: () => 0,
-        levelProgress: () => ({ level: 1, currentLevelXp: 0, xpForNextLevel: 200, progressFraction: 0 })
+        levelProgress: () => ({ level: 1, currentLevelXp: 0, xpForNextLevel: 200, progressFraction: 0 }),
+        currentWeeklyStreak: () => 0,
+        bestWeeklyStreakDuring: () => 0
       },
       location: { search: locationSearch, hash: "", pathname: "/", replace() {} },
       addEventListener() {}

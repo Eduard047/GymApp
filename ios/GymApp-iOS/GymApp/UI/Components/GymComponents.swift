@@ -100,18 +100,11 @@ public struct GymBrandMark: View {
     }
 
     public var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: size * 0.24, style: .continuous)
-                .fill(GymTheme.heroGradient)
-                .shadow(color: Color.black.opacity(0.14), radius: size * 0.09, y: size * 0.045)
-
-            Image(systemName: "dumbbell.fill")
-                .font(.system(size: size * 0.40, weight: .bold, design: .rounded))
-                .symbolRenderingMode(.monochrome)
-                .foregroundStyle(Color.white)
-        }
-        .frame(width: size, height: size)
-        .accessibilityHidden(true)
+        Image("BrandMark")
+            .resizable()
+            .scaledToFit()
+            .frame(width: size, height: size)
+            .accessibilityHidden(true)
     }
 }
 

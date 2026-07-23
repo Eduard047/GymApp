@@ -19,11 +19,9 @@ import com.example.gymapp.util.DateTimeUtils
 import com.example.gymapp.util.TrainingProfile
 import java.nio.ByteBuffer
 import java.security.MessageDigest
-import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
-import java.time.temporal.TemporalAdjusters
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -496,7 +494,21 @@ class GymRepository(
             val totalVolume = monthSessions.sumOf { it.totalVolume }
             val totalSets = monthSessions.sumOf { it.setCount }
             val streakDays = calculateStreakDays(allSessions)
-            val weeklyStreakWeeks = calculateWeeklyStreakWeeks(allSessions)
+            val sessionTimestamps = allSessions.map { it.session.date }
+            val weeklyStreakWeeks = if (monthOffset == 0) {
+                WeeklyStreakCalculator.current(
+                    sessionTimestamps = sessionTimestamps,
+                    nowMillis = System.currentTimeMillis(),
+                    zoneId = ZoneId.systemDefault()
+                )
+            } else {
+                WeeklyStreakCalculator.bestDuringPeriod(
+                    sessionTimestamps = sessionTimestamps,
+                    periodStartMillis = start,
+                    periodEndMillis = end,
+                    zoneId = ZoneId.systemDefault()
+                )
+            }
             DashboardStats(
                 workoutCount = monthSessions.size,
                 totalVolume = totalVolume,
@@ -1707,32 +1719,6 @@ class GymRepository(
         while (workoutDays.contains(cursorDay)) {
             streak += 1
             cursorDay -= 1
-        }
-        return streak
-    }
-
-    private fun calculateWeeklyStreakWeeks(allSessions: List<WorkoutSessionSummary>): Int {
-        if (allSessions.isEmpty()) {
-            return 0
-        }
-
-        val zoneId = ZoneId.systemDefault()
-        val weekStarts = allSessions.groupingBy { session ->
-            Instant.ofEpochMilli(session.session.date)
-                .atZone(zoneId)
-                .toLocalDate()
-                .with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
-        }.eachCount()
-
-        var cursorWeekStart = LocalDate.now(zoneId).with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
-        if ((weekStarts[cursorWeekStart] ?: 0) < 3) {
-            cursorWeekStart = cursorWeekStart.minusWeeks(1)
-        }
-
-        var streak = 0
-        while ((weekStarts[cursorWeekStart] ?: 0) >= 3) {
-            streak += 1
-            cursorWeekStart = cursorWeekStart.minusWeeks(1)
         }
         return streak
     }

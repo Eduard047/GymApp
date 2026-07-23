@@ -68,3 +68,30 @@ test("empty workouts earn no progression and extreme XP is bounded without a lin
   assert.match(source, /const squares = stages \* \(stages - 1\)/);
   assert.doesNotMatch(source, /while \(remaining >= next\)/);
 });
+
+test("historical months preserve the best three-workout weekly streak reached in that month", () => {
+  const localTimestamp = (year, month, day) => new Date(year, month - 1, day, 12).getTime();
+  const sessions = [
+    [1, 6], [2, 6], [4, 6],
+    [9, 6], [11, 6], [12, 6],
+    [15, 6], [16, 6]
+  ].map(([day, month]) => ({ startedAt: localTimestamp(2026, month, day) }));
+
+  assert.equal(
+    rules.bestWeeklyStreakDuring(
+      sessions,
+      new Date(2026, 5, 1).getTime(),
+      new Date(2026, 6, 1).getTime() - 1
+    ),
+    2
+  );
+  assert.equal(rules.currentWeeklyStreak(sessions, localTimestamp(2026, 7, 23)), 0);
+  assert.equal(
+    rules.bestWeeklyStreakDuring(
+      [{ startedAt: localTimestamp(2026, 6, 1) }, { startedAt: localTimestamp(2026, 6, 9) }],
+      new Date(2026, 5, 1).getTime(),
+      new Date(2026, 6, 1).getTime() - 1
+    ),
+    0
+  );
+});

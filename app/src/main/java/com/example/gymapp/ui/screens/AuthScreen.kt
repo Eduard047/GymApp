@@ -28,7 +28,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Email
-import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -74,6 +73,7 @@ import com.example.gymapp.auth.newPasswordCharacterGroupsAreValid
 import com.example.gymapp.auth.newPasswordLengthIsValid
 import com.example.gymapp.auth.validatedLocalDisplayNameOrNull
 import com.example.gymapp.ui.components.AppPanel
+import com.example.gymapp.ui.components.AppBrandMark
 import com.example.gymapp.ui.components.HeroPanel
 import com.example.gymapp.ui.components.SectionTitle
 import com.example.gymapp.util.asString
@@ -126,7 +126,7 @@ fun AuthScreen(
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    AuthHeroMark(imageVector = Icons.Filled.FitnessCenter)
+                    AppBrandMark(modifier = Modifier.size(72.dp))
                     Column(
                         modifier = Modifier.weight(1f),
                         verticalArrangement = Arrangement.spacedBy(5.dp)

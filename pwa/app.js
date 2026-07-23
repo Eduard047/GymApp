@@ -3650,7 +3650,15 @@ function streakDays() {
 }
 
 function weeklyStreak() {
-  return Math.ceil(streakDays() / 7);
+  return window.GymProgressionRules.currentWeeklyStreak(state.sessions);
+}
+
+function selectedMonthWeeklyStreak() {
+  if ((monthOffsets[activeMonthScope()] || 0) === 0) return weeklyStreak();
+  const selected = monthDate();
+  const start = new Date(selected.getFullYear(), selected.getMonth(), 1).getTime();
+  const end = new Date(selected.getFullYear(), selected.getMonth() + 1, 1).getTime() - 1;
+  return window.GymProgressionRules.bestWeeklyStreakDuring(state.sessions, start, end);
 }
 
 function loginScreen() {
@@ -3928,7 +3936,7 @@ function focusLensCard(sessions) {
     </div>
     <div class="focus-lens-metrics" aria-label="${txAttr("Current training facts", "Поточні показники тренувань")}">
       <div><strong>${sessions.length}</strong><span>${tx("workouts", "тренувань")}</span></div>
-      <div><strong>${weeklyStreak()}</strong><span>${tx("week streak", "тижні серії")}</span></div>
+      <div><strong>${selectedMonthWeeklyStreak()}</strong><span>${tx("week streak", "тижні серії")}</span></div>
       <div><strong>${Math.round(totalVolume(sessions))}</strong><span>${tx("volume", "обсяг")}</span></div>
     </div>
     <div class="focus-lens-foot">
@@ -3948,7 +3956,7 @@ function soloProgressHero() {
     <div class="eyebrow">${t("soloProgress")}</div>
     <div class="hero-split"><div><span class="pill hero-pill">${tx("LEVEL", "РІВЕНЬ")} ${level}</span><h2>${rankTitle(xp)}</h2><p>${progress.currentLevelXp} / ${progress.xpForNextLevel} XP ${tx("to next level", "до наступного рівня")}</p></div><div class="hero-stat"><span>${tx("TOTAL XP", "УСЬОГО XP")}</span><strong>${xp}</strong><small>${tx("earned", "зароблено")}</small></div></div>
     <div class="progress"><span class="${percentageClass(progress.progressFraction * 100)}"></span></div>
-    <div class="metric-grid three"><div><span>${tx("Month XP", "XP за місяць")}</span><strong>${xpForSessions(selectedMonthSessions())} XP</strong></div><div><span>${tx("Next title", "Наступний ранг")}</span><strong>${nextTitle}</strong></div><div><span>${tx("Week streak", "Серія тижнів")}</span><strong>${weeklyStreak()} ${tx("wk", "тж")}</strong></div></div>
+    <div class="metric-grid three"><div><span>${tx("Month XP", "XP за місяць")}</span><strong>${xpForSessions(selectedMonthSessions())} XP</strong></div><div><span>${tx("Next title", "Наступний ранг")}</span><strong>${nextTitle}</strong></div><div><span>${tx("Week streak", "Серія тижнів")}</span><strong>${selectedMonthWeeklyStreak()} ${tx("wk", "тж")}</strong></div></div>
   </section>`;
 }
 
@@ -3957,7 +3965,7 @@ function dashboardCard(sessions) {
   const avg = sets.length ? totalVolume(sessions) / sets.length : 0;
   return `<section class="hero-panel">
     <h2>${t("monthlySnapshot")}</h2><p>${tx("Track consistency, output and intensity at a glance.", "Відстежуй стабільність, обсяг і інтенсивність одним поглядом.")}</p>
-    <div class="metric-grid"><div><span>${tx("Workouts", "Тренування")}</span><strong>${sessions.length}</strong></div><div><span>${tx("Streak", "Серія")}</span><strong>${weeklyStreak()} ${tx("wk", "тж")}</strong></div><div><span>${tx("Total Volume", "Загальний обсяг")}</span><strong>${Math.round(totalVolume(sessions))}</strong></div><div><span>${tx("Avg / Set", "Сер. / підхід")}</span><strong>${avg.toFixed(1)}</strong></div></div>
+    <div class="metric-grid"><div><span>${tx("Workouts", "Тренування")}</span><strong>${sessions.length}</strong></div><div><span>${tx("Streak", "Серія")}</span><strong>${selectedMonthWeeklyStreak()} ${tx("wk", "тж")}</strong></div><div><span>${tx("Total Volume", "Загальний обсяг")}</span><strong>${Math.round(totalVolume(sessions))}</strong></div><div><span>${tx("Avg / Set", "Сер. / підхід")}</span><strong>${avg.toFixed(1)}</strong></div></div>
   </section>`;
 }
 
@@ -6267,7 +6275,7 @@ function leaderboardScreen() {
     : leaderboardState.status === "error"
       ? tx("Showing local stats while protected cloud progress is unavailable.", "Показуємо локальні дані, поки захищений хмарний прогрес недоступний.")
       : cloudMode
-      ? tx("Only your profile is shown while verified scoring is being built.", "Показано лише твій профіль, поки ми створюємо перевірений рейтинг.")
+      ? tx("Refresh updates only your own cloud XP. It does not start a rating check.", "Оновлення завантажує лише твої власні XP із хмари. Воно не запускає перевірку рейтингу.")
       : remoteAuthEnabled()
         ? tx("Local mode. Sign in to protect and synchronize your progress.", "Локальний режим. Увійди, щоб захистити й синхронізувати прогрес.")
         : tx("Protected cloud progress is available after Supabase is configured.", "Захищений хмарний прогрес стане доступним після налаштування Supabase.");
@@ -6275,8 +6283,8 @@ function leaderboardScreen() {
     ${themePreferencePanel()}
     ${accountPanel()}
     ${profileDataPanel()}
-    <section class="hero-panel profile-rating-hero"><div class="hero-split"><div><span class="eyebrow">${tx("Security", "Безпека")}</span><h2>${tx("Protected progress", "Захищений прогрес")}</h2><p>${tx("Competitive standings are paused until workout scores can be verified server-side. Your private progress stays available.", "Змагальний рейтинг призупинено, доки сервер не зможе перевіряти тренувальні бали. Твій приватний прогрес залишається доступним.")}</p></div><div class="hero-stat"><span>${tx("Your XP", "Твої XP")}</span><strong>${totalXp()}</strong><small>${escapeHtml(rankTitle())}</small></div></div></section>
-    <section class="panel highlighted"><div class="row-head"><div><h2>${tx("Your synced progress", "Твій синхронізований прогрес")}</h2><p>${supporting}</p></div><button class="button" data-action="refresh-leaderboard" ${loading ? "disabled" : ""}>${loading ? tx("Loading", "Завантаження") : tx("Refresh", "Оновити")}</button></div>${leaderboardState.error ? `<p class="muted">${escapeHtml(leaderboardState.error)}</p>` : ""}${!rows.length && !loading ? `<div class="empty">${tx("No synced progress yet.", "Синхронізованого прогресу ще немає.")}</div>` : ""}</section>
+    <section class="hero-panel profile-rating-hero"><div class="hero-split"><div><span class="eyebrow">${tx("Rating status", "Статус рейтингу")}</span><h2>${tx("Rating not available yet", "Рейтинг поки недоступний")}</h2><p>${tx("Workouts are currently scored on your device, so public ranking is disabled, not queued for review. It will appear only after a future app and server update adds verified scoring; no release date is set. Your private progress remains available.", "Зараз тренування оцінюються на пристрої, тому публічний рейтинг вимкнено, а не поставлено в чергу на перевірку. Він з’явиться лише після майбутнього оновлення застосунку й сервера з перевіреним підрахунком; дати випуску поки немає. Твій приватний прогрес залишається доступним.")}</p></div><div class="hero-stat"><span>${tx("Your XP", "Твої XP")}</span><strong>${totalXp()}</strong><small>${escapeHtml(rankTitle())}</small></div></div></section>
+    <section class="panel highlighted"><div class="row-head"><div><h2>${tx("Your synced progress", "Твій синхронізований прогрес")}</h2><p>${supporting}</p></div><button class="button" data-action="refresh-leaderboard" ${loading ? "disabled" : ""}>${loading ? tx("Loading", "Завантаження") : tx("Refresh progress", "Оновити прогрес")}</button></div>${leaderboardState.error ? `<p class="muted">${escapeHtml(leaderboardState.error)}</p>` : ""}${!rows.length && !loading ? `<div class="empty">${tx("No synced progress yet.", "Синхронізованого прогресу ще немає.")}</div>` : ""}</section>
     <section class="leaderboard-list">${rows.map(leaderboardRow).join("")}</section>`;
 }
 

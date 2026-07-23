@@ -19,14 +19,14 @@
     <string name="title_progress">Прогресс</string>
     <string name="title_profile">Профиль</string>
     <string name="profile_screen_subtitle">Аккаунт, Garmin, приватные резервные копии, диагностика и защищённый прогресс.</string>
-    <string name="leaderboard_hero_title">Защищённый прогресс</string>
-    <string name="leaderboard_hero_supporting">Соревновательный рейтинг приостановлен, пока сервер не сможет проверять тренировочные баллы. Твой приватный прогресс остаётся доступным.</string>
+    <string name="leaderboard_hero_title">Рейтинг пока недоступен</string>
+    <string name="leaderboard_hero_supporting">Сейчас тренировки оцениваются на устройстве, поэтому публичный рейтинг отключён, а не поставлен в очередь на проверку. Он появится только после будущего обновления приложения и сервера с проверяемым подсчётом; даты выпуска пока нет. Твой приватный прогресс остаётся доступным.</string>
     <string name="leaderboard_your_xp">Твои XP</string>
     <string name="leaderboard_title">Твой синхронизированный прогресс</string>
     <string name="leaderboard_loading_supporting">Загружаем защищённый облачный прогресс...</string>
-    <string name="leaderboard_synced_supporting">Показывается только твой профиль, пока мы создаём проверяемый рейтинг.</string>
+    <string name="leaderboard_synced_supporting">Обновление загружает только твои собственные XP из облака. Оно не запускает проверку рейтинга.</string>
     <string name="leaderboard_loading_action">Загрузка</string>
-    <string name="leaderboard_refresh_action">Обновить</string>
+    <string name="leaderboard_refresh_action">Обновить прогресс</string>
     <string name="leaderboard_empty">Синхронизированного прогресса пока нет.</string>
     <string name="leaderboard_row_detail">Уровень %1$d - %2$d тренировок</string>
 

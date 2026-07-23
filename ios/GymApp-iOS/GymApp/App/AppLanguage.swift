@@ -158,14 +158,17 @@ private let gymRussianEnglishFallbacks: [String: String] = [
     "This iPhone's workout history was saved to the cloud.":
         "История тренировок с этого iPhone сохранена в облаке.",
     "Protected progress": "Защищённый прогресс",
-    "Competitive standings are paused until workout scores can be verified server-side. Your private progress stays available.":
-        "Соревновательный рейтинг приостановлен, пока сервер не сможет проверять тренировочные баллы. Твой приватный прогресс остаётся доступным.",
-    "Private preview": "Приватный просмотр",
+    "Rating status": "Статус рейтинга",
+    "Rating not available yet": "Рейтинг пока недоступен",
+    "Workouts are currently scored on your device, so public ranking is disabled, not queued for review. It will appear only after a future app and server update adds verified scoring; no release date is set. Your private progress remains available.":
+        "Сейчас тренировки оцениваются на устройстве, поэтому публичный рейтинг отключён, а не поставлен в очередь на проверку. Он появится только после будущего обновления приложения и сервера с проверяемым подсчётом; даты выпуска пока нет. Твой приватный прогресс остаётся доступным.",
+    "Private progress only": "Только приватный прогресс",
     "YOUR PROGRESS": "ТВОЙ ПРОГРЕСС",
     "Your synced progress": "Твой синхронизированный прогресс",
     "Loading protected cloud progress…": "Загружаем защищённый облачный прогресс…",
-    "Only your profile is shown while verified scoring is being built.":
-        "Показывается только твой профиль, пока мы создаём проверяемый рейтинг.",
+    "Your own cloud progress is up to date.": "Твой собственный облачный прогресс актуален.",
+    "Refresh updates only your own cloud XP. It does not start a rating check.":
+        "Обновление загружает только твои собственные XP из облака. Оно не запускает проверку рейтинга.",
     "Uploads and reloads your protected progress": "Загружает и обновляет твой защищённый прогресс",
     "Local progress": "Локальный прогресс",
     "No synced progress yet": "Синхронизированного прогресса пока нет",
@@ -185,7 +188,10 @@ private let gymRussianEnglishFallbacks: [String: String] = [
     "Blocked athletes are visible again.": "Заблокированные атлеты снова видны.",
     "Loading": "Загрузка",
     "Refresh": "Обновить",
+    "Refresh progress": "Обновить прогресс",
     "Sign in with a cloud account to refresh": "Войди в облачный аккаунт, чтобы обновить",
+    "Refreshes only your cloud progress; it does not start a rating check":
+        "Обновляет только твой облачный прогресс и не запускает проверку рейтинга",
     "Uploads your latest stats and reloads the ranking": "Загружает твою актуальную статистику и обновляет рейтинг",
     "Report display name": "Пожаловаться на имя",
     "Block from leaderboard": "Заблокировать в рейтинге",

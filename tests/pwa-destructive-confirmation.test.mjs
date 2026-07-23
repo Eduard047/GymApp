@@ -87,7 +87,9 @@ function loadContext(options = {}) {
           currentLevelXp: 0,
           xpForNextLevel: 200,
           progressFraction: 0
-        })
+        }),
+        currentWeeklyStreak: () => 0,
+        bestWeeklyStreakDuring: () => 0
       }
     }
   };
