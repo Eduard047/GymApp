@@ -4962,6 +4962,217 @@ final class CoreParityTests: XCTestCase {
         XCTAssertFalse(appState.isCloudWritePaused)
     }
 
+    func testCanonicalCloudConflictRequiresChoiceAndCanLoadVerifiedCloudHistory() async throws {
+        let directory = try temporaryDirectory(named: "cloud-conflict-use-cloud")
+        let defaults = temporaryDefaults(named: "cloud-conflict-use-cloud")
+        let auth = AuthService(keychain: InMemoryKeychainStore(), defaults: defaults)
+        let cloud = cloudSession(userID: "cloud-conflict-use-cloud-user")
+        let session = AppAccountSession.cloud(cloud)
+        let owner = BackupOwner(
+            accountID: session.storageKey,
+            userID: cloud.userID,
+            email: cloud.email,
+            remote: true
+        )
+        let localStore = try WorkoutStore(
+            accountStorageKey: session.storageKey,
+            directoryURL: directory
+        )
+        let localExercise = try localStore.addExercise(name: "Local Conflict Exercise")
+        _ = try localStore.createWorkout(
+            date: Date(timeIntervalSince1970: 1_750_000_100),
+            exercises: [
+                WorkoutExerciseDraft(
+                    exerciseID: localExercise.id,
+                    sets: [.init(weight: 80, reps: 8)]
+                )
+            ]
+        )
+        let remote = try remoteBackupData(
+            exerciseName: "Cloud Conflict Exercise",
+            owner: owner
+        )
+        let appState = try AppState(
+            auth: auth,
+            defaults: defaults,
+            workoutDirectoryURL: directory,
+            remoteStateLoader: { requestedUserID in
+                XCTAssertEqual(requestedUserID, cloud.userID)
+                return remote
+            }
+        )
+
+        try auth.installSessionForTesting(session)
+        let conflictReady = await waitUntil { appState.cloudSyncConflict != nil }
+
+        XCTAssertTrue(conflictReady)
+        XCTAssertFalse(appState.isAccountReady)
+        XCTAssertEqual(appState.cloudSyncConflict?.localWorkoutCount, 1)
+        XCTAssertEqual(appState.cloudSyncConflict?.cloudWorkoutCount, 1)
+        let localBackup = String(decoding: try appState.cloudSyncConflictBackupData(), as: UTF8.self)
+        XCTAssertTrue(localBackup.contains("Local Conflict Exercise"))
+        XCTAssertFalse(localBackup.contains("Cloud Conflict Exercise"))
+
+        appState.resolveCloudSyncConflict(useCloudVersion: true)
+        let accountReady = await waitUntil {
+            appState.isAccountReady &&
+                self.customExerciseNames(in: appState.workoutStore) ==
+                    ["Cloud Conflict Exercise"]
+        }
+
+        XCTAssertTrue(accountReady)
+        XCTAssertNil(appState.cloudSyncConflict)
+    }
+
+    func testCloudConflictChoiceRejectsAChangedRemoteWithoutReplacingLocalHistory() async throws {
+        let directory = try temporaryDirectory(named: "cloud-conflict-stale-remote")
+        let defaults = temporaryDefaults(named: "cloud-conflict-stale-remote")
+        let auth = AuthService(keychain: InMemoryKeychainStore(), defaults: defaults)
+        let cloud = cloudSession(userID: "cloud-conflict-stale-user")
+        let session = AppAccountSession.cloud(cloud)
+        let owner = BackupOwner(
+            accountID: session.storageKey,
+            userID: cloud.userID,
+            email: cloud.email,
+            remote: true
+        )
+        let localStore = try WorkoutStore(
+            accountStorageKey: session.storageKey,
+            directoryURL: directory
+        )
+        _ = try localStore.addExercise(name: "Preserved Local Exercise")
+        let firstRemote = try remoteBackupData(exerciseName: "First Cloud Exercise", owner: owner)
+        let changedRemote = try remoteBackupData(exerciseName: "Changed Cloud Exercise", owner: owner)
+        var loads = 0
+        let appState = try AppState(
+            auth: auth,
+            defaults: defaults,
+            workoutDirectoryURL: directory,
+            remoteStateLoader: { _ in
+                loads += 1
+                return loads == 1 ? firstRemote : changedRemote
+            }
+        )
+
+        try auth.installSessionForTesting(session)
+        let conflictReady = await waitUntil { appState.cloudSyncConflict != nil }
+        XCTAssertTrue(conflictReady)
+
+        appState.resolveCloudSyncConflict(useCloudVersion: true)
+        let rejected = await waitUntil {
+            appState.accountPreparationError != nil &&
+                !appState.isResolvingCloudSyncConflict
+        }
+
+        XCTAssertTrue(rejected)
+        XCTAssertFalse(appState.isAccountReady)
+        XCTAssertNotNil(appState.cloudSyncConflict)
+        let preserved = try WorkoutStore(
+            accountStorageKey: session.storageKey,
+            directoryURL: directory
+        )
+        XCTAssertEqual(customExerciseNames(in: preserved), ["Preserved Local Exercise"])
+    }
+
+    func testCloudConflictCanKeepLocalHistoryWithFreshRevisionCAS() async throws {
+        let directory = try temporaryDirectory(named: "cloud-conflict-keep-local")
+        let defaults = temporaryDefaults(named: "cloud-conflict-keep-local")
+        let recorder = AuthRequestRecorder()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        let auth = AuthService(
+            keychain: InMemoryKeychainStore(),
+            urlSession: urlSession,
+            defaults: defaults
+        )
+        let cloud = cloudSession(userID: "cloud-conflict-keep-local-user")
+        let session = AppAccountSession.cloud(cloud)
+        let owner = BackupOwner(
+            accountID: session.storageKey,
+            userID: cloud.userID,
+            email: cloud.email,
+            remote: true
+        )
+        let localStore = try WorkoutStore(
+            accountStorageKey: session.storageKey,
+            directoryURL: directory
+        )
+        _ = try localStore.addExercise(name: "Keep Local Exercise")
+        let remoteData = try remoteBackupData(exerciseName: "Replace Cloud Exercise", owner: owner)
+        let remoteObject = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: remoteData) as? [String: Any]
+        )
+        let revision0 = "2026-07-23T09:00:00.000000Z"
+        let revision1 = "2026-07-23T09:00:01.000000Z"
+        AuthURLProtocolStub.handler = { request in
+            recorder.append(request)
+            switch (request.url?.path, request.httpMethod) {
+            case ("/rest/v1/user_states", "GET"):
+                let response: [[String: Any]] = [[
+                    "state": remoteObject,
+                    "updated_at": revision0
+                ]]
+                let data = try JSONSerialization.data(withJSONObject: response)
+                return (HTTPURLResponse(
+                    url: try XCTUnwrap(request.url),
+                    statusCode: 200,
+                    httpVersion: nil,
+                    headerFields: ["Content-Type": "application/json"]
+                )!, data)
+            case ("/rest/v1/user_states", "PATCH"):
+                let revisionFilter = URLComponents(
+                    url: try XCTUnwrap(request.url),
+                    resolvingAgainstBaseURL: false
+                )?.queryItems?.first(where: { $0.name == "updated_at" })?.value
+                XCTAssertEqual(revisionFilter, "eq.\(revision0)")
+                let body = String(decoding: try XCTUnwrap(request.httpBody), as: UTF8.self)
+                XCTAssertTrue(body.contains("Keep Local Exercise"))
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    json: #"[{"updated_at":"\#(revision1)"}]"#
+                )
+            case ("/rest/v1/profiles", "POST"):
+                return try AuthURLProtocolStub.response(for: request, json: "{}")
+            default:
+                XCTFail("Unexpected conflict request: \(request.url?.absoluteString ?? "nil")")
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    statusCode: 404,
+                    json: "{}"
+                )
+            }
+        }
+        defer {
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+        }
+        let appState = try AppState(
+            auth: auth,
+            defaults: defaults,
+            workoutDirectoryURL: directory,
+            cloudURLSession: urlSession
+        )
+
+        try auth.installSessionForTesting(session)
+        let conflictReady = await waitUntil { appState.cloudSyncConflict != nil }
+        XCTAssertTrue(conflictReady)
+        appState.resolveCloudSyncConflict(useCloudVersion: false)
+        let accountReady = await waitUntil { appState.isAccountReady }
+        XCTAssertTrue(accountReady)
+
+        XCTAssertEqual(
+            customExerciseNames(in: appState.workoutStore),
+            ["Keep Local Exercise"]
+        )
+        XCTAssertEqual(
+            recorder.requests.filter {
+                $0.url?.path == "/rest/v1/user_states" && $0.httpMethod == "PATCH"
+            }.count,
+            1
+        )
+    }
+
     func testSignOutFlushesPendingWritableCloudStateBeforeLogout() async throws {
         let directory = try temporaryDirectory(named: "signout-cloud-flush")
         let defaults = temporaryDefaults(named: "signout-cloud-flush")

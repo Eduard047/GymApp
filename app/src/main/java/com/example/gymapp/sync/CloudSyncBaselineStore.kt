@@ -14,7 +14,8 @@ internal data class CloudSyncConflictSnapshot(
     val userId: String,
     val sessionGeneration: String,
     val localDigest: String,
-    val remoteDigest: String?
+    val remoteDigest: String?,
+    val remoteExists: Boolean
 )
 
 internal fun isCurrentCloudSyncConflict(
@@ -22,11 +23,13 @@ internal fun isCurrentCloudSyncConflict(
     userId: String,
     sessionGeneration: String,
     localDigest: String,
-    remoteDigest: String?
+    remoteDigest: String?,
+    remoteExists: Boolean
 ): Boolean = conflict.userId == userId &&
     conflict.sessionGeneration == sessionGeneration &&
     conflict.localDigest == localDigest &&
-    conflict.remoteDigest == remoteDigest
+    conflict.remoteDigest == remoteDigest &&
+    conflict.remoteExists == remoteExists
 
 /** Runs a destructive choice only for the exact account and local/remote pair the user reviewed. */
 internal suspend fun <T> runCurrentCloudSyncConflictAction(
@@ -35,6 +38,7 @@ internal suspend fun <T> runCurrentCloudSyncConflictAction(
     sessionGeneration: String,
     localDigest: String,
     remoteDigest: String?,
+    remoteExists: Boolean,
     action: suspend () -> T
 ): T {
     check(isCurrentCloudSyncConflict(
@@ -42,7 +46,8 @@ internal suspend fun <T> runCurrentCloudSyncConflictAction(
         userId = userId,
         sessionGeneration = sessionGeneration,
         localDigest = localDigest,
-        remoteDigest = remoteDigest
+        remoteDigest = remoteDigest,
+        remoteExists = remoteExists
     )) { "Cloud data changed on another device. Reload it before syncing again." }
     return action()
 }

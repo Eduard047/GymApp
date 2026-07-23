@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
@@ -43,6 +44,9 @@ fun ProfileScreen(
     isLeaderboardLoading: Boolean,
     leaderboardError: LocalizedText?,
     onRefreshLeaderboard: () -> Unit,
+    cloudSyncChoiceRequired: Boolean,
+    cloudSyncChoiceReady: Boolean,
+    onReviewCloudSync: () -> Unit,
     onExportBackup: () -> Unit,
     onExportDiagnostics: () -> Unit,
     onClearBackup: () -> Unit,
@@ -100,6 +104,14 @@ fun ProfileScreen(
                     onOpenGarminApp = { openGymWorkoutTrackerInGarminStore(context) },
                     onResetGarminPairing = { showGarminResetConfirmation = true }
                 )
+            }
+            if (accountState.isCloudAccount && cloudSyncChoiceRequired) {
+                item {
+                    CloudSyncChoiceCard(
+                        choiceReady = cloudSyncChoiceReady,
+                        onReview = onReviewCloudSync
+                    )
+                }
             }
             if (accountState.isCloudAccount) {
                 item {
@@ -171,6 +183,45 @@ fun ProfileScreen(
                 onDeleteCloudAccount()
             }
         )
+    }
+}
+
+@Composable
+private fun CloudSyncChoiceCard(
+    choiceReady: Boolean,
+    onReview: () -> Unit
+) {
+    AppPanel(
+        modifier = Modifier.fillMaxWidth(),
+        highlighted = true
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.cloud_sync_choice_card_title),
+                style = MaterialTheme.typography.titleLarge
+            )
+            Text(
+                text = stringResource(R.string.cloud_sync_choice_card_description),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Button(
+                onClick = onReview,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 52.dp)
+            ) {
+                Text(
+                    stringResource(
+                        if (choiceReady) R.string.cloud_sync_choice_card_review
+                        else R.string.cloud_sync_choice_card_check
+                    )
+                )
+            }
+        }
     }
 }
 

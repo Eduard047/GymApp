@@ -135,6 +135,28 @@ private let gymRussianExactFallbacks: [String: String] = [
 ]
 
 private let gymRussianEnglishFallbacks: [String: String] = [
+    "Workout sync": "Синхронизация тренировок",
+    "Which workout history should GymApp keep?": "Какую историю тренировок сохранить?",
+    "This iPhone and the cloud contain different changes. Nothing has been deleted or overwritten.":
+        "На этом iPhone и в облаке разные изменения. Пока ничего не удалено и не перезаписано.",
+    "On this iPhone": "На этом iPhone",
+    "In the cloud": "В облаке",
+    "Saved workouts": "Сохранено тренировок",
+    "Choose this if your latest workouts were recorded on this iPhone. This history will replace the cloud copy.":
+        "Выбери это, если последние тренировки записывал на этом iPhone. Эта история заменит облачную копию.",
+    "Keep workouts from this iPhone": "Сохранить тренировки с этого iPhone",
+    "Choose this if your latest workouts were recorded on another device or in the PWA. The cloud history will replace workouts on this iPhone.":
+        "Выбери это, если последние тренировки записывал на другом устройстве или в PWA. Облачная история заменит тренировки на этом iPhone.",
+    "Use workouts from the cloud": "Загрузить тренировки из облака",
+    "Back up this iPhone first": "Сначала сделать копию этого iPhone",
+    "Sign out without changes": "Выйти без изменений",
+    "Checking both histories again…": "Снова проверяем обе истории…",
+    "The workout histories changed before your choice was applied. Review both versions again.":
+        "Истории тренировок изменились до применения выбора. Проверь обе версии ещё раз.",
+    "Cloud workout history was loaded on this iPhone.":
+        "Облачная история тренировок загружена на этот iPhone.",
+    "This iPhone's workout history was saved to the cloud.":
+        "История тренировок с этого iPhone сохранена в облаке.",
     "Protected progress": "Защищённый прогресс",
     "Competitive standings are paused until workout scores can be verified server-side. Your private progress stays available.":
         "Соревновательный рейтинг приостановлен, пока сервер не сможет проверять тренировочные баллы. Твой приватный прогресс остаётся доступным.",

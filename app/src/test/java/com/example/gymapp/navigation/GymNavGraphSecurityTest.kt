@@ -222,27 +222,32 @@ class GymNavGraphSecurityTest {
             userId = userId,
             sessionGeneration = session.sessionGeneration,
             localDigest = local,
-            remoteDigest = remote
+            remoteDigest = remote,
+            remoteExists = true
         )
 
         assertTrue(isCurrentCloudSyncConflict(
-            conflict, userId, session.sessionGeneration, local, remote
+            conflict, userId, session.sessionGeneration, local, remote, true
         ))
         assertFalse(isCurrentCloudSyncConflict(
             conflict,
             "223e4567-e89b-12d3-a456-426614174000",
             session.sessionGeneration,
             local,
-            remote
+            remote,
+            true
         ))
         assertFalse(isCurrentCloudSyncConflict(
-            conflict, userId, "new-generation", local, remote
+            conflict, userId, "new-generation", local, remote, true
         ))
         assertFalse(isCurrentCloudSyncConflict(
-            conflict, userId, session.sessionGeneration, "c".repeat(64), remote
+            conflict, userId, session.sessionGeneration, "c".repeat(64), remote, true
         ))
         assertFalse(isCurrentCloudSyncConflict(
-            conflict, userId, session.sessionGeneration, local, "d".repeat(64)
+            conflict, userId, session.sessionGeneration, local, "d".repeat(64), true
+        ))
+        assertFalse(isCurrentCloudSyncConflict(
+            conflict, userId, session.sessionGeneration, local, remote, false
         ))
 
         var sideEffects = 0
@@ -252,7 +257,8 @@ class GymNavGraphSecurityTest {
                 userId,
                 session.sessionGeneration,
                 local,
-                remote
+                remote,
+                true
             ) {
                 sideEffects += 1
                 "accepted"
@@ -268,7 +274,8 @@ class GymNavGraphSecurityTest {
                     userId,
                     session.sessionGeneration,
                     local,
-                    "e".repeat(64)
+                    "e".repeat(64),
+                    true
                 ) {
                     sideEffects += 1
                 }
@@ -277,12 +284,40 @@ class GymNavGraphSecurityTest {
         assertTrue(staleResult.isFailure)
         assertEquals(1, sideEffects)
 
-        val missingRemote = conflict.copy(remoteDigest = null)
+        val stalePresenceResult = runBlocking {
+            runCatching {
+                runCurrentCloudSyncConflictAction(
+                    conflict,
+                    userId,
+                    session.sessionGeneration,
+                    local,
+                    remote,
+                    false
+                ) {
+                    sideEffects += 1
+                }
+            }
+        }
+        assertTrue(stalePresenceResult.isFailure)
+        assertEquals(1, sideEffects)
+
+        val unverifiedRemote = conflict.copy(remoteDigest = null)
         assertTrue(isCurrentCloudSyncConflict(
-            missingRemote, userId, session.sessionGeneration, local, null
+            unverifiedRemote, userId, session.sessionGeneration, local, null, true
         ))
         assertFalse(isCurrentCloudSyncConflict(
-            missingRemote, userId, session.sessionGeneration, local, remote
+            unverifiedRemote, userId, session.sessionGeneration, local, null, false
+        ))
+        assertFalse(isCurrentCloudSyncConflict(
+            unverifiedRemote, userId, session.sessionGeneration, local, remote, true
+        ))
+
+        val missingRemote = conflict.copy(remoteDigest = null, remoteExists = false)
+        assertTrue(isCurrentCloudSyncConflict(
+            missingRemote, userId, session.sessionGeneration, local, null, false
+        ))
+        assertFalse(isCurrentCloudSyncConflict(
+            missingRemote, userId, session.sessionGeneration, local, null, true
         ))
     }
 

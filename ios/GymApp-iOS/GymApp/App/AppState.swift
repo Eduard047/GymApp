@@ -7,10 +7,30 @@ func leaderboardHiddenProfilesDefaultsKey(for accountStorageKey: String) -> Stri
 
 @MainActor
 final class AppState: ObservableObject {
+    struct CloudSyncConflictSummary: Equatable {
+        let localWorkoutCount: Int
+        let cloudWorkoutCount: Int
+    }
+
     private enum CloudSavePhase {
         case idle
         case debouncing
         case uploading
+    }
+
+    private struct CloudWorkoutIdentity: Hashable {
+        let customExercises: [BackupExercise]
+        let sessions: [BackupSession]
+    }
+
+    private struct PendingCloudSyncConflict {
+        let generation: UInt64
+        let storageKey: String
+        let userID: String
+        let owner: BackupOwner
+        let localStore: WorkoutStore
+        let localIdentity: CloudWorkoutIdentity
+        let remoteIdentity: CloudWorkoutIdentity
     }
 
     let auth: AuthService
@@ -25,6 +45,8 @@ final class AppState: ObservableObject {
     @Published private(set) var activeAccountStorageKey: String?
     @Published private(set) var accountPreparationError: String?
     @Published private(set) var isSigningOut = false
+    @Published private(set) var cloudSyncConflict: CloudSyncConflictSummary?
+    @Published private(set) var isResolvingCloudSyncConflict = false
 
     private var sessionSubscription: AnyCancellable?
     private var storeSubscription: AnyCancellable?
@@ -40,6 +62,7 @@ final class AppState: ObservableObject {
     private var restTimerOwnerFingerprint: String?
     private var applyingRemoteState = false
     private var cloudWritableAccountStorageKey: String?
+    private var pendingCloudSyncConflict: PendingCloudSyncConflict?
     private let defaults: UserDefaults
     private let workoutDirectoryURL: URL?
     private let remoteStateLoader: (@MainActor (String) async throws -> Data?)?
@@ -170,6 +193,29 @@ final class AppState: ObservableObject {
         scheduleActivation(auth.session)
     }
 
+    func cloudSyncConflictBackupData() throws -> Data {
+        guard let pending = pendingCloudSyncConflict,
+              pending.generation == accountActivationGeneration,
+              auth.session?.storageKey == pending.storageKey,
+              auth.session?.cloud?.userID == pending.userID else {
+            throw AuthServiceError.sessionChanged
+        }
+        return try pending.localStore.exportBackupData(owner: pending.owner)
+    }
+
+    func resolveCloudSyncConflict(useCloudVersion: Bool) {
+        guard !isResolvingCloudSyncConflict,
+              let pending = pendingCloudSyncConflict else { return }
+        isResolvingCloudSyncConflict = true
+        accountPreparationError = nil
+        Task { [weak self] in
+            await self?.resolveCloudSyncConflict(
+                pending,
+                useCloudVersion: useCloudVersion
+            )
+        }
+    }
+
     @discardableResult
     func signOut() async -> Bool {
         guard !isSigningOut else { return false }
@@ -258,6 +304,9 @@ final class AppState: ObservableObject {
         abandonPendingCloudSave()
         cloudSync.resetForAccountTransition()
         cloudWritableAccountStorageKey = nil
+        pendingCloudSyncConflict = nil
+        cloudSyncConflict = nil
+        isResolvingCloudSyncConflict = false
         activeAccountStorageKey = nil
         accountPreparationError = nil
         isPreparingAccount = session != nil
@@ -352,6 +401,33 @@ final class AppState: ObservableObject {
                             activeOwner: expectedOwner,
                             localCatalogSeedVersion: persistedCatalogSeedVersion
                         )
+                        let localBackup = try candidate.makeBackup(owner: expectedOwner)
+                        let remoteBackup = try JSONDecoder().decode(
+                            GymBackup.self,
+                            from: preparedBackup.data
+                        )
+                        let localIdentity = Self.cloudWorkoutIdentity(localBackup)
+                        let remoteIdentity = Self.cloudWorkoutIdentity(remoteBackup)
+                        if preparedBackup.roundTripSafe,
+                           Self.hasUserWorkoutData(localBackup),
+                           localIdentity != remoteIdentity {
+                            pendingCloudSyncConflict = PendingCloudSyncConflict(
+                                generation: generation,
+                                storageKey: expectedStorageKey,
+                                userID: expectedUserID,
+                                owner: expectedOwner,
+                                localStore: candidate,
+                                localIdentity: localIdentity,
+                                remoteIdentity: remoteIdentity
+                            )
+                            cloudSyncConflict = CloudSyncConflictSummary(
+                                localWorkoutCount: localBackup.sessions.count,
+                                cloudWorkoutCount: remoteBackup.sessions.count
+                            )
+                            isPreparingAccount = false
+                            accountPreparationError = nil
+                            return
+                        }
                         _ = try candidate.restoreBackup(
                             data: preparedBackup.data,
                             activeOwner: expectedOwner
@@ -423,6 +499,126 @@ final class AppState: ObservableObject {
             accountPreparationError = gymErrorMessage(error)
             show(error: error)
         }
+    }
+
+    private func resolveCloudSyncConflict(
+        _ pending: PendingCloudSyncConflict,
+        useCloudVersion: Bool
+    ) async {
+        defer { isResolvingCloudSyncConflict = false }
+        do {
+            try ensureActivationIsCurrent(
+                generation: pending.generation,
+                expectedStorageKey: pending.storageKey
+            )
+            let remoteData: Data?
+            if let remoteStateLoader {
+                remoteData = try await remoteStateLoader(pending.userID)
+            } else {
+                remoteData = try await cloudSync.withSyncIndicator {
+                    try await self.cloudSync.loadRemoteState(
+                        expectedUserID: pending.userID
+                    )
+                }
+            }
+            guard let remoteData else {
+                throw CloudSyncError.staleRemoteState
+            }
+            let preparedBackup = try WorkoutStore.prepareCloudBackup(
+                remoteData,
+                activeOwner: pending.owner,
+                localCatalogSeedVersion: pending.localStore.catalogSeedVersion
+            )
+            guard preparedBackup.roundTripSafe else {
+                throw CloudSyncError.staleRemoteState
+            }
+            let reloadedRemoteBackup = try JSONDecoder().decode(
+                GymBackup.self,
+                from: preparedBackup.data
+            )
+            guard Self.cloudWorkoutIdentity(reloadedRemoteBackup) == pending.remoteIdentity else {
+                throw CloudSyncError.staleRemoteState
+            }
+            let currentLocalBackup = try pending.localStore.makeBackup(owner: pending.owner)
+            guard Self.cloudWorkoutIdentity(currentLocalBackup) == pending.localIdentity else {
+                throw CloudSyncError.staleRemoteState
+            }
+            try ensureActivationIsCurrent(
+                generation: pending.generation,
+                expectedStorageKey: pending.storageKey
+            )
+
+            var catalogChanged = false
+            if useCloudVersion {
+                _ = try pending.localStore.restoreBackup(
+                    data: preparedBackup.data,
+                    activeOwner: pending.owner
+                )
+                catalogChanged = try pending.localStore.seedBuiltInExercises() > 0
+                _ = try pending.localStore.seedDefaultMuscleMappings()
+            } else {
+                try await cloudSync.withSyncIndicator {
+                    try await self.uploadCurrentState(
+                        from: pending.localStore,
+                        owner: pending.owner,
+                        expectedStorageKey: pending.storageKey,
+                        expectedUserID: pending.userID
+                    )
+                }
+            }
+            try ensureActivationIsCurrent(
+                generation: pending.generation,
+                expectedStorageKey: pending.storageKey
+            )
+
+            cloudWritableAccountStorageKey = pending.storageKey
+            pendingCloudSyncConflict = nil
+            cloudSyncConflict = nil
+            accountPreparationError = nil
+            publish(store: pending.localStore, activeStorageKey: pending.storageKey)
+            isPreparingAccount = false
+            if catalogChanged {
+                scheduleCloudSave(delay: .zero)
+            }
+            show(
+                message: useCloudVersion
+                    ? gymText(
+                        "Cloud workout history was loaded on this iPhone.",
+                        "Хмарну історію тренувань завантажено на цей iPhone.",
+                        languageCode: defaults.string(forKey: "app-language") ??
+                            AppLanguage.english.rawValue
+                    )
+                    : gymText(
+                        "This iPhone's workout history was saved to the cloud.",
+                        "Історію тренувань із цього iPhone збережено в хмарі.",
+                        languageCode: defaults.string(forKey: "app-language") ??
+                            AppLanguage.english.rawValue
+                    ),
+                isError: false
+            )
+        } catch is CancellationError {
+            return
+        } catch {
+            guard pending.generation == accountActivationGeneration,
+                  auth.session?.storageKey == pending.storageKey else { return }
+            accountPreparationError = gymText(
+                "The workout histories changed before your choice was applied. Review both versions again.",
+                "Історії тренувань змінилися до застосування вибору. Перевір обидві версії ще раз.",
+                languageCode: defaults.string(forKey: "app-language") ?? AppLanguage.english.rawValue
+            )
+            show(error: error)
+        }
+    }
+
+    private static func cloudWorkoutIdentity(_ backup: GymBackup) -> CloudWorkoutIdentity {
+        CloudWorkoutIdentity(
+            customExercises: backup.exercises.filter { $0.catalogKey == nil },
+            sessions: backup.sessions
+        )
+    }
+
+    private static func hasUserWorkoutData(_ backup: GymBackup) -> Bool {
+        !backup.sessions.isEmpty || backup.exercises.contains { $0.catalogKey == nil }
     }
 
     func forceCloudSync() async {
