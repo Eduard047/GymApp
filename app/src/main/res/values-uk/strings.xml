@@ -197,6 +197,13 @@
     <string name="label_reps">Повтори</string>
     <string name="add_workout_intro_title">Склади тренування на сьогодні</string>
     <string name="add_workout_intro_supporting">Записуй план швидко та тримай темп завдяки розумним ярликам для підходів.</string>
+    <string name="focus_lens_eyebrow">ТВІЙ НАСТУПНИЙ КРОК</string>
+    <string name="focus_lens_title">Склади тренування на сьогодні</string>
+    <string name="focus_lens_supporting">Починай, коли готовий. Складай тренування поступово, у своєму темпі.</string>
+    <string name="focus_lens_month_workouts">Тренувань</string>
+    <string name="focus_lens_week_streak">Тижні серії</string>
+    <string name="focus_lens_volume">Обсяг</string>
+    <string name="action_start_workout">Почати тренування</string>
     <string name="add_workout_active_exercises">Вправи: %1$d</string>
     <string name="add_workout_total_sets">Підходи: %1$d</string>
     <string name="add_workout_plan_templates">Швидкі шаблони сесії</string>

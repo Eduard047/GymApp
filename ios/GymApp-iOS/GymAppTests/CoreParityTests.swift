@@ -3997,7 +3997,7 @@ final class CoreParityTests: XCTestCase {
             urlSession: urlSession,
             defaults: defaults
         )
-        let cloud = cloudSession(userID: "single-flight-delete-user")
+        let cloud = cloudSession(userID: "00000000-0000-4000-8000-0000000000a1")
         let accountSession = AppAccountSession.cloud(cloud)
         let owner = BackupOwner(
             accountID: accountSession.storageKey,
@@ -4036,7 +4036,8 @@ final class CoreParityTests: XCTestCase {
             remoteStateLoader: { requestedUserID in
                 XCTAssertEqual(requestedUserID, cloud.userID)
                 return remote
-            }
+            },
+            garminBindingStore: GarminDeviceBindingStore(keychain: InMemoryKeychainStore())
         )
         let accountReady = await waitUntil { appState.isAccountReady }
         XCTAssertTrue(accountReady)
@@ -4441,9 +4442,8 @@ final class CoreParityTests: XCTestCase {
             email: cloud.email,
             remote: true
         )
-        let remote = try remoteBackupData(
-            exerciseName: "Initial Refresh Preserved Data",
-            owner: owner
+        let remote = try pwaFlatCloudData(
+            exerciseName: "Initial Refresh Preserved Data"
         )
         try auth.installSessionForTesting(accountSession)
         AuthURLProtocolStub.handler = { request in
@@ -4458,7 +4458,11 @@ final class CoreParityTests: XCTestCase {
             }
             refreshStarted.fulfill()
             _ = releaseRefresh.wait(timeout: .now() + 5)
-            throw URLError(.notConnectedToInternet)
+            return try AuthURLProtocolStub.response(
+                for: request,
+                statusCode: 503,
+                json: #"{"message":"Refresh temporarily unavailable"}"#
+            )
         }
         defer {
             releaseRefresh.signal()
@@ -4525,8 +4529,10 @@ final class CoreParityTests: XCTestCase {
         do {
             try await deletion.value
             XCTFail("A failed initial refresh must not complete account deletion.")
+        } catch AuthServiceError.requestFailed(let status, _) {
+            XCTAssertEqual(status, 503)
         } catch {
-            XCTAssertEqual((error as? URLError)?.code, .notConnectedToInternet)
+            XCTFail("Unexpected initial refresh error: \(error)")
         }
 
         XCTAssertEqual(recorder.requests.map(\.url?.path), ["/auth/v1/token"])

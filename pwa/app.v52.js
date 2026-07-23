@@ -3675,11 +3675,27 @@ function loginScreen() {
     <main class="screen auth-screen" data-scroll-key="auth">
       <section class="hero-panel auth-hero"><h2>GymApp</h2><p>${remoteEnabled ? tx("Sign in to sync workouts across devices.", "Увійди, щоб синхронізувати тренування між пристроями.") : tx("Cloud login is ready after Supabase keys are added.", "Хмарний вхід запрацює після додавання ключів Supabase.")}</p></section>
       ${remotePanel}
+      ${themePreferencePanel("auth")}
       <details class="local-account-details" ${remoteEnabled ? "" : "open"}><summary>${tx("Offline local account", "Офлайн-акаунт")}</summary><section class="panel auth-panel"><p class="muted">${remoteEnabled ? tx("Fallback for this browser only.", "Запасний режим лише для цього браузера.") : tx("Paste Supabase keys into supabase-config.js to enable real network login.", "Встав ключі Supabase у supabase-config.js, щоб увімкнути справжній мережевий вхід.")}</p><div class="field-row login-row"><input id="local-login-name" autocomplete="username" maxlength="64" aria-label="${txAttr("Name", "Ім'я")}" placeholder="${txAttr("Name", "Ім'я")}"><button class="button" data-action="login-account">${tx("Enter", "Увійти")}</button></div>${accounts.length ? `<div class="saved-accounts"><span class="field-caption">${tx("Saved accounts", "Збережені акаунти")}</span><div class="chip-row">${accounts.map(account => `<button class="chip buttonlike" data-action="login-account" data-name="${escapeAttr(account.name)}">${escapeHtml(account.name)}</button>`).join("")}</div></div>` : ""}</section></details>
       <nav class="auth-links" aria-label="${txAttr("GymApp links", "Посилання GymApp")}"><a href="${PUBLIC_SITE_URL}" target="_blank" rel="noopener noreferrer">${tx("Website", "Сайт")}</a><a href="${SUPPORT_URL}" target="_blank" rel="noopener noreferrer">${tx("Support", "Підтримка")}</a><a href="${PRIVACY_URL}" target="_blank" rel="noopener noreferrer">${tx("Privacy", "Конфіденційність")}</a></nav>
       <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
     </main>
   </div>`;
+}
+
+function themePreferencePanel(context = "profile") {
+  const preference = window.GymThemePreference?.getPreference?.();
+  const current = ["system", "light", "dark"].includes(preference) ? preference : "system";
+  const options = [
+    ["system", tx("System", "Системна")],
+    ["light", tx("Light", "Світла")],
+    ["dark", tx("Dark", "Темна")]
+  ];
+  const titleId = `theme-preference-${context}`;
+  return `<section class="panel theme-preference-card ${context === "auth" ? "auth-theme-card" : ""}" aria-labelledby="${titleId}">
+    <div class="theme-preference-copy"><h2 id="${titleId}">${tx("Appearance", "Вигляд")}</h2><p class="muted">${tx("Follow this device or keep GymApp light or dark.", "Використовуй тему пристрою або зафіксуй світлий чи темний вигляд GymApp.")}</p></div>
+    <div class="theme-options" role="radiogroup" aria-label="${txAttr("Color theme", "Колірна тема")}">${options.map(([value, label]) => `<button type="button" class="theme-option ${current === value ? "selected" : ""}" role="radio" aria-checked="${current === value}" data-action="set-theme" data-theme="${value}">${label}</button>`).join("")}</div>
+  </section>`;
 }
 
 function emailConfirmationPanel() {
@@ -3843,15 +3859,16 @@ function workoutsScreen() {
   const sessions = [...selectedMonthSessions()].sort((a, b) => b.startedAt - a.startedAt);
   const savedSessions = n(sessions.length, "saved session", "saved sessions", "збережене тренування", "збережені тренування", "збережених тренувань");
   return `
-    <section class="screen-copy workouts-screen-copy"><h2>${t("workouts")}</h2><p>${tx("Your training history and next best move.", "Твоя історія тренувань і рекомендація, що робити далі.")}</p><button class="button full" data-action="open-add">${svg("add", "small-icon")}${t("addWorkout")}</button></section>
-    <div class="workouts-controls">
-      ${monthSwitcher()}
-      <section class="segmented panel compact" aria-label="${txAttr("Workout sections", "Розділи тренувань")}">
-        <button class="${overviewMode === "overview" ? "selected" : ""}" data-action="overview-mode" data-mode="overview" aria-pressed="${overviewMode === "overview"}"><strong>${t("overview")}</strong><span>${tx("Progress, goals, achievements", "Прогрес, цілі, досягнення")}</span></button>
-        <button class="${overviewMode === "list" ? "selected" : ""}" data-action="overview-mode" data-mode="list" aria-pressed="${overviewMode === "list"}"><strong>${t("workoutList")}</strong><span>${savedSessions}</span></button>
-      </section>
-    </div>
+    <section class="screen-copy workouts-screen-copy"><div><span class="eyebrow">${tx("TRAINING", "ТРЕНУВАННЯ")}</span><h2>${t("workouts")}</h2></div><p>${tx("Your training history and next best move.", "Твоя історія тренувань і рекомендація, що робити далі.")}</p></section>
     <div class="workouts-scroll">
+      ${focusOverview(sessions)}
+      <div class="workouts-controls">
+        ${monthSwitcher()}
+        <section class="segmented panel compact" aria-label="${txAttr("Workout sections", "Розділи тренувань")}">
+          <button class="${overviewMode === "overview" ? "selected" : ""}" data-action="overview-mode" data-mode="overview" aria-pressed="${overviewMode === "overview"}"><strong>${t("overview")}</strong><span>${tx("Progress, goals, achievements", "Прогрес, цілі, досягнення")}</span></button>
+          <button class="${overviewMode === "list" ? "selected" : ""}" data-action="overview-mode" data-mode="list" aria-pressed="${overviewMode === "list"}"><strong>${t("workoutList")}</strong><span>${savedSessions}</span></button>
+        </section>
+      </div>
       ${overviewCards(sessions)}
       <section id="workout-list-section" class="panel highlighted workout-section-header">
         <div><h2>${t("workoutList")}</h2><p>${sessions.length ? tx("Tap a workout to open its details.", "Натисни тренування, щоб відкрити деталі.") : tx("New sessions will appear here as soon as you log them.", "Нові тренування з'являться тут одразу після збереження.")}</p></div>
@@ -3865,11 +3882,60 @@ function workoutsScreen() {
 function overviewCards(sessions) {
   return `
     ${soloProgressHero()}
-    ${dashboardCard(sessions)}
     ${activityHeatmapCard()}
     ${muscleMapCard()}
     ${recommendationsCard()}
   `;
+}
+
+function focusOverview(sessions) {
+  const recent = sessions.slice(0, 4);
+  return `<div class="focus-overview">
+    ${focusLensCard(sessions)}
+    <section class="focus-recent" aria-labelledby="focus-recent-title">
+      <div class="focus-recent-head"><div><span class="eyebrow">${tx("HISTORY", "ІСТОРІЯ")}</span><h2 id="focus-recent-title">${tx("Recent sessions", "Останні тренування")}</h2></div><button class="button ghost mini" data-action="overview-mode" data-mode="list">${tx("View all", "Переглянути всі")}</button></div>
+      <div class="focus-recent-list">${recent.length ? recent.map(session => {
+        const summary = sessionSummary(session);
+        const title = session.note?.trim() || tx("Workout", "Тренування");
+        return `<article class="focus-recent-row clickable" data-action="open-detail" data-id="${escapeAttr(session.id)}"><div class="focus-recent-icon">${svg("workouts")}</div><div><strong>${escapeHtml(title)}</strong><span>${escapeHtml(fmtDate(session.startedAt))}</span><small>${summary.exercises} ${tx("exercises", "вправ")} · ${summary.sets} ${tx("sets", "підходів")}</small></div><span>${Math.round(summary.volume)}</span></article>`;
+      }).join("") : `<div class="focus-recent-empty"><strong>${tx("Your first session will appear here", "Твоє перше тренування з’явиться тут")}</strong><span>${tx("Start when you are ready — there is no schedule to catch up with.", "Починай, коли готовий — тут немає графіка, який треба наздоганяти.")}</span></div>`}</div>
+    </section>
+  </div>`;
+}
+
+function focusLensCard(sessions) {
+  const monthLabel = fmtDate(monthDate().getTime(), { month: "long", year: "numeric" });
+  const weekStart = new Date();
+  weekStart.setHours(0, 0, 0, 0);
+  weekStart.setDate(weekStart.getDate() - 6);
+  const activeDays = new Set(
+    state.sessions
+      .filter(session => Number.isFinite(Number(session.startedAt)) && session.startedAt >= weekStart.getTime())
+      .map(session => new Date(session.startedAt).toDateString())
+  );
+  const dayMarkers = Array.from({ length: 7 }, (_, index) => {
+    const day = new Date(weekStart);
+    day.setDate(weekStart.getDate() + index);
+    const isActive = activeDays.has(day.toDateString());
+    const isToday = day.toDateString() === new Date().toDateString();
+    return `<span class="focus-day ${isActive ? "active" : ""} ${isToday ? "today" : ""}" aria-label="${escapeAttr(fmtDate(day.getTime(), { weekday: "long" }))}"></span>`;
+  }).join("");
+  return `<section class="focus-lens" aria-labelledby="focus-lens-title">
+    <div class="focus-lens-copy">
+      <span class="focus-lens-eyebrow">${tx("YOUR NEXT MOVE", "ТВІЙ НАСТУПНИЙ КРОК")}</span>
+      <h2 id="focus-lens-title">${tx("Build today’s session", "Склади тренування на сьогодні")}</h2>
+      <p>${tx("Ready when you are. Start simple and shape the workout as you go.", "Починай, коли готовий. Складай тренування поступово, у своєму темпі.")}</p>
+    </div>
+    <div class="focus-lens-metrics" aria-label="${txAttr("Current training facts", "Поточні показники тренувань")}">
+      <div><strong>${sessions.length}</strong><span>${tx("workouts", "тренувань")}</span></div>
+      <div><strong>${weeklyStreak()}</strong><span>${tx("week streak", "тижні серії")}</span></div>
+      <div><strong>${Math.round(totalVolume(sessions))}</strong><span>${tx("volume", "обсяг")}</span></div>
+    </div>
+    <div class="focus-lens-foot">
+      <div class="focus-rhythm"><span>${escapeHtml(monthLabel)}</span><div class="focus-days">${dayMarkers}</div></div>
+      <button class="focus-lens-action" data-action="open-add">${svg("add", "small-icon")}<span>${tx("Start workout", "Почати тренування")}</span></button>
+    </div>
+  </section>`;
 }
 
 function soloProgressHero() {
@@ -6206,6 +6272,7 @@ function leaderboardScreen() {
         ? tx("Local mode. Sign in to protect and synchronize your progress.", "Локальний режим. Увійди, щоб захистити й синхронізувати прогрес.")
         : tx("Protected cloud progress is available after Supabase is configured.", "Захищений хмарний прогрес стане доступним після налаштування Supabase.");
   return `<section class="screen-copy profile-screen-copy"><span class="eyebrow">${tx("Profile", "Профіль")}</span><h2>${tx("Account, data and progress", "Акаунт, дані та прогрес")}</h2><p>${tx("Manage your account, connected services and protected progress in one place.", "Керуй акаунтом, підключеними сервісами та захищеним прогресом в одному місці.")}</p></section>
+    ${themePreferencePanel()}
     ${accountPanel()}
     ${profileDataPanel()}
     <section class="hero-panel profile-rating-hero"><div class="hero-split"><div><span class="eyebrow">${tx("Security", "Безпека")}</span><h2>${tx("Protected progress", "Захищений прогрес")}</h2><p>${tx("Competitive standings are paused until workout scores can be verified server-side. Your private progress stays available.", "Змагальний рейтинг призупинено, доки сервер не зможе перевіряти тренувальні бали. Твій приватний прогрес залишається доступним.")}</p></div><div class="hero-stat"><span>${tx("Your XP", "Твої XP")}</span><strong>${totalXp()}</strong><small>${escapeHtml(rankTitle())}</small></div></div></section>
@@ -7062,6 +7129,12 @@ function handleAction(action, el) {
   if (action === "refresh-leaderboard") return refreshLeaderboard(true);
   if (action === "back") return back();
   if (action === "language-menu") { languageMenuOpen = !languageMenuOpen; return render(); }
+  if (action === "set-theme") {
+    const theme = el.dataset.theme;
+    if (!["system", "light", "dark"].includes(theme)) return;
+    window.GymThemePreference?.setPreference?.(theme);
+    return render();
+  }
   if (action === "set-language") {
     const language = el.dataset.language;
     if (!["en", "uk", "ru"].includes(language)) return;

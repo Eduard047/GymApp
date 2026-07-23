@@ -14,15 +14,15 @@ import androidx.compose.ui.platform.LocalContext
 private val DarkColorScheme = darkColorScheme(
     primary = CobaltNight,
     onPrimary = Night,
-    primaryContainer = Color(0xFF203A78),
+    primaryContainer = Color(0xFF173D70),
     onPrimaryContainer = Frost,
-    secondary = Color(0xFFB8C8E8),
+    secondary = Color(0xFF77DDB7),
     onSecondary = Night,
-    secondaryContainer = Color(0xFF26334A),
+    secondaryContainer = Color(0xFF163F3A),
     onSecondaryContainer = Frost,
     tertiary = AmberNight,
     onTertiary = Night,
-    tertiaryContainer = Color(0xFF4D3518),
+    tertiaryContainer = Color(0xFF3A315F),
     onTertiaryContainer = Frost,
     background = Night,
     surface = NightSurface,
@@ -30,8 +30,8 @@ private val DarkColorScheme = darkColorScheme(
     onSurfaceVariant = FrostMuted,
     onSurface = Frost,
     onBackground = Frost,
-    outline = Color(0xFF455368),
-    outlineVariant = Color(0xFF2D3A4D)
+    outline = Color(0xFF49617D),
+    outlineVariant = Color(0xFF263E59)
 )
 
 private val LightColorScheme = lightColorScheme(
@@ -39,13 +39,13 @@ private val LightColorScheme = lightColorScheme(
     onPrimary = Color.White,
     primaryContainer = CobaltSoft,
     onPrimaryContainer = Navy,
-    secondary = Navy,
+    secondary = RecoveryMint,
     onSecondary = Color.White,
-    secondaryContainer = Color(0xFFE7EBF2),
+    secondaryContainer = Color(0xFFE6FBF4),
     onSecondaryContainer = Ink,
-    tertiary = Amber,
+    tertiary = MomentumViolet,
     onTertiary = Color.White,
-    tertiaryContainer = Color(0xFFFFE8C9),
+    tertiaryContainer = Color(0xFFEDE9FF),
     onTertiaryContainer = Ink,
     background = Canvas,
     surface = Paper,
@@ -53,8 +53,8 @@ private val LightColorScheme = lightColorScheme(
     onSurfaceVariant = InkMuted,
     onSurface = Ink,
     onBackground = Ink,
-    outline = Color(0xFFC8C2B6),
-    outlineVariant = Color(0xFFDDD7CB)
+    outline = Color(0xFFB7C4D7),
+    outlineVariant = Color(0xFFDCE5F2)
 )
 
 @Composable

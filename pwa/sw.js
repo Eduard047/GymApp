@@ -1,7 +1,7 @@
 "use strict";
 
 const CACHE_PREFIX = "gym-pwa-";
-const CACHE_VERSION = "v66";
+const CACHE_VERSION = "v69";
 const CACHE_NAME = `${CACHE_PREFIX}${CACHE_VERSION}`;
 const LEGACY_GITHUB_ORIGIN = "https://eduard047.github.io";
 const LEGACY_GITHUB_SCOPE = `${LEGACY_GITHUB_ORIGIN}/GymApp/`;
@@ -17,6 +17,7 @@ const ASSETS = [
   "./confirmed.v52.css",
   "./confirmed.v52.js",
   "./frame-guard.v52.js",
+  "./theme.v52.js",
   "./styles.v52.css",
   "./muscle-regions.v52.js",
   "./supabase-config.v52.js",

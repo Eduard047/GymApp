@@ -197,6 +197,13 @@
     <string name="label_reps">Повторения</string>
     <string name="add_workout_intro_title">Составь тренировку на сегодня</string>
     <string name="add_workout_intro_supporting">Быстро запиши план и держи темп с удобными действиями для подходов.</string>
+    <string name="focus_lens_eyebrow">ТВОЙ СЛЕДУЮЩИЙ ШАГ</string>
+    <string name="focus_lens_title">Составь тренировку на сегодня</string>
+    <string name="focus_lens_supporting">Начинай, когда готов. Собирай тренировку постепенно, в своём темпе.</string>
+    <string name="focus_lens_month_workouts">Тренировок</string>
+    <string name="focus_lens_week_streak">Недели серии</string>
+    <string name="focus_lens_volume">Объём</string>
+    <string name="action_start_workout">Начать тренировку</string>
     <string name="add_workout_active_exercises">Упражнений: %1$d</string>
     <string name="add_workout_total_sets">Подходов: %1$d</string>
     <string name="add_workout_plan_templates">Быстрые шаблоны сессии</string>

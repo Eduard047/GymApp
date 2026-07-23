@@ -61,7 +61,9 @@ fun MuscleHeatmapCard(
 ) {
     AppPanel(
         modifier = modifier.fillMaxWidth(),
-        highlighted = true
+        // Dense anatomical detail needs a neutral canvas; selection and load
+        // colors carry the emphasis inside the card.
+        highlighted = false
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -380,8 +382,10 @@ private fun MuscleBodyMapCanvas(
     onMuscleSelected: ((String) -> Unit)?,
     modifier: Modifier
 ) {
-    val inactiveColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.52f)
-    val outlineColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f)
+    // Derive the idle figure from foreground roles instead of neighboring pale
+    // surfaces. This keeps every region readable on both light and dark cards.
+    val inactiveColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f)
+    val outlineColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.58f)
     val lowColor = Color(0xFF3B82F6)
     val mediumColor = Color(0xFF8B5CF6)
     val highColor = Color(0xFFE11D48)
@@ -462,7 +466,7 @@ private fun MuscleBodyMapCanvas(
 
 @Composable
 private fun MuscleLegend() {
-    val inactiveColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.56f)
+    val inactiveColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f)
     val lowColor = Color(0xFF3B82F6)
     val mediumColor = Color(0xFF8B5CF6)
     val highColor = Color(0xFFE11D48)
@@ -1015,12 +1019,15 @@ private fun DrawScope.drawSourceBody(
 
             drawPath(
                 path = region.path,
-                color = if (selected) fillColor.copy(alpha = 0.95f) else fillColor
+                // Selection is communicated by the primary outline below.
+                // Do not increase fill opacity: a selected zero-load muscle
+                // must not look like a high-intensity region.
+                color = fillColor
             )
             drawPath(
                 path = region.path,
-                color = outlineColor.copy(alpha = 0.5f),
-                style = Stroke(width = 0.12f)
+                color = outlineColor,
+                style = Stroke(width = 0.18f)
             )
             if (selected) {
                 drawPath(

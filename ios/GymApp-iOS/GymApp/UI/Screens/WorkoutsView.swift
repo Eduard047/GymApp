@@ -1,3 +1,10 @@
+/*
+THESIS: Focus Lens puts today's workout in one fluid focal form and refuses the stacked-dashboard default.
+OWN-WORLD: Airy canvas, aquatic contextual color, continuous curves, solid content rows, and one Liquid Glass control layer.
+STORY: See the next useful action, understand its size and weekly rhythm, start it, then review recent work without changing modes.
+FIRST VIEWPORT: A large asymmetric lens leads; core facts sit inside it and the start capsule attaches near thumb reach, followed by progressive analytics.
+FORM: User-selected Focus Lens from Fluid Focus; seed af1a1dee. iOS keeps native TabView, NavigationStack, Dynamic Type, Reduce Transparency, and system materials.
+*/
 import SwiftUI
 
 @MainActor
@@ -23,6 +30,7 @@ public struct WorkoutsView: View {
 
     @Environment(\.calendar) private var calendar
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @ObservedObject private var store: WorkoutStore
 
     @State private var referenceDate = Date()
@@ -54,6 +62,8 @@ public struct WorkoutsView: View {
                 ScrollView {
                     LazyVStack(spacing: 12) {
                         screenHeader
+
+                        focusLens
 
                         WorkoutMonthSwitcher(
                             month: selectedMonth,
@@ -94,22 +104,10 @@ public struct WorkoutsView: View {
     }
 
     private var screenHeader: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(alignment: .center, spacing: 12) {
-                headerCopy
-                Spacer(minLength: 8)
-                addWorkoutButton
-                    .fixedSize(horizontal: true, vertical: false)
-                AppLanguageMenu()
-            }
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(alignment: .top) {
-                    headerCopy
-                    Spacer(minLength: 8)
-                    AppLanguageMenu()
-                }
-                addWorkoutButton
-            }
+        HStack(alignment: .top, spacing: 12) {
+            headerCopy
+            Spacer(minLength: 8)
+            AppLanguageMenu()
         }
         .padding(.top, 8)
     }
@@ -126,12 +124,159 @@ public struct WorkoutsView: View {
         }
     }
 
-    private var addWorkoutButton: some View {
-        Button(action: onAddWorkout) {
-            Label("Add workout", systemImage: "plus")
+    private var focusLens: some View {
+        VStack(alignment: .leading, spacing: 22) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(gymText(
+                    "YOUR NEXT MOVE",
+                    "ТВІЙ НАСТУПНИЙ КРОК",
+                    languageCode: gymCurrentLanguageCode()
+                ))
+                .font(.caption2.bold())
+                .tracking(0.9)
+                .foregroundStyle(Color.white.opacity(0.74))
+
+                Text(gymText(
+                    "Build today’s session",
+                    "Склади тренування на сьогодні",
+                    languageCode: gymCurrentLanguageCode()
+                ))
+                .font(.system(.largeTitle, design: .rounded, weight: .bold))
+                .tracking(-0.8)
+                .foregroundStyle(Color.white)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityAddTraits(.isHeader)
+
+                Text(gymText(
+                    "Ready when you are. Start simple and shape the workout as you go.",
+                    "Починай, коли готовий. Складай тренування поступово, у своєму темпі.",
+                    languageCode: gymCurrentLanguageCode()
+                ))
+                .font(.subheadline)
+                .foregroundStyle(Color.white.opacity(0.84))
+                .fixedSize(horizontal: false, vertical: true)
+            }
+
+            HStack(alignment: .top, spacing: 14) {
+                focusMetric(
+                    value: "\(dashboardStats.workoutCount)",
+                    label: gymText("Workouts", "Тренувань", languageCode: gymCurrentLanguageCode())
+                )
+                focusMetric(
+                    value: "\(dashboardStats.weeklyStreakWeeks)",
+                    label: gymText("Week streak", "Тижні серії", languageCode: gymCurrentLanguageCode())
+                )
+                focusMetric(
+                    value: formattedMetric(dashboardStats.totalVolume),
+                    label: gymText("Volume", "Обсяг", languageCode: gymCurrentLanguageCode())
+                )
+            }
+
+            HStack(alignment: .center, spacing: 12) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(
+                        selectedMonth.formatted(
+                            .dateTime
+                                .month(.wide)
+                                .year()
+                                .locale(AppLanguage(rawValue: gymCurrentLanguageCode())?.locale ?? AppLanguage.english.locale)
+                        )
+                    )
+                        .font(.caption)
+                        .foregroundStyle(Color.white.opacity(0.72))
+                    weeklyRhythm
+                }
+                Spacer(minLength: 8)
+                focusActionButton
+            }
         }
-        .buttonStyle(GymPrimaryButtonStyle())
-        .accessibilityHint("Starts a new workout entry")
+        .padding(24)
+        .frame(maxWidth: .infinity, minHeight: 350, alignment: .leading)
+        .background {
+            UnevenRoundedRectangle(
+                topLeadingRadius: 44,
+                bottomLeadingRadius: 30,
+                bottomTrailingRadius: 60,
+                topTrailingRadius: 76,
+                style: .continuous
+            )
+            .fill(GymTheme.heroGradient)
+        }
+        .clipShape(
+            UnevenRoundedRectangle(
+                topLeadingRadius: 44,
+                bottomLeadingRadius: 30,
+                bottomTrailingRadius: 60,
+                topTrailingRadius: 76,
+                style: .continuous
+            )
+        )
+        .shadow(color: GymTheme.primary.opacity(0.24), radius: 24, x: 0, y: 14)
+    }
+
+    private func focusMetric(value: String, label: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(value)
+                .font(.title3.bold())
+                .foregroundStyle(Color.white)
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+            Text(label)
+                .font(.caption2)
+                .foregroundStyle(Color.white.opacity(0.7))
+                .lineLimit(2)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var weeklyRhythm: some View {
+        let today = calendar.startOfDay(for: referenceDate)
+        let start = calendar.date(byAdding: .day, value: -6, to: today) ?? today
+        let activeDays = Set(store.workoutSummaries.map { calendar.startOfDay(for: $0.date) })
+        return HStack(spacing: 7) {
+            ForEach(0 ..< 7, id: \.self) { offset in
+                let day = calendar.date(byAdding: .day, value: offset, to: start) ?? start
+                Circle()
+                    .fill(activeDays.contains(day) ? Color(red: 0.49, green: 0.94, blue: 0.78) : Color.white.opacity(0.28))
+                    .frame(width: 9, height: 9)
+                    .overlay {
+                        if calendar.isDate(day, inSameDayAs: today) {
+                            Circle().stroke(Color.white.opacity(0.42), lineWidth: 2).padding(-3)
+                        }
+                    }
+                    .accessibilityLabel(gymFormattedDate(day, date: .long, time: .omitted))
+                    .accessibilityValue(activeDays.contains(day) ? gymLocalized("Workout completed") : gymLocalized("No workout"))
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var focusActionButton: some View {
+        let button = Button(action: onAddWorkout) {
+            Label(
+                gymText("Start workout", "Почати тренування", languageCode: gymCurrentLanguageCode()),
+                systemImage: "plus"
+            )
+            .font(.subheadline.bold())
+            .foregroundStyle(Color.white)
+            .padding(.horizontal, 18)
+            .frame(minHeight: 52)
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint(gymLocalized("Starts a new workout entry"))
+
+        if reduceTransparency {
+            button
+                .background(Color.white.opacity(0.24), in: Capsule())
+                .overlay { Capsule().strokeBorder(Color.white.opacity(0.36), lineWidth: 1) }
+        } else if #available(iOS 26.0, *) {
+            button.glassEffect(.regular.interactive(), in: .capsule)
+        } else {
+            button
+                .background(.ultraThinMaterial, in: Capsule())
+                .overlay { Capsule().strokeBorder(Color.white.opacity(0.32), lineWidth: 1) }
+        }
     }
 
     private var sectionPicker: some View {
@@ -169,8 +314,6 @@ public struct WorkoutsView: View {
             monthXP: monthXP,
             onOpenRanks: onOpenRanks
         )
-
-        WorkoutKPICard(stats: dashboardStats)
 
         WorkoutActivityHeatmap(
             month: selectedMonth,

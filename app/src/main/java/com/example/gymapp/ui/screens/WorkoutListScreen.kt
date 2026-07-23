@@ -1,7 +1,16 @@
 package com.example.gymapp.ui.screens
 
+/*
+THESIS: Focus Lens puts today's workout in one fluid focal form and refuses the stacked-dashboard default.
+OWN-WORLD: Airy canvas, aquatic contextual color, continuous curves, solid content rows, and one expressive Material control layer.
+STORY: See the next useful action, understand its size and weekly rhythm, start it, then review recent work without changing modes.
+FIRST VIEWPORT: A large asymmetric lens leads; core facts live inside it and the start action stays near thumb reach, followed by progressive analytics.
+FORM: User-selected Focus Lens from Fluid Focus; seed af1a1dee. Android structure remains Material 3 with native back, insets, semantics, and motion.
+*/
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.Alignment
@@ -9,10 +18,12 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -21,6 +32,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -36,10 +48,14 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.shape.RoundedCornerShape
 import com.example.gymapp.R
 import com.example.gymapp.data.entity.WorkoutSessionEntity
 import com.example.gymapp.data.repository.DashboardStats
@@ -80,72 +96,29 @@ fun WorkoutListScreen(
         }
     }
     // Fixed overview item count before the workout list header.
-    val workoutSectionIndex = 5
+    val workoutSectionIndex = 7
 
     Column(
         modifier = modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         AnimatedVisibility(visible = showTopControls) {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp)
-                        .padding(top = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                        Text(
-                            text = stringResource(R.string.title_workouts),
-                            style = MaterialTheme.typography.headlineLarge,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = stringResource(R.string.workouts_screen_subtitle),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    Button(
-                        onClick = onAddWorkout,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 52.dp),
-                        shape = MaterialTheme.shapes.small
-                    ) {
-                        Icon(imageVector = Icons.Default.Add, contentDescription = null)
-                        Text(
-                            text = stringResource(R.string.action_add_workout),
-                            modifier = Modifier.padding(start = 8.dp),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
-
-                MonthSwitcher(
-                    monthLabel = uiState.monthLabel,
-                    isCurrentMonth = uiState.monthOffset == 0,
-                    onPreviousMonth = onPreviousMonth,
-                    onCurrentMonth = onCurrentMonth,
-                    onNextMonth = onNextMonth,
-                    modifier = Modifier.padding(horizontal = 12.dp)
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .padding(top = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(3.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.title_workouts),
+                    style = MaterialTheme.typography.headlineLarge,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
-
-                WorkoutSectionSwitcher(
-                    sessionCount = uiState.sessions.size,
-                    workoutsSelected = workoutsSelected,
-                    onOverviewClick = {
-                        workoutsSelected = false
-                        coroutineScope.launch { listState.animateScrollToItem(0) }
-                    },
-                    onWorkoutListClick = {
-                        workoutsSelected = true
-                        coroutineScope.launch { listState.animateScrollToItem(workoutSectionIndex) }
-                    },
-                    modifier = Modifier.padding(horizontal = 12.dp)
+                Text(
+                    text = stringResource(R.string.workouts_screen_subtitle),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
@@ -162,11 +135,39 @@ fun WorkoutListScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item {
-                SoloProgressHero(progress = uiState.soloProgress)
+                FocusLens(
+                    stats = uiState.dashboardStats,
+                    onStartWorkout = onAddWorkout
+                )
             }
 
             item {
-                DashboardCard(stats = uiState.dashboardStats)
+                MonthSwitcher(
+                    monthLabel = uiState.monthLabel,
+                    isCurrentMonth = uiState.monthOffset == 0,
+                    onPreviousMonth = onPreviousMonth,
+                    onCurrentMonth = onCurrentMonth,
+                    onNextMonth = onNextMonth
+                )
+            }
+
+            item {
+                WorkoutSectionSwitcher(
+                    sessionCount = uiState.sessions.size,
+                    workoutsSelected = workoutsSelected,
+                    onOverviewClick = {
+                        workoutsSelected = false
+                        coroutineScope.launch { listState.animateScrollToItem(0) }
+                    },
+                    onWorkoutListClick = {
+                        workoutsSelected = true
+                        coroutineScope.launch { listState.animateScrollToItem(workoutSectionIndex) }
+                    }
+                )
+            }
+
+            item {
+                SoloProgressHero(progress = uiState.soloProgress)
             }
 
             item {
@@ -505,6 +506,130 @@ private fun WorkoutSectionHeader(
                 }
             )
         }
+    }
+}
+
+@Composable
+private fun FocusLens(
+    stats: DashboardStats,
+    onStartWorkout: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val darkTheme = isSystemInDarkTheme()
+    val lensShape = RoundedCornerShape(
+        topStart = 44.dp,
+        topEnd = 76.dp,
+        bottomEnd = 60.dp,
+        bottomStart = 32.dp
+    )
+    val lensBrush = if (darkTheme) {
+        Brush.linearGradient(
+            listOf(Color(0xFF124A96), Color(0xFF176FC5), Color(0xFF164F9B))
+        )
+    } else {
+        Brush.linearGradient(
+            listOf(Color(0xFF1B71D8), Color(0xFF3295F1), Color(0xFF2467CD))
+        )
+    }
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = 330.dp)
+            .clip(lensShape)
+            .background(lensBrush)
+            .padding(24.dp),
+        verticalArrangement = Arrangement.spacedBy(20.dp)
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                text = stringResource(R.string.focus_lens_eyebrow),
+                style = MaterialTheme.typography.labelMedium,
+                color = Color.White.copy(alpha = 0.74f),
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = stringResource(R.string.focus_lens_title),
+                style = MaterialTheme.typography.headlineLarge,
+                color = Color.White,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = stringResource(R.string.focus_lens_supporting),
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color.White.copy(alpha = 0.84f)
+            )
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            FocusLensMetric(
+                label = stringResource(R.string.focus_lens_month_workouts),
+                value = stats.workoutCount.toString(),
+                modifier = Modifier.weight(1f)
+            )
+            FocusLensMetric(
+                label = stringResource(R.string.focus_lens_week_streak),
+                value = stats.weeklyStreakWeeks.toString(),
+                modifier = Modifier.weight(1f)
+            )
+            FocusLensMetric(
+                label = stringResource(R.string.focus_lens_volume),
+                value = stringResource(R.string.kpi_volume_value, stats.totalVolume),
+                modifier = Modifier.weight(1f)
+            )
+        }
+
+        Spacer(modifier = Modifier.weight(1f))
+
+        Button(
+            onClick = onStartWorkout,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 54.dp),
+            shape = RoundedCornerShape(50),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Color.White.copy(alpha = 0.2f),
+                contentColor = Color.White
+            ),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.34f))
+        ) {
+            Icon(imageVector = Icons.Default.Add, contentDescription = null)
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = stringResource(R.string.action_start_workout),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}
+
+@Composable
+private fun FocusLensMetric(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(
+            text = value,
+            style = MaterialTheme.typography.titleLarge,
+            color = Color.White,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = Color.White.copy(alpha = 0.72f),
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 

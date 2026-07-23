@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Reusable editorial card with a quiet surface and thin keyline.
+/// Reusable content surface with a quiet fill and restrained depth.
 public struct GymPanel<Content: View>: View {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var colorSchemeContrast
@@ -28,12 +28,12 @@ public struct GymPanel<Content: View>: View {
             }
             .overlay {
                 RoundedRectangle(cornerRadius: GymTheme.panelCornerRadius, style: .continuous)
-                    .strokeBorder(borderColor, lineWidth: colorSchemeContrast == .increased ? 1.5 : 1)
+                    .strokeBorder(borderColor, lineWidth: colorSchemeContrast == .increased ? 1.5 : 0.75)
             }
             .clipShape(RoundedRectangle(cornerRadius: GymTheme.panelCornerRadius, style: .continuous))
             .shadow(
-                color: Color.black.opacity(reduceTransparency ? 0.035 : 0.055),
-                radius: highlighted ? 7 : 3,
+                color: Color.black.opacity(reduceTransparency ? 0.025 : 0.045),
+                radius: highlighted ? 8 : 4,
                 x: 0,
                 y: highlighted ? 4 : 2
             )
@@ -50,9 +50,9 @@ public struct GymPanel<Content: View>: View {
 
     private var borderColor: Color {
         if highlighted {
-            return GymTheme.primary.opacity(colorSchemeContrast == .increased ? 0.9 : 0.42)
+            return GymTheme.primary.opacity(colorSchemeContrast == .increased ? 0.9 : 0.22)
         }
-        return GymTheme.outlineSoft.opacity(colorSchemeContrast == .increased ? 1 : 0.82)
+        return GymTheme.outlineSoft.opacity(colorSchemeContrast == .increased ? 1 : 0.68)
     }
 }
 

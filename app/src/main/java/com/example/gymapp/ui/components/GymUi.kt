@@ -45,15 +45,15 @@ fun AppPanel(
         containerColor
     }
     val strokeColor = if (highlighted) {
-        MaterialTheme.colorScheme.primary.copy(alpha = 0.36f)
+        MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
     } else {
-        MaterialTheme.colorScheme.outlineVariant
+        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f)
     }
 
     Box(
         modifier = modifier
             .shadow(
-                elevation = if (highlighted) 4.dp else 2.dp,
+                elevation = if (highlighted) 3.dp else 1.dp,
                 shape = shape,
                 clip = false,
                 ambientColor = Color.Black.copy(alpha = 0.08f),
@@ -61,7 +61,7 @@ fun AppPanel(
             )
             .clip(shape)
             .background(panelColor, shape)
-            .border(BorderStroke(1.dp, strokeColor), shape)
+            .border(BorderStroke(0.75.dp, strokeColor), shape)
     ) {
         CompositionLocalProvider(LocalContentColor provides contentColor) {
             content()
@@ -75,17 +75,18 @@ fun HeroPanel(
     content: @Composable () -> Unit
 ) {
     val shape = GymPanelShape
-    // Secondary is intentionally a light accent in the dark palette, not a card background.
+    // Hero panels represent the current focus, so they use the primary blue role.
+    // The darker container role keeps the same hierarchy in dark appearance.
     val darkTheme = isSystemInDarkTheme()
     val container = if (darkTheme) {
-        MaterialTheme.colorScheme.secondaryContainer
+        MaterialTheme.colorScheme.primaryContainer
     } else {
-        MaterialTheme.colorScheme.secondary
+        MaterialTheme.colorScheme.primary
     }
     val heroContentColor = if (darkTheme) {
-        MaterialTheme.colorScheme.onSecondaryContainer
+        MaterialTheme.colorScheme.onPrimaryContainer
     } else {
-        MaterialTheme.colorScheme.onSecondary
+        MaterialTheme.colorScheme.onPrimary
     }
     Box(
         modifier = modifier

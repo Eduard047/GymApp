@@ -11,6 +11,7 @@ const VERSIONED_ASSET_PAIRS = [
   ["confirmed.css", "confirmed.v52.css"],
   ["confirmed.js", "confirmed.v52.js"],
   ["frame-guard.js", "frame-guard.v52.js"],
+  ["theme.js", "theme.v52.js"],
   ["styles.css", "styles.v52.css"],
   ["muscle-regions.js", "muscle-regions.v52.js"],
   ["supabase-config.js", "supabase-config.v52.js"],
@@ -183,12 +184,12 @@ test("service worker caches only exact immutable v52 same-origin assets", () => 
 
 test("v52 pathname assets cannot be mistaken for predecessor assets", () => {
   const predecessorPaths = new Set([
-    "confirmed.css", "confirmed.js", "frame-guard.js", "styles.css",
+    "confirmed.css", "confirmed.js", "frame-guard.js", "theme.js", "styles.css",
     "muscle-regions.js", "supabase-config.js", "state-contract.js",
     "garmin-cloud-sync.js", "progression-rules.js", "russian-text.js", "app.js"
   ]);
   const v52Paths = [
-    "confirmed.v52.css", "confirmed.v52.js", "frame-guard.v52.js", "styles.v52.css",
+    "confirmed.v52.css", "confirmed.v52.js", "frame-guard.v52.js", "theme.v52.js", "styles.v52.css",
     "muscle-regions.v52.js", "supabase-config.v52.js", "state-contract.v52.js",
     "garmin-cloud-sync.v52.js", "progression-rules.v52.js", "russian-text.v52.js", "app.v52.js"
   ];
@@ -315,7 +316,7 @@ test("cached documents receive the same anti-framing policy", async () => {
   const response = await responsePromiseFor(handler, "https://example.test/GymApp/");
 
   assert.equal(await response.text(), "cached");
-  assert.deepEqual(worker.openedCaches, ["gym-pwa-v66"]);
+  assert.deepEqual(worker.openedCaches, ["gym-pwa-v69"]);
   assert.match(response.headers.get("Content-Security-Policy"), /style-src 'self'/);
   assert.match(response.headers.get("Content-Security-Policy"), /frame-ancestors 'none'/);
   assert.doesNotMatch(response.headers.get("Content-Security-Policy"), /unsafe-inline/);
@@ -331,8 +332,9 @@ test("install reloads one internally consistent version without taking over old 
   handler({ waitUntil(value) { installPromise = value; } });
   await installPromise;
 
-  assert.deepEqual(worker.openedCaches, ["gym-pwa-v66"]);
+  assert.deepEqual(worker.openedCaches, ["gym-pwa-v69"]);
   assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/app.v52.js")));
+  assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/theme.v52.js")));
   assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/styles.v52.css")));
   assert.equal(worker.addedAssets.every(asset => asset instanceof Request && asset.cache === "reload"), true);
   assert.equal(worker.skipWaitingCount(), 0);
@@ -426,7 +428,7 @@ test("a sibling github.io project scope never enters GymApp legacy cleanup", asy
   await installPromise;
 
   assert.equal(worker.skipWaitingCount(), 0);
-  assert.deepEqual(worker.openedCaches, ["gym-pwa-v66"]);
+  assert.deepEqual(worker.openedCaches, ["gym-pwa-v69"]);
   assert.equal(worker.claimCount(), 0);
   assert.equal(isIntercepted(worker.listeners.get("fetch"), scope), true);
 });

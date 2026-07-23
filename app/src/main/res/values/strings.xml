@@ -197,6 +197,13 @@
     <string name="label_reps">Reps</string>
     <string name="add_workout_intro_title">Build today’s session</string>
     <string name="add_workout_intro_supporting">Log your plan fast and keep momentum with smart set shortcuts.</string>
+    <string name="focus_lens_eyebrow">YOUR NEXT MOVE</string>
+    <string name="focus_lens_title">Build today’s session</string>
+    <string name="focus_lens_supporting">Ready when you are. Start simple and shape the workout as you go.</string>
+    <string name="focus_lens_month_workouts">Workouts</string>
+    <string name="focus_lens_week_streak">Week streak</string>
+    <string name="focus_lens_volume">Volume</string>
+    <string name="action_start_workout">Start workout</string>
     <string name="add_workout_active_exercises">Exercises: %1$d</string>
     <string name="add_workout_total_sets">Sets: %1$d</string>
     <string name="add_workout_plan_templates">Quick session templates</string>
