@@ -18,7 +18,7 @@ Connect IQ watch app targeting the 108 API-compatible Garmin watches and wearabl
 - `SELECT` / `START`: perform the highlighted action.
 - `BACK` or `MENU` from dashboard: pause the workout and open the pause menu.
 - Pause menu has `RESUME`, `SAVE`, and `DISCARD`.
-- `SAVE` opens a summary screen first; confirming there saves the Garmin FIT activity and sends the GymApp summary to the Android phone app.
+- `SAVE` opens a summary screen first; confirming there always saves the Garmin FIT activity, including workouts without manually logged sets or an Android phone connection. When the watch is securely paired with GymApp and sets were logged, the detailed GymApp summary is also queued for the phone.
 - `DISCARD` opens an explicit warning screen. `KEEP WORKOUT` is selected by default, `BACK` cancels, and only `YES, DISCARD` exits without saving the Garmin activity or sending the GymApp workout.
 - Finished workouts are queued locally until Garmin Connect can deliver them to the Android app.
 

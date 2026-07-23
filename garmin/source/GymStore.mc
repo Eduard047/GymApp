@@ -512,7 +512,7 @@ class GymStore {
         sets = [];
         restEndsAt = 0;
         applyDeferredSyncIfIdle();
-        save();
+        return save();
     }
 
     static function restSeconds() {

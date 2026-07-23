@@ -139,7 +139,10 @@ test("Garmin messages are bounded, account-bound, replay-aware, and acked by id"
   assert.match(view, /GymStore\.canQueueWorkout\(message\)/);
   assert.match(view, /if \(!GymStore\.hasAccountBinding\(\) \|\| GymStore\.pending\.size\(\) == 0\)/);
   assert.match(view, /if \(!GymStore\.queueWorkout\(message\)\)/);
-  assert.match(view, /if \(finishWorkout\(\)\) \{[\s\S]*GymSession\.stopAndSave\(\)/);
+  assert.match(
+    view,
+    /if \(!finishWorkout\(\)\)[\s\S]*return;[\s\S]*if \(!GymSession\.stopAndSave\(\)\)/
+  );
   assert.doesNotMatch(view, /if \(!GymSession\.recording\) \{\s*GymStore\.clearActiveWorkout\(\)/);
   assert.match(app, /GymStore\.applyPhoneSync\(message\)/);
   assert.match(app, /"syncRevision" => syncRevision\.toLong\(\)/);

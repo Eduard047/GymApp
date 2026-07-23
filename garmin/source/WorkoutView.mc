@@ -185,14 +185,14 @@ class WorkoutView extends Ui.View {
     }
 
     function finishWorkout() {
-        if (GymStore.sets.size() == 0) {
-            GymStore.status = "NO SETS";
-            Ui.requestUpdate();
-            return false;
+        if (GymStore.sets.size() == 0 || !GymStore.hasAccountBinding()) {
+            // FIT recording is a watch-local feature. Manual set logging and an
+            // authenticated phone binding are required only for GymApp sync.
+            return true;
         }
         var message = GymStore.workoutMessage();
         if (message == null) {
-            GymStore.status = "SYNC FIRST";
+            GymStore.status = "SAVE FAIL";
             Ui.requestUpdate();
             return false;
         }
@@ -207,15 +207,27 @@ class WorkoutView extends Ui.View {
             return false;
         }
         GymComm.send(message, method(:onWorkoutSent));
-        Attention.vibrate([new Attention.VibeProfile(80, 250)]);
         return true;
     }
 
     function saveAndExit() {
-        if (finishWorkout()) {
-            GymSession.stopAndSave();
-            System.exit();
+        if (!finishWorkout()) {
+            return;
         }
+        if (!GymSession.stopAndSave()) {
+            GymStore.status = "FIT FAIL";
+            Ui.requestUpdate();
+            return;
+        }
+        if (GymStore.sets.size() > 0 && !GymStore.clearActiveWorkout()) {
+            // Keep the already saved FIT session closed and retry only the local
+            // cleanup. Never silently resurrect these sets as a new activity.
+            GymStore.status = "SAVE FAIL";
+            Ui.requestUpdate();
+            return;
+        }
+        Attention.vibrate([new Attention.VibeProfile(80, 250)]);
+        System.exit();
     }
 
     function onUpdate(dc) {

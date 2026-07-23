@@ -160,14 +160,24 @@ class GymSession {
 
     static function stopAndSave() {
         stopSensors();
-        if (session != null) {
-            try {
-                if (session.isRecording()) {
-                    session.stop();
-                }
-                session.save();
-            } catch (ex) {
+        if (session == null) {
+            // A successful FIT save can be followed by a retry when clearing the
+            // app's local workout state failed. Treat that retry as idempotent.
+            return !recording && status.equals("SAVED");
+        }
+        var saved = false;
+        try {
+            if (session.isRecording() && !session.stop()) {
+                status = "STOP ERR";
+                return false;
             }
+            saved = session.save();
+        } catch (ex) {
+            saved = false;
+        }
+        if (!saved) {
+            status = "SAVE ERR";
+            return false;
         }
         session = null;
         gymKcalField = null;
@@ -175,6 +185,7 @@ class GymSession {
         recording = false;
         paused = false;
         status = "SAVED";
+        return true;
     }
 
     static function discard() {
