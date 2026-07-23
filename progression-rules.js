@@ -67,6 +67,83 @@
     };
   }
 
+  function mondayStart(timestamp) {
+    const date = new Date(Number(timestamp));
+    if (!Number.isFinite(date.getTime())) return null;
+    date.setHours(0, 0, 0, 0);
+    date.setDate(date.getDate() - ((date.getDay() + 6) % 7));
+    return date.getTime();
+  }
+
+  function weeklyCounts(sessions) {
+    const counts = new Map();
+    for (const session of Array.isArray(sessions) ? sessions : []) {
+      const week = mondayStart(session?.startedAt ?? session?.date);
+      if (week === null) continue;
+      counts.set(week, (counts.get(week) || 0) + 1);
+    }
+    return counts;
+  }
+
+  function currentWeeklyStreak(sessions, now = Date.now()) {
+    const counts = weeklyCounts(sessions);
+    if (!counts.size) return 0;
+
+    let cursor = mondayStart(now);
+    if (cursor === null) return 0;
+    if ((counts.get(cursor) || 0) < 3) {
+      const previous = new Date(cursor);
+      previous.setDate(previous.getDate() - 7);
+      cursor = previous.getTime();
+    }
+
+    let streak = 0;
+    while ((counts.get(cursor) || 0) >= 3) {
+      streak++;
+      const previous = new Date(cursor);
+      previous.setDate(previous.getDate() - 7);
+      cursor = previous.getTime();
+    }
+    return streak;
+  }
+
+  function bestWeeklyStreakDuring(sessions, periodStart, periodEnd) {
+    const start = Number(periodStart);
+    const end = Number(periodEnd);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return 0;
+
+    const validSessions = (Array.isArray(sessions) ? sessions : [])
+      .map(session => Number(session?.startedAt ?? session?.date))
+      .filter(Number.isFinite);
+    const periodWeeks = new Set(
+      validSessions
+        .filter(timestamp => timestamp >= start && timestamp <= end)
+        .map(mondayStart)
+        .filter(week => week !== null)
+    );
+    if (!periodWeeks.size) return 0;
+
+    const successfulWeeks = [...weeklyCounts(sessions)]
+      .filter(([, count]) => count >= 3)
+      .map(([week]) => week)
+      .sort((left, right) => left - right);
+    let previousWeek = null;
+    let running = 0;
+    let best = 0;
+    for (const week of successfulWeeks) {
+      if (previousWeek === null) {
+        running = 1;
+      } else {
+        const expected = new Date(previousWeek);
+        expected.setDate(expected.getDate() + 7);
+        running = expected.getTime() === week ? running + 1 : 1;
+      }
+      if (periodWeeks.has(week)) best = Math.max(best, running);
+      previousWeek = week;
+    }
+    return best;
+  }
+
   return Object.freeze({
     RULES_VERSION,
     MAX_SUPPORTED_XP,
@@ -74,6 +151,8 @@
     sessionXP,
     requirementForLevel,
     cumulativeXPForLevel,
-    levelProgress
+    levelProgress,
+    currentWeeklyStreak,
+    bestWeeklyStreakDuring
   });
 });

@@ -3446,6 +3446,7 @@ function goRoot(name) {
 
 function back() {
   if (modal) {
+    if (isDestructiveConfirmationModal()) return closeModal();
     modal = null;
     languageMenuOpen = false;
     return render();
@@ -3466,9 +3467,12 @@ function svg(name, cls = "") {
   return `<svg class="${iconClass}" viewBox="0 0 24 24" aria-hidden="true"><path d="${icons[name] || ""}"></path></svg>`;
 }
 
+function displayLocale() {
+  return state.language === "uk" ? "uk-UA" : state.language === "ru" ? "ru-RU" : "en-US";
+}
+
 function fmtDate(value, options = { month: "short", day: "numeric", year: "numeric" }) {
-  const locale = state.language === "uk" ? "uk-UA" : state.language === "ru" ? "ru-RU" : "en-US";
-  return new Intl.DateTimeFormat(locale, options).format(new Date(value));
+  return new Intl.DateTimeFormat(displayLocale(), options).format(new Date(value));
 }
 
 function activeMonthScope() {
@@ -3646,7 +3650,15 @@ function streakDays() {
 }
 
 function weeklyStreak() {
-  return Math.ceil(streakDays() / 7);
+  return window.GymProgressionRules.currentWeeklyStreak(state.sessions);
+}
+
+function selectedMonthWeeklyStreak() {
+  if ((monthOffsets[activeMonthScope()] || 0) === 0) return weeklyStreak();
+  const selected = monthDate();
+  const start = new Date(selected.getFullYear(), selected.getMonth(), 1).getTime();
+  const end = new Date(selected.getFullYear(), selected.getMonth() + 1, 1).getTime() - 1;
+  return window.GymProgressionRules.bestWeeklyStreakDuring(state.sessions, start, end);
 }
 
 function loginScreen() {
@@ -3671,11 +3683,27 @@ function loginScreen() {
     <main class="screen auth-screen" data-scroll-key="auth">
       <section class="hero-panel auth-hero"><h2>GymApp</h2><p>${remoteEnabled ? tx("Sign in to sync workouts across devices.", "Увійди, щоб синхронізувати тренування між пристроями.") : tx("Cloud login is ready after Supabase keys are added.", "Хмарний вхід запрацює після додавання ключів Supabase.")}</p></section>
       ${remotePanel}
+      ${themePreferencePanel("auth")}
       <details class="local-account-details" ${remoteEnabled ? "" : "open"}><summary>${tx("Offline local account", "Офлайн-акаунт")}</summary><section class="panel auth-panel"><p class="muted">${remoteEnabled ? tx("Fallback for this browser only.", "Запасний режим лише для цього браузера.") : tx("Paste Supabase keys into supabase-config.js to enable real network login.", "Встав ключі Supabase у supabase-config.js, щоб увімкнути справжній мережевий вхід.")}</p><div class="field-row login-row"><input id="local-login-name" autocomplete="username" maxlength="64" aria-label="${txAttr("Name", "Ім'я")}" placeholder="${txAttr("Name", "Ім'я")}"><button class="button" data-action="login-account">${tx("Enter", "Увійти")}</button></div>${accounts.length ? `<div class="saved-accounts"><span class="field-caption">${tx("Saved accounts", "Збережені акаунти")}</span><div class="chip-row">${accounts.map(account => `<button class="chip buttonlike" data-action="login-account" data-name="${escapeAttr(account.name)}">${escapeHtml(account.name)}</button>`).join("")}</div></div>` : ""}</section></details>
       <nav class="auth-links" aria-label="${txAttr("GymApp links", "Посилання GymApp")}"><a href="${PUBLIC_SITE_URL}" target="_blank" rel="noopener noreferrer">${tx("Website", "Сайт")}</a><a href="${SUPPORT_URL}" target="_blank" rel="noopener noreferrer">${tx("Support", "Підтримка")}</a><a href="${PRIVACY_URL}" target="_blank" rel="noopener noreferrer">${tx("Privacy", "Конфіденційність")}</a></nav>
       <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
     </main>
   </div>`;
+}
+
+function themePreferencePanel(context = "profile") {
+  const preference = window.GymThemePreference?.getPreference?.();
+  const current = ["system", "light", "dark"].includes(preference) ? preference : "system";
+  const options = [
+    ["system", tx("System", "Системна")],
+    ["light", tx("Light", "Світла")],
+    ["dark", tx("Dark", "Темна")]
+  ];
+  const titleId = `theme-preference-${context}`;
+  return `<section class="panel theme-preference-card ${context === "auth" ? "auth-theme-card" : ""}" aria-labelledby="${titleId}">
+    <div class="theme-preference-copy"><h2 id="${titleId}">${tx("Appearance", "Вигляд")}</h2><p class="muted">${tx("Follow this device or keep GymApp light or dark.", "Використовуй тему пристрою або зафіксуй світлий чи темний вигляд GymApp.")}</p></div>
+    <div class="theme-options" role="radiogroup" aria-label="${txAttr("Color theme", "Колірна тема")}">${options.map(([value, label]) => `<button type="button" class="theme-option ${current === value ? "selected" : ""}" role="radio" aria-checked="${current === value}" data-action="set-theme" data-theme="${value}">${label}</button>`).join("")}</div>
+  </section>`;
 }
 
 function emailConfirmationPanel() {
@@ -3839,15 +3867,16 @@ function workoutsScreen() {
   const sessions = [...selectedMonthSessions()].sort((a, b) => b.startedAt - a.startedAt);
   const savedSessions = n(sessions.length, "saved session", "saved sessions", "збережене тренування", "збережені тренування", "збережених тренувань");
   return `
-    <section class="screen-copy workouts-screen-copy"><h2>${t("workouts")}</h2><p>${tx("Your training history and next best move.", "Твоя історія тренувань і рекомендація, що робити далі.")}</p><button class="button full" data-action="open-add">${svg("add", "small-icon")}${t("addWorkout")}</button></section>
-    <div class="workouts-controls">
-      ${monthSwitcher()}
-      <section class="segmented panel compact" aria-label="${txAttr("Workout sections", "Розділи тренувань")}">
-        <button class="${overviewMode === "overview" ? "selected" : ""}" data-action="overview-mode" data-mode="overview" aria-pressed="${overviewMode === "overview"}"><strong>${t("overview")}</strong><span>${tx("Progress, goals, achievements", "Прогрес, цілі, досягнення")}</span></button>
-        <button class="${overviewMode === "list" ? "selected" : ""}" data-action="overview-mode" data-mode="list" aria-pressed="${overviewMode === "list"}"><strong>${t("workoutList")}</strong><span>${savedSessions}</span></button>
-      </section>
-    </div>
+    <section class="screen-copy workouts-screen-copy"><div><span class="eyebrow">${tx("TRAINING", "ТРЕНУВАННЯ")}</span><h2>${t("workouts")}</h2></div><p>${tx("Your training history and next best move.", "Твоя історія тренувань і рекомендація, що робити далі.")}</p></section>
     <div class="workouts-scroll">
+      ${focusOverview(sessions)}
+      <div class="workouts-controls">
+        ${monthSwitcher()}
+        <section class="segmented panel compact" aria-label="${txAttr("Workout sections", "Розділи тренувань")}">
+          <button class="${overviewMode === "overview" ? "selected" : ""}" data-action="overview-mode" data-mode="overview" aria-pressed="${overviewMode === "overview"}"><strong>${t("overview")}</strong><span>${tx("Progress, goals, achievements", "Прогрес, цілі, досягнення")}</span></button>
+          <button class="${overviewMode === "list" ? "selected" : ""}" data-action="overview-mode" data-mode="list" aria-pressed="${overviewMode === "list"}"><strong>${t("workoutList")}</strong><span>${savedSessions}</span></button>
+        </section>
+      </div>
       ${overviewCards(sessions)}
       <section id="workout-list-section" class="panel highlighted workout-section-header">
         <div><h2>${t("workoutList")}</h2><p>${sessions.length ? tx("Tap a workout to open its details.", "Натисни тренування, щоб відкрити деталі.") : tx("New sessions will appear here as soon as you log them.", "Нові тренування з'являться тут одразу після збереження.")}</p></div>
@@ -3861,11 +3890,60 @@ function workoutsScreen() {
 function overviewCards(sessions) {
   return `
     ${soloProgressHero()}
-    ${dashboardCard(sessions)}
     ${activityHeatmapCard()}
     ${muscleMapCard()}
     ${recommendationsCard()}
   `;
+}
+
+function focusOverview(sessions) {
+  const recent = sessions.slice(0, 4);
+  return `<div class="focus-overview">
+    ${focusLensCard(sessions)}
+    <section class="focus-recent" aria-labelledby="focus-recent-title">
+      <div class="focus-recent-head"><div><span class="eyebrow">${tx("HISTORY", "ІСТОРІЯ")}</span><h2 id="focus-recent-title">${tx("Recent sessions", "Останні тренування")}</h2></div><button class="button ghost mini" data-action="overview-mode" data-mode="list">${tx("View all", "Переглянути всі")}</button></div>
+      <div class="focus-recent-list">${recent.length ? recent.map(session => {
+        const summary = sessionSummary(session);
+        const title = session.note?.trim() || tx("Workout", "Тренування");
+        return `<article class="focus-recent-row clickable" data-action="open-detail" data-id="${escapeAttr(session.id)}"><div class="focus-recent-icon">${svg("workouts")}</div><div><strong>${escapeHtml(title)}</strong><span>${escapeHtml(fmtDate(session.startedAt))}</span><small>${summary.exercises} ${tx("exercises", "вправ")} · ${summary.sets} ${tx("sets", "підходів")}</small></div><span>${Math.round(summary.volume)}</span></article>`;
+      }).join("") : `<div class="focus-recent-empty"><strong>${tx("Your first session will appear here", "Твоє перше тренування з’явиться тут")}</strong><span>${tx("Start when you are ready — there is no schedule to catch up with.", "Починай, коли готовий — тут немає графіка, який треба наздоганяти.")}</span></div>`}</div>
+    </section>
+  </div>`;
+}
+
+function focusLensCard(sessions) {
+  const monthLabel = fmtDate(monthDate().getTime(), { month: "long", year: "numeric" });
+  const weekStart = new Date();
+  weekStart.setHours(0, 0, 0, 0);
+  weekStart.setDate(weekStart.getDate() - 6);
+  const activeDays = new Set(
+    state.sessions
+      .filter(session => Number.isFinite(Number(session.startedAt)) && session.startedAt >= weekStart.getTime())
+      .map(session => new Date(session.startedAt).toDateString())
+  );
+  const dayMarkers = Array.from({ length: 7 }, (_, index) => {
+    const day = new Date(weekStart);
+    day.setDate(weekStart.getDate() + index);
+    const isActive = activeDays.has(day.toDateString());
+    const isToday = day.toDateString() === new Date().toDateString();
+    return `<span class="focus-day ${isActive ? "active" : ""} ${isToday ? "today" : ""}" aria-label="${escapeAttr(fmtDate(day.getTime(), { weekday: "long" }))}"></span>`;
+  }).join("");
+  return `<section class="focus-lens" aria-labelledby="focus-lens-title">
+    <div class="focus-lens-copy">
+      <span class="focus-lens-eyebrow">${tx("YOUR NEXT MOVE", "ТВІЙ НАСТУПНИЙ КРОК")}</span>
+      <h2 id="focus-lens-title">${tx("Build today’s session", "Склади тренування на сьогодні")}</h2>
+      <p>${tx("Ready when you are. Start simple and shape the workout as you go.", "Починай, коли готовий. Складай тренування поступово, у своєму темпі.")}</p>
+    </div>
+    <div class="focus-lens-metrics" aria-label="${txAttr("Current training facts", "Поточні показники тренувань")}">
+      <div><strong>${sessions.length}</strong><span>${tx("workouts", "тренувань")}</span></div>
+      <div><strong>${selectedMonthWeeklyStreak()}</strong><span>${tx("week streak", "тижні серії")}</span></div>
+      <div><strong>${Math.round(totalVolume(sessions))}</strong><span>${tx("volume", "обсяг")}</span></div>
+    </div>
+    <div class="focus-lens-foot">
+      <div class="focus-rhythm"><span>${escapeHtml(monthLabel)}</span><div class="focus-days">${dayMarkers}</div></div>
+      <button class="focus-lens-action" data-action="open-add">${svg("add", "small-icon")}<span>${tx("Start workout", "Почати тренування")}</span></button>
+    </div>
+  </section>`;
 }
 
 function soloProgressHero() {
@@ -3878,7 +3956,7 @@ function soloProgressHero() {
     <div class="eyebrow">${t("soloProgress")}</div>
     <div class="hero-split"><div><span class="pill hero-pill">${tx("LEVEL", "РІВЕНЬ")} ${level}</span><h2>${rankTitle(xp)}</h2><p>${progress.currentLevelXp} / ${progress.xpForNextLevel} XP ${tx("to next level", "до наступного рівня")}</p></div><div class="hero-stat"><span>${tx("TOTAL XP", "УСЬОГО XP")}</span><strong>${xp}</strong><small>${tx("earned", "зароблено")}</small></div></div>
     <div class="progress"><span class="${percentageClass(progress.progressFraction * 100)}"></span></div>
-    <div class="metric-grid three"><div><span>${tx("Month XP", "XP за місяць")}</span><strong>${xpForSessions(selectedMonthSessions())} XP</strong></div><div><span>${tx("Next title", "Наступний ранг")}</span><strong>${nextTitle}</strong></div><div><span>${tx("Week streak", "Серія тижнів")}</span><strong>${weeklyStreak()} ${tx("wk", "тж")}</strong></div></div>
+    <div class="metric-grid three"><div><span>${tx("Month XP", "XP за місяць")}</span><strong>${xpForSessions(selectedMonthSessions())} XP</strong></div><div><span>${tx("Next title", "Наступний ранг")}</span><strong>${nextTitle}</strong></div><div><span>${tx("Week streak", "Серія тижнів")}</span><strong>${selectedMonthWeeklyStreak()} ${tx("wk", "тж")}</strong></div></div>
   </section>`;
 }
 
@@ -3887,7 +3965,7 @@ function dashboardCard(sessions) {
   const avg = sets.length ? totalVolume(sessions) / sets.length : 0;
   return `<section class="hero-panel">
     <h2>${t("monthlySnapshot")}</h2><p>${tx("Track consistency, output and intensity at a glance.", "Відстежуй стабільність, обсяг і інтенсивність одним поглядом.")}</p>
-    <div class="metric-grid"><div><span>${tx("Workouts", "Тренування")}</span><strong>${sessions.length}</strong></div><div><span>${tx("Streak", "Серія")}</span><strong>${weeklyStreak()} ${tx("wk", "тж")}</strong></div><div><span>${tx("Total Volume", "Загальний обсяг")}</span><strong>${Math.round(totalVolume(sessions))}</strong></div><div><span>${tx("Avg / Set", "Сер. / підхід")}</span><strong>${avg.toFixed(1)}</strong></div></div>
+    <div class="metric-grid"><div><span>${tx("Workouts", "Тренування")}</span><strong>${sessions.length}</strong></div><div><span>${tx("Streak", "Серія")}</span><strong>${selectedMonthWeeklyStreak()} ${tx("wk", "тж")}</strong></div><div><span>${tx("Total Volume", "Загальний обсяг")}</span><strong>${Math.round(totalVolume(sessions))}</strong></div><div><span>${tx("Avg / Set", "Сер. / підхід")}</span><strong>${avg.toFixed(1)}</strong></div></div>
   </section>`;
 }
 
@@ -4650,7 +4728,7 @@ function legacyExerciseDetailCard(session, group) {
   const remaining = timerRemaining(key);
   return `<section class="panel highlighted"><div class="row-head"><h2>${escapeHtml(exerciseDisplayName(group))}</h2>${isPr(session, group) ? `<span class="pill">${svg("trophy", "small-icon")}${tx("New PR", "Новий PR")}</span>` : ""}</div>
     ${group.sets.length ? `<div class="timer-row"><div><strong>${tx("Exercise Rest", "Відпочинок")}</strong><span data-timer-display="${escapeAttr(key)}" aria-live="polite">${remaining > 0 ? formatTimer(remaining) : tx("Ready", "Готово")}</span></div><div class="actions"><button class="button ghost mini" data-action="timer" data-key="${escapeAttr(key)}" data-seconds="60">60s</button><button class="button ghost mini" data-action="timer" data-key="${escapeAttr(key)}" data-seconds="90">90s</button><button class="button ghost mini" data-action="timer" data-key="${escapeAttr(key)}" data-seconds="180">180s</button><button class="button ghost mini" data-action="timer-stop" data-timer-stop="${escapeAttr(key)}" data-key="${escapeAttr(key)}" ${remaining ? "" : "disabled"}>${tx("Stop", "Стоп")}</button></div></div>
-    <div class="table"><div class="table-head"><span>${tx("Set", "Підхід")}</span><span>${tx("Weight (kg)", "Вага (кг)")}</span><span>${tx("Reps", "Повтори")}</span><span></span></div>${group.sets.map((set, i) => `<div class="table-row"><span>${tx("Set", "Підхід")} ${i + 1}</span><span>${Number(set.weight).toFixed(1)}</span><span>${set.reps}</span><span><button class="icon-button" data-action="edit-set" data-id="${set.id}">${svg("edit")}</button><button class="icon-button" data-action="delete-set" data-id="${set.id}">${svg("delete")}</button></span></div>`).join("")}</div>` : `<div class="empty">${tx("No sets were imported for this exercise.", "Для цієї вправи не імпортовано підходи.")}</div>`}
+    <div class="table"><div class="table-head"><span>${tx("Set", "Підхід")}</span><span>${tx("Weight (kg)", "Вага (кг)")}</span><span>${tx("Reps", "Повтори")}</span><span></span></div>${group.sets.map((set, i) => `<div class="table-row"><span>${tx("Set", "Підхід")} ${i + 1}</span><span>${Number(set.weight).toFixed(1)}</span><span>${set.reps}</span><span><button class="icon-button" data-action="edit-set" data-id="${set.id}" aria-label="${txAttr("Edit set", "Редагувати підхід")}">${svg("edit")}</button><button class="icon-button" data-action="delete-set" data-id="${set.id}" data-session="${escapeAttr(session.id)}" aria-label="${txAttr("Delete set", "Видалити підхід")}">${svg("delete")}</button></span></div>`).join("")}</div>` : `<div class="empty">${tx("No sets were imported for this exercise.", "Для цієї вправи не імпортовано підходи.")}</div>`}
     <button class="button ghost full" data-action="detail-add-set" data-session="${session.id}" data-name="${escapeAttr(group.name)}">${t("addSet")}</button>
   </section>`;
 }
@@ -4720,7 +4798,7 @@ function exerciseDetailCard(session, group, isGarminWorkout = false) {
   return `<section class="panel highlighted workout-exercise-card"><details ${isGarminWorkout ? "" : "open"}><summary class="detail-summary"><div><h2>${escapeHtml(exerciseDisplayName(group))}</h2><p class="muted">${escapeHtml(setSummary)}</p></div>${isPr(session, group) ? `<span class="pill">${svg("trophy", "small-icon")}${tx("New PR", "Новий рекорд")}</span>` : ""}</summary>
     ${exerciseDetailBodyMap(group, "collapsed")}
     ${!isGarminWorkout ? exerciseDetailBodyMap(group, "expanded") : ""}
-    ${group.sets.length ? `${restTimer}<div class="table"><div class="table-head"><span>${tx("Set", "Підхід")}</span><span>${tx("Weight (kg)", "Вага (кг)")}</span><span>${tx("Reps", "Повтори")}</span><span></span></div>${group.sets.map((set, i) => `<div class="table-row"><span>${tx("Set", "Підхід")} ${i + 1}</span><span>${Number(set.weight).toFixed(1)}</span><span>${set.reps}</span><span><button class="icon-button" data-action="edit-set" data-id="${set.id}">${svg("edit")}</button><button class="icon-button" data-action="delete-set" data-id="${set.id}">${svg("delete")}</button></span></div>`).join("")}</div>` : `<div class="empty">${tx("No sets were imported for this exercise.", "Для цієї вправи не імпортовано жодного підходу.")}</div>`}
+    ${group.sets.length ? `${restTimer}<div class="table"><div class="table-head"><span>${tx("Set", "Підхід")}</span><span>${tx("Weight (kg)", "Вага (кг)")}</span><span>${tx("Reps", "Повтори")}</span><span></span></div>${group.sets.map((set, i) => `<div class="table-row"><span>${tx("Set", "Підхід")} ${i + 1}</span><span>${Number(set.weight).toFixed(1)}</span><span>${set.reps}</span><span><button class="icon-button" data-action="edit-set" data-id="${set.id}" aria-label="${txAttr("Edit set", "Редагувати підхід")}">${svg("edit")}</button><button class="icon-button" data-action="delete-set" data-id="${set.id}" data-session="${escapeAttr(session.id)}" aria-label="${txAttr("Delete set", "Видалити підхід")}">${svg("delete")}</button></span></div>`).join("")}</div>` : `<div class="empty">${tx("No sets were imported for this exercise.", "Для цієї вправи не імпортовано жодного підходу.")}</div>`}
     <button class="button ghost full" data-action="detail-add-set" data-session="${session.id}" data-name="${escapeAttr(group.name)}">${t("addSet")}</button>
   </details></section>`;
 }
@@ -4729,6 +4807,16 @@ function formatSetWeight(weight) {
   const value = Number(weight);
   if (!Number.isFinite(value)) return "0";
   return value % 1 === 0 ? String(value.toFixed(0)) : value.toFixed(1);
+}
+
+function formatLocalizedSetWeight(weight) {
+  const value = Number(weight);
+  const normalized = Number.isFinite(value) ? value : 0;
+  const amount = new Intl.NumberFormat(displayLocale(), {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 1
+  }).format(normalized);
+  return `${amount} ${tx("kg", "кг")}`;
 }
 
 function isPr(session, exercise) {
@@ -6187,15 +6275,16 @@ function leaderboardScreen() {
     : leaderboardState.status === "error"
       ? tx("Showing local stats while protected cloud progress is unavailable.", "Показуємо локальні дані, поки захищений хмарний прогрес недоступний.")
       : cloudMode
-      ? tx("Only your profile is shown while verified scoring is being built.", "Показано лише твій профіль, поки ми створюємо перевірений рейтинг.")
+      ? tx("Refresh updates only your own cloud XP. It does not start a rating check.", "Оновлення завантажує лише твої власні XP із хмари. Воно не запускає перевірку рейтингу.")
       : remoteAuthEnabled()
         ? tx("Local mode. Sign in to protect and synchronize your progress.", "Локальний режим. Увійди, щоб захистити й синхронізувати прогрес.")
         : tx("Protected cloud progress is available after Supabase is configured.", "Захищений хмарний прогрес стане доступним після налаштування Supabase.");
   return `<section class="screen-copy profile-screen-copy"><span class="eyebrow">${tx("Profile", "Профіль")}</span><h2>${tx("Account, data and progress", "Акаунт, дані та прогрес")}</h2><p>${tx("Manage your account, connected services and protected progress in one place.", "Керуй акаунтом, підключеними сервісами та захищеним прогресом в одному місці.")}</p></section>
+    ${themePreferencePanel()}
     ${accountPanel()}
     ${profileDataPanel()}
-    <section class="hero-panel profile-rating-hero"><div class="hero-split"><div><span class="eyebrow">${tx("Security", "Безпека")}</span><h2>${tx("Protected progress", "Захищений прогрес")}</h2><p>${tx("Competitive standings are paused until workout scores can be verified server-side. Your private progress stays available.", "Змагальний рейтинг призупинено, доки сервер не зможе перевіряти тренувальні бали. Твій приватний прогрес залишається доступним.")}</p></div><div class="hero-stat"><span>${tx("Your XP", "Твої XP")}</span><strong>${totalXp()}</strong><small>${escapeHtml(rankTitle())}</small></div></div></section>
-    <section class="panel highlighted"><div class="row-head"><div><h2>${tx("Your synced progress", "Твій синхронізований прогрес")}</h2><p>${supporting}</p></div><button class="button" data-action="refresh-leaderboard" ${loading ? "disabled" : ""}>${loading ? tx("Loading", "Завантаження") : tx("Refresh", "Оновити")}</button></div>${leaderboardState.error ? `<p class="muted">${escapeHtml(leaderboardState.error)}</p>` : ""}${!rows.length && !loading ? `<div class="empty">${tx("No synced progress yet.", "Синхронізованого прогресу ще немає.")}</div>` : ""}</section>
+    <section class="hero-panel profile-rating-hero"><div class="hero-split"><div><span class="eyebrow">${tx("Rating status", "Статус рейтингу")}</span><h2>${tx("Rating not available yet", "Рейтинг поки недоступний")}</h2><p>${tx("Workouts are currently scored on your device, so public ranking is disabled, not queued for review. It will appear only after a future app and server update adds verified scoring; no release date is set. Your private progress remains available.", "Зараз тренування оцінюються на пристрої, тому публічний рейтинг вимкнено, а не поставлено в чергу на перевірку. Він з’явиться лише після майбутнього оновлення застосунку й сервера з перевіреним підрахунком; дати випуску поки немає. Твій приватний прогрес залишається доступним.")}</p></div><div class="hero-stat"><span>${tx("Your XP", "Твої XP")}</span><strong>${totalXp()}</strong><small>${escapeHtml(rankTitle())}</small></div></div></section>
+    <section class="panel highlighted"><div class="row-head"><div><h2>${tx("Your synced progress", "Твій синхронізований прогрес")}</h2><p>${supporting}</p></div><button class="button" data-action="refresh-leaderboard" ${loading ? "disabled" : ""}>${loading ? tx("Loading", "Завантаження") : tx("Refresh progress", "Оновити прогрес")}</button></div>${leaderboardState.error ? `<p class="muted">${escapeHtml(leaderboardState.error)}</p>` : ""}${!rows.length && !loading ? `<div class="empty">${tx("No synced progress yet.", "Синхронізованого прогресу ще немає.")}</div>` : ""}</section>
     <section class="leaderboard-list">${rows.map(leaderboardRow).join("")}</section>`;
 }
 
@@ -6405,7 +6494,7 @@ function safeChartValue(value) {
 function progressHistoryCard(group) {
   const volume = group.sets.reduce((sum, s) => sum + Number(s.weight || 0) * Number(s.reps || 0), 0);
   const reps = group.sets.reduce((sum, x) => sum + Number(x.reps || 0), 0);
-  return `<article class="workout-item"><h3>${fmtDate(group.session.startedAt)}</h3><div class="chip-row"><span class="chip">${tx("Sets", "Підходи")}: ${group.sets.length}</span><span class="chip">${tx("Reps", "Повтори")}: ${reps}</span><span class="chip">${tx("Volume", "Обсяг")}: ${Math.round(volume)}</span></div><div class="table"><div class="table-row"><strong>${tx("Set", "Підхід")}</strong><strong>${tx("Weight", "Вага")}</strong><strong>${tx("Reps", "Повтори")}</strong><span></span></div>${group.sets.map((set, i) => `<div class="table-row"><span>${tx("Set", "Підхід")} ${i + 1}</span><span>${Number(set.weight || 0).toFixed(1)}</span><span>${Number(set.reps || 0)}</span><button class="icon-button" data-action="delete-set" data-id="${set.id}">${svg("delete")}</button></div>`).join("")}</div></article>`;
+  return `<article class="workout-item"><h3>${fmtDate(group.session.startedAt)}</h3><div class="chip-row"><span class="chip">${tx("Sets", "Підходи")}: ${group.sets.length}</span><span class="chip">${tx("Reps", "Повтори")}: ${reps}</span><span class="chip">${tx("Volume", "Обсяг")}: ${Math.round(volume)}</span></div><div class="table"><div class="table-row"><strong>${tx("Set", "Підхід")}</strong><strong>${tx("Weight", "Вага")}</strong><strong>${tx("Reps", "Повтори")}</strong><span></span></div>${group.sets.map((set, i) => `<div class="table-row"><span>${tx("Set", "Підхід")} ${i + 1}</span><span>${Number(set.weight || 0).toFixed(1)}</span><span>${Number(set.reps || 0)}</span><button class="icon-button" data-action="delete-set" data-id="${set.id}" data-session="${escapeAttr(group.session.id)}" aria-label="${txAttr("Delete set", "Видалити підхід")}">${svg("delete")}</button></div>`).join("")}</div></article>`;
 }
 
 function missionsScreen() {
@@ -6834,11 +6923,54 @@ function modalMarkup() {
   if (modal.type === "history") return bottomSheet(exerciseHistoryMarkup(modal.exercise));
   if (modal.type === "map") return bottomSheet(mappingEditor(modal.name));
   if (modal.type === "edit-set") return bottomSheet(`<h2>${tx("Edit Set", "Редагувати підхід")}</h2><label>${tx("Weight (kg)", "Вага (кг)")}<input id="edit-weight" value="${modal.set.weight || ""}" inputmode="decimal"></label><label>${tx("Reps", "Повтори")}<input id="edit-reps" value="${modal.set.reps || ""}" inputmode="numeric"></label><button class="button full" data-action="apply-edit-set" data-id="${modal.set.id}">${tx("Save", "Зберегти")}</button>`);
+  if (modal.type === "confirm-delete-exercise") {
+    const preview = modal.intent?.preview || {};
+    return bottomSheet(`<h2 id="delete-exercise-confirm-title">${tx("Delete exercise", "Видалити вправу")}</h2><p id="delete-exercise-confirm-target"><strong>${escapeHtml(preview.name || "")}</strong></p><p class="muted" id="delete-exercise-confirm-description">${tx("Delete this exercise from your library? This cannot be undone in GymApp.", "Видалити цю вправу з каталогу? У GymApp це неможливо скасувати.")}</p><div class="actions vertical"><button class="button ghost full" data-action="cancel-destructive" data-modal-initial-focus>${tx("Cancel", "Скасувати")}</button><button class="button danger full" data-action="confirm-delete-exercise">${tx("Delete exercise", "Видалити вправу")}</button></div>`, "delete-exercise-confirm-title", "alertdialog", "delete-exercise-confirm-target delete-exercise-confirm-description");
+  }
+  if (modal.type === "confirm-delete-set") {
+    const preview = modal.intent?.preview || {};
+    return bottomSheet(`<h2 id="delete-set-confirm-title">${tx("Delete set", "Видалити підхід")}</h2><p id="delete-set-confirm-target"><strong>${escapeHtml(preview.exerciseName || "")}</strong></p><p class="muted" id="delete-set-confirm-detail">${escapeHtml(preview.detail || "")}</p><p class="muted" id="delete-set-confirm-description">${tx("Delete this saved set? Workout totals, progress, and recommendations will be updated. This cannot be undone in GymApp.", "Видалити цей збережений підхід? Підсумки тренування, прогрес і рекомендації буде оновлено. У GymApp це неможливо скасувати.")}</p><div class="actions vertical"><button class="button ghost full" data-action="cancel-destructive" data-modal-initial-focus>${tx("Cancel", "Скасувати")}</button><button class="button danger full" data-action="confirm-delete-set">${tx("Delete set", "Видалити підхід")}</button></div>`, "delete-set-confirm-title", "alertdialog", "delete-set-confirm-target delete-set-confirm-detail delete-set-confirm-description");
+  }
+  if (modal.type === "confirm-import") {
+    const preview = modal.intent?.preview || {};
+    return bottomSheet(`<h2 id="import-confirm-title">${tx("Replace profile with backup?", "Замінити профіль резервною копією?")}</h2><p class="muted" id="import-confirm-description">${tx("This import will replace workout history, exercises, mappings, and profile settings. This cannot be undone in GymApp.", "Цей імпорт замінить історію тренувань, вправи, зіставлення та налаштування профілю. У GymApp це неможливо скасувати.")}</p><div class="metric-grid three"><div><span>${tx("Exercises", "Вправи")}</span><strong>${Number(preview.exerciseCount) || 0}</strong></div><div><span>${tx("Workouts", "Тренування")}</span><strong>${Number(preview.sessionCount) || 0}</strong></div><div><span>${tx("Sets", "Підходи")}</span><strong>${Number(preview.setCount) || 0}</strong></div></div><div class="actions vertical"><button class="button ghost full" data-action="cancel-destructive" data-modal-initial-focus>${tx("Cancel", "Скасувати")}</button><button class="button danger full" data-action="confirm-import">${tx("Replace with backup", "Замінити резервною копією")}</button></div>`, "import-confirm-title", "alertdialog", "import-confirm-description");
+  }
   return "";
 }
 
-function bottomSheet(content) {
-  return `<div class="modal" role="dialog" aria-modal="true" aria-label="${txAttr("Dialog", "Діалог")}"><section class="modal-panel"><div class="sheet-handle"></div><button class="icon-button sheet-close" data-action="close-modal" aria-label="${txAttr("Close dialog", "Закрити діалог")}">${svg("close")}</button>${content}</section></div>`;
+function bottomSheet(content, labelledBy = "", requestedRole = "dialog", describedBy = "") {
+  const accessibleName = labelledBy
+    ? `aria-labelledby="${escapeAttr(labelledBy)}"`
+    : `aria-label="${txAttr("Dialog", "Діалог")}"`;
+  const accessibleDescription = describedBy ? ` aria-describedby="${escapeAttr(describedBy)}"` : "";
+  const role = requestedRole === "alertdialog" ? "alertdialog" : "dialog";
+  return `<div class="modal" role="${role}" aria-modal="true" ${accessibleName}${accessibleDescription}><section class="modal-panel"><div class="sheet-handle"></div><button class="icon-button sheet-close" data-action="close-modal" aria-label="${txAttr("Close dialog", "Закрити діалог")}">${svg("close")}</button>${content}</section></div>`;
+}
+
+function handleDestructiveModalKeydown(modalElement, event) {
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeModal();
+    return;
+  }
+  if (event.key !== "Tab") return;
+  const focusable = [...modalElement.querySelectorAll(
+    'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])'
+  )].filter(element => element.getAttribute?.("aria-hidden") !== "true");
+  if (!focusable.length) {
+    event.preventDefault();
+    return;
+  }
+  const first = focusable[0];
+  const last = focusable.at(-1);
+  const active = document.activeElement;
+  if (event.shiftKey && (active === first || !modalElement.contains(active))) {
+    event.preventDefault();
+    last.focus({ preventScroll: true });
+  } else if (!event.shiftKey && (active === last || !modalElement.contains(active))) {
+    event.preventDefault();
+    first.focus({ preventScroll: true });
+  }
 }
 
 function exerciseHistoryMarkup(exercise) {
@@ -6859,6 +6991,20 @@ function bindEvents() {
     ev.stopPropagation();
     handleAction(el.dataset.action, el);
   }));
+  const modalInitialFocus = app.querySelector("[data-modal-initial-focus]");
+  if (modalInitialFocus) {
+    requestAnimationFrame(() => modalInitialFocus.focus({ preventScroll: true }));
+  }
+  const modalElement = app.querySelector(".modal");
+  if (modalElement && isDestructiveConfirmationModal()) {
+    Array.from(app.children || []).forEach(element => {
+      if (element !== modalElement) element.inert = true;
+    });
+    modalElement.addEventListener("click", event => {
+      if (event.target === modalElement) closeModal();
+    });
+    modalElement.addEventListener("keydown", event => handleDestructiveModalKeydown(modalElement, event));
+  }
   const loginName = app.querySelector("#local-login-name");
   if (loginName) loginName.addEventListener("keydown", ev => {
     if (ev.key === "Enter") loginAccount(loginName.value);
@@ -6931,6 +7077,38 @@ function syncTopbarVisibility() {
   app.classList.toggle("topbar-collapsed", (visibleScrollContainer()?.scrollTop || 0) > 24);
 }
 
+function destructiveReturnFocus(action, element = null) {
+  if (!["delete-exercise", "delete-set", "import-json"].includes(action)) return null;
+  const target = { action };
+  const id = Number(element?.dataset?.id);
+  const sessionId = Number(element?.dataset?.session);
+  if (Number.isSafeInteger(id) && id > 0) target.id = id;
+  if (Number.isSafeInteger(sessionId) && sessionId > 0) target.sessionId = sessionId;
+  return target;
+}
+
+function restoreDestructiveFocus(target) {
+  if (!target || !["delete-exercise", "delete-set", "import-json"].includes(target.action)) return;
+  requestAnimationFrame(() => {
+    const candidate = [...app.querySelectorAll(`[data-action="${target.action}"]`)].find(element => {
+      const idMatches = target.id == null || Number(element.dataset.id) === target.id;
+      const sessionMatches = target.sessionId == null || Number(element.dataset.session) === target.sessionId;
+      return idMatches && sessionMatches;
+    });
+    candidate?.focus({ preventScroll: true });
+  });
+}
+
+function focusStableScreenContext() {
+  requestAnimationFrame(() => {
+    const main = visibleScrollContainer() || app.querySelector("main");
+    const target = main?.querySelector?.("h2") || main;
+    if (!target) return;
+    if (!target.hasAttribute?.("tabindex")) target.setAttribute?.("tabindex", "-1");
+    target.focus({ preventScroll: true });
+  });
+}
+
 function handleAction(action, el) {
   if (action === "auth-mode") {
     authMode = ["login", "signup", "forgot"].includes(el.dataset.mode) ? el.dataset.mode : "login";
@@ -6959,6 +7137,12 @@ function handleAction(action, el) {
   if (action === "refresh-leaderboard") return refreshLeaderboard(true);
   if (action === "back") return back();
   if (action === "language-menu") { languageMenuOpen = !languageMenuOpen; return render(); }
+  if (action === "set-theme") {
+    const theme = el.dataset.theme;
+    if (!["system", "light", "dark"].includes(theme)) return;
+    window.GymThemePreference?.setPreference?.(theme);
+    return render();
+  }
   if (action === "set-language") {
     const language = el.dataset.language;
     if (!["en", "uk", "ru"].includes(language)) return;
@@ -7059,23 +7243,45 @@ function handleAction(action, el) {
   if (action === "detail-add-set") return detailAddSet(Number(el.dataset.session), el.dataset.name);
   if (action === "edit-set") return openEditSet(Number(el.dataset.id));
   if (action === "apply-edit-set") return applyEditSet(Number(el.dataset.id));
-  if (action === "delete-set") return deleteSet(Number(el.dataset.id));
+  if (action === "delete-set") return deleteSet(
+    Number(el.dataset.id),
+    Number(el.dataset.session),
+    destructiveReturnFocus("delete-set", el)
+  );
+  if (action === "confirm-delete-set") return confirmDeleteSet();
   if (action === "timer") { state.timers ||= {}; state.timers[el.dataset.key] = Date.now() + Number(el.dataset.seconds) * 1000; saveState(); return render(); }
   if (action === "timer-stop") { delete state.timers?.[el.dataset.key]; saveState(); return render(); }
   if (action === "save-exercise") return saveExercise();
   if (action === "toggle-exercise-favorite") return toggleExerciseFavorite(Number(el.dataset.id));
   if (action === "rename-exercise") { modal = { type: "rename", exercise: state.exercises.find(ex => ex.id === Number(el.dataset.id)) }; return render(); }
   if (action === "apply-rename") return applyRename(Number(el.dataset.id));
-  if (action === "delete-exercise") return deleteExercise(Number(el.dataset.id));
+  if (action === "delete-exercise") return deleteExercise(
+    Number(el.dataset.id),
+    destructiveReturnFocus("delete-exercise", el)
+  );
+  if (action === "confirm-delete-exercise") return confirmDeleteExercise();
   if (action === "exercise-history") { modal = { type: "history", exercise: state.exercises.find(ex => ex.id === Number(el.dataset.id)) }; return render(); }
   if (action === "export-json") { modal = { type: "backup-json", diagnostics: false, json: exportPayload(false) }; return render(); }
   if (action === "export-diagnostics") { modal = { type: "backup-json", diagnostics: true, json: exportPayload(true) }; return render(); }
   if (action === "import-json") { modal = { type: "import" }; return render(); }
-  if (action === "apply-import") return applyImport();
+  if (action === "apply-import") return applyImport(destructiveReturnFocus("import-json"));
+  if (action === "confirm-import") return confirmImport();
+  if (action === "cancel-destructive") return closeModal();
   if (action === "copy-json") return copyExportJson();
   if (action === "download-json") return downloadJson(modal.json, modal.diagnostics);
   if (action === "pdf-report") return printReport();
-  if (action === "close-modal") { modal = null; return render(); }
+  if (action === "close-modal") return closeModal();
+}
+
+function isDestructiveConfirmationModal(value = modal) {
+  return ["confirm-delete-exercise", "confirm-delete-set", "confirm-import"].includes(value?.type);
+}
+
+function closeModal() {
+  const focusTarget = isDestructiveConfirmationModal() ? modal?.intent?.returnFocus : null;
+  modal = null;
+  render();
+  restoreDestructiveFocus(focusTarget);
 }
 
 function updateDraftInput(input) {
@@ -7643,21 +7849,206 @@ function applyEditSet(id) {
   render();
 }
 
-function deleteSet(id) {
-  for (const session of state.sessions) {
-    const index = session.sets.findIndex(s => s.id === id);
-    if (index >= 0) {
-      session.sets.splice(index, 1);
-      saveState();
-      showToast(tx("Set deleted.", "Підхід видалено."));
-      return render();
+function destructiveAccountIdentity(account = activeAccount) {
+  const normalized = normalizeStoredAccount(account);
+  if (!normalized) return null;
+  return normalized.remote === "supabase"
+    ? `supabase:${normalized.userId}`
+    : `local:${normalized.id}`;
+}
+
+function destructiveImpactFingerprint(value) {
+  try {
+    const encoded = JSON.stringify(value);
+    if (typeof encoded !== "string") return null;
+    const bytes = new TextEncoder().encode(encoded);
+    const mask = 0xffffffffffffffffn;
+    const prime = 0x100000001b3n;
+    let forward = 0xcbf29ce484222325n;
+    let reverse = 0x84222325cbf29ce4n;
+    for (let index = 0; index < bytes.length; index += 1) {
+      forward = ((forward ^ BigInt(bytes[index])) * prime) & mask;
+      reverse = ((reverse ^ BigInt(bytes[bytes.length - index - 1])) * prime) & mask;
     }
+    return `${bytes.length.toString(16)}:${forward.toString(16).padStart(16, "0")}:${reverse.toString(16).padStart(16, "0")}`;
+  } catch {
+    return null;
   }
 }
 
+function destructiveStateFingerprint(sourceState = state) {
+  try {
+    const normalized = validateImportedEnvelope({ schemaVersion: 2, ...sourceState }, defaultAppState()).state;
+    return destructiveImpactFingerprint(normalized);
+  } catch {
+    return null;
+  }
+}
+
+function destructiveStorageSnapshot(stateFingerprint) {
+  try {
+    const storageKey = activeStorageKey();
+    const storedState = localStorage.getItem(storageKey);
+    if (storedState == null) return null;
+    const normalizedStoredState = validateImportedEnvelope(storedState, defaultAppState()).state;
+    if (destructiveImpactFingerprint(normalizedStoredState) !== stateFingerprint) return null;
+    return {
+      storageKey,
+      storedStateFingerprint: destructiveImpactFingerprint(storedState),
+      authMarkerFingerprint: destructiveImpactFingerprint(localStorage.getItem(AUTH_KEY))
+    };
+  } catch {
+    return null;
+  }
+}
+
+function destructiveStorageSnapshotIsCurrent(snapshot) {
+  if (!snapshot || snapshot.storageKey !== activeStorageKey()) return false;
+  try {
+    return destructiveImpactFingerprint(localStorage.getItem(snapshot.storageKey)) === snapshot.storedStateFingerprint &&
+      destructiveImpactFingerprint(localStorage.getItem(AUTH_KEY)) === snapshot.authMarkerFingerprint;
+  } catch {
+    return false;
+  }
+}
+
+function destructiveIntent(details) {
+  const accountIdentity = destructiveAccountIdentity();
+  const stateFingerprint = destructiveStateFingerprint();
+  const storageSnapshot = stateFingerprint ? destructiveStorageSnapshot(stateFingerprint) : null;
+  if (!accountIdentity || !stateFingerprint || !storageSnapshot) return null;
+  return { ...details, accountEpoch, accountIdentity, stateFingerprint, storageSnapshot };
+}
+
+function destructiveIntentIsCurrent(intent) {
+  return Boolean(intent && intent.accountEpoch === accountEpoch &&
+    intent.accountIdentity === destructiveAccountIdentity() &&
+    intent.stateFingerprint === destructiveStateFingerprint() &&
+    destructiveStorageSnapshotIsCurrent(intent.storageSnapshot));
+}
+
+function destructiveStorageRecord(key) {
+  try {
+    return { key, value: localStorage.getItem(key) };
+  } catch {
+    return null;
+  }
+}
+
+function restoreDestructiveStorageRecord(record) {
+  if (!record) return false;
+  try {
+    if (record.value == null) localStorage.removeItem(record.key);
+    else localStorage.setItem(record.key, record.value);
+    return localStorage.getItem(record.key) === record.value;
+  } catch {
+    return false;
+  }
+}
+
+function persistDestructiveState(expectedSnapshot) {
+  if (!destructiveStorageSnapshotIsCurrent(expectedSnapshot)) {
+    throw new Error("Destructive confirmation storage snapshot is stale.");
+  }
+  const keys = [];
+  if (activeAccount?.remote === "supabase" && UUID_PATTERN.test(activeAccount.userId || "")) {
+    keys.push(syncBaselineKey(activeAccount.userId));
+  }
+  keys.push(activeStorageKey());
+  const snapshots = keys.map(destructiveStorageRecord);
+  if (snapshots.some(snapshot => !snapshot)) throw new Error("Destructive persistence could not be prepared.");
+  if (!destructiveStorageSnapshotIsCurrent(expectedSnapshot)) {
+    throw new Error("Destructive confirmation storage snapshot changed before persistence.");
+  }
+  try {
+    saveState();
+  } catch (error) {
+    const restored = [...snapshots].reverse().map(restoreDestructiveStorageRecord).every(Boolean);
+    if (!restored) throw new Error("Destructive persistence rollback failed.");
+    throw error;
+  }
+}
+
+function rejectStaleDestructiveConfirmation() {
+  closeModal();
+  showToast(tx(
+    "This confirmation is no longer current. Nothing was changed.",
+    "Це підтвердження вже неактуальне. Нічого не змінено."
+  ));
+}
+
+function showDestructiveSaveFailure() {
+  closeModal();
+  showToast(tx(
+    "The change could not be completed safely. Reload this account before making more changes.",
+    "Не вдалося безпечно завершити зміну. Перезавантаж цей акаунт перед подальшими змінами."
+  ));
+}
+
+function setLocation(id, sessionId) {
+  if (!Number.isSafeInteger(id) || id <= 0 || !Number.isSafeInteger(sessionId) || sessionId <= 0) return null;
+  const matches = [];
+  for (const session of state.sessions) {
+    if (session.id !== sessionId) continue;
+    session.sets.forEach((set, index) => {
+      if (set.id === id) matches.push({ session, set, index });
+    });
+  }
+  return matches.length === 1 ? matches[0] : null;
+}
+
+function deleteSet(id, sessionId, returnFocus = null) {
+  const location = setLocation(id, sessionId);
+  if (!location) return rejectStaleDestructiveConfirmation();
+  const impactFingerprint = destructiveImpactFingerprint(location.session);
+  const intent = destructiveIntent({
+    setId: id,
+    sessionId,
+    impactFingerprint,
+    returnFocus,
+    preview: {
+      exerciseName: exerciseDisplayName(location.set),
+      detail: `${fmtDate(location.session.startedAt)} · ${tx("Set", "Підхід")} ${location.index + 1} · ${formatLocalizedSetWeight(location.set.weight)} × ${location.set.reps}`
+    }
+  });
+  if (!intent || !impactFingerprint) return showDestructiveSaveFailure();
+  modal = { type: "confirm-delete-set", intent };
+  render();
+}
+
+function confirmDeleteSet() {
+  const intent = modal?.type === "confirm-delete-set" ? modal.intent : null;
+  const location = intent ? setLocation(intent.setId, intent.sessionId) : null;
+  if (!destructiveIntentIsCurrent(intent) || !location ||
+      location.session.id !== intent.sessionId ||
+      destructiveImpactFingerprint(location.session) !== intent.impactFingerprint) {
+    return rejectStaleDestructiveConfirmation();
+  }
+  const previousSets = location.session.sets;
+  location.session.sets = previousSets.filter(set => set.id !== intent.setId);
+  if (location.session.sets.length !== previousSets.length - 1) {
+    location.session.sets = previousSets;
+    return rejectStaleDestructiveConfirmation();
+  }
+  try {
+    persistDestructiveState(intent.storageSnapshot);
+  } catch {
+    location.session.sets = previousSets;
+    return showDestructiveSaveFailure();
+  }
+  modal = null;
+  render();
+  focusStableScreenContext();
+  showToast(tx("Set deleted.", "Підхід видалено."));
+}
+
 function deleteSession(id) {
-  const session = state.sessions.find(s => s.id === id);
-  if (!session) return;
+  const matches = state.sessions.filter(session => session.id === id);
+  if (matches.length !== 1) return showToast(tx(
+    "This confirmation is no longer current. Nothing was changed.",
+    "Це підтвердження вже неактуальне. Нічого не змінено."
+  ));
+  const session = matches[0];
   if (!window.confirm(tx(`Delete workout from ${fmtDate(session.startedAt)}?`, `Видалити тренування від ${fmtDate(session.startedAt)}?`))) return;
   state.sessions = state.sessions.filter(item => item.id !== id);
   saveState();
@@ -7755,15 +8146,57 @@ function applyRename(id) {
   render();
 }
 
-function deleteExercise(id) {
-  const exercise = state.exercises.find(ex => ex.id === id);
-  if (!exercise) return;
+function exerciseLocation(id) {
+  if (!Number.isSafeInteger(id) || id <= 0) return null;
+  const matches = state.exercises.filter(exercise => exercise.id === id);
+  return matches.length === 1 ? matches[0] : null;
+}
+
+function deleteExercise(id, returnFocus = null) {
+  if (!Number.isSafeInteger(id) || id <= 0) return;
+  const exercise = exerciseLocation(id);
+  if (!exercise) return rejectStaleDestructiveConfirmation();
   if (state.sessions.some(session => session.sets.some(set => exercisesMatch(set, exercise)))) {
     return showToast(tx("Exercise is used in workouts.", "Вправа використовується у тренуваннях."));
   }
-  state.exercises = state.exercises.filter(ex => ex.id !== id);
-  saveState();
+  const impactFingerprint = destructiveImpactFingerprint(exercise);
+  const intent = destructiveIntent({
+    exerciseId: id,
+    impactFingerprint,
+    returnFocus,
+    preview: { name: exerciseDisplayName(exercise) }
+  });
+  if (!intent || !impactFingerprint) return showDestructiveSaveFailure();
+  modal = { type: "confirm-delete-exercise", intent };
   render();
+}
+
+function confirmDeleteExercise() {
+  const intent = modal?.type === "confirm-delete-exercise" ? modal.intent : null;
+  const exercise = intent ? exerciseLocation(intent.exerciseId) : null;
+  const isUsed = exercise && state.sessions.some(session =>
+    session.sets.some(set => exercisesMatch(set, exercise))
+  );
+  if (!destructiveIntentIsCurrent(intent) || !exercise || isUsed ||
+      destructiveImpactFingerprint(exercise) !== intent.impactFingerprint) {
+    return rejectStaleDestructiveConfirmation();
+  }
+  const previousExercises = state.exercises;
+  state.exercises = previousExercises.filter(item => item.id !== intent.exerciseId);
+  if (state.exercises.length !== previousExercises.length - 1) {
+    state.exercises = previousExercises;
+    return rejectStaleDestructiveConfirmation();
+  }
+  try {
+    persistDestructiveState(intent.storageSnapshot);
+  } catch {
+    state.exercises = previousExercises;
+    return showDestructiveSaveFailure();
+  }
+  modal = null;
+  render();
+  focusStableScreenContext();
+  showToast(tx("Exercise deleted.", "Вправу видалено."));
 }
 
 function saveMapping(name) {
@@ -7859,7 +8292,18 @@ function importAllowed(owner) {
   return Boolean(owner?.userId && owner.userId === activeAccount.userId);
 }
 
-function applyImport() {
+function importedStateIdsAreUnique(candidate) {
+  if (!candidate || !Array.isArray(candidate.exercises) || !Array.isArray(candidate.sessions)) return false;
+  const uniquePositiveIds = values => {
+    const ids = values.map(Number);
+    return ids.every(id => Number.isSafeInteger(id) && id > 0) && new Set(ids).size === ids.length;
+  };
+  return uniquePositiveIds(candidate.exercises.map(exercise => exercise.id)) &&
+    uniquePositiveIds(candidate.sessions.map(session => session.id)) &&
+    uniquePositiveIds(candidate.sessions.flatMap(session => session.sets.map(set => set.id)));
+}
+
+function applyImport(returnFocus = null) {
   try {
     const raw = document.querySelector("#import-json").value;
     const imported = validateImportedEnvelope(raw, state);
@@ -7874,14 +8318,63 @@ function applyImport() {
     const nextState = imported.state;
     ensureBuiltInExerciseCatalog(nextState);
     preserveExerciseFavorites(nextState, state);
-    state = nextState;
-    saveState();
-    modal = null;
-    goRoot("workouts");
-    showToast(tx("Backup imported.", "Резервну копію імпортовано."));
+    if (!importedStateIdsAreUnique(nextState)) throw new Error("Backup IDs are ambiguous.");
+    const currentStateFingerprint = destructiveImpactFingerprint(state);
+    const nextStateFingerprint = destructiveImpactFingerprint(nextState);
+    const ownerFingerprint = destructiveImpactFingerprint(imported.owner);
+    const intent = destructiveIntent({
+      currentStateFingerprint,
+      nextStateFingerprint,
+      ownerFingerprint,
+      owner: imported.owner,
+      nextState,
+      returnFocus,
+      preview: {
+        exerciseCount: nextState.exercises.length,
+        sessionCount: nextState.sessions.length,
+        setCount: allSetsFromSessions(nextState.sessions).length
+      }
+    });
+    if (!currentStateFingerprint || !nextStateFingerprint || !ownerFingerprint) {
+      throw new Error("Import confirmation could not be prepared.");
+    }
+    if (!intent) return showDestructiveSaveFailure();
+    modal = { type: "confirm-import", intent };
+    render();
   } catch {
     showToast(tx("Invalid backup.", "Некоректна резервна копія."));
   }
+}
+
+function confirmImport() {
+  const intent = modal?.type === "confirm-import" ? modal.intent : null;
+  if (!destructiveIntentIsCurrent(intent) ||
+      destructiveImpactFingerprint(state) !== intent?.currentStateFingerprint ||
+      destructiveImpactFingerprint(intent?.nextState) !== intent?.nextStateFingerprint ||
+      destructiveImpactFingerprint(intent?.owner) !== intent?.ownerFingerprint ||
+      !importedStateIdsAreUnique(intent?.nextState) ||
+      !importAllowed(intent?.owner)) {
+    return rejectStaleDestructiveConfirmation();
+  }
+  try {
+    window.GymStateContract.validateAndNormalize({ schemaVersion: 2, ...intent.nextState }, {
+      fallback: defaultAppState()
+    });
+  } catch {
+    return rejectStaleDestructiveConfirmation();
+  }
+  const previousState = state;
+  state = intent.nextState;
+  try {
+    persistDestructiveState(intent.storageSnapshot);
+  } catch {
+    state = previousState;
+    return showDestructiveSaveFailure();
+  }
+  modal = null;
+  goRoot("workouts");
+  focusStableScreenContext();
+  showToast(tx("Backup imported.", "Резервну копію імпортовано."));
 }
 
 async function copyExportJson() {
@@ -8067,6 +8560,13 @@ if ("serviceWorker" in navigator) {
     updateViaCache: "none"
   }).catch(() => {}));
 }
+
+window.addEventListener("storage", event => {
+  if (!isDestructiveConfirmationModal()) return;
+  const snapshot = modal?.intent?.storageSnapshot;
+  if (!snapshot || (event.key !== null && event.key !== snapshot.storageKey && event.key !== AUTH_KEY)) return;
+  if (!destructiveStorageSnapshotIsCurrent(snapshot)) rejectStaleDestructiveConfirmation();
+});
 
 window.addEventListener("popstate", event => {
   const restoredNav = validatedHistoryNav(event.state?.gymAppNav);
