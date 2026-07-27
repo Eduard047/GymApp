@@ -381,7 +381,7 @@ class AddWorkoutViewModel(
                 hasValidationError.value = true
                 current
             } else {
-                current + ExerciseInputState(draftId = nextDraftId++)
+                listOf(ExerciseInputState(draftId = nextDraftId++)) + current
             }
         }
     }

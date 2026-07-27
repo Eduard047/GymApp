@@ -441,7 +441,7 @@ struct AddWorkoutView: View {
 
     private func addExercise(_ exercise: Exercise) {
         guard !drafts.contains(where: { $0.exerciseID == exercise.id }) else { return }
-        drafts.append(
+        drafts.insert(
             WorkoutEditorExerciseDraft(
                 exerciseID: exercise.id,
                 sets: [
@@ -450,7 +450,8 @@ struct AddWorkoutView: View {
                         reps: 10
                     )
                 ]
-            )
+            ),
+            at: 0
         )
     }
 

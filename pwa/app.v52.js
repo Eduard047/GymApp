@@ -7203,7 +7203,7 @@ function handleAction(action, el) {
     if (workoutDraft.blocks.length >= window.GymStateContract.LIMITS.exercisesPerSession) {
       return showToast(tx("This workout has reached the exercise limit.", "Досягнуто ліміт вправ у тренуванні."));
     }
-    workoutDraft.blocks.push({ exerciseName: "", sets: [{ weight: "", reps: "" }] });
+    workoutDraft.blocks.unshift({ exerciseName: "", sets: [{ weight: "", reps: "" }] });
     return render();
   }
   if (action === "remove-block") {

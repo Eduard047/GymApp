@@ -32,6 +32,12 @@ class GymApp extends App.AppBase {
         return [view, new WorkoutDelegate(view)];
     }
 
+    function allowTrialMessage() {
+        // GymApp is free and has no trial/unlock flow. Development builds report
+        // isTrial() as true, so suppress Garmin's lock screen in the simulator.
+        return false;
+    }
+
     function onMail(iterator as Comm.MailboxIterator) as Void {
         var message = iterator.next();
         while (message != null) {
