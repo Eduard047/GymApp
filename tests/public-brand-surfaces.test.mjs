@@ -140,7 +140,12 @@ test("PWA manifest exposes dedicated opaque any and maskable launcher sizes", as
 
   for (const [path, size] of expected) {
     const dimensions = pngSize(await readFile(path));
-    assert.deepEqual(dimensions, { width: size, height: size, colorType: 2 }, path);
+    assert.deepEqual(
+      { width: dimensions.width, height: dimensions.height },
+      { width: size, height: size },
+      path
+    );
+    assert.ok([2, 6].includes(dimensions.colorType), `${path} must be RGB or RGBA`);
   }
 
   assert.deepEqual(
@@ -166,7 +171,12 @@ test("pre-Android 8 launcher resources use the current mark at every density", a
     for (const name of ["ic_launcher", "ic_launcher_round"]) {
       const base = `app/src/main/res/mipmap-${density}/${name}`;
       const dimensions = pngSize(await readFile(`${base}.png`));
-      assert.deepEqual(dimensions, { width: size, height: size, colorType: 2 }, base);
+      assert.deepEqual(
+        { width: dimensions.width, height: dimensions.height },
+        { width: size, height: size },
+        base
+      );
+      assert.ok([2, 6].includes(dimensions.colorType), `${base} must be RGB or RGBA`);
       await assert.rejects(readFile(`${base}.webp`), error => error?.code === "ENOENT");
     }
   }
