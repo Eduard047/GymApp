@@ -693,4 +693,10 @@
     <string name="garmin_reset_pairing_title">Reset secure Garmin pairing?</string>
     <string name="garmin_reset_pairing_description">This clears queued workouts on the trusted watch and starts a new protected receipt window. Keep the watch connected.</string>
     <string name="garmin_reset_pairing_confirm">Reset pairing</string>
+    <string name="exercise_media_title">Exercise preview</string>
+    <string name="exercise_media_add">Add image</string>
+    <string name="exercise_media_choose">Choose your image</string>
+    <string name="exercise_media_restore">Restore built-in preview</string>
+    <string name="exercise_media_hint">Tap to see the start and finish positions</string>
+    <string name="exercise_media_error">Couldn’t use this image. Choose a JPEG, PNG, or WebP up to 8 MB.</string>
 </resources>

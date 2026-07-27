@@ -1,3 +1,4 @@
+import PhotosUI
 import SwiftUI
 
 struct WorkoutEditorSetDraft: Identifiable, Hashable {
@@ -220,9 +221,12 @@ struct WorkoutDraftExerciseCard: View {
     @Binding var draft: WorkoutEditorExerciseDraft
     @ObservedObject var restTimers: RestTimerManager
 
+    let exerciseID: UUID
+    let exerciseMediaOwnerKey: String
     let exerciseName: String
     let lastWeight: Double?
     let onDeleteExercise: () -> Void
+    @State private var showingMedia = false
 
     private var timerID: String { "draft-exercise-\(draft.id.uuidString)" }
 
@@ -230,6 +234,13 @@ struct WorkoutDraftExerciseCard: View {
         GymPanel(highlighted: true) {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(alignment: .center, spacing: 10) {
+                    ExerciseMediaThumbnail(
+                        exerciseName: exerciseName,
+                        exerciseID: exerciseID,
+                        ownerKey: exerciseMediaOwnerKey
+                    ) {
+                        showingMedia = true
+                    }
                     VStack(alignment: .leading, spacing: 3) {
                         Text(exerciseName)
                             .font(.headline)
@@ -298,6 +309,15 @@ struct WorkoutDraftExerciseCard: View {
                 .accessibilityHint("Copies the latest values and starts a ninety second rest timer")
             }
         }
+        .sheet(isPresented: $showingMedia) {
+            ExerciseMediaSheet(
+                exerciseName: exerciseName,
+                exerciseID: exerciseID,
+                ownerKey: exerciseMediaOwnerKey
+            )
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+        }
     }
 
     private func binding(for id: UUID) -> Binding<WorkoutEditorSetDraft> {
@@ -327,6 +347,204 @@ struct WorkoutDraftExerciseCard: View {
 
     private func delete(_ id: UUID) {
         draft.sets.removeAll { $0.id == id }
+    }
+}
+
+private struct ExerciseMediaThumbnail: View {
+    let exerciseName: String
+    let exerciseID: UUID
+    let ownerKey: String
+    let action: () -> Void
+
+    private var image: UIImage? {
+        ExerciseMediaStore.customImage(ownerKey: ownerKey, exerciseID: exerciseID)
+            ?? ExerciseMediaStore.bundledImages(exerciseName: exerciseName).first
+    }
+
+    var body: some View {
+        Button {
+            action()
+        } label: {
+            ZStack(alignment: .bottomTrailing) {
+                Group {
+                    if let image {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFill()
+                    } else {
+                        VStack(spacing: 3) {
+                            Image(systemName: "photo.badge.plus")
+                            Text(gymText("Add image", "Додати фото", languageCode: gymCurrentLanguageCode()))
+                                .font(.caption2)
+                        }
+                        .foregroundStyle(GymTheme.textSecondary)
+                    }
+                }
+                .frame(width: 76, height: 64)
+                .clipped()
+
+                if image != nil {
+                    Image(systemName: "play.fill")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(.white)
+                        .padding(6)
+                        .background(GymTheme.primary, in: Circle())
+                        .padding(5)
+                }
+            }
+            .background(GymTheme.surfaceVariant)
+            .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(
+            gymText(
+                "Open exercise preview",
+                "Відкрити демонстрацію вправи",
+                languageCode: gymCurrentLanguageCode()
+            )
+        )
+    }
+}
+
+private struct ExerciseMediaSheet: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dismiss) private var dismiss
+
+    let exerciseName: String
+    let exerciseID: UUID
+    let ownerKey: String
+
+    @State private var selectedItem: PhotosPickerItem?
+    @State private var customImage: UIImage?
+    @State private var frameIndex = 0
+    @State private var errorMessage: String?
+
+    private var bundledImages: [UIImage] {
+        ExerciseMediaStore.bundledImages(exerciseName: exerciseName)
+    }
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 16) {
+                Text(exerciseName)
+                    .font(.title2.bold())
+
+                ZStack {
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(GymTheme.surfaceVariant)
+                    if let image = customImage ?? bundledImages[safe: frameIndex] {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFit()
+                            .id(customImage == nil ? frameIndex : -1)
+                            .transition(.opacity)
+                            .padding(8)
+                    } else {
+                        Image(systemName: "figure.strengthtraining.traditional")
+                            .font(.system(size: 52))
+                            .foregroundStyle(GymTheme.textSecondary)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 240)
+                .animation(reduceMotion ? nil : .easeInOut(duration: 0.35), value: frameIndex)
+
+                Text(
+                    gymText(
+                        "The preview alternates between the start and finish positions.",
+                        "Демонстрація почергово показує початкове та кінцеве положення.",
+                        languageCode: gymCurrentLanguageCode()
+                    )
+                )
+                .font(.footnote)
+                .foregroundStyle(GymTheme.textSecondary)
+
+                if let errorMessage {
+                    Text(errorMessage)
+                        .font(.footnote)
+                        .foregroundStyle(.red)
+                }
+
+                PhotosPicker(selection: $selectedItem, matching: .images) {
+                    Label(
+                        gymText(
+                            "Choose your image",
+                            "Обрати своє фото",
+                            languageCode: gymCurrentLanguageCode()
+                        ),
+                        systemImage: "photo.on.rectangle.angled"
+                    )
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(GymPrimaryButtonStyle())
+
+                if customImage != nil, !bundledImages.isEmpty {
+                    Button {
+                        ExerciseMediaStore.deleteCustomImage(ownerKey: ownerKey, exerciseID: exerciseID)
+                        customImage = nil
+                    } label: {
+                        Label(
+                            gymText(
+                                "Restore built-in preview",
+                                "Повернути вбудовану демонстрацію",
+                                languageCode: gymCurrentLanguageCode()
+                            ),
+                            systemImage: "arrow.uturn.backward"
+                        )
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(GymSecondaryButtonStyle())
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(18)
+            .navigationTitle(
+                gymText("Exercise preview", "Демонстрація вправи", languageCode: gymCurrentLanguageCode())
+            )
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+        .onAppear {
+            customImage = ExerciseMediaStore.customImage(ownerKey: ownerKey, exerciseID: exerciseID)
+        }
+        .task(id: customImage == nil) {
+            guard customImage == nil, bundledImages.count > 1 else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(reduceMotion ? 2_500 : 1_150))
+                guard !Task.isCancelled else { return }
+                frameIndex = (frameIndex + 1) % bundledImages.count
+            }
+        }
+        .onChange(of: selectedItem) { _, item in
+            guard let item else { return }
+            Task {
+                do {
+                    guard let data = try await item.loadTransferable(type: Data.self) else {
+                        throw ExerciseMediaStore.MediaError.invalidImage
+                    }
+                    try ExerciseMediaStore.saveCustomImage(data, ownerKey: ownerKey, exerciseID: exerciseID)
+                    customImage = ExerciseMediaStore.customImage(ownerKey: ownerKey, exerciseID: exerciseID)
+                    errorMessage = nil
+                } catch {
+                    errorMessage = gymText(
+                        "Couldn’t use this image. Choose a photo up to 8 MB.",
+                        "Не вдалося використати фото. Оберіть зображення до 8 МБ.",
+                        languageCode: gymCurrentLanguageCode()
+                    )
+                }
+                selectedItem = nil
+            }
+        }
+    }
+}
+
+private extension Collection {
+    subscript(safe index: Index) -> Element? {
+        indices.contains(index) ? self[index] : nil
     }
 }
 

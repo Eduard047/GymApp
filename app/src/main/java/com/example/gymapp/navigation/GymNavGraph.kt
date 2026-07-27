@@ -1143,6 +1143,7 @@ fun GymAppRoot(
 
                             AddWorkoutScreen(
                                 uiState = uiState,
+                                exerciseMediaOwnerKey = checkNotNull(authState.session).databaseName(),
                                 onNoteChange = viewModel::updateNote,
                                 onTrainingSplitSelected = viewModel::updateTrainingSplit,
                                 onWorkoutsPerWeekSelected = viewModel::updateWorkoutsPerWeek,

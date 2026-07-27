@@ -1,7 +1,7 @@
 "use strict";
 
 const CACHE_PREFIX = "gym-pwa-";
-const CACHE_VERSION = "v73";
+const CACHE_VERSION = "v74";
 const CACHE_NAME = `${CACHE_PREFIX}${CACHE_VERSION}`;
 const LEGACY_GITHUB_ORIGIN = "https://eduard047.github.io";
 const LEGACY_GITHUB_SCOPE = `${LEGACY_GITHUB_ORIGIN}/GymApp/`;
@@ -10,6 +10,18 @@ const IS_LEGACY_GITHUB_ORIGIN = self.location.origin === LEGACY_GITHUB_ORIGIN &&
   self.registration.scope === LEGACY_GITHUB_SCOPE;
 const LEGACY_CLEANUP_URL = new URL("./legacy-origin-cleanup-v61.html", self.registration.scope);
 const LEGACY_CONFIRMATION_URL = new URL("./confirmed.html", self.registration.scope);
+const EXERCISE_MEDIA_KEYS = [
+  "bench_press", "dumbbell_bench_press", "incline_dumbbell_press", "incline_bench_press",
+  "chest_fly_machine", "push_up", "dips", "pull_up", "band_assisted_pull_up",
+  "lat_pulldown", "straight_arm_pulldown", "barbell_row", "seated_cable_row", "face_pull",
+  "squat", "leg_press", "romanian_deadlift", "deadlift", "hip_thrust", "leg_extension",
+  "lying_leg_curl", "seated_leg_curl", "hip_adduction", "hip_abduction", "calf_raise",
+  "shoulder_press", "lateral_raise", "rear_delt_fly", "upright_row", "biceps_curl",
+  "barbell_curl", "seated_dumbbell_curl", "hammer_curl", "cable_curl", "preacher_curl",
+  "triceps_pushdown", "v_bar_pushdown", "overhead_dumbbell_triceps_extension",
+  "hyperextension", "plank", "weighted_crunch", "hanging_leg_raise", "plate_twist",
+  "weighted_side_bend"
+];
 const ASSETS = [
   "./",
   "./index.html",
@@ -26,6 +38,10 @@ const ASSETS = [
   "./progression-rules.v52.js",
   "./russian-text.v52.js",
   "./app.v52.js",
+  ...EXERCISE_MEDIA_KEYS.flatMap(key => [
+    `./exercise-media/${key}_0.jpg`,
+    `./exercise-media/${key}_1.jpg`
+  ]),
   "./manifest.webmanifest",
   "./icon-192.png",
   "./icon-512.png",

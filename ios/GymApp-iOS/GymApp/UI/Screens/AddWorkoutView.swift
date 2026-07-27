@@ -349,6 +349,8 @@ struct AddWorkoutView: View {
                     WorkoutDraftExerciseCard(
                         draft: binding(for: item.id),
                         restTimers: restTimers,
+                        exerciseID: exercise.id,
+                        exerciseMediaOwnerKey: store.accountStorageKey,
                         exerciseName: gymExerciseName(exercise),
                         lastWeight: store.lastWeight(exerciseID: exercise.id),
                         onDeleteExercise: { drafts.removeAll { $0.id == item.id } }

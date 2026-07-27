@@ -693,4 +693,10 @@
     <string name="garmin_reset_pairing_title">Сбросить защищённую привязку Garmin?</string>
     <string name="garmin_reset_pairing_description">Очередь тренировок на доверенных часах будет очищена, после чего начнётся новый защищённый период для квитанций. Не отключайте часы.</string>
     <string name="garmin_reset_pairing_confirm">Сбросить привязку</string>
+    <string name="exercise_media_title">Демонстрация упражнения</string>
+    <string name="exercise_media_add">Добавить фото</string>
+    <string name="exercise_media_choose">Выбрать своё фото</string>
+    <string name="exercise_media_restore">Вернуть встроенную демонстрацию</string>
+    <string name="exercise_media_hint">Нажмите, чтобы увидеть начальное и конечное положение</string>
+    <string name="exercise_media_error">Не удалось использовать фото. Выберите JPEG, PNG или WebP до 8 МБ.</string>
 </resources>

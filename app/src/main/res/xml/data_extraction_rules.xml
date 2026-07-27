@@ -3,6 +3,7 @@
     <cloud-backup>
         <!-- Workout databases contain private account-scoped data and are restored in-app instead. -->
         <exclude domain="database" path="." />
+        <exclude domain="file" path="exercise-media/" />
         <!-- Auth sessions, PKCE verifiers, and Garmin credentials are device-bound. -->
         <exclude domain="sharedpref" path="gym_cloud_auth.xml" />
         <exclude domain="sharedpref" path="gym_cloud_auth.xml.bak" />
@@ -21,6 +22,7 @@
     </cloud-backup>
     <device-transfer>
         <exclude domain="database" path="." />
+        <exclude domain="file" path="exercise-media/" />
         <exclude domain="sharedpref" path="gym_cloud_auth.xml" />
         <exclude domain="sharedpref" path="gym_cloud_auth.xml.bak" />
         <exclude domain="sharedpref" path="gym_local_database_bindings.xml" />

@@ -2,6 +2,8 @@
 <full-backup-content>
     <!-- Workout databases contain private account-scoped data and are restored in-app instead. -->
     <exclude domain="database" path="." />
+    <!-- User-selected exercise images stay device-local and account-bound. -->
+    <exclude domain="file" path="exercise-media/" />
     <!-- Auth sessions, PKCE verifiers, and Garmin credentials are device-bound. -->
     <exclude domain="sharedpref" path="gym_cloud_auth.xml" />
     <exclude domain="sharedpref" path="gym_cloud_auth.xml.bak" />

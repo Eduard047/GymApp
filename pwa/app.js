@@ -70,6 +70,7 @@ const icons = {
   list: "M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01",
   listFilled: "M4 10.5c-.83 0-1.5.67-1.5 1.5s.67 1.5 1.5 1.5 1.5-.67 1.5-1.5-.67-1.5-1.5-1.5zm0-6C3.17 4.5 2.5 5.17 2.5 6S3.17 7.5 4 7.5 5.5 6.83 5.5 6 4.83 4.5 4 4.5zm0 12c-.83 0-1.5.68-1.5 1.5s.68 1.5 1.5 1.5 1.5-.68 1.5-1.5-.67-1.5-1.5-1.5zM7 19h14v-2H7v2zm0-6h14v-2H7v2zm0-8v2h14V5H7z",
   medal: "M8 21l4-7 4 7M8 3h8l2 5-6 6-6-6z",
+  image: "M4 4h16v16H4zM7 16l3-3 2 2 3-4 3 5M9 9h.01",
   person: "M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-4.42 0-8 2.01-8 4.5V21h16v-2.5c0-2.49-3.58-4.5-8-4.5z",
   save: "M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2zM7 21v-8h10v8M7 3v5h8",
   showChart: "M3.5 18.49l6-6.01 4 4L22 6.92l-1.41-1.41-7.09 7.97-4-4L2 16.99z",
@@ -203,6 +204,18 @@ const builtInExerciseCatalog = [
 
 const CATALOG_SEED_VERSION = 2;
 const builtInExerciseByKey = new Map(builtInExerciseCatalog.map(exercise => [exercise.key, exercise]));
+const bundledExerciseMediaKeys = new Set([
+  "bench_press", "dumbbell_bench_press", "incline_dumbbell_press", "incline_bench_press",
+  "chest_fly_machine", "push_up", "dips", "pull_up", "band_assisted_pull_up",
+  "lat_pulldown", "straight_arm_pulldown", "barbell_row", "seated_cable_row", "face_pull",
+  "squat", "leg_press", "romanian_deadlift", "deadlift", "hip_thrust", "leg_extension",
+  "lying_leg_curl", "seated_leg_curl", "hip_adduction", "hip_abduction", "calf_raise",
+  "shoulder_press", "lateral_raise", "rear_delt_fly", "upright_row", "biceps_curl",
+  "barbell_curl", "seated_dumbbell_curl", "hammer_curl", "cable_curl", "preacher_curl",
+  "triceps_pushdown", "v_bar_pushdown", "overhead_dumbbell_triceps_extension",
+  "hyperextension", "plank", "weighted_crunch", "hanging_leg_raise", "plate_twist",
+  "weighted_side_bend"
+]);
 const builtInExerciseKeyByAlias = new Map(
   builtInExerciseCatalog.flatMap(exercise =>
     [...new Set([exercise.names.en, exercise.names.uk, ru(exercise.names.en), ...exercise.aliases])]
@@ -1190,6 +1203,87 @@ function persistedExerciseCatalogKey(value) {
 function builtInExerciseFor(value) {
   const key = resolvedExerciseCatalogKey(value);
   return key ? builtInExerciseByKey.get(key) : null;
+}
+
+function customExerciseMediaStorageKey(exercise) {
+  const owner = destructiveImpactFingerprint(activeStorageKey()) || "local";
+  return `gymapp-exercise-media-v1:${owner}:${exerciseIdentity(exercise)}`;
+}
+
+function customExerciseMedia(exercise) {
+  try {
+    return localStorage.getItem(customExerciseMediaStorageKey(exercise)) || null;
+  } catch {
+    return null;
+  }
+}
+
+function bundledExerciseMedia(exercise) {
+  const key = resolvedExerciseCatalogKey(exercise);
+  if (!key || !bundledExerciseMediaKeys.has(key)) return null;
+  return {
+    preview: `./exercise-media/${key}_0.jpg`,
+    frames: [`./exercise-media/${key}_0.jpg`, `./exercise-media/${key}_1.jpg`]
+  };
+}
+
+function exerciseMedia(exercise) {
+  const custom = customExerciseMedia(exercise);
+  return custom ? { preview: custom, frames: [custom], custom: true } : bundledExerciseMedia(exercise);
+}
+
+function exerciseMediaThumbnail(exercise, blockIndex) {
+  const media = exerciseMedia(exercise);
+  const label = txAttr("Open exercise demonstration", "Відкрити демонстрацію вправи");
+  if (!media) {
+    return `<button class="exercise-media-thumb empty" type="button" data-action="open-exercise-media" data-block="${blockIndex}" aria-label="${label}">${svg("image", "exercise-media-placeholder-icon")}<span>${tx("Add image", "Додати фото")}</span></button>`;
+  }
+  return `<button class="exercise-media-thumb" type="button" data-action="open-exercise-media" data-block="${blockIndex}" aria-label="${label}"><img src="${escapeAttr(media.preview)}" alt="" loading="lazy"><span class="exercise-media-play">${media.frames.length > 1 ? "▶" : svg("image", "small-icon")}</span></button>`;
+}
+
+async function normalizeCustomExerciseImage(file) {
+  const allowedTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
+  if (!(file instanceof File) || !allowedTypes.has(file.type) || file.size < 1 || file.size > 8 * 1024 * 1024) {
+    throw new Error("unsupported-image");
+  }
+  const bitmap = await createImageBitmap(file);
+  try {
+    if (bitmap.width < 32 || bitmap.height < 32 || bitmap.width > 8192 || bitmap.height > 8192 ||
+        bitmap.width * bitmap.height > 40_000_000) {
+      throw new Error("invalid-image-size");
+    }
+    const maximumSide = 1024;
+    const scale = Math.min(1, maximumSide / Math.max(bitmap.width, bitmap.height));
+    const width = Math.max(1, Math.round(bitmap.width * scale));
+    const height = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d", { alpha: false });
+    if (!context) throw new Error("image-canvas");
+    context.fillStyle = "#f7faff";
+    context.fillRect(0, 0, width, height);
+    context.drawImage(bitmap, 0, 0, width, height);
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.82);
+    if (dataUrl.length > 1_600_000) throw new Error("compressed-image-too-large");
+    return dataUrl;
+  } finally {
+    bitmap.close();
+  }
+}
+
+async function saveCustomExerciseMedia(file) {
+  if (!modal?.exercise) return;
+  try {
+    const dataUrl = await normalizeCustomExerciseImage(file);
+    localStorage.setItem(customExerciseMediaStorageKey(modal.exercise), dataUrl);
+    render();
+  } catch {
+    showToast(tx(
+      "Choose a JPEG, PNG, or WebP image up to 8 MB.",
+      "Оберіть JPEG, PNG або WebP розміром до 8 МБ."
+    ));
+  }
 }
 
 function exerciseCatalogKey(value) {
@@ -4353,7 +4447,7 @@ function draftBlock(block, blockIndex) {
   const lastWeight = lastWeightFor(block.exerciseName);
   const rec = block.exerciseName ? smartRecommendation(block) : null;
   const title = block.exerciseName ? exerciseDisplayName(block) : `${tx("Exercise", "Вправа")} ${blockIndex + 1}`;
-  return `<section class="draft-exercise panel highlighted"><details open><summary class="detail-summary"><div><h2>${escapeHtml(title)}</h2><p class="muted">${escapeHtml(draftSetSummary(block))}</p></div><button class="icon-button" data-action="remove-block" data-block="${blockIndex}" aria-label="${txAttr("Remove exercise", "Прибрати вправу")}">${svg("delete")}</button></summary>
+  return `<section class="draft-exercise panel highlighted"><details open><summary class="detail-summary"><div class="draft-exercise-title"><h2>${escapeHtml(title)}</h2><p class="muted">${escapeHtml(draftSetSummary(block))}</p></div>${block.exerciseName ? exerciseMediaThumbnail(block, blockIndex) : ""}<button class="icon-button" data-action="remove-block" data-block="${blockIndex}" aria-label="${txAttr("Remove exercise", "Прибрати вправу")}">${svg("delete")}</button></summary>
     <label>${tx("Exercise", "Вправа")}<select class="exercise-select" data-block="${blockIndex}" data-field="exerciseName"><option value="">${tx("Select exercise", "Обери вправу")}</option>${state.exercises.map(ex => `<option value="${escapeAttr(ex.name)}" ${ex.name === block.exerciseName ? "selected" : ""}>${escapeHtml(exerciseDisplayName(ex))}</option>`).join("")}</select></label>
     ${block.exerciseName ? exerciseMuscleMapCard(block) : ""}
     ${lastWeight != null ? `<div class="row-line"><strong>${tx("Last", "Остання вага")}: ${lastWeight.toFixed(1)} kg</strong><button class="button ghost mini" data-action="apply-last" data-block="${blockIndex}">${t("useLast")}</button></div>` : ""}
@@ -6918,6 +7012,14 @@ function modalMarkup() {
   if (modal.type === "template") return bottomSheet(`<h2>${t("templatePicker")}</h2>${state.sessions.length ? [...state.sessions].sort((a, b) => b.startedAt - a.startedAt).map(session => `<article class="workout-item"><h3>${fmtDate(session.startedAt)}</h3><p>${sessionSummary(session).exercises} ${tx("exercises", "вправ")} - ${sessionSummary(session).sets} ${tx("sets", "підходів")} - ${Math.round(sessionSummary(session).volume)} ${tx("volume", "обсяг")}</p><button class="button full" data-action="copy-template" data-id="${session.id}">${t("copyWorkout")}</button></article>`).join("") : `<p>${tx("No previous workouts yet.", "Попередніх тренувань ще немає.")}</p>`}`);
   if (modal.type === "import") return bottomSheet(`<h2>${tx("Import backup", "Імпорт резервної копії")}</h2><textarea id="import-json" placeholder="${txAttr("Paste exported GymApp JSON here", "Встав сюди експортований JSON GymApp")}"></textarea><button class="button full" data-action="apply-import">${tx("Import", "Імпорт")}</button>`);
   if (modal.type === "add-exercise") return bottomSheet(`<h2>${tx("Add exercise", "Додати вправу")}</h2><input id="new-exercise-name" maxlength="120" aria-label="${txAttr("Exercise name", "Назва вправи")}" placeholder="${txAttr("Exercise name", "Назва вправи")}"><button class="button full" data-action="save-exercise">${tx("Add exercise", "Додати вправу")}</button>`);
+  if (modal.type === "exercise-media") {
+    const media = exerciseMedia(modal.exercise);
+    const frames = media?.frames || [];
+    const visual = frames.length
+      ? `<div class="exercise-media-stage ${frames.length > 1 ? "animated" : ""}" aria-label="${txAttr("Exercise movement reference", "Орієнтир руху вправи")}">${frames.map((frame, index) => `<img class="exercise-media-frame frame-${index}" src="${escapeAttr(frame)}" alt="">`).join("")}<span class="exercise-media-state">${frames.length > 1 ? tx("Start · Finish", "Початок · Кінець") : tx("Your image", "Ваше фото")}</span></div>`
+      : `<div class="exercise-media-stage empty">${svg("image", "exercise-media-empty-icon")}<strong>${tx("No demonstration yet", "Демонстрації поки немає")}</strong><p>${tx("Choose a clear image that helps you recognize this exercise.", "Оберіть чітке фото, яке допоможе впізнати цю вправу.")}</p></div>`;
+    return bottomSheet(`<div class="exercise-media-sheet"><div><span class="eyebrow">${tx("Movement guide", "Орієнтир руху")}</span><h2>${escapeHtml(exerciseDisplayName(modal.exercise))}</h2><p class="muted">${tx("Tap-friendly reference for exercise selection. This is not medical or coaching advice.", "Зручний орієнтир для вибору вправи. Це не медична чи тренерська рекомендація.")}</p></div>${visual}<label class="button secondary full exercise-media-file-label">${svg("upload", "small-icon")}${tx("Choose your image", "Обрати своє фото")}<input id="exercise-media-file" type="file" accept="image/jpeg,image/png,image/webp" hidden></label>${media?.custom ? `<button class="button ghost full" data-action="remove-exercise-media">${tx("Restore built-in image", "Повернути стандартне зображення")}</button>` : ""}</div>`);
+  }
   if (modal.type === "backup-json") return bottomSheet(`<h2>${modal.diagnostics ? tx("Redacted diagnostics ready", "Знеособлена діагностика готова") : tx("Backup JSON ready", "Резервна копія JSON готова")}</h2><textarea readonly>${escapeHtml(modal.json)}</textarea><div class="actions"><button class="button" data-action="copy-json">${tx("Copy JSON", "Копіювати JSON")}</button><button class="button ghost" data-action="download-json">${tx("Download", "Завантажити")}</button></div><button class="button ghost full" data-action="pdf-report">${t("sharePdf")}</button>`);
   if (modal.type === "rename") return bottomSheet(`<h2>${t("rename")}</h2><input id="rename-name" maxlength="120" value="${escapeAttr(exerciseDisplayName(modal.exercise))}"><button class="button full" data-action="apply-rename" data-id="${modal.exercise.id}">${tx("Save", "Зберегти")}</button>`);
   if (modal.type === "history") return bottomSheet(exerciseHistoryMarkup(modal.exercise));
@@ -7071,6 +7173,13 @@ function bindEvents() {
     scrollContainer.addEventListener("scroll", syncTopbarVisibility, { passive: true });
     syncTopbarVisibility();
   }
+  const exerciseMediaFile = app.querySelector("#exercise-media-file");
+  if (exerciseMediaFile) {
+    exerciseMediaFile.addEventListener("change", () => {
+      const file = exerciseMediaFile.files?.[0];
+      if (file) saveCustomExerciseMedia(file);
+    });
+  }
 }
 
 function syncTopbarVisibility() {
@@ -7198,6 +7307,22 @@ function handleAction(action, el) {
   if (action === "repeat-latest") { workoutDraft = createDraft([...state.sessions].sort((a, b) => b.startedAt - a.startedAt)[0]); return render(); }
   if (action === "template-picker") { modal = { type: "template" }; return render(); }
   if (action === "copy-template") { workoutDraft = createDraft(state.sessions.find(s => s.id === Number(el.dataset.id))); modal = null; nav = [{ name: "workouts" }, { name: "add" }]; replaceNavigationHistory(); return render(); }
+  if (action === "open-exercise-media") {
+    const block = workoutDraft?.blocks[Number(el.dataset.block)];
+    const exercise = block?.exerciseName ? state.exercises.find(item => exercisesMatch(item, block)) || block : null;
+    if (!exercise) return;
+    modal = { type: "exercise-media", exercise };
+    return render();
+  }
+  if (action === "remove-exercise-media") {
+    if (!modal?.exercise) return;
+    try {
+      localStorage.removeItem(customExerciseMediaStorageKey(modal.exercise));
+    } catch {
+      return showToast(tx("The custom image could not be removed.", "Не вдалося видалити власне фото."));
+    }
+    return render();
+  }
   if (action === "add-block") {
     if (!workoutDraft) return;
     if (workoutDraft.blocks.length >= window.GymStateContract.LIMITS.exercisesPerSession) {
@@ -8035,6 +8160,11 @@ function confirmDeleteSet() {
   } catch {
     location.session.sets = previousSets;
     return showDestructiveSaveFailure();
+  }
+  try {
+    localStorage.removeItem(customExerciseMediaStorageKey(exercise));
+  } catch {
+    // The catalog deletion is authoritative even when optional device-local media cleanup fails.
   }
   modal = null;
   render();
