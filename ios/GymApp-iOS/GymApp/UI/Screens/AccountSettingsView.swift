@@ -54,7 +54,10 @@ struct AccountSettingsView: View {
                     accountDetailsCard
                     syncCard
                     if isCloudAccount {
-                        GarminSettingsCard(garminCloud: appState.garminCloud)
+                        GarminSettingsCard(
+                            garminCloud: appState.garminCloud,
+                            garminPhoneSync: appState.garminPhoneSync
+                        )
                     }
                     privacyAndSupportCard
                     sessionCard
@@ -398,6 +401,7 @@ private struct GarminTokenPresentation: Identifiable {
 @MainActor
 private struct GarminSettingsCard: View {
     @ObservedObject var garminCloud: GarminCloudService
+    @ObservedObject var garminPhoneSync: GarminPhoneSyncService
 
     @State private var displayName = gymLocalized("Garmin watch")
     @State private var errorMessage: String?
@@ -426,6 +430,56 @@ private struct GarminSettingsCard: View {
                 }
                 .buttonStyle(GymSecondaryButtonStyle())
                 .accessibilityHint("Opens this app in Connect IQ, or opens the App Store if Connect IQ is not installed")
+
+                Button {
+                    garminPhoneSync.selectDevices()
+                } label: {
+                    Label("Connect this iPhone to Garmin", systemImage: "iphone.and.arrow.forward")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(GymPrimaryButtonStyle())
+                .accessibilityHint("Opens Garmin Connect so you can choose which paired watches may send completed workouts to this iPhone")
+
+                if let message = garminPhoneSync.statusMessage {
+                    GymStatusBanner(message: message, isError: garminPhoneSync.statusIsError)
+                }
+
+                if !garminPhoneSync.devices.isEmpty {
+                    VStack(alignment: .leading, spacing: 7) {
+                        Text("Direct iPhone connection")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(GymTheme.textSecondary)
+                        ForEach(garminPhoneSync.devices) { device in
+                            HStack(spacing: 9) {
+                                Image(systemName: device.connected ? "checkmark.circle.fill" : "circle")
+                                    .foregroundStyle(
+                                        device.connected ? GymTheme.primary : GymTheme.textSecondary
+                                    )
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(device.name)
+                                        .font(.subheadline.weight(.semibold))
+                                    Text(device.model)
+                                        .font(.caption)
+                                        .foregroundStyle(GymTheme.textSecondary)
+                                }
+                                Spacer()
+                                Text(device.connected ? "Connected" : "Offline")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(
+                                        device.connected ? GymTheme.primary : GymTheme.textSecondary
+                                    )
+                            }
+                            .padding(11)
+                            .background(
+                                RoundedRectangle(
+                                    cornerRadius: GymTheme.controlCornerRadius,
+                                    style: .continuous
+                                )
+                                .fill(GymTheme.surfaceVariant)
+                            )
+                        }
+                    }
+                }
 
                 if let errorMessage {
                     GymStatusBanner(message: errorMessage, isError: true)

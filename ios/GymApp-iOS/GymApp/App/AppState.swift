@@ -37,6 +37,7 @@ final class AppState: ObservableObject {
     let restTimers: RestTimerManager
     let cloudSync: CloudSyncService
     let garminCloud: GarminCloudService
+    let garminPhoneSync: GarminPhoneSyncService
 
     @Published private(set) var workoutStore: WorkoutStore
     @Published var statusMessage: String?
@@ -111,11 +112,16 @@ final class AppState: ObservableObject {
             urlSession: cloudURLSession,
             bindingStore: garminBindingStore
         )
+        self.garminPhoneSync = GarminPhoneSyncService(
+            auth: auth,
+            defaults: defaults
+        )
         let openedStore = try WorkoutStore.openRecoveringCorruptStore(
             accountStorageKey: "signed-out",
             directoryURL: workoutDirectoryURL
         )
         self.workoutStore = openedStore.store
+        self.garminPhoneSync.bind(workoutStore: openedStore.store)
         self.restTimers.bindToAccount(
             ownerFingerprint: initialRestTimerOwnerFingerprint,
             discardPersistedState: hadPendingDeletion
@@ -818,6 +824,7 @@ final class AppState: ObservableObject {
                 cleanupError = cleanupError ?? error
             }
         }
+        garminPhoneSync.clearLocalData(storageKey: storageKey)
         defaults.removeObject(forKey: Self.trainingProfileKeyPrefix + storageKey)
         defaults.removeObject(forKey: Self.hiddenLeaderboardProfilesKey)
         defaults.removeObject(
@@ -1041,6 +1048,7 @@ final class AppState: ObservableObject {
 
     private func publish(store: WorkoutStore, activeStorageKey: String?) {
         workoutStore = store
+        garminPhoneSync.bind(workoutStore: store)
         observeStore()
         activeAccountStorageKey = activeStorageKey
     }
@@ -1071,6 +1079,10 @@ final class AppState: ObservableObject {
         defaults.removeObject(forKey: hiddenLeaderboardProfilesKey)
         defaults.removeObject(
             forKey: leaderboardHiddenProfilesDefaultsKey(for: storageKey)
+        )
+        GarminPhoneSyncService.clearStoredData(
+            defaults: defaults,
+            storageKey: storageKey
         )
         if let cloudUserID = cloudUserID(fromDeletionStorageKey: storageKey) {
             do {

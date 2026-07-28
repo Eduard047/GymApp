@@ -5968,6 +5968,133 @@ final class CoreParityTests: XCTestCase {
         return try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
     }
 
+    func testGarminPhoneParserAcceptsBoundWorkoutMetrics() throws {
+        let binding = GarminPhoneBinding(
+            account: String(repeating: "a", count: 64),
+            device: "11111111-2222-3333-4444-555555555555",
+            pairingGeneration: String(repeating: "b", count: 64)
+        )
+        let message: [String: Any] = [
+            "type": "create_workout",
+            "bindingVersion": 2,
+            "accountBinding": binding.account,
+            "deviceBinding": binding.device,
+            "pairingGeneration": binding.pairingGeneration,
+            "requestId": "request-1234567890",
+            "startedAtSeconds": 1_750_000_000,
+            "sets": [
+                ["exerciseName": "Bench Press", "weight": 100.5, "reps": 5]
+            ],
+            "durationSeconds": 1_800,
+            "gymCalories": 225.5,
+            "garminCalories": 240,
+            "avgHeartRate": 132,
+            "maxHeartRate": 168,
+            "heartRateZone": 3,
+            "setMetrics": [[42, 90, 118, 154, 136, 18, 92]]
+        ]
+
+        let command = try XCTUnwrap(
+            GarminPhoneWorkoutParser.parse(
+                message,
+                expectedBinding: binding,
+                now: Date(timeIntervalSince1970: 1_750_001_000)
+            )
+        )
+
+        XCTAssertEqual(command.requestID, "request-1234567890")
+        XCTAssertEqual(command.sets, [
+            NamedWorkoutSetDraft(exerciseName: "Bench Press", weight: 100.5, reps: 5)
+        ])
+        XCTAssertEqual(
+            command.setStatistics,
+            [
+                GarminPhoneSetStatistics(
+                    activeSeconds: 42,
+                    restBeforeSeconds: 90,
+                    startHeartRate: 118,
+                    peakHeartRate: 154,
+                    endHeartRate: 136,
+                    recoveryHeartRateDrop: 18,
+                    detectionConfidence: 92
+                )
+            ]
+        )
+    }
+
+    func testGarminPhoneParserRejectsWrongBindingAndMalformedMetrics() {
+        let binding = GarminPhoneBinding(
+            account: String(repeating: "a", count: 64),
+            device: "11111111-2222-3333-4444-555555555555",
+            pairingGeneration: String(repeating: "b", count: 64)
+        )
+        var message: [String: Any] = [
+            "type": "create_workout",
+            "bindingVersion": 2,
+            "accountBinding": binding.account,
+            "deviceBinding": binding.device,
+            "pairingGeneration": binding.pairingGeneration,
+            "requestId": "request-1234567890",
+            "sets": [
+                ["exerciseName": "Squat", "weight": 120.0, "reps": 5]
+            ],
+            "setMetrics": [[35, 75, 110, 160, 140, 20, 95]]
+        ]
+
+        message["accountBinding"] = String(repeating: "c", count: 64)
+        XCTAssertNil(
+            GarminPhoneWorkoutParser.parse(message, expectedBinding: binding)
+        )
+
+        message["accountBinding"] = binding.account
+        message["pairingGeneration"] = String(repeating: "d", count: 64)
+        XCTAssertNil(
+            GarminPhoneWorkoutParser.parse(message, expectedBinding: binding)
+        )
+
+        message["pairingGeneration"] = binding.pairingGeneration
+        message["setMetrics"] = [[35, 75, 170, 160, 140, 20, 95]]
+        XCTAssertNil(
+            GarminPhoneWorkoutParser.parse(message, expectedBinding: binding)
+        )
+
+        message["setMetrics"] = [[35, 75, 110, 160, 140, 20, Double.nan]]
+        XCTAssertNil(
+            GarminPhoneWorkoutParser.parse(message, expectedBinding: binding)
+        )
+    }
+
+    func testGarminPhoneRequestTypeAndAccountCleanupAreBounded() {
+        XCTAssertEqual(
+            GarminPhoneWorkoutParser.messageType(["type": "request_sync"]),
+            "request_sync"
+        )
+
+        let defaults = temporaryDefaults(named: "garmin-phone-cleanup")
+        let storageKey = "cloud_00000000-0000-0000-0000-000000000001"
+        let digest = SHA256.hash(data: Data(storageKey.utf8))
+            .map { String(format: "%02x", $0) }
+            .joined()
+        let indexKey = "garmin-phone-state-index.v1.\(digest)"
+        let deviceKey = "garmin-phone-devices.v1.\(digest)"
+        let ownedStateKey = "garmin-phone-receipts.v1.owned"
+        let unrelatedKey = "unrelated-setting"
+        defaults.set([ownedStateKey, unrelatedKey], forKey: indexKey)
+        defaults.set(Data([1, 2, 3]), forKey: deviceKey)
+        defaults.set(Data([4, 5, 6]), forKey: ownedStateKey)
+        defaults.set("keep", forKey: unrelatedKey)
+
+        GarminPhoneSyncService.clearStoredData(
+            defaults: defaults,
+            storageKey: storageKey
+        )
+
+        XCTAssertNil(defaults.object(forKey: indexKey))
+        XCTAssertNil(defaults.object(forKey: deviceKey))
+        XCTAssertNil(defaults.object(forKey: ownedStateKey))
+        XCTAssertEqual(defaults.string(forKey: unrelatedKey), "keep")
+    }
+
     private func temporaryDefaults(named name: String) -> UserDefaults {
         let suiteName = "GymAppTests.\(name).\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!

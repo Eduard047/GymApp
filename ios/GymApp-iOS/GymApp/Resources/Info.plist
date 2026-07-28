@@ -47,6 +47,14 @@
 	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>GymApp uses Bluetooth to receive your completed workout and set metrics from your selected Garmin watch.</string>
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>GymApp uses Bluetooth to exchange workout plans and completed workouts with your selected Garmin watch.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>bluetooth-central</string>
+	</array>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchScreen</key>
