@@ -14,6 +14,13 @@ class GymStore {
     static var weight = 50.0;
     static var reps = 10;
     static var restEndsAt = 0;
+    static var lastSetUndoUntil = 0;
+    static var lastSetBoost = 0.0;
+    static var lastSetWasAutoPrompt = false;
+    static var lastSetStatistics = null;
+    static var lastLoggedSetEndSeconds = 0;
+    static var lastSetPreviousLoggedEnd = 0;
+    static var undoWindowMs = 10000;
     static var status = "READY";
     static var weightStep = 2.5;
     static var restSecondsDefault = 90;
@@ -64,6 +71,8 @@ class GymStore {
     static var maxLegacyStoredValueBytes = 32768;
 
     static function load() {
+        clearTransientSetActions();
+        lastLoggedSetEndSeconds = 0;
         var savedAccountBinding = Storage.getValue("accountBinding");
         accountBinding = isValidAccountBinding(savedAccountBinding) ? savedAccountBinding.toString() : null;
         var savedStateOwnerBinding = Storage.getValue("stateOwnerBinding");
@@ -410,18 +419,120 @@ class GymStore {
             !isValidWeight(weight) ||
             !isValidReps(reps)) {
             status = "SET LIMIT";
-            return;
+            return false;
         }
-        sets.add({
+        var statistics = GymSession.captureSetStatistics();
+        var restBefore = 0;
+        var previousSet = null;
+        var previousRecovery = null;
+        if (sets.size() > 0) {
+            previousSet = sets[sets.size() - 1];
+            var currentStart = statistics.get("setStartedSeconds");
+            if (lastLoggedSetEndSeconds > 0 && currentStart instanceof Lang.Number &&
+                currentStart >= lastLoggedSetEndSeconds) {
+                restBefore = currentStart - lastLoggedSetEndSeconds;
+                if (restBefore > 86400) {
+                    restBefore = 86400;
+                }
+            }
+            previousRecovery = previousSet.get("recoveryHeartRateDrop");
+            var recoveryDrop = GymSession.recoveryHeartRateDrop();
+            if (recoveryDrop != null) {
+                previousSet.put("recoveryHeartRateDrop", recoveryDrop);
+            }
+        }
+        var setItem = {
             "exerciseName" => currentExercise(),
             "weight" => weight,
-            "reps" => reps
-        });
-        GymSession.addSetBoost(weight, reps);
+            "reps" => reps,
+            "activeSeconds" => statistics.get("activeSeconds"),
+            "restBeforeSeconds" => restBefore,
+            "startHeartRate" => statistics.get("startHeartRate"),
+            "peakHeartRate" => statistics.get("peakHeartRate"),
+            "endHeartRate" => statistics.get("endHeartRate"),
+            "detectionConfidence" => statistics.get("detectionConfidence")
+        };
+        var wasAutoPrompt = GymSession.autoLogPrompt;
+        sets.add(setItem);
+        var boost = GymSession.addSetBoost(weight, reps);
+        if (!save()) {
+            sets.remove(setItem);
+            if (previousSet != null) {
+                if (previousRecovery == null) {
+                    previousSet.remove("recoveryHeartRateDrop");
+                } else {
+                    previousSet.put("recoveryHeartRateDrop", previousRecovery);
+                }
+            }
+            GymSession.removeSetBoost(boost);
+            save();
+            return false;
+        }
+        lastSetBoost = boost;
+        lastSetWasAutoPrompt = wasAutoPrompt;
+        lastSetStatistics = statistics;
+        lastSetPreviousLoggedEnd = lastLoggedSetEndSeconds;
+        lastLoggedSetEndSeconds = statistics.get("setEndedSeconds");
+        lastSetUndoUntil = System.getTimer() + undoWindowMs;
+        GymSession.beginRecoveryTracking(statistics);
         GymSession.clearAutoPrompt();
         restEndsAt = System.getTimer() + (restSecondsDefault * 1000);
         status = "SET SAVED";
-        save();
+        return true;
+    }
+
+    static function canUndoLastSet() {
+        if (sets.size() == 0 || lastSetUndoUntil <= 0) {
+            return false;
+        }
+        if (System.getTimer() > lastSetUndoUntil) {
+            clearTransientSetActions();
+            return false;
+        }
+        return true;
+    }
+
+    static function undoLastSet() {
+        if (!canUndoLastSet()) {
+            status = "UNDO EXPIRED";
+            return false;
+        }
+        var lastIndex = sets.size() - 1;
+        var lastSet = sets[lastIndex];
+        var boost = lastSetBoost;
+        var restorePrompt = lastSetWasAutoPrompt;
+        var restoreStatistics = lastSetStatistics;
+        var previousLoggedEnd = lastSetPreviousLoggedEnd;
+        sets.remove(lastSet);
+        GymSession.removeSetBoost(boost);
+        if (!save()) {
+            sets.add(lastSet);
+            GymSession.restoreSetBoost(boost);
+            save();
+            return false;
+        }
+        clearTransientSetActions();
+        lastLoggedSetEndSeconds = previousLoggedEnd;
+        restEndsAt = 0;
+        if (restorePrompt) {
+            GymSession.restoreAutoPromptAfterUndo(restoreStatistics);
+        } else {
+            GymSession.clearRecoveryTracking();
+        }
+        status = "SET UNDONE";
+        return true;
+    }
+
+    static function cancelRest() {
+        restEndsAt = 0;
+    }
+
+    static function clearTransientSetActions() {
+        lastSetUndoUntil = 0;
+        lastSetBoost = 0.0;
+        lastSetWasAutoPrompt = false;
+        lastSetStatistics = null;
+        lastSetPreviousLoggedEnd = 0;
     }
 
     static function cycleWeightStep() {
@@ -504,6 +615,8 @@ class GymStore {
         sets = [];
         plan = [];
         restEndsAt = 0;
+        lastLoggedSetEndSeconds = 0;
+        clearTransientSetActions();
         applyDeferredSyncIfIdle();
         save();
     }
@@ -511,6 +624,8 @@ class GymStore {
     static function clearActiveWorkout() {
         sets = [];
         restEndsAt = 0;
+        lastLoggedSetEndSeconds = 0;
+        clearTransientSetActions();
         applyDeferredSyncIfIdle();
         return save();
     }
@@ -533,6 +648,7 @@ class GymStore {
         }
         var requestId = nextRequestId("workout");
         var setCopies = [];
+        var setMetrics = [];
         for (var i = 0; i < sets.size(); i += 1) {
             var setItem = sets[i];
             if (!(setItem instanceof Lang.Dictionary)) {
@@ -544,11 +660,19 @@ class GymStore {
             if (!isValidExerciseName(exerciseName) || !isValidWeight(setWeight) || !isValidReps(setReps)) {
                 return null;
             }
-            setCopies.add({
+            var setCopy = {
                 "exerciseName" => exerciseName.toString(),
                 "weight" => setWeight,
                 "reps" => setReps
-            });
+            };
+            setCopies.add(setCopy);
+            setMetrics.add(compactSetMetrics(setItem));
+        }
+        if (setMetrics.size() > 0) {
+            var latestRecovery = GymSession.recoveryHeartRateDrop();
+            if (latestRecovery != null) {
+                setMetrics[setMetrics.size() - 1][5] = latestRecovery;
+            }
         }
         var message = {
             "type" => "create_workout",
@@ -564,7 +688,8 @@ class GymStore {
             "maxHeartRate" => GymSession.maxHr,
             "lastHeartRate" => GymSession.hr,
             "heartRateZone" => GymSession.zone,
-            "sets" => setCopies
+            "sets" => setCopies,
+            "setMetrics" => setMetrics
         };
         if (isValidAccountBinding(pairingGeneration)) {
             message.put("pairingGeneration", pairingGeneration.toString());
@@ -1120,6 +1245,8 @@ class GymStore {
         sets = [];
         plan = [];
         restEndsAt = 0;
+        lastLoggedSetEndSeconds = 0;
+        clearTransientSetActions();
         applyDeferredSyncIfIdle();
         var cleaned = save();
         if (cleaned) {
@@ -1155,6 +1282,8 @@ class GymStore {
             sets = [];
             plan = [];
             restEndsAt = 0;
+            lastLoggedSetEndSeconds = 0;
+            clearTransientSetActions();
             applyDeferredSyncIfIdle();
             if (!save()) {
                 return;
@@ -1231,6 +1360,8 @@ class GymStore {
         lastCloudPlanRevision = 0;
         lastCloudPlanId = null;
         restEndsAt = 0;
+        lastLoggedSetEndSeconds = 0;
+        clearTransientSetActions();
         weight = 50.0;
         reps = 10;
         exercises = builtInExercises();
@@ -1356,6 +1487,7 @@ class GymStore {
         }
         exercises = copyExerciseList(snapshot.get("exercises"));
         sets = normalizedSetList(snapshot.get("sets"));
+        clearTransientSetActions();
         plan = normalizedSetList(snapshot.get("plan"));
         pending = normalizedLegacyPendingList(snapshot.get("pending"));
         weight = snapshot.get("weight");
@@ -1404,13 +1536,40 @@ class GymStore {
         var copy = [];
         for (var i = 0; i < source.size(); i += 1) {
             var item = source[i];
-            copy.add({
+            var normalized = {
                 "exerciseName" => item.get("exerciseName").toString(),
                 "weight" => item.get("weight"),
                 "reps" => item.get("reps")
-            });
+            };
+            copyOptionalSetMetrics(normalized, item);
+            copy.add(normalized);
         }
         return copy;
+    }
+
+    static function compactSetMetrics(source) {
+        return [
+            source.get("activeSeconds"),
+            source.get("restBeforeSeconds"),
+            source.get("startHeartRate"),
+            source.get("peakHeartRate"),
+            source.get("endHeartRate"),
+            source.get("recoveryHeartRateDrop"),
+            source.get("detectionConfidence")
+        ];
+    }
+
+    static function copyOptionalSetMetrics(target, source) {
+        var keys = [
+            "activeSeconds", "restBeforeSeconds", "startHeartRate", "peakHeartRate",
+            "endHeartRate", "recoveryHeartRateDrop", "detectionConfidence"
+        ];
+        for (var i = 0; i < keys.size(); i += 1) {
+            var value = source.get(keys[i]);
+            if (value != null) {
+                target.put(keys[i], value);
+            }
+        }
     }
 
     static function sourceForMessage(message) {
@@ -1874,10 +2033,17 @@ class GymStore {
         var totalNameBytes = 0;
         for (var i = 0; i < value.size(); i += 1) {
             var item = value[i];
-            if (!(item instanceof Lang.Dictionary) ||
+            if (!(item instanceof Lang.Dictionary) || item.size() > 10 ||
                 !isValidExerciseName(item.get("exerciseName")) ||
                 !isValidWeight(item.get("weight")) ||
-                !isValidReps(item.get("reps"))) {
+                !isValidReps(item.get("reps")) ||
+                !isOptionalBoundedNumber(item.get("activeSeconds"), 0.0, 7200.0) ||
+                !isOptionalBoundedNumber(item.get("restBeforeSeconds"), 0.0, 86400.0) ||
+                !isOptionalBoundedNumber(item.get("startHeartRate"), 0.0, 240.0) ||
+                !isOptionalBoundedNumber(item.get("peakHeartRate"), 0.0, 240.0) ||
+                !isOptionalBoundedNumber(item.get("endHeartRate"), 0.0, 240.0) ||
+                !isOptionalBoundedNumber(item.get("recoveryHeartRateDrop"), 0.0, 240.0) ||
+                !isOptionalBoundedNumber(item.get("detectionConfidence"), 0.0, 100.0)) {
                 return false;
             }
             totalNameBytes += item.get("exerciseName").toString().toUtf8Array().size();
@@ -1939,7 +2105,31 @@ class GymStore {
             isOptionalBoundedNumber(message.get("maxHeartRate"), 0.0, 300.0) &&
             isOptionalBoundedNumber(message.get("lastHeartRate"), 0.0, 300.0) &&
             isOptionalBoundedNumber(message.get("heartRateZone"), 0.0, 5.0) &&
-            isValidSetList(message.get("sets"), maxWorkoutSets, false);
+            isValidSetList(message.get("sets"), maxWorkoutSets, false) &&
+            (message.get("setMetrics") == null ||
+                isValidSetMetricsList(message.get("setMetrics"), message.get("sets")));
+    }
+
+    static function isValidSetMetricsList(value, expectedSets) {
+        if (!(expectedSets instanceof Lang.Array) || !(value instanceof Lang.Array) ||
+            value.size() != expectedSets.size() ||
+            value.size() > maxWorkoutSets) {
+            return false;
+        }
+        for (var i = 0; i < value.size(); i += 1) {
+            var metrics = value[i];
+            if (!(metrics instanceof Lang.Array) || metrics.size() != 7 ||
+                !isOptionalBoundedNumber(metrics[0], 0.0, 7200.0) ||
+                !isOptionalBoundedNumber(metrics[1], 0.0, 86400.0) ||
+                !isOptionalBoundedNumber(metrics[2], 0.0, 240.0) ||
+                !isOptionalBoundedNumber(metrics[3], 0.0, 240.0) ||
+                !isOptionalBoundedNumber(metrics[4], 0.0, 240.0) ||
+                !isOptionalBoundedNumber(metrics[5], 0.0, 240.0) ||
+                !isOptionalBoundedNumber(metrics[6], 0.0, 100.0)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     static function normalizedLegacyPendingList(source) {
@@ -1959,6 +2149,9 @@ class GymStore {
             copyOptionalLegacyMetric(safe, message, "maxHeartRate");
             copyOptionalLegacyMetric(safe, message, "lastHeartRate");
             copyOptionalLegacyMetric(safe, message, "heartRateZone");
+            if (message.get("setMetrics") != null) {
+                safe.put("setMetrics", message.get("setMetrics"));
+            }
             copy.add(safe);
         }
         return copy;
@@ -2005,7 +2198,9 @@ class GymStore {
             isOptionalBoundedNumber(message.get("maxHeartRate"), 0.0, 300.0) &&
             isOptionalBoundedNumber(message.get("lastHeartRate"), 0.0, 300.0) &&
             isOptionalBoundedNumber(message.get("heartRateZone"), 0.0, 5.0) &&
-            isValidSetList(message.get("sets"), maxWorkoutSets, false);
+            isValidSetList(message.get("sets"), maxWorkoutSets, false) &&
+            (message.get("setMetrics") == null ||
+                isValidSetMetricsList(message.get("setMetrics"), message.get("sets")));
     }
 
     static function isValidOptionalAccountBinding(value) {

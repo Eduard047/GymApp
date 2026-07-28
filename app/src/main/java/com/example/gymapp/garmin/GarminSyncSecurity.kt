@@ -60,7 +60,18 @@ internal data class GarminWorkoutCommand(
     val garminCalories: Int?,
     val averageHeartRate: Int?,
     val maximumHeartRate: Int?,
-    val endingHeartRateZone: Int?
+    val endingHeartRateZone: Int?,
+    val setStatistics: List<GarminSetStatistics?> = emptyList()
+)
+
+internal data class GarminSetStatistics(
+    val activeSeconds: Long?,
+    val restBeforeSeconds: Long?,
+    val startHeartRate: Int?,
+    val peakHeartRate: Int?,
+    val endHeartRate: Int?,
+    val recoveryHeartRateDrop: Int?,
+    val detectionConfidence: Int?
 )
 
 internal fun canonicalGarminWorkoutPayloadDigest(command: GarminWorkoutCommand): String {
@@ -95,7 +106,8 @@ internal fun canonicalGarminWorkoutPayloadDigest(command: GarminWorkoutCommand):
         value?.let(::updateDouble)
     }
 
-    updateString("gymapp-garmin-workout/v1")
+    val hasSetStatistics = command.setStatistics.any { it != null }
+    updateString(if (hasSetStatistics) "gymapp-garmin-workout/v2" else "gymapp-garmin-workout/v1")
     updateString(command.requestId)
     updateLong(command.startedAtMillis)
     updateInt(command.sets.size)
@@ -112,6 +124,20 @@ internal fun canonicalGarminWorkoutPayloadDigest(command: GarminWorkoutCommand):
     // Keep the v1 digest slot and wire meaning stable. Garmin sends the zone for
     // the final accepted heart-rate reading; it is not a peak or dominant zone.
     updateOptionalInt(command.endingHeartRateZone)
+    if (hasSetStatistics) {
+        command.setStatistics.forEach { statistics ->
+            digest.update(if (statistics == null) 0.toByte() else 1.toByte())
+            statistics?.let {
+                updateOptionalLong(it.activeSeconds)
+                updateOptionalLong(it.restBeforeSeconds)
+                updateOptionalInt(it.startHeartRate)
+                updateOptionalInt(it.peakHeartRate)
+                updateOptionalInt(it.endHeartRate)
+                updateOptionalInt(it.recoveryHeartRateDrop)
+                updateOptionalInt(it.detectionConfidence)
+            }
+        }
+    }
 
     return digest.digest().joinToString(separator = "") { byte ->
         (byte.toInt() and 0xff).toString(16).padStart(2, '0')
@@ -342,6 +368,17 @@ internal fun parseGarminWorkoutCommand(
         require(WorkoutDataLimits.isValidWeight(weight))
         NamedWorkoutSetDraft(exerciseName = exerciseName, weight = weight, reps = reps)
     }
+    val rawSetMetrics = command["setMetrics"]
+    val setStatistics = if (rawSetMetrics == null) {
+        List(sets.size) { null }
+    } else {
+        val metrics = rawSetMetrics as? List<*> ?: error("Garmin set metrics are malformed.")
+        require(metrics.size == sets.size)
+        metrics.map { raw ->
+            val values = raw as? List<*> ?: error("Garmin set metrics are malformed.")
+            parseGarminSetStatistics(values)
+        }
+    }
 
     val nowSeconds = nowMillis / 1_000L
     val startedAtSeconds = optionalBoundedLong(
@@ -370,9 +407,51 @@ internal fun parseGarminWorkoutCommand(
         garminCalories = optionalBoundedInt(command, "garminCalories", 0, MAX_GARMIN_CALORIES.toInt()),
         averageHeartRate = averageHeartRate,
         maximumHeartRate = maximumHeartRate,
-        endingHeartRateZone = optionalBoundedInt(command, "heartRateZone", 0, MAX_GARMIN_HEART_RATE_ZONE)
+        endingHeartRateZone = optionalBoundedInt(command, "heartRateZone", 0, MAX_GARMIN_HEART_RATE_ZONE),
+        setStatistics = setStatistics
     )
 }.getOrNull()
+
+private fun parseGarminSetStatistics(values: List<*>): GarminSetStatistics? {
+    require(values.size == 7)
+    val item = mapOf<Any?, Any?>(
+        "activeSeconds" to values[0],
+        "restBeforeSeconds" to values[1],
+        "startHeartRate" to values[2],
+        "peakHeartRate" to values[3],
+        "endHeartRate" to values[4],
+        "recoveryHeartRateDrop" to values[5],
+        "detectionConfidence" to values[6]
+    )
+    val activeSeconds = optionalBoundedLong(item, "activeSeconds", 0L, 7_200L)
+    val restBeforeSeconds = optionalBoundedLong(item, "restBeforeSeconds", 0L, 86_400L)
+    val startHeartRate = optionalBoundedInt(item, "startHeartRate", 0, 240)
+    val peakHeartRate = optionalBoundedInt(item, "peakHeartRate", 0, 240)
+    val endHeartRate = optionalBoundedInt(item, "endHeartRate", 0, 240)
+    val recoveryHeartRateDrop = optionalBoundedInt(item, "recoveryHeartRateDrop", 0, 240)
+    val detectionConfidence = optionalBoundedInt(item, "detectionConfidence", 0, 100)
+    val parsedValues = listOf(
+        activeSeconds,
+        restBeforeSeconds,
+        startHeartRate,
+        peakHeartRate,
+        endHeartRate,
+        recoveryHeartRateDrop,
+        detectionConfidence
+    )
+    if (parsedValues.all { it == null }) return null
+    require(startHeartRate == null || peakHeartRate == null || startHeartRate <= peakHeartRate)
+    require(endHeartRate == null || peakHeartRate == null || endHeartRate <= peakHeartRate)
+    return GarminSetStatistics(
+        activeSeconds = activeSeconds,
+        restBeforeSeconds = restBeforeSeconds,
+        startHeartRate = startHeartRate,
+        peakHeartRate = peakHeartRate,
+        endHeartRate = endHeartRate,
+        recoveryHeartRateDrop = recoveryHeartRateDrop,
+        detectionConfidence = detectionConfidence
+    )
+}
 
 internal fun validatedGarminPlanOrNull(
     sets: List<NamedWorkoutSetDraft>

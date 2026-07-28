@@ -395,6 +395,57 @@ class GarminSyncSecurityTest {
         assertEquals(132, parsed.averageHeartRate)
         assertEquals(168, parsed.maximumHeartRate)
         assertEquals(3, parsed.endingHeartRateZone)
+        assertEquals(listOf(null), parsed.setStatistics)
+    }
+
+    @Test
+    fun workoutParserAcceptsBoundedSetStatisticsAndRejectsInconsistentMetrics() {
+        val nowMillis = 1_800_000_000_000L
+        val metrics = listOf<Any?>(
+            32,
+            64,
+            112,
+            148,
+            130,
+            24,
+            90
+        )
+        val parsed = parseGarminWorkoutCommand(
+            validCommand() + ("setMetrics" to listOf(metrics)),
+            nowMillis
+        )
+
+        assertNotNull(parsed)
+        assertEquals(
+            GarminSetStatistics(
+                activeSeconds = 32L,
+                restBeforeSeconds = 64L,
+                startHeartRate = 112,
+                peakHeartRate = 148,
+                endHeartRate = 130,
+                recoveryHeartRateDrop = 24,
+                detectionConfidence = 90
+            ),
+            parsed?.setStatistics?.single()
+        )
+        assertNull(
+            parseGarminWorkoutCommand(
+                validCommand() + ("setMetrics" to listOf(metrics.toMutableList().also { it[6] = 101 })),
+                nowMillis
+            )
+        )
+        assertNull(
+            parseGarminWorkoutCommand(
+                validCommand() + ("setMetrics" to listOf(metrics.toMutableList().also { it[3] = 100 })),
+                nowMillis
+            )
+        )
+        assertNull(
+            parseGarminWorkoutCommand(
+                validCommand() + ("setMetrics" to listOf(metrics.dropLast(1))),
+                nowMillis
+            )
+        )
     }
 
     @Test

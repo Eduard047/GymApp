@@ -1285,6 +1285,25 @@ class GarminSyncManager(
                 else -> "Ending HR zone Z$zone"
             }
         }
+        command.setStatistics.forEachIndexed { index, statistics ->
+            if (statistics == null) return@forEachIndexed
+            val metrics = mutableListOf<String>()
+            statistics.activeSeconds?.let { metrics += "${it}s" }
+            statistics.restBeforeSeconds?.takeIf { it > 0L }?.let { metrics += "R${it}s" }
+            val hrValues = listOf(
+                statistics.startHeartRate,
+                statistics.peakHeartRate,
+                statistics.endHeartRate
+            )
+            if (hrValues.any { it != null }) {
+                metrics += "HR${hrValues.joinToString("/") { it?.toString() ?: "-" }}"
+            }
+            statistics.recoveryHeartRateDrop?.let { metrics += "↓$it" }
+            statistics.detectionConfidence?.let { metrics += "C$it%" }
+            if (metrics.isNotEmpty()) {
+                details += "S${index + 1} ${metrics.joinToString(" ")}"
+            }
+        }
         return details.joinToString(separator = " · ")
     }
 

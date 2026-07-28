@@ -5,15 +5,16 @@ Connect IQ watch app targeting the 108 API-compatible Garmin watches and wearabl
 ## Current controls
 
 - Main dashboard shows workout time, current heart rate, heart-rate zone bar, Gym kcal, and Garmin kcal.
-- The app automatically estimates effort state from heart-rate trend: warmup, set active, rest, or ready.
+- The app estimates effort from wrist movement plus heart-rate trend, with an automatic heart-rate-only fallback.
 - When the watch detects a likely completed set, the dashboard shows `LOG SET?`; tap/select logs the set with the currently selected exercise, weight, and reps.
+- After a set is saved, the last set can be undone for 10 seconds. Tap the undo area, press `BACK`/`LAP`, swipe right, or use the left action on the save row. Undo also rolls back the set calorie correction and rest timer.
 - Tap an empty dashboard area, or press right/select, to open the set entry screen.
 - On touch watches, the exercise, weight, reps, save, and settings rows use full-width tap regions. Tap the left or right half of an adjustable row to decrease or increase it.
 - On one- and two-button watches, next/previous moves between rows and select/start activates the highlighted row, so every action remains reachable without touch.
 - On multi-button watches, up/down moves focus, left/right decreases/increases the selected value, and select/start performs the primary action.
 - Set entry lets you pick exercise, adjust weight by the configured step, adjust reps, and save a set.
 - On touch watches, swipe up/down to move focus, left to move to the next content screen, and right to go back.
-- Debug screen shows HR, zone, effort state, HR trend, auto-log status, sensitivity, and the latest auto-detect reason.
+- Debug screen shows the authoritative activity HR (`ACT`), direct sensor HR (`SNS`), movement score (`MOV`), confidence, effort state, kcal/min, and sync status.
 - Settings screen lets you change auto-log on/off, auto-detect sensitivity, weight step, default rest time, and default reps.
 - `SELECT` / `START`: perform the highlighted action.
 - `BACK` or `MENU` from dashboard: pause the workout and open the pause menu.
@@ -26,12 +27,16 @@ Connect IQ watch app targeting the 108 API-compatible Garmin watches and wearabl
 
 - Garmin FIT activity is recorded as a strength-training workout through Connect IQ activity recording.
 - GymApp calculates its own strength-focused kcal estimate and also shows Garmin's reported kcal for comparison.
-- The phone app receives workout duration, Gym kcal, Garmin kcal, average/max HR, HR zones, set count, and debug state.
+- The phone app receives workout duration, Gym kcal, Garmin kcal, average/max HR, HR zones, and per-set duration, rest-before, start/peak/end HR, recovery drop, and detector confidence.
 - Exercise name, weight, and reps still require the selected values on the watch; heart rate cannot reliably infer exercise/kg/reps by itself.
 
 ## Auto set detection
 
-The watch estimates set/rest transitions from heart-rate movement:
+The watch estimates set/rest transitions from a bounded 10 Hz accelerometer movement score and heart-rate movement. The displayed HR remains Garmin's native current activity value (with direct sensor fallback); a three-sample median filter is used only for set/rest detection. Missing sensor data expires instead of leaving a stale number on screen, and a high but flat recovery heart rate cannot by itself start another set. Devices that cannot open the accelerometer stream automatically retain heart-rate-only detection.
+
+Detection is expressed as low, medium, or high confidence. High-confidence evidence can start a detected set, while medium confidence is shown as `SET?` instead of being treated as completed. Raw accelerometer samples are held only for the callback, are bounded before processing, and are never persisted or synchronized.
+
+The rest countdown is guidance rather than a paused tracking mode. FIT recording, heart-rate sampling, calorie tracking, and automatic detection continue during rest. When a new set is detected, the countdown ends immediately and the dashboard switches to `SET ACTIVE`.
 
 - `LOW`: fewer false positives, waits longer before suggesting a logged set.
 - `NORMAL`: default balance.

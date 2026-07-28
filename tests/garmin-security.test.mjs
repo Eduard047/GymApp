@@ -114,7 +114,11 @@ test("Garmin messages are bounded, account-bound, replay-aware, and acked by id"
   assert.match(sessionStart, /garminCalories = null/);
   const sessionTick = session.match(/static function tick\(\) \{[\s\S]*?\n    \}/)?.[0] || "";
   assert.match(sessionTick, /var appliedActivityHeartRate = updateGarminActivityInfo\(\)/);
-  assert.match(sessionTick, /if \(!appliedActivityHeartRate\) \{\s*updateHeartRateFromSensor\(\)/);
+  assert.match(sessionTick, /var sampledSensorHeartRate = readHeartRateFromSensor\(\)/);
+  assert.match(
+    sessionTick,
+    /if \(!appliedActivityHeartRate\)[\s\S]*applyHeartRate\(sampledSensorHeartRate\)[\s\S]*expireStaleHeartRate\(\)/
+  );
   const activityInfo = session.match(/static function updateGarminActivityInfo\(\) \{[\s\S]*?\n    \}/)?.[0] || "";
   assert.match(activityInfo, /appliedHeartRate = applyHeartRate\(info\.currentHeartRate\)/);
   assert.match(activityInfo, /return appliedHeartRate/);
