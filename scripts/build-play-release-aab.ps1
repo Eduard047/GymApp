@@ -559,8 +559,16 @@ $keystoreCertificateArguments = @{
 }
 $expectedCertificateSha256 = Get-ReleaseKeystoreCertificateSha256 @keystoreCertificateArguments
 $manifestMetadataPath = Join-Path $projectRoot 'app/build/intermediates/merged_manifests/release/processReleaseManifest/output-metadata.json'
-$manifestContainerPath = Join-Path $projectRoot 'app/build/intermediates/linked_resources_for_bundle_proto_format/release/bundleReleaseResources/linked-resources-for-bundle-proto-format.ap_'
-if (-not (Test-Path -LiteralPath $manifestContainerPath -PathType Leaf)) {
+$manifestContainerCandidates = @(
+    'app/build/intermediates/shrunk_resources_proto_format/release/minifyReleaseWithR8/shrunk-resources-proto-format-release.ap_',
+    'app/build/intermediates/linked_resources_proto_format/release/processReleaseResources/linked-resources-proto-format-release.ap_',
+    'app/build/intermediates/linked_resources_for_bundle_proto_format/release/bundleReleaseResources/linked-resources-for-bundle-proto-format.ap_'
+)
+$manifestContainerPath = $manifestContainerCandidates |
+    ForEach-Object { Join-Path $projectRoot $_ } |
+    Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } |
+    Select-Object -First 1
+if (-not $manifestContainerPath) {
     throw "Release AAB manifest container was not generated."
 }
 
