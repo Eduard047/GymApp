@@ -1555,6 +1555,7 @@ private fun AppTopBar(
         TopAppBar(
             colors = TopAppBarDefaults.topAppBarColors(
                 containerColor = Color.Transparent,
+                scrolledContainerColor = Color.Transparent,
                 titleContentColor = MaterialTheme.colorScheme.onBackground
             ),
             title = {
@@ -1577,6 +1578,7 @@ private fun AppTopBar(
         CenterAlignedTopAppBar(
             colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
                 containerColor = Color.Transparent,
+                scrolledContainerColor = Color.Transparent,
                 titleContentColor = MaterialTheme.colorScheme.onBackground
             ),
             title = {

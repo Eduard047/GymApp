@@ -26,10 +26,33 @@ object ExerciseMediaStore {
     fun customFile(context: Context, ownerKey: String, exerciseId: Long): File =
         File(File(context.filesDir, "exercise-media/${ownerFingerprint(ownerKey)}"), "$exerciseId.jpg")
 
-    fun loadCustom(context: Context, ownerKey: String, exerciseId: Long): Bitmap? =
+    fun loadCustom(
+        context: Context,
+        ownerKey: String,
+        exerciseId: Long,
+        requestedWidth: Int,
+        requestedHeight: Int
+    ): Bitmap? =
         customFile(context, ownerKey, exerciseId)
             .takeIf(File::isFile)
-            ?.let { BitmapFactory.decodeFile(it.absolutePath) }
+            ?.let { file ->
+                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeFile(file.absolutePath, bounds)
+                val options = sampledOptions(bounds, requestedWidth, requestedHeight)
+                BitmapFactory.decodeFile(file.absolutePath, options)
+            }
+
+    fun loadBundledFrame(
+        context: Context,
+        path: String,
+        requestedWidth: Int,
+        requestedHeight: Int
+    ): Bitmap? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        context.assets.open(path).use { BitmapFactory.decodeStream(it, null, bounds) }
+        val options = sampledOptions(bounds, requestedWidth, requestedHeight)
+        return context.assets.open(path).use { BitmapFactory.decodeStream(it, null, options) }
+    }
 
     fun saveCustom(context: Context, ownerKey: String, exerciseId: Long, uri: Uri) {
         val mime = context.contentResolver.getType(uri)?.lowercase()
@@ -56,7 +79,10 @@ object ExerciseMediaStore {
         require(bounds.outWidth.toLong() * bounds.outHeight.toLong() <= MaxPixels) {
             "invalid_dimensions"
         }
-        val decoded = requireNotNull(BitmapFactory.decodeByteArray(bytes, 0, bytes.size)) {
+        val decodeOptions = sampledOptions(bounds, MaxSavedDimension, MaxSavedDimension)
+        val decoded = requireNotNull(
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, decodeOptions)
+        ) {
             "invalid_image"
         }
         val scale = min(1f, MaxSavedDimension.toFloat() / maxOf(decoded.width, decoded.height))
@@ -86,6 +112,44 @@ object ExerciseMediaStore {
 
     fun deleteCustom(context: Context, ownerKey: String, exerciseId: Long) {
         customFile(context, ownerKey, exerciseId).delete()
+    }
+
+    internal fun calculateInSampleSize(
+        sourceWidth: Int,
+        sourceHeight: Int,
+        requestedWidth: Int,
+        requestedHeight: Int
+    ): Int {
+        if (
+            sourceWidth <= 0 ||
+                sourceHeight <= 0 ||
+                requestedWidth <= 0 ||
+                requestedHeight <= 0
+        ) {
+            return 1
+        }
+
+        var sampleSize = 1
+        while (
+            sourceWidth / (sampleSize * 2) >= requestedWidth &&
+                sourceHeight / (sampleSize * 2) >= requestedHeight
+        ) {
+            sampleSize *= 2
+        }
+        return sampleSize
+    }
+
+    private fun sampledOptions(
+        bounds: BitmapFactory.Options,
+        requestedWidth: Int,
+        requestedHeight: Int
+    ) = BitmapFactory.Options().apply {
+        inSampleSize = calculateInSampleSize(
+            sourceWidth = bounds.outWidth,
+            sourceHeight = bounds.outHeight,
+            requestedWidth = requestedWidth,
+            requestedHeight = requestedHeight
+        )
     }
 
     private fun ownerFingerprint(ownerKey: String): String {

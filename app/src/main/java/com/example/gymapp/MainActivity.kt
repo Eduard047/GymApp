@@ -1,12 +1,13 @@
 package com.example.gymapp
 
 import android.content.Intent
+import android.content.res.Configuration
 import android.os.Bundle
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.WindowCompat
 import androidx.lifecycle.lifecycleScope
 import com.example.gymapp.auth.AuthCallbackKind
 import com.example.gymapp.auth.authErrorText
@@ -27,7 +28,7 @@ class MainActivity : AppCompatActivity() {
 
         handleAuthRedirect(intent)
 
-        enableEdgeToEdge()
+        configureEdgeToEdge()
         setContent {
             GymAppTheme {
                 GymAppRoot(
@@ -37,6 +38,17 @@ class MainActivity : AppCompatActivity() {
                     restTimerController = app.restTimerController
                 )
             }
+        }
+    }
+
+    private fun configureEdgeToEdge() {
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        val isDarkTheme =
+            resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK ==
+                Configuration.UI_MODE_NIGHT_YES
+        WindowCompat.getInsetsController(window, window.decorView).run {
+            isAppearanceLightStatusBars = !isDarkTheme
+            isAppearanceLightNavigationBars = !isDarkTheme
         }
     }
 

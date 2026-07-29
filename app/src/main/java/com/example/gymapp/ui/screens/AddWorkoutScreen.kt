@@ -1,7 +1,6 @@
 ﻿package com.example.gymapp.ui.screens
 
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.Crossfade
@@ -65,6 +64,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
@@ -953,12 +953,28 @@ private fun ExerciseMediaThumbnail(
     onClick: () -> Unit
 ) {
     val context = LocalContext.current
-    val custom = remember(exercise.id, ownerKey, revision) {
-        ExerciseMediaStore.loadCustom(context, ownerKey, exercise.id)
+    val density = LocalDensity.current
+    val requestedWidth = with(density) { 76.dp.roundToPx() }
+    val requestedHeight = with(density) { 64.dp.roundToPx() }
+    val custom = remember(exercise.id, ownerKey, revision, requestedWidth, requestedHeight) {
+        ExerciseMediaStore.loadCustom(
+            context,
+            ownerKey,
+            exercise.id,
+            requestedWidth,
+            requestedHeight
+        )
     }
-    val builtIn = remember(exercise.name) {
+    val builtIn = remember(exercise.name, requestedWidth, requestedHeight) {
         ExerciseMediaStore.bundledFramePaths(exercise.name).firstOrNull()?.let { path ->
-            runCatching { context.assets.open(path).use(BitmapFactory::decodeStream) }.getOrNull()
+            runCatching {
+                ExerciseMediaStore.loadBundledFrame(
+                    context,
+                    path,
+                    requestedWidth,
+                    requestedHeight
+                )
+            }.getOrNull()
         }
     }
     val image = custom ?: builtIn
@@ -1014,12 +1030,28 @@ private fun ExerciseMediaSheet(
     val scope = rememberCoroutineScope()
     var revision by remember { mutableStateOf(0) }
     var error by remember { mutableStateOf(false) }
-    val custom = remember(exercise.id, ownerKey, revision) {
-        ExerciseMediaStore.loadCustom(context, ownerKey, exercise.id)
+    val density = LocalDensity.current
+    val requestedWidth = 1_024
+    val requestedHeight = with(density) { 230.dp.roundToPx() }
+    val custom = remember(exercise.id, ownerKey, revision, requestedWidth, requestedHeight) {
+        ExerciseMediaStore.loadCustom(
+            context,
+            ownerKey,
+            exercise.id,
+            requestedWidth,
+            requestedHeight
+        )
     }
-    val bundled = remember(exercise.name) {
+    val bundled = remember(exercise.name, requestedWidth, requestedHeight) {
         ExerciseMediaStore.bundledFramePaths(exercise.name).mapNotNull { path ->
-            runCatching { context.assets.open(path).use(BitmapFactory::decodeStream) }.getOrNull()
+            runCatching {
+                ExerciseMediaStore.loadBundledFrame(
+                    context,
+                    path,
+                    requestedWidth,
+                    requestedHeight
+                )
+            }.getOrNull()
         }
     }
     var frameIndex by remember { mutableStateOf(0) }
