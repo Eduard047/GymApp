@@ -1,7 +1,7 @@
 "use strict";
 
 const CACHE_PREFIX = "gym-pwa-";
-const CACHE_VERSION = "v74";
+const CACHE_VERSION = "v78";
 const CACHE_NAME = `${CACHE_PREFIX}${CACHE_VERSION}`;
 const LEGACY_GITHUB_ORIGIN = "https://eduard047.github.io";
 const LEGACY_GITHUB_SCOPE = `${LEGACY_GITHUB_ORIGIN}/GymApp/`;
@@ -26,18 +26,18 @@ const ASSETS = [
   "./",
   "./index.html",
   "./confirmed.html",
-  "./confirmed.v52.css",
-  "./confirmed.v52.js",
-  "./frame-guard.v52.js",
-  "./theme.v52.js",
-  "./styles.v52.css",
-  "./muscle-regions.v52.js",
-  "./supabase-config.v52.js",
-  "./state-contract.v52.js",
-  "./garmin-cloud-sync.v52.js",
-  "./progression-rules.v52.js",
-  "./russian-text.v52.js",
-  "./app.v52.js",
+  "./confirmed.v56.css",
+  "./confirmed.v56.js",
+  "./frame-guard.v56.js",
+  "./theme.v56.js",
+  "./styles.v56.css",
+  "./muscle-regions.v56.js",
+  "./supabase-config.v56.js",
+  "./state-contract.v56.js",
+  "./garmin-cloud-sync.v56.js",
+  "./progression-rules.v56.js",
+  "./russian-text.v56.js",
+  "./app.v56.js",
   ...EXERCISE_MEDIA_KEYS.flatMap(key => [
     `./exercise-media/${key}_0.jpg`,
     `./exercise-media/${key}_1.jpg`

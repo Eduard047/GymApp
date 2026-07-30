@@ -144,7 +144,6 @@ test("audited Ukrainian runtime labels keep their intended workout, progress, au
     ["Maximum weight and session volume over time.", "Максимальна вага та обсяг тренування в динаміці."],
     ["No exercise data yet", "За цією вправою поки немає даних"],
     ["No logged exercises for this muscle in the selected period.", "Для цієї групи м'язів у вибраному періоді немає записаних вправ."],
-    ["Open the full rank list and check the next unlocks.", "Відкрий повний список рангів і подивися, що відкриється далі."],
     ["Paste exported GymApp JSON here", "Встав сюди експортований JSON GymApp"],
     ["Plateau plan: change the rep target to break the flat trend.", "План виходу з плато: зміни ціль за повторами, щоб подолати застій."],
     ["One softer session is held steady; a deload needs two comparable regressions.", "Одне слабше тренування утримує навантаження; для розвантаження потрібні два порівнювані спади."],
@@ -215,6 +214,29 @@ test("PWA Russian dynamic Garmin, workout, exercise, and mission text never fall
     assert.notEqual(item.unitRu, item.unitEn, item.unitEn);
     assert.doesNotMatch(item.titleRu, /\b(?:check-in|days|sessions)\b/i, item.titleEn);
   }
+
+  const missionSummaryTranslations = JSON.parse(vm.runInContext(`JSON.stringify(
+    [
+      ["daily", dailyMissionCatalog()],
+      ["weekly", weeklyMissionCatalog()],
+      ["monthly", monthlyMissionCatalog()]
+    ].flatMap(([cadence, catalog]) => catalog.map(template => {
+      state.language = "en";
+      const summaryEn = missionSummary(template, cadence);
+      state.language = "ru";
+      const summaryRu = missionSummary(template, cadence);
+      return { summaryEn, summaryRu };
+    }))
+  )`, context));
+  assert.equal(missionSummaryTranslations.length, missionTranslations.length);
+  for (const item of missionSummaryTranslations) {
+    assert.notEqual(item.summaryRu, item.summaryEn, item.summaryEn);
+    assert.doesNotMatch(
+      item.summaryRu,
+      /\b(?:workouts?|sessions?|sets?|exercise|volume|days?)\b/i,
+      item.summaryEn
+    );
+  }
 });
 
 test("destructive confirmations have explicit Russian labels and escaped previews", () => {
@@ -278,13 +300,16 @@ test("localized attributes and audited generated labels are HTML encoded", () =>
   assert.doesNotMatch(mapping, /<img/);
   assert.match(mapping, /&lt;img src=x/);
 
-  const mission = vm.runInContext(`missionSection(
-    translationPayload,
-    translationPayload,
-    [{ done: false, title: translationPayload, summary: translationPayload,
-       cadenceLabel: translationPayload, reward: 10, progressLabel: translationPayload,
-       progress: 0, target: 1 }]
-  )`, context);
+  const mission = vm.runInContext(`missionCard({
+    done: false,
+    title: translationPayload,
+    summary: translationPayload,
+    cadenceLabel: translationPayload,
+    reward: 10,
+    progressLabel: translationPayload,
+    progress: 0,
+    target: 1
+  })`, context);
   assert.doesNotMatch(mission, /<img|onfocus="alert/);
   assert.match(mission, /&lt;img src=x/);
 

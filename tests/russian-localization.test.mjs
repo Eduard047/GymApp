@@ -180,8 +180,8 @@ test("PWA accepts Russian state and renders Russian runtime text before app star
   assert.match(appSource, /tx\("synced from Garmin", "синхронізовано з Garmin"\)/);
   assert.match(appSource, /txAttr\("Name in English, Ukrainian, or Russian", "Назва англійською, українською або російською"\)/);
   assert.doesNotMatch(appSource, /Name in English, Ukrainian or Russian/);
-  assert.ok(indexSource.indexOf("russian-text.v52.js") < indexSource.indexOf("app.v52.js"));
-  assert.match(workerSource, /"\.\/russian-text\.v52\.js"/);
+  assert.ok(indexSource.indexOf("russian-text.v56.js") < indexSource.indexOf("app.v56.js"));
+  assert.match(workerSource, /"\.\/russian-text\.v56\.js"/);
 });
 
 test("Garmin accepts Russian language sync and uses direct touch hit targets", async () => {
