@@ -662,6 +662,39 @@ test("cloud decoding is strict and auth refresh cannot switch account identity",
   assert.match(appSource, /chunks\.length >= MAX_REMOTE_RESPONSE_CHUNKS/);
 });
 
+test("Supabase 12-character refresh tokens remain valid and malformed tokens fail closed", async () => {
+  const context = loadContext(async url => {
+    if (url.includes("grant_type=refresh_token")) {
+      return new Response(JSON.stringify({
+        access_token: unsignedJwtFor(ACTIVE_USER_ID),
+        refresh_token: "Ab3dE5gH7jK9",
+        user: { id: ACTIVE_USER_ID }
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    throw new Error(`unexpected request: ${url}`);
+  });
+  const twelveCharacterSession = {
+    access_token: unsignedJwtFor(ACTIVE_USER_ID),
+    refresh_token: "Zy8xWv6uTs4r",
+    user: { id: ACTIVE_USER_ID, email: "owner@example.com" }
+  };
+  context.__twelveCharacterSession = twelveCharacterSession;
+
+  assert.equal(vm.runInContext("validRemoteSession(globalThis.__twelveCharacterSession)", context), true);
+  vm.runInContext("saveRemoteSession(globalThis.__twelveCharacterSession)", context);
+  const refreshed = await vm.runInContext("refreshRemoteSession(loadRemoteSession())", context);
+  assert.equal(refreshed.refresh_token, "Ab3dE5gH7jK9");
+  assert.equal(vm.runInContext("loadRemoteSession().refresh_token", context), "Ab3dE5gH7jK9");
+
+  context.__emptyRefreshTokenSession = { ...twelveCharacterSession, refresh_token: "" };
+  context.__oversizedRefreshTokenSession = {
+    ...twelveCharacterSession,
+    refresh_token: "x".repeat(8193)
+  };
+  assert.equal(vm.runInContext("validRemoteSession(globalThis.__emptyRefreshTokenSession)", context), false);
+  assert.equal(vm.runInContext("validRemoteSession(globalThis.__oversizedRefreshTokenSession)", context), false);
+});
+
 test("cloud credentials use transient storage and migrate the legacy persistent value once", () => {
   const context = loadContext(async () => {
     throw new Error("network is not used");

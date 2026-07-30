@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-const appSource = readFileSync(new URL("../pwa/app.v56.js", import.meta.url), "utf8");
+const appSource = readFileSync(new URL("../pwa/app.v57.js", import.meta.url), "utf8");
 const stylesSource = readFileSync(new URL("../pwa/styles.v56.css", import.meta.url), "utf8");
 const russianSource = readFileSync(new URL("../pwa/russian-text.v56.js", import.meta.url), "utf8");
 
