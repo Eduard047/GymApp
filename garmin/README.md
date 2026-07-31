@@ -4,7 +4,7 @@ Connect IQ watch app targeting the 108 API-compatible Garmin watches and wearabl
 
 ## Current controls
 
-- Main dashboard shows workout time, current heart rate, heart-rate zone bar, Gym kcal, and Garmin kcal.
+- Main dashboard uses a watch-first workout hierarchy: current heart rate and zone, elapsed time, Gym kcal, current planned set, exercise, weight/reps, and the live effort/rest status. Garmin kcal remains available in the workout summary.
 - The app estimates effort from wrist movement plus heart-rate trend, with an automatic heart-rate-only fallback.
 - When the watch detects a likely completed set, the dashboard shows `LOG SET?`; tap/select logs the set with the currently selected exercise, weight, and reps.
 - After a set is saved, the last set can be undone for 10 seconds. Tap the undo area, press `BACK`/`LAP`, swipe right, or use the left action on the save row. Undo also rolls back the set calorie correction and rest timer.

@@ -271,19 +271,7 @@ class WorkoutView extends Ui.View {
     }
 
     function drawDashboard(dc, w, h) {
-        dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, sy(h, 26), Gfx.FONT_TINY, GymSession.elapsedText(), Gfx.TEXT_JUSTIFY_CENTER);
-
         var hrText = GymSession.hr == null ? "--" : GymSession.hr.toString();
-        var garminKcal = GymSession.garminCalories == null ? "--" : GymSession.garminCalories.toString();
-
-        dc.setColor(zoneColor(GymSession.zone), Gfx.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, sy(h, 54), Gfx.FONT_NUMBER_MILD, hrText, Gfx.TEXT_JUSTIFY_CENTER);
-        drawHeartRateZones(dc, w, h, 126);
-
-        drawCompactValue(dc, w, h, 82, 162, "GYM", GymSession.gymCalories.format("%.0f"));
-        drawCompactValue(dc, w, h, 178, 162, "GAR", garminKcal);
-
         var rest = GymStore.restSeconds();
         var setActive = GymSession.effortState.equals("SET ACTIVE");
         var setMaybe = GymSession.effortState.equals("SET MAYBE");
@@ -294,14 +282,273 @@ class WorkoutView extends Ui.View {
                 (setMaybe ?
                     effortLabel(GymSession.effortState) :
                     (rest > 0 ?
-                        (GymStore.tr("REST ", "ВІДП ", "ОТДЫХ ") + rest.toString() + GymStore.tr("s", "с", "с")) :
+                        (GymStore.tr("REST ", "ВІДП ", "ОТДЫХ ") + countdownText(rest)) :
                         effortLabel(GymSession.effortState))));
-        dc.setColor(GymSession.autoLogPrompt ? Gfx.COLOR_GREEN : (setActive ? Gfx.COLOR_GREEN : (setMaybe ? Gfx.COLOR_YELLOW : (rest > 0 ? Gfx.COLOR_YELLOW : stateColor(GymSession.effortState)))), Gfx.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, sy(h, 202), Gfx.FONT_XTINY, status, Gfx.TEXT_JUSTIFY_CENTER);
+
+        if (isCompactDashboard(w, h)) {
+            drawCompactDashboard(dc, w, h, hrText, rest, setActive, setMaybe, status);
+            if (GymSession.paused) {
+                drawPausedOverlay(dc, w, h);
+            }
+            return;
+        }
+
+        drawHeartIcon(dc, w, h, 130, 14);
+
+        dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(w / 2, sy(h, 31), Gfx.FONT_TINY, hrText, Gfx.TEXT_JUSTIFY_CENTER);
+        dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(w / 2, sy(h, 64), Gfx.FONT_SYSTEM_XTINY, "BPM", Gfx.TEXT_JUSTIFY_CENTER);
+        drawHeartRateZones(dc, w, h, 92);
+
+        drawDashboardDivider(dc, w, h, 110);
+        drawDashboardMetric(dc, w, h, 78, 113,
+            GymStore.tr("ELAPSED", "ЧАС", "ВРЕМЯ"), GymSession.elapsedText());
+        drawDashboardMetric(dc, w, h, 182, 113,
+            GymStore.tr("CALORIES", "ККАЛ", "ККАЛ"), GymSession.gymCalories.format("%.0f"));
+        dc.setColor(Gfx.COLOR_DK_GRAY, Gfx.COLOR_TRANSPARENT);
+        dc.drawLine(w / 2, sy(h, 113), w / 2, sy(h, 148));
+        drawDashboardDivider(dc, w, h, 153);
+
+        drawDashboardSetRow(dc, w, h);
+        dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(w / 2, sy(h, 184), Gfx.FONT_SYSTEM_XTINY, setSummaryText(), Gfx.TEXT_JUSTIFY_CENTER);
+
+        var statusColor = GymSession.autoLogPrompt ? Gfx.COLOR_GREEN :
+            (setActive ? Gfx.COLOR_GREEN :
+                (setMaybe ? Gfx.COLOR_YELLOW :
+                    (rest > 0 ? Gfx.COLOR_GREEN : stateColor(GymSession.effortState))));
+        drawDashboardStatusPill(dc, w, h, status, statusColor);
 
         if (GymSession.paused) {
             drawPausedOverlay(dc, w, h);
         }
+    }
+
+    function isCompactDashboard(w, h) {
+        return w < 240 || h < 240;
+    }
+
+    function isTinyDashboard(w, h) {
+        return w < 200 || h < 200;
+    }
+
+    function drawCompactDashboard(dc, w, h, hrText, rest, setActive, setMaybe, status) {
+        if (isTinyDashboard(w, h)) {
+            drawTinyDashboard(dc, w, h, hrText, rest, setActive, setMaybe, status);
+            return;
+        }
+
+        var centerX = w / 2;
+        drawCompactHeartIcon(dc, centerX, 17);
+
+        dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(centerX, 22, Gfx.FONT_TINY, hrText, Gfx.TEXT_JUSTIFY_CENTER);
+        dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(centerX, 49, Gfx.FONT_SYSTEM_XTINY, "BPM", Gfx.TEXT_JUSTIFY_CENTER);
+        drawCompactHeartRateZones(dc, w, 67);
+
+        drawCompactDivider(dc, w, 83);
+        drawCompactMetric(dc, centerX - 39, 87,
+            GymStore.tr("TIME", "ЧАС", "ВРЕМЯ"), GymSession.elapsedText());
+        drawCompactMetric(dc, centerX + 39, 87,
+            GymStore.tr("KCAL", "ККАЛ", "ККАЛ"), GymSession.gymCalories.format("%.0f"));
+        dc.setColor(Gfx.COLOR_DK_GRAY, Gfx.COLOR_TRANSPARENT);
+        dc.drawLine(centerX, 87, centerX, 116);
+        drawCompactDivider(dc, w, 120);
+
+        dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
+        var setExercise = dashboardSetProgressText() + " | " + GymStore.currentExerciseLabel();
+        dc.drawText(centerX, 123, Gfx.FONT_SYSTEM_XTINY,
+            fitTextWidth(dc, setExercise, Gfx.FONT_SYSTEM_XTINY, w - 38),
+            Gfx.TEXT_JUSTIFY_CENTER);
+        dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(centerX, 141, Gfx.FONT_SYSTEM_XTINY, setSummaryText(), Gfx.TEXT_JUSTIFY_CENTER);
+
+        var statusColor = GymSession.autoLogPrompt ? Gfx.COLOR_GREEN :
+            (setActive ? Gfx.COLOR_GREEN :
+                (setMaybe ? Gfx.COLOR_YELLOW :
+                    (rest > 0 ? Gfx.COLOR_GREEN : stateColor(GymSession.effortState))));
+        var fitted = fitTextWidth(dc, status, Gfx.FONT_SYSTEM_XTINY, w - 82);
+        dc.setColor(statusColor, Gfx.COLOR_TRANSPARENT);
+        dc.drawRoundedRectangle(41, 161, w - 82, 24, 9);
+        dc.drawText(centerX, 162, Gfx.FONT_SYSTEM_XTINY, fitted, Gfx.TEXT_JUSTIFY_CENTER);
+    }
+
+    function drawTinyDashboard(dc, w, h, hrText, rest, setActive, setMaybe, status) {
+        var centerX = w / 2;
+        drawCompactHeartIcon(dc, centerX, 10);
+
+        dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(centerX, 14, Gfx.FONT_XTINY, hrText, Gfx.TEXT_JUSTIFY_CENTER);
+        dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(centerX, 35, Gfx.FONT_SYSTEM_XTINY, "BPM", Gfx.TEXT_JUSTIFY_CENTER);
+        drawCompactHeartRateZones(dc, w, 51);
+
+        drawTinyDivider(dc, w, 64);
+        drawCompactMetric(dc, centerX - 31, 68,
+            GymStore.tr("TIME", "ЧАС", "ВРЕМЯ"), GymSession.elapsedText());
+        drawCompactMetric(dc, centerX + 31, 68,
+            GymStore.tr("KCAL", "ККАЛ", "ККАЛ"), GymSession.gymCalories.format("%.0f"));
+        dc.setColor(Gfx.COLOR_DK_GRAY, Gfx.COLOR_TRANSPARENT);
+        dc.drawLine(centerX, 68, centerX, 95);
+        drawTinyDivider(dc, w, 99);
+
+        var setExercise = dashboardSetProgressText() + " | " + GymStore.currentExerciseLabel();
+        dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(centerX, 103, Gfx.FONT_SYSTEM_XTINY,
+            fitTextWidth(dc, setExercise, Gfx.FONT_SYSTEM_XTINY, w - 28),
+            Gfx.TEXT_JUSTIFY_CENTER);
+        dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(centerX, 119, Gfx.FONT_SYSTEM_XTINY, setSummaryText(), Gfx.TEXT_JUSTIFY_CENTER);
+
+        var statusColor = GymSession.autoLogPrompt ? Gfx.COLOR_GREEN :
+            (setActive ? Gfx.COLOR_GREEN :
+                (setMaybe ? Gfx.COLOR_YELLOW :
+                    (rest > 0 ? Gfx.COLOR_GREEN : stateColor(GymSession.effortState))));
+        var fitted = fitTextWidth(dc, status, Gfx.FONT_SYSTEM_XTINY, w - 76);
+        dc.setColor(statusColor, Gfx.COLOR_TRANSPARENT);
+        dc.drawRoundedRectangle(38, 137, w - 76, 21, 8);
+        dc.drawText(centerX, 137, Gfx.FONT_SYSTEM_XTINY, fitted, Gfx.TEXT_JUSTIFY_CENTER);
+    }
+
+    function drawCompactHeartIcon(dc, x, y) {
+        dc.setColor(Gfx.COLOR_RED, Gfx.COLOR_TRANSPARENT);
+        dc.fillCircle(x - 3, y, 3);
+        dc.fillCircle(x + 3, y, 3);
+        dc.fillPolygon([[x - 6, y], [x + 6, y], [x, y + 9]]);
+    }
+
+    function drawCompactHeartRateZones(dc, w, y) {
+        var segmentWidth = w < 200 ? 12 : 16;
+        var gap = w < 200 ? 2 : 3;
+        var totalWidth = (segmentWidth * 5) + (gap * 4);
+        var left = (w - totalWidth) / 2;
+        for (var i = 1; i <= 5; i += 1) {
+            var x = left + ((i - 1) * (segmentWidth + gap));
+            dc.setColor(zoneColor(i), Gfx.COLOR_TRANSPARENT);
+            dc.fillRoundedRectangle(x, y, segmentWidth, 7, 3);
+        }
+
+        var markerZone = GymSession.zone;
+        if (markerZone < 1) {
+            markerZone = 1;
+        } else if (markerZone > 5) {
+            markerZone = 5;
+        }
+        var markerX = left + ((markerZone - 1) * (segmentWidth + gap)) + (segmentWidth / 2);
+        dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
+        dc.fillPolygon([[markerX, y - 5], [markerX - 4, y - 1], [markerX + 4, y - 1]]);
+    }
+
+    function drawCompactDivider(dc, w, y) {
+        dc.setColor(Gfx.COLOR_DK_GRAY, Gfx.COLOR_TRANSPARENT);
+        dc.drawLine(35, y, w - 35, y);
+    }
+
+    function drawTinyDivider(dc, w, y) {
+        dc.setColor(Gfx.COLOR_DK_GRAY, Gfx.COLOR_TRANSPARENT);
+        dc.drawLine(28, y, w - 28, y);
+    }
+
+    function drawCompactMetric(dc, x, y, label, value) {
+        dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(x, y, Gfx.FONT_SYSTEM_XTINY, label, Gfx.TEXT_JUSTIFY_CENTER);
+        dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(x, y + 15, Gfx.FONT_SYSTEM_XTINY, value, Gfx.TEXT_JUSTIFY_CENTER);
+    }
+
+    function drawHeartIcon(dc, w, h, baseX, baseY) {
+        var x = sx(w, baseX);
+        var y = sy(h, baseY);
+        var radius = sr(w, h, 4);
+        dc.setColor(Gfx.COLOR_RED, Gfx.COLOR_TRANSPARENT);
+        dc.fillCircle(x - radius, y, radius);
+        dc.fillCircle(x + radius, y, radius);
+        dc.fillPolygon([
+            [x - (radius * 2), y],
+            [x + (radius * 2), y],
+            [x, y + (radius * 3)]
+        ]);
+    }
+
+    function drawDashboardDivider(dc, w, h, baseY) {
+        dc.setColor(Gfx.COLOR_DK_GRAY, Gfx.COLOR_TRANSPARENT);
+        dc.drawLine(sx(w, 58), sy(h, baseY), sx(w, 202), sy(h, baseY));
+    }
+
+    function drawDashboardMetric(dc, w, h, baseX, baseY, label, value) {
+        dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(sx(w, baseX), sy(h, baseY), Gfx.FONT_SYSTEM_XTINY,
+            label, Gfx.TEXT_JUSTIFY_CENTER);
+        dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(sx(w, baseX), sy(h, baseY + 16), Gfx.FONT_SYSTEM_XTINY,
+            value, Gfx.TEXT_JUSTIFY_CENTER);
+    }
+
+    function dashboardSetProgressText() {
+        var current = GymStore.sets.size() + 1;
+        if (current > GymStore.maxWorkoutSets) {
+            current = GymStore.maxWorkoutSets;
+        }
+        var label = GymStore.tr("SET ", "ПІДХІД ", "ПОДХОД ") + current.toString();
+        if (GymStore.plan.size() > 0) {
+            var total = GymStore.plan.size();
+            if (total < current) {
+                total = current;
+            }
+            label += GymStore.tr(" OF ", " З ", " ИЗ ") + total.toString();
+        }
+        return label;
+    }
+
+    function dashboardSetBadgeText() {
+        var current = GymStore.sets.size() + 1;
+        if (current > GymStore.maxWorkoutSets) {
+            current = GymStore.maxWorkoutSets;
+        }
+        if (GymStore.plan.size() > 0) {
+            var total = GymStore.plan.size();
+            if (total < current) {
+                total = current;
+            }
+            return current.toString() + "/" + total.toString();
+        }
+        return "SET " + current.toString();
+    }
+
+    function drawDashboardSetRow(dc, w, h) {
+        var badgeLeft = sx(w, 55);
+        var badgeTop = sy(h, 159);
+        var badgeWidth = sr(w, h, 50);
+        var badgeHeight = sr(w, h, 25);
+        dc.setColor(Gfx.COLOR_GREEN, Gfx.COLOR_TRANSPARENT);
+        dc.drawRoundedRectangle(badgeLeft, badgeTop, badgeWidth, badgeHeight, sr(w, h, 9));
+        dc.drawText(badgeLeft + (badgeWidth / 2), sy(h, 160), Gfx.FONT_SYSTEM_XTINY,
+            dashboardSetBadgeText(), Gfx.TEXT_JUSTIFY_CENTER);
+
+        dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(sx(w, 112), sy(h, 160), Gfx.FONT_SYSTEM_XTINY,
+            fitTextWidth(dc, GymStore.currentExerciseLabel(), Gfx.FONT_SYSTEM_XTINY, sr(w, h, 104)),
+            Gfx.TEXT_JUSTIFY_LEFT);
+    }
+
+    function countdownText(seconds) {
+        var minutes = (seconds / 60).toNumber();
+        var remaining = seconds % 60;
+        var suffix = remaining < 10 ? "0" + remaining.toString() : remaining.toString();
+        return minutes.toString() + ":" + suffix;
+    }
+
+    function drawDashboardStatusPill(dc, w, h, label, color) {
+        var fitted = fitTextWidth(dc, label, Gfx.FONT_SYSTEM_XTINY, sr(w, h, 122));
+        var left = sx(w, 63);
+        var top = sy(h, 210);
+        var width = sr(w, h, 134);
+        var height = sr(w, h, 25);
+        dc.setColor(color, Gfx.COLOR_TRANSPARENT);
+        dc.drawRoundedRectangle(left, top, width, height, sr(w, h, 10));
+        dc.drawText(w / 2, sy(h, 210), Gfx.FONT_SYSTEM_XTINY, fitted, Gfx.TEXT_JUSTIFY_CENTER);
     }
 
     function showPauseFlash() {
@@ -351,14 +598,14 @@ class WorkoutView extends Ui.View {
     }
 
     function drawHeartRateZones(dc, w, h, baseY) {
-        var left = sx(w, 48);
+        var left = sx(w, 62);
         var y = sy(h, baseY);
-        var segmentWidth = sr(w, h, 30);
-        var gap = sr(w, h, 5);
+        var segmentWidth = sr(w, h, 24);
+        var gap = sr(w, h, 4);
         for (var i = 1; i <= 5; i += 1) {
             var x = left + ((i - 1) * (segmentWidth + gap));
             dc.setColor(zoneColor(i), Gfx.COLOR_TRANSPARENT);
-            dc.fillRoundedRectangle(x, y, segmentWidth, sr(w, h, 12), sr(w, h, 4));
+            dc.fillRoundedRectangle(x, y, segmentWidth, sr(w, h, 9), sr(w, h, 4));
         }
 
         var markerZone = GymSession.zone;
@@ -369,7 +616,7 @@ class WorkoutView extends Ui.View {
         }
         var markerX = left + ((markerZone - 1) * (segmentWidth + gap)) + (segmentWidth / 2);
         dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
-        dc.fillPolygon([[markerX, y - sr(w, h, 7)], [markerX - sr(w, h, 6), y - sr(w, h, 1)], [markerX + sr(w, h, 6), y - sr(w, h, 1)]]);
+        dc.fillPolygon([[markerX, y - sr(w, h, 6)], [markerX - sr(w, h, 5), y - sr(w, h, 1)], [markerX + sr(w, h, 5), y - sr(w, h, 1)]]);
     }
 
     function zoneColor(zone) {
@@ -691,7 +938,10 @@ class WorkoutView extends Ui.View {
         }
         var totalWidth = sr(w, h, 50);
         var startX = (w / 2) - (totalWidth / 2);
-        var y = sy(h, 12);
+        var y = page == 0 ?
+            (isCompactDashboard(w, h) ?
+                (isTinyDashboard(w, h) ? h - 10 : h - 14) :
+                sy(h, 244)) : sy(h, 12);
         for (var i = 0; i < 4; i += 1) {
             var x = startX + (i * sr(w, h, 16));
             dc.setColor(i == dotPage ? Gfx.COLOR_WHITE : Gfx.COLOR_DK_GRAY, Gfx.COLOR_TRANSPARENT);

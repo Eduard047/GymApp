@@ -63,6 +63,26 @@ test("Garmin rest countdown never blocks or hides a detected next set", async ()
   );
 });
 
+test("Garmin dashboard renders the selected live workout hierarchy without static mock data", async () => {
+  const view = await readFile("garmin/source/WorkoutView.mc", "utf8");
+  const dashboard = section(view, "function drawDashboard(", "function drawHeartIcon(");
+
+  assert.match(dashboard, /GymSession\.hr == null \? "--" : GymSession\.hr\.toString\(\)/);
+  assert.match(dashboard, /GymSession\.elapsedText\(\)/);
+  assert.match(dashboard, /GymSession\.gymCalories\.format\("%\.0f"\)/);
+  assert.match(dashboard, /dashboardSetProgressText\(\)/);
+  assert.match(dashboard, /GymStore\.currentExerciseLabel\(\)/);
+  assert.match(dashboard, /setSummaryText\(\)/);
+  assert.match(dashboard, /countdownText\(rest\)/);
+  assert.match(view, /function drawHeartIcon\(/);
+  assert.match(view, /function drawDashboardStatusPill\(/);
+  assert.match(view, /function isCompactDashboard\(w, h\)/);
+  assert.match(view, /function drawCompactDashboard\(/);
+  assert.match(view, /function isTinyDashboard\(w, h\)/);
+  assert.match(view, /isTinyDashboard\(w, h\) \? h - 10 : h - 14/);
+  assert.doesNotMatch(dashboard, /"142"|"00:17:34"|"Bench Press"|"128"/);
+});
+
 test("Garmin can undo only the most recent set inside a bounded window", async () => {
   const [session, store, view] = await Promise.all([
     readFile("garmin/source/GymSession.mc", "utf8"),
