@@ -1,0 +1,6 @@
+# Synthetic 12-character Supabase refresh-token fixtures committed in d22f283.
+# The current test constructs these values from short segments so new commits do
+# not resemble credentials; these exact fingerprints cover immutable history.
+d22f283d432a6c7e6cf1f77181c18332bc7a6111:tests/pwa-cloud-cas.test.mjs:generic-api-key:670
+d22f283d432a6c7e6cf1f77181c18332bc7a6111:tests/pwa-cloud-cas.test.mjs:generic-api-key:678
+d22f283d432a6c7e6cf1f77181c18332bc7a6111:tests/pwa-cloud-cas.test.mjs:generic-api-key:686

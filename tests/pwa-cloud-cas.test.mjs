@@ -663,11 +663,13 @@ test("cloud decoding is strict and auth refresh cannot switch account identity",
 });
 
 test("Supabase 12-character refresh tokens remain valid and malformed tokens fail closed", async () => {
+  const replacementRefreshToken = ["Ab3d", "E5gH", "7jK9"].join("");
+  const existingRefreshToken = ["Zy8x", "Wv6u", "Ts4r"].join("");
   const context = loadContext(async url => {
     if (url.includes("grant_type=refresh_token")) {
       return new Response(JSON.stringify({
         access_token: unsignedJwtFor(ACTIVE_USER_ID),
-        refresh_token: "Ab3dE5gH7jK9",
+        refresh_token: replacementRefreshToken,
         user: { id: ACTIVE_USER_ID }
       }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
@@ -675,7 +677,7 @@ test("Supabase 12-character refresh tokens remain valid and malformed tokens fai
   });
   const twelveCharacterSession = {
     access_token: unsignedJwtFor(ACTIVE_USER_ID),
-    refresh_token: "Zy8xWv6uTs4r",
+    refresh_token: existingRefreshToken,
     user: { id: ACTIVE_USER_ID, email: "owner@example.com" }
   };
   context.__twelveCharacterSession = twelveCharacterSession;
@@ -683,8 +685,8 @@ test("Supabase 12-character refresh tokens remain valid and malformed tokens fai
   assert.equal(vm.runInContext("validRemoteSession(globalThis.__twelveCharacterSession)", context), true);
   vm.runInContext("saveRemoteSession(globalThis.__twelveCharacterSession)", context);
   const refreshed = await vm.runInContext("refreshRemoteSession(loadRemoteSession())", context);
-  assert.equal(refreshed.refresh_token, "Ab3dE5gH7jK9");
-  assert.equal(vm.runInContext("loadRemoteSession().refresh_token", context), "Ab3dE5gH7jK9");
+  assert.equal(refreshed.refresh_token, replacementRefreshToken);
+  assert.equal(vm.runInContext("loadRemoteSession().refresh_token", context), replacementRefreshToken);
 
   context.__emptyRefreshTokenSession = { ...twelveCharacterSession, refresh_token: "" };
   context.__oversizedRefreshTokenSession = {
