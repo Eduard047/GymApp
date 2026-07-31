@@ -69,7 +69,7 @@ private struct StartupFailureView: View {
     let retry: () -> Void
 
     var body: some View {
-        ContentUnavailableView {
+        GymContentUnavailableView {
             Label(
                 gymText("Storage unavailable", "Сховище недоступне", languageCode: languageCode),
                 systemImage: "externaldrive.badge.exclamationmark"

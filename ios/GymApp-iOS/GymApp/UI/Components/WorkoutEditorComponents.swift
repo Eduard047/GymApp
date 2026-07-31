@@ -519,7 +519,7 @@ private struct ExerciseMediaSheet: View {
                 frameIndex = (frameIndex + 1) % bundledImages.count
             }
         }
-        .onChange(of: selectedItem) { _, item in
+        .onChange(of: selectedItem) { item in
             guard let item else { return }
             Task {
                 do {
@@ -692,7 +692,7 @@ struct ExercisePickerSheet: View {
 
                     if filteredExercises.isEmpty {
                         if scope == .frequent && frequentExerciseIDs.isEmpty && search.isEmpty {
-                            ContentUnavailableView {
+                            GymContentUnavailableView {
                                 Label(gymLocalized("No frequent exercises yet"), systemImage: "star")
                             } description: {
                                 Text(gymLocalized(
@@ -700,7 +700,7 @@ struct ExercisePickerSheet: View {
                                 ))
                             }
                         } else {
-                            ContentUnavailableView.search(text: search)
+                            GymContentUnavailableView.search(text: search)
                         }
                     } else {
                         ForEach(filteredExercises) { exercise in

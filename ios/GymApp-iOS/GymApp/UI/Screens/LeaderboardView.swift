@@ -303,7 +303,7 @@ struct LeaderboardView: View {
 
     private var emptyState: some View {
         GymPanel {
-            ContentUnavailableView {
+            GymContentUnavailableView {
                 Label(t("No synced progress yet", "Синхронізованого прогресу ще немає"), systemImage: "person.crop.circle")
             } description: {
                 Text(t("Sign in and sync to restore your protected progress here.", "Увійди та синхронізуй дані, щоб відновити тут свій захищений прогрес."))

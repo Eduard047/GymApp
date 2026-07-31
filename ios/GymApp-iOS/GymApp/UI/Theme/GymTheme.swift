@@ -84,6 +84,70 @@ public struct GymBackground<Content: View>: View {
     }
 }
 
+/// A small iOS 16-compatible replacement for SwiftUI's iOS 17
+/// `ContentUnavailableView`.
+public struct GymContentUnavailableView: View {
+    private let label: AnyView
+    private let description: AnyView
+    private let actions: AnyView
+
+    public init<LabelContent: View, DescriptionContent: View, ActionsContent: View>(
+        @ViewBuilder label: () -> LabelContent,
+        @ViewBuilder description: () -> DescriptionContent,
+        @ViewBuilder actions: () -> ActionsContent
+    ) {
+        self.label = AnyView(label())
+        self.description = AnyView(description())
+        self.actions = AnyView(actions())
+    }
+
+    public init<LabelContent: View, DescriptionContent: View>(
+        @ViewBuilder label: () -> LabelContent,
+        @ViewBuilder description: () -> DescriptionContent
+    ) {
+        self.init(label: label, description: description, actions: { EmptyView() })
+    }
+
+    public init(
+        _ title: LocalizedStringKey,
+        systemImage: String,
+        description: Text
+    ) {
+        self.init(
+            label: { Label(title, systemImage: systemImage) },
+            description: { description },
+            actions: { EmptyView() }
+        )
+    }
+
+    public static func search(text: String) -> GymContentUnavailableView {
+        GymContentUnavailableView {
+            Label("No results", systemImage: "magnifyingglass")
+        } description: {
+            if text.isEmpty {
+                Text("Try a different filter.")
+            } else {
+                Text("No results for \u{201c}\(text)\u{201d}.")
+            }
+        }
+    }
+
+    public var body: some View {
+        VStack(spacing: 12) {
+            label
+                .font(.title3.weight(.semibold))
+            description
+                .font(.subheadline)
+                .foregroundStyle(GymTheme.textSecondary)
+                .multilineTextAlignment(.center)
+            actions
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .contain)
+    }
+}
+
 private extension UIColor {
     convenience init(rgb: UInt32, alpha: CGFloat = 1) {
         self.init(

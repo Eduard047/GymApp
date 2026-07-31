@@ -2,6 +2,7 @@ package com.example.gymapp.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -15,12 +16,16 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.Icon
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Watch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -30,6 +35,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import com.example.gymapp.R
 import com.example.gymapp.auth.LeaderboardRow
 import com.example.gymapp.garmin.openGymWorkoutTrackerInGarminStore
+import com.example.gymapp.garmin.GarminDeviceUiState
 import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.SectionTitle
 import com.example.gymapp.ui.viewmodel.ExerciseListUiState
@@ -58,6 +64,7 @@ fun ProfileScreen(
     isAccountActionLoading: Boolean,
     onChangePassword: (currentPassword: String, newPassword: String) -> Unit,
     onDeleteCloudAccount: () -> Unit,
+    garminDeviceState: GarminDeviceUiState,
     onResetGarminPairing: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -104,6 +111,9 @@ fun ProfileScreen(
                     onOpenGarminApp = { openGymWorkoutTrackerInGarminStore(context) },
                     onResetGarminPairing = { showGarminResetConfirmation = true }
                 )
+            }
+            item {
+                GarminDeviceCard(garminDeviceState)
             }
             if (accountState.isCloudAccount && cloudSyncChoiceRequired) {
                 item {
@@ -183,6 +193,72 @@ fun ProfileScreen(
                 onDeleteCloudAccount()
             }
         )
+    }
+}
+
+@Composable
+private fun GarminDeviceCard(state: GarminDeviceUiState) {
+    AppPanel(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            SectionTitle(
+                eyebrow = stringResource(R.string.garmin_profile_eyebrow),
+                title = stringResource(R.string.garmin_profile_title),
+                supporting = stringResource(R.string.garmin_profile_supporting)
+            )
+            if (!state.sdkReady || state.devices.isEmpty()) {
+                Text(
+                    text = stringResource(
+                        if (state.sdkReady) R.string.garmin_profile_no_devices
+                        else R.string.garmin_profile_unavailable
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                state.devices.forEach { device ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Watch,
+                            contentDescription = null,
+                            tint = if (device.connected) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(device.name, style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                text = stringResource(
+                                    if (device.connected) R.string.garmin_profile_connected
+                                    else R.string.garmin_profile_offline
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (device.connected) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                }
+                            )
+                        }
+                        if (device.trustedForActiveAccount) {
+                            Text(
+                                text = stringResource(R.string.garmin_profile_paired),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

@@ -127,6 +127,16 @@ test("Garmin messages are bounded, account-bound, replay-aware, and acked by id"
   assert.match(androidManager, /cacheAndPushPlan[\s\S]*syncPayload\(exerciseCatalog, plan, syncId, resetWorkout = false\)/);
   assert.match(androidManager, /pushSyncForContext[\s\S]*syncPayload\(exercises, plan, syncId, resetWorkout = false\)/);
   assert.match(androidManager, /sendPendingAuthResetIfPossible[\s\S]*exercises = emptyList\(\)[\s\S]*plan = emptyList\(\)[\s\S]*resetWorkout = true/);
+  assert.match(
+    androidManager,
+    /registerForDeviceEvents\(device\)[\s\S]*runCatching \{[\s\S]*refreshDeviceUiState\(\)[\s\S]*onFailure \{ error ->[\s\S]*Rejected malformed Garmin device callback/
+  );
+  assert.match(
+    androidManager,
+    /registerForAppEvents\(device, garminApp\)[\s\S]*runCatching \{[\s\S]*boundedGarminInboundEnvelopes\(messages\)[\s\S]*Rejected malformed Garmin app callback/
+  );
+  assert.match(androidManager, /MAX_PROFILE_GARMIN_DEVICES = 8/);
+  assert.match(androidManager, /MAX_PROFILE_DEVICE_NAME_CHARS = 80/);
   assert.match(store, /isValidAccountBinding[\s\S]*code >= 97 && code <= 102/);
   assert.doesNotMatch(store, /pending\.remove\(i\)/);
   assert.doesNotMatch(app, /pending\.remove\(0\)/);

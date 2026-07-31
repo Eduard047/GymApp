@@ -1,6 +1,6 @@
 # GymApp for iOS
 
-Native SwiftUI port of the Android GymApp. The project targets iOS 17 and is built with Xcode 26 / the iOS 26 SDK. It intentionally has no advertising, analytics, tracking, or third-party runtime SDKs.
+Native SwiftUI port of the Android GymApp. The project targets iOS 16 and is built with Xcode 26 / the iOS 26 SDK. It intentionally has no advertising, analytics, tracking, or third-party runtime SDKs.
 
 ## Included
 
@@ -44,7 +44,7 @@ xcodebuild \
   2026-07-21, including localization, bounded-network, cloud compatibility,
   persistent password-recovery state, HTTPS auth-bridge, and unsolicited-callback rejection cases.
 - Release `iphoneos` build: **passed** on 2026-07-11 as an unsigned arm64 app
-  with deployment target iOS 17.0 and bundle ID `com.setforge.gymapp.ios`.
+  with deployment target iOS 16.0 and bundle ID `com.setforge.gymapp.ios`.
 - Strict Swift 6 complete-concurrency warnings-as-errors build: **passed**.
 - `deno check ../../supabase/functions/delete-account/index.ts`: **passed** against
   the canonical repository-root source with

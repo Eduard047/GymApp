@@ -65,7 +65,7 @@ struct ExerciseProgressView: View {
         .navigationTitle(t("Progress", "Прогрес"))
         .environment(\.locale, appLocale)
         .onAppear(perform: selectDefaultExerciseIfNeeded)
-        .onChange(of: store.exercises) { _, _ in selectDefaultExerciseIfNeeded() }
+        .onChange(of: store.exercises) { _ in selectDefaultExerciseIfNeeded() }
         .alert(item: $activeAlert, content: makeAlert)
     }
 
@@ -270,7 +270,7 @@ struct ExerciseProgressView: View {
     private var historySection: some View {
         if historyGroups.isEmpty {
             GymPanel {
-                ContentUnavailableView {
+                GymContentUnavailableView {
                     Label(t("No progress this month", "Немає прогресу за цей місяць"), systemImage: "chart.xyaxis.line")
                 } description: {
                     Text(t("Log sets for the selected exercise to unlock trends.", "Додай підходи для вибраної вправи, щоб відкрити тренди."))
@@ -368,7 +368,7 @@ struct ExerciseProgressView: View {
 
     private var noExerciseState: some View {
         GymPanel {
-            ContentUnavailableView {
+            GymContentUnavailableView {
                 Label(t("No exercises yet", "Ще немає вправ"), systemImage: "dumbbell")
             } description: {
                 Text(t("Create an exercise and log a workout first.", "Спочатку створи вправу й запиши тренування."))

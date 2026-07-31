@@ -47,6 +47,9 @@ struct AppRootView: View {
                 )
             }
         }
+        // A number of feature views resolve app strings through UserDefaults-backed helpers.
+        // Recreate the presentation subtree so cached labels cannot survive a language change.
+        .id(languageCode)
         .environment(\.locale, AppLanguage(rawValue: languageCode)?.locale ?? Locale(identifier: "en"))
         .allowsHitTesting(!appState.isSigningOut)
         .overlay {
@@ -74,10 +77,10 @@ struct AppRootView: View {
                 showsPasswordUpdate = false
             }
         }
-        .onChange(of: auth.needsPasswordUpdate) { _, needsUpdate in
+        .onChange(of: auth.needsPasswordUpdate) { needsUpdate in
             showsPasswordUpdate = needsUpdate
         }
-        .onChange(of: scenePhase) { _, phase in
+        .onChange(of: scenePhase) { phase in
             if phase == .background { appState.saveBeforeBackgrounding() }
         }
         .task {
@@ -334,7 +337,7 @@ private struct AccountPreparationView: View {
     let signOut: () -> Void
 
     var body: some View {
-        ContentUnavailableView {
+        GymContentUnavailableView {
             Label(
                 gymText("Preparing account", "Підготовка акаунта", languageCode: languageCode),
                 systemImage: isWorking ? "arrow.triangle.2.circlepath" : "person.crop.circle.badge.exclamationmark"

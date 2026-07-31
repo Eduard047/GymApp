@@ -18,6 +18,9 @@ struct ProfileView: View {
     @ObservedObject private var appState: AppState
     @ObservedObject private var auth: AuthService
     @ObservedObject private var store: WorkoutStore
+    @ObservedObject private var garminCloud: GarminCloudService
+    @ObservedObject private var garminPhoneSync: GarminPhoneSyncService
+    @AppStorage("app-language") private var languageCode = AppLanguage.english.rawValue
 
     @State private var activeAlert: ActiveAlert?
     @State private var showsAccountSettings = false
@@ -33,6 +36,8 @@ struct ProfileView: View {
         self.appState = appState
         self.auth = auth
         self.store = store
+        self.garminCloud = appState.garminCloud
+        self.garminPhoneSync = appState.garminPhoneSync
     }
 
     var body: some View {
@@ -41,6 +46,7 @@ struct ProfileView: View {
                 LazyVStack(alignment: .leading, spacing: 14) {
                     header
                     accountCard
+                    garminCard
 
                     if let resultMessage {
                         GymStatusBanner(message: resultMessage, isError: false)
@@ -83,6 +89,10 @@ struct ProfileView: View {
             defaultFilename: exportFilename,
             onCompletion: handleExportCompletion
         )
+        .task(id: auth.session?.storageKey) {
+            guard isCloudAccount, !garminCloud.isWorking else { return }
+            try? await garminCloud.refreshDevices()
+        }
     }
 
     private var header: some View {
@@ -133,6 +143,90 @@ struct ProfileView: View {
     }
 
     private var isCloudAccount: Bool { auth.session?.cloud != nil }
+
+    private var garminCard: some View {
+        GymPanel {
+            VStack(alignment: .leading, spacing: 12) {
+                GymSectionTitle(
+                    eyebrow: "Garmin",
+                    title: gymText("Your watch", "Твій годинник", languageCode: languageCode),
+                    supporting: gymText(
+                        "Live Bluetooth status is available for watches shared with this iPhone. Cloud watches show their latest synchronization state.",
+                        "Поточний статус Bluetooth доступний для годинників, підключених до цього iPhone. Для хмарних годинників показано стан останньої синхронізації.",
+                        languageCode: languageCode
+                    )
+                )
+
+                if garminPhoneSync.devices.isEmpty && selectedCloudDevice == nil {
+                    Label(
+                        gymText("No Garmin watch connected yet", "Годинник Garmin ще не підключено", languageCode: languageCode),
+                        systemImage: "applewatch"
+                    )
+                        .font(.subheadline)
+                        .foregroundStyle(GymTheme.textSecondary)
+                } else {
+                    ForEach(garminPhoneSync.devices) { device in
+                        garminDeviceRow(
+                            name: device.name,
+                            detail: device.model,
+                            status: device.connected
+                                ? gymText("Connected now", "Зараз підключено", languageCode: languageCode)
+                                : gymText("Not connected now", "Зараз не підключено", languageCode: languageCode),
+                            connected: device.connected
+                        )
+                    }
+                    if garminPhoneSync.devices.isEmpty, let device = selectedCloudDevice {
+                        garminDeviceRow(
+                            name: device.displayName,
+                            detail: gymText("Garmin cloud watch", "Хмарний годинник Garmin", languageCode: languageCode),
+                            status: device.lastSeenAt == nil
+                                ? gymText("Waiting for first watch sync", "Очікуємо першу синхронізацію годинника", languageCode: languageCode)
+                                : gymText("Recently synchronized with GymApp cloud", "Нещодавно синхронізовано з хмарою GymApp", languageCode: languageCode),
+                            connected: device.lastSeenAt != nil
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    private var selectedCloudDevice: GarminDeviceSummary? {
+        guard let selectedID = garminCloud.selectedDevice?.deviceID else { return nil }
+        return garminCloud.availableDevices.first { $0.id == selectedID }
+    }
+
+    private func garminDeviceRow(
+        name: String,
+        detail: String,
+        status: String,
+        connected: Bool
+    ) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: "applewatch")
+                .font(.title2)
+                .foregroundStyle(connected ? GymTheme.primary : GymTheme.textSecondary)
+                .frame(width: 30)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(name)
+                    .font(.headline)
+                    .foregroundStyle(GymTheme.textPrimary)
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(GymTheme.textSecondary)
+                Text(status)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(connected ? GymTheme.primary : GymTheme.textSecondary)
+            }
+            Spacer(minLength: 4)
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: GymTheme.controlCornerRadius, style: .continuous)
+                .fill(GymTheme.surfaceVariant)
+        )
+        .accessibilityElement(children: .combine)
+    }
 
     private var accountSubtitle: String {
         if let email = auth.session?.cloud?.email {

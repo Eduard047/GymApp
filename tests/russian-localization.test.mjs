@@ -180,8 +180,23 @@ test("PWA accepts Russian state and renders Russian runtime text before app star
   assert.match(appSource, /tx\("synced from Garmin", "синхронізовано з Garmin"\)/);
   assert.match(appSource, /txAttr\("Name in English, Ukrainian, or Russian", "Назва англійською, українською або російською"\)/);
   assert.doesNotMatch(appSource, /Name in English, Ukrainian or Russian/);
-  assert.ok(indexSource.indexOf("russian-text.v56.js") < indexSource.indexOf("app.v57.js"));
-  assert.match(workerSource, /"\.\/russian-text\.v56\.js"/);
+  assert.ok(indexSource.indexOf("russian-text.v57.js") < indexSource.indexOf("app.v58.js"));
+  assert.match(workerSource, /"\.\/russian-text\.v57\.js"/);
+});
+
+test("runtime language switches invalidate cached labels on every client", async () => {
+  const [androidRoot, iosRoot, pwaApp] = await Promise.all([
+    readFile("app/src/main/java/com/example/gymapp/navigation/GymNavGraph.kt", "utf8"),
+    readFile("ios/GymApp-iOS/GymApp/App/AppRootView.swift", "utf8"),
+    readFile("pwa/app.js", "utf8")
+  ]);
+  assert.match(androidRoot, /key\(uiIsolationKey, selectedLanguage\) \{ rememberNavController\(\) \}/);
+  assert.match(androidRoot, /key\(uiIsolationKey, selectedLanguage\) \{[\s\S]*GymBackground/);
+  assert.match(iosRoot, /\.id\(languageCode\)[\s\S]*\.environment\(\\\.locale/);
+  assert.match(
+    pwaApp,
+    /if \(action === "set-language"\)[\s\S]*authNotice = null;[\s\S]*resetGarminProfileContext\(\);[\s\S]*saveState\(\);[\s\S]*return render\(\);/
+  );
 });
 
 test("Garmin accepts Russian language sync and uses direct touch hit targets", async () => {

@@ -309,7 +309,7 @@ struct WorkoutDetailView: View {
                 }
                 .scrollDismissesKeyboard(.interactively)
             } else {
-                ContentUnavailableView(
+                GymContentUnavailableView(
                     "Workout unavailable",
                     systemImage: "exclamationmark.triangle",
                     description: Text("It may have been deleted on another screen.")
@@ -874,8 +874,8 @@ private struct StoredWorkoutSetEditorRow: View {
         }
         .padding(12)
         .background(GymTheme.surfaceVariant.opacity(0.48), in: RoundedRectangle(cornerRadius: 16))
-        .onChange(of: set.weight) { _, newValue in weight = newValue }
-        .onChange(of: set.reps) { _, newValue in reps = newValue }
+        .onChange(of: set.weight) { newValue in weight = newValue }
+        .onChange(of: set.reps) { newValue in reps = newValue }
     }
 
     @ViewBuilder

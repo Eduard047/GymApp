@@ -693,6 +693,14 @@
     <string name="garmin_reset_pairing_title">Скинути захищене прив’язування Garmin?</string>
     <string name="garmin_reset_pairing_description">Черга тренувань на довіреному годиннику буде очищена, після чого почнеться новий захищений період для квитанцій. Не від’єднуйте годинник.</string>
     <string name="garmin_reset_pairing_confirm">Скинути прив’язування</string>
+    <string name="garmin_profile_eyebrow">Garmin</string>
+    <string name="garmin_profile_title">Ваш годинник</string>
+    <string name="garmin_profile_supporting">Поточний стан з’єднання з Garmin Connect на цьому телефоні.</string>
+    <string name="garmin_profile_connected">Зараз підключено</string>
+    <string name="garmin_profile_offline">Зараз не підключено</string>
+    <string name="garmin_profile_paired">Прив’язано</string>
+    <string name="garmin_profile_no_devices">У Garmin Connect немає сполученого годинника.</string>
+    <string name="garmin_profile_unavailable">Garmin Connect недоступний. Відкрийте його й повторіть спробу.</string>
     <string name="exercise_media_title">Демонстрація вправи</string>
     <string name="exercise_media_add">Додати фото</string>
     <string name="exercise_media_choose">Обрати своє фото</string>

@@ -54,7 +54,7 @@ struct PostWorkoutSummaryView: View {
                     .padding(.bottom, 30)
                 }
             } else {
-                ContentUnavailableView(
+                GymContentUnavailableView(
                     "Summary unavailable",
                     systemImage: "chart.bar.xaxis",
                     description: Text("The workout may have been deleted.")

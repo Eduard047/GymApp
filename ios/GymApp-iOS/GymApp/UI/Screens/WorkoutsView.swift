@@ -86,7 +86,7 @@ public struct WorkoutsView: View {
                     .padding(.bottom, 16)
                 }
                 .scrollIndicators(.hidden)
-                .onChange(of: section) { _, newSection in
+                .onChange(of: section) { newSection in
                     withAnimation(reduceMotion ? nil : .snappy(duration: 0.35)) {
                         proxy.scrollTo(newSection, anchor: .top)
                     }
@@ -367,7 +367,7 @@ public struct WorkoutsView: View {
 
         if monthWorkouts.isEmpty {
             GymPanel {
-                ContentUnavailableView {
+                GymContentUnavailableView {
                     Label("No workouts this month", systemImage: "calendar.badge.plus")
                 } description: {
                     Text("Use Add workout when you are ready to log your first session.")

@@ -314,7 +314,7 @@ struct ExercisesView: View {
 
             if filteredExercises.isEmpty {
                 GymPanel {
-                    ContentUnavailableView {
+                    GymContentUnavailableView {
                         Label(
                             gymLocalized(store.exercises.isEmpty ? "No exercises yet" : "No matches"),
                             systemImage: store.exercises.isEmpty ? "dumbbell" : "magnifyingglass"
@@ -893,7 +893,7 @@ private struct ExerciseHistorySheet: View {
 
                     if history.isEmpty {
                         GymPanel {
-                            ContentUnavailableView(
+                            GymContentUnavailableView(
                                 "No history yet",
                                 systemImage: "clock",
                                 description: Text("Log this exercise in a workout to see progress here.")

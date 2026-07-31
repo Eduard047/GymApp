@@ -693,6 +693,14 @@
     <string name="garmin_reset_pairing_title">Reset secure Garmin pairing?</string>
     <string name="garmin_reset_pairing_description">This clears queued workouts on the trusted watch and starts a new protected receipt window. Keep the watch connected.</string>
     <string name="garmin_reset_pairing_confirm">Reset pairing</string>
+    <string name="garmin_profile_eyebrow">Garmin</string>
+    <string name="garmin_profile_title">Your watch</string>
+    <string name="garmin_profile_supporting">Live connection status from Garmin Connect on this phone.</string>
+    <string name="garmin_profile_connected">Connected now</string>
+    <string name="garmin_profile_offline">Not connected now</string>
+    <string name="garmin_profile_paired">Paired</string>
+    <string name="garmin_profile_no_devices">No Garmin watch is paired in Garmin Connect.</string>
+    <string name="garmin_profile_unavailable">Garmin Connect is unavailable. Open it and try again.</string>
     <string name="exercise_media_title">Exercise preview</string>
     <string name="exercise_media_add">Add image</string>
     <string name="exercise_media_choose">Choose your image</string>

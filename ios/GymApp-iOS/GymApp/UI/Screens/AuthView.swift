@@ -50,7 +50,7 @@ public struct AuthView: View {
                 .padding(.trailing, 16)
                 .accessibilitySortPriority(2)
         }
-        .onChange(of: mode) { _, _ in
+        .onChange(of: mode) { _ in
             localMessage = nil
             authService.message = nil
             focusedField = .email

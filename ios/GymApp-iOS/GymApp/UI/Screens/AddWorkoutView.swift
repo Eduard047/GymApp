@@ -112,7 +112,7 @@ struct AddWorkoutView: View {
             )
             .presentationDetents([.medium, .large])
         }
-        .onChange(of: profile) { _, newProfile in
+        .onChange(of: profile) { newProfile in
             Self.saveProfile(newProfile, storageKey: store.accountStorageKey)
         }
     }
@@ -334,7 +334,7 @@ struct AddWorkoutView: View {
 
         if drafts.isEmpty {
             GymPanel {
-                ContentUnavailableView {
+                GymContentUnavailableView {
                     Label("No exercises", systemImage: "dumbbell")
                 } description: {
                     Text("Choose a template, ask Smart Coach, or add an exercise manually.")

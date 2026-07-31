@@ -290,12 +290,14 @@ fun GymAppRoot(
         session = authState.session,
         needsPasswordUpdate = authState.needsPasswordUpdate
     )
+    val selectedLanguage by languageManager.selectedLanguage.collectAsState()
     // A new account generation gets a new controller and graph identity. Navigation Compose can
     // otherwise retain equal-route back-stack entries and their repository-bound ViewModelStores.
-    val navController = key(uiIsolationKey) { rememberNavController() }
+    // Language is part of the identity too: retained ViewModels can contain already-formatted
+    // labels, so keeping them across a locale switch produces a mixed-language screen.
+    val navController = key(uiIsolationKey, selectedLanguage) { rememberNavController() }
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
-    val selectedLanguage by languageManager.selectedLanguage.collectAsState()
     val repository = remember(uiIsolationKey) { repositoryProvider(authState.session) }
     val coroutineScope = key(uiIsolationKey) { rememberCoroutineScope() }
     val accountDeletionScope = rememberCoroutineScope()
@@ -733,7 +735,7 @@ fun GymAppRoot(
     }
     val topAppBarScrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
 
-    key(uiIsolationKey) {
+    key(uiIsolationKey, selectedLanguage) {
         GymBackground {
             Box(modifier = Modifier.fillMaxSize()) {
             if (authState.needsPasswordUpdate) {
@@ -1499,6 +1501,8 @@ fun GymAppRoot(
                                         accountDeletionInProgress = false
                                     }
                                 },
+                                garminDeviceState = applicationContext.gymApplication
+                                    .garminSyncManager.deviceUiState.collectAsState().value,
                                 onResetGarminPairing = {
                                     coroutineScope.launch {
                                         applicationContext.gymApplication.garminSyncManager
