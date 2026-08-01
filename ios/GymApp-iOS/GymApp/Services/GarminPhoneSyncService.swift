@@ -721,7 +721,7 @@ enum GarminWorkoutNoteParser {
 
     private static func decimalStringIsBounded(_ value: String) -> Bool {
         value.range(
-            of: #"^[0-9]+(?:\.[0-9]{1,2})?$"#,
+            of: "^[0-9]+(?:\\.[0-9]{1,2})?$",
             options: .regularExpression
         ) != nil
     }
@@ -729,7 +729,11 @@ enum GarminWorkoutNoteParser {
     private static func parseDuration(_ value: String) -> Int64? {
         let components = value.split(separator: ":", omittingEmptySubsequences: false)
         guard components.count == 2 || components.count == 3,
-              components.allSatisfy({ !$0.isEmpty && $0.allSatisfy(\.isNumber) }) else {
+              components.allSatisfy({ component in
+                  !component.isEmpty && component.allSatisfy({ character in
+                      character.isNumber
+                  })
+              }) else {
             return nil
         }
         if components.count == 2 {
@@ -1313,7 +1317,7 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
                     locale: Locale(identifier: "en_US_POSIX"),
                     interval.gymCalories
                 )
-                    .replacingOccurrences(of: #"\.?0+$"#, with: "", options: .regularExpression)
+                    .replacingOccurrences(of: "\\.?0+$", with: "", options: .regularExpression)
                 values.append("K\(gymCalories)/\(interval.garminCalories.map(String.init) ?? "-")")
                 values.append(
                     "Z" + interval.heartRateZoneSeconds.map(String.init).joined(separator: "/") + "s"
