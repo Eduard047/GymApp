@@ -7,11 +7,37 @@ import java.nio.ByteBuffer
 import java.security.MessageDigest
 import java.util.Locale
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
 internal const val MAX_GARMIN_BINDING_LENGTH = 128
 internal const val GARMIN_BINDING_VERSION = 2
 internal const val MAX_GARMIN_REQUEST_ID_LENGTH = 128
 internal const val MAX_GARMIN_SYNC_ID_LENGTH = 128
+
+internal enum class GarminPendingResetTrigger {
+    ExplicitUserAction,
+    AuthenticationChange,
+    SdkReady,
+    DeviceStatusChange
+}
+
+internal fun shouldAttemptPendingGarminReset(trigger: GarminPendingResetTrigger): Boolean =
+    trigger == GarminPendingResetTrigger.ExplicitUserAction
+
+internal class GarminDeviceRegistrationTracker {
+    private val registered = ConcurrentHashMap.newKeySet<Long>()
+
+    fun claim(deviceIdentifier: Long): Boolean = registered.add(deviceIdentifier)
+
+    fun release(deviceIdentifier: Long) {
+        registered.remove(deviceIdentifier)
+    }
+
+    fun clear() {
+        registered.clear()
+    }
+}
+
 internal const val MAX_GARMIN_WORKOUT_SETS = 60
 internal const val MAX_GARMIN_EXERCISE_NAME_LENGTH = 160
 internal const val MAX_GARMIN_TOTAL_NAME_BYTES = 12_000

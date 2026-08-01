@@ -11,6 +11,36 @@ import org.junit.Test
 
 class GarminSyncSecurityTest {
     @Test
+    fun pendingAccountResetCanOnlyStartFromExplicitUserAction() {
+        assertTrue(
+            shouldAttemptPendingGarminReset(GarminPendingResetTrigger.ExplicitUserAction)
+        )
+        assertFalse(
+            shouldAttemptPendingGarminReset(GarminPendingResetTrigger.AuthenticationChange)
+        )
+        assertFalse(shouldAttemptPendingGarminReset(GarminPendingResetTrigger.SdkReady))
+        assertFalse(
+            shouldAttemptPendingGarminReset(GarminPendingResetTrigger.DeviceStatusChange)
+        )
+    }
+
+    @Test
+    fun deviceEventRegistrationIsIdempotentAndCanRecoverAfterSdkShutdown() {
+        val tracker = GarminDeviceRegistrationTracker()
+
+        assertTrue(tracker.claim(123456789L))
+        assertFalse(tracker.claim(123456789L))
+        assertTrue(tracker.claim(987654321L))
+
+        tracker.release(123456789L)
+        assertTrue(tracker.claim(123456789L))
+
+        tracker.clear()
+        assertTrue(tracker.claim(123456789L))
+        assertTrue(tracker.claim(987654321L))
+    }
+
+    @Test
     fun cloudAccountBindingMatchesCanonicalServerHash() {
         val expected = "986c0dc956dc822b5d8f698661b9eb1ef880786ff9043c16744d2a420e99e9bb"
 

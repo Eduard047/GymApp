@@ -84,7 +84,11 @@ class GarminSyncManager(
     )
     private val connectIQ = ConnectIQ.getInstance(application, ConnectIQ.IQConnectType.WIRELESS)
     private val garminApp = IQApp(GARMIN_APP_ID)
+    private val registeredDeviceEvents = GarminDeviceRegistrationTracker()
     private val registeredDevices = ConcurrentHashMap.newKeySet<Long>()
+    private val knownDevicesById = ConcurrentHashMap<Long, IQDevice>()
+    private val latestDeviceStatuses =
+        ConcurrentHashMap<Long, IQDevice.IQDeviceStatus>()
     private val pendingSyncAcks = ConcurrentHashMap<String, PendingSyncAck>()
     private val inboundWorkCommands =
         newBoundedGarminInboundChannel<QueuedGarminCommand>(MAX_GARMIN_PENDING_WORK_COMMANDS)
@@ -169,7 +173,6 @@ class GarminSyncManager(
             Log.i(TAG, "Connect IQ SDK ready")
             runCatching { registerConnectedDevices() }
                 .onFailure { Log.e(TAG, "Cannot register Garmin SDK devices", it) }
-            scope.launch { sendPendingAuthResetIfPossible() }
         }
 
         override fun onInitializeError(errStatus: ConnectIQ.IQSdkErrorStatus) {
@@ -182,7 +185,10 @@ class GarminSyncManager(
         override fun onSdkShutDown() {
             sdkReady = false
             sdkInitializationRequested = false
+            registeredDeviceEvents.clear()
             registeredDevices.clear()
+            knownDevicesById.clear()
+            latestDeviceStatuses.clear()
             _deviceUiState.value = GarminDeviceUiState()
             Log.i(TAG, "Connect IQ SDK shut down")
         }
@@ -232,9 +238,11 @@ class GarminSyncManager(
                 val resetRequired = recordAuthTransition(target)
                 cancelStalePendingAcks()
                 if (resetRequired) {
-                    // Network work is intentionally detached from the collector so a
-                    // newer auth state is persisted immediately and invalidates old ACKs.
-                    scope.launch { sendPendingAuthResetIfPossible() }
+                    // Fail closed without invoking the third-party transport from an
+                    // authentication callback. A previous SDK/process failure must not
+                    // become a crash loop after every application restart or sign-in.
+                    lastPlanSyncStatus =
+                        "Open Garmin pairing reset before syncing the active account"
                 }
                 refreshDeviceUiState()
             }
@@ -328,7 +336,6 @@ class GarminSyncManager(
         if (!isStillActive(account)) {
             lastPlanSyncStatus =
                 "Clearing previous Garmin account data; reconnect the trusted watch"
-            scope.launch { sendPendingAuthResetIfPossible() }
             return false
         }
         val plan = validatedGarminPlanOrNull(sets) ?: run {
@@ -372,6 +379,12 @@ class GarminSyncManager(
      * receipts have been retired locally.
      */
     suspend fun resetSecureGarminPairing(): Boolean {
+        // Account transitions are deliberately cleared only after an explicit user
+        // action. This keeps a failing Garmin SDK call from repeating on every login.
+        if (pendingAuthTransition() != null) {
+            sendPendingAuthResetIfPossible(GarminPendingResetTrigger.ExplicitUserAction)
+            return pendingAuthTransition() == null
+        }
         val account = activeAccountContext() ?: run {
             lastPlanSyncStatus = "Sign in before Garmin pairing reset"
             return false
@@ -485,22 +498,32 @@ class GarminSyncManager(
             emptyList()
         }
         Log.i(TAG, "Known Garmin device count=${devices.size}")
+        knownDevicesById.clear()
+        devices.forEach { knownDevicesById[it.deviceIdentifier] = it }
 
         devices.forEach { device ->
-            runCatching {
-                connectIQ.registerForDeviceEvents(device) { changedDevice, status ->
-                    runCatching {
-                        Log.i(TAG, "Garmin device event status=$status")
-                        refreshDeviceUiState()
-                        if (status == IQDevice.IQDeviceStatus.CONNECTED) {
-                            registerAppEvents(changedDevice)
-                            scope.launch { sendPendingAuthResetIfPossible() }
+            if (registeredDeviceEvents.claim(device.deviceIdentifier)) {
+                runCatching {
+                    connectIQ.registerForDeviceEvents(device) { changedDevice, status ->
+                        runCatching {
+                            Log.i(TAG, "Garmin device event status=$status")
+                            latestDeviceStatuses[changedDevice.deviceIdentifier] = status
+                            refreshDeviceUiState()
+                            if (status == IQDevice.IQDeviceStatus.CONNECTED) {
+                                registerAppEvents(changedDevice)
+                            }
+                        }.onFailure { error ->
+                            Log.e(TAG, "Rejected malformed Garmin device callback", error)
                         }
-                    }.onFailure { error ->
-                        Log.e(TAG, "Rejected malformed Garmin device callback", error)
                     }
+                }.onFailure {
+                    registeredDeviceEvents.release(device.deviceIdentifier)
+                    Log.i(TAG, "Cannot register Garmin device events", it)
                 }
+            }
+            runCatching {
                 val status = connectIQ.getDeviceStatus(device)
+                latestDeviceStatuses[device.deviceIdentifier] = status
                 Log.i(TAG, "Garmin device status=$status")
                 if (status == IQDevice.IQDeviceStatus.CONNECTED) {
                     registerAppEvents(device)
@@ -513,11 +536,13 @@ class GarminSyncManager(
     private suspend fun ensureSdkReady(): Boolean {
         if (!sdkReady) {
             initialize()
-            withTimeoutOrNull(GARMIN_SDK_READY_TIMEOUT_MS) {
-                while (!sdkReady) {
+            val initialized = withTimeoutOrNull(GARMIN_SDK_READY_TIMEOUT_MS) {
+                while (!sdkReady && sdkInitializationRequested) {
                     delay(150L)
                 }
-            } ?: return false
+                sdkReady
+            } ?: false
+            if (!initialized) return false
         }
         registerConnectedDevices()
         return true
@@ -988,7 +1013,8 @@ class GarminSyncManager(
         return false
     }
 
-    private suspend fun sendPendingAuthResetIfPossible() {
+    private suspend fun sendPendingAuthResetIfPossible(trigger: GarminPendingResetTrigger) {
+        if (!shouldAttemptPendingGarminReset(trigger)) return
         if (pendingAuthTransition() == null) return
         if (!ensureSdkReady()) {
             lastPlanSyncStatus = "Reconnect the trusted Garmin watch to clear old account data"
@@ -1204,16 +1230,16 @@ class GarminSyncManager(
             _deviceUiState.value = GarminDeviceUiState()
             return
         }
-        val resolution = resolveGarminDevices()
-        if (resolution.failedStatus != null) {
-            _deviceUiState.value = GarminDeviceUiState(sdkReady = true)
-            return
-        }
         val account = rawActiveAccountContext()
         val trustedBinding = account?.let(::trustedDeviceBinding)
+        // Device callbacks already carry the new status. Do not call getDeviceStatus
+        // from inside that callback: some Garmin Connect versions synchronously
+        // dispatch another status callback and can recurse until the process dies.
+        val knownDevices = knownDevicesById.values
+            .sortedBy { it.deviceIdentifier }
         _deviceUiState.value = GarminDeviceUiState(
             sdkReady = true,
-            devices = resolution.known
+            devices = knownDevices
                 .take(MAX_PROFILE_GARMIN_DEVICES)
                 .map { device ->
                     val name = runCatching { device.friendlyName }
@@ -1224,9 +1250,8 @@ class GarminSyncManager(
                         ?: "Garmin watch"
                     GarminDeviceSummary(
                         name = name,
-                        connected = resolution.connected.any {
-                            it.deviceIdentifier == device.deviceIdentifier
-                        },
+                        connected = latestDeviceStatuses[device.deviceIdentifier] ==
+                            IQDevice.IQDeviceStatus.CONNECTED,
                         trustedForActiveAccount = trustedBinding == deviceBinding(device)
                     )
                 }
@@ -1236,9 +1261,12 @@ class GarminSyncManager(
     private fun resolveGarminDevices(): GarminDeviceResolution = try {
         val connected = connectIQ.connectedDevices.orEmpty()
         val known = connectIQ.knownDevices.orEmpty()
+        known.forEach { knownDevicesById[it.deviceIdentifier] = it }
         val connectedByStatus = known.filter { device ->
             runCatching {
-                connectIQ.getDeviceStatus(device) == IQDevice.IQDeviceStatus.CONNECTED
+                val status = connectIQ.getDeviceStatus(device)
+                latestDeviceStatuses[device.deviceIdentifier] = status
+                status == IQDevice.IQDeviceStatus.CONNECTED
             }.getOrDefault(false)
         }
         GarminDeviceResolution(
