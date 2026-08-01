@@ -5,7 +5,7 @@ import vm from "node:vm";
 
 const stateContractSource = await readFile(new URL("../pwa/state-contract.js", import.meta.url), "utf8");
 const appSources = await Promise.all(
-  ["app.js", "app.v58.js"].map(async filename => ({
+  ["app.js", "app.v59.js"].map(async filename => ({
     filename,
     source: await readFile(new URL(`../pwa/${filename}`, import.meta.url), "utf8")
   }))

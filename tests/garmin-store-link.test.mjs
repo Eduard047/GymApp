@@ -3,6 +3,8 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const GARMIN_STORE_URL = "https://apps.garmin.com/apps/fe82a300-4d9f-4588-8b10-365d75280b8f";
+const GYMAPP_ANDROID_PACKAGE = "com.setforge.gymapp";
+const GYMAPP_PLAY_URL = "https://play.google.com/store/apps/details?id=com.setforge.gymapp";
 const CONNECT_IQ_PACKAGE = "com.garmin.connectiq";
 const CONNECT_IQ_PLAY_URL = "https://play.google.com/store/apps/details?id=com.garmin.connectiq";
 const CONNECT_IQ_APP_STORE_URL = "https://apps.apple.com/app/connect-iq-store/id1317652970";
@@ -51,4 +53,23 @@ test("PWA uses our Garmin listing and an Android intent with a Google Play fallb
   assert.equal(quotedValueFollowing(app, "CONNECT_IQ_ANDROID_PACKAGE"), CONNECT_IQ_PACKAGE);
   assert.equal(app.includes("S.browser_fallback_url="), true);
   assert.equal(app.includes(OLD_QA_DOWNLOAD), false);
+});
+
+test("PWA exposes official Android and Garmin store links on the login and account surfaces", async () => {
+  const [app, styles] = await Promise.all([
+    readFile("pwa/app.js", "utf8"),
+    readFile("pwa/styles.css", "utf8")
+  ]);
+
+  assert.equal(quotedValueFollowing(app, "ANDROID_APP_PACKAGE"), GYMAPP_ANDROID_PACKAGE);
+  assert.equal(app.includes("const GOOGLE_PLAY_APP_URL = `https://play.google.com/store/apps/details?id=${ANDROID_APP_PACKAGE}`"), true);
+  assert.equal(app.includes(GYMAPP_PLAY_URL), false, "Keep the package ID as the single Google Play source of truth");
+  assert.match(app, /function storeDownloadPanel\(\)/);
+  assert.match(app, /\$\{storeDownloadPanel\(\)\}/);
+  assert.match(app, /class="store-download-link" href="\$\{escapeAttr\(GOOGLE_PLAY_APP_URL\)\}" target="_blank" rel="noopener noreferrer"/);
+  assert.match(app, /class="store-download-link" href="\$\{escapeAttr\(garminStoreAppLink\(\)\)\}" target="_blank" rel="noopener noreferrer"/);
+  assert.match(app, /class="button ghost" href="\$\{escapeAttr\(GOOGLE_PLAY_APP_URL\)\}" target="_blank" rel="noopener noreferrer"/);
+  assert.match(styles, /\.auth-actions\s*\{[^}]*gap: 12px;[^}]*margin-top: 16px;/s);
+  assert.match(styles, /:root\[data-theme="dark"\][\s\S]*?--on-accent: #071321;/);
+  assert.match(styles, /\.button\s*\{[^}]*color: var\(--on-accent\);[^}]*background: var\(--sage\);/s);
 });
