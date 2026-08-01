@@ -760,21 +760,33 @@ class WorkoutView extends Ui.View {
         dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
         drawHeader(dc, w, h, GymStore.tr("DEBUG", "ДЕБАГ", "ОТЛАДКА"));
 
-        drawDebugLine(dc, w, h, 46, "HR", (GymSession.hr == null ? "--" : GymSession.hr.toString()) + " " + GymSession.hrSource);
-        drawDebugLine(dc, w, h, 66, "ACT", GymSession.activityHr == null ? "--" : GymSession.activityHr.toString());
-        drawDebugLine(dc, w, h, 86, "SNS", GymSession.sensorHr == null ? "--" : GymSession.sensorHr.toString());
-        drawDebugLine(dc, w, h, 106, "MOV", GymSession.motionAvailable ? GymSession.motionScore.format("%.0f") : "--");
-        drawDebugLine(dc, w, h, 126, "CONF", GymSession.setConfidence.toString() + "% " + GymSession.confidenceLevel);
-        drawDebugLine(dc, w, h, 146, "ST", fitText(effortLabel(GymSession.effortState), 7));
-        drawDebugLine(dc, w, h, 166, "K/M", GymSession.lastKcalPerMinute.format("%.1f"));
-        drawDebugLine(dc, w, h, 186, GymStore.tr("SYNC", "СИНХ", "СИНХ"), statusLabel(GymStore.status));
+        // Garmin's XTINY font height differs between product families. Derive the
+        // rows from the real font metrics so the header cannot overlap the HR row.
+        var lineHeight = dc.getFontHeight(Gfx.FONT_XTINY);
+        var lineY = sy(h, 34) + lineHeight + sr(w, h, 4);
+        var lineStep = lineHeight + sr(w, h, 1);
+        drawDebugLine(dc, w, lineY, "HR", (GymSession.hr == null ? "--" : GymSession.hr.toString()) + " " + GymSession.hrSource);
+        lineY += lineStep;
+        drawDebugLine(dc, w, lineY, "ACT", GymSession.activityHr == null ? "--" : GymSession.activityHr.toString());
+        lineY += lineStep;
+        drawDebugLine(dc, w, lineY, "SNS", GymSession.sensorHr == null ? "--" : GymSession.sensorHr.toString());
+        lineY += lineStep;
+        drawDebugLine(dc, w, lineY, "MOV", GymSession.motionAvailable ? GymSession.motionScore.format("%.0f") : "--");
+        lineY += lineStep;
+        drawDebugLine(dc, w, lineY, "CONF", GymSession.setConfidence.toString() + "% " + GymSession.confidenceLevel);
+        lineY += lineStep;
+        drawDebugLine(dc, w, lineY, "ST", fitText(effortLabel(GymSession.effortState), 7));
+        lineY += lineStep;
+        drawDebugLine(dc, w, lineY, "K/M", GymSession.lastKcalPerMinute.format("%.1f"));
+        lineY += lineStep;
+        drawDebugLine(dc, w, lineY, GymStore.tr("SYNC", "СИНХ", "СИНХ"), statusLabel(GymStore.status));
     }
 
-    function drawDebugLine(dc, w, h, baseY, label, value) {
+    function drawDebugLine(dc, w, y, label, value) {
         dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(sx(w, 72), sy(h, baseY), Gfx.FONT_XTINY, label, Gfx.TEXT_JUSTIFY_LEFT);
+        dc.drawText(sx(w, 72), y, Gfx.FONT_XTINY, label, Gfx.TEXT_JUSTIFY_LEFT);
         dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(sx(w, 188), sy(h, baseY), Gfx.FONT_XTINY, value, Gfx.TEXT_JUSTIFY_RIGHT);
+        dc.drawText(sx(w, 188), y, Gfx.FONT_XTINY, value, Gfx.TEXT_JUSTIFY_RIGHT);
     }
 
     function drawSettings(dc, w, h) {

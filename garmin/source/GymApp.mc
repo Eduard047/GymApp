@@ -141,6 +141,17 @@ class GymApp extends App.AppBase {
 
     function onSyncAckSent(ok) {
         GymStore.status = ok ? "ACK OK" : "ACK ERR";
+        if (ok && GymStore.hasAccountBinding() && GymStore.pending.size() > 0) {
+            // A queued workout may have been waiting while the phone repaired the
+            // secure pairing. Retry only the oldest item and keep it until the
+            // Android database acknowledgement arrives.
+            GymComm.send(GymStore.pending[0], method(:onPendingWorkoutSentAfterSync));
+        }
+        Ui.requestUpdate();
+    }
+
+    function onPendingWorkoutSentAfterSync(ok) {
+        GymStore.status = ok ? "WAITING ACK" : "QUEUED";
         Ui.requestUpdate();
     }
 }

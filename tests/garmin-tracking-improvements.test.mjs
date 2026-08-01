@@ -32,6 +32,9 @@ test("Garmin tracking prefers activity HR, diagnoses both sources, and expires s
   assert.match(view, /"SNS", GymSession\.sensorHr/);
   assert.match(view, /"MOV", GymSession\.motionAvailable/);
   assert.match(view, /"CONF", GymSession\.setConfidence/);
+  assert.match(view, /dc\.getFontHeight\(Gfx\.FONT_XTINY\)/);
+  assert.match(view, /lineY = sy\(h, 34\) \+ lineHeight \+ sr\(w, h, 4\)/);
+  assert.doesNotMatch(view, /drawDebugLine\(dc, w, h, 46,/);
 });
 
 test("Garmin rest countdown never blocks or hides a detected next set", async () => {
@@ -162,6 +165,8 @@ test("Garmin set metrics are bounded, persisted, undo-aware, and synchronized wi
   assert.match(addSet, /if \(!save\(\)\)[\s\S]*previousSet\.remove\("recoveryHeartRateDrop"\)/);
   assert.match(store, /setMetrics\.add\(compactSetMetrics\(setItem\)\)/);
   assert.match(store, /"setMetrics" => setMetrics/);
+  assert.match(store, /peakHeartRate == null \|\| startHeartRate > peakHeartRate/);
+  assert.match(session, /peakHrValue == null \|\| endHrValue > peakHrValue/);
   assert.match(store, /static function isValidSetMetricsList/);
   assert.doesNotMatch(store, /accelerometerData|motionScore/);
   assert.match(androidSecurity, /data class GarminSetStatistics/);

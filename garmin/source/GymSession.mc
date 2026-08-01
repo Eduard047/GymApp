@@ -801,6 +801,12 @@ class GymSession {
         if (peakHrValue == null && hr != null) {
             peakHrValue = hr;
         }
+        if (startHrValue != null && (peakHrValue == null || startHrValue > peakHrValue)) {
+            peakHrValue = startHrValue;
+        }
+        if (endHrValue != null && (peakHrValue == null || endHrValue > peakHrValue)) {
+            peakHrValue = endHrValue;
+        }
         var confidence = currentSetMaxConfidence;
         if (setConfidence > confidence) {
             confidence = setConfidence;

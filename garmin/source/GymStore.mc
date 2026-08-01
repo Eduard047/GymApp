@@ -723,6 +723,9 @@ class GymStore {
         var resetValue = safeMessage.get("resetWorkout");
         var resetWorkout = bindingSource.equals("phone") &&
             resetValue instanceof Lang.Boolean && resetValue;
+        var repairValue = safeMessage.get("repairPairing");
+        var repairPairing = bindingSource.equals("phone") &&
+            repairValue instanceof Lang.Boolean && repairValue;
         var accountChanged = accountBinding == null ||
             !accountBinding.toString().equals(nextAccountBinding);
         if (bindingSource.equals("cloud") && stagedPhoneSyncRevision > 0l &&
@@ -757,10 +760,17 @@ class GymStore {
                     return false;
                 }
             } else if (!pairingGeneration.toString().equals(nextPairingGeneration.toString()) &&
-                !resetWorkout) {
+                !resetWorkout && !repairPairing) {
                 status = "PAIR OLD";
                 return false;
             }
+        }
+        if (repairPairing &&
+            (resetWorkout || accountChanged || !isValidAccountBinding(pairingGeneration) ||
+                !isValidAccountBinding(nextPairingGeneration) ||
+                pairingGeneration.toString().equals(nextPairingGeneration.toString()))) {
+            status = "BAD BIND";
+            return false;
         }
         if (bindingSource.equals("cloud") && cloudDeviceBinding != null &&
             !cloudDeviceBinding.toString().equals(nextDeviceBinding)) {
@@ -835,6 +845,7 @@ class GymStore {
             cloudDeviceBinding = nextDeviceBinding;
         } else {
             deviceBinding = nextDeviceBinding;
+            var previousPairingGeneration = pairingGeneration;
             var shouldUpgradePending = !isValidAccountBinding(pairingGeneration) &&
                 isValidAccountBinding(nextPairingGeneration);
             pairingGeneration = isValidAccountBinding(nextPairingGeneration) ?
@@ -844,9 +855,23 @@ class GymStore {
                 status = "SAVE FAIL";
                 return false;
             }
+            if (repairPairing &&
+                !rotatePairingGenerationForPending(
+                    previousPairingGeneration,
+                    pairingGeneration
+                )) {
+                load();
+                status = "SAVE FAIL";
+                return false;
+            }
         }
         rememberSyncRequest(replayKey);
         rememberSyncRevision(safeMessage, bindingSource);
+
+        // Language is independent of plan replacement and is safe to apply while
+        // a workout is active. The plan itself remains deferred until the set list
+        // is idle, but EN/UK/RU changes immediately and durably with this sync.
+        applyValidatedLanguage(safeMessage);
 
         if (sets.size() > 0) {
             deferredSync = safeMessage;
@@ -871,10 +896,7 @@ class GymStore {
     }
 
     static function applyValidatedSync(message) {
-        var syncedLanguage = message.get("language");
-        if (syncedLanguage != null) {
-            language = normalizedLanguage(syncedLanguage.toString());
-        }
+        applyValidatedLanguage(message);
         var flatNames = message.get("planNames");
         var flatWeights = message.get("planWeights");
         var flatReps = message.get("planReps");
@@ -915,6 +937,13 @@ class GymStore {
                 GymStore.plan = [];
                 status = "EMPTY PLAN";
             }
+        }
+    }
+
+    static function applyValidatedLanguage(message) {
+        var syncedLanguage = message.get("language");
+        if (syncedLanguage != null) {
+            language = normalizedLanguage(syncedLanguage.toString());
         }
     }
 
@@ -1026,6 +1055,13 @@ class GymStore {
                 return false;
             }
         }
+        var repairPairing = message.get("repairPairing");
+        if (repairPairing != null &&
+            (!(repairPairing instanceof Lang.Boolean) ||
+                !trustedSource.equals("phone") ||
+                (repairPairing && resetWorkout instanceof Lang.Boolean && resetWorkout))) {
+            return false;
+        }
         return true;
     }
 
@@ -1056,7 +1092,8 @@ class GymStore {
             return key.equals("planId") || key.equals("planRevision");
         }
         return key.equals("syncRevision") || key.equals("language") ||
-            key.equals("exercises") || key.equals("pairingGeneration");
+            key.equals("exercises") || key.equals("pairingGeneration") ||
+            key.equals("repairPairing");
     }
 
     static function normalizedSyncMessage(message, trustedSource) {
@@ -1085,6 +1122,10 @@ class GymStore {
             var syncedExercises = message.get("exercises");
             if (syncedExercises != null) {
                 normalized.put("exercises", copySyncArray(syncedExercises));
+            }
+            var repairPairing = message.get("repairPairing");
+            if (repairPairing instanceof Lang.Boolean) {
+                normalized.put("repairPairing", repairPairing);
             }
         }
         var resetWorkout = message.get("resetWorkout");
@@ -1202,6 +1243,31 @@ class GymStore {
                 return false;
             }
             item.put("pairingGeneration", pairingGeneration.toString());
+        }
+        return isValidPendingList(pending);
+    }
+
+    static function rotatePairingGenerationForPending(previousGeneration, nextGeneration) {
+        if (!isValidAccountBinding(previousGeneration) ||
+            !isValidAccountBinding(nextGeneration) ||
+            previousGeneration.toString().equals(nextGeneration.toString()) ||
+            !hasAccountBinding()) {
+            return false;
+        }
+        for (var i = 0; i < pending.size(); i += 1) {
+            var item = pending[i];
+            if (!(item instanceof Lang.Dictionary) || !isValidWorkoutMessage(item) ||
+                !isValidAccountBinding(item.get("pairingGeneration")) ||
+                !item.get("pairingGeneration").toString().equals(
+                    previousGeneration.toString()
+                ) ||
+                !accountBinding.toString().equals(item.get("accountBinding").toString()) ||
+                !deviceBinding.toString().equals(item.get("deviceBinding").toString())) {
+                return false;
+            }
+        }
+        for (var j = 0; j < pending.size(); j += 1) {
+            pending[j].put("pairingGeneration", nextGeneration.toString());
         }
         return isValidPendingList(pending);
     }
@@ -1548,12 +1614,23 @@ class GymStore {
     }
 
     static function compactSetMetrics(source) {
+        var startHeartRate = source.get("startHeartRate");
+        var peakHeartRate = source.get("peakHeartRate");
+        var endHeartRate = source.get("endHeartRate");
+        if (startHeartRate != null &&
+            (peakHeartRate == null || startHeartRate > peakHeartRate)) {
+            peakHeartRate = startHeartRate;
+        }
+        if (endHeartRate != null &&
+            (peakHeartRate == null || endHeartRate > peakHeartRate)) {
+            peakHeartRate = endHeartRate;
+        }
         return [
             source.get("activeSeconds"),
             source.get("restBeforeSeconds"),
-            source.get("startHeartRate"),
-            source.get("peakHeartRate"),
-            source.get("endHeartRate"),
+            startHeartRate,
+            peakHeartRate,
+            endHeartRate,
             source.get("recoveryHeartRateDrop"),
             source.get("detectionConfidence")
         ];
@@ -1717,6 +1794,7 @@ class GymStore {
         }
         return left.get("syncRevision").toLong() == right.get("syncRevision").toLong() &&
             sameOptionalText(left.get("pairingGeneration"), right.get("pairingGeneration")) &&
+            sameOptionalBoolean(left.get("repairPairing"), right.get("repairPairing")) &&
             sameOptionalText(left.get("language"), right.get("language")) &&
             sameOptionalTextArray(left.get("exercises"), right.get("exercises"));
     }

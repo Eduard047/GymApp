@@ -375,6 +375,47 @@ class GarminSyncSecurityTest {
                 expected
             )
         )
+        assertEquals(
+            GarminSyncRequestBindingMismatch.PairingGeneration,
+            garminSyncRequestBindingMismatch(
+                legacySyncRequest + ("pairingGeneration" to "2".repeat(64)),
+                expected
+            )
+        )
+        assertEquals(
+            GarminSyncRequestBindingMismatch.Account,
+            garminSyncRequestBindingMismatch(
+                legacySyncRequest + ("accountBinding" to "b".repeat(64)),
+                expected
+            )
+        )
+        assertEquals(
+            GarminSyncRequestBindingMismatch.Device,
+            garminSyncRequestBindingMismatch(
+                legacySyncRequest + ("deviceBinding" to "other-device"),
+                expected
+            )
+        )
+        assertTrue(
+            garminSyncRequestCanRepairPairing(
+                legacySyncRequest + ("pairingGeneration" to "2".repeat(64)),
+                expected
+            )
+        )
+        assertFalse(
+            garminSyncRequestCanRepairPairing(
+                legacySyncRequest +
+                    ("accountBinding" to "b".repeat(64)) +
+                    ("pairingGeneration" to "2".repeat(64)),
+                expected
+            )
+        )
+        assertFalse(
+            garminSyncRequestCanRepairPairing(
+                legacySyncRequest + ("pairingGeneration" to "malformed"),
+                expected
+            )
+        )
     }
 
     @Test
@@ -429,7 +470,7 @@ class GarminSyncSecurityTest {
     }
 
     @Test
-    fun workoutParserAcceptsBoundedSetStatisticsAndRejectsInconsistentMetrics() {
+    fun workoutParserAcceptsBoundedSetStatisticsAndCanonicalizesLegacyPeakHeartRate() {
         val nowMillis = 1_800_000_000_000L
         val metrics = listOf<Any?>(
             32,
@@ -464,11 +505,44 @@ class GarminSyncSecurityTest {
                 nowMillis
             )
         )
-        assertNull(
-            parseGarminWorkoutCommand(
-                validCommand() + ("setMetrics" to listOf(metrics.toMutableList().also { it[3] = 100 })),
+        assertEquals(
+            GarminWorkoutParseIssue.SetMetricsShape,
+            parseGarminWorkoutCommandResult(
+                validCommand() + ("setMetrics" to listOf(metrics.dropLast(1))),
                 nowMillis
-            )
+            ).issue
+        )
+        assertEquals(
+            GarminWorkoutParseIssue.SetMetricsDetectionConfidence,
+            parseGarminWorkoutCommandResult(
+                validCommand() +
+                    ("setMetrics" to listOf(metrics.toMutableList().also { it[6] = 101 })),
+                nowMillis
+            ).issue
+        )
+        assertEquals(
+            130,
+            parseGarminWorkoutCommand(
+                validCommand() +
+                    ("setMetrics" to listOf(metrics.toMutableList().also { it[3] = 100 })),
+                nowMillis
+            )?.setStatistics?.single()?.peakHeartRate
+        )
+        assertEquals(
+            GarminSetStatistics(
+                activeSeconds = 32L,
+                restBeforeSeconds = 64L,
+                startHeartRate = null,
+                peakHeartRate = null,
+                endHeartRate = null,
+                recoveryHeartRateDrop = null,
+                detectionConfidence = 90
+            ),
+            parseGarminWorkoutCommand(
+                validCommand() +
+                    ("setMetrics" to listOf(listOf(32, 64, null, null, null, null, 90))),
+                nowMillis
+            )?.setStatistics?.single()
         )
         assertNull(
             parseGarminWorkoutCommand(

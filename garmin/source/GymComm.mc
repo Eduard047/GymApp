@@ -114,7 +114,7 @@ class GymCommListener extends Comm.ConnectionListener {
 }
 
 class GymComm {
-    static var watchVersion = "2026.06.29.1205";
+    static var watchVersion = "2026.08.01.1232";
     static var cloudSyncUrl = "https://owrcbsrectdgaotndtxy.supabase.co/functions/v1/garmin-sync";
     static var legacyCapabilityLength = 64;
     static var cloudCapabilityLength = 234;

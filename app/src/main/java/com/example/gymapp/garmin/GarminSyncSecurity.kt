@@ -77,6 +77,14 @@ internal enum class GarminBindingDecision {
     Rejected
 }
 
+internal enum class GarminSyncRequestBindingMismatch {
+    None,
+    BindingVersion,
+    Account,
+    Device,
+    PairingGeneration
+}
+
 internal data class GarminWorkoutCommand(
     val requestId: String,
     val startedAtMillis: Long,
@@ -98,6 +106,34 @@ internal data class GarminSetStatistics(
     val endHeartRate: Int?,
     val recoveryHeartRateDrop: Int?,
     val detectionConfidence: Int?
+)
+
+internal enum class GarminWorkoutParseIssue {
+    Envelope,
+    RequestId,
+    Sets,
+    SetShape,
+    SetName,
+    SetValues,
+    SetMetrics,
+    SetMetricsShape,
+    SetMetricsActiveSeconds,
+    SetMetricsRestBeforeSeconds,
+    SetMetricsStartHeartRate,
+    SetMetricsPeakHeartRate,
+    SetMetricsEndHeartRate,
+    SetMetricsRecoveryHeartRateDrop,
+    SetMetricsDetectionConfidence,
+    StartedAt,
+    HeartRate,
+    Duration,
+    Calories,
+    HeartRateZone
+}
+
+internal data class GarminWorkoutParseResult(
+    val command: GarminWorkoutCommand?,
+    val issue: GarminWorkoutParseIssue?
 )
 
 internal fun canonicalGarminWorkoutPayloadDigest(command: GarminWorkoutCommand): String {
@@ -215,26 +251,50 @@ internal fun garminBindingDecision(
 internal fun garminSyncRequestBindingDecision(
     command: Map<Any?, Any?>,
     expected: GarminBinding
-): GarminBindingDecision {
-    if (!hasCurrentGarminBindingVersion(command)) return GarminBindingDecision.Rejected
-    val account = command["accountBinding"] as? String ?: return GarminBindingDecision.Rejected
-    val device = command["deviceBinding"] as? String ?: return GarminBindingDecision.Rejected
+): GarminBindingDecision = if (
+    garminSyncRequestBindingMismatch(command, expected) ==
+        GarminSyncRequestBindingMismatch.None
+) GarminBindingDecision.Bound else GarminBindingDecision.Rejected
+
+internal fun garminSyncRequestBindingMismatch(
+    command: Map<Any?, Any?>,
+    expected: GarminBinding
+): GarminSyncRequestBindingMismatch {
+    if (!hasCurrentGarminBindingVersion(command)) {
+        return GarminSyncRequestBindingMismatch.BindingVersion
+    }
+    val account = command["accountBinding"] as? String
+        ?: return GarminSyncRequestBindingMismatch.Account
+    if (!isValidGarminAccountBinding(account) || account != expected.account) {
+        return GarminSyncRequestBindingMismatch.Account
+    }
+    val device = command["deviceBinding"] as? String
+        ?: return GarminSyncRequestBindingMismatch.Device
+    if (device != expected.device) return GarminSyncRequestBindingMismatch.Device
+    val generation = command["pairingGeneration"]
+        ?: return GarminSyncRequestBindingMismatch.None
     if (
-        !isValidGarminAccountBinding(account) || account != expected.account ||
-        device != expected.device
+        generation !is String ||
+        !isValidGarminPairingGeneration(generation) ||
+        generation != expected.pairingGeneration
     ) {
-        return GarminBindingDecision.Rejected
+        return GarminSyncRequestBindingMismatch.PairingGeneration
     }
-    val generation = command["pairingGeneration"] ?: return GarminBindingDecision.Bound
-    if (generation !is String) return GarminBindingDecision.Rejected
-    return if (
-        isValidGarminPairingGeneration(generation) &&
-        generation == expected.pairingGeneration
+    return GarminSyncRequestBindingMismatch.None
+}
+
+internal fun garminSyncRequestCanRepairPairing(
+    command: Map<Any?, Any?>,
+    expected: GarminBinding
+): Boolean {
+    if (
+        garminSyncRequestBindingMismatch(command, expected) !=
+        GarminSyncRequestBindingMismatch.PairingGeneration
     ) {
-        GarminBindingDecision.Bound
-    } else {
-        GarminBindingDecision.Rejected
+        return false
     }
+    val watchGeneration = command["pairingGeneration"] as? String ?: return false
+    return isValidGarminPairingGeneration(watchGeneration)
 }
 
 internal fun hasCurrentGarminBindingVersion(command: Map<Any?, Any?>): Boolean {
@@ -368,18 +428,29 @@ internal fun isValidGarminMessageId(value: String, maxLength: Int): Boolean {
 internal fun parseGarminWorkoutCommand(
     command: Map<Any?, Any?>,
     nowMillis: Long
-): GarminWorkoutCommand? = runCatching {
+): GarminWorkoutCommand? = parseGarminWorkoutCommandResult(command, nowMillis).command
+
+internal fun parseGarminWorkoutCommandResult(
+    command: Map<Any?, Any?>,
+    nowMillis: Long
+): GarminWorkoutParseResult {
+    var issue = GarminWorkoutParseIssue.Envelope
+    val parsed = runCatching {
     require(command.size <= MAX_GARMIN_COMMAND_ENTRIES)
 
+    issue = GarminWorkoutParseIssue.RequestId
     val requestId = requiredGarminString(command, "requestId", MAX_GARMIN_REQUEST_ID_LENGTH)
     require(isValidGarminMessageId(requestId, MAX_GARMIN_REQUEST_ID_LENGTH))
 
+    issue = GarminWorkoutParseIssue.Sets
     val rawSets = command["sets"] as? List<*> ?: error("Garmin workout sets are missing.")
     require(rawSets.size in 1..MAX_GARMIN_WORKOUT_SETS)
     val sets = rawSets.map { raw ->
+        issue = GarminWorkoutParseIssue.SetShape
         @Suppress("UNCHECKED_CAST")
         val item = raw as? Map<Any?, Any?> ?: error("Garmin workout set is malformed.")
         require(item.size <= MAX_GARMIN_SET_ENTRIES)
+        issue = GarminWorkoutParseIssue.SetName
         val exerciseName = requiredGarminString(
             item,
             "exerciseName",
@@ -389,11 +460,13 @@ internal fun parseGarminWorkoutCommand(
             WorkoutDataLimits.isValidExerciseName(exerciseName) &&
                 exerciseName.codePointCount(0, exerciseName.length) <= MAX_GARMIN_EXERCISE_NAME_LENGTH
         )
+        issue = GarminWorkoutParseIssue.SetValues
         val weight = requiredFiniteDouble(item, "weight")
         val reps = requiredBoundedInt(item, "reps", 1, WorkoutDataLimits.MAX_REPS)
         require(WorkoutDataLimits.isValidWeight(weight))
         NamedWorkoutSetDraft(exerciseName = exerciseName, weight = weight, reps = reps)
     }
+    issue = GarminWorkoutParseIssue.SetMetrics
     val rawSetMetrics = command["setMetrics"]
     val setStatistics = if (rawSetMetrics == null) {
         List(sets.size) { null }
@@ -401,11 +474,18 @@ internal fun parseGarminWorkoutCommand(
         val metrics = rawSetMetrics as? List<*> ?: error("Garmin set metrics are malformed.")
         require(metrics.size == sets.size)
         metrics.map { raw ->
+            issue = GarminWorkoutParseIssue.SetMetricsShape
             val values = raw as? List<*> ?: error("Garmin set metrics are malformed.")
-            parseGarminSetStatistics(values)
+            val metricResult = parseGarminSetStatistics(values)
+            metricResult.issue?.let { metricIssue ->
+                issue = metricIssue
+                error("Garmin set metrics are outside supported limits.")
+            }
+            metricResult.statistics
         }
     }
 
+    issue = GarminWorkoutParseIssue.StartedAt
     val nowSeconds = nowMillis / 1_000L
     val startedAtSeconds = optionalBoundedLong(
         command,
@@ -415,68 +495,128 @@ internal fun parseGarminWorkoutCommand(
     ) ?: nowSeconds
     val startedAtMillis = Math.multiplyExact(startedAtSeconds, 1_000L)
     require(WorkoutDataLimits.isValidTimestamp(startedAtMillis))
+    issue = GarminWorkoutParseIssue.HeartRate
     val averageHeartRate = optionalBoundedInt(command, "avgHeartRate", 0, MAX_GARMIN_HEART_RATE)
     val maximumHeartRate = optionalBoundedInt(command, "maxHeartRate", 0, MAX_GARMIN_HEART_RATE)
     require(averageHeartRate == null || maximumHeartRate == null || averageHeartRate <= maximumHeartRate)
+
+    issue = GarminWorkoutParseIssue.Duration
+    val durationSeconds = optionalBoundedLong(
+        command,
+        "durationSeconds",
+        0L,
+        MAX_GARMIN_DURATION_SECONDS
+    )
+    issue = GarminWorkoutParseIssue.Calories
+    val gymCalories = optionalFiniteDouble(command, "gymCalories", 0.0, MAX_GARMIN_CALORIES)
+    val garminCalories = optionalBoundedInt(
+        command,
+        "garminCalories",
+        0,
+        MAX_GARMIN_CALORIES.toInt()
+    )
+    issue = GarminWorkoutParseIssue.HeartRateZone
+    val endingHeartRateZone = optionalBoundedInt(
+        command,
+        "heartRateZone",
+        0,
+        MAX_GARMIN_HEART_RATE_ZONE
+    )
 
     GarminWorkoutCommand(
         requestId = requestId,
         startedAtMillis = startedAtMillis,
         sets = sets,
-        durationSeconds = optionalBoundedLong(
-            command,
-            "durationSeconds",
-            0L,
-            MAX_GARMIN_DURATION_SECONDS
-        ),
-        gymCalories = optionalFiniteDouble(command, "gymCalories", 0.0, MAX_GARMIN_CALORIES),
-        garminCalories = optionalBoundedInt(command, "garminCalories", 0, MAX_GARMIN_CALORIES.toInt()),
+        durationSeconds = durationSeconds,
+        gymCalories = gymCalories,
+        garminCalories = garminCalories,
         averageHeartRate = averageHeartRate,
         maximumHeartRate = maximumHeartRate,
-        endingHeartRateZone = optionalBoundedInt(command, "heartRateZone", 0, MAX_GARMIN_HEART_RATE_ZONE),
+        endingHeartRateZone = endingHeartRateZone,
         setStatistics = setStatistics
     )
-}.getOrNull()
-
-private fun parseGarminSetStatistics(values: List<*>): GarminSetStatistics? {
-    require(values.size == 7)
-    val item = mapOf<Any?, Any?>(
-        "activeSeconds" to values[0],
-        "restBeforeSeconds" to values[1],
-        "startHeartRate" to values[2],
-        "peakHeartRate" to values[3],
-        "endHeartRate" to values[4],
-        "recoveryHeartRateDrop" to values[5],
-        "detectionConfidence" to values[6]
+    }.getOrNull()
+    return GarminWorkoutParseResult(
+        command = parsed,
+        issue = if (parsed == null) issue else null
     )
+}
+
+private data class GarminSetStatisticsParseResult(
+    val statistics: GarminSetStatistics?,
+    val issue: GarminWorkoutParseIssue?
+)
+
+private fun parseGarminSetStatistics(values: List<*>): GarminSetStatisticsParseResult {
+    var issue = GarminWorkoutParseIssue.SetMetricsShape
+    return try {
+    require(values.size == 7)
+    val metricKeys = listOf(
+        "activeSeconds",
+        "restBeforeSeconds",
+        "startHeartRate",
+        "peakHeartRate",
+        "endHeartRate",
+        "recoveryHeartRateDrop",
+        "detectionConfidence"
+    )
+    // Connect IQ uses null in the fixed seven-slot metrics tuple for an
+    // unavailable optional reading. Omit those slots before using the generic
+    // optional-number validators; non-null values remain strictly bounded.
+    val item = buildMap<Any?, Any?> {
+        metricKeys.indices.forEach { index ->
+            values[index]?.let { value -> put(metricKeys[index], value) }
+        }
+    }
+    issue = GarminWorkoutParseIssue.SetMetricsActiveSeconds
     val activeSeconds = optionalBoundedLong(item, "activeSeconds", 0L, 7_200L)
+    issue = GarminWorkoutParseIssue.SetMetricsRestBeforeSeconds
     val restBeforeSeconds = optionalBoundedLong(item, "restBeforeSeconds", 0L, 86_400L)
+    issue = GarminWorkoutParseIssue.SetMetricsStartHeartRate
     val startHeartRate = optionalBoundedInt(item, "startHeartRate", 0, 240)
-    val peakHeartRate = optionalBoundedInt(item, "peakHeartRate", 0, 240)
+    issue = GarminWorkoutParseIssue.SetMetricsPeakHeartRate
+    val reportedPeakHeartRate = optionalBoundedInt(item, "peakHeartRate", 0, 240)
+    issue = GarminWorkoutParseIssue.SetMetricsEndHeartRate
     val endHeartRate = optionalBoundedInt(item, "endHeartRate", 0, 240)
+    issue = GarminWorkoutParseIssue.SetMetricsRecoveryHeartRateDrop
     val recoveryHeartRateDrop = optionalBoundedInt(item, "recoveryHeartRateDrop", 0, 240)
+    issue = GarminWorkoutParseIssue.SetMetricsDetectionConfidence
     val detectionConfidence = optionalBoundedInt(item, "detectionConfidence", 0, 100)
     val parsedValues = listOf(
         activeSeconds,
         restBeforeSeconds,
         startHeartRate,
-        peakHeartRate,
+        reportedPeakHeartRate,
         endHeartRate,
         recoveryHeartRateDrop,
         detectionConfidence
     )
-    if (parsedValues.all { it == null }) return null
-    require(startHeartRate == null || peakHeartRate == null || startHeartRate <= peakHeartRate)
-    require(endHeartRate == null || peakHeartRate == null || endHeartRate <= peakHeartRate)
-    return GarminSetStatistics(
-        activeSeconds = activeSeconds,
-        restBeforeSeconds = restBeforeSeconds,
-        startHeartRate = startHeartRate,
-        peakHeartRate = peakHeartRate,
-        endHeartRate = endHeartRate,
-        recoveryHeartRateDrop = recoveryHeartRateDrop,
-        detectionConfidence = detectionConfidence
+    if (parsedValues.all { it == null }) {
+        return GarminSetStatisticsParseResult(statistics = null, issue = null)
+    }
+    // Older released watch builds could snapshot the end HR after the stored peak,
+    // producing start/end > peak even though every scalar was valid. Preserve the
+    // workout and canonicalize the derived peak to the maximum observed HR.
+    val peakHeartRate = listOfNotNull(
+        startHeartRate,
+        reportedPeakHeartRate,
+        endHeartRate
+    ).maxOrNull()
+    GarminSetStatisticsParseResult(
+        statistics = GarminSetStatistics(
+            activeSeconds = activeSeconds,
+            restBeforeSeconds = restBeforeSeconds,
+            startHeartRate = startHeartRate,
+            peakHeartRate = peakHeartRate,
+            endHeartRate = endHeartRate,
+            recoveryHeartRateDrop = recoveryHeartRateDrop,
+            detectionConfidence = detectionConfidence
+        ),
+        issue = null
     )
+    } catch (_: RuntimeException) {
+        GarminSetStatisticsParseResult(statistics = null, issue = issue)
+    }
 }
 
 internal fun validatedGarminPlanOrNull(

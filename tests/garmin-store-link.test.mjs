@@ -46,6 +46,16 @@ test("native clients open our Garmin listing with platform store fallbacks", asy
   assert.equal(iosSettings.includes(OLD_QA_DOWNLOAD), false);
 });
 
+test("Android profile relies on the app bar for its single Profile heading", async () => {
+  const androidScreen = await readFile(
+    "app/src/main/java/com/example/gymapp/ui/screens/ProfileScreen.kt",
+    "utf8"
+  );
+
+  assert.equal(androidScreen.includes("text = stringResource(R.string.title_profile)"), false);
+  assert.equal(androidScreen.includes("text = stringResource(R.string.profile_screen_subtitle)"), true);
+});
+
 test("PWA uses our Garmin listing and an Android intent with a Google Play fallback", async () => {
   const app = await readFile("pwa/app.js", "utf8");
 

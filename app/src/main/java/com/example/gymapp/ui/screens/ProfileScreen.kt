@@ -81,20 +81,12 @@ fun ProfileScreen(
         onRefresh = onRefreshLeaderboard,
         headerContent = {
             item {
-                Column(
+                Text(
+                    text = stringResource(R.string.profile_screen_subtitle),
                     modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Text(
-                        text = stringResource(R.string.title_profile),
-                        style = MaterialTheme.typography.headlineLarge
-                    )
-                    Text(
-                        text = stringResource(R.string.profile_screen_subtitle),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
             item {
                 AccountStatusCard(

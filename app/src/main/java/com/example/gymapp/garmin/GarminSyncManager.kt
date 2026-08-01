@@ -676,12 +676,31 @@ class GarminSyncManager(
             device = sourceDeviceBinding,
             pairingGeneration = pairingGeneration
         )
-        val decision = garminSyncRequestBindingDecision(
+        val mismatch = garminSyncRequestBindingMismatch(
             command = command,
             expected = binding
         )
-        if (decision == GarminBindingDecision.Rejected) {
-            Log.i(TAG, "Rejected Garmin sync request with stale account or device binding")
+        if (mismatch != GarminSyncRequestBindingMismatch.None) {
+            if (
+                advertisesGeneration &&
+                garminSyncRequestCanRepairPairing(command = command, expected = binding)
+            ) {
+                // The transport source is the already pinned physical watch and both
+                // account/device bindings match. Rotate only the watch-side receipt
+                // generation; the watch preserves its active and queued workouts.
+                Log.i(TAG, "Repairing Garmin pairing generation")
+                lastPlanSyncStatus = "Repairing secure Garmin pairing"
+                pushSyncForContext(
+                    device = device,
+                    account = account,
+                    generationSupportOverride = true,
+                    repairPairing = true
+                )
+                return
+            }
+            // Log only the mismatch category. Bindings and device identifiers are
+            // intentionally never written to diagnostics.
+            Log.i(TAG, "Rejected Garmin sync request: ${mismatch.name}")
             return
         }
         pushSyncForContext(device, account, supportsGeneration)
@@ -727,11 +746,14 @@ class GarminSyncManager(
                 return@withLock null
             }
 
-            val workout = parseGarminWorkoutCommand(
+            val parseResult = parseGarminWorkoutCommandResult(
                 command = command,
                 nowMillis = System.currentTimeMillis()
-            ) ?: run {
-                Log.i(TAG, "Rejected malformed or out-of-range Garmin workout")
+            )
+            val workout = parseResult.command ?: run {
+                // The category is intentionally value-free: no request identifiers,
+                // exercise names, metrics, bindings, or device IDs enter diagnostics.
+                Log.i(TAG, "Rejected Garmin workout: ${parseResult.issue?.name ?: "Unknown"}")
                 return@withLock null
             }
 
@@ -763,7 +785,8 @@ class GarminSyncManager(
     private suspend fun pushSyncForContext(
         device: IQDevice,
         account: GarminAccountContext,
-        generationSupportOverride: Boolean? = null
+        generationSupportOverride: Boolean? = null,
+        repairPairing: Boolean = false
     ) {
         outboundSyncMutex.withLock {
             if (!isStillActive(account)) return@withLock
@@ -774,7 +797,13 @@ class GarminSyncManager(
             val deviceBinding = deviceBinding(device)
             val plan = cachedPlan(account, deviceBinding)
             val syncId = newGarminMessageId()
-            val basePayload = syncPayload(exercises, plan, syncId, resetWorkout = false)
+            val basePayload = syncPayload(
+                exercises = exercises,
+                plan = plan,
+                syncId = syncId,
+                resetWorkout = false,
+                repairPairing = repairPairing
+            )
             if (!cachePlan(plan, account, deviceBinding)) return@withLock
             if (!isStillActive(account)) return@withLock
             val supportsGeneration = generationSupportOverride
@@ -819,7 +848,8 @@ class GarminSyncManager(
         exercises: List<String>,
         plan: List<NamedWorkoutSetDraft>,
         syncId: String? = null,
-        resetWorkout: Boolean = false
+        resetWorkout: Boolean = false,
+        repairPairing: Boolean = false
     ): Map<String, Any> {
         val compactPlan = checkNotNull(validatedGarminPlanOrNull(plan)) {
             "Garmin plan is outside supported limits."
@@ -851,6 +881,9 @@ class GarminSyncManager(
         if (!syncId.isNullOrBlank()) {
             payload["syncId"] = syncId
             payload["requestId"] = syncId
+        }
+        if (repairPairing) {
+            payload["repairPairing"] = true
         }
         return payload
     }
