@@ -20,7 +20,7 @@ class GymStore {
     static var lastSetStatistics = null;
     static var lastLoggedSetEndSeconds = 0;
     static var lastSetPreviousLoggedEnd = 0;
-    static var undoWindowMs = 10000;
+    static var undoWindowMs = 5000;
     static var status = "READY";
     static var weightStep = 2.5;
     static var restSecondsDefault = 90;

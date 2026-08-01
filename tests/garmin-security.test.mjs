@@ -4,6 +4,17 @@ import test from "node:test";
 
 const read = (path) => readFile(path, "utf8");
 
+test("Android release keeps Garmin broadcast Parcelable class names", async () => {
+  const rules = await read("app/proguard-rules.pro");
+
+  for (const className of ["IQDevice", "IQApp", "IQMessage"]) {
+    assert.match(
+      rules,
+      new RegExp(`-keep class com\\.garmin\\.android\\.connectiq\\.${className} \\{ \\*; \\}`)
+    );
+  }
+});
+
 test("Garmin messages are bounded, account-bound, replay-aware, and acked by id", async () => {
   const [store, app, comm, view, session, androidManager] = await Promise.all([
     read("garmin/source/GymStore.mc"),

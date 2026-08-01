@@ -557,7 +557,7 @@ class WorkoutView extends Ui.View {
 
     function showSetSavedFlash(number) {
         savedSetNumber = number;
-        savedSetFlashUntil = System.getTimer() + 3000;
+        savedSetFlashUntil = System.getTimer() + GymStore.undoWindowMs;
     }
 
     function isUndoOverlayActive() {
@@ -1110,7 +1110,9 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
     }
 
     function onBack() {
-        if (GymStore.canUndoLastSet()) {
+        // Back is an undo action only while the five-second confirmation is
+        // visibly active. After it disappears, Back returns to navigation.
+        if (view.isUndoOverlayActive()) {
             undoLastSet();
             Ui.requestUpdate();
             return true;

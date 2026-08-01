@@ -16,6 +16,14 @@
 # debugging stack traces.
 #-keepattributes SourceFile,LineNumberTable
 
+# Garmin Connect sends SDK Parcelable objects through broadcasts using their
+# original fully qualified class names. Renaming these classes makes Android
+# unable to unmarshal an incoming watch message before our receiver can handle
+# it, causing a release-only BadParcelableException.
+-keep class com.garmin.android.connectiq.IQDevice { *; }
+-keep class com.garmin.android.connectiq.IQApp { *; }
+-keep class com.garmin.android.connectiq.IQMessage { *; }
+
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile

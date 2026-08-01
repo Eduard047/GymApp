@@ -90,7 +90,7 @@ test("Garmin can undo only the most recent set inside a bounded window", async (
     readFile("garmin/source/WorkoutView.mc", "utf8")
   ]);
 
-  assert.match(store, /undoWindowMs = 10000/);
+  assert.match(store, /undoWindowMs = 5000/);
   assert.match(store, /static function canUndoLastSet\(\)/);
   const undo = section(store, "static function undoLastSet()", "static function cancelRest()");
   assert.match(undo, /if \(!canUndoLastSet\(\)\)[\s\S]*return false/);
@@ -102,7 +102,8 @@ test("Garmin can undo only the most recent set inside a bounded window", async (
   assert.match(session, /static function restoreAutoPromptAfterUndo\(statistics\)/);
   assert.match(view, /function isUndoOverlayActive\(\)/);
   assert.match(view, /GymStore\.tr\("TAP \/ BACK: UNDO"/);
-  assert.match(view, /function onBack\(\)[\s\S]*if \(GymStore\.canUndoLastSet\(\)\)[\s\S]*undoLastSet\(\)/);
+  assert.match(view, /savedSetFlashUntil = System\.getTimer\(\) \+ GymStore\.undoWindowMs/);
+  assert.match(view, /function onBack\(\)[\s\S]*if \(view\.isUndoOverlayActive\(\)\)[\s\S]*undoLastSet\(\)/);
   assert.match(view, /if \(x < \(view\.screenWidth \/ 2\)\)[\s\S]*undoLastSet\(\)[\s\S]*recordSet\(\)/);
 });
 
