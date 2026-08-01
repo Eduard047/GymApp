@@ -33,10 +33,13 @@
     <string name="action_add_workout">Add Workout</string>
     <string name="action_add_exercise">Add Exercise</string>
     <string name="action_add_set">Add Set</string>
+    <string name="action_add_planned_set">Add planned set</string>
+    <string name="action_log_set_and_rest">Log set · rest %1$d s</string>
     <string name="action_add_set_last_weight">Quick + Last</string>
     <string name="action_copy_last_set">Copy Last Set</string>
     <string name="action_copy_last_plus">Copy Last +2.5 kg</string>
     <string name="action_save_workout">Save Workout</string>
+    <string name="action_save_completed_workout">Save as completed workout</string>
     <string name="action_delete">Delete</string>
     <string name="action_deleting">Deleting…</string>
     <string name="action_edit">Edit</string>
@@ -203,7 +206,7 @@
     <string name="hint_optional">Optional</string>
     <string name="label_reps">Reps</string>
     <string name="add_workout_intro_title">Build today’s session</string>
-    <string name="add_workout_intro_supporting">Log your plan fast and keep momentum with smart set shortcuts.</string>
+    <string name="add_workout_intro_supporting">Build planned rows, sync them as Garmin targets, or save every row as completed.</string>
     <string name="focus_lens_eyebrow">YOUR NEXT MOVE</string>
     <string name="focus_lens_title">Build today’s session</string>
     <string name="focus_lens_supporting">Ready when you are. Start simple and shape the workout as you go.</string>
@@ -236,6 +239,8 @@
     <string name="template_picker_empty">No previous workouts yet.</string>
     <string name="template_picker_summary">%1$d exercises • %2$d sets • %3$s volume</string>
     <string name="add_workout_save_hint">Check your sets, then save to move straight into workout details.</string>
+    <string name="add_workout_plan_mode_hint">Plan mode: these rows are targets sent to Garmin and are not logged as completed by syncing.</string>
+    <string name="add_workout_completed_mode_hint">Completed mode: saving writes every planned row immediately to workout history and summary.</string>
     <string name="note_template_push">Push day</string>
     <string name="note_template_pull">Pull day</string>
     <string name="note_template_legs">Leg day</string>
@@ -296,6 +301,8 @@
     <string name="message_set_deleted">Set deleted</string>
     <string name="message_delete_target_changed">Deletion stopped because the saved data changed. Review it and try again.</string>
     <string name="message_delete_failed">Could not delete the saved data. Nothing was removed by this request.</string>
+    <string name="message_add_set_failed">Could not log the set. Rest was not started.</string>
+    <string name="message_rest_timer_save_failed">The set was saved, but the rest timer could not be started.</string>
     <string name="message_invalid_set_input">Enter valid reps and optional weight.</string>
     <string name="message_exercise_error">Unable to save exercise. Name may already exist.</string>
 
@@ -586,6 +593,15 @@
     <string name="garmin_intensity_solid">Solid</string>
     <string name="garmin_intensity_high">High</string>
     <string name="garmin_kcal_explainer">Gym kcal is saved from the Garmin app strength formula. Garmin kcal is the system value Garmin Connect uses for daily calories.</string>
+    <string name="garmin_partial_sets_status">Original Garmin result: completed %1$d of %2$d planned sets.</string>
+    <string name="garmin_set_intervals_title">Chronological watch sets</string>
+    <string name="garmin_set_intervals_supporting">S# follows the watch timeline and may differ from exercise-grouped set order. Each row is a slice of the full workout totals recorded while that watch set was active.</string>
+    <string name="garmin_watch_set_label">Watch set S%1$d</string>
+    <string name="garmin_set_interval_active">%1$s active</string>
+    <string name="garmin_set_interval_calories">Gym %1$s kcal · Garmin %2$s kcal</string>
+    <string name="garmin_set_interval_zones">HR zones (seconds): %1$s</string>
+    <string name="garmin_set_interval_no_zones">No valid heart-rate zone samples for this set.</string>
+    <string name="garmin_set_intervals_omitted">%1$d additional interval rows were omitted from the note to keep the workout safely importable.</string>
     <string name="workout_comparison_eyebrow">Like for like</string>
     <string name="workout_comparison_title">Versus the previous matching workout</string>
     <string name="workout_comparison_supporting">%1$d matching exercises • previous workout %2$s</string>

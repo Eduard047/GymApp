@@ -40,7 +40,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -61,7 +60,9 @@ import com.example.gymapp.R
 import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.entity.SetEntryEntity
 import com.example.gymapp.data.repository.defaultContributionsForExercise
+import com.example.gymapp.garmin.GarminSetIntervalMetrics
 import com.example.gymapp.garmin.GarminWorkoutMetrics
+import com.example.gymapp.garmin.hasSetIntervalDetails
 import com.example.gymapp.garmin.parseTrustedGarminWorkoutMetrics
 import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.ExerciseMuscleMap
@@ -77,11 +78,13 @@ import com.example.gymapp.ui.viewmodel.WorkoutDetailUiState
 import com.example.gymapp.util.DateTimeUtils
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import java.text.NumberFormat
 import java.util.Locale
 
 private const val SETS_TABLE_SET_WEIGHT = 0.95f
 private const val SETS_TABLE_WEIGHT_WEIGHT = 1.1f
 private const val SETS_TABLE_REPS_WEIGHT = 0.9f
+private const val DEFAULT_EXERCISE_REST_SECONDS = 90
 private val SETS_TABLE_ACTIONS_WIDTH = 104.dp
 
 @Composable
@@ -90,6 +93,8 @@ fun WorkoutDetailScreen(
     events: Flow<WorkoutDetailEvent>,
     onAddExerciseToWorkout: (Long) -> Unit,
     onAddSet: (Long) -> Unit,
+    onStartExerciseRestTimer: (Long, Int) -> Unit,
+    onStopExerciseRestTimer: (Long) -> Unit,
     onDeleteSet: (SetEntryEntity) -> Unit,
     onConfirmDeleteSet: () -> Unit,
     onDismissDeleteSet: () -> Unit,
@@ -105,37 +110,19 @@ fun WorkoutDetailScreen(
     var editReps by remember { mutableStateOf("") }
     var confirmDeleteSession by remember { mutableStateOf(false) }
 
-    val exerciseTimerTargets = remember { mutableStateMapOf<Long, Long>() }
     var exerciseTimerNowMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
-    LaunchedEffect(exerciseTimerTargets.keys.toList(), exerciseTimerTargets.values.toList()) {
-        if (exerciseTimerTargets.isEmpty()) return@LaunchedEffect
-
-        while (exerciseTimerTargets.isNotEmpty()) {
+    LaunchedEffect(uiState.exerciseRestDeadlineMillis) {
+        while (true) {
             val now = System.currentTimeMillis()
             exerciseTimerNowMillis = now
-            val expiredIds = exerciseTimerTargets
-                .filterValues { it <= now }
-                .keys
-                .toList()
-            expiredIds.forEach { exerciseTimerTargets.remove(it) }
-            if (exerciseTimerTargets.isEmpty()) break
+            if (uiState.exerciseRestDeadlineMillis.values.none { deadline -> deadline > now }) break
             delay(500)
         }
     }
 
-    fun startExerciseTimer(workoutExerciseId: Long, seconds: Int) {
-        if (seconds <= 0) return
-        exerciseTimerNowMillis = System.currentTimeMillis()
-        exerciseTimerTargets[workoutExerciseId] = exerciseTimerNowMillis + seconds * 1_000L
-    }
-
-    fun stopExerciseTimer(workoutExerciseId: Long) {
-        exerciseTimerTargets.remove(workoutExerciseId)
-    }
-
     fun remainingExerciseTimerSeconds(workoutExerciseId: Long): Int {
-        val target = exerciseTimerTargets[workoutExerciseId] ?: return 0
+        val target = uiState.exerciseRestDeadlineMillis[workoutExerciseId] ?: return 0
         val remainingMillis = (target - exerciseTimerNowMillis).coerceAtLeast(0L)
         return ((remainingMillis + 999L) / 1_000L).toInt()
     }
@@ -143,6 +130,20 @@ fun WorkoutDetailScreen(
     LaunchedEffect(events, context) {
         events.collect { event ->
             when (event) {
+                WorkoutDetailEvent.AddSetFailed -> {
+                    snackbarHostState.showSnackbar(
+                        message = context.getString(R.string.message_add_set_failed),
+                        duration = SnackbarDuration.Short
+                    )
+                }
+
+                WorkoutDetailEvent.RestTimerFailed -> {
+                    snackbarHostState.showSnackbar(
+                        message = context.getString(R.string.message_rest_timer_save_failed),
+                        duration = SnackbarDuration.Short
+                    )
+                }
+
                 WorkoutDetailEvent.SetDeleted -> {
                     snackbarHostState.showSnackbar(
                         message = context.getString(R.string.message_set_deleted),
@@ -239,6 +240,11 @@ fun WorkoutDetailScreen(
                 if (garminMetrics != null) {
                     item {
                         GarminWorkoutMetricsCard(metrics = garminMetrics)
+                    }
+                    if (garminMetrics.hasSetIntervalDetails()) {
+                        item {
+                            GarminSetIntervalsCard(metrics = garminMetrics)
+                        }
                     }
                 }
 
@@ -389,10 +395,16 @@ fun WorkoutDetailScreen(
                             if (!isGarminWorkout) {
                                 ExerciseRestTimerRow(
                                     restSecondsRemaining = localRestSecondsRemaining,
-                                    onStart60 = { startExerciseTimer(workoutExerciseId, 60) },
-                                    onStart90 = { startExerciseTimer(workoutExerciseId, 90) },
-                                    onStart180 = { startExerciseTimer(workoutExerciseId, 180) },
-                                    onStop = { stopExerciseTimer(workoutExerciseId) }
+                                    onStart60 = {
+                                        onStartExerciseRestTimer(workoutExerciseId, 60)
+                                    },
+                                    onStart90 = {
+                                        onStartExerciseRestTimer(workoutExerciseId, 90)
+                                    },
+                                    onStart180 = {
+                                        onStartExerciseRestTimer(workoutExerciseId, 180)
+                                    },
+                                    onStop = { onStopExerciseRestTimer(workoutExerciseId) }
                                 )
                             }
 
@@ -510,14 +522,15 @@ fun WorkoutDetailScreen(
                             }
 
                             OutlinedButton(
-                                onClick = {
-                                    onAddSet(workoutExerciseId)
-                                    startExerciseTimer(workoutExerciseId, 90)
-                                },
+                                onClick = { onAddSet(workoutExerciseId) },
+                                enabled = workoutExerciseId !in uiState.setAdditionsInFlight,
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Text(
-                                    text = stringResource(R.string.action_add_set),
+                                    text = stringResource(
+                                        R.string.action_log_set_and_rest,
+                                        DEFAULT_EXERCISE_REST_SECONDS
+                                    ),
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
@@ -756,6 +769,22 @@ private fun GarminWorkoutHeaderCard(
                 style = MaterialTheme.typography.bodySmall,
                 color = Color.White.copy(alpha = 0.78f)
             )
+            val completedSetCount = metrics.completedSetCount
+            completedSetCount?.let { completed ->
+                metrics.plannedSetCount
+                    ?.takeIf { planned -> planned > completed }
+                    ?.let { plannedSetCount ->
+                        Text(
+                            text = stringResource(
+                                R.string.garmin_partial_sets_status,
+                                completed,
+                                plannedSetCount
+                            ),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = Color.White
+                        )
+                    }
+            }
         }
     }
 }
@@ -846,6 +875,103 @@ private fun GarminWorkoutMetricsCard(metrics: GarminWorkoutMetrics) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
+    }
+}
+
+@Composable
+private fun GarminSetIntervalsCard(metrics: GarminWorkoutMetrics) {
+    AppPanel(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.garmin_set_intervals_title),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = stringResource(R.string.garmin_set_intervals_supporting),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            metrics.setIntervals.forEach { interval ->
+                GarminSetIntervalRow(interval = interval)
+            }
+            if (metrics.omittedSetIntervalCount > 0) {
+                Text(
+                    text = stringResource(
+                        R.string.garmin_set_intervals_omitted,
+                        metrics.omittedSetIntervalCount
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun GarminSetIntervalRow(interval: GarminSetIntervalMetrics) {
+    val nonZeroZones = interval.heartRateZoneSeconds
+        .mapIndexedNotNull { zone, seconds ->
+            seconds.takeIf { it > 0 }?.let { "Z$zone $it" }
+        }
+        .joinToString(separator = " · ")
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(GymCompactShape)
+            .background(
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                GymCompactShape
+            )
+            .border(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f),
+                shape = GymCompactShape
+            )
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = stringResource(R.string.garmin_watch_set_label, interval.setNumber),
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = stringResource(
+                    R.string.garmin_set_interval_active,
+                    formatGarminDuration(interval.activeSeconds)
+                ),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+        Text(
+            text = stringResource(
+                R.string.garmin_set_interval_calories,
+                formatGarminIntervalCalories(interval.gymCalories),
+                interval.garminCalories?.toString() ?: "—"
+            ),
+            style = MaterialTheme.typography.bodyMedium
+        )
+        Text(
+            text = if (nonZeroZones.isEmpty()) {
+                stringResource(R.string.garmin_set_interval_no_zones)
+            } else {
+                stringResource(R.string.garmin_set_interval_zones, nonZeroZones)
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
@@ -1175,6 +1301,15 @@ private fun formatCompactWeight(weight: Double): String {
     } else {
         String.format(Locale.getDefault(), "%.1f", weight)
     }
+}
+
+private fun formatGarminIntervalCalories(calories: Double): String {
+    if (!calories.isFinite()) return "—"
+    return NumberFormat.getNumberInstance(Locale.getDefault()).apply {
+        isGroupingUsed = false
+        minimumFractionDigits = 0
+        maximumFractionDigits = 2
+    }.format(calories)
 }
 
 private fun GarminWorkoutMetrics.intensityLabelRes(): Int? {

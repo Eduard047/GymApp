@@ -10,6 +10,7 @@ import com.example.gymapp.auth.activeCloudSessionFor
 import com.example.gymapp.auth.databaseName
 import com.example.gymapp.data.repository.GarminWorkoutApplyResult
 import com.example.gymapp.data.repository.NamedWorkoutSetDraft
+import com.example.gymapp.data.repository.WorkoutDataLimits
 import com.example.gymapp.util.AppLanguage
 import com.garmin.android.connectiq.ConnectIQ
 import com.garmin.android.connectiq.IQApp
@@ -32,6 +33,8 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
 import org.json.JSONObject
+import java.math.BigDecimal
+import java.math.RoundingMode
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
@@ -71,6 +74,133 @@ data class GarminDeviceUiState(
     val sdkReady: Boolean = false,
     val devices: List<GarminDeviceSummary> = emptyList()
 )
+
+/** Builds the bounded, portable note stored with a trusted Garmin workout. */
+internal fun garminWorkoutNote(
+    command: GarminWorkoutCommand,
+    language: AppLanguage
+): String {
+    val isUk = language == AppLanguage.UK
+    val isRu = language == AppLanguage.RU
+    val details = mutableListOf("Garmin")
+    command.durationSeconds?.takeIf { it > 0L }?.let { seconds ->
+        val minutes = seconds / 60
+        val remainder = seconds % 60
+        details += when {
+            isUk -> "Тривалість ${minutes}:${remainder.toString().padStart(2, '0')}"
+            isRu -> "Длительность ${minutes}:${remainder.toString().padStart(2, '0')}"
+            else -> "Duration ${minutes}:${remainder.toString().padStart(2, '0')}"
+        }
+    }
+    command.gymCalories?.takeIf { it > 0.0 }?.let { calories ->
+        details += if (isUk) "Gym ккал ${calories.toInt()}" else "Gym kcal ${calories.toInt()}"
+    }
+    command.garminCalories?.takeIf { it > 0 }?.let { calories ->
+        details += if (isUk) "Garmin ккал $calories" else "Garmin kcal $calories"
+    }
+    command.averageHeartRate?.takeIf { it > 0 }?.let { bpm ->
+        details += when {
+            isUk -> "Сер пульс $bpm"
+            isRu -> "Средний пульс $bpm"
+            else -> "Avg HR $bpm"
+        }
+    }
+    command.maximumHeartRate?.takeIf { it > 0 }?.let { bpm ->
+        details += when {
+            isUk -> "Макс пульс $bpm"
+            isRu -> "Макс. пульс $bpm"
+            else -> "Max HR $bpm"
+        }
+    }
+    command.endingHeartRateZone?.takeIf { it > 0 }?.let { zone ->
+        details += when {
+            isUk -> "Кінцева зона пульсу Z$zone"
+            isRu -> "Конечная зона пульса Z$zone"
+            else -> "Ending HR zone Z$zone"
+        }
+    }
+    val exactPlannedSetCount = command.plannedTargetSetCount
+    val exactCompletedSetCount = command.completedPlannedSetCount
+    val progress = if (exactPlannedSetCount != null && exactCompletedSetCount != null) {
+        exactCompletedSetCount to exactPlannedSetCount
+    } else {
+        command.plannedSetCount?.let { planned -> command.sets.size to planned }
+    }
+    progress
+        ?.takeIf { (completed, planned) -> planned > completed }
+        ?.let { (completed, planned) ->
+            details += when {
+                isUk -> "Виконано $completed/$planned підходів"
+                isRu -> "Выполнено $completed/$planned подходов"
+                else -> "Completed $completed/$planned sets"
+            }
+        }
+
+    val perSetDetails = command.sets.indices.mapNotNull { index ->
+        val metrics = mutableListOf<String>()
+        command.setStatistics.getOrNull(index)?.let { statistics ->
+            statistics.activeSeconds?.let { metrics += "${it}s" }
+            statistics.restBeforeSeconds?.takeIf { it > 0L }?.let { metrics += "R${it}s" }
+            val hrValues = listOf(
+                statistics.startHeartRate,
+                statistics.peakHeartRate,
+                statistics.endHeartRate
+            )
+            if (hrValues.any { it != null }) {
+                metrics += "HR${hrValues.joinToString("/") { it?.toString() ?: "-" }}"
+            }
+            statistics.recoveryHeartRateDrop?.let { metrics += "↓$it" }
+            statistics.detectionConfidence?.let { metrics += "C$it%" }
+        }
+        command.setIntervals.getOrNull(index)?.let { interval ->
+            metrics += "I${interval.startOffsetSeconds}-${interval.endOffsetSeconds}s"
+            metrics += "K${compactGarminDecimal(interval.gymCalories)}/${interval.garminCalories ?: "-"}"
+            metrics += "Z${interval.heartRateZoneSeconds.joinToString("/")}s"
+        }
+        metrics.takeIf { it.isNotEmpty() }?.let { "S${index + 1} ${it.joinToString(" ")}" }
+    }
+
+    val fixedDetailCount = details.size
+    var omittedDetails = 0
+    for (index in perSetDetails.indices) {
+        val setDetail = perSetDetails[index]
+        val remainingAfterCandidate = perSetDetails.lastIndex - index
+        val reservedMarker = remainingAfterCandidate
+            .takeIf { it > 0 }
+            ?.let { "S+$it" }
+        val candidate = buildList {
+            addAll(details)
+            add(setDetail)
+            reservedMarker?.let(::add)
+        }.joinToString(separator = " · ")
+        if (WorkoutDataLimits.isValidNote(candidate)) {
+            details += setDetail
+        } else {
+            omittedDetails = perSetDetails.size - index
+            break
+        }
+    }
+    if (omittedDetails > 0) {
+        var marker = "S+$omittedDetails"
+        var candidate = (details + marker).joinToString(separator = " · ")
+        // Every accepted row reserved this marker. Keep a defensive fallback so a future change to
+        // the fixed diagnostics cannot silently discard the omission count at the note boundary.
+        while (!WorkoutDataLimits.isValidNote(candidate) && details.size > fixedDetailCount) {
+            details.removeAt(details.lastIndex)
+            omittedDetails += 1
+            marker = "S+$omittedDetails"
+            candidate = (details + marker).joinToString(separator = " · ")
+        }
+        if (WorkoutDataLimits.isValidNote(candidate)) details += marker
+    }
+    return details.joinToString(separator = " · ")
+}
+
+private fun compactGarminDecimal(value: Double): String =
+    BigDecimal.valueOf(value)
+        .setScale(2, RoundingMode.HALF_UP)
+        .stripTrailingZeros()
+        .toPlainString()
 
 class GarminSyncManager(
     private val application: GymApplication
@@ -1379,66 +1509,7 @@ class GarminSyncManager(
     }
 
     private fun buildGarminWorkoutNote(command: GarminWorkoutCommand): String {
-        val language = application.languageManager.currentLanguage()
-        val isUk = language == AppLanguage.UK
-        val isRu = language == AppLanguage.RU
-        val details = mutableListOf("Garmin")
-        command.durationSeconds?.takeIf { it > 0L }?.let { seconds ->
-            val minutes = seconds / 60
-            val remainder = seconds % 60
-            details += when {
-                isUk -> "Тривалість ${minutes}:${remainder.toString().padStart(2, '0')}"
-                isRu -> "Длительность ${minutes}:${remainder.toString().padStart(2, '0')}"
-                else -> "Duration ${minutes}:${remainder.toString().padStart(2, '0')}"
-            }
-        }
-        command.gymCalories?.takeIf { it > 0.0 }?.let { calories ->
-            details += if (isUk) "Gym ккал ${calories.toInt()}" else "Gym kcal ${calories.toInt()}"
-        }
-        command.garminCalories?.takeIf { it > 0 }?.let { calories ->
-            details += if (isUk) "Garmin ккал $calories" else "Garmin kcal $calories"
-        }
-        command.averageHeartRate?.takeIf { it > 0 }?.let { bpm ->
-            details += when {
-                isUk -> "Сер пульс $bpm"
-                isRu -> "Средний пульс $bpm"
-                else -> "Avg HR $bpm"
-            }
-        }
-        command.maximumHeartRate?.takeIf { it > 0 }?.let { bpm ->
-            details += when {
-                isUk -> "Макс пульс $bpm"
-                isRu -> "Макс. пульс $bpm"
-                else -> "Max HR $bpm"
-            }
-        }
-        command.endingHeartRateZone?.takeIf { it > 0 }?.let { zone ->
-            details += when {
-                isUk -> "Кінцева зона пульсу Z$zone"
-                isRu -> "Конечная зона пульса Z$zone"
-                else -> "Ending HR zone Z$zone"
-            }
-        }
-        command.setStatistics.forEachIndexed { index, statistics ->
-            if (statistics == null) return@forEachIndexed
-            val metrics = mutableListOf<String>()
-            statistics.activeSeconds?.let { metrics += "${it}s" }
-            statistics.restBeforeSeconds?.takeIf { it > 0L }?.let { metrics += "R${it}s" }
-            val hrValues = listOf(
-                statistics.startHeartRate,
-                statistics.peakHeartRate,
-                statistics.endHeartRate
-            )
-            if (hrValues.any { it != null }) {
-                metrics += "HR${hrValues.joinToString("/") { it?.toString() ?: "-" }}"
-            }
-            statistics.recoveryHeartRateDrop?.let { metrics += "↓$it" }
-            statistics.detectionConfidence?.let { metrics += "C$it%" }
-            if (metrics.isNotEmpty()) {
-                details += "S${index + 1} ${metrics.joinToString(" ")}"
-            }
-        }
-        return details.joinToString(separator = " · ")
+        return garminWorkoutNote(command, application.languageManager.currentLanguage())
     }
 
     private suspend fun persistWorkout(

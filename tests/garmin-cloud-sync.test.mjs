@@ -2,13 +2,16 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import test from "node:test";
+import { validateGarminPlan as validateEdgeGarminPlan } from "../supabase/functions/_shared/garmin-plan-contract.ts";
 
 const require = createRequire(import.meta.url);
 const {
   PLAN_LIMITS,
+  WORKOUT_NOTE_LIMITS,
   validateGarminPlan,
   draftToGarminPlan,
-  cloudPlanResponseToSyncMessage
+  cloudPlanResponseToSyncMessage,
+  parseGarminWorkoutMetrics
 } = require("../pwa/garmin-cloud-sync.js");
 
 test("PWA draft becomes a clean Garmin cloud plan", () => {
@@ -159,6 +162,33 @@ test("cloud response flattens to the sync payload Garmin applies", () => {
   });
 });
 
+test("Supabase Edge validation preserves every set's distinct kg and reps", () => {
+  const source = {
+    source: "pwa",
+    version: 1,
+    title: "Per-set plan",
+    createdAt: "2026-06-29T12:00:00.000Z",
+    startedAt: "2026-06-29T10:30:00.000Z",
+    note: "",
+    exercises: [{
+      name: "Bench Press",
+      sets: [
+        { weight: 80.5, reps: 8, orderIndex: 0 },
+        { weight: 82.5, reps: 6, orderIndex: 1 },
+        { weight: 75, reps: 12, orderIndex: 2 }
+      ]
+    }]
+  };
+
+  const validation = validateEdgeGarminPlan(source);
+
+  assert.equal(validation.ok, true);
+  assert.deepEqual(validation.plan.exercises[0].sets, source.exercises[0].sets);
+  const invalidTail = structuredClone(source);
+  invalidTail.exercises[0].sets[2].reps = 1.5;
+  assert.equal(validateEdgeGarminPlan(invalidTail).ok, false);
+});
+
 test("non-plan cloud responses do not produce Garmin sync messages", () => {
   assert.equal(cloudPlanResponseToSyncMessage({ status: "empty" }), null);
   assert.equal(cloudPlanResponseToSyncMessage({ status: "ok", plan: { exercises: [] } }), null);
@@ -188,6 +218,128 @@ test("cloud delivery revisions must be positive monotonic int32 counters", () =>
   assert.equal(cloudPlanResponseToSyncMessage({ ...base, planRevision: 2147483647 })?.planRevision, 2147483647);
 });
 
+test("PWA parses partial Garmin receipts with bounded per-set intervals in Russian", () => {
+  const metrics = parseGarminWorkoutMetrics(
+    "Garmin · Выполнено 2/3 подходов · Длительность 12:34 · Gym kcal 40 · " +
+    "Garmin kcal 38 · Средний пульс 130 · Макс. пульс 165 · " +
+    "Конечная зона пульса Z3 · " +
+    "S1 42s R90s HR118/154/136 ↓18 C92% I0-42s K4.5/5 Z0/0/12/20/10/0s · " +
+    "S2 I132-160s K3/- Z0/0/8/15/5/0s"
+  );
+
+  assert.deepEqual(metrics, {
+    duration: "12:34",
+    gymCalories: 40,
+    garminCalories: 38,
+    avgHeartRate: 130,
+    maxHeartRate: 165,
+    heartRateZone: "Z3",
+    completion: { completedSets: 2, plannedSets: 3 },
+    omittedSetIntervalCount: null,
+    sets: [
+      {
+        index: 1,
+        statistics: {
+          activeSeconds: 42,
+          restBeforeSeconds: 90,
+          startHeartRate: 118,
+          peakHeartRate: 154,
+          endHeartRate: 136,
+          recoveryHeartRateDrop: 18,
+          detectionConfidence: 92
+        },
+        interval: {
+          startSeconds: 0,
+          endSeconds: 42,
+          gymCalories: 4.5,
+          garminCalories: 5,
+          zoneSeconds: [0, 0, 12, 20, 10, 0]
+        }
+      },
+      {
+        index: 2,
+        interval: {
+          startSeconds: 132,
+          endSeconds: 160,
+          gymCalories: 3,
+          garminCalories: null,
+          zoneSeconds: [0, 0, 8, 15, 5, 0]
+        }
+      }
+    ]
+  });
+});
+
+test("PWA set interval notes are bounded, fail closed, and allow sixty partial receipt rows", () => {
+  assert.equal(WORKOUT_NOTE_LIMITS.characters, 4000);
+  assert.equal(parseGarminWorkoutMetrics("Garmin · Completed 3/2 sets"), null);
+  assert.deepEqual(
+    parseGarminWorkoutMetrics("Garmin · Частично 2/3 подходов")?.completion,
+    { completedSets: 2, plannedSets: 3 }
+  );
+  assert.deepEqual(
+    parseGarminWorkoutMetrics("Garmin · Completed 0/3 sets")?.completion,
+    { completedSets: 0, plannedSets: 3 }
+  );
+  assert.equal(parseGarminWorkoutMetrics("Garmin · Completed 3/3 sets"), null);
+  assert.equal(
+    parseGarminWorkoutMetrics(
+      "Garmin · Completed 2/3 sets · " +
+      "S1 I0-10s K2/2 Z0/0/0/0/10/0s · S+1"
+    )?.omittedSetIntervalCount,
+    1
+  );
+  for (const invalidMarker of ["S+0", "S+61", "S+1 · S+2"]) {
+    assert.equal(parseGarminWorkoutMetrics(`Garmin · ${invalidMarker}`), null);
+  }
+  assert.equal(
+    parseGarminWorkoutMetrics("Garmin · S1 I0-10s K2/2 Z0/0/0/0/11/0s"),
+    null,
+    "zone slices cannot exceed the set interval"
+  );
+  assert.equal(
+    parseGarminWorkoutMetrics("Garmin · S1 I0-7201s K2/2 Z0/0/0/0/0/0s"),
+    null,
+    "one set cannot span more than two hours"
+  );
+  assert.equal(parseGarminWorkoutMetrics(`Garmin · ${"x".repeat(4000)}`), null);
+  assert.equal(
+    parseGarminWorkoutMetrics(
+      "Garmin · Duration 0:50 · " +
+      "S1 I0-42s K2/2 Z0/0/0/0/42/0s · S2 I41-50s K2/2 Z0/0/0/0/9/0s"
+    ),
+    null,
+    "intervals cannot overlap"
+  );
+  assert.equal(
+    parseGarminWorkoutMetrics("Garmin · Duration 0:50 · S1 I42-51s K2/2 Z0/0/0/0/9/0s"),
+    null,
+    "an interval cannot end after the workout"
+  );
+  assert.equal(
+    parseGarminWorkoutMetrics("Garmin · Duration 1:00 · S1 I0-10s Kbad Z0/0/0/10/0/0s"),
+    null,
+    "a malformed structured set row cannot be silently dropped"
+  );
+  assert.equal(
+    parseGarminWorkoutMetrics(
+      "Garmin · Duration 0:50 · " +
+      "S1 I0-42s K2/2 Z0/0/0/0/42/0s · S2 I42-50s K2/2 Z0/0/0/0/8/0s"
+    )?.sets.length,
+    2,
+    "touching interval boundaries and an end equal to duration are valid"
+  );
+
+  const rows = Array.from(
+    { length: 60 },
+    (_, index) => `S${index + 1} I${index}-${index + 1}s K1/- Z0/0/0/1/0/0s`
+  );
+  const note = `Garmin · ${rows.join(" · ")}`;
+  assert.ok(note.length <= WORKOUT_NOTE_LIMITS.characters);
+  assert.equal(parseGarminWorkoutMetrics(note)?.sets.length, 60);
+  assert.equal(parseGarminWorkoutMetrics(`${note} · S+1`), null);
+});
+
 test("PWA, Supabase, and Garmin code are wired to the same cloud sync contract", async () => {
   const [appJs, indexHtml, swJs, edgeFunction, edgeConfig, schema, hardeningMigration, rateLimitMigration, denoConfig, denoLock, gymComm, workoutView, settingsXml, manifest, buildScript] = await Promise.all([
     readFile("pwa/app.js", "utf8"),
@@ -207,8 +359,8 @@ test("PWA, Supabase, and Garmin code are wired to the same cloud sync contract",
     readFile("scripts/build-garmin.ps1", "utf8")
   ]);
 
-  assert.match(indexHtml, /garmin-cloud-sync\.v56\.js/);
-  assert.match(swJs, /garmin-cloud-sync\.v56\.js/);
+  assert.match(indexHtml, /garmin-cloud-sync\.v57\.js/);
+  assert.match(swJs, /garmin-cloud-sync\.v57\.js/);
   assert.match(appJs, /\/functions\/v1\/garmin-sync/);
   assert.match(appJs, /\/rest\/v1\/rpc\/garmin_enqueue_plan/);
   assert.doesNotMatch(appJs, /supabaseRequest\("\/rest\/v1\/garmin_plans"/);

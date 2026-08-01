@@ -33,6 +33,9 @@ class WorkoutView extends Ui.View {
     function onShow() {
         ticker.start(method(:tick), 1000, true);
         if (!GymSession.recording) {
+            if (GymStore.sets.size() > 0) {
+                GymStore.markWorkoutResumed();
+            }
             GymSession.start();
             if (GymStore.sets.size() > 0) {
                 // Sets are intentionally durable. A process restart starts a fresh FIT
@@ -67,6 +70,7 @@ class WorkoutView extends Ui.View {
             GymStore.cancelRest();
             rest = 0;
             restWasActive = false;
+            dismissSetSavedFlash();
             GymStore.status = "SET ACTIVE";
         }
         var active = rest > 0;
@@ -171,7 +175,7 @@ class WorkoutView extends Ui.View {
 
     function onWorkoutSent(ok) {
         if (ok) {
-            GymStore.status = "SENT";
+            GymStore.status = "WAITING ACK";
         } else {
             GymStore.status = "QUEUED";
         }
@@ -214,7 +218,9 @@ class WorkoutView extends Ui.View {
             Ui.requestUpdate();
             return false;
         }
-        GymComm.send(message, method(:onWorkoutSent));
+        // queueWorkout appends durably. Always send the oldest entry so a newly
+        // finished P2 cannot overtake an offline P1 already awaiting its ACK.
+        GymComm.send(GymStore.pending[0], method(:onWorkoutSent));
         return true;
     }
 
@@ -573,12 +579,24 @@ class WorkoutView extends Ui.View {
         dc.clear();
         dc.setColor(Gfx.COLOR_GREEN, Gfx.COLOR_TRANSPARENT);
         dc.drawCircle(w / 2, h / 2, sr(w, h, 124));
-        dc.drawText(w / 2, sy(h, 66), Gfx.FONT_SMALL, GymStore.tr("SET", "ПІДХІД", "ПОДХОД"), Gfx.TEXT_JUSTIFY_CENTER);
-        dc.drawText(w / 2, sy(h, 98), Gfx.FONT_NUMBER_MEDIUM, savedSetNumber.toString(), Gfx.TEXT_JUSTIFY_CENTER);
+        dc.drawText(w / 2, sy(h, 48), Gfx.FONT_SMALL, GymStore.tr("SET", "ПІДХІД", "ПОДХОД"), Gfx.TEXT_JUSTIFY_CENTER);
+        dc.drawText(w / 2, sy(h, 76), Gfx.FONT_NUMBER_MEDIUM, savedSetNumber.toString(), Gfx.TEXT_JUSTIFY_CENTER);
         dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, sy(h, 176), Gfx.FONT_XTINY, fitTextWidth(dc, GymStore.currentExerciseLabel(), Gfx.FONT_XTINY, sr(w, h, 184)), Gfx.TEXT_JUSTIFY_CENTER);
+        dc.drawText(w / 2, sy(h, 142), Gfx.FONT_XTINY,
+            fitTextWidth(dc,
+                GymStore.tr("NEXT: ", "ДАЛІ: ", "ДАЛЬШЕ: ") + GymStore.currentExerciseLabel(),
+                Gfx.FONT_XTINY, sr(w, h, 184)),
+            Gfx.TEXT_JUSTIFY_CENTER);
+        dc.drawText(w / 2, sy(h, 164), Gfx.FONT_XTINY,
+            fitTextWidth(dc, setSummaryText(), Gfx.FONT_XTINY, sr(w, h, 184)),
+            Gfx.TEXT_JUSTIFY_CENTER);
+        var rest = GymStore.restSeconds();
+        dc.setColor(Gfx.COLOR_GREEN, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(w / 2, sy(h, 188), Gfx.FONT_XTINY,
+            GymStore.tr("REST ", "ВІДП ", "ОТДЫХ ") + countdownText(rest),
+            Gfx.TEXT_JUSTIFY_CENTER);
         dc.setColor(Gfx.COLOR_YELLOW, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, sy(h, 214), Gfx.FONT_XTINY, GymStore.tr("TAP / BACK: UNDO", "ТАП / НАЗАД: СКАС", "ТАП / НАЗАД: ОТМЕНА"), Gfx.TEXT_JUSTIFY_CENTER);
+        dc.drawText(w / 2, sy(h, 216), Gfx.FONT_XTINY, GymStore.tr("TAP / BACK: UNDO", "ТАП / НАЗАД: СКАС", "ТАП / НАЗАД: ОТМЕНА"), Gfx.TEXT_JUSTIFY_CENTER);
     }
 
     function drawPausedOverlay(dc, w, h) {
@@ -1052,6 +1070,9 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
     }
 
     function onNextPage() {
+        if (view.isUndoOverlayActive()) {
+            return true;
+        }
         if (view.page == 2) {
             view.pauseSelected = (view.pauseSelected + 1) % 3;
         } else if (view.page == 6) {
@@ -1072,6 +1093,9 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
     }
 
     function onPreviousPage() {
+        if (view.isUndoOverlayActive()) {
+            return true;
+        }
         if (view.page == 3) {
             view.page = 2;
         } else if (view.page == 2) {
@@ -1092,6 +1116,9 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
     }
 
     function onNextMode() {
+        if (view.isUndoOverlayActive()) {
+            return true;
+        }
         if (view.page == 6) {
             moveDiscardSelection(1);
         } else {
@@ -1102,6 +1129,9 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
     }
 
     function onPreviousMode() {
+        if (view.isUndoOverlayActive()) {
+            return true;
+        }
         if (view.page == 6) {
             moveDiscardSelection(-1);
         } else {
@@ -1112,6 +1142,9 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
     }
 
     function onMenu() {
+        if (view.isUndoOverlayActive()) {
+            return true;
+        }
         if (view.page == 6) {
             cancelDiscardConfirmation();
         } else {
@@ -1231,6 +1264,11 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
 
     function onSwipe(evt) {
         var direction = evt.getDirection();
+        if (view.isUndoOverlayActive()) {
+            // The platform Back gesture keeps its documented undo behavior. Other
+            // swipes cannot mutate the obscured page or selected row.
+            return direction == Ui.SWIPE_RIGHT ? onBack() : true;
+        }
         if (direction == Ui.SWIPE_UP) {
             return onNextPage();
         } else if (direction == Ui.SWIPE_DOWN) {
@@ -1245,6 +1283,17 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
 
     function onKey(evt) {
         var key = evt.getKey();
+        if (view.isUndoOverlayActive()) {
+            if (key == Ui.KEY_ESC || key == Ui.KEY_LAP) {
+                return onBack();
+            } else if (key == Ui.KEY_ENTER || key == Ui.KEY_START) {
+                return onSelect();
+            }
+            // Consume arrows, page keys, and Menu while the confirmation covers
+            // their target. In particular RIGHT on the hidden SAVE row must not
+            // record a second set.
+            return true;
+        }
         if (key == Ui.KEY_UP) {
             return onPreviousPage();
         } else if (key == Ui.KEY_DOWN) {
@@ -1367,6 +1416,9 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
     }
 
     function activate(delta) {
+        if (view.isUndoOverlayActive()) {
+            return;
+        }
         if (view.selected == 0) {
             GymStore.nextExercise(delta);
         } else if (view.selected == 1) {

@@ -99,6 +99,46 @@ class GarminWorkoutReceiptAtomicityTest {
     }
 
     @Test
+    fun partialWorkoutPersistsEveryCompletedSetWithItsOwnLoadAndReps() = runBlocking {
+        withDatabase("garmin-partial-sets") { database, repository ->
+            val note = "Garmin · Duration 4:00 · Completed 2/4 sets · " +
+                "S1 I0-42s K5.5/6 Z0/0/12/20/10/0s · " +
+                "S2 I90-128s K4.25/- Z0/3/15/15/5/0s"
+
+            assertEquals(
+                GarminWorkoutApplyResult.Applied,
+                repository.applyGarminCreateWorkout(
+                    ownerBinding = ownerBinding,
+                    deviceBinding = deviceBinding,
+                    pairingGeneration = pairingGeneration,
+                    requestId = requestId,
+                    payloadDigest = "d".repeat(64),
+                    date = 1_750_000_002_000L,
+                    note = note,
+                    sets = listOf(
+                        NamedWorkoutSetDraft("Bench Press", 82.5, 8),
+                        NamedWorkoutSetDraft("Bench Press", 80.0, 7)
+                    )
+                )
+            )
+
+            val summary = database.workoutDao().getSessions().first().single()
+            val details = checkNotNull(repository.getWorkoutTemplate(summary.session.id))
+            val persistedSets = details.workoutExercises.single().sets
+            assertEquals(listOf(82.5 to 8, 80.0 to 7), persistedSets.map { it.weight to it.reps })
+            assertEquals(listOf(0, 1), persistedSets.map { it.orderIndex })
+            assertTrue(summary.hasGarminReceipt)
+
+            val metrics = parseTrustedGarminWorkoutMetrics(
+                note = checkNotNull(details.session.note),
+                hasGarminReceipt = summary.hasGarminReceipt
+            )
+            assertEquals(4, metrics?.plannedSetCount)
+            assertEquals(2, metrics?.setIntervals?.size)
+        }
+    }
+
+    @Test
     fun importedGarminMarkerHasNoReceiptProvenance() = runBlocking {
         withDatabase("garmin-imported-note") { database, repository ->
             val forgedNote = "Garmin · Duration 45:00 · Garmin kcal 250 · Avg HR 140"

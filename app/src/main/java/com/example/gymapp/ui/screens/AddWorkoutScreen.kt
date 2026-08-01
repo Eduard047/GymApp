@@ -375,7 +375,7 @@ fun AddWorkoutScreen(
                     SectionTitle(
                         eyebrow = stringResource(R.string.title_add_workout),
                         title = stringResource(R.string.action_sync_plan_to_watch),
-                        supporting = stringResource(R.string.add_workout_save_hint)
+                        supporting = stringResource(R.string.add_workout_plan_mode_hint)
                     )
                     OutlinedButton(
                         onClick = onSyncPlanToWatch,
@@ -417,21 +417,31 @@ fun AddWorkoutScreen(
         }
 
         item {
-            Button(
-                onClick = onSaveWorkout,
-                modifier = Modifier.fillMaxWidth(),
-                enabled = !uiState.isSaving
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
             ) {
-                if (uiState.isSaving) {
-                    CircularProgressIndicator(
-                        modifier = Modifier
-                            .padding(end = 8.dp)
-                            .size(18.dp),
-                        strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.onPrimary
-                    )
+                Text(
+                    text = stringResource(R.string.add_workout_completed_mode_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Button(
+                    onClick = onSaveWorkout,
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !uiState.isSaving
+                ) {
+                    if (uiState.isSaving) {
+                        CircularProgressIndicator(
+                            modifier = Modifier
+                                .padding(end = 8.dp)
+                                .size(18.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onPrimary
+                        )
+                    }
+                    Text(text = stringResource(R.string.action_save_completed_workout))
                 }
-                Text(text = stringResource(R.string.action_save_workout))
             }
         }
     }
@@ -862,7 +872,7 @@ private fun ExerciseDraftCard(
                     onClick = onAddSet,
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text(text = stringResource(R.string.action_add_set))
+                    Text(text = stringResource(R.string.action_add_planned_set))
                 }
                 OutlinedButton(
                     onClick = { onAddSetFromPrevious(0.0) },

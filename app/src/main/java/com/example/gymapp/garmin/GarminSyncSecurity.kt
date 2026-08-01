@@ -51,6 +51,10 @@ internal const val MAX_GARMIN_DURATION_SECONDS = 7 * 24 * 60 * 60L
 internal const val MAX_GARMIN_CALORIES = 100_000.0
 internal const val MAX_GARMIN_HEART_RATE = 300
 internal const val MAX_GARMIN_HEART_RATE_ZONE = 5
+internal const val MAX_GARMIN_SET_INTERVAL_OFFSET_SECONDS = 7 * 24 * 60 * 60L
+internal const val MAX_GARMIN_SET_INTERVAL_DURATION_SECONDS = 7_200L
+internal const val MAX_GARMIN_SET_INTERVAL_CALORIES = MAX_GARMIN_CALORIES
+internal const val GARMIN_SET_INTERVAL_CALORIE_ROUNDING_TOLERANCE = 0.1
 internal const val MIN_GARMIN_STARTED_AT_SECONDS = 946_684_800L // 2000-01-01 UTC
 internal const val MAX_GARMIN_FUTURE_SKEW_SECONDS = 24 * 60 * 60L
 internal const val LEGACY_GARMIN_FALLBACK_GENERATION =
@@ -95,7 +99,11 @@ internal data class GarminWorkoutCommand(
     val averageHeartRate: Int?,
     val maximumHeartRate: Int?,
     val endingHeartRateZone: Int?,
-    val setStatistics: List<GarminSetStatistics?> = emptyList()
+    val setStatistics: List<GarminSetStatistics?> = emptyList(),
+    val setIntervals: List<GarminSetInterval?> = emptyList(),
+    val plannedSetCount: Int? = null,
+    val plannedTargetSetCount: Int? = null,
+    val completedPlannedSetCount: Int? = null
 )
 
 internal data class GarminSetStatistics(
@@ -106,6 +114,21 @@ internal data class GarminSetStatistics(
     val endHeartRate: Int?,
     val recoveryHeartRateDrop: Int?,
     val detectionConfidence: Int?
+)
+
+/**
+ * A compact, per-set slice of the workout-wide Garmin metrics.
+ *
+ * These values are trusted only after the containing bound-device command is accepted. They are
+ * intentionally retained in the workout note instead of Room columns so older backups and cloud
+ * clients can continue to round-trip the workout without a schema migration.
+ */
+internal data class GarminSetInterval(
+    val startOffsetSeconds: Long,
+    val endOffsetSeconds: Long,
+    val gymCalories: Double,
+    val garminCalories: Int?,
+    val heartRateZoneSeconds: List<Int>
 )
 
 internal enum class GarminWorkoutParseIssue {
@@ -124,6 +147,15 @@ internal enum class GarminWorkoutParseIssue {
     SetMetricsEndHeartRate,
     SetMetricsRecoveryHeartRateDrop,
     SetMetricsDetectionConfidence,
+    SetIntervals,
+    SetIntervalsShape,
+    SetIntervalsOffsets,
+    SetIntervalsGymCalories,
+    SetIntervalsGarminCalories,
+    SetIntervalsHeartRateZones,
+    PlannedSetCount,
+    PlannedTargetSetCount,
+    CompletedPlannedSetCount,
     StartedAt,
     HeartRate,
     Duration,
@@ -466,6 +498,43 @@ internal fun parseGarminWorkoutCommandResult(
         require(WorkoutDataLimits.isValidWeight(weight))
         NamedWorkoutSetDraft(exerciseName = exerciseName, weight = weight, reps = reps)
     }
+
+    issue = GarminWorkoutParseIssue.PlannedSetCount
+    val plannedSetCount = optionalBoundedInt(
+        command,
+        "plannedSetCount",
+        1,
+        MAX_GARMIN_WORKOUT_SETS
+    )
+    require(plannedSetCount == null || plannedSetCount >= sets.size)
+
+    issue = GarminWorkoutParseIssue.PlannedTargetSetCount
+    val plannedTargetSetCount = optionalBoundedInt(
+        command,
+        "plannedTargetSetCount",
+        1,
+        MAX_GARMIN_WORKOUT_SETS
+    )
+
+    issue = GarminWorkoutParseIssue.CompletedPlannedSetCount
+    val completedPlannedSetCount = optionalBoundedInt(
+        command,
+        "completedPlannedSetCount",
+        0,
+        MAX_GARMIN_WORKOUT_SETS
+    )
+    val hasPlannedTargetSetCount = command.containsKey("plannedTargetSetCount")
+    val hasCompletedPlannedSetCount = command.containsKey("completedPlannedSetCount")
+    require(hasPlannedTargetSetCount == hasCompletedPlannedSetCount)
+    if (hasPlannedTargetSetCount) {
+        require(
+            plannedSetCount != null && plannedTargetSetCount != null &&
+                completedPlannedSetCount != null
+        )
+        require(plannedSetCount >= plannedTargetSetCount)
+        require(completedPlannedSetCount <= minOf(plannedTargetSetCount, sets.size))
+    }
+
     issue = GarminWorkoutParseIssue.SetMetrics
     val rawSetMetrics = command["setMetrics"]
     val setStatistics = if (rawSetMetrics == null) {
@@ -485,6 +554,27 @@ internal fun parseGarminWorkoutCommandResult(
         }
     }
 
+
+    issue = GarminWorkoutParseIssue.SetIntervals
+    val rawSetIntervals = command["setIntervals"]
+    val setIntervals = if (rawSetIntervals == null) {
+        List(sets.size) { null }
+    } else {
+        val intervals = rawSetIntervals as? List<*>
+            ?: error("Garmin set intervals are malformed.")
+        require(intervals.size == sets.size)
+        intervals.map { raw ->
+            issue = GarminWorkoutParseIssue.SetIntervalsShape
+            val values = raw as? List<*> ?: error("Garmin set interval is malformed.")
+            val intervalResult = parseGarminSetInterval(values)
+            intervalResult.issue?.let { intervalIssue ->
+                issue = intervalIssue
+                error("Garmin set interval is outside supported limits.")
+            }
+            checkNotNull(intervalResult.interval)
+        }
+    }
+
     issue = GarminWorkoutParseIssue.StartedAt
     val nowSeconds = nowMillis / 1_000L
     val startedAtSeconds = optionalBoundedLong(
@@ -496,27 +586,74 @@ internal fun parseGarminWorkoutCommandResult(
     val startedAtMillis = Math.multiplyExact(startedAtSeconds, 1_000L)
     require(WorkoutDataLimits.isValidTimestamp(startedAtMillis))
     issue = GarminWorkoutParseIssue.HeartRate
-    val averageHeartRate = optionalBoundedInt(command, "avgHeartRate", 0, MAX_GARMIN_HEART_RATE)
-    val maximumHeartRate = optionalBoundedInt(command, "maxHeartRate", 0, MAX_GARMIN_HEART_RATE)
+    val averageHeartRate = nullableOptionalBoundedInt(
+        command,
+        "avgHeartRate",
+        0,
+        MAX_GARMIN_HEART_RATE
+    )
+    val maximumHeartRate = nullableOptionalBoundedInt(
+        command,
+        "maxHeartRate",
+        0,
+        MAX_GARMIN_HEART_RATE
+    )
+    nullableOptionalBoundedInt(command, "lastHeartRate", 0, MAX_GARMIN_HEART_RATE)
     require(averageHeartRate == null || maximumHeartRate == null || averageHeartRate <= maximumHeartRate)
 
     issue = GarminWorkoutParseIssue.Duration
-    val durationSeconds = optionalBoundedLong(
+    val durationSeconds = nullableOptionalBoundedLong(
         command,
         "durationSeconds",
         0L,
         MAX_GARMIN_DURATION_SECONDS
     )
     issue = GarminWorkoutParseIssue.Calories
-    val gymCalories = optionalFiniteDouble(command, "gymCalories", 0.0, MAX_GARMIN_CALORIES)
-    val garminCalories = optionalBoundedInt(
+    val gymCalories = nullableOptionalFiniteDouble(
+        command,
+        "gymCalories",
+        0.0,
+        MAX_GARMIN_CALORIES
+    )
+    val garminCalories = nullableOptionalBoundedInt(
         command,
         "garminCalories",
         0,
         MAX_GARMIN_CALORIES.toInt()
     )
+
+    if (rawSetIntervals != null) {
+        val structuredIntervals = setIntervals.map { checkNotNull(it) }
+
+        issue = GarminWorkoutParseIssue.SetIntervalsOffsets
+        structuredIntervals.zipWithNext().forEach { (previous, current) ->
+            require(current.startOffsetSeconds >= previous.endOffsetSeconds)
+        }
+        val totalDurationSeconds = requireNotNull(durationSeconds)
+        require(
+            structuredIntervals.all { interval ->
+                interval.endOffsetSeconds <= totalDurationSeconds
+            }
+        )
+
+        issue = GarminWorkoutParseIssue.SetIntervalsGymCalories
+        val totalGymCalories = requireNotNull(gymCalories)
+        val intervalGymCalories = structuredIntervals.sumOf { it.gymCalories }
+        require(
+            intervalGymCalories <=
+                totalGymCalories + GARMIN_SET_INTERVAL_CALORIE_ROUNDING_TOLERANCE
+        )
+
+        val intervalGarminCalories = structuredIntervals.mapNotNull { it.garminCalories }
+        if (intervalGarminCalories.isNotEmpty()) {
+            issue = GarminWorkoutParseIssue.SetIntervalsGarminCalories
+            val totalGarminCalories = requireNotNull(garminCalories)
+            require(intervalGarminCalories.sum() <= totalGarminCalories)
+        }
+    }
+
     issue = GarminWorkoutParseIssue.HeartRateZone
-    val endingHeartRateZone = optionalBoundedInt(
+    val endingHeartRateZone = nullableOptionalBoundedInt(
         command,
         "heartRateZone",
         0,
@@ -533,13 +670,94 @@ internal fun parseGarminWorkoutCommandResult(
         averageHeartRate = averageHeartRate,
         maximumHeartRate = maximumHeartRate,
         endingHeartRateZone = endingHeartRateZone,
-        setStatistics = setStatistics
+        setStatistics = setStatistics,
+        setIntervals = setIntervals,
+        plannedSetCount = plannedSetCount,
+        plannedTargetSetCount = plannedTargetSetCount,
+        completedPlannedSetCount = completedPlannedSetCount
     )
     }.getOrNull()
     return GarminWorkoutParseResult(
         command = parsed,
         issue = if (parsed == null) issue else null
     )
+}
+
+private data class GarminSetIntervalParseResult(
+    val interval: GarminSetInterval?,
+    val issue: GarminWorkoutParseIssue?
+)
+
+private fun parseGarminSetInterval(values: List<*>): GarminSetIntervalParseResult {
+    var issue = GarminWorkoutParseIssue.SetIntervalsShape
+    return try {
+        require(values.size == 10)
+        val item = buildMap<Any?, Any?> {
+            put("startOffsetSeconds", values[0])
+            put("endOffsetSeconds", values[1])
+            put("gymCalories", values[2])
+            values[3]?.let { put("garminCalories", it) }
+            repeat(6) { zone -> put("z$zone", values[zone + 4]) }
+        }
+
+        issue = GarminWorkoutParseIssue.SetIntervalsOffsets
+        val startOffsetSeconds = requiredBoundedLong(
+            item,
+            "startOffsetSeconds",
+            0L,
+            MAX_GARMIN_SET_INTERVAL_OFFSET_SECONDS
+        )
+        val endOffsetSeconds = requiredBoundedLong(
+            item,
+            "endOffsetSeconds",
+            0L,
+            MAX_GARMIN_SET_INTERVAL_OFFSET_SECONDS
+        )
+        require(endOffsetSeconds >= startOffsetSeconds)
+        val intervalDuration = endOffsetSeconds - startOffsetSeconds
+        require(intervalDuration <= MAX_GARMIN_SET_INTERVAL_DURATION_SECONDS)
+
+        issue = GarminWorkoutParseIssue.SetIntervalsGymCalories
+        val gymCalories = optionalFiniteDouble(
+            item,
+            "gymCalories",
+            0.0,
+            MAX_GARMIN_SET_INTERVAL_CALORIES
+        ) ?: error("Garmin interval calories are missing.")
+
+        issue = GarminWorkoutParseIssue.SetIntervalsGarminCalories
+        val garminCalories = optionalBoundedInt(
+            item,
+            "garminCalories",
+            0,
+            MAX_GARMIN_SET_INTERVAL_CALORIES.toInt()
+        )
+
+        issue = GarminWorkoutParseIssue.SetIntervalsHeartRateZones
+        val zones = List(6) { zone ->
+            requiredBoundedInt(
+                item,
+                "z$zone",
+                0,
+                MAX_GARMIN_SET_INTERVAL_DURATION_SECONDS.toInt()
+            )
+        }
+        val zoneSeconds = zones.fold(0L) { total, seconds -> Math.addExact(total, seconds.toLong()) }
+        require(zoneSeconds <= intervalDuration)
+
+        GarminSetIntervalParseResult(
+            interval = GarminSetInterval(
+                startOffsetSeconds = startOffsetSeconds,
+                endOffsetSeconds = endOffsetSeconds,
+                gymCalories = gymCalories,
+                garminCalories = garminCalories,
+                heartRateZoneSeconds = zones
+            ),
+            issue = null
+        )
+    } catch (_: RuntimeException) {
+        GarminSetIntervalParseResult(interval = null, issue = issue)
+    }
 }
 
 private data class GarminSetStatisticsParseResult(
@@ -841,6 +1059,16 @@ private fun optionalFiniteDouble(
     return value.toDouble().also { require(it.isFinite() && it in minimum..maximum) }
 }
 
+private fun nullableOptionalFiniteDouble(
+    map: Map<Any?, Any?>,
+    key: String,
+    minimum: Double,
+    maximum: Double
+): Double? {
+    if (!map.containsKey(key) || map[key] == null) return null
+    return optionalFiniteDouble(map, key, minimum, maximum)
+}
+
 private fun requiredBoundedInt(
     map: Map<Any?, Any?>,
     key: String,
@@ -848,6 +1076,16 @@ private fun requiredBoundedInt(
     maximum: Int
 ): Int {
     return optionalBoundedInt(map, key, minimum, maximum)
+        ?: error("Garmin field '$key' is missing.")
+}
+
+private fun requiredBoundedLong(
+    map: Map<Any?, Any?>,
+    key: String,
+    minimum: Long,
+    maximum: Long
+): Long {
+    return optionalBoundedLong(map, key, minimum, maximum)
         ?: error("Garmin field '$key' is missing.")
 }
 
@@ -865,6 +1103,16 @@ private fun optionalBoundedInt(
     return doubleValue.toInt()
 }
 
+private fun nullableOptionalBoundedInt(
+    map: Map<Any?, Any?>,
+    key: String,
+    minimum: Int,
+    maximum: Int
+): Int? {
+    if (!map.containsKey(key) || map[key] == null) return null
+    return optionalBoundedInt(map, key, minimum, maximum)
+}
+
 private fun optionalBoundedLong(
     map: Map<Any?, Any?>,
     key: String,
@@ -877,4 +1125,14 @@ private fun optionalBoundedLong(
     require(doubleValue.isFinite() && doubleValue % 1.0 == 0.0)
     require(doubleValue >= minimum.toDouble() && doubleValue <= maximum.toDouble())
     return value.toLong().also { require(it in minimum..maximum) }
+}
+
+private fun nullableOptionalBoundedLong(
+    map: Map<Any?, Any?>,
+    key: String,
+    minimum: Long,
+    maximum: Long
+): Long? {
+    if (!map.containsKey(key) || map[key] == null) return null
+    return optionalBoundedLong(map, key, minimum, maximum)
 }

@@ -4,6 +4,7 @@ import com.example.gymapp.data.entity.ExerciseHistoryEntry
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class GarminWorkoutStatisticsTest {
@@ -67,6 +68,79 @@ class GarminWorkoutStatisticsTest {
         )
         assertNotNull(trusted)
         assertEquals(250, trusted?.garminCalories)
+    }
+
+    @Test
+    fun trustedParserKeepsBoundedPerSetIntervalsAndPartialProgress() {
+        val note = "Garmin · Duration 12:00 · Completed 2/4 sets · " +
+            "S1 42s HR110/145/130 I0-42s K5.5/6 Z0/0/12/20/10/0s · " +
+            "S2 38s I90-128s K4.25/- Z0/3/15/15/5/0s · S+2"
+
+        assertNull(parseTrustedGarminWorkoutMetrics(note, hasGarminReceipt = false))
+        val metrics = parseTrustedGarminWorkoutMetrics(note, hasGarminReceipt = true)
+
+        assertNotNull(metrics)
+        assertEquals(4, metrics?.plannedSetCount)
+        assertEquals(2, metrics?.completedSetCount)
+        assertEquals(2, metrics?.omittedSetIntervalCount)
+        assertEquals(
+            listOf(
+                GarminSetIntervalMetrics(
+                    setNumber = 1,
+                    startOffsetSeconds = 0,
+                    endOffsetSeconds = 42,
+                    gymCalories = 5.5,
+                    garminCalories = 6,
+                    heartRateZoneSeconds = listOf(0, 0, 12, 20, 10, 0)
+                ),
+                GarminSetIntervalMetrics(
+                    setNumber = 2,
+                    startOffsetSeconds = 90,
+                    endOffsetSeconds = 128,
+                    gymCalories = 4.25,
+                    garminCalories = null,
+                    heartRateZoneSeconds = listOf(0, 3, 15, 15, 5, 0)
+                )
+            ),
+            metrics?.setIntervals
+        )
+        assertEquals(42L, metrics?.setIntervals?.first()?.activeSeconds)
+        assertTrue(metrics?.hasSetIntervalDetails() == true)
+
+        val omittedOnly = parseGarminWorkoutMetrics("Garmin · S+3")
+        assertTrue(omittedOnly?.setIntervals?.isEmpty() == true)
+        assertTrue(omittedOnly?.hasSetIntervalDetails() == true)
+
+        assertEquals(
+            4,
+            parseGarminWorkoutMetrics("Garmin · Частично 2/4 подходов")?.plannedSetCount
+        )
+        assertEquals(
+            2,
+            parseGarminWorkoutMetrics("Garmin · Частично 2/4 подходов")?.completedSetCount
+        )
+        assertEquals(
+            4,
+            parseGarminWorkoutMetrics("Garmin · Частково 2/4 підходів")?.plannedSetCount
+        )
+        assertEquals(
+            0,
+            parseGarminWorkoutMetrics("Garmin · Completed 0/4 sets")?.completedSetCount
+        )
+    }
+
+    @Test
+    fun setIntervalParserDropsImpossibleRowsWithoutDroppingAggregateMetrics() {
+        val note = "Garmin · Duration 10:00 · Gym kcal 100 · " +
+            "S1 I50-40s K5/6 Z0/0/0/0/0/0s · " +
+            "S2 I0-10s K5/6 Z0/0/0/11/0/0s · " +
+            "S3 I0-10s K100001/6 Z0/0/0/10/0/0s"
+
+        val parsed = parseGarminWorkoutMetrics(note)
+
+        assertEquals(600L, parsed?.durationSeconds)
+        assertEquals(100, parsed?.gymCalories)
+        assertTrue(parsed?.setIntervals?.isEmpty() == true)
     }
 
     @Test

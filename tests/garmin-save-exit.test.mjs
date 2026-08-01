@@ -10,7 +10,7 @@ const section = (source, start, end) => {
   return source.slice(startIndex, endIndex);
 };
 
-test("Garmin FIT save and exit do not depend on phone sync or manually logged sets", async () => {
+test("Garmin queues account-bound sets durably before FIT save while unbound FIT stays independent", async () => {
   const [view, session, store] = await Promise.all([
     readFile("garmin/source/WorkoutView.mc", "utf8"),
     readFile("garmin/source/GymSession.mc", "utf8"),
@@ -29,6 +29,32 @@ test("Garmin FIT save and exit do not depend on phone sync or manually logged se
   );
   assert.match(finishWorkout, /GymStore\.canQueueWorkout\(message\)/);
   assert.match(finishWorkout, /GymStore\.queueWorkout\(message\)/);
+  assert.match(
+    finishWorkout,
+    /GymStore\.queueWorkout\(message\)[\s\S]*GymComm\.send\(GymStore\.pending\[0\], method\(:onWorkoutSent\)\)/
+  );
+  assert.doesNotMatch(finishWorkout, /GymComm\.send\(message,/);
+
+  assert.match(store, /maxPendingWorkouts = 8/);
+  assert.match(store, /maxPendingNameBytes = 12000/);
+  assert.match(store, /maxEstimatedStoreBytes = 24000/);
+  const canQueueWorkout = section(
+    store,
+    "static function canQueueWorkout(message)",
+    "static function isValidWorkoutMessage(message)"
+  );
+  assert.match(canQueueWorkout, /pending\.size\(\) >= maxPendingWorkouts/);
+  assert.match(canQueueWorkout, /totalNameBytes > maxPendingNameBytes/);
+
+  const queue = [];
+  const canAppend = () => queue.length < 8;
+  for (let index = 1; index <= 8; index += 1) {
+    assert.equal(canAppend(), true, `offline workout P${index} should fit the count bound`);
+    queue.push({ requestId: `P${index}` });
+  }
+  assert.equal(queue[0].requestId, "P1", "new workouts must not overtake durable P1");
+  assert.equal(queue[2].requestId, "P3", "an ordinary third offline workout must remain queueable");
+  assert.equal(canAppend(), false, "the bounded ninth workout must apply backpressure without eviction");
 
   const saveAndExit = section(view, "function saveAndExit()", "function onUpdate(");
   assert.match(saveAndExit, /if \(!finishWorkout\(\)\)[\s\S]*return;/);
@@ -61,4 +87,52 @@ test("Garmin FIT save and exit do not depend on phone sync or manually logged se
     "static function restSeconds()"
   );
   assert.match(clearActiveWorkout, /sets = \[\];[\s\S]*return save\(\);/);
+});
+
+test("Garmin partial workouts declare plan progress and drain one queued workout per ack", async () => {
+  const [store, app] = await Promise.all([
+    readFile("garmin/source/GymStore.mc", "utf8"),
+    readFile("garmin/source/GymApp.mc", "utf8")
+  ]);
+
+  const workoutMessage = section(
+    store,
+    "static function workoutMessage()",
+    "static function applyPhoneSync("
+  );
+  assert.match(workoutMessage, /if \(plan\.size\(\) > 0\)/);
+  assert.match(workoutMessage, /var plannedTargetSetCount = plan\.size\(\)/);
+  assert.match(workoutMessage, /var plannedSetCount = plannedTargetSetCount/);
+  assert.match(workoutMessage, /plannedSetCount < setCopies\.size\(\)[\s\S]*plannedSetCount = setCopies\.size\(\)/);
+  assert.match(workoutMessage, /message\.put\("plannedSetCount", plannedSetCount\)/);
+  assert.match(workoutMessage, /message\.put\("plannedTargetSetCount", plannedTargetSetCount\)/);
+  assert.match(
+    workoutMessage,
+    /message\.put\("completedPlannedSetCount", completedPlannedSetCount\(\)\)/
+  );
+
+  const oldPhoneAccepts = ({ plannedSetCount, sets }) => plannedSetCount >= sets.length;
+  const extraSetPayload = {
+    plannedSetCount: 4,
+    plannedTargetSetCount: 3,
+    completedPlannedSetCount: 3,
+    sets: [{}, {}, {}, {}]
+  };
+  assert.equal(oldPhoneAccepts(extraSetPayload), true);
+  assert.equal(extraSetPayload.plannedTargetSetCount, 3);
+  assert.equal(extraSetPayload.completedPlannedSetCount, 3);
+
+  const ackHandler = section(app, "function handlePhonePayload(", "function sendSyncAck(");
+  assert.match(
+    ackHandler,
+    /removePendingByRequestId\(ackRequestId\)[\s\S]*sendNextPendingWorkout\(\)/
+  );
+  const drain = section(
+    app,
+    "function sendNextPendingWorkout()",
+    "function onPendingWorkoutSentAfterSync("
+  );
+  assert.match(drain, /GymStore\.pending\.size\(\) == 0/);
+  assert.match(drain, /GymComm\.send\(GymStore\.pending\[0\]/);
+  assert.doesNotMatch(drain, /for \s*\(|while \s*\(/);
 });

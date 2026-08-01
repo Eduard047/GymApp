@@ -21,14 +21,17 @@ import com.example.gymapp.util.LocalizedText
 import com.example.gymapp.util.parseWeightInputOrNull
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class WorkoutDetailUiState(
     val sessionDetails: WorkoutSessionDetails? = null,
@@ -38,6 +41,8 @@ data class WorkoutDetailUiState(
     val setDeletionError: LocalizedText? = null,
     val personalRecordFlags: Map<Long, Boolean> = emptyMap(),
     val restSecondsRemaining: Int = 0,
+    val exerciseRestDeadlineMillis: Map<Long, Long> = emptyMap(),
+    val setAdditionsInFlight: Set<Long> = emptySet(),
     val availableExercisesToAdd: List<ExerciseEntity> = emptyList(),
     val workoutComparison: WorkoutComparison? = null
 )
@@ -54,7 +59,15 @@ private data class SetDeletionState(
     val error: LocalizedText?
 )
 
+private data class WorkoutRestTimerState(
+    val restSecondsRemaining: Int,
+    val exerciseRestDeadlineMillis: Map<Long, Long>,
+    val setAdditionsInFlight: Set<Long>
+)
+
 sealed interface WorkoutDetailEvent {
+    data object AddSetFailed : WorkoutDetailEvent
+    data object RestTimerFailed : WorkoutDetailEvent
     data object SetDeleted : WorkoutDetailEvent
     data object SessionDeleted : WorkoutDetailEvent
     data object InvalidInput : WorkoutDetailEvent
@@ -66,8 +79,19 @@ sealed interface WorkoutDetailEvent {
 class WorkoutDetailViewModel(
     private val repository: GymRepository,
     private val sessionId: Long,
-    private val restTimerController: RestTimerController
+    private val restTimerController: RestTimerController,
+    private val timerAccountKey: String
 ) : ViewModel() {
+    private val setAdditionGate = PerExerciseSetAdditionGate()
+    private val exerciseRestDeadlines = restTimerController.exerciseRestDeadlineMillis.map {
+        deadlines ->
+        deadlines.entries
+            .asSequence()
+            .filter { (key, _) ->
+                key.accountKey == timerAccountKey && key.sessionId == sessionId
+            }
+            .associate { (key, deadline) -> key.workoutExerciseId to deadline }
+    }
     private val sessionDetailsFlow = repository.observeSessionDetails(sessionId)
     private val allExercisesFlow = repository.observeExercises()
     private val allExerciseHistoryFlow = repository.observeAllExerciseHistory()
@@ -146,14 +170,25 @@ class WorkoutDetailViewModel(
     }
     private val _events = MutableSharedFlow<WorkoutDetailEvent>()
     val events = _events.asSharedFlow()
+    private val restTimerState = combine(
+        restTimerController.remainingSeconds,
+        exerciseRestDeadlines,
+        setAdditionGate.inFlight
+    ) { restSecondsRemaining, exerciseRestDeadlineMillis, setAdditionsInFlight ->
+        WorkoutRestTimerState(
+            restSecondsRemaining = restSecondsRemaining,
+            exerciseRestDeadlineMillis = exerciseRestDeadlineMillis,
+            setAdditionsInFlight = setAdditionsInFlight
+        )
+    }
 
     val uiState: StateFlow<WorkoutDetailUiState> = combine(
         sessionContextFlow,
         setDeletionState,
         personalRecordFlags,
-        restTimerController.remainingSeconds,
+        restTimerState,
         allExercisesFlow
-    ) { sessionContext, deletion, prFlags, restSeconds, allExercises ->
+    ) { sessionContext, deletion, prFlags, timers, allExercises ->
         val details = sessionContext.details
         val selectedExerciseIds = details
             ?.workoutExercises
@@ -167,7 +202,9 @@ class WorkoutDetailViewModel(
             isSetDeletionInProgress = deletion.isInProgress,
             setDeletionError = deletion.error,
             personalRecordFlags = prFlags,
-            restSecondsRemaining = restSeconds,
+            restSecondsRemaining = timers.restSecondsRemaining,
+            exerciseRestDeadlineMillis = timers.exerciseRestDeadlineMillis,
+            setAdditionsInFlight = timers.setAdditionsInFlight,
             availableExercisesToAdd = allExercises.filterNot { it.id in selectedExerciseIds },
             workoutComparison = sessionContext.comparison
         )
@@ -179,21 +216,52 @@ class WorkoutDetailViewModel(
 
     fun addSet(workoutExerciseId: Long) {
         viewModelScope.launch {
-            val currentDetails = uiState.value.sessionDetails ?: return@launch
-            val workoutExercise = currentDetails.workoutExercises
-                .firstOrNull { it.workoutExercise.id == workoutExerciseId }
-                ?: return@launch
-            val existingSets = workoutExercise.sets
-            val template = existingSets?.maxByOrNull { it.orderIndex }
-            val historicalWeight = repository.getLastWeightBeforeDate(
-                exerciseId = workoutExercise.workoutExercise.exerciseId,
-                beforeDate = currentDetails.session.date
-            )
-            repository.addSet(
+            val result = persistWorkoutDetailSet(
                 workoutExerciseId = workoutExerciseId,
-                weight = template?.weight ?: historicalWeight ?: 20.0,
-                reps = template?.reps ?: 10
+                gate = setAdditionGate,
+                persist = {
+                    val currentDetails = checkNotNull(uiState.value.sessionDetails) {
+                        "Workout details are unavailable."
+                    }
+                    val workoutExercise = checkNotNull(
+                        currentDetails.workoutExercises.firstOrNull {
+                            it.workoutExercise.id == workoutExerciseId
+                        }
+                    ) {
+                        "Workout exercise is unavailable."
+                    }
+                    val template = workoutExercise.sets.maxByOrNull { it.orderIndex }
+                    val historicalWeight = repository.getLastWeightBeforeDate(
+                        exerciseId = workoutExercise.workoutExercise.exerciseId,
+                        beforeDate = currentDetails.session.date
+                    )
+                    repository.addSet(
+                        workoutExerciseId = workoutExerciseId,
+                        weight = template?.weight ?: historicalWeight ?: 20.0,
+                        reps = template?.reps ?: 10
+                    )
+                },
+                afterPersist = {
+                    restTimerController.startExercise(
+                        accountKey = timerAccountKey,
+                        sessionId = sessionId,
+                        workoutExerciseId = workoutExerciseId,
+                        seconds = DEFAULT_REST_SECONDS
+                    )
+                }
             )
+            when (result) {
+                WorkoutDetailSetPersistenceResult.PersistenceFailed -> {
+                    _events.emit(WorkoutDetailEvent.AddSetFailed)
+                }
+
+                WorkoutDetailSetPersistenceResult.SetSavedButTimerFailed -> {
+                    _events.emit(WorkoutDetailEvent.RestTimerFailed)
+                }
+
+                WorkoutDetailSetPersistenceResult.AlreadyInFlight,
+                WorkoutDetailSetPersistenceResult.SetSavedAndTimerStarted -> Unit
+            }
         }
     }
 
@@ -308,6 +376,32 @@ class WorkoutDetailViewModel(
         restTimerController.stop()
     }
 
+    fun startExerciseRestTimer(
+        workoutExerciseId: Long,
+        seconds: Int = DEFAULT_REST_SECONDS
+    ) {
+        if (!restTimerController.startExercise(
+                accountKey = timerAccountKey,
+                sessionId = sessionId,
+                workoutExerciseId = workoutExerciseId,
+                seconds = seconds
+            )
+        ) {
+            viewModelScope.launch { _events.emit(WorkoutDetailEvent.RestTimerFailed) }
+        }
+    }
+
+    fun stopExerciseRestTimer(workoutExerciseId: Long) {
+        if (!restTimerController.stopExercise(
+                accountKey = timerAccountKey,
+                sessionId = sessionId,
+                workoutExerciseId = workoutExerciseId
+            )
+        ) {
+            viewModelScope.launch { _events.emit(WorkoutDetailEvent.RestTimerFailed) }
+        }
+    }
+
     companion object {
         private const val MAX_REPS_INPUT_LENGTH = 10
 
@@ -316,15 +410,74 @@ class WorkoutDetailViewModel(
         fun factory(
             repository: GymRepository,
             sessionId: Long,
-            restTimerController: RestTimerController
+            restTimerController: RestTimerController,
+            timerAccountKey: String
         ): ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 WorkoutDetailViewModel(
                     repository = repository,
                     sessionId = sessionId,
-                    restTimerController = restTimerController
+                    restTimerController = restTimerController,
+                    timerAccountKey = timerAccountKey
                 )
             }
         }
+    }
+}
+
+internal enum class WorkoutDetailSetPersistenceResult {
+    AlreadyInFlight,
+    PersistenceFailed,
+    SetSavedButTimerFailed,
+    SetSavedAndTimerStarted
+}
+
+internal class PerExerciseSetAdditionGate {
+    private val lock = Any()
+    private val _inFlight = MutableStateFlow<Set<Long>>(emptySet())
+    val inFlight: StateFlow<Set<Long>> = _inFlight
+
+    fun tryStart(workoutExerciseId: Long): Boolean = synchronized(lock) {
+        if (workoutExerciseId <= 0L || workoutExerciseId in _inFlight.value) {
+            return@synchronized false
+        }
+        _inFlight.value = _inFlight.value + workoutExerciseId
+        true
+    }
+
+    fun finish(workoutExerciseId: Long) {
+        synchronized(lock) {
+            _inFlight.value = _inFlight.value - workoutExerciseId
+        }
+    }
+}
+
+internal suspend fun persistWorkoutDetailSet(
+    workoutExerciseId: Long,
+    gate: PerExerciseSetAdditionGate,
+    persist: suspend () -> Unit,
+    afterPersist: () -> Boolean
+): WorkoutDetailSetPersistenceResult {
+    if (!gate.tryStart(workoutExerciseId)) {
+        return WorkoutDetailSetPersistenceResult.AlreadyInFlight
+    }
+    return try {
+        val persisted = try {
+            persist()
+            true
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Throwable) {
+            false
+        }
+        when {
+            !persisted -> WorkoutDetailSetPersistenceResult.PersistenceFailed
+            withContext(NonCancellable) { afterPersist() } -> {
+                WorkoutDetailSetPersistenceResult.SetSavedAndTimerStarted
+            }
+            else -> WorkoutDetailSetPersistenceResult.SetSavedButTimerFailed
+        }
+    } finally {
+        gate.finish(workoutExerciseId)
     }
 }

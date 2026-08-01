@@ -194,7 +194,15 @@ test("PWA Russian dynamic Garmin, workout, exercise, and mission text never fall
     ["High-output days 3", "Дни высокой нагрузки: 3"],
     ["Volume days 4", "Дни объёмных тренировок: 4"],
     ["Strong sessions 5", "Сильные тренировки: 5"],
-    ["Wide sessions 6", "Разнообразные тренировки: 6"]
+    ["Wide sessions 6", "Разнообразные тренировки: 6"],
+    [
+      "Original Garmin result: completed 2 of 3 planned sets.",
+      "Исходный результат Garmin: выполнено 2 из 3 запланированных подходов."
+    ],
+    [
+      "Set metric rows omitted from the bounded workout note: 2.",
+      "Строк показателей подходов, не поместившихся в ограниченную заметку тренировки: 2."
+    ]
   ]);
   for (const [english, expected] of cases) {
     assert.equal(context.window.GymRussianText.translate(english), expected, english);

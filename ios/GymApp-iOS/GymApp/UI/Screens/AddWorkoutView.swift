@@ -3,7 +3,6 @@ import SwiftUI
 @MainActor
 struct AddWorkoutView: View {
     @ObservedObject private var store: WorkoutStore
-    @ObservedObject private var restTimers: RestTimerManager
     @ObservedObject private var garminCloud: GarminCloudService
 
     @State private var date = Date()
@@ -29,7 +28,6 @@ struct AddWorkoutView: View {
     ) {
         self.init(
             store: appState.workoutStore,
-            restTimers: appState.restTimers,
             garminCloud: appState.garminCloud,
             isCloudAccount: appState.auth.session?.cloud != nil,
             onSaved: onSaved,
@@ -42,7 +40,6 @@ struct AddWorkoutView: View {
 
     init(
         store: WorkoutStore,
-        restTimers: RestTimerManager,
         garminCloud: GarminCloudService,
         isCloudAccount: Bool,
         onSaved: @escaping (UUID) -> Void,
@@ -50,7 +47,6 @@ struct AddWorkoutView: View {
         onStatus: @escaping (String, Bool) -> Void = { _, _ in }
     ) {
         _store = ObservedObject(wrappedValue: store)
-        _restTimers = ObservedObject(wrappedValue: restTimers)
         _garminCloud = ObservedObject(wrappedValue: garminCloud)
         _profile = State(initialValue: Self.loadProfile(storageKey: store.accountStorageKey))
         self.isCloudAccount = isCloudAccount
@@ -317,9 +313,11 @@ struct AddWorkoutView: View {
     private var editorSection: some View {
         HStack {
             GymSectionTitle(
-                eyebrow: "Workout",
-                title: "Exercises and sets",
-                supporting: drafts.isEmpty ? "Add an exercise to begin." : "Use Last, Previous, Copy, or +2.5 for faster logging."
+                eyebrow: "Plan builder",
+                title: "Planned exercises and sets",
+                supporting: drafts.isEmpty
+                    ? "Add an exercise to begin."
+                    : "Planned rows are targets. They do not start rest timers or count as completed until you save them."
             )
             Spacer(minLength: 8)
             Button {
@@ -348,7 +346,6 @@ struct AddWorkoutView: View {
                 if let exercise = store.exercise(id: item.exerciseID) {
                     WorkoutDraftExerciseCard(
                         draft: binding(for: item.id),
-                        restTimers: restTimers,
                         exerciseID: exercise.id,
                         exerciseMediaOwnerKey: store.accountStorageKey,
                         exerciseName: gymExerciseName(exercise),
@@ -371,7 +368,7 @@ struct AddWorkoutView: View {
                 Text(
                     garminCloud.selectedDevice == nil
                         ? gymLocalized("Select or pair a Garmin watch in Account settings before queueing a plan.")
-                        : gymLocalized("After saving, the plan is added to the private cloud queue for the selected Garmin watch.")
+                        : gymLocalized("Garmin plan mode: after saving, every planned row is sent to the selected watch as a target. The watch logs what you actually complete.")
                 )
                     .font(.caption)
                     .foregroundStyle(GymTheme.textSecondary)
@@ -384,25 +381,32 @@ struct AddWorkoutView: View {
     }
 
     private var saveButton: some View {
-        Button(action: save) {
-            if isSaving {
-                HStack(spacing: 10) {
-                    ProgressView().tint(.white)
-                    Text("Saving…")
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Completed mode: saving immediately adds every planned row to workout history and summaries.")
+                .font(.caption)
+                .foregroundStyle(GymTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Button(action: save) {
+                if isSaving {
+                    HStack(spacing: 10) {
+                        ProgressView().tint(.white)
+                        Text("Saving…")
+                    }
+                } else {
+                    Label("Save as completed workout", systemImage: "checkmark.circle.fill")
                 }
-            } else {
-                Label("Save workout", systemImage: "checkmark.circle.fill")
             }
-        }
-        .buttonStyle(GymPrimaryButtonStyle())
-        .disabled(isSaving || drafts.isEmpty)
-        .accessibilityHint(
-            gymLocalized(
-                queueForGarmin && isCloudAccount
-                    ? "Saves and queues the plan for Garmin"
-                    : "Saves the workout locally"
+            .buttonStyle(GymPrimaryButtonStyle())
+            .disabled(isSaving || drafts.isEmpty)
+            .accessibilityHint(
+                gymLocalized(
+                    queueForGarmin && isCloudAccount
+                        ? "Adds every planned row to history as completed and also queues the rows as Garmin targets"
+                        : "Adds every planned row to history and summaries as completed"
+                )
             )
-        )
+        }
     }
 
     private func binding(for id: UUID) -> Binding<WorkoutEditorExerciseDraft> {

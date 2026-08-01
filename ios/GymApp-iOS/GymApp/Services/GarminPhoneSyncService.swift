@@ -27,7 +27,54 @@ struct GarminPhoneSetStatistics: Codable, Equatable {
     let detectionConfidence: Int?
 }
 
+struct GarminPhoneSetInterval: Codable, Equatable {
+    let startSeconds: Int64
+    let endSeconds: Int64
+    let gymCalories: Double
+    let garminCalories: Int?
+    let heartRateZoneSeconds: [Int64]
+}
+
 struct GarminPhoneWorkoutCommand: Codable, Equatable {
+    let requestID: String
+    let startedAtSeconds: Int64
+    let sets: [NamedWorkoutSetDraft]
+    let plannedSetCount: Int?
+    let plannedTargetSetCount: Int?
+    let completedPlannedSetCount: Int?
+    let durationSeconds: Int64?
+    let gymCalories: Double?
+    let garminCalories: Int?
+    let averageHeartRate: Int?
+    let maximumHeartRate: Int?
+    let endingHeartRateZone: Int?
+    let setStatistics: [GarminPhoneSetStatistics?]
+    let setIntervals: [GarminPhoneSetInterval?]
+
+    var digest: String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        // Keep the released receipt identity stable. Exact planned/completed progress
+        // and `setIntervals` are diagnostic enrichments; older clients ignored them
+        // before persisting the same core workout and may replay after an ack loss.
+        let legacyIdentity = GarminPhoneWorkoutReceiptIdentity(
+            requestID: requestID,
+            startedAtSeconds: startedAtSeconds,
+            sets: sets,
+            durationSeconds: durationSeconds,
+            gymCalories: gymCalories,
+            garminCalories: garminCalories,
+            averageHeartRate: averageHeartRate,
+            maximumHeartRate: maximumHeartRate,
+            endingHeartRateZone: endingHeartRateZone,
+            setStatistics: setStatistics
+        )
+        let data = (try? encoder.encode(legacyIdentity)) ?? Data()
+        return data.garminSHA256Hex
+    }
+}
+
+private struct GarminPhoneWorkoutReceiptIdentity: Codable {
     let requestID: String
     let startedAtSeconds: Int64
     let sets: [NamedWorkoutSetDraft]
@@ -38,13 +85,6 @@ struct GarminPhoneWorkoutCommand: Codable, Equatable {
     let maximumHeartRate: Int?
     let endingHeartRateZone: Int?
     let setStatistics: [GarminPhoneSetStatistics?]
-
-    var digest: String {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys]
-        let data = (try? encoder.encode(self)) ?? Data()
-        return data.garminSHA256Hex
-    }
 }
 
 enum GarminPhoneWorkoutParser {
@@ -59,6 +99,7 @@ enum GarminPhoneWorkoutParser {
     static let maximumDurationSeconds: Int64 = 7 * 24 * 60 * 60
     static let minimumStartedAtSeconds: Int64 = 946_684_800
     static let maximumFutureSkewSeconds: Int64 = 24 * 60 * 60
+    static let setIntervalCalorieRoundingTolerance = 0.1
 
     static func parse(
         _ rawMessage: Any,
@@ -119,6 +160,52 @@ enum GarminPhoneWorkoutParser {
             )
         }
 
+        let plannedSetCount: Int? = optionalInteger(
+            message["plannedSetCount"],
+            minimum: sets.count,
+            maximum: maximumSets
+        )
+        guard optionalNumberWasValid(
+            message["plannedSetCount"],
+            parsed: plannedSetCount
+        ) else {
+            return nil
+        }
+
+        let plannedTargetSetCount: Int? = optionalInteger(
+            message["plannedTargetSetCount"],
+            minimum: 1,
+            maximum: maximumSets
+        )
+        guard optionalNumberWasValid(
+            message["plannedTargetSetCount"],
+            parsed: plannedTargetSetCount
+        ) else {
+            return nil
+        }
+
+        let completedPlannedSetCount: Int?
+        if let rawCompletedCount = message["completedPlannedSetCount"] {
+            guard !(rawCompletedCount is NSNull),
+                  let completedCount = integer(
+                      rawCompletedCount,
+                      minimum: 0,
+                      maximum: maximumSets
+                  ),
+                  let plannedSetCount,
+                  let plannedTargetSetCount,
+                  plannedSetCount >= plannedTargetSetCount,
+                  completedCount <= min(plannedTargetSetCount, sets.count) else {
+                return nil
+            }
+            completedPlannedSetCount = completedCount
+        } else {
+            completedPlannedSetCount = nil
+        }
+        let hasPlannedTargetSetCount = message["plannedTargetSetCount"] != nil
+        let hasCompletedPlannedSetCount = message["completedPlannedSetCount"] != nil
+        guard hasPlannedTargetSetCount == hasCompletedPlannedSetCount else { return nil }
+
         let setStatistics: [GarminPhoneSetStatistics?]
         if message["setMetrics"] == nil || message["setMetrics"] is NSNull {
             setStatistics = Array(repeating: nil, count: sets.count)
@@ -166,6 +253,72 @@ enum GarminPhoneWorkoutParser {
                 ) ? nil : statistics)
             }
             setStatistics = parsed
+        }
+
+        let setIntervals: [GarminPhoneSetInterval?]
+        if message["setIntervals"] == nil || message["setIntervals"] is NSNull {
+            setIntervals = Array(repeating: nil, count: sets.count)
+        } else {
+            guard let intervals = array(message["setIntervals"]),
+                  intervals.count == sets.count else {
+                return nil
+            }
+            var parsed: [GarminPhoneSetInterval?] = []
+            parsed.reserveCapacity(intervals.count)
+            for value in intervals {
+                guard let items = array(value), items.count == 10,
+                      let startSeconds: Int64 = integer(
+                          items[0],
+                          minimum: 0,
+                          maximum: maximumDurationSeconds
+                      ),
+                      let endSeconds: Int64 = integer(
+                          items[1],
+                          minimum: startSeconds,
+                          maximum: maximumDurationSeconds
+                      ),
+                      let gymCalories = finiteDouble(
+                          items[2],
+                          minimum: 0,
+                          maximum: 100_000
+                      ) else {
+                    return nil
+                }
+                let garminCalories: Int? = optionalInteger(
+                    items[3],
+                    minimum: 0,
+                    maximum: 100_000
+                )
+                guard optionalNumberWasValid(items[3], parsed: garminCalories) else {
+                    return nil
+                }
+                var zones: [Int64] = []
+                zones.reserveCapacity(6)
+                for zoneValue in items[4 ... 9] {
+                    guard let seconds: Int64 = integer(
+                        zoneValue,
+                        minimum: 0,
+                        maximum: 7_200
+                    ) else {
+                        return nil
+                    }
+                    zones.append(seconds)
+                }
+                guard endSeconds - startSeconds <= 7_200,
+                      zones.reduce(0, +) <= endSeconds - startSeconds else {
+                    return nil
+                }
+                parsed.append(
+                    GarminPhoneSetInterval(
+                        startSeconds: startSeconds,
+                        endSeconds: endSeconds,
+                        gymCalories: gymCalories,
+                        garminCalories: garminCalories,
+                        heartRateZoneSeconds: zones
+                    )
+                )
+            }
+            setIntervals = parsed
         }
 
         let nowSeconds = Int64(now.timeIntervalSince1970.rounded(.down))
@@ -229,17 +382,49 @@ enum GarminPhoneWorkoutParser {
             return nil
         }
 
+        if message["setIntervals"] != nil, !(message["setIntervals"] is NSNull) {
+            let structuredIntervals = setIntervals.compactMap { $0 }
+            guard structuredIntervals.count == sets.count else { return nil }
+
+            for index in structuredIntervals.indices.dropFirst() {
+                guard structuredIntervals[index].startSeconds >=
+                    structuredIntervals[structuredIntervals.index(before: index)].endSeconds else {
+                    return nil
+                }
+            }
+            guard let duration,
+                  structuredIntervals.allSatisfy({ $0.endSeconds <= duration }) else {
+                return nil
+            }
+            guard let gymCalories else { return nil }
+            let intervalGymCalories = structuredIntervals.reduce(0.0) { $0 + $1.gymCalories }
+            guard intervalGymCalories <= gymCalories + setIntervalCalorieRoundingTolerance else {
+                return nil
+            }
+            let intervalGarminCalories = structuredIntervals.compactMap(\.garminCalories)
+            if !intervalGarminCalories.isEmpty {
+                guard let garminCalories,
+                      intervalGarminCalories.reduce(0, +) <= garminCalories else {
+                    return nil
+                }
+            }
+        }
+
         return GarminPhoneWorkoutCommand(
             requestID: requestID,
             startedAtSeconds: startedAtSeconds,
             sets: sets,
+            plannedSetCount: plannedSetCount,
+            plannedTargetSetCount: plannedTargetSetCount,
+            completedPlannedSetCount: completedPlannedSetCount,
             durationSeconds: duration,
             gymCalories: gymCalories,
             garminCalories: garminCalories,
             averageHeartRate: averageHeartRate,
             maximumHeartRate: maximumHeartRate,
             endingHeartRateZone: heartRateZone,
-            setStatistics: setStatistics
+            setStatistics: setStatistics,
+            setIntervals: setIntervals
         )
     }
 
@@ -327,6 +512,259 @@ enum GarminPhoneWorkoutParser {
 
     private static func optionalNumberWasValid<T>(_ raw: Any?, parsed: T?) -> Bool {
         raw == nil || raw is NSNull || parsed != nil
+    }
+}
+
+struct GarminWorkoutNoteInterval: Equatable, Identifiable {
+    let setIndex: Int
+    let startSeconds: Int64
+    let endSeconds: Int64
+    let gymCalories: Double
+    let garminCalories: Int?
+    let heartRateZoneSeconds: [Int64]
+
+    var id: Int { setIndex }
+}
+
+struct GarminWorkoutNoteSummary: Equatable {
+    let completedSetCount: Int?
+    let plannedSetCount: Int?
+    let intervals: [GarminWorkoutNoteInterval]
+    let omittedMetricRows: Int?
+}
+
+enum GarminWorkoutNoteParser {
+    private static let maximumCharacters = 4_000
+    private static let maximumBytes = 16_000
+    private static let maximumSets = 60
+    private static let maximumSessionSeconds: Int64 = 7 * 24 * 60 * 60
+    private static let maximumSetSeconds: Int64 = 7_200
+    private static let maximumCalories = 100_000.0
+
+    static func parse(_ note: String?) -> GarminWorkoutNoteSummary? {
+        guard let note,
+              note.count <= maximumCharacters,
+              note.utf8.count <= maximumBytes else {
+            return nil
+        }
+        let segments = note.components(separatedBy: " · ")
+        guard let prefix = segments.first,
+              prefix == "Garmin" || prefix == "Garmin Fenix 8" else {
+            return nil
+        }
+
+        var completedSetCount: Int?
+        var plannedSetCount: Int?
+        var omittedMetricRows: Int?
+        var intervals: [GarminWorkoutNoteInterval] = []
+        var seenSetIndexes = Set<Int>()
+        var durationSeconds: Int64?
+
+        for segment in segments.dropFirst() {
+            let tokens = segment.split(separator: " ").map(String.init)
+            guard let first = tokens.first else { continue }
+            if ["Duration", "Тривалість", "Длительность"].contains(first) {
+                guard durationSeconds == nil,
+                      tokens.count == 2,
+                      let parsedDuration = parseDuration(tokens[1]) else {
+                    return nil
+                }
+                durationSeconds = parsedDuration
+                continue
+            }
+            if ["Completed", "Partial", "Виконано", "Частково", "Выполнено", "Частично"]
+                .contains(first), tokens.count >= 2 {
+                let counts = tokens[1].split(separator: "/", omittingEmptySubsequences: false)
+                guard completedSetCount == nil,
+                      plannedSetCount == nil,
+                      counts.count == 2,
+                      let completed = boundedInteger(String(counts[0]), minimum: 0, maximum: maximumSets),
+                      let planned = boundedInteger(String(counts[1]), minimum: 1, maximum: maximumSets),
+                      planned > completed else {
+                    return nil
+                }
+                completedSetCount = completed
+                plannedSetCount = planned
+                continue
+            }
+            if first.hasPrefix("S+"), tokens.count == 1 {
+                guard omittedMetricRows == nil,
+                      let value = boundedInteger(
+                    String(first.dropFirst(2)),
+                    minimum: 1,
+                    maximum: maximumSets
+                ) else {
+                    return nil
+                }
+                omittedMetricRows = value
+                continue
+            }
+            guard first.first == "S",
+                  let setIndex = boundedInteger(
+                      String(first.dropFirst()),
+                      minimum: 1,
+                      maximum: maximumSets
+                  ) else {
+                continue
+            }
+            let intervalToken = tokens.first(where: { $0.first == "I" })
+            let calorieToken = tokens.first(where: { $0.first == "K" })
+            let zoneToken = tokens.first(where: { $0.first == "Z" })
+            guard intervalToken != nil || calorieToken != nil || zoneToken != nil else { continue }
+            guard let intervalToken, let calorieToken, let zoneToken,
+                  seenSetIndexes.insert(setIndex).inserted,
+                  let interval = parseInterval(
+                      setIndex: setIndex,
+                      intervalToken: intervalToken,
+                      calorieToken: calorieToken,
+                      zoneToken: zoneToken
+                  ) else {
+                return nil
+            }
+            intervals.append(interval)
+        }
+        guard intervals.count + (omittedMetricRows ?? 0) <= maximumSets else {
+            return nil
+        }
+        for index in intervals.indices.dropFirst() {
+            let previous = intervals[intervals.index(before: index)]
+            let current = intervals[index]
+            guard current.setIndex > previous.setIndex,
+                  current.startSeconds >= previous.endSeconds else {
+                return nil
+            }
+        }
+        if let durationSeconds,
+           intervals.contains(where: { $0.endSeconds > durationSeconds }) {
+            return nil
+        }
+        return GarminWorkoutNoteSummary(
+            completedSetCount: completedSetCount,
+            plannedSetCount: plannedSetCount,
+            intervals: intervals.sorted { $0.setIndex < $1.setIndex },
+            omittedMetricRows: omittedMetricRows
+        )
+    }
+
+    private static func parseInterval(
+        setIndex: Int,
+        intervalToken: String,
+        calorieToken: String,
+        zoneToken: String
+    ) -> GarminWorkoutNoteInterval? {
+        guard intervalToken.hasPrefix("I"), intervalToken.hasSuffix("s"),
+              calorieToken.hasPrefix("K"),
+              zoneToken.hasPrefix("Z"), zoneToken.hasSuffix("s") else {
+            return nil
+        }
+        let range = intervalToken.dropFirst().dropLast()
+            .split(separator: "-", omittingEmptySubsequences: false)
+        let calories = calorieToken.dropFirst()
+            .split(separator: "/", omittingEmptySubsequences: false)
+        let zones = zoneToken.dropFirst().dropLast()
+            .split(separator: "/", omittingEmptySubsequences: false)
+        guard range.count == 2,
+              calories.count == 2,
+              zones.count == 6,
+              let startSeconds = boundedInteger(
+                  String(range[0]),
+                  minimum: Int64(0),
+                  maximum: maximumSessionSeconds
+              ),
+              let endSeconds = boundedInteger(
+                  String(range[1]),
+                  minimum: startSeconds,
+                  maximum: maximumSessionSeconds
+              ),
+              endSeconds - startSeconds <= maximumSetSeconds,
+              decimalStringIsBounded(String(calories[0])),
+              let gymCalories = Double(String(calories[0])),
+              gymCalories.isFinite,
+              (0 ... maximumCalories).contains(gymCalories) else {
+            return nil
+        }
+        let garminCalories: Int?
+        if calories[1] == "-" {
+            garminCalories = nil
+        } else {
+            guard let value = boundedInteger(
+                String(calories[1]),
+                minimum: 0,
+                maximum: Int(maximumCalories)
+            ) else {
+                return nil
+            }
+            garminCalories = value
+        }
+        var zoneSeconds: [Int64] = []
+        zoneSeconds.reserveCapacity(6)
+        for value in zones {
+            guard let seconds = boundedInteger(
+                String(value),
+                minimum: Int64(0),
+                maximum: maximumSetSeconds
+            ) else {
+                return nil
+            }
+            zoneSeconds.append(seconds)
+        }
+        guard zoneSeconds.reduce(0, +) <= endSeconds - startSeconds else { return nil }
+        return GarminWorkoutNoteInterval(
+            setIndex: setIndex,
+            startSeconds: startSeconds,
+            endSeconds: endSeconds,
+            gymCalories: gymCalories,
+            garminCalories: garminCalories,
+            heartRateZoneSeconds: zoneSeconds
+        )
+    }
+
+    private static func decimalStringIsBounded(_ value: String) -> Bool {
+        value.range(
+            of: #"^[0-9]+(?:\.[0-9]{1,2})?$"#,
+            options: .regularExpression
+        ) != nil
+    }
+
+    private static func parseDuration(_ value: String) -> Int64? {
+        let components = value.split(separator: ":", omittingEmptySubsequences: false)
+        guard components.count == 2 || components.count == 3,
+              components.allSatisfy({ !$0.isEmpty && $0.allSatisfy(\.isNumber) }) else {
+            return nil
+        }
+        if components.count == 2 {
+            guard let minutes = Int64(components[0]),
+                  let seconds = Int64(components[1]),
+                  minutes <= maximumSessionSeconds / 60,
+                  seconds < 60 else {
+                return nil
+            }
+            return minutes * 60 + seconds
+        }
+        guard let hours = Int64(components[0]),
+              let minutes = Int64(components[1]),
+              let seconds = Int64(components[2]),
+              hours <= maximumSessionSeconds / 3_600,
+              minutes < 60,
+              seconds < 60 else {
+            return nil
+        }
+        let duration = hours * 3_600 + minutes * 60 + seconds
+        return duration <= maximumSessionSeconds ? duration : nil
+    }
+
+    private static func boundedInteger<T: FixedWidthInteger>(
+        _ value: String,
+        minimum: T,
+        maximum: T
+    ) -> T? {
+        guard !value.isEmpty,
+              value.allSatisfy(\.isNumber),
+              let parsed = T(value),
+              (minimum ... maximum).contains(parsed) else {
+            return nil
+        }
+        return parsed
     }
 }
 
@@ -790,9 +1228,28 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
         return next
     }
 
-    private func workoutNote(_ command: GarminPhoneWorkoutCommand) -> String {
-        let language = normalizedLanguage(defaults.string(forKey: "app-language"))
+    static func formattedWorkoutNote(
+        _ command: GarminPhoneWorkoutCommand,
+        language rawLanguage: String
+    ) -> String {
+        let language = ["uk", "ru"].contains(rawLanguage) ? rawLanguage : "en"
         var details = ["Garmin"]
+        let progress: (completed: Int, planned: Int)?
+        if let plannedTargetSetCount = command.plannedTargetSetCount,
+           let completedPlannedSetCount = command.completedPlannedSetCount {
+            progress = (completedPlannedSetCount, plannedTargetSetCount)
+        } else if let plannedSetCount = command.plannedSetCount {
+            progress = (command.sets.count, plannedSetCount)
+        } else {
+            progress = nil
+        }
+        if let progress, progress.planned > progress.completed {
+            details.append(
+                language == "uk" ? "Виконано \(progress.completed)/\(progress.planned) підходів" :
+                    language == "ru" ? "Выполнено \(progress.completed)/\(progress.planned) подходов" :
+                    "Completed \(progress.completed)/\(progress.planned) sets"
+            )
+        }
         if let seconds = command.durationSeconds, seconds > 0 {
             let duration = String(format: "%lld:%02lld", seconds / 60, seconds % 60)
             details.append(
@@ -828,42 +1285,85 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
                     "Ending HR zone Z\(value)"
             )
         }
-        for (index, statistics) in command.setStatistics.enumerated() {
-            guard let statistics else { continue }
+        for index in command.sets.indices {
             var values: [String] = []
-            if let value = statistics.activeSeconds { values.append("\(value)s") }
-            if let value = statistics.restBeforeSeconds, value > 0 {
-                values.append("R\(value)s")
+            if let statistics = command.setStatistics[index] {
+                if let value = statistics.activeSeconds { values.append("\(value)s") }
+                if let value = statistics.restBeforeSeconds, value > 0 {
+                    values.append("R\(value)s")
+                }
+                let heartRates = [
+                    statistics.startHeartRate,
+                    statistics.peakHeartRate,
+                    statistics.endHeartRate
+                ]
+                if heartRates.contains(where: { $0 != nil }) {
+                    values.append(
+                        "HR" + heartRates.map { $0.map(String.init) ?? "-" }
+                            .joined(separator: "/")
+                    )
+                }
+                if let value = statistics.recoveryHeartRateDrop { values.append("↓\(value)") }
+                if let value = statistics.detectionConfidence { values.append("C\(value)%") }
             }
-            let heartRates = [
-                statistics.startHeartRate,
-                statistics.peakHeartRate,
-                statistics.endHeartRate
-            ]
-            if heartRates.contains(where: { $0 != nil }) {
+            if let interval = command.setIntervals[index] {
+                values.append("I\(interval.startSeconds)-\(interval.endSeconds)s")
+                let gymCalories = String(
+                    format: "%.2f",
+                    locale: Locale(identifier: "en_US_POSIX"),
+                    interval.gymCalories
+                )
+                    .replacingOccurrences(of: #"\.?0+$"#, with: "", options: .regularExpression)
+                values.append("K\(gymCalories)/\(interval.garminCalories.map(String.init) ?? "-")")
                 values.append(
-                    "HR" + heartRates.map { $0.map(String.init) ?? "-" }.joined(separator: "/")
+                    "Z" + interval.heartRateZoneSeconds.map(String.init).joined(separator: "/") + "s"
                 )
             }
-            if let value = statistics.recoveryHeartRateDrop { values.append("↓\(value)") }
-            if let value = statistics.detectionConfidence { values.append("C\(value)%") }
             if !values.isEmpty {
-                details.append("S\(index + 1) \(values.joined(separator: " "))")
+                let detail = "S\(index + 1) \(values.joined(separator: " "))"
+                let remainingAfterCurrent = command.sets.count - index - 1
+                let reservedMarker = remainingAfterCurrent > 0
+                    ? "S+\(remainingAfterCurrent)"
+                    : nil
+                let candidateDetails = details + [detail] + (reservedMarker.map { [$0] } ?? [])
+                let candidate = candidateDetails.joined(separator: " · ")
+                guard candidate.count <= 4_000, candidate.utf8.count <= 16_000 else {
+                    let marker = "S+\(command.sets.count - index)"
+                    let marked = (details + [marker]).joined(separator: " · ")
+                    if marked.count <= 4_000, marked.utf8.count <= 16_000 {
+                        details.append(marker)
+                    }
+                    break
+                }
+                details.append(detail)
             }
         }
         return details.joined(separator: " · ")
+    }
+
+    private func workoutNote(_ command: GarminPhoneWorkoutCommand) -> String {
+        Self.formattedWorkoutNote(
+            command,
+            language: normalizedLanguage(defaults.string(forKey: "app-language"))
+        )
     }
 
     private func matchingWorkout(
         _ command: GarminPhoneWorkoutCommand,
         in store: WorkoutStore
     ) -> Bool {
+        Self.matchesPersistedWorkout(command, in: store)
+    }
+
+    static func matchesPersistedWorkout(
+        _ command: GarminPhoneWorkoutCommand,
+        in store: WorkoutStore
+    ) -> Bool {
         let expectedDate = TimeInterval(command.startedAtSeconds)
-        let expectedNote = workoutNote(command)
         let names = Dictionary(uniqueKeysWithValues: store.exercises.map { ($0.id, $0.name) })
+        let expectedSets = canonicalGroupedSets(command.sets)
         return store.workouts.contains { workout in
-            guard abs(workout.date.timeIntervalSince1970 - expectedDate) < 1,
-                  workout.note == expectedNote else {
+            guard abs(workout.date.timeIntervalSince1970 - expectedDate) < 1 else {
                 return false
             }
             let flattened = workout.exercises.flatMap { block in
@@ -875,8 +1375,35 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
                     )
                 }
             }
-            return flattened == command.sets
+            return canonicalGroupedSets(flattened) == expectedSets
         }
+    }
+
+    private struct CanonicalWorkoutSet: Equatable {
+        let exerciseKey: String
+        let weight: Double
+        let reps: Int
+    }
+
+    private static func canonicalGroupedSets(
+        _ sets: [NamedWorkoutSetDraft]
+    ) -> [CanonicalWorkoutSet] {
+        var orderedExerciseKeys: [String] = []
+        var grouped: [String: [CanonicalWorkoutSet]] = [:]
+        for set in sets {
+            let exerciseKey = set.exerciseName.gymTrimmed.lowercased()
+            if grouped[exerciseKey] == nil {
+                orderedExerciseKeys.append(exerciseKey)
+            }
+            grouped[exerciseKey, default: []].append(
+                CanonicalWorkoutSet(
+                    exerciseKey: exerciseKey,
+                    weight: set.weight,
+                    reps: set.reps
+                )
+            )
+        }
+        return orderedExerciseKeys.flatMap { grouped[$0, default: []] }
     }
 
     private func loadReceiptLedger(key: String) -> GarminPhoneReceiptLedger {

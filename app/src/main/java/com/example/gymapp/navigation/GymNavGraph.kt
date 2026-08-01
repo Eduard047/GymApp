@@ -109,6 +109,7 @@ import com.example.gymapp.util.AppLanguage
 import com.example.gymapp.util.LanguageManager
 import com.example.gymapp.util.LocalizedText
 import com.example.gymapp.util.RestTimerController
+import com.example.gymapp.util.restTimerAccountKey
 import com.example.gymapp.util.asString
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.CancellationException
@@ -1230,7 +1231,10 @@ fun GymAppRoot(
                                 factory = WorkoutDetailViewModel.factory(
                                     repository = repository,
                                     sessionId = sessionId,
-                                    restTimerController = restTimerController
+                                    restTimerController = restTimerController,
+                                    timerAccountKey = checkNotNull(
+                                        restTimerAccountKey(authState.session)
+                                    )
                                 )
                             )
                             val uiState by viewModel.uiState.collectAsState()
@@ -1240,6 +1244,8 @@ fun GymAppRoot(
                                 events = viewModel.events,
                                 onAddExerciseToWorkout = viewModel::addExerciseToWorkout,
                                 onAddSet = viewModel::addSet,
+                                onStartExerciseRestTimer = viewModel::startExerciseRestTimer,
+                                onStopExerciseRestTimer = viewModel::stopExerciseRestTimer,
                                 onDeleteSet = viewModel::requestDeleteSet,
                                 onConfirmDeleteSet = viewModel::confirmSetDeletion,
                                 onDismissDeleteSet = viewModel::dismissSetDeletion,

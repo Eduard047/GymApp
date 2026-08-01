@@ -1,5 +1,98 @@
 import SwiftUI
 
+enum GarminWorkoutDetailCopy {
+    static func intervalsTitle(languageCode: String) -> String {
+        localized(
+            languageCode,
+            en: "Chronological watch sets",
+            uk: "Хронологічні підходи з годинника",
+            ru: "Хронологические подходы с часов"
+        )
+    }
+
+    static func intervalsSupporting(languageCode: String) -> String {
+        localized(
+            languageCode,
+            en: "S# follows the watch timeline and may differ from exercise-grouped set order. Read from the workout note; imported or manually edited notes are not proof of watch origin. Calories and heart-rate-zone time are slices of the full workout.",
+            uk: "S# відповідає хронології годинника й може відрізнятися від порядку підходів, згрупованих за вправами. Прочитано з нотатки тренування; імпортована або вручну змінена нотатка не підтверджує походження з годинника. Калорії та час у пульсових зонах — це відрізки від загального тренування.",
+            ru: "S# соответствует хронологии часов и может отличаться от порядка подходов, сгруппированных по упражнениям. Прочитано из заметки тренировки; импортированная или изменённая вручную заметка не подтверждает происхождение с часов. Калории и время в пульсовых зонах — это отрезки от общей тренировки."
+        )
+    }
+
+    static func originalPartial(
+        completed: Int,
+        planned: Int,
+        languageCode: String
+    ) -> String {
+        localized(
+            languageCode,
+            en: "Original Garmin result: completed \(completed) of \(planned) planned sets.",
+            uk: "Початковий результат Garmin: виконано \(completed) із \(planned) запланованих підходів.",
+            ru: "Исходный результат Garmin: выполнено \(completed) из \(planned) запланированных подходов."
+        )
+    }
+
+    static func intervalLabel(
+        setIndex: Int,
+        startSeconds: Int64,
+        endSeconds: Int64,
+        languageCode: String
+    ) -> String {
+        localized(
+            languageCode,
+            en: "Watch set S\(setIndex) · \(startSeconds)–\(endSeconds)s",
+            uk: "Підхід з годинника S\(setIndex) · \(startSeconds)–\(endSeconds)с",
+            ru: "Подход с часов S\(setIndex) · \(startSeconds)–\(endSeconds)с"
+        )
+    }
+
+    static func omittedRows(_ count: Int, languageCode: String) -> String {
+        localized(
+            languageCode,
+            en: "Set metric rows omitted from the bounded workout note: \(count).",
+            uk: "Рядків показників підходів, що не вмістилися в обмежену нотатку тренування: \(count).",
+            ru: "Строк показателей подходов, не вместившихся в ограниченную заметку тренировки: \(count)."
+        )
+    }
+
+    static func noTimedHeartRateZone(languageCode: String) -> String {
+        localized(
+            languageCode,
+            en: "No timed heart-rate zone",
+            uk: "Немає зафіксованого часу в пульсових зонах",
+            ru: "Нет зафиксированного времени в пульсовых зонах"
+        )
+    }
+
+    static func calorieUnit(languageCode: String) -> String {
+        normalized(languageCode) == "en" ? "kcal" : "ккал"
+    }
+
+    static func secondsUnit(languageCode: String) -> String {
+        normalized(languageCode) == "en" ? "s" : "с"
+    }
+
+    private static func localized(
+        _ languageCode: String,
+        en: String,
+        uk: String,
+        ru: String
+    ) -> String {
+        switch normalized(languageCode) {
+        case "uk": uk
+        case "ru": ru
+        default: en
+        }
+    }
+
+    private static func normalized(_ languageCode: String) -> String {
+        let value = languageCode.lowercased()
+        if value.hasPrefix("uk") { return "uk" }
+        if value.hasPrefix("ru") { return "ru" }
+        return "en"
+    }
+}
+
 struct WorkoutDetailWorkoutDeletionTarget: Equatable, Identifiable {
     let accountStorageKey: String
     let storeIdentifier: ObjectIdentifier
@@ -295,6 +388,14 @@ struct WorkoutDetailView: View {
                     LazyVStack(spacing: 14) {
                         hero(workout)
 
+                        if let summary = GarminWorkoutNoteParser.parse(workout.note),
+                           !summary.intervals.isEmpty || summary.omittedMetricRows != nil ||
+                            (summary.completedSetCount != nil &&
+                                (summary.plannedSetCount ?? 0) >
+                                    (summary.completedSetCount ?? Int.max)) {
+                            garminSetIntervalsPanel(summary)
+                        }
+
                         if let statusMessage {
                             GymStatusBanner(message: statusMessage, isError: true)
                         }
@@ -370,6 +471,88 @@ struct WorkoutDetailView: View {
                 }
             }
         }
+    }
+
+    private func garminSetIntervalsPanel(_ summary: GarminWorkoutNoteSummary) -> some View {
+        let languageCode = gymCurrentLanguageCode()
+        return GymPanel(highlighted: true) {
+            VStack(alignment: .leading, spacing: 12) {
+                GymSectionTitle(
+                    eyebrow: "Garmin",
+                    title: GarminWorkoutDetailCopy.intervalsTitle(languageCode: languageCode),
+                    supporting: GarminWorkoutDetailCopy.intervalsSupporting(
+                        languageCode: languageCode
+                    )
+                )
+                if let completedSetCount = summary.completedSetCount,
+                   let plannedSetCount = summary.plannedSetCount,
+                   plannedSetCount > completedSetCount {
+                    Text(
+                        GarminWorkoutDetailCopy.originalPartial(
+                            completed: completedSetCount,
+                            planned: plannedSetCount,
+                            languageCode: languageCode
+                        )
+                    )
+                    .font(.subheadline.weight(.semibold))
+                }
+                ForEach(summary.intervals) { interval in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(
+                            GarminWorkoutDetailCopy.intervalLabel(
+                                setIndex: interval.setIndex,
+                                startSeconds: interval.startSeconds,
+                                endSeconds: interval.endSeconds,
+                                languageCode: languageCode
+                            )
+                        )
+                        .font(.subheadline.weight(.bold))
+                        Text(intervalCalorieText(interval, languageCode: languageCode))
+                            .font(.caption)
+                            .foregroundStyle(GymTheme.textSecondary)
+                        Text(intervalZoneText(interval, languageCode: languageCode))
+                            .font(.caption)
+                            .foregroundStyle(GymTheme.textSecondary)
+                    }
+                    .accessibilityElement(children: .combine)
+                }
+                if let omittedMetricRows = summary.omittedMetricRows {
+                    Text(
+                        GarminWorkoutDetailCopy.omittedRows(
+                            omittedMetricRows,
+                            languageCode: languageCode
+                        )
+                    )
+                    .font(.caption)
+                    .foregroundStyle(GymTheme.textSecondary)
+                }
+            }
+        }
+    }
+
+    private func intervalCalorieText(
+        _ interval: GarminWorkoutNoteInterval,
+        languageCode: String
+    ) -> String {
+        let gym = interval.gymCalories.formatted(.number.precision(.fractionLength(0 ... 2)))
+        let unit = GarminWorkoutDetailCopy.calorieUnit(languageCode: languageCode)
+        guard let garminCalories = interval.garminCalories else {
+            return "Gym \(gym) \(unit)"
+        }
+        return "Gym \(gym) \(unit) · Garmin \(garminCalories) \(unit)"
+    }
+
+    private func intervalZoneText(
+        _ interval: GarminWorkoutNoteInterval,
+        languageCode: String
+    ) -> String {
+        let secondsUnit = GarminWorkoutDetailCopy.secondsUnit(languageCode: languageCode)
+        let zones = interval.heartRateZoneSeconds.enumerated().compactMap { zone, seconds in
+            seconds > 0 ? "Z\(zone) \(seconds)\(secondsUnit)" : nil
+        }
+        return zones.isEmpty
+            ? GarminWorkoutDetailCopy.noTimedHeartRateZone(languageCode: languageCode)
+            : zones.joined(separator: " · ")
     }
 
     private var metadataPanel: some View {

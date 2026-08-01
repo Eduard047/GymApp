@@ -20,6 +20,12 @@ class GymStore {
     static var lastSetStatistics = null;
     static var lastLoggedSetEndSeconds = 0;
     static var lastSetPreviousLoggedEnd = 0;
+    static var activeWorkoutStartedAtSeconds = null;
+    // Set intervals are relative to one in-memory GymSession. If the app process
+    // restarts with durable sets, the new session starts again at zero and those
+    // coordinate systems cannot be mixed safely. Keep the workout, but omit the
+    // optional interval diagnostics for the whole resumed workout.
+    static var resumedWorkoutIntervalsInvalid = false;
     static var undoWindowMs = 5000;
     static var status = "READY";
     static var weightStep = 2.5;
@@ -57,7 +63,11 @@ class GymStore {
 
     static var maxPlanSets = 60;
     static var maxWorkoutSets = 60;
-    static var maxPendingWorkouts = 2;
+    // Keep a bounded offline backlog, but do not block an ordinary third workout
+    // merely because the phone has not acknowledged the first two yet. The byte
+    // budgets below remain authoritative, so no item is evicted or silently
+    // truncated when the watch is genuinely out of durable storage.
+    static var maxPendingWorkouts = 8;
     static var maxPendingNameBytes = 12000;
     static var maxExerciseNameLength = 160;
     static var maxExerciseNameBytes = 640;
@@ -73,6 +83,7 @@ class GymStore {
     static function load() {
         clearTransientSetActions();
         lastLoggedSetEndSeconds = 0;
+        resumedWorkoutIntervalsInvalid = false;
         var savedAccountBinding = Storage.getValue("accountBinding");
         accountBinding = isValidAccountBinding(savedAccountBinding) ? savedAccountBinding.toString() : null;
         var savedStateOwnerBinding = Storage.getValue("stateOwnerBinding");
@@ -110,6 +121,13 @@ class GymStore {
         } else {
             sets = [];
         }
+        if (sets.size() > 0) {
+            resumedWorkoutIntervalsInvalid = true;
+        }
+        var savedWorkoutStartedAt = Storage.getValue("activeWorkoutStartedAtSeconds");
+        activeWorkoutStartedAtSeconds = sets.size() > 0 &&
+            isValidWorkoutStartedAtSeconds(savedWorkoutStartedAt) ?
+            savedWorkoutStartedAt : null;
         var savedPlan = Storage.getValue("plan");
         legacyRawPlan = legacyUnboundState ? savedPlan : null;
         if (isValidSetList(savedPlan, maxPlanSets, true)) {
@@ -241,6 +259,12 @@ class GymStore {
 
     static function save() {
         try {
+            if (activeWorkoutStartedAtSeconds != null &&
+                (!hasAccountBinding() || sets.size() == 0 ||
+                    !isValidWorkoutStartedAtSeconds(activeWorkoutStartedAtSeconds))) {
+                status = "SAVE FAIL";
+                return false;
+            }
             if (legacyUnboundState && !ensureLegacyQuarantine()) {
                 status = "LEGACY FULL";
                 return false;
@@ -257,7 +281,17 @@ class GymStore {
                 return false;
             }
             Storage.setValue("exercises", exercises);
-            Storage.setValue("sets", sets);
+            // Preserve the logical workout origin across a torn first-set write,
+            // while also preserving the origin of a torn last-set undo. An orphan
+            // origin is ignored on load; a durable set without its origin is not
+            // recoverable, so the write order depends on which side is authoritative.
+            if (sets.size() > 0) {
+                Storage.setValue("activeWorkoutStartedAtSeconds", activeWorkoutStartedAtSeconds);
+                Storage.setValue("sets", sets);
+            } else {
+                Storage.setValue("sets", sets);
+                Storage.setValue("activeWorkoutStartedAtSeconds", activeWorkoutStartedAtSeconds);
+            }
             Storage.setValue("plan", plan);
             Storage.setValue("pending", pending);
             Storage.setValue("weight", weight);
@@ -379,27 +413,156 @@ class GymStore {
 
     static function applyCurrentPlanSet() {
         if (plan.size() == 0) {
-            return;
+            return false;
         }
         var exerciseName = currentExercise();
         var item = null;
+        var completed = completedSetsForExercise(exerciseName);
+        var matchingIndex = 0;
         for (var i = 0; i < plan.size(); i += 1) {
             var candidate = plan[i];
-            if (candidate instanceof Lang.Dictionary && candidate.get("exerciseName").toString().equals(exerciseName)) {
-                item = candidate;
-                break;
+            if (candidate instanceof Lang.Dictionary &&
+                candidate.get("exerciseName").toString().equals(exerciseName)) {
+                if (matchingIndex == completed) {
+                    item = candidate;
+                    break;
+                }
+                matchingIndex += 1;
             }
         }
-        if (item instanceof Lang.Dictionary) {
-            var plannedWeight = item.get("weight");
-            var plannedReps = item.get("reps");
-            if (plannedWeight instanceof Lang.Number || plannedWeight instanceof Lang.Float) {
-                weight = plannedWeight;
-            }
-            if (plannedReps instanceof Lang.Number) {
-                reps = plannedReps;
+        return applyPlanItem(item);
+    }
+
+    static function applyPlanItem(item) {
+        if (!(item instanceof Lang.Dictionary)) {
+            return false;
+        }
+        var plannedWeight = item.get("weight");
+        var plannedReps = item.get("reps");
+        // The phone serializes Kotlin Double values. Validation accepts every
+        // Connect IQ numeric representation, so application must use the same
+        // contract or a valid plan can be ACKed while retaining stale kg.
+        if (!isValidWeight(plannedWeight) || !isValidReps(plannedReps)) {
+            return false;
+        }
+        weight = plannedWeight;
+        reps = plannedReps;
+        return true;
+    }
+
+    static function completedSetsForExercise(exerciseName) {
+        var completed = 0;
+        for (var i = 0; i < sets.size(); i += 1) {
+            var item = sets[i];
+            if (item instanceof Lang.Dictionary &&
+                item.get("exerciseName").toString().equals(exerciseName)) {
+                completed += 1;
             }
         }
+        return completed;
+    }
+
+    static function remainingPlannedSetsForExercise(exerciseName) {
+        var planned = 0;
+        for (var i = 0; i < plan.size(); i += 1) {
+            var item = plan[i];
+            if (item instanceof Lang.Dictionary &&
+                item.get("exerciseName").toString().equals(exerciseName)) {
+                planned += 1;
+            }
+        }
+        var remaining = planned - completedSetsForExercise(exerciseName);
+        return remaining > 0 ? remaining : 0;
+    }
+
+    static function plannedSetsForExercise(exerciseName) {
+        var planned = 0;
+        for (var i = 0; i < plan.size(); i += 1) {
+            var item = plan[i];
+            if (item instanceof Lang.Dictionary &&
+                item.get("exerciseName").toString().equals(exerciseName)) {
+                planned += 1;
+            }
+        }
+        return planned;
+    }
+
+    static function completedPlannedSetCount() {
+        var completed = 0;
+        for (var i = 0; i < sets.size(); i += 1) {
+            var setItem = sets[i];
+            if (!(setItem instanceof Lang.Dictionary)) {
+                continue;
+            }
+            var exerciseName = setItem.get("exerciseName").toString();
+            var earlierActual = 0;
+            for (var j = 0; j < i; j += 1) {
+                var earlierSet = sets[j];
+                if (earlierSet instanceof Lang.Dictionary &&
+                    earlierSet.get("exerciseName").toString().equals(exerciseName)) {
+                    earlierActual += 1;
+                }
+            }
+            if (earlierActual < plannedSetsForExercise(exerciseName)) {
+                completed += 1;
+            }
+        }
+        if (completed > plan.size()) {
+            completed = plan.size();
+        }
+        return completed;
+    }
+
+    static function planSlotIsCompleted(planIndex) {
+        if (planIndex < 0 || planIndex >= plan.size()) {
+            return false;
+        }
+        var item = plan[planIndex];
+        if (!(item instanceof Lang.Dictionary)) {
+            return false;
+        }
+        var exerciseName = item.get("exerciseName").toString();
+        var earlierPlanSlots = 0;
+        for (var i = 0; i < planIndex; i += 1) {
+            var earlier = plan[i];
+            if (earlier instanceof Lang.Dictionary &&
+                earlier.get("exerciseName").toString().equals(exerciseName)) {
+                earlierPlanSlots += 1;
+            }
+        }
+        return completedSetsForExercise(exerciseName) > earlierPlanSlots;
+    }
+
+    static function selectExerciseByName(exerciseName) {
+        for (var i = 0; i < exercises.size(); i += 1) {
+            if (exercises[i].toString().equals(exerciseName)) {
+                exerciseIndex = i;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    static function selectNextPlanSlotInGlobalOrder() {
+        for (var i = 0; i < plan.size(); i += 1) {
+            if (!planSlotIsCompleted(i)) {
+                var item = plan[i];
+                var exerciseName = item.get("exerciseName").toString();
+                if (!selectExerciseByName(exerciseName)) {
+                    return false;
+                }
+                return applyPlanItem(item);
+            }
+        }
+        return false;
+    }
+
+    static function advancePlanAfterSetSaved() {
+        // Preserve the exact order supplied by the phone (including circuits such
+        // as A1, B1, A2, B2). Manual exercise selection can still jump to that
+        // exercise's next target; automatic advancement resumes at the earliest
+        // remaining global slot.
+        selectNextPlanSlotInGlobalOrder();
     }
 
     static function nextExercise(delta) {
@@ -422,7 +585,22 @@ class GymStore {
             return false;
         }
         var statistics = GymSession.captureSetStatistics();
-        var restBefore = 0;
+        var setInterval = GymSession.copySetInterval(statistics.get("setInterval"));
+        var previousWorkoutStartedAt = activeWorkoutStartedAtSeconds;
+        if (activeWorkoutStartedAtSeconds == null &&
+            !resumedWorkoutIntervalsInvalid && hasAccountBinding() &&
+            isValidWorkoutStartedAtSeconds(GymSession.startedAt)) {
+            // Commit the logical origin with the first durable set. Subsequent
+            // process restarts can then label every persisted set with its real date.
+            activeWorkoutStartedAtSeconds = GymSession.startedAt;
+        }
+        var previousWeight = weight;
+        var previousReps = reps;
+        var previousExerciseIndex = exerciseIndex;
+        var wasPlannedSet = remainingPlannedSetsForExercise(currentExercise()) > 0;
+        // The first set has no preceding rest. After a process restart the prior
+        // set end is also unknown, so do not manufacture a zero-second recovery.
+        var restBefore = null;
         var previousSet = null;
         var previousRecovery = null;
         if (sets.size() > 0) {
@@ -450,13 +628,25 @@ class GymStore {
             "startHeartRate" => statistics.get("startHeartRate"),
             "peakHeartRate" => statistics.get("peakHeartRate"),
             "endHeartRate" => statistics.get("endHeartRate"),
-            "detectionConfidence" => statistics.get("detectionConfidence")
+            "detectionConfidence" => statistics.get("detectionConfidence"),
+            "setInterval" => setInterval
         };
         var wasAutoPrompt = GymSession.autoLogPrompt;
         sets.add(setItem);
         var boost = GymSession.addSetBoost(weight, reps);
+        setInterval[2] += boost;
+        if (setInterval[2] > 100000.0) {
+            setInterval[2] = 100000.0;
+        }
+        if (wasPlannedSet) {
+            advancePlanAfterSetSaved();
+        }
         if (!save()) {
             sets.remove(setItem);
+            weight = previousWeight;
+            reps = previousReps;
+            exerciseIndex = previousExerciseIndex;
+            activeWorkoutStartedAtSeconds = previousWorkoutStartedAt;
             if (previousSet != null) {
                 if (previousRecovery == null) {
                     previousSet.remove("recoveryHeartRateDrop");
@@ -503,10 +693,31 @@ class GymStore {
         var restorePrompt = lastSetWasAutoPrompt;
         var restoreStatistics = lastSetStatistics;
         var previousLoggedEnd = lastSetPreviousLoggedEnd;
+        var previousWeight = weight;
+        var previousReps = reps;
+        var previousExerciseIndex = exerciseIndex;
+        var previousWorkoutStartedAt = activeWorkoutStartedAtSeconds;
         sets.remove(lastSet);
+        if (sets.size() == 0) {
+            activeWorkoutStartedAtSeconds = null;
+        }
         GymSession.removeSetBoost(boost);
+        weight = lastSet.get("weight");
+        reps = lastSet.get("reps");
+        for (var e = 0; e < exercises.size(); e += 1) {
+            if (exercises[e].toString().equals(lastSet.get("exerciseName").toString())) {
+                exerciseIndex = e;
+                break;
+            }
+        }
+        // Undo returns the exact values the athlete saved, including deliberate
+        // deviations from the plan. Removing the set already rewinds the plan cursor.
         if (!save()) {
             sets.add(lastSet);
+            weight = previousWeight;
+            reps = previousReps;
+            exerciseIndex = previousExerciseIndex;
+            activeWorkoutStartedAtSeconds = previousWorkoutStartedAt;
             GymSession.restoreSetBoost(boost);
             save();
             return false;
@@ -514,17 +725,19 @@ class GymStore {
         clearTransientSetActions();
         lastLoggedSetEndSeconds = previousLoggedEnd;
         restEndsAt = 0;
-        if (restorePrompt) {
-            GymSession.restoreAutoPromptAfterUndo(restoreStatistics);
-        } else {
-            GymSession.clearRecoveryTracking();
-        }
+        // Both automatic and manual commits clear the detector after saving. Undo
+        // must restore the captured interval/HR/calorie snapshot in either case;
+        // only the prompt visibility differs.
+        GymSession.restoreSetAfterUndo(restoreStatistics, restorePrompt);
         status = "SET UNDONE";
         return true;
     }
 
     static function cancelRest() {
         restEndsAt = 0;
+        // Once the next set has started, undoing the previous one would overwrite
+        // the detector and recovery state for the active set.
+        clearTransientSetActions();
     }
 
     static function clearTransientSetActions() {
@@ -614,6 +827,8 @@ class GymStore {
     static function clearWorkout() {
         sets = [];
         plan = [];
+        activeWorkoutStartedAtSeconds = null;
+        resumedWorkoutIntervalsInvalid = false;
         restEndsAt = 0;
         lastLoggedSetEndSeconds = 0;
         clearTransientSetActions();
@@ -621,8 +836,16 @@ class GymStore {
         save();
     }
 
+    static function markWorkoutResumed() {
+        if (sets.size() > 0) {
+            resumedWorkoutIntervalsInvalid = true;
+        }
+    }
+
     static function clearActiveWorkout() {
         sets = [];
+        activeWorkoutStartedAtSeconds = null;
+        resumedWorkoutIntervalsInvalid = false;
         restEndsAt = 0;
         lastLoggedSetEndSeconds = 0;
         clearTransientSetActions();
@@ -649,6 +872,8 @@ class GymStore {
         var requestId = nextRequestId("workout");
         var setCopies = [];
         var setMetrics = [];
+        var setIntervals = [];
+        var allIntervalsAvailable = !resumedWorkoutIntervalsInvalid;
         for (var i = 0; i < sets.size(); i += 1) {
             var setItem = sets[i];
             if (!(setItem instanceof Lang.Dictionary)) {
@@ -667,6 +892,12 @@ class GymStore {
             };
             setCopies.add(setCopy);
             setMetrics.add(compactSetMetrics(setItem));
+            var setInterval = setItem.get("setInterval");
+            if (isValidSetInterval(setInterval)) {
+                setIntervals.add(copySetInterval(setInterval));
+            } else {
+                allIntervalsAvailable = false;
+            }
         }
         if (setMetrics.size() > 0) {
             var latestRecovery = GymSession.recoveryHeartRateDrop();
@@ -674,23 +905,59 @@ class GymStore {
                 setMetrics[setMetrics.size() - 1][5] = latestRecovery;
             }
         }
+        var messageStartedAt = isValidWorkoutStartedAtSeconds(activeWorkoutStartedAtSeconds) ?
+            activeWorkoutStartedAtSeconds : GymSession.startedAt;
         var message = {
             "type" => "create_workout",
             "bindingVersion" => bindingVersion,
             "requestId" => requestId,
             "accountBinding" => accountBinding,
             "deviceBinding" => deviceBinding,
-            "startedAtSeconds" => GymSession.startedAt,
-            "durationSeconds" => GymSession.elapsedSeconds,
-            "gymCalories" => GymSession.gymCalories,
-            "garminCalories" => GymSession.garminCalories,
-            "avgHeartRate" => GymSession.avgHr,
-            "maxHeartRate" => GymSession.maxHr,
-            "lastHeartRate" => GymSession.hr,
-            "heartRateZone" => GymSession.zone,
+            // New workouts persist their logical origin with the first set. Only
+            // legacy in-progress workouts without that key fall back to the honest
+            // beginning of the current resumed recording segment.
+            "startedAtSeconds" => messageStartedAt,
             "sets" => setCopies,
             "setMetrics" => setMetrics
         };
+        if (!resumedWorkoutIntervalsInvalid) {
+            message.put("durationSeconds", GymSession.elapsedSeconds);
+            message.put("gymCalories", GymSession.gymCalories);
+            message.put("avgHeartRate", GymSession.avgHr);
+            message.put("maxHeartRate", GymSession.maxHr);
+            message.put("heartRateZone", GymSession.zone);
+            // Optional scalar diagnostics must be absent, rather than explicit
+            // null, so released phone parsers can accept a workout when the
+            // Garmin system calorie or heart-rate source is unavailable.
+            if (GymSession.garminCalories != null) {
+                message.put("garminCalories", GymSession.garminCalories);
+            }
+            if (GymSession.hr != null) {
+                message.put("lastHeartRate", GymSession.hr);
+            }
+        }
+        if (allIntervalsAvailable && setIntervals.size() == setCopies.size() &&
+            areSetIntervalsConsistent(
+                setIntervals,
+                GymSession.elapsedSeconds,
+                GymSession.gymCalories,
+                GymSession.garminCalories
+            )) {
+            message.put("setIntervals", setIntervals);
+        }
+        if (plan.size() > 0) {
+            var plannedTargetSetCount = plan.size();
+            // Released phone parsers require the legacy field to be at least the
+            // number of actual sets. Keep that compatibility envelope while the
+            // exact target/progress pair carries honest plan completion for new clients.
+            var plannedSetCount = plannedTargetSetCount;
+            if (plannedSetCount < setCopies.size()) {
+                plannedSetCount = setCopies.size();
+            }
+            message.put("plannedSetCount", plannedSetCount);
+            message.put("plannedTargetSetCount", plannedTargetSetCount);
+            message.put("completedPlannedSetCount", completedPlannedSetCount());
+        }
         if (isValidAccountBinding(pairingGeneration)) {
             message.put("pairingGeneration", pairingGeneration.toString());
         }
@@ -1310,6 +1577,8 @@ class GymStore {
         pending = nextPending;
         sets = [];
         plan = [];
+        activeWorkoutStartedAtSeconds = null;
+        resumedWorkoutIntervalsInvalid = false;
         restEndsAt = 0;
         lastLoggedSetEndSeconds = 0;
         clearTransientSetActions();
@@ -1347,6 +1616,8 @@ class GymStore {
         if (queued) {
             sets = [];
             plan = [];
+            activeWorkoutStartedAtSeconds = null;
+            resumedWorkoutIntervalsInvalid = false;
             restEndsAt = 0;
             lastLoggedSetEndSeconds = 0;
             clearTransientSetActions();
@@ -1419,6 +1690,8 @@ class GymStore {
         sets = [];
         plan = [];
         pending = [];
+        activeWorkoutStartedAtSeconds = null;
+        resumedWorkoutIntervalsInvalid = false;
         deferredSync = null;
         processedSyncIds = [];
         // The phone fence is device-global, not account-scoped. Keeping it prevents a
@@ -1533,6 +1806,9 @@ class GymStore {
             "sensitivityIndex" => sensitivityIndex,
             "language" => language
         };
+        if (isValidWorkoutStartedAtSeconds(activeWorkoutStartedAtSeconds)) {
+            snapshot.put("activeWorkoutStartedAtSeconds", activeWorkoutStartedAtSeconds);
+        }
         if (estimatedValueBytes(snapshot) > maxEstimatedStoreBytes) {
             return false;
         }
@@ -1563,11 +1839,15 @@ class GymStore {
         autoPromptEnabled = snapshot.get("autoPromptEnabled");
         sensitivityIndex = snapshot.get("sensitivityIndex");
         language = snapshot.get("language").toString();
+        var snapshotStartedAt = snapshot.get("activeWorkoutStartedAtSeconds");
+        activeWorkoutStartedAtSeconds = sets.size() > 0 &&
+            isValidWorkoutStartedAtSeconds(snapshotStartedAt) ? snapshotStartedAt : null;
         return true;
     }
 
     static function isValidLegacyCurrentQuarantine(value) {
-        if (!(value instanceof Lang.Dictionary) || value.size() != 12 ||
+        if (!(value instanceof Lang.Dictionary) ||
+            (value.size() != 12 && value.size() != 13) ||
             !(value.get("version") instanceof Lang.Number) || value.get("version") != 1 ||
             !isValidExerciseList(value.get("exercises"), maxPlanSets) ||
             !isValidSetList(value.get("sets"), maxWorkoutSets, true) ||
@@ -1578,7 +1858,10 @@ class GymStore {
             !isValidRestSeconds(value.get("restSecondsDefault")) ||
             !(value.get("autoPromptEnabled") instanceof Lang.Boolean) ||
             !isValidSensitivity(value.get("sensitivityIndex")) ||
-            !isBoundedText(value.get("language"), 2)) {
+            !isBoundedText(value.get("language"), 2) ||
+            (value.get("activeWorkoutStartedAtSeconds") != null &&
+                (!isValidWorkoutStartedAtSeconds(value.get("activeWorkoutStartedAtSeconds")) ||
+                    setListCount(value.get("sets")) == 0))) {
             return false;
         }
         var savedLanguage = value.get("language").toString();
@@ -1636,6 +1919,14 @@ class GymStore {
         ];
     }
 
+    static function copySetInterval(source) {
+        var copy = [];
+        for (var i = 0; i < source.size(); i += 1) {
+            copy.add(source[i]);
+        }
+        return copy;
+    }
+
     static function copyOptionalSetMetrics(target, source) {
         var keys = [
             "activeSeconds", "restBeforeSeconds", "startHeartRate", "peakHeartRate",
@@ -1646,6 +1937,10 @@ class GymStore {
             if (value != null) {
                 target.put(keys[i], value);
             }
+        }
+        var setInterval = source.get("setInterval");
+        if (isValidSetInterval(setInterval)) {
+            target.put("setInterval", copySetInterval(setInterval));
         }
     }
 
@@ -1932,7 +2227,12 @@ class GymStore {
         estimate += estimatedValueBytes(deviceBinding);
         estimate += estimatedValueBytes(pairingGeneration);
         estimate += estimatedValueBytes(cloudDeviceBinding);
+        estimate += estimatedValueBytes(activeWorkoutStartedAtSeconds);
         return estimate <= maxEstimatedStoreBytes;
+    }
+
+    static function isValidWorkoutStartedAtSeconds(value) {
+        return isBoundedInteger(value, 946684800, 2147483647);
     }
 
     static function estimatedValueBytes(value) {
@@ -2111,7 +2411,7 @@ class GymStore {
         var totalNameBytes = 0;
         for (var i = 0; i < value.size(); i += 1) {
             var item = value[i];
-            if (!(item instanceof Lang.Dictionary) || item.size() > 10 ||
+            if (!(item instanceof Lang.Dictionary) || item.size() > 11 ||
                 !isValidExerciseName(item.get("exerciseName")) ||
                 !isValidWeight(item.get("weight")) ||
                 !isValidReps(item.get("reps")) ||
@@ -2121,7 +2421,9 @@ class GymStore {
                 !isOptionalBoundedNumber(item.get("peakHeartRate"), 0.0, 240.0) ||
                 !isOptionalBoundedNumber(item.get("endHeartRate"), 0.0, 240.0) ||
                 !isOptionalBoundedNumber(item.get("recoveryHeartRateDrop"), 0.0, 240.0) ||
-                !isOptionalBoundedNumber(item.get("detectionConfidence"), 0.0, 100.0)) {
+                !isOptionalBoundedNumber(item.get("detectionConfidence"), 0.0, 100.0) ||
+                (item.get("setInterval") != null &&
+                    !isValidSetInterval(item.get("setInterval")))) {
                 return false;
             }
             totalNameBytes += item.get("exerciseName").toString().toUtf8Array().size();
@@ -2130,6 +2432,102 @@ class GymStore {
             }
         }
         return true;
+    }
+
+    static function isValidSetInterval(value) {
+        if (!(value instanceof Lang.Array) || value.size() != 10 ||
+            !isBoundedInteger(value[0], 0, 604800) ||
+            !isBoundedInteger(value[1], 0, 604800) ||
+            value[1] < value[0] || value[1] - value[0] > 7200 ||
+            !isBoundedNumber(value[2], 0.0, 100000.0) ||
+            !isOptionalBoundedInteger(value[3], 0, 100000)) {
+            return false;
+        }
+        var zoneSeconds = 0;
+        for (var i = 4; i < 10; i += 1) {
+            if (!isBoundedInteger(value[i], 0, 7200)) {
+                return false;
+            }
+            zoneSeconds += value[i];
+        }
+        return zoneSeconds <= value[1] - value[0];
+    }
+
+    static function isValidSetIntervalsList(value, expectedSets) {
+        if (!(expectedSets instanceof Lang.Array) || !(value instanceof Lang.Array) ||
+            value.size() != expectedSets.size() || value.size() > maxWorkoutSets) {
+            return false;
+        }
+        for (var i = 0; i < value.size(); i += 1) {
+            if (!isValidSetInterval(value[i])) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    static function areSetIntervalsConsistent(value, durationSeconds, gymTotal, garminTotal) {
+        if (!(value instanceof Lang.Array) ||
+            !isBoundedNumber(durationSeconds, 0.0, 604800.0) ||
+            !isOptionalBoundedNumber(gymTotal, 0.0, 10000000.0) ||
+            !isOptionalBoundedNumber(garminTotal, 0.0, 10000000.0)) {
+            return false;
+        }
+        var previousEnd = 0;
+        var gymSum = 0.0;
+        var garminSum = 0.0;
+        var hasGarminSlice = false;
+        for (var i = 0; i < value.size(); i += 1) {
+            var interval = value[i];
+            if (!isValidSetInterval(interval) || interval[0] < previousEnd ||
+                interval[1] > durationSeconds) {
+                return false;
+            }
+            previousEnd = interval[1];
+            gymSum += interval[2].toFloat();
+            if (interval[3] != null) {
+                hasGarminSlice = true;
+                garminSum += interval[3].toFloat();
+            }
+        }
+        if (value.size() > 0 && gymTotal == null) {
+            return false;
+        }
+        if (gymTotal != null && gymSum > gymTotal.toFloat() + 0.1) {
+            return false;
+        }
+        if (hasGarminSlice && garminTotal == null) {
+            return false;
+        }
+        return garminTotal == null || garminSum <= garminTotal.toFloat() + 0.1;
+    }
+
+    static function isValidPlannedSetCount(value, actualSetCount) {
+        return isBoundedInteger(value, 1, maxPlanSets) && value >= actualSetCount;
+    }
+
+    static function isValidPlannedTargetSetCount(value) {
+        return isBoundedInteger(value, 1, maxPlanSets);
+    }
+
+    static function isValidCompletedPlannedSetCount(value, targetCount, actualSetCount) {
+        if (!isValidPlannedTargetSetCount(targetCount) ||
+            !isBoundedInteger(value, 0, maxPlanSets)) {
+            return false;
+        }
+        var maximum = targetCount < actualSetCount ? targetCount : actualSetCount;
+        return value <= maximum;
+    }
+
+    static function isValidExactPlannedProgress(legacyCount, targetCount, completedCount, actualSetCount) {
+        if (targetCount == null && completedCount == null) {
+            return true;
+        }
+        return isValidPlannedSetCount(legacyCount, actualSetCount) &&
+            isValidPlannedTargetSetCount(targetCount) &&
+            targetCount <= legacyCount &&
+            completedCount != null &&
+            isValidCompletedPlannedSetCount(completedCount, targetCount, actualSetCount);
     }
 
     static function isValidPendingList(value) {
@@ -2169,7 +2567,7 @@ class GymStore {
     }
 
     static function isValidLegacyWorkoutMessage(message) {
-        if (!(message instanceof Lang.Dictionary) || message.size() > 16) {
+        if (!(message instanceof Lang.Dictionary) || message.size() > 18) {
             return false;
         }
         var type = message.get("type");
@@ -2185,7 +2583,22 @@ class GymStore {
             isOptionalBoundedNumber(message.get("heartRateZone"), 0.0, 5.0) &&
             isValidSetList(message.get("sets"), maxWorkoutSets, false) &&
             (message.get("setMetrics") == null ||
-                isValidSetMetricsList(message.get("setMetrics"), message.get("sets")));
+                isValidSetMetricsList(message.get("setMetrics"), message.get("sets"))) &&
+            (message.get("setIntervals") == null ||
+                (isValidSetIntervalsList(message.get("setIntervals"), message.get("sets")) &&
+                    areSetIntervalsConsistent(
+                        message.get("setIntervals"),
+                        message.get("durationSeconds"),
+                        message.get("gymCalories"),
+                        message.get("garminCalories")
+                    ))) &&
+            (message.get("plannedSetCount") == null ||
+                isValidPlannedSetCount(
+                    message.get("plannedSetCount"),
+                    setListCount(message.get("sets"))
+                )) &&
+            message.get("plannedTargetSetCount") == null &&
+            message.get("completedPlannedSetCount") == null;
     }
 
     static function isValidSetMetricsList(value, expectedSets) {
@@ -2230,6 +2643,12 @@ class GymStore {
             if (message.get("setMetrics") != null) {
                 safe.put("setMetrics", message.get("setMetrics"));
             }
+            if (message.get("setIntervals") != null) {
+                safe.put("setIntervals", message.get("setIntervals"));
+            }
+            if (message.get("plannedSetCount") != null) {
+                safe.put("plannedSetCount", message.get("plannedSetCount"));
+            }
             copy.add(safe);
         }
         return copy;
@@ -2257,7 +2676,7 @@ class GymStore {
     }
 
     static function isValidWorkoutMessage(message) {
-        if (!(message instanceof Lang.Dictionary) || message.size() > 16) {
+        if (!(message instanceof Lang.Dictionary) || message.size() > 20) {
             return false;
         }
         var version = message.get("bindingVersion");
@@ -2269,7 +2688,7 @@ class GymStore {
             isBoundedText(message.get("deviceBinding"), maxBindingLength) &&
             isValidOptionalAccountBinding(message.get("pairingGeneration")) &&
             isBoundedNumber(message.get("startedAtSeconds"), 946684800.0, 2147483647.0) &&
-            isBoundedNumber(message.get("durationSeconds"), 0.0, 604800.0) &&
+            isOptionalBoundedNumber(message.get("durationSeconds"), 0.0, 604800.0) &&
             isOptionalBoundedNumber(message.get("gymCalories"), 0.0, 10000000.0) &&
             isOptionalBoundedNumber(message.get("garminCalories"), 0.0, 10000000.0) &&
             isOptionalBoundedNumber(message.get("avgHeartRate"), 0.0, 300.0) &&
@@ -2278,7 +2697,26 @@ class GymStore {
             isOptionalBoundedNumber(message.get("heartRateZone"), 0.0, 5.0) &&
             isValidSetList(message.get("sets"), maxWorkoutSets, false) &&
             (message.get("setMetrics") == null ||
-                isValidSetMetricsList(message.get("setMetrics"), message.get("sets")));
+                isValidSetMetricsList(message.get("setMetrics"), message.get("sets"))) &&
+            (message.get("setIntervals") == null ||
+                (isValidSetIntervalsList(message.get("setIntervals"), message.get("sets")) &&
+                    areSetIntervalsConsistent(
+                        message.get("setIntervals"),
+                        message.get("durationSeconds"),
+                        message.get("gymCalories"),
+                        message.get("garminCalories")
+                    ))) &&
+            (message.get("plannedSetCount") == null ||
+                isValidPlannedSetCount(
+                    message.get("plannedSetCount"),
+                    setListCount(message.get("sets"))
+                )) &&
+            isValidExactPlannedProgress(
+                message.get("plannedSetCount"),
+                message.get("plannedTargetSetCount"),
+                message.get("completedPlannedSetCount"),
+                setListCount(message.get("sets"))
+            );
     }
 
     static function isValidOptionalAccountBinding(value) {
@@ -2297,6 +2735,15 @@ class GymStore {
         return value == null || isBoundedNumber(value, minimum, maximum);
     }
 
+    static function isBoundedInteger(value, minimum, maximum) {
+        return (value instanceof Lang.Number || value instanceof Lang.Long) &&
+            value >= minimum && value <= maximum;
+    }
+
+    static function isOptionalBoundedInteger(value, minimum, maximum) {
+        return value == null || isBoundedInteger(value, minimum, maximum);
+    }
+
     static function isNumeric(value) {
         return value instanceof Lang.Number || value instanceof Lang.Float ||
             value instanceof Lang.Long || value instanceof Lang.Double;
@@ -2308,6 +2755,10 @@ class GymStore {
             total += setList[i].get("exerciseName").toString().toUtf8Array().size();
         }
         return total;
+    }
+
+    static function setListCount(value) {
+        return value instanceof Lang.Array ? value.size() : 0;
     }
 
     static function isValidProcessedSyncIds(value) {

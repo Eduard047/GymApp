@@ -33,10 +33,13 @@
     <string name="action_add_workout">Додати тренування</string>
     <string name="action_add_exercise">Додати вправу</string>
     <string name="action_add_set">Додати підхід</string>
+    <string name="action_add_planned_set">Додати запланований підхід</string>
+    <string name="action_log_set_and_rest">Записати підхід · відпочинок %1$d с</string>
     <string name="action_add_set_last_weight">Швидко + Остання</string>
     <string name="action_copy_last_set">Копіювати попередній</string>
     <string name="action_copy_last_plus">Копіювати +2.5 кг</string>
     <string name="action_save_workout">Зберегти тренування</string>
+    <string name="action_save_completed_workout">Зберегти як виконане тренування</string>
     <string name="action_delete">Видалити</string>
     <string name="action_deleting">Видалення…</string>
     <string name="action_edit">Редагувати</string>
@@ -203,7 +206,7 @@
     <string name="hint_optional">Необовʼязково</string>
     <string name="label_reps">Повтори</string>
     <string name="add_workout_intro_title">Склади тренування на сьогодні</string>
-    <string name="add_workout_intro_supporting">Записуй план швидко та тримай темп завдяки розумним ярликам для підходів.</string>
+    <string name="add_workout_intro_supporting">Створи заплановані рядки, надішли їх як цілі Garmin або збережи всі рядки як виконані.</string>
     <string name="focus_lens_eyebrow">ТВІЙ НАСТУПНИЙ КРОК</string>
     <string name="focus_lens_title">Склади тренування на сьогодні</string>
     <string name="focus_lens_supporting">Починай, коли готовий. Складай тренування поступово, у своєму темпі.</string>
@@ -236,6 +239,8 @@
     <string name="template_picker_empty">Попередніх тренувань ще немає.</string>
     <string name="template_picker_summary">%1$d вправ • %2$d підходів • %3$s обсяг</string>
     <string name="add_workout_save_hint">Перевір підходи та збережи, щоб одразу перейти в деталі тренування.</string>
+    <string name="add_workout_plan_mode_hint">Режим плану: ці рядки надсилаються на Garmin як цілі й не записуються як виконані під час синхронізації.</string>
+    <string name="add_workout_completed_mode_hint">Режим виконаного тренування: збереження одразу додає всі заплановані рядки до історії та підсумку.</string>
     <string name="note_template_push">День жиму</string>
     <string name="note_template_pull">День тяги</string>
     <string name="note_template_legs">День ніг</string>
@@ -296,6 +301,8 @@
     <string name="message_set_deleted">Підхід видалено</string>
     <string name="message_delete_target_changed">Видалення зупинено: збережені дані змінилися. Перевір їх і спробуй ще раз.</string>
     <string name="message_delete_failed">Не вдалося видалити збережені дані. Цей запит нічого не видалив.</string>
+    <string name="message_add_set_failed">Не вдалося записати підхід. Таймер відпочинку не запущено.</string>
+    <string name="message_rest_timer_save_failed">Підхід збережено, але не вдалося запустити таймер відпочинку.</string>
     <string name="message_invalid_set_input">Введіть коректні повтори та необовʼязкову вагу.</string>
     <string name="message_exercise_error">Не вдалося зберегти вправу. Назва може вже існувати.</string>
 
@@ -586,6 +593,15 @@
     <string name="garmin_intensity_solid">Активно</string>
     <string name="garmin_intensity_high">Високо</string>
     <string name="garmin_kcal_explainer">Gym ккал збережені з формули силового тренування GymApp на Garmin. Garmin ккал — це системне значення, яке Garmin Connect враховує в денних калоріях.</string>
+    <string name="garmin_partial_sets_status">Початковий результат Garmin: виконано %1$d із %2$d запланованих підходів.</string>
+    <string name="garmin_set_intervals_title">Хронологічні підходи з годинника</string>
+    <string name="garmin_set_intervals_supporting">S# відповідає хронології годинника й може відрізнятися від порядку підходів, згрупованих за вправами. Кожен рядок — частина загальних показників тренування, записана під час цього підходу з годинника.</string>
+    <string name="garmin_watch_set_label">Підхід з годинника S%1$d</string>
+    <string name="garmin_set_interval_active">активність %1$s</string>
+    <string name="garmin_set_interval_calories">Gym %1$s ккал · Garmin %2$s ккал</string>
+    <string name="garmin_set_interval_zones">Зони пульсу (секунди): %1$s</string>
+    <string name="garmin_set_interval_no_zones">Для цього підходу немає коректних вимірів зони пульсу.</string>
+    <string name="garmin_set_intervals_omitted">Ще %1$d рядків відрізків не ввійшли до нотатки, щоб тренування гарантовано імпортувалося.</string>
     <string name="workout_comparison_eyebrow">Точне порівняння</string>
     <string name="workout_comparison_title">Проти попереднього схожого тренування</string>
     <string name="workout_comparison_supporting">%1$d однакових вправ • попереднє тренування %2$s</string>

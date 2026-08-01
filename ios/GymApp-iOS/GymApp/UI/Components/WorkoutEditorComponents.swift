@@ -219,7 +219,6 @@ struct WorkoutSetDraftRow: View {
 @MainActor
 struct WorkoutDraftExerciseCard: View {
     @Binding var draft: WorkoutEditorExerciseDraft
-    @ObservedObject var restTimers: RestTimerManager
 
     let exerciseID: UUID
     let exerciseMediaOwnerKey: String
@@ -227,8 +226,6 @@ struct WorkoutDraftExerciseCard: View {
     let lastWeight: Double?
     let onDeleteExercise: () -> Void
     @State private var showingMedia = false
-
-    private var timerID: String { "draft-exercise-\(draft.id.uuidString)" }
 
     var body: some View {
         GymPanel(highlighted: true) {
@@ -275,12 +272,6 @@ struct WorkoutDraftExerciseCard: View {
                     )
                 }
 
-                WorkoutRestTimerControls(
-                    manager: restTimers,
-                    timerID: timerID,
-                    exerciseName: exerciseName
-                )
-
                 ForEach(Array(draft.sets.enumerated()), id: \.element.id) { index, item in
                     WorkoutSetDraftRow(
                         set: binding(for: item.id),
@@ -301,12 +292,11 @@ struct WorkoutDraftExerciseCard: View {
                             reps: source?.reps ?? 10
                         )
                     )
-                    restTimers.start(id: timerID, seconds: 90, title: exerciseName)
                 } label: {
-                    Label("Add set · start 90 sec rest", systemImage: "plus.circle.fill")
+                    Label("Add planned set", systemImage: "plus.circle.fill")
                 }
                 .buttonStyle(GymSecondaryButtonStyle())
-                .accessibilityHint("Copies the latest values and starts a ninety second rest timer")
+                .accessibilityHint("Copies the latest values into a planned set")
             }
         }
         .sheet(isPresented: $showingMedia) {

@@ -809,6 +809,22 @@
         }
       }
     },
+    "Add planned set" : {
+      "localizations" : {
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Додати запланований підхід"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Добавить запланированный подход"
+          }
+        }
+      }
+    },
     "Add set · start 90 sec rest" : {
       "localizations" : {
         "uk" : {
@@ -11779,6 +11795,54 @@
       "localizations" : {
         "uk" : { "stringUnit" : { "state" : "translated", "value" : "Спереду" } },
         "ru" : { "stringUnit" : { "state" : "translated", "value" : "Спереди" } }
+      }
+    },
+    "Plan builder" : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Конструктор плану" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Конструктор плана" } }
+      }
+    },
+    "Planned exercises and sets" : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Заплановані вправи та підходи" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Запланированные упражнения и подходы" } }
+      }
+    },
+    "Planned rows are targets. They do not start rest timers or count as completed until you save them." : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Заплановані рядки — це цілі. Вони не запускають таймери відпочинку й не вважаються виконаними, доки ви їх не збережете." } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Запланированные строки — это цели. Они не запускают таймеры отдыха и не считаются выполненными, пока вы их не сохраните." } }
+      }
+    },
+    "Garmin plan mode: after saving, every planned row is sent to the selected watch as a target. The watch logs what you actually complete." : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Режим плану Garmin: після збереження кожен запланований рядок надсилається на вибраний годинник як ціль. Годинник записує те, що ви фактично виконаєте." } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Режим плана Garmin: после сохранения каждая запланированная строка отправляется на выбранные часы как цель. Часы записывают то, что вы фактически выполните." } }
+      }
+    },
+    "Completed mode: saving immediately adds every planned row to workout history and summaries." : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Режим виконаного тренування: збереження негайно додає кожен запланований рядок до історії та підсумків тренувань." } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Режим выполненной тренировки: сохранение сразу добавляет каждую запланированную строку в историю и сводки тренировок." } }
+      }
+    },
+    "Save as completed workout" : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Зберегти як виконане тренування" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Сохранить как выполненную тренировку" } }
+      }
+    },
+    "Adds every planned row to history as completed and also queues the rows as Garmin targets" : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Додає кожен запланований рядок до історії як виконаний і також ставить рядки в чергу як цілі Garmin" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Добавляет каждую запланированную строку в историю как выполненную и также ставит строки в очередь как цели Garmin" } }
+      }
+    },
+    "Adds every planned row to history and summaries as completed" : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Додає кожен запланований рядок до історії та підсумків як виконаний" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Добавляет каждую запланированную строку в историю и сводки как выполненную" } }
       }
     },
     "Back" : {

@@ -1,6 +1,8 @@
 package com.example.gymapp.garmin
 
 import com.example.gymapp.data.repository.NamedWorkoutSetDraft
+import com.example.gymapp.data.repository.WorkoutDataLimits
+import com.example.gymapp.util.AppLanguage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -467,6 +469,72 @@ class GarminSyncSecurityTest {
         assertEquals(168, parsed.maximumHeartRate)
         assertEquals(3, parsed.endingHeartRateZone)
         assertEquals(listOf(null), parsed.setStatistics)
+
+        val resumedSegment = parseGarminWorkoutCommand(
+            validCommand() - setOf(
+                "durationSeconds",
+                "gymCalories",
+                "garminCalories",
+                "avgHeartRate",
+                "maxHeartRate",
+                "heartRateZone"
+            ),
+            nowMillis
+        )
+        assertNotNull(resumedSegment)
+        assertNull(resumedSegment?.durationSeconds)
+        assertNull(resumedSegment?.gymCalories)
+        assertNull(resumedSegment?.garminCalories)
+        assertNull(resumedSegment?.averageHeartRate)
+        assertNull(resumedSegment?.maximumHeartRate)
+        assertNull(resumedSegment?.endingHeartRateZone)
+    }
+
+    @Test
+    fun releasedWatchExplicitNullMetricsRemainCompatibleButMalformedValuesFailClosed() {
+        val nowMillis = 1_800_000_000_000L
+        val explicitNullMetrics = validCommand().toMutableMap().apply {
+            listOf(
+                "durationSeconds",
+                "gymCalories",
+                "garminCalories",
+                "avgHeartRate",
+                "maxHeartRate",
+                "lastHeartRate",
+                "heartRateZone"
+            ).forEach { key -> put(key, null) }
+        }
+
+        val parsed = parseGarminWorkoutCommand(explicitNullMetrics, nowMillis)
+
+        assertNotNull(parsed)
+        assertNull(parsed?.durationSeconds)
+        assertNull(parsed?.gymCalories)
+        assertNull(parsed?.garminCalories)
+        assertNull(parsed?.averageHeartRate)
+        assertNull(parsed?.maximumHeartRate)
+        assertNull(parsed?.endingHeartRateZone)
+
+        listOf(
+            "garminCalories" to "430",
+            "garminCalories" to -1,
+            "lastHeartRate" to "120",
+            "lastHeartRate" to 301,
+            "avgHeartRate" to 120.5,
+            "durationSeconds" to Double.POSITIVE_INFINITY
+        ).forEach { (key, value) ->
+            assertNull(
+                key,
+                parseGarminWorkoutCommand(
+                    explicitNullMetrics + (key to value),
+                    nowMillis
+                )
+            )
+        }
+        assertNull(
+            parseGarminWorkoutCommand(validCommand() + ("requestId" to null), nowMillis)
+        )
+        assertNull(parseGarminWorkoutCommand(validCommand() + ("sets" to null), nowMillis))
     }
 
     @Test
@@ -549,6 +617,343 @@ class GarminSyncSecurityTest {
                 validCommand() + ("setMetrics" to listOf(metrics.dropLast(1))),
                 nowMillis
             )
+        )
+    }
+
+    @Test
+    fun workoutParserKeepsPartialMultiSetValuesAndBoundedIntervals() {
+        val nowMillis = 1_800_000_000_000L
+        val sets = listOf(
+            validSet() + mapOf("weight" to 82.5, "reps" to 8),
+            validSet() + mapOf("weight" to 80.0, "reps" to 7),
+            validSet() + mapOf("weight" to 77.5, "reps" to 6)
+        )
+        val intervals = listOf(
+            listOf(0, 42, 5.5, 6, 0, 0, 12, 20, 10, 0),
+            listOf(90, 128, 4.25, null, 0, 3, 15, 15, 5, 0),
+            listOf(180, 180, 82.5 * 8.0 / 700.0, 0, 0, 0, 0, 0, 0, 0)
+        )
+        val parsed = parseGarminWorkoutCommand(
+            validCommand() + mapOf(
+                "sets" to sets,
+                "setIntervals" to intervals,
+                "plannedSetCount" to 5,
+                "plannedTargetSetCount" to 5,
+                "completedPlannedSetCount" to 2
+            ),
+            nowMillis
+        )
+
+        assertNotNull(parsed)
+        checkNotNull(parsed)
+        assertEquals(
+            listOf(
+                NamedWorkoutSetDraft("Bench Press", 82.5, 8),
+                NamedWorkoutSetDraft("Bench Press", 80.0, 7),
+                NamedWorkoutSetDraft("Bench Press", 77.5, 6)
+            ),
+            parsed.sets
+        )
+        assertEquals(5, parsed.plannedSetCount)
+        assertEquals(5, parsed.plannedTargetSetCount)
+        assertEquals(2, parsed.completedPlannedSetCount)
+        assertEquals(
+            GarminSetInterval(
+                startOffsetSeconds = 0,
+                endOffsetSeconds = 42,
+                gymCalories = 5.5,
+                garminCalories = 6,
+                heartRateZoneSeconds = listOf(0, 0, 12, 20, 10, 0)
+            ),
+            parsed.setIntervals.first()
+        )
+        val note = garminWorkoutNote(parsed, AppLanguage.EN)
+        assertTrue(note.contains("Completed 2/5 sets"))
+        assertTrue(note.contains("S1 I0-42s K5.5/6 Z0/0/12/20/10/0s"))
+        assertTrue(note.contains("S2 I90-128s K4.25/- Z0/3/15/15/5/0s"))
+        assertTrue(note.contains("S3 I180-180s K0.94/0 Z0/0/0/0/0/0s"))
+        assertTrue(WorkoutDataLimits.isValidNote(note))
+    }
+
+    @Test
+    fun exactPlannedTargetKeepsLegacyPlannedCountCompatibleWithExtraSets() {
+        val nowMillis = 1_800_000_000_000L
+        val wireCommand = validCommand() + mapOf(
+            "sets" to List(4) { validSet() },
+            "plannedSetCount" to 4,
+            "plannedTargetSetCount" to 3,
+            "completedPlannedSetCount" to 2
+        )
+        val parsed = checkNotNull(parseGarminWorkoutCommand(wireCommand, nowMillis))
+
+        assertEquals(4, parsed.sets.size)
+        assertEquals(4, parsed.plannedSetCount)
+        assertEquals(3, parsed.plannedTargetSetCount)
+        assertEquals(2, parsed.completedPlannedSetCount)
+        assertTrue(garminWorkoutNote(parsed, AppLanguage.EN).contains("Completed 2/3 sets"))
+
+        val legacyView = wireCommand - setOf(
+            "plannedTargetSetCount",
+            "completedPlannedSetCount"
+        )
+        val legacyParsed = checkNotNull(parseGarminWorkoutCommand(legacyView, nowMillis))
+        assertEquals(4, legacyParsed.plannedSetCount)
+        assertEquals(
+            canonicalGarminWorkoutPayloadDigest(legacyParsed),
+            canonicalGarminWorkoutPayloadDigest(parsed)
+        )
+    }
+
+    @Test
+    fun workoutParserRejectsMalformedSetIntervalsAndImpossibleCompletedCounts() {
+        val nowMillis = 1_800_000_000_000L
+        val validInterval = listOf<Any?>(0, 42, 5.5, 6, 0, 0, 12, 20, 10, 0)
+
+        assertEquals(
+            GarminWorkoutParseIssue.SetIntervals,
+            parseGarminWorkoutCommandResult(
+                validCommand() + ("setIntervals" to emptyList<Any>()),
+                nowMillis
+            ).issue
+        )
+        assertEquals(
+            GarminWorkoutParseIssue.SetIntervalsShape,
+            parseGarminWorkoutCommandResult(
+                validCommand() + ("setIntervals" to listOf(validInterval.dropLast(1))),
+                nowMillis
+            ).issue
+        )
+        assertEquals(
+            GarminWorkoutParseIssue.SetIntervalsOffsets,
+            parseGarminWorkoutCommandResult(
+                validCommand() + (
+                    "setIntervals" to listOf(validInterval.toMutableList().also {
+                        it[0] = 43
+                        it[1] = 42
+                    })
+                    ),
+                nowMillis
+            ).issue
+        )
+        assertEquals(
+            GarminWorkoutParseIssue.SetIntervalsGymCalories,
+            parseGarminWorkoutCommandResult(
+                validCommand() + (
+                    "setIntervals" to listOf(validInterval.toMutableList().also { it[2] = Double.NaN })
+                    ),
+                nowMillis
+            ).issue
+        )
+        assertEquals(
+            GarminWorkoutParseIssue.SetIntervalsGarminCalories,
+            parseGarminWorkoutCommandResult(
+                validCommand() + (
+                    "setIntervals" to listOf(validInterval.toMutableList().also { it[3] = 1.5 })
+                    ),
+                nowMillis
+            ).issue
+        )
+        assertEquals(
+            GarminWorkoutParseIssue.SetIntervalsHeartRateZones,
+            parseGarminWorkoutCommandResult(
+                validCommand() + (
+                    "setIntervals" to listOf(validInterval.toMutableList().also { it[4] = 1 })
+                    ),
+                nowMillis
+            ).issue
+        )
+        val extraSetCommand = validCommand() + mapOf(
+            "sets" to listOf(validSet(), validSet(), validSet()),
+            "plannedSetCount" to 3,
+            "plannedTargetSetCount" to 2,
+            "completedPlannedSetCount" to 0
+        )
+        val extraSetParsed = parseGarminWorkoutCommand(extraSetCommand, nowMillis)
+        assertNotNull(extraSetParsed)
+        assertEquals(0, extraSetParsed?.completedPlannedSetCount)
+        assertTrue(
+            garminWorkoutNote(checkNotNull(extraSetParsed), AppLanguage.EN)
+                .contains("Completed 0/2 sets")
+        )
+
+        listOf(
+            validCommand() + ("completedPlannedSetCount" to 0),
+            validCommand() + mapOf(
+                "plannedSetCount" to 1,
+                "plannedTargetSetCount" to 1
+            ),
+            validCommand() + mapOf(
+                "plannedSetCount" to 1,
+                "plannedTargetSetCount" to 1,
+                "completedPlannedSetCount" to 2
+            ),
+            validCommand() + mapOf(
+                "plannedSetCount" to 3,
+                "plannedTargetSetCount" to 3,
+                "completedPlannedSetCount" to 2
+            ),
+            validCommand() + mapOf(
+                "plannedSetCount" to 3,
+                "plannedTargetSetCount" to 3,
+                "completedPlannedSetCount" to -1
+            ),
+            validCommand() + mapOf(
+                "plannedSetCount" to 3,
+                "plannedTargetSetCount" to 3,
+                "completedPlannedSetCount" to 1.5
+            )
+        ).forEach { command ->
+            assertEquals(
+                GarminWorkoutParseIssue.CompletedPlannedSetCount,
+                parseGarminWorkoutCommandResult(command, nowMillis).issue
+            )
+        }
+    }
+
+    @Test
+    fun workoutParserEnforcesStructuredIntervalTimelineAndAggregateTotals() {
+        val nowMillis = 1_800_000_000_000L
+        val sets = listOf(validSet(), validSet())
+        val first = listOf<Any?>(0, 42, 5.0, 5, 0, 0, 12, 20, 10, 0)
+        val second = listOf<Any?>(42, 50, 5.0, 5, 0, 0, 0, 8, 0, 0)
+        val baseline = validCommand() + mapOf(
+            "sets" to sets,
+            "setIntervals" to listOf(first, second),
+            "durationSeconds" to 50,
+            "gymCalories" to 9.91,
+            "garminCalories" to 10
+        )
+
+        assertNotNull(parseGarminWorkoutCommand(baseline, nowMillis))
+        assertEquals(
+            GarminWorkoutParseIssue.SetIntervalsOffsets,
+            parseGarminWorkoutCommandResult(baseline - "durationSeconds", nowMillis).issue
+        )
+
+        assertEquals(
+            GarminWorkoutParseIssue.SetIntervalsOffsets,
+            parseGarminWorkoutCommandResult(
+                baseline + (
+                    "setIntervals" to listOf(
+                        first,
+                        second.toMutableList().also {
+                            it[0] = 41
+                        }
+                    )
+                    ),
+                nowMillis
+            ).issue
+        )
+        assertEquals(
+            GarminWorkoutParseIssue.SetIntervalsOffsets,
+            parseGarminWorkoutCommandResult(
+                baseline + (
+                    "setIntervals" to listOf(
+                        first,
+                        second.toMutableList().also { it[1] = 51 }
+                    )
+                    ),
+                nowMillis
+            ).issue
+        )
+        assertEquals(
+            GarminWorkoutParseIssue.SetIntervalsGymCalories,
+            parseGarminWorkoutCommandResult(
+                baseline + ("gymCalories" to 9.89),
+                nowMillis
+            ).issue
+        )
+        assertEquals(
+            GarminWorkoutParseIssue.SetIntervalsGymCalories,
+            parseGarminWorkoutCommandResult(baseline - "gymCalories", nowMillis).issue
+        )
+        assertEquals(
+            GarminWorkoutParseIssue.SetIntervalsGarminCalories,
+            parseGarminWorkoutCommandResult(
+                baseline + ("garminCalories" to 9),
+                nowMillis
+            ).issue
+        )
+        assertEquals(
+            GarminWorkoutParseIssue.SetIntervalsGarminCalories,
+            parseGarminWorkoutCommandResult(baseline - "garminCalories", nowMillis).issue
+        )
+
+        val missingPerIntervalGarminCalories = baseline + (
+            "setIntervals" to listOf(
+                first,
+                second.toMutableList().also { it[3] = null }
+            )
+            ) + ("garminCalories" to 9)
+        assertNotNull(parseGarminWorkoutCommand(missingPerIntervalGarminCalories, nowMillis))
+    }
+
+    @Test
+    fun maximumSetDiagnosticsReserveSpaceForTheOmittedRowMarker() {
+        val nowMillis = 1_800_000_000_000L
+        val set = validSet() + mapOf("weight" to 1_000_000.0, "reps" to 10_000)
+        val intervals = List(MAX_GARMIN_WORKOUT_SETS) { index ->
+            listOf(
+                index * 7_200,
+                (index + 1) * 7_200,
+                1_666.66,
+                1_666,
+                1_200,
+                1_200,
+                1_200,
+                1_200,
+                1_200,
+                1_200
+            )
+        }
+        val metrics = listOf(7_200, 86_400, 240, 240, 240, 240, 100)
+        val parsed = parseGarminWorkoutCommand(
+            validCommand() + mapOf(
+                "sets" to List(MAX_GARMIN_WORKOUT_SETS) { set },
+                "setMetrics" to List(MAX_GARMIN_WORKOUT_SETS) { metrics },
+                "setIntervals" to intervals,
+                "durationSeconds" to MAX_GARMIN_DURATION_SECONDS,
+                "gymCalories" to MAX_GARMIN_CALORIES,
+                "garminCalories" to MAX_GARMIN_CALORIES.toInt(),
+                "plannedSetCount" to MAX_GARMIN_WORKOUT_SETS
+            ),
+            nowMillis
+        )
+
+        assertNotNull(parsed)
+        val note = garminWorkoutNote(checkNotNull(parsed), AppLanguage.EN)
+        assertTrue(WorkoutDataLimits.isValidNote(note))
+        assertTrue(note.codePointCount(0, note.length) <= WorkoutDataLimits.MAX_NOTE_LENGTH)
+        assertTrue(note.contains("S1 "))
+        val omitted = checkNotNull(
+            Regex("(?:^| · )S\\+([0-9]{1,2})$").find(note)
+        ).groupValues[1].toInt()
+        val included = Regex("(?:^| · )S[1-9][0-9]?\\s").findAll(note).count()
+        assertEquals(MAX_GARMIN_WORKOUT_SETS, included + omitted)
+        assertEquals(MAX_GARMIN_WORKOUT_SETS, parsed.sets.size)
+    }
+
+    @Test
+    fun newDiagnosticFieldsDoNotBreakAckLostRetriesAcceptedByOlderAndroid() {
+        val nowMillis = 1_800_000_000_000L
+        val legacyParsed = checkNotNull(parseGarminWorkoutCommand(validCommand(), nowMillis))
+        val upgradedParsed = checkNotNull(
+            parseGarminWorkoutCommand(
+                validCommand() + mapOf(
+                    "setIntervals" to listOf(
+                        listOf(0, 42, 5.5, 6, 0, 0, 12, 20, 10, 0)
+                    ),
+                    "plannedSetCount" to 3,
+                    "plannedTargetSetCount" to 3,
+                    "completedPlannedSetCount" to 1
+                ),
+                nowMillis
+            )
+        )
+
+        assertEquals(
+            canonicalGarminWorkoutPayloadDigest(legacyParsed),
+            canonicalGarminWorkoutPayloadDigest(upgradedParsed)
         )
     }
 

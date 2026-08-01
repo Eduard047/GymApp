@@ -96,6 +96,7 @@ class GymApp extends App.AppBase {
             var ackRequestId = message.get("requestId");
             if (GymStore.bindingsMatch(message) && GymStore.removePendingByRequestId(ackRequestId)) {
                 GymStore.status = "SAVED";
+                sendNextPendingWorkout();
             } else {
                 GymStore.status = "BAD ACK";
             }
@@ -141,13 +142,23 @@ class GymApp extends App.AppBase {
 
     function onSyncAckSent(ok) {
         GymStore.status = ok ? "ACK OK" : "ACK ERR";
-        if (ok && GymStore.hasAccountBinding() && GymStore.pending.size() > 0) {
+        if (ok) {
             // A queued workout may have been waiting while the phone repaired the
             // secure pairing. Retry only the oldest item and keep it until the
             // Android database acknowledgement arrives.
-            GymComm.send(GymStore.pending[0], method(:onPendingWorkoutSentAfterSync));
+            sendNextPendingWorkout();
         }
         Ui.requestUpdate();
+    }
+
+    function sendNextPendingWorkout() {
+        if (!GymStore.hasAccountBinding() || GymStore.pending.size() == 0) {
+            return;
+        }
+        // Drain exactly one oldest item per durable database acknowledgement. The
+        // item remains queued until its own ack, so disconnects and retries are safe.
+        GymStore.status = "SENDING NEXT";
+        GymComm.send(GymStore.pending[0], method(:onPendingWorkoutSentAfterSync));
     }
 
     function onPendingWorkoutSentAfterSync(ok) {

@@ -27,7 +27,7 @@ test("Garmin messages are bounded, account-bound, replay-aware, and acked by id"
 
   assert.match(store, /maxPlanSets = 60/);
   assert.match(store, /maxWorkoutSets = 60/);
-  assert.match(store, /maxPendingWorkouts = 2/);
+  assert.match(store, /maxPendingWorkouts = 8/);
   assert.match(store, /maxPendingNameBytes = 12000/);
   assert.match(store, /maxTotalNameBytes = 12000/);
   assert.match(store, /toUtf8Array\(\)\.size\(\)/);
@@ -138,7 +138,11 @@ test("Garmin messages are bounded, account-bound, replay-aware, and acked by id"
   const activityInfo = session.match(/static function updateGarminActivityInfo\(\) \{[\s\S]*?\n    \}/)?.[0] || "";
   assert.match(activityInfo, /appliedHeartRate = applyHeartRate\(info\.currentHeartRate\)/);
   assert.match(activityInfo, /return appliedHeartRate/);
-  assert.match(store, /"startedAtSeconds" => GymSession\.startedAt/);
+  assert.match(
+    store,
+    /var messageStartedAt = isValidWorkoutStartedAtSeconds\(activeWorkoutStartedAtSeconds\) \?[\s\S]*activeWorkoutStartedAtSeconds : GymSession\.startedAt/
+  );
+  assert.match(store, /"startedAtSeconds" => messageStartedAt/);
   assert.doesNotMatch(store, /"startedAtSeconds" => Time\.now\(\)\.value\(\)/);
   assert.match(androidManager, /cacheAndPushPlan[\s\S]*syncPayload\(exerciseCatalog, plan, syncId, resetWorkout = false\)/);
   assert.match(androidManager, /pushSyncForContext[\s\S]*repairPairing = repairPairing/);
@@ -177,6 +181,6 @@ test("Garmin messages are bounded, account-bound, replay-aware, and acked by id"
   assert.doesNotMatch(view, /if \(!GymSession\.recording\) \{\s*GymStore\.clearActiveWorkout\(\)/);
   assert.match(app, /GymStore\.applyPhoneSync\(message\)/);
   assert.match(app, /"syncRevision" => syncRevision\.toLong\(\)/);
-  assert.match(app, /onSyncAckSent[\s\S]*GymStore\.pending\.size\(\) > 0[\s\S]*WAITING ACK/);
+  assert.match(app, /onSyncAckSent[\s\S]*sendNextPendingWorkout\(\)[\s\S]*GymStore\.pending\.size\(\) == 0[\s\S]*WAITING ACK/);
   assert.match(view, /GymStore\.applyCloudSync\(message\)/);
 });

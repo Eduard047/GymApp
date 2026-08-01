@@ -19,4 +19,6 @@
     <exclude domain="sharedpref" path="gym_training_profiles.xml.bak" />
     <exclude domain="sharedpref" path="gym_cloud_sync_baselines.xml" />
     <exclude domain="sharedpref" path="gym_cloud_sync_baselines.xml.bak" />
+    <exclude domain="sharedpref" path="gym_exercise_rest_timers.xml" />
+    <exclude domain="sharedpref" path="gym_exercise_rest_timers.xml.bak" />
 </full-backup-content>

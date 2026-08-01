@@ -15,15 +15,18 @@ function placeholders(value) {
 }
 
 test("Android Russian resources cover every English string with compatible placeholders", async () => {
-  const [englishSource, russianSource, manager, navigation, dynamic, workoutDetail] = await Promise.all([
+  const [englishSource, ukrainianSource, russianSource, manager, navigation, dynamic, workoutDetail, addWorkout] = await Promise.all([
     readFile("app/src/main/res/values/strings.xml", "utf8"),
+    readFile("app/src/main/res/values-uk/strings.xml", "utf8"),
     readFile("app/src/main/res/values-ru/strings.xml", "utf8"),
     readFile("app/src/main/java/com/example/gymapp/util/LanguageManager.kt", "utf8"),
     readFile("app/src/main/java/com/example/gymapp/navigation/GymNavGraph.kt", "utf8"),
     readFile("app/src/main/java/com/example/gymapp/util/RussianText.kt", "utf8"),
-    readFile("app/src/main/java/com/example/gymapp/ui/screens/WorkoutDetailScreen.kt", "utf8")
+    readFile("app/src/main/java/com/example/gymapp/ui/screens/WorkoutDetailScreen.kt", "utf8"),
+    readFile("app/src/main/java/com/example/gymapp/ui/screens/AddWorkoutScreen.kt", "utf8")
   ]);
   const english = androidStrings(englishSource);
+  const ukrainian = androidStrings(ukrainianSource);
   const russian = androidStrings(russianSource);
   assert.deepEqual([...russian.keys()].sort(), [...english.keys()].sort());
   for (const [name, value] of english) {
@@ -38,14 +41,30 @@ test("Android Russian resources cover every English string with compatible place
     /parseTrustedGarminWorkoutMetrics\([\s\S]*note = details\.session\.note\.orEmpty\(\),[\s\S]*hasGarminReceipt = uiState\.hasGarminReceipt/
   );
   assert.equal(russian.get("action_add_set"), "Добавить подход");
+  assert.equal(english.get("action_add_planned_set"), "Add planned set");
+  assert.equal(ukrainian.get("action_add_planned_set"), "Додати запланований підхід");
+  assert.equal(russian.get("action_add_planned_set"), "Добавить запланированный подход");
+  assert.equal(english.get("action_save_completed_workout"), "Save as completed workout");
+  assert.equal(russian.get("action_save_completed_workout"), "Сохранить как выполненную тренировку");
+  assert.match(english.get("add_workout_plan_mode_hint"), /targets sent to Garmin/);
+  assert.match(english.get("add_workout_completed_mode_hint"), /immediately to workout history and summary/);
+  assert.match(addWorkout, /R\.string\.action_add_planned_set/);
+  assert.match(addWorkout, /R\.string\.action_save_completed_workout/);
+  assert.match(addWorkout, /R\.string\.add_workout_plan_mode_hint/);
+  assert.match(addWorkout, /R\.string\.add_workout_completed_mode_hint/);
+  assert.equal(english.get("garmin_set_intervals_title"), "Chronological watch sets");
+  assert.equal(ukrainian.get("garmin_watch_set_label"), "Підхід з годинника S%1$d");
+  assert.equal(russian.get("garmin_watch_set_label"), "Подход с часов S%1$d");
 });
 
 test("iOS String Catalog has Russian values for every key and preserves format placeholders", async () => {
-  const [catalogSource, languageSource, menuSource, projectSource] = await Promise.all([
+  const [catalogSource, languageSource, menuSource, projectSource, workoutEditor, addWorkout] = await Promise.all([
     readFile("ios/GymApp-iOS/GymApp/Resources/Localizable.xcstrings", "utf8"),
     readFile("ios/GymApp-iOS/GymApp/App/AppLanguage.swift", "utf8"),
     readFile("ios/GymApp-iOS/GymApp/UI/Components/AppLanguageMenu.swift", "utf8"),
-    readFile("ios/GymApp-iOS/GymApp.xcodeproj/project.pbxproj", "utf8")
+    readFile("ios/GymApp-iOS/GymApp.xcodeproj/project.pbxproj", "utf8"),
+    readFile("ios/GymApp-iOS/GymApp/UI/Components/WorkoutEditorComponents.swift", "utf8"),
+    readFile("ios/GymApp-iOS/GymApp/UI/Screens/AddWorkoutView.swift", "utf8")
   ]);
   const catalog = JSON.parse(catalogSource);
   assert.ok(Object.keys(catalog.strings).length >= 650);
@@ -59,6 +78,25 @@ test("iOS String Catalog has Russian values for every key and preserves format p
   assert.match(languageSource, /case russian = "ru"/);
   assert.match(menuSource, /Label\("Русский"/);
   assert.match(projectSource, /knownRegions = \([\s\S]*\bru,/);
+  assert.equal(
+    catalog.strings["Add planned set"].localizations.uk.stringUnit.value,
+    "Додати запланований підхід"
+  );
+  assert.equal(
+    catalog.strings["Add planned set"].localizations.ru.stringUnit.value,
+    "Добавить запланированный подход"
+  );
+  assert.match(workoutEditor, /Label\("Add planned set"/);
+  const draftCard = workoutEditor.match(/struct WorkoutDraftExerciseCard:[\s\S]*?private func binding/)[0];
+  assert.doesNotMatch(draftCard, /restTimers\.start|WorkoutRestTimerControls/);
+  assert.equal(
+    catalog.strings["Save as completed workout"].localizations.ru.stringUnit.value,
+    "Сохранить как выполненную тренировку"
+  );
+  assert.match(addWorkout, /Label\("Save as completed workout"/);
+  assert.match(addWorkout, /Planned rows are targets\. They do not start rest timers/);
+  assert.match(addWorkout, /Garmin plan mode: after saving, every planned row is sent/);
+  assert.match(addWorkout, /Completed mode: saving immediately adds every planned row/);
 });
 
 test("PWA accepts Russian state and renders Russian runtime text before app startup", async () => {
@@ -72,6 +110,10 @@ test("PWA accepts Russian state and renders Russian runtime text before app star
   const window = {};
   vm.runInNewContext(russianSource, { Map, Object, RegExp, String, window });
   assert.equal(window.GymRussianText.translate("Add Set"), "Добавить подход");
+  assert.equal(window.GymRussianText.translate("Log set · rest 90 s"), "Записать подход · отдых 90 с");
+  assert.equal(window.GymRussianText.translate("Add planned set"), "Добавить запланированный подход");
+  assert.equal(window.GymRussianText.translate("Save as completed workout"), "Сохранить как выполненную тренировку");
+  assert.equal(window.GymRussianText.translate("Chronological watch set intervals"), "Хронологические интервалы подходов на часах");
   assert.equal(window.GymRussianText.translate("Barbell Row"), "Тяга штанги в наклоне");
   assert.equal(window.GymRussianText.translate("Deadlift"), "Становая тяга");
   assert.equal(window.GymRussianText.translate("4-workout week"), "4 тренировок за неделю");
@@ -180,8 +222,8 @@ test("PWA accepts Russian state and renders Russian runtime text before app star
   assert.match(appSource, /tx\("synced from Garmin", "синхронізовано з Garmin"\)/);
   assert.match(appSource, /txAttr\("Name in English, Ukrainian, or Russian", "Назва англійською, українською або російською"\)/);
   assert.doesNotMatch(appSource, /Name in English, Ukrainian or Russian/);
-  assert.ok(indexSource.indexOf("russian-text.v58.js") < indexSource.indexOf("app.v59.js"));
-  assert.match(workerSource, /"\.\/russian-text\.v58\.js"/);
+  assert.ok(indexSource.indexOf("russian-text.v59.js") < indexSource.indexOf("app.v60.js"));
+  assert.match(workerSource, /"\.\/russian-text\.v59\.js"/);
 });
 
 test("runtime language switches invalidate cached labels on every client", async () => {

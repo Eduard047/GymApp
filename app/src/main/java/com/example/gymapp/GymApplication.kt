@@ -36,9 +36,11 @@ class GymApplication : Application() {
         deleteSharedPreferences(RETIRED_PHONE_WEAR_PREFERENCES)
         val authManager = cloudAuthManager
         val profileManager = trainingProfileManager
+        val timerController = restTimerController
         applicationScope.launch(start = CoroutineStart.UNDISPATCHED) {
             authManager.authState.collect { state ->
                 profileManager.switchAccount(state.session)
+                timerController.switchAccount(state.session)
             }
         }
         garminSyncManager.initialize()

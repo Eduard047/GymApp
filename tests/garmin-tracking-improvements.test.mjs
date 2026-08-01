@@ -10,6 +10,58 @@ const section = (source, start, end) => {
   return source.slice(startIndex, endIndex);
 };
 
+const completedCountByExercise = (sets, exerciseName) =>
+  sets.filter((set) => set.exerciseName === exerciseName).length;
+
+const nextRemainingGlobalSlot = (plan, sets) => {
+  const seenPlanSlots = new Map();
+  for (const slot of plan) {
+    const ordinal = seenPlanSlots.get(slot.exerciseName) ?? 0;
+    seenPlanSlots.set(slot.exerciseName, ordinal + 1);
+    if (completedCountByExercise(sets, slot.exerciseName) <= ordinal) {
+      return slot;
+    }
+  }
+  return null;
+};
+
+const completedPlannedCount = (plan, sets) => {
+  const planned = new Map();
+  for (const slot of plan) {
+    planned.set(slot.exerciseName, (planned.get(slot.exerciseName) ?? 0) + 1);
+  }
+  const actual = new Map();
+  for (const set of sets) {
+    actual.set(set.exerciseName, (actual.get(set.exerciseName) ?? 0) + 1);
+  }
+  return [...planned].reduce(
+    (sum, [name, count]) => sum + Math.min(count, actual.get(name) ?? 0),
+    0
+  );
+};
+
+const intervalsAreConsistent = (intervals, durationSeconds, gymTotal, garminTotal) => {
+  let previousEnd = 0;
+  let gymSum = 0;
+  let garminSum = 0;
+  let hasGarminSlice = false;
+  for (const interval of intervals) {
+    const [start, end, gym, garmin] = interval;
+    if (start < previousEnd || end < start || end > durationSeconds) return false;
+    previousEnd = end;
+    gymSum += gym;
+    if (garmin != null) {
+      hasGarminSlice = true;
+      garminSum += garmin;
+    }
+  }
+  return (
+    gymTotal != null &&
+    gymSum <= gymTotal + 0.1 &&
+    (!hasGarminSlice || (garminTotal != null && garminSum <= garminTotal + 0.1))
+  );
+};
+
 test("Garmin tracking prefers activity HR, diagnoses both sources, and expires stale readings", async () => {
   const [session, view] = await Promise.all([
     readFile("garmin/source/GymSession.mc", "utf8"),
@@ -60,10 +112,60 @@ test("Garmin rest countdown never blocks or hides a detected next set", async ()
     "active-set status must take visual priority over the countdown"
   );
   assert.match(store, /static function cancelRest\(\) \{\s*restEndsAt = 0;/);
+  assert.match(store, /static function cancelRest\(\)[\s\S]*clearTransientSetActions\(\)/);
+  assert.match(tick, /GymStore\.cancelRest\(\)[\s\S]*dismissSetSavedFlash\(\)/);
   assert.match(
     session,
     /static function clearAutoPrompt\(\)[\s\S]*effortState = "REST"[\s\S]*lastHrChangeSeconds = elapsedSeconds/
   );
+});
+
+test("Garmin set commit clears residual motion while preserving genuinely new detection", async () => {
+  const [session, store, view] = await Promise.all([
+    readFile("garmin/source/GymSession.mc", "utf8"),
+    readFile("garmin/source/GymStore.mc", "utf8"),
+    readFile("garmin/source/WorkoutView.mc", "utf8")
+  ]);
+
+  const clear = section(
+    session,
+    "static function clearAutoPrompt()",
+    "static function restoreSetAfterUndo("
+  );
+  assert.match(clear, /activeSignalCount = 0/);
+  assert.match(clear, /motionSignalCount = 0/);
+  assert.match(clear, /motionScore = 0\.0/);
+  assert.match(clear, /lastMotionTimerMs = 0/);
+  assert.match(clear, /lastCredibleMotionSeconds = 0/);
+  assert.match(clear, /clearSetCandidate\(\)/);
+  assert.match(clear, /effortState = "REST"/);
+  assert.doesNotMatch(clear, /clearTransientSetActions|lastSetUndoUntil/);
+
+  const addSet = section(store, "static function addSet()", "static function canUndoLastSet()");
+  assert.ok(
+    addSet.indexOf("lastSetUndoUntil =") < addSet.indexOf("GymSession.clearAutoPrompt()") &&
+      addSet.indexOf("GymSession.clearAutoPrompt()") < addSet.indexOf("restEndsAt ="),
+    "commit must retain undo, clear old motion, and only then start rest"
+  );
+
+  const freshness = section(
+    session,
+    "static function isMotionFresh()",
+    "static function readHeartRateFromSensor("
+  );
+  assert.match(freshness, /lastMotionTimerMs <= 0[\s\S]*return false/);
+
+  const tick = section(view, "function tick()", "function requestSyncNow()");
+  assert.match(tick, /rest > 0 && GymSession\.effortState\.equals\("SET ACTIVE"\)/);
+  assert.match(store, /static function canUndoLastSet\(\)/);
+
+  const sensorCallback = section(
+    session,
+    "static function onSensorData(data)",
+    "static function isFiniteSensorNumber"
+  );
+  assert.match(sensorCallback, /motionScore = \(motionScore \* 0\.55\) \+ \(sampleScore \* 0\.45\)/);
+  assert.match(sensorCallback, /lastMotionTimerMs = System\.getTimer\(\)/);
 });
 
 test("Garmin dashboard renders the selected live workout hierarchy without static mock data", async () => {
@@ -100,14 +202,97 @@ test("Garmin can undo only the most recent set inside a bounded window", async (
   assert.match(undo, /var lastIndex = sets\.size\(\) - 1/);
   assert.match(undo, /sets\.remove\(lastSet\)/);
   assert.match(undo, /GymSession\.removeSetBoost\(boost\)/);
+  assert.match(undo, /weight = lastSet\.get\("weight"\)/);
+  assert.match(undo, /reps = lastSet\.get\("reps"\)/);
+  assert.doesNotMatch(undo, /applyCurrentPlanSet\(\)/);
+  assert.match(undo, /var previousWorkoutStartedAt = activeWorkoutStartedAtSeconds/);
+  assert.match(undo, /sets\.remove\(lastSet\)[\s\S]*if \(sets\.size\(\) == 0\)[\s\S]*activeWorkoutStartedAtSeconds = null/);
   assert.match(undo, /if \(!save\(\)\)[\s\S]*sets\.add\(lastSet\)[\s\S]*GymSession\.restoreSetBoost\(boost\)/);
+  assert.match(undo, /if \(!save\(\)\)[\s\S]*activeWorkoutStartedAtSeconds = previousWorkoutStartedAt[\s\S]*GymSession\.restoreSetBoost\(boost\)/);
   assert.match(undo, /restEndsAt = 0/);
-  assert.match(session, /static function restoreAutoPromptAfterUndo\(statistics\)/);
+  assert.match(session, /static function restoreSetAfterUndo\(statistics, restorePrompt\)/);
+  assert.match(undo, /GymSession\.restoreSetAfterUndo\(restoreStatistics, restorePrompt\)/);
   assert.match(view, /function isUndoOverlayActive\(\)/);
   assert.match(view, /GymStore\.tr\("TAP \/ BACK: UNDO"/);
   assert.match(view, /savedSetFlashUntil = System\.getTimer\(\) \+ GymStore\.undoWindowMs/);
   assert.match(view, /function onBack\(\)[\s\S]*if \(view\.isUndoOverlayActive\(\)\)[\s\S]*undoLastSet\(\)/);
   assert.match(view, /if \(x < \(view\.screenWidth \/ 2\)\)[\s\S]*undoLastSet\(\)[\s\S]*recordSet\(\)/);
+});
+
+test("Garmin manual and automatic undo restore the same captured set statistics", async () => {
+  const [session, store] = await Promise.all([
+    readFile("garmin/source/GymSession.mc", "utf8"),
+    readFile("garmin/source/GymStore.mc", "utf8")
+  ]);
+
+  const undo = section(store, "static function undoLastSet()", "static function cancelRest()");
+  assert.match(undo, /GymSession\.restoreSetAfterUndo\(restoreStatistics, restorePrompt\)/);
+  assert.doesNotMatch(undo, /if \(restorePrompt\)|clearRecoveryTracking\(\)/);
+  assert.doesNotMatch(undo, /applyCurrentPlanSet\(\)/);
+
+  const restore = section(
+    session,
+    "static function restoreSetAfterUndo(statistics, restorePrompt)",
+    "static function resetProfileDefaults()"
+  );
+  assert.match(restore, /autoLogPrompt = restorePrompt instanceof Lang\.Boolean && restorePrompt/);
+  assert.match(restore, /activeStartSeconds = statistics\.get\("setStartedSeconds"\)/);
+  assert.match(restore, /currentSetStartHr = statistics\.get\("startHeartRate"\)/);
+  assert.match(restore, /currentSetPeakHr = statistics\.get\("peakHeartRate"\)/);
+  assert.match(restore, /restoredSetInterval = copySetInterval\(statistics\.get\("setInterval"\)\)/);
+
+  const captured = {
+    setStartedSeconds: 42,
+    setEndedSeconds: 65,
+    startHeartRate: 118,
+    peakHeartRate: 151,
+    endHeartRate: 132,
+    detectionConfidence: 88,
+    setInterval: [42, 65, 2.4, 3, 0, 2, 8, 9, 4, 0]
+  };
+  const restoreContract = (statistics, wasAutoPrompt) => ({
+    ...structuredClone(statistics),
+    autoLogPrompt: wasAutoPrompt
+  });
+  for (const wasAutoPrompt of [false, true]) {
+    const restored = restoreContract(captured, wasAutoPrompt);
+    assert.deepEqual(restored.setInterval, captured.setInterval);
+    assert.equal(restored.startHeartRate, captured.startHeartRate);
+    assert.equal(restored.peakHeartRate, captured.peakHeartRate);
+    assert.equal(restored.autoLogPrompt, wasAutoPrompt);
+  }
+});
+
+test("Garmin saved-set overlay consumes hidden navigation and cannot create a phantom set", async () => {
+  const view = await readFile("garmin/source/WorkoutView.mc", "utf8");
+
+  for (const handler of ["onNextPage()", "onPreviousPage()", "onNextMode()", "onPreviousMode()", "onMenu()"]) {
+    const body = section(view, `function ${handler}`, "function ");
+    assert.match(body, /if \(view\.isUndoOverlayActive\(\)\) \{\s*return true;/, handler);
+  }
+  const key = section(view, "function onKey(evt)", "function handleSelect()");
+  assert.ok(
+    key.indexOf("if (view.isUndoOverlayActive())") < key.indexOf("if (key == Ui.KEY_UP)"),
+    "overlay guard must run before arrows can reach the hidden selection"
+  );
+  assert.match(key, /KEY_ESC[\s\S]*return onBack\(\)/);
+  assert.match(key, /KEY_ENTER[\s\S]*return onSelect\(\)/);
+  assert.match(key, /return true;[\s\S]*if \(key == Ui\.KEY_UP\)/);
+  const activate = section(view, "function activate(delta)", "function recordSet()");
+  assert.match(activate, /if \(view\.isUndoOverlayActive\(\)\) \{\s*return;/);
+
+  const dispatch = (state, event) => {
+    if (state.overlay && !["back", "dismiss", "undo"].includes(event)) return state;
+    if (event === "right" && state.selected === 3) return { ...state, sets: state.sets + 1 };
+    if (event === "back" || event === "undo") return { ...state, overlay: false, sets: state.sets - 1 };
+    if (event === "dismiss") return { ...state, overlay: false };
+    return state;
+  };
+  const saved = { overlay: true, selected: 3, sets: 1 };
+  assert.deepEqual(dispatch(saved, "right"), saved);
+  assert.deepEqual(dispatch(saved, "pageDown"), saved);
+  assert.equal(dispatch(saved, "back").sets, 0);
+  assert.equal(dispatch(saved, "dismiss").sets, 1);
 });
 
 test("Garmin set save and undo keep calorie corrections consistent on failure", async () => {
@@ -120,6 +305,12 @@ test("Garmin set save and undo keep calorie corrections consistent on failure", 
   const addSet = section(store, "static function addSet()", "static function canUndoLastSet()");
   assert.match(addSet, /var boost = GymSession\.addSetBoost\(weight, reps\)/);
   assert.match(addSet, /if \(!save\(\)\)[\s\S]*sets\.remove\(setItem\)[\s\S]*GymSession\.removeSetBoost\(boost\)[\s\S]*return false/);
+  const rollback = addSet.slice(addSet.indexOf("if (!save())"), addSet.indexOf("lastSetBoost ="));
+  assert.equal(
+    rollback.match(/\bsave\(\);/g)?.length ?? 0,
+    1,
+    "failed commit rollback must persist its restored state exactly once"
+  );
   assert.match(session, /static function removeSetBoost\(boost\)/);
   assert.match(session, /static function restoreSetBoost\(boost\)/);
   const recordSet = section(view, "function recordSet()", "function undoLastSet()");
@@ -143,9 +334,347 @@ test("Garmin fuses bounded motion evidence with HR and falls back safely", async
   const confidence = section(session, "static function updateSetConfidence", "static function motionThreshold");
   assert.match(confidence, /if \(!freshMotion\)[\s\S]*score = 85/);
   assert.match(confidence, /strongMotion[\s\S]*moderateMotion/);
+  assert.match(confidence, /strongMotion && motionSignalCount >= 2[\s\S]*score \+= 75/);
+  assert.match(session, /motionSignalCount > 4[\s\S]*motionSignalCount = 4/);
   assert.match(session, /if \(setConfidence >= 70\)[\s\S]*activeSignalCount \+= 1/);
   assert.match(view, /SET MAYBE/);
   assert.match(view, /confidenceLabel\(\)/);
+});
+
+test("Garmin backdates a confirmed set to bounded first evidence and drops false candidates", async () => {
+  const session = await readFile("garmin/source/GymSession.mc", "utf8");
+  const effort = section(session, "static function updateEffortState(value)", "static function updateSetConfidence");
+  assert.match(effort, /setConfidence >= 40[\s\S]*beginSetCandidate\(value\)/);
+  assert.match(effort, /setConfidence >= 70[\s\S]*activeSignalCount \+= 1/);
+  assert.match(effort, /candidateStartSeconds <= elapsedSeconds[\s\S]*elapsedSeconds - candidateStartSeconds <= 8/);
+  assert.match(effort, /activeStartSeconds = hasCandidate \? candidateStartSeconds : elapsedSeconds/);
+  assert.match(effort, /else \{\s*clearSetCandidate\(\);\s*\}/);
+
+  const candidate = section(session, "static function beginSetCandidate(", "static function activeEvidenceEndSeconds(");
+  assert.match(candidate, /candidateStartGymCalories = gymCalories/);
+  assert.match(candidate, /candidateStartGarminCalories = garminCalories/);
+  assert.match(candidate, /elapsedSeconds - candidateStartSeconds > 8/);
+  assert.match(candidate, /elapsedSeconds - candidateLastSignalSeconds > 3/);
+  const beginInterval = section(session, "static function beginSetInterval()", "static function resetCurrentSetInterval()");
+  assert.match(beginInterval, /currentSetStartGymCalories = useCandidate \? candidateStartGymCalories : gymCalories/);
+
+  const capture = section(session, "static function captureSetStatistics()", "static function beginSetInterval()");
+  assert.match(capture, /promoteSetCandidateForCapture\(\)/);
+  assert.match(capture, /elapsedSeconds - candidateStartSeconds > 8/);
+  assert.match(capture, /elapsedSeconds - candidateLastSignalSeconds > 3/);
+  assert.match(capture, /activeStartSeconds = candidateStartSeconds/);
+  assert.match(capture, /beginSetInterval\(\)/);
+
+  const detector = { candidateStart: null, activeStart: null, consecutive: 0 };
+  const signal = (state, time, confidence) => {
+    if (confidence < 40) return { candidateStart: null, activeStart: null, consecutive: 0 };
+    const candidateStart = state.candidateStart ?? time;
+    const consecutive = confidence >= 70 ? state.consecutive + 1 : 0;
+    return {
+      candidateStart,
+      consecutive,
+      activeStart: consecutive >= 2 && time - candidateStart <= 8 ? candidateStart : null
+    };
+  };
+  const first = signal(detector, 10, 75);
+  const confirmed = signal(first, 11, 80);
+  assert.equal(confirmed.activeStart, 10, "confirmation must include the first credible second");
+  assert.equal(signal(first, 11, 10).candidateStart, null, "a false candidate must not leak into another set");
+});
+
+test("Garmin preserves global per-set plan order while manual exercise jumps remain deterministic", async () => {
+  const [store, view] = await Promise.all([
+    readFile("garmin/source/GymStore.mc", "utf8"),
+    readFile("garmin/source/WorkoutView.mc", "utf8")
+  ]);
+
+  const applyTarget = section(
+    store,
+    "static function applyCurrentPlanSet()",
+    "static function applyPlanItem("
+  );
+  assert.match(applyTarget, /var completed = completedSetsForExercise\(exerciseName\)/);
+  assert.match(applyTarget, /if \(matchingIndex == completed\)[\s\S]*item = candidate/);
+  assert.match(applyTarget, /item = candidate;[\s\S]*matchingIndex \+= 1/);
+
+  const applyItem = section(
+    store,
+    "static function applyPlanItem(",
+    "static function completedSetsForExercise("
+  );
+  assert.match(applyItem, /!isValidWeight\(plannedWeight\) \|\| !isValidReps\(plannedReps\)/);
+  assert.match(applyItem, /weight = plannedWeight;\s*reps = plannedReps;/);
+  assert.doesNotMatch(applyItem, /plannedWeight instanceof Lang\.(Number|Float)/);
+
+  const countCompleted = section(
+    store,
+    "static function completedSetsForExercise(",
+    "static function remainingPlannedSetsForExercise("
+  );
+  assert.match(countCompleted, /item\.get\("exerciseName"\)\.toString\(\)\.equals\(exerciseName\)/);
+
+  const addSet = section(store, "static function addSet()", "static function canUndoLastSet()");
+  assert.match(addSet, /var wasPlannedSet = remainingPlannedSetsForExercise\(currentExercise\(\)\) > 0/);
+  assert.match(addSet, /if \(wasPlannedSet\)[\s\S]*advancePlanAfterSetSaved\(\)/);
+  assert.match(store, /static function selectNextPlanSlotInGlobalOrder\(\)/);
+  const advance = section(store, "static function advancePlanAfterSetSaved()", "static function nextExercise(");
+  assert.match(advance, /selectNextPlanSlotInGlobalOrder\(\)/);
+
+  const plan = [
+    { exerciseName: "A", weight: 10, reps: 12 },
+    { exerciseName: "B", weight: 20, reps: 8 },
+    { exerciseName: "A", weight: 12.5, reps: 10 },
+    { exerciseName: "B", weight: 22.5, reps: 6 }
+  ];
+  const completed = [];
+  const observed = [];
+  while (true) {
+    const next = nextRemainingGlobalSlot(plan, completed);
+    if (!next) break;
+    observed.push([next.exerciseName, next.weight, next.reps]);
+    completed.push(next);
+  }
+  assert.deepEqual(
+    observed,
+    plan.map(({ exerciseName, weight, reps }) => [exerciseName, weight, reps]),
+    "automatic progression must retain A1, B1, A2, B2 instead of grouping by exercise"
+  );
+
+  const manualOutOfOrder = [plan[0], plan[2]];
+  assert.equal(nextRemainingGlobalSlot(plan, manualOutOfOrder), plan[1]);
+  assert.equal(completedPlannedCount(plan, [...manualOutOfOrder, { exerciseName: "A" }]), 2);
+  const mixedPlan = [
+    { exerciseName: "A" },
+    { exerciseName: "A" },
+    { exerciseName: "B" }
+  ];
+  const extraAMissingB = [
+    { exerciseName: "A" },
+    { exerciseName: "A" },
+    { exerciseName: "A" }
+  ];
+  assert.equal(completedPlannedCount(mixedPlan, extraAMissingB), 2);
+  assert.equal(completedPlannedCount(mixedPlan, [...extraAMissingB, { exerciseName: "B" }]), 3);
+  const plannedProgress = section(
+    store,
+    "static function completedPlannedSetCount()",
+    "static function planSlotIsCompleted("
+  );
+  assert.match(plannedProgress, /earlierActual < plannedSetsForExercise\(exerciseName\)/);
+  const progressValidation = section(
+    store,
+    "static function isValidCompletedPlannedSetCount(",
+    "static function isValidPendingList("
+  );
+  assert.match(progressValidation, /targetCount < actualSetCount \? targetCount : actualSetCount/);
+  assert.match(progressValidation, /return value <= maximum/);
+  assert.match(progressValidation, /static function isValidExactPlannedProgress/);
+  assert.match(progressValidation, /targetCount == null && completedCount == null/);
+  assert.match(progressValidation, /targetCount <= legacyCount/);
+
+  const overlay = section(view, "function drawSetSavedOverlay(", "function drawPausedOverlay(");
+  assert.match(overlay, /GymStore\.tr\("NEXT: "/);
+  assert.match(overlay, /fitTextWidth\(dc, setSummaryText\(\)/);
+  assert.match(overlay, /GymStore\.tr\("REST "/);
+  assert.match(overlay, /countdownText\(rest\)/);
+});
+
+test("Garmin emits bounded active-set calorie and heart-zone slices without changing legacy metrics", async () => {
+  const [session, store] = await Promise.all([
+    readFile("garmin/source/GymSession.mc", "utf8"),
+    readFile("garmin/source/GymStore.mc", "utf8")
+  ]);
+
+  assert.match(session, /currentSetZoneSeconds = \[0, 0, 0, 0, 0, 0\]/);
+  assert.match(session, /trackActiveSetInterval\(lastValidHrSeconds, zone\)/);
+  assert.match(session, /if \(delta > 1\)[\s\S]*delta = 1/);
+  assert.match(session, /currentSetZoneSeconds\[sampleZone\] \+= delta/);
+  assert.match(session, /ended > started \+ 7200[\s\S]*ended = started \+ 7200/);
+  assert.match(session, /gymDelta > 100000\.0[\s\S]*gymDelta = 100000\.0/);
+  assert.match(session, /garminDelta > 100000[\s\S]*garminDelta = 100000/);
+  assert.match(session, /captureEndedSetTotals\(\)/);
+  assert.match(session, /endingGarminCalories >= currentSetStartGarminCalories/);
+
+  const message = section(store, "static function workoutMessage()", "static function applyPhoneSync(");
+  assert.match(message, /setMetrics\.add\(compactSetMetrics\(setItem\)\)/);
+  assert.match(message, /setIntervals\.add\(copySetInterval\(setInterval\)\)/);
+  assert.match(message, /message\.put\("setIntervals", setIntervals\)/);
+  assert.match(message, /message\.put\("plannedSetCount", plannedSetCount\)/);
+  assert.match(message, /message\.put\("plannedTargetSetCount", plannedTargetSetCount\)/);
+  assert.match(message, /message\.put\("completedPlannedSetCount", completedPlannedSetCount\(\)\)/);
+
+  const intervalValidation = section(
+    store,
+    "static function isValidSetInterval(",
+    "static function isValidSetIntervalsList("
+  );
+  assert.match(intervalValidation, /value\.size\(\) != 10/);
+  assert.match(intervalValidation, /value\[1\] - value\[0\] > 7200/);
+  assert.match(intervalValidation, /!isBoundedNumber\(value\[2\], 0\.0, 100000\.0\)/);
+  assert.match(intervalValidation, /!isOptionalBoundedInteger\(value\[3\], 0, 100000\)/);
+  assert.match(intervalValidation, /zoneSeconds <= value\[1\] - value\[0\]/);
+
+  const legacyMetrics = section(
+    store,
+    "static function isValidSetMetricsList(",
+    "static function normalizedLegacyPendingList("
+  );
+  assert.match(legacyMetrics, /metrics\.size\(\) != 7/);
+});
+
+test("Garmin omits unavailable system calories and heart rate instead of sending null", async () => {
+  const store = await readFile("garmin/source/GymStore.mc", "utf8");
+  const message = section(store, "static function workoutMessage()", "static function applyPhoneSync(");
+  const freshDiagnostics = section(
+    message,
+    "if (!resumedWorkoutIntervalsInvalid)",
+    "if (allIntervalsAvailable"
+  );
+
+  assert.match(freshDiagnostics, /if \(GymSession\.garminCalories != null\) \{\s*message\.put\("garminCalories", GymSession\.garminCalories\);\s*\}/);
+  assert.match(freshDiagnostics, /if \(GymSession\.hr != null\) \{\s*message\.put\("lastHeartRate", GymSession\.hr\);\s*\}/);
+  assert.equal((freshDiagnostics.match(/message\.put\("garminCalories"/g) || []).length, 1);
+  assert.equal((freshDiagnostics.match(/message\.put\("lastHeartRate"/g) || []).length, 1);
+});
+
+test("Garmin never emits mixed restart intervals or attribution beyond real sensor evidence", async () => {
+  const [session, store, view] = await Promise.all([
+    readFile("garmin/source/GymSession.mc", "utf8"),
+    readFile("garmin/source/GymStore.mc", "utf8"),
+    readFile("garmin/source/WorkoutView.mc", "utf8")
+  ]);
+
+  const load = section(store, "static function load()", "static function save()");
+  assert.match(load, /resumedWorkoutIntervalsInvalid = false/);
+  assert.match(load, /if \(sets\.size\(\) > 0\) \{\s*resumedWorkoutIntervalsInvalid = true;/);
+  assert.match(load, /Storage\.getValue\("activeWorkoutStartedAtSeconds"\)/);
+  assert.match(load, /sets\.size\(\) > 0 &&[\s\S]*isValidWorkoutStartedAtSeconds\(savedWorkoutStartedAt\)/);
+  const onShow = section(view, "function onShow()", "function onHide()");
+  assert.match(onShow, /!GymSession\.recording[\s\S]*GymStore\.sets\.size\(\) > 0[\s\S]*GymStore\.markWorkoutResumed\(\)[\s\S]*GymSession\.start\(\)/);
+  const message = section(store, "static function workoutMessage()", "static function applyPhoneSync(");
+  assert.match(message, /allIntervalsAvailable = !resumedWorkoutIntervalsInvalid/);
+  const resumedMetrics = section(
+    message,
+    "if (!resumedWorkoutIntervalsInvalid)",
+    "if (allIntervalsAvailable"
+  );
+  for (const field of [
+    "durationSeconds",
+    "gymCalories",
+    "avgHeartRate",
+    "maxHeartRate",
+    "heartRateZone"
+  ]) {
+    assert.match(resumedMetrics, new RegExp(`message\\.put\\("${field}"`));
+  }
+  assert.match(resumedMetrics, /if \(GymSession\.garminCalories != null\) \{[\s\S]*message\.put\("garminCalories", GymSession\.garminCalories\)/);
+  assert.match(resumedMetrics, /if \(GymSession\.hr != null\) \{[\s\S]*message\.put\("lastHeartRate", GymSession\.hr\)/);
+  const requiredMessage = message.slice(message.indexOf("var message = {"), message.indexOf("if (!resumedWorkoutIntervalsInvalid)"));
+  assert.doesNotMatch(requiredMessage, /durationSeconds|gymCalories|garminCalories|avgHeartRate|maxHeartRate|lastHeartRate|heartRateZone/);
+  assert.match(requiredMessage, /"startedAtSeconds" => messageStartedAt/);
+  assert.match(message, /activeWorkoutStartedAtSeconds\) \?[\s\S]*activeWorkoutStartedAtSeconds : GymSession\.startedAt/);
+  assert.match(message, /areSetIntervalsConsistent\([\s\S]*GymSession\.elapsedSeconds/);
+  assert.ok(
+    message.indexOf("areSetIntervalsConsistent(") < message.indexOf('message.put("setIntervals"'),
+    "aggregate validation must happen before the optional diagnostics enter the payload"
+  );
+  const aggregate = section(
+    store,
+    "static function areSetIntervalsConsistent(",
+    "static function isValidPlannedSetCount("
+  );
+  assert.match(aggregate, /interval\[0\] < previousEnd/);
+  assert.match(aggregate, /interval\[1\] > durationSeconds/);
+  assert.match(aggregate, /gymSum > gymTotal\.toFloat\(\) \+ 0\.1/);
+  assert.match(aggregate, /garminSum <= garminTotal\.toFloat\(\) \+ 0\.1/);
+
+  const oldS1AndFreshS2 = [
+    [30, 45, 2.0, 3, 0, 0, 5, 10, 0, 0],
+    [2, 8, 1.0, 1, 0, 0, 2, 4, 0, 0]
+  ];
+  assert.equal(
+    intervalsAreConsistent(oldS1AndFreshS2, 10, 1.5, 2),
+    false,
+    "a process-resumed S2 must never be mixed with S1 offsets/totals"
+  );
+  assert.equal(
+    intervalsAreConsistent(
+      [
+        [2, 8, 1.0, 1, 0, 0, 2, 4, 0, 0],
+        [12, 18, 1.5, 2, 0, 1, 2, 3, 0, 0]
+      ],
+      20,
+      4,
+      5
+    ),
+    true
+  );
+  assert.equal(intervalsAreConsistent([[1, 4, 5, null]], 5, 4, null), false);
+
+  const tracking = section(
+    session,
+    "static function trackActiveSetInterval(sampleSeconds, sampleZone)",
+    "static function capturedSetInterval("
+  );
+  assert.match(tracking, /var delta = elapsedSeconds - sampleSeconds/);
+  assert.match(tracking, /if \(delta > 1\)[\s\S]*delta = 1/);
+  assert.match(tracking, /currentSetZoneSeconds\[sampleZone\] \+= delta/);
+  const expiry = section(session, "static function expireStaleHeartRate()", "static function trackMinuteHeartRate(");
+  assert.match(expiry, /lastSetEndSeconds = activeEvidenceEndSeconds\(\)/);
+  assert.doesNotMatch(expiry, /trackActiveSetInterval/);
+  assert.ok(expiry.indexOf("lastSetEndSeconds =") < expiry.indexOf("hr = null"));
+  const capture = section(session, "static function captureSetStatistics()", "static function beginSetInterval()");
+  assert.match(capture, /currentSetZoneSeconds instanceof Lang\.Array \? activeEvidenceEndSeconds\(\) : elapsedSeconds/);
+  const capturedInterval = section(session, "static function capturedSetInterval(", "static function copySetInterval(");
+  assert.match(capturedInterval, /currentSetLastEvidenceGymCalories != null/);
+  assert.match(capturedInterval, /currentSetLastEvidenceGarminCalories != null/);
+  const evidenceEnd = (lastHr, lastMotion, start, elapsed) =>
+    Math.min(elapsed, Math.max(start, lastHr, lastMotion));
+  assert.equal(evidenceEnd(12, 0, 5, 17), 12);
+  assert.equal(evidenceEnd(12, 14, 5, 17), 14);
+
+  const attributePreviousSample = (zoneSeconds, previousTime, previousZone, currentTime) => {
+    const delta = Math.min(1, Math.max(0, currentTime - previousTime));
+    zoneSeconds[previousZone] += delta;
+    return zoneSeconds;
+  };
+  const zonesAfterGap = attributePreviousSample([0, 0, 0, 0, 0, 0], 1, 1, 5);
+  assert.deepEqual(zonesAfterGap, [0, 1, 0, 0, 0, 0]);
+  assert.equal(zonesAfterGap[4], 0, "the later Z4 sample must not smear across t2-t4");
+
+  const workoutValidation = section(store, "static function isValidWorkoutMessage(", "static function isValidOptionalAccountBinding(");
+  assert.match(workoutValidation, /isOptionalBoundedNumber\(message\.get\("durationSeconds"\)/);
+
+  const addSet = section(store, "static function addSet()", "static function canUndoLastSet()");
+  assert.match(addSet, /var previousWorkoutStartedAt = activeWorkoutStartedAtSeconds/);
+  assert.match(addSet, /activeWorkoutStartedAtSeconds = GymSession\.startedAt/);
+  assert.match(addSet, /if \(!save\(\)\)[\s\S]*activeWorkoutStartedAtSeconds = previousWorkoutStartedAt/);
+  const save = section(store, "static function save()", "static function isUk()");
+  assert.match(save, /Storage\.setValue\("activeWorkoutStartedAtSeconds", activeWorkoutStartedAtSeconds\)/);
+  assert.match(save, /activeWorkoutStartedAtSeconds != null[\s\S]*sets\.size\(\) == 0/);
+  assert.match(
+    save,
+    /if \(sets\.size\(\) > 0\) \{[\s\S]*Storage\.setValue\("activeWorkoutStartedAtSeconds", activeWorkoutStartedAtSeconds\);[\s\S]*Storage\.setValue\("sets", sets\);[\s\S]*\} else \{[\s\S]*Storage\.setValue\("sets", sets\);[\s\S]*Storage\.setValue\("activeWorkoutStartedAtSeconds", activeWorkoutStartedAtSeconds\);/
+  );
+  const budget = section(store, "static function isWithinStorageBudget()", "static function isValidWorkoutStartedAtSeconds(");
+  assert.match(budget, /estimatedValueBytes\(activeWorkoutStartedAtSeconds\)/);
+  const timestampValidation = section(
+    store,
+    "static function isValidWorkoutStartedAtSeconds(",
+    "static function estimatedValueBytes("
+  );
+  assert.match(timestampValidation, /isBoundedInteger\(value, 946684800, 2147483647\)/);
+  const validStoredTimestamp = (value) => Number.isInteger(value) && value >= 946_684_800 && value <= 2_147_483_647;
+  assert.equal(validStoredTimestamp(1_800_000_000), true);
+  assert.equal(validStoredTimestamp(1_800_000_000.5), false);
+
+  const durableStorage = {};
+  const originalSessionStartedAt = 1_800_000_000;
+  durableStorage.activeWorkoutStartedAtSeconds = originalSessionStartedAt;
+  const reloadedOrigin = durableStorage.activeWorkoutStartedAtSeconds;
+  const resumedSessionStartedAt = originalSessionStartedAt + 3_600;
+  const emittedStartedAt = reloadedOrigin ?? resumedSessionStartedAt;
+  assert.equal(emittedStartedAt, originalSessionStartedAt);
 });
 
 test("Garmin set metrics are bounded, persisted, undo-aware, and synchronized without raw motion", async () => {
@@ -160,6 +689,11 @@ test("Garmin set metrics are bounded, persisted, undo-aware, and synchronized wi
   assert.match(session, /"activeSeconds" => duration/);
   assert.match(session, /static function recoveryHeartRateDrop\(\)/);
   const addSet = section(store, "static function addSet()", "static function canUndoLastSet()");
+  assert.match(addSet, /var restBefore = null/);
+  assert.match(
+    addSet,
+    /lastLoggedSetEndSeconds > 0[\s\S]*restBefore = currentStart - lastLoggedSetEndSeconds/
+  );
   assert.match(addSet, /"restBeforeSeconds" => restBefore/);
   assert.match(addSet, /"detectionConfidence" => statistics\.get\("detectionConfidence"\)/);
   assert.match(addSet, /if \(!save\(\)\)[\s\S]*previousSet\.remove\("recoveryHeartRateDrop"\)/);

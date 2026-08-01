@@ -5983,15 +5983,26 @@ final class CoreParityTests: XCTestCase {
             "requestId": "request-1234567890",
             "startedAtSeconds": 1_750_000_000,
             "sets": [
-                ["exerciseName": "Bench Press", "weight": 100.5, "reps": 5]
+                ["exerciseName": "Bench Press", "weight": 100.5, "reps": 5],
+                ["exerciseName": "Bench Press", "weight": 92.5, "reps": 8]
             ],
+            "plannedSetCount": 3,
+            "plannedTargetSetCount": 3,
+            "completedPlannedSetCount": 1,
             "durationSeconds": 1_800,
             "gymCalories": 225.5,
             "garminCalories": 240,
             "avgHeartRate": 132,
             "maxHeartRate": 168,
             "heartRateZone": 3,
-            "setMetrics": [[42, 90, 118, 154, 136, 18, 92]]
+            "setMetrics": [
+                [42, 90, 118, 154, 136, 18, 92],
+                [NSNull(), NSNull(), NSNull(), NSNull(), NSNull(), NSNull(), NSNull()]
+            ],
+            "setIntervals": [
+                [0, 42, 4.5, 5, 0, 0, 12, 20, 10, 0],
+                [132, 160, 3.0, NSNull(), 0, 0, 8, 15, 5, 0]
+            ]
         ]
 
         let command = try XCTUnwrap(
@@ -6004,8 +6015,12 @@ final class CoreParityTests: XCTestCase {
 
         XCTAssertEqual(command.requestID, "request-1234567890")
         XCTAssertEqual(command.sets, [
-            NamedWorkoutSetDraft(exerciseName: "Bench Press", weight: 100.5, reps: 5)
+            NamedWorkoutSetDraft(exerciseName: "Bench Press", weight: 100.5, reps: 5),
+            NamedWorkoutSetDraft(exerciseName: "Bench Press", weight: 92.5, reps: 8)
         ])
+        XCTAssertEqual(command.plannedSetCount, 3)
+        XCTAssertEqual(command.plannedTargetSetCount, 3)
+        XCTAssertEqual(command.completedPlannedSetCount, 1)
         XCTAssertEqual(
             command.setStatistics,
             [
@@ -6017,9 +6032,76 @@ final class CoreParityTests: XCTestCase {
                     endHeartRate: 136,
                     recoveryHeartRateDrop: 18,
                     detectionConfidence: 92
+                ),
+                nil
+            ]
+        )
+        XCTAssertEqual(
+            command.setIntervals,
+            [
+                GarminPhoneSetInterval(
+                    startSeconds: 0,
+                    endSeconds: 42,
+                    gymCalories: 4.5,
+                    garminCalories: 5,
+                    heartRateZoneSeconds: [0, 0, 12, 20, 10, 0]
+                ),
+                GarminPhoneSetInterval(
+                    startSeconds: 132,
+                    endSeconds: 160,
+                    gymCalories: 3,
+                    garminCalories: nil,
+                    heartRateZoneSeconds: [0, 0, 8, 15, 5, 0]
                 )
             ]
         )
+        XCTAssertTrue(
+            GarminPhoneSyncService.formattedWorkoutNote(command, language: "en")
+                .contains("Completed 1/3 sets")
+        )
+
+        var legacyMessage = message
+        legacyMessage.removeValue(forKey: "plannedSetCount")
+        legacyMessage.removeValue(forKey: "plannedTargetSetCount")
+        legacyMessage.removeValue(forKey: "completedPlannedSetCount")
+        legacyMessage.removeValue(forKey: "setIntervals")
+        let legacyCommand = try XCTUnwrap(
+            GarminPhoneWorkoutParser.parse(
+                legacyMessage,
+                expectedBinding: binding,
+                now: Date(timeIntervalSince1970: 1_750_001_000)
+            )
+        )
+        XCTAssertEqual(command.digest, legacyCommand.digest)
+        XCTAssertNil(legacyCommand.plannedSetCount)
+        XCTAssertNil(legacyCommand.plannedTargetSetCount)
+        XCTAssertNil(legacyCommand.completedPlannedSetCount)
+        XCTAssertEqual(legacyCommand.setIntervals, [nil, nil])
+
+        var resumedSegmentMessage = legacyMessage
+        for key in [
+            "durationSeconds",
+            "gymCalories",
+            "garminCalories",
+            "avgHeartRate",
+            "maxHeartRate",
+            "heartRateZone"
+        ] {
+            resumedSegmentMessage.removeValue(forKey: key)
+        }
+        let resumedSegment = try XCTUnwrap(
+            GarminPhoneWorkoutParser.parse(
+                resumedSegmentMessage,
+                expectedBinding: binding,
+                now: Date(timeIntervalSince1970: 1_750_001_000)
+            )
+        )
+        XCTAssertNil(resumedSegment.durationSeconds)
+        XCTAssertNil(resumedSegment.gymCalories)
+        XCTAssertNil(resumedSegment.garminCalories)
+        XCTAssertNil(resumedSegment.averageHeartRate)
+        XCTAssertNil(resumedSegment.maximumHeartRate)
+        XCTAssertNil(resumedSegment.endingHeartRateZone)
     }
 
     func testGarminPhoneParserRejectsWrongBindingAndMalformedMetrics() {
@@ -6062,6 +6144,475 @@ final class CoreParityTests: XCTestCase {
         XCTAssertNil(
             GarminPhoneWorkoutParser.parse(message, expectedBinding: binding)
         )
+
+        message["setMetrics"] = [[35, 75, 110, 160, 140, 20, 95]]
+        message["plannedSetCount"] = 0
+        XCTAssertNil(
+            GarminPhoneWorkoutParser.parse(message, expectedBinding: binding)
+        )
+
+        message["plannedSetCount"] = 2
+        message["setIntervals"] = [[0, 7_201, 1.0, 1, 0, 0, 0, 0, 0, 0]]
+        XCTAssertNil(
+            GarminPhoneWorkoutParser.parse(message, expectedBinding: binding)
+        )
+
+        message["setIntervals"] = [[0, 10, 1.0, 1, 0, 0, 0, 0, 11, 0]]
+        XCTAssertNil(
+            GarminPhoneWorkoutParser.parse(message, expectedBinding: binding)
+        )
+
+        message.removeValue(forKey: "setIntervals")
+        message.removeValue(forKey: "plannedSetCount")
+        message["completedPlannedSetCount"] = 0
+        XCTAssertNil(GarminPhoneWorkoutParser.parse(message, expectedBinding: binding))
+
+        message["plannedSetCount"] = 1
+        message["plannedTargetSetCount"] = 1
+        message["completedPlannedSetCount"] = 2
+        XCTAssertNil(GarminPhoneWorkoutParser.parse(message, expectedBinding: binding))
+
+        message["plannedSetCount"] = 3
+        message["plannedTargetSetCount"] = 3
+        XCTAssertNil(GarminPhoneWorkoutParser.parse(message, expectedBinding: binding))
+
+        message["completedPlannedSetCount"] = NSNull()
+        XCTAssertNil(GarminPhoneWorkoutParser.parse(message, expectedBinding: binding))
+    }
+
+    func testGarminPendingReceiptRecoveryMatchesGroupedMixedExerciseWorkoutAcrossNoteVersions() throws {
+        let binding = GarminPhoneBinding(
+            account: String(repeating: "a", count: 64),
+            device: "11111111-2222-3333-4444-555555555555",
+            pairingGeneration: String(repeating: "b", count: 64)
+        )
+        let legacyMessage: [String: Any] = [
+            "type": "create_workout",
+            "bindingVersion": 2,
+            "accountBinding": binding.account,
+            "deviceBinding": binding.device,
+            "pairingGeneration": binding.pairingGeneration,
+            "requestId": "request-mixed-recovery-1234",
+            "startedAtSeconds": 1_750_000_000,
+            "sets": [
+                ["exerciseName": "Bench Press", "weight": 100.0, "reps": 5],
+                ["exerciseName": "Squat", "weight": 120.0, "reps": 5],
+                ["exerciseName": "Bench Press", "weight": 92.5, "reps": 8],
+                ["exerciseName": "Squat", "weight": 110.0, "reps": 7]
+            ],
+            "durationSeconds": 40,
+            "gymCalories": 10.0,
+            "garminCalories": 10
+        ]
+        let legacyCommand = try XCTUnwrap(
+            GarminPhoneWorkoutParser.parse(
+                legacyMessage,
+                expectedBinding: binding,
+                now: Date(timeIntervalSince1970: 1_750_001_000)
+            )
+        )
+        var enrichedMessage = legacyMessage
+        enrichedMessage["plannedSetCount"] = 5
+        enrichedMessage["plannedTargetSetCount"] = 5
+        enrichedMessage["completedPlannedSetCount"] = 4
+        enrichedMessage["setIntervals"] = [
+            [0, 10, 2.5, 2, 0, 0, 5, 5, 0, 0],
+            [10, 20, 2.5, 2, 0, 0, 5, 5, 0, 0],
+            [20, 30, 2.5, 2, 0, 0, 5, 5, 0, 0],
+            [30, 40, 2.5, 2, 0, 0, 5, 5, 0, 0]
+        ]
+        let enrichedCommand = try XCTUnwrap(
+            GarminPhoneWorkoutParser.parse(
+                enrichedMessage,
+                expectedBinding: binding,
+                now: Date(timeIntervalSince1970: 1_750_001_000)
+            )
+        )
+        XCTAssertEqual(legacyCommand.digest, enrichedCommand.digest)
+
+        let store = try WorkoutStore(
+            accountStorageKey: "garmin-pending-mixed",
+            directoryURL: try temporaryDirectory(named: "garmin-pending-mixed")
+        )
+        let legacyLocalizedNote = GarminPhoneSyncService.formattedWorkoutNote(
+            legacyCommand,
+            language: "uk"
+        )
+        _ = try store.createWorkout(
+            date: Date(timeIntervalSince1970: TimeInterval(legacyCommand.startedAtSeconds)),
+            note: legacyLocalizedNote,
+            namedSets: legacyCommand.sets
+        )
+        let persistedWorkout = try XCTUnwrap(store.workouts.first)
+        let names = Dictionary(uniqueKeysWithValues: store.exercises.map { ($0.id, $0.name) })
+        let persistedOrder = persistedWorkout.exercises.flatMap { block in
+            block.sets.map { _ in names[block.exerciseID] ?? "" }
+        }
+        XCTAssertEqual(persistedOrder, ["Bench Press", "Bench Press", "Squat", "Squat"])
+        XCTAssertNotEqual(
+            legacyLocalizedNote,
+            GarminPhoneSyncService.formattedWorkoutNote(enrichedCommand, language: "en")
+        )
+
+        XCTAssertTrue(
+            GarminPhoneSyncService.matchesPersistedWorkout(enrichedCommand, in: store)
+        )
+
+        var conflictingMessage = enrichedMessage
+        var conflictingSets = try XCTUnwrap(conflictingMessage["sets"] as? [[String: Any]])
+        conflictingSets[2]["weight"] = 91.0
+        conflictingMessage["sets"] = conflictingSets
+        let conflictingCommand = try XCTUnwrap(
+            GarminPhoneWorkoutParser.parse(
+                conflictingMessage,
+                expectedBinding: binding,
+                now: Date(timeIntervalSince1970: 1_750_001_000)
+            )
+        )
+        XCTAssertFalse(
+            GarminPhoneSyncService.matchesPersistedWorkout(conflictingCommand, in: store)
+        )
+    }
+
+    func testGarminPhoneExactTargetKeepsLegacyPlannedCountCompatibleWithExtraSets() throws {
+        let binding = GarminPhoneBinding(
+            account: String(repeating: "a", count: 64),
+            device: "11111111-2222-3333-4444-555555555555",
+            pairingGeneration: String(repeating: "b", count: 64)
+        )
+        var message: [String: Any] = [
+            "type": "create_workout",
+            "bindingVersion": 2,
+            "accountBinding": binding.account,
+            "deviceBinding": binding.device,
+            "pairingGeneration": binding.pairingGeneration,
+            "requestId": "request-legacy-plan-1",
+            "sets": (0 ..< 4).map { index in
+                ["exerciseName": "Squat", "weight": 120.0 - Double(index), "reps": 5]
+            },
+            "plannedSetCount": 4,
+            "plannedTargetSetCount": 3,
+            "completedPlannedSetCount": 2
+        ]
+        let command = try XCTUnwrap(
+            GarminPhoneWorkoutParser.parse(message, expectedBinding: binding)
+        )
+        XCTAssertEqual(command.plannedSetCount, 4)
+        XCTAssertEqual(command.plannedTargetSetCount, 3)
+        XCTAssertEqual(command.completedPlannedSetCount, 2)
+        XCTAssertTrue(
+            GarminPhoneSyncService.formattedWorkoutNote(command, language: "en")
+                .contains("Completed 2/3 sets")
+        )
+
+        message.removeValue(forKey: "plannedTargetSetCount")
+        message.removeValue(forKey: "completedPlannedSetCount")
+        let legacyCommand = try XCTUnwrap(
+            GarminPhoneWorkoutParser.parse(message, expectedBinding: binding)
+        )
+        XCTAssertEqual(legacyCommand.plannedSetCount, 4)
+        XCTAssertEqual(command.digest, legacyCommand.digest)
+    }
+
+    func testGarminPhoneParserEnforcesStructuredIntervalConsistency() throws {
+        let binding = GarminPhoneBinding(
+            account: String(repeating: "a", count: 64),
+            device: "11111111-2222-3333-4444-555555555555",
+            pairingGeneration: String(repeating: "b", count: 64)
+        )
+        var message: [String: Any] = [
+            "type": "create_workout",
+            "bindingVersion": 2,
+            "accountBinding": binding.account,
+            "deviceBinding": binding.device,
+            "pairingGeneration": binding.pairingGeneration,
+            "requestId": "request-interval-1234",
+            "sets": [
+                ["exerciseName": "Squat", "weight": 120.0, "reps": 5],
+                ["exerciseName": "Squat", "weight": 110.0, "reps": 7]
+            ],
+            "plannedSetCount": 2,
+            "plannedTargetSetCount": 1,
+            "completedPlannedSetCount": 1,
+            "durationSeconds": 50,
+            "gymCalories": 9.91,
+            "garminCalories": 10,
+            "setIntervals": [
+                [0, 42, 5.0, 5, 0, 0, 12, 20, 10, 0],
+                [42, 50, 5.0, 5, 0, 0, 0, 8, 0, 0]
+            ]
+        ]
+
+        XCTAssertNotNil(GarminPhoneWorkoutParser.parse(message, expectedBinding: binding))
+        var zeroCompletedMessage = message
+        zeroCompletedMessage["plannedSetCount"] = 3
+        zeroCompletedMessage["plannedTargetSetCount"] = 3
+        zeroCompletedMessage["completedPlannedSetCount"] = 0
+        let zeroCompletedCommand = try XCTUnwrap(
+            GarminPhoneWorkoutParser.parse(zeroCompletedMessage, expectedBinding: binding)
+        )
+        XCTAssertTrue(
+            GarminPhoneSyncService.formattedWorkoutNote(
+                zeroCompletedCommand,
+                language: "en"
+            ).contains("Completed 0/3 sets")
+        )
+
+        message["setIntervals"] = [
+            [0, 42, 5.0, 5, 0, 0, 12, 20, 10, 0],
+            [41, 50, 5.0, 5, 0, 0, 0, 8, 0, 0]
+        ]
+        XCTAssertNil(GarminPhoneWorkoutParser.parse(message, expectedBinding: binding))
+
+        message["setIntervals"] = [
+            [0, 42, 5.0, 5, 0, 0, 12, 20, 10, 0],
+            [42, 51, 5.0, 5, 0, 0, 0, 8, 0, 0]
+        ]
+        XCTAssertNil(GarminPhoneWorkoutParser.parse(message, expectedBinding: binding))
+
+        message["setIntervals"] = [
+            [0, 42, 5.0, 5, 0, 0, 12, 20, 10, 0],
+            [42, 50, 5.0, 5, 0, 0, 0, 8, 0, 0]
+        ]
+        message.removeValue(forKey: "durationSeconds")
+        XCTAssertNil(GarminPhoneWorkoutParser.parse(message, expectedBinding: binding))
+        message["durationSeconds"] = 50
+
+        message["setIntervals"] = [
+            [0, 42, 5.0, 5, 0, 0, 12, 20, 10, 0],
+            [42, 50, 5.0, NSNull(), 0, 0, 0, 8, 0, 0]
+        ]
+        message["gymCalories"] = 9.89
+        XCTAssertNil(GarminPhoneWorkoutParser.parse(message, expectedBinding: binding))
+
+        message.removeValue(forKey: "gymCalories")
+        XCTAssertNil(GarminPhoneWorkoutParser.parse(message, expectedBinding: binding))
+
+        message["gymCalories"] = 10.0
+        message.removeValue(forKey: "garminCalories")
+        XCTAssertNil(GarminPhoneWorkoutParser.parse(message, expectedBinding: binding))
+
+        message["setIntervals"] = [
+            [0, 42, 5.0, NSNull(), 0, 0, 12, 20, 10, 0],
+            [42, 50, 5.0, NSNull(), 0, 0, 0, 8, 0, 0]
+        ]
+        XCTAssertNotNil(GarminPhoneWorkoutParser.parse(message, expectedBinding: binding))
+
+        message["setIntervals"] = [
+            [0, 42, 5.0, 5, 0, 0, 12, 20, 10, 0],
+            [42, 50, 5.0, 5, 0, 0, 0, 8, 0, 0]
+        ]
+        message["garminCalories"] = 9
+        XCTAssertNil(GarminPhoneWorkoutParser.parse(message, expectedBinding: binding))
+    }
+
+    func testGarminPhoneMaximumMetricNoteStaysImportableAndMarksOmittedRows() throws {
+        let binding = GarminPhoneBinding(
+            account: String(repeating: "a", count: 64),
+            device: "11111111-2222-3333-4444-555555555555",
+            pairingGeneration: String(repeating: "b", count: 64)
+        )
+        let message: [String: Any] = [
+            "type": "create_workout",
+            "bindingVersion": 2,
+            "accountBinding": binding.account,
+            "deviceBinding": binding.device,
+            "pairingGeneration": binding.pairingGeneration,
+            "requestId": "request-max-note-1234",
+            "sets": Array(
+                repeating: ["exerciseName": "Bench Press", "weight": 100.5, "reps": 5],
+                count: 60
+            ),
+            "plannedSetCount": 60,
+            "durationSeconds": 432_000,
+            "gymCalories": 100_000.0,
+            "garminCalories": 100_000,
+            "setMetrics": Array(
+                repeating: [7200, 86400, 240, 240, 240, 240, 100],
+                count: 60
+            ),
+            "setIntervals": (0 ..< 60).map { index in
+                [
+                    index * 7_200,
+                    (index + 1) * 7_200,
+                    1_666.66,
+                    1_666,
+                    1_200,
+                    1_200,
+                    1_200,
+                    1_200,
+                    1_200,
+                    1_200
+                ] as [Any]
+            }
+        ]
+        let command = try XCTUnwrap(
+            GarminPhoneWorkoutParser.parse(message, expectedBinding: binding)
+        )
+
+        let note = GarminPhoneSyncService.formattedWorkoutNote(command, language: "en")
+
+        XCTAssertLessThanOrEqual(note.count, 4_000)
+        XCTAssertLessThanOrEqual(note.utf8.count, 16_000)
+        XCTAssertNotNil(note.range(of: #"S\+[1-9][0-9]*"#, options: .regularExpression))
+        XCTAssertNotNil(GarminWorkoutNoteParser.parse(note)?.omittedMetricRows)
+    }
+
+    func testGarminWorkoutNoteParserReadsPartialIntervalsAndRejectsInvalidSlices() throws {
+        let summary = try XCTUnwrap(
+            GarminWorkoutNoteParser.parse(
+                "Garmin · Частично 2/3 подходов · " +
+                    "S1 42s I0-42s K4.5/5 Z0/0/12/20/10/0s · " +
+                    "S2 I132-160s K3/- Z0/0/8/15/5/0s"
+            )
+        )
+
+        XCTAssertEqual(summary.completedSetCount, 2)
+        XCTAssertEqual(summary.plannedSetCount, 3)
+        XCTAssertNil(summary.omittedMetricRows)
+        XCTAssertEqual(
+            summary.intervals,
+            [
+                GarminWorkoutNoteInterval(
+                    setIndex: 1,
+                    startSeconds: 0,
+                    endSeconds: 42,
+                    gymCalories: 4.5,
+                    garminCalories: 5,
+                    heartRateZoneSeconds: [0, 0, 12, 20, 10, 0]
+                ),
+                GarminWorkoutNoteInterval(
+                    setIndex: 2,
+                    startSeconds: 132,
+                    endSeconds: 160,
+                    gymCalories: 3,
+                    garminCalories: nil,
+                    heartRateZoneSeconds: [0, 0, 8, 15, 5, 0]
+                )
+            ]
+        )
+        XCTAssertNil(
+            GarminWorkoutNoteParser.parse(
+                "Garmin · S1 I0-10s K1/1 Z0/0/0/0/11/0s"
+            )
+        )
+        XCTAssertNil(
+            GarminWorkoutNoteParser.parse(
+                "Garmin · S1 I0-7201s K1/1 Z0/0/0/0/0/0s"
+            )
+        )
+        XCTAssertNil(
+            GarminWorkoutNoteParser.parse(
+                "Garmin · " + String(repeating: "x", count: 4_000)
+            )
+        )
+        XCTAssertEqual(
+            GarminWorkoutNoteParser.parse(
+                "Garmin · S1 I0-10s K1/1 Z0/0/0/0/10/0s · S+2"
+            )?.omittedMetricRows,
+            2
+        )
+        XCTAssertNil(GarminWorkoutNoteParser.parse("Garmin · S+0"))
+        XCTAssertNil(GarminWorkoutNoteParser.parse("Garmin · S+61"))
+        XCTAssertNil(GarminWorkoutNoteParser.parse("Garmin · S+1 · S+2"))
+        XCTAssertNil(
+            GarminWorkoutNoteParser.parse(
+                "Garmin · Duration 0:20 · " +
+                    "S1 I0-10s K1/1 Z0/0/0/0/10/0s · " +
+                    "S2 I9-15s K1/1 Z0/0/0/0/6/0s"
+            )
+        )
+        XCTAssertNil(
+            GarminWorkoutNoteParser.parse(
+                "Garmin · Duration 0:20 · " +
+                    "S1 I10-15s K1/1 Z0/0/0/0/5/0s · " +
+                    "S2 I0-5s K1/1 Z0/0/0/0/5/0s"
+            )
+        )
+        XCTAssertNil(
+            GarminWorkoutNoteParser.parse(
+                "Garmin · Duration 0:20 · S1 I0-21s K1/1 Z0/0/0/0/21/0s"
+            )
+        )
+        XCTAssertNil(
+            GarminWorkoutNoteParser.parse(
+                "Garmin · Duration 0:20 · " +
+                    "S2 I0-5s K1/1 Z0/0/0/0/5/0s · " +
+                    "S1 I5-10s K1/1 Z0/0/0/0/5/0s"
+            )
+        )
+        XCTAssertEqual(
+            GarminWorkoutNoteParser.parse("Garmin · Completed 0/3 sets")?.completedSetCount,
+            0
+        )
+    }
+
+    func testGarminWorkoutDetailCopyIdentifiesChronologicalWatchSetOrderInEveryLanguage() {
+        XCTAssertEqual(
+            GarminWorkoutDetailCopy.intervalsTitle(languageCode: "en"),
+            "Chronological watch sets"
+        )
+        XCTAssertEqual(
+            GarminWorkoutDetailCopy.intervalsTitle(languageCode: "uk"),
+            "Хронологічні підходи з годинника"
+        )
+        XCTAssertEqual(
+            GarminWorkoutDetailCopy.intervalsTitle(languageCode: "ru"),
+            "Хронологические подходы с часов"
+        )
+        XCTAssertTrue(
+            GarminWorkoutDetailCopy.intervalsSupporting(languageCode: "en")
+                .contains("may differ from exercise-grouped set order")
+        )
+        XCTAssertTrue(
+            GarminWorkoutDetailCopy.intervalsSupporting(languageCode: "uk")
+                .contains("може відрізнятися")
+        )
+        XCTAssertTrue(
+            GarminWorkoutDetailCopy.intervalsSupporting(languageCode: "ru")
+                .contains("может отличаться")
+        )
+        XCTAssertEqual(
+            GarminWorkoutDetailCopy.originalPartial(
+                completed: 0,
+                planned: 3,
+                languageCode: "ru"
+            ),
+            "Исходный результат Garmin: выполнено 0 из 3 запланированных подходов."
+        )
+        XCTAssertEqual(
+            GarminWorkoutDetailCopy.intervalLabel(
+                setIndex: 2,
+                startSeconds: 42,
+                endSeconds: 50,
+                languageCode: "ru"
+            ),
+            "Подход с часов S2 · 42–50с"
+        )
+        XCTAssertEqual(
+            GarminWorkoutDetailCopy.intervalLabel(
+                setIndex: 2,
+                startSeconds: 42,
+                endSeconds: 50,
+                languageCode: "en"
+            ),
+            "Watch set S2 · 42–50s"
+        )
+        XCTAssertEqual(
+            GarminWorkoutDetailCopy.intervalLabel(
+                setIndex: 2,
+                startSeconds: 42,
+                endSeconds: 50,
+                languageCode: "uk"
+            ),
+            "Підхід з годинника S2 · 42–50с"
+        )
+        XCTAssertEqual(
+            GarminWorkoutDetailCopy.noTimedHeartRateZone(languageCode: "ru"),
+            "Нет зафиксированного времени в пульсовых зонах"
+        )
+        XCTAssertEqual(GarminWorkoutDetailCopy.calorieUnit(languageCode: "ru"), "ккал")
+        XCTAssertEqual(GarminWorkoutDetailCopy.secondsUnit(languageCode: "ru"), "с")
     }
 
     func testGarminPhoneRequestTypeAndAccountCleanupAreBounded() {
