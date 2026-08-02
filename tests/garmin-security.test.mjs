@@ -78,7 +78,7 @@ test("Garmin messages are bounded, account-bound, replay-aware, and acked by id"
   assert.match(store, /Storage\.setValue\("legacyQuarantineCurrent", snapshot\)/);
   assert.match(store, /refreshLegacyCurrentQuarantine\(\)[\s\S]*Storage\.setValue\("legacyQuarantineVersion", 1\)/);
   assert.match(store, /Storage\.deleteValue\("legacyQuarantineCurrent"\)/);
-  assert.match(store, /restoreLegacyCurrentQuarantine\(\)/);
+  assert.match(store, /restoreLegacyCurrentQuarantine\(legacyUnboundUpgrade && !hasLegacyMarker\)/);
   assert.match(store, /ensureLegacyQuarantine\(\) \|\| !refreshLegacyCurrentQuarantine\(\)/);
   assert.match(store, /refreshLegacyCurrentQuarantine\(\)[\s\S]*Storage\.setValue\("exercises", exercises\)/);
   assert.match(store, /legacyRawPending = legacyUnboundState \? savedPending : null/);

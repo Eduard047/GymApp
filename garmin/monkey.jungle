@@ -1,3 +1,13 @@
 project.manifest = manifest.xml
 base.sourcePath = source
 base.resourcePath = resources
+base.excludeAnnotations = compactLegacyState
+
+# These five API 3.4 products cap watch apps at 98,304 bytes. Select the compact
+# one-time legacy migration path while retaining the current atomic workout,
+# interval, account-binding, replay, and sync implementation.
+descentg1.excludeAnnotations = fullLegacyState
+instinct2.excludeAnnotations = fullLegacyState
+instinct2s.excludeAnnotations = fullLegacyState
+instinct2x.excludeAnnotations = fullLegacyState
+instinctcrossover.excludeAnnotations = fullLegacyState

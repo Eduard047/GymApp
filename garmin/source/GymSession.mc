@@ -1426,39 +1426,34 @@ class GymSession {
         return boost;
     }
 
-    static function addSetBoost(weightKg, reps) {
-        var boost = setBoostFor(weightKg, reps);
-        setBoostCalories += boost;
-        gymCalories += boost;
-        return boost;
-    }
-
     static function removeSetBoost(boost) {
-        if (!(boost instanceof Lang.Float) && !(boost instanceof Lang.Double) && !(boost instanceof Lang.Number)) {
-            return;
-        }
-        if (boost < 0.0 || boost > 7.0) {
-            return;
-        }
-        setBoostCalories -= boost;
-        gymCalories -= boost;
-        if (setBoostCalories < 0.0) {
-            setBoostCalories = 0.0;
-        }
-        if (gymCalories < 0.0) {
-            gymCalories = 0.0;
-        }
+        changeSetBoost(boost, false);
     }
 
     static function restoreSetBoost(boost) {
+        changeSetBoost(boost, true);
+    }
+
+    static function changeSetBoost(boost, add) {
         if (!(boost instanceof Lang.Float) && !(boost instanceof Lang.Double) && !(boost instanceof Lang.Number)) {
             return;
         }
         if (boost < 0.0 || boost > 7.0) {
             return;
         }
-        setBoostCalories += boost;
-        gymCalories += boost;
+        if (add) {
+            setBoostCalories += boost;
+            gymCalories += boost;
+        } else {
+            setBoostCalories -= boost;
+            gymCalories -= boost;
+            if (setBoostCalories < 0.0) {
+                setBoostCalories = 0.0;
+            }
+            if (gymCalories < 0.0) {
+                gymCalories = 0.0;
+            }
+        }
     }
 
     static function metForHeartRate() {

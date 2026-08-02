@@ -544,8 +544,8 @@ test("Garmin omits unavailable system calories and heart rate instead of sending
     "if (allIntervalsAvailable"
   );
 
-  assert.match(freshDiagnostics, /if \(messageCheckpoint\.get\("garminCalories"\) != null\)/);
-  assert.match(freshDiagnostics, /if \(messageCheckpoint\.get\("lastHeartRate"\) != null\)/);
+  assert.match(freshDiagnostics, /if \(messageCheckpoint\[2\] != null\)/);
+  assert.match(freshDiagnostics, /if \(messageCheckpoint\[6\] != null\)/);
   assert.equal((freshDiagnostics.match(/message\.put\("garminCalories"/g) || []).length, 1);
   assert.equal((freshDiagnostics.match(/message\.put\("lastHeartRate"/g) || []).length, 1);
 });
@@ -612,6 +612,81 @@ test("Garmin active-workout copy-on-write has only old-or-new crash outcomes", a
   );
 });
 
+test("Garmin low-memory products keep an atomic compact ownerless recovery boundary", async () => {
+  const [store, jungle] = await Promise.all([
+    readFile("garmin/source/GymStore.mc", "utf8"),
+    readFile("garmin/monkey.jungle", "utf8")
+  ]);
+
+  assert.match(jungle, /^base\.excludeAnnotations = compactLegacyState$/m);
+  const compactProducts = [
+    "descentg1",
+    "instinct2",
+    "instinct2s",
+    "instinct2x",
+    "instinctcrossover"
+  ];
+  for (const product of compactProducts) {
+    assert.match(
+      jungle,
+      new RegExp(`^${product}\\.excludeAnnotations = fullLegacyState$`, "m")
+    );
+  }
+  assert.equal(
+    (jungle.match(/\.excludeAnnotations = fullLegacyState/g) || []).length,
+    compactProducts.length
+  );
+
+  const compact = section(
+    store,
+    "// CIQ 3.4 products with a 96 KiB watch-app ceiling",
+    "static function builtInExercises()"
+  );
+  const load = section(store, "static function load()", "static function save()");
+  assert.match(
+    load,
+    /hasLegacyMarker = savedLegacyMarker instanceof Lang\.Boolean && savedLegacyMarker/
+  );
+  assert.match(
+    load,
+    /restoreLegacyCurrentQuarantine\(legacyUnboundUpgrade && !hasLegacyMarker\)/
+  );
+  assert.match(compact, /accountBinding != null \|\| stateOwnerBinding != null/);
+  assert.doesNotMatch(compact, /legacyUnboundState = false/);
+  assert.match(
+    compact,
+    /legacyCompactCount == -2 \|\|[\s\S]*!isValidSetList\(sets, maxWorkoutSets, true\)/
+  );
+  assert.ok(
+    compact.indexOf("refreshLegacyCurrentQuarantine()") <
+      compact.indexOf('Storage.setValue("legacyUnboundState", true)'),
+    "the compact set snapshot must commit before the ownerless recovery marker"
+  );
+  assert.match(compact, /Storage\.setValue\("legacyCompactCurrentV1", \[/);
+  assert.match(compact, /normalizedSetList\(sets\)/);
+  assert.match(compact, /isValidSetList\(snapshot\[1\], maxWorkoutSets, true\)/);
+  assert.match(compact, /legacyCompactCount = sets\.size\(\)/);
+  assert.match(
+    compact,
+    /static function ensureLegacyQuarantine\(\)[\s\S]*legacyCompactCount != -2/
+  );
+  const compactRestore = section(
+    compact,
+    "static function restoreLegacyCurrentQuarantine(",
+    "static function legacyCurrentSetCount()"
+  );
+  assert.match(compactRestore, /snapshot == null[\s\S]*legacyCompactCount = allowSeed \? -1 : -2/);
+  assert.match(compactRestore, /return allowSeed/);
+  assert.match(compactRestore, /legacyCompactCount = -2;[\s\S]*return false/);
+  assert.doesNotMatch(compactRestore, /sets = \[\]/);
+  assert.match(compact, /static function isValidLegacyPendingList\(value\)[\s\S]*return false/);
+  assert.match(compact, /static function normalizedLegacyPendingList\(source\)[\s\S]*return \[\]/);
+
+  const fullLegacy = store.match(/\(:fullLegacyState\)/g) || [];
+  assert.ok(fullLegacy.length >= 10, "ordinary devices must retain the full legacy quarantine path");
+  assert.match(store, /Storage\.setValue\("legacyQuarantineCore", core\)/);
+});
+
 test("Garmin atomically resumes bounded interval timelines without mixing segment clocks", async () => {
   const [session, store, view] = await Promise.all([
     readFile("garmin/source/GymSession.mc", "utf8"),
@@ -635,9 +710,11 @@ test("Garmin atomically resumes bounded interval timelines without mixing segmen
     "static function restoreActiveWorkoutSnapshot("
   );
   assert.match(snapshotValidation, /snapshot\.size\(\) != 7/);
-  assert.match(snapshotValidation, /isValidAccountBinding\(snapshot\.get\("accountBinding"\)\)/);
-  assert.match(snapshotValidation, /isBoundedText\(snapshot\.get\("deviceBinding"\), maxBindingLength\)/);
-  assert.match(snapshotValidation, /isValidOptionalAccountBinding\(snapshot\.get\("pairingGeneration"\)\)/);
+  assert.match(snapshotValidation, /snapshot\[0\] != 2/);
+  assert.match(snapshotValidation, /isValidAccountBinding\(snapshot\[1\]\)/);
+  assert.match(snapshotValidation, /isBoundedText\(snapshot\[2\], maxBindingLength\)/);
+  assert.match(snapshotValidation, /isValidOptionalAccountBinding\(snapshot\[3\]\)/);
+  assert.match(snapshotValidation, /isValidSetList\(snapshot\[5\], maxWorkoutSets, true\)/);
   assert.match(snapshotValidation, /startedAtSeconds == null && checkpoint != null/);
   assert.match(snapshotValidation, /startedAtSeconds != null &&[\s\S]*!isValidWorkoutStartedAtSeconds\(startedAtSeconds\)/);
   assert.match(snapshotValidation, /areSnapshotIntervalsConsistent\(snapshotSets, checkpoint\)/);
@@ -656,6 +733,7 @@ test("Garmin atomically resumes bounded interval timelines without mixing segmen
     "static function persistActiveWorkoutSnapshot(",
     "static function persistEmptyActiveWorkoutSnapshot("
   );
+  assert.match(persist, /var snapshot = \[[\s\S]*2,/);
   assert.match(persist, /Storage\.setValue\("activeWorkoutV1", snapshot\)/);
   assert.doesNotMatch(persist, /Storage\.setValue\("sets"/);
   const addSet = section(store, "static function addSet()", "static function canUndoLastSet()");
@@ -676,8 +754,9 @@ test("Garmin atomically resumes bounded interval timelines without mixing segmen
     "static function setIntervalForCurrentTimeline(",
     "static function persistActiveWorkoutSnapshot("
   );
-  assert.match(shift, /shiftedStart = interval\[0\] \+ timelineElapsedOffset/);
-  assert.match(shift, /shiftedEnd = interval\[1\] \+ timelineElapsedOffset/);
+  assert.match(shift, /elapsedOffset = timelineBase == null \? 0 : timelineBase\[0\]/);
+  assert.match(shift, /shiftedStart = interval\[0\] \+ elapsedOffset/);
+  assert.match(shift, /shiftedEnd = interval\[1\] \+ elapsedOffset/);
   assert.match(shift, /shiftedStart <= 604800 && shiftedEnd <= 604800/);
   const message = section(store, "static function workoutMessage()", "static function applyPhoneSync(");
   assert.match(message, /messageCheckpoint = activeWorkoutTimelineValid &&[\s\S]*currentTimelineCheckpoint\(0\.0\)/);
@@ -696,9 +775,9 @@ test("Garmin atomically resumes bounded interval timelines without mixing segmen
   ]) {
     assert.match(resumedMetrics, new RegExp(`message\\.put\\("${field}"`));
   }
-  assert.match(resumedMetrics, /messageCheckpoint\.get\("garminCalories"\)/);
-  assert.match(resumedMetrics, /messageCheckpoint\.get\("lastHeartRate"\)/);
-  assert.match(message, /areSetIntervalsConsistent\([\s\S]*messageCheckpoint\.get\("elapsedSeconds"\)/);
+  assert.match(resumedMetrics, /messageCheckpoint\[2\]/);
+  assert.match(resumedMetrics, /messageCheckpoint\[6\]/);
+  assert.match(message, /areSetIntervalsConsistent\([\s\S]*messageCheckpoint\[0\]/);
   assert.ok(
     message.indexOf("areSetIntervalsConsistent(") < message.indexOf('message.put("setIntervals"'),
     "aggregate validation must happen before the optional diagnostics enter the payload"
