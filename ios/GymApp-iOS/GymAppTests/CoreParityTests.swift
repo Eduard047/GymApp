@@ -1931,8 +1931,8 @@ final class CoreParityTests: XCTestCase {
         let exercise = Exercise(name: "Cable Fly")
         let recommendation = RecommendationEngine.buildForExercise(exerciseID: exercise.id, history: [])
         XCTAssertEqual(recommendation.kind, .newExercise)
-        XCTAssertEqual(recommendation.sets.count, 2)
-        XCTAssertEqual(recommendation.sets.map(\.reps), [10, 10])
+        XCTAssertEqual(recommendation.sets.count, 3)
+        XCTAssertEqual(recommendation.sets.map(\.reps), [10, 10, 10])
         XCTAssertTrue(recommendation.sets.allSatisfy { $0.weight == nil })
     }
 
@@ -1962,8 +1962,8 @@ final class CoreParityTests: XCTestCase {
         )
 
         XCTAssertEqual(recommendation.kind, .holdAndBuild)
-        XCTAssertEqual(recommendation.sets.compactMap(\.weight), [100, 100, 100, 100, 100])
-        XCTAssertEqual(recommendation.sets.map(\.reps), [6, 6, 6, 6, 6])
+        XCTAssertEqual(recommendation.sets.compactMap(\.weight), [100, 100, 100, 100])
+        XCTAssertEqual(recommendation.sets.map(\.reps), [6, 6, 6, 6])
     }
 
     func testCutDeficitCanEarnPerSetDoubleProgressionAtReducedVolume() {
@@ -1972,9 +1972,15 @@ final class CoreParityTests: XCTestCase {
         let history = coachSession(
             exerciseID: exercise.id,
             exerciseName: exercise.name,
+            date: now.addingTimeInterval(-3 * 86_400),
+            weights: [20, 40, 60],
+            reps: [10, 10, 10]
+        ) + coachSession(
+            exerciseID: exercise.id,
+            exerciseName: exercise.name,
             date: now.addingTimeInterval(-86_400),
-            weights: [20, 40, 60, 55],
-            reps: [14, 14, 14, 14]
+            weights: [20, 40, 60],
+            reps: [10, 10, 10]
         )
         let profile = TrainingProfile(
             split: .upperLower,
@@ -1994,7 +2000,7 @@ final class CoreParityTests: XCTestCase {
         XCTAssertEqual(recommendation.kind, .progressiveOverload)
         XCTAssertEqual(recommendation.sets.count, 3)
         XCTAssertEqual(recommendation.sets.compactMap(\.weight), [21, 41, 62.5])
-        XCTAssertEqual(recommendation.sets.map(\.reps), [8, 8, 8])
+        XCTAssertEqual(recommendation.sets.map(\.reps), [6, 6, 6])
     }
 
     func testMuscleGainDoubleProgressionHoldsAtMinimumAndLoadsAtMaximum() {
@@ -2026,15 +2032,34 @@ final class CoreParityTests: XCTestCase {
         XCTAssertEqual(minimum.sets.compactMap(\.weight), [50, 50, 50, 50])
         XCTAssertEqual(minimum.sets.map(\.reps), [9, 9, 9, 9])
 
-        let maximum = recommendation(reps: 12)
+        let maximumHistory = coachSession(
+            exerciseID: exercise.id,
+            exerciseName: exercise.name,
+            date: now.addingTimeInterval(-3 * 86_400),
+            weights: [50, 50, 50, 50],
+            reps: [10, 10, 10, 10]
+        ) + coachSession(
+            exerciseID: exercise.id,
+            exerciseName: exercise.name,
+            date: now.addingTimeInterval(-86_400),
+            weights: [50, 50, 50, 50],
+            reps: [10, 10, 10, 10]
+        )
+        let maximum = RecommendationEngine.buildForExercise(
+            exerciseID: exercise.id,
+            history: maximumHistory,
+            trainingProfile: profile,
+            now: now,
+            calendar: utcCalendar()
+        )
         XCTAssertEqual(maximum.kind, .progressiveOverload)
         XCTAssertEqual(maximum.sets.compactMap(\.weight), [52.5, 52.5, 52.5, 52.5])
-        XCTAssertEqual(maximum.sets.map(\.reps), [8, 8, 8, 8])
+        XCTAssertEqual(maximum.sets.map(\.reps), [6, 6, 6, 6])
     }
 
     func testCoachSetBudgetRespondsToGoalCaloriesAndWeeklyFrequency() {
         let now = Date(timeIntervalSince1970: 1_780_000_000)
-        let exercise = Exercise(name: "Cable Fly")
+        let exercise = Exercise(name: "Bench Press")
         let history = coachSession(
             exerciseID: exercise.id,
             exerciseName: exercise.name,
@@ -2068,9 +2093,9 @@ final class CoreParityTests: XCTestCase {
             calorieMode: .maintenance
         ))
 
-        XCTAssertEqual(muscleSurplus.sets.count, 5)
+        XCTAssertEqual(muscleSurplus.sets.count, 4)
         XCTAssertEqual(balancedTwoDays.sets.count, 4)
-        XCTAssertEqual(balancedSixDays.sets.count, 2)
+        XCTAssertEqual(balancedSixDays.sets.count, 3)
     }
 
     func testFullBodyExerciseBudgetRespondsToWeeklyFrequency() {
@@ -2104,8 +2129,8 @@ final class CoreParityTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(twoDays.exercises.count, 7)
-        XCTAssertEqual(sixDays.exercises.count, 5)
+        XCTAssertEqual(twoDays.exercises.count, 6)
+        XCTAssertEqual(sixDays.exercises.count, 4)
 
         let duplicateID = UUID()
         let duplicatePlan = RecommendationEngine.buildWorkoutPlan(
@@ -2178,7 +2203,7 @@ final class CoreParityTests: XCTestCase {
         )
 
         XCTAssertEqual(recommendation.kind, .deload)
-        XCTAssertEqual(recommendation.sets.compactMap(\.weight), [92, 92, 92])
+        XCTAssertEqual(recommendation.sets.compactMap(\.weight), [92, 92, 92, 92])
     }
 
     func testSingleRegressionDoesNotTriggerDeload() {
@@ -2209,13 +2234,13 @@ final class CoreParityTests: XCTestCase {
             calendar: utcCalendar()
         )
 
-        XCTAssertEqual(recommendation.kind, .holdAndBuild)
+        XCTAssertEqual(recommendation.kind, .progressiveOverload)
     }
 
     func testImprovingRepsAtSameWeightAreNotClassifiedAsPlateau() {
         let now = Date(timeIntervalSince1970: 1_780_000_000)
         let exercise = Exercise(name: "Bench Press")
-        let history = [8, 9, 10, 11].enumerated().flatMap { offset, reps in
+        let history = [5, 6, 7, 8].enumerated().flatMap { offset, reps in
             coachSession(
                 exerciseID: exercise.id,
                 exerciseName: exercise.name,
@@ -2234,7 +2259,7 @@ final class CoreParityTests: XCTestCase {
         )
 
         XCTAssertEqual(recommendation.kind, .holdAndBuild)
-        XCTAssertEqual(recommendation.sets.map(\.reps), [12, 12, 12])
+        XCTAssertEqual(recommendation.sets.map(\.reps), [8, 8, 8, 8])
     }
 
     func testFourUnchangedSessionsUsePlateauBreakRepVariation() {
@@ -2246,7 +2271,7 @@ final class CoreParityTests: XCTestCase {
                 exerciseName: exercise.name,
                 date: now.addingTimeInterval(-Double(daysAgo) * 86_400),
                 weights: [80, 80, 80],
-                reps: [10, 10, 10]
+                reps: [7, 7, 7]
             )
         }
 
@@ -2259,8 +2284,8 @@ final class CoreParityTests: XCTestCase {
         )
 
         XCTAssertEqual(recommendation.kind, .plateauBreak)
-        XCTAssertEqual(recommendation.sets.compactMap(\.weight), [80, 80, 80])
-        XCTAssertEqual(recommendation.sets.map(\.reps), [6, 12, 6])
+        XCTAssertEqual(recommendation.sets.compactMap(\.weight), [80, 80, 80, 80])
+        XCTAssertEqual(recommendation.sets.map(\.reps), [5, 6, 5, 6])
     }
 
     func testFullBodyVariantRotatesABCAndLegacyPlansDecodeAsA() throws {
@@ -2410,6 +2435,7 @@ final class CoreParityTests: XCTestCase {
         let now = Date(timeIntervalSince1970: 1_780_000_000)
         let exercise = Exercise(name: "Bench Press")
         let workoutID = UUID()
+        let olderWorkoutID = UUID()
         var history = (0 ..< 100).map { index in
             ExerciseHistoryEntry(
                 setID: UUID(),
@@ -2418,7 +2444,19 @@ final class CoreParityTests: XCTestCase {
                 exerciseID: exercise.id,
                 exerciseName: exercise.name,
                 weight: 1_000_000,
-                reps: 12,
+                reps: 8,
+                setOrderIndex: index
+            )
+        }
+        history += (0 ..< 100).map { index in
+            ExerciseHistoryEntry(
+                setID: UUID(),
+                workoutID: olderWorkoutID,
+                sessionDate: now.addingTimeInterval(-3 * 86_400),
+                exerciseID: exercise.id,
+                exerciseName: exercise.name,
+                weight: 1_000_000,
+                reps: 8,
                 setOrderIndex: index
             )
         }
@@ -2442,9 +2480,59 @@ final class CoreParityTests: XCTestCase {
         )
 
         XCTAssertEqual(recommendation.kind, .progressiveOverload)
-        XCTAssertEqual(recommendation.sets.count, 5)
-        XCTAssertEqual(recommendation.sets.compactMap(\.weight), Array(repeating: 1_000_000, count: 5))
-        XCTAssertEqual(recommendation.sets.map(\.reps), Array(repeating: 6, count: 5))
+        XCTAssertEqual(recommendation.sets.count, 4)
+        XCTAssertEqual(recommendation.sets.compactMap(\.weight), Array(repeating: 1_000_000, count: 4))
+        XCTAssertEqual(recommendation.sets.map(\.reps), Array(repeating: 5, count: 4))
+    }
+
+    func testEveryProfileKeepsPrescriptionsWithinThreeToFourSetsAndTenReps() {
+        for goal in TrainingGoal.allCases {
+            for calorieMode in CalorieMode.allCases {
+                for workoutsPerWeek in 2 ... 6 {
+                    let profile = TrainingProfile(
+                        split: workoutsPerWeek <= 3 ? .fullBody : workoutsPerWeek == 4 ? .upperLower : .pushPullLegs,
+                        workoutsPerWeek: workoutsPerWeek,
+                        goal: goal,
+                        calorieMode: calorieMode
+                    )
+                    for exercise in [Exercise(name: "Bench Press"), Exercise(name: "Biceps Curl")] {
+                        let recommendation = RecommendationEngine.buildForExercise(
+                            exerciseID: exercise.id,
+                            history: [],
+                            exerciseCatalogKey: exercise.catalogKey,
+                            exerciseName: exercise.name,
+                            trainingProfile: profile
+                        )
+                        XCTAssertTrue((3 ... 4).contains(recommendation.sets.count))
+                        XCTAssertTrue(recommendation.sets.allSatisfy { (3 ... 10).contains($0.reps) })
+                    }
+                }
+            }
+        }
+    }
+
+    func testSmartPlanNeverTreatsWarmUpAsAWorkingExercise() {
+        let exercises = [
+            Exercise(name: "Warm Up"),
+            Exercise(name: "Bench Press"),
+            Exercise(name: "Barbell Row"),
+            Exercise(name: "Squat"),
+            Exercise(name: "Shoulder Press"),
+            Exercise(name: "Pull Up"),
+            Exercise(name: "Romanian Deadlift")
+        ]
+        let plan = RecommendationEngine.buildWorkoutPlan(
+            exercises: exercises,
+            history: [],
+            trainingProfile: TrainingProfile(
+                split: .fullBody,
+                workoutsPerWeek: 3,
+                goal: .balanced,
+                calorieMode: .maintenance
+            )
+        )
+
+        XCTAssertFalse(plan.exercises.contains { $0.exercise.catalogKey == "warm_up" })
     }
 
     func testPostWorkoutXPFormulaParity() {

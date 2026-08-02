@@ -213,21 +213,26 @@ test("PWA Strength 5-rep work builds to six without a false deload and preserves
   assert.deepEqual(recommendation.sets, [
     { weight: 80, reps: 6 },
     { weight: 82.5, reps: 6 },
+    { weight: 85, reps: 6 },
     { weight: 85, reps: 6 }
   ]);
 });
 
-test("PWA double progression adds load only after every Strength set reaches the top range", () => {
+test("PWA double progression adds load after every Strength set reaches the top range twice", () => {
   const context = loadPwaContext();
   const recommendation = recommendationFor(context, {
     profile: { split: "Full Body", days: 4, goal: "Strength", calories: "Maintenance" },
-    sessions: [exerciseSession(1, 1, "Bench Press", [[80, 6], [82.5, 6], [85, 6]])]
+    sessions: [
+      exerciseSession(1, 3, "Bench Press", [[80, 6], [82.5, 6], [85, 6], [85, 6]]),
+      exerciseSession(2, 1, "Bench Press", [[80, 6], [82.5, 6], [85, 6], [85, 6]])
+    ]
   });
 
   assert.equal(recommendation.kindId, "ProgressiveOverload");
   assert.deepEqual(recommendation.sets, [
     { weight: 85, reps: 3 },
     { weight: 87.5, reps: 3 },
+    { weight: 90, reps: 3 },
     { weight: 90, reps: 3 }
   ]);
 });
@@ -250,21 +255,24 @@ test("PWA Muscle Gain uses its rep range and surplus/frequency-aware set budgets
   assert.equal(maintenance.kindId, "HoldAndBuild");
   assert.deepEqual(maintenance.sets.map(set => set.reps), [9, 9, 9, 9]);
   assert.deepEqual(maintenance.sets.map(set => set.weight), [40, 42.5, 45, 45]);
-  assert.equal(surplusTwoDays.sets.length, 6);
-  assert.equal(surplusSixDays.sets.length, 4);
+  assert.equal(surplusTwoDays.sets.length, 4);
+  assert.equal(surplusSixDays.sets.length, 3);
 });
 
-test("PWA Cut plus Deficit trims sets but still permits earned top-range progression", () => {
+test("PWA Cut plus Deficit keeps three quality sets and permits earned progression", () => {
   const context = loadPwaContext();
   const recommendation = recommendationFor(context, {
     profile: { split: "Upper / Lower", days: 4, goal: "Aesthetic Cut", calories: "Deficit" },
-    sessions: [exerciseSession(1, 1, "Bench Press", [[50, 14], [55, 14], [60, 14]])]
+    sessions: [
+      exerciseSession(1, 3, "Bench Press", [[50, 10], [55, 10], [60, 10]]),
+      exerciseSession(2, 1, "Bench Press", [[50, 10], [55, 10], [60, 10]])
+    ]
   });
 
   assert.equal(recommendation.kindId, "ProgressiveOverload");
-  assert.equal(recommendation.sets.length, 2);
-  assert.deepEqual(recommendation.sets.map(set => set.reps), [8, 8]);
-  assert.deepEqual(recommendation.sets.map(set => set.weight), [51.5, 56.5]);
+  assert.equal(recommendation.sets.length, 3);
+  assert.deepEqual(recommendation.sets.map(set => set.reps), [6, 6, 6]);
+  assert.deepEqual(recommendation.sets.map(set => set.weight), [51.5, 56.5, 62.5]);
 });
 
 test("PWA deload requires two consecutive comparable regressions", () => {
@@ -297,16 +305,16 @@ test("PWA plateau detection ignores rising reps and reacts to a truly flat four-
   const rising = recommendationFor(context, {
     profile,
     sessions: [
-      exerciseSession(1, 7, "Bench Press", [[50, 8], [50, 8], [50, 8]]),
-      exerciseSession(2, 5, "Bench Press", [[50, 9], [50, 9], [50, 9]]),
-      exerciseSession(3, 3, "Bench Press", [[50, 10], [50, 10], [50, 10]]),
-      exerciseSession(4, 1, "Bench Press", [[50, 11], [50, 11], [50, 11]])
+      exerciseSession(1, 7, "Bench Press", [[50, 5], [50, 5], [50, 5]]),
+      exerciseSession(2, 5, "Bench Press", [[50, 6], [50, 6], [50, 6]]),
+      exerciseSession(3, 3, "Bench Press", [[50, 7], [50, 7], [50, 7]]),
+      exerciseSession(4, 1, "Bench Press", [[50, 8], [50, 8], [50, 8]])
     ]
   });
   const flat = recommendationFor(context, {
     profile,
     sessions: [1, 2, 3, 4].map((id, index) =>
-      exerciseSession(id, 7 - index * 2, "Bench Press", [[50, 10], [50, 10], [50, 10]])
+      exerciseSession(id, 7 - index * 2, "Bench Press", [[50, 7], [50, 7], [50, 7]])
     )
   });
 
@@ -343,7 +351,7 @@ test("PWA smart history matches built-in aliases through stable catalog identity
   });
 
   assert.notEqual(recommendation.kindId, "NewExercise");
-  assert.deepEqual(recommendation.sets.map(set => set.weight), [60, 62.5, 65]);
+  assert.deepEqual(recommendation.sets.map(set => set.weight), [60, 62.5, 65, 65]);
 });
 
 test("PWA smart outputs remain finite and clamped at the state-contract load bound", () => {
@@ -351,12 +359,15 @@ test("PWA smart outputs remain finite and clamped at the state-contract load bou
   const maximum = 1_000_000;
   const recommendation = recommendationFor(context, {
     profile: { split: "Full Body", days: 4, goal: "Balanced", calories: "Maintenance" },
-    sessions: [exerciseSession(1, 1, "Bench Press", [[maximum, 12], [maximum, 12], [maximum, 12]])]
+    sessions: [
+      exerciseSession(1, 3, "Bench Press", [[maximum, 8], [maximum, 8], [maximum, 8], [maximum, 8]]),
+      exerciseSession(2, 1, "Bench Press", [[maximum, 8], [maximum, 8], [maximum, 8], [maximum, 8]])
+    ]
   });
 
   assert.equal(recommendation.kindId, "ProgressiveOverload");
   assert.ok(recommendation.sets.every(set => Number.isFinite(set.weight) && set.weight === maximum));
-  assert.ok(recommendation.sets.every(set => Number.isInteger(set.reps) && set.reps >= 1 && set.reps <= 10_000));
+  assert.ok(recommendation.sets.every(set => Number.isInteger(set.reps) && set.reps >= 1 && set.reps <= 10));
   assert.ok(Number.isFinite(recommendation.estimatedVolume));
 });
 
@@ -379,8 +390,57 @@ test("PWA smart coach ignores history beyond the allowed future clock skew", () 
   });
 
   assert.equal(recommendation.kindId, "HoldAndBuild");
-  assert.deepEqual(recommendation.sets.map(set => set.weight), [50, 50, 50]);
+  assert.deepEqual(recommendation.sets.map(set => set.weight), [50, 50, 50, 50]);
   assert.equal(plan.focus, "Upper");
+});
+
+test("PWA smart prescriptions stay within three to four sets and ten reps for every profile", () => {
+  const context = loadPwaContext();
+  const goals = ["Aesthetic Cut", "Muscle Gain", "Strength", "Balanced"];
+  const calories = ["Deficit", "Maintenance", "Surplus"];
+  const days = [2, 3, 4, 5, 6];
+
+  for (const goal of goals) {
+    for (const calorieMode of calories) {
+      for (const workoutsPerWeek of days) {
+        const profile = {
+          split: workoutsPerWeek <= 3 ? "Full Body" : workoutsPerWeek === 4 ? "Upper / Lower" : "Push Pull Legs",
+          days: workoutsPerWeek,
+          goal,
+          calories: calorieMode
+        };
+        for (const exercise of ["Bench Press", "Biceps Curl"]) {
+          const recommendation = recommendationFor(context, { profile, sessions: [], exercise });
+          assert.ok(recommendation.sets.length >= 3 && recommendation.sets.length <= 4);
+          assert.ok(recommendation.sets.every(set => set.reps >= 3 && set.reps <= 10));
+        }
+      }
+    }
+  }
+});
+
+test("PWA smart plan never treats warm-up as a working exercise", () => {
+  const context = loadPwaContext();
+  const profile = { split: "Full Body", days: 3, goal: "Balanced", calories: "Maintenance" };
+  const payload = JSON.stringify({
+    exercises: [
+      { id: 1, name: "Warm Up", catalogKey: "warm_up" },
+      { id: 2, name: "Bench Press" },
+      { id: 3, name: "Cable Row" },
+      { id: 4, name: "Squat" },
+      { id: 5, name: "Shoulder Press" },
+      { id: 6, name: "Pull Up" },
+      { id: 7, name: "Romanian Deadlift" }
+    ],
+    sessions: [],
+    profile
+  });
+  const plan = vm.runInContext(`
+    state = normalizeImportedState(${payload}, defaultAppState());
+    buildSmartWorkoutPlan();
+  `, context);
+
+  assert.equal(JSON.parse(JSON.stringify(plan)).exercises.some(item => item.catalogKey === "warm_up"), false);
 });
 
 test("PWA achievement gallery exposes the canonical twelve stable milestones", () => {

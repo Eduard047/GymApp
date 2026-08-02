@@ -212,8 +212,8 @@ class WorkoutRecommendationEngineTest {
         )
 
         assertEquals(WorkoutRecommendationKind.HoldAndBuild, recommendation.kind)
-        assertEquals(List(5) { 100.0 }, recommendation.sets.map { it.weight })
-        assertEquals(List(5) { 6 }, recommendation.sets.map { it.reps })
+        assertEquals(List(4) { 100.0 }, recommendation.sets.map { it.weight })
+        assertEquals(List(4) { 6 }, recommendation.sets.map { it.reps })
     }
 
     @Test
@@ -221,6 +221,11 @@ class WorkoutRecommendationEngineTest {
         val recommendation = recommendation(
             history = exerciseSession(
                 sessionId = 1,
+                daysAgo = 3,
+                weights = List(4) { 100.0 },
+                reps = List(4) { 6 }
+            ) + exerciseSession(
+                sessionId = 2,
                 daysAgo = 1,
                 weights = List(4) { 100.0 },
                 reps = List(4) { 6 }
@@ -254,9 +259,14 @@ class WorkoutRecommendationEngineTest {
         val progressing = recommendation(
             history = exerciseSession(
                 sessionId = 2,
+                daysAgo = 3,
+                weights = listOf(40.0, 50.0, 60.0, 60.0),
+                reps = listOf(10, 10, 10, 10)
+            ) + exerciseSession(
+                sessionId = 3,
                 daysAgo = 1,
-                weights = listOf(40.0, 50.0, 60.0),
-                reps = listOf(12, 12, 12)
+                weights = listOf(40.0, 50.0, 60.0, 60.0),
+                reps = listOf(10, 10, 10, 10)
             ),
             profile = profile
         )
@@ -266,7 +276,7 @@ class WorkoutRecommendationEngineTest {
         assertEquals(List(4) { 9 }, building.sets.map { it.reps })
         assertEquals(WorkoutRecommendationKind.ProgressiveOverload, progressing.kind)
         assertEquals(listOf(42.5, 52.5, 65.0, 65.0), progressing.sets.map { it.weight })
-        assertEquals(List(4) { 8 }, progressing.sets.map { it.reps })
+        assertEquals(List(4) { 6 }, progressing.sets.map { it.reps })
     }
 
     @Test
@@ -274,9 +284,14 @@ class WorkoutRecommendationEngineTest {
         val recommendation = recommendation(
             history = exerciseSession(
                 sessionId = 1,
+                daysAgo = 3,
+                weights = listOf(50.0, 45.0, 40.0),
+                reps = listOf(10, 10, 10)
+            ) + exerciseSession(
+                sessionId = 2,
                 daysAgo = 1,
                 weights = listOf(50.0, 45.0, 40.0),
-                reps = listOf(14, 14, 14)
+                reps = listOf(10, 10, 10)
             ),
             profile = TrainingProfile(
                 goal = TrainingGoal.AestheticFatLoss,
@@ -286,11 +301,11 @@ class WorkoutRecommendationEngineTest {
         )
 
         assertEquals(WorkoutRecommendationKind.ProgressiveOverload, recommendation.kind)
-        assertEquals(2, recommendation.sets.size)
-        assertTrue(recommendation.sets.zip(listOf(50.0, 45.0)).all { (set, previousWeight) ->
+        assertEquals(3, recommendation.sets.size)
+        assertTrue(recommendation.sets.zip(listOf(50.0, 45.0, 40.0)).all { (set, previousWeight) ->
             (set.weight ?: 0.0) > previousWeight
         })
-        assertEquals(List(2) { 8 }, recommendation.sets.map { it.reps })
+        assertEquals(List(3) { 6 }, recommendation.sets.map { it.reps })
     }
 
     @Test
@@ -313,8 +328,8 @@ class WorkoutRecommendationEngineTest {
         }
 
         assertEquals(4, setCount(CalorieMode.Maintenance, workoutsPerWeek = 4))
-        assertEquals(5, setCount(CalorieMode.Surplus, workoutsPerWeek = 4))
-        assertEquals(5, setCount(CalorieMode.Maintenance, workoutsPerWeek = 2))
+        assertEquals(4, setCount(CalorieMode.Surplus, workoutsPerWeek = 4))
+        assertEquals(4, setCount(CalorieMode.Maintenance, workoutsPerWeek = 2))
         assertEquals(3, setCount(CalorieMode.Maintenance, workoutsPerWeek = 6))
     }
 
@@ -342,7 +357,7 @@ class WorkoutRecommendationEngineTest {
                 sessionId = sessionId,
                 daysAgo = 9 - sessionId * 2,
                 weights = List(3) { 60.0 },
-                reps = List(3) { 10 }
+                reps = List(3) { 7 }
             )
         }
         val rising = (1L..4L).flatMap { sessionId ->
@@ -350,7 +365,7 @@ class WorkoutRecommendationEngineTest {
                 sessionId = sessionId,
                 daysAgo = 9 - sessionId * 2,
                 weights = List(3) { 60.0 },
-                reps = List(3) { 7 + sessionId.toInt() }
+                reps = List(3) { 4 + sessionId.toInt() }
             )
         }
         val profile = TrainingProfile(goal = TrainingGoal.Balanced, calorieMode = CalorieMode.Maintenance)
@@ -404,8 +419,8 @@ class WorkoutRecommendationEngineTest {
             zoneId = zoneId
         )
 
-        assertEquals(7, plan(workoutsPerWeek = 2).exercises.size)
-        assertEquals(5, plan(workoutsPerWeek = 6).exercises.size)
+        assertEquals(6, plan(workoutsPerWeek = 2).exercises.size)
+        assertEquals(4, plan(workoutsPerWeek = 6).exercises.size)
     }
 
     @Test
@@ -506,8 +521,58 @@ class WorkoutRecommendationEngineTest {
             zoneId = zoneId
         )
 
-        assertEquals(7, plan.exercises.size)
+        assertEquals(6, plan.exercises.size)
         assertTrue(plan.exercises.all { it.exercise.id <= WorkoutDataLimits.MAX_EXERCISES })
+    }
+
+    @Test
+    fun everyProfileKeepsPrescriptionsWithinThreeToFourSetsAndTenReps() {
+        TrainingGoal.entries.forEach { goal ->
+            CalorieMode.entries.forEach { calorieMode ->
+                (2..6).forEach { workoutsPerWeek ->
+                    val profile = TrainingProfile(
+                        split = when (workoutsPerWeek) {
+                            2, 3 -> TrainingSplit.FullBody
+                            4 -> TrainingSplit.UpperLower
+                            else -> TrainingSplit.PushPullLegs
+                        },
+                        workoutsPerWeek = workoutsPerWeek,
+                        goal = goal,
+                        calorieMode = calorieMode
+                    )
+                    listOf("Bench Press", "Biceps Curl").forEachIndexed { index, exerciseName ->
+                        val recommendation = WorkoutRecommendationEngine.buildForExercise(
+                            exerciseId = index.toLong() + 1L,
+                            exerciseName = exerciseName,
+                            history = emptyList(),
+                            trainingProfile = profile,
+                            nowMillis = nowMillis,
+                            zoneId = zoneId
+                        )
+                        assertTrue(recommendation.sets.size in 3..4)
+                        assertTrue(recommendation.sets.all { it.reps in 3..10 })
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    fun smartPlanNeverTreatsWarmUpAsAWorkingExercise() {
+        val plan = WorkoutRecommendationEngine.buildWorkoutPlan(
+            exercises = catalog() + ExerciseEntity(id = 99, name = "Warm Up"),
+            history = emptyList(),
+            trainingProfile = TrainingProfile(
+                split = TrainingSplit.FullBody,
+                workoutsPerWeek = 3,
+                goal = TrainingGoal.Balanced,
+                calorieMode = CalorieMode.Maintenance
+            ),
+            nowMillis = nowMillis,
+            zoneId = zoneId
+        )
+
+        assertFalse(plan.exerciseNames().contains("Warm Up"))
     }
 
     private fun pplPlanAfter(exerciseName: String, exerciseId: Long) = WorkoutRecommendationEngine.buildWorkoutPlan(

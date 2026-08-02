@@ -142,7 +142,7 @@ test("unowned released v2 tokens are cleared on every account transition", async
 test("PWA preserves released watches while the future binary binds v3 to account and device", async () => {
   const [app, versionedApp, comm, store, properties, worker] = await Promise.all([
     readFile("pwa/app.js", "utf8"),
-    readFile("pwa/app.v60.js", "utf8"),
+    readFile("pwa/app.v61.js", "utf8"),
     readFile("garmin/source/GymComm.mc", "utf8"),
     readFile("garmin/source/GymStore.mc", "utf8"),
     readFile("garmin/resources/settings/properties.xml", "utf8"),
@@ -157,7 +157,7 @@ test("PWA preserves released watches while the future binary binds v3 to account
   assert.match(app, /replacementNonce/);
   assert.match(app, /capabilityVersion: GARMIN_CAPABILITY_VERSION/);
   assert.match(app, /GARMIN_CAPABILITY_PATTERN\.exec\(token\)/);
-  assert.match(worker, /CACHE_VERSION = "v85"/);
+  assert.match(worker, /CACHE_VERSION = "v87"/);
 
   assert.match(comm, /cloudCapabilityLength = 234/);
   assert.match(comm, /legacyCapabilityLength = 64/);

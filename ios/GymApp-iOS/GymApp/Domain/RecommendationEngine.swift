@@ -179,6 +179,9 @@ public enum RecommendationEngine {
     private static let lowerMovementPatterns: Set<MovementPattern> = [
         .squat, .legPress, .hinge, .kneeFlexion, .kneeExtension, .calf
     ]
+    private static let compoundMovementPatterns: Set<MovementPattern> = [
+        .squat, .legPress, .hinge, .horizontalPress, .verticalPress, .horizontalPull, .verticalPull
+    ]
 
     public static func buildForExercise(
         exerciseID: UUID,
@@ -189,6 +192,19 @@ public enum RecommendationEngine {
         now: Date = Date(),
         calendar: Calendar = .current
     ) -> WorkoutRecommendation {
+        let programmingAnalysis: ExerciseAnalysis? = if let exerciseName,
+                                                        !exerciseName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            analyzeExercise(exerciseName, catalogKey: exerciseCatalogKey)
+        } else if let matchingEntry = history.first(where: {
+            $0.exerciseID == exerciseID && !$0.exerciseName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }) {
+            analyzeExercise(
+                matchingEntry.exerciseName,
+                catalogKey: matchingEntry.exerciseCatalogKey
+            )
+        } else {
+            nil
+        }
         let targetIdentityKey = exerciseName.map {
             exerciseIdentityKey(name: $0, catalogKey: exerciseCatalogKey)
         } ?? exerciseCatalogKey.flatMap {
@@ -208,13 +224,17 @@ public enum RecommendationEngine {
                     ? $0.setOrderIndex < $1.setOrderIndex
                     : $0.sessionDate > $1.sessionDate
             }
-        let repRange = goalRepRange(trainingProfile)
-        let defaultTargetReps = min(repRange.upperBound, max(repRange.lowerBound, defaultReps))
+        let repRange = goalRepRange(trainingProfile, analysis: programmingAnalysis)
+        let defaultRepsTarget = defaultTargetReps(
+            trainingProfile,
+            analysis: programmingAnalysis,
+            repRange: repRange
+        )
 
         guard !matchingHistory.isEmpty else {
             let targetSetCount = setBudget(
-                observedSetCount: defaultSetCount,
-                profile: trainingProfile
+                profile: trainingProfile,
+                analysis: programmingAnalysis
             )
             return WorkoutRecommendation(
                 exerciseID: exerciseID,
@@ -226,10 +246,10 @@ public enum RecommendationEngine {
                             kind: .newExercise,
                             index: index,
                             weight: nil,
-                            reps: defaultTargetReps
+                            reps: defaultRepsTarget
                         ),
                         weight: nil,
-                        reps: defaultTargetReps
+                        reps: defaultRepsTarget
                     )
                 },
                 kind: .newExercise,
@@ -276,7 +296,8 @@ public enum RecommendationEngine {
         let latestStable = latest.sets.allSatisfy { $0.reps >= repRange.lowerBound }
         let latestStrained = latest.sets.contains { $0.reps < repRange.lowerBound } ||
             volumeRatio < 0.9
-        let earnedProgression = latest.sets.allSatisfy { $0.reps >= repRange.upperBound }
+        let earnedProgression = latest.sets.allSatisfy { $0.reps >= repRange.upperBound } &&
+            previous?.sets.allSatisfy { $0.reps >= repRange.upperBound } == true
         let isFatLossDeficit = trainingProfile.goal == .aestheticFatLoss &&
             trainingProfile.calorieMode == .deficit
 
@@ -294,15 +315,16 @@ public enum RecommendationEngine {
         }
 
         let targetSetCount = setBudget(
-            observedSetCount: latest.sets.count,
-            profile: trainingProfile
+            profile: trainingProfile,
+            analysis: programmingAnalysis
         )
         let baselineSets = resizedBaselineSets(latest.sets, targetCount: targetSetCount)
+        let plateauUsesLowerRange = latest.averageReps >= Double(repRange.lowerBound + repRange.upperBound) / 2
         let sets = baselineSets.enumerated().map { index, baseline -> RecommendedWorkoutSet in
             let target: (weight: Double?, reps: Int)
             switch kind {
             case .newExercise:
-                target = (nil, defaultTargetReps)
+                target = (nil, defaultRepsTarget)
             case .progressiveOverload:
                 let increasedWeight = baseline.weight > 0
                     ? roundToNearestHalf(
@@ -342,7 +364,9 @@ public enum RecommendationEngine {
             case .plateauBreak:
                 target = (
                     baseline.weight,
-                    index.isMultiple(of: 2) ? repRange.lowerBound : repRange.upperBound
+                    plateauUsesLowerRange
+                        ? min(repRange.upperBound, repRange.lowerBound + index % 2)
+                        : max(repRange.lowerBound, repRange.upperBound - index % 2)
                 )
             }
             return RecommendedWorkoutSet(
@@ -403,7 +427,12 @@ public enum RecommendationEngine {
         let usableExercises = exercises
             .prefix(maximumExerciseCount)
             .filter {
-                isUsableExercise($0) && seenExerciseIDs.insert($0.id).inserted
+                isUsableExercise($0) &&
+                    BuiltInExerciseCatalog.resolvedKey(
+                        catalogKey: $0.catalogKey,
+                        name: $0.name
+                    ) != "warm_up" &&
+                    seenExerciseIDs.insert($0.id).inserted
             }
         guard !usableExercises.isEmpty else {
             return SmartWorkoutPlan(focus: .fullBody, exercises: [])
@@ -421,13 +450,10 @@ public enum RecommendationEngine {
             focus: focus,
             history: usableHistory
         )
-        var targetExerciseCount = focus == .fullBody ? 6 : 5
-        if trainingProfile.workoutsPerWeek <= 2 {
-            targetExerciseCount += 1
-        } else if trainingProfile.workoutsPerWeek >= 5 {
-            targetExerciseCount -= 1
-        }
-        targetExerciseCount = min(7, max(4, targetExerciseCount))
+        let targetExerciseCount = targetExerciseCount(
+            focus: focus,
+            profile: trainingProfile
+        )
         let recentIDs = recentSessionIDs(usableHistory, limit: 3)
         let targetMuscles = targetMuscles(for: focus)
         let historyByIdentity: [String: [ExerciseHistoryEntry]] = Dictionary(
@@ -494,13 +520,18 @@ public enum RecommendationEngine {
                 variant: variant,
                 identityKey: identityKey
             )
+            let programmingScore = programmingPreferenceScore(
+                analysis: analysis,
+                profile: trainingProfile,
+                sessionCount: sessionCount
+            )
             return ExerciseCandidate(
                 exercise: exercise,
                 analysis: analysis,
                 identityKey: identityKey,
                 history: exerciseHistory,
-                score: focusScore + muscleMatch + novelty + due + confidence -
-                    recentPenalty - sameWeekPenalty + variantScore
+                score: focusScore + muscleMatch + novelty + due + confidence +
+                    variantScore + programmingScore - recentPenalty - sameWeekPenalty
             )
         }
 
@@ -547,40 +578,81 @@ public enum RecommendationEngine {
             : step
     }
 
-    private static func goalRepRange(_ profile: TrainingProfile) -> ClosedRange<Int> {
+    private static func goalRepRange(
+        _ profile: TrainingProfile,
+        analysis: ExerciseAnalysis?
+    ) -> ClosedRange<Int> {
+        let compound = isCompound(analysis)
         switch profile.goal {
-        case .strength: return 3 ... 6
-        case .muscleGain: return 8 ... 12
-        case .aestheticFatLoss: return 8 ... 14
-        case .balanced: return 6 ... 12
+        case .strength: return compound ? 3 ... 6 : 6 ... 10
+        case .muscleGain, .aestheticFatLoss: return compound ? 6 ... 10 : 8 ... 10
+        case .balanced: return compound ? 5 ... 8 : 8 ... 10
         }
     }
 
+    private static func defaultTargetReps(
+        _ profile: TrainingProfile,
+        analysis: ExerciseAnalysis?,
+        repRange: ClosedRange<Int>
+    ) -> Int {
+        let compound = isCompound(analysis)
+        let target: Int
+        switch profile.goal {
+        case .strength: target = compound ? 5 : 8
+        case .muscleGain, .aestheticFatLoss, .balanced: target = compound ? 8 : 10
+        }
+        return min(repRange.upperBound, max(repRange.lowerBound, target))
+    }
+
+    private static func isCompound(_ analysis: ExerciseAnalysis?) -> Bool {
+        guard let analysis else { return false }
+        return !analysis.patterns.isDisjoint(with: compoundMovementPatterns)
+    }
+
     private static func setBudget(
-        observedSetCount: Int,
+        profile: TrainingProfile,
+        analysis: ExerciseAnalysis?
+    ) -> Int {
+        let highFrequency = profile.workoutsPerWeek >= 5
+        let recoveryLimited = profile.calorieMode == .deficit
+        return isCompound(analysis) && !highFrequency && !recoveryLimited ? 4 : 3
+    }
+
+    private static func targetExerciseCount(
+        focus: SmartWorkoutFocus,
         profile: TrainingProfile
     ) -> Int {
-        var target = max(1, observedSetCount)
-        if profile.goal == .muscleGain { target += 1 }
-        switch profile.calorieMode {
-        case .deficit: target -= 1
-        case .maintenance: break
-        case .surplus: target += 1
+        let days = min(6, max(2, profile.workoutsPerWeek))
+        var target: Int
+        if focus == .fullBody {
+            target = days == 2 ? 6 : days == 3 ? 5 : 4
+        } else {
+            target = days <= 3 ? 6 : 5
         }
-        if profile.workoutsPerWeek <= 2 {
-            target += 1
-        } else if profile.workoutsPerWeek >= 5 {
-            target -= 1
-        }
+        if profile.goal == .strength { target -= 1 }
+        if profile.goal == .muscleGain, profile.calorieMode == .surplus { target += 1 }
+        return min(6, max(4, target))
+    }
 
-        let bounds: ClosedRange<Int>
+    private static func programmingPreferenceScore(
+        analysis: ExerciseAnalysis,
+        profile: TrainingProfile,
+        sessionCount: Int
+    ) -> Double {
+        let compound = isCompound(analysis)
+        var score: Double
         switch profile.goal {
-        case .strength: bounds = 3 ... 5
-        case .muscleGain: bounds = 3 ... 6
-        case .aestheticFatLoss: bounds = 2 ... 4
-        case .balanced: bounds = 2 ... 5
+        case .strength: score = compound ? 24 : -8
+        case .muscleGain: score = compound ? 14 : 6
+        case .aestheticFatLoss: score = compound ? 8 : 2
+        case .balanced: score = compound ? 10 : 4
         }
-        return min(bounds.upperBound, max(bounds.lowerBound, target))
+        if profile.calorieMode == .deficit {
+            score += sessionCount > 0 ? 10 : -6
+        } else if profile.calorieMode == .surplus, compound {
+            score += 4
+        }
+        return score
     }
 
     private static func resizedBaselineSets(

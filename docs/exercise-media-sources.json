@@ -6,6 +6,11 @@
     "license": "Unlicense",
     "licenseUrl": "https://github.com/yuhonas/free-exercise-db/blob/main/LICENSE.md"
   },
+  "generatedSource": {
+    "name": "OpenAI image generation",
+    "created": "2026-08-02",
+    "note": "Original GymApp-specific instructional images with fictional people; not derived from Free Exercise DB."
+  },
   "exercises": {
     "bench_press": "Barbell_Bench_Press_-_Medium_Grip",
     "dumbbell_bench_press": "Dumbbell_Bench_Press",
@@ -29,7 +34,7 @@
     "leg_extension": "Leg_Extensions",
     "lying_leg_curl": "Lying_Leg_Curls",
     "seated_leg_curl": "Seated_Leg_Curl",
-    "hip_adduction": "Cable_Hip_Adduction",
+    "hip_adduction": "Thigh_Adductor",
     "hip_abduction": "Thigh_Abductor",
     "calf_raise": "Standing_Calf_Raises",
     "shoulder_press": "Barbell_Shoulder_Press",
@@ -50,6 +55,16 @@
     "weighted_crunch": "Weighted_Crunches",
     "hanging_leg_raise": "Hanging_Leg_Raise",
     "plate_twist": "Plate_Twist",
-    "weighted_side_bend": "Dumbbell_Side_Bend"
+    "weighted_side_bend": "Dumbbell_Side_Bend",
+    "plate_loaded_row": "Leverage_Iso_Row",
+    "lunge": "Dumbbell_Lunges",
+    "french_press": "Standing_Overhead_Barbell_Triceps_Extension"
+  },
+  "generatedExercises": {
+    "assisted_pull_up": "Counterweighted assisted pull-up machine, bottom and top positions",
+    "bulgarian_split_squat": "Dumbbell Bulgarian split squat, start and bottom positions",
+    "machine_lateral_raise": "Seated lateral-raise machine, lowered and raised positions",
+    "side_hyperextension": "Side hyperextension on a 45-degree bench, lowered and aligned positions",
+    "warm_up": "Low-intensity bodyweight squat warm-up, standing and squat positions"
   }
 }
