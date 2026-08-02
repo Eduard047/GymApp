@@ -147,9 +147,14 @@ object WorkoutRecommendationEngine {
         val previous = sessions.getOrNull(1)
         val daysSinceLastSession = daysBetween(latest.date, nowMillis, zoneId)
         val repRange = goalRepRange(trainingProfile, programmingAnalysis)
+        val targetSetCount = setBudget(trainingProfile, programmingAnalysis)
+        val loadMode = programmingAnalysis?.loadMode ?: ExerciseLoadMode.Standard
         val bestEstimatedMax = sessions.maxOf { it.estimatedMax }
-        val plateauDetected = isTruePlateau(sessions.take(4))
-        val repeatedRegression = sessions.size >= 3 &&
+        val canAssessPlateau = loadMode != ExerciseLoadMode.Assistance && latest.maxWeight > 0.0
+        val canAssessRegression = loadMode != ExerciseLoadMode.Assistance &&
+            (latest.maxWeight > 0.0 || loadMode == ExerciseLoadMode.Bodyweight)
+        val plateauDetected = canAssessPlateau && isTruePlateau(sessions.take(4))
+        val repeatedRegression = canAssessRegression && sessions.size >= 3 &&
             isComparableRegression(newer = sessions[0], older = sessions[1]) &&
             isComparableRegression(newer = sessions[1], older = sessions[2])
         val latestNearBest = latest.estimatedMax >= bestEstimatedMax * 0.97
@@ -161,8 +166,22 @@ object WorkoutRecommendationEngine {
         }
         val latestStable = latest.sets.all { it.reps >= repRange.minimum }
         val latestStrained = latest.sets.any { it.reps < repRange.minimum } || volumeRatio < 0.9
-        val earnedProgression = latest.sets.all { it.reps >= repRange.maximum } &&
-            previous?.sets?.all { it.reps >= repRange.maximum } == true
+        val completedRepCeiling = completedAtRepCeiling(
+            session = latest,
+            targetSetCount = targetSetCount,
+            repCeiling = repRange.maximum
+        ) && completedAtRepCeiling(
+            session = previous,
+            targetSetCount = targetSetCount,
+            repCeiling = repRange.maximum
+        ) && performanceDidNotDecline(
+            latest = latest,
+            previous = previous,
+            targetSetCount = targetSetCount
+        )
+        val needsHarderBodyweight = completedRepCeiling &&
+            loadMode == ExerciseLoadMode.Bodyweight && latest.maxWeight <= 0.0
+        val earnedProgression = completedRepCeiling && !needsHarderBodyweight
         val isFatLossDeficit = trainingProfile.goal == TrainingGoal.AestheticFatLoss &&
             trainingProfile.calorieMode == CalorieMode.Deficit
 
@@ -174,32 +193,44 @@ object WorkoutRecommendationEngine {
             else -> WorkoutRecommendationKind.HoldAndBuild
         }
 
-        val targetSetCount = setBudget(trainingProfile, programmingAnalysis)
         val baselineSets = baselineSets(latest.sets, targetSetCount)
         val plateauUsesLowerRange = latest.averageReps >= (repRange.minimum + repRange.maximum) / 2.0
-        val sets = baselineSets.mapIndexed { index, baseline ->
+        val sets = baselineSets.map { baseline ->
             val weight = when (kind) {
                 WorkoutRecommendationKind.NewExercise -> null
                 WorkoutRecommendationKind.ProgressiveOverload -> {
                     if (baseline.weight <= 0.0) {
                         baseline.weight
                     } else {
+                        val step = chooseWeightStep(
+                            weight = baseline.weight,
+                            trainingProfile = trainingProfile
+                        )
                         boundedRoundedWeight(
-                            baseline.weight + chooseWeightStep(
-                                weight = baseline.weight,
-                                trainingProfile = trainingProfile
-                            )
+                            if (loadMode == ExerciseLoadMode.Assistance) {
+                                max(0.0, baseline.weight - step)
+                            } else {
+                                baseline.weight + step
+                            }
                         )
                     }
                 }
                 WorkoutRecommendationKind.HoldAndBuild,
                 WorkoutRecommendationKind.PlateauBreak -> baseline.weight
-                WorkoutRecommendationKind.Deload -> boundedRoundedWeight(
-                    baseline.weight * if (isFatLossDeficit) 0.9 else 0.92
-                )
-                WorkoutRecommendationKind.Comeback -> boundedRoundedWeight(
-                    baseline.weight * comebackMultiplier(daysSinceLastSession)
-                )
+                WorkoutRecommendationKind.Deload -> if (loadMode == ExerciseLoadMode.Assistance) {
+                    boundedRoundedWeight(
+                        baseline.weight + chooseWeightStep(baseline.weight, trainingProfile)
+                    )
+                } else {
+                    boundedRoundedWeight(baseline.weight * if (isFatLossDeficit) 0.9 else 0.92)
+                }
+                WorkoutRecommendationKind.Comeback -> if (loadMode == ExerciseLoadMode.Assistance) {
+                    boundedRoundedWeight(
+                        baseline.weight + chooseWeightStep(baseline.weight, trainingProfile)
+                    )
+                } else {
+                    boundedRoundedWeight(baseline.weight * comebackMultiplier(daysSinceLastSession))
+                }
             }
             val reps = when (kind) {
                 WorkoutRecommendationKind.NewExercise ->
@@ -212,13 +243,8 @@ object WorkoutRecommendationEngine {
                 WorkoutRecommendationKind.Deload,
                 WorkoutRecommendationKind.Comeback ->
                     baseline.reps.coerceIn(repRange.minimum, repRange.maximum)
-                WorkoutRecommendationKind.PlateauBreak -> {
-                    if (plateauUsesLowerRange) {
-                        (repRange.minimum + index % 2).coerceAtMost(repRange.maximum)
-                    } else {
-                        (repRange.maximum - index % 2).coerceAtLeast(repRange.minimum)
-                    }
-                }
+                WorkoutRecommendationKind.PlateauBreak ->
+                    if (plateauUsesLowerRange) repRange.minimum else repRange.maximum
             }
             RecommendedWorkoutSet(weight = weight, reps = reps)
         }
@@ -303,17 +329,17 @@ object WorkoutRecommendationEngine {
             val daysSince = exerciseHistory
                 .maxOfOrNull { it.sessionDate }
                 ?.let { daysBetween(it, nowMillis, zoneId) }
-                ?: 90
+                ?: 7
             val sessionCount = exerciseHistory.map { it.sessionId }.distinct().size
             val recentExercisePenalty = exerciseHistory
                 .filter { it.sessionId in recentSessionIds }
                 .map { it.sessionId }
                 .distinct()
-                .size * 16.0
+                .size * 8.0
             val sameWeekExercisePenalty = if (
                 exerciseHistory.any { daysBetween(it.sessionDate, nowMillis, zoneId) <= 6 }
             ) {
-                55.0
+                10.0
             } else {
                 0.0
             }
@@ -324,9 +350,8 @@ object WorkoutRecommendationEngine {
                 else -> -60.0
             }
             val muscleMatchScore = analysis.muscles.count { it in targetMuscles } * 9.0
-            val noveltyScore = if (sessionCount == 0) 12.0 else 0.0
-            val dueScore = daysSince.coerceAtMost(28) * 1.25
-            val confidenceScore = sessionCount.coerceAtMost(4) * 2.0
+            val dueScore = daysSince.coerceAtMost(14).toDouble()
+            val continuityScore = sessionCount.coerceAtMost(4) * 5.0
             val variantScore = variantPreferenceScore(analysis, focus, variant)
             val programmingScore = programmingPreferenceScore(
                 analysis = analysis,
@@ -337,7 +362,7 @@ object WorkoutRecommendationEngine {
             ExerciseCandidate(
                 exercise = exercise,
                 analysis = analysis,
-                score = focusScore + muscleMatchScore + noveltyScore + dueScore + confidenceScore +
+                score = focusScore + muscleMatchScore + dueScore + continuityScore +
                     variantScore + programmingScore -
                     recentExercisePenalty - sameWeekExercisePenalty
             )
@@ -443,7 +468,7 @@ object WorkoutRecommendationEngine {
     ): Int {
         val highFrequency = trainingProfile.workoutsPerWeek.coerceIn(2, 6) >= 5
         val recoveryLimited = trainingProfile.calorieMode == CalorieMode.Deficit
-        return if (analysis?.isCompound == true && !highFrequency && !recoveryLimited) 4 else 3
+        return if (analysis?.role == ExerciseRole.Primary && !highFrequency && !recoveryLimited) 4 else 3
     }
 
     private fun targetExerciseCount(
@@ -451,21 +476,16 @@ object WorkoutRecommendationEngine {
         trainingProfile: TrainingProfile
     ): Int {
         val days = trainingProfile.workoutsPerWeek.coerceIn(2, 6)
-        var target = when {
-            focus == SmartWorkoutFocus.FullBody && days == 2 -> 6
-            focus == SmartWorkoutFocus.FullBody && days == 3 -> 5
-            focus == SmartWorkoutFocus.FullBody -> 4
-            days <= 3 -> 6
-            else -> 5
+        var target = when (days) {
+            2 -> 6
+            3 -> 5
+            4 -> 4
+            else -> 3
         }
         if (trainingProfile.goal == TrainingGoal.Strength) target -= 1
-        if (
-            trainingProfile.goal == TrainingGoal.MuscleGain &&
-            trainingProfile.calorieMode == CalorieMode.Surplus
-        ) {
-            target += 1
-        }
-        return target.coerceIn(4, 6)
+        if (trainingProfile.calorieMode == CalorieMode.Deficit) target -= 1
+        val minimum = if (focus == SmartWorkoutFocus.FullBody) 3 else 2
+        return target.coerceIn(minimum, 6)
     }
 
     private fun programmingPreferenceScore(
@@ -494,6 +514,29 @@ object WorkoutRecommendationEngine {
         return List(targetSetCount) { index ->
             latestSets.getOrElse(index) { latestSets.last() }
         }
+    }
+
+    private fun completedAtRepCeiling(
+        session: ExerciseSessionSnapshot?,
+        targetSetCount: Int,
+        repCeiling: Int
+    ): Boolean {
+        if (session == null || session.sets.size < targetSetCount) return false
+        return session.sets.take(targetSetCount).all { it.reps >= repCeiling }
+    }
+
+    private fun performanceDidNotDecline(
+        latest: ExerciseSessionSnapshot,
+        previous: ExerciseSessionSnapshot?,
+        targetSetCount: Int
+    ): Boolean {
+        if (previous == null || latest.sets.size < targetSetCount || previous.sets.size < targetSetCount) {
+            return false
+        }
+        val latestSets = latest.sets.take(targetSetCount)
+        val previousSets = previous.sets.take(targetSetCount)
+        return latestSets.map { it.weight }.average() >= previousSets.map { it.weight }.average() &&
+            latestSets.map { it.reps }.average() >= previousSets.map { it.reps }.average()
     }
 
     private fun boundedRoundedWeight(value: Double): Double {
@@ -568,6 +611,9 @@ object WorkoutRecommendationEngine {
         nowMillis: Long,
         zoneId: ZoneId
     ): SmartWorkoutFocus {
+        if (trainingProfile.workoutsPerWeek.coerceIn(2, 6) <= 2) {
+            return SmartWorkoutFocus.FullBody
+        }
         if (history.isEmpty()) {
             return when (trainingProfile.split) {
                 TrainingSplit.UpperLower -> SmartWorkoutFocus.Upper
@@ -718,11 +764,21 @@ object WorkoutRecommendationEngine {
 
     private fun analyzeExercise(name: String): ExerciseAnalysis {
         val definition = BuiltInExerciseCatalog.definitionForName(name)
-        val normalized = (definition?.nameEn ?: name).normalizedExerciseName()
+        val normalized = name.normalizedExerciseName()
         val identityKey = definition?.let { "catalog:${it.key}" } ?: "custom:$normalized"
+        if (definition != null) {
+            val programming = builtInProgrammingByKey.getValue(definition.key)
+            return ExerciseAnalysis(
+                identityKey = identityKey,
+                category = programming.category,
+                muscles = definition.muscleIds,
+                patterns = programming.patterns,
+                role = programming.role,
+                loadMode = programming.loadMode
+            )
+        }
         val muscles = linkedSetOf<String>()
         val patterns = linkedSetOf<MovementPattern>()
-        definition?.muscleIds?.let(muscles::addAll)
 
         fun add(vararg ids: String) {
             muscles += ids
@@ -805,12 +861,11 @@ object WorkoutRecommendationEngine {
             pattern(MovementPattern.Hinge)
         }
 
-        val classificationMuscles = definition?.muscleIds ?: muscles
+        val classificationMuscles = muscles
         val lowerCount = classificationMuscles.count { it in lowerMuscles }
         val pushCount = classificationMuscles.count { it in pushMuscles }
         val pullCount = classificationMuscles.count { it in pullMuscles }
         val category = when {
-            definition?.key == "warm_up" -> SmartWorkoutFocus.FullBody
             patterns.any { it in lowerMovementPatterns } || lowerCount > max(pushCount, pullCount) ->
                 SmartWorkoutFocus.Legs
             patterns.any { it == MovementPattern.HorizontalPull || it == MovementPattern.VerticalPull } &&
@@ -828,7 +883,13 @@ object WorkoutRecommendationEngine {
             identityKey = identityKey,
             category = category,
             muscles = muscles,
-            patterns = patterns.ifEmpty { linkedSetOf(MovementPattern.Accessory) }
+            patterns = patterns.ifEmpty { linkedSetOf(MovementPattern.Accessory) },
+            role = if (patterns.any { it in compoundMovementPatterns }) {
+                ExerciseRole.Secondary
+            } else {
+                ExerciseRole.Isolation
+            },
+            loadMode = ExerciseLoadMode.Standard
         )
     }
 
@@ -867,7 +928,36 @@ object WorkoutRecommendationEngine {
             }
             .toMutableList()
 
-        if (focus != SmartWorkoutFocus.FullBody) {
+        if (focus == SmartWorkoutFocus.Lower || focus == SmartWorkoutFocus.Legs) {
+            selectRequiredPattern(
+                remaining = remaining,
+                selected = selected,
+                coveredMuscles = coveredMuscles,
+                patterns = preferredPatternsForVariant(focus, variant)
+            )
+            selectRequiredPattern(
+                remaining = remaining,
+                selected = selected,
+                coveredMuscles = coveredMuscles,
+                patterns = if (variant == SmartWorkoutVariant.A) {
+                    setOf(MovementPattern.Hinge, MovementPattern.KneeFlexion)
+                } else {
+                    setOf(MovementPattern.Squat, MovementPattern.LegPress)
+                }
+            )
+        }
+
+        if (focus == SmartWorkoutFocus.Upper) {
+            val preferred = preferredPatternsForVariant(focus, variant)
+            val press = preferred.filterTo(linkedSetOf()) {
+                it == MovementPattern.HorizontalPress || it == MovementPattern.VerticalPress
+            }.ifEmpty { setOf(MovementPattern.HorizontalPress, MovementPattern.VerticalPress) }
+            val pull = preferred.filterTo(linkedSetOf()) {
+                it == MovementPattern.HorizontalPull || it == MovementPattern.VerticalPull
+            }.ifEmpty { setOf(MovementPattern.HorizontalPull, MovementPattern.VerticalPull) }
+            selectRequiredPattern(remaining, selected, coveredMuscles, press)
+            selectRequiredPattern(remaining, selected, coveredMuscles, pull)
+        } else if (focus == SmartWorkoutFocus.Push || focus == SmartWorkoutFocus.Pull) {
             selectRequiredPattern(
                 remaining = remaining,
                 selected = selected,
@@ -876,35 +966,16 @@ object WorkoutRecommendationEngine {
             )
         }
 
-        if (focus == SmartWorkoutFocus.Lower || focus == SmartWorkoutFocus.Legs) {
-            if (selected.none { candidate ->
-                    candidate.analysis.patterns.any { it == MovementPattern.Squat || it == MovementPattern.LegPress }
-                }
-            ) {
-                selectRequiredPattern(
-                    remaining = remaining,
-                    selected = selected,
-                    coveredMuscles = coveredMuscles,
-                    patterns = setOf(MovementPattern.Squat, MovementPattern.LegPress)
-                )
-            }
-            if (shouldPrioritizeHeavyLower(history) &&
-                selected.none { candidate -> MovementPattern.Hinge in candidate.analysis.patterns }
-            ) {
-                selectRequiredPattern(
-                    remaining = remaining,
-                    selected = selected,
-                    coveredMuscles = coveredMuscles,
-                    patterns = setOf(MovementPattern.Hinge)
-                )
-            }
-        }
-
         if (focus == SmartWorkoutFocus.FullBody) {
             listOf(SmartWorkoutFocus.Push, SmartWorkoutFocus.Pull, SmartWorkoutFocus.Legs).forEach { requiredFocus ->
                 val best = remaining
-                    .filter { it.analysis.category == requiredFocus }
-                    .sortedWith(exerciseCandidateOrder())
+                    .filter { it.analysis.category == requiredFocus && it.analysis.isCompound }
+                    .sortedWith(
+                        compareByDescending<ExerciseCandidate> { candidate ->
+                            candidate.score + candidate.analysis.selectionRolePriority()
+                        }.thenBy { it.analysis.identityKey }
+                            .thenBy { it.exercise.id }
+                    )
                     .firstOrNull()
                     ?: return@forEach
                 selected += best
@@ -918,6 +989,7 @@ object WorkoutRecommendationEngine {
                 compareByDescending<ExerciseCandidate> { candidate ->
                     balancedScore(
                         candidate = candidate,
+                        selected = selected,
                         coveredMuscles = coveredMuscles,
                         targetMuscles = targetMuscles,
                         lastTrainedByMuscle = lastTrainedByMuscle,
@@ -953,7 +1025,8 @@ object WorkoutRecommendationEngine {
             .filter { candidate -> candidate.analysis.patterns.any { it in patterns } }
             .sortedWith(
                 compareByDescending<ExerciseCandidate> { candidate ->
-                    candidate.score + candidate.analysis.patterns.count { it in patterns } * 35.0
+                    candidate.score + candidate.analysis.patterns.count { it in patterns } * 35.0 +
+                        candidate.analysis.selectionRolePriority()
                 }.thenBy { it.analysis.identityKey }
                     .thenBy { it.exercise.id }
             )
@@ -971,21 +1044,9 @@ object WorkoutRecommendationEngine {
             .thenBy { it.exercise.id }
     }
 
-    private fun shouldPrioritizeHeavyLower(history: List<ExerciseHistoryEntry>): Boolean {
-        val latestLowerSession = history
-            .sessionGroupsByDate()
-            .firstOrNull { dominantFocus(it.entries).isLowerDay() }
-            ?: return true
-        val patterns = latestLowerSession.entries
-            .flatMap { analyzeExercise(it.exerciseName).patterns }
-            .toSet()
-        return MovementPattern.Squat !in patterns &&
-            MovementPattern.LegPress !in patterns &&
-            MovementPattern.Hinge !in patterns
-    }
-
     private fun balancedScore(
         candidate: ExerciseCandidate,
+        selected: List<ExerciseCandidate>,
         coveredMuscles: Set<String>,
         targetMuscles: Set<String>,
         lastTrainedByMuscle: Map<String, Long>,
@@ -1011,8 +1072,21 @@ object WorkoutRecommendationEngine {
         } else {
             0.0
         }
+        val duplicateCompoundPatternPenalty = if (candidate.analysis.isCompound) {
+            selected.sumOf { selectedCandidate ->
+                candidate.analysis.patterns.count { pattern ->
+                    pattern in compoundMovementPatterns && pattern in selectedCandidate.analysis.patterns
+                } * 30.0
+            }
+        } else {
+            0.0
+        }
+        val sameCategoryPenalty = selected.count {
+            it.analysis.category == candidate.analysis.category
+        } * 12.0
 
-        return candidate.score + newTargetMuscles * 24.0 + targetOverlap * 4.0 - fatiguePenalty - tooMuchSameCategoryPenalty
+        return candidate.score + newTargetMuscles * 24.0 + targetOverlap * 4.0 - fatiguePenalty -
+            tooMuchSameCategoryPenalty - duplicateCompoundPatternPenalty - sameCategoryPenalty
     }
 
     private fun dominantFocus(entries: List<ExerciseHistoryEntry>): SmartWorkoutFocus {
@@ -1106,10 +1180,42 @@ object WorkoutRecommendationEngine {
         val identityKey: String,
         val category: SmartWorkoutFocus,
         val muscles: Set<String>,
-        val patterns: Set<MovementPattern>
+        val patterns: Set<MovementPattern>,
+        val role: ExerciseRole,
+        val loadMode: ExerciseLoadMode
     ) {
         val isCompound: Boolean
-            get() = patterns.any { it in compoundMovementPatterns }
+            get() = role == ExerciseRole.Primary || role == ExerciseRole.Secondary
+
+        fun selectionRolePriority(): Double = when (role) {
+            ExerciseRole.Primary -> 28.0
+            ExerciseRole.Secondary -> 14.0
+            ExerciseRole.Isolation,
+            ExerciseRole.Core,
+            ExerciseRole.Warmup -> 0.0
+        }
+    }
+
+    private data class BuiltInProgramming(
+        val category: SmartWorkoutFocus,
+        val role: ExerciseRole,
+        val loadMode: ExerciseLoadMode,
+        val patterns: Set<MovementPattern>
+    )
+
+    private enum class ExerciseRole {
+        Primary,
+        Secondary,
+        Isolation,
+        Core,
+        Warmup
+    }
+
+    private enum class ExerciseLoadMode {
+        Standard,
+        Bodyweight,
+        Assistance,
+        None
     }
 
     private enum class MovementPattern {
@@ -1126,6 +1232,70 @@ object WorkoutRecommendationEngine {
         Core,
         Accessory
     }
+
+    private fun programming(
+        category: SmartWorkoutFocus,
+        role: ExerciseRole,
+        loadMode: ExerciseLoadMode = ExerciseLoadMode.Standard,
+        vararg patterns: MovementPattern
+    ) = BuiltInProgramming(category, role, loadMode, patterns.toSet())
+
+    // Stable built-ins use reviewed programming metadata. Custom exercise names are handled by
+    // the bounded heuristic fallback in analyzeExercise and cannot inject trusted role/load flags.
+    private val builtInProgrammingByKey = mapOf(
+        "bench_press" to programming(SmartWorkoutFocus.Push, ExerciseRole.Primary, patterns = arrayOf(MovementPattern.HorizontalPress)),
+        "dumbbell_bench_press" to programming(SmartWorkoutFocus.Push, ExerciseRole.Secondary, patterns = arrayOf(MovementPattern.HorizontalPress)),
+        "incline_dumbbell_press" to programming(SmartWorkoutFocus.Push, ExerciseRole.Secondary, patterns = arrayOf(MovementPattern.HorizontalPress)),
+        "incline_bench_press" to programming(SmartWorkoutFocus.Push, ExerciseRole.Secondary, patterns = arrayOf(MovementPattern.HorizontalPress)),
+        "chest_fly_machine" to programming(SmartWorkoutFocus.Push, ExerciseRole.Isolation, patterns = arrayOf(MovementPattern.Accessory)),
+        "push_up" to programming(SmartWorkoutFocus.Push, ExerciseRole.Secondary, ExerciseLoadMode.Bodyweight, MovementPattern.HorizontalPress),
+        "dips" to programming(SmartWorkoutFocus.Push, ExerciseRole.Secondary, ExerciseLoadMode.Bodyweight, MovementPattern.HorizontalPress),
+        "pull_up" to programming(SmartWorkoutFocus.Pull, ExerciseRole.Secondary, ExerciseLoadMode.Bodyweight, MovementPattern.VerticalPull),
+        "assisted_pull_up" to programming(SmartWorkoutFocus.Pull, ExerciseRole.Secondary, ExerciseLoadMode.Assistance, MovementPattern.VerticalPull),
+        "band_assisted_pull_up" to programming(SmartWorkoutFocus.Pull, ExerciseRole.Secondary, ExerciseLoadMode.Bodyweight, MovementPattern.VerticalPull),
+        "lat_pulldown" to programming(SmartWorkoutFocus.Pull, ExerciseRole.Secondary, patterns = arrayOf(MovementPattern.VerticalPull)),
+        "straight_arm_pulldown" to programming(SmartWorkoutFocus.Pull, ExerciseRole.Isolation, patterns = arrayOf(MovementPattern.Accessory)),
+        "barbell_row" to programming(SmartWorkoutFocus.Pull, ExerciseRole.Primary, patterns = arrayOf(MovementPattern.HorizontalPull)),
+        "seated_cable_row" to programming(SmartWorkoutFocus.Pull, ExerciseRole.Secondary, patterns = arrayOf(MovementPattern.HorizontalPull)),
+        "plate_loaded_row" to programming(SmartWorkoutFocus.Pull, ExerciseRole.Secondary, patterns = arrayOf(MovementPattern.HorizontalPull)),
+        "face_pull" to programming(SmartWorkoutFocus.Pull, ExerciseRole.Isolation, patterns = arrayOf(MovementPattern.Accessory)),
+        "squat" to programming(SmartWorkoutFocus.Legs, ExerciseRole.Primary, patterns = arrayOf(MovementPattern.Squat)),
+        "leg_press" to programming(SmartWorkoutFocus.Legs, ExerciseRole.Secondary, patterns = arrayOf(MovementPattern.LegPress)),
+        "bulgarian_split_squat" to programming(SmartWorkoutFocus.Legs, ExerciseRole.Secondary, patterns = arrayOf(MovementPattern.Squat)),
+        "lunge" to programming(SmartWorkoutFocus.Legs, ExerciseRole.Secondary, patterns = arrayOf(MovementPattern.Squat)),
+        "romanian_deadlift" to programming(SmartWorkoutFocus.Legs, ExerciseRole.Primary, patterns = arrayOf(MovementPattern.Hinge)),
+        "deadlift" to programming(SmartWorkoutFocus.Legs, ExerciseRole.Primary, patterns = arrayOf(MovementPattern.Hinge)),
+        "hip_thrust" to programming(SmartWorkoutFocus.Legs, ExerciseRole.Secondary, patterns = arrayOf(MovementPattern.Hinge)),
+        "leg_extension" to programming(SmartWorkoutFocus.Legs, ExerciseRole.Isolation, patterns = arrayOf(MovementPattern.KneeExtension)),
+        "lying_leg_curl" to programming(SmartWorkoutFocus.Legs, ExerciseRole.Isolation, patterns = arrayOf(MovementPattern.KneeFlexion)),
+        "seated_leg_curl" to programming(SmartWorkoutFocus.Legs, ExerciseRole.Isolation, patterns = arrayOf(MovementPattern.KneeFlexion)),
+        "hip_adduction" to programming(SmartWorkoutFocus.Legs, ExerciseRole.Isolation, patterns = arrayOf(MovementPattern.Accessory)),
+        "hip_abduction" to programming(SmartWorkoutFocus.Legs, ExerciseRole.Isolation, patterns = arrayOf(MovementPattern.Accessory)),
+        "calf_raise" to programming(SmartWorkoutFocus.Legs, ExerciseRole.Isolation, patterns = arrayOf(MovementPattern.Calf)),
+        "shoulder_press" to programming(SmartWorkoutFocus.Push, ExerciseRole.Primary, patterns = arrayOf(MovementPattern.VerticalPress)),
+        "lateral_raise" to programming(SmartWorkoutFocus.Push, ExerciseRole.Isolation, patterns = arrayOf(MovementPattern.Accessory)),
+        "machine_lateral_raise" to programming(SmartWorkoutFocus.Push, ExerciseRole.Isolation, patterns = arrayOf(MovementPattern.Accessory)),
+        "rear_delt_fly" to programming(SmartWorkoutFocus.Pull, ExerciseRole.Isolation, patterns = arrayOf(MovementPattern.Accessory)),
+        "upright_row" to programming(SmartWorkoutFocus.Pull, ExerciseRole.Isolation, patterns = arrayOf(MovementPattern.Accessory)),
+        "biceps_curl" to programming(SmartWorkoutFocus.Pull, ExerciseRole.Isolation, patterns = arrayOf(MovementPattern.Accessory)),
+        "barbell_curl" to programming(SmartWorkoutFocus.Pull, ExerciseRole.Isolation, patterns = arrayOf(MovementPattern.Accessory)),
+        "seated_dumbbell_curl" to programming(SmartWorkoutFocus.Pull, ExerciseRole.Isolation, patterns = arrayOf(MovementPattern.Accessory)),
+        "hammer_curl" to programming(SmartWorkoutFocus.Pull, ExerciseRole.Isolation, patterns = arrayOf(MovementPattern.Accessory)),
+        "cable_curl" to programming(SmartWorkoutFocus.Pull, ExerciseRole.Isolation, patterns = arrayOf(MovementPattern.Accessory)),
+        "preacher_curl" to programming(SmartWorkoutFocus.Pull, ExerciseRole.Isolation, patterns = arrayOf(MovementPattern.Accessory)),
+        "triceps_pushdown" to programming(SmartWorkoutFocus.Push, ExerciseRole.Isolation, patterns = arrayOf(MovementPattern.Accessory)),
+        "v_bar_pushdown" to programming(SmartWorkoutFocus.Push, ExerciseRole.Isolation, patterns = arrayOf(MovementPattern.Accessory)),
+        "overhead_dumbbell_triceps_extension" to programming(SmartWorkoutFocus.Push, ExerciseRole.Isolation, patterns = arrayOf(MovementPattern.Accessory)),
+        "french_press" to programming(SmartWorkoutFocus.Push, ExerciseRole.Isolation, patterns = arrayOf(MovementPattern.Accessory)),
+        "hyperextension" to programming(SmartWorkoutFocus.Legs, ExerciseRole.Isolation, patterns = arrayOf(MovementPattern.Hinge)),
+        "side_hyperextension" to programming(SmartWorkoutFocus.FullBody, ExerciseRole.Core, patterns = arrayOf(MovementPattern.Core)),
+        "plank" to programming(SmartWorkoutFocus.FullBody, ExerciseRole.Core, ExerciseLoadMode.Bodyweight, MovementPattern.Core),
+        "weighted_crunch" to programming(SmartWorkoutFocus.FullBody, ExerciseRole.Core, patterns = arrayOf(MovementPattern.Core)),
+        "hanging_leg_raise" to programming(SmartWorkoutFocus.FullBody, ExerciseRole.Core, ExerciseLoadMode.Bodyweight, MovementPattern.Core),
+        "plate_twist" to programming(SmartWorkoutFocus.FullBody, ExerciseRole.Core, patterns = arrayOf(MovementPattern.Core)),
+        "weighted_side_bend" to programming(SmartWorkoutFocus.FullBody, ExerciseRole.Core, patterns = arrayOf(MovementPattern.Core)),
+        "warm_up" to programming(SmartWorkoutFocus.FullBody, ExerciseRole.Warmup, ExerciseLoadMode.None, MovementPattern.Accessory)
+    )
 
     private val lowerMovementPatterns = setOf(
         MovementPattern.Squat,

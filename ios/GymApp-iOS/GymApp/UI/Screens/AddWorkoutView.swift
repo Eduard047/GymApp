@@ -522,6 +522,8 @@ struct AddWorkoutView: View {
             let recommendation = RecommendationEngine.buildForExercise(
                 exerciseID: exercise.id,
                 history: history,
+                exerciseCatalogKey: exercise.catalogKey,
+                exerciseName: exercise.name,
                 trainingProfile: profile
             )
             return WorkoutEditorExerciseDraft(

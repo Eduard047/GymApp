@@ -157,6 +157,34 @@ public struct SmartWorkoutPlan: Codable, Identifiable, Hashable, Sendable {
 
 /// Pure Swift port of Android's per-exercise and smart-plan recommendation engine.
 public enum RecommendationEngine {
+    enum ExerciseRole: String, Sendable {
+        case primary
+        case secondary
+        case isolation
+        case core
+        case warmup
+    }
+
+    enum ExerciseLoadMode: String, Sendable {
+        case standard
+        case bodyweight
+        case assistance
+        case none
+    }
+
+    enum MovementPattern: Hashable, Sendable {
+        case squat, legPress, hinge, kneeFlexion, kneeExtension, calf
+        case horizontalPress, verticalPress, horizontalPull, verticalPull
+        case core, accessory
+    }
+
+    struct ExerciseProgrammingMetadata: Equatable, Sendable {
+        let category: SmartWorkoutFocus
+        let role: ExerciseRole
+        let loadMode: ExerciseLoadMode
+        let patterns: Set<MovementPattern>
+    }
+
     private static let defaultSetCount = 3
     private static let defaultReps = 10
     private static let maxHistorySessions = 24
@@ -181,6 +209,63 @@ public enum RecommendationEngine {
     ]
     private static let compoundMovementPatterns: Set<MovementPattern> = [
         .squat, .legPress, .hinge, .horizontalPress, .verticalPress, .horizontalPull, .verticalPull
+    ]
+
+    // Reviewed programming data is bound to canonical catalog keys. User-created
+    // names still use the conservative heuristic fallback in analyzeExercise.
+    static let builtInProgramming: [String: ExerciseProgrammingMetadata] = [
+        "bench_press": .init(category: .push, role: .primary, loadMode: .standard, patterns: [.horizontalPress]),
+        "dumbbell_bench_press": .init(category: .push, role: .secondary, loadMode: .standard, patterns: [.horizontalPress]),
+        "incline_dumbbell_press": .init(category: .push, role: .secondary, loadMode: .standard, patterns: [.horizontalPress]),
+        "incline_bench_press": .init(category: .push, role: .secondary, loadMode: .standard, patterns: [.horizontalPress]),
+        "chest_fly_machine": .init(category: .push, role: .isolation, loadMode: .standard, patterns: [.accessory]),
+        "push_up": .init(category: .push, role: .secondary, loadMode: .bodyweight, patterns: [.horizontalPress]),
+        "dips": .init(category: .push, role: .secondary, loadMode: .bodyweight, patterns: [.horizontalPress]),
+        "pull_up": .init(category: .pull, role: .secondary, loadMode: .bodyweight, patterns: [.verticalPull]),
+        "assisted_pull_up": .init(category: .pull, role: .secondary, loadMode: .assistance, patterns: [.verticalPull]),
+        "band_assisted_pull_up": .init(category: .pull, role: .secondary, loadMode: .bodyweight, patterns: [.verticalPull]),
+        "lat_pulldown": .init(category: .pull, role: .secondary, loadMode: .standard, patterns: [.verticalPull]),
+        "straight_arm_pulldown": .init(category: .pull, role: .isolation, loadMode: .standard, patterns: [.accessory]),
+        "barbell_row": .init(category: .pull, role: .primary, loadMode: .standard, patterns: [.horizontalPull]),
+        "seated_cable_row": .init(category: .pull, role: .secondary, loadMode: .standard, patterns: [.horizontalPull]),
+        "plate_loaded_row": .init(category: .pull, role: .secondary, loadMode: .standard, patterns: [.horizontalPull]),
+        "face_pull": .init(category: .pull, role: .isolation, loadMode: .standard, patterns: [.accessory]),
+        "squat": .init(category: .legs, role: .primary, loadMode: .standard, patterns: [.squat]),
+        "leg_press": .init(category: .legs, role: .secondary, loadMode: .standard, patterns: [.legPress]),
+        "bulgarian_split_squat": .init(category: .legs, role: .secondary, loadMode: .standard, patterns: [.squat]),
+        "lunge": .init(category: .legs, role: .secondary, loadMode: .standard, patterns: [.squat]),
+        "romanian_deadlift": .init(category: .legs, role: .primary, loadMode: .standard, patterns: [.hinge]),
+        "deadlift": .init(category: .legs, role: .primary, loadMode: .standard, patterns: [.hinge]),
+        "hip_thrust": .init(category: .legs, role: .secondary, loadMode: .standard, patterns: [.hinge]),
+        "leg_extension": .init(category: .legs, role: .isolation, loadMode: .standard, patterns: [.kneeExtension]),
+        "lying_leg_curl": .init(category: .legs, role: .isolation, loadMode: .standard, patterns: [.kneeFlexion]),
+        "seated_leg_curl": .init(category: .legs, role: .isolation, loadMode: .standard, patterns: [.kneeFlexion]),
+        "hip_adduction": .init(category: .legs, role: .isolation, loadMode: .standard, patterns: [.accessory]),
+        "hip_abduction": .init(category: .legs, role: .isolation, loadMode: .standard, patterns: [.accessory]),
+        "calf_raise": .init(category: .legs, role: .isolation, loadMode: .standard, patterns: [.calf]),
+        "shoulder_press": .init(category: .push, role: .primary, loadMode: .standard, patterns: [.verticalPress]),
+        "lateral_raise": .init(category: .push, role: .isolation, loadMode: .standard, patterns: [.accessory]),
+        "machine_lateral_raise": .init(category: .push, role: .isolation, loadMode: .standard, patterns: [.accessory]),
+        "rear_delt_fly": .init(category: .pull, role: .isolation, loadMode: .standard, patterns: [.accessory]),
+        "upright_row": .init(category: .pull, role: .isolation, loadMode: .standard, patterns: [.accessory]),
+        "biceps_curl": .init(category: .pull, role: .isolation, loadMode: .standard, patterns: [.accessory]),
+        "barbell_curl": .init(category: .pull, role: .isolation, loadMode: .standard, patterns: [.accessory]),
+        "seated_dumbbell_curl": .init(category: .pull, role: .isolation, loadMode: .standard, patterns: [.accessory]),
+        "hammer_curl": .init(category: .pull, role: .isolation, loadMode: .standard, patterns: [.accessory]),
+        "cable_curl": .init(category: .pull, role: .isolation, loadMode: .standard, patterns: [.accessory]),
+        "preacher_curl": .init(category: .pull, role: .isolation, loadMode: .standard, patterns: [.accessory]),
+        "triceps_pushdown": .init(category: .push, role: .isolation, loadMode: .standard, patterns: [.accessory]),
+        "v_bar_pushdown": .init(category: .push, role: .isolation, loadMode: .standard, patterns: [.accessory]),
+        "overhead_dumbbell_triceps_extension": .init(category: .push, role: .isolation, loadMode: .standard, patterns: [.accessory]),
+        "french_press": .init(category: .push, role: .isolation, loadMode: .standard, patterns: [.accessory]),
+        "hyperextension": .init(category: .legs, role: .isolation, loadMode: .standard, patterns: [.hinge]),
+        "side_hyperextension": .init(category: .fullBody, role: .core, loadMode: .standard, patterns: [.core]),
+        "plank": .init(category: .fullBody, role: .core, loadMode: .bodyweight, patterns: [.core]),
+        "weighted_crunch": .init(category: .fullBody, role: .core, loadMode: .standard, patterns: [.core]),
+        "hanging_leg_raise": .init(category: .fullBody, role: .core, loadMode: .bodyweight, patterns: [.core]),
+        "plate_twist": .init(category: .fullBody, role: .core, loadMode: .standard, patterns: [.core]),
+        "weighted_side_bend": .init(category: .fullBody, role: .core, loadMode: .standard, patterns: [.core]),
+        "warm_up": .init(category: .fullBody, role: .warmup, loadMode: .none, patterns: [.accessory])
     ]
 
     public static func buildForExercise(
@@ -283,21 +368,55 @@ public enum RecommendationEngine {
         let latest = sessionSnapshots[0]
         let previous = sessionSnapshots.count > 1 ? sessionSnapshots[1] : nil
         let daysSinceLastSession = calendar.gymDaysBetween(latest.date, now)
+        let targetSetCount = setBudget(
+            profile: trainingProfile,
+            analysis: programmingAnalysis
+        )
+        let loadMode = programmingAnalysis?.loadMode ?? .standard
         let bestEstimatedMax = sessionSnapshots.map { $0.estimatedMax }.max() ?? 0
-        let plateauDetected = isTruePlateau(Array(sessionSnapshots.prefix(4)))
+        let canAssessStandardLoadTrend = loadMode != .assistance && latest.maxWeight > 0
+        let plateauDetected = canAssessStandardLoadTrend &&
+            isTruePlateau(Array(sessionSnapshots.prefix(4)))
         let latestNearBest = bestEstimatedMax <= 0 || latest.estimatedMax >= bestEstimatedMax * 0.97
         let previousVolumePerSet = previous?.averageVolumePerSet ?? latest.averageVolumePerSet
         let volumeRatio = previousVolumePerSet <= 0
             ? 1
             : latest.averageVolumePerSet / previousVolumePerSet
-        let repeatedRegression = sessionSnapshots.count >= 3 &&
-            isComparableRegression(newer: sessionSnapshots[0], older: sessionSnapshots[1]) &&
-            isComparableRegression(newer: sessionSnapshots[1], older: sessionSnapshots[2])
-        let latestStable = latest.sets.allSatisfy { $0.reps >= repRange.lowerBound }
+        let repeatedRegression: Bool
+        if sessionSnapshots.count < 3 || loadMode == .assistance {
+            repeatedRegression = false
+        } else if loadMode == .bodyweight,
+                  sessionSnapshots.prefix(3).allSatisfy({ $0.maxWeight <= 0 }) {
+            repeatedRegression = isBodyweightRepRegression(
+                newer: sessionSnapshots[0],
+                older: sessionSnapshots[1]
+            ) && isBodyweightRepRegression(
+                newer: sessionSnapshots[1],
+                older: sessionSnapshots[2]
+            )
+        } else {
+            repeatedRegression = canAssessStandardLoadTrend &&
+                isComparableRegression(newer: sessionSnapshots[0], older: sessionSnapshots[1]) &&
+                isComparableRegression(newer: sessionSnapshots[1], older: sessionSnapshots[2])
+        }
+        let latestStable = latest.sets.count >= 2 &&
+            latest.sets.allSatisfy { $0.reps >= repRange.lowerBound }
         let latestStrained = latest.sets.contains { $0.reps < repRange.lowerBound } ||
-            volumeRatio < 0.9
-        let earnedProgression = latest.sets.allSatisfy { $0.reps >= repRange.upperBound } &&
-            previous?.sets.allSatisfy { $0.reps >= repRange.upperBound } == true
+            volumeRatio < 0.88
+        let earnedProgression = completedAtRepCeiling(
+            latest,
+            targetSetCount: targetSetCount,
+            repCeiling: repRange.upperBound
+        ) && completedAtRepCeiling(
+            previous,
+            targetSetCount: targetSetCount,
+            repCeiling: repRange.upperBound
+        ) && performanceDidNotDecline(
+            latest: latest,
+            previous: previous,
+            targetSetCount: targetSetCount,
+            loadMode: loadMode
+        ) && !(loadMode == .bodyweight && latest.maxWeight <= 0)
         let isFatLossDeficit = trainingProfile.goal == .aestheticFatLoss &&
             trainingProfile.calorieMode == .deficit
 
@@ -314,10 +433,6 @@ public enum RecommendationEngine {
             kind = .holdAndBuild
         }
 
-        let targetSetCount = setBudget(
-            profile: trainingProfile,
-            analysis: programmingAnalysis
-        )
         let baselineSets = resizedBaselineSets(latest.sets, targetCount: targetSetCount)
         let plateauUsesLowerRange = latest.averageReps >= Double(repRange.lowerBound + repRange.upperBound) / 2
         let sets = baselineSets.enumerated().map { index, baseline -> RecommendedWorkoutSet in
@@ -328,10 +443,15 @@ public enum RecommendationEngine {
             case .progressiveOverload:
                 let increasedWeight = baseline.weight > 0
                     ? roundToNearestHalf(
-                        baseline.weight + chooseWeightStep(
-                            weight: baseline.weight,
-                            profile: trainingProfile
-                        )
+                        loadMode == .assistance
+                            ? max(0, baseline.weight - chooseWeightStep(
+                                weight: baseline.weight,
+                                profile: trainingProfile
+                            ))
+                            : baseline.weight + chooseWeightStep(
+                                weight: baseline.weight,
+                                profile: trainingProfile
+                            )
                     )
                     : baseline.weight
                 target = (
@@ -347,7 +467,12 @@ public enum RecommendationEngine {
                 target = (
                     baseline.weight > 0
                         ? roundToNearestHalf(
-                            baseline.weight * (isFatLossDeficit ? 0.9 : 0.92)
+                            loadMode == .assistance
+                                ? baseline.weight + chooseWeightStep(
+                                    weight: baseline.weight,
+                                    profile: trainingProfile
+                                )
+                                : baseline.weight * (isFatLossDeficit ? 0.9 : 0.92)
                         )
                         : baseline.weight,
                     min(repRange.upperBound, max(repRange.lowerBound, baseline.reps))
@@ -356,7 +481,12 @@ public enum RecommendationEngine {
                 target = (
                     baseline.weight > 0
                         ? roundToNearestHalf(
-                            baseline.weight * comebackMultiplier(daysSinceLastSession)
+                            loadMode == .assistance
+                                ? baseline.weight + chooseWeightStep(
+                                    weight: baseline.weight,
+                                    profile: trainingProfile
+                                )
+                                : baseline.weight * comebackMultiplier(daysSinceLastSession)
                         )
                         : baseline.weight,
                     min(repRange.upperBound, max(repRange.lowerBound, baseline.reps))
@@ -364,9 +494,7 @@ public enum RecommendationEngine {
             case .plateauBreak:
                 target = (
                     baseline.weight,
-                    plateauUsesLowerRange
-                        ? min(repRange.upperBound, repRange.lowerBound + index % 2)
-                        : max(repRange.lowerBound, repRange.upperBound - index % 2)
+                    plateauUsesLowerRange ? repRange.lowerBound : repRange.upperBound
                 )
             }
             return RecommendedWorkoutSet(
@@ -460,46 +588,22 @@ public enum RecommendationEngine {
             grouping: usableHistory,
             by: { entryIdentityKey($0) }
         )
-        let historyByExerciseID: [UUID: [ExerciseHistoryEntry]] = Dictionary(
-            grouping: usableHistory,
-            by: { $0.exerciseID }
-        )
-        let exercisesByIdentity = Dictionary(grouping: usableExercises) {
-            exerciseIdentityKey($0)
-        }
-        let canonicalExercises = exercisesByIdentity.values.compactMap { equivalents in
-            equivalents.sorted { left, right in
-                let leftHistoryCount = historyByExerciseID[left.id]?.count ?? 0
-                let rightHistoryCount = historyByExerciseID[right.id]?.count ?? 0
-                if leftHistoryCount != rightHistoryCount {
-                    return leftHistoryCount > rightHistoryCount
-                }
-                if left.name.lowercased() != right.name.lowercased() {
-                    return left.name.lowercased() < right.name.lowercased()
-                }
-                return left.id.uuidString < right.id.uuidString
-            }.first
-        }
-
-        let candidates = canonicalExercises.map { exercise -> ExerciseCandidate in
+        let candidates = usableExercises.map { exercise -> ExerciseCandidate in
             let identityKey = exerciseIdentityKey(exercise)
-            let exerciseHistory = mergedHistory(
-                historyByExerciseID[exercise.id, default: []],
-                historyByIdentity[identityKey, default: []]
-            )
+            let exerciseHistory = historyByIdentity[identityKey, default: []]
             let analysis = analyzeExercise(
                 exercise.name,
                 catalogKey: exercise.catalogKey
             )
             let daysSince = exerciseHistory.map(\.sessionDate).max()
-                .map { calendar.gymDaysBetween($0, now) } ?? 90
+                .map { calendar.gymDaysBetween($0, now) } ?? 7
             let sessionCount = Set(exerciseHistory.map(\.workoutID)).count
             let recentPenalty = Double(Set(
                 exerciseHistory.filter { recentIDs.contains($0.workoutID) }.map(\.workoutID)
-            ).count) * 16
+            ).count) * 8
             let sameWeekPenalty = exerciseHistory.contains {
                 calendar.gymDaysBetween($0.sessionDate, now) <= 6
-            } ? 55.0 : 0.0
+            } ? 10.0 : 0.0
             let focusScore: Double
             if focus == .fullBody {
                 focusScore = 44
@@ -511,9 +615,8 @@ public enum RecommendationEngine {
                 focusScore = -60
             }
             let muscleMatch = Double(analysis.muscles.intersection(targetMuscles).count) * 9
-            let novelty = sessionCount == 0 ? 12.0 : 0.0
-            let due = Double(min(28, daysSince)) * 1.25
-            let confidence = Double(min(4, sessionCount)) * 2
+            let due = Double(min(14, daysSince))
+            let continuity = Double(min(4, sessionCount)) * 5
             let variantScore = variantPreferenceScore(
                 analysis: analysis,
                 focus: focus,
@@ -530,13 +633,23 @@ public enum RecommendationEngine {
                 analysis: analysis,
                 identityKey: identityKey,
                 history: exerciseHistory,
-                score: focusScore + muscleMatch + novelty + due + confidence +
+                score: focusScore + muscleMatch + due + continuity +
                     variantScore + programmingScore - recentPenalty - sameWeekPenalty
             )
         }
+        let canonicalCandidates = Dictionary(grouping: candidates, by: \.identityKey)
+            .values
+            .compactMap { equivalents in
+                equivalents.sorted { left, right in
+                    if left.score != right.score { return left.score > right.score }
+                    let comparison = left.exercise.name.localizedCaseInsensitiveCompare(right.exercise.name)
+                    if comparison != .orderedSame { return comparison == .orderedAscending }
+                    return left.exercise.id.uuidString < right.exercise.id.uuidString
+                }.first
+            }
 
         let selected = selectBalancedExercises(
-            candidates: candidates,
+            candidates: canonicalCandidates,
             focus: focus,
             variant: variant,
             targetMuscles: targetMuscles,
@@ -606,7 +719,7 @@ public enum RecommendationEngine {
 
     private static func isCompound(_ analysis: ExerciseAnalysis?) -> Bool {
         guard let analysis else { return false }
-        return !analysis.patterns.isDisjoint(with: compoundMovementPatterns)
+        return analysis.role == .primary || analysis.role == .secondary
     }
 
     private static func setBudget(
@@ -615,7 +728,7 @@ public enum RecommendationEngine {
     ) -> Int {
         let highFrequency = profile.workoutsPerWeek >= 5
         let recoveryLimited = profile.calorieMode == .deficit
-        return isCompound(analysis) && !highFrequency && !recoveryLimited ? 4 : 3
+        return analysis?.role == .primary && !highFrequency && !recoveryLimited ? 4 : 3
     }
 
     private static func targetExerciseCount(
@@ -623,15 +736,10 @@ public enum RecommendationEngine {
         profile: TrainingProfile
     ) -> Int {
         let days = min(6, max(2, profile.workoutsPerWeek))
-        var target: Int
-        if focus == .fullBody {
-            target = days == 2 ? 6 : days == 3 ? 5 : 4
-        } else {
-            target = days <= 3 ? 6 : 5
-        }
+        var target = days == 2 ? 6 : days == 3 ? 5 : days == 4 ? 4 : 3
         if profile.goal == .strength { target -= 1 }
-        if profile.goal == .muscleGain, profile.calorieMode == .surplus { target += 1 }
-        return min(6, max(4, target))
+        if profile.calorieMode == .deficit { target -= 1 }
+        return min(6, max(focus == .fullBody ? 3 : 2, target))
     }
 
     private static func programmingPreferenceScore(
@@ -653,6 +761,36 @@ public enum RecommendationEngine {
             score += 4
         }
         return score
+    }
+
+    private static func completedAtRepCeiling(
+        _ session: ExerciseSessionSnapshot?,
+        targetSetCount: Int,
+        repCeiling: Int
+    ) -> Bool {
+        guard let session, session.sets.count >= targetSetCount else { return false }
+        return session.sets.prefix(targetSetCount).allSatisfy { $0.reps >= repCeiling }
+    }
+
+    private static func performanceDidNotDecline(
+        latest: ExerciseSessionSnapshot,
+        previous: ExerciseSessionSnapshot?,
+        targetSetCount: Int,
+        loadMode: ExerciseLoadMode
+    ) -> Bool {
+        guard let previous,
+              latest.sets.count >= targetSetCount,
+              previous.sets.count >= targetSetCount else { return false }
+        let latestSets = latest.sets.prefix(targetSetCount)
+        let previousSets = previous.sets.prefix(targetSetCount)
+        let latestAverageWeight = latestSets.map(\.weight).reduce(0, +) / Double(targetSetCount)
+        let previousAverageWeight = previousSets.map(\.weight).reduce(0, +) / Double(targetSetCount)
+        let latestAverageReps = Double(latestSets.map(\.reps).reduce(0, +)) / Double(targetSetCount)
+        let previousAverageReps = Double(previousSets.map(\.reps).reduce(0, +)) / Double(targetSetCount)
+        let weightDidNotDecline = loadMode == .assistance
+            ? latestAverageWeight <= previousAverageWeight
+            : latestAverageWeight >= previousAverageWeight
+        return weightDidNotDecline && latestAverageReps >= previousAverageReps
     }
 
     private static func resizedBaselineSets(
@@ -678,22 +816,33 @@ public enum RecommendationEngine {
             newer.averageVolumePerSet < older.averageVolumePerSet * 0.92
     }
 
+    private static func isBodyweightRepRegression(
+        newer: ExerciseSessionSnapshot,
+        older: ExerciseSessionSnapshot
+    ) -> Bool {
+        newer.averageReps < older.averageReps * 0.9
+    }
+
     private static func isTruePlateau(_ sessions: [ExerciseSessionSnapshot]) -> Bool {
-        guard sessions.count >= 4 else { return false }
+        guard sessions.count >= 4,
+              sessions.allSatisfy({ $0.estimatedMax > 0 && $0.averageVolumePerSet > 0 }) else {
+            return false
+        }
         let latest = sessions[0]
         let oldest = sessions[sessions.count - 1]
-        let estimatedMaxImproved = oldest.estimatedMax <= 0
-            ? latest.estimatedMax > 0
-            : latest.estimatedMax > oldest.estimatedMax * 1.015
-        let averageRepsImproved = latest.averageReps > oldest.averageReps + 0.25
-        let volumePerSetImproved = oldest.averageVolumePerSet <= 0
-            ? latest.averageVolumePerSet > 0
-            : latest.averageVolumePerSet > oldest.averageVolumePerSet * 1.02
-        let weights = sessions.map(\.maxWeight)
-        let stableLoad = (weights.max() ?? 0) - (weights.min() ?? 0) <=
-            max(1.25, oldest.maxWeight * 0.02)
-        return stableLoad && !estimatedMaxImproved && !averageRepsImproved &&
-            !volumePerSetImproved
+        let estimatedMaxValues = sessions.map(\.estimatedMax)
+        let volumeValues = sessions.map(\.averageVolumePerSet)
+        guard let maximumEstimatedMax = estimatedMaxValues.max(),
+              let minimumEstimatedMax = estimatedMaxValues.min(),
+              let maximumVolume = volumeValues.max(),
+              let minimumVolume = volumeValues.min() else { return false }
+        let estimatedMaxSpread = (maximumEstimatedMax - minimumEstimatedMax) / maximumEstimatedMax
+        let volumeSpread = (maximumVolume - minimumVolume) / maximumVolume
+        return estimatedMaxSpread <= 0.02 &&
+            volumeSpread <= 0.03 &&
+            latest.estimatedMax <= oldest.estimatedMax * 1.015 &&
+            latest.averageReps <= oldest.averageReps + 0.25 &&
+            latest.averageVolumePerSet <= oldest.averageVolumePerSet * 1.02
     }
 
     private static func canonicalCatalogKey(
@@ -704,21 +853,6 @@ public enum RecommendationEngine {
             catalogKey: catalogKey,
             name: name ?? ""
         )
-    }
-
-    private static func mergedHistory(
-        _ exactHistory: [ExerciseHistoryEntry],
-        _ identityHistory: [ExerciseHistoryEntry]
-    ) -> [ExerciseHistoryEntry] {
-        var seenSetIDs = Set<UUID>()
-        var result: [ExerciseHistoryEntry] = []
-        result.reserveCapacity(exactHistory.count + identityHistory.count)
-        for source in [exactHistory, identityHistory] {
-            for entry in source where seenSetIDs.insert(entry.setID).inserted {
-                result.append(entry)
-            }
-        }
-        return result
     }
 
     private static func isUsableExercise(_ exercise: Exercise) -> Bool {
@@ -780,7 +914,7 @@ public enum RecommendationEngine {
             ? 10.0
             : 0.0
         let preferredPatterns = preferredPatterns(for: focus, variant: variant)
-        let patternScore = analysis.patterns.isDisjoint(with: preferredPatterns) ? 0.0 : 18.0
+        let patternScore = Double(analysis.patterns.intersection(preferredPatterns).count) * 18
         return bucketScore + patternScore
     }
 
@@ -887,6 +1021,7 @@ public enum RecommendationEngine {
         now: Date,
         calendar: Calendar
     ) -> SmartWorkoutFocus {
+        if profile.workoutsPerWeek <= 2 { return .fullBody }
         guard !history.isEmpty else {
             switch profile.split {
             case .upperLower: return .upper
@@ -970,6 +1105,15 @@ public enum RecommendationEngine {
 
         if let definition {
             muscles.formUnion(definition.muscleIDs)
+            if let programming = builtInProgramming[definition.key] {
+                return ExerciseAnalysis(
+                    category: programming.category,
+                    muscles: muscles,
+                    patterns: programming.patterns,
+                    role: programming.role,
+                    loadMode: programming.loadMode
+                )
+            }
         }
 
         if has("жим ног", "leg press") { add("quads", "glutes", "hamstrings"); pattern(.legPress) }
@@ -1030,7 +1174,16 @@ public enum RecommendationEngine {
             category = .fullBody
         }
         if patterns.isEmpty { patterns.insert(.accessory) }
-        return ExerciseAnalysis(category: category, muscles: muscles, patterns: patterns)
+        let role: ExerciseRole = patterns.isDisjoint(with: compoundMovementPatterns)
+            ? .isolation
+            : .secondary
+        return ExerciseAnalysis(
+            category: category,
+            muscles: muscles,
+            patterns: patterns,
+            role: role,
+            loadMode: .standard
+        )
     }
 
     private static func isEligible(_ analysis: ExerciseAnalysis, for focus: SmartWorkoutFocus) -> Bool {
@@ -1063,7 +1216,38 @@ public enum RecommendationEngine {
             ? candidates
             : eligible
 
-        if focus != .fullBody {
+        if focus == .lower || focus == .legs {
+            selectRequiredPattern(
+                remaining: &remaining,
+                selected: &selected,
+                covered: &covered,
+                patterns: preferredPatterns(for: focus, variant: variant)
+            )
+            selectRequiredPattern(
+                remaining: &remaining,
+                selected: &selected,
+                covered: &covered,
+                patterns: variant == .a ? [.hinge, .kneeFlexion] : [.squat, .legPress]
+            )
+        }
+
+        if focus == .upper {
+            let preferred = preferredPatterns(for: focus, variant: variant)
+            let pressPatterns = preferred.intersection([.horizontalPress, .verticalPress])
+            let pullPatterns = preferred.intersection([.horizontalPull, .verticalPull])
+            selectRequiredPattern(
+                remaining: &remaining,
+                selected: &selected,
+                covered: &covered,
+                patterns: pressPatterns.isEmpty ? [.horizontalPress, .verticalPress] : pressPatterns
+            )
+            selectRequiredPattern(
+                remaining: &remaining,
+                selected: &selected,
+                covered: &covered,
+                patterns: pullPatterns.isEmpty ? [.horizontalPull, .verticalPull] : pullPatterns
+            )
+        } else if focus == .push || focus == .pull {
             selectRequiredPattern(
                 remaining: &remaining,
                 selected: &selected,
@@ -1072,35 +1256,15 @@ public enum RecommendationEngine {
             )
         }
 
-        if focus == .lower || focus == .legs {
-            if !selected.contains(where: {
-                !$0.analysis.patterns.isDisjoint(with: [.squat, .legPress])
-            }) {
-                selectRequiredPattern(
-                    remaining: &remaining,
-                    selected: &selected,
-                    covered: &covered,
-                    patterns: [.squat, .legPress]
-                )
-            }
-            if shouldPrioritizeHeavyLower(history),
-               !selected.contains(where: { $0.analysis.patterns.contains(.hinge) }) {
-                selectRequiredPattern(
-                    remaining: &remaining,
-                    selected: &selected,
-                    covered: &covered,
-                    patterns: [.hinge]
-                )
-            }
-        }
         if focus == .fullBody {
             for required in [SmartWorkoutFocus.push, .pull, .legs] {
                 guard let best = remaining
-                    .filter({ $0.analysis.category == required })
+                    .filter({ $0.analysis.category == required && isCompound($0.analysis) })
                     .max(by: {
-                        $0.score == $1.score
-                            ? $0.identityKey > $1.identityKey
-                            : $0.score < $1.score
+                        let leftScore = $0.score + programmingPriority($0.analysis)
+                        let rightScore = $1.score + programmingPriority($1.analysis)
+                        if leftScore != rightScore { return leftScore < rightScore }
+                        return $0.exercise.name.localizedCaseInsensitiveCompare($1.exercise.name) == .orderedDescending
                     }) else { continue }
                 selected.append(best)
                 covered.formUnion(best.analysis.muscles)
@@ -1114,6 +1278,7 @@ public enum RecommendationEngine {
                     candidate,
                     balancedScore(
                         candidate,
+                        selected: selected,
                         covered: covered,
                         targets: targetMuscles,
                         lastTrained: lastTrained,
@@ -1123,27 +1288,23 @@ public enum RecommendationEngine {
                 )
             }
             guard let best = scored.max(by: {
-                $0.1 == $1.1
-                    ? $0.0.identityKey > $1.0.identityKey
-                    : $0.1 < $1.1
+                if $0.1 != $1.1 { return $0.1 < $1.1 }
+                return $0.0.exercise.name.localizedCaseInsensitiveCompare($1.0.exercise.name) == .orderedDescending
             })?.0 else { break }
             selected.append(best)
             covered.formUnion(best.analysis.muscles)
             remaining.removeAll { $0.exercise.id == best.exercise.id }
         }
 
-        if selected.count < targetExerciseCount {
-            let selectedIDs = Set(selected.map { $0.exercise.id })
-            selected.append(contentsOf: candidates
-                .filter { isEligible($0.analysis, for: focus) && !selectedIDs.contains($0.exercise.id) }
-                .sorted {
-                    $0.score == $1.score
-                        ? $0.identityKey < $1.identityKey
-                        : $0.score > $1.score
-                }
-                .prefix(targetExerciseCount - selected.count))
-        }
         return Array(selected.prefix(targetExerciseCount))
+    }
+
+    private static func programmingPriority(_ analysis: ExerciseAnalysis) -> Double {
+        switch analysis.role {
+        case .primary: return 28
+        case .secondary: return 14
+        case .isolation, .core, .warmup: return 0
+        }
     }
 
     private static func selectRequiredPattern(
@@ -1156,29 +1317,22 @@ public enum RecommendationEngine {
             .filter({ !$0.analysis.patterns.isDisjoint(with: patterns) })
             .max(by: {
                 let leftScore = $0.score +
-                    Double($0.analysis.patterns.intersection(patterns).count) * 35
+                    Double($0.analysis.patterns.intersection(patterns).count) * 35 +
+                    programmingPriority($0.analysis)
                 let rightScore = $1.score +
-                    Double($1.analysis.patterns.intersection(patterns).count) * 35
-                return leftScore == rightScore
-                    ? $0.identityKey > $1.identityKey
-                    : leftScore < rightScore
+                    Double($1.analysis.patterns.intersection(patterns).count) * 35 +
+                    programmingPriority($1.analysis)
+                if leftScore != rightScore { return leftScore < rightScore }
+                return $0.exercise.name.localizedCaseInsensitiveCompare($1.exercise.name) == .orderedDescending
             }) else { return }
         selected.append(best)
         covered.formUnion(best.analysis.muscles)
         remaining.removeAll { $0.exercise.id == best.exercise.id }
     }
 
-    private static func shouldPrioritizeHeavyLower(_ history: [ExerciseHistoryEntry]) -> Bool {
-        guard let latest = sessionGroups(history)
-            .first(where: { dominantFocus($0.entries).isLowerDay }) else { return true }
-        let patterns = Set(latest.entries.flatMap {
-            analyzeExercise($0.exerciseName, catalogKey: $0.exerciseCatalogKey).patterns
-        })
-        return !patterns.contains(.squat) && !patterns.contains(.legPress) && !patterns.contains(.hinge)
-    }
-
     private static func balancedScore(
         _ candidate: ExerciseCandidate,
+        selected: [ExerciseCandidate],
         covered: Set<String>,
         targets: Set<String>,
         lastTrained: [String: Date],
@@ -1201,7 +1355,23 @@ public enum RecommendationEngine {
         let repeatedPenalty = !covered.isEmpty && candidate.analysis.muscles.allSatisfy(covered.contains)
             ? 10.0
             : 0.0
-        return candidate.score + Double(newTargets) * 24 + Double(overlap) * 4 - fatigue - repeatedPenalty
+        let duplicateCompoundPatternPenalty: Double
+        if isCompound(candidate.analysis) {
+            duplicateCompoundPatternPenalty = selected.reduce(0) { result, item in
+                let repeatedPatterns = candidate.analysis.patterns
+                    .intersection(compoundMovementPatterns)
+                    .intersection(item.analysis.patterns)
+                    .count
+                return result + Double(repeatedPatterns) * 30
+            }
+        } else {
+            duplicateCompoundPatternPenalty = 0
+        }
+        let sameCategoryPenalty = Double(selected.filter {
+            $0.analysis.category == candidate.analysis.category
+        }.count) * 12
+        return candidate.score + Double(newTargets) * 24 + Double(overlap) * 4 - fatigue -
+            repeatedPenalty - duplicateCompoundPatternPenalty - sameCategoryPenalty
     }
 
     private static func dominantFocus(_ entries: [ExerciseHistoryEntry]) -> SmartWorkoutFocus {
@@ -1321,12 +1491,8 @@ public enum RecommendationEngine {
         let category: SmartWorkoutFocus
         let muscles: Set<String>
         let patterns: Set<MovementPattern>
-    }
-
-    private enum MovementPattern: Hashable {
-        case squat, legPress, hinge, kneeFlexion, kneeExtension, calf
-        case horizontalPress, verticalPress, horizontalPull, verticalPull
-        case core, accessory
+        let role: ExerciseRole
+        let loadMode: ExerciseLoadMode
     }
 
     private struct SessionGroup {

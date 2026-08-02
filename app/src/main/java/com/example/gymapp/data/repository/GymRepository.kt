@@ -1191,10 +1191,12 @@ class GymRepository(
 
         val flows = uniqueIds.map { exerciseId ->
             observeExerciseHistory(exerciseId).map { history ->
+                val exerciseName = exerciseDao.getById(exerciseId)?.name
                 exerciseId to WorkoutRecommendationEngine.buildForExercise(
                     exerciseId = exerciseId,
                     history = history,
-                    trainingProfile = trainingProfile
+                    trainingProfile = trainingProfile,
+                    exerciseName = exerciseName
                 )
             }
         }
