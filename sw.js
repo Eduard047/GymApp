@@ -1,7 +1,7 @@
 "use strict";
 
 const CACHE_PREFIX = "gym-pwa-";
-const CACHE_VERSION = "v85";
+const CACHE_VERSION = "v87";
 const CACHE_NAME = `${CACHE_PREFIX}${CACHE_VERSION}`;
 const LEGACY_GITHUB_ORIGIN = "https://eduard047.github.io";
 const LEGACY_GITHUB_SCOPE = `${LEGACY_GITHUB_ORIGIN}/GymApp/`;
@@ -12,15 +12,15 @@ const LEGACY_CLEANUP_URL = new URL("./legacy-origin-cleanup-v61.html", self.regi
 const LEGACY_CONFIRMATION_URL = new URL("./confirmed.html", self.registration.scope);
 const EXERCISE_MEDIA_KEYS = [
   "bench_press", "dumbbell_bench_press", "incline_dumbbell_press", "incline_bench_press",
-  "chest_fly_machine", "push_up", "dips", "pull_up", "band_assisted_pull_up",
-  "lat_pulldown", "straight_arm_pulldown", "barbell_row", "seated_cable_row", "face_pull",
-  "squat", "leg_press", "romanian_deadlift", "deadlift", "hip_thrust", "leg_extension",
+  "chest_fly_machine", "push_up", "dips", "pull_up", "assisted_pull_up", "band_assisted_pull_up",
+  "lat_pulldown", "straight_arm_pulldown", "barbell_row", "seated_cable_row", "plate_loaded_row", "face_pull",
+  "squat", "leg_press", "romanian_deadlift", "deadlift", "hip_thrust", "bulgarian_split_squat", "lunge", "leg_extension",
   "lying_leg_curl", "seated_leg_curl", "hip_adduction", "hip_abduction", "calf_raise",
-  "shoulder_press", "lateral_raise", "rear_delt_fly", "upright_row", "biceps_curl",
+  "shoulder_press", "lateral_raise", "machine_lateral_raise", "rear_delt_fly", "upright_row", "biceps_curl",
   "barbell_curl", "seated_dumbbell_curl", "hammer_curl", "cable_curl", "preacher_curl",
   "triceps_pushdown", "v_bar_pushdown", "overhead_dumbbell_triceps_extension",
-  "hyperextension", "plank", "weighted_crunch", "hanging_leg_raise", "plate_twist",
-  "weighted_side_bend"
+  "french_press", "hyperextension", "side_hyperextension", "plank", "weighted_crunch",
+  "hanging_leg_raise", "plate_twist", "weighted_side_bend", "warm_up"
 ];
 const ASSETS = [
   "./",
@@ -30,14 +30,14 @@ const ASSETS = [
   "./confirmed.v56.js",
   "./frame-guard.v56.js",
   "./theme.v56.js",
-  "./styles.v58.css",
+  "./styles.v59.css",
   "./muscle-regions.v56.js",
   "./supabase-config.v56.js",
   "./state-contract.v56.js",
   "./garmin-cloud-sync.v57.js",
   "./progression-rules.v56.js",
   "./russian-text.v59.js",
-  "./app.v60.js",
+  "./app.v61.js",
   ...EXERCISE_MEDIA_KEYS.flatMap(key => [
     `./exercise-media/${key}_0.jpg`,
     `./exercise-media/${key}_1.jpg`
