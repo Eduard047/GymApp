@@ -50,6 +50,10 @@ test("Garmin messages are bounded, account-bound, replay-aware, and acked by id"
     store.match(/static function clearAccountScopedState\(\) \{[\s\S]*?\n    \}/)?.[0] || "",
     /lastPhoneSyncRevision = 0l|lastPhoneSyncId = null/
   );
+  assert.match(
+    store.match(/static function clearAccountScopedState\(\) \{[\s\S]*?\n    \}/)?.[0] || "",
+    /Storage\.deleteValue\("activeWorkoutV1"\)/
+  );
   assert.match(store, /cloudRevision < stagedCloudPlanRevision/);
   assert.match(store, /phoneRevision < stagedPhoneSyncRevision/);
   assert.doesNotMatch(store, /revisionStatus == 0 \|\| containsName/);

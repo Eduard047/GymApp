@@ -86,7 +86,13 @@ test("Garmin queues account-bound sets durably before FIT save while unbound FIT
     "static function clearActiveWorkout()",
     "static function restSeconds()"
   );
-  assert.match(clearActiveWorkout, /sets = \[\];[\s\S]*return save\(\);/);
+  assert.match(clearActiveWorkout, /persistEmptyActiveWorkoutSnapshot\(\)/);
+  assert.ok(
+    clearActiveWorkout.indexOf("persistEmptyActiveWorkoutSnapshot()") <
+      clearActiveWorkout.indexOf("sets = []"),
+    "the authoritative empty snapshot must commit before active globals are cleared"
+  );
+  assert.match(clearActiveWorkout, /return compatibilitySaved \|\| atomicallyCleared/);
 });
 
 test("Garmin partial workouts declare plan progress and drain one queued workout per ack", async () => {

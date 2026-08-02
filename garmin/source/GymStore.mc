@@ -21,6 +21,19 @@ class GymStore {
     static var lastLoggedSetEndSeconds = 0;
     static var lastSetPreviousLoggedEnd = 0;
     static var activeWorkoutStartedAtSeconds = null;
+    // The active workout is committed as one Object Store value. The legacy
+    // per-key values remain as a downgrade/migration fallback, but never override
+    // a valid snapshot bound to the current owner and device.
+    static var activeWorkoutSnapshotValid = false;
+    static var activeWorkoutTimelineValid = false;
+    static var timelineElapsedOffset = 0;
+    static var timelineGymCaloriesOffset = 0.0;
+    static var timelineGarminCaloriesOffset = null;
+    static var timelineHeartRateSumOffset = 0;
+    static var timelineHeartRateSamplesOffset = 0;
+    static var timelineMaxHeartRateOffset = 0;
+    static var timelineLastHeartRateOffset = null;
+    static var timelineHeartRateZoneOffset = 0;
     // Set intervals are relative to one in-memory GymSession. If the app process
     // restarts with durable sets, the new session starts again at zero and those
     // coordinate systems cannot be mixed safely. Keep the workout, but omit the
@@ -84,6 +97,7 @@ class GymStore {
         clearTransientSetActions();
         lastLoggedSetEndSeconds = 0;
         resumedWorkoutIntervalsInvalid = false;
+        resetActiveWorkoutSnapshotState();
         var savedAccountBinding = Storage.getValue("accountBinding");
         accountBinding = isValidAccountBinding(savedAccountBinding) ? savedAccountBinding.toString() : null;
         var savedStateOwnerBinding = Storage.getValue("stateOwnerBinding");
@@ -201,6 +215,11 @@ class GymStore {
         deferredSync = savedDeferredSync instanceof Lang.Dictionary ? savedDeferredSync : null;
         var savedProcessedSyncIds = Storage.getValue("processedSyncIds");
         processedSyncIds = isValidProcessedSyncIds(savedProcessedSyncIds) ? savedProcessedSyncIds : [];
+        var savedActiveWorkout = Storage.getValue("activeWorkoutV1");
+        if (scopedStateValid && isValidActiveWorkoutSnapshot(savedActiveWorkout) &&
+            activeWorkoutSnapshotMatchesBindings(savedActiveWorkout)) {
+            restoreActiveWorkoutSnapshot(savedActiveWorkout);
+        }
         var phoneFence = Storage.getValue("phoneSyncFence");
         if (phoneFence instanceof Lang.Dictionary && isValidPhoneSyncFence(phoneFence)) {
             lastPhoneSyncRevision = phoneFence.get("revision").toLong();
@@ -265,6 +284,21 @@ class GymStore {
                 status = "SAVE FAIL";
                 return false;
             }
+            if (activeWorkoutSnapshotValid && hasAccountBinding()) {
+                var checkpoint = sets.size() == 0 ? emptyTimelineCheckpoint() :
+                    (activeWorkoutTimelineValid ? currentTimelineCheckpoint(0.0) : null);
+                if (sets.size() > 0 && activeWorkoutTimelineValid && checkpoint == null) {
+                    status = "SAVE FAIL";
+                    return false;
+                }
+                if (!persistActiveWorkoutSnapshot(
+                        sets,
+                        sets.size() == 0 ? null : activeWorkoutStartedAtSeconds,
+                        checkpoint
+                    )) {
+                    return false;
+                }
+            }
             if (legacyUnboundState && !ensureLegacyQuarantine()) {
                 status = "LEGACY FULL";
                 return false;
@@ -281,11 +315,15 @@ class GymStore {
                 return false;
             }
             Storage.setValue("exercises", exercises);
-            // Preserve the logical workout origin across a torn first-set write,
-            // while also preserving the origin of a torn last-set undo. An orphan
-            // origin is ignored on load; a durable set without its origin is not
-            // recoverable, so the write order depends on which side is authoritative.
-            if (sets.size() > 0) {
+            // A valid V1 snapshot is the sole active-workout authority. Keep the
+            // legacy mirrors empty so the same bounded set list is not charged
+            // twice against Object Store and cannot resurrect if a snapshot is
+            // later rejected. Old installs without a snapshot keep the previous
+            // ordered two-key fallback until their current workout ends.
+            if (activeWorkoutSnapshotValid && hasAccountBinding()) {
+                Storage.setValue("sets", []);
+                Storage.setValue("activeWorkoutStartedAtSeconds", null);
+            } else if (sets.size() > 0) {
                 Storage.setValue("activeWorkoutStartedAtSeconds", activeWorkoutStartedAtSeconds);
                 Storage.setValue("sets", sets);
             } else {
@@ -339,6 +377,229 @@ class GymStore {
             status = "SAVE FAIL";
             return false;
         }
+    }
+
+    static function resetActiveWorkoutSnapshotState() {
+        activeWorkoutSnapshotValid = false;
+        activeWorkoutTimelineValid = false;
+        timelineElapsedOffset = 0;
+        timelineGymCaloriesOffset = 0.0;
+        timelineGarminCaloriesOffset = null;
+        timelineHeartRateSumOffset = 0;
+        timelineHeartRateSamplesOffset = 0;
+        timelineMaxHeartRateOffset = 0;
+        timelineLastHeartRateOffset = null;
+        timelineHeartRateZoneOffset = 0;
+    }
+
+    static function activeWorkoutSnapshotMatchesBindings(snapshot) {
+        if (!(snapshot instanceof Lang.Dictionary) || !hasAccountBinding() ||
+            !accountBinding.toString().equals(snapshot.get("accountBinding").toString()) ||
+            !deviceBinding.toString().equals(snapshot.get("deviceBinding").toString())) {
+            return false;
+        }
+        var snapshotGeneration = snapshot.get("pairingGeneration");
+        if (isValidAccountBinding(pairingGeneration)) {
+            return isValidAccountBinding(snapshotGeneration) &&
+                pairingGeneration.toString().equals(snapshotGeneration.toString());
+        }
+        return snapshotGeneration == null;
+    }
+
+    static function isValidActiveWorkoutSnapshot(snapshot) {
+        if (!(snapshot instanceof Lang.Dictionary) || snapshot.size() != 7 ||
+            !(snapshot.get("version") instanceof Lang.Number) ||
+            snapshot.get("version") != 1 ||
+            !isValidAccountBinding(snapshot.get("accountBinding")) ||
+            !isBoundedText(snapshot.get("deviceBinding"), maxBindingLength) ||
+            !isValidOptionalAccountBinding(snapshot.get("pairingGeneration")) ||
+            !isValidSetList(snapshot.get("sets"), maxWorkoutSets, true)) {
+            return false;
+        }
+        var snapshotSets = snapshot.get("sets");
+        if (!(snapshotSets instanceof Lang.Array)) {
+            return false;
+        }
+        var startedAtSeconds = snapshot.get("startedAtSeconds");
+        var checkpoint = snapshot.get("timelineCheckpoint");
+        if (snapshotSets.size() == 0 && startedAtSeconds != null) {
+            return false;
+        }
+        if (snapshotSets.size() > 0 &&
+            ((startedAtSeconds == null && checkpoint != null) ||
+                (startedAtSeconds != null &&
+                    !isValidWorkoutStartedAtSeconds(startedAtSeconds)))) {
+            // Pre-origin releases can have durable account-bound sets without a
+            // trustworthy start time. Preserve them atomically only in the existing
+            // fail-closed mode: no persisted timeline or interval diagnostics.
+            return false;
+        }
+        return checkpoint == null ||
+            (isValidTimelineCheckpoint(checkpoint) &&
+                areSnapshotIntervalsConsistent(snapshotSets, checkpoint));
+    }
+
+    static function isValidTimelineCheckpoint(checkpoint) {
+        if (!(checkpoint instanceof Lang.Dictionary) || checkpoint.size() != 8 ||
+            !isBoundedInteger(checkpoint.get("elapsedSeconds"), 0, 604800) ||
+            !isBoundedNumber(checkpoint.get("gymCalories"), 0.0, 10000000.0) ||
+            !isOptionalBoundedInteger(checkpoint.get("garminCalories"), 0, 10000000) ||
+            !isBoundedInteger(checkpoint.get("heartRateSum"), 0, 200000000) ||
+            !isBoundedInteger(checkpoint.get("heartRateSamples"), 0, 604800) ||
+            !isBoundedInteger(checkpoint.get("maxHeartRate"), 0, 300) ||
+            !isOptionalBoundedInteger(checkpoint.get("lastHeartRate"), 0, 300) ||
+            !isBoundedInteger(checkpoint.get("heartRateZone"), 0, 5)) {
+            return false;
+        }
+        var samplesValue = checkpoint.get("heartRateSamples");
+        var sumValue = checkpoint.get("heartRateSum");
+        if (!(samplesValue instanceof Lang.Number) ||
+            !(sumValue instanceof Lang.Number)) {
+            return false;
+        }
+        var samples = samplesValue;
+        var sum = sumValue;
+        return (samples > 0 || sum == 0) && sum <= samples * 240;
+    }
+
+    static function areSnapshotIntervalsConsistent(snapshotSets, checkpoint) {
+        var intervals = [];
+        for (var i = 0; i < snapshotSets.size(); i += 1) {
+            var interval = snapshotSets[i].get("setInterval");
+            if (!isValidSetInterval(interval)) {
+                return false;
+            }
+            intervals.add(interval);
+        }
+        return areSetIntervalsConsistent(
+            intervals,
+            checkpoint.get("elapsedSeconds"),
+            checkpoint.get("gymCalories"),
+            checkpoint.get("garminCalories")
+        );
+    }
+
+    static function restoreActiveWorkoutSnapshot(snapshot) {
+        sets = normalizedSetList(snapshot.get("sets"));
+        activeWorkoutStartedAtSeconds = snapshot.get("startedAtSeconds");
+        activeWorkoutSnapshotValid = true;
+        var checkpoint = snapshot.get("timelineCheckpoint");
+        if (checkpoint != null && isValidTimelineCheckpoint(checkpoint) &&
+            areSnapshotIntervalsConsistent(sets, checkpoint)) {
+            activeWorkoutTimelineValid = true;
+            resumedWorkoutIntervalsInvalid = false;
+            timelineElapsedOffset = checkpoint.get("elapsedSeconds");
+            timelineGymCaloriesOffset = checkpoint.get("gymCalories");
+            timelineGarminCaloriesOffset = checkpoint.get("garminCalories");
+            timelineHeartRateSumOffset = checkpoint.get("heartRateSum");
+            timelineHeartRateSamplesOffset = checkpoint.get("heartRateSamples");
+            timelineMaxHeartRateOffset = checkpoint.get("maxHeartRate");
+            timelineLastHeartRateOffset = checkpoint.get("lastHeartRate");
+            timelineHeartRateZoneOffset = checkpoint.get("heartRateZone");
+        } else {
+            activeWorkoutTimelineValid = false;
+            resumedWorkoutIntervalsInvalid = sets.size() > 0;
+        }
+    }
+
+    static function currentTimelineCheckpoint(gymCalorieAdjustment) {
+        if (resumedWorkoutIntervalsInvalid ||
+            (!(gymCalorieAdjustment instanceof Lang.Number) &&
+                !(gymCalorieAdjustment instanceof Lang.Float) &&
+                !(gymCalorieAdjustment instanceof Lang.Double))) {
+            return null;
+        }
+        var elapsed = timelineElapsedOffset + GymSession.elapsedSeconds;
+        var gymTotal = timelineGymCaloriesOffset + GymSession.gymCalories + gymCalorieAdjustment;
+        var garminTotal = timelineGarminCaloriesOffset;
+        if (GymSession.garminCalories != null) {
+            garminTotal = (garminTotal == null ? 0 : garminTotal) + GymSession.garminCalories;
+        }
+        var samples = timelineHeartRateSamplesOffset + GymSession.hrSamples;
+        var sum = timelineHeartRateSumOffset + (GymSession.avgHr * GymSession.hrSamples);
+        var maximum = timelineMaxHeartRateOffset > GymSession.maxHr ?
+            timelineMaxHeartRateOffset : GymSession.maxHr;
+        var lastHeartRate = GymSession.hr != null ? GymSession.hr : timelineLastHeartRateOffset;
+        var lastZone = GymSession.hr != null ? GymSession.zone : timelineHeartRateZoneOffset;
+        var checkpoint = {
+            "elapsedSeconds" => elapsed,
+            "gymCalories" => gymTotal,
+            "garminCalories" => garminTotal,
+            "heartRateSum" => sum,
+            "heartRateSamples" => samples,
+            "maxHeartRate" => maximum,
+            "lastHeartRate" => lastHeartRate,
+            "heartRateZone" => lastZone
+        };
+        return isValidTimelineCheckpoint(checkpoint) ? checkpoint : null;
+    }
+
+    static function emptyTimelineCheckpoint() {
+        return {
+            "elapsedSeconds" => 0,
+            "gymCalories" => 0.0,
+            "garminCalories" => null,
+            "heartRateSum" => 0,
+            "heartRateSamples" => 0,
+            "maxHeartRate" => 0,
+            "lastHeartRate" => null,
+            "heartRateZone" => 0
+        };
+    }
+
+    static function setIntervalForCurrentTimeline(source) {
+        var interval = GymSession.copySetInterval(source);
+        if (!resumedWorkoutIntervalsInvalid && timelineElapsedOffset > 0 &&
+            isValidSetInterval(interval)) {
+            var shiftedStart = interval[0] + timelineElapsedOffset;
+            var shiftedEnd = interval[1] + timelineElapsedOffset;
+            if (shiftedStart <= 604800 && shiftedEnd <= 604800) {
+                interval[0] = shiftedStart;
+                interval[1] = shiftedEnd;
+            }
+        }
+        return interval;
+    }
+
+    static function persistActiveWorkoutSnapshot(nextSets, startedAtSeconds, checkpoint) {
+        if (!hasAccountBinding()) {
+            return false;
+        }
+        var snapshot = {
+            "version" => 1,
+            "accountBinding" => accountBinding.toString(),
+            "deviceBinding" => deviceBinding.toString(),
+            "pairingGeneration" => isValidAccountBinding(pairingGeneration) ?
+                pairingGeneration.toString() : null,
+            "startedAtSeconds" => startedAtSeconds,
+            "sets" => normalizedSetList(nextSets),
+            "timelineCheckpoint" => checkpoint
+        };
+        if (!isValidActiveWorkoutSnapshot(snapshot) ||
+            !isWithinStorageBudgetForActiveSnapshot(snapshot)) {
+            status = "STORE FULL";
+            return false;
+        }
+        try {
+            Storage.setValue("activeWorkoutV1", snapshot);
+            activeWorkoutSnapshotValid = true;
+            activeWorkoutTimelineValid = checkpoint != null;
+            return true;
+        } catch (e) {
+            status = "SAVE FAIL";
+            return false;
+        }
+    }
+
+    static function persistEmptyActiveWorkoutSnapshot() {
+        if (!persistActiveWorkoutSnapshot([], null, emptyTimelineCheckpoint())) {
+            return false;
+        }
+        resetActiveWorkoutSnapshotState();
+        activeWorkoutSnapshotValid = true;
+        activeWorkoutTimelineValid = true;
+        resumedWorkoutIntervalsInvalid = false;
+        return true;
     }
 
     static function isUk() {
@@ -584,16 +845,26 @@ class GymStore {
             status = "SET LIMIT";
             return false;
         }
+        if (!hasAccountBinding() && !ensureUnboundAtomicQuarantine()) {
+            // A fresh ownerless workout has no account/device tuple for activeWorkoutV1.
+            // Establish the same single-value quarantine used by legacy ownerless data
+            // before publishing its first mutation; it remains unsendable by design.
+            status = "LEGACY FULL";
+            return false;
+        }
         var statistics = GymSession.captureSetStatistics();
-        var setInterval = GymSession.copySetInterval(statistics.get("setInterval"));
+        var setInterval = setIntervalForCurrentTimeline(statistics.get("setInterval"));
         var previousWorkoutStartedAt = activeWorkoutStartedAtSeconds;
-        if (activeWorkoutStartedAtSeconds == null &&
+        var nextWorkoutStartedAt = activeWorkoutStartedAtSeconds;
+        if (nextWorkoutStartedAt == null &&
             !resumedWorkoutIntervalsInvalid && hasAccountBinding() &&
             isValidWorkoutStartedAtSeconds(GymSession.startedAt)) {
             // Commit the logical origin with the first durable set. Subsequent
             // process restarts can then label every persisted set with its real date.
-            activeWorkoutStartedAtSeconds = GymSession.startedAt;
+            nextWorkoutStartedAt = GymSession.startedAt;
         }
+        var previousSets = sets;
+        var nextSets = normalizedSetList(sets);
         var previousWeight = weight;
         var previousReps = reps;
         var previousExerciseIndex = exerciseIndex;
@@ -601,10 +872,8 @@ class GymStore {
         // The first set has no preceding rest. After a process restart the prior
         // set end is also unknown, so do not manufacture a zero-second recovery.
         var restBefore = null;
-        var previousSet = null;
-        var previousRecovery = null;
-        if (sets.size() > 0) {
-            previousSet = sets[sets.size() - 1];
+        if (nextSets.size() > 0) {
+            var previousSet = nextSets[nextSets.size() - 1];
             var currentStart = statistics.get("setStartedSeconds");
             if (lastLoggedSetEndSeconds > 0 && currentStart instanceof Lang.Number &&
                 currentStart >= lastLoggedSetEndSeconds) {
@@ -613,7 +882,6 @@ class GymStore {
                     restBefore = 86400;
                 }
             }
-            previousRecovery = previousSet.get("recoveryHeartRateDrop");
             var recoveryDrop = GymSession.recoveryHeartRateDrop();
             if (recoveryDrop != null) {
                 previousSet.put("recoveryHeartRateDrop", recoveryDrop);
@@ -632,30 +900,52 @@ class GymStore {
             "setInterval" => setInterval
         };
         var wasAutoPrompt = GymSession.autoLogPrompt;
-        sets.add(setItem);
-        var boost = GymSession.addSetBoost(weight, reps);
+        var boost = GymSession.setBoostFor(weight, reps);
         setInterval[2] += boost;
         if (setInterval[2] > 100000.0) {
             setInterval[2] = 100000.0;
         }
+        nextSets.add(setItem);
+
+        var legacyOriginUnavailable = previousSets.size() > 0 &&
+            previousWorkoutStartedAt == null && nextWorkoutStartedAt == null &&
+            resumedWorkoutIntervalsInvalid;
+        var usedAtomicSnapshot = hasAccountBinding() &&
+            (isValidWorkoutStartedAtSeconds(nextWorkoutStartedAt) ||
+                legacyOriginUnavailable);
+        if (usedAtomicSnapshot) {
+            var checkpoint = currentTimelineCheckpoint(boost);
+            if (!resumedWorkoutIntervalsInvalid && checkpoint == null) {
+                status = "SAVE FAIL";
+                return false;
+            }
+            if (!persistActiveWorkoutSnapshot(nextSets, nextWorkoutStartedAt, checkpoint)) {
+                return false;
+            }
+        }
+
+        // Only publish globals and calorie corrections after the single-value
+        // snapshot commit succeeds. A thrown Object Store write leaves the old set
+        // list and detector totals untouched.
+        sets = nextSets;
+        activeWorkoutStartedAtSeconds = nextWorkoutStartedAt;
+        GymSession.restoreSetBoost(boost);
         if (wasPlannedSet) {
             advancePlanAfterSetSaved();
         }
-        if (!save()) {
-            sets.remove(setItem);
+        var compatibilitySaved = save();
+        var legacySnapshotCommitted = legacyUnboundState &&
+            legacyCurrentSetCount() == nextSets.size();
+        if (!compatibilitySaved && !usedAtomicSnapshot && !legacySnapshotCommitted) {
+            sets = previousSets;
             weight = previousWeight;
             reps = previousReps;
             exerciseIndex = previousExerciseIndex;
             activeWorkoutStartedAtSeconds = previousWorkoutStartedAt;
-            if (previousSet != null) {
-                if (previousRecovery == null) {
-                    previousSet.remove("recoveryHeartRateDrop");
-                } else {
-                    previousSet.put("recoveryHeartRateDrop", previousRecovery);
-                }
-            }
             GymSession.removeSetBoost(boost);
-            save();
+            if (!save()) {
+                status = "RECOVERY FAIL";
+            }
             return false;
         }
         lastSetBoost = boost;
@@ -667,6 +957,8 @@ class GymStore {
         GymSession.beginRecoveryTracking(statistics);
         GymSession.clearAutoPrompt();
         restEndsAt = System.getTimer() + (restSecondsDefault * 1000);
+        // The atomic snapshot is the commit; compatibility mirror failures do
+        // not turn a successfully stored athlete action into a UI error.
         status = "SET SAVED";
         return true;
     }
@@ -687,8 +979,15 @@ class GymStore {
             status = "UNDO EXPIRED";
             return false;
         }
-        var lastIndex = sets.size() - 1;
-        var lastSet = sets[lastIndex];
+        if (!hasAccountBinding() && !ensureUnboundAtomicQuarantine()) {
+            status = "LEGACY FULL";
+            return false;
+        }
+        var previousSets = sets;
+        var lastIndex = previousSets.size() - 1;
+        var lastSet = previousSets[lastIndex];
+        var nextSets = normalizedSetList(previousSets);
+        nextSets.remove(nextSets[nextSets.size() - 1]);
         var boost = lastSetBoost;
         var restorePrompt = lastSetWasAutoPrompt;
         var restoreStatistics = lastSetStatistics;
@@ -697,10 +996,31 @@ class GymStore {
         var previousReps = reps;
         var previousExerciseIndex = exerciseIndex;
         var previousWorkoutStartedAt = activeWorkoutStartedAtSeconds;
-        sets.remove(lastSet);
-        if (sets.size() == 0) {
-            activeWorkoutStartedAtSeconds = null;
+        var nextWorkoutStartedAt = previousWorkoutStartedAt;
+        if (nextSets.size() == 0) {
+            nextWorkoutStartedAt = null;
         }
+
+        var legacyOriginUnavailable = nextSets.size() > 0 &&
+            previousWorkoutStartedAt == null && nextWorkoutStartedAt == null &&
+            resumedWorkoutIntervalsInvalid;
+        var usedAtomicSnapshot = hasAccountBinding() &&
+            (nextSets.size() == 0 || isValidWorkoutStartedAtSeconds(nextWorkoutStartedAt) ||
+                legacyOriginUnavailable);
+        if (usedAtomicSnapshot) {
+            var checkpoint = nextSets.size() == 0 ?
+                emptyTimelineCheckpoint() : currentTimelineCheckpoint(-boost);
+            if (!resumedWorkoutIntervalsInvalid && checkpoint == null) {
+                status = "SAVE FAIL";
+                return false;
+            }
+            if (!persistActiveWorkoutSnapshot(nextSets, nextWorkoutStartedAt, checkpoint)) {
+                return false;
+            }
+        }
+
+        sets = nextSets;
+        activeWorkoutStartedAtSeconds = nextWorkoutStartedAt;
         GymSession.removeSetBoost(boost);
         weight = lastSet.get("weight");
         reps = lastSet.get("reps");
@@ -712,14 +1032,19 @@ class GymStore {
         }
         // Undo returns the exact values the athlete saved, including deliberate
         // deviations from the plan. Removing the set already rewinds the plan cursor.
-        if (!save()) {
-            sets.add(lastSet);
+        var compatibilitySaved = save();
+        var legacySnapshotCommitted = legacyUnboundState &&
+            legacyCurrentSetCount() == nextSets.size();
+        if (!compatibilitySaved && !usedAtomicSnapshot && !legacySnapshotCommitted) {
+            sets = previousSets;
             weight = previousWeight;
             reps = previousReps;
             exerciseIndex = previousExerciseIndex;
             activeWorkoutStartedAtSeconds = previousWorkoutStartedAt;
             GymSession.restoreSetBoost(boost);
-            save();
+            if (!save()) {
+                status = "RECOVERY FAIL";
+            }
             return false;
         }
         clearTransientSetActions();
@@ -825,6 +1150,10 @@ class GymStore {
     }
 
     static function clearWorkout() {
+        if (hasAccountBinding() && !persistEmptyActiveWorkoutSnapshot()) {
+            status = "SAVE FAIL";
+            return;
+        }
         sets = [];
         plan = [];
         activeWorkoutStartedAtSeconds = null;
@@ -837,12 +1166,20 @@ class GymStore {
     }
 
     static function markWorkoutResumed() {
-        if (sets.size() > 0) {
+        if (sets.size() > 0 && !activeWorkoutTimelineValid) {
             resumedWorkoutIntervalsInvalid = true;
         }
     }
 
     static function clearActiveWorkout() {
+        var atomicallyCleared = false;
+        if (hasAccountBinding()) {
+            if (!persistEmptyActiveWorkoutSnapshot()) {
+                status = "SAVE FAIL";
+                return false;
+            }
+            atomicallyCleared = true;
+        }
         sets = [];
         activeWorkoutStartedAtSeconds = null;
         resumedWorkoutIntervalsInvalid = false;
@@ -850,7 +1187,8 @@ class GymStore {
         lastLoggedSetEndSeconds = 0;
         clearTransientSetActions();
         applyDeferredSyncIfIdle();
-        return save();
+        var compatibilitySaved = save();
+        return compatibilitySaved || atomicallyCleared;
     }
 
     static function restSeconds() {
@@ -873,7 +1211,9 @@ class GymStore {
         var setCopies = [];
         var setMetrics = [];
         var setIntervals = [];
-        var allIntervalsAvailable = !resumedWorkoutIntervalsInvalid;
+        var messageCheckpoint = activeWorkoutTimelineValid &&
+            !resumedWorkoutIntervalsInvalid ? currentTimelineCheckpoint(0.0) : null;
+        var allIntervalsAvailable = messageCheckpoint != null;
         for (var i = 0; i < sets.size(); i += 1) {
             var setItem = sets[i];
             if (!(setItem instanceof Lang.Dictionary)) {
@@ -920,28 +1260,31 @@ class GymStore {
             "sets" => setCopies,
             "setMetrics" => setMetrics
         };
-        if (!resumedWorkoutIntervalsInvalid) {
-            message.put("durationSeconds", GymSession.elapsedSeconds);
-            message.put("gymCalories", GymSession.gymCalories);
-            message.put("avgHeartRate", GymSession.avgHr);
-            message.put("maxHeartRate", GymSession.maxHr);
-            message.put("heartRateZone", GymSession.zone);
+        if (messageCheckpoint != null) {
+            message.put("durationSeconds", messageCheckpoint.get("elapsedSeconds"));
+            message.put("gymCalories", messageCheckpoint.get("gymCalories"));
+            var combinedSamples = messageCheckpoint.get("heartRateSamples");
+            var combinedAverage = combinedSamples > 0 ?
+                (messageCheckpoint.get("heartRateSum") / combinedSamples).toNumber() : 0;
+            message.put("avgHeartRate", combinedAverage);
+            message.put("maxHeartRate", messageCheckpoint.get("maxHeartRate"));
+            message.put("heartRateZone", messageCheckpoint.get("heartRateZone"));
             // Optional scalar diagnostics must be absent, rather than explicit
             // null, so released phone parsers can accept a workout when the
             // Garmin system calorie or heart-rate source is unavailable.
-            if (GymSession.garminCalories != null) {
-                message.put("garminCalories", GymSession.garminCalories);
+            if (messageCheckpoint.get("garminCalories") != null) {
+                message.put("garminCalories", messageCheckpoint.get("garminCalories"));
             }
-            if (GymSession.hr != null) {
-                message.put("lastHeartRate", GymSession.hr);
+            if (messageCheckpoint.get("lastHeartRate") != null) {
+                message.put("lastHeartRate", messageCheckpoint.get("lastHeartRate"));
             }
         }
         if (allIntervalsAvailable && setIntervals.size() == setCopies.size() &&
             areSetIntervalsConsistent(
                 setIntervals,
-                GymSession.elapsedSeconds,
-                GymSession.gymCalories,
-                GymSession.garminCalories
+                messageCheckpoint.get("elapsedSeconds"),
+                messageCheckpoint.get("gymCalories"),
+                messageCheckpoint.get("garminCalories")
             )) {
             message.put("setIntervals", setIntervals);
         }
@@ -1575,6 +1918,12 @@ class GymStore {
         }
 
         pending = nextPending;
+        if (hasAccountBinding() && !persistEmptyActiveWorkoutSnapshot()) {
+            // The queue and request marker are already durable. Recovery retries
+            // the tombstone before it clears the active in-memory workout.
+            status = "QUEUED SAFE";
+            return true;
+        }
         sets = [];
         plan = [];
         activeWorkoutStartedAtSeconds = null;
@@ -1614,6 +1963,9 @@ class GymStore {
             }
         }
         if (queued) {
+            if (hasAccountBinding() && !persistEmptyActiveWorkoutSnapshot()) {
+                return;
+            }
             sets = [];
             plan = [];
             activeWorkoutStartedAtSeconds = null;
@@ -1642,6 +1994,8 @@ class GymStore {
         }
         try {
             Storage.deleteValue("queuedActiveRequestId");
+            Storage.deleteValue("activeWorkoutV1");
+            resetActiveWorkoutSnapshotState();
             return true;
         } catch (e) {
             // The owner deletion is the irreversible security boundary. Never allow
@@ -1682,6 +2036,14 @@ class GymStore {
     }
 
     static function clearAccountScopedState() {
+        try {
+            // Invalid/missing ownership never restores this value, but remove the
+            // account-bound wearable cache as well so a later lifecycle cannot revive
+            // stale data even if durable owner metadata is externally repaired.
+            Storage.deleteValue("activeWorkoutV1");
+        } catch (e) {
+            // Binding validation remains the fail-closed authorization boundary.
+        }
         accountBinding = null;
         stateOwnerBinding = null;
         deviceBinding = null;
@@ -1692,6 +2054,7 @@ class GymStore {
         pending = [];
         activeWorkoutStartedAtSeconds = null;
         resumedWorkoutIntervalsInvalid = false;
+        resetActiveWorkoutSnapshotState();
         deferredSync = null;
         processedSyncIds = [];
         // The phone fence is device-global, not account-scoped. Keeping it prevents a
@@ -1705,6 +2068,59 @@ class GymStore {
         reps = 10;
         exercises = builtInExercises();
         exerciseIndex = 0;
+    }
+
+    static function ensureUnboundAtomicQuarantine() {
+        if (hasAccountBinding()) {
+            return true;
+        }
+        if (legacyUnboundState) {
+            return ensureLegacyQuarantine();
+        }
+        // Never reclassify partially bound account data as ownerless. Normal load and
+        // account-transition paths clear such state; this guard keeps an unexpected
+        // in-memory lifecycle interleave fail-closed.
+        if (accountBinding != null || stateOwnerBinding != null) {
+            return false;
+        }
+
+        // A clean install has no pre-upgrade raw values to preserve. Seed the immutable
+        // quarantine copy from the current ownerless state, then commit its recovery
+        // marker before add/undo is allowed to write the atomic current snapshot.
+        legacyUnboundState = true;
+        legacyQuarantineReady = false;
+        legacyRawExercises = copyExerciseList(exercises);
+        legacyRawSets = normalizedSetList(sets);
+        legacyRawPlan = normalizedSetList(plan);
+        legacyRawPending = normalizedLegacyPendingList(pending);
+        if (!ensureLegacyQuarantine()) {
+            legacyUnboundState = false;
+            legacyRawExercises = null;
+            legacyRawSets = null;
+            legacyRawPlan = null;
+            legacyRawPending = null;
+            return false;
+        }
+        try {
+            // This marker makes legacyQuarantineCurrent authoritative on the next load.
+            // It must be durable before the first athlete mutation is attempted.
+            Storage.setValue("legacyUnboundState", true);
+        } catch (e) {
+            clearPartialLegacyQuarantine();
+            legacyUnboundState = false;
+            legacyRawExercises = null;
+            legacyRawSets = null;
+            legacyRawPlan = null;
+            legacyRawPending = null;
+            return false;
+        }
+        try {
+            Storage.setValue("storageSchemaVersion", storageSchemaVersion);
+        } catch (e) {
+            // The ownerless marker and current snapshot are already a complete recovery
+            // boundary. Schema metadata is retried by the next compatibility save.
+        }
+        return true;
     }
 
     static function ensureLegacyQuarantine() {
@@ -1843,6 +2259,21 @@ class GymStore {
         activeWorkoutStartedAtSeconds = sets.size() > 0 &&
             isValidWorkoutStartedAtSeconds(snapshotStartedAt) ? snapshotStartedAt : null;
         return true;
+    }
+
+    static function legacyCurrentSetCount() {
+        try {
+            var snapshot = Storage.getValue("legacyQuarantineCurrent");
+            if (snapshot instanceof Lang.Dictionary &&
+                isValidLegacyCurrentQuarantine(snapshot)) {
+                var snapshotSets = snapshot.get("sets");
+                if (snapshotSets instanceof Lang.Array) {
+                    return snapshotSets.size();
+                }
+            }
+        } catch (e) {
+        }
+        return -1;
     }
 
     static function isValidLegacyCurrentQuarantine(value) {
@@ -2228,6 +2659,21 @@ class GymStore {
         estimate += estimatedValueBytes(pairingGeneration);
         estimate += estimatedValueBytes(cloudDeviceBinding);
         estimate += estimatedValueBytes(activeWorkoutStartedAtSeconds);
+        return estimate <= maxEstimatedStoreBytes;
+    }
+
+    static function isWithinStorageBudgetForActiveSnapshot(snapshot) {
+        var estimate = 4096;
+        estimate += estimatedValueBytes(exercises);
+        estimate += estimatedValueBytes(snapshot);
+        estimate += estimatedValueBytes(plan);
+        estimate += estimatedValueBytes(pending);
+        estimate += estimatedValueBytes(deferredSync);
+        estimate += estimatedValueBytes(processedSyncIds);
+        estimate += estimatedValueBytes(accountBinding);
+        estimate += estimatedValueBytes(deviceBinding);
+        estimate += estimatedValueBytes(pairingGeneration);
+        estimate += estimatedValueBytes(cloudDeviceBinding);
         return estimate <= maxEstimatedStoreBytes;
     }
 

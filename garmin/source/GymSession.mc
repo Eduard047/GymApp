@@ -1412,7 +1412,7 @@ class GymSession {
         }
     }
 
-    static function addSetBoost(weightKg, reps) {
+    static function setBoostFor(weightKg, reps) {
         if (weightKg == null || reps == null || weightKg <= 0 || reps <= 0) {
             return 0.0;
         }
@@ -1423,6 +1423,11 @@ class GymSession {
         if (boost > 7.0) {
             boost = 7.0;
         }
+        return boost;
+    }
+
+    static function addSetBoost(weightKg, reps) {
+        var boost = setBoostFor(weightKg, reps);
         setBoostCalories += boost;
         gymCalories += boost;
         return boost;
