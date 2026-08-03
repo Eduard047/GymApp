@@ -87,17 +87,19 @@ final class CloudBackwardCompatibilityTests: XCTestCase {
         XCTAssertEqual(reopened.catalogSeedVersion, 0)
     }
 
-    func testCatalogVersionTwoAddsOnlyHipAbductionToExistingAccounts() throws {
-        let directory = try temporaryDirectory(named: "catalog-seed-v2")
-        let accountID = "catalog-seed-v2"
+    func testCatalogUpgradeAddsOnlyVersionedExercisesToExistingAccounts() throws {
+        let directory = try temporaryDirectory(named: "catalog-seed-upgrade")
+        let accountID = "catalog-seed-upgrade"
         let owner = BackupOwner(accountID: accountID)
         let store = try WorkoutStore(accountStorageKey: accountID, directoryURL: directory)
-        XCTAssertEqual(try store.seedBuiltInExercises(), 52)
+        XCTAssertEqual(try store.seedBuiltInExercises(), BuiltInExerciseCatalog.definitions.count)
 
         var versionOneBackup = try store.makeBackup(owner: owner)
         versionOneBackup.catalogSeedVersion = 1
         versionOneBackup.exercises.removeAll {
-            $0.catalogKey == "bench_press" || $0.catalogKey == "hip_abduction"
+            $0.catalogKey == "bench_press" ||
+                $0.catalogKey == "hip_abduction" ||
+                $0.catalogKey == "assisted_dip"
         }
         versionOneBackup.summary?.exerciseCount = versionOneBackup.exercises.count
         _ = try store.restoreBackup(
@@ -105,10 +107,11 @@ final class CloudBackwardCompatibilityTests: XCTestCase {
             activeOwner: owner
         )
 
-        XCTAssertEqual(try store.seedBuiltInExercises(), 1)
+        XCTAssertEqual(try store.seedBuiltInExercises(), 2)
         XCTAssertTrue(store.exercises.contains { $0.catalogKey == "hip_abduction" })
+        XCTAssertTrue(store.exercises.contains { $0.catalogKey == "assisted_dip" })
         XCTAssertFalse(store.exercises.contains { $0.catalogKey == "bench_press" })
-        XCTAssertEqual(store.catalogSeedVersion, 2)
+        XCTAssertEqual(store.catalogSeedVersion, BuiltInExerciseCatalog.seedVersion)
     }
 
     private func jsonObject(_ data: Data) throws -> [String: Any] {
