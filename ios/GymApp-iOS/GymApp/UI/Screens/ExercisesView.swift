@@ -443,7 +443,12 @@ struct ExercisesView: View {
 
         return GymPanel {
             VStack(alignment: .leading, spacing: 13) {
-                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                HStack(alignment: .center, spacing: 10) {
+                    ExerciseMediaButton(
+                        exerciseName: exercise.name,
+                        exerciseID: exercise.id,
+                        ownerKey: store.accountStorageKey
+                    )
                     Text(displayName)
                         .font(.headline)
                         .foregroundStyle(GymTheme.textPrimary)
@@ -1074,6 +1079,7 @@ private struct ExerciseHistorySheet: View {
     let exercise: Exercise
     let history: [ExerciseHistoryEntry]
     let stats: ExerciseProgressStats
+    @EnvironmentObject private var store: WorkoutStore
 
     var body: some View {
         GymBackground {
@@ -1085,6 +1091,12 @@ private struct ExerciseHistorySheet: View {
                         supporting: history.isEmpty
                             ? "No completed sets yet."
                             : "Every completed set, newest first."
+                    )
+
+                    ExerciseMediaButton(
+                        exerciseName: exercise.name,
+                        exerciseID: exercise.id,
+                        ownerKey: store.accountStorageKey
                     )
 
                     ViewThatFits(in: .horizontal) {

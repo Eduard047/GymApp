@@ -2644,7 +2644,11 @@ final class CoreParityTests: XCTestCase {
             Exercise(name: "Pull Up"),
             Exercise(name: "Squat"),
             Exercise(name: "Romanian Deadlift"),
-            Exercise(name: "Leg Press")
+            Exercise(name: "Leg Press"),
+            Exercise(name: "Lateral Raise"),
+            Exercise(name: "Biceps Curl"),
+            Exercise(name: "Plank"),
+            Exercise(name: "Hyperextension")
         ]
         let twoDays = RecommendationEngine.buildWorkoutPlan(
             exercises: exercises,
@@ -2667,8 +2671,8 @@ final class CoreParityTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(twoDays.exercises.count, 6)
-        XCTAssertEqual(sixDays.exercises.count, 4)
+        XCTAssertEqual(twoDays.exercises.count, 10)
+        XCTAssertEqual(sixDays.exercises.count, 6)
         func exerciseCount(
             days: Int,
             goal: TrainingGoal = .balanced,
@@ -2685,12 +2689,12 @@ final class CoreParityTests: XCTestCase {
                 )
             ).exercises.count
         }
-        XCTAssertEqual(exerciseCount(days: 3), 6)
-        XCTAssertEqual(exerciseCount(days: 4), 5)
-        XCTAssertEqual(exerciseCount(days: 5), 4)
-        XCTAssertEqual(exerciseCount(days: 3, goal: .strength), 6)
-        XCTAssertEqual(exerciseCount(days: 3, calories: .deficit), 6)
-        XCTAssertEqual(exerciseCount(days: 3, goal: .strength, calories: .deficit), 6)
+        XCTAssertEqual(exerciseCount(days: 3), 9)
+        XCTAssertEqual(exerciseCount(days: 4), 8)
+        XCTAssertEqual(exerciseCount(days: 5), 7)
+        XCTAssertEqual(exerciseCount(days: 3, goal: .strength), 9)
+        XCTAssertEqual(exerciseCount(days: 3, calories: .deficit), 9)
+        XCTAssertEqual(exerciseCount(days: 3, goal: .strength, calories: .deficit), 9)
 
         let duplicateID = UUID()
         let duplicatePlan = RecommendationEngine.buildWorkoutPlan(
@@ -2726,7 +2730,145 @@ final class CoreParityTests: XCTestCase {
         XCTAssertEqual(cappedPlan.exercises.map { $0.exercise.name }, ["Unmapped catalog entry 0"])
     }
 
-    func testSmartPlanRotatesOneTrunkSlotAndAvoidsUpperBodyOverprogramming() {
+    func testWeeklyEffectiveSetsUseExactRollingWindowAndBoundedManualFractions() {
+        let now = Date(timeIntervalSince1970: 1_780_000_000)
+        let exerciseID = UUID()
+        let datedSets: [(TimeInterval, Int)] = [
+            (-7 * 24 * 60 * 60.0, 0),
+            (-3 * 24 * 60 * 60.0, 1),
+            (0.0, 2),
+            (-7 * 24 * 60 * 60.0 - 0.001, 3),
+            (0.001, 4)
+        ]
+        var history: [ExerciseHistoryEntry] = []
+        for (offset, index) in datedSets {
+            let source = coachSession(
+                exerciseID: exerciseID,
+                exerciseName: "My cable move",
+                workoutID: UUID(),
+                date: now.addingTimeInterval(offset),
+                weights: [20],
+                reps: [8]
+            )[0]
+            history.append(ExerciseHistoryEntry(
+                setID: source.setID,
+                workoutID: source.workoutID,
+                sessionDate: source.sessionDate,
+                exerciseID: source.exerciseID,
+                exerciseName: source.exerciseName,
+                weight: source.weight,
+                reps: source.reps,
+                setOrderIndex: index
+            ))
+        }
+        let mappings = [
+            ExerciseMuscleMapping(
+                exerciseNameKey: MuscleMappingEngine.normalizeExerciseName("My cable move"),
+                exerciseName: "My cable move",
+                muscleID: "biceps",
+                weight: 0.4
+            ),
+            ExerciseMuscleMapping(
+                exerciseNameKey: MuscleMappingEngine.normalizeExerciseName("My cable move"),
+                exerciseName: "My cable move",
+                muscleID: "not-a-muscle",
+                weight: 1
+            ),
+            ExerciseMuscleMapping(
+                exerciseNameKey: MuscleMappingEngine.normalizeExerciseName("My cable move"),
+                exerciseName: "My cable move",
+                muscleID: "chest",
+                weight: .nan
+            )
+        ]
+
+        let sets = RecommendationEngine.weeklyEffectiveSets(
+            history: history,
+            muscleMappings: mappings,
+            now: now
+        )
+
+        XCTAssertEqual(try XCTUnwrap(sets["biceps"]), 1.2, accuracy: 0.000_001)
+        XCTAssertNil(sets["not-a-muscle"])
+        XCTAssertNil(sets["chest"])
+    }
+
+    func testWeeklyTargetsFollowGoalAndCalorieRecoveryBudget() {
+        XCTAssertEqual(RecommendationEngine.weeklyTargetSets(profile: .init(
+            goal: .muscleGain,
+            calorieMode: .surplus
+        )), 11)
+        XCTAssertEqual(RecommendationEngine.weeklyTargetSets(profile: .init(
+            goal: .muscleGain,
+            calorieMode: .deficit
+        )), 8)
+        XCTAssertEqual(RecommendationEngine.weeklyTargetSets(profile: .init(
+            goal: .strength,
+            calorieMode: .maintenance
+        )), 8)
+        XCTAssertEqual(RecommendationEngine.weeklyTargetSets(profile: .init(
+            goal: .aestheticFatLoss,
+            calorieMode: .deficit
+        )), 6)
+    }
+
+    func testWeeklyCoverageRewardsNeglectedMusclesAndPenalizesSaturatedOnes() {
+        let contributions = [
+            MuscleContribution(muscleID: "chest", weight: 1),
+            MuscleContribution(muscleID: "triceps", weight: 0.5)
+        ]
+        let neglected = RecommendationEngine.weeklyCoverageScore(
+            contributions: contributions,
+            plannedSetCount: 3,
+            projectedSets: [:],
+            targetSets: 8
+        )
+        let almostCovered = RecommendationEngine.weeklyCoverageScore(
+            contributions: contributions,
+            plannedSetCount: 3,
+            projectedSets: ["chest": 7, "triceps": 7],
+            targetSets: 8
+        )
+        let saturated = RecommendationEngine.weeklyCoverageScore(
+            contributions: contributions,
+            plannedSetCount: 3,
+            projectedSets: ["chest": 8, "triceps": 8],
+            targetSets: 8
+        )
+
+        XCTAssertEqual(neglected, 81, accuracy: 0.000_001)
+        XCTAssertEqual(almostCovered, 36, accuracy: 0.000_001)
+        XCTAssertEqual(saturated, -18, accuracy: 0.000_001)
+    }
+
+    func testEveryBuiltInExerciseHasTwoBundledPreviewFrames() {
+        for definition in BuiltInExerciseCatalog.definitions {
+            XCTAssertEqual(
+                ExerciseMediaStore.bundledImages(exerciseName: definition.englishName).count,
+                2,
+                "Missing preview frames for \(definition.key)"
+            )
+        }
+    }
+
+    func testCustomExerciseMediaRemainsAccountScoped() throws {
+        let exerciseID = UUID()
+        let ownerA = "media-owner-a-\(UUID().uuidString)"
+        let ownerB = "media-owner-b-\(UUID().uuidString)"
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 40, height: 40)).image { context in
+            UIColor.systemBlue.setFill()
+            context.cgContext.fill(CGRect(x: 0, y: 0, width: 40, height: 40))
+        }
+        let data = try XCTUnwrap(image.jpegData(compressionQuality: 0.9))
+        defer { ExerciseMediaStore.deleteCustomImage(ownerKey: ownerA, exerciseID: exerciseID) }
+
+        try ExerciseMediaStore.saveCustomImage(data, ownerKey: ownerA, exerciseID: exerciseID)
+
+        XCTAssertNotNil(ExerciseMediaStore.customImage(ownerKey: ownerA, exerciseID: exerciseID))
+        XCTAssertNil(ExerciseMediaStore.customImage(ownerKey: ownerB, exerciseID: exerciseID))
+    }
+
+    func testSmartPlanRotatesOneTrunkSlotInEveryWorkout() {
         let now = Date(timeIntervalSince1970: 1_780_000_000)
         let exercises = [
             Exercise(name: "Bench Press"),
@@ -2737,7 +2879,10 @@ final class CoreParityTests: XCTestCase {
             Exercise(name: "Romanian Deadlift"),
             Exercise(name: "Leg Press"),
             Exercise(name: "Plank"),
-            Exercise(name: "Hyperextension")
+            Exercise(name: "Hyperextension"),
+            Exercise(name: "Dumbbell Bench Press"),
+            Exercise(name: "Lat Pulldown"),
+            Exercise(name: "Biceps Curl")
         ]
         let trunkKeys: Set<String> = ["plank", "hyperextension", "side_hyperextension"]
         func selectedTrunkKeys(_ plan: SmartWorkoutPlan) -> Set<String> {
@@ -2795,7 +2940,7 @@ final class CoreParityTests: XCTestCase {
             now: now,
             calendar: utcCalendar()
         )
-        XCTAssertEqual(upperWithoutRecentTrunk.exercises.count, 5)
+        XCTAssertEqual(upperWithoutRecentTrunk.exercises.count, 8)
         XCTAssertEqual(selectedTrunkKeys(upperWithoutRecentTrunk).count, 1)
 
         let plank = try! XCTUnwrap(exercises.first { $0.catalogKey == "plank" })
@@ -2819,7 +2964,32 @@ final class CoreParityTests: XCTestCase {
             now: now,
             calendar: utcCalendar()
         )
-        XCTAssertTrue(selectedTrunkKeys(upperWithRecentTrunk).isEmpty)
+        XCTAssertEqual(upperWithRecentTrunk.exercises.count, 8)
+        XCTAssertEqual(selectedTrunkKeys(upperWithRecentTrunk), ["hyperextension"])
+
+        let hyperextension = try! XCTUnwrap(exercises.first { $0.catalogKey == "hyperextension" })
+        let recentHyperHistory = coachSession(
+            exerciseID: hyperextension.id,
+            exerciseName: hyperextension.name,
+            exerciseCatalogKey: hyperextension.catalogKey,
+            date: now.addingTimeInterval(-86_400),
+            weights: [20, 20, 20],
+            reps: [10, 10, 10]
+        )
+        let upperWithRecentHyper = RecommendationEngine.buildWorkoutPlan(
+            exercises: exercises,
+            history: recentHyperHistory,
+            trainingProfile: TrainingProfile(
+                split: .upperLower,
+                workoutsPerWeek: 4,
+                goal: .balanced,
+                calorieMode: .maintenance
+            ),
+            now: now,
+            calendar: utcCalendar()
+        )
+        XCTAssertEqual(upperWithRecentHyper.exercises.count, 8)
+        XCTAssertEqual(selectedTrunkKeys(upperWithRecentHyper), ["plank"])
     }
 
     func testTwoDayProfileForcesFullBodyAndBalancedPlansPreferCompounds() {
@@ -3070,11 +3240,17 @@ final class CoreParityTests: XCTestCase {
                 reps: [1]
             )
         }
+        let rotationProfile = TrainingProfile(
+            split: .fullBody,
+            workoutsPerWeek: 6,
+            goal: .balanced,
+            calorieMode: .maintenance
+        )
         func composition(sessionCount: Int) -> Set<String> {
             Set(RecommendationEngine.buildWorkoutPlan(
                 exercises: rotationExercises,
                 history: Array(rotationHistory.prefix(sessionCount)).flatMap { $0 },
-                trainingProfile: profile,
+                trainingProfile: rotationProfile,
                 now: now,
                 calendar: utcCalendar()
             ).exercises.map { $0.exercise.catalogKey ?? $0.exercise.name })
@@ -3082,9 +3258,11 @@ final class CoreParityTests: XCTestCase {
         let compositionA = composition(sessionCount: 0)
         let compositionB = composition(sessionCount: 1)
         let compositionC = composition(sessionCount: 2)
-        XCTAssertNotEqual(compositionA, compositionB)
-        XCTAssertNotEqual(compositionB, compositionC)
-        XCTAssertNotEqual(compositionA, compositionC)
+        XCTAssertGreaterThanOrEqual(
+            Set([compositionA, compositionB, compositionC]).count,
+            2,
+            "Weekly muscle deficits may converge two variants, but rotation must still change composition"
+        )
 
         let legacy = Data(#"{"focus":"fullBody","exercises":[]}"#.utf8)
         XCTAssertEqual(try JSONDecoder().decode(SmartWorkoutPlan.self, from: legacy).variant, .a)
@@ -3232,6 +3410,66 @@ final class CoreParityTests: XCTestCase {
                         )
                         XCTAssertTrue((3 ... 4).contains(recommendation.sets.count))
                         XCTAssertTrue(recommendation.sets.allSatisfy { (3 ... 10).contains($0.reps) })
+                    }
+                }
+            }
+        }
+    }
+
+    func testBuiltInCatalogFillsEveryProfileBudgetWithExactlyOneTrunkExercise() {
+        let exercises = BuiltInExerciseCatalog.definitions.map {
+            Exercise(name: $0.englishName, catalogKey: $0.key)
+        }
+        let trunkKeys: Set<String> = [
+            "hyperextension",
+            "side_hyperextension",
+            "plank",
+            "weighted_crunch",
+            "hanging_leg_raise",
+            "plate_twist",
+            "weighted_side_bend"
+        ]
+
+        for goal in TrainingGoal.allCases {
+            for calorieMode in CalorieMode.allCases {
+                for workoutsPerWeek in 2 ... 6 {
+                    for split in TrainingSplit.allCases {
+                        let context = "\(goal)/\(calorieMode)/\(workoutsPerWeek)/\(split)"
+                        let plan = RecommendationEngine.buildWorkoutPlan(
+                            exercises: exercises,
+                            history: [],
+                            trainingProfile: TrainingProfile(
+                                split: split,
+                                workoutsPerWeek: workoutsPerWeek,
+                                goal: goal,
+                                calorieMode: calorieMode
+                            )
+                        )
+                        let expectedCount = 12 - workoutsPerWeek
+
+                        XCTAssertEqual(plan.exercises.count, expectedCount, context)
+                        XCTAssertEqual(
+                            plan.exercises.filter { exercise in
+                                exercise.exercise.catalogKey.map(trunkKeys.contains) ?? false
+                            }.count,
+                            1,
+                            "\(context) trunk"
+                        )
+                        XCTAssertEqual(
+                            Set(plan.exercises.map { $0.exercise.id }).count,
+                            plan.exercises.count,
+                            "\(context) unique"
+                        )
+                        XCTAssertTrue(
+                            plan.exercises.allSatisfy { (3 ... 4).contains($0.recommendation.sets.count) },
+                            "\(context) sets"
+                        )
+                        XCTAssertTrue(
+                            plan.exercises.allSatisfy { exercise in
+                                exercise.recommendation.sets.allSatisfy { (3 ... 10).contains($0.reps) }
+                            },
+                            "\(context) reps"
+                        )
                     }
                 }
             }

@@ -1194,6 +1194,7 @@ fun GymAppRoot(
 
                             PostWorkoutSummaryScreen(
                                 uiState = uiState,
+                                exerciseMediaOwnerKey = checkNotNull(authState.session).databaseName(),
                                 onViewWorkout = {
                                     navController.navigate(AppDestination.workoutDetailRoute(sessionId)) {
                                         popUpTo(AppDestination.PostWorkoutSummary.route) {
@@ -1242,6 +1243,7 @@ fun GymAppRoot(
 
                             WorkoutDetailScreen(
                                 uiState = uiState,
+                                exerciseMediaOwnerKey = checkNotNull(authState.session).databaseName(),
                                 events = viewModel.events,
                                 onAddExerciseToWorkout = viewModel::addExerciseToWorkout,
                                 onAddSet = viewModel::addSet,
@@ -1265,6 +1267,7 @@ fun GymAppRoot(
 
                             ExerciseListScreen(
                                 uiState = uiState,
+                                exerciseMediaOwnerKey = checkNotNull(authState.session).databaseName(),
                                 onNameChange = viewModel::updateNewExerciseName,
                                 onAddExercise = viewModel::addExercise,
                                 onExerciseClick = viewModel::openExerciseHistory,
@@ -1300,6 +1303,7 @@ fun GymAppRoot(
 
                             ExerciseProgressScreen(
                                 uiState = uiState,
+                                exerciseMediaOwnerKey = checkNotNull(authState.session).databaseName(),
                                 events = viewModel.events,
                                 onSelectExercise = viewModel::selectExercise,
                                 onDeleteHistoryEntry = viewModel::requestDeleteHistoryEntry,

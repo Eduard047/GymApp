@@ -57,6 +57,7 @@ data class PostWorkoutMuscleUiState(
 )
 
 data class PostWorkoutPrUiState(
+    val exerciseId: Long,
     val exerciseName: String,
     val weight: Double,
     val previousBest: Double?
@@ -396,6 +397,7 @@ class PostWorkoutSummaryViewModel(
                     return@mapNotNull null
                 }
                 PostWorkoutPrUiState(
+                    exerciseId = exerciseId,
                     exerciseName = BuiltInExerciseCatalog.displayName(
                         bestCurrentSet.exerciseName,
                         currentLocale().language

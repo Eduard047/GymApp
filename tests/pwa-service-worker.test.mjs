@@ -316,7 +316,7 @@ test("cached documents receive the same anti-framing policy", async () => {
   const response = await responsePromiseFor(handler, "https://example.test/GymApp/");
 
   assert.equal(await response.text(), "cached");
-  assert.deepEqual(worker.openedCaches, ["gym-pwa-v89"]);
+  assert.deepEqual(worker.openedCaches, ["gym-pwa-v91"]);
   assert.match(response.headers.get("Content-Security-Policy"), /style-src 'self'/);
   assert.match(response.headers.get("Content-Security-Policy"), /frame-ancestors 'none'/);
   assert.doesNotMatch(response.headers.get("Content-Security-Policy"), /unsafe-inline/);
@@ -332,7 +332,7 @@ test("install reloads one internally consistent version without taking over old 
   handler({ waitUntil(value) { installPromise = value; } });
   await installPromise;
 
-  assert.deepEqual(worker.openedCaches, ["gym-pwa-v89"]);
+  assert.deepEqual(worker.openedCaches, ["gym-pwa-v91"]);
   assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/app.v63.js")));
   assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/theme.v56.js")));
   assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/styles.v59.css")));
@@ -428,7 +428,7 @@ test("a sibling github.io project scope never enters GymApp legacy cleanup", asy
   await installPromise;
 
   assert.equal(worker.skipWaitingCount(), 0);
-  assert.deepEqual(worker.openedCaches, ["gym-pwa-v89"]);
+  assert.deepEqual(worker.openedCaches, ["gym-pwa-v91"]);
   assert.equal(worker.claimCount(), 0);
   assert.equal(isIntercepted(worker.listeners.get("fetch"), scope), true);
 });

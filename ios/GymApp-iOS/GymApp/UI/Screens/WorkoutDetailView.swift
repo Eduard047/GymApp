@@ -614,6 +614,13 @@ struct WorkoutDetailView: View {
         return GymPanel(highlighted: true) {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(alignment: .center, spacing: 10) {
+                    if let exercise {
+                        ExerciseMediaButton(
+                            exerciseName: exercise.name,
+                            exerciseID: exercise.id,
+                            ownerKey: store.accountStorageKey
+                        )
+                    }
                     VStack(alignment: .leading, spacing: 3) {
                         Text(name)
                             .font(.headline)

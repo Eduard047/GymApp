@@ -7,6 +7,7 @@ import com.example.gymapp.data.repository.SmartWorkoutFocus
 import com.example.gymapp.data.repository.SmartWorkoutVariant
 import com.example.gymapp.data.repository.ExerciseLoadDirection
 import com.example.gymapp.data.repository.ExerciseLoadProfile
+import com.example.gymapp.data.repository.MuscleContribution
 import com.example.gymapp.data.repository.WorkoutDataLimits
 import com.example.gymapp.data.repository.WorkoutRecommendationEngine
 import com.example.gymapp.data.repository.WorkoutRecommendationKind
@@ -177,7 +178,12 @@ class WorkoutRecommendationEngineTest {
                 name.contains("Leg") ||
                 name.contains("Romanian") ||
                 name.contains("Calf") ||
-                name.contains("Crunch")
+                name.contains("Crunch") ||
+                name.contains("Deadlift") ||
+                name.contains("Hip") ||
+                name.contains("Lunge") ||
+                name.contains("Bulgarian") ||
+                name.contains("Hyperextension")
         })
     }
 
@@ -865,9 +871,9 @@ class WorkoutRecommendationEngineTest {
             zoneId = zoneId
         )
 
-        assertEquals(6, plan(workoutsPerWeek = 2).exercises.size)
-        assertEquals(4, plan(workoutsPerWeek = 6).exercises.size)
-        assertEquals(12, plan(workoutsPerWeek = 6).exercises.sumOf { it.recommendation.sets.size })
+        assertEquals(10, plan(workoutsPerWeek = 2).exercises.size)
+        assertEquals(6, plan(workoutsPerWeek = 6).exercises.size)
+        assertEquals(18, plan(workoutsPerWeek = 6).exercises.sumOf { it.recommendation.sets.size })
     }
 
     @Test
@@ -885,18 +891,19 @@ class WorkoutRecommendationEngineTest {
             zoneId = zoneId
         ).exercises.size
 
-        assertEquals(6, count(2, TrainingSplit.FullBody))
-        assertEquals(6, count(3, TrainingSplit.FullBody))
-        assertEquals(5, count(4, TrainingSplit.UpperLower))
-        assertEquals(5, count(5, TrainingSplit.UpperLower))
-        assertEquals(5, count(6, TrainingSplit.PushPullLegs))
-        assertEquals(4, count(5, TrainingSplit.FullBody))
-        assertEquals(4, count(6, TrainingSplit.FullBody))
+        assertEquals(10, count(2, TrainingSplit.FullBody))
+        assertEquals(9, count(3, TrainingSplit.FullBody))
+        assertEquals(8, count(4, TrainingSplit.UpperLower))
+        assertEquals(7, count(5, TrainingSplit.UpperLower))
+        assertEquals(6, count(6, TrainingSplit.PushPullLegs))
+        assertEquals(7, count(5, TrainingSplit.FullBody))
+        assertEquals(6, count(6, TrainingSplit.FullBody))
     }
 
     @Test
-    fun fullBodyAndLowerPlansReserveTrunkWorkAndRotateTowardHyperextension() {
+    fun everyPlanReservesOneTrunkSlotAndRotatesCoreWithHyperextension() {
         val trunkCatalog = catalog() + ExerciseEntity(id = 16, name = "Hyperextension")
+        val trunkNames = setOf("Weighted Crunch", "Hyperextension")
         val fullBody = WorkoutRecommendationEngine.buildWorkoutPlan(
             exercises = trunkCatalog,
             history = emptyList(),
@@ -927,13 +934,71 @@ class WorkoutRecommendationEngineTest {
             nowMillis = nowMillis,
             zoneId = zoneId
         )
+        val upperAfterCore = WorkoutRecommendationEngine.buildWorkoutPlan(
+            exercises = trunkCatalog,
+            history = session(3, daysAgo = 1, exerciseId = 13, exerciseName = "Weighted Crunch"),
+            trainingProfile = TrainingProfile(
+                split = TrainingSplit.UpperLower,
+                workoutsPerWeek = 4
+            ),
+            nowMillis = nowMillis,
+            zoneId = zoneId
+        )
+        val pushAfterCore = WorkoutRecommendationEngine.buildWorkoutPlan(
+            exercises = trunkCatalog,
+            history = session(4, daysAgo = 1, exerciseId = 13, exerciseName = "Weighted Crunch"),
+            trainingProfile = TrainingProfile(
+                split = TrainingSplit.PushPullLegs,
+                workoutsPerWeek = 6
+            ),
+            nowMillis = nowMillis,
+            zoneId = zoneId
+        )
 
-        assertTrue(fullBody.exerciseNames().any { it == "Weighted Crunch" || it == "Hyperextension" })
+        assertEquals(1, fullBody.exerciseNames().count { it in trunkNames })
+        assertEquals(1, rotated.exerciseNames().count { it in trunkNames })
         assertTrue(rotated.exerciseNames().contains("Hyperextension"))
         assertEquals(SmartWorkoutFocus.Lower, lower.focus)
-        assertTrue(lower.exerciseNames().any { it == "Weighted Crunch" || it == "Hyperextension" })
-        assertTrue(fullBody.exercises.sumOf { it.recommendation.sets.size } <= 16)
-        assertTrue(lower.exercises.sumOf { it.recommendation.sets.size } <= 20)
+        assertEquals(1, lower.exerciseNames().count { it in trunkNames })
+        assertEquals(SmartWorkoutFocus.Upper, upperAfterCore.focus)
+        assertEquals(1, upperAfterCore.exerciseNames().count { it in trunkNames })
+        assertTrue(upperAfterCore.exerciseNames().contains("Hyperextension"))
+        assertEquals(SmartWorkoutFocus.Push, pushAfterCore.focus)
+        assertEquals(1, pushAfterCore.exerciseNames().count { it in trunkNames })
+        assertTrue(pushAfterCore.exerciseNames().contains("Hyperextension"))
+        assertTrue(fullBody.exercises.sumOf { it.recommendation.sets.size } <= 28)
+        assertTrue(lower.exercises.sumOf { it.recommendation.sets.size } <= 32)
+        assertTrue(upperAfterCore.exercises.sumOf { it.recommendation.sets.size } <= 32)
+        assertEquals(18, pushAfterCore.exercises.sumOf { it.recommendation.sets.size })
+    }
+
+    @Test
+    fun sparseCatalogKeepsExactlyOneTrunkInsteadOfPaddingWithAnotherVariant() {
+        val sparseCatalog = listOf(
+            ExerciseEntity(id = 1, name = "Bench Press"),
+            ExerciseEntity(id = 2, name = "Cable Row"),
+            ExerciseEntity(id = 3, name = "Squat"),
+            ExerciseEntity(id = 4, name = "Weighted Crunch"),
+            ExerciseEntity(id = 5, name = "Hyperextension")
+        )
+
+        val plan = WorkoutRecommendationEngine.buildWorkoutPlan(
+            exercises = sparseCatalog,
+            history = emptyList(),
+            trainingProfile = TrainingProfile(
+                split = TrainingSplit.FullBody,
+                workoutsPerWeek = 2
+            ),
+            nowMillis = nowMillis,
+            zoneId = zoneId
+        )
+
+        assertEquals(4, plan.exercises.size)
+        assertEquals(plan.exercises.size, plan.exercises.map { it.exercise.id }.distinct().size)
+        assertEquals(
+            1,
+            plan.exerciseNames().count { it == "Weighted Crunch" || it == "Hyperextension" }
+        )
     }
 
     @Test
@@ -954,7 +1019,10 @@ class WorkoutRecommendationEngineTest {
 
         assertEquals(SmartWorkoutFocus.FullBody, plan.focus)
         assertTrue(names.any { it == "Bench Press" || it == "Shoulder Press" })
-        assertTrue(names.any { it == "Cable Row" || it == "Pull Up" })
+        assertTrue(names.any {
+            it == "Cable Row" || it == "Barbell Row" || it == "Pull Up" ||
+                it == "Lat Pulldown" || it == "Crane Pulldown"
+        })
         assertTrue(names.any { it == "Squat" || it == "Leg Press" || it == "Romanian Deadlift" })
     }
 
@@ -975,15 +1043,15 @@ class WorkoutRecommendationEngineTest {
         val names = plan.exerciseNames()
 
         assertEquals(SmartWorkoutFocus.Upper, plan.focus)
-        assertEquals(5, names.size)
+        assertEquals(8, names.size)
         assertTrue(names.any { it == "Bench Press" || it == "Shoulder Press" })
         assertTrue(names.any { it == "Cable Row" || it == "Pull Up" || it == "Crane Pulldown" })
-        assertTrue(plan.exercises.sumOf { it.recommendation.sets.size } <= 20)
+        assertTrue(plan.exercises.sumOf { it.recommendation.sets.size } <= 32)
         assertTrue(names.contains("Weighted Crunch"))
     }
 
     @Test
-    fun highFrequencyMuscleGainUpperPlanKeepsFiveExercisesWithinSessionCap() {
+    fun highFrequencyMuscleGainUpperPlanKeepsSixExercisesWithinSessionCap() {
         val plan = WorkoutRecommendationEngine.buildWorkoutPlan(
             exercises = catalog(),
             history = emptyList(),
@@ -998,8 +1066,8 @@ class WorkoutRecommendationEngineTest {
         )
 
         assertEquals(SmartWorkoutFocus.Upper, plan.focus)
-        assertEquals(5, plan.exercises.size)
-        assertEquals(15, plan.exercises.sumOf { it.recommendation.sets.size })
+        assertEquals(6, plan.exercises.size)
+        assertEquals(18, plan.exercises.sumOf { it.recommendation.sets.size })
         assertTrue(plan.exerciseNames().any { it == "Bench Press" || it == "Shoulder Press" })
         assertTrue(plan.exerciseNames().any { it == "Cable Row" || it == "Pull Up" })
     }
@@ -1102,7 +1170,7 @@ class WorkoutRecommendationEngineTest {
             zoneId = zoneId
         )
 
-        assertEquals(6, plan.exercises.size)
+        assertEquals(10, plan.exercises.size)
         assertTrue(plan.exercises.all { it.exercise.id <= WorkoutDataLimits.MAX_EXERCISES })
     }
 
@@ -1137,6 +1205,57 @@ class WorkoutRecommendationEngineTest {
     }
 
     @Test
+    fun builtInCatalogFillsEveryProfileBudgetWithExactlyOneTrunkExercise() {
+        val exercises = BuiltInExerciseCatalog.definitions.mapIndexed { index, definition ->
+            ExerciseEntity(id = index.toLong() + 1L, name = definition.nameEn)
+        }
+        val trunkNames = setOf(
+            "Hyperextension",
+            "Side Hyperextension",
+            "Plank",
+            "Weighted Crunch",
+            "Hanging Leg Raise",
+            "Plate Twist",
+            "Weighted Side Bend"
+        )
+
+        TrainingGoal.entries.forEach { goal ->
+            CalorieMode.entries.forEach { calorieMode ->
+                (2..6).forEach { workoutsPerWeek ->
+                    TrainingSplit.entries.forEach { split ->
+                        val context = "$goal/$calorieMode/$workoutsPerWeek/$split"
+                        val plan = WorkoutRecommendationEngine.buildWorkoutPlan(
+                            exercises = exercises,
+                            history = emptyList(),
+                            trainingProfile = TrainingProfile(
+                                split = split,
+                                workoutsPerWeek = workoutsPerWeek,
+                                goal = goal,
+                                calorieMode = calorieMode
+                            ),
+                            nowMillis = nowMillis,
+                            zoneId = zoneId
+                        )
+                        val expectedCount = 12 - workoutsPerWeek
+
+                        assertEquals(context, expectedCount, plan.exercises.size)
+                        assertEquals(
+                            "$context trunk",
+                            1,
+                            plan.exerciseNames().count { it in trunkNames }
+                        )
+                        assertEquals(plan.exercises.size, plan.exercises.map { it.exercise.id }.distinct().size)
+                        assertTrue(plan.exercises.all { it.recommendation.sets.size in 3..4 })
+                        assertTrue(plan.exercises.all { exercise ->
+                            exercise.recommendation.sets.all { it.reps in 3..10 }
+                        })
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
     fun smartPlanNeverTreatsWarmUpAsAWorkingExercise() {
         val plan = WorkoutRecommendationEngine.buildWorkoutPlan(
             exercises = catalog() + ExerciseEntity(id = 99, name = "Warm Up"),
@@ -1152,6 +1271,145 @@ class WorkoutRecommendationEngineTest {
         )
 
         assertFalse(plan.exerciseNames().contains("Warm Up"))
+    }
+
+    @Test
+    fun weeklyTargetsFollowGoalAndCalorieProfileWithinSafeBounds() {
+        val muscleGainSurplus = WorkoutRecommendationEngine.weeklyMuscleTargets(
+            TrainingProfile(goal = TrainingGoal.MuscleGain, calorieMode = CalorieMode.Surplus)
+        )
+        val deficit = WorkoutRecommendationEngine.weeklyMuscleTargets(
+            TrainingProfile(goal = TrainingGoal.Strength, calorieMode = CalorieMode.Deficit)
+        )
+
+        assertEquals(15, muscleGainSurplus.size)
+        assertTrue(muscleGainSurplus.values.all { it == 11.0 })
+        assertEquals(15, deficit.size)
+        assertTrue(deficit.values.all { it == 6.0 })
+    }
+
+    @Test
+    fun weeklyEffectiveSetsUseExactSevenDayWindowAndFractionalKnownMappings() {
+        val window = 7L * 24L * 60L * 60L * 1_000L
+        fun entry(id: Long, timestamp: Long) = ExerciseHistoryEntry(
+            setId = id,
+            sessionId = id,
+            sessionDate = timestamp,
+            exerciseId = 99,
+            exerciseName = "Weekly marker",
+            weight = 1.0,
+            reps = 1,
+            setOrderIndex = 0
+        )
+        val mappings = mapOf(
+            "weekly marker" to listOf(
+                MuscleContribution("chest", 0.5),
+                MuscleContribution("unknown", 1.0),
+                MuscleContribution("biceps", Double.NaN)
+            )
+        )
+
+        val completed = WorkoutRecommendationEngine.completedWeeklyEffectiveSets(
+            history = listOf(
+                entry(1, nowMillis - window),
+                entry(2, nowMillis),
+                entry(3, nowMillis - window - 1),
+                entry(4, nowMillis + 1)
+            ),
+            nowMillis = nowMillis,
+            manualMuscleMappings = mappings
+        )
+
+        assertEquals(1.0, completed.getValue("chest"), 0.0001)
+        assertEquals(0.0, completed.getValue("biceps"), 0.0001)
+        assertFalse(completed.containsKey("unknown"))
+    }
+
+    @Test
+    fun saturatedManualMuscleMappingLosesToNeglectedAccessoriesWithoutChangingRoles() {
+        val requiredCatalog = listOf(
+            ExerciseEntity(id = 1, name = "Bench Press"),
+            ExerciseEntity(id = 2, name = "Barbell Row"),
+            ExerciseEntity(id = 3, name = "Squat"),
+            ExerciseEntity(id = 4, name = "Plank"),
+            ExerciseEntity(id = 5, name = "Alpha accessory"),
+            ExerciseEntity(id = 6, name = "Beta accessory"),
+            ExerciseEntity(id = 7, name = "Gamma accessory")
+        )
+        val mappings = mapOf(
+            "weekly marker" to listOf(MuscleContribution("chest", 1.0)),
+            "alpha accessory" to listOf(MuscleContribution("chest", 1.0)),
+            "beta accessory" to listOf(MuscleContribution("biceps", 1.0)),
+            "gamma accessory" to listOf(MuscleContribution("calves", 1.0))
+        )
+        val chestHistory = List(8) { index ->
+            ExerciseHistoryEntry(
+                setId = index.toLong() + 1,
+                sessionId = 100 + index.toLong(),
+                sessionDate = nowMillis - 60_000L,
+                exerciseId = 99,
+                exerciseName = "Weekly marker",
+                weight = 1.0,
+                reps = 1,
+                setOrderIndex = 0
+            )
+        }
+        val plan = WorkoutRecommendationEngine.buildWorkoutPlan(
+            exercises = requiredCatalog,
+            history = chestHistory,
+            trainingProfile = TrainingProfile(
+                split = TrainingSplit.FullBody,
+                workoutsPerWeek = 6,
+                goal = TrainingGoal.Balanced,
+                calorieMode = CalorieMode.Maintenance
+            ),
+            nowMillis = nowMillis,
+            zoneId = zoneId,
+            manualMuscleMappings = mappings
+        )
+
+        assertEquals(6, plan.exercises.size)
+        assertFalse(plan.exerciseNames().contains("Alpha accessory"))
+        assertTrue(plan.exerciseNames().contains("Beta accessory"))
+        assertTrue(plan.exerciseNames().contains("Gamma accessory"))
+        assertEquals(1, plan.exercises.count { it.exercise.name == "Plank" })
+    }
+
+    @Test
+    fun projectedWeeklySetsPreventFillerSlotsFromOverConcentratingOneMuscle() {
+        val plan = WorkoutRecommendationEngine.buildWorkoutPlan(
+            exercises = listOf(
+                ExerciseEntity(id = 1, name = "Bench Press"),
+                ExerciseEntity(id = 2, name = "Barbell Row"),
+                ExerciseEntity(id = 3, name = "Squat"),
+                ExerciseEntity(id = 4, name = "Plank"),
+                ExerciseEntity(id = 5, name = "Alpha biceps accessory"),
+                ExerciseEntity(id = 6, name = "Beta biceps accessory"),
+                ExerciseEntity(id = 7, name = "Zeta calves accessory")
+            ),
+            history = emptyList(),
+            trainingProfile = TrainingProfile(
+                split = TrainingSplit.FullBody,
+                workoutsPerWeek = 6,
+                goal = TrainingGoal.Strength,
+                calorieMode = CalorieMode.Deficit
+            ),
+            nowMillis = nowMillis,
+            zoneId = zoneId,
+            manualMuscleMappings = mapOf(
+                "alpha biceps accessory" to listOf(MuscleContribution("biceps", 1.0)),
+                "beta biceps accessory" to listOf(MuscleContribution("biceps", 1.0)),
+                "zeta calves accessory" to listOf(MuscleContribution("calves", 1.0))
+            )
+        )
+
+        val names = plan.exerciseNames()
+        assertEquals(1, names.count { it.contains("biceps accessory") })
+        assertTrue(names.contains("Zeta calves accessory"))
+        assertTrue(plan.exercises.all { exercise ->
+            exercise.recommendation.sets.size in 3..4 &&
+                exercise.recommendation.sets.all { it.reps <= 10 }
+        })
     }
 
     private fun pplPlanAfter(exerciseName: String, exerciseId: Long) = WorkoutRecommendationEngine.buildWorkoutPlan(
@@ -1182,7 +1440,20 @@ class WorkoutRecommendationEngineTest {
         ExerciseEntity(id = 12, name = "Calf Raise"),
         ExerciseEntity(id = 13, name = "Weighted Crunch"),
         ExerciseEntity(id = 14, name = "Overhead Dumbbell Extension"),
-        ExerciseEntity(id = 15, name = "Crane Pulldown")
+        ExerciseEntity(id = 15, name = "Crane Pulldown"),
+        ExerciseEntity(id = 17, name = "Dumbbell Bench Press"),
+        ExerciseEntity(id = 18, name = "Chest Fly Machine"),
+        ExerciseEntity(id = 19, name = "Dips"),
+        ExerciseEntity(id = 20, name = "Barbell Row"),
+        ExerciseEntity(id = 21, name = "Lat Pulldown"),
+        ExerciseEntity(id = 22, name = "Hammer Curl"),
+        ExerciseEntity(id = 23, name = "Deadlift"),
+        ExerciseEntity(id = 24, name = "Hip Thrust"),
+        ExerciseEntity(id = 25, name = "Bulgarian Split Squat"),
+        ExerciseEntity(id = 26, name = "Lunge"),
+        ExerciseEntity(id = 27, name = "Seated Leg Curl"),
+        ExerciseEntity(id = 28, name = "Hip Adduction"),
+        ExerciseEntity(id = 29, name = "Hip Abduction")
     )
 
     private fun recommendation(

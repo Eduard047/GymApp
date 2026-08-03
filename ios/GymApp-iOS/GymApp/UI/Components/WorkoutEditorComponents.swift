@@ -340,7 +340,32 @@ struct WorkoutDraftExerciseCard: View {
     }
 }
 
-private struct ExerciseMediaThumbnail: View {
+struct ExerciseMediaButton: View {
+    let exerciseName: String
+    let exerciseID: UUID
+    let ownerKey: String
+    @State private var showingMedia = false
+
+    var body: some View {
+        ExerciseMediaThumbnail(
+            exerciseName: exerciseName,
+            exerciseID: exerciseID,
+            ownerKey: ownerKey,
+            action: { showingMedia = true }
+        )
+        .sheet(isPresented: $showingMedia) {
+            ExerciseMediaSheet(
+                exerciseName: exerciseName,
+                exerciseID: exerciseID,
+                ownerKey: ownerKey
+            )
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+        }
+    }
+}
+
+struct ExerciseMediaThumbnail: View {
     let exerciseName: String
     let exerciseID: UUID
     let ownerKey: String
@@ -396,7 +421,7 @@ private struct ExerciseMediaThumbnail: View {
     }
 }
 
-private struct ExerciseMediaSheet: View {
+struct ExerciseMediaSheet: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dismiss) private var dismiss
 

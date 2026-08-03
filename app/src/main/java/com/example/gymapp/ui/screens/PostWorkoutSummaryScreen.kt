@@ -32,6 +32,7 @@ import com.example.gymapp.R
 import com.example.gymapp.data.repository.BadgeRarity
 import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.EmptyStatePanel
+import com.example.gymapp.ui.components.ExerciseMediaPreview
 import com.example.gymapp.ui.components.HeroPanel
 import com.example.gymapp.ui.components.InfoPill
 import com.example.gymapp.ui.components.MetricTile
@@ -49,6 +50,7 @@ import java.util.Locale
 @Composable
 fun PostWorkoutSummaryScreen(
     uiState: PostWorkoutSummaryUiState,
+    exerciseMediaOwnerKey: String,
     onViewWorkout: () -> Unit,
     onDone: () -> Unit,
     modifier: Modifier = Modifier
@@ -104,7 +106,10 @@ fun PostWorkoutSummaryScreen(
 
                 if (uiState.personalRecords.isNotEmpty()) {
                     item {
-                        PersonalRecordsCard(records = uiState.personalRecords)
+                        PersonalRecordsCard(
+                            records = uiState.personalRecords,
+                            exerciseMediaOwnerKey = exerciseMediaOwnerKey
+                        )
                     }
                 }
 
@@ -353,7 +358,10 @@ private fun MuscleImpactRow(muscle: PostWorkoutMuscleUiState) {
 }
 
 @Composable
-private fun PersonalRecordsCard(records: List<PostWorkoutPrUiState>) {
+private fun PersonalRecordsCard(
+    records: List<PostWorkoutPrUiState>,
+    exerciseMediaOwnerKey: String
+) {
     AppPanel(
         modifier = Modifier.fillMaxWidth(),
         highlighted = true
@@ -372,6 +380,13 @@ private fun PersonalRecordsCard(records: List<PostWorkoutPrUiState>) {
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    ExerciseMediaPreview(
+                        exerciseId = record.exerciseId,
+                        exerciseName = record.exerciseName,
+                        ownerKey = exerciseMediaOwnerKey,
+                        width = 64.dp,
+                        height = 54.dp
+                    )
                     Column(
                         modifier = Modifier.weight(1f),
                         verticalArrangement = Arrangement.spacedBy(2.dp)

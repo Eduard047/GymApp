@@ -66,6 +66,7 @@ import com.example.gymapp.garmin.hasSetIntervalDetails
 import com.example.gymapp.garmin.parseTrustedGarminWorkoutMetrics
 import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.ExerciseMuscleMap
+import com.example.gymapp.ui.components.ExerciseMediaPreview
 import com.example.gymapp.ui.components.HeroPanel
 import com.example.gymapp.ui.components.InfoPill
 import com.example.gymapp.ui.components.MetricTile
@@ -90,6 +91,7 @@ private val SETS_TABLE_ACTIONS_WIDTH = 104.dp
 @Composable
 fun WorkoutDetailScreen(
     uiState: WorkoutDetailUiState,
+    exerciseMediaOwnerKey: String,
     events: Flow<WorkoutDetailEvent>,
     onAddExerciseToWorkout: (Long) -> Unit,
     onAddSet: (Long) -> Unit,
@@ -301,6 +303,13 @@ fun WorkoutDetailScreen(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
+                                ExerciseMediaPreview(
+                                    exerciseId = exerciseDetails.exercise.id,
+                                    exerciseName = exerciseDetails.exercise.name,
+                                    ownerKey = exerciseMediaOwnerKey,
+                                    width = 72.dp,
+                                    height = 60.dp
+                                )
                                 Text(
                                     text = displayExerciseName,
                                     style = MaterialTheme.typography.titleMedium,

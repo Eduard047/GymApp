@@ -302,9 +302,17 @@ struct PostWorkoutSummaryView: View {
                 )
                 ForEach(personalRecords) { record in
                     HStack(alignment: .top, spacing: 11) {
-                        Image(systemName: record.systemImage)
-                            .foregroundStyle(GymTheme.tertiary)
-                            .frame(width: 24)
+                        if let exercise = store.exercise(id: record.exerciseID) {
+                            ExerciseMediaButton(
+                                exerciseName: exercise.name,
+                                exerciseID: exercise.id,
+                                ownerKey: store.accountStorageKey
+                            )
+                        } else {
+                            Image(systemName: record.systemImage)
+                                .foregroundStyle(GymTheme.tertiary)
+                                .frame(width: 24)
+                        }
                         VStack(alignment: .leading, spacing: 3) {
                             Text(record.title).font(.subheadline.weight(.semibold))
                             Text(gymLocalized(record.detail))

@@ -1244,13 +1244,22 @@ function exerciseMedia(exercise) {
   return custom ? { preview: custom, frames: [custom], custom: true } : bundledExerciseMedia(exercise);
 }
 
-function exerciseMediaThumbnail(exercise, blockIndex) {
+function exerciseMediaThumbnail(exercise, { blockIndex = null, className = "" } = {}) {
   const media = exerciseMedia(exercise);
   const label = txAttr("Open exercise demonstration", "Відкрити демонстрацію вправи");
+  const storedExercise = state.exercises.find(item => exercisesMatch(item, exercise));
+  const idAttribute = storedExercise && Number.isSafeInteger(Number(storedExercise.id)) && Number(storedExercise.id) > 0
+    ? ` data-exercise-id="${escapeAttr(String(storedExercise.id))}"`
+    : "";
+  const blockAttribute = Number.isInteger(blockIndex) && blockIndex >= 0
+    ? ` data-block="${blockIndex}"`
+    : "";
+  if (!idAttribute && !blockAttribute) return "";
+  const classes = `exercise-media-thumb${className ? ` ${escapeAttr(className)}` : ""}`;
   if (!media) {
-    return `<button class="exercise-media-thumb empty" type="button" data-action="open-exercise-media" data-block="${blockIndex}" aria-label="${label}">${svg("image", "exercise-media-placeholder-icon")}<span>${tx("Add image", "Додати фото")}</span></button>`;
+    return `<button class="${classes} empty" type="button" data-action="open-exercise-media"${idAttribute}${blockAttribute} aria-label="${label}">${svg("image", "exercise-media-placeholder-icon")}<span>${tx("Add image", "Додати фото")}</span></button>`;
   }
-  return `<button class="exercise-media-thumb" type="button" data-action="open-exercise-media" data-block="${blockIndex}" aria-label="${label}"><img src="${escapeAttr(media.preview)}" alt="" loading="lazy"><span class="exercise-media-play">${media.frames.length > 1 ? "▶" : svg("image", "small-icon")}</span></button>`;
+  return `<button class="${classes}" type="button" data-action="open-exercise-media"${idAttribute}${blockAttribute} aria-label="${label}"><img src="${escapeAttr(media.preview)}" alt="" loading="lazy"><span class="exercise-media-play">${media.frames.length > 1 ? "▶" : svg("image", "small-icon")}</span></button>`;
 }
 
 async function normalizeCustomExerciseImage(file) {
@@ -4773,7 +4782,7 @@ function draftBlock(block, blockIndex) {
   const storedExercise = block.exerciseName ? state.exercises.find(exercise => exercisesMatch(exercise, block)) : null;
   const loadProfile = storedExercise ? normalizeExerciseLoadProfile(storedExercise.loadProfile) : null;
   const title = block.exerciseName ? exerciseDisplayName(block) : `${tx("Exercise", "Вправа")} ${blockIndex + 1}`;
-  return `<section class="draft-exercise panel highlighted"><details open><summary class="detail-summary"><div class="draft-exercise-title"><h2>${escapeHtml(title)}</h2><p class="muted">${escapeHtml(draftSetSummary(block))}</p></div>${block.exerciseName ? exerciseMediaThumbnail(block, blockIndex) : ""}${block.exerciseName ? exerciseDetailBodyMap(block, "collapsed") : ""}<button class="icon-button" data-action="remove-block" data-block="${blockIndex}" aria-label="${txAttr("Remove exercise", "Прибрати вправу")}">${svg("delete")}</button></summary>
+  return `<section class="draft-exercise panel highlighted"><details open><summary class="detail-summary"><div class="draft-exercise-title"><h2>${escapeHtml(title)}</h2><p class="muted">${escapeHtml(draftSetSummary(block))}</p></div>${block.exerciseName ? exerciseMediaThumbnail(block, { blockIndex }) : ""}${block.exerciseName ? exerciseDetailBodyMap(block, "collapsed") : ""}<button class="icon-button" data-action="remove-block" data-block="${blockIndex}" aria-label="${txAttr("Remove exercise", "Прибрати вправу")}">${svg("delete")}</button></summary>
     <label>${tx("Exercise", "Вправа")}<select class="exercise-select" data-block="${blockIndex}" data-field="exerciseName"><option value="">${tx("Select exercise", "Обери вправу")}</option>${state.exercises.map(ex => `<option value="${escapeAttr(ex.name)}" ${ex.name === block.exerciseName ? "selected" : ""}>${escapeHtml(exerciseDisplayName(ex))}</option>`).join("")}</select></label>
     ${block.exerciseName ? exerciseMuscleBreakdownCard(block) : ""}
     ${storedExercise ? `<div class="row-line"><span class="muted">${loadProfile ? `${tx("Configured machine weights", "Налаштовані ваги тренажера")}: ${loadProfile.allowedWeightsKg.length}` : tx("Use the exact weights available on this machine.", "Вкажи точні ваги, доступні на цьому тренажері.")}</span><button class="button ghost mini" data-action="configure-load-profile" data-id="${escapeAttr(String(storedExercise.id))}">${tx("Machine weights", "Ваги тренажера")}</button></div>` : ""}
@@ -5497,7 +5506,7 @@ function exerciseDetailCard(session, group, isGarminWorkout = false) {
     ? `${group.sets.length} ${tx("sets", "підходів")} · ${group.sets.map(set => `${formatSetWeight(set.weight)} kg x ${set.reps}`).join(" · ")}`
     : tx("No sets", "Немає підходів");
   const restTimer = isGarminWorkout ? "" : `<div class="timer-row"><div><strong>${tx("Exercise Rest", "Відпочинок")}</strong><span data-timer-display="${escapeAttr(key)}" aria-live="polite">${remaining > 0 ? formatTimer(remaining) : tx("Ready", "Готово")}</span></div><div class="actions"><button class="button ghost mini" data-action="timer" data-key="${escapeAttr(key)}" data-seconds="60">60s</button><button class="button ghost mini" data-action="timer" data-key="${escapeAttr(key)}" data-seconds="90">90s</button><button class="button ghost mini" data-action="timer" data-key="${escapeAttr(key)}" data-seconds="180">180s</button><button class="button ghost mini" data-action="timer-stop" data-timer-stop="${escapeAttr(key)}" data-key="${escapeAttr(key)}" ${remaining ? "" : "disabled"}>${tx("Stop", "Стоп")}</button></div></div>`;
-  return `<section class="panel highlighted workout-exercise-card"><details ${isGarminWorkout ? "" : "open"}><summary class="detail-summary"><div><h2>${escapeHtml(exerciseDisplayName(group))}</h2><p class="muted">${escapeHtml(setSummary)}</p></div>${isPr(session, group) ? `<span class="pill">${svg("trophy", "small-icon")}${tx("New PR", "Новий рекорд")}</span>` : ""}${exerciseDetailBodyMap(group, "collapsed")}</summary>
+  return `<section class="panel highlighted workout-exercise-card"><details ${isGarminWorkout ? "" : "open"}><summary class="detail-summary"><div><h2>${escapeHtml(exerciseDisplayName(group))}</h2><p class="muted">${escapeHtml(setSummary)}</p></div>${exerciseMediaThumbnail(group, { className: "compact" })}${isPr(session, group) ? `<span class="pill">${svg("trophy", "small-icon")}${tx("New PR", "Новий рекорд")}</span>` : ""}${exerciseDetailBodyMap(group, "collapsed")}</summary>
     ${!isGarminWorkout ? exerciseDetailBodyMap(group, "expanded") : ""}
     ${group.sets.length ? `${restTimer}<div class="table"><div class="table-head"><span>${tx("Set", "Підхід")}</span><span>${tx("Weight (kg)", "Вага (кг)")}</span><span>${tx("Reps", "Повтори")}</span><span></span></div>${group.sets.map((set, i) => `<div class="table-row"><span>${tx("Set", "Підхід")} ${i + 1}</span><span>${Number(set.weight).toFixed(1)}</span><span>${set.reps}</span><span><button class="icon-button" data-action="edit-set" data-id="${set.id}" aria-label="${txAttr("Edit set", "Редагувати підхід")}">${svg("edit")}</button><button class="icon-button" data-action="delete-set" data-id="${set.id}" data-session="${escapeAttr(session.id)}" aria-label="${txAttr("Delete set", "Видалити підхід")}">${svg("delete")}</button></span></div>`).join("")}</div>` : `<div class="empty">${tx("No sets were imported for this exercise.", "Для цієї вправи не імпортовано жодного підходу.")}</div>`}
     <button class="button ghost full" data-action="detail-add-set" data-session="${session.id}" data-name="${escapeAttr(group.name)}">${t("logSetAndRest")}</button>
@@ -7176,7 +7185,7 @@ function exerciseRow(exercise) {
   const workoutCount = exerciseWorkoutCount(exercise);
   const mappingCount = mappingFor(exercise).length;
   const loadProfile = normalizeExerciseLoadProfile(exercise.loadProfile);
-  return `<article class="panel exercise-row"><div class="exercise-card-head"><h3 class="exercise-name">${escapeHtml(exerciseDisplayName(exercise))}</h3><div class="actions"><button class="icon-button favorite-toggle ${favorite ? "selected" : ""}" data-action="toggle-exercise-favorite" data-id="${escapeAttr(String(exercise.id))}" aria-pressed="${favorite}" aria-label="${favorite ? txAttr("Remove from favorites", "Прибрати з улюблених") : txAttr("Add to favorites", "Додати до улюблених")}">${svg(favorite ? "heartFilled" : "heart")}</button>${builtIn ? `<span class="pill">${tx("Built-in", "Вбудована")}</span>` : `<button class="icon-button" data-action="rename-exercise" data-id="${exercise.id}" aria-label="${txAttr("Rename exercise", "Перейменувати вправу")}">${svg("edit")}</button>`}<button class="icon-button" data-action="delete-exercise" data-id="${exercise.id}" aria-label="${txAttr("Delete exercise", "Видалити вправу")}">${svg("delete")}</button></div></div><div class="exercise-metrics"><span class="pill">${n(workoutCount, "workout", "workouts", "тренування", "тренування", "тренувань")}</span><span class="pill">${mappingCount ? tx(`${mappingCount} mapped`, `Зіставлено: ${mappingCount}`) : tx("Auto mapping", "Автоматичне зіставлення")}</span>${loadProfile ? `<span class="pill">${tx("Machine weights", "Ваги тренажера")}: ${loadProfile.allowedWeightsKg.length}</span>` : ""}</div><div class="exercise-card-actions"><button class="button ghost" data-action="exercise-history" data-id="${exercise.id}">${tx("History", "Історія")}</button><button class="button ghost" data-action="map-exercise" data-name="${escapeAttr(exercise.name)}">${tx("Muscle groups", "Групи м’язів")}</button><button class="button ghost" data-action="configure-load-profile" data-id="${exercise.id}">${tx("Machine weights", "Ваги тренажера")}</button></div></article>`;
+  return `<article class="panel exercise-row"><div class="exercise-card-head"><div class="exercise-card-identity">${exerciseMediaThumbnail(exercise, { className: "compact" })}<h3 class="exercise-name">${escapeHtml(exerciseDisplayName(exercise))}</h3></div><div class="actions"><button class="icon-button favorite-toggle ${favorite ? "selected" : ""}" data-action="toggle-exercise-favorite" data-id="${escapeAttr(String(exercise.id))}" aria-pressed="${favorite}" aria-label="${favorite ? txAttr("Remove from favorites", "Прибрати з улюблених") : txAttr("Add to favorites", "Додати до улюблених")}">${svg(favorite ? "heartFilled" : "heart")}</button>${builtIn ? `<span class="pill">${tx("Built-in", "Вбудована")}</span>` : `<button class="icon-button" data-action="rename-exercise" data-id="${exercise.id}" aria-label="${txAttr("Rename exercise", "Перейменувати вправу")}">${svg("edit")}</button>`}<button class="icon-button" data-action="delete-exercise" data-id="${exercise.id}" aria-label="${txAttr("Delete exercise", "Видалити вправу")}">${svg("delete")}</button></div></div><div class="exercise-metrics"><span class="pill">${n(workoutCount, "workout", "workouts", "тренування", "тренування", "тренувань")}</span><span class="pill">${mappingCount ? tx(`${mappingCount} mapped`, `Зіставлено: ${mappingCount}`) : tx("Auto mapping", "Автоматичне зіставлення")}</span>${loadProfile ? `<span class="pill">${tx("Machine weights", "Ваги тренажера")}: ${loadProfile.allowedWeightsKg.length}</span>` : ""}</div><div class="exercise-card-actions"><button class="button ghost" data-action="exercise-history" data-id="${exercise.id}">${tx("History", "Історія")}</button><button class="button ghost" data-action="map-exercise" data-name="${escapeAttr(exercise.name)}">${tx("Muscle groups", "Групи м’язів")}</button><button class="button ghost" data-action="configure-load-profile" data-id="${exercise.id}">${tx("Machine weights", "Ваги тренажера")}</button></div></article>`;
 }
 
 function progressScreen() {
@@ -7195,7 +7204,7 @@ function progressScreen() {
   const vol = history.reduce((sum, s) => sum + safeChartValue(s.weight) * safeChartValue(s.reps), 0);
   const reps = history.reduce((sum, x) => sum + safeChartValue(x.reps), 0);
   const hasMuscleMapping = contributionFor(selected).some(item => muscles.some(([id]) => id === item.muscleId));
-  return `${monthSwitcher()}<section class="panel progress-selector"><label for="progress-select">${tx("Exercise", "Вправа")}</label><select id="progress-select" data-action="progress-select">${state.exercises.map(ex => `<option value="${ex.id}" ${Number(ex.id) === selectedId ? "selected" : ""}>${escapeHtml(exerciseDisplayName(ex))}</option>`).join("")}</select></section>
+  return `${monthSwitcher()}<section class="panel progress-selector"><div class="progress-exercise-heading">${exerciseMediaThumbnail(selected, { className: "progress" })}<label for="progress-select">${tx("Exercise", "Вправа")}</label></div><select id="progress-select" data-action="progress-select">${state.exercises.map(ex => `<option value="${ex.id}" ${Number(ex.id) === selectedId ? "selected" : ""}>${escapeHtml(exerciseDisplayName(ex))}</option>`).join("")}</select></section>
     ${hasMuscleMapping ? exerciseMuscleBreakdownCard(selected, true) : ""}
     <section class="panel progress-summary"><h2>${tx("Progress Summary", "Підсумок прогресу")}</h2><p class="muted">${tx("Volume = weight x reps across all completed sets.", "Обсяг = вага x повтори по всіх завершених підходах.")}</p><div class="metric-grid three"><div><span>${tx("Sessions", "Сесії")}</span><strong>${grouped.length}</strong></div><div><span>${tx("Total Sets", "Усього підходів")}</span><strong>${history.length}</strong></div><div><span>${tx("Total Reps", "Усього повторів")}</span><strong>${reps}</strong></div><div><span>${tx("Best Weight", "Найкраща вага")}</span><strong>${history.length ? `${best.toFixed(1)} kg` : tx("No data", "Немає даних")}</strong></div><div><span>${tx("Average Max", "Середній максимум")}</span><strong>${history.length ? `${avg.toFixed(1)} kg` : tx("No data", "Немає даних")}</strong></div><div><span>${tx("Total Volume", "Загальний обсяг")}</span><strong>${Math.round(vol)}</strong></div></div></section>
     <section class="hero-panel progress-spotlight">${spotlight(selected, grouped, allTimeBest)}</section>
@@ -7888,7 +7897,7 @@ function exerciseHistoryMarkup(exercise) {
   const history = allSets().filter(set => exercisesMatch(set, exercise)).sort((a, b) => b.session.startedAt - a.session.startedAt);
   const groups = progressHistoryGroups(history);
   const total = history.reduce((s, x) => s + Number(x.weight || 0) * Number(x.reps || 0), 0);
-  return `<h2>${escapeHtml(exerciseDisplayName(exercise))}</h2><div class="metric-grid three"><div><span>${tx("Sessions", "Сесії")}</span><strong>${groups.length}</strong></div><div><span>${tx("Sets", "Підходи")}</span><strong>${history.length}</strong></div><div><span>${tx("Volume", "Обсяг")}</span><strong>${Math.round(total)}</strong></div></div>${exerciseMuscleMapCard(exercise)}${groups.length ? groupedExerciseHistory(groups) : `<div class="empty">${tx("No history for this exercise yet.", "Історії для цієї вправи ще немає.")}</div>`}`;
+  return `<div class="exercise-history-heading">${exerciseMediaThumbnail(exercise, { className: "progress" })}<h2>${escapeHtml(exerciseDisplayName(exercise))}</h2></div><div class="metric-grid three"><div><span>${tx("Sessions", "Сесії")}</span><strong>${groups.length}</strong></div><div><span>${tx("Sets", "Підходи")}</span><strong>${history.length}</strong></div><div><span>${tx("Volume", "Обсяг")}</span><strong>${Math.round(total)}</strong></div></div>${exerciseMuscleMapCard(exercise)}${groups.length ? groupedExerciseHistory(groups) : `<div class="empty">${tx("No history for this exercise yet.", "Історії для цієї вправи ще немає.")}</div>`}`;
 }
 
 function mappingEditor(name) {
@@ -8133,8 +8142,13 @@ function handleAction(action, el) {
   if (action === "template-picker") { modal = { type: "template" }; return render(); }
   if (action === "copy-template") { workoutDraft = createDraft(state.sessions.find(s => s.id === Number(el.dataset.id))); modal = null; nav = [{ name: "workouts" }, { name: "add" }]; replaceNavigationHistory(); return render(); }
   if (action === "open-exercise-media") {
-    const block = workoutDraft?.blocks[Number(el.dataset.block)];
-    const exercise = block?.exerciseName ? state.exercises.find(item => exercisesMatch(item, block)) || block : null;
+    const exerciseId = Number(el.dataset.exerciseId);
+    const storedExercise = Number.isSafeInteger(exerciseId) && exerciseId > 0
+      ? state.exercises.find(item => Number(item.id) === exerciseId)
+      : null;
+    const blockIndex = Number(el.dataset.block);
+    const block = Number.isInteger(blockIndex) && blockIndex >= 0 ? workoutDraft?.blocks[blockIndex] : null;
+    const exercise = storedExercise || (block?.exerciseName ? state.exercises.find(item => exercisesMatch(item, block)) || block : null);
     if (!exercise) return;
     modal = { type: "exercise-media", exercise };
     return render();
@@ -8303,10 +8317,11 @@ function generateSmartWorkout() {
 }
 
 function buildSmartWorkoutPlan() {
-  const history = smartUsableHistory();
+  const nowMillis = Date.now();
+  const history = smartUsableHistory(allSets(), nowMillis);
   const focus = chooseWorkoutFocus(history);
   const variant = smartWorkoutVariant(focus, history);
-  const targetExerciseCount = smartTargetExerciseCount(focus);
+  const targetExerciseCount = smartTargetExerciseCount();
   const historyByExercise = new Map();
   history.forEach(set => {
     const key = exerciseMatchKey(set);
@@ -8347,7 +8362,17 @@ function buildSmartWorkoutPlan() {
     }
     return groups;
   }, new Map()).values()];
-  const selected = selectBalancedSmartExercises(canonicalCandidates, focus, targetMuscles, targetExerciseCount, history, variant);
+  const weeklyEffectiveSets = smartWeeklyEffectiveSets(history, nowMillis);
+  const selected = selectBalancedSmartExercises(
+    canonicalCandidates,
+    focus,
+    targetMuscles,
+    targetExerciseCount,
+    history,
+    variant,
+    weeklyEffectiveSets,
+    smartWeeklyMuscleTarget()
+  );
   return {
     focus,
     variant,
@@ -8359,11 +8384,13 @@ function buildSmartWorkoutPlan() {
   };
 }
 
-function smartTargetExerciseCount(focus) {
+function smartTargetExerciseCount() {
   const days = Number(state.profile.days);
-  if (days <= 3) return 6;
-  if (days >= 5 && focus === "FullBody") return 4;
-  return 5;
+  if (days <= 2) return 10;
+  if (days === 3) return 9;
+  if (days === 4) return 8;
+  if (days === 5) return 7;
+  return 6;
 }
 
 function smartWorkoutVariant(focus, history) {
@@ -8480,6 +8507,7 @@ const smartPushMuscles = new Set(["chest", "shoulders", "triceps"]);
 const smartPullMuscles = new Set(["lats", "upperBack", "biceps", "forearms"]);
 const smartLowerMuscles = new Set(["quads", "hamstrings", "glutes", "calves", "adductors", "lowerBack"]);
 const smartCoreMuscles = new Set(["abs", "obliques"]);
+const smartKnownMuscleIds = new Set(muscles.map(([id]) => id));
 const smartCompoundPatterns = new Set([
   "Squat", "LegPress", "Hinge", "HorizontalPress", "VerticalPress", "HorizontalPull", "VerticalPull"
 ]);
@@ -8618,31 +8646,76 @@ function analyzeSmartExercise(exercise) {
   };
 }
 
-function selectBalancedSmartExercises(candidates, focus, targetMuscles, targetExerciseCount, history, variant) {
+function smartWeeklyMuscleTarget(profile = state.profile) {
+  const base = profile?.goal === "Muscle Gain" ? 10 : 8;
+  const calorieAdjustment = profile?.calories === "Deficit" ? -2 : profile?.calories === "Surplus" ? 1 : 0;
+  return clamp(base + calorieAdjustment, 6, 11);
+}
+
+function smartKnownMuscleContributions(exercise) {
+  const bounded = new Map();
+  contributionFor(exercise).forEach(item => {
+    const weight = Number(item?.weight);
+    if (!smartKnownMuscleIds.has(item?.muscleId) || !Number.isFinite(weight)) return;
+    bounded.set(item.muscleId, Math.max(bounded.get(item.muscleId) || 0, clamp(weight, 0, 1)));
+  });
+  return [...bounded].filter(([, weight]) => weight > 0).map(([muscleId, weight]) => ({ muscleId, weight }));
+}
+
+function smartWeeklyEffectiveSets(history, nowMillis = Date.now()) {
+  const result = new Map(muscles.map(([id]) => [id, 0]));
+  const windowStart = nowMillis - 7 * 24 * 60 * 60 * 1000;
+  history.forEach(set => {
+    const completedAt = Number(set?.session?.startedAt);
+    if (!smartSetUsable(set) || !Number.isFinite(completedAt) || completedAt < windowStart || completedAt > nowMillis) return;
+    smartKnownMuscleContributions(set).forEach(({ muscleId, weight }) => {
+      result.set(muscleId, (result.get(muscleId) || 0) + weight);
+    });
+  });
+  return result;
+}
+
+function smartWeeklyCoverageScore(candidate, selected, completedEffectiveSets, weeklyTarget) {
+  const projected = new Map(completedEffectiveSets);
+  selected.forEach(item => {
+    const plannedSets = smartTargetSetCount(item.analysis);
+    smartKnownMuscleContributions(item.exercise).forEach(({ muscleId, weight }) => {
+      projected.set(muscleId, (projected.get(muscleId) || 0) + plannedSets * weight);
+    });
+  });
+  const plannedSets = smartTargetSetCount(candidate.analysis);
+  const contributions = smartKnownMuscleContributions(candidate.exercise);
+  const coverageGain = contributions.reduce((sum, { muscleId, weight }) => {
+    const deficit = Math.max(weeklyTarget - (projected.get(muscleId) || 0), 0);
+    return sum + Math.min(deficit, plannedSets * weight);
+  }, 0);
+  const saturatedPenalty = coverageGain === 0
+    ? 12 * contributions.reduce((sum, item) => sum + item.weight, 0)
+    : 0;
+  return coverageGain * 18 - saturatedPenalty;
+}
+
+function selectBalancedSmartExercises(candidates, focus, targetMuscles, targetExerciseCount, history, variant, weeklyEffectiveSets = smartWeeklyEffectiveSets(history), weeklyTarget = smartWeeklyMuscleTarget()) {
   const selected = [];
   const coveredMuscles = new Set();
   const lastTrained = lastTrainedBySmartMuscle(history);
   const isTrunkCandidate = candidate => candidate.analysis.patterns.has("Core") ||
     ["hyperextension", "side_hyperextension"].includes(resolvedExerciseCatalogKey(candidate.exercise));
-  const recentSessions = sessionGroupsByDate(history).slice(0, 2);
-  const recentTrunkPresent = recentSessions.some(session => session.sets.some(set => {
-    const key = resolvedExerciseCatalogKey(set);
-    return analyzeSmartExercise(set).patterns.has("Core") || ["hyperextension", "side_hyperextension"].includes(key);
-  }));
-  const trunkRequired = ["FullBody", "Lower", "Legs"].includes(focus) ||
-    (targetExerciseCount >= 5 && !recentTrunkPresent);
   let remaining = candidates.filter(candidate =>
-    isCandidateForFocus(candidate.analysis, focus) || (trunkRequired && isTrunkCandidate(candidate))
+    isCandidateForFocus(candidate.analysis, focus) || isTrunkCandidate(candidate)
   );
   if (!remaining.length && focus !== "Lower" && focus !== "Legs") remaining = [...candidates];
 
   const takeBestPattern = patterns => {
     const best = remaining
-      .filter(candidate => [...candidate.analysis.patterns].some(pattern => patterns.has(pattern)))
+      .filter(candidate => !isTrunkCandidate(candidate) &&
+        [...candidate.analysis.patterns].some(pattern => patterns.has(pattern)))
       .sort((a, b) => {
         const priority = candidate => candidate.analysis.role === "Primary" ? 28 : smartIsCompound(candidate.analysis) ? 14 : 0;
-        return (b.score + patternMatchCount(b, patterns) * 35 + priority(b)) -
-          (a.score + patternMatchCount(a, patterns) * 35 + priority(a)) ||
+        return (b.score + patternMatchCount(b, patterns) * 35 + priority(b) +
+          smartWeeklyCoverageScore(b, selected, weeklyEffectiveSets, weeklyTarget)) -
+          (a.score + patternMatchCount(a, patterns) * 35 + priority(a) +
+          smartWeeklyCoverageScore(a, selected, weeklyEffectiveSets, weeklyTarget)) ||
           a.exercise.name.localeCompare(b.exercise.name);
       })[0];
     if (!best) return;
@@ -8672,7 +8745,8 @@ function selectBalancedSmartExercises(candidates, focus, targetMuscles, targetEx
         .filter(candidate => candidate.analysis.category === requiredFocus && smartIsCompound(candidate.analysis))
         .sort((a, b) => {
           const priority = candidate => candidate.analysis.role === "Primary" ? 28 : smartIsCompound(candidate.analysis) ? 14 : 0;
-          return (b.score + priority(b)) - (a.score + priority(a)) ||
+          return (b.score + priority(b) + smartWeeklyCoverageScore(b, selected, weeklyEffectiveSets, weeklyTarget)) -
+            (a.score + priority(a) + smartWeeklyCoverageScore(a, selected, weeklyEffectiveSets, weeklyTarget)) ||
             a.exercise.name.localeCompare(b.exercise.name);
         })[0];
       if (!best) return;
@@ -8695,24 +8769,29 @@ function selectBalancedSmartExercises(candidates, focus, targetMuscles, targetEx
   const trunkKind = candidate => ["hyperextension", "side_hyperextension"].includes(
     resolvedExerciseCatalogKey(candidate.exercise)
   ) ? "hyper" : "core";
-  const trunk = trunkRequired ? remaining
-    .filter(isTrunkCandidate)
-    .sort((left, right) => {
-      const preference = candidate => trunkKind(candidate) === preferredTrunkKind ? 60 : 0;
-      return (right.score + preference(right)) - (left.score + preference(left)) ||
-        left.exercise.name.localeCompare(right.exercise.name);
-    })[0] : null;
+  const trunkCandidates = selected.some(isTrunkCandidate) ? [] : remaining.filter(isTrunkCandidate);
+  const preferredTrunkCandidates = trunkCandidates.filter(candidate =>
+    trunkKind(candidate) === preferredTrunkKind
+  );
+  const trunk = (preferredTrunkCandidates.length ? preferredTrunkCandidates : trunkCandidates)
+    .sort((left, right) => (right.score + smartWeeklyCoverageScore(right, selected, weeklyEffectiveSets, weeklyTarget)) -
+      (left.score + smartWeeklyCoverageScore(left, selected, weeklyEffectiveSets, weeklyTarget)) ||
+      left.exercise.name.localeCompare(right.exercise.name))[0] || null;
   if (trunk && selected.length < targetExerciseCount) {
     selected.push(trunk);
     trunk.analysis.muscles.forEach(muscle => coveredMuscles.add(muscle));
     remaining = remaining.filter(candidate => candidate.exercise.id !== trunk.exercise.id);
+  }
+  if (selected.some(isTrunkCandidate)) {
+    remaining = remaining.filter(candidate => !isTrunkCandidate(candidate));
   }
 
   while (selected.length < targetExerciseCount && remaining.length) {
     const best = remaining
       .map(candidate => ({
         candidate,
-        score: balancedSmartScore(candidate, selected, coveredMuscles, targetMuscles, lastTrained)
+        score: balancedSmartScore(candidate, selected, coveredMuscles, targetMuscles, lastTrained) +
+          smartWeeklyCoverageScore(candidate, selected, weeklyEffectiveSets, weeklyTarget)
       }))
       .sort((a, b) => b.score - a.score || a.candidate.exercise.name.localeCompare(b.candidate.exercise.name))[0].candidate;
     selected.push(best);

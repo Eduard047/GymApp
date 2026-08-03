@@ -551,6 +551,7 @@ struct AddWorkoutView: View {
         let plan = RecommendationEngine.buildWorkoutPlan(
             exercises: store.exercises,
             history: store.allExerciseHistory(),
+            muscleMappings: store.muscleMappings,
             trainingProfile: profile
         )
         guard !plan.exercises.isEmpty else {

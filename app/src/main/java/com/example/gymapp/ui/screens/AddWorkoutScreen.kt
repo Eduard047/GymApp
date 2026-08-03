@@ -1,9 +1,5 @@
 ﻿package com.example.gymapp.ui.screens
 
-import android.graphics.Bitmap
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -30,8 +26,6 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.filled.Image
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Replay
@@ -61,10 +55,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
@@ -80,10 +71,10 @@ import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.EmptyStatePanel
 import com.example.gymapp.ui.components.ExerciseMuscleBreakdownCard
 import com.example.gymapp.ui.components.ExerciseMuscleMap
+import com.example.gymapp.ui.components.ExerciseMediaPreview
 import com.example.gymapp.ui.components.HeroPanel
 import com.example.gymapp.ui.components.InfoPill
 import com.example.gymapp.ui.components.SectionTitle
-import com.example.gymapp.ui.media.ExerciseMediaStore
 import com.example.gymapp.ui.util.currentAppLanguageTag
 import com.example.gymapp.ui.util.localizedExerciseName
 import com.example.gymapp.ui.viewmodel.AddWorkoutUiState
@@ -97,10 +88,6 @@ import com.example.gymapp.util.TrainingProfile
 import com.example.gymapp.util.TrainingSplit
 import com.example.gymapp.util.asString
 import java.util.Locale
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -722,8 +709,6 @@ private fun ExerciseDraftCard(
 ) {
     var isExpanded by rememberSaveable(draft.draftId) { mutableStateOf(true) }
     val selectedExercise = exercises.firstOrNull { it.id == draft.exerciseId }
-    var showMedia by rememberSaveable(draft.draftId) { mutableStateOf(false) }
-    var mediaRevision by remember { mutableStateOf(0) }
     val muscleIntensities = remember(selectedExercise?.name) {
         selectedExercise
             ?.let { defaultContributionsForExercise(it.name) }
@@ -756,11 +741,12 @@ private fun ExerciseDraftCard(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 if (selectedExercise != null) {
-                    ExerciseMediaThumbnail(
-                        exercise = selectedExercise,
+                    ExerciseMediaPreview(
+                        exerciseId = selectedExercise.id,
+                        exerciseName = selectedExercise.name,
                         ownerKey = exerciseMediaOwnerKey,
-                        revision = mediaRevision,
-                        onClick = { showMedia = true }
+                        width = 76.dp,
+                        height = 64.dp
                     )
                 }
                 Column(modifier = Modifier.weight(1f)) {
@@ -942,206 +928,6 @@ private fun ExerciseDraftCard(
                     }
                 }
             }
-            }
-        }
-    }
-    if (showMedia && selectedExercise != null) {
-        ExerciseMediaSheet(
-            exercise = selectedExercise,
-            ownerKey = exerciseMediaOwnerKey,
-            onMediaChanged = { mediaRevision += 1 },
-            onDismiss = { showMedia = false }
-        )
-    }
-}
-
-@Composable
-private fun ExerciseMediaThumbnail(
-    exercise: ExerciseEntity,
-    ownerKey: String,
-    revision: Int,
-    onClick: () -> Unit
-) {
-    val context = LocalContext.current
-    val density = LocalDensity.current
-    val requestedWidth = with(density) { 76.dp.roundToPx() }
-    val requestedHeight = with(density) { 64.dp.roundToPx() }
-    val custom = remember(exercise.id, ownerKey, revision, requestedWidth, requestedHeight) {
-        ExerciseMediaStore.loadCustom(
-            context,
-            ownerKey,
-            exercise.id,
-            requestedWidth,
-            requestedHeight
-        )
-    }
-    val builtIn = remember(exercise.name, requestedWidth, requestedHeight) {
-        ExerciseMediaStore.bundledFramePaths(exercise.name).firstOrNull()?.let { path ->
-            runCatching {
-                ExerciseMediaStore.loadBundledFrame(
-                    context,
-                    path,
-                    requestedWidth,
-                    requestedHeight
-                )
-            }.getOrNull()
-        }
-    }
-    val image = custom ?: builtIn
-    Surface(
-        modifier = Modifier
-            .size(width = 76.dp, height = 64.dp)
-            .clickable(onClick = onClick),
-        shape = GymControlShape,
-        color = MaterialTheme.colorScheme.surfaceVariant
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            if (image != null) {
-                Image(
-                    bitmap = image.asImageBitmap(),
-                    contentDescription = stringResource(R.string.exercise_media_hint),
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
-                )
-                Surface(
-                    modifier = Modifier.align(Alignment.BottomEnd).padding(5.dp),
-                    shape = GymControlShape,
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.9f)
-                ) {
-                    Icon(
-                        Icons.Default.PlayArrow,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onPrimary,
-                        modifier = Modifier.padding(3.dp).size(16.dp)
-                    )
-                }
-            } else {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(Icons.Default.Image, contentDescription = null)
-                    Text(
-                        stringResource(R.string.exercise_media_add),
-                        style = MaterialTheme.typography.labelSmall
-                    )
-                }
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun ExerciseMediaSheet(
-    exercise: ExerciseEntity,
-    ownerKey: String,
-    onMediaChanged: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    var revision by remember { mutableStateOf(0) }
-    var error by remember { mutableStateOf(false) }
-    val density = LocalDensity.current
-    val requestedWidth = 1_024
-    val requestedHeight = with(density) { 230.dp.roundToPx() }
-    val custom = remember(exercise.id, ownerKey, revision, requestedWidth, requestedHeight) {
-        ExerciseMediaStore.loadCustom(
-            context,
-            ownerKey,
-            exercise.id,
-            requestedWidth,
-            requestedHeight
-        )
-    }
-    val bundled = remember(exercise.name, requestedWidth, requestedHeight) {
-        ExerciseMediaStore.bundledFramePaths(exercise.name).mapNotNull { path ->
-            runCatching {
-                ExerciseMediaStore.loadBundledFrame(
-                    context,
-                    path,
-                    requestedWidth,
-                    requestedHeight
-                )
-            }.getOrNull()
-        }
-    }
-    var frameIndex by remember { mutableStateOf(0) }
-    LaunchedEffect(custom, bundled) {
-        frameIndex = 0
-        if (custom == null && bundled.size > 1) {
-            while (true) {
-                delay(1_150)
-                frameIndex = (frameIndex + 1) % bundled.size
-            }
-        }
-    }
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        if (uri != null) {
-            scope.launch {
-                error = runCatching {
-                    withContext(Dispatchers.IO) {
-                        ExerciseMediaStore.saveCustom(context, ownerKey, exercise.id, uri)
-                    }
-                }.isFailure
-                revision += 1
-                if (!error) onMediaChanged()
-            }
-        }
-    }
-
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(
-            modifier = Modifier.padding(start = 18.dp, end = 18.dp, bottom = 28.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            Text(stringResource(R.string.exercise_media_title), style = MaterialTheme.typography.titleLarge)
-            Text(localizedExerciseName(exercise.name), style = MaterialTheme.typography.titleMedium)
-            Surface(
-                modifier = Modifier.fillMaxWidth().height(230.dp),
-                shape = GymControlShape,
-                color = MaterialTheme.colorScheme.surfaceVariant
-            ) {
-                val image: Bitmap? = custom ?: bundled.getOrNull(frameIndex)
-                if (image != null) {
-                    Crossfade(targetState = image, label = "exercise-media") { bitmap ->
-                        Image(
-                            bitmap = bitmap.asImageBitmap(),
-                            contentDescription = stringResource(R.string.exercise_media_hint),
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Fit
-                        )
-                    }
-                } else {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(Icons.Default.Image, contentDescription = null, modifier = Modifier.size(52.dp))
-                    }
-                }
-            }
-            Text(
-                stringResource(R.string.exercise_media_hint),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            if (error) {
-                Text(
-                    stringResource(R.string.exercise_media_error),
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodySmall
-                )
-            }
-            Button(onClick = { picker.launch("image/*") }, modifier = Modifier.fillMaxWidth()) {
-                Text(stringResource(R.string.exercise_media_choose))
-            }
-            if (custom != null && bundled.isNotEmpty()) {
-                OutlinedButton(
-                    onClick = {
-                        ExerciseMediaStore.deleteCustom(context, ownerKey, exercise.id)
-                        revision += 1
-                        onMediaChanged()
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(stringResource(R.string.exercise_media_restore))
-                }
             }
         }
     }

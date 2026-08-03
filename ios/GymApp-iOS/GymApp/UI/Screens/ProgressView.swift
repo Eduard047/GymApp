@@ -109,6 +109,11 @@ struct ExerciseProgressView: View {
         return GymPanel(highlighted: !contributions.isEmpty) {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .top, spacing: 10) {
+                    ExerciseMediaButton(
+                        exerciseName: exercise.name,
+                        exerciseID: exercise.id,
+                        ownerKey: store.accountStorageKey
+                    )
                     VStack(alignment: .leading, spacing: 3) {
                         Text(t("Muscle Breakdown", "Розподіл по м’язах"))
                             .font(.headline)

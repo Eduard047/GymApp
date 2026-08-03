@@ -506,6 +506,55 @@ test("detail, summary, and progress UI do not reclassify a custom label from an 
   );
 });
 
+test("exercise media thumbnails appear across library, progress, workout detail, and history", () => {
+  const context = loadPwaContext();
+  const markup = vm.runInContext(`(() => {
+    state = defaultAppState();
+    const exercise = state.exercises.find(item => item.catalogKey === "bench_press");
+    state.progressExerciseId = exercise.id;
+    state.sessions = [{
+      id: 10,
+      startedAt: Date.now(),
+      note: "",
+      exerciseNames: [exercise.name],
+      sets: [{ id: 11, exerciseName: exercise.name, catalogKey: exercise.catalogKey, weight: 50, reps: 8, orderIndex: 0 }]
+    }];
+    return [
+      exerciseRow(exercise),
+      progressScreen(),
+      detailScreen(10),
+      exerciseHistoryMarkup(exercise)
+    ].join("\\n");
+  })()`, context);
+
+  assert.equal((markup.match(/data-action="open-exercise-media"/g) || []).length, 4);
+  assert.equal((markup.match(/data-exercise-id="1"/g) || []).length, 4);
+  assert.equal((markup.match(/exercise-media\/bench_press_0\.jpg/g) || []).length, 4);
+});
+
+test("exercise media actions resolve only validated stored IDs and custom labels cannot borrow built-in media", () => {
+  const context = loadPwaContext();
+  const result = jsonFrom(context, `(() => {
+    state = defaultAppState();
+    workoutDraft = null;
+    modal = null;
+    const bench = state.exercises.find(item => item.catalogKey === "bench_press");
+    const custom = { id: 999, name: "<img src=x onerror=alert(1)>", catalogKey: "bench_press" };
+    state.exercises.push(custom);
+    const customMarkup = exerciseMediaThumbnail(custom);
+    handleAction("open-exercise-media", { dataset: { exerciseId: String(bench.id) } });
+    const openedId = modal?.exercise?.id || null;
+    modal = null;
+    handleAction("open-exercise-media", { dataset: { exerciseId: "1e309" } });
+    return { customMarkup, openedId, invalidOpened: modal !== null };
+  })()`);
+
+  assert.equal(result.openedId, 1);
+  assert.equal(result.invalidOpened, false);
+  assert.doesNotMatch(result.customMarkup, /<img /);
+  assert.match(result.customMarkup, /data-exercise-id="999"/);
+});
+
 test("saving an untouched localized rename keeps a legacy raw alias and identity", () => {
   const context = loadPwaContext();
   vm.runInContext(`

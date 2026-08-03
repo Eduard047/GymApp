@@ -368,7 +368,8 @@ object WorkoutRecommendationEngine {
         trainingProfile: TrainingProfile = TrainingProfile(),
         nowMillis: Long = System.currentTimeMillis(),
         zoneId: ZoneId = ZoneId.systemDefault(),
-        loadProfiles: Map<Long, ExerciseLoadProfile> = emptyMap()
+        loadProfiles: Map<Long, ExerciseLoadProfile> = emptyMap(),
+        manualMuscleMappings: Map<String, List<MuscleContribution>> = emptyMap()
     ): SmartWorkoutPlan {
         val safeExercises = exercises
             .asSequence()
@@ -391,7 +392,13 @@ object WorkoutRecommendationEngine {
             .toList()
         val focus = chooseWorkoutFocus(safeHistory, trainingProfile, nowMillis, zoneId)
         val variant = chooseWorkoutVariant(focus, safeHistory)
-        val targetExerciseCount = targetExerciseCount(focus, trainingProfile)
+        val targetExerciseCount = targetExerciseCount(trainingProfile)
+        val weeklyTargets = weeklyMuscleTargets(trainingProfile)
+        val completedWeeklySets = completedWeeklyEffectiveSets(
+            history = safeHistory,
+            nowMillis = nowMillis,
+            manualMuscleMappings = manualMuscleMappings
+        )
 
         val analysesByExerciseId = safeExercises.associate { exercise ->
             exercise.id to analyzeExercise(exercise.name)
@@ -464,7 +471,11 @@ object WorkoutRecommendationEngine {
             targetExerciseCount = targetExerciseCount,
             history = safeHistory,
             nowMillis = nowMillis,
-            zoneId = zoneId
+            zoneId = zoneId,
+            trainingProfile = trainingProfile,
+            manualMuscleMappings = manualMuscleMappings,
+            weeklyTargets = weeklyTargets,
+            completedWeeklySets = completedWeeklySets
         )
         return SmartWorkoutPlan(
             focus = focus,
@@ -592,18 +603,101 @@ object WorkoutRecommendationEngine {
         return if (analysis?.role == ExerciseRole.Primary && !highFrequency && !recoveryLimited) 4 else 3
     }
 
-    private fun targetExerciseCount(
-        focus: SmartWorkoutFocus,
-        trainingProfile: TrainingProfile
-    ): Int {
-        val days = trainingProfile.workoutsPerWeek.coerceIn(2, 6)
-        val target = when (days) {
-            2 -> 6
-            3 -> 6
-            4 -> 5
-            else -> if (focus == SmartWorkoutFocus.FullBody) 4 else 5
+    internal fun weeklyMuscleTargets(trainingProfile: TrainingProfile): Map<String, Double> {
+        val goalBase = when (trainingProfile.goal) {
+            TrainingGoal.MuscleGain -> 10
+            TrainingGoal.Strength,
+            TrainingGoal.Balanced,
+            TrainingGoal.AestheticFatLoss -> 8
         }
-        return target.coerceIn(4, 6)
+        val calorieAdjustment = when (trainingProfile.calorieMode) {
+            CalorieMode.Deficit -> -2
+            CalorieMode.Maintenance -> 0
+            CalorieMode.Surplus -> 1
+        }
+        val target = (goalBase + calorieAdjustment).coerceIn(6, 11).toDouble()
+        return MUSCLE_DEFINITIONS.associate { it.id to target }
+    }
+
+    internal fun completedWeeklyEffectiveSets(
+        history: List<ExerciseHistoryEntry>,
+        nowMillis: Long,
+        manualMuscleMappings: Map<String, List<MuscleContribution>>
+    ): Map<String, Double> {
+        val windowStart = nowMillis - WEEKLY_VOLUME_WINDOW_MILLIS
+        val result = MUSCLE_DEFINITIONS.associate { it.id to 0.0 }.toMutableMap()
+        history.asSequence()
+            .filter { it.sessionDate in windowStart..nowMillis }
+            .forEach { entry ->
+                safeMuscleContributions(entry.exerciseName, manualMuscleMappings).forEach { contribution ->
+                    result[contribution.muscleId] =
+                        (result[contribution.muscleId] ?: 0.0) + contribution.weight
+                }
+            }
+        return result
+    }
+
+    private fun weeklyVolumeScore(
+        candidate: ExerciseCandidate,
+        projectedWeeklySets: Map<String, Double>,
+        weeklyTargets: Map<String, Double>,
+        plannedSets: Int,
+        manualMuscleMappings: Map<String, List<MuscleContribution>>
+    ): Double {
+        val contributions = safeMuscleContributions(candidate.exercise.name, manualMuscleMappings)
+        val coverageGain = contributions.sumOf { contribution ->
+            val target = weeklyTargets[contribution.muscleId] ?: return@sumOf 0.0
+            val remaining = (target - (projectedWeeklySets[contribution.muscleId] ?: 0.0))
+                .coerceAtLeast(0.0)
+            minOf(remaining, plannedSets * contribution.weight)
+        }
+        val saturatedPenalty = if (coverageGain <= 0.0) {
+            12.0 * contributions.sumOf { it.weight }
+        } else {
+            0.0
+        }
+        return coverageGain * 18.0 - saturatedPenalty
+    }
+
+    private fun addProjectedWeeklySets(
+        candidate: ExerciseCandidate,
+        projectedWeeklySets: MutableMap<String, Double>,
+        plannedSets: Int,
+        manualMuscleMappings: Map<String, List<MuscleContribution>>
+    ) {
+        safeMuscleContributions(candidate.exercise.name, manualMuscleMappings).forEach { contribution ->
+            projectedWeeklySets[contribution.muscleId] =
+                (projectedWeeklySets[contribution.muscleId] ?: 0.0) + plannedSets * contribution.weight
+        }
+    }
+
+    private fun safeMuscleContributions(
+        exerciseName: String,
+        manualMuscleMappings: Map<String, List<MuscleContribution>>
+    ): List<MuscleContribution> {
+        val knownMuscleIds = MUSCLE_DEFINITIONS.asSequence().map { it.id }.toSet()
+        return muscleContributionsForExercise(exerciseName, manualMuscleMappings)
+            .asSequence()
+            .filter { it.muscleId in knownMuscleIds && it.weight.isFinite() && it.weight > 0.0 }
+            .groupBy { it.muscleId }
+            .map { (muscleId, contributions) ->
+                MuscleContribution(
+                    muscleId = muscleId,
+                    weight = contributions.maxOf { it.weight }.coerceIn(0.0, 1.0)
+                )
+            }
+            .sortedBy { it.muscleId }
+    }
+
+    private fun targetExerciseCount(trainingProfile: TrainingProfile): Int {
+        val days = trainingProfile.workoutsPerWeek.coerceIn(2, 6)
+        return when (days) {
+            2 -> 10
+            3 -> 9
+            4 -> 8
+            5 -> 7
+            else -> 6
+        }
     }
 
     private fun programmingPreferenceScore(
@@ -1047,11 +1141,16 @@ object WorkoutRecommendationEngine {
         targetExerciseCount: Int,
         history: List<ExerciseHistoryEntry>,
         nowMillis: Long,
-        zoneId: ZoneId
+        zoneId: ZoneId,
+        trainingProfile: TrainingProfile,
+        manualMuscleMappings: Map<String, List<MuscleContribution>>,
+        weeklyTargets: Map<String, Double>,
+        completedWeeklySets: Map<String, Double>
     ): List<ExerciseCandidate> {
         val selected = mutableListOf<ExerciseCandidate>()
         val coveredMuscles = mutableSetOf<String>()
         val lastTrainedByMuscle = lastTrainedByMuscle(history)
+        val projectedWeeklySets = completedWeeklySets.toMutableMap()
         val remaining = candidates
             .filter { candidate -> isExerciseEligibleForFocus(candidate.analysis, focus) }
             .ifEmpty {
@@ -1062,23 +1161,41 @@ object WorkoutRecommendationEngine {
                 }
             }
             .toMutableList()
+        fun volumeScore(candidate: ExerciseCandidate): Double = weeklyVolumeScore(
+            candidate = candidate,
+            projectedWeeklySets = projectedWeeklySets,
+            weeklyTargets = weeklyTargets,
+            plannedSets = setBudget(trainingProfile, candidate.analysis),
+            manualMuscleMappings = manualMuscleMappings
+        )
+        fun recordSelection(candidate: ExerciseCandidate) {
+            selected += candidate
+            coveredMuscles += candidate.analysis.muscles
+            addProjectedWeeklySets(
+                candidate = candidate,
+                projectedWeeklySets = projectedWeeklySets,
+                plannedSets = setBudget(trainingProfile, candidate.analysis),
+                manualMuscleMappings = manualMuscleMappings
+            )
+            remaining.removeAll { it.exercise.id == candidate.exercise.id }
+        }
 
         if (focus == SmartWorkoutFocus.Lower || focus == SmartWorkoutFocus.Legs) {
             selectRequiredPattern(
                 remaining = remaining,
-                selected = selected,
-                coveredMuscles = coveredMuscles,
-                patterns = preferredPatternsForVariant(focus, variant)
+                patterns = preferredPatternsForVariant(focus, variant),
+                volumeScore = ::volumeScore,
+                onSelected = ::recordSelection
             )
             selectRequiredPattern(
                 remaining = remaining,
-                selected = selected,
-                coveredMuscles = coveredMuscles,
                 patterns = if (variant == SmartWorkoutVariant.A) {
                     setOf(MovementPattern.Hinge, MovementPattern.KneeFlexion)
                 } else {
                     setOf(MovementPattern.Squat, MovementPattern.LegPress)
-                }
+                },
+                volumeScore = ::volumeScore,
+                onSelected = ::recordSelection
             )
         }
 
@@ -1090,51 +1207,53 @@ object WorkoutRecommendationEngine {
             val pull = preferred.filterTo(linkedSetOf()) {
                 it == MovementPattern.HorizontalPull || it == MovementPattern.VerticalPull
             }.ifEmpty { setOf(MovementPattern.HorizontalPull, MovementPattern.VerticalPull) }
-            selectRequiredPattern(remaining, selected, coveredMuscles, press)
-            selectRequiredPattern(remaining, selected, coveredMuscles, pull)
+            selectRequiredPattern(remaining, press, ::volumeScore, ::recordSelection)
+            selectRequiredPattern(remaining, pull, ::volumeScore, ::recordSelection)
         } else if (focus == SmartWorkoutFocus.Push || focus == SmartWorkoutFocus.Pull) {
             selectRequiredPattern(
                 remaining = remaining,
-                selected = selected,
-                coveredMuscles = coveredMuscles,
-                patterns = preferredPatternsForVariant(focus, variant)
+                patterns = preferredPatternsForVariant(focus, variant),
+                volumeScore = ::volumeScore,
+                onSelected = ::recordSelection
             )
         }
 
         if (focus == SmartWorkoutFocus.FullBody) {
+            val preferredPatterns = preferredPatternsForVariant(focus, variant)
             listOf(SmartWorkoutFocus.Push, SmartWorkoutFocus.Pull, SmartWorkoutFocus.Legs).forEach { requiredFocus ->
-                val best = remaining
+                val eligible = remaining
                     .filter { it.analysis.category == requiredFocus && it.analysis.isCompound }
+                val preferred = eligible.filter { candidate ->
+                    candidate.analysis.patterns.any { it in preferredPatterns }
+                }
+                val best = preferred.ifEmpty { eligible }
                     .sortedWith(
                         compareByDescending<ExerciseCandidate> { candidate ->
-                            candidate.score + candidate.analysis.selectionRolePriority()
+                            candidate.score + candidate.analysis.selectionRolePriority() + volumeScore(candidate)
                         }.thenBy { it.analysis.identityKey }
                             .thenBy { it.exercise.id }
                     )
                     .firstOrNull()
                     ?: return@forEach
-                selected += best
-                coveredMuscles += best.analysis.muscles
-                remaining.removeAll { it.exercise.id == best.exercise.id }
+                recordSelection(best)
             }
         }
 
-        val trunkIsMandatory = focus == SmartWorkoutFocus.FullBody ||
-            focus == SmartWorkoutFocus.Lower || focus == SmartWorkoutFocus.Legs
-        val trunkIsDue = targetExerciseCount >= 5 && history
-            .sessionGroupsByDate()
-            .take(2)
-            .none { session ->
-                session.entries.any { entry -> analyzeExercise(entry.exerciseName).isTrunkExercise() }
-            }
-        if (selected.size < targetExerciseCount && (trunkIsMandatory || trunkIsDue)) {
+        // Keep one direct trunk slot in every generated workout. This is selected
+        // inside the existing exercise budget, so upper/push/pull sessions retain
+        // their required movement patterns without growing session volume.
+        if (selected.size < targetExerciseCount && selected.none { it.analysis.isTrunkExercise() }) {
             selectTrunkExercise(
                 candidates = candidates,
-                remaining = remaining,
                 selected = selected,
-                coveredMuscles = coveredMuscles,
-                history = history
+                history = history,
+                variant = variant,
+                volumeScore = ::volumeScore,
+                onSelected = ::recordSelection
             )
+        }
+        if (selected.any { it.analysis.isTrunkExercise() }) {
+            remaining.removeAll { it.analysis.isTrunkExercise() }
         }
 
         while (selected.size < targetExerciseCount && remaining.isNotEmpty()) {
@@ -1149,20 +1268,27 @@ object WorkoutRecommendationEngine {
                         nowMillis = nowMillis,
                         zoneId = zoneId
                     )
+                        + volumeScore(candidate)
                 }.thenBy { it.analysis.identityKey }
                     .thenBy { it.exercise.id }
             ).firstOrNull() ?: break
-            selected += best
-            coveredMuscles += best.analysis.muscles
-            remaining.removeAll { it.exercise.id == best.exercise.id }
+            recordSelection(best)
         }
 
         if (selected.size < targetExerciseCount) {
-            selected += candidates
+            val fallback = candidates
                 .filter { candidate -> isExerciseEligibleForFocus(candidate.analysis, focus) }
                 .filterNot { candidate -> selected.any { it.exercise.id == candidate.exercise.id } }
-                .sortedWith(exerciseCandidateOrder())
+                .filterNot { candidate ->
+                    selected.any { it.analysis.isTrunkExercise() } && candidate.analysis.isTrunkExercise()
+                }
+                .sortedWith(
+                    compareByDescending<ExerciseCandidate> { it.score + volumeScore(it) }
+                        .thenBy { it.analysis.identityKey }
+                        .thenBy { it.exercise.id }
+                )
                 .take(targetExerciseCount - selected.size)
+            fallback.forEach(::recordSelection)
         }
 
         return selected.take(targetExerciseCount)
@@ -1170,15 +1296,19 @@ object WorkoutRecommendationEngine {
 
     private fun selectRequiredPattern(
         remaining: MutableList<ExerciseCandidate>,
-        selected: MutableList<ExerciseCandidate>,
-        coveredMuscles: MutableSet<String>,
-        patterns: Set<MovementPattern>
+        patterns: Set<MovementPattern>,
+        volumeScore: (ExerciseCandidate) -> Double,
+        onSelected: (ExerciseCandidate) -> Unit
     ) {
         val best = remaining
-            .filter { candidate -> candidate.analysis.patterns.any { it in patterns } }
+            .filter { candidate ->
+                !candidate.analysis.isTrunkExercise() &&
+                    candidate.analysis.patterns.any { it in patterns }
+            }
             .sortedWith(
                 compareByDescending<ExerciseCandidate> { candidate ->
                     candidate.score + candidate.analysis.patterns.count { it in patterns } * 35.0 +
+                        volumeScore(candidate) +
                         candidate.analysis.selectionRolePriority()
                 }.thenBy { it.analysis.identityKey }
                     .thenBy { it.exercise.id }
@@ -1186,43 +1316,45 @@ object WorkoutRecommendationEngine {
             .firstOrNull()
             ?: return
 
-        selected += best
-        coveredMuscles += best.analysis.muscles
-        remaining.removeAll { it.exercise.id == best.exercise.id }
+        onSelected(best)
     }
 
     private fun selectTrunkExercise(
         candidates: List<ExerciseCandidate>,
-        remaining: MutableList<ExerciseCandidate>,
         selected: MutableList<ExerciseCandidate>,
-        coveredMuscles: MutableSet<String>,
-        history: List<ExerciseHistoryEntry>
+        history: List<ExerciseHistoryEntry>,
+        variant: SmartWorkoutVariant,
+        volumeScore: (ExerciseCandidate) -> Double,
+        onSelected: (ExerciseCandidate) -> Unit
     ) {
-        val lastPerformedByIdentity = history
-            .groupBy { entry -> analyzeExercise(entry.exerciseName).identityKey }
-            .mapValues { (_, entries) -> entries.maxOf { it.sessionDate } }
+        val lastPerformedByKind = history
+            .mapNotNull { entry ->
+                analyzeExercise(entry.exerciseName).trunkKind()?.let { kind -> kind to entry.sessionDate }
+            }
+            .groupBy(keySelector = { it.first }, valueTransform = { it.second })
+            .mapValues { (_, dates) -> dates.max() }
+        val coreLastPerformed = lastPerformedByKind[TrunkKind.Core] ?: Long.MIN_VALUE
+        val hyperLastPerformed = lastPerformedByKind[TrunkKind.Hyperextension] ?: Long.MIN_VALUE
+        val preferredKind = when {
+            hyperLastPerformed < coreLastPerformed -> TrunkKind.Hyperextension
+            coreLastPerformed < hyperLastPerformed -> TrunkKind.Core
+            variant == SmartWorkoutVariant.B -> TrunkKind.Hyperextension
+            else -> TrunkKind.Core
+        }
         val best = candidates
             .asSequence()
             .filter { it.analysis.isTrunkExercise() }
             .filterNot { candidate -> selected.any { it.exercise.id == candidate.exercise.id } }
             .sortedWith(
-                compareBy<ExerciseCandidate> {
-                    lastPerformedByIdentity[it.analysis.identityKey] ?: Long.MIN_VALUE
-                }.thenByDescending { it.score }
+                compareByDescending<ExerciseCandidate> { it.analysis.trunkKind() == preferredKind }
+                    .thenByDescending(volumeScore)
+                    .thenByDescending { it.score }
                     .thenBy { it.analysis.identityKey }
                     .thenBy { it.exercise.id }
             )
             .firstOrNull()
             ?: return
-        selected += best
-        coveredMuscles += best.analysis.muscles
-        remaining.removeAll { it.exercise.id == best.exercise.id }
-    }
-
-    private fun exerciseCandidateOrder(): Comparator<ExerciseCandidate> {
-        return compareByDescending<ExerciseCandidate> { it.score }
-            .thenBy { it.analysis.identityKey }
-            .thenBy { it.exercise.id }
+        onSelected(best)
     }
 
     private fun balancedScore(
@@ -1369,9 +1501,14 @@ object WorkoutRecommendationEngine {
         val isCompound: Boolean
             get() = role == ExerciseRole.Primary || role == ExerciseRole.Secondary
 
-        fun isTrunkExercise(): Boolean = role == ExerciseRole.Core ||
+        fun trunkKind(): TrunkKind? = when {
             identityKey == "catalog:hyperextension" ||
-            identityKey == "catalog:side_hyperextension"
+                identityKey == "catalog:side_hyperextension" -> TrunkKind.Hyperextension
+            role == ExerciseRole.Core -> TrunkKind.Core
+            else -> null
+        }
+
+        fun isTrunkExercise(): Boolean = trunkKind() != null
 
         fun selectionRolePriority(): Double = when (role) {
             ExerciseRole.Primary -> 28.0
@@ -1380,6 +1517,11 @@ object WorkoutRecommendationEngine {
             ExerciseRole.Core,
             ExerciseRole.Warmup -> 0.0
         }
+    }
+
+    private enum class TrunkKind {
+        Core,
+        Hyperextension
     }
 
     private data class BuiltInProgramming(
@@ -1507,6 +1649,7 @@ object WorkoutRecommendationEngine {
     private val pullMuscles = setOf("lats", "upperBack", "biceps", "forearms")
     private val lowerMuscles = setOf("quads", "hamstrings", "glutes", "calves", "adductors", "lowerBack")
     private val coreMuscles = setOf("abs", "obliques")
+    private const val WEEKLY_VOLUME_WINDOW_MILLIS = 7L * 24L * 60L * 60L * 1_000L
 }
 
 private fun String.containsAny(vararg tokens: String): Boolean {

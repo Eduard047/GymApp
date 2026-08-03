@@ -140,7 +140,26 @@ function planFor(context, { profile, sessions }) {
     "Hyperextension",
     "Side Hyperextension",
     "Overhead Dumbbell Extension",
-    "Crane Pulldown"
+    "Crane Pulldown",
+    "Dumbbell Bench Press",
+    "Incline Dumbbell Press",
+    "Incline Bench Press",
+    "Chest Fly Machine",
+    "Push Up",
+    "Dips",
+    "Barbell Row",
+    "Seated Cable Row",
+    "Lat Pulldown",
+    "Face Pull",
+    "Hammer Curl",
+    "Preacher Curl",
+    "Deadlift",
+    "Hip Thrust",
+    "Bulgarian Split Squat",
+    "Lunge",
+    "Seated Leg Curl",
+    "Hip Adduction",
+    "Hip Abduction"
   ].map((name, index) => ({ id: index + 1, name }));
   const payload = JSON.stringify({ exercises, sessions, profile });
   return vm.runInContext(`
@@ -160,9 +179,13 @@ test("PWA smart lower plan matches Android safeguards against upper or unknown f
   });
 
   assert.ok(names.includes("Squat"));
-  assert.ok(names.includes("Romanian Deadlift"));
+  assert.ok(names.some(name => ["Romanian Deadlift", "Deadlift", "Hip Thrust"].includes(name)));
   assert.ok(names.every(name =>
-    ["Squat", "Leg Press", "Leg Extension", "Leg Curl", "Romanian Deadlift", "Calf Raise", "Weighted Crunch", "Hyperextension", "Side Hyperextension"].includes(name)
+    [
+      "Squat", "Leg Press", "Leg Extension", "Leg Curl", "Romanian Deadlift", "Calf Raise",
+      "Deadlift", "Hip Thrust", "Bulgarian Split Squat", "Lunge", "Seated Leg Curl",
+      "Hip Adduction", "Hip Abduction", "Weighted Crunch", "Hyperextension", "Side Hyperextension"
+    ].includes(name)
   ));
   assert.ok(!names.includes("Bench Press"));
   assert.ok(!names.includes("Overhead Dumbbell Extension"));
@@ -177,7 +200,10 @@ test("PWA full-body smart plan keeps push, pull, and legs represented", () => {
   });
 
   assert.ok(names.some(name => ["Bench Press", "Shoulder Press", "Lateral Raise"].includes(name)));
-  assert.ok(names.some(name => ["Cable Row", "Pull Up", "Biceps Curl", "Crane Pulldown"].includes(name)));
+  assert.ok(names.some(name => [
+    "Cable Row", "Pull Up", "Biceps Curl", "Crane Pulldown", "Barbell Row",
+    "Seated Cable Row", "Lat Pulldown", "Face Pull", "Hammer Curl", "Preacher Curl"
+  ].includes(name)));
   assert.ok(names.some(name => ["Squat", "Leg Press", "Romanian Deadlift", "Calf Raise"].includes(name)));
   assert.ok(names.some(name => ["Weighted Crunch", "Hyperextension", "Side Hyperextension"].includes(name)));
 });
@@ -201,7 +227,7 @@ test("PWA upper day keeps both a press and a pull without banning familiar prima
     ]
   });
 
-  assert.equal(names.length, 5);
+  assert.equal(names.length, 8);
   assert.ok(names.some(name => ["Bench Press", "Shoulder Press"].includes(name)));
   assert.ok(names.some(name => ["Cable Row", "Pull Up"].includes(name)));
 });
@@ -512,20 +538,20 @@ test("PWA two-day PPL safely becomes full body and high-frequency plans stay sho
   })));
 
   assert.equal(twoDay.focus, "FullBody");
-  assert.equal(twoDay.exercises.length, 6);
-  assert.equal(sixDay.exercises.length, 4);
-  assert.equal(sixDay.exercises.reduce((sum, item) => sum + item.recommendation.sets.length, 0), 12);
+  assert.equal(twoDay.exercises.length, 10);
+  assert.equal(sixDay.exercises.length, 6);
+  assert.equal(sixDay.exercises.reduce((sum, item) => sum + item.recommendation.sets.length, 0), 18);
 });
 
 test("PWA target exercise counts do not collapse for goal or calorie mode", () => {
   const context = loadPwaContext();
   for (const [days, split, expected] of [
-    [2, "Full Body", 6],
-    [3, "Full Body", 6],
-    [4, "Full Body", 5],
-    [5, "Push Pull Legs", 5],
-    [6, "Push Pull Legs", 5],
-    [6, "Full Body", 4]
+    [2, "Full Body", 10],
+    [3, "Full Body", 9],
+    [4, "Full Body", 8],
+    [5, "Push Pull Legs", 7],
+    [6, "Push Pull Legs", 6],
+    [6, "Full Body", 6]
   ]) {
     for (const [goal, calories] of [["Strength", "Deficit"], ["Muscle Gain", "Surplus"]]) {
       const plan = planFor(context, { profile: { split, days, goal, calories }, sessions: [] });
@@ -534,7 +560,93 @@ test("PWA target exercise counts do not collapse for goal or calorie mode", () =
   }
 });
 
-test("PWA rotates mandatory trunk work and avoids forcing it on every upper session", () => {
+test("PWA weekly muscle targets follow goal and calorie mode within safe bounds", () => {
+  const context = loadPwaContext();
+  const targets = JSON.parse(JSON.stringify(vm.runInContext(`(() => {
+    const goals = ["Aesthetic Cut", "Muscle Gain", "Strength", "Balanced"];
+    const calories = ["Deficit", "Maintenance", "Surplus"];
+    return Object.fromEntries(goals.flatMap(goal => calories.map(mode => [
+      goal + ":" + mode,
+      smartWeeklyMuscleTarget({ goal, calories: mode })
+    ])));
+  })()`, context)));
+
+  assert.deepEqual(targets, {
+    "Aesthetic Cut:Deficit": 6,
+    "Aesthetic Cut:Maintenance": 8,
+    "Aesthetic Cut:Surplus": 9,
+    "Muscle Gain:Deficit": 8,
+    "Muscle Gain:Maintenance": 10,
+    "Muscle Gain:Surplus": 11,
+    "Strength:Deficit": 6,
+    "Strength:Maintenance": 8,
+    "Strength:Surplus": 9,
+    "Balanced:Deficit": 6,
+    "Balanced:Maintenance": 8,
+    "Balanced:Surplus": 9
+  });
+});
+
+test("PWA weekly effective sets use an exact rolling window and fractional muscle credit", () => {
+  const context = loadPwaContext();
+  const result = JSON.parse(JSON.stringify(vm.runInContext(`(() => {
+    state = defaultAppState();
+    const now = 1800000000000;
+    const week = 7 * 24 * 60 * 60 * 1000;
+    const row = (id, startedAt, reps = 8) => ({
+      id,
+      exerciseName: "Жим штанги лежачи",
+      weight: 50,
+      reps,
+      orderIndex: 0,
+      session: { id, startedAt }
+    });
+    const effective = smartWeeklyEffectiveSets([
+      row(1, now - week),
+      row(2, now),
+      row(3, now - week - 1),
+      row(4, now + 1),
+      row(5, now - 1, 0),
+      { ...row(6, now - 1), session: { id: 6, startedAt: "bad" } }
+    ], now);
+    return Object.fromEntries(effective);
+  })()`, context)));
+
+  assert.equal(result.chest, 2);
+  assert.equal(result.triceps, 1.2);
+  assert.equal(result.shoulders, 1);
+  assert.equal(result.quads, 0);
+});
+
+test("PWA weekly coverage favors neglected muscles and accounts for projected smart sets", () => {
+  const context = loadPwaContext();
+  const scores = JSON.parse(JSON.stringify(vm.runInContext(`(() => {
+    state = defaultAppState();
+    state.profile = { split: "Full Body", days: 3, goal: "Balanced", calories: "Maintenance" };
+    const benchExercise = state.exercises.find(item => item.catalogKey === "bench_press");
+    const curlExercise = state.exercises.find(item => item.catalogKey === "biceps_curl");
+    const candidate = exercise => ({ exercise, analysis: analyzeSmartExercise(exercise), score: 0 });
+    const bench = candidate(benchExercise);
+    const curl = candidate(curlExercise);
+    const completed = new Map(muscles.map(([id]) => [id, 8]));
+    completed.set("chest", 0);
+    completed.set("shoulders", 0);
+    completed.set("triceps", 0);
+    const empty = new Map(muscles.map(([id]) => [id, 0]));
+    return {
+      neglectedBench: smartWeeklyCoverageScore(bench, [], completed, 8),
+      saturatedCurl: smartWeeklyCoverageScore(curl, [], completed, 8),
+      firstBench: smartWeeklyCoverageScore(bench, [], empty, 6),
+      thirdBench: smartWeeklyCoverageScore(bench, [bench, bench], empty, 6)
+    };
+  })()`, context)));
+
+  assert.ok(scores.neglectedBench > scores.saturatedCurl);
+  assert.ok(scores.firstBench > 0);
+  assert.ok(scores.thirdBench < 0);
+});
+
+test("PWA rotates exactly one mandatory trunk slot in every workout", () => {
   const context = loadPwaContext();
   const profile = { split: "Upper / Lower", days: 4, goal: "Balanced", calories: "Maintenance" };
   const afterCore = planNamesFor(context, {
@@ -555,11 +667,18 @@ test("PWA rotates mandatory trunk work and avoids forcing it on every upper sess
     profile,
     sessions: [session(5, 1, ["Leg Press", "Weighted Crunch"])]
   });
-  const trunkNames = new Set(["Weighted Crunch", "Hyperextension", "Side Hyperextension"]);
+  const coreNames = new Set([
+    "Plank", "Weighted Crunch", "Hanging Leg Raise", "Plate Twist", "Weighted Side Bend"
+  ]);
+  const hyperNames = new Set(["Hyperextension", "Side Hyperextension"]);
+  const trunkNames = new Set([...coreNames, ...hyperNames]);
 
-  assert.ok(afterCore.some(name => ["Hyperextension", "Side Hyperextension"].includes(name)));
-  assert.ok(afterHyper.includes("Weighted Crunch"));
-  assert.ok(upperAfterRecentTrunk.every(name => !trunkNames.has(name)));
+  assert.equal(afterCore.filter(name => trunkNames.has(name)).length, 1);
+  assert.ok(afterCore.some(name => hyperNames.has(name)));
+  assert.equal(afterHyper.filter(name => trunkNames.has(name)).length, 1);
+  assert.ok(afterHyper.some(name => coreNames.has(name)));
+  assert.equal(upperAfterRecentTrunk.filter(name => trunkNames.has(name)).length, 1);
+  assert.ok(upperAfterRecentTrunk.some(name => hyperNames.has(name)));
 });
 
 test("PWA plan deduplicates localized aliases by stable catalog identity", () => {
@@ -761,6 +880,10 @@ test("PWA 1200-scenario plan matrix stays deterministic, balanced, and volume-bo
     [session(103, 1, ["Squat", "Romanian Deadlift"])],
     [session(104, 1, ["Bench Press", "Cable Row", "Squat"])]
   ];
+  const trunkKeys = new Set([
+    "hyperextension", "side_hyperextension", "plank", "weighted_crunch",
+    "hanging_leg_raise", "plate_twist", "weighted_side_bend"
+  ]);
 
   let scenarioCount = 0;
   for (const goal of goals) {
@@ -773,15 +896,23 @@ test("PWA 1200-scenario plan matrix stays deterministic, balanced, and volume-bo
             const repeated = JSON.parse(JSON.stringify(planFor(context, { profile, sessions })));
             const totalSets = plan.exercises.reduce((sum, item) => sum + item.recommendation.sets.length, 0);
             const names = plan.exercises.map(item => item.name);
+            const trunkCount = plan.exercises.filter(item => trunkKeys.has(item.catalogKey)).length;
+            const expectedExerciseCount = 12 - days;
 
             scenarioCount += 1;
             assert.deepEqual(repeated, plan);
             assert.equal(new Set(names).size, names.length);
-            assert.ok(totalSets <= 24);
+            assert.equal(
+              plan.exercises.length,
+              expectedExerciseCount,
+              `${days}d ${split} ${goal} ${calorieMode} ${plan.focus}`
+            );
+            assert.equal(trunkCount, 1, `${days}d ${split} ${goal} ${calorieMode} ${plan.focus}`);
+            assert.ok(totalSets <= expectedExerciseCount * 4);
             assert.ok(plan.exercises.every(item => item.recommendation.sets.length >= 3 && item.recommendation.sets.length <= 4));
             assert.ok(plan.exercises.every(item => item.recommendation.sets.every(set => Number.isInteger(set.reps) && set.reps <= 10)));
             if (days <= 2) assert.equal(plan.focus, "FullBody");
-            if (days >= 5) assert.ok(totalSets <= 15);
+            if (days >= 5) assert.ok(totalSets <= 21);
           }
         }
       }

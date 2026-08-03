@@ -74,6 +74,7 @@ import com.example.gymapp.data.repository.WorkoutDataLimits
 import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.EmptyStatePanel
 import com.example.gymapp.ui.components.ExerciseMuscleBreakdownCard
+import com.example.gymapp.ui.components.ExerciseMediaPreview
 import com.example.gymapp.ui.components.InfoPill
 import com.example.gymapp.ui.components.SectionTitle
 import com.example.gymapp.ui.util.currentAppLanguageTag
@@ -192,6 +193,7 @@ internal fun exerciseNameMatchesLocalizedQuery(exerciseName: String, query: Stri
 @Composable
 fun ExerciseListScreen(
     uiState: ExerciseListUiState,
+    exerciseMediaOwnerKey: String,
     onNameChange: (String) -> Unit,
     onAddExercise: () -> Unit,
     onExerciseClick: (Long) -> Unit,
@@ -411,6 +413,13 @@ fun ExerciseListScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
+                            ExerciseMediaPreview(
+                                exerciseId = exercise.id,
+                                exerciseName = exercise.name,
+                                ownerKey = exerciseMediaOwnerKey,
+                                width = 72.dp,
+                                height = 60.dp
+                            )
                             Text(
                                 text = displayExerciseName,
                                 modifier = Modifier.weight(1f),
@@ -601,7 +610,9 @@ fun ExerciseListScreen(
             contentColor = MaterialTheme.colorScheme.onBackground
         ) {
             ExerciseHistoryBottomSheetContent(
+                exerciseId = selectedExerciseId,
                 exerciseName = selectedExerciseName,
+                exerciseMediaOwnerKey = exerciseMediaOwnerKey,
                 history = uiState.selectedExerciseHistory,
                 onEditExerciseMapping = {
                     onDismissHistory()
@@ -1817,8 +1828,10 @@ private fun wrapPdfLine(text: String, maxChars: Int): List<String> {
 
 @Composable
 private fun ExerciseHistoryBottomSheetContent(
+    exerciseId: Long,
     exerciseName: String,
     history: List<ExerciseHistoryEntry>,
+    exerciseMediaOwnerKey: String,
     onEditExerciseMapping: () -> Unit
 ) {
     val locale = Locale.getDefault()
@@ -1859,10 +1872,23 @@ private fun ExerciseHistoryBottomSheetContent(
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         item {
-            Text(
-                text = localizedExerciseName(exerciseName),
-                style = MaterialTheme.typography.headlineSmall
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                ExerciseMediaPreview(
+                    exerciseId = exerciseId,
+                    exerciseName = exerciseName,
+                    ownerKey = exerciseMediaOwnerKey,
+                    width = 84.dp,
+                    height = 70.dp
+                )
+                Text(
+                    text = localizedExerciseName(exerciseName),
+                    style = MaterialTheme.typography.headlineSmall,
+                    modifier = Modifier.weight(1f)
+                )
+            }
         }
 
         item {

@@ -564,6 +564,7 @@ public enum RecommendationEngine {
     public static func buildWorkoutPlan(
         exercises: [Exercise],
         history: [ExerciseHistoryEntry],
+        muscleMappings: [ExerciseMuscleMapping] = [],
         trainingProfile: TrainingProfile = TrainingProfile(),
         now: Date = Date(),
         calendar: Calendar = .current
@@ -595,12 +596,16 @@ public enum RecommendationEngine {
             focus: focus,
             history: usableHistory
         )
-        let targetExerciseCount = targetExerciseCount(
-            focus: focus,
-            profile: trainingProfile
-        )
+        let targetExerciseCount = targetExerciseCount(profile: trainingProfile)
         let recentIDs = recentSessionIDs(usableHistory, limit: 3)
         let targetMuscles = targetMuscles(for: focus)
+        let manualContributionMap = MuscleMappingEngine.manualContributionMap(from: muscleMappings)
+        let weeklyVolume = weeklyVolumeState(
+            history: usableHistory,
+            manualContributions: manualContributionMap,
+            profile: trainingProfile,
+            now: now
+        )
         let historyByIdentity: [String: [ExerciseHistoryEntry]] = Dictionary(
             grouping: usableHistory,
             by: { entryIdentityKey($0) }
@@ -650,6 +655,11 @@ public enum RecommendationEngine {
                 analysis: analysis,
                 identityKey: identityKey,
                 history: exerciseHistory,
+                muscleContributions: MuscleMappingEngine.contributions(
+                    for: exercise.name,
+                    manualMappings: manualContributionMap
+                ),
+                plannedSetCount: setBudget(profile: trainingProfile, analysis: analysis),
                 score: focusScore + muscleMatch + due + continuity +
                     variantScore + programmingScore - recentPenalty - sameWeekPenalty
             )
@@ -672,6 +682,7 @@ public enum RecommendationEngine {
             targetMuscles: targetMuscles,
             targetExerciseCount: targetExerciseCount,
             history: usableHistory,
+            weeklyVolume: weeklyVolume,
             now: now,
             calendar: calendar
         )
@@ -824,14 +835,15 @@ public enum RecommendationEngine {
         return analysis?.role == .primary && !highFrequency && !recoveryLimited ? 4 : 3
     }
 
-    private static func targetExerciseCount(
-        focus: SmartWorkoutFocus,
-        profile: TrainingProfile
-    ) -> Int {
+    private static func targetExerciseCount(profile: TrainingProfile) -> Int {
         let days = min(6, max(2, profile.workoutsPerWeek))
-        if days == 2 || days == 3 { return 6 }
-        if focus == .fullBody, days >= 5 { return 4 }
-        return 5
+        switch days {
+        case 2: return 10
+        case 3: return 9
+        case 4: return 8
+        case 5: return 7
+        default: return 6
+        }
     }
 
     private static func programmingPreferenceScore(
@@ -1305,11 +1317,13 @@ public enum RecommendationEngine {
         targetMuscles: Set<String>,
         targetExerciseCount: Int,
         history: [ExerciseHistoryEntry],
+        weeklyVolume: WeeklyVolumeState,
         now: Date,
         calendar: Calendar
     ) -> [ExerciseCandidate] {
         var selected: [ExerciseCandidate] = []
         var covered = Set<String>()
+        var projectedWeeklyVolume = weeklyVolume
         let lastTrained = lastTrainedByMuscle(history)
         let eligible = candidates.filter { isEligible($0.analysis, for: focus) }
         var remaining = eligible.isEmpty && focus != .lower && focus != .legs
@@ -1321,13 +1335,15 @@ public enum RecommendationEngine {
                 remaining: &remaining,
                 selected: &selected,
                 covered: &covered,
-                patterns: preferredPatterns(for: focus, variant: variant)
+                patterns: preferredPatterns(for: focus, variant: variant),
+                weeklyVolume: &projectedWeeklyVolume
             )
             selectRequiredPattern(
                 remaining: &remaining,
                 selected: &selected,
                 covered: &covered,
-                patterns: variant == .a ? [.hinge, .kneeFlexion] : [.squat, .legPress]
+                patterns: variant == .a ? [.hinge, .kneeFlexion] : [.squat, .legPress],
+                weeklyVolume: &projectedWeeklyVolume
             )
         }
 
@@ -1339,20 +1355,23 @@ public enum RecommendationEngine {
                 remaining: &remaining,
                 selected: &selected,
                 covered: &covered,
-                patterns: pressPatterns.isEmpty ? [.horizontalPress, .verticalPress] : pressPatterns
+                patterns: pressPatterns.isEmpty ? [.horizontalPress, .verticalPress] : pressPatterns,
+                weeklyVolume: &projectedWeeklyVolume
             )
             selectRequiredPattern(
                 remaining: &remaining,
                 selected: &selected,
                 covered: &covered,
-                patterns: pullPatterns.isEmpty ? [.horizontalPull, .verticalPull] : pullPatterns
+                patterns: pullPatterns.isEmpty ? [.horizontalPull, .verticalPull] : pullPatterns,
+                weeklyVolume: &projectedWeeklyVolume
             )
         } else if focus == .push || focus == .pull {
             selectRequiredPattern(
                 remaining: &remaining,
                 selected: &selected,
                 covered: &covered,
-                patterns: preferredPatterns(for: focus, variant: variant)
+                patterns: preferredPatterns(for: focus, variant: variant),
+                weeklyVolume: &projectedWeeklyVolume
             )
         }
 
@@ -1361,48 +1380,60 @@ public enum RecommendationEngine {
                 guard let best = remaining
                     .filter({ $0.analysis.category == required && isCompound($0.analysis) })
                     .max(by: {
-                        let leftScore = $0.score + programmingPriority($0.analysis)
-                        let rightScore = $1.score + programmingPriority($1.analysis)
+                        let leftScore = $0.score + programmingPriority($0.analysis) +
+                            weeklyVolumeScore($0, state: projectedWeeklyVolume)
+                        let rightScore = $1.score + programmingPriority($1.analysis) +
+                            weeklyVolumeScore($1, state: projectedWeeklyVolume)
                         if leftScore != rightScore { return leftScore < rightScore }
                         return $0.exercise.name.localizedCaseInsensitiveCompare($1.exercise.name) == .orderedDescending
                     }) else { continue }
                 selected.append(best)
                 covered.formUnion(best.analysis.muscles)
+                projectWeeklyVolume(best, into: &projectedWeeklyVolume)
                 remaining.removeAll { $0.exercise.id == best.exercise.id }
             }
         }
 
-        let recentSessions = sessionGroups(history).prefix(2)
-        let recentlyTrainedTrunk = recentSessions.contains { session in
-            session.entries.contains { entry in
-                isTrunkHistoryEntry(entry)
-            }
+        let coreLastPerformed = history
+            .filter { isTrunkHistoryEntry($0) && !isHyperextensionHistoryEntry($0) }
+            .map(\.sessionDate)
+            .max() ?? .distantPast
+        let hyperLastPerformed = history
+            .filter(isHyperextensionHistoryEntry)
+            .map(\.sessionDate)
+            .max() ?? .distantPast
+        let prefersHyperextension: Bool
+        if hyperLastPerformed != coreLastPerformed {
+            prefersHyperextension = hyperLastPerformed < coreLastPerformed
+        } else {
+            prefersHyperextension = variant == .b
         }
-        let requiresTrunkSlot = focus == .fullBody || focus == .lower || focus == .legs ||
-            (targetExerciseCount >= 5 && !recentlyTrainedTrunk)
 
-        // Lower/full-body sessions always include one trunk-resilience slot. Upper,
-        // push, and pull sessions fill it only after two sessions without trunk work.
-        // The least-recently trained option rotates core and hyperextension work.
-        if requiresTrunkSlot,
-           selected.count < targetExerciseCount,
+        // Reserve one direct trunk slot inside every generated workout's existing
+        // exercise budget. Alternate anterior/core and hyperextension work by the
+        // least-recently trained group rather than adding session volume.
+        if selected.count < targetExerciseCount,
            !selected.contains(where: isTrunkAccessory) {
             let trunkCandidates = candidates.filter { candidate in
                 isTrunkAccessory(candidate) &&
                     !selected.contains(where: { $0.exercise.id == candidate.exercise.id })
             }
             if let best = trunkCandidates.min(by: {
+                let leftPreferred = isHyperextension($0) == prefersHyperextension
+                let rightPreferred = isHyperextension($1) == prefersHyperextension
+                if leftPreferred != rightPreferred { return leftPreferred }
+                let leftWeeklyScore = weeklyVolumeScore($0, state: projectedWeeklyVolume)
+                let rightWeeklyScore = weeklyVolumeScore($1, state: projectedWeeklyVolume)
+                if leftWeeklyScore != rightWeeklyScore { return leftWeeklyScore > rightWeeklyScore }
                 let leftDate = $0.history.map(\.sessionDate).max() ?? .distantPast
                 let rightDate = $1.history.map(\.sessionDate).max() ?? .distantPast
                 if leftDate != rightDate { return leftDate < rightDate }
-                let leftPreferred = variant == .b ? isHyperextension($0) : !isHyperextension($0)
-                let rightPreferred = variant == .b ? isHyperextension($1) : !isHyperextension($1)
-                if leftPreferred != rightPreferred { return leftPreferred }
                 if $0.score != $1.score { return $0.score > $1.score }
                 return $0.exercise.name.localizedCaseInsensitiveCompare($1.exercise.name) == .orderedDescending
             }) {
                 selected.append(best)
                 covered.formUnion(best.analysis.muscles)
+                projectWeeklyVolume(best, into: &projectedWeeklyVolume)
                 remaining.removeAll { $0.exercise.id == best.exercise.id }
             }
         }
@@ -1420,6 +1451,7 @@ public enum RecommendationEngine {
                         covered: covered,
                         targets: targetMuscles,
                         lastTrained: lastTrained,
+                        weeklyVolume: projectedWeeklyVolume,
                         now: now,
                         calendar: calendar
                     )
@@ -1431,6 +1463,7 @@ public enum RecommendationEngine {
             })?.0 else { break }
             selected.append(best)
             covered.formUnion(best.analysis.muscles)
+            projectWeeklyVolume(best, into: &projectedWeeklyVolume)
             remaining.removeAll { $0.exercise.id == best.exercise.id }
         }
 
@@ -1447,12 +1480,16 @@ public enum RecommendationEngine {
     }
 
     private static func isTrunkHistoryEntry(_ entry: ExerciseHistoryEntry) -> Bool {
+        if isHyperextensionHistoryEntry(entry) { return true }
+        return analyzeExercise(entry.exerciseName, catalogKey: entry.exerciseCatalogKey).role == .core
+    }
+
+    private static func isHyperextensionHistoryEntry(_ entry: ExerciseHistoryEntry) -> Bool {
         let key = canonicalCatalogKey(
             catalogKey: entry.exerciseCatalogKey,
             name: entry.exerciseName
         )
-        if key == "hyperextension" || key == "side_hyperextension" { return true }
-        return analyzeExercise(entry.exerciseName, catalogKey: entry.exerciseCatalogKey).role == .core
+        return key == "hyperextension" || key == "side_hyperextension"
     }
 
     private static func programmingPriority(_ analysis: ExerciseAnalysis) -> Double {
@@ -1467,22 +1504,24 @@ public enum RecommendationEngine {
         remaining: inout [ExerciseCandidate],
         selected: inout [ExerciseCandidate],
         covered: inout Set<String>,
-        patterns: Set<MovementPattern>
+        patterns: Set<MovementPattern>,
+        weeklyVolume: inout WeeklyVolumeState
     ) {
         guard let best = remaining
-            .filter({ !$0.analysis.patterns.isDisjoint(with: patterns) })
+            .filter({ !isTrunkAccessory($0) && !$0.analysis.patterns.isDisjoint(with: patterns) })
             .max(by: {
                 let leftScore = $0.score +
                     Double($0.analysis.patterns.intersection(patterns).count) * 35 +
-                    programmingPriority($0.analysis)
+                    programmingPriority($0.analysis) + weeklyVolumeScore($0, state: weeklyVolume)
                 let rightScore = $1.score +
                     Double($1.analysis.patterns.intersection(patterns).count) * 35 +
-                    programmingPriority($1.analysis)
+                    programmingPriority($1.analysis) + weeklyVolumeScore($1, state: weeklyVolume)
                 if leftScore != rightScore { return leftScore < rightScore }
                 return $0.exercise.name.localizedCaseInsensitiveCompare($1.exercise.name) == .orderedDescending
             }) else { return }
         selected.append(best)
         covered.formUnion(best.analysis.muscles)
+        projectWeeklyVolume(best, into: &weeklyVolume)
         remaining.removeAll { $0.exercise.id == best.exercise.id }
     }
 
@@ -1492,6 +1531,7 @@ public enum RecommendationEngine {
         covered: Set<String>,
         targets: Set<String>,
         lastTrained: [String: Date],
+        weeklyVolume: WeeklyVolumeState,
         now: Date,
         calendar: Calendar
     ) -> Double {
@@ -1526,8 +1566,124 @@ public enum RecommendationEngine {
         let sameCategoryPenalty = Double(selected.filter {
             $0.analysis.category == candidate.analysis.category
         }.count) * 12
-        return candidate.score + Double(newTargets) * 24 + Double(overlap) * 4 - fatigue -
+        return candidate.score + Double(newTargets) * 24 + Double(overlap) * 4 +
+            weeklyVolumeScore(candidate, state: weeklyVolume) - fatigue -
             repeatedPenalty - duplicateCompoundPatternPenalty - sameCategoryPenalty
+    }
+
+    static func weeklyEffectiveSets(
+        history: [ExerciseHistoryEntry],
+        muscleMappings: [ExerciseMuscleMapping] = [],
+        now: Date
+    ) -> [String: Double] {
+        let usableHistory = history
+            .prefix(maximumHistorySetCount)
+            .filter { isUsableHistoryEntry($0, now: now) }
+        let manualContributions = MuscleMappingEngine.manualContributionMap(from: muscleMappings)
+        let knownMuscleIDs = Set(MuscleMappingEngine.muscleDefinitions.map(\.id))
+        let windowStart = now.addingTimeInterval(-7 * 24 * 60 * 60)
+        var completed: [String: Double] = [:]
+        for entry in usableHistory where entry.sessionDate >= windowStart && entry.sessionDate <= now {
+            for contribution in MuscleMappingEngine.contributions(
+                for: entry.exerciseName,
+                manualMappings: manualContributions
+            ) where knownMuscleIDs.contains(contribution.muscleID) && contribution.weight.isFinite {
+                let weight = min(1, max(0, contribution.weight))
+                guard weight > 0 else { continue }
+                completed[contribution.muscleID, default: 0] += weight
+            }
+        }
+        return completed
+    }
+
+    static func weeklyTargetSets(profile: TrainingProfile) -> Double {
+        weeklySetTarget(profile: profile)
+    }
+
+    static func weeklyCoverageScore(
+        contributions: [MuscleContribution],
+        plannedSetCount: Int,
+        projectedSets: [String: Double],
+        targetSets: Double
+    ) -> Double {
+        let knownMuscleIDs = Set(MuscleMappingEngine.muscleDefinitions.map(\.id))
+        var gain = 0.0
+        var contributionWeight = 0.0
+        for contribution in contributions
+        where knownMuscleIDs.contains(contribution.muscleID) && contribution.weight.isFinite {
+            let weight = min(1, max(0, contribution.weight))
+            guard weight > 0 else { continue }
+            contributionWeight += weight
+            let deficit = max(0, targetSets - projectedSets[contribution.muscleID, default: 0])
+            gain += min(deficit, Double(max(0, plannedSetCount)) * weight)
+        }
+        return gain > 0 ? gain * 18 : -12 * contributionWeight
+    }
+
+    private static func weeklyVolumeState(
+        history: [ExerciseHistoryEntry],
+        manualContributions: [String: [MuscleContribution]],
+        profile: TrainingProfile,
+        now: Date
+    ) -> WeeklyVolumeState {
+        let knownMuscleIDs = Set(MuscleMappingEngine.muscleDefinitions.map(\.id))
+        var completed: [String: Double] = [:]
+        let windowStart = now.addingTimeInterval(-7 * 24 * 60 * 60)
+        for entry in history where entry.sessionDate >= windowStart && entry.sessionDate <= now {
+            for contribution in MuscleMappingEngine.contributions(
+                for: entry.exerciseName,
+                manualMappings: manualContributions
+            ) where knownMuscleIDs.contains(contribution.muscleID) && contribution.weight.isFinite {
+                let weight = min(1, max(0, contribution.weight))
+                guard weight > 0 else { continue }
+                completed[contribution.muscleID, default: 0] += weight
+            }
+        }
+        return WeeklyVolumeState(
+            projectedSets: completed,
+            targetSets: weeklySetTarget(profile: profile),
+            knownMuscleIDs: knownMuscleIDs
+        )
+    }
+
+    private static func weeklySetTarget(profile: TrainingProfile) -> Double {
+        let base: Int
+        switch profile.goal {
+        case .muscleGain: base = 10
+        case .strength, .balanced, .aestheticFatLoss: base = 8
+        }
+        let calorieAdjustment: Int
+        switch profile.calorieMode {
+        case .deficit: calorieAdjustment = -2
+        case .maintenance: calorieAdjustment = 0
+        case .surplus: calorieAdjustment = 1
+        }
+        return Double(min(11, max(6, base + calorieAdjustment)))
+    }
+
+    private static func weeklyVolumeScore(
+        _ candidate: ExerciseCandidate,
+        state: WeeklyVolumeState
+    ) -> Double {
+        weeklyCoverageScore(
+            contributions: candidate.muscleContributions,
+            plannedSetCount: candidate.plannedSetCount,
+            projectedSets: state.projectedSets,
+            targetSets: state.targetSets
+        )
+    }
+
+    private static func projectWeeklyVolume(
+        _ candidate: ExerciseCandidate,
+        into state: inout WeeklyVolumeState
+    ) {
+        for contribution in candidate.muscleContributions
+        where state.knownMuscleIDs.contains(contribution.muscleID) && contribution.weight.isFinite {
+            let weight = min(1, max(0, contribution.weight))
+            guard weight > 0 else { continue }
+            state.projectedSets[contribution.muscleID, default: 0] +=
+                Double(candidate.plannedSetCount) * weight
+        }
     }
 
     private static func dominantFocus(_ entries: [ExerciseHistoryEntry]) -> SmartWorkoutFocus {
@@ -1636,7 +1792,15 @@ public enum RecommendationEngine {
         let analysis: ExerciseAnalysis
         let identityKey: String
         let history: [ExerciseHistoryEntry]
+        let muscleContributions: [MuscleContribution]
+        let plannedSetCount: Int
         let score: Double
+    }
+
+    private struct WeeklyVolumeState {
+        var projectedSets: [String: Double]
+        let targetSets: Double
+        let knownMuscleIDs: Set<String>
     }
 
     private struct ExerciseAnalysis {

@@ -41,6 +41,7 @@ import com.example.gymapp.data.entity.ExerciseHistoryEntry
 import com.example.gymapp.data.repository.defaultContributionsForExercise
 import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.EmptyStatePanel
+import com.example.gymapp.ui.components.ExerciseMediaPreview
 import com.example.gymapp.ui.components.ExerciseSpotlightCard
 import com.example.gymapp.ui.components.ExerciseTrendChartsCard
 import com.example.gymapp.ui.components.InfoPill
@@ -70,6 +71,7 @@ private data class ProgressMetricUi(
 @Composable
 fun ExerciseProgressScreen(
     uiState: ExerciseProgressUiState,
+    exerciseMediaOwnerKey: String,
     events: Flow<ExerciseProgressEvent>,
     onSelectExercise: (Long) -> Unit,
     onDeleteHistoryEntry: (Long) -> Unit,
@@ -159,6 +161,31 @@ fun ExerciseProgressScreen(
                     exercises = uiState.exercises.map { it.id to it.name },
                     onSelectExercise = onSelectExercise
                 )
+            }
+
+            uiState.exercises.firstOrNull { it.id == uiState.selectedExerciseId }?.let { exercise ->
+                item(key = "selected_exercise_media_${exercise.id}") {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        ExerciseMediaPreview(
+                            exerciseId = exercise.id,
+                            exerciseName = exercise.name,
+                            ownerKey = exerciseMediaOwnerKey,
+                            width = 96.dp,
+                            height = 80.dp
+                        )
+                        Text(
+                            text = localizedExerciseName(exercise.name),
+                            style = MaterialTheme.typography.titleLarge,
+                            modifier = Modifier.weight(1f),
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
             }
 
             if (selectedDisplayExerciseName == null) {

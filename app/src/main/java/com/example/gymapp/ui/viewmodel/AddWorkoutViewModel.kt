@@ -13,6 +13,8 @@ import com.example.gymapp.data.repository.ExerciseLoadProfile
 import com.example.gymapp.data.repository.NamedWorkoutSetDraft
 import com.example.gymapp.data.repository.WorkoutRecommendation
 import com.example.gymapp.data.repository.WorkoutRecommendationEngine
+import com.example.gymapp.data.repository.MuscleContribution
+import com.example.gymapp.data.repository.toManualContributionMap
 import com.example.gymapp.data.repository.WorkoutDataLimits
 import com.example.gymapp.data.repository.WorkoutExerciseDraft
 import com.example.gymapp.data.repository.WorkoutSetDraft
@@ -149,7 +151,8 @@ class AddWorkoutViewModel(
     private data class ExerciseCatalogState(
         val exercises: List<ExerciseEntity>,
         val frequentExerciseIds: List<Long>,
-        val loadProfiles: Map<Long, ExerciseLoadProfile>
+        val loadProfiles: Map<Long, ExerciseLoadProfile>,
+        val manualMuscleMappings: Map<String, List<MuscleContribution>>
     )
 
     private var nextDraftId = 2L
@@ -172,11 +175,12 @@ class AddWorkoutViewModel(
             started = SharingStarted.Eagerly,
             initialValue = emptyList()
         )
-    private val exerciseCatalogState = combine(
+    private val exerciseCatalogState: StateFlow<ExerciseCatalogState> = combine(
         exercises,
         exerciseHistory,
-        repository.observeExerciseLoadProfiles()
-    ) { exerciseList, history, loadProfiles ->
+        repository.observeExerciseLoadProfiles(),
+        repository.observeExerciseMuscleMappings()
+    ) { exerciseList, history, loadProfiles, muscleMappings ->
         val frequentIds = history
             .groupBy { it.exerciseId }
             .map { (exerciseId, entries) ->
@@ -196,9 +200,19 @@ class AddWorkoutViewModel(
         ExerciseCatalogState(
             exercises = exerciseList,
             frequentExerciseIds = frequentIds,
-            loadProfiles = loadProfiles
+            loadProfiles = loadProfiles,
+            manualMuscleMappings = muscleMappings.toManualContributionMap()
         )
-    }
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = ExerciseCatalogState(
+            exercises = emptyList(),
+            frequentExerciseIds = emptyList(),
+            loadProfiles = emptyMap(),
+            manualMuscleMappings = emptyMap()
+        )
+    )
     private val workoutTemplates = repository.observeSessions().map { sessions ->
         sessions
             .take(60)
@@ -358,7 +372,8 @@ class AddWorkoutViewModel(
             exercises = currentState.exercises,
             history = exerciseHistory.value,
             trainingProfile = currentState.trainingProfile,
-            loadProfiles = currentState.exerciseLoadProfiles
+            loadProfiles = currentState.exerciseLoadProfiles,
+            manualMuscleMappings = exerciseCatalogState.value.manualMuscleMappings
         )
         if (plan.exercises.isEmpty()) {
             hasValidationError.value = true
