@@ -35,6 +35,72 @@ class ExerciseLoadProfileBackupTest {
     }
 
     @Test
+    fun redundantIOSWorkoutLoadProfileMustMatchCatalogAndDoesNotChangeDigest() {
+        val configured = backup(
+            exercise(
+                name = "Lat Pulldown",
+                direction = "higherIsHarder",
+                weights = listOf(69.0, 73.0, 77.0)
+            )
+        )
+        val baseline = JSONObject(configured.toString()).apply {
+            put(
+                "sessions",
+                JSONArray().put(
+                    JSONObject()
+                        .put("date", 1_750_000_000_000L)
+                        .put(
+                            "exercises",
+                            JSONArray().put(
+                                exercise(name = "Lat Pulldown").put(
+                                    "sets",
+                                    JSONArray().put(
+                                        JSONObject().put("weight", 73.0).put("reps", 8)
+                                    )
+                                )
+                            )
+                        )
+                )
+            )
+        }
+        val redundant = JSONObject(baseline.toString()).apply {
+            getJSONArray("sessions")
+                .getJSONObject(0)
+                .getJSONArray("exercises")
+                .getJSONObject(0)
+                .put(
+                    "loadProfile",
+                    JSONObject()
+                        .put("direction", "higherIsHarder")
+                        .put("allowedWeightsKg", JSONArray(listOf(69.0, 73.0, 77.0)))
+                )
+        }
+
+        val validated = BackupImportValidator.validate(redundant)
+        assertEquals(
+            listOf(69.0, 73.0, 77.0),
+            validated.exercises.single().loadProfile?.allowedWeightsKg
+        )
+        assertNull(validated.sessions.single().blocks.single().exercise.loadProfile)
+        assertEquals(
+            canonicalWorkoutPayloadDigest(baseline),
+            canonicalWorkoutPayloadDigest(redundant)
+        )
+
+        val mismatched = JSONObject(redundant.toString()).apply {
+            getJSONArray("sessions")
+                .getJSONObject(0)
+                .getJSONArray("exercises")
+                .getJSONObject(0)
+                .getJSONObject("loadProfile")
+                .put("allowedWeightsKg", JSONArray(listOf(70.0, 75.0, 80.0)))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            BackupImportValidator.validate(mismatched)
+        }
+    }
+
+    @Test
     fun loadProfileRejectsUnsupportedDirectionUnsortedDuplicatesAndOversizedLists() {
         listOf(
             exercise("Machine", "sideways", listOf(5.0, 10.0)),

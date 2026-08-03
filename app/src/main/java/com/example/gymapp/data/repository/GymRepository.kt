@@ -1991,11 +1991,11 @@ internal fun validateBackupOwnerContext(
         }
 
         val remoteMarker = owner.opt("remote")
-        val isPwaRemoteOwner = remoteMarker == true || remoteMarker == "supabase"
-        val isExactPwaAlias = backupUserId == currentUserId &&
-            backupAccountId == "remote-$currentUserId" &&
-            isPwaRemoteOwner
-        require(backupAccountId == null || backupAccountId == currentUserId || isExactPwaAlias) {
+        val isRemoteOwner = remoteMarker == true || remoteMarker == "supabase"
+        val isExactCrossClientAlias = backupUserId == currentUserId &&
+            isRecognizedCloudAccountId(backupAccountId, currentUserId) &&
+            isRemoteOwner
+        require(backupAccountId == null || backupAccountId == currentUserId || isExactCrossClientAlias) {
             "This backup belongs to another account."
         }
         return
@@ -2008,6 +2008,16 @@ internal fun validateBackupOwnerContext(
         "This backup belongs to another account."
     }
 }
+
+/**
+ * Cloud clients use different account-storage keys for the same authenticated Supabase user.
+ * Accept only exact, user-bound aliases; arbitrary prefixes or another user's suffix remain
+ * rejected even when the row was returned through authenticated RLS.
+ */
+internal fun isRecognizedCloudAccountId(accountId: String?, activeUserId: String): Boolean =
+    accountId == activeUserId ||
+        accountId == "remote-$activeUserId" ||
+        accountId == "cloud_$activeUserId"
 
 private fun String.toExerciseMappingKey(): String {
     return normalizedExerciseName()

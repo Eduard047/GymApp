@@ -176,7 +176,9 @@ final class AppState: ObservableObject {
         switch session {
         case .cloud(let cloud):
             return BackupOwner(
-                accountID: session?.storageKey,
+                // Keep the device-local `cloud_<uuid>` storage namespace out of the shared
+                // envelope. Android and PWA use the authenticated Supabase UUID here.
+                accountID: cloud.userID,
                 userID: cloud.userID,
                 email: cloud.email,
                 remote: true
@@ -1020,7 +1022,7 @@ final class AppState: ObservableObject {
         guard store.accountStorageKey == expectedStorageKey,
               auth.session?.storageKey == expectedStorageKey,
               auth.session?.cloud?.userID == expectedUserID,
-              owner.accountID == expectedStorageKey,
+              owner.accountID == expectedUserID,
               owner.userID == expectedUserID else {
             throw AuthServiceError.sessionChanged
         }

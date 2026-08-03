@@ -1108,7 +1108,10 @@ public final class WorkoutStore: ObservableObject {
                         return BackupWorkoutExercise(
                             name: exercise.name,
                             catalogKey: exercise.catalogKey,
-                            machineLoadProfile: exercise.machineLoadProfile,
+                            // The catalog already carries the current machine profile. Keeping a
+                            // second copy in every historical block made otherwise equivalent
+                            // Android and iOS cloud envelopes diverge.
+                            machineLoadProfile: nil,
                             sets: block.sets.map { BackupSet(weight: $0.weight, reps: $0.reps) }
                         )
                     }
@@ -1283,8 +1286,8 @@ public final class WorkoutStore: ObservableObject {
                 guard remoteMarker == "supabase" else {
                     throw WorkoutStoreError.backupOwnerMismatch
                 }
-                // PWA uses `remote-<uuid>` while native clients use `cloud_<uuid>`.
-                // Exact user identity is authoritative; rewrite only the representation.
+                // Legacy PWA rows may use `remote-<uuid>`. Exact user identity is
+                // authoritative; rewrite the alias to the portable Supabase UUID.
                 root["owner"] = canonicalOwner
                 needsEncoding = true
                 roundTripSafe = false

@@ -165,10 +165,22 @@ internal object BackupImportValidator {
             ValidatedBackupSession(date = date, note = note, blocks = blocks)
         }
 
+        validateRedundantWorkoutLoadProfiles(exercises, sessions)
+        val normalizedSessions = sessions.map { session ->
+            session.copy(
+                blocks = session.blocks.map { block ->
+                    // A matching nested profile is an iOS compatibility duplicate. The catalog
+                    // is authoritative, so discard the duplicate before database import instead
+                    // of rewriting the same profile once for every historical workout block.
+                    block.copy(exercise = block.exercise.copy(loadProfile = null))
+                }
+            )
+        }
+
         return ValidatedBackup(
             catalogSeedVersion = catalogSeedVersion,
             exercises = exercises,
-            sessions = sessions
+            sessions = normalizedSessions
         )
     }
 
@@ -320,9 +332,7 @@ internal object BackupImportValidator {
         } else {
             null
         }
-        val loadProfile = if (
-            allowFavorite && json.has("loadProfile") && !json.isNull("loadProfile")
-        ) {
+        val loadProfile = if (json.has("loadProfile") && !json.isNull("loadProfile")) {
             validateLoadProfile(json.opt("loadProfile"))
         } else {
             null
@@ -338,6 +348,9 @@ internal object BackupImportValidator {
     private fun validateLoadProfile(rawValue: Any?): ExerciseLoadProfile {
         val profile = rawValue as? JSONObject
             ?: throw IllegalArgumentException("Exercise load profile must be an object.")
+        require(profile.keys().asSequence().toSet() == setOf("direction", "allowedWeightsKg")) {
+            "Exercise load profile contains unsupported fields."
+        }
         val rawDirection = profile.optionalBoundedString("direction", 32)
             ?: throw IllegalArgumentException("Exercise load direction is required.")
         val direction = ExerciseLoadDirection.fromWireValue(rawDirection)
@@ -360,6 +373,34 @@ internal object BackupImportValidator {
             "Exercise weight options must be unique and strictly increasing."
         }
         return ExerciseLoadProfile(direction, weights)
+    }
+
+    private fun validateRedundantWorkoutLoadProfiles(
+        exercises: List<ValidatedBackupExercise>,
+        sessions: List<ValidatedBackupSession>
+    ) {
+        val catalogProfileByIdentity = mutableMapOf<String, ExerciseLoadProfile?>()
+        exercises.forEach { exercise ->
+            if (catalogProfileByIdentity.containsKey(exercise.identityKey)) {
+                require(catalogProfileByIdentity[exercise.identityKey] == exercise.loadProfile) {
+                    "Duplicate exercise load profiles must match."
+                }
+            } else {
+                catalogProfileByIdentity[exercise.identityKey] = exercise.loadProfile
+            }
+        }
+        sessions.forEach { session ->
+            session.blocks.forEach { block ->
+                block.exercise.loadProfile?.let { profile ->
+                    require(
+                        catalogProfileByIdentity.containsKey(block.exercise.identityKey) &&
+                            catalogProfileByIdentity[block.exercise.identityKey] == profile
+                    ) {
+                        "Workout exercise load profile must match the exercise catalog."
+                    }
+                }
+            }
+        }
     }
 
     private fun validateSets(array: JSONArray): List<ValidatedBackupSet> {

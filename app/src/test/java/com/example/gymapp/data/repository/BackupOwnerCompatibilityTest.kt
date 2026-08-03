@@ -77,6 +77,35 @@ class BackupOwnerCompatibilityTest {
     }
 
     @Test
+    fun `iOS cloud owner alias is accepted only for the same Supabase user`() {
+        val matching = backupWithOwner(
+            accountId = "cloud_$userId",
+            ownerUserId = userId,
+            remote = true
+        )
+        BackupImportValidator.validate(matching)
+        validateBackupOwnerContext(matching, null, userId, activeRemote = true)
+
+        val wrongAlias = backupWithOwner(
+            accountId = "cloud_00000000-0000-4000-8000-000000000002",
+            ownerUserId = userId,
+            remote = true
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            validateBackupOwnerContext(wrongAlias, null, userId, activeRemote = true)
+        }
+
+        val unboundAlias = backupWithOwner(
+            accountId = "cloud_$userId",
+            ownerUserId = null,
+            remote = true
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            validateBackupOwnerContext(unboundAlias, null, userId, activeRemote = true)
+        }
+    }
+
+    @Test
     fun `arbitrary legacy remote markers remain rejected`() {
         val root = backupWithOwner(
             accountId = "remote-$userId",

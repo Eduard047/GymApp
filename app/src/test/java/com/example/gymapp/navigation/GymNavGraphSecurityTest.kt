@@ -91,6 +91,21 @@ class GymNavGraphSecurityTest {
         )
 
         assertTrue(isCanonicalAndroidCloudEnvelope(canonical, userId))
+        val iOSCanonical = JSONObject(canonical.toString()).apply {
+            getJSONObject("owner").put("accountId", "cloud_$userId")
+        }
+        assertTrue(isCanonicalAndroidCloudEnvelope(iOSCanonical, userId))
+        val forgedIOSAlias = JSONObject(canonical.toString()).apply {
+            getJSONObject("owner").put(
+                "accountId",
+                "cloud_00000000-0000-4000-8000-000000000002"
+            )
+        }
+        assertFalse(isCanonicalAndroidCloudEnvelope(forgedIOSAlias, userId))
+        val unboundIOSAlias = JSONObject(iOSCanonical.toString()).apply {
+            getJSONObject("owner").remove("userId")
+        }
+        assertFalse(isCanonicalAndroidCloudEnvelope(unboundIOSAlias, userId))
         val forgedPortableProvenance = JSONObject(canonical.toString()).apply {
             getJSONArray("sessions").getJSONObject(0).put("garminProvenance", true)
         }
@@ -193,6 +208,28 @@ class GymNavGraphSecurityTest {
         )
 
         assertTrue(isCanonicalAndroidCloudEnvelope(canonical, userId))
+
+        val redundantIOSProfile = JSONObject(canonical.toString()).apply {
+            val catalogProfile = getJSONArray("exercises")
+                .getJSONObject(0)
+                .getJSONObject("loadProfile")
+            getJSONArray("sessions")
+                .getJSONObject(0)
+                .getJSONArray("exercises")
+                .getJSONObject(0)
+                .put("loadProfile", JSONObject(catalogProfile.toString()))
+        }
+        assertTrue(isCanonicalAndroidCloudEnvelope(redundantIOSProfile, userId))
+
+        val mismatchedIOSProfile = JSONObject(redundantIOSProfile.toString()).apply {
+            getJSONArray("sessions")
+                .getJSONObject(0)
+                .getJSONArray("exercises")
+                .getJSONObject(0)
+                .getJSONObject("loadProfile")
+                .put("allowedWeightsKg", JSONArray(listOf(40.0, 45.0)))
+        }
+        assertFalse(isCanonicalAndroidCloudEnvelope(mismatchedIOSProfile, userId))
 
         val unknownField = JSONObject(canonical.toString()).apply {
             getJSONArray("exercises").getJSONObject(0)

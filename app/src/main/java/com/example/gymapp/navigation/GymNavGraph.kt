@@ -77,6 +77,7 @@ import com.example.gymapp.auth.requiresEmailConfirmation
 import com.example.gymapp.data.catalog.BuiltInExerciseCatalog
 import com.example.gymapp.data.repository.BackupOwner
 import com.example.gymapp.data.repository.canonicalWorkoutPayloadDigest
+import com.example.gymapp.data.repository.isRecognizedCloudAccountId
 import com.example.gymapp.gymApplication
 import com.example.gymapp.data.repository.GymRepository
 import com.example.gymapp.ui.screens.AddWorkoutScreen
@@ -229,7 +230,12 @@ internal fun isCanonicalAndroidCloudEnvelope(root: JSONObject, activeUserId: Str
 
         val owner = root.optJSONObject("owner") ?: error("Missing owner")
         require(owner.keySet().all { it in setOf("accountId", "userId", "email", "remote") })
-        require(owner.opt("accountId") == activeUserId)
+        require(
+            isRecognizedCloudAccountId(
+                accountId = owner.opt("accountId") as? String,
+                activeUserId = activeUserId
+            )
+        )
         require(owner.opt("userId") == activeUserId)
         require(owner.opt("remote") == true)
 
@@ -257,7 +263,9 @@ internal fun isCanonicalAndroidCloudEnvelope(root: JSONObject, activeUserId: Str
             val blocks = session.optJSONArray("exercises") ?: error("Invalid session exercises")
             repeat(blocks.length()) { blockIndex ->
                 val block = blocks.optJSONObject(blockIndex) ?: error("Invalid exercise block")
-                require(block.keySet().all { it in setOf("name", "catalogKey", "sets") })
+                require(
+                    block.keySet().all { it in setOf("name", "catalogKey", "loadProfile", "sets") }
+                )
                 require(block.keySet().containsAll(setOf("name", "sets")))
                 val sets = block.optJSONArray("sets") ?: error("Invalid exercise sets")
                 require(sets.allObjectsMatch(setOf("weight", "reps"), setOf("weight", "reps")))

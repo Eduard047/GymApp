@@ -7,6 +7,44 @@ import XCTest
 
 @MainActor
 final class CoreParityTests: XCTestCase {
+    func testCloudExportUsesPortableOwnerIDInsteadOfLocalStorageAlias() async throws {
+        let directory = try temporaryDirectory(named: "portable-cloud-owner")
+        let defaults = temporaryDefaults(named: "portable-cloud-owner")
+        let auth = AuthService(keychain: InMemoryKeychainStore(), defaults: defaults)
+        let cloud = cloudSession(userID: "00000000-0000-4000-8000-0000000000a1")
+        let session = AppAccountSession.cloud(cloud)
+        let remote = try remoteBackupData(
+            exerciseName: "Portable Owner Exercise",
+            owner: BackupOwner(
+                accountID: cloud.userID,
+                userID: cloud.userID,
+                email: cloud.email,
+                remote: true
+            )
+        )
+        try auth.installSessionForTesting(session)
+        let appState = try AppState(
+            auth: auth,
+            defaults: defaults,
+            workoutDirectoryURL: directory,
+            remoteStateLoader: { requestedUserID in
+                XCTAssertEqual(requestedUserID, cloud.userID)
+                return remote
+            }
+        )
+
+        let accountReady = await waitUntil { appState.isAccountReady }
+        XCTAssertTrue(accountReady)
+        XCTAssertEqual(appState.workoutStore.accountStorageKey, session.storageKey)
+        let root = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: appState.exportBackup()) as? [String: Any]
+        )
+        let owner = try XCTUnwrap(root["owner"] as? [String: Any])
+        XCTAssertEqual(owner["accountId"] as? String, cloud.userID)
+        XCTAssertEqual(owner["userId"] as? String, cloud.userID)
+        XCTAssertEqual(owner["remote"] as? Bool, true)
+    }
+
     func testHistoricalMonthKeepsTheBestWeeklyStreakReachedInThatMonth() throws {
         let calendar = utcCalendar()
         let dates = [
@@ -519,6 +557,18 @@ final class CoreParityTests: XCTestCase {
         let backupString = try XCTUnwrap(String(data: backupData, encoding: .utf8))
         XCTAssertTrue(backupString.contains("\"loadProfile\""))
         XCTAssertFalse(backupString.contains("machineLoadProfile"))
+        let backupObject = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: backupData) as? [String: Any]
+        )
+        let catalogExercise = try XCTUnwrap(
+            (backupObject["exercises"] as? [[String: Any]])?.first
+        )
+        let workoutExercise = try XCTUnwrap(
+            ((backupObject["sessions"] as? [[String: Any]])?.first?["exercises"]
+                as? [[String: Any]])?.first
+        )
+        XCTAssertNotNil(catalogExercise["loadProfile"])
+        XCTAssertNil(workoutExercise["loadProfile"])
 
         let restored = try WorkoutStore(
             accountStorageKey: "machine-profile",
@@ -6203,10 +6253,10 @@ final class CoreParityTests: XCTestCase {
             urlSession: urlSession,
             defaults: defaults
         )
-        let cloud = cloudSession(userID: "cloud-conflict-keep-local-user")
+        let cloud = cloudSession(userID: "00000000-0000-4000-8000-000000000101")
         let session = AppAccountSession.cloud(cloud)
         let owner = BackupOwner(
-            accountID: session.storageKey,
+            accountID: cloud.userID,
             userID: cloud.userID,
             email: cloud.email,
             remote: true
@@ -6302,7 +6352,7 @@ final class CoreParityTests: XCTestCase {
             urlSession: urlSession,
             defaults: defaults
         )
-        let cloud = cloudSession(userID: "signout-flush-user")
+        let cloud = cloudSession(userID: "00000000-0000-4000-8000-000000000102")
         AuthURLProtocolStub.handler = { request in
             recorder.append(request)
             switch (request.url?.path, request.httpMethod) {
@@ -6381,7 +6431,7 @@ final class CoreParityTests: XCTestCase {
             urlSession: urlSession,
             defaults: defaults
         )
-        let cloud = cloudSession(userID: "signout-failure-user")
+        let cloud = cloudSession(userID: "00000000-0000-4000-8000-000000000103")
         AuthURLProtocolStub.handler = { request in
             recorder.append(request)
             switch (request.url?.path, request.httpMethod) {
@@ -6456,7 +6506,7 @@ final class CoreParityTests: XCTestCase {
             urlSession: urlSession,
             defaults: defaults
         )
-        let account = cloudSession(userID: "signout-stable-snapshot-user")
+        let account = cloudSession(userID: "00000000-0000-4000-8000-000000000104")
         let accountSession = AppAccountSession.cloud(account)
         let seededStore = try WorkoutStore(
             accountStorageKey: accountSession.storageKey,
@@ -6555,7 +6605,7 @@ final class CoreParityTests: XCTestCase {
             urlSession: urlSession,
             defaults: defaults
         )
-        let account = cloudSession(userID: "signout-inflight-cas-user")
+        let account = cloudSession(userID: "00000000-0000-4000-8000-000000000105")
         let accountSession = AppAccountSession.cloud(account)
         let seededStore = try WorkoutStore(
             accountStorageKey: accountSession.storageKey,
