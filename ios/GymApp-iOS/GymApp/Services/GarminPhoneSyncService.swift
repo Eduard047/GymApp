@@ -574,6 +574,236 @@ struct GarminWorkoutNoteSummary: Equatable {
     }
 }
 
+struct GarminWorkoutTimelineSlice: Equatable, Identifiable {
+    let setIndex: Int
+    let startSeconds: Int64
+    let endSeconds: Int64
+    let detectionConfidence: Int?
+
+    var id: Int { setIndex }
+}
+
+/// A bounded, display-only interpretation of the metrics already persisted in a
+/// Garmin workout note. It deliberately avoids inferring physiology: every value
+/// is either an aggregate of recorded set rows or absent.
+struct GarminWorkoutSessionInsights: Equatable {
+    static let maximumSets = 60
+    static let maximumSessionSeconds: Int64 = 7 * 24 * 60 * 60
+    static let maximumSetSeconds: Int64 = 7_200
+    static let maximumCalories = 100_000.0
+
+    let timelineDurationSeconds: Int64?
+    let timelineSlices: [GarminWorkoutTimelineSlice]
+    let recordedActiveSeconds: Int64?
+    let recordedRestSeconds: Int64?
+    let workDensityPercent: Int?
+    let averageDetectionConfidence: Int?
+    let averageRecoveryHeartRateDrop: Int?
+    let aggregateHeartRateZoneSeconds: [Int64]?
+    let dominantHeartRateZone: Int?
+    let peakHeartRate: Int?
+    let peakHeartRateSetIndex: Int?
+    let longestRestSeconds: Int64?
+    let longestRestSetIndex: Int?
+    let lowConfidenceSetIndexes: [Int]
+    let isPartial: Bool
+
+    var hasContent: Bool {
+        !timelineSlices.isEmpty || recordedActiveSeconds != nil ||
+            recordedRestSeconds != nil || averageDetectionConfidence != nil ||
+            averageRecoveryHeartRateDrop != nil || aggregateHeartRateZoneSeconds != nil ||
+            peakHeartRate != nil || longestRestSeconds != nil
+    }
+
+    static func make(from summary: GarminWorkoutNoteSummary) -> Self? {
+        guard summary.setMetrics.count <= maximumSets,
+              summary.intervals.count <= maximumSets,
+              validOptional(summary.durationSeconds, range: 0 ... maximumSessionSeconds),
+              validSetIndexes(summary.setMetrics.map(\.setIndex)),
+              validSetIndexes(summary.intervals.map(\.setIndex)) else {
+            return nil
+        }
+
+        let metricsByIndex = Dictionary(
+            uniqueKeysWithValues: summary.setMetrics.map { ($0.setIndex, $0) }
+        )
+        guard metricsByIndex.count == summary.setMetrics.count else { return nil }
+
+        for metric in summary.setMetrics {
+            guard validOptional(metric.activeSeconds, range: 0 ... maximumSetSeconds),
+                  validOptional(metric.restBeforeSeconds, range: 0 ... 86_400),
+                  validOptional(metric.startHeartRate, range: 0 ... 240),
+                  validOptional(metric.peakHeartRate, range: 0 ... 240),
+                  validOptional(metric.endHeartRate, range: 0 ... 240),
+                  validOptional(metric.recoveryHeartRateDrop, range: 0 ... 240),
+                  validOptional(metric.detectionConfidence, range: 0 ... 100),
+                  metric.startHeartRate == nil || metric.peakHeartRate == nil ||
+                    metric.startHeartRate! <= metric.peakHeartRate!,
+                  metric.endHeartRate == nil || metric.peakHeartRate == nil ||
+                    metric.endHeartRate! <= metric.peakHeartRate! else {
+                return nil
+            }
+        }
+
+        var previousEnd: Int64 = 0
+        var intervalIndexes = Set<Int>()
+        var aggregateZones = Array(repeating: Int64(0), count: 6)
+        var hasTimedZone = false
+        var slices: [GarminWorkoutTimelineSlice] = []
+        slices.reserveCapacity(summary.intervals.count)
+        for interval in summary.intervals {
+            let duration = interval.endSeconds - interval.startSeconds
+            guard intervalIndexes.insert(interval.setIndex).inserted,
+                  interval.startSeconds >= 0,
+                  interval.startSeconds >= previousEnd,
+                  interval.endSeconds >= interval.startSeconds,
+                  interval.endSeconds <= maximumSessionSeconds,
+                  duration <= maximumSetSeconds,
+                  interval.gymCalories.isFinite,
+                  (0 ... maximumCalories).contains(interval.gymCalories),
+                  interval.garminCalories.map({ (0 ... Int(maximumCalories)).contains($0) }) ?? true,
+                  interval.heartRateZoneSeconds.count == 6,
+                  interval.heartRateZoneSeconds.allSatisfy({ (0 ... maximumSetSeconds).contains($0) }),
+                  safeSum(interval.heartRateZoneSeconds).map({ $0 <= duration }) == true else {
+                return nil
+            }
+            previousEnd = interval.endSeconds
+            for zoneIndex in aggregateZones.indices {
+                guard aggregateZones[zoneIndex] <= Int64.max - interval.heartRateZoneSeconds[zoneIndex] else {
+                    return nil
+                }
+                aggregateZones[zoneIndex] += interval.heartRateZoneSeconds[zoneIndex]
+                hasTimedZone = hasTimedZone || interval.heartRateZoneSeconds[zoneIndex] > 0
+            }
+            if duration > 0 {
+                slices.append(
+                    GarminWorkoutTimelineSlice(
+                        setIndex: interval.setIndex,
+                        startSeconds: interval.startSeconds,
+                        endSeconds: interval.endSeconds,
+                        detectionConfidence: metricsByIndex[interval.setIndex]?.detectionConfidence
+                    )
+                )
+            }
+        }
+        if let sessionDuration = summary.durationSeconds,
+           summary.intervals.contains(where: { $0.endSeconds > sessionDuration }) {
+            return nil
+        }
+
+        let visualIndexes = summary.visualSetIndexes
+        let activeValues = visualIndexes.compactMap { setIndex -> Int64? in
+            metricsByIndex[setIndex]?.activeSeconds ??
+                summary.intervals.first(where: { $0.setIndex == setIndex }).map {
+                    $0.endSeconds - $0.startSeconds
+                }
+        }
+        let restValues = summary.setMetrics.compactMap(\.restBeforeSeconds)
+        guard let activeTotal = safeSum(activeValues),
+              let restTotal = safeSum(restValues) else {
+            return nil
+        }
+        let recordedActive = activeValues.isEmpty ? nil : activeTotal
+        let recordedRest = restValues.isEmpty ? nil : restTotal
+        let density: Int?
+        let hasContiguousSetIndexes = !visualIndexes.isEmpty &&
+            visualIndexes == Array(1 ... visualIndexes.count)
+        let hasEveryActiveDuration = activeValues.count == visualIndexes.count
+        let hasEveryBetweenSetRest = visualIndexes.dropFirst().allSatisfy { setIndex in
+            metricsByIndex[setIndex]?.restBeforeSeconds != nil
+        }
+        let canCalculateCompleteDensity = summary.omittedMetricRows == nil &&
+            hasContiguousSetIndexes && hasEveryActiveDuration && hasEveryBetweenSetRest
+        if canCalculateCompleteDensity, let recordedActive,
+           recordedActive <= Int64.max - restTotal,
+           recordedActive + restTotal > 0 {
+            density = Int(
+                (Double(recordedActive) / Double(recordedActive + restTotal) * 100).rounded()
+            )
+        } else {
+            density = nil
+        }
+
+        let confidenceValues = summary.setMetrics.compactMap(\.detectionConfidence)
+        let recoveryValues = summary.setMetrics.compactMap(\.recoveryHeartRateDrop)
+        let averageConfidence = roundedAverage(confidenceValues)
+        let averageRecovery = roundedAverage(recoveryValues)
+        let lowConfidenceSets = summary.setMetrics.compactMap { metric in
+            metric.detectionConfidence.map { $0 < 40 ? metric.setIndex : nil } ?? nil
+        }
+
+        let peak = summary.setMetrics.compactMap { metric -> (Int, Int)? in
+            guard let value = metric.peakHeartRate, value > 0 else { return nil }
+            return (metric.setIndex, value)
+        }.max { lhs, rhs in
+            lhs.1 == rhs.1 ? lhs.0 > rhs.0 : lhs.1 < rhs.1
+        }
+        let longestRest = summary.setMetrics.compactMap { metric -> (Int, Int64)? in
+            guard let value = metric.restBeforeSeconds, value > 0 else { return nil }
+            return (metric.setIndex, value)
+        }.max { lhs, rhs in
+            lhs.1 == rhs.1 ? lhs.0 > rhs.0 : lhs.1 < rhs.1
+        }
+
+        let dominantZone: Int?
+        if hasTimedZone {
+            dominantZone = aggregateZones.indices.max { lhs, rhs in
+                aggregateZones[lhs] == aggregateZones[rhs]
+                    ? lhs > rhs
+                    : aggregateZones[lhs] < aggregateZones[rhs]
+            }
+        } else {
+            dominantZone = nil
+        }
+        let lastIntervalEnd = summary.intervals.last?.endSeconds ?? 0
+        let timelineDuration = max(summary.durationSeconds ?? 0, lastIntervalEnd)
+
+        let result = Self(
+            timelineDurationSeconds: timelineDuration > 0 ? timelineDuration : nil,
+            timelineSlices: slices,
+            recordedActiveSeconds: recordedActive,
+            recordedRestSeconds: recordedRest,
+            workDensityPercent: density,
+            averageDetectionConfidence: averageConfidence,
+            averageRecoveryHeartRateDrop: averageRecovery,
+            aggregateHeartRateZoneSeconds: hasTimedZone ? aggregateZones : nil,
+            dominantHeartRateZone: dominantZone,
+            peakHeartRate: peak?.1,
+            peakHeartRateSetIndex: peak?.0,
+            longestRestSeconds: longestRest?.1,
+            longestRestSetIndex: longestRest?.0,
+            lowConfidenceSetIndexes: lowConfidenceSets,
+            isPartial: summary.omittedMetricRows != nil
+        )
+        return result.hasContent ? result : nil
+    }
+
+    private static func validSetIndexes(_ values: [Int]) -> Bool {
+        values.allSatisfy { (1 ... maximumSets).contains($0) } && Set(values).count == values.count
+    }
+
+    private static func validOptional<T: Comparable>(
+        _ value: T?,
+        range: ClosedRange<T>
+    ) -> Bool {
+        value.map(range.contains) ?? true
+    }
+
+    private static func safeSum(_ values: [Int64]) -> Int64? {
+        var total: Int64 = 0
+        for value in values {
+            guard value >= 0, total <= Int64.max - value else { return nil }
+            total += value
+        }
+        return total
+    }
+
+    private static func roundedAverage(_ values: [Int]) -> Int? {
+        guard !values.isEmpty else { return nil }
+        return Int((Double(values.reduce(0, +)) / Double(values.count)).rounded())
+    }
+}
+
 enum GarminWorkoutNoteParser {
     private static let maximumCharacters = 4_000
     private static let maximumBytes = 16_000

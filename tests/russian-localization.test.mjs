@@ -113,7 +113,7 @@ test("PWA accepts Russian state and renders Russian runtime text before app star
   assert.equal(window.GymRussianText.translate("Log set · rest 90 s"), "Записать подход · отдых 90 с");
   assert.equal(window.GymRussianText.translate("Add planned set"), "Добавить запланированный подход");
   assert.equal(window.GymRussianText.translate("Save as completed workout"), "Сохранить как выполненную тренировку");
-  assert.equal(window.GymRussianText.translate("Chronological watch set intervals"), "Хронологические интервалы подходов на часах");
+  assert.equal(window.GymRussianText.translate("Chronological watch set metrics"), "Хронологические показатели подходов на часах");
   assert.equal(window.GymRussianText.translate("Barbell Row"), "Тяга штанги в наклоне");
   assert.equal(window.GymRussianText.translate("Deadlift"), "Становая тяга");
   assert.equal(window.GymRussianText.translate("4-workout week"), "4 тренировок за неделю");
@@ -163,7 +163,10 @@ test("PWA accepts Russian state and renders Russian runtime text before app star
     ["This backup belongs to another account.", "Эта резервная копия принадлежит другому аккаунту."],
     ["This full backup contains private workout history and account metadata. Copy it to the system clipboard? Other apps may be able to read it.", "Полная резервная копия содержит личную историю тренировок и данные аккаунта. Скопировать её в системный буфер обмена? Другие приложения могут получить к ней доступ."],
     ["This report will include the full private backup. Continue to the print dialog?", "Отчёт будет содержать полную личную резервную копию. Перейти к диалогу печати?"],
-    ["synced from Garmin", "синхронизировано с Garmin"],
+    ["Garmin-format strength workout", "Силовая тренировка в формате Garmin"],
+    ["metrics parsed from the saved note", "показатели прочитаны из сохранённой заметки"],
+    ["Set metrics", "Показатели подхода"],
+    ["Rest before", "Отдых перед подходом"],
     ["2 / week", "2 раза в неделю"],
     ["3 / week", "3 раза в неделю"],
     ["4 / week", "4 раза в неделю"],
@@ -219,11 +222,11 @@ test("PWA accepts Russian state and renders Russian runtime text before app star
   assert.match(contractSource, /\["en", "uk", "ru"\]\.includes/);
   assert.match(appSource, /data-language="ru">Русский/);
   assert.match(appSource, /\^Garmin\(\?: Fenix 8\)\?\(\?: ·\|\$\)/);
-  assert.match(appSource, /tx\("synced from Garmin", "синхронізовано з Garmin"\)/);
+  assert.match(appSource, /tx\("metrics parsed from the saved note", "показники прочитано зі збереженої нотатки"\)/);
   assert.match(appSource, /txAttr\("Name in English, Ukrainian, or Russian", "Назва англійською, українською або російською"\)/);
   assert.doesNotMatch(appSource, /Name in English, Ukrainian or Russian/);
-  assert.ok(indexSource.indexOf("russian-text.v64.js") < indexSource.indexOf("app.v64.js"));
-  assert.match(workerSource, /"\.\/russian-text\.v64\.js"/);
+  assert.ok(indexSource.indexOf("russian-text.v67.js") < indexSource.indexOf("app.v67.js"));
+  assert.match(workerSource, /"\.\/russian-text\.v67\.js"/);
 });
 
 test("runtime language switches invalidate cached labels on every client", async () => {

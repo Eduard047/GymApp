@@ -1021,13 +1021,6 @@ class GymStore {
         return true;
     }
 
-    static function cancelRest() {
-        restEndsAt = 0;
-        // Once the next set has started, undoing the previous one would overwrite
-        // the detector and recovery state for the active set.
-        clearTransientSetActions();
-    }
-
     static function clearTransientSetActions() {
         lastSetUndoUntil = 0;
         lastSetBoost = 0.0;

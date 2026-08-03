@@ -2401,7 +2401,7 @@ final class CoreParityTests: XCTestCase {
             calendar: utcCalendar()
         )
         XCTAssertEqual(comeback.kind, .comeback)
-        XCTAssertEqual(comeback.sets.compactMap(\.weight), [47.5, 47.5, 47.5])
+        XCTAssertEqual(comeback.sets.compactMap(\.weight), [52.5, 52.5, 52.5])
     }
 
     func testExactMachineWeightsSnapDirectionallyAndHoldAtStackBoundaries() throws {
@@ -2513,7 +2513,7 @@ final class CoreParityTests: XCTestCase {
             now: now,
             calendar: utcCalendar()
         )
-        XCTAssertEqual(comeback.sets.compactMap(\.weight), [45, 45, 45])
+        XCTAssertEqual(comeback.sets.compactMap(\.weight), [50, 50, 50])
     }
 
     func testFallbackProgressionSnapsOffGridHistoryToTwoPointFiveKilograms() {
@@ -2801,7 +2801,7 @@ final class CoreParityTests: XCTestCase {
         XCTAssertEqual(RecommendationEngine.weeklyTargetSets(profile: .init(
             goal: .muscleGain,
             calorieMode: .deficit
-        )), 8)
+        )), 9)
         XCTAssertEqual(RecommendationEngine.weeklyTargetSets(profile: .init(
             goal: .strength,
             calorieMode: .maintenance
@@ -2809,7 +2809,15 @@ final class CoreParityTests: XCTestCase {
         XCTAssertEqual(RecommendationEngine.weeklyTargetSets(profile: .init(
             goal: .aestheticFatLoss,
             calorieMode: .deficit
-        )), 6)
+        )), 7)
+
+        let targets = RecommendationEngine.weeklyMuscleTargets(profile: .init(
+            goal: .muscleGain,
+            calorieMode: .surplus
+        ))
+        XCTAssertEqual(targets["chest"], 11)
+        XCTAssertEqual(targets["biceps"], 8.25)
+        XCTAssertEqual(targets["forearms"], 5.5)
     }
 
     func testWeeklyCoverageRewardsNeglectedMusclesAndPenalizesSaturatedOnes() {
@@ -2926,7 +2934,8 @@ final class CoreParityTests: XCTestCase {
             calendar: utcCalendar()
         )
         XCTAssertEqual(fullBodyB.variant, .b)
-        XCTAssertEqual(selectedTrunkKeys(fullBodyB), ["hyperextension"])
+        XCTAssertEqual(selectedTrunkKeys(fullBodyB), ["plank"])
+        XCTAssertEqual(fullBodyB.exercises.last?.exercise.catalogKey, "plank")
 
         let upperWithoutRecentTrunk = RecommendationEngine.buildWorkoutPlan(
             exercises: exercises,
@@ -3100,7 +3109,7 @@ final class CoreParityTests: XCTestCase {
         )
 
         XCTAssertEqual(recommendation.kind, .deload)
-        XCTAssertEqual(recommendation.sets.compactMap(\.weight), [92.5, 92.5, 92.5, 92.5])
+        XCTAssertEqual(recommendation.sets.compactMap(\.weight), [90, 90, 90])
     }
 
     func testSingleRegressionDoesNotTriggerDeload() {
@@ -3434,42 +3443,60 @@ final class CoreParityTests: XCTestCase {
             for calorieMode in CalorieMode.allCases {
                 for workoutsPerWeek in 2 ... 6 {
                     for split in TrainingSplit.allCases {
-                        let context = "\(goal)/\(calorieMode)/\(workoutsPerWeek)/\(split)"
-                        let plan = RecommendationEngine.buildWorkoutPlan(
-                            exercises: exercises,
-                            history: [],
-                            trainingProfile: TrainingProfile(
-                                split: split,
-                                workoutsPerWeek: workoutsPerWeek,
-                                goal: goal,
-                                calorieMode: calorieMode
+                        for effort in SmartWorkoutEffort.allCases {
+                            let context = "\(goal)/\(calorieMode)/\(workoutsPerWeek)/\(split)/\(effort)"
+                            let plan = RecommendationEngine.buildWorkoutPlan(
+                                exercises: exercises,
+                                history: [],
+                                trainingProfile: TrainingProfile(
+                                    split: split,
+                                    workoutsPerWeek: workoutsPerWeek,
+                                    goal: goal,
+                                    calorieMode: calorieMode
+                                ),
+                                effort: effort
                             )
-                        )
-                        let expectedCount = 12 - workoutsPerWeek
+                            let baseCount = 12 - workoutsPerWeek
+                            let expectedCount = effort == .recovery ? max(5, baseCount - 2) : baseCount
 
-                        XCTAssertEqual(plan.exercises.count, expectedCount, context)
-                        XCTAssertEqual(
-                            plan.exercises.filter { exercise in
-                                exercise.exercise.catalogKey.map(trunkKeys.contains) ?? false
-                            }.count,
-                            1,
-                            "\(context) trunk"
-                        )
-                        XCTAssertEqual(
-                            Set(plan.exercises.map { $0.exercise.id }).count,
-                            plan.exercises.count,
-                            "\(context) unique"
-                        )
-                        XCTAssertTrue(
-                            plan.exercises.allSatisfy { (3 ... 4).contains($0.recommendation.sets.count) },
-                            "\(context) sets"
-                        )
-                        XCTAssertTrue(
-                            plan.exercises.allSatisfy { exercise in
-                                exercise.recommendation.sets.allSatisfy { (3 ... 10).contains($0.reps) }
-                            },
-                            "\(context) reps"
-                        )
+                            XCTAssertEqual(plan.exercises.count, expectedCount, context)
+                            XCTAssertEqual(plan.requestedEffort, effort, context)
+                            XCTAssertEqual(
+                                plan.appliedEffort,
+                                effort == .recovery ? .recovery : .standard,
+                                context
+                            )
+                            XCTAssertEqual(
+                                plan.exercises.filter { exercise in
+                                    exercise.exercise.catalogKey.map(trunkKeys.contains) ?? false
+                                }.count,
+                                1,
+                                "\(context) trunk"
+                            )
+                            XCTAssertTrue(
+                                plan.exercises.last?.exercise.catalogKey.map(trunkKeys.contains) ?? false,
+                                "\(context) trunk last"
+                            )
+                            XCTAssertEqual(
+                                Set(plan.exercises.map { $0.exercise.id }).count,
+                                plan.exercises.count,
+                                "\(context) unique"
+                            )
+                            XCTAssertTrue(
+                                plan.exercises.allSatisfy {
+                                    effort == .recovery
+                                        ? $0.recommendation.sets.count == 3
+                                        : (3 ... 4).contains($0.recommendation.sets.count)
+                                },
+                                "\(context) sets"
+                            )
+                            XCTAssertTrue(
+                                plan.exercises.allSatisfy { exercise in
+                                    exercise.recommendation.sets.allSatisfy { (3 ... 10).contains($0.reps) }
+                                },
+                                "\(context) reps"
+                            )
+                        }
                     }
                 }
             }
@@ -6769,6 +6796,712 @@ final class CoreParityTests: XCTestCase {
         XCTAssertEqual(auth.session?.cloud?.userID, "user-b")
         XCTAssertTrue(appState.isAccountReady)
         XCTAssertEqual(customExerciseNames(in: appState.workoutStore), ["Account B"])
+    }
+
+    func testSmartWorkoutPlanLegacyCodableDefaultsEffortSafely() throws {
+        let legacy = Data(#"{"focus":"fullBody","exercises":[],"variant":"A"}"#.utf8)
+        let plan = try JSONDecoder().decode(SmartWorkoutPlan.self, from: legacy)
+
+        XCTAssertEqual(plan.requestedEffort, .auto)
+        XCTAssertEqual(plan.appliedEffort, .standard)
+        XCTAssertNil(plan.effortAdjustment)
+
+        let unknown = Data(
+            #"{"focus":"fullBody","exercises":[],"variant":"A","requestedEffort":"future","appliedEffort":"auto"}"#.utf8
+        )
+        let unknownPlan = try JSONDecoder().decode(SmartWorkoutPlan.self, from: unknown)
+        XCTAssertEqual(unknownPlan.requestedEffort, .auto)
+        XCTAssertEqual(unknownPlan.appliedEffort, .standard)
+        XCTAssertNil(unknownPlan.effortAdjustment)
+    }
+
+    func testUnknownCoachWeightRequiresExplicitSelectionWhileBodyweightZeroIsValid() {
+        let unresolved = WorkoutEditorSetDraft(
+            recommendedSet: RecommendedWorkoutSet(weight: nil, reps: 8)
+        )
+        XCTAssertEqual(unresolved.weight, 0)
+        XCTAssertTrue(unresolved.requiresWeightSelection)
+        XCTAssertFalse(unresolved.isReadyForSave)
+
+        let bodyweight = WorkoutEditorSetDraft(
+            recommendedSet: RecommendedWorkoutSet(weight: 0, reps: 8)
+        )
+        XCTAssertEqual(bodyweight.weight, 0)
+        XCTAssertFalse(bodyweight.requiresWeightSelection)
+        XCTAssertTrue(bodyweight.isReadyForSave)
+    }
+
+    func testAutoChoosesRecoveryAndRecoveryReducesCountSetsAndBodyweightReps() throws {
+        let now = Date(timeIntervalSince1970: 1_780_000_000)
+        let exercises = BuiltInExerciseCatalog.definitions.map {
+            Exercise(name: $0.englishName, catalogKey: $0.key)
+        }
+        let recentWorkoutID = UUID()
+        let recent = ["bench_press", "barbell_row", "squat"].flatMap { key -> [ExerciseHistoryEntry] in
+            let exercise = exercises.first { $0.catalogKey == key }!
+            return coachSession(
+                exerciseID: exercise.id,
+                exerciseName: exercise.name,
+                exerciseCatalogKey: exercise.catalogKey,
+                workoutID: recentWorkoutID,
+                date: now.addingTimeInterval(-86_400),
+                weights: [key == "squat" ? 80 : 50],
+                reps: [8]
+            )
+        }
+        let plan = RecommendationEngine.buildWorkoutPlan(
+            exercises: exercises,
+            history: recent,
+            trainingProfile: TrainingProfile(
+                split: .fullBody,
+                workoutsPerWeek: 3,
+                goal: .balanced,
+                calorieMode: .maintenance
+            ),
+            effort: .auto,
+            now: now,
+            calendar: utcCalendar()
+        )
+
+        XCTAssertEqual(plan.requestedEffort, .auto)
+        XCTAssertEqual(plan.appliedEffort, .recovery)
+        XCTAssertEqual(plan.effortAdjustment, .autoRecovery)
+        XCTAssertEqual(plan.exercises.count, 7)
+        XCTAssertTrue(plan.exercises.allSatisfy { $0.recommendation.sets.count == 3 })
+        XCTAssertTrue(plan.exercises.allSatisfy { $0.recommendation.targetRIR == 3 ... 4 })
+        XCTAssertTrue(plan.exercises.last.map { item in
+            ["hyperextension", "side_hyperextension", "plank", "weighted_crunch",
+             "hanging_leg_raise", "plate_twist", "weighted_side_bend"]
+                .contains(item.exercise.catalogKey ?? "")
+        } ?? false)
+
+        let pullUp = Exercise(name: "Pull Up")
+        let recoveryPullUp = RecommendationEngine.buildForExercise(
+            exerciseID: pullUp.id,
+            history: [],
+            exerciseCatalogKey: pullUp.catalogKey,
+            exerciseName: pullUp.name,
+            trainingProfile: TrainingProfile(goal: .balanced, calorieMode: .maintenance),
+            effort: .recovery,
+            now: now,
+            calendar: utcCalendar()
+        )
+        XCTAssertEqual(recoveryPullUp.sets.compactMap(\.weight), [0, 0, 0])
+        XCTAssertEqual(recoveryPullUp.sets.map(\.reps), [7, 7, 7])
+
+        for name in ["Lat Pulldown", "Assisted Pull Up"] {
+            let exercise = Exercise(name: name)
+            let recommendation = RecommendationEngine.buildForExercise(
+                exerciseID: exercise.id,
+                history: [],
+                exerciseCatalogKey: exercise.catalogKey,
+                exerciseName: exercise.name,
+                trainingProfile: TrainingProfile(goal: .balanced, calorieMode: .maintenance),
+                now: now,
+                calendar: utcCalendar()
+            )
+            XCTAssertTrue(recommendation.sets.allSatisfy { $0.weight == nil }, name)
+        }
+        let none = Exercise(name: "Warm Up")
+        let noneRecommendation = RecommendationEngine.buildForExercise(
+            exerciseID: none.id,
+            history: [],
+            exerciseCatalogKey: none.catalogKey,
+            exerciseName: none.name,
+            now: now,
+            calendar: utcCalendar()
+        )
+        XCTAssertEqual(noneRecommendation.sets.compactMap(\.weight), [0, 0, 0])
+    }
+
+    func testHardRequiresTwoIdentitySessionsAndUsesHardRIROnlyForFirstTwoCompounds() {
+        let now = Date(timeIntervalSince1970: 1_780_000_000)
+        let includedKeys: Set<String> = ["bench_press", "barbell_row", "squat", "plank"]
+        let exercises = BuiltInExerciseCatalog.definitions.filter {
+            includedKeys.contains($0.key)
+        }.map {
+            Exercise(name: $0.englishName, catalogKey: $0.key)
+        }
+        let trained = ["bench_press", "barbell_row"]
+        let history = [5, 3].flatMap { days -> [ExerciseHistoryEntry] in
+            let workoutID = UUID()
+            return trained.flatMap { key -> [ExerciseHistoryEntry] in
+                let exercise = exercises.first { $0.catalogKey == key }!
+                return coachSession(
+                    exerciseID: exercise.id,
+                    exerciseName: exercise.name,
+                    exerciseCatalogKey: exercise.catalogKey,
+                    workoutID: workoutID,
+                    date: now.addingTimeInterval(-Double(days) * 86_400),
+                    weights: [60, 60, 60],
+                    reps: [8, 8, 8]
+                )
+            }
+        }
+        let plan = RecommendationEngine.buildWorkoutPlan(
+            exercises: exercises,
+            history: history,
+            trainingProfile: TrainingProfile(
+                split: .fullBody,
+                workoutsPerWeek: 3,
+                goal: .balanced,
+                calorieMode: .maintenance
+            ),
+            effort: .hard,
+            now: now,
+            calendar: utcCalendar()
+        )
+
+        XCTAssertEqual(plan.appliedEffort, .hard)
+        let hardBlocks = plan.exercises.filter { $0.recommendation.targetRIR == 1 ... 2 }
+        XCTAssertEqual(hardBlocks.count, 2)
+        XCTAssertTrue(hardBlocks.allSatisfy { $0.recommendation.sets.count == 4 })
+        XCTAssertTrue(plan.exercises.filter { $0.recommendation.targetRIR == 2 ... 3 }
+            .allSatisfy { $0.recommendation.sets.count == 3 })
+
+        let unfamiliar = Exercise(name: "Shoulder Press")
+        let oneSession = coachSession(
+            exerciseID: unfamiliar.id,
+            exerciseName: unfamiliar.name,
+            exerciseCatalogKey: unfamiliar.catalogKey,
+            date: now.addingTimeInterval(-3 * 86_400),
+            weights: [20, 20, 20],
+            reps: [8, 8, 8]
+        )
+        let recommendation = RecommendationEngine.buildForExercise(
+            exerciseID: unfamiliar.id,
+            history: oneSession,
+            exerciseCatalogKey: unfamiliar.catalogKey,
+            exerciseName: unfamiliar.name,
+            trainingProfile: TrainingProfile(goal: .balanced, calorieMode: .maintenance),
+            effort: .hard,
+            now: now,
+            calendar: utcCalendar()
+        )
+        XCTAssertEqual(recommendation.sets.count, 3)
+        XCTAssertEqual(recommendation.targetRIR, 2 ... 3)
+    }
+
+    func testDeloadAndComebackOverrideHardSetAndRIRSlots() {
+        let now = Date(timeIntervalSince1970: 1_780_000_000)
+        let bench = Exercise(name: "Bench Press")
+        let profile = TrainingProfile(
+            split: .fullBody,
+            workoutsPerWeek: 3,
+            goal: .balanced,
+            calorieMode: .maintenance
+        )
+        let regressionHistory = [
+            (days: 5, reps: 10),
+            (days: 3, reps: 8),
+            (days: 1, reps: 6)
+        ].flatMap { item in
+            coachSession(
+                exerciseID: bench.id,
+                exerciseName: bench.name,
+                exerciseCatalogKey: bench.catalogKey,
+                date: now.addingTimeInterval(-Double(item.days) * 86_400),
+                weights: [100, 100, 100],
+                reps: [item.reps, item.reps, item.reps]
+            )
+        }
+        let deload = RecommendationEngine.buildForExercise(
+            exerciseID: bench.id,
+            history: regressionHistory,
+            exerciseCatalogKey: bench.catalogKey,
+            exerciseName: bench.name,
+            trainingProfile: profile,
+            effort: .hard,
+            now: now,
+            calendar: utcCalendar()
+        )
+        XCTAssertEqual(deload.kind, .deload)
+        XCTAssertEqual(deload.sets.count, 3)
+        XCTAssertEqual(deload.targetRIR, 3 ... 4)
+        XCTAssertFalse(deload.reasons.contains(.hardSession))
+
+        let comebackHistory = [32, 30].flatMap { days in
+            coachSession(
+                exerciseID: bench.id,
+                exerciseName: bench.name,
+                exerciseCatalogKey: bench.catalogKey,
+                date: now.addingTimeInterval(-Double(days) * 86_400),
+                weights: [100, 100, 100],
+                reps: [8, 8, 8]
+            )
+        }
+        let comeback = RecommendationEngine.buildForExercise(
+            exerciseID: bench.id,
+            history: comebackHistory,
+            exerciseCatalogKey: bench.catalogKey,
+            exerciseName: bench.name,
+            trainingProfile: profile,
+            effort: .hard,
+            now: now,
+            calendar: utcCalendar()
+        )
+        XCTAssertEqual(comeback.kind, .comeback)
+        XCTAssertEqual(comeback.sets.count, 3)
+        XCTAssertEqual(comeback.targetRIR, 3 ... 4)
+        XCTAssertFalse(comeback.reasons.contains(.hardSession))
+    }
+
+    func testHardDowngradesForInsufficientHistoryLongBreakAndUnrecoveredTargets() {
+        let now = Date(timeIntervalSince1970: 1_780_000_000)
+        let exercises = BuiltInExerciseCatalog.definitions.map {
+            Exercise(name: $0.englishName, catalogKey: $0.key)
+        }
+        let bench = exercises.first { $0.catalogKey == "bench_press" }!
+        func plan(days: [Int]) -> SmartWorkoutPlan {
+            let history = days.flatMap { day in
+                coachSession(
+                    exerciseID: bench.id,
+                    exerciseName: bench.name,
+                    exerciseCatalogKey: bench.catalogKey,
+                    date: now.addingTimeInterval(-Double(day) * 86_400),
+                    weights: [60, 60, 60],
+                    reps: [8, 8, 8]
+                )
+            }
+            return RecommendationEngine.buildWorkoutPlan(
+                exercises: exercises,
+                history: history,
+                trainingProfile: TrainingProfile(
+                    split: .fullBody,
+                    workoutsPerWeek: 3,
+                    goal: .balanced,
+                    calorieMode: .maintenance
+                ),
+                effort: .hard,
+                now: now,
+                calendar: utcCalendar()
+            )
+        }
+
+        let insufficient = plan(days: [3])
+        XCTAssertEqual(insufficient.appliedEffort, .standard)
+        XCTAssertEqual(insufficient.effortAdjustment, .hardInsufficientHistory)
+        let longBreak = plan(days: [14, 16])
+        XCTAssertEqual(longBreak.appliedEffort, .standard)
+        XCTAssertEqual(longBreak.effortAdjustment, .hardLongBreak)
+        XCTAssertEqual(plan(days: [1, 3]).appliedEffort, .hard)
+        XCTAssertEqual(plan(days: [3, 5]).appliedEffort, .hard)
+
+        let recentWorkoutID = UUID()
+        let recentBroadHistory = ["bench_press", "barbell_row", "squat"].flatMap { key -> [ExerciseHistoryEntry] in
+            let exercise = exercises.first { $0.catalogKey == key }!
+            return coachSession(
+                exerciseID: exercise.id,
+                exerciseName: exercise.name,
+                exerciseCatalogKey: exercise.catalogKey,
+                workoutID: recentWorkoutID,
+                date: now.addingTimeInterval(-86_400),
+                weights: [50],
+                reps: [8]
+            )
+        } + coachSession(
+            exerciseID: bench.id,
+            exerciseName: bench.name,
+            exerciseCatalogKey: bench.catalogKey,
+            date: now.addingTimeInterval(-3 * 86_400),
+            weights: [60],
+            reps: [8]
+        )
+        let unrecovered = RecommendationEngine.buildWorkoutPlan(
+            exercises: exercises,
+            history: recentBroadHistory,
+            trainingProfile: TrainingProfile(
+                split: .fullBody,
+                workoutsPerWeek: 3,
+                goal: .balanced,
+                calorieMode: .maintenance
+            ),
+            effort: .hard,
+            now: now,
+            calendar: utcCalendar()
+        )
+        XCTAssertEqual(unrecovered.appliedEffort, .standard)
+        XCTAssertEqual(unrecovered.effortAdjustment, .hardTargetNotRecovered)
+    }
+
+    func testRecoveryUsesRealMachineStackDirectionAndAssistanceVolumeIsZero() throws {
+        let now = Date(timeIntervalSince1970: 1_780_000_000)
+        let standard = Exercise(name: "Lat Pulldown")
+        let standardProfile = try MachineLoadProfile(
+            direction: .higherIsHarder,
+            allowedWeightsKg: [40, 50, 60]
+        )
+        let standardRecommendation = RecommendationEngine.buildForExercise(
+            exerciseID: standard.id,
+            history: coachSession(
+                exerciseID: standard.id,
+                exerciseName: standard.name,
+                exerciseCatalogKey: standard.catalogKey,
+                date: now.addingTimeInterval(-3 * 86_400),
+                weights: [50, 50, 50],
+                reps: [8, 8, 8]
+            ) + coachSession(
+                exerciseID: standard.id,
+                exerciseName: standard.name,
+                exerciseCatalogKey: standard.catalogKey,
+                date: now.addingTimeInterval(-86_400),
+                weights: [50, 50, 50],
+                reps: [8, 8, 8]
+            ),
+            exerciseCatalogKey: standard.catalogKey,
+            exerciseName: standard.name,
+            machineLoadProfile: standardProfile,
+            trainingProfile: TrainingProfile(goal: .balanced, calorieMode: .maintenance),
+            effort: .recovery,
+            now: now,
+            calendar: utcCalendar()
+        )
+        XCTAssertEqual(standardRecommendation.kind, .holdAndBuild)
+        XCTAssertEqual(standardRecommendation.sets.compactMap(\.weight), [40, 40, 40])
+        XCTAssertEqual(standardRecommendation.sets.map(\.reps), [8, 8, 8])
+
+        let plateauHistory = [7, 5, 3, 1].flatMap { days in
+            coachSession(
+                exerciseID: standard.id,
+                exerciseName: standard.name,
+                exerciseCatalogKey: standard.catalogKey,
+                date: now.addingTimeInterval(-Double(days) * 86_400),
+                weights: [50, 50, 50],
+                reps: [6, 6, 6]
+            )
+        }
+        let recoveryPlateau = RecommendationEngine.buildForExercise(
+            exerciseID: standard.id,
+            history: plateauHistory,
+            exerciseCatalogKey: standard.catalogKey,
+            exerciseName: standard.name,
+            machineLoadProfile: standardProfile,
+            trainingProfile: TrainingProfile(goal: .balanced, calorieMode: .maintenance),
+            effort: .recovery,
+            now: now,
+            calendar: utcCalendar()
+        )
+        XCTAssertEqual(recoveryPlateau.kind, .holdAndBuild)
+        XCTAssertEqual(recoveryPlateau.sets.compactMap(\.weight), [40, 40, 40])
+        XCTAssertEqual(recoveryPlateau.sets.map(\.reps), [6, 6, 6])
+
+        let assisted = Exercise(name: "Assisted Pull Up")
+        let assistedProfile = try MachineLoadProfile(
+            direction: .lowerIsHarder,
+            allowedWeightsKg: [40, 50, 60]
+        )
+        let assistedRecommendation = RecommendationEngine.buildForExercise(
+            exerciseID: assisted.id,
+            history: coachSession(
+                exerciseID: assisted.id,
+                exerciseName: assisted.name,
+                exerciseCatalogKey: assisted.catalogKey,
+                date: now.addingTimeInterval(-3 * 86_400),
+                weights: [40, 40, 40],
+                reps: [8, 8, 8]
+            ),
+            exerciseCatalogKey: assisted.catalogKey,
+            exerciseName: assisted.name,
+            machineLoadProfile: assistedProfile,
+            trainingProfile: TrainingProfile(goal: .balanced, calorieMode: .maintenance),
+            effort: .recovery,
+            now: now,
+            calendar: utcCalendar()
+        )
+        XCTAssertEqual(assistedRecommendation.sets.compactMap(\.weight), [50, 50, 50])
+        XCTAssertEqual(assistedRecommendation.estimatedVolume, 0)
+    }
+
+    func testMixedStackBoundaryAndBodyweightCeilingExposeActionableReasons() throws {
+        let now = Date(timeIntervalSince1970: 1_780_000_000)
+        let exercise = Exercise(name: "Lat Pulldown")
+        let profile = try MachineLoadProfile(
+            direction: .higherIsHarder,
+            allowedWeightsKg: [50, 60]
+        )
+        func history(_ weights: [Double]) -> [ExerciseHistoryEntry] {
+            [3, 1].flatMap { days in
+                coachSession(
+                    exerciseID: exercise.id,
+                    exerciseName: exercise.name,
+                    exerciseCatalogKey: exercise.catalogKey,
+                    date: now.addingTimeInterval(-Double(days) * 86_400),
+                    weights: weights,
+                    reps: Array(repeating: 10, count: weights.count)
+                )
+            }
+        }
+        let mixed = RecommendationEngine.buildForExercise(
+            exerciseID: exercise.id,
+            history: history([50, 60, 60]),
+            exerciseCatalogKey: exercise.catalogKey,
+            exerciseName: exercise.name,
+            machineLoadProfile: profile,
+            trainingProfile: TrainingProfile(goal: .muscleGain, calorieMode: .maintenance),
+            now: now,
+            calendar: utcCalendar()
+        )
+        XCTAssertEqual(mixed.kind, .progressiveOverload)
+        XCTAssertEqual(mixed.sets.compactMap(\.weight), [60, 60, 60])
+
+        let boundary = RecommendationEngine.buildForExercise(
+            exerciseID: exercise.id,
+            history: history([60, 60, 60]),
+            exerciseCatalogKey: exercise.catalogKey,
+            exerciseName: exercise.name,
+            machineLoadProfile: profile,
+            trainingProfile: TrainingProfile(goal: .muscleGain, calorieMode: .maintenance),
+            now: now,
+            calendar: utcCalendar()
+        )
+        XCTAssertEqual(boundary.kind, .holdAndBuild)
+        XCTAssertTrue(boundary.reasons.contains(.loadBoundaryReached))
+
+        let pullUp = Exercise(name: "Pull Up")
+        let bodyweightHistory = [3, 1].flatMap { days in
+            coachSession(
+                exerciseID: pullUp.id,
+                exerciseName: pullUp.name,
+                exerciseCatalogKey: pullUp.catalogKey,
+                date: now.addingTimeInterval(-Double(days) * 86_400),
+                weights: [0, 0, 0],
+                reps: [8, 8, 8]
+            )
+        }
+        let bodyweight = RecommendationEngine.buildForExercise(
+            exerciseID: pullUp.id,
+            history: bodyweightHistory,
+            exerciseCatalogKey: pullUp.catalogKey,
+            exerciseName: pullUp.name,
+            trainingProfile: TrainingProfile(goal: .balanced, calorieMode: .maintenance),
+            now: now,
+            calendar: utcCalendar()
+        )
+        XCTAssertTrue(bodyweight.reasons.contains(.harderBodyweightVariation))
+    }
+
+    func testAssistedRegressionNeedsMoreThanThreePercentAndPPLSkipsUnknownLatestSession() {
+        let now = Date(timeIntervalSince1970: 1_780_000_000)
+        let assisted = Exercise(name: "Assisted Dip")
+        let mildHistory = [(5, 40.0), (3, 41.0), (1, 42.0)].flatMap { days, weight in
+            coachSession(
+                exerciseID: assisted.id,
+                exerciseName: assisted.name,
+                exerciseCatalogKey: assisted.catalogKey,
+                date: now.addingTimeInterval(-Double(days) * 86_400),
+                weights: [weight, weight, weight],
+                reps: [8, 8, 8]
+            )
+        }
+        let mild = RecommendationEngine.buildForExercise(
+            exerciseID: assisted.id,
+            history: mildHistory,
+            exerciseCatalogKey: assisted.catalogKey,
+            exerciseName: assisted.name,
+            trainingProfile: TrainingProfile(goal: .balanced, calorieMode: .maintenance),
+            now: now,
+            calendar: utcCalendar()
+        )
+        XCTAssertNotEqual(mild.kind, .deload)
+
+        let row = Exercise(name: "Barbell Row")
+        let olderPull = coachSession(
+            exerciseID: row.id,
+            exerciseName: row.name,
+            exerciseCatalogKey: row.catalogKey,
+            date: now.addingTimeInterval(-3 * 86_400),
+            weights: [50],
+            reps: [8]
+        )
+        let latestUnknown = coachSession(
+            exerciseID: UUID(),
+            exerciseName: "Custom mobility marker",
+            date: now.addingTimeInterval(-86_400),
+            weights: [0],
+            reps: [8]
+        )
+        let plan = RecommendationEngine.buildWorkoutPlan(
+            exercises: BuiltInExerciseCatalog.definitions.map {
+                Exercise(name: $0.englishName, catalogKey: $0.key)
+            },
+            history: olderPull + latestUnknown,
+            trainingProfile: TrainingProfile(
+                split: .pushPullLegs,
+                workoutsPerWeek: 4,
+                goal: .balanced,
+                calorieMode: .maintenance
+            ),
+            now: now,
+            calendar: utcCalendar()
+        )
+        XCTAssertEqual(plan.focus, .legs)
+    }
+
+    func testAlternativesPreserveMovementExcludeSelectedAndRecalculateOwnHistory() {
+        let now = Date(timeIntervalSince1970: 1_780_000_000)
+        let bench = Exercise(name: "Bench Press")
+        let dumbbell = Exercise(name: "Dumbbell Bench Press")
+        let incline = Exercise(name: "Incline Dumbbell Press")
+        let alias = Exercise(name: "жим лежачи", catalogKey: "bench_press")
+        let row = Exercise(name: "Barbell Row", isFavorite: true)
+        let curl = Exercise(name: "Biceps Curl", isFavorite: true)
+        let hostile = Exercise(name: "<img src=x onerror=alert(1)>", isFavorite: true)
+        let warmup = Exercise(name: "Warm Up")
+        let exercises = [bench, dumbbell, incline, alias, row, curl, hostile, warmup]
+        let benchHistory = coachSession(
+            exerciseID: bench.id,
+            exerciseName: bench.name,
+            exerciseCatalogKey: bench.catalogKey,
+            date: now.addingTimeInterval(-86_400),
+            weights: [100, 100, 100],
+            reps: [8, 8, 8]
+        )
+        let dumbbellHistory = coachSession(
+            exerciseID: dumbbell.id,
+            exerciseName: dumbbell.name,
+            exerciseCatalogKey: dumbbell.catalogKey,
+            date: now.addingTimeInterval(-2 * 86_400),
+            weights: [22.5, 22.5, 22.5],
+            reps: [6, 6, 6]
+        )
+        let alternatives = RecommendationEngine.findAlternatives(
+            currentExercise: bench,
+            selectedExerciseIDs: [bench.id, incline.id],
+            exercises: exercises,
+            history: benchHistory + dumbbellHistory,
+            trainingProfile: TrainingProfile(goal: .balanced, calorieMode: .maintenance),
+            limit: 50,
+            now: now,
+            calendar: utcCalendar()
+        )
+
+        XCTAssertLessThanOrEqual(alternatives.count, 6)
+        XCTAssertTrue(alternatives.contains { $0.exercise.id == dumbbell.id })
+        XCTAssertFalse(
+            alternatives.contains { [incline.id, alias.id, row.id, curl.id, hostile.id, warmup.id]
+                .contains($0.exercise.id) },
+            "Unexpected alternatives: \(alternatives.map { $0.exercise.name })"
+        )
+        let dumbbellAlternative = alternatives.first { $0.exercise.id == dumbbell.id }
+        XCTAssertEqual(dumbbellAlternative?.recommendation.sets.compactMap(\.weight), [22.5, 22.5, 22.5])
+        XCTAssertFalse(alternatives.contains { $0.recommendation.sets.contains { $0.weight == 100 } })
+
+        let staleRevalidation = RecommendationEngine.findAlternatives(
+            currentExercise: bench,
+            selectedExerciseIDs: [bench.id, incline.id, dumbbell.id],
+            exercises: exercises,
+            history: benchHistory + dumbbellHistory,
+            trainingProfile: TrainingProfile(goal: .balanced, calorieMode: .maintenance),
+            now: now,
+            calendar: utcCalendar()
+        )
+        XCTAssertFalse(staleRevalidation.contains { $0.exercise.id == dumbbell.id })
+    }
+
+    func testSmartPlansReserveAllRequiredMovementPlanesWhenCatalogSupportsThem() {
+        let now = Date(timeIntervalSince1970: 1_780_000_000)
+        let exercises = BuiltInExerciseCatalog.definitions.map {
+            Exercise(name: $0.englishName, catalogKey: $0.key)
+        }
+        let horizontalPress: Set<String> = [
+            "bench_press", "dumbbell_bench_press", "incline_dumbbell_press",
+            "incline_bench_press", "push_up", "dips", "assisted_dip"
+        ]
+        let verticalPress: Set<String> = ["shoulder_press"]
+        let horizontalPull: Set<String> = ["barbell_row", "seated_cable_row", "plate_loaded_row"]
+        let verticalPull: Set<String> = [
+            "pull_up", "assisted_pull_up", "band_assisted_pull_up", "lat_pulldown"
+        ]
+        let squatOrPress: Set<String> = ["squat", "leg_press", "bulgarian_split_squat", "lunge"]
+        let hingeOrFlexion: Set<String> = [
+            "romanian_deadlift", "deadlift", "hip_thrust", "lying_leg_curl", "seated_leg_curl"
+        ]
+        func keys(_ plan: SmartWorkoutPlan) -> Set<String> {
+            Set(plan.exercises.compactMap(\.exercise.catalogKey))
+        }
+        let profile = TrainingProfile(
+            split: .upperLower,
+            workoutsPerWeek: 4,
+            goal: .balanced,
+            calorieMode: .maintenance
+        )
+        let upper = RecommendationEngine.buildWorkoutPlan(
+            exercises: exercises,
+            history: [],
+            trainingProfile: profile,
+            effort: .standard,
+            now: now,
+            calendar: utcCalendar()
+        )
+        XCTAssertFalse(keys(upper).isDisjoint(with: horizontalPress))
+        XCTAssertFalse(keys(upper).isDisjoint(with: verticalPress))
+        XCTAssertFalse(keys(upper).isDisjoint(with: horizontalPull))
+        XCTAssertFalse(keys(upper).isDisjoint(with: verticalPull))
+
+        let bench = exercises.first { $0.catalogKey == "bench_press" }!
+        let upperHistory = coachSession(
+            exerciseID: bench.id,
+            exerciseName: bench.name,
+            exerciseCatalogKey: bench.catalogKey,
+            date: now.addingTimeInterval(-3 * 86_400),
+            weights: [60],
+            reps: [8]
+        )
+        let lower = RecommendationEngine.buildWorkoutPlan(
+            exercises: exercises,
+            history: upperHistory,
+            trainingProfile: profile,
+            effort: .standard,
+            now: now,
+            calendar: utcCalendar()
+        )
+        XCTAssertEqual(lower.focus, .lower)
+        XCTAssertFalse(keys(lower).isDisjoint(with: squatOrPress))
+        XCTAssertFalse(keys(lower).isDisjoint(with: hingeOrFlexion))
+
+        let push = RecommendationEngine.buildWorkoutPlan(
+            exercises: exercises,
+            history: [],
+            trainingProfile: TrainingProfile(
+                split: .pushPullLegs,
+                workoutsPerWeek: 4,
+                goal: .balanced,
+                calorieMode: .maintenance
+            ),
+            effort: .standard,
+            now: now,
+            calendar: utcCalendar()
+        )
+        XCTAssertFalse(keys(push).isDisjoint(with: horizontalPress))
+        XCTAssertFalse(keys(push).isDisjoint(with: verticalPress))
+
+        let pull = RecommendationEngine.buildWorkoutPlan(
+            exercises: exercises,
+            history: upperHistory,
+            trainingProfile: TrainingProfile(
+                split: .pushPullLegs,
+                workoutsPerWeek: 4,
+                goal: .balanced,
+                calorieMode: .maintenance
+            ),
+            effort: .standard,
+            now: now,
+            calendar: utcCalendar()
+        )
+        XCTAssertEqual(pull.focus, .pull)
+        XCTAssertFalse(keys(pull).isDisjoint(with: horizontalPull))
+        XCTAssertFalse(keys(pull).isDisjoint(with: verticalPull))
+
+        let fallback = RecommendationEngine.buildWorkoutPlan(
+            exercises: [bench, Exercise(name: "Barbell Row"), Exercise(name: "Plank")],
+            history: [],
+            trainingProfile: profile,
+            effort: .standard,
+            now: now,
+            calendar: utcCalendar()
+        )
+        XCTAssertFalse(fallback.exercises.isEmpty)
+        XCTAssertFalse(keys(fallback).isDisjoint(with: horizontalPress))
     }
 
     func testDemoDataIsExplicitAndIdempotent() throws {

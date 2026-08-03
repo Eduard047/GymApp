@@ -8,10 +8,13 @@ struct AddWorkoutView: View {
     @State private var date = Date()
     @State private var note = ""
     @State private var profile = TrainingProfile()
+    @State private var selectedEffort: SmartWorkoutEffort = .auto
+    @State private var latestSmartPlan: SmartWorkoutPlan?
     @State private var drafts: [WorkoutEditorExerciseDraft] = []
     @State private var queueForGarmin = false
     @State private var showingExercisePicker = false
     @State private var showingPreviousPicker = false
+    @State private var replacementRequest: SmartReplacementRequest?
     @State private var statusMessage: String?
     @State private var statusIsError = false
     @State private var isSaving = false
@@ -109,8 +112,20 @@ struct AddWorkoutView: View {
             )
             .presentationDetents([.medium, .large])
         }
+        .sheet(item: $replacementRequest) { request in
+            SmartExerciseAlternativesSheet(
+                alternatives: request.alternatives,
+                exerciseMediaOwnerKey: store.accountStorageKey,
+                onSelect: { applyAlternative($0, request: request) }
+            )
+            .presentationDetents([.medium, .large])
+        }
         .onChange(of: profile) { newProfile in
+            latestSmartPlan = nil
             Self.saveProfile(newProfile, storageKey: store.accountStorageKey)
+        }
+        .onChange(of: selectedEffort) { _ in
+            latestSmartPlan = nil
         }
     }
 
@@ -300,6 +315,64 @@ struct AddWorkoutView: View {
                     title: "Generate the next workout",
                     supporting: "Uses your split, recent fatigue, neglected muscles, and progressive overload history."
                 )
+
+                ScrollView(.horizontal) {
+                    HStack(spacing: 8) {
+                        ForEach(SmartWorkoutEffort.allCases) { effort in
+                            Button {
+                                selectedEffort = effort
+                            } label: {
+                                Text(effort.displayName)
+                                    .font(.subheadline.weight(.semibold))
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 9)
+                                    .foregroundStyle(
+                                        selectedEffort == effort ? Color.white : GymTheme.primary
+                                    )
+                                    .background(
+                                        selectedEffort == effort
+                                            ? GymTheme.primary
+                                            : GymTheme.primary.opacity(0.1),
+                                        in: Capsule()
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityAddTraits(selectedEffort == effort ? .isSelected : [])
+                        }
+                    }
+                }
+                .scrollIndicators(.hidden)
+
+                if let latestSmartPlan {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(
+                            gymText(
+                                "Focus: \(latestSmartPlan.focus.displayName) · RIR \(latestSmartPlan.rirSummary)",
+                                "Фокус: \(latestSmartPlan.focus.displayName) · RIR \(latestSmartPlan.rirSummary)",
+                                "Фокус: \(latestSmartPlan.focus.displayName) · RIR \(latestSmartPlan.rirSummary)",
+                                languageCode: gymCurrentLanguageCode()
+                            )
+                        )
+                        .font(.subheadline.weight(.semibold))
+                        Text(
+                            gymText(
+                                "Requested: \(latestSmartPlan.requestedEffort.displayName). Applied: \(latestSmartPlan.appliedEffort.displayName).",
+                                "Запитано: \(latestSmartPlan.requestedEffort.displayName). Застосовано: \(latestSmartPlan.appliedEffort.displayName).",
+                                "Запрошено: \(latestSmartPlan.requestedEffort.displayName). Применено: \(latestSmartPlan.appliedEffort.displayName).",
+                                languageCode: gymCurrentLanguageCode()
+                            )
+                        )
+                        .font(.caption)
+                        .foregroundStyle(GymTheme.textSecondary)
+                        if let adjustment = latestSmartPlan.effortAdjustment {
+                            Text(adjustment.displayText)
+                                .font(.caption)
+                                .foregroundStyle(GymTheme.textSecondary)
+                        }
+                    }
+                    .padding(10)
+                    .background(GymTheme.surfaceVariant.opacity(0.55), in: RoundedRectangle(cornerRadius: 14))
+                }
                 Button(action: applySmartCoach) {
                     Label("Build smart workout", systemImage: "sparkles")
                 }
@@ -351,7 +424,11 @@ struct AddWorkoutView: View {
                         exerciseMediaOwnerKey: store.accountStorageKey,
                         exerciseName: gymExerciseName(exercise),
                         lastWeight: store.lastWeight(exerciseID: exercise.id),
-                        onDeleteExercise: { drafts.removeAll { $0.id == item.id } }
+                        onShowSimilar: { showAlternatives(for: item.id) },
+                        onDeleteExercise: {
+                            latestSmartPlan = nil
+                            drafts.removeAll { $0.id == item.id }
+                        }
                     )
                 }
             }
@@ -415,7 +492,10 @@ struct AddWorkoutView: View {
             get: { drafts.first(where: { $0.id == id }) ?? WorkoutEditorExerciseDraft(exerciseID: UUID()) },
             set: { value in
                 guard let index = drafts.firstIndex(where: { $0.id == id }) else { return }
-                drafts[index] = value
+                var editedValue = value
+                editedValue.coachRecommendation = nil
+                latestSmartPlan = nil
+                drafts[index] = editedValue
             }
         )
     }
@@ -434,6 +514,7 @@ struct AddWorkoutView: View {
 
     private func addExercise(_ exercise: Exercise) {
         guard !drafts.contains(where: { $0.exerciseID == exercise.id }) else { return }
+        latestSmartPlan = nil
         drafts.insert(
             WorkoutEditorExerciseDraft(
                 exerciseID: exercise.id,
@@ -449,6 +530,7 @@ struct AddWorkoutView: View {
     }
 
     private func applyPreviousWorkout(_ workout: WorkoutSession) {
+        latestSmartPlan = nil
         drafts = workout.exercises.map { block in
             WorkoutEditorExerciseDraft(
                 exerciseID: block.exerciseID,
@@ -462,6 +544,7 @@ struct AddWorkoutView: View {
     }
 
     private func applyTemplate(_ preset: WorkoutTemplatePreset) {
+        latestSmartPlan = nil
         if preset == .deload {
             guard let latest = store.latestWorkoutTemplate else {
                 show(gymLocalized("A deload template needs a previous workout."), error: true)
@@ -539,7 +622,8 @@ struct AddWorkoutView: View {
             exercises: store.exercises,
             history: store.allExerciseHistory(),
             muscleMappings: store.muscleMappings,
-            trainingProfile: profile
+            trainingProfile: profile,
+            effort: selectedEffort
         )
         guard !plan.exercises.isEmpty else {
             show(gymLocalized("Smart Coach needs exercises in your catalog."), error: true)
@@ -549,13 +633,12 @@ struct AddWorkoutView: View {
             WorkoutEditorExerciseDraft(
                 exerciseID: item.exercise.id,
                 sets: item.recommendation.sets.map {
-                    WorkoutEditorSetDraft(
-                        weight: $0.weight ?? store.lastWeight(exerciseID: item.exercise.id) ?? 0,
-                        reps: $0.reps
-                    )
-                }
+                    WorkoutEditorSetDraft(recommendedSet: $0)
+                },
+                coachRecommendation: item.recommendation
             )
         }
+        latestSmartPlan = plan
         show(
             gymText(
                 "Smart Coach built a \(plan.focus.displayName.lowercased()) workout.",
@@ -564,6 +647,116 @@ struct AddWorkoutView: View {
             ),
             error: false
         )
+    }
+
+    private func showAlternatives(for draftID: UUID) {
+        guard let draft = drafts.first(where: { $0.id == draftID }),
+              let currentExercise = store.exercise(id: draft.exerciseID) else {
+            show(gymLocalized("This exercise is no longer available."), error: true)
+            return
+        }
+        let appliedEffort = latestSmartPlan?.appliedEffort ??
+            (selectedEffort == .auto ? .standard : selectedEffort)
+        let alternatives = RecommendationEngine.findAlternatives(
+            currentExercise: currentExercise,
+            selectedExerciseIDs: Set(drafts.map(\.exerciseID)),
+            exercises: store.exercises,
+            history: store.allExerciseHistory(),
+            muscleMappings: store.muscleMappings,
+            trainingProfile: profile,
+            effort: appliedEffort,
+            allowsHardSetBoost: appliedEffort == .hard && draft.sets.count == 4
+        )
+        replacementRequest = SmartReplacementRequest(
+            draftID: draft.id,
+            expectedExerciseID: draft.exerciseID,
+            alternatives: alternatives
+        )
+    }
+
+    private func applyAlternative(
+        _ alternative: SmartWorkoutAlternative,
+        request: SmartReplacementRequest
+    ) {
+        guard let draftIndex = drafts.firstIndex(where: {
+            $0.id == request.draftID && $0.exerciseID == request.expectedExerciseID
+        }), let currentExercise = store.exercise(id: request.expectedExerciseID),
+            store.exercise(id: alternative.exercise.id) != nil else {
+            show(gymLocalized("The workout changed. Open similar exercises again."), error: true)
+            return
+        }
+        let appliedEffort = latestSmartPlan?.appliedEffort ??
+            (selectedEffort == .auto ? .standard : selectedEffort)
+        let refreshedAlternatives = RecommendationEngine.findAlternatives(
+            currentExercise: currentExercise,
+            selectedExerciseIDs: Set(drafts.map(\.exerciseID)),
+            exercises: store.exercises,
+            history: store.allExerciseHistory(),
+            muscleMappings: store.muscleMappings,
+            trainingProfile: profile,
+            effort: appliedEffort,
+            allowsHardSetBoost: appliedEffort == .hard && drafts[draftIndex].sets.count == 4
+        )
+        guard let refreshedAlternative = refreshedAlternatives.first(where: {
+            $0.exercise.id == alternative.exercise.id
+        }) else {
+            show(gymLocalized("The workout changed. Open similar exercises again."), error: true)
+            return
+        }
+        let alternativeIdentity = exerciseDraftIdentity(refreshedAlternative.exercise)
+        let duplicateExists = drafts.enumerated().contains { index, draft in
+            guard index != draftIndex, let exercise = store.exercise(id: draft.exerciseID) else { return false }
+            return exerciseDraftIdentity(exercise) == alternativeIdentity
+        }
+        guard !duplicateExists else {
+            show(gymLocalized("That exercise is already in this workout."), error: true)
+            return
+        }
+
+        drafts[draftIndex].exerciseID = refreshedAlternative.exercise.id
+        drafts[draftIndex].sets = refreshedAlternative.recommendation.sets.map {
+            WorkoutEditorSetDraft(recommendedSet: $0)
+        }
+        drafts[draftIndex].coachRecommendation = refreshedAlternative.recommendation
+        if let plan = latestSmartPlan,
+           let planIndex = plan.exercises.firstIndex(where: {
+               $0.exercise.id == request.expectedExerciseID
+           }) {
+            var updatedExercises = plan.exercises
+            updatedExercises[planIndex] = SmartWorkoutExercise(
+                exercise: refreshedAlternative.exercise,
+                recommendation: refreshedAlternative.recommendation
+            )
+            latestSmartPlan = SmartWorkoutPlan(
+                focus: plan.focus,
+                exercises: updatedExercises,
+                variant: plan.variant,
+                requestedEffort: plan.requestedEffort,
+                appliedEffort: plan.appliedEffort,
+                effortAdjustment: plan.effortAdjustment
+            )
+        } else if latestSmartPlan != nil {
+            latestSmartPlan = nil
+        }
+        show(
+            gymText(
+                "Replaced with \(gymExerciseName(refreshedAlternative.exercise)). Its own history and machine settings were applied.",
+                "Замінено на «\(gymExerciseName(refreshedAlternative.exercise))». Застосовано історію та налаштування тренажера саме цієї вправи.",
+                "Заменено на «\(gymExerciseName(refreshedAlternative.exercise))». Применены история и настройки тренажёра именно этого упражнения.",
+                languageCode: gymCurrentLanguageCode()
+            ),
+            error: false
+        )
+    }
+
+    private func exerciseDraftIdentity(_ exercise: Exercise) -> String {
+        if let key = BuiltInExerciseCatalog.resolvedKey(
+            catalogKey: exercise.catalogKey,
+            name: exercise.name
+        ) {
+            return "catalog:\(key)"
+        }
+        return "custom:\(MuscleMappingEngine.normalizeExerciseName(exercise.name))"
     }
 
     private func validationMessage() -> String? {
@@ -579,7 +772,10 @@ struct AddWorkoutView: View {
                 return gymLocalized("Every exercise needs at least one set.")
             }
             for set in draft.sets {
-                guard set.weight.isFinite, set.weight >= 0 else {
+                guard !set.requiresWeightSelection else {
+                    return gymLocalized("Choose a working weight before saving.")
+                }
+                guard set.isReadyForSave else {
                     return gymLocalized("Weight must be a non-negative number.")
                 }
                 guard (1 ... 10_000).contains(set.reps) else {
@@ -694,6 +890,13 @@ struct AddWorkoutView: View {
     }
 }
 
+private struct SmartReplacementRequest: Identifiable {
+    let id = UUID()
+    let draftID: UUID
+    let expectedExerciseID: UUID
+    let alternatives: [SmartWorkoutAlternative]
+}
+
 private struct PreviousWorkoutPicker: View {
     @Environment(\.dismiss) private var dismiss
 
@@ -763,6 +966,70 @@ private extension SmartWorkoutFocus {
         case .pull: gymLocalized("Pull")
         case .legs: gymLocalized("Legs")
         case .fullBody: gymLocalized("Full body")
+        }
+    }
+}
+
+private extension SmartWorkoutEffort {
+    var displayName: String {
+        switch self {
+        case .auto: gymLocalized("Auto")
+        case .recovery: gymLocalized("Recovery")
+        case .standard: gymLocalized("Standard")
+        case .hard: gymLocalized("Hard")
+        }
+    }
+
+    var rirText: String {
+        switch self {
+        case .auto, .standard: "2–3"
+        case .recovery: "3–4"
+        case .hard: "1–2"
+        }
+    }
+}
+
+private extension SmartWorkoutPlan {
+    var rirSummary: String {
+        let ranges = Set(exercises.map {
+            "\($0.recommendation.targetRIR.lowerBound)–\($0.recommendation.targetRIR.upperBound)"
+        })
+        if ranges.count == 1 { return ranges.first ?? appliedEffort.rirText }
+        return ["1–2", "2–3", "3–4"].filter(ranges.contains).joined(separator: " · ")
+    }
+}
+
+private extension SmartWorkoutEffortAdjustment {
+    var displayText: String {
+        switch self {
+        case .autoRecovery:
+            gymText(
+                "Auto selected Recovery because at least half of the target muscles were trained in the last two days.",
+                "Авто вибрав відновлення, бо щонайменше половина цільових м’язів тренувалася протягом останніх двох днів.",
+                "Авто выбрал восстановление, потому что как минимум половина целевых мышц тренировалась в последние два дня.",
+                languageCode: gymCurrentLanguageCode()
+            )
+        case .hardInsufficientHistory:
+            gymText(
+                "Hard was changed to Standard because fewer than two workouts are available.",
+                "Важкий режим змінено на стандартний, бо доступно менше двох тренувань.",
+                "Тяжёлый режим изменён на стандартный, потому что доступно меньше двух тренировок.",
+                languageCode: gymCurrentLanguageCode()
+            )
+        case .hardLongBreak:
+            gymText(
+                "Hard was changed to Standard after a long training break.",
+                "Важкий режим змінено на стандартний після тривалої перерви.",
+                "Тяжёлый режим изменён на стандартный после длительного перерыва.",
+                languageCode: gymCurrentLanguageCode()
+            )
+        case .hardTargetNotRecovered:
+            gymText(
+                "Hard was changed to Standard because at least half of the target muscles are still recovering.",
+                "Важкий режим змінено на стандартний, бо щонайменше половина цільових м’язів ще відновлюється.",
+                "Тяжёлый режим изменён на стандартный, потому что как минимум половина целевых мышц ещё восстанавливается.",
+                languageCode: gymCurrentLanguageCode()
+            )
         }
     }
 }

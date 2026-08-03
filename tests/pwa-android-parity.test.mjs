@@ -12,7 +12,7 @@ const garminCloudSource = await readFile(
   "utf8"
 );
 const appSources = await Promise.all(
-  ["app.js", "app.v64.js"].map(async filename => ({
+  ["app.js", "app.v67.js"].map(async filename => ({
     filename,
     source: await readFile(new URL(`../pwa/${filename}`, import.meta.url), "utf8")
   }))
@@ -380,17 +380,27 @@ for (const { filename, source } of appSources) {
     const context = loadPwaContext(source);
     vm.runInContext('state.language = "en"', context);
     const parsed = JSON.parse(vm.runInContext(`JSON.stringify(parseGarminWorkoutMetrics(
-      "Garmin · Completed 2/3 sets · S1 I0-42s K4.5/5 Z0/0/12/20/10/0s · S+1"
+      "Garmin · Duration 4:00 · Completed 2/3 sets · S1 42s R90s HR118/142/126 ↓16 C82% I0-42s K4.5/5 Z0/0/12/20/10/0s · S+1"
     ))`, context));
     assert.deepEqual(parsed.completion, { completedSets: 2, plannedSets: 3 });
     assert.equal(parsed.omittedSetIntervalCount, 1);
     const html = vm.runInContext(`garminWorkoutMetricsCard(${JSON.stringify(parsed)}, 9)`, context);
     assert.match(html, /Original Garmin result: completed 2 of 3 planned sets/);
-    assert.match(html, /Chronological watch set intervals/);
+    assert.match(html, /Chronological watch set metrics/);
     assert.match(html, /Watch S1, S2, … follow completion order and may differ from the exercise grouping below/);
     assert.match(html, /Read from the workout note; imported or manually edited notes are not proof of watch origin/);
     assert.match(html, /Set metric rows omitted from the bounded workout note: 1/);
-    assert.match(html, /Watch S1 · 0–42s · Gym 4\.5 kcal · Garmin 5 kcal · Z2 12s/);
+    assert.match(html, /garmin-workout-timeline/);
+    assert.match(html, /width="175\.00"/);
+    assert.match(html, /garmin-set-card/);
+    assert.match(html, /garmin-hr-strip/);
+    assert.match(html, />118</);
+    assert.match(html, />142</);
+    assert.match(html, /Recovery ↓16 bpm/);
+    assert.match(html, /High sensor confidence · 82%/);
+    assert.match(html, /garmin-zone-stack/);
+    assert.match(html, /Z2 12s/);
+    assert.match(html, /Gym 4\.5 kcal · Garmin 5 kcal/);
 
     const hostile = {
       ...parsed,
@@ -409,9 +419,44 @@ for (const { filename, source } of appSources) {
       `garminWorkoutMetricsCard(${JSON.stringify(hostile)}, 2)`,
       context
     );
-    assert.doesNotMatch(escaped, /<img|<svg/);
-    assert.match(escaped, /&lt;img/);
-    assert.match(escaped, /&lt;svg/);
+    assert.doesNotMatch(escaped, /<img|<svg[^>]+onload/);
+    assert.doesNotMatch(escaped, /onerror|onload|&lt;img|&lt;svg/);
+    assert.match(escaped, /Watch set/);
+  });
+
+  test(`${filename} keeps bounded Garmin stats-only set rows without inventing intervals`, () => {
+    const context = loadPwaContext(source);
+    vm.runInContext('state.language = "en"', context);
+    const parsed = JSON.parse(vm.runInContext(`JSON.stringify(parseGarminWorkoutMetrics(
+      "Garmin · S1 35s R90s HR110/150/125 ↓20 C75%"
+    ))`, context));
+    const html = vm.runInContext(`garminWorkoutMetricsCard(${JSON.stringify(parsed)}, 1)`, context);
+
+    assert.match(html, /Watch set[^<]*S1/);
+    assert.match(html, /35s active/);
+    assert.match(html, /Rest before 01:30/);
+    assert.match(html, />110</);
+    assert.match(html, />150</);
+    assert.match(html, />125</);
+    assert.match(html, /Recovery ↓20 bpm/);
+    assert.match(html, /High sensor confidence · 75%/);
+    assert.doesNotMatch(html, /garmin-workout-timeline|garmin-zone-stack|Gym 0 kcal/);
+  });
+
+  test(`${filename} describes PWA Garmin-format notes without asserting watch provenance`, () => {
+    const context = loadPwaContext(source);
+    vm.runInContext('state.language = "en"', context);
+    const html = vm.runInContext(`garminWorkoutHeader(
+      { id: "session-1", startedAt: 1700000000000 },
+      { duration: "4:00" },
+      [{ sets: [] }]
+    )`, context);
+
+    assert.match(html, /Garmin-format strength workout/);
+    assert.match(html, /metrics parsed from the saved note/);
+    assert.match(html, /saved session/);
+    assert.match(html, /Workout sets are grouped below/);
+    assert.doesNotMatch(html, /synced from Garmin|watch session/);
   });
 
   test(`${filename} does not fall back to permissive Garmin UI for a rejected note`, () => {

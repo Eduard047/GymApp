@@ -5,11 +5,29 @@ struct WorkoutEditorSetDraft: Identifiable, Hashable {
     let id: UUID
     var weight: Double
     var reps: Int
+    var requiresWeightSelection: Bool
 
-    init(id: UUID = UUID(), weight: Double = 0, reps: Int = 10) {
+    init(
+        id: UUID = UUID(),
+        weight: Double = 0,
+        reps: Int = 10,
+        requiresWeightSelection: Bool = false
+    ) {
         self.id = id
         self.weight = weight
         self.reps = reps
+        self.requiresWeightSelection = requiresWeightSelection
+    }
+
+    init(id: UUID = UUID(), recommendedSet: RecommendedWorkoutSet) {
+        self.id = id
+        weight = recommendedSet.weight ?? 0
+        reps = recommendedSet.reps
+        requiresWeightSelection = recommendedSet.weight == nil
+    }
+
+    var isReadyForSave: Bool {
+        !requiresWeightSelection && weight.isFinite && weight >= 0
     }
 
     var storeDraft: WorkoutSetDraft {
@@ -19,17 +37,20 @@ struct WorkoutEditorSetDraft: Identifiable, Hashable {
 
 struct WorkoutEditorExerciseDraft: Identifiable, Hashable {
     let id: UUID
-    let exerciseID: UUID
+    var exerciseID: UUID
     var sets: [WorkoutEditorSetDraft]
+    var coachRecommendation: WorkoutRecommendation?
 
     init(
         id: UUID = UUID(),
         exerciseID: UUID,
-        sets: [WorkoutEditorSetDraft] = [WorkoutEditorSetDraft()]
+        sets: [WorkoutEditorSetDraft] = [WorkoutEditorSetDraft()],
+        coachRecommendation: WorkoutRecommendation? = nil
     ) {
         self.id = id
         self.exerciseID = exerciseID
         self.sets = sets
+        self.coachRecommendation = coachRecommendation
     }
 
     var storeDraft: WorkoutExerciseDraft {
@@ -142,7 +163,7 @@ struct WorkoutSetDraftRow: View {
                 .foregroundStyle(GymTheme.textSecondary)
             TextField(
                 "0",
-                value: $set.weight,
+                value: weightBinding,
                 format: .number.precision(.fractionLength(0 ... 2))
             )
             .keyboardType(.decimalPad)
@@ -154,6 +175,11 @@ struct WorkoutSetDraftRow: View {
                     languageCode: gymCurrentLanguageCode()
                 )
             )
+            if set.requiresWeightSelection {
+                Text("Choose a working weight before saving.")
+                    .font(.caption)
+                    .foregroundStyle(GymTheme.error)
+            }
         }
         .frame(maxWidth: .infinity)
 
@@ -184,7 +210,10 @@ struct WorkoutSetDraftRow: View {
     @ViewBuilder
     private var quickActions: some View {
         Button {
-            if let lastWeight { set.weight = lastWeight }
+            if let lastWeight {
+                set.weight = lastWeight
+                set.requiresWeightSelection = false
+            }
         } label: {
             Label("Last", systemImage: "clock.arrow.circlepath")
         }
@@ -206,6 +235,7 @@ struct WorkoutSetDraftRow: View {
 
         Button {
             set.weight += 2.5
+            set.requiresWeightSelection = false
         } label: {
             Label("+2.5", systemImage: "plus")
         }
@@ -213,6 +243,16 @@ struct WorkoutSetDraftRow: View {
         Button(action: onDuplicate) {
             Label("Copy set", systemImage: "doc.on.doc")
         }
+    }
+
+    private var weightBinding: Binding<Double> {
+        Binding(
+            get: { set.weight },
+            set: { value in
+                set.weight = value
+                set.requiresWeightSelection = false
+            }
+        )
     }
 }
 
@@ -224,6 +264,7 @@ struct WorkoutDraftExerciseCard: View {
     let exerciseMediaOwnerKey: String
     let exerciseName: String
     let lastWeight: Double?
+    let onShowSimilar: (() -> Void)?
     let onDeleteExercise: () -> Void
     @State private var showingMedia = false
 
@@ -272,6 +313,16 @@ struct WorkoutDraftExerciseCard: View {
                     )
                 }
 
+                if let onShowSimilar {
+                    Button(action: onShowSimilar) {
+                        Label("Similar exercises", systemImage: "arrow.triangle.swap")
+                    }
+                    .buttonStyle(GymSecondaryButtonStyle())
+                    .accessibilityHint(
+                        gymLocalized("Shows safe replacements with a newly calculated prescription")
+                    )
+                }
+
                 ForEach(Array(draft.sets.enumerated()), id: \.element.id) { index, item in
                     WorkoutSetDraftRow(
                         set: binding(for: item.id),
@@ -289,7 +340,8 @@ struct WorkoutDraftExerciseCard: View {
                     draft.sets.append(
                         WorkoutEditorSetDraft(
                             weight: source?.weight ?? lastWeight ?? 0,
-                            reps: source?.reps ?? 10
+                            reps: source?.reps ?? 10,
+                            requiresWeightSelection: source?.requiresWeightSelection ?? false
                         )
                     )
                 } label: {
@@ -324,19 +376,103 @@ struct WorkoutDraftExerciseCard: View {
         guard let index = draft.sets.firstIndex(where: { $0.id == id }), index > 0 else { return }
         draft.sets[index].weight = draft.sets[index - 1].weight
         draft.sets[index].reps = draft.sets[index - 1].reps
+        draft.sets[index].requiresWeightSelection = draft.sets[index - 1].requiresWeightSelection
     }
 
     private func duplicate(_ id: UUID) {
         guard let index = draft.sets.firstIndex(where: { $0.id == id }) else { return }
         let source = draft.sets[index]
         draft.sets.insert(
-            WorkoutEditorSetDraft(weight: source.weight, reps: source.reps),
+            WorkoutEditorSetDraft(
+                weight: source.weight,
+                reps: source.reps,
+                requiresWeightSelection: source.requiresWeightSelection
+            ),
             at: index + 1
         )
     }
 
     private func delete(_ id: UUID) {
         draft.sets.removeAll { $0.id == id }
+    }
+}
+
+struct SmartExerciseAlternativesSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    let alternatives: [SmartWorkoutAlternative]
+    let exerciseMediaOwnerKey: String
+    let onSelect: (SmartWorkoutAlternative) -> Void
+
+    var body: some View {
+        NavigationStack {
+            GymBackground {
+                ScrollView {
+                    LazyVStack(spacing: 12) {
+                        if alternatives.isEmpty {
+                            GymPanel {
+                                GymContentUnavailableView {
+                                    Label("No similar exercises", systemImage: "dumbbell")
+                                } description: {
+                                    Text("No safe replacement is available in your exercise catalog.")
+                                }
+                            }
+                        } else {
+                            ForEach(alternatives) { alternative in
+                                alternativeCard(alternative)
+                            }
+                        }
+                    }
+                    .padding(14)
+                }
+            }
+            .navigationTitle("Similar exercises")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private func alternativeCard(_ alternative: SmartWorkoutAlternative) -> some View {
+        GymPanel(highlighted: true) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 12) {
+                    ExerciseMediaButton(
+                        exerciseName: gymExerciseName(alternative.exercise),
+                        exerciseID: alternative.exercise.id,
+                        ownerKey: exerciseMediaOwnerKey
+                    )
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(gymExerciseName(alternative.exercise))
+                            .font(.headline)
+                        Text(prescriptionText(alternative.recommendation))
+                            .font(.subheadline.monospacedDigit())
+                            .foregroundStyle(GymTheme.textSecondary)
+                    }
+                    Spacer(minLength: 0)
+                }
+
+                Button {
+                    onSelect(alternative)
+                    dismiss()
+                } label: {
+                    Label("Use this exercise", systemImage: "checkmark.circle.fill")
+                }
+                .buttonStyle(GymPrimaryButtonStyle())
+            }
+        }
+    }
+
+    private func prescriptionText(_ recommendation: WorkoutRecommendation) -> String {
+        guard let first = recommendation.sets.first else { return gymLocalized("No prescription") }
+        let setCount = recommendation.sets.count
+        let weight = first.weight.map {
+            " · \($0.formatted(.number.precision(.fractionLength(0 ... 2)))) kg"
+        } ?? ""
+        return "\(setCount) × \(first.reps)\(weight)"
     }
 }
 

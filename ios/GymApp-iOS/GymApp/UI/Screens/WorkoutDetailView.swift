@@ -61,7 +61,7 @@ enum GarminWorkoutDetailCopy {
     }
 
     static func confidence(languageCode: String) -> String {
-        localized(languageCode, en: "Detection", uk: "Розпізнавання", ru: "Распознавание")
+        localized(languageCode, en: "Set signal", uk: "Сигнал підходу", ru: "Сигнал подхода")
     }
 
     static func recovery(languageCode: String) -> String {
@@ -208,6 +208,112 @@ enum GarminWorkoutDetailCopy {
         )
     }
 
+    static func insightsTitle(languageCode: String) -> String {
+        localized(
+            languageCode,
+            en: "Session overview",
+            uk: "Огляд сесії",
+            ru: "Обзор сессии"
+        )
+    }
+
+    static func insightsSupporting(partial: Bool, languageCode: String) -> String {
+        if partial {
+            return localized(
+                languageCode,
+                en: "Calculated only from the set rows retained in this bounded workout note; some rows were omitted.",
+                uk: "Розраховано лише за рядками підходів, що збереглися в обмеженій нотатці; частину рядків пропущено.",
+                ru: "Рассчитано только по строкам подходов, сохранившимся в ограниченной заметке; часть строк пропущена."
+            )
+        }
+        return localized(
+            languageCode,
+            en: "A visual summary of set data stored in this Garmin-format workout note.",
+            uk: "Візуальний підсумок даних підходів зі збереженої нотатки тренування у форматі Garmin.",
+            ru: "Визуальная сводка данных подходов из сохранённой заметки тренировки в формате Garmin."
+        )
+    }
+
+    static func workoutTimeline(languageCode: String) -> String {
+        localized(
+            languageCode,
+            en: "Set timeline",
+            uk: "Хронологія підходів",
+            ru: "Хронология подходов"
+        )
+    }
+
+    static func timelineValue(setCount: Int, duration: Int64, languageCode: String) -> String {
+        localized(
+            languageCode,
+            en: "\(setCount) recorded sets across \(garminDuration(duration))",
+            uk: "Записано підходів: \(setCount), тривалість \(garminDuration(duration))",
+            ru: "Записано подходов: \(setCount), длительность \(garminDuration(duration))"
+        )
+    }
+
+    static func recordedWork(languageCode: String) -> String {
+        localized(languageCode, en: "Recorded work", uk: "Записана робота", ru: "Записанная работа")
+    }
+
+    static func recordedRest(languageCode: String) -> String {
+        localized(languageCode, en: "Recorded rest", uk: "Записаний відпочинок", ru: "Записанный отдых")
+    }
+
+    static func workDensity(languageCode: String) -> String {
+        localized(languageCode, en: "Work density", uk: "Щільність роботи", ru: "Плотность работы")
+    }
+
+    static func averageDetection(languageCode: String) -> String {
+        localized(
+            languageCode,
+            en: "Avg set signal",
+            uk: "Сер. сигнал підходу",
+            ru: "Сред. сигнал подхода"
+        )
+    }
+
+    static func averageRecovery(languageCode: String) -> String {
+        localized(
+            languageCode,
+            en: "Avg HR recovery",
+            uk: "Сер. відновлення пульсу",
+            ru: "Сред. восстановление пульса"
+        )
+    }
+
+    static func dominantZone(languageCode: String) -> String {
+        localized(languageCode, en: "Most zone time", uk: "Найбільше часу", ru: "Больше всего времени")
+    }
+
+    static func peakSet(setIndex: Int, heartRate: Int, languageCode: String) -> String {
+        localized(
+            languageCode,
+            en: "Highest recorded set peak: S\(setIndex), \(heartRate) bpm.",
+            uk: "Найвищий записаний пік підходу: S\(setIndex), \(heartRate) уд/хв.",
+            ru: "Самый высокий записанный пик подхода: S\(setIndex), \(heartRate) уд/мин."
+        )
+    }
+
+    static func longestRest(setIndex: Int, seconds: Int64, languageCode: String) -> String {
+        localized(
+            languageCode,
+            en: "Longest recorded rest was before S\(setIndex): \(garminDuration(seconds)).",
+            uk: "Найдовший записаний відпочинок був перед S\(setIndex): \(garminDuration(seconds)).",
+            ru: "Самый длинный записанный отдых был перед S\(setIndex): \(garminDuration(seconds))."
+        )
+    }
+
+    static func lowConfidenceSets(_ indexes: [Int], languageCode: String) -> String {
+        let values = indexes.map { "S\($0)" }.joined(separator: ", ")
+        return localized(
+            languageCode,
+            en: "Review set detection for \(values): the sensor signal was below 40%.",
+            uk: "Перевір визначення підходів \(values): сигнал сенсорів був нижчим за 40%.",
+            ru: "Проверь определение подходов \(values): сигнал датчиков был ниже 40%."
+        )
+    }
+
     static func calorieUnit(languageCode: String) -> String {
         normalized(languageCode) == "en" ? "kcal" : "ккал"
     }
@@ -257,6 +363,11 @@ enum GarminWorkoutChartModel {
         }
         guard total > 0, total < Int64.max else { return [] }
         return seconds.map { Double($0) / Double(total) }
+    }
+
+    static func timelinePosition(_ seconds: Int64, duration: Int64) -> Double {
+        guard duration > 0 else { return 0 }
+        return min(1, max(0, Double(seconds) / Double(duration)))
     }
 }
 
@@ -464,6 +575,225 @@ private struct GarminHeartRateRangeChart: View {
     }
 }
 
+private struct GarminSessionInsightsCard: View {
+    let insights: GarminWorkoutSessionInsights
+    let languageCode: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(GarminWorkoutDetailCopy.insightsTitle(languageCode: languageCode))
+                    .font(.headline)
+                    .foregroundStyle(GymTheme.textPrimary)
+                Text(
+                    GarminWorkoutDetailCopy.insightsSupporting(
+                        partial: insights.isPartial,
+                        languageCode: languageCode
+                    )
+                )
+                .font(.caption)
+                .foregroundStyle(GymTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if let duration = insights.timelineDurationSeconds,
+               !insights.timelineSlices.isEmpty {
+                GarminWorkoutTimelineChart(
+                    slices: insights.timelineSlices,
+                    durationSeconds: duration,
+                    languageCode: languageCode
+                )
+            }
+
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 116), spacing: 8)],
+                spacing: 8
+            ) {
+                if let seconds = insights.recordedActiveSeconds {
+                    GymMetricTile(
+                        label: GarminWorkoutDetailCopy.recordedWork(languageCode: languageCode),
+                        value: garminDuration(seconds)
+                    )
+                }
+                if let seconds = insights.recordedRestSeconds {
+                    GymMetricTile(
+                        label: GarminWorkoutDetailCopy.recordedRest(languageCode: languageCode),
+                        value: garminDuration(seconds)
+                    )
+                }
+                if let density = insights.workDensityPercent {
+                    GymMetricTile(
+                        label: GarminWorkoutDetailCopy.workDensity(languageCode: languageCode),
+                        value: "\(density)%"
+                    )
+                }
+                if let confidence = insights.averageDetectionConfidence {
+                    GymMetricTile(
+                        label: GarminWorkoutDetailCopy.averageDetection(languageCode: languageCode),
+                        value: "\(confidence)%"
+                    )
+                }
+                if let recovery = insights.averageRecoveryHeartRateDrop {
+                    GymMetricTile(
+                        label: GarminWorkoutDetailCopy.averageRecovery(languageCode: languageCode),
+                        value: "↓\(recovery)"
+                    )
+                }
+                if let zone = insights.dominantHeartRateZone {
+                    GymMetricTile(
+                        label: GarminWorkoutDetailCopy.dominantZone(languageCode: languageCode),
+                        value: "Z\(zone)"
+                    )
+                }
+            }
+
+            if let zoneSeconds = insights.aggregateHeartRateZoneSeconds {
+                GarminHeartRateZoneChart(
+                    seconds: zoneSeconds,
+                    languageCode: languageCode
+                )
+            }
+
+            if let setIndex = insights.peakHeartRateSetIndex,
+               let heartRate = insights.peakHeartRate {
+                insightLine(
+                    GarminWorkoutDetailCopy.peakSet(
+                        setIndex: setIndex,
+                        heartRate: heartRate,
+                        languageCode: languageCode
+                    ),
+                    systemImage: "heart.fill",
+                    color: GymTheme.secondary
+                )
+            }
+            if let setIndex = insights.longestRestSetIndex,
+               let seconds = insights.longestRestSeconds {
+                insightLine(
+                    GarminWorkoutDetailCopy.longestRest(
+                        setIndex: setIndex,
+                        seconds: seconds,
+                        languageCode: languageCode
+                    ),
+                    systemImage: "timer",
+                    color: GymTheme.tertiary
+                )
+            }
+            if !insights.lowConfidenceSetIndexes.isEmpty {
+                insightLine(
+                    GarminWorkoutDetailCopy.lowConfidenceSets(
+                        insights.lowConfidenceSetIndexes,
+                        languageCode: languageCode
+                    ),
+                    systemImage: "exclamationmark.triangle.fill",
+                    color: GymTheme.error
+                )
+            }
+        }
+        .padding(13)
+        .background(
+            GymTheme.surfaceVariant.opacity(0.62),
+            in: RoundedRectangle(cornerRadius: GymTheme.compactCornerRadius, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: GymTheme.compactCornerRadius, style: .continuous)
+                .strokeBorder(GymTheme.outlineSoft.opacity(0.8), lineWidth: 1)
+        }
+    }
+
+    private func insightLine(
+        _ text: String,
+        systemImage: String,
+        color: Color
+    ) -> some View {
+        Label {
+            Text(text)
+                .fixedSize(horizontal: false, vertical: true)
+        } icon: {
+            Image(systemName: systemImage)
+                .foregroundStyle(color)
+        }
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(GymTheme.textSecondary)
+    }
+}
+
+private struct GarminWorkoutTimelineChart: View {
+    let slices: [GarminWorkoutTimelineSlice]
+    let durationSeconds: Int64
+    let languageCode: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text(GarminWorkoutDetailCopy.workoutTimeline(languageCode: languageCode))
+                .font(.caption.weight(.bold))
+                .foregroundStyle(GymTheme.textSecondary)
+                .textCase(.uppercase)
+                .tracking(0.35)
+
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(GymTheme.outlineSoft.opacity(0.72))
+                        .frame(height: 16)
+
+                    ForEach(slices) { slice in
+                        let start = GarminWorkoutChartModel.timelinePosition(
+                            slice.startSeconds,
+                            duration: durationSeconds
+                        )
+                        let end = GarminWorkoutChartModel.timelinePosition(
+                            slice.endSeconds,
+                            duration: durationSeconds
+                        )
+                        let x = geometry.size.width * start
+                        let width = max(4, geometry.size.width * max(0, end - start))
+                        Capsule()
+                            .fill(confidenceColor(slice.detectionConfidence))
+                            .frame(width: width, height: 22)
+                            .overlay {
+                                if width >= 28 {
+                                    Text("S\(slice.setIndex)")
+                                        .font(.caption2.monospacedDigit().weight(.black))
+                                        .foregroundStyle(Color.white)
+                                }
+                            }
+                            .offset(x: min(x, max(0, geometry.size.width - width)))
+                    }
+                }
+                .frame(maxHeight: .infinity)
+            }
+            .frame(height: 28)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(
+                GarminWorkoutDetailCopy.workoutTimeline(languageCode: languageCode)
+            )
+            .accessibilityValue(
+                GarminWorkoutDetailCopy.timelineValue(
+                    setCount: slices.count,
+                    duration: durationSeconds,
+                    languageCode: languageCode
+                )
+            )
+
+            HStack {
+                Text("0:00")
+                Spacer()
+                Text(garminDuration(durationSeconds))
+            }
+            .font(.caption2.monospacedDigit().weight(.semibold))
+            .foregroundStyle(GymTheme.textSecondary)
+            .accessibilityHidden(true)
+        }
+    }
+
+    private func confidenceColor(_ confidence: Int?) -> Color {
+        guard let confidence else { return GymTheme.primary }
+        if confidence < 40 { return GymTheme.error }
+        if confidence < 70 { return GymTheme.tertiary }
+        return GymTheme.secondary
+    }
+}
+
 private struct GarminSetMetricsCard: View {
     let setIndex: Int
     let interval: GarminWorkoutNoteInterval?
@@ -504,7 +834,9 @@ private struct GarminSetMetricsCard: View {
                             GymInfoPill(
                                 "\(GarminWorkoutDetailCopy.confidence(languageCode: languageCode)) \(confidence)%",
                                 systemImage: "waveform.path.ecg",
-                                accent: GymTheme.secondary
+                                accent: confidence < 40
+                                    ? GymTheme.error
+                                    : confidence < 70 ? GymTheme.tertiary : GymTheme.secondary
                             )
                         }
                         if let recovery = metrics?.recoveryHeartRateDrop {
@@ -1251,6 +1583,7 @@ struct WorkoutDetailView: View {
 
     private func garminSetIntervalsPanel(_ summary: GarminWorkoutNoteSummary) -> some View {
         let languageCode = gymCurrentLanguageCode()
+        let insights = GarminWorkoutSessionInsights.make(from: summary)
         return GymPanel(highlighted: true) {
             VStack(alignment: .leading, spacing: 12) {
                 GymSectionTitle(
@@ -1260,17 +1593,31 @@ struct WorkoutDetailView: View {
                         languageCode: languageCode
                     )
                 )
+                if let insights {
+                    GarminSessionInsightsCard(
+                        insights: insights,
+                        languageCode: languageCode
+                    )
+                }
                 if let completedSetCount = summary.completedSetCount,
                    let plannedSetCount = summary.plannedSetCount,
                    plannedSetCount > completedSetCount {
-                    Text(
-                        GarminWorkoutDetailCopy.originalPartial(
-                            completed: completedSetCount,
-                            planned: plannedSetCount,
-                            languageCode: languageCode
+                    VStack(alignment: .leading, spacing: 7) {
+                        Text(
+                            GarminWorkoutDetailCopy.originalPartial(
+                                completed: completedSetCount,
+                                planned: plannedSetCount,
+                                languageCode: languageCode
+                            )
                         )
-                    )
-                    .font(.subheadline.weight(.semibold))
+                        .font(.subheadline.weight(.semibold))
+                        ProgressView(
+                            value: Double(completedSetCount),
+                            total: Double(plannedSetCount)
+                        )
+                        .tint(GymTheme.primary)
+                        .accessibilityValue("\(completedSetCount) / \(plannedSetCount)")
+                    }
                 }
                 ForEach(summary.visualSetIndexes, id: \.self) { setIndex in
                     GarminSetMetricsCard(

@@ -12084,6 +12084,90 @@
         "uk" : { "stringUnit" : { "state" : "translated", "value" : "Ззаду" } },
         "ru" : { "stringUnit" : { "state" : "translated", "value" : "Сзади" } }
       }
+    },
+    "Auto" : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Авто" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Авто" } }
+      }
+    },
+    "Recovery" : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Відновлення" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Восстановление" } }
+      }
+    },
+    "Standard" : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Стандарт" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Стандарт" } }
+      }
+    },
+    "Hard" : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Важко" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Тяжело" } }
+      }
+    },
+    "Similar exercises" : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Схожі вправи" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Похожие упражнения" } }
+      }
+    },
+    "Use this exercise" : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Використати цю вправу" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Использовать это упражнение" } }
+      }
+    },
+    "No similar exercises" : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Немає схожих вправ" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Нет похожих упражнений" } }
+      }
+    },
+    "No safe replacement is available in your exercise catalog." : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "У вашому каталозі немає безпечної заміни." } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "В вашем каталоге нет безопасной замены." } }
+      }
+    },
+    "Shows safe replacements with a newly calculated prescription" : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Показує безпечні заміни з наново розрахованим планом" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Показывает безопасные замены с заново рассчитанным планом" } }
+      }
+    },
+    "No prescription" : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Немає плану" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Нет плана" } }
+      }
+    },
+    "This exercise is no longer available." : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Ця вправа більше недоступна." } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Это упражнение больше недоступно." } }
+      }
+    },
+    "The workout changed. Open similar exercises again." : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Тренування змінилося. Відкрийте схожі вправи ще раз." } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Тренировка изменилась. Откройте похожие упражнения ещё раз." } }
+      }
+    },
+    "That exercise is already in this workout." : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Ця вправа вже є в тренуванні." } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Это упражнение уже есть в тренировке." } }
+      }
+    },
+    "Choose a working weight before saving." : {
+      "localizations" : {
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Виберіть робочу вагу перед збереженням." } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Выберите рабочий вес перед сохранением." } }
+      }
     }
   },
   "version" : "1.1"

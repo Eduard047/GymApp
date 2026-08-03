@@ -13,6 +13,11 @@ import com.example.gymapp.data.repository.ExerciseLoadProfile
 import com.example.gymapp.data.repository.NamedWorkoutSetDraft
 import com.example.gymapp.data.repository.WorkoutRecommendation
 import com.example.gymapp.data.repository.WorkoutRecommendationEngine
+import com.example.gymapp.data.repository.SmartWorkoutAlternative
+import com.example.gymapp.data.repository.SmartWorkoutEffort
+import com.example.gymapp.data.repository.SmartWorkoutEffortAdjustment
+import com.example.gymapp.data.repository.SmartWorkoutFocus
+import com.example.gymapp.data.repository.SmartWorkoutVariant
 import com.example.gymapp.data.repository.MuscleContribution
 import com.example.gymapp.data.repository.defaultContributionsForExercise
 import com.example.gymapp.data.repository.normalizedExerciseName
@@ -58,6 +63,53 @@ data class WorkoutTemplatePreviewUiModel(
     val totalVolume: Double
 )
 
+data class SmartWorkoutPlanSummaryUiModel(
+    val focus: SmartWorkoutFocus,
+    val variant: SmartWorkoutVariant,
+    val requestedEffort: SmartWorkoutEffort,
+    val appliedEffort: SmartWorkoutEffort,
+    val effortAdjustment: SmartWorkoutEffortAdjustment?,
+    val hardExerciseIds: Set<Long> = emptySet(),
+    val trainingProfileSnapshot: TrainingProfile = TrainingProfile()
+)
+
+internal data class SmartWorkoutRecommendationPolicy(
+    val effort: SmartWorkoutEffort,
+    val hardExerciseIds: Set<Long>
+)
+
+internal fun smartWorkoutRecommendationPolicy(
+    selectedEffort: SmartWorkoutEffort,
+    currentProfile: TrainingProfile,
+    generatedPlan: SmartWorkoutPlanSummaryUiModel?
+): SmartWorkoutRecommendationPolicy {
+    if (generatedPlan == null || generatedPlan.requestedEffort != selectedEffort ||
+        generatedPlan.trainingProfileSnapshot != currentProfile
+    ) {
+        // Choosing a chip configures the next generated plan. It must not silently turn a
+        // manually assembled draft into a hard or recovery session before generation.
+        return SmartWorkoutRecommendationPolicy(
+            effort = SmartWorkoutEffort.Standard,
+            hardExerciseIds = emptySet()
+        )
+    }
+    return SmartWorkoutRecommendationPolicy(
+        effort = generatedPlan.appliedEffort,
+        hardExerciseIds = if (generatedPlan.appliedEffort == SmartWorkoutEffort.Hard) {
+            generatedPlan.hardExerciseIds
+        } else {
+            emptySet()
+        }
+    )
+}
+
+data class SmartWorkoutAlternativePickerUiState(
+    val draftId: Long,
+    val expectedExerciseId: Long,
+    val selectedExerciseIdsSnapshot: Set<Long>,
+    val alternatives: List<SmartWorkoutAlternative>
+)
+
 data class AddWorkoutUiState(
     val workoutDate: Long = System.currentTimeMillis(),
     val note: String = "",
@@ -70,6 +122,9 @@ data class AddWorkoutUiState(
     val workoutRecommendations: Map<Long, WorkoutRecommendation> = emptyMap(),
     val exerciseLoadProfiles: Map<Long, ExerciseLoadProfile> = emptyMap(),
     val trainingProfile: TrainingProfile = TrainingProfile(),
+    val smartWorkoutEffort: SmartWorkoutEffort = SmartWorkoutEffort.Auto,
+    val generatedSmartPlan: SmartWorkoutPlanSummaryUiModel? = null,
+    val smartAlternativePicker: SmartWorkoutAlternativePickerUiState? = null,
     val canRepeatFromLast: Boolean = false,
     val workoutTemplates: List<WorkoutTemplatePreviewUiModel> = emptyList(),
     val isTemplatePickerOpen: Boolean = false,
@@ -135,6 +190,9 @@ class AddWorkoutViewModel(
         val note: String,
         val exerciseDrafts: List<ExerciseInputState>,
         val trainingProfile: TrainingProfile,
+        val smartWorkoutEffort: SmartWorkoutEffort,
+        val generatedSmartPlan: SmartWorkoutPlanSummaryUiModel?,
+        val smartAlternativePicker: SmartWorkoutAlternativePickerUiState?,
         val isTemplatePickerOpen: Boolean,
         val isTemplateLoading: Boolean,
         val isSyncingPlanToWatch: Boolean,
@@ -149,7 +207,22 @@ class AddWorkoutViewModel(
         val note: String,
         val exerciseDrafts: List<ExerciseInputState>,
         val isTemplatePickerOpen: Boolean,
-        val isTemplateLoading: Boolean
+        val isTemplateLoading: Boolean,
+        val smartWorkoutEffort: SmartWorkoutEffort,
+        val generatedSmartPlan: SmartWorkoutPlanSummaryUiModel?,
+        val smartAlternativePicker: SmartWorkoutAlternativePickerUiState?
+    )
+
+    private data class SmartCoachState(
+        val effort: SmartWorkoutEffort,
+        val generatedPlan: SmartWorkoutPlanSummaryUiModel?,
+        val alternativePicker: SmartWorkoutAlternativePickerUiState?
+    )
+
+    private data class RecommendationRequest(
+        val exerciseIds: List<Long>,
+        val selectedEffort: SmartWorkoutEffort,
+        val generatedPlan: SmartWorkoutPlanSummaryUiModel?
     )
 
     private data class ExerciseCatalogState(
@@ -167,6 +240,9 @@ class AddWorkoutViewModel(
     private val exerciseDrafts = MutableStateFlow(listOf(ExerciseInputState(draftId = 1L)))
     private val isTemplatePickerOpen = MutableStateFlow(false)
     private val isTemplateLoading = MutableStateFlow(false)
+    private val smartWorkoutEffort = MutableStateFlow(SmartWorkoutEffort.Auto)
+    private val generatedSmartPlan = MutableStateFlow<SmartWorkoutPlanSummaryUiModel?>(null)
+    private val smartAlternativePicker = MutableStateFlow<SmartWorkoutAlternativePickerUiState?>(null)
     private val isSyncingPlanToWatch = MutableStateFlow(false)
     private val didSyncPlanToWatch = MutableStateFlow<Boolean?>(null)
     private val watchPlanSyncError = MutableStateFlow<LocalizedText?>(null)
@@ -256,9 +332,35 @@ class AddWorkoutViewModel(
         repository.observeLastWeights(ids)
     }
 
-    private val workoutRecommendations = selectedExerciseIds.flatMapLatest { ids ->
+    private val smartCoachState = combine(
+        smartWorkoutEffort,
+        generatedSmartPlan,
+        smartAlternativePicker
+    ) { effort, plan, alternatives ->
+        SmartCoachState(effort, plan, alternatives)
+    }
+
+    private val recommendationRequest = combine(
+        selectedExerciseIds,
+        smartWorkoutEffort,
+        generatedSmartPlan
+    ) { ids, selectedEffort, generatedPlan ->
+        RecommendationRequest(ids, selectedEffort, generatedPlan)
+    }
+
+    private val workoutRecommendations = recommendationRequest.flatMapLatest { request ->
         trainingProfileManager.profile.flatMapLatest { profile ->
-            repository.observeWorkoutRecommendations(ids, profile)
+            val policy = smartWorkoutRecommendationPolicy(
+                selectedEffort = request.selectedEffort,
+                currentProfile = profile,
+                generatedPlan = request.generatedPlan
+            )
+            repository.observeWorkoutRecommendations(
+                exerciseIds = request.exerciseIds,
+                trainingProfile = profile,
+                effort = policy.effort,
+                hardExerciseIds = policy.hardExerciseIds
+            )
         }
     }
 
@@ -266,13 +368,17 @@ class AddWorkoutViewModel(
         note,
         exerciseDrafts,
         isTemplatePickerOpen,
-        isTemplateLoading
-    ) { noteValue, drafts, templatePickerOpen, templateLoading ->
+        isTemplateLoading,
+        smartCoachState
+    ) { noteValue, drafts, templatePickerOpen, templateLoading, smartCoach ->
         EditorState(
             note = noteValue,
             exerciseDrafts = drafts,
             isTemplatePickerOpen = templatePickerOpen,
-            isTemplateLoading = templateLoading
+            isTemplateLoading = templateLoading,
+            smartWorkoutEffort = smartCoach.effort,
+            generatedSmartPlan = smartCoach.generatedPlan,
+            smartAlternativePicker = smartCoach.alternativePicker
         )
     }
 
@@ -309,6 +415,9 @@ class AddWorkoutViewModel(
             note = editor.note,
             exerciseDrafts = editor.exerciseDrafts,
             trainingProfile = profile,
+            smartWorkoutEffort = editor.smartWorkoutEffort,
+            generatedSmartPlan = editor.generatedSmartPlan,
+            smartAlternativePicker = editor.smartAlternativePicker,
             isTemplatePickerOpen = editor.isTemplatePickerOpen,
             isTemplateLoading = editor.isTemplateLoading,
             isSyncingPlanToWatch = transient.isSyncingPlanToWatch,
@@ -338,6 +447,9 @@ class AddWorkoutViewModel(
             workoutRecommendations = recommendations,
             exerciseLoadProfiles = catalog.loadProfiles,
             trainingProfile = local.trainingProfile,
+            smartWorkoutEffort = local.smartWorkoutEffort,
+            generatedSmartPlan = local.generatedSmartPlan,
+            smartAlternativePicker = local.smartAlternativePicker,
             canRepeatFromLast = templates.isNotEmpty(),
             workoutTemplates = templates,
             isTemplatePickerOpen = local.isTemplatePickerOpen,
@@ -366,32 +478,50 @@ class AddWorkoutViewModel(
 
     fun updateTrainingSplit(split: TrainingSplit) {
         resetWatchPlanSyncResult()
+        generatedSmartPlan.value = null
+        smartAlternativePicker.value = null
         trainingProfileManager.updateSplit(split)
     }
 
     fun updateWorkoutsPerWeek(value: Int) {
         resetWatchPlanSyncResult()
+        generatedSmartPlan.value = null
+        smartAlternativePicker.value = null
         trainingProfileManager.updateWorkoutsPerWeek(value)
     }
 
     fun updateTrainingGoal(goal: TrainingGoal) {
         resetWatchPlanSyncResult()
+        generatedSmartPlan.value = null
+        smartAlternativePicker.value = null
         trainingProfileManager.updateGoal(goal)
     }
 
     fun updateCalorieMode(mode: CalorieMode) {
         resetWatchPlanSyncResult()
+        generatedSmartPlan.value = null
+        smartAlternativePicker.value = null
         trainingProfileManager.updateCalorieMode(mode)
     }
 
+    fun updateSmartWorkoutEffort(effort: SmartWorkoutEffort) {
+        resetWatchPlanSyncResult()
+        smartWorkoutEffort.value = effort
+        generatedSmartPlan.value = null
+        smartAlternativePicker.value = null
+    }
+
     fun generateSmartWorkout(defaultNote: String) {
-        val currentState = uiState.value
+        val catalog = exerciseCatalogState.value
+        val currentProfile = trainingProfileManager.profile.value
+        val selectedEffort = smartWorkoutEffort.value
         val plan = WorkoutRecommendationEngine.buildWorkoutPlan(
-            exercises = currentState.exercises,
+            exercises = catalog.exercises,
             history = exerciseHistory.value,
-            trainingProfile = currentState.trainingProfile,
-            loadProfiles = currentState.exerciseLoadProfiles,
-            manualMuscleMappings = exerciseCatalogState.value.manualMuscleMappings
+            trainingProfile = currentProfile,
+            loadProfiles = catalog.loadProfiles,
+            manualMuscleMappings = catalog.manualMuscleMappings,
+            effort = selectedEffort
         )
         if (plan.exercises.isEmpty()) {
             hasValidationError.value = true
@@ -412,13 +542,157 @@ class AddWorkoutViewModel(
                 }
             )
         }
+        generatedSmartPlan.value = SmartWorkoutPlanSummaryUiModel(
+            focus = plan.focus,
+            variant = plan.variant,
+            requestedEffort = plan.requestedEffort,
+            appliedEffort = plan.appliedEffort,
+            effortAdjustment = plan.effortAdjustment,
+            hardExerciseIds = plan.exercises.asSequence()
+                .filter { planned -> planned.recommendation.targetRir == 1..2 }
+                .map { planned -> planned.exercise.id }
+                .toSet(),
+            trainingProfileSnapshot = currentProfile
+        )
+        smartAlternativePicker.value = null
         if (note.value.isBlank()) {
             note.value = defaultNote
         }
     }
 
+    fun openSmartWorkoutAlternatives(draftId: Long) {
+        val drafts = exerciseDrafts.value
+        val catalog = exerciseCatalogState.value
+        val currentProfile = trainingProfileManager.profile.value
+        val draft = drafts.firstOrNull { it.draftId == draftId } ?: return
+        val currentExerciseId = draft.exerciseId ?: return
+        val recommendationPolicy = smartWorkoutRecommendationPolicy(
+            selectedEffort = smartWorkoutEffort.value,
+            currentProfile = currentProfile,
+            generatedPlan = generatedSmartPlan.value
+        )
+        val selectedExerciseIds = drafts.mapNotNullTo(linkedSetOf()) { it.exerciseId }
+        val alternatives = WorkoutRecommendationEngine.findAlternatives(
+            currentExerciseId = currentExerciseId,
+            selectedExerciseIds = selectedExerciseIds,
+            exercises = catalog.exercises,
+            history = exerciseHistory.value,
+            trainingProfile = currentProfile,
+            effort = recommendationPolicy.effort,
+            loadProfiles = catalog.loadProfiles,
+            manualMuscleMappings = catalog.manualMuscleMappings,
+            hardSetEligible = currentExerciseId in recommendationPolicy.hardExerciseIds,
+            limit = MAX_SMART_ALTERNATIVES
+        )
+        hasValidationError.value = false
+        smartAlternativePicker.value = SmartWorkoutAlternativePickerUiState(
+            draftId = draftId,
+            expectedExerciseId = currentExerciseId,
+            selectedExerciseIdsSnapshot = selectedExerciseIds,
+            alternatives = alternatives
+        )
+    }
+
+    fun closeSmartWorkoutAlternatives() {
+        smartAlternativePicker.value = null
+    }
+
+    fun applySmartWorkoutAlternative(
+        draftId: Long,
+        expectedCurrentExerciseId: Long,
+        replacementExerciseId: Long
+    ) {
+        val picker = smartAlternativePicker.value
+        val draftsSnapshot = exerciseDrafts.value
+        val selectedExerciseIds = draftsSnapshot.mapNotNullTo(linkedSetOf()) { it.exerciseId }
+        val targetDraft = draftsSnapshot.firstOrNull { it.draftId == draftId }
+        val wasOffered = picker?.alternatives?.any { candidate ->
+            candidate.exercise.id == replacementExerciseId
+        } == true
+        if (picker == null || !wasOffered || picker.draftId != draftId ||
+            picker.expectedExerciseId != expectedCurrentExerciseId ||
+            picker.selectedExerciseIdsSnapshot != selectedExerciseIds ||
+            targetDraft?.exerciseId != expectedCurrentExerciseId
+        ) {
+            hasValidationError.value = true
+            return
+        }
+        val catalog = exerciseCatalogState.value
+        val currentProfile = trainingProfileManager.profile.value
+        val recommendationPolicy = smartWorkoutRecommendationPolicy(
+            selectedEffort = smartWorkoutEffort.value,
+            currentProfile = currentProfile,
+            generatedPlan = generatedSmartPlan.value
+        )
+        // Recompute the bounded allowlist at apply time. History, profiles and catalog rows can
+        // change while the sheet is open; a stale client-side option must not be trusted.
+        val alternative = WorkoutRecommendationEngine.findAlternatives(
+            currentExerciseId = expectedCurrentExerciseId,
+            selectedExerciseIds = selectedExerciseIds,
+            exercises = catalog.exercises,
+            history = exerciseHistory.value,
+            trainingProfile = currentProfile,
+            effort = recommendationPolicy.effort,
+            loadProfiles = catalog.loadProfiles,
+            manualMuscleMappings = catalog.manualMuscleMappings,
+            hardSetEligible = expectedCurrentExerciseId in recommendationPolicy.hardExerciseIds,
+            limit = MAX_SMART_ALTERNATIVES
+        ).firstOrNull { candidate -> candidate.exercise.id == replacementExerciseId }
+        if (alternative == null || alternative.recommendation.sets.size !in 3..4) {
+            hasValidationError.value = true
+            return
+        }
+        var applied = false
+        exerciseDrafts.update { current ->
+            if (current.any { draft ->
+                    draft.draftId != draftId && draft.exerciseId == replacementExerciseId
+                }
+            ) {
+                return@update current
+            }
+            current.map { draft ->
+                if (draft.draftId == draftId && draft.exerciseId == expectedCurrentExerciseId) {
+                    applied = true
+                    draft.copy(
+                        exerciseId = replacementExerciseId,
+                        sets = alternative.recommendation.sets.map { set ->
+                            SetInputState(
+                                weight = set.weight?.let(::formatWeight).orEmpty(),
+                                reps = set.reps.toString()
+                            )
+                        }
+                    )
+                } else {
+                    draft
+                }
+            }
+        }
+        if (applied) {
+            generatedSmartPlan.value = generatedSmartPlan.value?.let { plan ->
+                if (expectedCurrentExerciseId !in plan.hardExerciseIds) {
+                    plan
+                } else {
+                    val replacementKeepsHardSlot = alternative.recommendation.targetRir == 1..2 &&
+                        alternative.recommendation.sets.size == 4
+                    plan.copy(
+                        hardExerciseIds = (plan.hardExerciseIds - expectedCurrentExerciseId).let { remaining ->
+                            if (replacementKeepsHardSlot) remaining + replacementExerciseId else remaining
+                        }
+                    )
+                }
+            }
+            hasValidationError.value = false
+            resetWatchPlanSyncResult()
+            smartAlternativePicker.value = null
+        } else {
+            hasValidationError.value = true
+        }
+    }
+
     fun addExerciseDraft() {
         resetWatchPlanSyncResult()
+        generatedSmartPlan.value = null
+        smartAlternativePicker.value = null
         exerciseDrafts.update { current ->
             if (current.size >= WorkoutDataLimits.MAX_EXERCISES_PER_SESSION) {
                 hasValidationError.value = true
@@ -431,6 +705,8 @@ class AddWorkoutViewModel(
 
     fun removeExerciseDraft(draftId: Long) {
         resetWatchPlanSyncResult()
+        generatedSmartPlan.value = null
+        smartAlternativePicker.value = null
         exerciseDrafts.update { current ->
             val updated = current.filterNot { it.draftId == draftId }
             if (updated.isEmpty()) listOf(ExerciseInputState(draftId = nextDraftId++)) else updated
@@ -438,11 +714,26 @@ class AddWorkoutViewModel(
     }
 
     fun updateExerciseSelection(draftId: Long, exerciseId: Long) {
+        if (exerciseId <= 0L || exerciseCatalogState.value.exercises.none { it.id == exerciseId }) {
+            hasValidationError.value = true
+            return
+        }
         hasValidationError.value = false
         resetWatchPlanSyncResult()
+        generatedSmartPlan.value = null
+        smartAlternativePicker.value = null
         exerciseDrafts.update { current ->
             current.map { draft ->
-                if (draft.draftId == draftId) draft.copy(exerciseId = exerciseId) else draft
+                if (draft.draftId == draftId && draft.exerciseId != exerciseId) {
+                    draft.copy(
+                        exerciseId = exerciseId,
+                        // A load from another movement (for example barbell bench to dumbbells)
+                        // is never transferable. Keep manual selection explicit and safe.
+                        sets = listOf(SetInputState())
+                    )
+                } else {
+                    draft
+                }
             }
         }
     }
@@ -710,6 +1001,8 @@ class AddWorkoutViewModel(
     }
 
     private fun applyWorkoutTemplate(template: WorkoutSessionDetails) {
+        generatedSmartPlan.value = null
+        smartAlternativePicker.value = null
         note.value = template.session.note.orEmpty()
         val drafts = template.workoutExercises.map { exerciseDetails ->
             val mappedSets = exerciseDetails.sets.map { set ->
@@ -836,6 +1129,7 @@ class AddWorkoutViewModel(
     companion object {
         private const val MAX_WEIGHT_INPUT_LENGTH = 64
         private const val MAX_REPS_INPUT_LENGTH = 10
+        private const val MAX_SMART_ALTERNATIVES = 6
 
         fun factory(
             repository: GymRepository,

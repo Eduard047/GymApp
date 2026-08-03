@@ -13,6 +13,7 @@ class WorkoutView extends Ui.View {
     var settingsCount = 6;
     var ticker;
     var restWasActive = false;
+    var autoPromptWasActive = false;
     var pauseFlashUntil = 0;
     var savedSetFlashUntil = 0;
     var savedSetNumber = 0;
@@ -45,6 +46,7 @@ class WorkoutView extends Ui.View {
         } else {
             GymSession.startSensors();
         }
+        autoPromptWasActive = GymSession.autoLogPrompt;
         getApp().pollMailbox();
         requestSyncNow();
         flushPending();
@@ -64,14 +66,22 @@ class WorkoutView extends Ui.View {
         getApp().pollMailbox();
         GymSession.tick();
         var rest = GymStore.restSeconds();
-        if (rest > 0 && GymSession.effortState.equals("SET ACTIVE")) {
-            // The countdown is guidance only. A detected new set ends rest without
-            // suppressing recording or producing a false "rest complete" vibration.
-            GymStore.cancelRest();
+        if (GymStore.restEndsAt > 0 && GymSession.effortState.equals("SET ACTIVE")) {
+            // Freeze rather than destroy the prior rest. A short false detection or
+            // explicit BACK rejection can restore it. A negative value is an
+            // in-memory suspended duration; ordinary rest deadlines stay positive.
+            GymStore.restEndsAt = System.getTimer() - GymStore.restEndsAt;
+        }
+        if (GymStore.restEndsAt < 0) {
             rest = 0;
             restWasActive = false;
             dismissSetSavedFlash();
             GymStore.status = "SET ACTIVE";
+        }
+        if (GymStore.restEndsAt < 0 && !GymSession.activeSetSeen &&
+            !GymSession.autoLogPrompt) {
+            restoreSuspendedRest();
+            rest = GymStore.restSeconds();
         }
         var active = rest > 0;
         if (restWasActive && !active) {
@@ -79,15 +89,46 @@ class WorkoutView extends Ui.View {
             GymStore.status = "REST DONE";
         }
         restWasActive = active;
+        if (!autoPromptWasActive && GymSession.autoLogPrompt) {
+            page = 0;
+            notifyAutoPrompt();
+        }
+        autoPromptWasActive = GymSession.autoLogPrompt;
         if ((System.getTimer() - lastSyncRequestAt) > 20000) {
             requestSyncNow();
         }
         Ui.requestUpdate();
     }
 
+    (:fullLegacyState)
+    function notifyAutoPrompt() {
+        // A distinct cue asks for confirmation; it never saves a set on the
+        // athlete's behalf.
+        Attention.vibrate([
+            new Attention.VibeProfile(45, 90),
+            new Attention.VibeProfile(35, 70),
+            new Attention.VibeProfile(45, 90)
+        ]);
+        GymStore.status = "CONFIRM SET";
+    }
+
+    (:compactLegacyState)
+    function notifyAutoPrompt() {
+        Attention.vibrate([new Attention.VibeProfile(45, 120)]);
+        GymStore.status = "CONFIRM SET";
+    }
+
     function requestSyncNow() {
         lastSyncRequestAt = System.getTimer();
         GymComm.requestSync(method(:onSyncSent));
+    }
+
+    function restoreSuspendedRest() {
+        if (GymStore.restEndsAt < 0) {
+            GymStore.restEndsAt = System.getTimer() - GymStore.restEndsAt;
+            restWasActive = true;
+            GymStore.status = "REST RESUMED";
+        }
     }
 
     function onSyncSent(ok) {
@@ -225,6 +266,11 @@ class WorkoutView extends Ui.View {
     }
 
     function saveAndExit() {
+        if (GymSession.autoLogPrompt || GymSession.activeSetSeen) {
+            page = 0;
+            Ui.requestUpdate();
+            return;
+        }
         if (!finishWorkout()) {
             return;
         }
@@ -281,15 +327,7 @@ class WorkoutView extends Ui.View {
         var rest = GymStore.restSeconds();
         var setActive = GymSession.effortState.equals("SET ACTIVE");
         var setMaybe = GymSession.effortState.equals("SET MAYBE");
-        var status = GymSession.autoLogPrompt ?
-            (GymStore.tr("LOG SET? ", "ПІДХІД? ", "ПОДХОД? ") + confidenceLabel()) :
-            (setActive ?
-                (effortLabel(GymSession.effortState) + " " + confidenceLabel()) :
-                (setMaybe ?
-                    effortLabel(GymSession.effortState) :
-                    (rest > 0 ?
-                        (GymStore.tr("REST ", "ВІДП ", "ОТДЫХ ") + countdownText(rest)) :
-                        effortLabel(GymSession.effortState))));
+        var status = dashboardStatusText(rest, setActive, setMaybe);
 
         if (isCompactDashboard(w, h)) {
             drawCompactDashboard(dc, w, h, hrText, rest, setActive, setMaybe, status);
@@ -709,6 +747,58 @@ class WorkoutView extends Ui.View {
         return GymStore.tr("LOW", "НИЗ", "НИЗ");
     }
 
+    (:fullLegacyState)
+    function dashboardStatusText(rest, setActive, setMaybe) {
+        if (GymSession.autoLogPrompt) {
+            return GymStore.tr("SAVE/BACK ", "ЗБЕР/НІ ", "СОХР/НЕТ ") +
+                GymSession.activeSetText();
+        }
+        if (setActive) {
+            return effortLabel(GymSession.effortState) + " " +
+                GymSession.activeSetText() + " " + confidenceLabel();
+        }
+        if (setMaybe) {
+            return effortLabel(GymSession.effortState) + " " + confidenceLabel();
+        }
+        if (rest > 0) {
+            var text = GymStore.tr("REST ", "ВІДП ", "ОТДЫХ ") + countdownText(rest);
+            var recovery = GymSession.recoveryHeartRateDrop();
+            if (recovery != null) {
+                text += " HR-" + recovery.toString();
+            }
+            return text;
+        }
+        return effortLabel(GymSession.effortState);
+    }
+
+    (:compactLegacyState)
+    function dashboardStatusText(rest, setActive, setMaybe) {
+        if (GymSession.autoLogPrompt) {
+            return GymStore.tr("SAVE/BACK", "ТАК/НІ", "ДА/НЕТ");
+        } else if (setActive) {
+            return effortLabel(GymSession.effortState) + " " + confidenceLabel();
+        } else if (setMaybe) {
+            return effortLabel(GymSession.effortState);
+        } else if (rest > 0) {
+            return GymStore.tr("REST ", "ВІДП ", "ОТДЫХ ") + countdownText(rest);
+        }
+        return effortLabel(GymSession.effortState);
+    }
+
+    (:fullLegacyState)
+    function motionDebugText() {
+        if (!GymSession.motionAvailable) {
+            return "--";
+        }
+        var source = GymSession.gyroAvailable ? "AG " : "A ";
+        var text = source + GymSession.motionScore.format("%.0f");
+        if (GymSession.gyroAvailable) {
+            text += "/" + GymSession.gyroScore.format("%.0f");
+        }
+        return fitText(text, 10);
+    }
+
+    (:fullLegacyState)
     function drawEntry(dc, w, h) {
         dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
         dc.drawText(w / 2, sy(h, 24), Gfx.FONT_XTINY, GymStore.tr("SET ENTRY", "ПІДХІД", "ПОДХОД"), Gfx.TEXT_JUSTIFY_CENTER);
@@ -727,6 +817,31 @@ class WorkoutView extends Ui.View {
         }
     }
 
+    (:compactLegacyState)
+    function drawEntry(dc, w, h) {
+        drawHeader(dc, w, h, GymStore.tr("SET ENTRY", "ПІДХІД", "ПОДХОД"));
+        var label;
+        var value;
+        if (selected == 0) {
+            label = GymStore.tr("EXERCISE", "ВПРАВА", "УПРАЖН");
+            value = GymStore.currentExerciseLabel();
+        } else if (selected == 1) {
+            label = "KG";
+            value = localizedDecimal(GymStore.weight);
+        } else if (selected == 2) {
+            label = GymStore.tr("REPS", "ПОВТ", "ПОВТ");
+            value = GymStore.reps.toString();
+        } else {
+            label = GymStore.canUndoLastSet() ?
+                GymStore.tr("UNDO / SAVE", "СКАС / ЗБЕР", "ОТМ / СОХР") :
+                GymStore.tr("SAVE SET", "ЗБЕР ПІДХ", "СОХР ПОДХ");
+            value = GymStore.sets.size().toString();
+        }
+        drawAdjustRow(dc, w, h, selected, 126, label, value);
+        dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(w / 2, sy(h, 192), Gfx.FONT_XTINY, setSummaryText(), Gfx.TEXT_JUSTIFY_CENTER);
+    }
+
     function drawPauseMenu(dc, w, h) {
         dc.setColor(Gfx.COLOR_YELLOW, Gfx.COLOR_TRANSPARENT);
         drawHeader(dc, w, h, GymStore.tr("PAUSED", "ПАУЗА", "ПАУЗА"));
@@ -739,6 +854,7 @@ class WorkoutView extends Ui.View {
         drawMenuRow(dc, w, h, 2, 170, GymStore.tr("DISCARD", "СКАСУВ", "СБРОСИТЬ"));
     }
 
+    (:fullLegacyState)
     function drawDiscardConfirmation(dc, w, h) {
         dc.setColor(Gfx.COLOR_RED, Gfx.COLOR_TRANSPARENT);
         dc.drawText(w / 2, sy(h, 34), Gfx.FONT_XTINY, GymStore.tr("DISCARD WORKOUT?", "СКАСУВАТИ?", "СБРОСИТЬ?"), Gfx.TEXT_JUSTIFY_CENTER);
@@ -752,6 +868,14 @@ class WorkoutView extends Ui.View {
         drawDiscardRow(dc, w, h, 1, 192, GymStore.tr("YES, DISCARD", "ТАК, СКАСУВАТИ", "ДА, СБРОСИТЬ"), true);
     }
 
+    (:compactLegacyState)
+    function drawDiscardConfirmation(dc, w, h) {
+        drawHeader(dc, w, h, GymStore.tr("DISCARD?", "СКАСУВАТИ?", "СБРОСИТЬ?"));
+        drawDiscardRow(dc, w, h, 0, 112, GymStore.tr("KEEP", "ЗАЛИШИТИ", "ОСТАВИТЬ"), false);
+        drawDiscardRow(dc, w, h, 1, 166, GymStore.tr("DISCARD", "СКАСУВАТИ", "СБРОСИТЬ"), true);
+    }
+
+    (:fullLegacyState)
     function drawSummary(dc, w, h) {
         dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
         dc.drawText(w / 2, sy(h, 30), Gfx.FONT_XTINY, GymStore.tr("SUMMARY", "ПІДСУМ", "ИТОГ"), Gfx.TEXT_JUSTIFY_CENTER);
@@ -767,6 +891,18 @@ class WorkoutView extends Ui.View {
         drawMenuRow(dc, w, h, 0, 210, GymStore.tr("SAVE & EXIT", "ЗБЕРЕГТИ", "СОХРАНИТЬ"));
     }
 
+    (:compactLegacyState)
+    function drawSummary(dc, w, h) {
+        drawHeader(dc, w, h, GymStore.tr("SUMMARY", "ПІДСУМ", "ИТОГ"));
+        dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(w / 2, sy(h, 78), Gfx.FONT_TINY, GymSession.elapsedText(), Gfx.TEXT_JUSTIFY_CENTER);
+        dc.drawText(w / 2, sy(h, 124), Gfx.FONT_XTINY,
+            GymStore.tr("SETS ", "ПІДХ ", "ПОДХ ") + GymStore.sets.size().toString(),
+            Gfx.TEXT_JUSTIFY_CENTER);
+        drawMenuRow(dc, w, h, 0, 174, GymStore.tr("SAVE & EXIT", "ЗБЕРЕГТИ", "СОХРАНИТЬ"));
+    }
+
+    (:fullLegacyState)
     function drawSummaryValue(dc, w, h, baseX, baseY, label, value) {
         dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
         dc.drawText(sx(w, baseX), sy(h, baseY), Gfx.FONT_XTINY, label, Gfx.TEXT_JUSTIFY_CENTER);
@@ -774,6 +910,7 @@ class WorkoutView extends Ui.View {
         dc.drawText(sx(w, baseX), sy(h, baseY + 16), Gfx.FONT_XTINY, value, Gfx.TEXT_JUSTIFY_CENTER);
     }
 
+    (:fullLegacyState)
     function drawDebug(dc, w, h) {
         dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
         drawHeader(dc, w, h, GymStore.tr("DEBUG", "ДЕБАГ", "ОТЛАДКА"));
@@ -789,7 +926,7 @@ class WorkoutView extends Ui.View {
         lineY += lineStep;
         drawDebugLine(dc, w, lineY, "SNS", GymSession.sensorHr == null ? "--" : GymSession.sensorHr.toString());
         lineY += lineStep;
-        drawDebugLine(dc, w, lineY, "MOV", GymSession.motionAvailable ? GymSession.motionScore.format("%.0f") : "--");
+        drawDebugLine(dc, w, lineY, "MOV", motionDebugText());
         lineY += lineStep;
         drawDebugLine(dc, w, lineY, "CONF", GymSession.setConfidence.toString() + "% " + GymSession.confidenceLevel);
         lineY += lineStep;
@@ -800,6 +937,21 @@ class WorkoutView extends Ui.View {
         drawDebugLine(dc, w, lineY, GymStore.tr("SYNC", "СИНХ", "СИНХ"), statusLabel(GymStore.status));
     }
 
+    (:compactLegacyState)
+    function drawDebug(dc, w, h) {
+        dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
+        drawHeader(dc, w, h, GymStore.tr("STATUS", "СТАН", "СТАТУС"));
+        dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(w / 2, sy(h, 82), Gfx.FONT_XTINY,
+            GymSession.hr == null ? "-- BPM" : GymSession.hr.toString() + " BPM",
+            Gfx.TEXT_JUSTIFY_CENTER);
+        dc.drawText(w / 2, sy(h, 122), Gfx.FONT_XTINY,
+            fitText(effortLabel(GymSession.effortState), 10), Gfx.TEXT_JUSTIFY_CENTER);
+        dc.drawText(w / 2, sy(h, 162), Gfx.FONT_XTINY,
+            fitText(GymStore.status, 10), Gfx.TEXT_JUSTIFY_CENTER);
+    }
+
+    (:fullLegacyState)
     function drawDebugLine(dc, w, y, label, value) {
         dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
         dc.drawText(sx(w, 72), y, Gfx.FONT_XTINY, label, Gfx.TEXT_JUSTIFY_LEFT);
@@ -807,6 +959,7 @@ class WorkoutView extends Ui.View {
         dc.drawText(sx(w, 188), y, Gfx.FONT_XTINY, value, Gfx.TEXT_JUSTIFY_RIGHT);
     }
 
+    (:fullLegacyState)
     function drawSettings(dc, w, h) {
         dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
         dc.drawText(w / 2, sy(h, 18), Gfx.FONT_XTINY, GymStore.tr("SETTINGS", "НАЛАШТ", "НАСТРОЙКИ"), Gfx.TEXT_JUSTIFY_CENTER);
@@ -817,6 +970,33 @@ class WorkoutView extends Ui.View {
         drawSettingsRow(dc, w, h, 3, 152, GymStore.tr("REST", "ВІДП", "ОТДЫХ"), adjustText(GymStore.restSecondsDefault.toString() + GymStore.tr("s", "с", "с")));
         drawSettingsRow(dc, w, h, 4, 186, GymStore.tr("REPS", "ПОВТ", "ПОВТ"), adjustText(GymStore.reps.toString()));
         drawSettingsRow(dc, w, h, 5, 220, GymStore.tr("CLOUD", "ХМАРА", "ОБЛАКО"), GymStore.tr("SYNC", "СИНХ", "СИНХ"));
+    }
+
+    (:compactLegacyState)
+    function drawSettings(dc, w, h) {
+        drawHeader(dc, w, h, GymStore.tr("SETTINGS", "НАЛАШТ", "НАСТРОЙКИ"));
+        var label;
+        var value;
+        if (settingsSelected == 0) {
+            label = "AUTO";
+            value = GymStore.onOff(GymStore.autoPromptEnabled);
+        } else if (settingsSelected == 1) {
+            label = GymStore.tr("DETECT", "ЧУТЛ", "ЧУВСТ");
+            value = GymStore.sensitivityLabel();
+        } else if (settingsSelected == 2) {
+            label = "KG STEP";
+            value = localizedDecimal(GymStore.weightStep);
+        } else if (settingsSelected == 3) {
+            label = GymStore.tr("REST", "ВІДП", "ОТДЫХ");
+            value = GymStore.restSecondsDefault.toString();
+        } else if (settingsSelected == 4) {
+            label = GymStore.tr("REPS", "ПОВТ", "ПОВТ");
+            value = GymStore.reps.toString();
+        } else {
+            label = GymStore.tr("CLOUD", "ХМАРА", "ОБЛАКО");
+            value = GymStore.tr("SYNC", "СИНХ", "СИНХ");
+        }
+        drawSettingsRow(dc, w, h, settingsSelected, 116, label, adjustText(value));
     }
 
     function adjustText(value) {
@@ -837,6 +1017,7 @@ class WorkoutView extends Ui.View {
             GymStore.tr("kg x ", " кг × ", " кг × ") + GymStore.reps.toString();
     }
 
+    (:fullLegacyState)
     function statusLabel(value) {
         var text = value == null ? "" : value.toString();
         if (!GymStore.isUk() && !GymStore.isRu()) {
@@ -854,6 +1035,8 @@ class WorkoutView extends Ui.View {
             return GymStore.tr(text, "СКАС", "ОТМЕНА");
         } else if (text.equals("SET ACTIVE")) {
             return GymStore.tr(text, "ПІДХІД", "ПОДХОД");
+        } else if (text.equals("CONFIRM SET")) {
+            return GymStore.tr("CONFIRM", "ПІДТВ", "ПОДТВ");
         } else if (text.equals("UNDO EXPIRED")) {
             return GymStore.tr(text, "ПІЗНО", "ПОЗДНО");
         } else if (text.equals("SENT")) {
@@ -1043,9 +1226,15 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         view = workoutView;
     }
 
+    function hasPendingSetPrompt() {
+        return GymSession.autoLogPrompt;
+    }
+
     function onSelect() {
         if (view.isUndoOverlayActive()) {
             view.dismissSetSavedFlash();
+        } else if (hasPendingSetPrompt()) {
+            recordSet();
         } else if (view.page == 3) {
             view.saveAndExit();
         } else if (view.page == 2) {
@@ -1057,11 +1246,7 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         } else if (view.page == 4) {
             view.page = 0;
         } else if (view.page == 0) {
-            if (GymSession.autoLogPrompt) {
-                recordSet();
-            } else {
-                view.page = 1;
-            }
+            view.page = 1;
         } else {
             handleSelect();
         }
@@ -1071,6 +1256,9 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
 
     function onNextPage() {
         if (view.isUndoOverlayActive()) {
+            return true;
+        }
+        if (hasPendingSetPrompt()) {
             return true;
         }
         if (view.page == 2) {
@@ -1096,6 +1284,9 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         if (view.isUndoOverlayActive()) {
             return true;
         }
+        if (hasPendingSetPrompt()) {
+            return true;
+        }
         if (view.page == 3) {
             view.page = 2;
         } else if (view.page == 2) {
@@ -1119,6 +1310,9 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         if (view.isUndoOverlayActive()) {
             return true;
         }
+        if (hasPendingSetPrompt()) {
+            return true;
+        }
         if (view.page == 6) {
             moveDiscardSelection(1);
         } else {
@@ -1132,6 +1326,9 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         if (view.isUndoOverlayActive()) {
             return true;
         }
+        if (hasPendingSetPrompt()) {
+            return true;
+        }
         if (view.page == 6) {
             moveDiscardSelection(-1);
         } else {
@@ -1143,6 +1340,9 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
 
     function onMenu() {
         if (view.isUndoOverlayActive()) {
+            return true;
+        }
+        if (hasPendingSetPrompt()) {
             return true;
         }
         if (view.page == 6) {
@@ -1159,6 +1359,11 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         // visibly active. After it disappears, Back returns to navigation.
         if (view.isUndoOverlayActive()) {
             undoLastSet();
+            Ui.requestUpdate();
+            return true;
+        }
+        if (hasPendingSetPrompt()) {
+            rejectSetPrompt();
             Ui.requestUpdate();
             return true;
         }
@@ -1199,6 +1404,8 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
             } else {
                 view.dismissSetSavedFlash();
             }
+        } else if (hasPendingSetPrompt()) {
+            recordSet();
         } else if (view.page == 3) {
             if (rowAt(y, 210, 44, 1) == 0) {
                 view.saveAndExit();
@@ -1224,11 +1431,7 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         } else if (view.page == 4) {
             view.page = 0;
         } else if (view.page == 0) {
-            if (GymSession.autoLogPrompt) {
-                recordSet();
-            } else {
-                view.page = 1;
-            }
+            view.page = 1;
         } else {
             var entryRow = rowAt(y, 104, 38, 4);
             if (entryRow >= 0) {
@@ -1269,6 +1472,9 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
             // swipes cannot mutate the obscured page or selected row.
             return direction == Ui.SWIPE_RIGHT ? onBack() : true;
         }
+        if (hasPendingSetPrompt()) {
+            return direction == Ui.SWIPE_RIGHT ? onBack() : true;
+        }
         if (direction == Ui.SWIPE_UP) {
             return onNextPage();
         } else if (direction == Ui.SWIPE_DOWN) {
@@ -1292,6 +1498,14 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
             // Consume arrows, page keys, and Menu while the confirmation covers
             // their target. In particular RIGHT on the hidden SAVE row must not
             // record a second set.
+            return true;
+        }
+        if (hasPendingSetPrompt()) {
+            if (key == Ui.KEY_ESC || key == Ui.KEY_LAP) {
+                return onBack();
+            } else if (key == Ui.KEY_ENTER || key == Ui.KEY_START) {
+                return onSelect();
+            }
             return true;
         }
         if (key == Ui.KEY_UP) {
@@ -1452,11 +1666,28 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         }
     }
 
+    function rejectSetPrompt() {
+        if (GymSession.rejectAutoPrompt()) {
+            view.autoPromptWasActive = false;
+            view.restoreSuspendedRest();
+        }
+    }
+
     function undoLastSet() {
+        // Keep the previous set's undo snapshot available while a possible next
+        // set is being evaluated, but never let undo restore that snapshot over
+        // live detector/recovery state. A rejected false candidate restores rest
+        // first, after which undo remains available if its short window is open.
+        if (GymStore.restEndsAt < 0 || GymSession.activeSetSeen ||
+            GymSession.autoLogPrompt) {
+            GymStore.status = "SET ACTIVE";
+            return;
+        }
         if (GymStore.undoLastSet()) {
             view.dismissSetSavedFlash();
             view.selected = 3;
-            view.page = 1;
+            view.page = GymSession.autoLogPrompt ? 0 : 1;
+            view.autoPromptWasActive = GymSession.autoLogPrompt;
             Attention.vibrate([new Attention.VibeProfile(45, 90), new Attention.VibeProfile(45, 90)]);
         }
     }

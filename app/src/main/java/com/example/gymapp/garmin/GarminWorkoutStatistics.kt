@@ -6,6 +6,9 @@ import com.example.gymapp.data.entity.WorkoutSessionDetails
 import com.example.gymapp.data.entity.WorkoutSessionSummary
 import com.example.gymapp.data.repository.WorkoutDataLimits
 import com.example.gymapp.data.repository.normalizedExerciseName
+import kotlin.math.roundToInt
+
+private const val MAX_GARMIN_SET_HEART_RATE = 240
 
 data class GarminWorkoutMetrics(
     val durationSeconds: Long? = null,
@@ -14,6 +17,7 @@ data class GarminWorkoutMetrics(
     val averageHeartRate: Int? = null,
     val maximumHeartRate: Int? = null,
     val endingHeartRateZone: Int? = null,
+    val setEvidence: List<GarminSetEvidenceMetrics> = emptyList(),
     val setIntervals: List<GarminSetIntervalMetrics> = emptyList(),
     val omittedSetIntervalCount: Int = 0,
     val plannedSetCount: Int? = null,
@@ -21,7 +25,18 @@ data class GarminWorkoutMetrics(
 )
 
 internal fun GarminWorkoutMetrics.hasSetIntervalDetails(): Boolean =
-    setIntervals.isNotEmpty() || omittedSetIntervalCount > 0
+    setEvidence.isNotEmpty() || setIntervals.isNotEmpty() || omittedSetIntervalCount > 0
+
+data class GarminSetEvidenceMetrics(
+    val setNumber: Int,
+    val activeSeconds: Long? = null,
+    val restBeforeSeconds: Long? = null,
+    val startHeartRate: Int? = null,
+    val peakHeartRate: Int? = null,
+    val endHeartRate: Int? = null,
+    val recoveryHeartRateDrop: Int? = null,
+    val detectionConfidence: Int? = null
+)
 
 data class GarminSetIntervalMetrics(
     val setNumber: Int,
@@ -29,11 +44,34 @@ data class GarminSetIntervalMetrics(
     val endOffsetSeconds: Long,
     val gymCalories: Double,
     val garminCalories: Int?,
-    val heartRateZoneSeconds: List<Int>
+    val heartRateZoneSeconds: List<Int>,
+    val restBeforeSeconds: Long? = null,
+    val startHeartRate: Int? = null,
+    val peakHeartRate: Int? = null,
+    val endHeartRate: Int? = null,
+    val recoveryHeartRateDrop: Int? = null,
+    val detectionConfidence: Int? = null
 ) {
     val activeSeconds: Long
         get() = endOffsetSeconds - startOffsetSeconds
 }
+
+internal data class GarminSetRecognitionSummary(
+    val averageConfidence: Int,
+    val measuredSetCount: Int,
+    val lowConfidenceSetNumbers: List<Int>
+)
+
+internal data class GarminRecoverySummary(
+    val medianHeartRateDrop: Int,
+    val measuredSetCount: Int
+)
+
+internal data class GarminWorkoutRhythmSummary(
+    val capturedSpanSeconds: Long,
+    val activeSetSeconds: Long,
+    val betweenSetSeconds: Long
+)
 
 data class ScalarMetricComparison(
     val currentValue: Double,
@@ -90,8 +128,18 @@ private val ENDING_HEART_RATE_ZONE_VALUE = Regex(
     RegexOption.IGNORE_CASE
 )
 private val SET_INTERVAL_VALUE = Regex(
-    """(?:^| · )S([1-9][0-9]?)\s+[^·]{0,180}?I([0-9]{1,6})-([0-9]{1,6})s\s+K([0-9]{1,6}(?:\.[0-9]{1,8})?)/(-|[0-9]{1,6})\s+Z([0-9]{1,4}(?:/[0-9]{1,4}){5})s(?= ·|$)"""
+    """(?:^| · )S([1-9][0-9]?)\s+([^·]{0,180}?)I([0-9]{1,6})-([0-9]{1,6})s\s+K([0-9]{1,6}(?:\.[0-9]{1,8})?)/(-|[0-9]{1,6})\s+Z([0-9]{1,4}(?:/[0-9]{1,4}){5})s(?= ·|$)"""
 )
+private val SET_EVIDENCE_ROW_VALUE = Regex(
+    """(?:^| · )S([1-9][0-9]?)\s+([^·]{1,180})(?= ·|$)"""
+)
+private val SET_ACTIVE_SECONDS_VALUE = Regex("""^([0-9]{1,6})s(?:\s|$)""")
+private val SET_REST_SECONDS_VALUE = Regex("""(?:^|\s)R([0-9]{1,6})s(?:\s|$)""")
+private val SET_HEART_RATE_VALUE = Regex(
+    """(?:^|\s)HR(-|[0-9]{1,3})/(-|[0-9]{1,3})/(-|[0-9]{1,3})(?:\s|$)"""
+)
+private val SET_RECOVERY_DROP_VALUE = Regex("""(?:^|\s)↓([0-9]{1,3})(?:\s|$)""")
+private val SET_DETECTION_CONFIDENCE_VALUE = Regex("""(?:^|\s)C([0-9]{1,3})%(?:\s|$)""")
 private val OMITTED_SET_INTERVALS_VALUE =
     Regex("""(?:^| · )S\+([0-9]{1,2})(?= ·|$)""")
 private val PARTIAL_SET_COUNT_VALUE = Regex(
@@ -116,7 +164,13 @@ internal fun parseGarminWorkoutMetrics(note: String): GarminWorkoutMetrics? {
         note,
         1..MAX_GARMIN_HEART_RATE_ZONE
     )
-    val setIntervals = parseGarminSetIntervals(note)
+    val setIntervals = parseGarminSetIntervals(
+        note = note,
+        workoutDurationSeconds = durationSeconds,
+        workoutGymCalories = gymCalories,
+        workoutGarminCalories = garminCalories
+    )
+    val setEvidence = parseGarminSetEvidence(note)
     val omittedSetIntervalCount = OMITTED_SET_INTERVALS_VALUE
         .boundedInt(note, 1..MAX_GARMIN_WORKOUT_SETS)
         ?: 0
@@ -140,6 +194,7 @@ internal fun parseGarminWorkoutMetrics(note: String): GarminWorkoutMetrics? {
         averageHeartRate = averageHeartRate,
         maximumHeartRate = maximumHeartRate,
         endingHeartRateZone = endingHeartRateZone,
+        setEvidence = setEvidence,
         setIntervals = setIntervals,
         omittedSetIntervalCount = omittedSetIntervalCount,
         plannedSetCount = partialProgress?.second,
@@ -147,32 +202,72 @@ internal fun parseGarminWorkoutMetrics(note: String): GarminWorkoutMetrics? {
     )
 }
 
-private fun parseGarminSetIntervals(note: String): List<GarminSetIntervalMetrics> {
+private fun parseGarminSetEvidence(note: String): List<GarminSetEvidenceMetrics> {
     val seenSetNumbers = mutableSetOf<Int>()
-    return SET_INTERVAL_VALUE.findAll(note)
+    return SET_EVIDENCE_ROW_VALUE.findAll(note)
         .take(MAX_GARMIN_WORKOUT_SETS)
         .mapNotNull { match ->
             val setNumber = match.groupValues[1].toIntOrNull()
                 ?.takeIf { it in 1..MAX_GARMIN_WORKOUT_SETS }
                 ?: return@mapNotNull null
             if (!seenSetNumbers.add(setNumber)) return@mapNotNull null
-            val startOffsetSeconds = match.groupValues[2].toLongOrNull()
+            val body = match.groupValues[2]
+            val activeSeconds = SET_ACTIVE_SECONDS_VALUE.firstGroup(body)
+                ?.toLongOrNull()
+                ?.takeIf { it in 0L..MAX_GARMIN_SET_INTERVAL_DURATION_SECONDS }
+            val statistics = parseGarminSetStatisticsPrefix(body)
+            if (activeSeconds == null && statistics.isEmpty()) return@mapNotNull null
+            GarminSetEvidenceMetrics(
+                setNumber = setNumber,
+                activeSeconds = activeSeconds,
+                restBeforeSeconds = statistics.restBeforeSeconds,
+                startHeartRate = statistics.startHeartRate,
+                peakHeartRate = statistics.peakHeartRate,
+                endHeartRate = statistics.endHeartRate,
+                recoveryHeartRateDrop = statistics.recoveryHeartRateDrop,
+                detectionConfidence = statistics.detectionConfidence
+            )
+        }
+        .toList()
+}
+
+private fun parseGarminSetIntervals(
+    note: String,
+    workoutDurationSeconds: Long?,
+    workoutGymCalories: Int?,
+    workoutGarminCalories: Int?
+): List<GarminSetIntervalMetrics> {
+    val seenSetNumbers = mutableSetOf<Int>()
+    var previousEndOffsetSeconds = 0L
+    val intervals = SET_INTERVAL_VALUE.findAll(note)
+        .take(MAX_GARMIN_WORKOUT_SETS)
+        .mapNotNull { match ->
+            val setNumber = match.groupValues[1].toIntOrNull()
+                ?.takeIf { it in 1..MAX_GARMIN_WORKOUT_SETS }
+                ?: return@mapNotNull null
+            if (!seenSetNumbers.add(setNumber)) return@mapNotNull null
+            val statisticsPrefix = match.groupValues[2]
+            val startOffsetSeconds = match.groupValues[3].toLongOrNull()
                 ?.takeIf { it in 0L..MAX_GARMIN_SET_INTERVAL_OFFSET_SECONDS }
                 ?: return@mapNotNull null
-            val endOffsetSeconds = match.groupValues[3].toLongOrNull()
+            val endOffsetSeconds = match.groupValues[4].toLongOrNull()
                 ?.takeIf { it in startOffsetSeconds..MAX_GARMIN_SET_INTERVAL_OFFSET_SECONDS }
                 ?: return@mapNotNull null
             val activeSeconds = endOffsetSeconds - startOffsetSeconds
             if (activeSeconds > MAX_GARMIN_SET_INTERVAL_DURATION_SECONDS) return@mapNotNull null
-            val gymCalories = match.groupValues[4].toDoubleOrNull()
+            if (startOffsetSeconds < previousEndOffsetSeconds) return@mapNotNull null
+            if (workoutDurationSeconds != null && endOffsetSeconds > workoutDurationSeconds) {
+                return@mapNotNull null
+            }
+            val gymCalories = match.groupValues[5].toDoubleOrNull()
                 ?.takeIf { it.isFinite() && it in 0.0..MAX_GARMIN_SET_INTERVAL_CALORIES }
                 ?: return@mapNotNull null
-            val garminCalories = match.groupValues[5]
+            val garminCalories = match.groupValues[6]
                 .takeUnless { it == "-" }
                 ?.toIntOrNull()
                 ?.takeIf { it in 0..MAX_GARMIN_SET_INTERVAL_CALORIES.toInt() }
-                ?: if (match.groupValues[5] == "-") null else return@mapNotNull null
-            val zones = match.groupValues[6]
+                ?: if (match.groupValues[6] == "-") null else return@mapNotNull null
+            val zones = match.groupValues[7]
                 .split('/')
                 .map { value ->
                     value.toIntOrNull()
@@ -182,16 +277,194 @@ private fun parseGarminSetIntervals(note: String): List<GarminSetIntervalMetrics
             if (zones.size != 6 || zones.sumOf { it.toLong() } > activeSeconds) {
                 return@mapNotNull null
             }
+            val parsedStatistics = parseGarminSetStatisticsPrefix(statisticsPrefix)
+            previousEndOffsetSeconds = endOffsetSeconds
             GarminSetIntervalMetrics(
                 setNumber = setNumber,
                 startOffsetSeconds = startOffsetSeconds,
                 endOffsetSeconds = endOffsetSeconds,
                 gymCalories = gymCalories,
                 garminCalories = garminCalories,
-                heartRateZoneSeconds = zones
+                heartRateZoneSeconds = zones,
+                restBeforeSeconds = parsedStatistics.restBeforeSeconds,
+                startHeartRate = parsedStatistics.startHeartRate,
+                peakHeartRate = parsedStatistics.peakHeartRate,
+                endHeartRate = parsedStatistics.endHeartRate,
+                recoveryHeartRateDrop = parsedStatistics.recoveryHeartRateDrop,
+                detectionConfidence = parsedStatistics.detectionConfidence
             )
         }
         .toList()
+
+    if (workoutGymCalories != null &&
+        intervals.sumOf(GarminSetIntervalMetrics::gymCalories) >
+        workoutGymCalories + 1.0 + GARMIN_SET_INTERVAL_CALORIE_ROUNDING_TOLERANCE
+    ) {
+        return emptyList()
+    }
+    val intervalGarminCalories = intervals.mapNotNull(GarminSetIntervalMetrics::garminCalories)
+    if (workoutGarminCalories != null && intervalGarminCalories.sum() > workoutGarminCalories) {
+        return emptyList()
+    }
+    return intervals
+}
+
+private data class ParsedGarminSetStatistics(
+    val restBeforeSeconds: Long?,
+    val startHeartRate: Int?,
+    val peakHeartRate: Int?,
+    val endHeartRate: Int?,
+    val recoveryHeartRateDrop: Int?,
+    val detectionConfidence: Int?
+) {
+    fun isEmpty(): Boolean = restBeforeSeconds == null && startHeartRate == null &&
+        peakHeartRate == null && endHeartRate == null && recoveryHeartRateDrop == null &&
+        detectionConfidence == null
+}
+
+private fun parseGarminSetStatisticsPrefix(prefix: String): ParsedGarminSetStatistics {
+    val restBeforeSeconds = SET_REST_SECONDS_VALUE.firstGroup(prefix)
+        ?.toLongOrNull()
+        ?.takeIf { it in 0L..86_400L }
+    val heartRates = SET_HEART_RATE_VALUE.find(prefix)?.let { match ->
+        List(3) { index ->
+            match.groupValues[index + 1]
+                .takeUnless { it == "-" }
+                ?.toIntOrNull()
+                ?.takeIf { it in 1..MAX_GARMIN_SET_HEART_RATE }
+        }
+    }.orEmpty()
+    val startHeartRate = heartRates.getOrNull(0)
+    val reportedPeakHeartRate = heartRates.getOrNull(1)
+    val endHeartRate = heartRates.getOrNull(2)
+    val peakHeartRate = listOfNotNull(
+        startHeartRate,
+        reportedPeakHeartRate,
+        endHeartRate
+    ).maxOrNull()
+    val recoveryHeartRateDrop = SET_RECOVERY_DROP_VALUE.firstGroup(prefix)
+        ?.toIntOrNull()
+        ?.takeIf { it in 0..MAX_GARMIN_SET_HEART_RATE }
+    val detectionConfidence = SET_DETECTION_CONFIDENCE_VALUE.firstGroup(prefix)
+        ?.toIntOrNull()
+        ?.takeIf { it in 0..100 }
+
+    return ParsedGarminSetStatistics(
+        restBeforeSeconds = restBeforeSeconds,
+        startHeartRate = startHeartRate,
+        peakHeartRate = peakHeartRate,
+        endHeartRate = endHeartRate,
+        recoveryHeartRateDrop = recoveryHeartRateDrop,
+        detectionConfidence = detectionConfidence
+    )
+}
+
+internal fun GarminWorkoutMetrics.totalHeartRateZoneSeconds(): List<Long> {
+    if (setIntervals.isEmpty() || setIntervals.size > MAX_GARMIN_WORKOUT_SETS) return emptyList()
+    val totals = LongArray(6)
+    setIntervals.forEach { interval ->
+        if (interval.heartRateZoneSeconds.size != totals.size) return emptyList()
+        interval.heartRateZoneSeconds.forEachIndexed { index, seconds ->
+            if (seconds !in 0..MAX_GARMIN_SET_INTERVAL_DURATION_SECONDS.toInt()) {
+                return emptyList()
+            }
+            totals[index] = Math.addExact(totals[index], seconds.toLong())
+        }
+    }
+    return totals.toList().takeIf { values -> values.any { it > 0L } }.orEmpty()
+}
+
+internal fun GarminWorkoutMetrics.setRecognitionSummary(): GarminSetRecognitionSummary? {
+    val evidence = boundedSetEvidence() ?: return null
+    val measured = evidence.mapNotNull { item ->
+        item.detectionConfidence?.let { confidence -> item.setNumber to confidence }
+    }
+    if (measured.isEmpty()) return null
+    return GarminSetRecognitionSummary(
+        averageConfidence = (measured.sumOf { it.second } / measured.size.toDouble())
+            .roundToInt()
+            .coerceIn(0, 100),
+        measuredSetCount = measured.size,
+        lowConfidenceSetNumbers = measured
+            .filter { (_, confidence) -> confidence < 40 }
+            .map { (setNumber, _) -> setNumber }
+    )
+}
+
+internal fun GarminWorkoutMetrics.recoverySummary(): GarminRecoverySummary? {
+    val evidence = boundedSetEvidence() ?: return null
+    val drops = evidence.mapNotNull(GarminSetEvidenceMetrics::recoveryHeartRateDrop).sorted()
+    if (drops.isEmpty()) return null
+    val middle = drops.size / 2
+    val median = if (drops.size % 2 == 0) {
+        (drops[middle - 1] + drops[middle]) / 2
+    } else {
+        drops[middle]
+    }
+    return GarminRecoverySummary(
+        medianHeartRateDrop = median,
+        measuredSetCount = drops.size
+    )
+}
+
+private fun GarminWorkoutMetrics.boundedSetEvidence(): List<GarminSetEvidenceMetrics>? {
+    if (setEvidence.size > MAX_GARMIN_WORKOUT_SETS ||
+        setIntervals.size > MAX_GARMIN_WORKOUT_SETS
+    ) return null
+    val combined = linkedMapOf<Int, GarminSetEvidenceMetrics>()
+    setEvidence.forEach { item ->
+        if (!item.isBounded() || combined.put(item.setNumber, item) != null) return null
+    }
+    setIntervals.forEach { interval ->
+        val fallback = GarminSetEvidenceMetrics(
+            setNumber = interval.setNumber,
+            activeSeconds = interval.activeSeconds,
+            restBeforeSeconds = interval.restBeforeSeconds,
+            startHeartRate = interval.startHeartRate,
+            peakHeartRate = interval.peakHeartRate,
+            endHeartRate = interval.endHeartRate,
+            recoveryHeartRateDrop = interval.recoveryHeartRateDrop,
+            detectionConfidence = interval.detectionConfidence
+        )
+        if (!fallback.isBounded()) return null
+        combined.putIfAbsent(interval.setNumber, fallback)
+    }
+    return combined.values.toList()
+}
+
+private fun GarminSetEvidenceMetrics.isBounded(): Boolean =
+    setNumber in 1..MAX_GARMIN_WORKOUT_SETS &&
+        (activeSeconds == null || activeSeconds in 0L..MAX_GARMIN_SET_INTERVAL_DURATION_SECONDS) &&
+        (restBeforeSeconds == null || restBeforeSeconds in 0L..86_400L) &&
+        listOf(startHeartRate, peakHeartRate, endHeartRate, recoveryHeartRateDrop)
+            .all { it == null || it in 0..MAX_GARMIN_SET_HEART_RATE } &&
+        (detectionConfidence == null || detectionConfidence in 0..100)
+
+internal fun GarminWorkoutMetrics.rhythmSummary(): GarminWorkoutRhythmSummary? {
+    val intervals = setIntervals.takeIf {
+        it.isNotEmpty() && it.size <= MAX_GARMIN_WORKOUT_SETS && it.all { interval ->
+            interval.startOffsetSeconds in 0L..MAX_GARMIN_SET_INTERVAL_OFFSET_SECONDS &&
+                interval.endOffsetSeconds >= interval.startOffsetSeconds &&
+                interval.endOffsetSeconds <= MAX_GARMIN_SET_INTERVAL_OFFSET_SECONDS &&
+                interval.activeSeconds <= MAX_GARMIN_SET_INTERVAL_DURATION_SECONDS
+        }
+    } ?: return null
+    if (intervals.zipWithNext().any { (previous, current) ->
+            current.startOffsetSeconds < previous.endOffsetSeconds
+        }
+    ) {
+        return null
+    }
+    val firstStart = intervals.first().startOffsetSeconds
+    val finalEnd = intervals.last().endOffsetSeconds
+    val capturedSpan = finalEnd - firstStart
+    val activeSeconds = intervals.sumOf(GarminSetIntervalMetrics::activeSeconds)
+    if (capturedSpan < 0L || activeSeconds !in 0L..capturedSpan) return null
+    return GarminWorkoutRhythmSummary(
+        capturedSpanSeconds = capturedSpan,
+        activeSetSeconds = activeSeconds,
+        betweenSetSeconds = capturedSpan - activeSeconds
+    )
 }
 
 /**

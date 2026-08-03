@@ -1170,9 +1170,13 @@ fun GymAppRoot(
                                 onWorkoutsPerWeekSelected = viewModel::updateWorkoutsPerWeek,
                                 onTrainingGoalSelected = viewModel::updateTrainingGoal,
                                 onCalorieModeSelected = viewModel::updateCalorieMode,
+                                onSmartWorkoutEffortSelected = viewModel::updateSmartWorkoutEffort,
                                 onGenerateSmartWorkout = {
                                     viewModel.generateSmartWorkout(smartCoachPlanNote)
                                 },
+                                onOpenSmartAlternatives = viewModel::openSmartWorkoutAlternatives,
+                                onCloseSmartAlternatives = viewModel::closeSmartWorkoutAlternatives,
+                                onApplySmartAlternative = viewModel::applySmartWorkoutAlternative,
                                 onAddExerciseDraft = viewModel::addExerciseDraft,
                                 onRemoveExerciseDraft = viewModel::removeExerciseDraft,
                                 onExerciseSelected = viewModel::updateExerciseSelection,

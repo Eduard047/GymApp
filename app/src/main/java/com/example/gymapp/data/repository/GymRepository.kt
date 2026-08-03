@@ -1216,7 +1216,9 @@ class GymRepository(
 
     fun observeWorkoutRecommendations(
         exerciseIds: List<Long>,
-        trainingProfile: TrainingProfile
+        trainingProfile: TrainingProfile,
+        effort: SmartWorkoutEffort = SmartWorkoutEffort.Standard,
+        hardExerciseIds: Set<Long> = emptySet()
     ): Flow<Map<Long, WorkoutRecommendation>> {
         val uniqueIds = exerciseIds.distinct()
         if (uniqueIds.isEmpty()) {
@@ -1234,7 +1236,9 @@ class GymRepository(
                     history = history,
                     trainingProfile = trainingProfile,
                     exerciseName = exerciseName,
-                    loadProfile = loadProfiles[exerciseId]
+                    loadProfile = loadProfiles[exerciseId],
+                    effort = effort,
+                    hardSetEligible = exerciseId in hardExerciseIds
                 )
             }
         }

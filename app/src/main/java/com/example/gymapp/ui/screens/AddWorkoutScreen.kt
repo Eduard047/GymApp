@@ -63,6 +63,11 @@ import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
 import com.example.gymapp.data.catalog.BuiltInExerciseCatalog
 import com.example.gymapp.data.entity.ExerciseEntity
+import com.example.gymapp.data.repository.SmartWorkoutAlternative
+import com.example.gymapp.data.repository.SmartWorkoutAlternativeReason
+import com.example.gymapp.data.repository.SmartWorkoutEffort
+import com.example.gymapp.data.repository.SmartWorkoutEffortAdjustment
+import com.example.gymapp.data.repository.SmartWorkoutFocus
 import com.example.gymapp.data.repository.WorkoutRecommendation
 import com.example.gymapp.data.repository.WorkoutRecommendationKind
 import com.example.gymapp.data.repository.WorkoutRecommendationReason
@@ -79,6 +84,7 @@ import com.example.gymapp.ui.util.currentAppLanguageTag
 import com.example.gymapp.ui.util.localizedExerciseName
 import com.example.gymapp.ui.viewmodel.AddWorkoutUiState
 import com.example.gymapp.ui.viewmodel.ExerciseInputState
+import com.example.gymapp.ui.viewmodel.SmartWorkoutPlanSummaryUiModel
 import com.example.gymapp.ui.viewmodel.WorkoutTemplatePreviewUiModel
 import com.example.gymapp.ui.theme.GymControlShape
 import com.example.gymapp.util.CalorieMode
@@ -99,7 +105,11 @@ fun AddWorkoutScreen(
     onWorkoutsPerWeekSelected: (Int) -> Unit,
     onTrainingGoalSelected: (TrainingGoal) -> Unit,
     onCalorieModeSelected: (CalorieMode) -> Unit,
+    onSmartWorkoutEffortSelected: (SmartWorkoutEffort) -> Unit,
     onGenerateSmartWorkout: () -> Unit,
+    onOpenSmartAlternatives: (Long) -> Unit,
+    onCloseSmartAlternatives: () -> Unit,
+    onApplySmartAlternative: (Long, Long, Long) -> Unit,
     onAddExerciseDraft: () -> Unit,
     onRemoveExerciseDraft: (Long) -> Unit,
     onExerciseSelected: (Long, Long) -> Unit,
@@ -264,7 +274,12 @@ fun AddWorkoutScreen(
         }
 
         item {
-            SmartCoachPanel(onGenerateSmartWorkout = onGenerateSmartWorkout)
+            SmartCoachPanel(
+                selectedEffort = uiState.smartWorkoutEffort,
+                generatedPlan = uiState.generatedSmartPlan,
+                onEffortSelected = onSmartWorkoutEffortSelected,
+                onGenerateSmartWorkout = onGenerateSmartWorkout
+            )
         }
 
         if (uiState.hasValidationError) {
@@ -341,6 +356,7 @@ fun AddWorkoutScreen(
                 },
                 onApplyLastWeight = { onApplyLastWeight(draft.draftId) },
                 onApplyWorkoutRecommendation = { onApplyWorkoutRecommendation(draft.draftId) },
+                onOpenSmartAlternatives = { onOpenSmartAlternatives(draft.draftId) },
                 onRemoveExerciseDraft = { onRemoveExerciseDraft(draft.draftId) }
             )
         }
@@ -448,6 +464,30 @@ fun AddWorkoutScreen(
             )
         }
     }
+
+    uiState.smartAlternativePicker?.let { picker ->
+        ModalBottomSheet(
+            onDismissRequest = onCloseSmartAlternatives,
+            containerColor = MaterialTheme.colorScheme.background,
+            contentColor = MaterialTheme.colorScheme.onBackground
+        ) {
+            SmartWorkoutAlternativePickerContent(
+                currentExerciseName = uiState.exercises
+                    .firstOrNull { it.id == picker.expectedExerciseId }
+                    ?.name,
+                alternatives = picker.alternatives,
+                exerciseMediaOwnerKey = exerciseMediaOwnerKey,
+                onSelect = { replacementExerciseId ->
+                    onApplySmartAlternative(
+                        picker.draftId,
+                        picker.expectedExerciseId,
+                        replacementExerciseId
+                    )
+                },
+                onDismiss = onCloseSmartAlternatives
+            )
+        }
+    }
 }
 
 @Composable
@@ -530,7 +570,12 @@ private fun TrainingProfilePanel(
 }
 
 @Composable
-private fun SmartCoachPanel(onGenerateSmartWorkout: () -> Unit) {
+private fun SmartCoachPanel(
+    selectedEffort: SmartWorkoutEffort,
+    generatedPlan: SmartWorkoutPlanSummaryUiModel?,
+    onEffortSelected: (SmartWorkoutEffort) -> Unit,
+    onGenerateSmartWorkout: () -> Unit
+) {
     AppPanel(modifier = Modifier.fillMaxWidth(), highlighted = true) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -553,6 +598,60 @@ private fun SmartCoachPanel(onGenerateSmartWorkout: () -> Unit) {
                     modifier = Modifier.weight(1f)
                 )
             }
+            Text(
+                text = stringResource(R.string.smart_coach_effort_title),
+                style = MaterialTheme.typography.labelLarge
+            )
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(SmartWorkoutEffort.entries) { effort ->
+                    FilterChip(
+                        selected = selectedEffort == effort,
+                        onClick = { onEffortSelected(effort) },
+                        label = { Text(effort.smartCoachLabel()) }
+                    )
+                }
+            }
+            Text(
+                text = selectedEffort.smartCoachDescription(),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            generatedPlan?.let { plan ->
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = GymControlShape,
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.48f)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = stringResource(
+                                R.string.smart_coach_generated_focus,
+                                plan.focus.smartCoachLabel(),
+                                plan.variant.name
+                            ),
+                            style = MaterialTheme.typography.labelLarge
+                        )
+                        Text(
+                            text = stringResource(
+                                R.string.smart_coach_applied_effort,
+                                plan.appliedEffort.smartCoachLabel()
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        plan.effortAdjustment?.let { adjustment ->
+                            Text(
+                                text = adjustment.smartCoachLabel(),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                }
+            }
             Button(
                 onClick = onGenerateSmartWorkout,
                 modifier = Modifier.fillMaxWidth()
@@ -567,6 +666,44 @@ private fun SmartCoachPanel(onGenerateSmartWorkout: () -> Unit) {
             }
         }
     }
+}
+
+@Composable
+private fun SmartWorkoutEffort.smartCoachLabel(): String = when (this) {
+    SmartWorkoutEffort.Auto -> stringResource(R.string.smart_effort_auto)
+    SmartWorkoutEffort.Recovery -> stringResource(R.string.smart_effort_recovery)
+    SmartWorkoutEffort.Standard -> stringResource(R.string.smart_effort_standard)
+    SmartWorkoutEffort.Hard -> stringResource(R.string.smart_effort_hard)
+}
+
+@Composable
+private fun SmartWorkoutEffort.smartCoachDescription(): String = when (this) {
+    SmartWorkoutEffort.Auto -> stringResource(R.string.smart_effort_auto_description)
+    SmartWorkoutEffort.Recovery -> stringResource(R.string.smart_effort_recovery_description)
+    SmartWorkoutEffort.Standard -> stringResource(R.string.smart_effort_standard_description)
+    SmartWorkoutEffort.Hard -> stringResource(R.string.smart_effort_hard_description)
+}
+
+@Composable
+private fun SmartWorkoutEffortAdjustment.smartCoachLabel(): String = when (this) {
+    SmartWorkoutEffortAdjustment.AutoRecovery ->
+        stringResource(R.string.smart_effort_adjustment_auto_recovery)
+    SmartWorkoutEffortAdjustment.HardInsufficientHistory ->
+        stringResource(R.string.smart_effort_adjustment_history)
+    SmartWorkoutEffortAdjustment.HardRecentBreak ->
+        stringResource(R.string.smart_effort_adjustment_break)
+    SmartWorkoutEffortAdjustment.HardMusclesRecovering ->
+        stringResource(R.string.smart_effort_adjustment_recovery)
+}
+
+@Composable
+private fun SmartWorkoutFocus.smartCoachLabel(): String = when (this) {
+    SmartWorkoutFocus.Upper -> stringResource(R.string.smart_focus_upper)
+    SmartWorkoutFocus.Lower -> stringResource(R.string.smart_focus_lower)
+    SmartWorkoutFocus.Push -> stringResource(R.string.smart_focus_push)
+    SmartWorkoutFocus.Pull -> stringResource(R.string.smart_focus_pull)
+    SmartWorkoutFocus.Legs -> stringResource(R.string.smart_focus_legs)
+    SmartWorkoutFocus.FullBody -> stringResource(R.string.smart_focus_full_body)
 }
 
 @Composable
@@ -709,6 +846,7 @@ private fun ExerciseDraftCard(
     onRepsChanged: (Int, String) -> Unit,
     onApplyLastWeight: () -> Unit,
     onApplyWorkoutRecommendation: () -> Unit,
+    onOpenSmartAlternatives: () -> Unit,
     onRemoveExerciseDraft: () -> Unit
 ) {
     var isExpanded by rememberSaveable(draft.draftId) { mutableStateOf(true) }
@@ -856,6 +994,19 @@ private fun ExerciseDraftCard(
                 )
             }
 
+            if (selectedExercise != null) {
+                OutlinedButton(
+                    onClick = onOpenSmartAlternatives,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(imageVector = Icons.Default.Replay, contentDescription = null)
+                    Text(
+                        text = stringResource(R.string.action_replace_with_similar),
+                        modifier = Modifier.padding(start = 8.dp)
+                    )
+                }
+            }
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -944,7 +1095,7 @@ private fun SmartRecommendationPanel(
     recommendation: WorkoutRecommendation,
     onApplyWorkoutRecommendation: () -> Unit
 ) {
-    val lightWeightLabel = stringResource(R.string.smart_coach_light_weight)
+    val weightNotSetLabel = stringResource(R.string.smart_coach_weight_not_set)
 
     AppPanel(
         modifier = Modifier.fillMaxWidth(),
@@ -981,7 +1132,7 @@ private fun SmartRecommendationPanel(
             for (set in recommendation.sets) {
                 val weight = set.weight?.let {
                     String.format(Locale.getDefault(), "%.1f", it)
-                } ?: lightWeightLabel
+                } ?: weightNotSetLabel
                 recommendationSetValues += stringResource(
                     R.string.set_weight_reps_value,
                     weight,
@@ -1008,6 +1159,16 @@ private fun SmartRecommendationPanel(
                 ),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Text(
+                text = stringResource(
+                    R.string.smart_coach_rir_guidance,
+                    recommendation.targetRir.first,
+                    recommendation.targetRir.last
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary
             )
 
             recommendation.reasons.take(3).forEach { reason ->
@@ -1063,7 +1224,140 @@ private fun WorkoutRecommendationReason.smartCoachLabel(daysSinceLastSession: In
         WorkoutRecommendationReason.AestheticGoal -> stringResource(R.string.smart_reason_aesthetic_goal)
         WorkoutRecommendationReason.CalorieDeficit -> stringResource(R.string.smart_reason_calorie_deficit)
         WorkoutRecommendationReason.FourDayUpperLower -> stringResource(R.string.smart_reason_upper_lower)
+        WorkoutRecommendationReason.RecoveryEffort -> stringResource(R.string.smart_reason_recovery_effort)
+        WorkoutRecommendationReason.HardEffort -> stringResource(R.string.smart_reason_hard_effort)
     }
+}
+
+@Composable
+private fun SmartWorkoutAlternativePickerContent(
+    currentExerciseName: String?,
+    alternatives: List<SmartWorkoutAlternative>,
+    exerciseMediaOwnerKey: String,
+    onSelect: (Long) -> Unit,
+    onDismiss: () -> Unit
+) {
+    LazyColumn(
+        modifier = Modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(start = 16.dp, top = 4.dp, end = 16.dp, bottom = 28.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        item {
+            Text(
+                text = stringResource(R.string.smart_alternatives_title),
+                style = MaterialTheme.typography.headlineSmall
+            )
+            currentExerciseName?.let { name ->
+                Text(
+                    text = stringResource(
+                        R.string.smart_alternatives_for,
+                        localizedExerciseName(name)
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        items(
+            items = alternatives,
+            key = { it.exercise.id }
+        ) { alternative ->
+            SmartWorkoutAlternativeCard(
+                alternative = alternative,
+                exerciseMediaOwnerKey = exerciseMediaOwnerKey,
+                onSelect = { onSelect(alternative.exercise.id) }
+            )
+        }
+
+        if (alternatives.isEmpty()) {
+            item {
+                Text(
+                    text = stringResource(R.string.smart_alternatives_empty),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        item {
+            OutlinedButton(
+                onClick = onDismiss,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(stringResource(R.string.action_cancel))
+            }
+        }
+    }
+}
+
+@Composable
+private fun SmartWorkoutAlternativeCard(
+    alternative: SmartWorkoutAlternative,
+    exerciseMediaOwnerKey: String,
+    onSelect: () -> Unit
+) {
+    AppPanel(modifier = Modifier.fillMaxWidth(), highlighted = true) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                ExerciseMediaPreview(
+                    exerciseId = alternative.exercise.id,
+                    exerciseName = alternative.exercise.name,
+                    ownerKey = exerciseMediaOwnerKey,
+                    width = 76.dp,
+                    height = 64.dp
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = localizedExerciseName(alternative.exercise.name),
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = stringResource(
+                            R.string.smart_alternative_prescription,
+                            alternative.recommendation.sets.size,
+                            alternative.recommendation.sets.firstOrNull()?.reps ?: 0,
+                            alternative.recommendation.targetRir.first,
+                            alternative.recommendation.targetRir.last
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            val reasonLabels = mutableListOf<String>()
+            alternative.reasons.take(3).forEach { reason ->
+                reasonLabels += reason.smartCoachLabel()
+            }
+            Text(
+                text = reasonLabels.joinToString(separator = " · "),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Button(onClick = onSelect, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.smart_alternative_select))
+            }
+        }
+    }
+}
+
+@Composable
+private fun SmartWorkoutAlternativeReason.smartCoachLabel(): String = when (this) {
+    SmartWorkoutAlternativeReason.SameMovement -> stringResource(R.string.smart_alternative_same_movement)
+    SmartWorkoutAlternativeReason.SameMuscles -> stringResource(R.string.smart_alternative_same_muscles)
+    SmartWorkoutAlternativeReason.SimilarRole -> stringResource(R.string.smart_alternative_similar_role)
+    SmartWorkoutAlternativeReason.SameEquipment -> stringResource(R.string.smart_alternative_same_equipment)
+    SmartWorkoutAlternativeReason.Familiar -> stringResource(R.string.smart_alternative_familiar)
+    SmartWorkoutAlternativeReason.Favorite -> stringResource(R.string.smart_alternative_favorite)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

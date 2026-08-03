@@ -91,7 +91,10 @@ class GarminWorkoutStatisticsTest {
                     endOffsetSeconds = 42,
                     gymCalories = 5.5,
                     garminCalories = 6,
-                    heartRateZoneSeconds = listOf(0, 0, 12, 20, 10, 0)
+                    heartRateZoneSeconds = listOf(0, 0, 12, 20, 10, 0),
+                    startHeartRate = 110,
+                    peakHeartRate = 145,
+                    endHeartRate = 130
                 ),
                 GarminSetIntervalMetrics(
                     setNumber = 2,
@@ -127,6 +130,239 @@ class GarminWorkoutStatisticsTest {
             0,
             parseGarminWorkoutMetrics("Garmin · Completed 0/4 sets")?.completedSetCount
         )
+    }
+
+    @Test
+    fun trustedParserExposesOnlyRecordedSetEvidenceAndBuildsBoundedSummaries() {
+        val metrics = parseTrustedGarminWorkoutMetrics(
+            note = "Garmin · Duration 4:00 · Gym kcal 20 · Garmin kcal 22 · " +
+                "S1 35s R90s HR110/150/125 ↓20 C82% I0-35s K4.5/5 Z0/0/10/15/10/0s · " +
+                "S2 40s R75s HR170/150/160 ↓10 C35% I110-150s K5.5/6 Z0/5/15/15/5/0s",
+            hasGarminReceipt = true
+        )
+
+        assertNotNull(metrics)
+        val first = metrics?.setIntervals?.first()
+        assertEquals(90L, first?.restBeforeSeconds)
+        assertEquals(110, first?.startHeartRate)
+        assertEquals(150, first?.peakHeartRate)
+        assertEquals(125, first?.endHeartRate)
+        assertEquals(20, first?.recoveryHeartRateDrop)
+        assertEquals(82, first?.detectionConfidence)
+
+        // A legacy watch could report a peak below the start/end sample. Keep the evidence but
+        // canonicalize the peak to the highest bounded reading.
+        assertEquals(170, metrics?.setIntervals?.get(1)?.peakHeartRate)
+        assertEquals(listOf(0L, 5L, 25L, 30L, 15L, 0L), metrics?.totalHeartRateZoneSeconds())
+        assertEquals(
+            GarminSetRecognitionSummary(
+                averageConfidence = 59,
+                measuredSetCount = 2,
+                lowConfidenceSetNumbers = listOf(2)
+            ),
+            metrics?.setRecognitionSummary()
+        )
+        assertEquals(
+            GarminRecoverySummary(medianHeartRateDrop = 15, measuredSetCount = 2),
+            metrics?.recoverySummary()
+        )
+        assertEquals(
+            GarminWorkoutRhythmSummary(
+                capturedSpanSeconds = 150,
+                activeSetSeconds = 75,
+                betweenSetSeconds = 75
+            ),
+            metrics?.rhythmSummary()
+        )
+    }
+
+    @Test
+    fun trustedParserKeepsStatisticsOnlySetWithoutInventingIntervalMetrics() {
+        val metrics = parseTrustedGarminWorkoutMetrics(
+            note = "Garmin · Duration 4:00 · S1 35s R90s HR110/150/125 ↓20 C75%",
+            hasGarminReceipt = true
+        )
+
+        assertNotNull(metrics)
+        assertEquals(
+            listOf(
+                GarminSetEvidenceMetrics(
+                    setNumber = 1,
+                    activeSeconds = 35,
+                    restBeforeSeconds = 90,
+                    startHeartRate = 110,
+                    peakHeartRate = 150,
+                    endHeartRate = 125,
+                    recoveryHeartRateDrop = 20,
+                    detectionConfidence = 75
+                )
+            ),
+            metrics?.setEvidence
+        )
+        assertTrue(metrics?.setIntervals?.isEmpty() == true)
+        assertNull(metrics?.gymCalories)
+        assertNull(metrics?.garminCalories)
+        assertTrue(metrics?.totalHeartRateZoneSeconds()?.isEmpty() == true)
+        assertNull(metrics?.rhythmSummary())
+        assertEquals(
+            GarminSetRecognitionSummary(
+                averageConfidence = 75,
+                measuredSetCount = 1,
+                lowConfidenceSetNumbers = emptyList()
+            ),
+            metrics?.setRecognitionSummary()
+        )
+        assertEquals(
+            GarminRecoverySummary(medianHeartRateDrop = 20, measuredSetCount = 1),
+            metrics?.recoverySummary()
+        )
+        assertTrue(metrics?.hasSetIntervalDetails() == true)
+    }
+
+    @Test
+    fun statisticsOnlyEvidenceDropsMalformedFieldsAndRemainsBounded() {
+        val metrics = parseGarminWorkoutMetrics(
+            "Garmin · S1 35s R999999s HR999/0/- ↓999 C101% · " +
+                "S2 7201s R60s HR100/140/120 ↓20 C35%"
+        )
+
+        assertEquals(
+            listOf(
+                GarminSetEvidenceMetrics(setNumber = 1, activeSeconds = 35),
+                GarminSetEvidenceMetrics(
+                    setNumber = 2,
+                    restBeforeSeconds = 60,
+                    startHeartRate = 100,
+                    peakHeartRate = 140,
+                    endHeartRate = 120,
+                    recoveryHeartRateDrop = 20,
+                    detectionConfidence = 35
+                )
+            ),
+            metrics?.setEvidence
+        )
+        assertEquals(
+            GarminSetRecognitionSummary(
+                averageConfidence = 35,
+                measuredSetCount = 1,
+                lowConfidenceSetNumbers = listOf(2)
+            ),
+            metrics?.setRecognitionSummary()
+        )
+        assertEquals(
+            GarminRecoverySummary(medianHeartRateDrop = 20, measuredSetCount = 1),
+            metrics?.recoverySummary()
+        )
+        assertTrue(metrics?.setIntervals?.isEmpty() == true)
+        assertTrue(metrics?.totalHeartRateZoneSeconds()?.isEmpty() == true)
+    }
+
+    @Test
+    fun setEvidenceParserDropsMalformedOptionalEvidenceAndUnsafeIntervals() {
+        val malformedEvidence = parseGarminWorkoutMetrics(
+            "Garmin · Duration 3:00 · Gym kcal 20 · Garmin kcal 20 · " +
+                "S1 35s HR999/0/- ↓999 C101% I0-35s K5/5 Z0/5/10/10/10/0s"
+        )
+        val first = malformedEvidence?.setIntervals?.single()
+        assertNotNull(first)
+        assertNull(first?.startHeartRate)
+        assertNull(first?.peakHeartRate)
+        assertNull(first?.endHeartRate)
+        assertNull(first?.recoveryHeartRateDrop)
+        assertNull(first?.detectionConfidence)
+        assertNull(malformedEvidence?.setRecognitionSummary())
+        assertNull(malformedEvidence?.recoverySummary())
+
+        val overlapping = parseGarminWorkoutMetrics(
+            "Garmin · Duration 3:00 · Gym kcal 20 · Garmin kcal 20 · " +
+                "S1 I0-40s K5/5 Z0/0/10/20/10/0s · " +
+                "S2 I30-60s K5/5 Z0/0/10/20/10/0s"
+        )
+        assertEquals(listOf(1), overlapping?.setIntervals?.map { it.setNumber })
+
+        val beyondWorkout = parseGarminWorkoutMetrics(
+            "Garmin · Duration 1:00 · Gym kcal 20 · Garmin kcal 20 · " +
+                "S1 I40-80s K5/5 Z0/0/10/20/10/0s"
+        )
+        assertTrue(beyondWorkout?.setIntervals?.isEmpty() == true)
+
+        val impossibleCalorieTotal = parseGarminWorkoutMetrics(
+            "Garmin · Duration 1:00 · Gym kcal 3 · " +
+                "S1 I0-40s K5.2/- Z0/0/10/20/10/0s"
+        )
+        assertTrue(impossibleCalorieTotal?.setIntervals?.isEmpty() == true)
+    }
+
+    @Test
+    fun legacyMetricsDoNotManufactureWatchInsights() {
+        val legacy = parseGarminWorkoutMetrics(
+            "Garmin Fenix 8 · Duration 40:00 · Avg HR 130 · Max HR 165"
+        )
+
+        assertTrue(legacy?.totalHeartRateZoneSeconds()?.isEmpty() == true)
+        assertNull(legacy?.setRecognitionSummary())
+        assertNull(legacy?.recoverySummary())
+        assertNull(legacy?.rhythmSummary())
+    }
+
+    @Test
+    fun derivedWatchInsightsRejectOversizedOrOutOfRangeModels() {
+        val validInterval = GarminSetIntervalMetrics(
+            setNumber = 1,
+            startOffsetSeconds = 0,
+            endOffsetSeconds = 30,
+            gymCalories = 3.0,
+            garminCalories = 3,
+            heartRateZoneSeconds = listOf(0, 0, 10, 10, 10, 0),
+            recoveryHeartRateDrop = 15,
+            detectionConfidence = 80
+        )
+        val oversized = GarminWorkoutMetrics(
+            setIntervals = List(MAX_GARMIN_WORKOUT_SETS + 1) { validInterval }
+        )
+
+        assertTrue(oversized.totalHeartRateZoneSeconds().isEmpty())
+        assertNull(oversized.setRecognitionSummary())
+        assertNull(oversized.recoverySummary())
+        assertNull(oversized.rhythmSummary())
+
+        val invalid = GarminWorkoutMetrics(
+            setIntervals = listOf(
+                validInterval.copy(
+                    heartRateZoneSeconds = listOf(0, 0, 7_201, 0, 0, 0),
+                    recoveryHeartRateDrop = 241,
+                    detectionConfidence = 101
+                )
+            )
+        )
+        assertTrue(invalid.totalHeartRateZoneSeconds().isEmpty())
+        assertNull(invalid.setRecognitionSummary())
+        assertNull(invalid.recoverySummary())
+
+        val oversizedEvidence = GarminWorkoutMetrics(
+            setEvidence = List(MAX_GARMIN_WORKOUT_SETS + 1) { index ->
+                GarminSetEvidenceMetrics(
+                    setNumber = (index % MAX_GARMIN_WORKOUT_SETS) + 1,
+                    recoveryHeartRateDrop = 10,
+                    detectionConfidence = 80
+                )
+            }
+        )
+        assertNull(oversizedEvidence.setRecognitionSummary())
+        assertNull(oversizedEvidence.recoverySummary())
+
+        val invalidEvidence = GarminWorkoutMetrics(
+            setEvidence = listOf(
+                GarminSetEvidenceMetrics(
+                    setNumber = 1,
+                    activeSeconds = MAX_GARMIN_SET_INTERVAL_DURATION_SECONDS + 1,
+                    recoveryHeartRateDrop = 241,
+                    detectionConfidence = 101
+                )
+            )
+        )
+        assertNull(invalidEvidence.setRecognitionSummary())
+        assertNull(invalidEvidence.recoverySummary())
     }
 
     @Test

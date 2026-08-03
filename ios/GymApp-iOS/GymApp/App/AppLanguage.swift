@@ -36,6 +36,19 @@ func gymText(_ english: String, _ ukrainian: String, languageCode: String) -> St
     }
 }
 
+func gymText(
+    _ english: String,
+    _ ukrainian: String,
+    _ russian: String,
+    languageCode: String
+) -> String {
+    switch languageCode {
+    case AppLanguage.ukrainian.rawValue: ukrainian
+    case AppLanguage.russian.rawValue: russian
+    default: english
+    }
+}
+
 func gymExerciseName(
     _ exercise: Exercise,
     languageCode: String = gymCurrentLanguageCode()
