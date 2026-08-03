@@ -14,6 +14,8 @@ import com.example.gymapp.data.repository.NamedWorkoutSetDraft
 import com.example.gymapp.data.repository.WorkoutRecommendation
 import com.example.gymapp.data.repository.WorkoutRecommendationEngine
 import com.example.gymapp.data.repository.MuscleContribution
+import com.example.gymapp.data.repository.defaultContributionsForExercise
+import com.example.gymapp.data.repository.normalizedExerciseName
 import com.example.gymapp.data.repository.toManualContributionMap
 import com.example.gymapp.data.repository.WorkoutDataLimits
 import com.example.gymapp.data.repository.WorkoutExerciseDraft
@@ -61,6 +63,8 @@ data class AddWorkoutUiState(
     val note: String = "",
     val exercises: List<ExerciseEntity> = emptyList(),
     val frequentExerciseIds: List<Long> = emptyList(),
+    val exerciseWorkoutCounts: Map<Long, Int> = emptyMap(),
+    val exerciseMuscleIds: Map<String, Set<String>> = emptyMap(),
     val exerciseDrafts: List<ExerciseInputState> = emptyList(),
     val lastWeights: Map<Long, Double?> = emptyMap(),
     val workoutRecommendations: Map<Long, WorkoutRecommendation> = emptyMap(),
@@ -151,6 +155,8 @@ class AddWorkoutViewModel(
     private data class ExerciseCatalogState(
         val exercises: List<ExerciseEntity>,
         val frequentExerciseIds: List<Long>,
+        val exerciseWorkoutCounts: Map<Long, Int>,
+        val exerciseMuscleIds: Map<String, Set<String>>,
         val loadProfiles: Map<Long, ExerciseLoadProfile>,
         val manualMuscleMappings: Map<String, List<MuscleContribution>>
     )
@@ -181,6 +187,8 @@ class AddWorkoutViewModel(
         repository.observeExerciseLoadProfiles(),
         repository.observeExerciseMuscleMappings()
     ) { exerciseList, history, loadProfiles, muscleMappings ->
+        val workoutCounts = workoutCountByExercise(history)
+        val manualMappings = muscleMappings.toManualContributionMap()
         val frequentIds = history
             .groupBy { it.exerciseId }
             .map { (exerciseId, entries) ->
@@ -200,8 +208,14 @@ class AddWorkoutViewModel(
         ExerciseCatalogState(
             exercises = exerciseList,
             frequentExerciseIds = frequentIds,
+            exerciseWorkoutCounts = workoutCounts,
+            exerciseMuscleIds = exerciseList.associate { exercise ->
+                val contributions = manualMappings[exercise.name.normalizedExerciseName()]
+                    ?: defaultContributionsForExercise(exercise.name)
+                exercise.name to contributions.mapTo(linkedSetOf()) { it.muscleId }
+            },
             loadProfiles = loadProfiles,
-            manualMuscleMappings = muscleMappings.toManualContributionMap()
+            manualMuscleMappings = manualMappings
         )
     }.stateIn(
         scope = viewModelScope,
@@ -209,6 +223,8 @@ class AddWorkoutViewModel(
         initialValue = ExerciseCatalogState(
             exercises = emptyList(),
             frequentExerciseIds = emptyList(),
+            exerciseWorkoutCounts = emptyMap(),
+            exerciseMuscleIds = emptyMap(),
             loadProfiles = emptyMap(),
             manualMuscleMappings = emptyMap()
         )
@@ -315,6 +331,8 @@ class AddWorkoutViewModel(
             note = local.note,
             exercises = catalog.exercises,
             frequentExerciseIds = catalog.frequentExerciseIds,
+            exerciseWorkoutCounts = catalog.exerciseWorkoutCounts,
+            exerciseMuscleIds = catalog.exerciseMuscleIds,
             exerciseDrafts = local.exerciseDrafts,
             lastWeights = lastWeightsMap,
             workoutRecommendations = recommendations,

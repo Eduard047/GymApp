@@ -74,6 +74,14 @@ else
     fi
     output="$output_root/gymapp-$device.prg"
     compiler_args+=(-o "$output" -d "$device")
+    # CIQ 3.4 watch apps on these products have a 96 KiB ceiling. The SDK 9.2
+    # debug table alone pushes the otherwise-valid compact build over that cap;
+    # strip only debug metadata while retaining identical runtime code.
+    case "$device" in
+        descentg1|instinct2|instinct2s|instinct2x|instinctcrossover)
+            compiler_args+=(-r)
+            ;;
+    esac
 fi
 
 (

@@ -111,7 +111,7 @@ private const val PRIVATE_SHARE_RETENTION_MILLIS = 24 * 60 * 60 * 1_000L
 private const val MAX_RETAINED_PRIVATE_SHARE_FILES = 32
 private val PRIVATE_SHARE_FILE_LOCK = Any()
 
-private enum class ExerciseBodyFilter(val muscleIds: Set<String>) {
+internal enum class ExerciseBodyFilter(val muscleIds: Set<String>) {
     All(emptySet()),
     Upper(setOf("chest", "shoulders", "biceps", "triceps", "forearms", "lats", "upperBack")),
     Lower(setOf("lowerBack", "glutes", "quads", "hamstrings", "adductors", "calves")),
@@ -159,7 +159,7 @@ internal fun AccountBackupSheets(
     }
 }
 
-private enum class ExerciseSortMode {
+internal enum class ExerciseSortMode {
     Name,
     MostFrequent,
     LeastFrequent
@@ -186,6 +186,42 @@ internal fun exerciseNameMatchesLocalizedQuery(exerciseName: String, query: Stri
     }
     return searchableNames.any { name ->
         name.lowercase(Locale.ROOT).contains(normalizedQuery)
+    }
+}
+
+internal fun filterAndSortExercises(
+    exercises: List<ExerciseEntity>,
+    exerciseWorkoutCounts: Map<Long, Int>,
+    muscleIdsByExerciseName: Map<String, Set<String>>,
+    query: String,
+    bodyFilter: ExerciseBodyFilter,
+    muscleFilter: String?,
+    sortMode: ExerciseSortMode,
+    favoritesOnly: Boolean,
+    languageTag: String
+): List<ExerciseEntity> {
+    val filtered = exercises.filter { exercise ->
+        val muscleIds = muscleIdsByExerciseName[exercise.name].orEmpty()
+        val matchesBody = bodyFilter == ExerciseBodyFilter.All ||
+            muscleIds.any(bodyFilter.muscleIds::contains)
+        exerciseNameMatchesLocalizedQuery(exercise.name, query) &&
+            matchesBody &&
+            (muscleFilter == null || muscleFilter in muscleIds) &&
+            (!favoritesOnly || exercise.isFavorite)
+    }
+    val byName = compareBy<ExerciseEntity> {
+        BuiltInExerciseCatalog.displayName(it.name, languageTag).lowercase(Locale.ROOT)
+    }.thenBy { it.id }
+    return when (sortMode) {
+        ExerciseSortMode.Name -> filtered.sortedWith(byName)
+        ExerciseSortMode.MostFrequent -> filtered.sortedWith(
+            compareByDescending<ExerciseEntity> { exerciseWorkoutCounts[it.id] ?: 0 }
+                .then(byName)
+        )
+        ExerciseSortMode.LeastFrequent -> filtered.sortedWith(
+            compareBy<ExerciseEntity> { exerciseWorkoutCounts[it.id] ?: 0 }
+                .then(byName)
+        )
     }
 }
 
@@ -241,29 +277,17 @@ fun ExerciseListScreen(
         favoritesOnly,
         languageTag
     ) {
-        val filtered = uiState.exercises.filter { exercise ->
-            val muscleIds = musclesByExercise[exercise.name].orEmpty()
-            val matchesQuery = exerciseNameMatchesLocalizedQuery(exercise.name, searchQuery)
-            val matchesBody = bodyFilter == ExerciseBodyFilter.All ||
-                muscleIds.any(bodyFilter.muscleIds::contains)
-            val matchesMuscle = muscleFilter == null || muscleFilter in muscleIds
-            val matchesFavorite = !favoritesOnly || exercise.isFavorite
-            matchesQuery && matchesBody && matchesMuscle && matchesFavorite
-        }
-        val byName = compareBy<ExerciseEntity> {
-            BuiltInExerciseCatalog.displayName(it.name, languageTag).lowercase(Locale.ROOT)
-        }.thenBy { it.id }
-        when (sortMode) {
-            ExerciseSortMode.Name -> filtered.sortedWith(byName)
-            ExerciseSortMode.MostFrequent -> filtered.sortedWith(
-                compareByDescending<ExerciseEntity> { uiState.exerciseWorkoutCounts[it.id] ?: 0 }
-                    .then(byName)
-            )
-            ExerciseSortMode.LeastFrequent -> filtered.sortedWith(
-                compareBy<ExerciseEntity> { uiState.exerciseWorkoutCounts[it.id] ?: 0 }
-                    .then(byName)
-            )
-        }
+        filterAndSortExercises(
+            exercises = uiState.exercises,
+            exerciseWorkoutCounts = uiState.exerciseWorkoutCounts,
+            muscleIdsByExerciseName = musclesByExercise,
+            query = searchQuery,
+            bodyFilter = bodyFilter,
+            muscleFilter = muscleFilter,
+            sortMode = sortMode,
+            favoritesOnly = favoritesOnly,
+            languageTag = languageTag
+        )
     }
     LaunchedEffect(uiState.newExerciseName, uiState.hasInputError, pendingAddedName) {
         if (
@@ -825,7 +849,7 @@ private fun ExerciseMetricPill(
 }
 
 @Composable
-private fun ExerciseSearchAndFilters(
+internal fun ExerciseSearchAndFilters(
     query: String,
     onQueryChange: (String) -> Unit,
     bodyFilter: ExerciseBodyFilter,

@@ -41,6 +41,7 @@
     <string name="action_save_workout">Зберегти тренування</string>
     <string name="action_save_completed_workout">Зберегти як виконане тренування</string>
     <string name="action_delete">Видалити</string>
+    <string name="action_share_workout">Поділитися тренуванням</string>
     <string name="action_deleting">Видалення…</string>
     <string name="action_edit">Редагувати</string>
     <string name="action_cancel">Скасувати</string>
@@ -301,6 +302,7 @@
     <string name="message_set_deleted">Підхід видалено</string>
     <string name="message_delete_target_changed">Видалення зупинено: збережені дані змінилися. Перевір їх і спробуй ще раз.</string>
     <string name="message_delete_failed">Не вдалося видалити збережені дані. Цей запит нічого не видалив.</string>
+    <string name="message_share_workout_failed">Не вдалося безпечно підготувати це тренування для надсилання.</string>
     <string name="message_add_set_failed">Не вдалося записати підхід. Таймер відпочинку не запущено.</string>
     <string name="message_rest_timer_save_failed">Підхід збережено, але не вдалося запустити таймер відпочинку.</string>
     <string name="message_invalid_set_input">Введіть коректні повтори та необовʼязкову вагу.</string>

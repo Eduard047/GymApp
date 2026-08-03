@@ -526,11 +526,52 @@ struct GarminWorkoutNoteInterval: Equatable, Identifiable {
     var id: Int { setIndex }
 }
 
+struct GarminWorkoutNoteSetMetrics: Equatable, Identifiable {
+    let setIndex: Int
+    let activeSeconds: Int64?
+    let restBeforeSeconds: Int64?
+    let startHeartRate: Int?
+    let peakHeartRate: Int?
+    let endHeartRate: Int?
+    let recoveryHeartRateDrop: Int?
+    let detectionConfidence: Int?
+
+    var id: Int { setIndex }
+
+    var hasHeartRate: Bool {
+        startHeartRate != nil || peakHeartRate != nil || endHeartRate != nil
+    }
+}
+
 struct GarminWorkoutNoteSummary: Equatable {
+    let durationSeconds: Int64?
+    let gymCalories: Int?
+    let garminCalories: Int?
+    let averageHeartRate: Int?
+    let maximumHeartRate: Int?
+    let endingHeartRateZone: Int?
     let completedSetCount: Int?
     let plannedSetCount: Int?
+    let setMetrics: [GarminWorkoutNoteSetMetrics]
     let intervals: [GarminWorkoutNoteInterval]
     let omittedMetricRows: Int?
+
+    var hasWorkoutMetrics: Bool {
+        durationSeconds != nil || gymCalories != nil || garminCalories != nil ||
+            averageHeartRate != nil || maximumHeartRate != nil || endingHeartRateZone != nil
+    }
+
+    func metrics(for setIndex: Int) -> GarminWorkoutNoteSetMetrics? {
+        setMetrics.first { $0.setIndex == setIndex }
+    }
+
+    func interval(for setIndex: Int) -> GarminWorkoutNoteInterval? {
+        intervals.first { $0.setIndex == setIndex }
+    }
+
+    var visualSetIndexes: [Int] {
+        Array(Set(setMetrics.map(\.setIndex) + intervals.map(\.setIndex))).sorted()
+    }
 }
 
 enum GarminWorkoutNoteParser {
@@ -556,6 +597,12 @@ enum GarminWorkoutNoteParser {
         var completedSetCount: Int?
         var plannedSetCount: Int?
         var omittedMetricRows: Int?
+        var gymCalories: Int?
+        var garminCalories: Int?
+        var averageHeartRate: Int?
+        var maximumHeartRate: Int?
+        var endingHeartRateZone: Int?
+        var setMetrics: [GarminWorkoutNoteSetMetrics] = []
         var intervals: [GarminWorkoutNoteInterval] = []
         var seenSetIndexes = Set<Int>()
         var durationSeconds: Int64?
@@ -570,6 +617,58 @@ enum GarminWorkoutNoteParser {
                     return nil
                 }
                 durationSeconds = parsedDuration
+                continue
+            }
+            if first == "Gym", tokens.count == 3,
+               ["kcal", "ккал"].contains(tokens[1]) {
+                guard gymCalories == nil,
+                      let value = boundedInteger(
+                        tokens[2], minimum: 1, maximum: Int(maximumCalories)
+                      ) else {
+                    return nil
+                }
+                gymCalories = value
+                continue
+            }
+            if first == "Garmin", tokens.count == 3,
+               ["kcal", "ккал"].contains(tokens[1]) {
+                guard garminCalories == nil,
+                      let value = boundedInteger(
+                        tokens[2], minimum: 1, maximum: Int(maximumCalories)
+                      ) else {
+                    return nil
+                }
+                garminCalories = value
+                continue
+            }
+            if ["Avg", "Сер", "Средний"].contains(first), tokens.count == 3,
+               ["HR", "пульс"].contains(tokens[1]) {
+                guard averageHeartRate == nil,
+                      let value = boundedInteger(tokens[2], minimum: 1, maximum: 240) else {
+                    return nil
+                }
+                averageHeartRate = value
+                continue
+            }
+            if ["Max", "Макс", "Макс."].contains(first), tokens.count == 3,
+               ["HR", "пульс"].contains(tokens[1]) {
+                guard maximumHeartRate == nil,
+                      let value = boundedInteger(tokens[2], minimum: 1, maximum: 240) else {
+                    return nil
+                }
+                maximumHeartRate = value
+                continue
+            }
+            if ["Ending", "Кінцева", "Конечная"].contains(first),
+               let zoneToken = tokens.last,
+               zoneToken.first == "Z" {
+                guard endingHeartRateZone == nil,
+                      let value = boundedInteger(
+                        String(zoneToken.dropFirst()), minimum: 1, maximum: 5
+                      ) else {
+                    return nil
+                }
+                endingHeartRateZone = value
                 continue
             }
             if ["Completed", "Partial", "Виконано", "Частково", "Выполнено", "Частично"]
@@ -610,20 +709,35 @@ enum GarminWorkoutNoteParser {
             let intervalToken = tokens.first(where: { $0.first == "I" })
             let calorieToken = tokens.first(where: { $0.first == "K" })
             let zoneToken = tokens.first(where: { $0.first == "Z" })
-            guard intervalToken != nil || calorieToken != nil || zoneToken != nil else { continue }
-            guard let intervalToken, let calorieToken, let zoneToken,
-                  seenSetIndexes.insert(setIndex).inserted,
-                  let interval = parseInterval(
-                      setIndex: setIndex,
-                      intervalToken: intervalToken,
-                      calorieToken: calorieToken,
-                      zoneToken: zoneToken
-                  ) else {
+            let metricResult = parseSetMetrics(setIndex: setIndex, tokens: tokens)
+            let hasIntervalData = intervalToken != nil || calorieToken != nil || zoneToken != nil
+            let hasMetricData: Bool
+            switch metricResult {
+            case .none:
+                hasMetricData = false
+            case let .valid(metrics):
+                hasMetricData = true
+                setMetrics.append(metrics)
+            case .invalid:
                 return nil
             }
-            intervals.append(interval)
+            guard hasIntervalData || hasMetricData else { continue }
+            guard seenSetIndexes.insert(setIndex).inserted else { return nil }
+            if hasIntervalData {
+                guard let intervalToken, let calorieToken, let zoneToken,
+                      let interval = parseInterval(
+                        setIndex: setIndex,
+                        intervalToken: intervalToken,
+                        calorieToken: calorieToken,
+                        zoneToken: zoneToken
+                      ) else {
+                    return nil
+                }
+                intervals.append(interval)
+            }
         }
-        guard intervals.count + (omittedMetricRows ?? 0) <= maximumSets else {
+        let parsedSetIndexes = Set(intervals.map(\.setIndex) + setMetrics.map(\.setIndex))
+        guard parsedSetIndexes.count + (omittedMetricRows ?? 0) <= maximumSets else {
             return nil
         }
         for index in intervals.indices.dropFirst() {
@@ -634,15 +748,148 @@ enum GarminWorkoutNoteParser {
                 return nil
             }
         }
+        for index in setMetrics.indices.dropFirst() {
+            let previous = setMetrics[setMetrics.index(before: index)]
+            let current = setMetrics[index]
+            guard current.setIndex > previous.setIndex else { return nil }
+        }
         if let durationSeconds,
            intervals.contains(where: { $0.endSeconds > durationSeconds }) {
             return nil
         }
+        if let averageHeartRate, let maximumHeartRate,
+           averageHeartRate > maximumHeartRate {
+            return nil
+        }
         return GarminWorkoutNoteSummary(
+            durationSeconds: durationSeconds,
+            gymCalories: gymCalories,
+            garminCalories: garminCalories,
+            averageHeartRate: averageHeartRate,
+            maximumHeartRate: maximumHeartRate,
+            endingHeartRateZone: endingHeartRateZone,
             completedSetCount: completedSetCount,
             plannedSetCount: plannedSetCount,
+            setMetrics: setMetrics.sorted { $0.setIndex < $1.setIndex },
             intervals: intervals.sorted { $0.setIndex < $1.setIndex },
             omittedMetricRows: omittedMetricRows
+        )
+    }
+
+    private enum SetMetricsParseResult {
+        case none
+        case valid(GarminWorkoutNoteSetMetrics)
+        case invalid
+    }
+
+    private static func parseSetMetrics(
+        setIndex: Int,
+        tokens: [String]
+    ) -> SetMetricsParseResult {
+        var activeSeconds: Int64?
+        var restBeforeSeconds: Int64?
+        var startHeartRate: Int?
+        var peakHeartRate: Int?
+        var endHeartRate: Int?
+        var recoveryHeartRateDrop: Int?
+        var detectionConfidence: Int?
+        var recognized = false
+
+        for token in tokens.dropFirst() {
+            if token.first == "I" || token.first == "K" || token.first == "Z" {
+                continue
+            }
+            if token.hasPrefix("R") {
+                recognized = true
+                guard restBeforeSeconds == nil,
+                      token.hasSuffix("s"),
+                      let value = boundedInteger(
+                        String(token.dropFirst().dropLast()),
+                        minimum: Int64(0),
+                        maximum: Int64(86_400)
+                      ) else {
+                    return .invalid
+                }
+                restBeforeSeconds = value
+                continue
+            }
+            if token.hasPrefix("HR") {
+                recognized = true
+                guard startHeartRate == nil, peakHeartRate == nil, endHeartRate == nil else {
+                    return .invalid
+                }
+                let values = token.dropFirst(2)
+                    .split(separator: "/", omittingEmptySubsequences: false)
+                guard values.count == 3 else { return .invalid }
+                func heartRate(_ value: Substring) -> Int? {
+                    value == "-" ? nil : boundedInteger(
+                        String(value), minimum: 0, maximum: 240
+                    )
+                }
+                let start = heartRate(values[0])
+                let peak = heartRate(values[1])
+                let end = heartRate(values[2])
+                guard values[0] == "-" || start != nil,
+                      values[1] == "-" || peak != nil,
+                      values[2] == "-" || end != nil,
+                      start != nil || peak != nil || end != nil,
+                      peak == nil || start == nil || start! <= peak!,
+                      peak == nil || end == nil || end! <= peak! else {
+                    return .invalid
+                }
+                startHeartRate = start
+                peakHeartRate = peak
+                endHeartRate = end
+                continue
+            }
+            if token.hasPrefix("↓") {
+                recognized = true
+                guard recoveryHeartRateDrop == nil,
+                      let value = boundedInteger(
+                        String(token.dropFirst()), minimum: 0, maximum: 240
+                      ) else {
+                    return .invalid
+                }
+                recoveryHeartRateDrop = value
+                continue
+            }
+            if token.hasPrefix("C") {
+                recognized = true
+                guard detectionConfidence == nil,
+                      token.hasSuffix("%"),
+                      let value = boundedInteger(
+                        String(token.dropFirst().dropLast()), minimum: 0, maximum: 100
+                      ) else {
+                    return .invalid
+                }
+                detectionConfidence = value
+                continue
+            }
+            if token.hasSuffix("s") {
+                recognized = true
+                guard activeSeconds == nil,
+                      let value = boundedInteger(
+                        String(token.dropLast()),
+                        minimum: Int64(0),
+                        maximum: maximumSetSeconds
+                      ) else {
+                    return .invalid
+                }
+                activeSeconds = value
+            }
+        }
+        guard recognized else { return .none }
+        return .valid(
+            GarminWorkoutNoteSetMetrics(
+                setIndex: setIndex,
+                activeSeconds: activeSeconds,
+                restBeforeSeconds: restBeforeSeconds,
+                startHeartRate: startHeartRate,
+                peakHeartRate: peakHeartRate,
+                endHeartRate: endHeartRate,
+                recoveryHeartRateDrop: recoveryHeartRateDrop,
+                detectionConfidence: detectionConfidence
+            )
         )
     }
 

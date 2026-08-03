@@ -174,7 +174,7 @@ test("Garmin dashboard renders the selected live workout hierarchy without stati
 
   assert.match(dashboard, /GymSession\.hr == null \? "--" : GymSession\.hr\.toString\(\)/);
   assert.match(dashboard, /GymSession\.elapsedText\(\)/);
-  assert.match(dashboard, /GymSession\.gymCalories\.format\("%\.0f"\)/);
+  assert.match(dashboard, /GymSession\.gymCalories\.format\("%\.1f"\)/);
   assert.match(dashboard, /dashboardSetProgressText\(\)/);
   assert.match(dashboard, /GymStore\.currentExerciseLabel\(\)/);
   assert.match(dashboard, /setSummaryText\(\)/);
@@ -186,6 +186,44 @@ test("Garmin dashboard renders the selected live workout hierarchy without stati
   assert.match(view, /function isTinyDashboard\(w, h\)/);
   assert.match(view, /isTinyDashboard\(w, h\) \? h - 10 : h - 14/);
   assert.doesNotMatch(dashboard, /"142"|"00:17:34"|"Bench Press"|"128"/);
+});
+
+test("Garmin workout clock, pause lifecycle, and calorie display keep advancing independently", async () => {
+  const [session, view] = await Promise.all([
+    readFile("garmin/source/GymSession.mc", "utf8"),
+    readFile("garmin/source/WorkoutView.mc", "utf8")
+  ]);
+
+  const onShow = section(view, "function onShow()", "function onHide()");
+  const viewTick = section(view, "function tick()", "function requestSyncNow()");
+  const sessionTick = section(session, "static function tick()", "static function startSensors()");
+  const pause = section(session, "static function pause()", "static function resume()");
+  const resume = section(session, "static function resume()", "static function togglePause()");
+  const calories = section(session, "static function updateCalories()", "static function setBoostFor(");
+
+  assert.match(onShow, /ticker\.start\(method\(:tick\), 1000, true\)/);
+  assert.match(viewTick, /GymSession\.tick\(\)/);
+  assert.match(viewTick, /Ui\.requestUpdate\(\)/);
+  assert.match(sessionTick, /elapsedSeconds = now - startedAt - pausedAccumSeconds - currentPaused/);
+  assert.ok(
+    sessionTick.indexOf("elapsedSeconds =") < sessionTick.indexOf("if (paused)"),
+    "a paused frame must first capture the exact elapsed time at pause"
+  );
+  assert.match(pause, /pausedAt = Time\.now\(\)\.value\(\)/);
+  assert.match(resume, /pausedAccumSeconds \+= now - pausedAt/);
+  assert.match(resume, /session\.start\(\)/);
+
+  assert.match(calories, /deltaSeconds = elapsedSeconds - lastCalorieSeconds/);
+  assert.match(calories, /if \(deltaSeconds > 30\)[\s\S]*deltaSeconds = 30/);
+  assert.match(calories, /gymCalories \+= lastKcalPerMinute \* \(deltaSeconds \/ 60\.0\)/);
+  assert.match(calories, /lastCalorieSeconds = elapsedSeconds/);
+  assert.equal((view.match(/GymSession\.gymCalories\.format\("%\.1f"\)/g) || []).length, 3);
+
+  const displayedCalories = (value) => value.toFixed(1);
+  assert.equal(displayedCalories(0), "0.0");
+  assert.equal(displayedCalories(0.28), "0.3");
+  assert.equal(displayedCalories(99.94), "99.9");
+  assert.equal(displayedCalories(100.1), "100.1");
 });
 
 test("Garmin can undo only the most recent set inside a bounded window", async () => {
@@ -613,9 +651,12 @@ test("Garmin active-workout copy-on-write has only old-or-new crash outcomes", a
 });
 
 test("Garmin low-memory products keep an atomic compact ownerless recovery boundary", async () => {
-  const [store, jungle] = await Promise.all([
+  const [store, jungle, bashBuild, powershellBuild, readme] = await Promise.all([
     readFile("garmin/source/GymStore.mc", "utf8"),
-    readFile("garmin/monkey.jungle", "utf8")
+    readFile("garmin/monkey.jungle", "utf8"),
+    readFile("scripts/build-garmin.sh", "utf8"),
+    readFile("scripts/build-garmin.ps1", "utf8"),
+    readFile("garmin/README.md", "utf8")
   ]);
 
   assert.match(jungle, /^base\.excludeAnnotations = compactLegacyState$/m);
@@ -636,6 +677,16 @@ test("Garmin low-memory products keep an atomic compact ownerless recovery bound
     (jungle.match(/\.excludeAnnotations = fullLegacyState/g) || []).length,
     compactProducts.length
   );
+  assert.match(
+    bashBuild,
+    /descentg1\|instinct2\|instinct2s\|instinct2x\|instinctcrossover\)[\s\S]*compiler_args\+=\(-r\)/
+  );
+  for (const product of compactProducts) {
+    assert.match(powershellBuild, new RegExp(`'${product}'`));
+  }
+  assert.match(powershellBuild, /\$lowMemoryDevices -contains \$Device[\s\S]*\$compilerArgs \+= '-r'/);
+  assert.match(readme, /96 KiB watch-app limit/);
+  assert.match(readme, /Runtime behavior is unchanged/);
 
   const compact = section(
     store,

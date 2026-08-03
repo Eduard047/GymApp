@@ -93,6 +93,18 @@ if ($Release) {
     $compilerArgs += @('-r', '-e')
 } else {
     $compilerArgs += @('-d', $Device)
+    # CIQ 3.4 watch apps on these products have a 96 KiB ceiling. SDK 9.2 debug
+    # metadata exceeds that cap even though the compact runtime code fits.
+    $lowMemoryDevices = @(
+        'descentg1',
+        'instinct2',
+        'instinct2s',
+        'instinct2x',
+        'instinctcrossover'
+    )
+    if ($lowMemoryDevices -contains $Device) {
+        $compilerArgs += '-r'
+    }
 }
 
 Push-Location $garminRoot

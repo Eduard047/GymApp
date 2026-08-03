@@ -1,5 +1,7 @@
 ﻿package com.example.gymapp.ui.screens
 
+import android.content.Context
+import android.content.Intent
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -22,6 +24,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
@@ -42,6 +45,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -60,6 +64,7 @@ import com.example.gymapp.R
 import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.entity.SetEntryEntity
 import com.example.gymapp.data.repository.defaultContributionsForExercise
+import com.example.gymapp.data.repository.SharedWorkoutLink
 import com.example.gymapp.garmin.GarminSetIntervalMetrics
 import com.example.gymapp.garmin.GarminWorkoutMetrics
 import com.example.gymapp.garmin.hasSetIntervalDetails
@@ -79,6 +84,7 @@ import com.example.gymapp.ui.viewmodel.WorkoutDetailUiState
 import com.example.gymapp.util.DateTimeUtils
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.launch
 import java.text.NumberFormat
 import java.util.Locale
 
@@ -87,6 +93,21 @@ private const val SETS_TABLE_WEIGHT_WEIGHT = 1.1f
 private const val SETS_TABLE_REPS_WEIGHT = 0.9f
 private const val DEFAULT_EXERCISE_REST_SECONDS = 90
 private val SETS_TABLE_ACTIONS_WIDTH = 104.dp
+
+internal fun shareWorkoutUrl(
+    context: Context,
+    url: String,
+    chooserTitle: String
+) {
+    require(url.startsWith(SharedWorkoutLink.BASE_URL + "#workout="))
+    require(url.length <= SharedWorkoutLink.BASE_URL.length + "#workout=".length +
+        SharedWorkoutLink.MAX_ENCODED_LENGTH)
+    val sendIntent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_TEXT, url)
+    }
+    context.startActivity(Intent.createChooser(sendIntent, chooserTitle))
+}
 
 @Composable
 fun WorkoutDetailScreen(
@@ -107,6 +128,7 @@ fun WorkoutDetailScreen(
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     var editingSet by remember { mutableStateOf<SetEntryEntity?>(null) }
     var editWeight by remember { mutableStateOf("") }
     var editReps by remember { mutableStateOf("") }
@@ -199,6 +221,23 @@ fun WorkoutDetailScreen(
                 )
             }
         } else {
+            val shareWorkout: () -> Unit = {
+                runCatching {
+                    val url = SharedWorkoutLink.fromSession(details)
+                    shareWorkoutUrl(
+                        context = context,
+                        url = url,
+                        chooserTitle = context.getString(R.string.action_share_workout)
+                    )
+                }.onFailure {
+                    coroutineScope.launch {
+                        snackbarHostState.showSnackbar(
+                            message = context.getString(R.string.message_share_workout_failed),
+                            duration = SnackbarDuration.Short
+                        )
+                    }
+                }
+            }
             val garminMetrics = remember(details.session.note, uiState.hasGarminReceipt) {
                 parseTrustedGarminWorkoutMetrics(
                     note = details.session.note.orEmpty(),
@@ -223,6 +262,7 @@ fun WorkoutDetailScreen(
                             metrics = garminMetrics,
                             exerciseCount = details.workoutExercises.size,
                             setCount = details.workoutExercises.sumOf { it.sets.size },
+                            onShare = shareWorkout,
                             onDelete = { confirmDeleteSession = true }
                         )
                     } else {
@@ -234,6 +274,7 @@ fun WorkoutDetailScreen(
                             volume = details.workoutExercises.sumOf { exercise ->
                                 exercise.sets.sumOf { set -> set.weight * set.reps }
                             },
+                            onShare = shareWorkout,
                             onDelete = { confirmDeleteSession = true }
                         )
                     }
@@ -652,6 +693,7 @@ private fun WorkoutHeaderCard(
     exerciseCount: Int,
     setCount: Int,
     volume: Double,
+    onShare: () -> Unit,
     onDelete: () -> Unit
 ) {
     HeroPanel(modifier = Modifier.fillMaxWidth()) {
@@ -669,6 +711,12 @@ private fun WorkoutHeaderCard(
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f)
                 )
+                IconButton(onClick = onShare) {
+                    Icon(
+                        imageVector = Icons.Default.Share,
+                        contentDescription = stringResource(R.string.action_share_workout)
+                    )
+                }
                 IconButton(onClick = onDelete) {
                     Icon(
                         imageVector = Icons.Default.Delete,
@@ -720,6 +768,7 @@ private fun GarminWorkoutHeaderCard(
     metrics: GarminWorkoutMetrics,
     exerciseCount: Int,
     setCount: Int,
+    onShare: () -> Unit,
     onDelete: () -> Unit
 ) {
     HeroPanel(modifier = Modifier.fillMaxWidth()) {
@@ -743,6 +792,12 @@ private fun GarminWorkoutHeaderCard(
                         color = Color.White.copy(alpha = 0.78f),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
+                    )
+                }
+                IconButton(onClick = onShare) {
+                    Icon(
+                        imageVector = Icons.Default.Share,
+                        contentDescription = stringResource(R.string.action_share_workout)
                     )
                 }
                 IconButton(onClick = onDelete) {

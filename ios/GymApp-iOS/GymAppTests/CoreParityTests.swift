@@ -7600,6 +7600,287 @@ final class CoreParityTests: XCTestCase {
         )
     }
 
+    func testGarminWorkoutNoteParserBuildsBoundedChartMetrics() throws {
+        let summary = try XCTUnwrap(
+            GarminWorkoutNoteParser.parse(
+                "Garmin · Duration 12:34 · Gym kcal 40 · Garmin kcal 38 · " +
+                    "Avg HR 130 · Max HR 165 · Ending HR zone Z3 · " +
+                    "S1 42s R90s HR118/154/136 ↓18 C92% " +
+                    "I0-42s K4.5/5 Z0/0/12/20/10/0s"
+            )
+        )
+
+        XCTAssertEqual(summary.durationSeconds, 754)
+        XCTAssertEqual(summary.gymCalories, 40)
+        XCTAssertEqual(summary.garminCalories, 38)
+        XCTAssertEqual(summary.averageHeartRate, 130)
+        XCTAssertEqual(summary.maximumHeartRate, 165)
+        XCTAssertEqual(summary.endingHeartRateZone, 3)
+        XCTAssertTrue(summary.hasWorkoutMetrics)
+        XCTAssertEqual(summary.visualSetIndexes, [1])
+        XCTAssertEqual(
+            summary.metrics(for: 1),
+            GarminWorkoutNoteSetMetrics(
+                setIndex: 1,
+                activeSeconds: 42,
+                restBeforeSeconds: 90,
+                startHeartRate: 118,
+                peakHeartRate: 154,
+                endHeartRate: 136,
+                recoveryHeartRateDrop: 18,
+                detectionConfidence: 92
+            )
+        )
+        XCTAssertEqual(summary.interval(for: 1)?.heartRateZoneSeconds, [0, 0, 12, 20, 10, 0])
+
+        XCTAssertNil(GarminWorkoutNoteParser.parse("Garmin · Avg HR 180 · Max HR 150"))
+        XCTAssertNil(GarminWorkoutNoteParser.parse("Garmin · Ending HR zone Z6"))
+        XCTAssertNil(GarminWorkoutNoteParser.parse("Garmin · S1 HR118/999/136"))
+        XCTAssertNil(GarminWorkoutNoteParser.parse("Garmin · S1 C101%"))
+        XCTAssertNil(GarminWorkoutNoteParser.parse("Garmin · S2 10s · S1 10s"))
+    }
+
+    func testGarminWorkoutChartModelClampsHeartRateAndNormalizesZones() {
+        XCTAssertEqual(GarminWorkoutChartModel.heartRatePosition(0), 0, accuracy: 0.0001)
+        XCTAssertEqual(GarminWorkoutChartModel.heartRatePosition(140), 0.5, accuracy: 0.0001)
+        XCTAssertEqual(GarminWorkoutChartModel.heartRatePosition(999), 1, accuracy: 0.0001)
+
+        let fractions = GarminWorkoutChartModel.zoneFractions([0, 0, 10, 20, 10, 0])
+        XCTAssertEqual(fractions.count, 6)
+        XCTAssertEqual(fractions.reduce(0, +), 1, accuracy: 0.0001)
+        XCTAssertEqual(fractions[2], 0.25, accuracy: 0.0001)
+        XCTAssertEqual(fractions[3], 0.5, accuracy: 0.0001)
+        XCTAssertTrue(GarminWorkoutChartModel.zoneFractions([1, 2]).isEmpty)
+        XCTAssertTrue(GarminWorkoutChartModel.zoneFractions([0, 0, 0, 0, 0, 0]).isEmpty)
+        XCTAssertTrue(GarminWorkoutChartModel.zoneFractions([0, 0, -1, 0, 0, 0]).isEmpty)
+    }
+
+    func testSharedWorkoutLinkMatchesPWACompactFormatWithoutPrivateMetrics() throws {
+        let exerciseID = UUID()
+        let workout = WorkoutSession(
+            date: Date(timeIntervalSince1970: 1_700_000_000),
+            note: "private Garmin HR 150 calories 300 account-id",
+            exercises: [
+                WorkoutExercise(
+                    exerciseID: exerciseID,
+                    sets: [
+                        WorkoutSet(weight: 50, reps: 8),
+                        WorkoutSet(weight: 52.5, reps: 7)
+                    ]
+                )
+            ]
+        )
+        let exercise = Exercise(
+            id: exerciseID,
+            name: "Lat pulldown",
+            catalogKey: "lat_pulldown"
+        )
+
+        let url = try SharedWorkoutLinkEncoder.makeURL(
+            workout: workout,
+            exercises: [exerciseID: exercise]
+        )
+
+        XCTAssertEqual(url.scheme, "https")
+        XCTAssertEqual(url.host, "gymapptracker.com")
+        XCTAssertEqual(url.path, "/")
+        XCTAssertNil(url.query)
+        let fragment = try XCTUnwrap(url.fragment)
+        XCTAssertTrue(fragment.hasPrefix("workout="))
+        let encoded = String(fragment.dropFirst("workout=".count))
+        XCTAssertLessThanOrEqual(encoded.count, SharedWorkoutLinkEncoder.maximumEncodedLength)
+        XCTAssertNotNil(encoded.range(of: "^[A-Za-z0-9_-]+$", options: .regularExpression))
+
+        var base64 = encoded.replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        base64 += String(repeating: "=", count: (4 - base64.count % 4) % 4)
+        let data = try XCTUnwrap(Data(base64Encoded: base64))
+        let payload = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: data) as? [String: Any]
+        )
+        XCTAssertEqual((payload["v"] as? NSNumber)?.intValue, 1)
+        let compactExercises = try XCTUnwrap(payload["e"] as? [Any])
+        let compactExercise = try XCTUnwrap(compactExercises.first as? [Any])
+        XCTAssertEqual(compactExercise[0] as? String, "lat_pulldown")
+        XCTAssertEqual(compactExercise[1] as? String, "Lat pulldown")
+        let compactSets = try XCTUnwrap(compactExercise[2] as? [Any])
+        XCTAssertEqual(compactSets.count, 2)
+        let firstSet = try XCTUnwrap(compactSets[0] as? [Any])
+        XCTAssertEqual((firstSet[0] as? NSNumber)?.doubleValue, 50)
+        XCTAssertEqual((firstSet[1] as? NSNumber)?.intValue, 8)
+
+        let serialized = String(decoding: data, as: UTF8.self)
+        for privateValue in ["private", "Garmin", "HR", "calories", "account-id"] {
+            XCTAssertFalse(serialized.contains(privateValue))
+        }
+    }
+
+    func testSharedWorkoutLinkRejectsUnboundedOrMalformedPlans() throws {
+        func workout(
+            name: String = "Exercise",
+            catalogKey: String? = nil,
+            sets: [WorkoutSet]
+        ) -> (WorkoutSession, [UUID: Exercise]) {
+            let exerciseID = UUID()
+            return (
+                WorkoutSession(
+                    date: Date(),
+                    exercises: [WorkoutExercise(exerciseID: exerciseID, sets: sets)]
+                ),
+                [exerciseID: Exercise(id: exerciseID, name: name, catalogKey: catalogKey)]
+            )
+        }
+
+        let empty = workout(sets: [])
+        XCTAssertThrowsError(
+            try SharedWorkoutLinkEncoder.makeURL(workout: empty.0, exercises: empty.1)
+        )
+
+        let tooManySets = workout(
+            sets: (0 ... SharedWorkoutLinkEncoder.maximumSetsPerExercise).map {
+                WorkoutSet(weight: Double($0), reps: 8)
+            }
+        )
+        XCTAssertThrowsError(
+            try SharedWorkoutLinkEncoder.makeURL(
+                workout: tooManySets.0,
+                exercises: tooManySets.1
+            )
+        )
+
+        func manyExercises(
+            count: Int,
+            setsPerExercise: Int
+        ) -> (WorkoutSession, [UUID: Exercise]) {
+            var blocks: [WorkoutExercise] = []
+            var definitions: [UUID: Exercise] = [:]
+            for index in 0 ..< count {
+                let exerciseID = UUID()
+                definitions[exerciseID] = Exercise(id: exerciseID, name: "Exercise \(index)")
+                blocks.append(
+                    WorkoutExercise(
+                        exerciseID: exerciseID,
+                        sets: (0 ..< setsPerExercise).map { setIndex in
+                            WorkoutSet(weight: Double(setIndex), reps: 8)
+                        }
+                    )
+                )
+            }
+            return (WorkoutSession(date: Date(), exercises: blocks), definitions)
+        }
+        let tooManyExercises = manyExercises(
+            count: SharedWorkoutLinkEncoder.maximumExercises + 1,
+            setsPerExercise: 1
+        )
+        XCTAssertThrowsError(
+            try SharedWorkoutLinkEncoder.makeURL(
+                workout: tooManyExercises.0,
+                exercises: tooManyExercises.1
+            )
+        )
+        let tooManyTotalSets = manyExercises(count: 11, setsPerExercise: 11)
+        XCTAssertThrowsError(
+            try SharedWorkoutLinkEncoder.makeURL(
+                workout: tooManyTotalSets.0,
+                exercises: tooManyTotalSets.1
+            )
+        )
+
+        for invalidWeight in [Double.nan, -1, SharedWorkoutLinkEncoder.maximumWeight + 1] {
+            let value = workout(sets: [WorkoutSet(weight: invalidWeight, reps: 8)])
+            XCTAssertThrowsError(
+                try SharedWorkoutLinkEncoder.makeURL(workout: value.0, exercises: value.1)
+            )
+        }
+        for invalidReps in [0, SharedWorkoutLinkEncoder.maximumRepetitions + 1] {
+            let value = workout(sets: [WorkoutSet(weight: 10, reps: invalidReps)])
+            XCTAssertThrowsError(
+                try SharedWorkoutLinkEncoder.makeURL(workout: value.0, exercises: value.1)
+            )
+        }
+
+        let controlName = workout(name: "Bad\u{0000}name", sets: [WorkoutSet(weight: 10, reps: 8)])
+        XCTAssertThrowsError(
+            try SharedWorkoutLinkEncoder.makeURL(
+                workout: controlName.0,
+                exercises: controlName.1
+            )
+        )
+        let oversizedName = workout(
+            name: String(repeating: "é", count: SharedWorkoutLinkEncoder.maximumExerciseNameCharacters + 1),
+            sets: [WorkoutSet(weight: 10, reps: 8)]
+        )
+        XCTAssertThrowsError(
+            try SharedWorkoutLinkEncoder.makeURL(
+                workout: oversizedName.0,
+                exercises: oversizedName.1
+            )
+        )
+        var invalidKey = workout(
+            name: "Exercise",
+            sets: [WorkoutSet(weight: 10, reps: 8)]
+        )
+        let invalidKeyExerciseID = invalidKey.0.exercises[0].exerciseID
+        var invalidKeyExercise = try XCTUnwrap(invalidKey.1[invalidKeyExerciseID])
+        invalidKeyExercise.catalogKey = "../private"
+        invalidKey.1[invalidKeyExerciseID] = invalidKeyExercise
+        XCTAssertThrowsError(
+            try SharedWorkoutLinkEncoder.makeURL(
+                workout: invalidKey.0,
+                exercises: invalidKey.1
+            )
+        )
+    }
+
+    func testExercisePickerAndLibraryShareAllFilterAndSortRules() {
+        let bench = Exercise(
+            name: "Bench Press",
+            catalogKey: "bench_press",
+            isFavorite: true
+        )
+        let squat = Exercise(name: "Squat", catalogKey: "squat")
+        let plank = Exercise(name: "Plank", catalogKey: "plank")
+        let custom = Exercise(name: "Custom calf machine")
+        let exercises = [squat, custom, plank, bench]
+        let mappings = [
+            ExerciseMuscleMapping(
+                exerciseNameKey: MuscleMappingEngine.normalizeExerciseName(custom.name),
+                exerciseName: custom.name,
+                muscleID: "calves",
+                weight: 1
+            )
+        ]
+        let counts = [bench.id: 5, squat.id: 3, plank.id: 1, custom.id: 0]
+
+        func filtered(
+            query: String = "",
+            body: ExerciseBodyFilter = .all,
+            muscle: String? = nil,
+            favoritesOnly: Bool = false,
+            sort: ExerciseSortMode = .name
+        ) -> [Exercise] {
+            ExerciseFilterEngine.filtered(
+                exercises: exercises,
+                query: query,
+                bodyFilter: body,
+                muscleFilter: muscle,
+                favoritesOnly: favoritesOnly,
+                sortMode: sort,
+                muscleMappings: mappings,
+                sessionCounts: counts
+            )
+        }
+
+        XCTAssertEqual(filtered(query: "жим лежачи").map(\.id), [bench.id])
+        XCTAssertEqual(filtered(favoritesOnly: true).map(\.id), [bench.id])
+        XCTAssertEqual(Set(filtered(body: .upper).map(\.id)), [bench.id])
+        XCTAssertEqual(Set(filtered(body: .lower).map(\.id)), [squat.id, custom.id])
+        XCTAssertEqual(Set(filtered(body: .core).map(\.id)), [plank.id])
+        XCTAssertEqual(filtered(muscle: "calves").map(\.id), [custom.id])
+        XCTAssertEqual(filtered(sort: .mostFrequent).map(\.id), [bench.id, squat.id, plank.id, custom.id])
+        XCTAssertEqual(filtered(sort: .leastFrequent).map(\.id), [custom.id, plank.id, squat.id, bench.id])
+    }
+
     func testGarminWorkoutDetailCopyIdentifiesChronologicalWatchSetOrderInEveryLanguage() {
         XCTAssertEqual(
             GarminWorkoutDetailCopy.intervalsTitle(languageCode: "en"),

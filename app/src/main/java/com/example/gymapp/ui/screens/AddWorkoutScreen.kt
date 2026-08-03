@@ -320,6 +320,8 @@ fun AddWorkoutScreen(
                 draft = draft,
                 exercises = uiState.exercises,
                 frequentExerciseIds = uiState.frequentExerciseIds,
+                exerciseWorkoutCounts = uiState.exerciseWorkoutCounts,
+                exerciseMuscleIds = uiState.exerciseMuscleIds,
                 lastWeight = draft.exerciseId?.let { uiState.lastWeights[it] },
                 recommendation = draft.exerciseId?.let { uiState.workoutRecommendations[it] },
                 exerciseMediaOwnerKey = exerciseMediaOwnerKey,
@@ -694,6 +696,8 @@ private fun ExerciseDraftCard(
     draft: ExerciseInputState,
     exercises: List<ExerciseEntity>,
     frequentExerciseIds: List<Long>,
+    exerciseWorkoutCounts: Map<Long, Int>,
+    exerciseMuscleIds: Map<String, Set<String>>,
     lastWeight: Double?,
     recommendation: WorkoutRecommendation?,
     exerciseMediaOwnerKey: String,
@@ -811,6 +815,8 @@ private fun ExerciseDraftCard(
                 selectedExerciseId = draft.exerciseId,
                 exercises = exercises,
                 frequentExerciseIds = frequentExerciseIds,
+                exerciseWorkoutCounts = exerciseWorkoutCounts,
+                exerciseMuscleIds = exerciseMuscleIds,
                 onExerciseSelected = onExerciseSelected,
                 modifier = Modifier.fillMaxWidth()
             )
@@ -1066,53 +1072,47 @@ private fun ExerciseSelector(
     selectedExerciseId: Long?,
     exercises: List<ExerciseEntity>,
     frequentExerciseIds: List<Long>,
+    exerciseWorkoutCounts: Map<Long, Int>,
+    exerciseMuscleIds: Map<String, Set<String>>,
     onExerciseSelected: (Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
     var frequentOnly by rememberSaveable { mutableStateOf(false) }
+    var bodyFilter by rememberSaveable { mutableStateOf(ExerciseBodyFilter.All) }
+    var muscleFilter by rememberSaveable { mutableStateOf<String?>(null) }
+    var sortMode by rememberSaveable { mutableStateOf(ExerciseSortMode.Name) }
+    var favoritesOnly by rememberSaveable { mutableStateOf(false) }
     val languageTag = currentAppLanguageTag()
     val selectedLabel = exercises
         .firstOrNull { it.id == selectedExerciseId }
         ?.let { BuiltInExerciseCatalog.displayName(it.name, languageTag) }
         ?: stringResource(R.string.label_select_exercise)
-    val frequentRank = remember(frequentExerciseIds) {
-        frequentExerciseIds.withIndex().associate { (index, id) -> id to index }
-    }
-    val normalizedQuery = query.trim().lowercase(Locale.ROOT)
     val visibleExercises = remember(
         exercises,
-        frequentRank,
+        frequentExerciseIds,
+        exerciseWorkoutCounts,
+        exerciseMuscleIds,
+        query,
         frequentOnly,
-        normalizedQuery,
+        bodyFilter,
+        muscleFilter,
+        sortMode,
+        favoritesOnly,
         languageTag
     ) {
-        exercises
-            .filter { exercise ->
-                val definition = BuiltInExerciseCatalog.definitionForName(exercise.name)
-                val matchesSearch = normalizedQuery.isEmpty() || buildList {
-                    add(exercise.name)
-                    add(BuiltInExerciseCatalog.displayName(exercise.name, languageTag))
-                    definition?.let {
-                        add(it.nameEn)
-                        add(it.nameUk)
-                        addAll(it.legacyAliases)
-                    }
-                }.any { it.lowercase(Locale.ROOT).contains(normalizedQuery) }
-                matchesSearch && (!frequentOnly || exercise.id in frequentRank)
-            }
-            .sortedWith { left, right ->
-                if (frequentOnly) {
-                    (frequentRank[left.id] ?: Int.MAX_VALUE)
-                        .compareTo(frequentRank[right.id] ?: Int.MAX_VALUE)
-                } else {
-                    BuiltInExerciseCatalog.displayName(left.name, languageTag).compareTo(
-                        BuiltInExerciseCatalog.displayName(right.name, languageTag),
-                        ignoreCase = true
-                    )
-                }
-            }
+        filterAndSortExercises(
+            exercises = exercises,
+            exerciseWorkoutCounts = exerciseWorkoutCounts,
+            muscleIdsByExerciseName = exerciseMuscleIds,
+            query = query,
+            bodyFilter = bodyFilter,
+            muscleFilter = muscleFilter,
+            sortMode = sortMode,
+            favoritesOnly = favoritesOnly,
+            languageTag = languageTag
+        ).filter { exercise -> !frequentOnly || exercise.id in frequentExerciseIds }
     }
 
     OutlinedButton(
@@ -1144,17 +1144,6 @@ private fun ExerciseSelector(
                     text = stringResource(R.string.label_select_exercise),
                     style = MaterialTheme.typography.headlineSmall
                 )
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = { query = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    label = { Text(stringResource(R.string.exercise_search_label)) },
-                    placeholder = { Text(stringResource(R.string.exercise_search_placeholder)) },
-                    leadingIcon = {
-                        Icon(imageVector = Icons.Default.Search, contentDescription = null)
-                    }
-                )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(
                         selected = !frequentOnly,
@@ -1163,7 +1152,10 @@ private fun ExerciseSelector(
                     )
                     FilterChip(
                         selected = frequentOnly,
-                        onClick = { frequentOnly = true },
+                        onClick = {
+                            frequentOnly = true
+                            sortMode = ExerciseSortMode.MostFrequent
+                        },
                         label = { Text(stringResource(R.string.exercise_picker_frequent)) },
                         leadingIcon = {
                             Icon(
@@ -1174,14 +1166,23 @@ private fun ExerciseSelector(
                         }
                     )
                 }
-                Text(
-                    text = stringResource(R.string.exercise_search_result_count, visibleExercises.size),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                ExerciseSearchAndFilters(
+                    query = query,
+                    onQueryChange = { query = it },
+                    bodyFilter = bodyFilter,
+                    onBodyFilterChange = { bodyFilter = it },
+                    muscleFilter = muscleFilter,
+                    onMuscleFilterChange = { muscleFilter = it },
+                    sortMode = sortMode,
+                    onSortModeChange = { sortMode = it },
+                    favoritesOnly = favoritesOnly,
+                    onFavoritesOnlyChange = { favoritesOnly = it },
+                    resultCount = visibleExercises.size
                 )
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .weight(1f, fill = false)
                         .heightIn(max = 480.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {

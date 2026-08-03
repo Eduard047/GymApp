@@ -630,50 +630,155 @@ struct WorkoutRestTimerControls: View {
     }
 }
 
-struct ExercisePickerSheet: View {
-    private enum Scope: String, CaseIterable, Identifiable {
-        case all
-        case frequent
+enum ExerciseBodyFilter: String, CaseIterable, Identifiable {
+    case all
+    case upper
+    case lower
+    case core
 
-        var id: Self { self }
+    var id: Self { self }
+
+    var muscleIDs: Set<String> {
+        switch self {
+        case .all: []
+        case .upper: ["chest", "shoulders", "biceps", "triceps", "forearms", "lats", "upperBack"]
+        case .lower: ["lowerBack", "glutes", "quads", "hamstrings", "adductors", "calves"]
+        case .core: ["abs", "obliques"]
+        }
     }
+
+    var localizedTitle: String {
+        switch self {
+        case .all: gymLocalized("All")
+        case .upper: gymText("Upper body", "Верх тіла", languageCode: gymCurrentLanguageCode())
+        case .lower: gymText("Lower body", "Низ тіла", languageCode: gymCurrentLanguageCode())
+        case .core: gymText("Core", "Кор", languageCode: gymCurrentLanguageCode())
+        }
+    }
+}
+
+enum ExerciseSortMode: String, CaseIterable, Identifiable {
+    case name
+    case mostFrequent
+    case leastFrequent
+
+    var id: Self { self }
+
+    var localizedTitle: String {
+        switch self {
+        case .name:
+            gymText("By name", "За назвою", languageCode: gymCurrentLanguageCode())
+        case .mostFrequent:
+            gymText("Most frequent", "Найчастіші", languageCode: gymCurrentLanguageCode())
+        case .leastFrequent:
+            gymText("Least frequent", "Найрідші", languageCode: gymCurrentLanguageCode())
+        }
+    }
+}
+
+enum ExerciseFilterEngine {
+    static func filtered(
+        exercises: [Exercise],
+        query: String,
+        bodyFilter: ExerciseBodyFilter,
+        muscleFilter: String?,
+        favoritesOnly: Bool,
+        sortMode: ExerciseSortMode,
+        muscleMappings: [ExerciseMuscleMapping],
+        sessionCounts: [UUID: Int]
+    ) -> [Exercise] {
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let manualMuscles = Dictionary(grouping: muscleMappings, by: \.exerciseNameKey)
+            .mapValues { Set($0.map(\.muscleID)) }
+        let matching = exercises.filter { exercise in
+            let definition = catalogDefinition(for: exercise)
+            let names = [exercise.name, gymExerciseName(exercise)] +
+                (definition.map { [$0.englishName, $0.ukrainianName] + $0.legacyAliases } ?? [])
+            let muscles = effectiveMuscleIDs(
+                for: exercise,
+                definition: definition,
+                manualMuscles: manualMuscles
+            )
+            let matchesQuery = trimmedQuery.isEmpty || names.contains { name in
+                name.localizedCaseInsensitiveContains(trimmedQuery)
+            }
+            let matchesBody = bodyFilter == .all ||
+                !muscles.isDisjoint(with: bodyFilter.muscleIDs)
+            let matchesMuscle = muscleFilter == nil || muscles.contains(muscleFilter!)
+            let matchesFavorite = !favoritesOnly || exercise.isFavorite
+            return matchesQuery && matchesBody && matchesMuscle && matchesFavorite
+        }
+        return matching.sorted { left, right in
+            let nameOrder = gymExerciseName(left)
+                .localizedCaseInsensitiveCompare(gymExerciseName(right))
+            let nameComesFirst = nameOrder == .orderedAscending ||
+                (nameOrder == .orderedSame && left.id.uuidString < right.id.uuidString)
+            switch sortMode {
+            case .name:
+                return nameComesFirst
+            case .mostFrequent:
+                let leftCount = max(0, sessionCounts[left.id] ?? 0)
+                let rightCount = max(0, sessionCounts[right.id] ?? 0)
+                return leftCount == rightCount ? nameComesFirst : leftCount > rightCount
+            case .leastFrequent:
+                let leftCount = max(0, sessionCounts[left.id] ?? 0)
+                let rightCount = max(0, sessionCounts[right.id] ?? 0)
+                return leftCount == rightCount ? nameComesFirst : leftCount < rightCount
+            }
+        }
+    }
+
+    private static func effectiveMuscleIDs(
+        for exercise: Exercise,
+        definition: BuiltInExerciseDefinition?,
+        manualMuscles: [String: Set<String>]
+    ) -> Set<String> {
+        let key = MuscleMappingEngine.normalizeExerciseName(exercise.name)
+        if let manual = manualMuscles[key], !manual.isEmpty { return manual }
+        if let definition { return Set(definition.muscleIDs) }
+        return Set(MuscleMappingEngine.defaultContributions(for: exercise.name).map(\.muscleID))
+    }
+
+    private static func catalogDefinition(for exercise: Exercise) -> BuiltInExerciseDefinition? {
+        if let definition = BuiltInExerciseCatalog.definition(forKey: exercise.catalogKey) {
+            return definition
+        }
+        guard let key = BuiltInExerciseCatalog.canonicalKey(forName: exercise.name) else {
+            return nil
+        }
+        return BuiltInExerciseCatalog.definition(forKey: key)
+    }
+}
+
+struct ExercisePickerSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var search = ""
     @State private var newExerciseName = ""
     @State private var errorMessage: String?
-    @State private var scope: Scope = .all
+    @State private var bodyFilter: ExerciseBodyFilter = .all
+    @State private var muscleFilter: String?
+    @State private var favoritesOnly = false
+    @State private var sortMode: ExerciseSortMode = .name
 
     let exercises: [Exercise]
     let selectedExerciseIDs: Set<UUID>
-    var frequentExerciseIDs: [UUID] = []
+    let muscleMappings: [ExerciseMuscleMapping]
+    let sessionCounts: [UUID: Int]
     let onSelect: (Exercise) -> Void
     let onCreate: (String) throws -> Exercise
 
     private var filteredExercises: [Exercise] {
-        let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
-        let frequentRank = Dictionary(
-            uniqueKeysWithValues: frequentExerciseIDs.enumerated().map { ($0.element, $0.offset) }
+        ExerciseFilterEngine.filtered(
+            exercises: exercises,
+            query: search,
+            bodyFilter: bodyFilter,
+            muscleFilter: muscleFilter,
+            favoritesOnly: favoritesOnly,
+            sortMode: sortMode,
+            muscleMappings: muscleMappings,
+            sessionCounts: sessionCounts
         )
-        return exercises
-            .filter { exercise in
-                let matchesScope = scope == .all || frequentRank[exercise.id] != nil
-                let matchesSearch = query.isEmpty ||
-                    exercise.name.localizedCaseInsensitiveContains(query) ||
-                    gymExerciseName(exercise).localizedCaseInsensitiveContains(query) ||
-                    BuiltInExerciseCatalog.definition(forKey: exercise.catalogKey ?? "")?
-                        .englishName.localizedCaseInsensitiveContains(query) == true ||
-                    BuiltInExerciseCatalog.definition(forKey: exercise.catalogKey ?? "")?
-                        .ukrainianName.localizedCaseInsensitiveContains(query) == true
-                return matchesScope && matchesSearch
-            }
-            .sorted { left, right in
-                if scope == .frequent {
-                    return (frequentRank[left.id] ?? .max) < (frequentRank[right.id] ?? .max)
-                }
-                return gymExerciseName(left)
-                    .localizedCaseInsensitiveCompare(gymExerciseName(right)) == .orderedAscending
-            }
     }
 
     var body: some View {
@@ -698,25 +803,81 @@ struct ExercisePickerSheet: View {
                 }
 
                 Section("Exercises") {
-                    Picker("Exercise filter", selection: $scope) {
-                        Text(gymLocalized("All")).tag(Scope.all)
-                        Text(gymLocalized("Frequent")).tag(Scope.frequent)
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            Button {
+                                favoritesOnly.toggle()
+                            } label: {
+                                Label(
+                                    gymLocalized("Favorites"),
+                                    systemImage: favoritesOnly ? "heart.fill" : "heart"
+                                )
+                            }
+                            .buttonStyle(.bordered)
+                            .tint(favoritesOnly ? GymTheme.primary : GymTheme.textSecondary)
+                            .accessibilityAddTraits(favoritesOnly ? .isSelected : [])
+
+                            ForEach(ExerciseBodyFilter.allCases) { filter in
+                                Button(filter.localizedTitle) { bodyFilter = filter }
+                                    .buttonStyle(.bordered)
+                                    .tint(
+                                        bodyFilter == filter
+                                            ? GymTheme.primary
+                                            : GymTheme.textSecondary
+                                    )
+                                    .accessibilityAddTraits(
+                                        bodyFilter == filter ? .isSelected : []
+                                    )
+                            }
+                        }
                     }
-                    .pickerStyle(.segmented)
-                    .accessibilityLabel(gymLocalized("Exercise filter"))
+
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(ExerciseSortMode.allCases) { mode in
+                                Button(mode.localizedTitle) { sortMode = mode }
+                                    .buttonStyle(.bordered)
+                                    .tint(
+                                        sortMode == mode
+                                            ? GymTheme.primary
+                                            : GymTheme.textSecondary
+                                    )
+                                    .accessibilityAddTraits(sortMode == mode ? .isSelected : [])
+                            }
+                        }
+                    }
+
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            Button(gymLocalized("All muscles")) { muscleFilter = nil }
+                                .buttonStyle(.bordered)
+                                .tint(
+                                    muscleFilter == nil
+                                        ? GymTheme.primary
+                                        : GymTheme.textSecondary
+                                )
+                            ForEach(MuscleMappingEngine.muscleDefinitions) { muscle in
+                                Button(
+                                    gymText(
+                                        muscle.titleEn,
+                                        muscle.titleUk,
+                                        languageCode: gymCurrentLanguageCode()
+                                    )
+                                ) {
+                                    muscleFilter = muscleFilter == muscle.id ? nil : muscle.id
+                                }
+                                .buttonStyle(.bordered)
+                                .tint(
+                                    muscleFilter == muscle.id
+                                        ? GymTheme.primary
+                                        : GymTheme.textSecondary
+                                )
+                            }
+                        }
+                    }
 
                     if filteredExercises.isEmpty {
-                        if scope == .frequent && frequentExerciseIDs.isEmpty && search.isEmpty {
-                            GymContentUnavailableView {
-                                Label(gymLocalized("No frequent exercises yet"), systemImage: "star")
-                            } description: {
-                                Text(gymLocalized(
-                                    "Frequently used exercises appear after you save workouts."
-                                ))
-                            }
-                        } else {
-                            GymContentUnavailableView.search(text: search)
-                        }
+                        GymContentUnavailableView.search(text: search)
                     } else {
                         ForEach(filteredExercises) { exercise in
                             Button {

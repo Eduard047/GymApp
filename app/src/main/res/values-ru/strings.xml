@@ -41,6 +41,7 @@
     <string name="action_save_workout">Сохранить тренировку</string>
     <string name="action_save_completed_workout">Сохранить как выполненную тренировку</string>
     <string name="action_delete">Удалить</string>
+    <string name="action_share_workout">Поделиться тренировкой</string>
     <string name="action_deleting">Удаление…</string>
     <string name="action_edit">Редактировать</string>
     <string name="action_cancel">Отменить</string>
@@ -301,6 +302,7 @@
     <string name="message_set_deleted">Подход удален</string>
     <string name="message_delete_target_changed">Удаление остановлено: сохранённые данные изменились. Проверь их и попробуй снова.</string>
     <string name="message_delete_failed">Не удалось удалить сохранённые данные. Этот запрос ничего не удалил.</string>
+    <string name="message_share_workout_failed">Не удалось безопасно подготовить эту тренировку для отправки.</string>
     <string name="message_add_set_failed">Не удалось записать подход. Таймер отдыха не запущен.</string>
     <string name="message_rest_timer_save_failed">Подход сохранён, но не удалось запустить таймер отдыха.</string>
     <string name="message_invalid_set_input">Введи корректное число повторений и при необходимости вес.</string>

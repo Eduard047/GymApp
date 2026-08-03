@@ -234,7 +234,20 @@ internal fun isCanonicalAndroidCloudEnvelope(root: JSONObject, activeUserId: Str
         require(owner.opt("remote") == true)
 
         val exercises = root.optJSONArray("exercises") ?: error("Missing exercises")
-        require(exercises.allObjectsMatch(setOf("name", "catalogKey"), setOf("name")))
+        require(
+            exercises.allObjectsMatch(
+                allowed = setOf("name", "catalogKey", "loadProfile"),
+                required = setOf("name")
+            )
+        )
+        repeat(exercises.length()) { exerciseIndex ->
+            val exercise = exercises.optJSONObject(exerciseIndex) ?: error("Invalid exercise")
+            if (exercise.has("loadProfile")) {
+                val profile = exercise.optJSONObject("loadProfile")
+                    ?: error("Invalid exercise load profile")
+                require(profile.keySet() == setOf("direction", "allowedWeightsKg"))
+            }
+        }
 
         val sessions = root.optJSONArray("sessions") ?: error("Missing sessions")
         repeat(sessions.length()) { sessionIndex ->
@@ -253,6 +266,10 @@ internal fun isCanonicalAndroidCloudEnvelope(root: JSONObject, activeUserId: Str
 
         val summary = root.optJSONObject("summary") ?: error("Missing summary")
         require(summary.keySet() == setOf("exerciseCount", "sessionCount", "setCount", "totalVolume"))
+        // Run the bounded import validator as the final structural/value check. In particular,
+        // machine load profiles are part of the canonical workout digest and must round-trip
+        // without turning a snapshot produced by this Android client into an untrusted legacy row.
+        require(canonicalWorkoutPayloadDigest(root) != null)
         true
     }.getOrDefault(false)
 

@@ -182,6 +182,34 @@ class GymNavGraphSecurityTest {
     }
 
     @Test
+    fun `native machine load profiles remain canonical but malformed profiles fail closed`() {
+        val canonical = canonicalState()
+        val exercise = canonical.getJSONArray("exercises").getJSONObject(0)
+        exercise.put(
+            "loadProfile",
+            JSONObject()
+                .put("direction", "higherIsHarder")
+                .put("allowedWeightsKg", JSONArray(listOf(45.0, 50.0, 55.0)))
+        )
+
+        assertTrue(isCanonicalAndroidCloudEnvelope(canonical, userId))
+
+        val unknownField = JSONObject(canonical.toString()).apply {
+            getJSONArray("exercises").getJSONObject(0)
+                .getJSONObject("loadProfile")
+                .put("unsafe", true)
+        }
+        assertFalse(isCanonicalAndroidCloudEnvelope(unknownField, userId))
+
+        val unsortedWeights = JSONObject(canonical.toString()).apply {
+            getJSONArray("exercises").getJSONObject(0)
+                .getJSONObject("loadProfile")
+                .put("allowedWeightsKg", JSONArray(listOf(55.0, 50.0)))
+        }
+        assertFalse(isCanonicalAndroidCloudEnvelope(unsortedWeights, userId))
+    }
+
+    @Test
     fun `cloud baseline allows replace only for clean or empty local state`() {
         val baseline = "a".repeat(64)
         val remote = "b".repeat(64)

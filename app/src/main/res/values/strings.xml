@@ -41,6 +41,7 @@
     <string name="action_save_workout">Save Workout</string>
     <string name="action_save_completed_workout">Save as completed workout</string>
     <string name="action_delete">Delete</string>
+    <string name="action_share_workout">Share workout</string>
     <string name="action_deleting">Deleting…</string>
     <string name="action_edit">Edit</string>
     <string name="action_cancel">Cancel</string>
@@ -301,6 +302,7 @@
     <string name="message_set_deleted">Set deleted</string>
     <string name="message_delete_target_changed">Deletion stopped because the saved data changed. Review it and try again.</string>
     <string name="message_delete_failed">Could not delete the saved data. Nothing was removed by this request.</string>
+    <string name="message_share_workout_failed">This workout could not be shared safely.</string>
     <string name="message_add_set_failed">Could not log the set. Rest was not started.</string>
     <string name="message_rest_timer_save_failed">The set was saved, but the rest timer could not be started.</string>
     <string name="message_invalid_set_input">Enter valid reps and optional weight.</string>

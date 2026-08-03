@@ -311,7 +311,7 @@ class WorkoutView extends Ui.View {
         drawDashboardMetric(dc, w, h, 78, 113,
             GymStore.tr("ELAPSED", "ЧАС", "ВРЕМЯ"), GymSession.elapsedText());
         drawDashboardMetric(dc, w, h, 182, 113,
-            GymStore.tr("CALORIES", "ККАЛ", "ККАЛ"), GymSession.gymCalories.format("%.0f"));
+            GymStore.tr("CALORIES", "ККАЛ", "ККАЛ"), GymSession.gymCalories.format("%.1f"));
         dc.setColor(Gfx.COLOR_DK_GRAY, Gfx.COLOR_TRANSPARENT);
         dc.drawLine(w / 2, sy(h, 113), w / 2, sy(h, 148));
         drawDashboardDivider(dc, w, h, 153);
@@ -358,7 +358,7 @@ class WorkoutView extends Ui.View {
         drawCompactMetric(dc, centerX - 39, 87,
             GymStore.tr("TIME", "ЧАС", "ВРЕМЯ"), GymSession.elapsedText());
         drawCompactMetric(dc, centerX + 39, 87,
-            GymStore.tr("KCAL", "ККАЛ", "ККАЛ"), GymSession.gymCalories.format("%.0f"));
+            GymStore.tr("KCAL", "ККАЛ", "ККАЛ"), GymSession.gymCalories.format("%.1f"));
         dc.setColor(Gfx.COLOR_DK_GRAY, Gfx.COLOR_TRANSPARENT);
         dc.drawLine(centerX, 87, centerX, 116);
         drawCompactDivider(dc, w, 120);
@@ -395,7 +395,7 @@ class WorkoutView extends Ui.View {
         drawCompactMetric(dc, centerX - 31, 68,
             GymStore.tr("TIME", "ЧАС", "ВРЕМЯ"), GymSession.elapsedText());
         drawCompactMetric(dc, centerX + 31, 68,
-            GymStore.tr("KCAL", "ККАЛ", "ККАЛ"), GymSession.gymCalories.format("%.0f"));
+            GymStore.tr("KCAL", "ККАЛ", "ККАЛ"), GymSession.gymCalories.format("%.1f"));
         dc.setColor(Gfx.COLOR_DK_GRAY, Gfx.COLOR_TRANSPARENT);
         dc.drawLine(centerX, 68, centerX, 95);
         drawTinyDivider(dc, w, 99);

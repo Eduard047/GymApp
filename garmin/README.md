@@ -63,6 +63,11 @@ macOS development build:
 ./scripts/build-garmin.sh --developer-key /secure/developer_key.der --device fenix8solar47mm
 ```
 
+Development PRGs for Descent G1, Instinct 2/2S/2X, and Instinct Crossover are
+compiled with debug metadata stripped because those CIQ 3.4 products have a
+96 KiB watch-app limit. Runtime behavior is unchanged; use a larger-memory
+target when source-level simulator debugging is required.
+
 Store export:
 
 ```powershell
