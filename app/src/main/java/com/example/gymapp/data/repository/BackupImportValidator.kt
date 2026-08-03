@@ -12,7 +12,9 @@ internal data class ValidatedBackupExercise(
     val name: String,
     val catalogKey: String?,
     /** Null means the legacy/manual backup did not carry this device-local preference. */
-    val isFavorite: Boolean? = null
+    val isFavorite: Boolean? = null,
+    /** Null means this backup does not configure machine-specific loading for the exercise. */
+    val loadProfile: ExerciseLoadProfile? = null
 ) {
     val identityKey: String =
         BuiltInExerciseCatalog.resolvedKey(catalogKey = catalogKey, rawName = name)
@@ -318,11 +320,46 @@ internal object BackupImportValidator {
         } else {
             null
         }
+        val loadProfile = if (
+            allowFavorite && json.has("loadProfile") && !json.isNull("loadProfile")
+        ) {
+            validateLoadProfile(json.opt("loadProfile"))
+        } else {
+            null
+        }
         return ValidatedBackupExercise(
             name = name,
             catalogKey = catalogKey,
-            isFavorite = isFavorite
+            isFavorite = isFavorite,
+            loadProfile = loadProfile
         )
+    }
+
+    private fun validateLoadProfile(rawValue: Any?): ExerciseLoadProfile {
+        val profile = rawValue as? JSONObject
+            ?: throw IllegalArgumentException("Exercise load profile must be an object.")
+        val rawDirection = profile.optionalBoundedString("direction", 32)
+            ?: throw IllegalArgumentException("Exercise load direction is required.")
+        val direction = ExerciseLoadDirection.fromWireValue(rawDirection)
+            ?: throw IllegalArgumentException("Exercise load direction is unsupported.")
+        val options = profile.optionalArrayOrNull("allowedWeightsKg")
+            ?: throw IllegalArgumentException("Exercise weight options are required.")
+        require(options.length() in 1..ExerciseLoadProfile.MAX_WEIGHT_OPTIONS) {
+            "Exercise weight options exceed the supported limit."
+        }
+        val weights = List(options.length()) { index ->
+            val value = options.opt(index)
+            require(value is Number) { "Exercise weight options must be numeric." }
+            value.toDouble().also { weight ->
+                require(WorkoutDataLimits.isValidWeight(weight)) {
+                    "Exercise weight option is outside the supported range."
+                }
+            }
+        }
+        require(ExerciseLoadProfile.isValid(direction, weights)) {
+            "Exercise weight options must be unique and strictly increasing."
+        }
+        return ExerciseLoadProfile(direction, weights)
     }
 
     private fun validateSets(array: JSONArray): List<ValidatedBackupSet> {
@@ -388,11 +425,18 @@ internal fun canonicalWorkoutPayloadDigest(backup: ValidatedBackup): String {
     // The seed marker is local catalog-migration metadata, not part of the public cloud
     // workout projection. Keeping it out of the digest lets legacy eight-key envelopes and
     // newer readers that accept the optional field compare as the same workout state.
-    updateString("gymapp-canonical-workout-payload/v1")
+    updateString("gymapp-canonical-workout-payload/v2")
     updateInt(backup.exercises.size)
     backup.exercises.forEach { exercise ->
         updateString(exercise.name)
         updateOptionalString(exercise.catalogKey)
+        val profile = exercise.loadProfile
+        digest.update(if (profile == null) 0.toByte() else 1.toByte())
+        profile?.let {
+            updateString(it.direction.wireValue)
+            updateInt(it.allowedWeightsKg.size)
+            it.allowedWeightsKg.forEach(::updateDouble)
+        }
     }
     updateInt(backup.sessions.size)
     backup.sessions.forEach { session ->

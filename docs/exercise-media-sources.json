@@ -9,6 +9,7 @@
   "generatedSource": {
     "name": "OpenAI image generation",
     "created": "2026-08-02",
+    "updated": "2026-08-03",
     "note": "Original GymApp-specific instructional images with fictional people; not derived from Free Exercise DB."
   },
   "exercises": {
@@ -21,7 +22,7 @@
     "dips": "Dips_-_Chest_Version",
     "pull_up": "Pullups",
     "band_assisted_pull_up": "Band_Assisted_Pull-Up",
-    "lat_pulldown": "Full_Range-Of-Motion_Lat_Pulldown",
+    "lat_pulldown": "Wide-Grip_Lat_Pulldown",
     "straight_arm_pulldown": "Straight-Arm_Pulldown",
     "barbell_row": "Bent_Over_Barbell_Row",
     "seated_cable_row": "Seated_Cable_Rows",
@@ -62,6 +63,7 @@
   },
   "generatedExercises": {
     "assisted_pull_up": "Counterweighted assisted pull-up machine, bottom and top positions",
+    "assisted_dip": "Counterweighted assisted dip machine, top and bottom positions",
     "bulgarian_split_squat": "Dumbbell Bulgarian split squat, start and bottom positions",
     "machine_lateral_raise": "Seated lateral-raise machine, lowered and raised positions",
     "side_hyperextension": "Side hyperextension on a 45-degree bench, lowered and aligned positions",

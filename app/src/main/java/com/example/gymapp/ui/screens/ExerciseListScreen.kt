@@ -68,6 +68,7 @@ import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.catalog.BuiltInExerciseCatalog
 import com.example.gymapp.data.entity.ExerciseHistoryEntry
 import com.example.gymapp.data.repository.defaultContributionsForExercise
+import com.example.gymapp.data.repository.ExerciseLoadDirection
 import com.example.gymapp.data.repository.MUSCLE_DEFINITIONS
 import com.example.gymapp.data.repository.WorkoutDataLimits
 import com.example.gymapp.ui.components.AppPanel
@@ -205,6 +206,13 @@ fun ExerciseListScreen(
     onToggleExerciseMappingMuscle: (String) -> Unit,
     onSaveExerciseMapping: () -> Unit,
     onDismissExerciseMapping: () -> Unit,
+    onEditExerciseLoadProfile: (ExerciseEntity) -> Unit,
+    onExerciseLoadDirectionChange: (ExerciseLoadDirection) -> Unit,
+    onExerciseLoadWeightsChange: (String) -> Unit,
+    onApplyExerciseLoadPreset: (Double) -> Unit,
+    onSaveExerciseLoadProfile: () -> Unit,
+    onClearExerciseLoadProfile: () -> Unit,
+    onDismissExerciseLoadProfile: () -> Unit,
     onDismissHistory: () -> Unit,
     onToggleFavorite: (ExerciseEntity) -> Unit,
     modifier: Modifier = Modifier
@@ -386,6 +394,7 @@ fun ExerciseListScreen(
             ) { exercise ->
                 val mappingCount = musclesByExercise[exercise.name].orEmpty().size
                 val workoutCount = uiState.exerciseWorkoutCounts[exercise.id] ?: 0
+                val loadProfile = uiState.loadProfiles[exercise.id]
                 val isBuiltIn = BuiltInExerciseCatalog.definitionForName(exercise.name) != null
                 val displayExerciseName = localizedExerciseName(exercise.name)
                 AppPanel(
@@ -453,11 +462,25 @@ fun ExerciseListScreen(
                             }
                         }
 
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
                             ExerciseMetricPill(
                                 icon = Icons.Default.FormatListNumbered,
                                 text = stringResource(R.string.exercise_workout_count_compact, workoutCount)
                             )
+                            if (loadProfile != null) {
+                                ExerciseMetricPill(
+                                    icon = Icons.Default.FitnessCenter,
+                                    text = stringResource(
+                                        R.string.exercise_load_option_count,
+                                        loadProfile.allowedWeightsKg.size
+                                    )
+                                )
+                            }
                             ExerciseMetricPill(
                                 icon = Icons.Default.FitnessCenter,
                                 text = if (mappingCount == 0) {
@@ -501,6 +524,18 @@ fun ExerciseListScreen(
                                     maxLines = 2
                                 )
                             }
+                        }
+                        OutlinedButton(
+                            onClick = { onEditExerciseLoadProfile(exercise) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 52.dp)
+                        ) {
+                            Icon(imageVector = Icons.Default.FitnessCenter, contentDescription = null)
+                            Text(
+                                text = stringResource(R.string.exercise_load_profile_action),
+                                modifier = Modifier.padding(start = 8.dp)
+                            )
                         }
                     }
                 }
@@ -593,6 +628,161 @@ fun ExerciseListScreen(
         }
     }
 
+    val loadEditorExercise = uiState.loadEditorExercise
+    if (loadEditorExercise != null) {
+        ModalBottomSheet(
+            onDismissRequest = onDismissExerciseLoadProfile,
+            containerColor = MaterialTheme.colorScheme.background,
+            contentColor = MaterialTheme.colorScheme.onBackground
+        ) {
+            ExerciseLoadProfileBottomSheetContent(
+                exerciseName = loadEditorExercise.name,
+                direction = uiState.loadEditorDirection,
+                weights = uiState.loadEditorWeights,
+                hasError = uiState.loadEditorHasError,
+                hasExistingProfile = uiState.loadProfiles.containsKey(loadEditorExercise.id),
+                onDirectionChange = onExerciseLoadDirectionChange,
+                onWeightsChange = onExerciseLoadWeightsChange,
+                onApplyPreset = onApplyExerciseLoadPreset,
+                onSave = onSaveExerciseLoadProfile,
+                onClear = onClearExerciseLoadProfile,
+                onDismiss = onDismissExerciseLoadProfile
+            )
+        }
+    }
+
+}
+
+@Composable
+private fun ExerciseLoadProfileBottomSheetContent(
+    exerciseName: String,
+    direction: ExerciseLoadDirection,
+    weights: String,
+    hasError: Boolean,
+    hasExistingProfile: Boolean,
+    onDirectionChange: (ExerciseLoadDirection) -> Unit,
+    onWeightsChange: (String) -> Unit,
+    onApplyPreset: (Double) -> Unit,
+    onSave: () -> Unit,
+    onClear: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    LazyColumn(
+        modifier = Modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(start = 16.dp, top = 4.dp, end = 16.dp, bottom = 28.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        item {
+            SectionTitle(
+                eyebrow = stringResource(R.string.exercise_load_profile_eyebrow),
+                title = localizedExerciseName(exerciseName),
+                supporting = stringResource(R.string.exercise_load_profile_supporting)
+            )
+        }
+        item {
+            Text(
+                text = stringResource(R.string.exercise_load_direction_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+        }
+        item {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                ExerciseLoadDirection.entries.forEach { option ->
+                    FilterChip(
+                        selected = direction == option,
+                        onClick = { onDirectionChange(option) },
+                        label = {
+                            Text(
+                                stringResource(
+                                    if (option == ExerciseLoadDirection.HigherIsHarder) {
+                                        R.string.exercise_load_higher_is_harder
+                                    } else {
+                                        R.string.exercise_load_lower_is_harder
+                                    }
+                                )
+                            )
+                        }
+                    )
+                }
+            }
+        }
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = { onApplyPreset(2.5) },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(stringResource(R.string.exercise_load_preset_2_5))
+                }
+                OutlinedButton(
+                    onClick = { onApplyPreset(5.0) },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(stringResource(R.string.exercise_load_preset_5))
+                }
+            }
+        }
+        item {
+            OutlinedTextField(
+                value = weights,
+                onValueChange = onWeightsChange,
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text(stringResource(R.string.exercise_load_weights_label)) },
+                supportingText = {
+                    Text(stringResource(R.string.exercise_load_weights_hint))
+                },
+                isError = hasError,
+                minLines = 5,
+                maxLines = 10
+            )
+        }
+        if (hasError) {
+            item {
+                Text(
+                    text = stringResource(R.string.exercise_load_profile_error),
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+        }
+        item {
+            Button(
+                onClick = onSave,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 52.dp)
+            ) {
+                Text(stringResource(R.string.exercise_load_profile_save))
+            }
+        }
+        if (hasExistingProfile) {
+            item {
+                OutlinedButton(
+                    onClick = onClear,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(stringResource(R.string.exercise_load_profile_clear))
+                }
+            }
+        }
+        item {
+            OutlinedButton(
+                onClick = onDismiss,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(stringResource(R.string.action_cancel))
+            }
+        }
+    }
 }
 
 @Composable

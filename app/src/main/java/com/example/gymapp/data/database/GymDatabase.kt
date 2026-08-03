@@ -7,12 +7,15 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.example.gymapp.data.dao.ExerciseDao
+import com.example.gymapp.data.dao.ExerciseLoadProfileDao
 import com.example.gymapp.data.dao.AppMetadataDao
 import com.example.gymapp.data.dao.GarminWorkoutReceiptDao
 import com.example.gymapp.data.dao.MuscleMappingDao
 import com.example.gymapp.data.dao.SetDao
 import com.example.gymapp.data.dao.WorkoutDao
 import com.example.gymapp.data.entity.ExerciseEntity
+import com.example.gymapp.data.entity.ExerciseLoadProfileEntity
+import com.example.gymapp.data.entity.ExerciseWeightOptionEntity
 import com.example.gymapp.data.entity.AppMetadataEntity
 import com.example.gymapp.data.entity.ExerciseMuscleMappingEntity
 import com.example.gymapp.data.entity.GarminWorkoutReceiptEntity
@@ -25,6 +28,8 @@ import java.util.concurrent.ConcurrentHashMap
 @Database(
     entities = [
         ExerciseEntity::class,
+        ExerciseLoadProfileEntity::class,
+        ExerciseWeightOptionEntity::class,
         AppMetadataEntity::class,
         WorkoutSessionEntity::class,
         WorkoutExerciseEntity::class,
@@ -33,11 +38,12 @@ import java.util.concurrent.ConcurrentHashMap
         GarminWorkoutReceiptEntity::class,
         GarminWorkoutProvenanceEntity::class
     ],
-    version = 11,
+    version = 12,
     exportSchema = true
 )
 abstract class GymDatabase : RoomDatabase() {
     abstract fun exerciseDao(): ExerciseDao
+    abstract fun exerciseLoadProfileDao(): ExerciseLoadProfileDao
     abstract fun appMetadataDao(): AppMetadataDao
     abstract fun workoutDao(): WorkoutDao
     abstract fun setDao(): SetDao
@@ -365,6 +371,42 @@ abstract class GymDatabase : RoomDatabase() {
             }
         }
 
+        internal val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS exercise_load_profiles (
+                        exerciseId INTEGER NOT NULL,
+                        direction TEXT NOT NULL,
+                        updatedAt INTEGER NOT NULL,
+                        PRIMARY KEY(exerciseId),
+                        FOREIGN KEY(exerciseId) REFERENCES exercises(id)
+                            ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS exercise_weight_options (
+                        exerciseId INTEGER NOT NULL,
+                        ordinal INTEGER NOT NULL,
+                        weight REAL NOT NULL,
+                        PRIMARY KEY(exerciseId, ordinal),
+                        FOREIGN KEY(exerciseId) REFERENCES exercises(id)
+                            ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE UNIQUE INDEX IF NOT EXISTS
+                        index_exercise_weight_options_exerciseId_weight
+                    ON exercise_weight_options(exerciseId, weight)
+                    """.trimIndent()
+                )
+            }
+        }
+
         internal val REGISTERED_MIGRATIONS: Array<Migration> = arrayOf(
             MIGRATION_1_2,
             MIGRATION_2_3,
@@ -375,7 +417,8 @@ abstract class GymDatabase : RoomDatabase() {
             MIGRATION_7_8,
             MIGRATION_8_9,
             MIGRATION_9_10,
-            MIGRATION_10_11
+            MIGRATION_10_11,
+            MIGRATION_11_12
         )
 
         fun getInstance(context: Context, databaseName: String = "gym_database"): GymDatabase {

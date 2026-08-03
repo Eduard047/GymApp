@@ -524,6 +524,7 @@ struct AddWorkoutView: View {
                 history: history,
                 exerciseCatalogKey: exercise.catalogKey,
                 exerciseName: exercise.name,
+                machineLoadProfile: exercise.machineLoadProfile,
                 trainingProfile: profile
             )
             return WorkoutEditorExerciseDraft(

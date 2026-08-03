@@ -66,7 +66,7 @@ function sha256(buffer) {
 
 test("every built-in exercise has two identical 480x320 assets on Android, iOS, and PWA", async () => {
   const keys = catalogKeys();
-  assert.equal(keys.length, 52);
+  assert.equal(keys.length, 53);
   assert.equal(new Set(keys).size, keys.length);
 
   const roots = [

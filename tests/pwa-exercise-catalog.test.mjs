@@ -103,7 +103,7 @@ test("built-in exercise catalog persists stable keys and localizes only display 
   const context = loadPwaContext();
   const defaults = jsonFrom(context, "defaultAppState().exercises");
 
-  assert.equal(defaults.length, 52);
+  assert.equal(defaults.length, 53);
   assert.deepEqual(defaults[0], { id: 1, name: "Bench Press", catalogKey: "bench_press" });
   assert.equal(vm.runInContext('exerciseDisplayName(defaultAppState().exercises[0], "uk")', context), "Жим штанги лежачи");
   assert.equal(vm.runInContext('exerciseDisplayName({ name: "My custom press" }, "uk")', context), "My custom press");
@@ -121,8 +121,8 @@ test("catalog seeding runs once and preserves later user deletions", () => {
 
   assert.equal(vm.runInContext("state.catalogSeedVersion", context), 0);
   assert.equal(vm.runInContext("ensureBuiltInExerciseCatalog(state)", context), true);
-  assert.equal(vm.runInContext("state.catalogSeedVersion", context), 2);
-  assert.equal(vm.runInContext("state.exercises.length", context), 53);
+  assert.equal(vm.runInContext("state.catalogSeedVersion", context), 3);
+  assert.equal(vm.runInContext("state.exercises.length", context), 54);
 
   vm.runInContext(`state.exercises = state.exercises.filter(
     exercise => exercise.catalogKey !== "bench_press"
@@ -134,10 +134,10 @@ test("catalog seeding runs once and preserves later user deletions", () => {
   ), false);
 
   const exported = jsonFrom(context, "JSON.parse(exportPayload(false))");
-  assert.equal(exported.catalogSeedVersion, 2);
+  assert.equal(exported.catalogSeedVersion, 3);
 });
 
-test("catalog version 2 adds only hip abduction to existing accounts", () => {
+test("catalog upgrades add only exercises introduced after the stored seed", () => {
   const context = loadPwaContext();
   vm.runInContext(`state = defaultAppState();
     state.catalogSeedVersion = 1;
@@ -146,9 +146,13 @@ test("catalog version 2 adds only hip abduction to existing accounts", () => {
     );`, context);
 
   assert.equal(vm.runInContext("ensureBuiltInExerciseCatalog(state)", context), true);
-  assert.equal(vm.runInContext("state.catalogSeedVersion", context), 2);
+  assert.equal(vm.runInContext("state.catalogSeedVersion", context), 3);
   assert.equal(vm.runInContext(
     'state.exercises.some(exercise => exercise.catalogKey === "hip_abduction")',
+    context
+  ), true);
+  assert.equal(vm.runInContext(
+    'state.exercises.some(exercise => exercise.catalogKey === "assisted_dip")',
     context
   ), true);
   assert.equal(vm.runInContext(
@@ -183,6 +187,83 @@ test("canonical aliases derive their stable key while custom labels remain custo
   assert.equal(vm.runInContext('exerciseCatalogKey("Приседания со штангой")', context), "squat");
   assert.equal(vm.runInContext('exerciseCatalogKey("Жим сидячи над головою")', context), "shoulder_press");
   assert.equal(vm.runInContext('exerciseCatalogKey("Разведение ног в тренажере")', context), "hip_abduction");
+  for (const alias of [
+    "підтягування з брусьями",
+    "підтягування з брусами",
+    "підтягування с брусьями",
+    "підтягування с брусами",
+    "подтягивания с брусьями",
+    "подтягивание с брусьями"
+  ]) {
+    assert.equal(vm.runInContext(`exerciseCatalogKey(${JSON.stringify(alias)})`, context), "assisted_dip");
+  }
+  assert.equal(vm.runInContext('exerciseCatalogKey("брусья в гравитроне")', context), null);
+});
+
+test("assisted-dip upgrade preserves the legacy row and history without a duplicate", () => {
+  const context = loadPwaContext();
+  const upgraded = jsonFrom(context, `(() => {
+    const next = normalizeImportedState({
+      catalogSeedVersion: 2,
+      exercises: [{ id: 700, name: "підтягування с брусьями", favorite: true }],
+      sessions: [{ id: 10, startedAt: 1760000000000, sets: [
+        { id: 11, exerciseName: "підтягування с брусьями", weight: 50, reps: 8, orderIndex: 0 }
+      ] }],
+      mappings: {},
+      profile: { split: "Push Pull Legs", days: 4, goal: "Balanced", calories: "Maintenance" }
+    }, defaultAppState());
+    ensureBuiltInExerciseCatalog(next);
+    return next;
+  })()`);
+
+  const matches = upgraded.exercises.filter(exercise => exercise.catalogKey === "assisted_dip");
+  assert.equal(matches.length, 1);
+  assert.deepEqual(matches[0], { id: 700, name: "Assisted Dip", catalogKey: "assisted_dip", favorite: true });
+  assert.equal(upgraded.sessions[0].sets[0].exerciseName, "підтягування с брусьями");
+  assert.equal(upgraded.sessions[0].sets[0].weight, 50);
+  assert.equal(upgraded.catalogSeedVersion, 3);
+});
+
+test("older cloud payloads keep a valid local machine profile only on cloud merge", () => {
+  const context = loadPwaContext();
+  const result = jsonFrom(context, `(() => {
+    const local = { exercises: [{ id: 1, name: "Lat Pulldown", catalogKey: "lat_pulldown", loadProfile: {
+      direction: "higherIsHarder", allowedWeightsKg: [45, 50, 55]
+    } }] };
+    const missing = { exercises: [{ id: 1, name: "Lat Pulldown", catalogKey: "lat_pulldown" }] };
+    const explicit = { exercises: [{ id: 1, name: "Lat Pulldown", catalogKey: "lat_pulldown", loadProfile: {
+      direction: "higherIsHarder", allowedWeightsKg: [40, 45, 50]
+    } }] };
+    const ordinaryReplacement = JSON.parse(JSON.stringify(missing));
+    preserveExerciseFavorites(missing, local, { preserveMissingLoadProfiles: true });
+    preserveExerciseFavorites(explicit, local, { preserveMissingLoadProfiles: true });
+    preserveExerciseFavorites(ordinaryReplacement, local);
+    return { missing, explicit, ordinaryReplacement };
+  })()`);
+
+  assert.deepEqual(result.missing.exercises[0].loadProfile.allowedWeightsKg, [45, 50, 55]);
+  assert.deepEqual(result.explicit.exercises[0].loadProfile.allowedWeightsKg, [40, 45, 50]);
+  assert.equal("loadProfile" in result.ordinaryReplacement.exercises[0], false);
+});
+
+test("machine-profile controls stay Russian without dynamic English keys", () => {
+  const context = loadPwaContext();
+  const markup = vm.runInContext(`(() => {
+    state = defaultAppState();
+    state.language = "ru";
+    const exercise = state.exercises.find(item => item.catalogKey === "lat_pulldown");
+    exercise.loadProfile = { direction: "higherIsHarder", allowedWeightsKg: [45, 50, 55] };
+    modal = { type: "load-profile", exerciseId: exercise.id };
+    return exerciseRow(exercise) + draftBlock({
+      exerciseName: exercise.name,
+      catalogKey: exercise.catalogKey,
+      sets: [{ weight: 50, reps: 8 }]
+    }, 0) + modalMarkup();
+  })()`, context);
+
+  assert.match(markup, /Веса тренажера/);
+  assert.match(markup, /Настроенные веса тренажера/);
+  assert.doesNotMatch(markup, /Machine weights|Configured machine weights/);
 });
 
 test("hip abduction aliases map to glutes without shoulder pollution", () => {
@@ -228,7 +309,7 @@ test("an explicit empty remote catalog remains empty and is not replaced by defa
   const context = loadPwaContext();
 
   assert.equal(vm.runInContext("normalizeImportedState({ exercises: [], sessions: [] }, defaultAppState()).exercises.length", context), 0);
-  assert.equal(vm.runInContext("normalizeImportedState({ sessions: [] }, defaultAppState()).exercises.length", context), 52);
+  assert.equal(vm.runInContext("normalizeImportedState({ sessions: [] }, defaultAppState()).exercises.length", context), 53);
 });
 
 test("exercise library sorts by unique workout frequency in both directions", () => {

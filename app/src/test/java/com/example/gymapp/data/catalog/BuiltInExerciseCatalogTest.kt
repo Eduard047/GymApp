@@ -11,6 +11,7 @@ class BuiltInExerciseCatalogTest {
             Triple("bench_press", "Bench Press", "Жим штанги лежачи"),
             Triple("incline_dumbbell_press", "Incline Dumbbell Press", "Жим гантелей на похилій лаві"),
             Triple("pull_up", "Pull Up", "Підтягування"),
+            Triple("assisted_dip", "Assisted Dip", "Віджимання на брусах у гравітроні"),
             Triple("lat_pulldown", "Lat Pulldown", "Тяга верхнього блока"),
             Triple("barbell_row", "Barbell Row", "Тяга штанги в нахилі"),
             Triple("squat", "Squat", "Присідання зі штангою"),
@@ -26,7 +27,7 @@ class BuiltInExerciseCatalogTest {
             Triple("plank", "Plank", "Планка")
         )
 
-        assertEquals(52, BuiltInExerciseCatalog.definitions.size)
+        assertEquals(53, BuiltInExerciseCatalog.definitions.size)
         expected.forEach { (key, english, ukrainian) ->
             assertEquals(key, BuiltInExerciseCatalog.inferKey(english))
             assertEquals(key, BuiltInExerciseCatalog.inferKey(ukrainian))
@@ -45,6 +46,10 @@ class BuiltInExerciseCatalogTest {
         assertEquals("shoulder_press", BuiltInExerciseCatalog.inferKey("Overhead Press"))
         assertEquals("hip_abduction", BuiltInExerciseCatalog.inferKey("разведение ног"))
         assertEquals("hip_abduction", BuiltInExerciseCatalog.inferKey("Разведение ног в тренажере"))
+        assertEquals("assisted_dip", BuiltInExerciseCatalog.inferKey("підтягування з брусьями"))
+        assertEquals("assisted_dip", BuiltInExerciseCatalog.inferKey("підтягування с брусьями"))
+        assertEquals("assisted_dip", BuiltInExerciseCatalog.inferKey("підтягування с брусами"))
+        assertEquals("dips", BuiltInExerciseCatalog.inferKey("брусья"))
     }
 
     @Test

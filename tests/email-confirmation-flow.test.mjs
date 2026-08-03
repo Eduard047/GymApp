@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-const appSource = readFileSync(new URL("../pwa/app.v62.js", import.meta.url), "utf8");
+const appSource = readFileSync(new URL("../pwa/app.v63.js", import.meta.url), "utf8");
 const stylesSource = readFileSync(new URL("../pwa/styles.v59.css", import.meta.url), "utf8");
-const russianSource = readFileSync(new URL("../pwa/russian-text.v60.js", import.meta.url), "utf8");
+const russianSource = readFileSync(new URL("../pwa/russian-text.v61.js", import.meta.url), "utf8");
 
 test("pending email confirmation uses a persistent account screen", () => {
   assert.match(appSource, /let pendingEmailConfirmation = null;/);

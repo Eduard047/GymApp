@@ -100,8 +100,10 @@ class GymNavGraphSecurityTest {
         canonical.put("catalogSeedVersion", 2)
         assertTrue(isCanonicalAndroidCloudEnvelope(canonical, userId))
         canonical.put("catalogSeedVersion", 3)
+        assertTrue(isCanonicalAndroidCloudEnvelope(canonical, userId))
+        canonical.put("catalogSeedVersion", 4)
         assertFalse(isCanonicalAndroidCloudEnvelope(canonical, userId))
-        canonical.put("catalogSeedVersion", 2)
+        canonical.put("catalogSeedVersion", 3)
         assertTrue(canonicalWorkoutPayloadMatches(canonical, JSONObject(canonical.toString())))
         val legacyEightKeyEnvelope = JSONObject(canonical.toString()).apply {
             remove("catalogSeedVersion")

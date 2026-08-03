@@ -37,6 +37,7 @@ enum class WorkoutRecommendationReason {
     PlateauDetected,
     NearPersonalBest,
     ConservativeIncrease,
+    LoadBoundaryReached,
     AestheticGoal,
     CalorieDeficit,
     FourDayUpperLower
@@ -88,7 +89,8 @@ object WorkoutRecommendationEngine {
         trainingProfile: TrainingProfile = TrainingProfile(),
         nowMillis: Long = System.currentTimeMillis(),
         zoneId: ZoneId = ZoneId.systemDefault(),
-        exerciseName: String? = null
+        exerciseName: String? = null,
+        loadProfile: ExerciseLoadProfile? = null
     ): WorkoutRecommendation {
         val programmingAnalysis = exerciseName
             ?.takeIf { it.isNotBlank() }
@@ -149,23 +151,41 @@ object WorkoutRecommendationEngine {
         val repRange = goalRepRange(trainingProfile, programmingAnalysis)
         val targetSetCount = setBudget(trainingProfile, programmingAnalysis)
         val loadMode = programmingAnalysis?.loadMode ?: ExerciseLoadMode.Standard
-        val bestEstimatedMax = sessions.maxOf { it.estimatedMax }
-        val canAssessPlateau = loadMode != ExerciseLoadMode.Assistance && latest.maxWeight > 0.0
-        val canAssessRegression = loadMode != ExerciseLoadMode.Assistance &&
+        val effectiveLoadDirection = loadProfile?.direction ?: if (loadMode == ExerciseLoadMode.Assistance) {
+            ExerciseLoadDirection.LowerIsHarder
+        } else {
+            ExerciseLoadDirection.HigherIsHarder
+        }
+        val usesExternalLoadMetrics = effectiveLoadDirection == ExerciseLoadDirection.HigherIsHarder
+        val bestEstimatedMax = if (usesExternalLoadMetrics) {
+            sessions.maxOf { it.estimatedMax }
+        } else {
+            0.0
+        }
+        val canAssessPlateau = effectiveLoadDirection == ExerciseLoadDirection.HigherIsHarder &&
+            latest.maxWeight > 0.0
+        val canAssessStandardRegression = effectiveLoadDirection == ExerciseLoadDirection.HigherIsHarder &&
             (latest.maxWeight > 0.0 || loadMode == ExerciseLoadMode.Bodyweight)
         val plateauDetected = canAssessPlateau && isTruePlateau(sessions.take(4))
-        val repeatedRegression = canAssessRegression && sessions.size >= 3 &&
-            isComparableRegression(newer = sessions[0], older = sessions[1]) &&
-            isComparableRegression(newer = sessions[1], older = sessions[2])
-        val latestNearBest = latest.estimatedMax >= bestEstimatedMax * 0.97
+        val repeatedRegression = sessions.size >= 3 && when (effectiveLoadDirection) {
+            ExerciseLoadDirection.HigherIsHarder -> canAssessStandardRegression &&
+                isComparableRegression(newer = sessions[0], older = sessions[1]) &&
+                isComparableRegression(newer = sessions[1], older = sessions[2])
+            ExerciseLoadDirection.LowerIsHarder ->
+                isComparableAssistanceRegression(newer = sessions[0], older = sessions[1]) &&
+                    isComparableAssistanceRegression(newer = sessions[1], older = sessions[2])
+        }
+        val latestNearBest = usesExternalLoadMetrics &&
+            latest.estimatedMax >= bestEstimatedMax * 0.97
         val previousVolumePerSet = previous?.averageVolumePerSet ?: latest.averageVolumePerSet
-        val volumeRatio = if (previousVolumePerSet <= 0.0) {
+        val volumeRatio = if (!usesExternalLoadMetrics || previousVolumePerSet <= 0.0) {
             1.0
         } else {
             latest.averageVolumePerSet / previousVolumePerSet
         }
         val latestStable = latest.sets.all { it.reps >= repRange.minimum }
-        val latestStrained = latest.sets.any { it.reps < repRange.minimum } || volumeRatio < 0.9
+        val latestStrained = latest.sets.any { it.reps < repRange.minimum } ||
+            usesExternalLoadMetrics && volumeRatio < 0.9
         val completedRepCeiling = completedAtRepCeiling(
             session = latest,
             targetSetCount = targetSetCount,
@@ -177,18 +197,30 @@ object WorkoutRecommendationEngine {
         ) && performanceDidNotDecline(
             latest = latest,
             previous = previous,
-            targetSetCount = targetSetCount
+            targetSetCount = targetSetCount,
+            direction = effectiveLoadDirection
         )
         val needsHarderBodyweight = completedRepCeiling &&
             loadMode == ExerciseLoadMode.Bodyweight && latest.maxWeight <= 0.0
         val earnedProgression = completedRepCeiling && !needsHarderBodyweight
+        val harderWeightAvailable = loadProfile == null || latest.sets
+            .take(targetSetCount)
+            .any { set ->
+                when (effectiveLoadDirection) {
+                    ExerciseLoadDirection.HigherIsHarder ->
+                        loadProfile.allowedWeightsKg.any { it > set.weight }
+                    ExerciseLoadDirection.LowerIsHarder ->
+                        loadProfile.allowedWeightsKg.any { it < set.weight }
+                }
+            }
+        val earnedAtLoadBoundary = earnedProgression && !harderWeightAvailable
         val isFatLossDeficit = trainingProfile.goal == TrainingGoal.AestheticFatLoss &&
             trainingProfile.calorieMode == CalorieMode.Deficit
 
         val kind = when {
             daysSinceLastSession >= ComebackBreakDays -> WorkoutRecommendationKind.Comeback
             repeatedRegression -> WorkoutRecommendationKind.Deload
-            earnedProgression -> WorkoutRecommendationKind.ProgressiveOverload
+            earnedProgression && harderWeightAvailable -> WorkoutRecommendationKind.ProgressiveOverload
             plateauDetected -> WorkoutRecommendationKind.PlateauBreak
             else -> WorkoutRecommendationKind.HoldAndBuild
         }
@@ -202,31 +234,68 @@ object WorkoutRecommendationEngine {
                     if (baseline.weight <= 0.0) {
                         baseline.weight
                     } else {
-                        val step = chooseWeightStep(
-                            weight = baseline.weight,
-                            trainingProfile = trainingProfile
-                        )
-                        boundedRoundedWeight(
-                            if (loadMode == ExerciseLoadMode.Assistance) {
-                                max(0.0, baseline.weight - step)
-                            } else {
-                                baseline.weight + step
-                            }
+                        adjustedWeight(
+                            currentWeight = baseline.weight,
+                            harder = true,
+                            direction = effectiveLoadDirection,
+                            loadProfile = loadProfile
                         )
                     }
                 }
                 WorkoutRecommendationKind.HoldAndBuild,
-                WorkoutRecommendationKind.PlateauBreak -> baseline.weight
-                WorkoutRecommendationKind.Deload -> if (loadMode == ExerciseLoadMode.Assistance) {
-                    boundedRoundedWeight(
-                        baseline.weight + chooseWeightStep(baseline.weight, trainingProfile)
+                WorkoutRecommendationKind.PlateauBreak -> when {
+                    loadProfile != null ->
+                        nearestAllowedWeight(baseline.weight, loadProfile.allowedWeightsKg)
+                    loadMode == ExerciseLoadMode.Standard ||
+                        loadMode == ExerciseLoadMode.Assistance -> nearestFallbackGridWeight(
+                            baseline.weight
+                        )
+                    else -> baseline.weight
+                }
+                WorkoutRecommendationKind.Deload -> if (loadProfile != null) {
+                    adjustedWeight(
+                        currentWeight = baseline.weight,
+                        harder = false,
+                        direction = effectiveLoadDirection,
+                        loadProfile = loadProfile
+                    )
+                } else if (loadMode == ExerciseLoadMode.Assistance) {
+                    adjustedWeight(
+                        currentWeight = baseline.weight,
+                        harder = false,
+                        direction = effectiveLoadDirection,
+                        loadProfile = null
+                    )
+                } else if (loadMode == ExerciseLoadMode.Standard) {
+                    adjustedWeight(
+                        currentWeight = baseline.weight,
+                        harder = false,
+                        direction = effectiveLoadDirection,
+                        loadProfile = null
                     )
                 } else {
                     boundedRoundedWeight(baseline.weight * if (isFatLossDeficit) 0.9 else 0.92)
                 }
-                WorkoutRecommendationKind.Comeback -> if (loadMode == ExerciseLoadMode.Assistance) {
-                    boundedRoundedWeight(
-                        baseline.weight + chooseWeightStep(baseline.weight, trainingProfile)
+                WorkoutRecommendationKind.Comeback -> if (loadProfile != null) {
+                    adjustedWeight(
+                        currentWeight = baseline.weight,
+                        harder = false,
+                        direction = effectiveLoadDirection,
+                        loadProfile = loadProfile
+                    )
+                } else if (loadMode == ExerciseLoadMode.Assistance) {
+                    adjustedWeight(
+                        currentWeight = baseline.weight,
+                        harder = false,
+                        direction = effectiveLoadDirection,
+                        loadProfile = null
+                    )
+                } else if (loadMode == ExerciseLoadMode.Standard) {
+                    adjustedWeight(
+                        currentWeight = baseline.weight,
+                        harder = false,
+                        direction = effectiveLoadDirection,
+                        loadProfile = null
                     )
                 } else {
                     boundedRoundedWeight(baseline.weight * comebackMultiplier(daysSinceLastSession))
@@ -250,11 +319,16 @@ object WorkoutRecommendationEngine {
         }
 
         val reasons = buildList {
+            if (earnedAtLoadBoundary) add(WorkoutRecommendationReason.LoadBoundaryReached)
             if (latestStable) add(WorkoutRecommendationReason.LastSessionStrong)
             if (latestStrained || repeatedRegression) add(WorkoutRecommendationReason.LastSessionUnstable)
             if (daysSinceLastSession >= ComebackBreakDays) add(WorkoutRecommendationReason.RecentBreak)
-            if (volumeRatio >= 1.08) add(WorkoutRecommendationReason.VolumeTrendingUp)
-            if (volumeRatio < 0.9 || repeatedRegression) add(WorkoutRecommendationReason.VolumeDropped)
+            if (usesExternalLoadMetrics && volumeRatio >= 1.08) {
+                add(WorkoutRecommendationReason.VolumeTrendingUp)
+            }
+            if (usesExternalLoadMetrics && (volumeRatio < 0.9 || repeatedRegression)) {
+                add(WorkoutRecommendationReason.VolumeDropped)
+            }
             if (plateauDetected) add(WorkoutRecommendationReason.PlateauDetected)
             if (latestNearBest) add(WorkoutRecommendationReason.NearPersonalBest)
             if (trainingProfile.goal == TrainingGoal.AestheticFatLoss) {
@@ -278,7 +352,11 @@ object WorkoutRecommendationEngine {
             sets = sets,
             kind = kind,
             confidence = confidenceFor(sessions.size, latest.sets.size, daysSinceLastSession, trainingProfile),
-            estimatedVolume = sets.sumOf { (it.weight ?: 0.0) * it.reps },
+            estimatedVolume = if (usesExternalLoadMetrics) {
+                sets.sumOf { (it.weight ?: 0.0) * it.reps }
+            } else {
+                0.0
+            },
             daysSinceLastSession = daysSinceLastSession,
             reasons = reasons.take(3)
         )
@@ -289,7 +367,8 @@ object WorkoutRecommendationEngine {
         history: List<ExerciseHistoryEntry>,
         trainingProfile: TrainingProfile = TrainingProfile(),
         nowMillis: Long = System.currentTimeMillis(),
-        zoneId: ZoneId = ZoneId.systemDefault()
+        zoneId: ZoneId = ZoneId.systemDefault(),
+        loadProfiles: Map<Long, ExerciseLoadProfile> = emptyMap()
     ): SmartWorkoutPlan {
         val safeExercises = exercises
             .asSequence()
@@ -398,7 +477,8 @@ object WorkoutRecommendationEngine {
                         trainingProfile = trainingProfile,
                         nowMillis = nowMillis,
                         zoneId = zoneId,
-                        exerciseName = candidate.exercise.name
+                        exerciseName = candidate.exercise.name,
+                        loadProfile = loadProfiles[candidate.exercise.id]
                     )
                 )
             },
@@ -406,22 +486,63 @@ object WorkoutRecommendationEngine {
         )
     }
 
-    private fun chooseWeightStep(weight: Double, trainingProfile: TrainingProfile): Double {
-        val baseStep = when {
-            weight < 20.0 -> 1.0
-            weight < 60.0 -> 2.5
-            weight < 120.0 -> 5.0
-            else -> 7.5
+    private fun adjustedWeight(
+        currentWeight: Double,
+        harder: Boolean,
+        direction: ExerciseLoadDirection,
+        loadProfile: ExerciseLoadProfile?
+    ): Double {
+        if (loadProfile != null) {
+            val increaseWeight = when (direction) {
+                ExerciseLoadDirection.HigherIsHarder -> harder
+                ExerciseLoadDirection.LowerIsHarder -> !harder
+            }
+            return if (increaseWeight) {
+                loadProfile.allowedWeightsKg.firstOrNull { it > currentWeight }
+                    ?: loadProfile.allowedWeightsKg.last()
+            } else {
+                loadProfile.allowedWeightsKg.lastOrNull { it < currentWeight }
+                    ?: loadProfile.allowedWeightsKg.first()
+            }
         }
-        return if (
-            trainingProfile.goal == TrainingGoal.AestheticFatLoss ||
-            trainingProfile.calorieMode == CalorieMode.Deficit
-        ) {
-            baseStep * 0.5
+        val increaseWeight = when (direction) {
+            ExerciseLoadDirection.HigherIsHarder -> harder
+            ExerciseLoadDirection.LowerIsHarder -> !harder
+        }
+        return snapFallbackWeightToGrid(
+            currentWeight = currentWeight,
+            targetWeight = currentWeight,
+            increaseWeight = increaseWeight
+        )
+    }
+
+    private fun snapFallbackWeightToGrid(
+        currentWeight: Double,
+        targetWeight: Double,
+        increaseWeight: Boolean
+    ): Double {
+        val gridKg = 2.5
+        var snapped = if (increaseWeight) {
+            kotlin.math.ceil(targetWeight / gridKg) * gridKg
         } else {
-            baseStep
+            kotlin.math.floor(targetWeight / gridKg) * gridKg
+        }
+        if (increaseWeight && snapped <= currentWeight) snapped += gridKg
+        if (!increaseWeight && snapped >= currentWeight) snapped -= gridKg
+        return snapped.coerceIn(0.0, WorkoutDataLimits.MAX_WEIGHT).let { bounded ->
+            if (increaseWeight && bounded <= currentWeight ||
+                !increaseWeight && bounded >= currentWeight
+            ) currentWeight else bounded
         }
     }
+
+    private fun nearestFallbackGridWeight(weight: Double): Double =
+        (round(weight / 2.5) * 2.5).coerceIn(0.0, WorkoutDataLimits.MAX_WEIGHT)
+
+    private fun nearestAllowedWeight(currentWeight: Double, allowedWeights: List<Double>): Double =
+        allowedWeights.minWithOrNull(
+            compareBy<Double> { kotlin.math.abs(it - currentWeight) }.thenBy { it }
+        ) ?: currentWeight
 
     private fun goalRepRange(
         trainingProfile: TrainingProfile,
@@ -476,16 +597,13 @@ object WorkoutRecommendationEngine {
         trainingProfile: TrainingProfile
     ): Int {
         val days = trainingProfile.workoutsPerWeek.coerceIn(2, 6)
-        var target = when (days) {
+        val target = when (days) {
             2 -> 6
-            3 -> 5
-            4 -> 4
-            else -> 3
+            3 -> 6
+            4 -> 5
+            else -> if (focus == SmartWorkoutFocus.FullBody) 4 else 5
         }
-        if (trainingProfile.goal == TrainingGoal.Strength) target -= 1
-        if (trainingProfile.calorieMode == CalorieMode.Deficit) target -= 1
-        val minimum = if (focus == SmartWorkoutFocus.FullBody) 3 else 2
-        return target.coerceIn(minimum, 6)
+        return target.coerceIn(4, 6)
     }
 
     private fun programmingPreferenceScore(
@@ -528,14 +646,21 @@ object WorkoutRecommendationEngine {
     private fun performanceDidNotDecline(
         latest: ExerciseSessionSnapshot,
         previous: ExerciseSessionSnapshot?,
-        targetSetCount: Int
+        targetSetCount: Int,
+        direction: ExerciseLoadDirection
     ): Boolean {
         if (previous == null || latest.sets.size < targetSetCount || previous.sets.size < targetSetCount) {
             return false
         }
         val latestSets = latest.sets.take(targetSetCount)
         val previousSets = previous.sets.take(targetSetCount)
-        return latestSets.map { it.weight }.average() >= previousSets.map { it.weight }.average() &&
+        val latestWeight = latestSets.map { it.weight }.average()
+        val previousWeight = previousSets.map { it.weight }.average()
+        val loadDidNotDecline = when (direction) {
+            ExerciseLoadDirection.HigherIsHarder -> latestWeight >= previousWeight
+            ExerciseLoadDirection.LowerIsHarder -> latestWeight <= previousWeight
+        }
+        return loadDidNotDecline &&
             latestSets.map { it.reps }.average() >= previousSets.map { it.reps }.average()
     }
 
@@ -553,6 +678,16 @@ object WorkoutRecommendationEngine {
         if (older.estimatedMax <= 0.0 || older.averageVolumePerSet <= 0.0) return false
         return newer.estimatedMax < older.estimatedMax * 0.97 &&
             newer.averageVolumePerSet < older.averageVolumePerSet * 0.92
+    }
+
+    private fun isComparableAssistanceRegression(
+        newer: ExerciseSessionSnapshot,
+        older: ExerciseSessionSnapshot
+    ): Boolean {
+        if (older.maxWeight <= 0.0) return false
+        val assistanceIncreased = newer.averageWeight > older.averageWeight * 1.03
+        val repsDidNotImprove = newer.averageReps <= older.averageReps * 1.02
+        return assistanceIncreased && repsDidNotImprove
     }
 
     private fun isTruePlateau(recentSessions: List<ExerciseSessionSnapshot>): Boolean {
@@ -984,6 +1119,24 @@ object WorkoutRecommendationEngine {
             }
         }
 
+        val trunkIsMandatory = focus == SmartWorkoutFocus.FullBody ||
+            focus == SmartWorkoutFocus.Lower || focus == SmartWorkoutFocus.Legs
+        val trunkIsDue = targetExerciseCount >= 5 && history
+            .sessionGroupsByDate()
+            .take(2)
+            .none { session ->
+                session.entries.any { entry -> analyzeExercise(entry.exerciseName).isTrunkExercise() }
+            }
+        if (selected.size < targetExerciseCount && (trunkIsMandatory || trunkIsDue)) {
+            selectTrunkExercise(
+                candidates = candidates,
+                remaining = remaining,
+                selected = selected,
+                coveredMuscles = coveredMuscles,
+                history = history
+            )
+        }
+
         while (selected.size < targetExerciseCount && remaining.isNotEmpty()) {
             val best = remaining.sortedWith(
                 compareByDescending<ExerciseCandidate> { candidate ->
@@ -1033,6 +1186,34 @@ object WorkoutRecommendationEngine {
             .firstOrNull()
             ?: return
 
+        selected += best
+        coveredMuscles += best.analysis.muscles
+        remaining.removeAll { it.exercise.id == best.exercise.id }
+    }
+
+    private fun selectTrunkExercise(
+        candidates: List<ExerciseCandidate>,
+        remaining: MutableList<ExerciseCandidate>,
+        selected: MutableList<ExerciseCandidate>,
+        coveredMuscles: MutableSet<String>,
+        history: List<ExerciseHistoryEntry>
+    ) {
+        val lastPerformedByIdentity = history
+            .groupBy { entry -> analyzeExercise(entry.exerciseName).identityKey }
+            .mapValues { (_, entries) -> entries.maxOf { it.sessionDate } }
+        val best = candidates
+            .asSequence()
+            .filter { it.analysis.isTrunkExercise() }
+            .filterNot { candidate -> selected.any { it.exercise.id == candidate.exercise.id } }
+            .sortedWith(
+                compareBy<ExerciseCandidate> {
+                    lastPerformedByIdentity[it.analysis.identityKey] ?: Long.MIN_VALUE
+                }.thenByDescending { it.score }
+                    .thenBy { it.analysis.identityKey }
+                    .thenBy { it.exercise.id }
+            )
+            .firstOrNull()
+            ?: return
         selected += best
         coveredMuscles += best.analysis.muscles
         remaining.removeAll { it.exercise.id == best.exercise.id }
@@ -1159,6 +1340,7 @@ object WorkoutRecommendationEngine {
     ) {
         val date: Long = sets.first().sessionDate
         val maxWeight: Double = sets.maxOf { it.weight }
+        val averageWeight: Double = sets.map { it.weight }.average()
         val averageReps: Double = sets.map { it.reps }.average()
         val volume: Double = sets.sumOf { it.weight * it.reps }
         val averageVolumePerSet: Double = volume / sets.size
@@ -1186,6 +1368,10 @@ object WorkoutRecommendationEngine {
     ) {
         val isCompound: Boolean
             get() = role == ExerciseRole.Primary || role == ExerciseRole.Secondary
+
+        fun isTrunkExercise(): Boolean = role == ExerciseRole.Core ||
+            identityKey == "catalog:hyperextension" ||
+            identityKey == "catalog:side_hyperextension"
 
         fun selectionRolePriority(): Double = when (role) {
             ExerciseRole.Primary -> 28.0
@@ -1250,6 +1436,7 @@ object WorkoutRecommendationEngine {
         "chest_fly_machine" to programming(SmartWorkoutFocus.Push, ExerciseRole.Isolation, patterns = arrayOf(MovementPattern.Accessory)),
         "push_up" to programming(SmartWorkoutFocus.Push, ExerciseRole.Secondary, ExerciseLoadMode.Bodyweight, MovementPattern.HorizontalPress),
         "dips" to programming(SmartWorkoutFocus.Push, ExerciseRole.Secondary, ExerciseLoadMode.Bodyweight, MovementPattern.HorizontalPress),
+        "assisted_dip" to programming(SmartWorkoutFocus.Push, ExerciseRole.Secondary, ExerciseLoadMode.Assistance, MovementPattern.HorizontalPress),
         "pull_up" to programming(SmartWorkoutFocus.Pull, ExerciseRole.Secondary, ExerciseLoadMode.Bodyweight, MovementPattern.VerticalPull),
         "assisted_pull_up" to programming(SmartWorkoutFocus.Pull, ExerciseRole.Secondary, ExerciseLoadMode.Assistance, MovementPattern.VerticalPull),
         "band_assisted_pull_up" to programming(SmartWorkoutFocus.Pull, ExerciseRole.Secondary, ExerciseLoadMode.Bodyweight, MovementPattern.VerticalPull),

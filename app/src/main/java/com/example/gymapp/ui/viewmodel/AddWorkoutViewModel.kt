@@ -9,6 +9,7 @@ import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.entity.ExerciseHistoryEntry
 import com.example.gymapp.data.entity.WorkoutSessionDetails
 import com.example.gymapp.data.repository.GymRepository
+import com.example.gymapp.data.repository.ExerciseLoadProfile
 import com.example.gymapp.data.repository.NamedWorkoutSetDraft
 import com.example.gymapp.data.repository.WorkoutRecommendation
 import com.example.gymapp.data.repository.WorkoutRecommendationEngine
@@ -61,6 +62,7 @@ data class AddWorkoutUiState(
     val exerciseDrafts: List<ExerciseInputState> = emptyList(),
     val lastWeights: Map<Long, Double?> = emptyMap(),
     val workoutRecommendations: Map<Long, WorkoutRecommendation> = emptyMap(),
+    val exerciseLoadProfiles: Map<Long, ExerciseLoadProfile> = emptyMap(),
     val trainingProfile: TrainingProfile = TrainingProfile(),
     val canRepeatFromLast: Boolean = false,
     val workoutTemplates: List<WorkoutTemplatePreviewUiModel> = emptyList(),
@@ -146,7 +148,8 @@ class AddWorkoutViewModel(
 
     private data class ExerciseCatalogState(
         val exercises: List<ExerciseEntity>,
-        val frequentExerciseIds: List<Long>
+        val frequentExerciseIds: List<Long>,
+        val loadProfiles: Map<Long, ExerciseLoadProfile>
     )
 
     private var nextDraftId = 2L
@@ -169,7 +172,11 @@ class AddWorkoutViewModel(
             started = SharingStarted.Eagerly,
             initialValue = emptyList()
         )
-    private val exerciseCatalogState = combine(exercises, exerciseHistory) { exerciseList, history ->
+    private val exerciseCatalogState = combine(
+        exercises,
+        exerciseHistory,
+        repository.observeExerciseLoadProfiles()
+    ) { exerciseList, history, loadProfiles ->
         val frequentIds = history
             .groupBy { it.exerciseId }
             .map { (exerciseId, entries) ->
@@ -188,7 +195,8 @@ class AddWorkoutViewModel(
             .map { it.first }
         ExerciseCatalogState(
             exercises = exerciseList,
-            frequentExerciseIds = frequentIds
+            frequentExerciseIds = frequentIds,
+            loadProfiles = loadProfiles
         )
     }
     private val workoutTemplates = repository.observeSessions().map { sessions ->
@@ -296,6 +304,7 @@ class AddWorkoutViewModel(
             exerciseDrafts = local.exerciseDrafts,
             lastWeights = lastWeightsMap,
             workoutRecommendations = recommendations,
+            exerciseLoadProfiles = catalog.loadProfiles,
             trainingProfile = local.trainingProfile,
             canRepeatFromLast = templates.isNotEmpty(),
             workoutTemplates = templates,
@@ -348,7 +357,8 @@ class AddWorkoutViewModel(
         val plan = WorkoutRecommendationEngine.buildWorkoutPlan(
             exercises = currentState.exercises,
             history = exerciseHistory.value,
-            trainingProfile = currentState.trainingProfile
+            trainingProfile = currentState.trainingProfile,
+            loadProfiles = currentState.exerciseLoadProfiles
         )
         if (plan.exercises.isEmpty()) {
             hasValidationError.value = true
@@ -449,7 +459,19 @@ class AddWorkoutViewModel(
                             if (parsedWeight == null) {
                                 previousSet.weight
                             } else {
-                                val adjusted = (parsedWeight + weightDelta).coerceAtLeast(0.0)
+                                val loadProfile = draft.exerciseId?.let {
+                                    uiState.value.exerciseLoadProfiles[it]
+                                }
+                                val adjusted = when {
+                                    loadProfile == null ->
+                                        (parsedWeight + weightDelta).coerceAtLeast(0.0)
+                                    weightDelta > 0.0 ->
+                                        loadProfile.allowedWeightsKg.firstOrNull { it > parsedWeight }
+                                            ?: parsedWeight
+                                    else ->
+                                        loadProfile.allowedWeightsKg.lastOrNull { it < parsedWeight }
+                                            ?: parsedWeight
+                                }
                                 if (WorkoutDataLimits.isValidWeight(adjusted)) {
                                     formatWeight(adjusted)
                                 } else {

@@ -276,10 +276,69 @@ class GymDatabaseRoomMigrationTest {
         }
     }
 
+    @Test
+    fun migrationElevenToTwelveAddsBoundedMachineProfilesAndPreservesExercises() {
+        migrationHelper.createDatabase(LOAD_PROFILE_TEST_DATABASE, 11).apply {
+            execSQL(
+                "INSERT INTO exercises(id, name, isFavorite) VALUES (7, 'Lat Pulldown', 1)"
+            )
+            close()
+        }
+
+        val migrated = migrationHelper.runMigrationsAndValidate(
+            LOAD_PROFILE_TEST_DATABASE,
+            12,
+            true,
+            *GymDatabase.REGISTERED_MIGRATIONS
+        )
+        try {
+            migrated.query("SELECT name, isFavorite FROM exercises WHERE id = 7").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("Lat Pulldown", cursor.getString(0))
+                assertEquals(1, cursor.getInt(1))
+            }
+            migrated.execSQL(
+                """
+                INSERT INTO exercise_load_profiles(exerciseId, direction, updatedAt)
+                VALUES (7, 'higherIsHarder', 1750000000000)
+                """.trimIndent()
+            )
+            listOf(69.0, 73.0, 77.0).forEachIndexed { index, weight ->
+                migrated.execSQL(
+                    """
+                    INSERT INTO exercise_weight_options(exerciseId, ordinal, weight)
+                    VALUES (?, ?, ?)
+                    """.trimIndent(),
+                    arrayOf<Any>(7L, index, weight)
+                )
+            }
+            migrated.query(
+                "SELECT weight FROM exercise_weight_options WHERE exerciseId = 7 ORDER BY ordinal"
+            ).use { cursor ->
+                val weights = buildList {
+                    while (cursor.moveToNext()) add(cursor.getDouble(0))
+                }
+                assertEquals(listOf(69.0, 73.0, 77.0), weights)
+            }
+            migrated.execSQL("DELETE FROM exercises WHERE id = 7")
+            migrated.query("SELECT COUNT(*) FROM exercise_load_profiles").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(0, cursor.getInt(0))
+            }
+            migrated.query("SELECT COUNT(*) FROM exercise_weight_options").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(0, cursor.getInt(0))
+            }
+        } finally {
+            migrated.close()
+        }
+    }
+
     private companion object {
         const val TEST_DATABASE = "room-migration-7-to-8"
         const val FAVORITE_TEST_DATABASE = "room-migration-8-to-9"
         const val GARMIN_INDEX_TEST_DATABASE = "room-migration-9-to-10"
         const val GARMIN_LIFECYCLE_TEST_DATABASE = "room-migration-10-to-11"
+        const val LOAD_PROFILE_TEST_DATABASE = "room-migration-11-to-12"
     }
 }

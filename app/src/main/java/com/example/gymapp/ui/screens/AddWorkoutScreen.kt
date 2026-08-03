@@ -1267,6 +1267,7 @@ private fun WorkoutRecommendationReason.smartCoachLabel(daysSinceLastSession: In
         WorkoutRecommendationReason.PlateauDetected -> stringResource(R.string.smart_reason_plateau)
         WorkoutRecommendationReason.NearPersonalBest -> stringResource(R.string.smart_reason_near_best)
         WorkoutRecommendationReason.ConservativeIncrease -> stringResource(R.string.smart_reason_conservative)
+        WorkoutRecommendationReason.LoadBoundaryReached -> stringResource(R.string.smart_reason_load_boundary)
         WorkoutRecommendationReason.AestheticGoal -> stringResource(R.string.smart_reason_aesthetic_goal)
         WorkoutRecommendationReason.CalorieDeficit -> stringResource(R.string.smart_reason_calorie_deficit)
         WorkoutRecommendationReason.FourDayUpperLower -> stringResource(R.string.smart_reason_upper_lower)

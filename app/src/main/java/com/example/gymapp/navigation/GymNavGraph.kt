@@ -526,9 +526,10 @@ fun GymAppRoot(
         combine(
             repository.observeSessions(),
             repository.observeExercises(),
-            repository.observeExerciseMuscleMappings()
-        ) { sessions, exercises, mappings ->
-            Triple(sessions.size, exercises.size, mappings.size)
+            repository.observeExerciseMuscleMappings(),
+            repository.observeExerciseLoadProfiles()
+        ) { sessions, exercises, mappings, loadProfiles ->
+            listOf(sessions.size, exercises.size, mappings.size, loadProfiles.hashCode())
         }
             .debounce(1_500)
             .collect {
@@ -1278,6 +1279,13 @@ fun GymAppRoot(
                                 onToggleExerciseMappingMuscle = viewModel::toggleExerciseMappingMuscle,
                                 onSaveExerciseMapping = viewModel::saveExerciseMapping,
                                 onDismissExerciseMapping = viewModel::closeExerciseMapping,
+                                onEditExerciseLoadProfile = viewModel::openExerciseLoadProfile,
+                                onExerciseLoadDirectionChange = viewModel::updateExerciseLoadDirection,
+                                onExerciseLoadWeightsChange = viewModel::updateExerciseLoadWeights,
+                                onApplyExerciseLoadPreset = viewModel::applyExerciseLoadPreset,
+                                onSaveExerciseLoadProfile = viewModel::saveExerciseLoadProfile,
+                                onClearExerciseLoadProfile = viewModel::clearExerciseLoadProfile,
+                                onDismissExerciseLoadProfile = viewModel::closeExerciseLoadProfile,
                                 onDismissHistory = viewModel::closeExerciseHistory,
                                 onToggleFavorite = viewModel::toggleFavorite,
                                 modifier = Modifier.fillMaxSize()

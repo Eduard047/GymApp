@@ -6,6 +6,8 @@ import com.example.gymapp.data.dao.ExerciseDeletionCascadeRow
 import com.example.gymapp.data.database.GymDatabase
 import com.example.gymapp.data.entity.AppMetadataEntity
 import com.example.gymapp.data.entity.ExerciseEntity
+import com.example.gymapp.data.entity.ExerciseLoadProfileEntity
+import com.example.gymapp.data.entity.ExerciseWeightOptionEntity
 import com.example.gymapp.data.entity.ExerciseHistoryEntry
 import com.example.gymapp.data.entity.ExerciseMuscleMappingEntity
 import com.example.gymapp.data.entity.GarminWorkoutReceiptEntity
@@ -206,6 +208,7 @@ class GymRepository(
     private val currentTimeMillis: () -> Long = System::currentTimeMillis
 ) {
     private val exerciseDao = database.exerciseDao()
+    private val exerciseLoadProfileDao = database.exerciseLoadProfileDao()
     private val appMetadataDao = database.appMetadataDao()
     private val workoutDao = database.workoutDao()
     private val setDao = database.setDao()
@@ -215,6 +218,23 @@ class GymRepository(
 
     fun observeExercises(): Flow<List<ExerciseEntity>> = exerciseDao.getExercises()
         .catch { emit(emptyList()) }
+
+    fun observeExerciseLoadProfiles(): Flow<Map<Long, ExerciseLoadProfile>> = combine(
+        exerciseLoadProfileDao.observeProfiles(),
+        exerciseLoadProfileDao.observeWeightOptions()
+    ) { profiles, options ->
+        loadProfileMap(profiles, options, rejectInvalid = false)
+    }.catch { emit(emptyMap()) }
+
+    suspend fun saveExerciseLoadProfile(
+        exerciseId: Long,
+        profile: ExerciseLoadProfile?
+    ) = database.withTransaction {
+        require(exerciseId > 0L && exerciseDao.getById(exerciseId) != null) {
+            "Exercise no longer exists."
+        }
+        replaceExerciseLoadProfile(exerciseId, profile)
+    }
 
     /** Clears every Room table only after the matching remote account deletion succeeded. */
     suspend fun clearAllAccountData() = withContext(Dispatchers.IO) {
@@ -668,7 +688,7 @@ class GymRepository(
         includeDiagnostics: Boolean = false,
         owner: BackupOwner? = null
     ): JSONObject = withContext(Dispatchers.Default) {
-        val (catalogSeedVersion, exercises, sessions) = database.withTransaction {
+        val (catalogSeedVersion, exerciseRows, sessions) = database.withTransaction {
             val exerciseCount = exerciseDao.getExerciseCount()
             val sessionCount = workoutDao.getSessionCount()
             val workoutExerciseCount = workoutDao.getTotalWorkoutExerciseCount()
@@ -691,9 +711,12 @@ class GymRepository(
                     textUtf8Bytes = workoutDao.getBackupTextUtf8Bytes()
                 )
             ) { "Stored workout data exceeds the safe backup byte budget." }
+            val loadProfiles = currentExerciseLoadProfiles(rejectInvalid = true)
             Triple(
                 appMetadataDao.getCatalogSeedVersion() ?: 0,
-                exerciseDao.getExercisesSnapshot(),
+                exerciseDao.getExercisesSnapshot().map { exercise ->
+                    exercise to loadProfiles[exercise.id]
+                },
                 workoutDao.getAllSessionDetailsForBackup().map(::sortSessionDetails)
             )
         }
@@ -710,9 +733,9 @@ class GymRepository(
                 put("remote", owner?.remote ?: false)
             })
             .put("exercises", JSONArray().apply {
-                exercises.forEach { exercise ->
+                exerciseRows.forEach { (exercise, loadProfile) ->
                     put(
-                        exerciseBackupJson(exercise.name)
+                        exerciseBackupJson(exercise.name, loadProfile)
                             .put("favorite", exercise.isFavorite)
                     )
                 }
@@ -754,7 +777,7 @@ class GymRepository(
         root.put(
             "summary",
             JSONObject()
-                .put("exerciseCount", exercises.size)
+                .put("exerciseCount", exerciseRows.size)
                 .put("sessionCount", sessions.size)
                 .put("setCount", setCount)
                 .put("totalVolume", totalVolume)
@@ -971,6 +994,9 @@ class GymRepository(
                     exercise.isFavorite?.let { favorite ->
                         check(exerciseDao.setFavorite(existingId, favorite) == 1)
                     }
+                    exercise.loadProfile?.let { profile ->
+                        replaceExerciseLoadProfile(existingId, profile)
+                    }
                     return existingId
                 }
 
@@ -982,6 +1008,9 @@ class GymRepository(
                     exerciseIdByCatalogKey[catalogKey]?.let { existingId ->
                         exercise.isFavorite?.let { favorite ->
                             check(exerciseDao.setFavorite(existingId, favorite) == 1)
+                        }
+                        exercise.loadProfile?.let { profile ->
+                            replaceExerciseLoadProfile(existingId, profile)
                         }
                         return existingId
                     }
@@ -996,6 +1025,9 @@ class GymRepository(
                 exerciseIdByNameKey[nameKey] = exerciseId
                 if (catalogKey != null) {
                     exerciseIdByCatalogKey.putIfAbsent(catalogKey, exerciseId)
+                }
+                exercise.loadProfile?.let { profile ->
+                    replaceExerciseLoadProfile(exerciseId, profile)
                 }
                 return exerciseId
             }
@@ -1106,13 +1138,15 @@ class GymRepository(
         require(setCount in 0..WorkoutDataLimits.MAX_TOTAL_SETS)
 
         val exercises = exerciseDao.getExercisesSnapshot()
+        val loadProfiles = currentExerciseLoadProfiles(rejectInvalid = true)
         val sessions = workoutDao.getAllSessionDetailsForBackup().map(::sortSessionDetails)
         val projection = ValidatedBackup(
             catalogSeedVersion = appMetadataDao.getCatalogSeedVersion() ?: 0,
             exercises = exercises.map { exercise ->
                 ValidatedBackupExercise(
                     name = exercise.name,
-                    catalogKey = BuiltInExerciseCatalog.inferKey(exercise.name)
+                    catalogKey = BuiltInExerciseCatalog.inferKey(exercise.name),
+                    loadProfile = loadProfiles[exercise.id]
                 )
             },
             sessions = sessions.map { details ->
@@ -1190,13 +1224,17 @@ class GymRepository(
         }
 
         val flows = uniqueIds.map { exerciseId ->
-            observeExerciseHistory(exerciseId).map { history ->
+            combine(
+                observeExerciseHistory(exerciseId),
+                observeExerciseLoadProfiles()
+            ) { history, loadProfiles ->
                 val exerciseName = exerciseDao.getById(exerciseId)?.name
                 exerciseId to WorkoutRecommendationEngine.buildForExercise(
                     exerciseId = exerciseId,
                     history = history,
                     trainingProfile = trainingProfile,
-                    exerciseName = exerciseName
+                    exerciseName = exerciseName,
+                    loadProfile = loadProfiles[exerciseId]
                 )
             }
         }
@@ -1853,6 +1891,75 @@ class GymRepository(
         }
     }
 
+    private suspend fun currentExerciseLoadProfiles(
+        rejectInvalid: Boolean
+    ): Map<Long, ExerciseLoadProfile> = loadProfileMap(
+        profiles = exerciseLoadProfileDao.getProfilesSnapshot(),
+        options = exerciseLoadProfileDao.getWeightOptionsSnapshot(),
+        rejectInvalid = rejectInvalid
+    )
+
+    private fun loadProfileMap(
+        profiles: List<ExerciseLoadProfileEntity>,
+        options: List<ExerciseWeightOptionEntity>,
+        rejectInvalid: Boolean
+    ): Map<Long, ExerciseLoadProfile> {
+        val optionsByExercise = options.groupBy { it.exerciseId }
+        if (rejectInvalid) {
+            require(optionsByExercise.keys.all { optionExerciseId ->
+                profiles.any { it.exerciseId == optionExerciseId }
+            }) { "Stored exercise load profile is invalid." }
+        }
+        return buildMap {
+            profiles.forEach { entity ->
+                val direction = ExerciseLoadDirection.fromWireValue(entity.direction)
+                val orderedOptions = optionsByExercise[entity.exerciseId]
+                    .orEmpty()
+                    .sortedBy { it.ordinal }
+                val ordinalsAreCanonical = orderedOptions.withIndex().all { (index, option) ->
+                    option.ordinal == index
+                }
+                val weights = orderedOptions.map { it.weight }
+                val isValid = ordinalsAreCanonical &&
+                    ExerciseLoadProfile.isValid(direction, weights)
+                if (rejectInvalid) {
+                    require(isValid) { "Stored exercise load profile is invalid." }
+                }
+                if (isValid && direction != null) {
+                    put(entity.exerciseId, ExerciseLoadProfile(direction, weights))
+                }
+            }
+        }
+    }
+
+    /** Must only be called inside [database]'s transaction. */
+    private suspend fun replaceExerciseLoadProfile(
+        exerciseId: Long,
+        profile: ExerciseLoadProfile?
+    ) {
+        exerciseLoadProfileDao.deleteWeightOptions(exerciseId)
+        if (profile == null) {
+            exerciseLoadProfileDao.deleteProfile(exerciseId)
+            return
+        }
+        exerciseLoadProfileDao.upsertProfile(
+            ExerciseLoadProfileEntity(
+                exerciseId = exerciseId,
+                direction = profile.direction.wireValue,
+                updatedAt = currentTimeMillis()
+            )
+        )
+        exerciseLoadProfileDao.insertWeightOptions(
+            profile.allowedWeightsKg.mapIndexed { index, weight ->
+                ExerciseWeightOptionEntity(
+                    exerciseId = exerciseId,
+                    ordinal = index,
+                    weight = weight
+                )
+            }
+        )
+    }
+
     private companion object {
         val GARMIN_OWNER_BINDING_PATTERN = Regex("^[0-9a-f]{64}$")
         val GARMIN_DEVICE_BINDING_PATTERN = Regex("^-?[0-9]{1,19}$")
@@ -1910,12 +2017,23 @@ private fun exerciseNamesConflict(existingName: String, candidateName: String): 
     return BuiltInExerciseCatalog.inferKey(existingName) == candidateCatalogKey
 }
 
-private fun exerciseBackupJson(rawName: String): JSONObject {
+private fun exerciseBackupJson(
+    rawName: String,
+    loadProfile: ExerciseLoadProfile? = null
+): JSONObject {
     return JSONObject()
         .put("name", rawName)
         .apply {
             BuiltInExerciseCatalog.inferKey(rawName)?.let { key ->
                 put("catalogKey", key)
+            }
+            loadProfile?.let { profile ->
+                put(
+                    "loadProfile",
+                    JSONObject()
+                        .put("direction", profile.direction.wireValue)
+                        .put("allowedWeightsKg", JSONArray(profile.allowedWeightsKg))
+                )
             }
         }
 }

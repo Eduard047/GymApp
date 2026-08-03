@@ -31,7 +31,7 @@ public struct BuiltInExerciseDefinition: Hashable, Sendable {
 /// The catalog key is optional metadata used only to choose a display label, so old
 /// snapshots and cross-platform schema-v2 backups remain valid.
 public enum BuiltInExerciseCatalog {
-    public static let seedVersion = 2
+    public static let seedVersion = 3
 
     public static let definitions: [BuiltInExerciseDefinition] = [
         definition("bench_press", "Bench Press", "Жим штанги лежачи", ["chest", "triceps", "shoulders"], aliases: ["жим лежачи"]),
@@ -41,6 +41,21 @@ public enum BuiltInExerciseCatalog {
         definition("chest_fly_machine", "Machine Chest Fly", "Зведення рук у тренажері", ["chest", "shoulders"], aliases: ["метелик в середину"]),
         definition("push_up", "Push Up", "Віджимання від підлоги", ["chest", "triceps", "shoulders"], aliases: ["Push-Up"]),
         definition("dips", "Dips", "Віджимання на брусах", ["triceps", "chest", "shoulders"], aliases: ["брусья"]),
+        definition(
+            "assisted_dip",
+            "Assisted Dip",
+            "Віджимання на брусах у гравітроні",
+            ["triceps", "chest", "shoulders"],
+            aliases: [
+                "підтягування з брусьями",
+                "підтягування з брусами",
+                "підтягування с брусьями",
+                "підтягування с брусами",
+                "подтягивания с брусьями",
+                "подтягивание с брусьями"
+            ],
+            introducedInSeedVersion: 3
+        ),
         definition("pull_up", "Pull Up", "Підтягування", ["lats", "biceps", "upperBack", "forearms"], aliases: ["Pull-Up"]),
         definition("assisted_pull_up", "Assisted Pull Up", "Підтягування у гравітроні", ["lats", "upperBack", "biceps", "forearms"], aliases: ["підтягування в гравітроні"]),
         definition("band_assisted_pull_up", "Band Assisted Pull Up", "Підтягування з еспандером", ["lats", "upperBack", "biceps", "forearms"], aliases: ["підтягування з резинкою"]),

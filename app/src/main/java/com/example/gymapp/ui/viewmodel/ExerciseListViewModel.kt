@@ -8,8 +8,11 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.gymapp.R
 import com.example.gymapp.auth.AccountSession
 import com.example.gymapp.auth.CloudAuthManager
+import com.example.gymapp.data.catalog.BuiltInExerciseCatalog
 import com.example.gymapp.data.repository.BackupOwner
 import com.example.gymapp.data.repository.ExerciseDeletionSnapshot
+import com.example.gymapp.data.repository.ExerciseLoadDirection
+import com.example.gymapp.data.repository.ExerciseLoadProfile
 import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.entity.ExerciseHistoryEntry
 import com.example.gymapp.data.repository.GymRepository
@@ -36,6 +39,11 @@ data class ExerciseListUiState(
     val muscleMappings: List<ExerciseMuscleMappingUiModel> = emptyList(),
     val mappingEditorExerciseName: String? = null,
     val mappingEditorMuscles: List<ExerciseMuscleOptionUiModel> = emptyList(),
+    val loadProfiles: Map<Long, ExerciseLoadProfile> = emptyMap(),
+    val loadEditorExercise: ExerciseEntity? = null,
+    val loadEditorDirection: ExerciseLoadDirection = ExerciseLoadDirection.HigherIsHarder,
+    val loadEditorWeights: String = "",
+    val loadEditorHasError: Boolean = false,
     val newExerciseName: String = "",
     val hasInputError: Boolean = false,
     val editingExercise: ExerciseEntity? = null,
@@ -119,6 +127,19 @@ private data class ExerciseDeletionState(
     val error: LocalizedText?
 )
 
+private data class ExerciseLoadEditorState(
+    val profiles: Map<Long, ExerciseLoadProfile>,
+    val exercise: ExerciseEntity?,
+    val direction: ExerciseLoadDirection,
+    val weights: String,
+    val hasError: Boolean
+)
+
+private data class ExerciseConfigurationState(
+    val mappings: ExerciseMappingState,
+    val loadEditor: ExerciseLoadEditorState
+)
+
 @OptIn(ExperimentalCoroutinesApi::class)
 class ExerciseListViewModel(
     private val repository: GymRepository,
@@ -135,6 +156,10 @@ class ExerciseListViewModel(
     private val importMessage = MutableStateFlow<LocalizedText?>(null)
     private val isImportOpen = MutableStateFlow(false)
     private val mappingEditorExerciseName = MutableStateFlow<String?>(null)
+    private val loadEditorExercise = MutableStateFlow<ExerciseEntity?>(null)
+    private val loadEditorDirection = MutableStateFlow(ExerciseLoadDirection.HigherIsHarder)
+    private val loadEditorWeights = MutableStateFlow("")
+    private val loadEditorHasError = MutableStateFlow(false)
     private val pendingExerciseDeletion = MutableStateFlow<ExerciseDeletionSnapshot?>(null)
     private val isExerciseDeletionInProgress = MutableStateFlow(false)
     private val exerciseDeletionError = MutableStateFlow<LocalizedText?>(null)
@@ -253,19 +278,46 @@ class ExerciseListViewModel(
         )
     }
 
+    private val loadEditorState = combine(
+        repository.observeExerciseLoadProfiles(),
+        loadEditorExercise,
+        loadEditorDirection,
+        loadEditorWeights,
+        loadEditorHasError
+    ) { profiles, exercise, direction, weights, error ->
+        ExerciseLoadEditorState(
+            profiles = profiles,
+            exercise = exercise,
+            direction = direction,
+            weights = weights,
+            hasError = error
+        )
+    }
+
+    private val configurationState = combine(mappingState, loadEditorState) { mapping, loadEditor ->
+        ExerciseConfigurationState(mapping, loadEditor)
+    }
+
     val uiState: StateFlow<ExerciseListUiState> = combine(
         baseState,
         editState,
         backupState,
-        mappingState,
+        configurationState,
         deletionState
-    ) { base, edit, backup, mapping, deletion ->
+    ) { base, edit, backup, configuration, deletion ->
+        val mapping = configuration.mappings
+        val loadEditor = configuration.loadEditor
         ExerciseListUiState(
             exercises = base.exercises,
             exerciseWorkoutCounts = base.exerciseWorkoutCounts,
             muscleMappings = mapping.mappings,
             mappingEditorExerciseName = mapping.editorExerciseName,
             mappingEditorMuscles = mapping.editorMuscles,
+            loadProfiles = loadEditor.profiles,
+            loadEditorExercise = loadEditor.exercise,
+            loadEditorDirection = loadEditor.direction,
+            loadEditorWeights = loadEditor.weights,
+            loadEditorHasError = loadEditor.hasError,
             newExerciseName = base.newExerciseName,
             hasInputError = base.hasInputError,
             editingExercise = edit.editingExercise,
@@ -455,6 +507,107 @@ class ExerciseListViewModel(
             closeExerciseMapping()
         }
     }
+
+    fun openExerciseLoadProfile(exercise: ExerciseEntity) {
+        val current = uiState.value.loadProfiles[exercise.id]
+        loadEditorExercise.value = exercise
+        loadEditorDirection.value = current?.direction ?: defaultLoadDirection(exercise)
+        loadEditorWeights.value = current?.allowedWeightsKg
+            ?.joinToString(separator = "\n", transform = ::formatLoadWeight)
+            .orEmpty()
+        loadEditorHasError.value = false
+    }
+
+    fun closeExerciseLoadProfile() {
+        loadEditorExercise.value = null
+        loadEditorWeights.value = ""
+        loadEditorHasError.value = false
+    }
+
+    fun updateExerciseLoadDirection(direction: ExerciseLoadDirection) {
+        loadEditorDirection.value = direction
+        loadEditorHasError.value = false
+    }
+
+    fun updateExerciseLoadWeights(value: String) {
+        if (value.length > 2_048) {
+            loadEditorHasError.value = true
+            return
+        }
+        loadEditorWeights.value = value
+        loadEditorHasError.value = false
+    }
+
+    fun applyExerciseLoadPreset(stepKg: Double) {
+        if (stepKg != 2.5 && stepKg != 5.0) return
+        val maximum = if (stepKg == 2.5) 200.0 else 300.0
+        loadEditorWeights.value = generateSequence(stepKg) { previous ->
+            (previous + stepKg).takeIf { it <= maximum }
+        }.joinToString(separator = "\n", transform = ::formatLoadWeight)
+        loadEditorHasError.value = false
+    }
+
+    fun saveExerciseLoadProfile() {
+        val exercise = loadEditorExercise.value ?: return
+        val weights = parseLoadWeights(loadEditorWeights.value)
+        if (weights == null) {
+            loadEditorHasError.value = true
+            return
+        }
+        val profile = runCatching {
+            ExerciseLoadProfile(loadEditorDirection.value, weights)
+        }.getOrNull()
+        if (profile == null) {
+            loadEditorHasError.value = true
+            return
+        }
+        viewModelScope.launch {
+            runCatching { repository.saveExerciseLoadProfile(exercise.id, profile) }
+                .onSuccess { closeExerciseLoadProfile() }
+                .onFailure { loadEditorHasError.value = true }
+        }
+    }
+
+    fun clearExerciseLoadProfile() {
+        val exercise = loadEditorExercise.value ?: return
+        viewModelScope.launch {
+            runCatching { repository.saveExerciseLoadProfile(exercise.id, null) }
+                .onSuccess { closeExerciseLoadProfile() }
+                .onFailure { loadEditorHasError.value = true }
+        }
+    }
+
+    private fun defaultLoadDirection(exercise: ExerciseEntity): ExerciseLoadDirection =
+        if (BuiltInExerciseCatalog.inferKey(exercise.name) in setOf("assisted_pull_up", "assisted_dip")) {
+            ExerciseLoadDirection.LowerIsHarder
+        } else {
+            ExerciseLoadDirection.HigherIsHarder
+        }
+
+    private fun parseLoadWeights(raw: String): List<Double>? {
+        val tokens = raw
+            .replace(Regex(",(?=\\s|$)"), " ")
+            .split(Regex("[;\\s]+"))
+            .filter { it.isNotBlank() }
+            .flatMap { token ->
+                if (token.count { it == ',' } > 1 || token.contains(',') && token.contains('.')) {
+                    token.split(',').filter(String::isNotBlank)
+                } else {
+                    listOf(token)
+                }
+            }
+        if (tokens.isEmpty() || tokens.size > ExerciseLoadProfile.MAX_WEIGHT_OPTIONS) return null
+        val parsed = tokens.map { token ->
+            token.replace(',', '.').toDoubleOrNull()?.takeIf(WorkoutDataLimits::isValidWeight)
+                ?: return null
+        }
+        return parsed.distinct().sorted().takeIf {
+            ExerciseLoadProfile.isValid(loadEditorDirection.value, it)
+        }
+    }
+
+    private fun formatLoadWeight(weight: Double): String =
+        if (weight % 1.0 == 0.0) weight.toLong().toString() else weight.toString()
 
     fun exportBackup() {
         viewModelScope.launch {

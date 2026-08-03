@@ -10807,6 +10807,240 @@
         }
       }
     },
+    "Assisted Dip" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Отжимания на брусьях в гравитроне"
+          }
+        }
+      }
+    },
+    "Available weights (kg), one per line" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Доступные веса (кг), по одному в строке"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Доступні ваги (кг), по одній у рядку"
+          }
+        }
+      }
+    },
+    "Example: 45 47.5 50 52.5. The coach will only choose a listed value." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Пример: 45 47,5 50 52,5. Тренер выберет только вес из списка."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Приклад: 45 47,5 50 52,5. Тренер вибере лише вагу зі списку."
+          }
+        }
+      }
+    },
+    "Higher weight is harder" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Больший вес сложнее"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Більша вага складніша"
+          }
+        }
+      }
+    },
+    "Load direction" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Направление нагрузки"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Напрям навантаження"
+          }
+        }
+      }
+    },
+    "Lower weight is harder (assistance)" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Меньший вес сложнее (противовес)"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Менша вага складніша (противага)"
+          }
+        }
+      }
+    },
+    "Machine weights" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Веса тренажёра"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ваги тренажера"
+          }
+        }
+      }
+    },
+    "Use exact machine weights" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Использовать точные веса тренажёра"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Використовувати точні ваги тренажера"
+          }
+        }
+      }
+    },
+    "Enter only the weights this machine can actually select. Saved history stays unchanged." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Укажи только те веса, которые реально можно выбрать на тренажёре. Сохранённая история не изменится."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Вкажи лише ті ваги, які реально можна вибрати на тренажері. Збережена історія не зміниться."
+          }
+        }
+      }
+    },
+    "Quick machine-stack presets" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Быстрые шаблоны стека"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Швидкі шаблони стека"
+          }
+        }
+      }
+    },
+    "Save changes" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сохранить изменения"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Зберегти зміни"
+          }
+        }
+      }
+    },
+    "Save machine weights" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сохранить веса тренажёра"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Зберегти ваги тренажера"
+          }
+        }
+      }
+    },
+    "Update the name or enter every selectable load shown on this machine." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Измени название или укажи все доступные нагрузки этого тренажёра."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Зміни назву або вкажи всі доступні навантаження цього тренажера."
+          }
+        }
+      }
+    },
+    "Enter 1–128 valid machine weights between 0 and 1,000,000 kg." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Укажи от 1 до 128 допустимых весов тренажёра в диапазоне от 0 до 1 000 000 кг."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Вкажи від 1 до 128 допустимих ваг тренажера в діапазоні від 0 до 1 000 000 кг."
+          }
+        }
+      }
+    },
+    "Exercise updated." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Упражнение обновлено."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Вправу оновлено."
+          }
+        }
+      }
+    },
     "Assisted Pull Up" : {
       "localizations" : {
         "ru" : {

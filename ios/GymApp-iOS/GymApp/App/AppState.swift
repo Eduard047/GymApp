@@ -19,7 +19,7 @@ final class AppState: ObservableObject {
     }
 
     private struct CloudWorkoutIdentity: Hashable {
-        let customExercises: [BackupExercise]
+        let configuredExercises: [BackupExercise]
         let sessions: [BackupSession]
     }
 
@@ -618,13 +618,17 @@ final class AppState: ObservableObject {
 
     private static func cloudWorkoutIdentity(_ backup: GymBackup) -> CloudWorkoutIdentity {
         CloudWorkoutIdentity(
-            customExercises: backup.exercises.filter { $0.catalogKey == nil },
+            configuredExercises: backup.exercises.filter {
+                $0.catalogKey == nil || $0.machineLoadProfile != nil
+            },
             sessions: backup.sessions
         )
     }
 
     private static func hasUserWorkoutData(_ backup: GymBackup) -> Bool {
-        !backup.sessions.isEmpty || backup.exercises.contains { $0.catalogKey == nil }
+        !backup.sessions.isEmpty || backup.exercises.contains {
+            $0.catalogKey == nil || $0.machineLoadProfile != nil
+        }
     }
 
     func forceCloudSync() async {

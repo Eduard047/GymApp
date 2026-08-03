@@ -78,6 +78,39 @@ test("exercise favorites are bounded booleans with a backward-compatible alias",
   assert.throws(() => contract.validateAndNormalize(conflicting), /conflicting favorite values/);
 });
 
+test("exercise machine load profiles are normalized and bounded", () => {
+  const valid = validBackup();
+  valid.exercises[0].loadProfile = {
+    direction: "higherIsHarder",
+    allowedWeightsKg: [0, 2.5, 5, 12.5, 69, 73]
+  };
+  assert.deepEqual(contract.validateAndNormalize(valid).state.exercises[0].loadProfile, {
+    direction: "higherIsHarder",
+    allowedWeightsKg: [0, 2.5, 5, 12.5, 69, 73]
+  });
+
+  const assisted = validBackup();
+  assisted.exercises[0].loadProfile = {
+    direction: "lowerIsHarder",
+    allowedWeightsKg: [20, 25, 30, 35, 40, 45, 50]
+  };
+  assert.equal(contract.validateAndNormalize(assisted).state.exercises[0].loadProfile.direction, "lowerIsHarder");
+
+  for (const loadProfile of [
+    { direction: "unknown", allowedWeightsKg: [5] },
+    { direction: "higherIsHarder", allowedWeightsKg: [] },
+    { direction: "higherIsHarder", allowedWeightsKg: [5, 5] },
+    { direction: "higherIsHarder", allowedWeightsKg: [10, 5] },
+    { direction: "higherIsHarder", allowedWeightsKg: [-1, 5] },
+    { direction: "higherIsHarder", allowedWeightsKg: [5, Infinity] },
+    { direction: "higherIsHarder", allowedWeightsKg: Array.from({ length: contract.LIMITS.loadProfileWeights + 1 }, (_, index) => index) }
+  ]) {
+    const invalid = validBackup();
+    invalid.exercises[0].loadProfile = loadProfile;
+    assert.throws(() => contract.validateAndNormalize(invalid));
+  }
+});
+
 test("profile enums never return an attacker-controlled fallback string", () => {
   const backup = validBackup();
   backup.profile = {

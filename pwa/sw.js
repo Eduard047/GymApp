@@ -1,7 +1,7 @@
 "use strict";
 
 const CACHE_PREFIX = "gym-pwa-";
-const CACHE_VERSION = "v88";
+const CACHE_VERSION = "v89";
 const CACHE_NAME = `${CACHE_PREFIX}${CACHE_VERSION}`;
 const LEGACY_GITHUB_ORIGIN = "https://eduard047.github.io";
 const LEGACY_GITHUB_SCOPE = `${LEGACY_GITHUB_ORIGIN}/GymApp/`;
@@ -12,7 +12,7 @@ const LEGACY_CLEANUP_URL = new URL("./legacy-origin-cleanup-v61.html", self.regi
 const LEGACY_CONFIRMATION_URL = new URL("./confirmed.html", self.registration.scope);
 const EXERCISE_MEDIA_KEYS = [
   "bench_press", "dumbbell_bench_press", "incline_dumbbell_press", "incline_bench_press",
-  "chest_fly_machine", "push_up", "dips", "pull_up", "assisted_pull_up", "band_assisted_pull_up",
+  "chest_fly_machine", "push_up", "dips", "pull_up", "assisted_pull_up", "assisted_dip", "band_assisted_pull_up",
   "lat_pulldown", "straight_arm_pulldown", "barbell_row", "seated_cable_row", "plate_loaded_row", "face_pull",
   "squat", "leg_press", "romanian_deadlift", "deadlift", "hip_thrust", "bulgarian_split_squat", "lunge", "leg_extension",
   "lying_leg_curl", "seated_leg_curl", "hip_adduction", "hip_abduction", "calf_raise",
@@ -33,11 +33,11 @@ const ASSETS = [
   "./styles.v59.css",
   "./muscle-regions.v56.js",
   "./supabase-config.v56.js",
-  "./state-contract.v56.js",
+  "./state-contract.v57.js",
   "./garmin-cloud-sync.v57.js",
   "./progression-rules.v56.js",
-  "./russian-text.v60.js",
-  "./app.v62.js",
+  "./russian-text.v61.js",
+  "./app.v63.js",
   ...EXERCISE_MEDIA_KEYS.flatMap(key => [
     `./exercise-media/${key}_0.jpg`,
     `./exercise-media/${key}_1.jpg`

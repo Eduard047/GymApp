@@ -221,6 +221,7 @@ public enum RecommendationEngine {
         "chest_fly_machine": .init(category: .push, role: .isolation, loadMode: .standard, patterns: [.accessory]),
         "push_up": .init(category: .push, role: .secondary, loadMode: .bodyweight, patterns: [.horizontalPress]),
         "dips": .init(category: .push, role: .secondary, loadMode: .bodyweight, patterns: [.horizontalPress]),
+        "assisted_dip": .init(category: .push, role: .secondary, loadMode: .assistance, patterns: [.horizontalPress]),
         "pull_up": .init(category: .pull, role: .secondary, loadMode: .bodyweight, patterns: [.verticalPull]),
         "assisted_pull_up": .init(category: .pull, role: .secondary, loadMode: .assistance, patterns: [.verticalPull]),
         "band_assisted_pull_up": .init(category: .pull, role: .secondary, loadMode: .bodyweight, patterns: [.verticalPull]),
@@ -273,6 +274,7 @@ public enum RecommendationEngine {
         history: [ExerciseHistoryEntry],
         exerciseCatalogKey: String? = nil,
         exerciseName: String? = nil,
+        machineLoadProfile: MachineLoadProfile? = nil,
         trainingProfile: TrainingProfile = TrainingProfile(),
         now: Date = Date(),
         calendar: Calendar = .current
@@ -373,18 +375,33 @@ public enum RecommendationEngine {
             analysis: programmingAnalysis
         )
         let loadMode = programmingAnalysis?.loadMode ?? .standard
-        let bestEstimatedMax = sessionSnapshots.map { $0.estimatedMax }.max() ?? 0
-        let canAssessStandardLoadTrend = loadMode != .assistance && latest.maxWeight > 0
+        let loadDirection = effectiveLoadDirection(
+            machineLoadProfile: machineLoadProfile,
+            loadMode: loadMode
+        )
+        let canAssessStandardLoadTrend = loadDirection == .higherIsHarder && latest.maxWeight > 0
+        let bestEstimatedMax = canAssessStandardLoadTrend
+            ? sessionSnapshots.map { $0.estimatedMax }.max() ?? 0
+            : 0
         let plateauDetected = canAssessStandardLoadTrend &&
             isTruePlateau(Array(sessionSnapshots.prefix(4)))
-        let latestNearBest = bestEstimatedMax <= 0 || latest.estimatedMax >= bestEstimatedMax * 0.97
+        let latestNearBest = canAssessStandardLoadTrend &&
+            latest.estimatedMax >= bestEstimatedMax * 0.97
         let previousVolumePerSet = previous?.averageVolumePerSet ?? latest.averageVolumePerSet
-        let volumeRatio = previousVolumePerSet <= 0
+        let volumeRatio = !canAssessStandardLoadTrend || previousVolumePerSet <= 0
             ? 1
             : latest.averageVolumePerSet / previousVolumePerSet
         let repeatedRegression: Bool
-        if sessionSnapshots.count < 3 || loadMode == .assistance {
+        if sessionSnapshots.count < 3 {
             repeatedRegression = false
+        } else if loadDirection == .lowerIsHarder {
+            repeatedRegression = isAssistanceRegression(
+                newer: sessionSnapshots[0],
+                older: sessionSnapshots[1]
+            ) && isAssistanceRegression(
+                newer: sessionSnapshots[1],
+                older: sessionSnapshots[2]
+            )
         } else if loadMode == .bodyweight,
                   sessionSnapshots.prefix(3).allSatisfy({ $0.maxWeight <= 0 }) {
             repeatedRegression = isBodyweightRepRegression(
@@ -402,7 +419,7 @@ public enum RecommendationEngine {
         let latestStable = latest.sets.count >= 2 &&
             latest.sets.allSatisfy { $0.reps >= repRange.lowerBound }
         let latestStrained = latest.sets.contains { $0.reps < repRange.lowerBound } ||
-            volumeRatio < 0.88
+            (canAssessStandardLoadTrend && volumeRatio < 0.88)
         let earnedProgression = completedAtRepCeiling(
             latest,
             targetSetCount: targetSetCount,
@@ -415,8 +432,13 @@ public enum RecommendationEngine {
             latest: latest,
             previous: previous,
             targetSetCount: targetSetCount,
-            loadMode: loadMode
+            loadDirection: loadDirection
         ) && !(loadMode == .bodyweight && latest.maxWeight <= 0)
+            && harderWeightAvailable(
+                machineLoadProfile: machineLoadProfile,
+                loadDirection: loadDirection,
+                baselineSets: Array(latest.sets.prefix(targetSetCount))
+            )
         let isFatLossDeficit = trainingProfile.goal == .aestheticFatLoss &&
             trainingProfile.calorieMode == .deficit
 
@@ -441,59 +463,54 @@ public enum RecommendationEngine {
             case .newExercise:
                 target = (nil, defaultRepsTarget)
             case .progressiveOverload:
-                let increasedWeight = baseline.weight > 0
-                    ? roundToNearestHalf(
-                        loadMode == .assistance
-                            ? max(0, baseline.weight - chooseWeightStep(
-                                weight: baseline.weight,
-                                profile: trainingProfile
-                            ))
-                            : baseline.weight + chooseWeightStep(
-                                weight: baseline.weight,
-                                profile: trainingProfile
-                            )
-                    )
-                    : baseline.weight
+                let increasedWeight = adjustedWeight(
+                    baseline.weight,
+                    adjustment: .harder,
+                    machineLoadProfile: machineLoadProfile,
+                    loadDirection: loadDirection
+                )
                 target = (
                     increasedWeight,
                     baseline.weight <= 0 ? repRange.upperBound : repRange.lowerBound
                 )
             case .holdAndBuild:
                 target = (
-                    baseline.weight,
+                    adjustedWeight(
+                        baseline.weight,
+                        adjustment: .hold,
+                        machineLoadProfile: machineLoadProfile,
+                        loadDirection: loadDirection
+                    ),
                     min(repRange.upperBound, max(repRange.lowerBound, baseline.reps + 1))
                 )
             case .deload:
                 target = (
-                    baseline.weight > 0
-                        ? roundToNearestHalf(
-                            loadMode == .assistance
-                                ? baseline.weight + chooseWeightStep(
-                                    weight: baseline.weight,
-                                    profile: trainingProfile
-                                )
-                                : baseline.weight * (isFatLossDeficit ? 0.9 : 0.92)
-                        )
-                        : baseline.weight,
+                    adjustedWeight(
+                        baseline.weight,
+                        adjustment: .easier(multiplier: isFatLossDeficit ? 0.9 : 0.92),
+                        machineLoadProfile: machineLoadProfile,
+                        loadDirection: loadDirection
+                    ),
                     min(repRange.upperBound, max(repRange.lowerBound, baseline.reps))
                 )
             case .comeback:
                 target = (
-                    baseline.weight > 0
-                        ? roundToNearestHalf(
-                            loadMode == .assistance
-                                ? baseline.weight + chooseWeightStep(
-                                    weight: baseline.weight,
-                                    profile: trainingProfile
-                                )
-                                : baseline.weight * comebackMultiplier(daysSinceLastSession)
-                        )
-                        : baseline.weight,
+                    adjustedWeight(
+                        baseline.weight,
+                        adjustment: .easier(multiplier: comebackMultiplier(daysSinceLastSession)),
+                        machineLoadProfile: machineLoadProfile,
+                        loadDirection: loadDirection
+                    ),
                     min(repRange.upperBound, max(repRange.lowerBound, baseline.reps))
                 )
             case .plateauBreak:
                 target = (
-                    baseline.weight,
+                    adjustedWeight(
+                        baseline.weight,
+                        adjustment: .hold,
+                        machineLoadProfile: machineLoadProfile,
+                        loadDirection: loadDirection
+                    ),
                     plateauUsesLowerRange ? repRange.lowerBound : repRange.upperBound
                 )
             }
@@ -518,8 +535,8 @@ public enum RecommendationEngine {
         addReason(.lastSessionStrong, when: latestStable)
         addReason(.lastSessionUnstable, when: latestStrained || repeatedRegression)
         addReason(.recentBreak, when: daysSinceLastSession >= comebackBreakDays)
-        addReason(.volumeTrendingUp, when: volumeRatio >= 1.08)
-        addReason(.volumeDropped, when: volumeRatio < 0.9 || repeatedRegression)
+        addReason(.volumeTrendingUp, when: canAssessStandardLoadTrend && volumeRatio >= 1.08)
+        addReason(.volumeDropped, when: canAssessStandardLoadTrend && (volumeRatio < 0.9 || repeatedRegression))
         addReason(.plateauDetected, when: plateauDetected)
         addReason(.nearPersonalBest, when: latestNearBest)
         addReason(.aestheticGoal, when: trainingProfile.goal == .aestheticFatLoss)
@@ -668,6 +685,7 @@ public enum RecommendationEngine {
                         history: $0.history,
                         exerciseCatalogKey: $0.exercise.catalogKey,
                         exerciseName: $0.exercise.name,
+                        machineLoadProfile: $0.exercise.machineLoadProfile,
                         trainingProfile: trainingProfile,
                         now: now,
                         calendar: calendar
@@ -678,17 +696,92 @@ public enum RecommendationEngine {
         )
     }
 
-    private static func chooseWeightStep(weight: Double, profile: TrainingProfile) -> Double {
-        let step: Double
-        switch weight {
-        case ..<20: step = 1
-        case ..<60: step = 2.5
-        case ..<120: step = 5
-        default: step = 7.5
+    private enum LoadAdjustment {
+        case harder
+        case easier(multiplier: Double)
+        case hold
+    }
+
+    private static func effectiveLoadDirection(
+        machineLoadProfile: MachineLoadProfile?,
+        loadMode: ExerciseLoadMode
+    ) -> MachineLoadDirection {
+        machineLoadProfile?.direction ?? (loadMode == .assistance ? .lowerIsHarder : .higherIsHarder)
+    }
+
+    private static func adjustedWeight(
+        _ baseline: Double,
+        adjustment: LoadAdjustment,
+        machineLoadProfile: MachineLoadProfile?,
+        loadDirection: MachineLoadDirection
+    ) -> Double {
+        if let machineLoadProfile {
+            let values = machineLoadProfile.allowedWeightsKg
+            switch adjustment {
+            case .hold:
+                return values.min {
+                    let leftDistance = abs($0 - baseline)
+                    let rightDistance = abs($1 - baseline)
+                    return leftDistance == rightDistance ? $0 < $1 : leftDistance < rightDistance
+                } ?? baseline
+            case .harder:
+                if loadDirection == .higherIsHarder {
+                    return values.first(where: { $0 > baseline }) ?? values.last ?? baseline
+                }
+                return values.last(where: { $0 < baseline }) ?? values.first ?? baseline
+            case .easier:
+                if loadDirection == .higherIsHarder {
+                    return values.last(where: { $0 < baseline }) ?? values.first ?? baseline
+                }
+                return values.first(where: { $0 > baseline }) ?? values.last ?? baseline
+            }
         }
-        return profile.goal == .aestheticFatLoss || profile.calorieMode == .deficit
-            ? step * 0.5
-            : step
+
+        guard baseline > 0 else { return baseline }
+        switch adjustment {
+        case .hold:
+            return nearestFallbackGridWeight(baseline)
+        case .harder:
+            return loadDirection == .lowerIsHarder
+                ? previousFallbackGridWeight(baseline)
+                : nextFallbackGridWeight(baseline)
+        case let .easier(multiplier):
+            if loadDirection == .lowerIsHarder {
+                return nextFallbackGridWeight(baseline)
+            }
+            let desired = nearestFallbackGridWeight(baseline * multiplier)
+            return desired < baseline ? desired : previousFallbackGridWeight(baseline)
+        }
+    }
+
+    private static let fallbackWeightGrid = 2.5
+
+    private static func nearestFallbackGridWeight(_ weight: Double) -> Double {
+        max(0, (weight / fallbackWeightGrid).rounded() * fallbackWeightGrid)
+    }
+
+    private static func nextFallbackGridWeight(_ weight: Double) -> Double {
+        let nextIndex = floor(weight / fallbackWeightGrid) + 1
+        return min(maximumSupportedWeight, nextIndex * fallbackWeightGrid)
+    }
+
+    private static func previousFallbackGridWeight(_ weight: Double) -> Double {
+        let previousIndex = ceil(weight / fallbackWeightGrid) - 1
+        return max(0, previousIndex * fallbackWeightGrid)
+    }
+
+    private static func harderWeightAvailable(
+        machineLoadProfile: MachineLoadProfile?,
+        loadDirection: MachineLoadDirection,
+        baselineSets: [ExerciseHistoryEntry]
+    ) -> Bool {
+        guard let machineLoadProfile else { return true }
+        return baselineSets.allSatisfy { baseline in
+            if loadDirection == .higherIsHarder {
+                return machineLoadProfile.allowedWeightsKg.contains { $0 > baseline.weight }
+            }
+            return machineLoadProfile.allowedWeightsKg.contains { $0 < baseline.weight }
+        }
     }
 
     private static func goalRepRange(
@@ -736,10 +829,9 @@ public enum RecommendationEngine {
         profile: TrainingProfile
     ) -> Int {
         let days = min(6, max(2, profile.workoutsPerWeek))
-        var target = days == 2 ? 6 : days == 3 ? 5 : days == 4 ? 4 : 3
-        if profile.goal == .strength { target -= 1 }
-        if profile.calorieMode == .deficit { target -= 1 }
-        return min(6, max(focus == .fullBody ? 3 : 2, target))
+        if days == 2 || days == 3 { return 6 }
+        if focus == .fullBody, days >= 5 { return 4 }
+        return 5
     }
 
     private static func programmingPreferenceScore(
@@ -776,7 +868,7 @@ public enum RecommendationEngine {
         latest: ExerciseSessionSnapshot,
         previous: ExerciseSessionSnapshot?,
         targetSetCount: Int,
-        loadMode: ExerciseLoadMode
+        loadDirection: MachineLoadDirection
     ) -> Bool {
         guard let previous,
               latest.sets.count >= targetSetCount,
@@ -787,7 +879,7 @@ public enum RecommendationEngine {
         let previousAverageWeight = previousSets.map(\.weight).reduce(0, +) / Double(targetSetCount)
         let latestAverageReps = Double(latestSets.map(\.reps).reduce(0, +)) / Double(targetSetCount)
         let previousAverageReps = Double(previousSets.map(\.reps).reduce(0, +)) / Double(targetSetCount)
-        let weightDidNotDecline = loadMode == .assistance
+        let weightDidNotDecline = loadDirection == .lowerIsHarder
             ? latestAverageWeight <= previousAverageWeight
             : latestAverageWeight >= previousAverageWeight
         return weightDidNotDecline && latestAverageReps >= previousAverageReps
@@ -821,6 +913,14 @@ public enum RecommendationEngine {
         older: ExerciseSessionSnapshot
     ) -> Bool {
         newer.averageReps < older.averageReps * 0.9
+    }
+
+    private static func isAssistanceRegression(
+        newer: ExerciseSessionSnapshot,
+        older: ExerciseSessionSnapshot
+    ) -> Bool {
+        newer.averageWeight > older.averageWeight &&
+            newer.averageReps <= older.averageReps * 1.02
     }
 
     private static func isTruePlateau(_ sessions: [ExerciseSessionSnapshot]) -> Bool {
@@ -1272,6 +1372,44 @@ public enum RecommendationEngine {
             }
         }
 
+        let recentSessions = sessionGroups(history).prefix(2)
+        let recentlyTrainedTrunk = recentSessions.contains { session in
+            session.entries.contains { entry in
+                isTrunkHistoryEntry(entry)
+            }
+        }
+        let requiresTrunkSlot = focus == .fullBody || focus == .lower || focus == .legs ||
+            (targetExerciseCount >= 5 && !recentlyTrainedTrunk)
+
+        // Lower/full-body sessions always include one trunk-resilience slot. Upper,
+        // push, and pull sessions fill it only after two sessions without trunk work.
+        // The least-recently trained option rotates core and hyperextension work.
+        if requiresTrunkSlot,
+           selected.count < targetExerciseCount,
+           !selected.contains(where: isTrunkAccessory) {
+            let trunkCandidates = candidates.filter { candidate in
+                isTrunkAccessory(candidate) &&
+                    !selected.contains(where: { $0.exercise.id == candidate.exercise.id })
+            }
+            if let best = trunkCandidates.min(by: {
+                let leftDate = $0.history.map(\.sessionDate).max() ?? .distantPast
+                let rightDate = $1.history.map(\.sessionDate).max() ?? .distantPast
+                if leftDate != rightDate { return leftDate < rightDate }
+                let leftPreferred = variant == .b ? isHyperextension($0) : !isHyperextension($0)
+                let rightPreferred = variant == .b ? isHyperextension($1) : !isHyperextension($1)
+                if leftPreferred != rightPreferred { return leftPreferred }
+                if $0.score != $1.score { return $0.score > $1.score }
+                return $0.exercise.name.localizedCaseInsensitiveCompare($1.exercise.name) == .orderedDescending
+            }) {
+                selected.append(best)
+                covered.formUnion(best.analysis.muscles)
+                remaining.removeAll { $0.exercise.id == best.exercise.id }
+            }
+        }
+        if selected.contains(where: isTrunkAccessory) {
+            remaining.removeAll(where: isTrunkAccessory)
+        }
+
         while selected.count < targetExerciseCount, !remaining.isEmpty {
             let scored = remaining.map { candidate in
                 (
@@ -1297,6 +1435,24 @@ public enum RecommendationEngine {
         }
 
         return Array(selected.prefix(targetExerciseCount))
+    }
+
+    private static func isTrunkAccessory(_ candidate: ExerciseCandidate) -> Bool {
+        candidate.analysis.role == .core || isHyperextension(candidate)
+    }
+
+    private static func isHyperextension(_ candidate: ExerciseCandidate) -> Bool {
+        candidate.identityKey == "catalog:hyperextension" ||
+            candidate.identityKey == "catalog:side_hyperextension"
+    }
+
+    private static func isTrunkHistoryEntry(_ entry: ExerciseHistoryEntry) -> Bool {
+        let key = canonicalCatalogKey(
+            catalogKey: entry.exerciseCatalogKey,
+            name: entry.exerciseName
+        )
+        if key == "hyperextension" || key == "side_hyperextension" { return true }
+        return analyzeExercise(entry.exerciseName, catalogKey: entry.exerciseCatalogKey).role == .core
     }
 
     private static func programmingPriority(_ analysis: ExerciseAnalysis) -> Double {
@@ -1440,11 +1596,6 @@ public enum RecommendationEngine {
         } ?? .fullBody
     }
 
-    private static func roundToNearestHalf(_ value: Double) -> Double {
-        let bounded = min(maximumSupportedWeight, max(0, value))
-        return (bounded * 2).rounded(.toNearestOrEven) / 2
-    }
-
     private static func sessionGroups(_ history: [ExerciseHistoryEntry]) -> [SessionGroup] {
         Dictionary(grouping: history, by: \.workoutID)
             .map {
@@ -1473,6 +1624,7 @@ public enum RecommendationEngine {
         var maxWeight: Double { sets.map(\.weight).max() ?? 0 }
         var minReps: Int { sets.map(\.reps).min() ?? 0 }
         var averageReps: Double { Double(sets.reduce(0) { $0 + $1.reps }) / Double(sets.count) }
+        var averageWeight: Double { sets.reduce(0) { $0 + $1.weight } / Double(sets.count) }
         var totalReps: Int { sets.reduce(0) { $0 + $1.reps } }
         var volume: Double { sets.reduce(0) { $0 + $1.volume } }
         var averageVolumePerSet: Double { volume / Double(sets.count) }

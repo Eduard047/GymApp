@@ -2,10 +2,62 @@ import Foundation
 
 // MARK: - Persistent workout models
 
+public enum MachineLoadDirection: String, Codable, CaseIterable, Hashable, Sendable {
+    case higherIsHarder
+    case lowerIsHarder
+}
+
+public struct MachineLoadProfile: Codable, Hashable, Sendable {
+    public static let maximumAllowedWeightCount = 128
+    public static let maximumAllowedWeightKg = 1_000_000.0
+
+    public let direction: MachineLoadDirection
+    public let allowedWeightsKg: [Double]
+
+    public init(direction: MachineLoadDirection, allowedWeightsKg: [Double]) throws {
+        guard !allowedWeightsKg.isEmpty,
+              allowedWeightsKg.count <= Self.maximumAllowedWeightCount,
+              allowedWeightsKg.allSatisfy({
+                  $0.isFinite && (0 ... Self.maximumAllowedWeightKg).contains($0)
+              }),
+              allowedWeightsKg == allowedWeightsKg.sorted(),
+              Set(allowedWeightsKg).count == allowedWeightsKg.count else {
+            throw MachineLoadProfileError.invalidAllowedWeights
+        }
+        self.direction = direction
+        self.allowedWeightsKg = allowedWeightsKg
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case direction
+        case allowedWeightsKg
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let direction = try container.decode(MachineLoadDirection.self, forKey: .direction)
+        let allowedWeightsKg = try container.decode([Double].self, forKey: .allowedWeightsKg)
+        do {
+            try self.init(direction: direction, allowedWeightsKg: allowedWeightsKg)
+        } catch {
+            throw DecodingError.dataCorruptedError(
+                forKey: .allowedWeightsKg,
+                in: container,
+                debugDescription: "Machine weights must be finite, sorted, unique, non-negative, and bounded."
+            )
+        }
+    }
+}
+
+public enum MachineLoadProfileError: Error, Equatable, Sendable {
+    case invalidAllowedWeights
+}
+
 public struct Exercise: Codable, Identifiable, Hashable, Sendable {
     public let id: UUID
     public var name: String
     public var catalogKey: String?
+    public var machineLoadProfile: MachineLoadProfile?
     /// A device-local preference. WorkoutStore persists this in its account-scoped
     /// envelope rather than the shared backup/cloud contract.
     public var isFavorite: Bool
@@ -14,11 +66,13 @@ public struct Exercise: Codable, Identifiable, Hashable, Sendable {
         id: UUID = UUID(),
         name: String,
         catalogKey: String? = nil,
+        machineLoadProfile: MachineLoadProfile? = nil,
         isFavorite: Bool = false
     ) {
         self.id = id
         self.name = name
         self.catalogKey = BuiltInExerciseCatalog.resolvedKey(catalogKey: catalogKey, name: name)
+        self.machineLoadProfile = machineLoadProfile
         self.isFavorite = isFavorite
     }
 
@@ -26,6 +80,7 @@ public struct Exercise: Codable, Identifiable, Hashable, Sendable {
         case id
         case name
         case catalogKey
+        case machineLoadProfile = "loadProfile"
         case isFavorite
     }
 
@@ -44,6 +99,7 @@ public struct Exercise: Codable, Identifiable, Hashable, Sendable {
             catalogKey: try container.decodeIfPresent(String.self, forKey: .catalogKey),
             name: name
         )
+        machineLoadProfile = try container.decodeIfPresent(MachineLoadProfile.self, forKey: .machineLoadProfile)
         isFavorite = try container.decodeIfPresent(Bool.self, forKey: .isFavorite) ?? false
     }
 
@@ -52,6 +108,7 @@ public struct Exercise: Codable, Identifiable, Hashable, Sendable {
         try container.encode(id, forKey: .id)
         try container.encode(name, forKey: .name)
         try container.encodeIfPresent(catalogKey, forKey: .catalogKey)
+        try container.encodeIfPresent(machineLoadProfile, forKey: .machineLoadProfile)
         // Favorites intentionally stay out of WorkoutDataSnapshot, backups, and the
         // public cloud shape. WorkoutStore.PersistedEnvelope encodes them separately.
     }
@@ -460,10 +517,22 @@ public struct BackupOwner: Codable, Hashable, Sendable {
 public struct BackupExercise: Codable, Hashable, Sendable {
     public var name: String
     public var catalogKey: String?
+    public var machineLoadProfile: MachineLoadProfile?
 
-    public init(name: String, catalogKey: String? = nil) {
+    public init(
+        name: String,
+        catalogKey: String? = nil,
+        machineLoadProfile: MachineLoadProfile? = nil
+    ) {
         self.name = name
         self.catalogKey = BuiltInExerciseCatalog.resolvedKey(catalogKey: catalogKey, name: name)
+        self.machineLoadProfile = machineLoadProfile
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case name
+        case catalogKey
+        case machineLoadProfile = "loadProfile"
     }
 }
 
@@ -480,12 +549,27 @@ public struct BackupSet: Codable, Hashable, Sendable {
 public struct BackupWorkoutExercise: Codable, Hashable, Sendable {
     public var name: String
     public var catalogKey: String?
+    public var machineLoadProfile: MachineLoadProfile?
     public var sets: [BackupSet]
 
-    public init(name: String, catalogKey: String? = nil, sets: [BackupSet]) {
+    public init(
+        name: String,
+        catalogKey: String? = nil,
+        machineLoadProfile: MachineLoadProfile? = nil,
+        sets: [BackupSet]
+    ) {
         self.name = name
         self.catalogKey = BuiltInExerciseCatalog.resolvedKey(catalogKey: catalogKey, name: name)
+        self.machineLoadProfile = machineLoadProfile
         self.sets = sets
+    }
+
+
+    private enum CodingKeys: String, CodingKey {
+        case name
+        case catalogKey
+        case machineLoadProfile = "loadProfile"
+        case sets
     }
 }
 

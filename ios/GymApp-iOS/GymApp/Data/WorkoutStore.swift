@@ -421,7 +421,10 @@ public final class WorkoutStore: ObservableObject {
     // MARK: Exercise CRUD
 
     @discardableResult
-    public func addExercise(name: String) throws -> Exercise {
+    public func addExercise(
+        name: String,
+        machineLoadProfile: MachineLoadProfile? = nil
+    ) throws -> Exercise {
         let cleaned = try Self.validatedExerciseName(name)
         var created: Exercise?
         try mutate { state in
@@ -430,7 +433,7 @@ public final class WorkoutStore: ObservableObject {
             }) else {
                 throw WorkoutStoreError.duplicateExerciseName
             }
-            let exercise = Exercise(name: cleaned)
+            let exercise = Exercise(name: cleaned, machineLoadProfile: machineLoadProfile)
             state.exercises.append(exercise)
             created = exercise
         }
@@ -512,6 +515,20 @@ public final class WorkoutStore: ObservableObject {
                 merged[value.id] = value
             }
             state.muscleMappings = Array(merged.values)
+        }
+    }
+
+    /// Updates only the machine's selectable loads. Exercise identity, workout
+    /// history, favorites, and manual muscle mappings stay attached to the same row.
+    public func updateExerciseMachineLoadProfile(
+        id: UUID,
+        machineLoadProfile: MachineLoadProfile?
+    ) throws {
+        try mutate { state in
+            guard let index = state.exercises.firstIndex(where: { $0.id == id }) else {
+                throw WorkoutStoreError.exerciseNotFound
+            }
+            state.exercises[index].machineLoadProfile = machineLoadProfile
         }
     }
 
@@ -1070,7 +1087,13 @@ public final class WorkoutStore: ObservableObject {
         let exerciseByID = Dictionary(uniqueKeysWithValues: exercises.map { ($0.id, $0) })
         let backupExercises = exercises
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-            .map { BackupExercise(name: $0.name, catalogKey: $0.catalogKey) }
+            .map {
+                BackupExercise(
+                    name: $0.name,
+                    catalogKey: $0.catalogKey,
+                    machineLoadProfile: $0.machineLoadProfile
+                )
+            }
         let backupSessions = try workouts
             .filter { $0.setCount > 0 }
             .sorted { $0.date < $1.date }
@@ -1085,6 +1108,7 @@ public final class WorkoutStore: ObservableObject {
                         return BackupWorkoutExercise(
                             name: exercise.name,
                             catalogKey: exercise.catalogKey,
+                            machineLoadProfile: exercise.machineLoadProfile,
                             sets: block.sets.map { BackupSet(weight: $0.weight, reps: $0.reps) }
                         )
                     }
@@ -1439,7 +1463,11 @@ public final class WorkoutStore: ObservableObject {
         var ignoredInvalidSets = 0
         var encounteredSets = 0
 
-        func resolveExercise(_ rawName: String, catalogKey: String? = nil) throws -> UUID? {
+        func resolveExercise(
+            _ rawName: String,
+            catalogKey: String? = nil,
+            machineLoadProfile: MachineLoadProfile? = nil
+        ) throws -> UUID? {
             guard Self.utf8Length(of: rawName, isAtMost: limits.maximumExerciseNameBytes) else {
                 throw WorkoutStoreError.importLimitExceeded("exercise name length")
             }
@@ -1458,14 +1486,22 @@ public final class WorkoutStore: ObservableObject {
                 name: name
             )
             if let id = exerciseIDByKey[key] {
-                if let index = exerciseIndexByID[id],
-                   next.exercises[index].catalogKey == nil {
-                    next.exercises[index].catalogKey = resolvedCatalogKey
+                if let index = exerciseIndexByID[id] {
+                    if next.exercises[index].catalogKey == nil {
+                        next.exercises[index].catalogKey = resolvedCatalogKey
+                    }
+                    if let machineLoadProfile {
+                        next.exercises[index].machineLoadProfile = machineLoadProfile
+                    }
                 }
                 return id
             }
             if let resolvedCatalogKey,
                let id = exerciseIDByCatalogKey[resolvedCatalogKey] {
+                if let machineLoadProfile,
+                   let index = exerciseIndexByID[id] {
+                    next.exercises[index].machineLoadProfile = machineLoadProfile
+                }
                 return id
             }
             guard next.exercises.count < limits.maximumExercises else {
@@ -1474,6 +1510,7 @@ public final class WorkoutStore: ObservableObject {
             let exercise = Exercise(
                 name: name,
                 catalogKey: resolvedCatalogKey,
+                machineLoadProfile: machineLoadProfile,
                 isFavorite: isLocallyFavorite(name: name, catalogKey: resolvedCatalogKey)
             )
             next.exercises.append(exercise)
@@ -1487,7 +1524,11 @@ public final class WorkoutStore: ObservableObject {
         }
 
         for item in backup.exercises {
-            _ = try resolveExercise(item.name, catalogKey: item.catalogKey)
+            _ = try resolveExercise(
+                item.name,
+                catalogKey: item.catalogKey,
+                machineLoadProfile: item.machineLoadProfile
+            )
         }
 
         var existingSignatures = Set(next.workouts.map(Self.importSignature))
@@ -1523,7 +1564,8 @@ public final class WorkoutStore: ObservableObject {
                     }
                     guard let exerciseID = try resolveExercise(
                         block.name,
-                        catalogKey: block.catalogKey
+                        catalogKey: block.catalogKey,
+                        machineLoadProfile: block.machineLoadProfile
                     ) else { continue }
                     var sets: [WorkoutSetDraft] = []
                     for set in block.sets {

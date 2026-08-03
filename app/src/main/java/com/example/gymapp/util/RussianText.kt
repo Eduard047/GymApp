@@ -59,6 +59,7 @@ object RussianText {
         "Apex" to "Апекс",
         "Ascendant" to "Вознесенный",
         "Assisted Pull Up" to "Подтягивание в гравитроне",
+        "Assisted Dip" to "Отжимания на брусьях в гравитроне",
         "Back, biceps and forearms have the oldest recent work." to "Спина, бицепс и предплечье дольше всего не были в работе.",
         "Balance" to "Баланс",
         "Band Assisted Pull Up" to "Подтягивание с эспандером",

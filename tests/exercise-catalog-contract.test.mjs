@@ -2,21 +2,22 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const [androidSource, iosSource, pwaSource, baseMigrationSource, hipAbductionMigrationSource] = await Promise.all([
+const [androidSource, iosSource, pwaSource, baseMigrationSource, hipAbductionMigrationSource, assistedDipMigrationSource] = await Promise.all([
   readFile("app/src/main/java/com/example/gymapp/data/catalog/BuiltInExerciseCatalog.kt", "utf8"),
   readFile("ios/GymApp-iOS/GymApp/Domain/BuiltInExerciseCatalog.swift", "utf8"),
   readFile("pwa/app.js", "utf8"),
   readFile("supabase/migrations/20260721143010_create_exercise_catalog.sql", "utf8"),
-  readFile("supabase/migrations/20260721201016_add_hip_abduction_to_exercise_catalog.sql", "utf8")
+  readFile("supabase/migrations/20260721201016_add_hip_abduction_to_exercise_catalog.sql", "utf8"),
+  readFile("supabase/migrations/20260803090000_add_machine_load_profiles_and_assisted_dip.sql", "utf8")
 ]);
-const migrationSource = `${baseMigrationSource}\n${hipAbductionMigrationSource}`;
+const migrationSource = `${baseMigrationSource}\n${hipAbductionMigrationSource}\n${assistedDipMigrationSource}`;
 
 const expectedCatalog = [...pwaSource.matchAll(
   /\{ key: "([a-z0-9_]+)", names: \{ en: "([^"]+)", uk: "([^"]+)" \}/g
 )].map(match => match.slice(1));
 
 test("Android, iOS, and PWA expose the same built-in exercise contract", () => {
-  assert.equal(expectedCatalog.length, 52);
+  assert.equal(expectedCatalog.length, 53);
   for (const [key, english, ukrainian] of expectedCatalog) {
     for (const [platform, source] of [
       ["Android", androidSource],

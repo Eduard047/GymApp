@@ -537,16 +537,25 @@ struct ExercisesView: View {
                         systemImage: "figure.strengthtraining.traditional",
                         accent: mappingCount == 0 ? GymTheme.secondary : GymTheme.primary
                     )
+                    if let machineLoadProfile = exercise.machineLoadProfile {
+                        GymInfoPill(
+                            machineWeightCountText(machineLoadProfile.allowedWeightsKg.count),
+                            systemImage: "scalemass",
+                            accent: GymTheme.primary
+                        )
+                    }
                 }
 
                 ViewThatFits(in: .horizontal) {
                     HStack(spacing: 10) {
                         historyButton(exercise)
                         mappingButton(exercise)
+                        machineWeightsButton(exercise)
                     }
                     VStack(spacing: 10) {
                         historyButton(exercise)
                         mappingButton(exercise)
+                        machineWeightsButton(exercise)
                     }
                 }
             }
@@ -632,6 +641,31 @@ struct ExercisesView: View {
         )
     }
 
+    private func machineWeightsButton(_ exercise: Exercise) -> some View {
+        Button {
+            presentedSheet = .editExercise(exercise)
+        } label: {
+            Label("Machine weights", systemImage: "scalemass")
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(GymSecondaryButtonStyle())
+        .accessibilityHint(
+            gymText(
+                "Sets exact selectable loads and the progression direction for this exercise",
+                "Задає точні доступні навантаження та напрям прогресії для цієї вправи",
+                languageCode: gymCurrentLanguageCode()
+            )
+        )
+    }
+
+    private func machineWeightCountText(_ count: Int) -> String {
+        switch gymCurrentLanguageCode() {
+        case AppLanguage.ukrainian.rawValue: return "Ваг: \(count)"
+        case AppLanguage.russian.rawValue: return "Весов: \(count)"
+        default: return "\(count) weights"
+        }
+    }
+
     private var filteredExercises: [Exercise] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         let matching = store.exercises.filter { exercise in
@@ -693,13 +727,32 @@ struct ExercisesView: View {
             .map(\.muscleID)
     }
 
+    private func defaultLoadDirection(for exercise: Exercise) -> MachineLoadDirection {
+        let key = BuiltInExerciseCatalog.resolvedKey(
+            catalogKey: exercise.catalogKey,
+            name: exercise.name
+        )
+        return key == "assisted_dip" || key == "assisted_pull_up"
+            ? .lowerIsHarder
+            : .higherIsHarder
+    }
+
     @ViewBuilder
     private func presentedContent(_ sheet: PresentedSheet) -> some View {
         switch sheet {
         case .addExercise:
             NavigationStack {
-                ExerciseEditorSheet(title: "Add exercise", initialName: "") { name in
-                    _ = try store.addExercise(name: name)
+                ExerciseEditorSheet(
+                    title: "Add exercise",
+                    initialName: "",
+                    initialMachineLoadProfile: nil,
+                    defaultLoadDirection: .higherIsHarder,
+                    allowsRenaming: true
+                ) { draft in
+                    _ = try store.addExercise(
+                        name: draft.name,
+                        machineLoadProfile: draft.machineLoadProfile
+                    )
                     resultMessage = "Exercise added."
                     resultIsError = false
                 }
@@ -708,12 +761,24 @@ struct ExercisesView: View {
         case let .editExercise(exercise):
             NavigationStack {
                 let displayName = gymExerciseName(exercise)
-                ExerciseEditorSheet(title: "Rename exercise", initialName: displayName) { name in
-                    let persistedName = name.gymTrimmed == displayName.gymTrimmed
+                ExerciseEditorSheet(
+                    title: catalogDefinition(for: exercise) == nil ? "Edit exercise" : "Machine weights",
+                    initialName: displayName,
+                    initialMachineLoadProfile: exercise.machineLoadProfile,
+                    defaultLoadDirection: defaultLoadDirection(for: exercise),
+                    allowsRenaming: catalogDefinition(for: exercise) == nil
+                ) { draft in
+                    let persistedName = draft.name.gymTrimmed == displayName.gymTrimmed
                         ? exercise.name
-                        : name
-                    try store.renameExercise(id: exercise.id, to: persistedName)
-                    resultMessage = "Exercise renamed."
+                        : draft.name
+                    if persistedName != exercise.name {
+                        try store.renameExercise(id: exercise.id, to: persistedName)
+                    }
+                    try store.updateExerciseMachineLoadProfile(
+                        id: exercise.id,
+                        machineLoadProfile: draft.machineLoadProfile
+                    )
+                    resultMessage = "Exercise updated."
                     resultIsError = false
                 }
             }
@@ -800,21 +865,59 @@ struct ExercisesView: View {
 }
 
 @MainActor
+private struct ExerciseEditorDraft {
+    let name: String
+    let machineLoadProfile: MachineLoadProfile?
+}
+
+private enum ExerciseEditorValidationError: LocalizedError {
+    case invalidWeights
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidWeights:
+            return "Enter 1–128 valid machine weights between 0 and 1,000,000 kg."
+        }
+    }
+}
+
+@MainActor
 private struct ExerciseEditorSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     let title: String
     let initialName: String
-    let onSave: (String) throws -> Void
+    let initialMachineLoadProfile: MachineLoadProfile?
+    let allowsRenaming: Bool
+    let onSave: (ExerciseEditorDraft) throws -> Void
 
     @State private var name: String
+    @State private var usesExactMachineWeights: Bool
+    @State private var loadDirection: MachineLoadDirection
+    @State private var allowedWeightsText: String
     @State private var error: String?
 
-    init(title: String, initialName: String, onSave: @escaping (String) throws -> Void) {
+    init(
+        title: String,
+        initialName: String,
+        initialMachineLoadProfile: MachineLoadProfile?,
+        defaultLoadDirection: MachineLoadDirection,
+        allowsRenaming: Bool,
+        onSave: @escaping (ExerciseEditorDraft) throws -> Void
+    ) {
         self.title = title
         self.initialName = initialName
+        self.initialMachineLoadProfile = initialMachineLoadProfile
+        self.allowsRenaming = allowsRenaming
         self.onSave = onSave
         _name = State(initialValue: initialName)
+        _usesExactMachineWeights = State(initialValue: initialMachineLoadProfile != nil)
+        _loadDirection = State(initialValue: initialMachineLoadProfile?.direction ?? defaultLoadDirection)
+        _allowedWeightsText = State(
+            initialValue: initialMachineLoadProfile?.allowedWeightsKg
+                .map(Self.displayWeight)
+                .joined(separator: "\n") ?? ""
+        )
     }
 
     var body: some View {
@@ -824,7 +927,11 @@ private struct ExerciseEditorSheet: View {
                     GymSectionTitle(
                         eyebrow: "Exercise library",
                         title: title,
-                        supporting: "Use a clear name you will recognize while logging workouts."
+                        supporting: initialName.isEmpty
+                            ? "Use a clear name you will recognize while logging workouts."
+                            : allowsRenaming
+                                ? "Update the name or enter every selectable load shown on this machine."
+                                : "Enter only the weights this machine can actually select. Saved history stays unchanged."
                     )
 
                     TextField("Exercise name", text: $name)
@@ -833,13 +940,59 @@ private struct ExerciseEditorSheet: View {
                         .onSubmit(save)
                         .gymTextFieldChrome()
                         .accessibilityLabel("Exercise name")
+                        .disabled(!allowsRenaming)
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        Toggle("Use exact machine weights", isOn: $usesExactMachineWeights)
+
+                        if usesExactMachineWeights {
+                            Picker("Load direction", selection: $loadDirection) {
+                                Text("Higher weight is harder")
+                                    .tag(MachineLoadDirection.higherIsHarder)
+                                Text("Lower weight is harder (assistance)")
+                                    .tag(MachineLoadDirection.lowerIsHarder)
+                            }
+                            .pickerStyle(.menu)
+
+                            Text("Quick machine-stack presets")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+
+                            HStack(spacing: 10) {
+                                Button("2.5 kg") { applyPreset(step: 2.5, maximum: 200) }
+                                    .buttonStyle(.bordered)
+                                Button("5 kg") { applyPreset(step: 5, maximum: 300) }
+                                    .buttonStyle(.bordered)
+                            }
+
+                            Text("Available weights (kg), one per line")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+
+                            TextEditor(text: $allowedWeightsText)
+                                .frame(minHeight: 150)
+                                .scrollContentBackground(.hidden)
+                                .gymTextFieldChrome()
+
+                            Text("Example: 45 47.5 50 52.5. The coach will only choose a listed value.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
 
                     if let error {
                         GymStatusBanner(message: error, isError: true)
                     }
 
                     Button(action: save) {
-                        Label(gymLocalized(initialName.isEmpty ? "Add exercise" : "Save name"), systemImage: "checkmark")
+                        Label(
+                            gymLocalized(
+                                initialName.isEmpty
+                                    ? "Add exercise"
+                                    : allowsRenaming ? "Save changes" : "Save machine weights"
+                            ),
+                            systemImage: "checkmark"
+                        )
                     }
                     .buttonStyle(GymPrimaryButtonStyle())
                     .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -858,11 +1011,59 @@ private struct ExerciseEditorSheet: View {
 
     private func save() {
         do {
-            try onSave(name)
+            let machineLoadProfile: MachineLoadProfile?
+            if usesExactMachineWeights {
+                guard allowedWeightsText.utf8.count <= 2_048 else {
+                    throw ExerciseEditorValidationError.invalidWeights
+                }
+                let tokens = allowedWeightsText.components(
+                    separatedBy: CharacterSet.whitespacesAndNewlines.union(
+                        CharacterSet(charactersIn: ";")
+                    )
+                ).filter { !$0.isEmpty }
+                let parsed = tokens.compactMap { Double($0.replacingOccurrences(of: ",", with: ".")) }
+                guard parsed.count == tokens.count,
+                      !parsed.isEmpty,
+                      parsed.count <= MachineLoadProfile.maximumAllowedWeightCount else {
+                    throw ExerciseEditorValidationError.invalidWeights
+                }
+                let normalized = Array(Set(parsed)).sorted()
+                do {
+                    machineLoadProfile = try MachineLoadProfile(
+                        direction: loadDirection,
+                        allowedWeightsKg: normalized
+                    )
+                } catch {
+                    throw ExerciseEditorValidationError.invalidWeights
+                }
+            } else {
+                machineLoadProfile = nil
+            }
+            try onSave(
+                ExerciseEditorDraft(
+                    name: name,
+                    machineLoadProfile: machineLoadProfile
+                )
+            )
             dismiss()
         } catch {
             self.error = gymErrorMessage(error)
         }
+    }
+
+    private static func displayWeight(_ weight: Double) -> String {
+        weight.rounded() == weight ? String(Int(weight)) : String(weight)
+    }
+
+    private func applyPreset(step: Double, maximum: Double) {
+        let count = min(
+            MachineLoadProfile.maximumAllowedWeightCount,
+            Int(floor(maximum / step))
+        )
+        allowedWeightsText = (1 ... count)
+            .map { Self.displayWeight(Double($0) * step) }
+            .joined(separator: "\n")
+        error = nil
     }
 }
 
