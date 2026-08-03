@@ -350,6 +350,33 @@ textarea:focus-visible,
 
 .exercise-media-play svg { width: 16px; height: 16px; }
 
+.exercise-media-thumb.compact {
+  flex-basis: 58px;
+  width: 58px;
+  height: 52px;
+  border-radius: 13px;
+}
+
+.exercise-media-thumb.progress {
+  flex-basis: 84px;
+  width: 84px;
+  height: 72px;
+}
+
+.exercise-card-identity,
+.progress-exercise-heading,
+.exercise-history-heading {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.exercise-card-identity { flex: 1 1 auto; }
+.exercise-card-identity .exercise-name,
+.exercise-history-heading h2 { margin: 0; }
+.progress-exercise-heading label { flex: 1 1 auto; }
+
 .exercise-media-sheet { display: grid; gap: 16px; }
 
 .exercise-media-stage {
