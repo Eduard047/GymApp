@@ -43,6 +43,10 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.time.DateTimeException
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
 
 data class SetInputState(
     val weight: String = "",
@@ -101,6 +105,50 @@ internal fun smartWorkoutRecommendationPolicy(
             emptySet()
         }
     )
+}
+
+internal fun resolveWorkoutDateSelection(
+    currentTimestamp: Long,
+    selectedEpochDay: Long,
+    nowMillis: Long = System.currentTimeMillis(),
+    zoneId: ZoneId = ZoneId.systemDefault()
+): Long? {
+    if (!WorkoutDataLimits.isValidTimestamp(currentTimestamp) ||
+        !WorkoutDataLimits.isValidTimestamp(nowMillis)
+    ) {
+        return null
+    }
+    val selectedDate = try {
+        LocalDate.ofEpochDay(selectedEpochDay)
+    } catch (_: DateTimeException) {
+        return null
+    }
+    val today = Instant.ofEpochMilli(nowMillis).atZone(zoneId).toLocalDate()
+    if (selectedDate > today) return null
+
+    val currentTime = Instant.ofEpochMilli(currentTimestamp).atZone(zoneId).toLocalTime()
+    val selectedTimestamp = try {
+        selectedDate.atTime(currentTime).atZone(zoneId).toInstant().toEpochMilli()
+    } catch (_: DateTimeException) {
+        return null
+    }
+    if (!WorkoutDataLimits.isValidTimestamp(selectedTimestamp)) return null
+    return if (selectedDate == today) minOf(selectedTimestamp, nowMillis) else selectedTimestamp
+}
+
+internal fun isSelectableWorkoutTimestamp(
+    timestamp: Long,
+    nowMillis: Long = System.currentTimeMillis(),
+    zoneId: ZoneId = ZoneId.systemDefault()
+): Boolean {
+    if (!WorkoutDataLimits.isValidTimestamp(timestamp) ||
+        !WorkoutDataLimits.isValidTimestamp(nowMillis)
+    ) {
+        return false
+    }
+    val selectedDate = Instant.ofEpochMilli(timestamp).atZone(zoneId).toLocalDate()
+    val today = Instant.ofEpochMilli(nowMillis).atZone(zoneId).toLocalDate()
+    return selectedDate <= today
 }
 
 data class SmartWorkoutAlternativePickerUiState(
@@ -187,6 +235,7 @@ class AddWorkoutViewModel(
     )
 
     private data class LocalState(
+        val workoutDate: Long,
         val note: String,
         val exerciseDrafts: List<ExerciseInputState>,
         val trainingProfile: TrainingProfile,
@@ -204,6 +253,7 @@ class AddWorkoutViewModel(
     )
 
     private data class EditorState(
+        val workoutDate: Long,
         val note: String,
         val exerciseDrafts: List<ExerciseInputState>,
         val isTemplatePickerOpen: Boolean,
@@ -236,6 +286,7 @@ class AddWorkoutViewModel(
 
     private var nextDraftId = 2L
 
+    private val workoutDate = MutableStateFlow(System.currentTimeMillis())
     private val note = MutableStateFlow("")
     private val exerciseDrafts = MutableStateFlow(listOf(ExerciseInputState(draftId = 1L)))
     private val isTemplatePickerOpen = MutableStateFlow(false)
@@ -364,15 +415,23 @@ class AddWorkoutViewModel(
         }
     }
 
-    private val editorState = combine(
+    private val workoutMetadata = combine(
+        workoutDate,
         note,
+    ) { date, noteValue ->
+        date to noteValue
+    }
+
+    private val editorState = combine(
+        workoutMetadata,
         exerciseDrafts,
         isTemplatePickerOpen,
         isTemplateLoading,
         smartCoachState
-    ) { noteValue, drafts, templatePickerOpen, templateLoading, smartCoach ->
+    ) { metadata, drafts, templatePickerOpen, templateLoading, smartCoach ->
         EditorState(
-            note = noteValue,
+            workoutDate = metadata.first,
+            note = metadata.second,
             exerciseDrafts = drafts,
             isTemplatePickerOpen = templatePickerOpen,
             isTemplateLoading = templateLoading,
@@ -412,6 +471,7 @@ class AddWorkoutViewModel(
         trainingProfileManager.profile
     ) { editor, transient, profile ->
         LocalState(
+            workoutDate = editor.workoutDate,
             note = editor.note,
             exerciseDrafts = editor.exerciseDrafts,
             trainingProfile = profile,
@@ -437,6 +497,7 @@ class AddWorkoutViewModel(
         localState
     ) { catalog, lastWeightsMap, recommendations, templates, local ->
         AddWorkoutUiState(
+            workoutDate = local.workoutDate,
             note = local.note,
             exercises = catalog.exercises,
             frequentExerciseIds = catalog.frequentExerciseIds,
@@ -474,6 +535,20 @@ class AddWorkoutViewModel(
         }
         resetWatchPlanSyncResult()
         note.value = value
+    }
+
+    fun updateWorkoutDate(selectedEpochDay: Long) {
+        val resolved = resolveWorkoutDateSelection(
+            currentTimestamp = workoutDate.value,
+            selectedEpochDay = selectedEpochDay
+        )
+        if (resolved == null) {
+            hasValidationError.value = true
+            return
+        }
+        resetWatchPlanSyncResult()
+        hasValidationError.value = false
+        workoutDate.value = resolved
     }
 
     fun updateTrainingSplit(split: TrainingSplit) {
@@ -872,7 +947,11 @@ class AddWorkoutViewModel(
     fun saveWorkout() {
         viewModelScope.launch {
             val parsedExercises = parseDrafts(exerciseDrafts.value)
-            if (parsedExercises.isEmpty() || !WorkoutDataLimits.isValidNote(note.value)) {
+            val selectedWorkoutDate = workoutDate.value
+            if (parsedExercises.isEmpty() ||
+                !WorkoutDataLimits.isValidNote(note.value) ||
+                !isSelectableWorkoutTimestamp(selectedWorkoutDate)
+            ) {
                 hasValidationError.value = true
                 return@launch
             }
@@ -882,7 +961,7 @@ class AddWorkoutViewModel(
 
             runCatching {
                 repository.createWorkoutSession(
-                    date = System.currentTimeMillis(),
+                    date = selectedWorkoutDate,
                     note = note.value,
                     workoutExercises = parsedExercises
                 )

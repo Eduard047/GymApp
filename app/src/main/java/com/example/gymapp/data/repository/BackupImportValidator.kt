@@ -76,7 +76,9 @@ internal object BackupImportValidator {
                 true,
                 "name"
             )
-            allExerciseIdentities += exercise.identityKey
+            require(allExerciseIdentities.add(exercise.identityKey)) {
+                "Backup exercise catalog contains a duplicate canonical identity."
+            }
             exercise
         }
 
@@ -89,7 +91,8 @@ internal object BackupImportValidator {
                         "Workout note exceeds the length limit."
                     }
                 }
-                ?.takeIf { it.isNotBlank() }
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
             val date = session.optionalTimestamp("date")
                 ?: session.optionalTimestamp("startedAt")
                 ?: defaultTimestamp
@@ -363,7 +366,7 @@ internal object BackupImportValidator {
         val weights = List(options.length()) { index ->
             val value = options.opt(index)
             require(value is Number) { "Exercise weight options must be numeric." }
-            value.toDouble().also { weight ->
+            value.toDouble().canonicalZero().also { weight ->
                 require(WorkoutDataLimits.isValidWeight(weight)) {
                     "Exercise weight option is outside the supported range."
                 }
@@ -411,7 +414,7 @@ internal object BackupImportValidator {
     }
 
     private fun validateSet(json: JSONObject): ValidatedBackupSet {
-        val weight = json.requiredFiniteNumber("weight")
+        val weight = json.requiredFiniteNumber("weight").canonicalZero()
         val repsLong = json.requiredIntegralNumber("reps")
         require(repsLong in Int.MIN_VALUE.toLong()..Int.MAX_VALUE.toLong()) {
             "Set repetitions are outside the supported range."
@@ -430,15 +433,129 @@ internal fun canonicalWorkoutPayloadMatches(left: JSONObject, right: JSONObject)
             BackupImportValidator.validate(right).withoutLocalExercisePreferences()
     }.getOrDefault(false)
 
-private fun ValidatedBackup.withoutLocalExercisePreferences(): ValidatedBackup = copy(
-    exercises = exercises.map { exercise -> exercise.copy(isFavorite = null) }
-)
+private fun ValidatedBackup.withoutLocalExercisePreferences(): ValidatedBackup =
+    withCanonicalPortableCatalogKeys().let { canonical ->
+        canonical.copy(
+            exercises = canonicalExerciseCatalogOrder(
+                canonical.exercises.map { exercise -> exercise.copy(isFavorite = null) }
+            )
+        )
+    }
+
+private fun ValidatedBackup.withCanonicalPortableCatalogKeys(): ValidatedBackup {
+    fun portable(exercise: ValidatedBackupExercise): ValidatedBackupExercise = exercise.copy(
+        // Early PWA rows carried canonical built-in names but no catalogKey. Inferring only a
+        // recognized name makes that historical wire equal to current native output without
+        // allowing an attacker-supplied key to relabel a custom exercise.
+        catalogKey = BuiltInExerciseCatalog.inferKey(exercise.name) ?: exercise.catalogKey
+    )
+    return copy(
+        exercises = exercises.map(::portable),
+        sessions = sessions.map { session ->
+            session.copy(
+                blocks = session.blocks.map { block ->
+                    block.copy(exercise = portable(block.exercise))
+                }
+            )
+        }
+    )
+}
+
+/**
+ * The exercise catalog is a set-like projection. Database and native-client collations may emit
+ * the same catalog in different orders, so canonical comparisons must not inherit either order.
+ * Session blocks and their sets remain deliberately order-sensitive.
+ */
+internal fun canonicalExerciseCatalogOrder(
+    exercises: List<ValidatedBackupExercise>
+): List<ValidatedBackupExercise> = exercises.sortedWith(::compareCanonicalExerciseCatalogEntries)
+
+internal fun compareCanonicalExerciseCatalogEntries(
+    left: ValidatedBackupExercise,
+    right: ValidatedBackupExercise
+): Int {
+    fun compareUnsignedBytes(leftBytes: ByteArray, rightBytes: ByteArray): Int {
+        val sharedSize = minOf(leftBytes.size, rightBytes.size)
+        repeat(sharedSize) { index ->
+            val result = (leftBytes[index].toInt() and 0xff)
+                .compareTo(rightBytes[index].toInt() and 0xff)
+            if (result != 0) return result
+        }
+        return leftBytes.size.compareTo(rightBytes.size)
+    }
+
+    fun asciiFoldedUtf8(value: String): ByteArray = value.toByteArray(Charsets.UTF_8).apply {
+        indices.forEach { index ->
+            val unsigned = this[index].toInt() and 0xff
+            if (unsigned in 0x41..0x5a) this[index] = (unsigned + 0x20).toByte()
+        }
+    }
+
+    fun compareWireText(leftValue: String, rightValue: String): Int {
+        compareUnsignedBytes(asciiFoldedUtf8(leftValue), asciiFoldedUtf8(rightValue))
+            .takeIf { it != 0 }
+            ?.let { return it }
+        return compareUnsignedBytes(
+            leftValue.toByteArray(Charsets.UTF_8),
+            rightValue.toByteArray(Charsets.UTF_8)
+        )
+    }
+
+    fun compareNullableExactUtf8(leftValue: String?, rightValue: String?): Int = when {
+        leftValue == null && rightValue == null -> 0
+        leftValue == null -> -1
+        rightValue == null -> 1
+        else -> compareUnsignedBytes(
+            leftValue.toByteArray(Charsets.UTF_8),
+            rightValue.toByteArray(Charsets.UTF_8)
+        )
+    }
+
+    fun compareProfiles(leftProfile: ExerciseLoadProfile?, rightProfile: ExerciseLoadProfile?): Int {
+        if (leftProfile == null || rightProfile == null) {
+            return when {
+                leftProfile == null && rightProfile == null -> 0
+                leftProfile == null -> -1
+                else -> 1
+            }
+        }
+        compareUnsignedBytes(
+            leftProfile.direction.wireValue.toByteArray(Charsets.UTF_8),
+            rightProfile.direction.wireValue.toByteArray(Charsets.UTF_8)
+        )
+            .takeIf { it != 0 }
+            ?.let { return it }
+        val sharedSize = minOf(
+            leftProfile.allowedWeightsKg.size,
+            rightProfile.allowedWeightsKg.size
+        )
+        repeat(sharedSize) { index ->
+            val leftWeight = leftProfile.allowedWeightsKg[index].canonicalZero()
+            val rightWeight = rightProfile.allowedWeightsKg[index].canonicalZero()
+            java.lang.Double.compare(leftWeight, rightWeight)
+                .takeIf { it != 0 }
+                ?.let { return it }
+        }
+        return leftProfile.allowedWeightsKg.size.compareTo(rightProfile.allowedWeightsKg.size)
+    }
+
+    compareWireText(left.name, right.name).takeIf { it != 0 }?.let { return it }
+    compareNullableExactUtf8(left.catalogKey, right.catalogKey).takeIf { it != 0 }?.let { return it }
+    return compareProfiles(left.loadProfile, right.loadProfile)
+}
 
 internal fun canonicalWorkoutPayloadDigest(root: JSONObject): String? = runCatching {
     canonicalWorkoutPayloadDigest(BackupImportValidator.validate(root))
 }.getOrNull()
 
 internal fun canonicalWorkoutPayloadDigest(backup: ValidatedBackup): String {
+    val canonicalBackup = backup.withCanonicalPortableCatalogKeys()
+    require(
+        canonicalBackup.exercises.map { it.identityKey }.toSet().size ==
+            canonicalBackup.exercises.size
+    ) {
+        "Workout projection contains a duplicate canonical exercise identity."
+    }
     val digest = MessageDigest.getInstance("SHA-256")
 
     fun updateLong(value: Long) {
@@ -466,9 +583,9 @@ internal fun canonicalWorkoutPayloadDigest(backup: ValidatedBackup): String {
     // The seed marker is local catalog-migration metadata, not part of the public cloud
     // workout projection. Keeping it out of the digest lets legacy eight-key envelopes and
     // newer readers that accept the optional field compare as the same workout state.
-    updateString("gymapp-canonical-workout-payload/v2")
-    updateInt(backup.exercises.size)
-    backup.exercises.forEach { exercise ->
+    updateString("gymapp-canonical-workout-payload/v3")
+    updateInt(canonicalBackup.exercises.size)
+    canonicalExerciseCatalogOrder(canonicalBackup.exercises).forEach { exercise ->
         updateString(exercise.name)
         updateOptionalString(exercise.catalogKey)
         val profile = exercise.loadProfile
@@ -479,8 +596,8 @@ internal fun canonicalWorkoutPayloadDigest(backup: ValidatedBackup): String {
             it.allowedWeightsKg.forEach(::updateDouble)
         }
     }
-    updateInt(backup.sessions.size)
-    backup.sessions.forEach { session ->
+    updateInt(canonicalBackup.sessions.size)
+    canonicalBackup.sessions.forEach { session ->
         updateLong(session.date)
         updateOptionalString(session.note)
         updateInt(session.blocks.size)
@@ -498,6 +615,8 @@ internal fun canonicalWorkoutPayloadDigest(backup: ValidatedBackup): String {
         (byte.toInt() and 0xff).toString(16).padStart(2, '0')
     }
 }
+
+private fun Double.canonicalZero(): Double = if (this == 0.0) 0.0 else this
 
 private fun JSONObject.optionalArray(key: String): JSONArray {
     if (!has(key) || isNull(key)) return JSONArray()

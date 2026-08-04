@@ -18,7 +18,33 @@ final class AppState: ObservableObject {
         case uploading
     }
 
-    private struct CloudWorkoutIdentity: Hashable {
+    struct CloudWorkoutIdentity: Hashable {
+        /// Catalog position is not semantic. Sorting preserves duplicate multiplicity while
+        /// avoiding dictionary overwrite behavior for attacker-controlled backup entries.
+        let configuredExercises: [BackupExercise]
+        let sessions: [BackupSession]
+        private let exactWire: Data
+
+        init(
+            configuredExercises: [BackupExercise],
+            sessions: [BackupSession],
+            exactWire: Data
+        ) {
+            self.configuredExercises = configuredExercises
+            self.sessions = sessions
+            self.exactWire = exactWire
+        }
+
+        static func == (lhs: Self, rhs: Self) -> Bool {
+            lhs.exactWire == rhs.exactWire
+        }
+
+        func hash(into hasher: inout Hasher) {
+            hasher.combine(exactWire)
+        }
+    }
+
+    private struct CloudWorkoutExactWire: Encodable {
         let configuredExercises: [BackupExercise]
         let sessions: [BackupSession]
     }
@@ -158,8 +184,8 @@ final class AppState: ObservableObject {
             workoutStore.accountStorageKey == expectedKey
     }
 
-    /// Legacy PWA rows can be read, but native serialization cannot preserve all of
-    /// their fields. Keep those rows read-only until a lossless shared contract exists.
+    /// Unknown future core fields remain read-only. Shared PWA extension namespaces are
+    /// validated, stored account-locally, and carried through iOS cloud writes.
     var isCloudWritePaused: Bool {
         guard isAccountReady, auth.session?.cloud != nil else { return false }
         return cloudWritableAccountStorageKey != activeAccountStorageKey
@@ -378,7 +404,8 @@ final class AppState: ObservableObject {
 
             var cloudError: Error?
             var cloudWritesAllowed = false
-            var loadedReadOnlyPWAState = false
+            var loadedReadOnlyUnsupportedState = false
+            var requiresCanonicalCloudUpload = false
             if let expectedUserID {
                 let remoteData: Data?
                 do {
@@ -414,11 +441,14 @@ final class AppState: ObservableObject {
                             GymBackup.self,
                             from: preparedBackup.data
                         )
-                        let localIdentity = Self.cloudWorkoutIdentity(localBackup)
-                        let remoteIdentity = Self.cloudWorkoutIdentity(remoteBackup)
+                        let localIdentity = try Self.cloudWorkoutIdentity(localBackup)
+                        let remoteIdentity = try Self.cloudWorkoutIdentity(remoteBackup)
                         if preparedBackup.roundTripSafe,
-                           Self.hasUserWorkoutData(localBackup),
+                           Self.hasUserWorkoutData(localIdentity),
                            localIdentity != remoteIdentity {
+                            try candidate.setCloudExtensionsData(
+                                preparedBackup.extensionsData
+                            )
                             pendingCloudSyncConflict = PendingCloudSyncConflict(
                                 generation: generation,
                                 storageKey: expectedStorageKey,
@@ -440,8 +470,15 @@ final class AppState: ObservableObject {
                             data: preparedBackup.data,
                             activeOwner: expectedOwner
                         )
+                        if preparedBackup.roundTripSafe {
+                            try candidate.setCloudExtensionsData(
+                                preparedBackup.extensionsData
+                            )
+                        }
                         cloudWritesAllowed = preparedBackup.roundTripSafe
-                        loadedReadOnlyPWAState = !preparedBackup.roundTripSafe
+                        loadedReadOnlyUnsupportedState = !preparedBackup.roundTripSafe
+                        requiresCanonicalCloudUpload =
+                            preparedBackup.roundTripSafe && preparedBackup.requiresCanonicalUpload
                     } catch is CancellationError {
                         return
                     } catch {
@@ -452,6 +489,7 @@ final class AppState: ObservableObject {
                         cloudError = error
                     }
                 } else {
+                    try candidate.setCloudExtensionsData(nil)
                     try await uploadCurrentState(
                         from: candidate,
                         owner: expectedOwner,
@@ -476,7 +514,8 @@ final class AppState: ObservableObject {
             publish(store: candidate, activeStorageKey: expectedStorageKey)
             isPreparingAccount = false
             accountPreparationError = nil
-            if (seededExerciseCount > 0 || catalogSeedMarkerChanged) && cloudWritesAllowed {
+            if (seededExerciseCount > 0 || catalogSeedMarkerChanged ||
+                requiresCanonicalCloudUpload) && cloudWritesAllowed {
                 scheduleCloudSave(delay: .zero)
             }
 
@@ -487,11 +526,11 @@ final class AppState: ObservableObject {
                 )
             }
             if let cloudError { show(error: cloudError) }
-            if loadedReadOnlyPWAState {
+            if loadedReadOnlyUnsupportedState {
                 show(
                     message: gymText(
-                        "Legacy browser cloud data was loaded. Automatic cloud uploads are paused to preserve browser-only profile, language, and mapping fields.",
-                        "Застарілі хмарні дані браузера завантажено. Автоматичне надсилання в хмару призупинено, щоб зберегти поля профілю, мови та мапінгу, доступні лише у браузері.",
+                        "This cloud row contains unsupported future workout fields. Automatic uploads are paused so another platform's data is not lost.",
+                        "Цей хмарний запис містить непідтримувані майбутні поля тренувань. Автоматичне надсилання призупинено, щоб не втратити дані з іншої платформи.",
                         languageCode: defaults.string(forKey: "app-language") ?? AppLanguage.english.rawValue
                     ),
                     isError: false
@@ -544,11 +583,11 @@ final class AppState: ObservableObject {
                 GymBackup.self,
                 from: preparedBackup.data
             )
-            guard Self.cloudWorkoutIdentity(reloadedRemoteBackup) == pending.remoteIdentity else {
+            guard try Self.cloudWorkoutIdentity(reloadedRemoteBackup) == pending.remoteIdentity else {
                 throw CloudSyncError.staleRemoteState
             }
             let currentLocalBackup = try pending.localStore.makeBackup(owner: pending.owner)
-            guard Self.cloudWorkoutIdentity(currentLocalBackup) == pending.localIdentity else {
+            guard try Self.cloudWorkoutIdentity(currentLocalBackup) == pending.localIdentity else {
                 throw CloudSyncError.staleRemoteState
             }
             try ensureActivationIsCurrent(
@@ -557,6 +596,9 @@ final class AppState: ObservableObject {
             )
 
             var catalogChanged = false
+            try pending.localStore.setCloudExtensionsData(
+                preparedBackup.extensionsData
+            )
             if useCloudVersion {
                 _ = try pending.localStore.restoreBackup(
                     data: preparedBackup.data,
@@ -618,19 +660,31 @@ final class AppState: ObservableObject {
         }
     }
 
-    private static func cloudWorkoutIdentity(_ backup: GymBackup) -> CloudWorkoutIdentity {
-        CloudWorkoutIdentity(
-            configuredExercises: backup.exercises.filter {
-                $0.catalogKey == nil || $0.machineLoadProfile != nil
-            },
-            sessions: backup.sessions
+    static func cloudWorkoutIdentity(_ backup: GymBackup) throws -> CloudWorkoutIdentity {
+        let canonical = try WorkoutStore.canonicalCloudWorkoutIdentityInput(backup)
+        let configuredExercises = canonical.exercises
+            .filter {
+                BuiltInExerciseCatalog.resolvedKey(
+                    catalogKey: $0.catalogKey,
+                    name: $0.name
+                ) == nil || $0.machineLoadProfile != nil
+            }
+            .sorted(by: BackupExercisePortableWireOrder.precedes)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let exactWire = try encoder.encode(CloudWorkoutExactWire(
+            configuredExercises: configuredExercises,
+            sessions: canonical.sessions
+        ))
+        return CloudWorkoutIdentity(
+            configuredExercises: configuredExercises,
+            sessions: canonical.sessions,
+            exactWire: exactWire
         )
     }
 
-    private static func hasUserWorkoutData(_ backup: GymBackup) -> Bool {
-        !backup.sessions.isEmpty || backup.exercises.contains {
-            $0.catalogKey == nil || $0.machineLoadProfile != nil
-        }
+    private static func hasUserWorkoutData(_ identity: CloudWorkoutIdentity) -> Bool {
+        !identity.sessions.isEmpty || !identity.configuredExercises.isEmpty
     }
 
     func forceCloudSync() async {
@@ -642,7 +696,7 @@ final class AppState: ObservableObject {
         }
         guard cloudWritableAccountStorageKey == session.storageKey else {
             show(
-                message: "Cloud upload is paused because this account uses a browser state format that iOS cannot preserve losslessly.",
+                message: "Cloud upload is paused because this row contains unsupported future workout fields.",
                 isError: true
             )
             return
@@ -678,8 +732,8 @@ final class AppState: ObservableObject {
         let store = workoutStore
         let owner = Self.backupOwner(for: session, fallbackStorageKey: session.storageKey)
         return try await cloudSync.withSyncIndicator {
-            // A legacy PWA row is intentionally read-only: fetching public standings
-            // must never become an alternate path that overwrites that cloud state.
+            // An unsupported future row is intentionally read-only: fetching standings
+            // must never become an alternate path that overwrites its unknown core fields.
             if cloudWritableAccountStorageKey == session.storageKey {
                 try await self.uploadCurrentState(
                     from: store,
@@ -1027,7 +1081,10 @@ final class AppState: ObservableObject {
             throw AuthServiceError.sessionChanged
         }
         let profile = store.syncProfileStats()
-        let data = try store.exportCloudBackupData(owner: owner)
+        let data = try store.exportCloudBackupData(
+            owner: owner,
+            extensionsData: store.cloudExtensionsData
+        )
         try await cloudSync.saveRemoteState(
             backupData: data,
             xp: profile.xp,

@@ -78,6 +78,21 @@ test("exercise favorites are bounded booleans with a backward-compatible alias",
   assert.throws(() => contract.validateAndNormalize(conflicting), /conflicting favorite values/);
 });
 
+test("muscle mapping identifiers use the shared Unicode character and byte limits", () => {
+  const valid = validBackup();
+  valid.mappings = { "custom carry": ["💪".repeat(32)] };
+  assert.equal(
+    contract.validateAndNormalize(valid).state.mappings["custom carry"][0],
+    "💪".repeat(32)
+  );
+
+  for (const muscle of ["a".repeat(65), "💪".repeat(33)]) {
+    const invalid = validBackup();
+    invalid.mappings = { "custom carry": [muscle] };
+    assert.throws(() => contract.validateAndNormalize(invalid), /supported length/);
+  }
+});
+
 test("exercise machine load profiles are normalized and bounded", () => {
   const valid = validBackup();
   valid.exercises[0].loadProfile = {
@@ -109,6 +124,24 @@ test("exercise machine load profiles are normalized and bounded", () => {
     invalid.exercises[0].loadProfile = loadProfile;
     assert.throws(() => contract.validateAndNormalize(invalid));
   }
+});
+
+test("portable exercise identity uses NFC, Unicode whitespace, apostrophe, and yo normalization", () => {
+  const key = contract.portableExerciseNameKey;
+  assert.equal(key("  МОЁ\u00a0УПРАЖНЕНИЕ\u2019  "), "мое упражнение'");
+  assert.equal(key("Row\u001cMachine"), "row machine");
+  assert.equal(key("Cafe\u0301\tRow"), key("Café Row"));
+  assert.notEqual(key("Café Row"), key("Cafe Row"), "unrelated accents must remain distinct");
+
+  const duplicateNames = validBackup();
+  duplicateNames.exercises = [{ name: "Моё упражнение" }];
+  duplicateNames.sessions[0].exercises = [
+    { name: "Мое\u2003упражнение", sets: [{ weight: -0, reps: 8 }] },
+    { name: "МОЁ УПРАЖНЕНИЕ", sets: [{ weight: 5, reps: 8 }] }
+  ];
+  const normalized = contract.validateAndNormalize(duplicateNames).state;
+  assert.equal(normalized.sessions[0].exerciseNames.length, 1);
+  assert.equal(Object.is(normalized.sessions[0].sets[0].weight, -0), false);
 });
 
 test("profile enums never return an attacker-controlled fallback string", () => {

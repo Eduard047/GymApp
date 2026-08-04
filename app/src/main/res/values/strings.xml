@@ -207,7 +207,9 @@
     <string name="hint_optional">Optional</string>
     <string name="label_reps">Reps</string>
     <string name="add_workout_intro_title">Build today’s session</string>
+    <string name="add_workout_intro_title_past">Log a past session</string>
     <string name="add_workout_intro_supporting">Build planned rows, sync them as Garmin targets, or save every row as completed.</string>
+    <string name="add_workout_date_supporting">Choose today or an earlier day. Future dates are disabled.</string>
     <string name="focus_lens_eyebrow">YOUR NEXT MOVE</string>
     <string name="focus_lens_title">Build today’s session</string>
     <string name="focus_lens_supporting">Ready when you are. Start simple and shape the workout as you go.</string>

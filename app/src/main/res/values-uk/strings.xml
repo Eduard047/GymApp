@@ -207,7 +207,9 @@
     <string name="hint_optional">Необовʼязково</string>
     <string name="label_reps">Повтори</string>
     <string name="add_workout_intro_title">Склади тренування на сьогодні</string>
+    <string name="add_workout_intro_title_past">Запиши минуле тренування</string>
     <string name="add_workout_intro_supporting">Створи заплановані рядки, надішли їх як цілі Garmin або збережи всі рядки як виконані.</string>
+    <string name="add_workout_date_supporting">Обери сьогодні або раніший день. Майбутні дати недоступні.</string>
     <string name="focus_lens_eyebrow">ТВІЙ НАСТУПНИЙ КРОК</string>
     <string name="focus_lens_title">Склади тренування на сьогодні</string>
     <string name="focus_lens_supporting">Починай, коли готовий. Складай тренування поступово, у своєму темпі.</string>

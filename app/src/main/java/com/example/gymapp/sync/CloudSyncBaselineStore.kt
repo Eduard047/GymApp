@@ -69,6 +69,16 @@ internal fun cloudSnapshotApplyDecision(
     return CloudSnapshotApplyDecision.Conflict
 }
 
+internal fun encodeCloudSyncBaseline(digest: String): String {
+    require(digest.matches(SHA256_PATTERN))
+    return "$CLOUD_SYNC_BASELINE_PREFIX$digest"
+}
+
+internal fun decodeCloudSyncBaseline(value: String?): String? {
+    if (value == null || !value.startsWith(CLOUD_SYNC_BASELINE_PREFIX)) return null
+    return value.removePrefix(CLOUD_SYNC_BASELINE_PREFIX).takeIf { it.matches(SHA256_PATTERN) }
+}
+
 /**
  * Stores only opaque hashes of the last server-confirmed workout projection.
  *
@@ -82,12 +92,12 @@ internal class CloudSyncBaselineStore(context: Context) {
         Context.MODE_PRIVATE
     )
 
-    fun read(userId: String): String? = preferences.getString(key(userId), null)
-        ?.takeIf { it.matches(SHA256_PATTERN) }
+    fun read(userId: String): String? = decodeCloudSyncBaseline(
+        preferences.getString(key(userId), null)
+    )
 
     fun write(userId: String, digest: String): Boolean {
-        require(digest.matches(SHA256_PATTERN))
-        return preferences.edit().putString(key(userId), digest).commit()
+        return preferences.edit().putString(key(userId), encodeCloudSyncBaseline(digest)).commit()
     }
 
     fun clear(userId: String): Boolean = preferences.edit().remove(key(userId)).commit()
@@ -104,6 +114,8 @@ internal class CloudSyncBaselineStore(context: Context) {
 
     private companion object {
         const val PREFS_NAME = "gym_cloud_sync_baselines"
-        val SHA256_PATTERN = Regex("^[0-9a-f]{64}$")
     }
 }
+
+private const val CLOUD_SYNC_BASELINE_PREFIX = "v3:"
+private val SHA256_PATTERN = Regex("^[0-9a-f]{64}$")

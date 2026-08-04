@@ -714,10 +714,31 @@ class GymRepository(
             val loadProfiles = currentExerciseLoadProfiles(rejectInvalid = true)
             Triple(
                 appMetadataDao.getCatalogSeedVersion() ?: 0,
-                exerciseDao.getExercisesSnapshot().map { exercise ->
-                    exercise to loadProfiles[exercise.id]
-                },
-                workoutDao.getAllSessionDetailsForBackup().map(::sortSessionDetails)
+                exerciseDao.getExercisesSnapshot()
+                    .map { exercise -> exercise to loadProfiles[exercise.id] }
+                    .sortedWith { left, right ->
+                        compareCanonicalExerciseCatalogEntries(
+                            ValidatedBackupExercise(
+                                name = left.first.name,
+                                catalogKey = BuiltInExerciseCatalog.inferKey(left.first.name),
+                                loadProfile = left.second
+                            ),
+                            ValidatedBackupExercise(
+                                name = right.first.name,
+                                catalogKey = BuiltInExerciseCatalog.inferKey(right.first.name),
+                                loadProfile = right.second
+                            )
+                        )
+                    },
+                workoutDao.getAllSessionDetailsForBackup()
+                    .map(::sortSessionDetails)
+                    // A workout entered later for an earlier day must still serialize before
+                    // newer workouts. The row id is the stable original-order tie breaker for
+                    // equal timestamps, matching the shared native/PWA cloud contract.
+                    .sortedWith(
+                        compareBy<WorkoutSessionDetails> { it.session.date }
+                            .thenBy { it.session.id }
+                    )
             )
         }
         val root = JSONObject()
@@ -925,13 +946,15 @@ class GymRepository(
             }
             val currentSeedVersion = appMetadataDao.getCatalogSeedVersion() ?: 0
             val restoredSeedVersion = if (replaceExisting) {
-                if (root.has("catalogSeedVersion")) {
-                    backup.catalogSeedVersion
-                } else {
-                    // The public cloud envelope predates the local seed marker. Preserve a
-                    // completed local migration so later pulls do not resurrect a built-in
-                    // exercise the user intentionally deleted.
-                    expectedLocalState?.catalogSeedVersion ?: currentSeedVersion
+                when {
+                    root.has("catalogSeedVersion") -> backup.catalogSeedVersion
+                    activeRemote -> {
+                        // The shared cloud catalog is authoritative and intentionally omits this
+                        // local migration marker. Treat an absent marker as fully seeded so a
+                        // fresh install cannot resurrect built-ins deleted on another platform.
+                        BuiltInExerciseCatalog.SEED_VERSION
+                    }
+                    else -> expectedLocalState?.catalogSeedVersion ?: currentSeedVersion
                 }
             } else {
                 maxOf(currentSeedVersion, backup.catalogSeedVersion)
@@ -950,36 +973,27 @@ class GymRepository(
                 "Stored set data exceeds the safe import limit."
             }
             val existingExercises = exerciseDao.getExercisesSnapshot()
-            val exerciseIdByNameKey = existingExercises
-                .associate { exercise -> exercise.name.normalizedExerciseName() to exercise.id }
-                .toMutableMap()
-            val exerciseIdByCatalogKey = linkedMapOf<String, Long>().apply {
-                existingExercises.forEach { exercise ->
-                    BuiltInExerciseCatalog.inferKey(exercise.name)?.let { catalogKey ->
-                        putIfAbsent(catalogKey, exercise.id)
-                    }
-                }
-            }
-
-            val prospectiveNameKeys = exerciseIdByNameKey.keys.toMutableSet()
-            val prospectiveCatalogKeys = exerciseIdByCatalogKey.keys.toMutableSet()
+            val exerciseIdentityIndex = ExerciseIdentityIndex(existingExercises)
+            val prospectiveIdentityIndex = ExerciseIdentityIndex(existingExercises)
             var prospectiveExerciseCount = existingExercises.size
+            var nextProspectiveExerciseId = -1L
 
             fun accountForImportedExercise(exercise: ValidatedBackupExercise) {
-                val nameKey = exercise.name.normalizedExerciseName()
-                if (nameKey in prospectiveNameKeys) return
                 val catalogKey = BuiltInExerciseCatalog.resolvedKey(
                     catalogKey = exercise.catalogKey,
                     rawName = exercise.name
                 )
-                if (catalogKey != null && catalogKey in prospectiveCatalogKeys) return
+                if (prospectiveIdentityIndex.resolve(exercise.name, catalogKey) != null) return
 
                 prospectiveExerciseCount += 1
                 require(prospectiveExerciseCount <= WorkoutDataLimits.MAX_EXERCISES) {
                     "Backup exceeds the exercise limit for this account."
                 }
-                prospectiveNameKeys += nameKey
-                if (catalogKey != null) prospectiveCatalogKeys += catalogKey
+                prospectiveIdentityIndex.add(
+                    id = nextProspectiveExerciseId--,
+                    name = exercise.name,
+                    catalogKey = catalogKey
+                )
             }
 
             backup.exercises.forEach(::accountForImportedExercise)
@@ -989,8 +1003,11 @@ class GymRepository(
 
             suspend fun resolveImportedExercise(exercise: ValidatedBackupExercise): Long {
                 val rawName = exercise.name
-                val nameKey = rawName.normalizedExerciseName()
-                exerciseIdByNameKey[nameKey]?.let { existingId ->
+                val catalogKey = BuiltInExerciseCatalog.resolvedKey(
+                    catalogKey = exercise.catalogKey,
+                    rawName = rawName
+                )
+                exerciseIdentityIndex.resolve(rawName, catalogKey)?.let { existingId ->
                     exercise.isFavorite?.let { favorite ->
                         check(exerciseDao.setFavorite(existingId, favorite) == 1)
                     }
@@ -1000,32 +1017,13 @@ class GymRepository(
                     return existingId
                 }
 
-                val catalogKey = BuiltInExerciseCatalog.resolvedKey(
-                    catalogKey = exercise.catalogKey,
-                    rawName = rawName
-                )
-                if (catalogKey != null) {
-                    exerciseIdByCatalogKey[catalogKey]?.let { existingId ->
-                        exercise.isFavorite?.let { favorite ->
-                            check(exerciseDao.setFavorite(existingId, favorite) == 1)
-                        }
-                        exercise.loadProfile?.let { profile ->
-                            replaceExerciseLoadProfile(existingId, profile)
-                        }
-                        return existingId
-                    }
-                }
-
                 val exerciseId = exerciseDao.insert(
                     ExerciseEntity(
                         name = rawName,
                         isFavorite = exercise.isFavorite == true
                     )
                 )
-                exerciseIdByNameKey[nameKey] = exerciseId
-                if (catalogKey != null) {
-                    exerciseIdByCatalogKey.putIfAbsent(catalogKey, exerciseId)
-                }
+                exerciseIdentityIndex.add(exerciseId, rawName, catalogKey)
                 exercise.loadProfile?.let { profile ->
                     replaceExerciseLoadProfile(exerciseId, profile)
                 }
@@ -1307,27 +1305,21 @@ class GymRepository(
                 "This account has reached the total set limit."
             }
             val existingExercises = exerciseDao.getExercisesSnapshot()
-            val exerciseIdByName = existingExercises
-                .associate { it.name.normalizedExerciseName() to it.id }
-                .toMutableMap()
-            val exerciseIdByCatalogKey = linkedMapOf<String, Long>().apply {
-                existingExercises.forEach { exercise ->
-                    BuiltInExerciseCatalog.inferKey(exercise.name)?.let { catalogKey ->
-                        putIfAbsent(catalogKey, exercise.id)
-                    }
-                }
-            }
-            val prospectiveNameKeys = exerciseIdByName.keys.toMutableSet()
-            val prospectiveCatalogKeys = exerciseIdByCatalogKey.keys.toMutableSet()
+            val exerciseIdentityIndex = ExerciseIdentityIndex(existingExercises)
+            val prospectiveIdentityIndex = ExerciseIdentityIndex(existingExercises)
             var prospectiveExerciseCount = existingExercises.size
+            var nextProspectiveExerciseId = -1L
             normalizedSets.forEach { set ->
-                val nameKey = set.exerciseName.normalizedExerciseName()
-                if (nameKey in prospectiveNameKeys) return@forEach
                 val catalogKey = BuiltInExerciseCatalog.inferKey(set.exerciseName)
-                if (catalogKey != null && catalogKey in prospectiveCatalogKeys) return@forEach
+                if (prospectiveIdentityIndex.resolve(set.exerciseName, catalogKey) != null) {
+                    return@forEach
+                }
                 prospectiveExerciseCount += 1
-                prospectiveNameKeys += nameKey
-                if (catalogKey != null) prospectiveCatalogKeys += catalogKey
+                prospectiveIdentityIndex.add(
+                    id = nextProspectiveExerciseId--,
+                    name = set.exerciseName,
+                    catalogKey = catalogKey
+                )
             }
             require(prospectiveExerciseCount <= WorkoutDataLimits.MAX_EXERCISES) {
                 "This account has reached the exercise limit."
@@ -1336,20 +1328,11 @@ class GymRepository(
 
             normalizedSets.forEach { set ->
                 val name = set.exerciseName
-                val key = name.normalizedExerciseName()
                 val catalogKey = BuiltInExerciseCatalog.inferKey(name)
-                val exerciseId = exerciseIdByName[key]
-                    ?: catalogKey?.let(exerciseIdByCatalogKey::get)
+                val exerciseId = exerciseIdentityIndex.resolve(name, catalogKey)
                     ?: exerciseDao.insert(ExerciseEntity(name = name)).also { insertedId ->
-                        exerciseIdByName[key] = insertedId
-                        if (catalogKey != null) {
-                            exerciseIdByCatalogKey.putIfAbsent(catalogKey, insertedId)
-                        }
+                        exerciseIdentityIndex.add(insertedId, name, catalogKey)
                     }
-                exerciseIdByName.putIfAbsent(key, exerciseId)
-                if (catalogKey != null) {
-                    exerciseIdByCatalogKey.putIfAbsent(catalogKey, exerciseId)
-                }
 
                 groupedDrafts.getOrPut(exerciseId) { mutableListOf() }
                     .add(WorkoutSetDraft(weight = set.weight, reps = set.reps))
@@ -1969,6 +1952,59 @@ class GymRepository(
         val GARMIN_DEVICE_BINDING_PATTERN = Regex("^-?[0-9]{1,19}$")
         val GARMIN_REQUEST_ID_PATTERN = Regex("^[A-Za-z0-9_.:-]{16,128}$")
         val SHA256_HEX_PATTERN = Regex("^[0-9a-f]{64}$")
+    }
+}
+
+internal class ExerciseIdentityIndex(exercises: Iterable<ExerciseEntity>) {
+    private val idsByExactName = linkedMapOf<String, MutableList<Long>>()
+    private val idsByPortableName = linkedMapOf<String, MutableList<Long>>()
+    private val idsByCatalogKey = linkedMapOf<String, MutableList<Long>>()
+
+    init {
+        exercises.forEach { exercise ->
+            add(
+                id = exercise.id,
+                name = exercise.name,
+                catalogKey = BuiltInExerciseCatalog.inferKey(exercise.name)
+            )
+        }
+    }
+
+    fun add(id: Long, name: String, catalogKey: String?) {
+        idsByExactName.getOrPut(name) { mutableListOf() }.add(id)
+        idsByPortableName.getOrPut(name.normalizedExerciseName()) { mutableListOf() }.add(id)
+        catalogKey?.let { key ->
+            idsByCatalogKey.getOrPut(key) { mutableListOf() }.add(id)
+        }
+    }
+
+    fun resolve(name: String, catalogKey: String?): Long? {
+        val exactMatches = idsByExactName[name].orEmpty().distinct()
+        require(exactMatches.size <= 1) {
+            "Stored exercise catalog contains an ambiguous exact name."
+        }
+        exactMatches.singleOrNull()?.let { return it }
+
+        val candidates = linkedSetOf<Long>()
+        fun addUnambiguous(matches: List<Long>?, kind: String) {
+            val distinctMatches = matches.orEmpty().distinct()
+            require(distinctMatches.size <= 1) {
+                "Stored exercise catalog contains an ambiguous $kind identity."
+            }
+            distinctMatches.singleOrNull()?.let(candidates::add)
+        }
+
+        addUnambiguous(
+            idsByPortableName[name.normalizedExerciseName()],
+            "portable name"
+        )
+        if (catalogKey != null) {
+            addUnambiguous(idsByCatalogKey[catalogKey], "built-in catalog")
+        }
+        require(candidates.size <= 1) {
+            "Stored exercise catalog contains conflicting workout identities."
+        }
+        return candidates.singleOrNull()
     }
 }
 

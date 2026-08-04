@@ -225,8 +225,8 @@ test("PWA accepts Russian state and renders Russian runtime text before app star
   assert.match(appSource, /tx\("metrics parsed from the saved note", "показники прочитано зі збереженої нотатки"\)/);
   assert.match(appSource, /txAttr\("Name in English, Ukrainian, or Russian", "Назва англійською, українською або російською"\)/);
   assert.doesNotMatch(appSource, /Name in English, Ukrainian or Russian/);
-  assert.ok(indexSource.indexOf("russian-text.v67.js") < indexSource.indexOf("app.v67.js"));
-  assert.match(workerSource, /"\.\/russian-text\.v67\.js"/);
+  assert.ok(indexSource.indexOf("russian-text.v68.js") < indexSource.indexOf("app.v68.js"));
+  assert.match(workerSource, /"\.\/russian-text\.v68\.js"/);
 });
 
 test("runtime language switches invalidate cached labels on every client", async () => {

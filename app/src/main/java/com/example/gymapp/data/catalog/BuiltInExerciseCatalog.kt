@@ -122,7 +122,7 @@ object BuiltInExerciseCatalog {
             sequenceOf(definition.nameEn, definition.nameUk)
                 .plus(definition.legacyAliases.asSequence())
                 .forEach { alias ->
-                    val normalized = normalizeName(alias)
+                    val normalized = normalizeExerciseIdentityName(alias)
                     require(put(normalized, definition) == null) {
                         "Duplicate built-in exercise alias: $alias"
                     }
@@ -138,7 +138,7 @@ object BuiltInExerciseCatalog {
     }
 
     fun definitionForName(rawName: String?): BuiltInExerciseDefinition? {
-        val normalized = rawName?.let(::normalizeName).orEmpty()
+        val normalized = rawName?.let(::normalizeExerciseIdentityName).orEmpty()
         return definitionsByName[normalized]
     }
 
@@ -153,7 +153,7 @@ object BuiltInExerciseCatalog {
      * unknown raw name keeps its own identity even if untrusted metadata names a built-in exercise.
      */
     fun resolvedKey(catalogKey: String?, rawName: String?): String? {
-        val cleanRawName = rawName?.trim().orEmpty()
+        val cleanRawName = normalizeExerciseIdentityName(rawName.orEmpty())
         return if (cleanRawName.isNotEmpty()) {
             inferKey(cleanRawName)
         } else {
@@ -170,14 +170,5 @@ object BuiltInExerciseCatalog {
             languageTag.equals("ru", ignoreCase = true) -> RussianText.translate(definition.nameEn)
             else -> definition.nameEn
         }
-    }
-
-    private fun normalizeName(value: String): String {
-        return value
-            .lowercase(Locale.ROOT)
-            .replace('ʼ', '\'')
-            .replace('’', '\'')
-            .replace(Regex("\\s+"), " ")
-            .trim()
     }
 }

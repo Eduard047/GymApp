@@ -249,15 +249,7 @@ public enum MuscleMappingEngine {
     }
 
     public static func normalizeExerciseName(_ value: String) -> String {
-        value
-            .lowercased()
-            .replacingOccurrences(of: "ʼ", with: "'")
-            .replacingOccurrences(of: "’", with: "'")
-            .replacingOccurrences(of: "ё", with: "е")
-            .components(separatedBy: .whitespacesAndNewlines)
-            .filter { !$0.isEmpty }
-            .joined(separator: " ")
-            .gymTrimmed
+        normalizeExerciseIdentityName(value)
     }
 
     private static func muscles(_ values: (String, Double)...) -> [MuscleContribution] {

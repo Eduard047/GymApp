@@ -12,7 +12,10 @@ object WorkoutDataLimits {
     const val MAX_JSON_NESTING_DEPTH = 16
     const val MAX_JSON_STRING_BYTES = 64 * 1_024
     const val MAX_JSON_ARRAY_ENTRIES = 100_000
-    const val MAX_JSON_OBJECT_MEMBERS = 64
+    // PWA muscle mappings are an object keyed by exercise name and intentionally share the
+    // 2,000-exercise account ceiling. Bytes, depth, array entries, and total value count remain
+    // independently bounded before org.json allocation.
+    const val MAX_JSON_OBJECT_MEMBERS = 2_000
     const val MAX_JSON_VALUE_COUNT = 350_000
     const val MAX_JSON_NUMBER_CHARS = 128
     const val MAX_EXERCISES = 2_000

@@ -1,5 +1,7 @@
 ﻿package com.example.gymapp.ui.screens
 
+import android.app.DatePickerDialog
+import android.content.Context
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -22,6 +24,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ExpandLess
@@ -93,6 +96,9 @@ import com.example.gymapp.util.TrainingGoal
 import com.example.gymapp.util.TrainingProfile
 import com.example.gymapp.util.TrainingSplit
 import com.example.gymapp.util.asString
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -100,6 +106,7 @@ import java.util.Locale
 fun AddWorkoutScreen(
     uiState: AddWorkoutUiState,
     exerciseMediaOwnerKey: String,
+    onWorkoutDateSelected: (Long) -> Unit,
     onNoteChange: (String) -> Unit,
     onTrainingSplitSelected: (TrainingSplit) -> Unit,
     onWorkoutsPerWeekSelected: (Int) -> Unit,
@@ -128,6 +135,11 @@ fun AddWorkoutScreen(
     onSaveWorkout: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    val selectedWorkoutLocalDate = Instant.ofEpochMilli(uiState.workoutDate)
+        .atZone(ZoneId.systemDefault())
+        .toLocalDate()
+    val isWorkoutToday = selectedWorkoutLocalDate == LocalDate.now(ZoneId.systemDefault())
     val selectedExerciseCount = uiState.exerciseDrafts.count { it.exerciseId != null }
     val totalSetCount = uiState.exerciseDrafts.sumOf { it.sets.size }
     val noteTemplates = listOf(
@@ -148,7 +160,13 @@ fun AddWorkoutScreen(
             HeroPanel(modifier = Modifier.fillMaxWidth()) {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(
-                        text = stringResource(R.string.add_workout_intro_title),
+                        text = stringResource(
+                            if (isWorkoutToday) {
+                                R.string.add_workout_intro_title
+                            } else {
+                                R.string.add_workout_intro_title_past
+                            }
+                        ),
                         style = MaterialTheme.typography.headlineSmall,
                         color = Color.White
                     )
@@ -186,9 +204,28 @@ fun AddWorkoutScreen(
                         eyebrow = stringResource(R.string.label_workout_date),
                         title = stringResource(R.string.label_note)
                     )
-                    InfoPill(
-                        text = DateTimeUtils.formatDate(uiState.workoutDate),
-                        accent = MaterialTheme.colorScheme.secondary
+                    OutlinedButton(
+                        onClick = {
+                            showWorkoutDatePicker(
+                                context = context,
+                                currentTimestamp = uiState.workoutDate,
+                                onSelectedEpochDay = onWorkoutDateSelected
+                            )
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = GymControlShape
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CalendarMonth,
+                            contentDescription = null
+                        )
+                        Spacer(modifier = Modifier.size(8.dp))
+                        Text(DateTimeUtils.formatDate(uiState.workoutDate))
+                    }
+                    Text(
+                        text = stringResource(R.string.add_workout_date_supporting),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     OutlinedTextField(
                         value = uiState.note,
@@ -488,6 +525,28 @@ fun AddWorkoutScreen(
             )
         }
     }
+}
+
+private fun showWorkoutDatePicker(
+    context: Context,
+    currentTimestamp: Long,
+    onSelectedEpochDay: (Long) -> Unit
+) {
+    val zoneId = ZoneId.systemDefault()
+    val currentDate = Instant.ofEpochMilli(currentTimestamp).atZone(zoneId).toLocalDate()
+    DatePickerDialog(
+        context,
+        { _, year, zeroBasedMonth, dayOfMonth ->
+            runCatching { LocalDate.of(year, zeroBasedMonth + 1, dayOfMonth) }
+                .getOrNull()
+                ?.let { selectedDate -> onSelectedEpochDay(selectedDate.toEpochDay()) }
+        },
+        currentDate.year,
+        currentDate.monthValue - 1,
+        currentDate.dayOfMonth
+    ).apply {
+        datePicker.maxDate = System.currentTimeMillis()
+    }.show()
 }
 
 @Composable

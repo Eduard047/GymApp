@@ -2,8 +2,10 @@ package com.example.gymapp.data.repository
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.example.gymapp.data.catalog.BuiltInExerciseCatalog
 import com.example.gymapp.data.database.GymDatabase
 import com.example.gymapp.data.entity.AppMetadataEntity
+import com.example.gymapp.data.entity.ExerciseEntity
 import java.util.UUID
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -18,6 +20,126 @@ import org.json.JSONObject
 
 @RunWith(AndroidJUnit4::class)
 class BackupCatalogKeyImportTest {
+    @Test
+    fun duplicateTopLevelBuiltInAliasIsRejectedBeforeCloudReplacementMutation() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "duplicate-cloud-catalog-identity-${UUID.randomUUID()}"
+        val database = GymDatabase.getInstance(context, databaseName)
+        val userId = "123e4567-e89b-12d3-a456-426614174000"
+
+        try {
+            val repository = GymRepository(database)
+            val exerciseId = repository.addExercise("Bench Press")
+            repository.createWorkoutSession(
+                date = 1_750_000_000_000L,
+                note = "Must survive rejected replacement",
+                workoutExercises = listOf(
+                    WorkoutExerciseDraft(
+                        exerciseId = exerciseId,
+                        sets = listOf(WorkoutSetDraft(weight = 80.0, reps = 8))
+                    )
+                )
+            )
+
+            val exercisesBefore = database.exerciseDao().getExercisesSnapshot()
+            val sessionsBefore = database.workoutDao().getAllSessionDetailsForBackup()
+            val projectionBefore = repository.getCloudWorkoutProjectionState()
+            val remote = repository.buildCloudBackupJson(
+                BackupOwner(
+                    accountId = userId,
+                    userId = userId,
+                    remote = true
+                )
+            ).apply {
+                // "жим лежачи" is a legacy alias of the already-exported bench_press row.
+                // The two differently-spelled rows therefore have one canonical identity.
+                getJSONArray("exercises").put(JSONObject().put("name", "жим лежачи"))
+            }
+
+            assertThrows(IllegalArgumentException::class.java) {
+                runBlocking {
+                    repository.replaceWithBackupJsonObject(
+                        root = remote,
+                        expectedLocalState = projectionBefore,
+                        activeUserId = userId,
+                        activeRemote = true
+                    )
+                }
+            }
+
+            val projectionAfter = repository.getCloudWorkoutProjectionState()
+            assertEquals(exercisesBefore, database.exerciseDao().getExercisesSnapshot())
+            assertEquals(sessionsBefore, database.workoutDao().getAllSessionDetailsForBackup())
+            assertEquals(projectionBefore.digest, projectionAfter.digest)
+            assertEquals(projectionBefore, projectionAfter)
+            assertEquals(1, projectionAfter.exerciseCount)
+            assertEquals(1, projectionAfter.sessionCount)
+            assertEquals(1, projectionAfter.workoutExerciseCount)
+            assertEquals(1, projectionAfter.setCount)
+        } finally {
+            database.close()
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
+    fun iosLocalizedCatalogOrderRoundTripsThroughAndroidRoom() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "ios-catalog-order-${UUID.randomUUID()}"
+        val database = GymDatabase.getInstance(context, databaseName)
+        val userId = "123e4567-e89b-12d3-a456-426614174000"
+
+        try {
+            val repository = GymRepository(database)
+            val remote = JSONObject(
+                """
+                {
+                  "schemaVersion": 2,
+                  "exportedAt": 1750000000000,
+                  "app": "GymApp",
+                  "diagnostics": false,
+                  "owner": {
+                    "accountId": "$userId",
+                    "userId": "$userId",
+                    "remote": true
+                  },
+                  "exercises": [
+                    {"name": "Жим у тренажері"},
+                    {"name": "Bench Press", "catalogKey": "bench_press"}
+                  ],
+                  "sessions": [],
+                  "summary": {
+                    "exerciseCount": 2,
+                    "sessionCount": 0,
+                    "setCount": 0,
+                    "totalVolume": 0.0
+                  }
+                }
+                """.trimIndent()
+            )
+            val remoteDigest = checkNotNull(canonicalWorkoutPayloadDigest(remote))
+
+            assertEquals(
+                0,
+                repository.replaceWithBackupJsonObject(
+                    root = remote,
+                    expectedLocalState = repository.getCloudWorkoutProjectionState(),
+                    activeUserId = userId,
+                    activeRemote = true
+                )
+            )
+
+            assertEquals(remoteDigest, repository.getCloudWorkoutProjectionState().digest)
+            assertEquals(
+                listOf("Bench Press", "Жим у тренажері"),
+                database.exerciseDao().getExercisesSnapshot().map { it.name }
+            )
+        } finally {
+            database.close()
+            context.deleteDatabase(databaseName)
+        }
+    }
+
     @Test
     fun favoriteRoundTripsInManualBackupButIsExcludedFromCloudProjection() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
@@ -65,7 +187,7 @@ class BackupCatalogKeyImportTest {
 
         try {
             val repository = GymRepository(database)
-            assertEquals(52, repository.seedBuiltInExercises())
+            assertEquals(BuiltInExerciseCatalog.definitions.size, repository.seedBuiltInExercises())
             val bench = database.exerciseDao().getExercisesSnapshot()
                 .first { it.name == "Bench Press" }
 
@@ -75,7 +197,10 @@ class BackupCatalogKeyImportTest {
             assertFalse(
                 database.exerciseDao().getExercisesSnapshot().any { it.name == "Bench Press" }
             )
-            assertEquals(2, repository.buildBackupJson().getInt("catalogSeedVersion"))
+            assertEquals(
+                BuiltInExerciseCatalog.SEED_VERSION,
+                repository.buildBackupJson().getInt("catalogSeedVersion")
+            )
 
             val cloud = repository.buildCloudBackupJson(
                 BackupOwner(
@@ -109,14 +234,14 @@ class BackupCatalogKeyImportTest {
     }
 
     @Test
-    fun catalogVersionTwoAddsOnlyHipAbductionToExistingAccounts() = runBlocking {
+    fun catalogUpgradeFromVersionOneRestoresOnlyMissingDefinitions() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val databaseName = "catalog-seed-v2-${UUID.randomUUID()}"
         val database = GymDatabase.getInstance(context, databaseName)
 
         try {
             val repository = GymRepository(database)
-            assertEquals(52, repository.seedBuiltInExercises())
+            assertEquals(BuiltInExerciseCatalog.definitions.size, repository.seedBuiltInExercises())
             val exercises = database.exerciseDao().getExercisesSnapshot()
             repository.deleteExercise(exercises.first { it.name == "Bench Press" })
             repository.deleteExercise(exercises.first { it.name == "Hip Abduction" })
@@ -126,7 +251,10 @@ class BackupCatalogKeyImportTest {
             val upgraded = database.exerciseDao().getExercisesSnapshot()
             assertTrue(upgraded.any { it.name == "Hip Abduction" })
             assertFalse(upgraded.any { it.name == "Bench Press" })
-            assertEquals(2, repository.buildBackupJson().getInt("catalogSeedVersion"))
+            assertEquals(
+                BuiltInExerciseCatalog.SEED_VERSION,
+                repository.buildBackupJson().getInt("catalogSeedVersion")
+            )
         } finally {
             database.close()
             context.deleteDatabase(databaseName)
@@ -578,8 +706,8 @@ class BackupCatalogKeyImportTest {
             try {
                 for (index in 1 until WorkoutDataLimits.MAX_EXERCISES) {
                     sqlite.execSQL(
-                        "INSERT INTO exercises(name) VALUES (?)",
-                        arrayOf<Any>("Capacity exercise $index")
+                        "INSERT INTO exercises(name, isFavorite) VALUES (?, ?)",
+                        arrayOf<Any>("Capacity exercise $index", 0)
                     )
                 }
                 sqlite.setTransactionSuccessful()
@@ -609,6 +737,49 @@ class BackupCatalogKeyImportTest {
                 }
             }
             assertEquals(WorkoutDataLimits.MAX_EXERCISES, database.exerciseDao().getExercisesSnapshot().size)
+        } finally {
+            database.close()
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
+    fun legacyPortableNameCollisionRequiresAnExactExerciseNameWithoutMutation() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "legacy-name-collision-${UUID.randomUUID()}"
+        val database = GymDatabase.getInstance(context, databaseName)
+
+        try {
+            val repository = GymRepository(database)
+            val plainId = database.exerciseDao().insert(ExerciseEntity(name = "Legacy Custom"))
+            val nbspId = database.exerciseDao().insert(ExerciseEntity(name = "Legacy\u00a0Custom"))
+
+            assertThrows(IllegalArgumentException::class.java) {
+                runBlocking {
+                    repository.createWorkoutSessionFromNamedSets(
+                        date = 1_750_000_000_000L,
+                        note = "Must not be saved",
+                        sets = listOf(
+                            NamedWorkoutSetDraft("Legacy\u2007Custom", 40.0, 8)
+                        )
+                    )
+                }
+            }
+            assertTrue(database.workoutDao().getAllSessionDetailsForBackup().isEmpty())
+            assertEquals(
+                setOf(plainId, nbspId),
+                database.exerciseDao().getExercisesSnapshot().mapTo(linkedSetOf()) { it.id }
+            )
+
+            val sessionId = repository.createWorkoutSessionFromNamedSets(
+                date = 1_750_000_001_000L,
+                note = "Exact legacy name",
+                sets = listOf(NamedWorkoutSetDraft("Legacy\u00a0Custom", 42.5, 8))
+            )
+            assertNotNull(sessionId)
+            val stored = database.workoutDao().getAllSessionDetailsForBackup().single()
+            assertEquals(nbspId, stored.workoutExercises.single().exercise.id)
+            assertEquals("Exact legacy name", stored.session.note)
         } finally {
             database.close()
             context.deleteDatabase(databaseName)

@@ -252,7 +252,7 @@ class GarminWorkoutReceiptAtomicityTest {
     }
 
     @Test
-    fun failedAuthoritativeReplacementRollsBackGarminProvenance() = runBlocking {
+    fun authoritativeReplacementCanonicalizesPaddedNoteAndRetainsGarminProvenance() = runBlocking {
         withDatabase("garmin-cloud-rollback") { database, repository ->
             val userId = UUID.randomUUID().toString()
             assertEquals(
@@ -272,26 +272,25 @@ class GarminWorkoutReceiptAtomicityTest {
             val cloud = repository.buildCloudBackupJson(
                 BackupOwner(accountId = userId, userId = userId, remote = true)
             )
-            // Validation preserves the spaces, while persistence normalizes them. The final
-            // canonical comparison therefore fails after replacement work has begun.
+            // Canonical validation and persistence both trim note boundaries, matching iOS.
             cloud.getJSONArray("sessions").getJSONObject(0).put("note", " Garmin ")
 
-            val failure = runCatching {
+            assertEquals(
+                1,
                 repository.replaceWithBackupJsonObject(
                     root = cloud,
                     expectedLocalState = repository.getCloudWorkoutProjectionState(),
                     activeUserId = userId,
                     activeRemote = true
                 )
-            }.exceptionOrNull()
-            assertTrue(failure is IllegalArgumentException)
+            )
 
             val restoredOriginal = database.workoutDao().getSessions().first().single()
-            assertEquals(original.session.id, restoredOriginal.session.id)
+            assertTrue(restoredOriginal.session.id != original.session.id)
             assertEquals("Garmin", restoredOriginal.session.note)
             assertTrue(restoredOriginal.hasGarminReceipt)
             assertEquals(
-                listOf(original.session.id),
+                listOf(restoredOriginal.session.id),
                 database.garminWorkoutReceiptDao().getProvenanceSessionIds()
             )
         }

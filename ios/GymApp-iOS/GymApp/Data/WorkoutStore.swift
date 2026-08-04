@@ -1,4 +1,5 @@
 import Combine
+import CoreFoundation
 import Foundation
 
 public enum WorkoutStoreError: Error, LocalizedError, Equatable, Sendable {
@@ -73,9 +74,15 @@ struct WorkoutStoreOpenResult {
 
 struct PreparedCloudBackup {
     let data: Data
-    /// Only the native v2 envelope is safe to write back losslessly. Legacy PWA
-    /// payloads contain profile/language/mapping fields that the native model cannot retain.
+    /// True when every core field is represented by the typed workout model and every
+    /// namespaced extension can be preserved verbatim on the next compare-and-swap write.
     let roundTripSafe: Bool
+    /// Canonical JSON object containing optional client-specific state. iOS never interprets
+    /// unknown namespaces, but carries them through account-scoped cloud writes unchanged.
+    let extensionsData: Data?
+    /// Legacy PWA/native rows are normalized in memory first. The caller should queue a CAS
+    /// write so all clients subsequently observe the shared canonical envelope.
+    let requiresCanonicalUpload: Bool
 }
 
 /// Aggregate-only projection for support diagnostics. Keep row values and owner data out.
@@ -161,6 +168,10 @@ public final class WorkoutStore: ObservableObject {
     @Published public private(set) var workouts: [WorkoutSession]
     @Published public private(set) var muscleMappings: [ExerciseMuscleMapping]
     public private(set) var catalogSeedVersion: Int
+    /// Account-scoped, validated client extension namespaces from the shared cloud row.
+    /// Stored separately from workout/domain state so unknown clients can round-trip data
+    /// without iOS interpreting or exposing it.
+    private(set) var cloudExtensionsData: Data?
 
     public private(set) var accountStorageKey: String
     public private(set) var storageURL: URL
@@ -211,6 +222,18 @@ public final class WorkoutStore: ObservableObject {
         var savedAt: Date
         var snapshot: WorkoutDataSnapshot
         var favoriteExerciseIDs: [UUID]?
+        var cloudExtensionsData: Data?
+    }
+
+    private struct LoadedStore {
+        let snapshot: WorkoutDataSnapshot
+        let cloudExtensionsData: Data?
+    }
+
+    private struct AuthoritativeBackupSetRow: Equatable {
+        let exerciseIdentity: String
+        let weight: Double
+        let reps: Int
     }
 
     public init(
@@ -236,10 +259,11 @@ public final class WorkoutStore: ObservableObject {
         self.directoryURL = directory
         self.storageURL = fileURL
         self.fileManager = fileManager
-        self.exercises = loaded.exercises
-        self.workouts = loaded.workouts
-        self.muscleMappings = loaded.muscleMappings
-        self.catalogSeedVersion = loaded.catalogSeedVersion
+        self.exercises = loaded.snapshot.exercises
+        self.workouts = loaded.snapshot.workouts
+        self.muscleMappings = loaded.snapshot.muscleMappings
+        self.catalogSeedVersion = loaded.snapshot.catalogSeedVersion
+        self.cloudExtensionsData = loaded.cloudExtensionsData
     }
 
     /// Opens the account store while preserving an unreadable or mismatched envelope.
@@ -339,11 +363,29 @@ public final class WorkoutStore: ObservableObject {
         )
         self.accountStorageKey = key
         self.storageURL = fileURL
-        publish(Self.normalized(loaded))
+        self.cloudExtensionsData = loaded.cloudExtensionsData
+        publish(Self.normalized(loaded.snapshot))
     }
 
     public func clearAllData() throws {
         try commit(WorkoutDataSnapshot())
+    }
+
+    /// Replaces only the opaque shared-cloud extension sidecar. Validation and the local
+    /// account envelope write complete before the new value becomes observable, so a crash
+    /// cannot pair another account's extension data with this store.
+    func setCloudExtensionsData(_ data: Data?) throws {
+        if let data {
+            _ = try Self.validatedCloudExtensions(data, limits: .standard)
+        }
+        let previous = cloudExtensionsData
+        cloudExtensionsData = data
+        do {
+            try persist(snapshot)
+        } catch {
+            cloudExtensionsData = previous
+            throw error
+        }
     }
 
     /// Removes the account-scoped file itself, used after an account/profile is deleted.
@@ -353,6 +395,7 @@ public final class WorkoutStore: ObservableObject {
         // Stop exposing the deleted account's payload immediately. Persisting the empty
         // envelope before unlinking also makes a failed remove safe and retryable.
         publish(empty)
+        cloudExtensionsData = nil
         do {
             try persist(empty)
             try Self.destroyAccountFiles(
@@ -613,9 +656,6 @@ public final class WorkoutStore: ObservableObject {
         guard !namedSets.isEmpty else { return nil }
         var created: WorkoutSession?
         try mutate { state in
-            var exerciseIDByKey = Dictionary(
-                uniqueKeysWithValues: state.exercises.map { (Self.nameKey($0.name), $0.id) }
-            )
             var orderedIDs: [UUID] = []
             var grouped: [UUID: [WorkoutSetDraft]] = [:]
 
@@ -624,14 +664,15 @@ public final class WorkoutStore: ObservableObject {
                 guard !cleanedName.isEmpty else { continue }
                 let name = try Self.validatedExerciseName(cleanedName)
                 try Self.validate(weight: set.weight, reps: set.reps)
-                let key = Self.nameKey(name)
                 let exerciseID: UUID
-                if let existing = exerciseIDByKey[key] {
+                if let existing = try Self.resolvedStoredExerciseID(
+                    for: name,
+                    in: state.exercises
+                ) {
                     exerciseID = existing
                 } else {
                     let exercise = Exercise(name: name)
                     state.exercises.append(exercise)
-                    exerciseIDByKey[key] = exercise.id
                     exerciseID = exercise.id
                 }
                 if grouped[exerciseID] == nil { orderedIDs.append(exerciseID) }
@@ -1086,7 +1127,6 @@ public final class WorkoutStore: ObservableObject {
         )
         let exerciseByID = Dictionary(uniqueKeysWithValues: exercises.map { ($0.id, $0) })
         let backupExercises = exercises
-            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
             .map {
                 BackupExercise(
                     name: $0.name,
@@ -1094,11 +1134,19 @@ public final class WorkoutStore: ObservableObject {
                     machineLoadProfile: $0.machineLoadProfile
                 )
             }
+            .sorted(by: BackupExercisePortableWireOrder.precedes)
         let backupSessions = try workouts
-            .filter { $0.setCount > 0 }
-            .sorted { $0.date < $1.date }
-            .map { workout in
-                BackupSession(
+            .enumerated()
+            .filter { $0.element.setCount > 0 }
+            .sorted { lhs, rhs in
+                if lhs.element.date != rhs.element.date {
+                    return lhs.element.date < rhs.element.date
+                }
+                return lhs.offset < rhs.offset
+            }
+            .map { indexedWorkout in
+                let workout = indexedWorkout.element
+                return BackupSession(
                     date: try Self.validatedTimestamp(workout.date, field: "session timestamp"),
                     note: workout.note,
                     exercises: workout.exercises.compactMap { block in
@@ -1117,6 +1165,9 @@ public final class WorkoutStore: ObservableObject {
                     }
                 )
             }
+        let backupSets = backupSessions.flatMap { session in
+            (session.exercises ?? []).flatMap(\.sets)
+        }
 
         return GymBackup(
             exportedAt: exportedAtMilliseconds,
@@ -1128,8 +1179,10 @@ public final class WorkoutStore: ObservableObject {
             summary: BackupSummary(
                 exerciseCount: backupExercises.count,
                 sessionCount: backupSessions.count,
-                setCount: workouts.reduce(0) { $0 + $1.setCount },
-                totalVolume: workouts.reduce(0) { $0 + $1.totalVolume }
+                setCount: backupSets.count,
+                totalVolume: backupSets.reduce(0) {
+                    $0 + ($1.weight * Double($1.reps))
+                }
             )
         )
     }
@@ -1165,11 +1218,18 @@ public final class WorkoutStore: ObservableObject {
         return json
     }
 
-    /// Encodes the legacy eight-key native cloud root accepted by already-released clients.
-    /// The seed marker remains part of local/manual backups, but it is local migration metadata
-    /// and must not extend the public cloud envelope in this release.
-    func exportCloudBackupData(owner: BackupOwner) throws -> Data {
+    /// Encodes the shared schema-v2 workout core and carries validated client-specific
+    /// namespaces forward without interpreting them. The seed marker remains local migration
+    /// metadata and never enters the shared cloud row.
+    func exportCloudBackupData(
+        owner: BackupOwner,
+        extensionsData: Data? = nil
+    ) throws -> Data {
         let backupData = try exportBackupData(owner: owner, prettyPrinted: false)
+        let backup = try JSONDecoder().decode(GymBackup.self, from: backupData)
+        // A legacy local store can safely retain two previously distinct spellings that now
+        // share one portable identity. Never publish that ambiguity or silently merge it.
+        _ = try Self.canonicalCloudWorkoutIdentityInput(backup)
         let parsed: Any
         do {
             parsed = try JSONSerialization.jsonObject(with: backupData)
@@ -1180,12 +1240,18 @@ public final class WorkoutStore: ObservableObject {
             throw WorkoutStoreError.persistenceFailure("Cloud backup encoding failed.")
         }
         root.removeValue(forKey: "catalogSeedVersion")
+        if let extensionsData {
+            root["extensions"] = try Self.validatedCloudExtensions(
+                extensionsData,
+                limits: .standard
+            )
+        }
         return try Self.encodedCloudBackup(root, limits: .standard)
     }
 
-    /// Adapts authenticated legacy PWA cloud rows to the native backup reader without
-    /// weakening owner checks. The caller must keep cloud writes paused when the result
-    /// is not round-trip safe, because native export does not preserve PWA-only fields.
+    /// Validates and canonicalizes an authenticated shared cloud row. Legacy PWA rows are
+    /// converted to the native workout core while their language/mapping/profile state moves
+    /// into `extensions.pwa`. Unknown extension namespaces are retained as bounded opaque JSON.
     static func prepareCloudBackup(
         _ data: Data,
         activeOwner: BackupOwner,
@@ -1225,61 +1291,38 @@ public final class WorkoutStore: ObservableObject {
             return owner
         }()
 
-        if root["schemaVersion"] == nil {
-            let requiredPWAKeys: Set<String> = [
-                "language", "exercises", "sessions", "mappings", "profile"
-            ]
-            let allowedPWAKeys = requiredPWAKeys.union([
-                "progressExerciseId", "catalogSeedVersion"
-            ])
-            guard requiredPWAKeys.isSubset(of: Set(root.keys)),
-                  Set(root.keys).isSubset(of: allowedPWAKeys),
-                  let language = root["language"] as? String,
-                  ["en", "uk", "ru"].contains(language),
-                  root["exercises"] is [Any],
-                  root["sessions"] is [Any],
-                  root["mappings"] is [String: Any],
-                  root["profile"] is [String: Any] else {
-                throw WorkoutStoreError.malformedBackup(
-                    "The legacy PWA cloud state has an unsupported shape."
-                )
-            }
-            root["schemaVersion"] = GymBackup.currentSchemaVersion
-            root["exportedAt"] = Date().gymEpochMilliseconds
-            root["app"] = "GymApp"
-            root["diagnostics"] = false
-            root["owner"] = canonicalOwner
-            if root["catalogSeedVersion"] == nil {
-                root["catalogSeedVersion"] = localCatalogSeedVersion
-            }
-            return PreparedCloudBackup(
-                data: try encodedCloudBackup(root, limits: limits),
-                roundTripSafe: false
+        if isLegacyPWACloudEnvelope(root) {
+            return try prepareLegacyPWACloudBackup(
+                root,
+                canonicalOwner: canonicalOwner,
+                expectedUserID: expectedUserID,
+                expectedAccountID: expectedAccountID,
+                limits: limits
             )
         }
 
-        let nativeKeys: Set<String> = [
-            "schemaVersion", "exportedAt", "app", "diagnostics", "owner",
-            "catalogSeedVersion", "exercises", "sessions", "summary"
-        ]
-        var roundTripSafe = Set(root.keys).isSubset(of: nativeKeys)
+        let extensionsData = try encodedExtensionsData(from: root, limits: limits)
         var needsEncoding = false
+        var requiresCanonicalUpload = false
 
         if root["catalogSeedVersion"] == nil {
-            // Legacy public cloud rows predate this local-only migration marker. Reuse the
-            // marker that was persisted before account activation so repeated pulls do not
-            // resurrect a built-in exercise the user intentionally deleted.
-            root["catalogSeedVersion"] = localCatalogSeedVersion
+            // The shared cloud catalog is authoritative and intentionally omits this local
+            // migration marker. Treat an absent marker as fully seeded so a fresh install
+            // cannot resurrect built-ins deleted on another platform.
+            root["catalogSeedVersion"] = BuiltInExerciseCatalog.seedVersion
             needsEncoding = true
         }
 
         if root["owner"] == nil || root["owner"] is NSNull {
-            // The authenticated user_states row supplies the missing legacy identity.
-            root["owner"] = canonicalOwner
-            needsEncoding = true
+            // Only the exact five-key earliest PWA row may inherit the authenticated
+            // user_states owner. A native-shaped document without an owner is ambiguous.
+            throw WorkoutStoreError.backupOwnerMismatch
         } else if let owner = root["owner"] as? [String: Any] {
             guard let ownerUserID = owner["userId"] as? String,
-                  ownerUserID == expectedUserID else {
+                  ownerUserID == expectedUserID,
+                  let ownerAccountID = owner["accountId"] as? String,
+                  isRecognizedCloudAccountID(ownerAccountID, userID: expectedUserID),
+                  isRecognizedCloudAccountID(expectedAccountID, userID: expectedUserID) else {
                 throw WorkoutStoreError.backupOwnerMismatch
             }
             if let remoteMarker = owner["remote"] as? String {
@@ -1290,9 +1333,9 @@ public final class WorkoutStore: ObservableObject {
                 // authoritative; rewrite the alias to the portable Supabase UUID.
                 root["owner"] = canonicalOwner
                 needsEncoding = true
-                roundTripSafe = false
+                requiresCanonicalUpload = true
             } else {
-                guard owner["remote"] as? Bool == true else {
+                guard jsonBoolean(owner["remote"]) == true else {
                     throw WorkoutStoreError.backupOwnerMismatch
                 }
             }
@@ -1300,10 +1343,676 @@ public final class WorkoutStore: ObservableObject {
             throw WorkoutStoreError.backupOwnerMismatch
         }
 
-        return PreparedCloudBackup(
-            data: needsEncoding ? try encodedCloudBackup(root, limits: limits) : data,
-            roundTripSafe: roundTripSafe
+        let preparedData = needsEncoding ? try encodedCloudBackup(root, limits: limits) : data
+        // Decoder tolerance remains broader than cloud write tolerance. Unknown core fields
+        // keep the row readable but paused; known namespaced extensions are lossless.
+        let roundTripSafe = isCanonicalNativeCloudEnvelope(
+            root,
+            expectedUserID: expectedUserID,
+            expectedAccountID: expectedAccountID,
+            limits: limits
         )
+        return PreparedCloudBackup(
+            data: preparedData,
+            roundTripSafe: roundTripSafe,
+            extensionsData: roundTripSafe ? extensionsData : nil,
+            requiresCanonicalUpload: roundTripSafe && requiresCanonicalUpload
+        )
+    }
+
+    private static func isLegacyPWACloudEnvelope(_ root: [String: Any]) -> Bool {
+        let legacySignals: Set<String> = [
+            "language", "mappings", "profile", "progressExerciseId",
+            "source", "exerciseCatalog"
+        ]
+        return !legacySignals.isDisjoint(with: Set(root.keys))
+    }
+
+    private static func prepareLegacyPWACloudBackup(
+        _ legacyRoot: [String: Any],
+        canonicalOwner: [String: Any],
+        expectedUserID: String,
+        expectedAccountID: String,
+        limits: BackupImportLimits
+    ) throws -> PreparedCloudBackup {
+        let earliestOwnerlessKeys: Set<String> = [
+            "language", "exercises", "sessions", "mappings", "profile"
+        ]
+        let allowedKeys: Set<String> = [
+            "schemaVersion", "exportedAt", "app", "source", "diagnostics", "owner",
+            "catalogSeedVersion", "language", "exercises", "exerciseCatalog", "sessions",
+            "mappings", "profile", "progressExerciseId"
+        ]
+        guard Set(legacyRoot.keys).isSubset(of: allowedKeys),
+              (legacyRoot["owner"] != nil || Set(legacyRoot.keys) == earliestOwnerlessKeys),
+              legacyRoot["extensions"] == nil,
+              legacyRoot["summary"] == nil,
+              legacyRoot["exercises"] is [Any],
+              legacyRoot["sessions"] is [Any],
+              let mappings = legacyRoot["mappings"] as? [String: Any],
+              let profile = legacyRoot["profile"] as? [String: Any] else {
+            throw WorkoutStoreError.malformedBackup(
+                "The legacy PWA cloud state has an unsupported shape."
+            )
+        }
+        let language: String
+        if let rawLanguage = legacyRoot["language"] {
+            guard let rawLanguage = rawLanguage as? String else {
+                throw WorkoutStoreError.malformedBackup(
+                    "The legacy PWA language is invalid."
+                )
+            }
+            language = rawLanguage
+        } else {
+            // The later owner-bound browser export omitted language; its documented
+            // import fallback was English. Ownerless rows remain exact and must carry it.
+            guard legacyRoot["owner"] != nil else {
+                throw WorkoutStoreError.malformedBackup(
+                    "The legacy PWA language is missing."
+                )
+            }
+            language = "en"
+        }
+        if let schema = legacyRoot["schemaVersion"],
+           jsonExactInteger(schema) != Int64(GymBackup.currentSchemaVersion) {
+            throw WorkoutStoreError.malformedBackup("The legacy PWA schema is unsupported.")
+        }
+        let exportedAt: Int64
+        if let rawExportedAt = legacyRoot["exportedAt"] {
+            guard let value = jsonExactInteger(rawExportedAt),
+                  (try? validatedTimestamp(value, field: "export timestamp")) != nil else {
+                throw WorkoutStoreError.malformedBackup(
+                    "The legacy PWA export timestamp is invalid."
+                )
+            }
+            exportedAt = value
+        } else {
+            exportedAt = Date().gymEpochMilliseconds
+        }
+        if let app = legacyRoot["app"], app as? String != "GymApp" {
+            throw WorkoutStoreError.malformedBackup("The legacy PWA app marker is invalid.")
+        }
+        if let source = legacyRoot["source"] {
+            guard let source = source as? String,
+                  !source.isEmpty,
+                  source.utf8.count <= maximumAppNameBytes else {
+                throw WorkoutStoreError.malformedBackup("The legacy PWA source is invalid.")
+            }
+        }
+        if let diagnostics = legacyRoot["diagnostics"], jsonBoolean(diagnostics) != false {
+            throw WorkoutStoreError.malformedBackup(
+                "A diagnostics document cannot replace cloud workout state."
+            )
+        }
+        if let owner = legacyRoot["owner"] {
+            guard let owner = owner as? [String: Any],
+                  Set(owner.keys).isSubset(of: ["accountId", "userId", "email", "remote"]),
+                  Set(owner.keys).isSuperset(of: ["accountId", "userId", "remote"]),
+                  let userID = owner["userId"] as? String,
+                  userID == expectedUserID,
+                  let accountID = owner["accountId"] as? String,
+                  isRecognizedCloudAccountID(accountID, userID: expectedUserID),
+                  isRecognizedCloudAccountID(expectedAccountID, userID: expectedUserID) else {
+                throw WorkoutStoreError.backupOwnerMismatch
+            }
+            if let marker = owner["remote"] as? String {
+                guard marker == "supabase" else {
+                    throw WorkoutStoreError.backupOwnerMismatch
+                }
+            } else if jsonBoolean(owner["remote"]) != true {
+                throw WorkoutStoreError.backupOwnerMismatch
+            }
+            if let rawEmail = owner["email"], !(rawEmail is NSNull) {
+                guard let email = rawEmail as? String,
+                      email.utf8.count <= maximumOwnerFieldBytes else {
+                    throw WorkoutStoreError.backupOwnerMismatch
+                }
+            }
+        }
+        if let progressExerciseID = legacyRoot["progressExerciseId"],
+           !(1 ... 9_007_199_254_740_991).contains(jsonExactInteger(progressExerciseID) ?? -1) {
+            throw WorkoutStoreError.malformedBackup(
+                "The legacy PWA progress exercise identifier is invalid."
+            )
+        }
+        if let rawCatalog = legacyRoot["exerciseCatalog"] {
+            guard let catalog = rawCatalog as? [Any],
+                  catalog.count <= limits.maximumExercises else {
+                throw WorkoutStoreError.malformedBackup(
+                    "The legacy PWA compatibility catalog is invalid."
+                )
+            }
+            for item in catalog {
+                let name: String?
+                if let item = item as? String {
+                    name = item
+                } else if let item = item as? [String: Any] {
+                    name = item["name"] as? String
+                } else {
+                    name = nil
+                }
+                guard let name,
+                      name == name.gymTrimmed,
+                      !name.isEmpty,
+                      name.count <= limits.maximumExerciseNameLength,
+                      name.utf8.count <= limits.maximumExerciseNameBytes else {
+                    throw WorkoutStoreError.malformedBackup(
+                        "The legacy PWA compatibility catalog is invalid."
+                    )
+                }
+            }
+        }
+
+        let pwaExtensions: [String: Any] = [
+            "version": 1,
+            "language": language,
+            "mappings": mappings,
+            "profile": profile
+        ]
+        let extensions = try validateCloudExtensionsObject(
+            ["pwa": pwaExtensions],
+            limits: limits
+        )
+        let extensionsData = try encodedCloudBackup(extensions, limits: limits)
+
+        var decodingRoot = legacyRoot
+        for key in [
+            "language", "mappings", "profile", "progressExerciseId", "source",
+            "exerciseCatalog"
+        ] {
+            decodingRoot.removeValue(forKey: key)
+        }
+        decodingRoot["schemaVersion"] = GymBackup.currentSchemaVersion
+        decodingRoot["exportedAt"] = exportedAt
+        decodingRoot["app"] = "GymApp"
+        decodingRoot["diagnostics"] = false
+        decodingRoot["owner"] = canonicalOwner
+        if decodingRoot["catalogSeedVersion"] == nil {
+            decodingRoot["catalogSeedVersion"] = BuiltInExerciseCatalog.seedVersion
+        }
+
+        let decodingData = try encodedCloudBackup(decodingRoot, limits: limits)
+        let decoded: GymBackup
+        do {
+            decoded = try JSONDecoder().decode(GymBackup.self, from: decodingData)
+        } catch {
+            throw WorkoutStoreError.malformedBackup(error.localizedDescription)
+        }
+        guard decoded.exercises.count <= limits.maximumExercises,
+              decoded.sessions.count <= limits.maximumSessions else {
+            throw WorkoutStoreError.importLimitExceeded("legacy PWA collection count")
+        }
+        try validateBackupMetadata(decoded, limits: limits)
+        var canonical = try canonicalCloudWorkoutIdentityInput(decoded)
+        try validateLosslessAuthoritativeRestore(
+            original: decoded,
+            canonical: canonical,
+            limits: limits
+        )
+        canonical.schemaVersion = GymBackup.currentSchemaVersion
+        canonical.exportedAt = exportedAt
+        canonical.app = "GymApp"
+        canonical.diagnostics = false
+        canonical.owner = BackupOwner(
+            accountID: canonicalOwner["accountId"] as? String,
+            userID: canonicalOwner["userId"] as? String,
+            email: canonicalOwner["email"] as? String,
+            remote: true
+        )
+        canonical.catalogSeedVersion = decoded.catalogSeedVersion
+        canonical.summary = canonicalBackupSummary(canonical)
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let encodedCanonical: Data
+        do {
+            encodedCanonical = try encoder.encode(canonical)
+        } catch {
+            throw WorkoutStoreError.malformedBackup(error.localizedDescription)
+        }
+        guard var canonicalRoot = try JSONSerialization.jsonObject(
+            with: encodedCanonical
+        ) as? [String: Any] else {
+            throw WorkoutStoreError.malformedBackup(
+                "The legacy PWA state could not be canonicalized."
+            )
+        }
+        canonicalRoot["extensions"] = extensions
+        guard isCanonicalNativeCloudEnvelope(
+            canonicalRoot,
+            expectedUserID: expectedUserID,
+            expectedAccountID: expectedAccountID,
+            limits: limits
+        ) else {
+            throw WorkoutStoreError.malformedBackup(
+                "The legacy PWA state cannot be represented losslessly."
+            )
+        }
+        return PreparedCloudBackup(
+            data: try encodedCloudBackup(canonicalRoot, limits: limits),
+            roundTripSafe: true,
+            extensionsData: extensionsData,
+            requiresCanonicalUpload: true
+        )
+    }
+
+    private static func canonicalBackupSummary(_ backup: GymBackup) -> BackupSummary {
+        let blocks = backup.sessions.flatMap { $0.exercises ?? [] }
+        let sets = blocks.flatMap(\.sets)
+        return BackupSummary(
+            exerciseCount: backup.exercises.count,
+            sessionCount: backup.sessions.count,
+            setCount: sets.count,
+            totalVolume: sets.reduce(0) { $0 + ($1.weight * Double($1.reps)) }
+        )
+    }
+
+    private static func encodedExtensionsData(
+        from root: [String: Any],
+        limits: BackupImportLimits
+    ) throws -> Data? {
+        guard let rawExtensions = root["extensions"] else { return nil }
+        guard let extensions = rawExtensions as? [String: Any] else {
+            throw WorkoutStoreError.malformedBackup("Cloud extensions must be an object.")
+        }
+        return try encodedCloudBackup(
+            validateCloudExtensionsObject(extensions, limits: limits),
+            limits: limits
+        )
+    }
+
+    private static func validatedCloudExtensions(
+        _ data: Data,
+        limits: BackupImportLimits
+    ) throws -> [String: Any] {
+        guard data.count <= limits.maximumFileBytes else {
+            throw WorkoutStoreError.importLimitExceeded("extension size")
+        }
+        try validateJSONEnvelope(data, limits: limits)
+        let parsed: Any
+        do {
+            parsed = try JSONSerialization.jsonObject(with: data)
+        } catch {
+            throw WorkoutStoreError.malformedBackup(error.localizedDescription)
+        }
+        guard let extensions = parsed as? [String: Any] else {
+            throw WorkoutStoreError.malformedBackup("Cloud extensions must be an object.")
+        }
+        return try validateCloudExtensionsObject(extensions, limits: limits)
+    }
+
+    @discardableResult
+    private static func validateCloudExtensionsObject(
+        _ extensions: [String: Any],
+        limits: BackupImportLimits
+    ) throws -> [String: Any] {
+        guard extensions.count <= 32 else {
+            throw WorkoutStoreError.importLimitExceeded("extension namespace count")
+        }
+        let namespacePattern = try NSRegularExpression(pattern: "^[a-z][a-z0-9._-]{0,63}$")
+        for (namespace, value) in extensions {
+            let range = NSRange(namespace.startIndex..., in: namespace)
+            guard namespacePattern.firstMatch(in: namespace, range: range) != nil,
+                  value is [String: Any] else {
+                throw WorkoutStoreError.malformedBackup(
+                    "Cloud extension namespace must contain a valid object."
+                )
+            }
+        }
+
+        var pending: [Any] = [extensions]
+        var nodeCount = 0
+        while let value = pending.popLast() {
+            nodeCount += 1
+            guard nodeCount <= 1_000_000 else {
+                throw WorkoutStoreError.importLimitExceeded("extension complexity")
+            }
+            if let object = value as? [String: Any] {
+                for (key, child) in object {
+                    guard !["__proto__", "prototype", "constructor"].contains(key) else {
+                        throw WorkoutStoreError.malformedBackup(
+                            "Cloud extensions contain a forbidden key."
+                        )
+                    }
+                    pending.append(child)
+                }
+            } else if let array = value as? [Any] {
+                pending.append(contentsOf: array)
+            } else if value is String || value is NSNull || jsonBoolean(value) != nil ||
+                        jsonFiniteNumber(value) != nil {
+                continue
+            } else {
+                throw WorkoutStoreError.malformedBackup(
+                    "Cloud extensions contain a non-JSON value."
+                )
+            }
+        }
+
+        if let rawPWA = extensions["pwa"] {
+            guard let pwa = rawPWA as? [String: Any],
+                  Set(pwa.keys) == Set(["version", "language", "mappings", "profile"]),
+                  jsonExactInteger(pwa["version"]) == 1,
+                  let language = pwa["language"] as? String,
+                  ["en", "uk", "ru"].contains(language),
+                  let mappings = pwa["mappings"] as? [String: Any],
+                  mappings.count <= 2_000,
+                  let profile = pwa["profile"] as? [String: Any] else {
+                throw WorkoutStoreError.malformedBackup("The PWA cloud extension is invalid.")
+            }
+            for (name, rawMuscles) in mappings {
+                guard name == name.gymTrimmed,
+                      !name.isEmpty,
+                      name.count <= limits.maximumExerciseNameLength,
+                      name.utf8.count <= limits.maximumExerciseNameBytes,
+                      let muscles = rawMuscles as? [Any],
+                      muscles.count <= 32 else {
+                    throw WorkoutStoreError.malformedBackup(
+                        "The PWA muscle mapping is invalid."
+                    )
+                }
+                var seen = Set<String>()
+                for rawMuscle in muscles {
+                    guard let muscle = rawMuscle as? String,
+                          muscle == muscle.gymTrimmed,
+                          !muscle.isEmpty,
+                          muscle.utf16.count <= 64,
+                          muscle.utf8.count <= 256,
+                          seen.insert(muscle).inserted else {
+                        throw WorkoutStoreError.malformedBackup(
+                            "The PWA muscle mapping is invalid."
+                        )
+                    }
+                }
+            }
+            guard Set(profile.keys) == Set(["split", "days", "goal", "calories"]),
+                  let split = profile["split"] as? String,
+                  ["Upper / Lower", "Full Body", "Push Pull Legs", "Custom"].contains(split),
+                  let days = jsonExactInteger(profile["days"]),
+                  (2 ... 6).contains(days),
+                  let goal = profile["goal"] as? String,
+                  ["Aesthetic Cut", "Muscle Gain", "Strength", "Balanced"].contains(goal),
+                  let calories = profile["calories"] as? String,
+                  ["Deficit", "Maintenance", "Surplus"].contains(calories) else {
+                throw WorkoutStoreError.malformedBackup("The PWA training profile is invalid.")
+            }
+        }
+        let encoded = try encodedCloudBackup(extensions, limits: limits)
+        try validateJSONEnvelope(encoded, limits: limits)
+        return extensions
+    }
+
+    private static func isCanonicalNativeCloudEnvelope(
+        _ root: [String: Any],
+        expectedUserID: String,
+        expectedAccountID: String,
+        limits: BackupImportLimits
+    ) -> Bool {
+        let requiredRootKeys: Set<String> = [
+            "schemaVersion", "exportedAt", "app", "diagnostics", "owner",
+            "exercises", "sessions", "summary"
+        ]
+        let rootKeys = Set(root.keys)
+        let optionalRootKeys: Set<String> = ["catalogSeedVersion", "extensions"]
+        guard requiredRootKeys.isSubset(of: rootKeys),
+              rootKeys.isSubset(of: requiredRootKeys.union(optionalRootKeys)),
+              jsonExactInteger(root["schemaVersion"]) == Int64(GymBackup.currentSchemaVersion),
+              let exportedAt = jsonExactInteger(root["exportedAt"]),
+              (try? validatedTimestamp(exportedAt, field: "export timestamp")) != nil,
+              root["app"] as? String == "GymApp",
+              jsonBoolean(root["diagnostics"]) == false else {
+            return false
+        }
+        if rootKeys.contains("catalogSeedVersion") {
+            guard let seedVersion = jsonExactInteger(root["catalogSeedVersion"]),
+                  (0 ... Int64(BuiltInExerciseCatalog.seedVersion)).contains(seedVersion) else {
+                return false
+            }
+        }
+        if let rawExtensions = root["extensions"] {
+            guard let extensions = rawExtensions as? [String: Any],
+                  (try? validateCloudExtensionsObject(extensions, limits: limits)) != nil else {
+                return false
+            }
+        }
+
+        guard let owner = root["owner"] as? [String: Any],
+              Set(owner.keys).isSubset(of: ["accountId", "userId", "email", "remote"]),
+              Set(owner.keys).isSuperset(of: ["accountId", "userId", "remote"]),
+              let ownerAccountID = owner["accountId"] as? String,
+              isRecognizedCloudAccountID(ownerAccountID, userID: expectedUserID),
+              isRecognizedCloudAccountID(expectedAccountID, userID: expectedUserID),
+              owner["userId"] as? String == expectedUserID,
+              jsonBoolean(owner["remote"]) == true else {
+            return false
+        }
+        if let email = owner["email"],
+           !(email is NSNull),
+           !(email is String) {
+            return false
+        }
+        for value in [owner["accountId"], owner["userId"], owner["email"]] {
+            if let string = value as? String,
+               string.utf8.count > maximumOwnerFieldBytes {
+                return false
+            }
+        }
+
+        guard let rawExercises = root["exercises"] as? [Any],
+              rawExercises.count <= limits.maximumExercises else {
+            return false
+        }
+        var catalogWires: [String: (name: String, catalogKey: String?)] = [:]
+        var previousCatalogExercise: BackupExercise?
+        for rawExercise in rawExercises {
+            guard let exercise = rawExercise as? [String: Any],
+                  let wire = canonicalNativeExerciseWire(
+                      exercise,
+                      allowLoadProfile: true,
+                      limits: limits
+                  ), catalogWires[wire.identity] == nil,
+                  let exerciseData = try? JSONSerialization.data(withJSONObject: exercise),
+                  let backupExercise = try? JSONDecoder().decode(
+                      BackupExercise.self,
+                      from: exerciseData
+                  ),
+                  previousCatalogExercise.map({
+                      !BackupExercisePortableWireOrder.precedes(backupExercise, $0)
+                  }) ?? true else {
+                return false
+            }
+            catalogWires[wire.identity] = (wire.name, wire.catalogKey)
+            previousCatalogExercise = backupExercise
+        }
+
+        guard let rawSessions = root["sessions"] as? [Any],
+              rawSessions.count <= limits.maximumSessions else {
+            return false
+        }
+        var totalSetCount = 0
+        var totalVolume = 0.0
+        var previousSessionTimestamp: Int64?
+        for rawSession in rawSessions {
+            guard let session = rawSession as? [String: Any],
+                  Set(session.keys).isSubset(of: ["date", "note", "exercises"]),
+                  Set(session.keys).isSuperset(of: ["date", "exercises"]),
+                  let timestamp = jsonExactInteger(session["date"]),
+                  (try? validatedTimestamp(timestamp, field: "session timestamp")) != nil,
+                  previousSessionTimestamp.map({ $0 <= timestamp }) ?? true,
+                  let rawBlocks = session["exercises"] as? [Any],
+                  !rawBlocks.isEmpty,
+                  rawBlocks.count <= limits.maximumExercisesPerSession else {
+                return false
+            }
+            previousSessionTimestamp = timestamp
+            if let note = session["note"], !(note is NSNull) {
+                guard let note = note as? String,
+                      note == note.gymTrimmed,
+                      !note.isEmpty,
+                      note.count <= limits.maximumNoteLength,
+                      note.utf8.count <= limits.maximumNoteBytes else {
+                    return false
+                }
+            }
+
+            for rawBlock in rawBlocks {
+                guard let block = rawBlock as? [String: Any],
+                      !block.keys.contains("loadProfile"),
+                      let wire = canonicalNativeExerciseWire(
+                          block,
+                          allowLoadProfile: false,
+                          limits: limits
+                      ),
+                      let catalogWire = catalogWires[wire.identity],
+                      wireStringsEqual(catalogWire.name, wire.name),
+                      optionalWireStringsEqual(catalogWire.catalogKey, wire.catalogKey),
+                      let rawSets = block["sets"] as? [Any],
+                      !rawSets.isEmpty,
+                      rawSets.count <= limits.maximumSetsPerExercise else {
+                    return false
+                }
+                for rawSet in rawSets {
+                    guard let set = rawSet as? [String: Any],
+                          Set(set.keys) == Set(["weight", "reps"]),
+                          let weight = jsonFiniteNumber(set["weight"]),
+                          (0 ... maximumWeight).contains(weight),
+                          let reps = jsonExactInteger(set["reps"]),
+                          (1 ... Int64(maximumReps)).contains(reps) else {
+                        return false
+                    }
+                    totalSetCount += 1
+                    totalVolume += weight * Double(reps)
+                    guard totalSetCount <= limits.maximumTotalSets else { return false }
+                    guard totalVolume.isFinite else { return false }
+                }
+            }
+        }
+
+        guard let summary = root["summary"] as? [String: Any],
+              Set(summary.keys) == Set([
+                  "exerciseCount", "sessionCount", "setCount", "totalVolume"
+              ]),
+              jsonExactInteger(summary["exerciseCount"]) == Int64(rawExercises.count),
+              jsonExactInteger(summary["sessionCount"]) == Int64(rawSessions.count),
+              jsonExactInteger(summary["setCount"]) == Int64(totalSetCount),
+              let summaryVolume = jsonFiniteNumber(summary["totalVolume"]),
+              summaryVolume == (totalVolume == 0 ? 0.0 : totalVolume) else {
+            return false
+        }
+        return true
+    }
+
+    private static func isRecognizedCloudAccountID(_ accountID: String, userID: String) -> Bool {
+        accountID == userID ||
+            accountID == "remote-\(userID)" ||
+            accountID == "cloud_\(userID)"
+    }
+
+    private static func canonicalNativeExerciseWire(
+        _ exercise: [String: Any],
+        allowLoadProfile: Bool,
+        limits: BackupImportLimits
+    ) -> (identity: String, name: String, catalogKey: String?)? {
+        let allowedKeys: Set<String> = allowLoadProfile
+            ? ["name", "catalogKey", "loadProfile"]
+            : ["name", "catalogKey", "sets"]
+        guard Set(exercise.keys).isSubset(of: allowedKeys),
+              exercise.keys.contains("name"),
+              let name = exercise["name"] as? String,
+              name.count <= limits.maximumExerciseNameLength,
+              name.utf8.count <= limits.maximumExerciseNameBytes else {
+            return nil
+        }
+        let rawCatalogKey: String?
+        if exercise.keys.contains("catalogKey") {
+            guard let value = exercise["catalogKey"] as? String,
+                  value.utf8.count <= maximumCatalogKeyBytes else {
+                return nil
+            }
+            rawCatalogKey = value
+        } else {
+            rawCatalogKey = nil
+        }
+        guard let canonical = try? canonicalBackupExerciseWire(
+            name: name,
+            catalogKey: rawCatalogKey
+        ), canonical.name == name, canonical.catalogKey == rawCatalogKey else {
+            return nil
+        }
+        if allowLoadProfile,
+           exercise.keys.contains("loadProfile"),
+           !isCanonicalMachineLoadProfile(exercise["loadProfile"]) {
+            return nil
+        }
+        return (
+            backupExerciseIdentity(name: canonical.name, catalogKey: canonical.catalogKey),
+            canonical.name,
+            canonical.catalogKey
+        )
+    }
+
+    private static func isCanonicalMachineLoadProfile(_ value: Any?) -> Bool {
+        guard let profile = value as? [String: Any],
+              Set(profile.keys) == Set(["direction", "allowedWeightsKg"]),
+              let direction = profile["direction"] as? String,
+              MachineLoadDirection(rawValue: direction) != nil,
+              let rawWeights = profile["allowedWeightsKg"] as? [Any],
+              !rawWeights.isEmpty,
+              rawWeights.count <= MachineLoadProfile.maximumAllowedWeightCount else {
+            return false
+        }
+        var previous: Double?
+        for rawWeight in rawWeights {
+            guard let weight = jsonFiniteNumber(rawWeight),
+                  (0 ... MachineLoadProfile.maximumAllowedWeightKg).contains(weight),
+                  previous.map({ $0 < weight }) ?? true else {
+                return false
+            }
+            previous = weight == 0 ? 0.0 : weight
+        }
+        return true
+    }
+
+    private static func jsonBoolean(_ value: Any?) -> Bool? {
+        guard let number = value as? NSNumber,
+              CFGetTypeID(number) == CFBooleanGetTypeID() else {
+            return nil
+        }
+        return number.boolValue
+    }
+
+    private static func jsonFiniteNumber(_ value: Any?) -> Double? {
+        guard let number = value as? NSNumber,
+              CFGetTypeID(number) != CFBooleanGetTypeID() else {
+            return nil
+        }
+        let result = number.doubleValue
+        return result.isFinite ? result : nil
+    }
+
+    private static func jsonExactInteger(_ value: Any?) -> Int64? {
+        guard let number = jsonFiniteNumber(value),
+              number.rounded() == number,
+              number >= Double(Int64.min),
+              number < Double(Int64.max) else {
+            return nil
+        }
+        let integer = Int64(number)
+        return Double(integer) == number ? integer : nil
+    }
+
+    private static func wireStringsEqual(_ lhs: String, _ rhs: String) -> Bool {
+        lhs.utf8.elementsEqual(rhs.utf8)
+    }
+
+    private static func optionalWireStringsEqual(_ lhs: String?, _ rhs: String?) -> Bool {
+        switch (lhs, rhs) {
+        case (nil, nil):
+            return true
+        case let (left?, right?):
+            return wireStringsEqual(left, right)
+        default:
+            return false
+        }
     }
 
     private static func encodedCloudBackup(
@@ -1394,7 +2103,7 @@ public final class WorkoutStore: ObservableObject {
         }
         try Self.validateJSONEnvelope(data, limits: limits)
 
-        let backup: GymBackup
+        var backup: GymBackup
         do {
             backup = try JSONDecoder().decode(GymBackup.self, from: data)
         } catch {
@@ -1418,37 +2127,53 @@ public final class WorkoutStore: ObservableObject {
             activeOwner: resolvedOwner,
             allowDifferentLocalAccountID: !replacingExisting && destinationIsFresh
         )
+        let decodedBackup = backup
+        backup = try Self.canonicalCloudWorkoutIdentityInput(backup)
+        if replacingExisting {
+            try Self.validateLosslessAuthoritativeRestore(
+                original: decodedBackup,
+                canonical: backup,
+                limits: limits
+            )
+        }
 
         // Favorite status is local to this account and deliberately absent from the
         // Android/PWA-compatible backup. Preserve it by stable exercise identity when
         // a cloud restore replaces UUIDs, so an older client cannot erase the choice.
-        let favoriteCatalogKeys: Set<String> = Set(snapshot.exercises.compactMap { exercise in
-            guard exercise.isFavorite else { return nil }
-            return BuiltInExerciseCatalog.resolvedKey(
+        let localExercisesByCatalogKey = Dictionary(grouping: snapshot.exercises.compactMap {
+            exercise -> (key: String, exercise: Exercise)? in
+            guard let key = BuiltInExerciseCatalog.resolvedKey(
                 catalogKey: exercise.catalogKey,
                 name: exercise.name
-            )
-        })
-        let favoriteNameKeys: Set<String> = Set(snapshot.exercises.compactMap { exercise in
-            exercise.isFavorite ? Self.nameKey(exercise.name) : nil
-        })
+            ) else { return nil }
+            return (key, exercise)
+        }, by: \.key)
+        let localExercisesByPortableNameKey = Dictionary(
+            grouping: snapshot.exercises,
+            by: { Self.nameKey($0.name) }
+        )
         func isLocallyFavorite(name: String, catalogKey: String?) -> Bool {
+            let legacyKey = Self.legacyPersistedNameKey(name)
+            if let exactLegacyMatch = snapshot.exercises.first(where: {
+                Self.legacyPersistedNameKey($0.name) == legacyKey
+            }) {
+                return exactLegacyMatch.isFavorite
+            }
             if let resolved = BuiltInExerciseCatalog.resolvedKey(
                 catalogKey: catalogKey,
                 name: name
-            ), favoriteCatalogKeys.contains(resolved) {
-                return true
+            ) {
+                let catalogMatches = localExercisesByCatalogKey[resolved] ?? []
+                return catalogMatches.count == 1 && catalogMatches[0].exercise.isFavorite
             }
-            return favoriteNameKeys.contains(Self.nameKey(name))
+            let portableMatches = localExercisesByPortableNameKey[Self.nameKey(name)] ?? []
+            return portableMatches.count == 1 && portableMatches[0].isFavorite
         }
 
         var next = replacingExisting ? WorkoutDataSnapshot() : snapshot
         next.catalogSeedVersion = replacingExisting
             ? backup.catalogSeedVersion
             : max(next.catalogSeedVersion, backup.catalogSeedVersion)
-        var exerciseIDByKey = Dictionary(
-            uniqueKeysWithValues: next.exercises.map { (Self.nameKey($0.name), $0.id) }
-        )
         var exerciseIDByCatalogKey: [String: UUID] = [:]
         var exerciseIndexByID: [UUID: Int] = [:]
         for (index, exercise) in next.exercises.enumerated() {
@@ -1483,12 +2208,11 @@ public final class WorkoutStore: ObservableObject {
                catalogKey.utf8.count > Self.maximumCatalogKeyBytes {
                 throw WorkoutStoreError.importLimitExceeded("catalog key length")
             }
-            let key = Self.nameKey(name)
             let resolvedCatalogKey = BuiltInExerciseCatalog.resolvedKey(
                 catalogKey: catalogKey,
                 name: name
             )
-            if let id = exerciseIDByKey[key] {
+            if let id = try Self.resolvedStoredExerciseID(for: name, in: next.exercises) {
                 if let index = exerciseIndexByID[id] {
                     if next.exercises[index].catalogKey == nil {
                         next.exercises[index].catalogKey = resolvedCatalogKey
@@ -1518,7 +2242,6 @@ public final class WorkoutStore: ObservableObject {
             )
             next.exercises.append(exercise)
             exerciseIndexByID[exercise.id] = next.exercises.count - 1
-            exerciseIDByKey[key] = exercise.id
             if let resolvedCatalogKey {
                 exerciseIDByCatalogKey[resolvedCatalogKey] = exercise.id
             }
@@ -1543,24 +2266,13 @@ public final class WorkoutStore: ObservableObject {
                 throw WorkoutStoreError.importLimitExceeded("note length")
             }
             let note = rawNote?.isEmpty == false ? rawNote : nil
-            var orderedExerciseIDs: [UUID] = []
-            var setsByExerciseID: [UUID: [WorkoutSetDraft]] = [:]
-
-            func appendSets(_ sets: [WorkoutSetDraft], exerciseID: UUID) throws {
-                guard !sets.isEmpty else { return }
-                if setsByExerciseID[exerciseID] == nil {
-                    orderedExerciseIDs.append(exerciseID)
-                }
-                setsByExerciseID[exerciseID, default: []].append(contentsOf: sets)
-                guard setsByExerciseID[exerciseID, default: []].count <= limits.maximumSetsPerExercise else {
-                    throw WorkoutStoreError.importLimitExceeded("sets per exercise")
-                }
-            }
-
+            let drafts: [WorkoutExerciseDraft]
             if let blocks = session.exercises {
                 guard blocks.count <= limits.maximumExercisesPerSession else {
                     throw WorkoutStoreError.importLimitExceeded("exercises per session")
                 }
+                var nativeDrafts: [WorkoutExerciseDraft] = []
+                var nativeSetCountByExerciseID: [UUID: Int] = [:]
                 for block in blocks {
                     guard block.sets.count <= limits.maximumSetsPerExercise else {
                         throw WorkoutStoreError.importLimitExceeded("sets per exercise")
@@ -1568,7 +2280,7 @@ public final class WorkoutStore: ObservableObject {
                     guard let exerciseID = try resolveExercise(
                         block.name,
                         catalogKey: block.catalogKey,
-                        machineLoadProfile: block.machineLoadProfile
+                        machineLoadProfile: nil
                     ) else { continue }
                     var sets: [WorkoutSetDraft] = []
                     for set in block.sets {
@@ -1581,7 +2293,7 @@ public final class WorkoutStore: ObservableObject {
                             ignoredInvalidSets += 1
                             continue
                         }
-                        let weight = max(0, set.weight)
+                        let weight = set.weight <= 0 ? 0.0 : set.weight
                         guard weight <= Self.maximumWeight else {
                             ignoredInvalidSets += 1
                             continue
@@ -1589,13 +2301,21 @@ public final class WorkoutStore: ObservableObject {
                         sets.append(WorkoutSetDraft(weight: weight, reps: set.reps))
                     }
                     if !sets.isEmpty {
-                        try appendSets(sets, exerciseID: exerciseID)
+                        let combinedCount = nativeSetCountByExerciseID[exerciseID, default: 0] + sets.count
+                        guard combinedCount <= limits.maximumSetsPerExercise else {
+                            throw WorkoutStoreError.importLimitExceeded("sets per exercise")
+                        }
+                        nativeSetCountByExerciseID[exerciseID] = combinedCount
+                        nativeDrafts.append(WorkoutExerciseDraft(exerciseID: exerciseID, sets: sets))
                     }
                 }
+                drafts = nativeDrafts
             } else if let flatSets = session.sets {
                 guard flatSets.count <= limits.maximumTotalSets else {
                     throw WorkoutStoreError.importLimitExceeded("total set count")
                 }
+                var orderedExerciseIDs: [UUID] = []
+                var setsByExerciseID: [UUID: [WorkoutSetDraft]] = [:]
                 for set in flatSets {
                     encounteredSets += 1
                     guard encounteredSets <= limits.maximumTotalSets else {
@@ -1609,25 +2329,34 @@ public final class WorkoutStore: ObservableObject {
                         ignoredInvalidSets += 1
                         continue
                     }
-                    let weight = max(0, set.weight)
+                    let weight = set.weight <= 0 ? 0.0 : set.weight
                     guard weight <= Self.maximumWeight else {
                         ignoredInvalidSets += 1
                         continue
                     }
-                    guard let exerciseID = try resolveExercise(name) else { continue }
-                    try appendSets(
-                        [WorkoutSetDraft(weight: weight, reps: set.reps)],
-                        exerciseID: exerciseID
+                    guard let exerciseID = try resolveExercise(
+                        name,
+                        catalogKey: set.catalogKey
+                    ) else { continue }
+                    if setsByExerciseID[exerciseID] == nil {
+                        orderedExerciseIDs.append(exerciseID)
+                    }
+                    setsByExerciseID[exerciseID, default: []].append(
+                        WorkoutSetDraft(weight: weight, reps: set.reps)
                     )
+                    guard setsByExerciseID[exerciseID, default: []].count <= limits.maximumSetsPerExercise else {
+                        throw WorkoutStoreError.importLimitExceeded("sets per exercise")
+                    }
                 }
-            }
-
-            guard orderedExerciseIDs.count <= limits.maximumExercisesPerSession else {
-                throw WorkoutStoreError.importLimitExceeded("exercises per session")
-            }
-            let drafts = orderedExerciseIDs.compactMap { exerciseID -> WorkoutExerciseDraft? in
-                guard let sets = setsByExerciseID[exerciseID], !sets.isEmpty else { return nil }
-                return WorkoutExerciseDraft(exerciseID: exerciseID, sets: sets)
+                guard orderedExerciseIDs.count <= limits.maximumExercisesPerSession else {
+                    throw WorkoutStoreError.importLimitExceeded("exercises per session")
+                }
+                drafts = orderedExerciseIDs.compactMap { exerciseID -> WorkoutExerciseDraft? in
+                    guard let sets = setsByExerciseID[exerciseID], !sets.isEmpty else { return nil }
+                    return WorkoutExerciseDraft(exerciseID: exerciseID, sets: sets)
+                }
+            } else {
+                drafts = []
             }
             guard !drafts.isEmpty else { continue }
             let timestamp = try Self.validatedTimestamp(
@@ -1639,7 +2368,7 @@ public final class WorkoutStore: ObservableObject {
                 note: note,
                 drafts: drafts
             )
-            if existingSignatures.insert(signature).inserted {
+            if replacingExisting || existingSignatures.insert(signature).inserted {
                 guard next.workouts.count < limits.maximumSessions else {
                     throw WorkoutStoreError.importLimitExceeded("session count")
                 }
@@ -1752,7 +2481,8 @@ public final class WorkoutStore: ObservableObject {
             favoriteExerciseIDs: state.exercises
                 .filter(\.isFavorite)
                 .map(\.id)
-                .sorted { $0.uuidString < $1.uuidString }
+                .sorted { $0.uuidString < $1.uuidString },
+            cloudExtensionsData: cloudExtensionsData
         )
         do {
             let data = try Self.localEncoder().encode(envelope)
@@ -1772,9 +2502,9 @@ public final class WorkoutStore: ObservableObject {
         accountStorageKey: String,
         from url: URL,
         fileManager: FileManager
-    ) throws -> WorkoutDataSnapshot {
+    ) throws -> LoadedStore {
         guard fileManager.fileExists(atPath: url.path) else {
-            return WorkoutDataSnapshot()
+            return LoadedStore(snapshot: WorkoutDataSnapshot(), cloudExtensionsData: nil)
         }
         do {
             let data = try Data(contentsOf: url, options: .mappedIfSafe)
@@ -1802,7 +2532,13 @@ public final class WorkoutStore: ObservableObject {
                 return migrated
             }
             try validate(migratedSnapshot)
-            return normalized(migratedSnapshot)
+            if let extensionsData = envelope.cloudExtensionsData {
+                _ = try validatedCloudExtensions(extensionsData, limits: .standard)
+            }
+            return LoadedStore(
+                snapshot: normalized(migratedSnapshot),
+                cloudExtensionsData: envelope.cloudExtensionsData
+            )
         } catch let error as WorkoutStoreError {
             throw error
         } catch {
@@ -1869,11 +2605,20 @@ public final class WorkoutStore: ObservableObject {
     }
 
     private static func normalized(_ state: WorkoutDataSnapshot) -> WorkoutDataSnapshot {
-        WorkoutDataSnapshot(
+        let workouts = state.workouts
+            .enumerated()
+            .sorted { lhs, rhs in
+                if lhs.element.date != rhs.element.date {
+                    return lhs.element.date > rhs.element.date
+                }
+                return lhs.offset < rhs.offset
+            }
+            .map(\.element)
+        return WorkoutDataSnapshot(
             exercises: state.exercises.sorted {
                 $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
             },
-            workouts: state.workouts.sorted { $0.date > $1.date },
+            workouts: workouts,
             muscleMappings: state.muscleMappings.sorted {
                 if $0.exerciseNameKey == $1.exerciseNameKey {
                     return $0.muscleID < $1.muscleID
@@ -1898,7 +2643,9 @@ public final class WorkoutStore: ObservableObject {
                 throw WorkoutStoreError.corruptStore("An exercise catalog key is too long.")
             }
         }
-        guard Set(state.exercises.map { nameKey($0.name) }).count == state.exercises.count else {
+        // Validate persisted names with the exact key used before portable cloud identity was
+        // introduced. New CRUD/import paths still use the stricter portable key below.
+        guard Set(state.exercises.map { legacyPersistedNameKey($0.name) }).count == state.exercises.count else {
             throw WorkoutStoreError.corruptStore("Duplicate exercise name.")
         }
         guard Set(state.workouts.map(\.id)).count == state.workouts.count else {
@@ -2087,13 +2834,369 @@ public final class WorkoutStore: ObservableObject {
                     if let name = set.exerciseName ?? set.name {
                         try validateImportedExerciseText(
                             name: name,
-                            catalogKey: nil,
+                            catalogKey: set.catalogKey,
                             limits: limits
                         )
                     }
                 }
             }
         }
+    }
+
+    /// Returns the canonical cross-client workout projection used both by cloud conflict
+    /// comparison and authoritative restore. Validation deliberately happens after raw wire
+    /// exercise names/keys are canonicalized, but before redundant nested profiles are removed.
+    static func canonicalCloudWorkoutIdentityInput(_ backup: GymBackup) throws -> GymBackup {
+        var canonical = backup
+        canonical.exercises = try backup.exercises
+            .map { try canonicalBackupExercise($0) }
+            .sorted(by: BackupExercisePortableWireOrder.precedes)
+        try validateUniqueBackupExerciseIdentities(canonical.exercises)
+        let catalogByIdentity = Dictionary(uniqueKeysWithValues: canonical.exercises.map {
+            (
+                backupExerciseIdentity(name: $0.name, catalogKey: $0.catalogKey),
+                $0
+            )
+        })
+        canonical.sessions = try backup.sessions.enumerated().map { index, session in
+            var canonicalSession = session
+            canonicalSession.date = session.date ?? session.startedAt
+            canonicalSession.startedAt = nil
+            let note = session.note?.gymTrimmed
+            canonicalSession.note = note?.isEmpty == false ? note : nil
+            if let blocks = session.exercises {
+                canonicalSession.exercises = try blocks.map {
+                    try canonicalBackupWorkoutExercise($0)
+                }
+            } else if let flatSets = session.sets {
+                var identityOrder: [String] = []
+                var setsByIdentity: [String: [BackupSet]] = [:]
+                for flatSet in flatSets {
+                    let rawName = (flatSet.exerciseName?.gymTrimmed.isEmpty == false
+                        ? flatSet.exerciseName
+                        : flatSet.name) ?? ""
+                    let flatWire = try canonicalBackupExerciseWire(
+                        name: rawName,
+                        catalogKey: flatSet.catalogKey
+                    )
+                    let identity = backupExerciseIdentity(
+                        name: flatWire.name,
+                        catalogKey: flatWire.catalogKey
+                    )
+                    guard catalogByIdentity[identity] != nil else {
+                        throw WorkoutStoreError.malformedBackup(
+                            "A legacy workout exercise is missing from the canonical catalog."
+                        )
+                    }
+                    if setsByIdentity[identity] == nil { identityOrder.append(identity) }
+                    setsByIdentity[identity, default: []].append(
+                        BackupSet(
+                            weight: flatSet.weight == 0 ? 0.0 : flatSet.weight,
+                            reps: flatSet.reps
+                        )
+                    )
+                }
+                canonicalSession.exercises = identityOrder.compactMap { identity in
+                    guard let exercise = catalogByIdentity[identity],
+                          let sets = setsByIdentity[identity],
+                          !sets.isEmpty else { return nil }
+                    return BackupWorkoutExercise(
+                        name: exercise.name,
+                        catalogKey: exercise.catalogKey,
+                        sets: sets
+                    )
+                }
+            }
+            // Native blocks are authoritative when both compatibility shapes are present;
+            // legacy flat-only rows have now been converted without dropping any set.
+            canonicalSession.sets = nil
+            return (index: index, session: canonicalSession)
+        }.sorted { lhs, rhs in
+            let leftTimestamp = lhs.session.date ?? Int64.min
+            let rightTimestamp = rhs.session.date ?? Int64.min
+            if leftTimestamp != rightTimestamp { return leftTimestamp < rightTimestamp }
+            return lhs.index < rhs.index
+        }.map(\.session)
+
+        try validateNestedExerciseLoadProfiles(canonical)
+
+        canonical.sessions = canonical.sessions.map { session in
+            var canonicalSession = session
+            canonicalSession.exercises = session.exercises?.map { block in
+                var canonicalBlock = block
+                // A matching nested profile is compatibility-only duplication. The catalog is
+                // authoritative, so absence and a matching redundant copy have one identity.
+                canonicalBlock.machineLoadProfile = nil
+                return canonicalBlock
+            }
+            return canonicalSession
+        }
+        return canonical
+    }
+
+    private static func validateLosslessAuthoritativeRestore(
+        original: GymBackup,
+        canonical: GymBackup,
+        limits: BackupImportLimits
+    ) throws {
+        guard original.sessions.count == canonical.sessions.count else {
+            throw WorkoutStoreError.malformedBackup("The workout session list is inconsistent.")
+        }
+
+        var catalogWires: [String: (name: String, catalogKey: String?)] = [:]
+        for exercise in canonical.exercises {
+            let identity = backupExerciseIdentity(
+                name: exercise.name,
+                catalogKey: exercise.catalogKey
+            )
+            guard catalogWires[identity] == nil else {
+                throw WorkoutStoreError.malformedBackup(
+                    "The exercise catalog contains a duplicate canonical identity."
+                )
+            }
+            catalogWires[identity] = (exercise.name, exercise.catalogKey)
+        }
+
+        for (originalSession, session) in zip(original.sessions, canonical.sessions) {
+            guard let timestamp = session.date,
+                  (try? validatedTimestamp(timestamp, field: "session timestamp")) != nil else {
+                throw WorkoutStoreError.malformedBackup("A workout timestamp is required.")
+            }
+            if let date = originalSession.date,
+               let startedAt = originalSession.startedAt,
+               date != startedAt {
+                throw WorkoutStoreError.malformedBackup(
+                    "A workout contains conflicting timestamps."
+                )
+            }
+            if let originalBlocks = originalSession.exercises,
+               let originalFlatSets = originalSession.sets {
+                let nativeRows = try authoritativeRows(
+                    blocks: originalBlocks,
+                    limits: limits
+                )
+                let flatRows = try authoritativeRows(
+                    flatSets: originalFlatSets,
+                    limits: limits
+                )
+                guard nativeRows == flatRows else {
+                    throw WorkoutStoreError.malformedBackup(
+                        "A workout contains conflicting native and legacy sets."
+                    )
+                }
+            }
+
+            if let blocks = session.exercises {
+                guard !blocks.isEmpty else {
+                    throw WorkoutStoreError.malformedBackup("A workout has no exercises.")
+                }
+                for block in blocks {
+                    guard !block.sets.isEmpty else {
+                        throw WorkoutStoreError.malformedBackup(
+                            "A workout exercise has no valid sets."
+                        )
+                    }
+                    let identity = backupExerciseIdentity(
+                        name: block.name,
+                        catalogKey: block.catalogKey
+                    )
+                    guard let catalogWire = catalogWires[identity],
+                          wireStringsEqual(catalogWire.name, block.name),
+                          optionalWireStringsEqual(catalogWire.catalogKey, block.catalogKey) else {
+                        throw WorkoutStoreError.malformedBackup(
+                            "A workout exercise is missing from the canonical catalog."
+                        )
+                    }
+                    for set in block.sets {
+                        guard set.weight.isFinite,
+                              (0 ... maximumWeight).contains(set.weight),
+                              (1 ... maximumReps).contains(set.reps) else {
+                            throw WorkoutStoreError.malformedBackup(
+                                "A workout set is outside the supported range."
+                            )
+                        }
+                    }
+                }
+            } else if let flatSets = session.sets {
+                guard !flatSets.isEmpty else {
+                    throw WorkoutStoreError.malformedBackup("A workout has no valid sets.")
+                }
+                _ = try authoritativeRows(flatSets: flatSets, limits: limits)
+            } else {
+                throw WorkoutStoreError.malformedBackup("A workout has no exercises.")
+            }
+        }
+    }
+
+    private static func authoritativeRows(
+        blocks: [BackupWorkoutExercise],
+        limits: BackupImportLimits
+    ) throws -> [AuthoritativeBackupSetRow] {
+        var rows: [AuthoritativeBackupSetRow] = []
+        for block in blocks {
+            guard !block.sets.isEmpty,
+                  block.sets.count <= limits.maximumSetsPerExercise else {
+                throw WorkoutStoreError.malformedBackup(
+                    "A workout exercise has no valid bounded sets."
+                )
+            }
+            let wire = try canonicalBackupExerciseWire(
+                name: block.name,
+                catalogKey: block.catalogKey
+            )
+            let identity = backupExerciseIdentity(
+                name: wire.name,
+                catalogKey: wire.catalogKey
+            )
+            for set in block.sets {
+                guard set.weight.isFinite,
+                      (0 ... maximumWeight).contains(set.weight),
+                      (1 ... maximumReps).contains(set.reps) else {
+                    throw WorkoutStoreError.malformedBackup(
+                        "A workout set is outside the supported range."
+                    )
+                }
+                rows.append(AuthoritativeBackupSetRow(
+                    exerciseIdentity: identity,
+                    weight: set.weight == 0 ? 0.0 : set.weight,
+                    reps: set.reps
+                ))
+            }
+        }
+        return rows
+    }
+
+    private static func authoritativeRows(
+        flatSets: [LegacyBackupSet],
+        limits: BackupImportLimits
+    ) throws -> [AuthoritativeBackupSetRow] {
+        guard flatSets.count <= limits.maximumTotalSets else {
+            throw WorkoutStoreError.importLimitExceeded("total set count")
+        }
+        return try flatSets.map { set in
+            let rawName = (set.exerciseName?.gymTrimmed.isEmpty == false
+                ? set.exerciseName
+                : set.name) ?? ""
+            let wire = try canonicalBackupExerciseWire(
+                name: rawName,
+                catalogKey: set.catalogKey
+            )
+            guard set.weight.isFinite,
+                  (0 ... maximumWeight).contains(set.weight),
+                  (1 ... maximumReps).contains(set.reps) else {
+                throw WorkoutStoreError.malformedBackup(
+                    "A legacy workout set is outside the supported range."
+                )
+            }
+            return AuthoritativeBackupSetRow(
+                exerciseIdentity: backupExerciseIdentity(
+                    name: wire.name,
+                    catalogKey: wire.catalogKey
+                ),
+                weight: set.weight == 0 ? 0.0 : set.weight,
+                reps: set.reps
+            )
+        }
+    }
+
+    private static func canonicalBackupExercise(_ exercise: BackupExercise) throws -> BackupExercise {
+        var canonical = exercise
+        let wire = try canonicalBackupExerciseWire(
+            name: exercise.name,
+            catalogKey: exercise.catalogKey
+        )
+        canonical.name = wire.name
+        canonical.catalogKey = wire.catalogKey
+        return canonical
+    }
+
+    private static func canonicalBackupWorkoutExercise(
+        _ exercise: BackupWorkoutExercise
+    ) throws -> BackupWorkoutExercise {
+        var canonical = exercise
+        let wire = try canonicalBackupExerciseWire(
+            name: exercise.name,
+            catalogKey: exercise.catalogKey
+        )
+        canonical.name = wire.name
+        canonical.catalogKey = wire.catalogKey
+        canonical.sets = exercise.sets.map { set in
+            var canonicalSet = set
+            canonicalSet.weight = set.weight == 0 ? 0.0 : set.weight
+            return canonicalSet
+        }
+        return canonical
+    }
+
+    private static func canonicalBackupExerciseWire(
+        name rawName: String,
+        catalogKey rawCatalogKey: String?
+    ) throws -> (name: String, catalogKey: String?) {
+        let name = rawName.gymTrimmed
+        guard !name.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else {
+            throw WorkoutStoreError.malformedBackup("An exercise name contains unsupported characters.")
+        }
+        let trimmedKey = rawCatalogKey?.gymTrimmed
+        let key = trimmedKey?.isEmpty == false ? trimmedKey : nil
+        let resolvedKey = BuiltInExerciseCatalog.resolvedKey(catalogKey: key, name: name)
+        if !name.isEmpty {
+            return (name, resolvedKey)
+        }
+        guard let resolvedKey,
+              let definition = BuiltInExerciseCatalog.definition(forKey: resolvedKey) else {
+            throw WorkoutStoreError.malformedBackup("An exercise name is required.")
+        }
+        // Recover the legacy key-only shape exactly as Android does instead of silently
+        // dropping its workout blocks during restore.
+        return (definition.englishName, resolvedKey)
+    }
+
+    private static func validateUniqueBackupExerciseIdentities(
+        _ exercises: [BackupExercise]
+    ) throws {
+        var identities = Set<String>()
+        for exercise in exercises {
+            let identity = backupExerciseIdentity(
+                name: exercise.name,
+                catalogKey: exercise.catalogKey
+            )
+            guard identities.insert(identity).inserted else {
+                throw WorkoutStoreError.malformedBackup(
+                    "The exercise catalog contains a duplicate canonical identity."
+                )
+            }
+        }
+    }
+
+    private static func validateNestedExerciseLoadProfiles(_ backup: GymBackup) throws {
+        let catalogProfiles = Dictionary(uniqueKeysWithValues: backup.exercises.map { exercise in
+            (
+                backupExerciseIdentity(name: exercise.name, catalogKey: exercise.catalogKey),
+                exercise.machineLoadProfile
+            )
+        })
+        for session in backup.sessions {
+            for block in session.exercises ?? [] {
+                guard let nestedProfile = block.machineLoadProfile else { continue }
+                let identity = backupExerciseIdentity(name: block.name, catalogKey: block.catalogKey)
+                guard catalogProfiles.keys.contains(identity),
+                      catalogProfiles[identity] == nestedProfile else {
+                    throw WorkoutStoreError.malformedBackup(
+                        "A workout exercise load profile does not match the exercise catalog."
+                    )
+                }
+            }
+        }
+    }
+
+    private static func backupExerciseIdentity(name: String, catalogKey: String?) -> String {
+        if let resolvedCatalogKey = BuiltInExerciseCatalog.resolvedKey(
+            catalogKey: catalogKey,
+            name: name
+        ) {
+            return "catalog:\(resolvedCatalogKey)"
+        }
+        return "name:\(MuscleMappingEngine.normalizeExerciseName(name))"
     }
 
     private static func validateImportedExerciseText(
@@ -2237,7 +3340,32 @@ public final class WorkoutStore: ObservableObject {
     }
 
     private static func nameKey(_ value: String) -> String {
+        MuscleMappingEngine.normalizeExerciseName(value)
+    }
+
+    private static func legacyPersistedNameKey(_ value: String) -> String {
         value.gymTrimmed.lowercased()
+    }
+
+    private static func resolvedStoredExerciseID(
+        for name: String,
+        in exercises: [Exercise]
+    ) throws -> UUID? {
+        let legacyKey = legacyPersistedNameKey(name)
+        if let exactLegacyMatch = exercises.first(where: {
+            legacyPersistedNameKey($0.name) == legacyKey
+        }) {
+            return exactLegacyMatch.id
+        }
+
+        let portableKey = nameKey(name)
+        let portableMatches = exercises.filter { nameKey($0.name) == portableKey }
+        guard portableMatches.count <= 1 else {
+            // A pre-portable store may legitimately contain multiple names that collapse to
+            // one cross-client identity. Guessing would attach history to the wrong exercise.
+            throw WorkoutStoreError.duplicateExerciseName
+        }
+        return portableMatches.first?.id
     }
 
     private static func summary(_ workout: WorkoutSession) -> WorkoutSessionSummary {

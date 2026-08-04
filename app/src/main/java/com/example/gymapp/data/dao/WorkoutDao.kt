@@ -192,7 +192,7 @@ interface WorkoutDao {
             INNER JOIN set_entries se ON se.workoutExerciseId = we.id
             WHERE we.sessionId = ws.id
         )
-        ORDER BY ws.date ASC
+        ORDER BY ws.date ASC, ws.id ASC
         """
     )
     suspend fun getAllSessionDetailsForBackup(): List<WorkoutSessionDetails>

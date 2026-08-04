@@ -74,10 +74,8 @@ import com.example.gymapp.auth.authErrorText
 import com.example.gymapp.auth.databaseName
 import com.example.gymapp.auth.LeaderboardRow
 import com.example.gymapp.auth.requiresEmailConfirmation
-import com.example.gymapp.data.catalog.BuiltInExerciseCatalog
 import com.example.gymapp.data.repository.BackupOwner
 import com.example.gymapp.data.repository.canonicalWorkoutPayloadDigest
-import com.example.gymapp.data.repository.isRecognizedCloudAccountId
 import com.example.gymapp.gymApplication
 import com.example.gymapp.data.repository.GymRepository
 import com.example.gymapp.ui.screens.AddWorkoutScreen
@@ -104,7 +102,11 @@ import com.example.gymapp.sync.PhoneSyncClient
 import com.example.gymapp.sync.CloudSnapshotApplyDecision
 import com.example.gymapp.sync.CloudSyncConflictSnapshot
 import com.example.gymapp.sync.CloudSyncBaselineStore
+import com.example.gymapp.sync.attachSharedCloudExtensions
 import com.example.gymapp.sync.cloudSnapshotApplyDecision
+import com.example.gymapp.sync.isCanonicalSharedCloudEnvelope
+import com.example.gymapp.sync.isSharedCloudStateCandidate
+import com.example.gymapp.sync.prepareSharedCloudState
 import com.example.gymapp.sync.runCurrentCloudSyncConflictAction
 import com.example.gymapp.util.AppLanguage
 import com.example.gymapp.util.LanguageManager
@@ -122,7 +124,6 @@ import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.json.JSONArray
 import org.json.JSONObject
 import java.security.MessageDigest
 
@@ -205,103 +206,7 @@ internal fun accountUiIsolationKey(
 }
 
 internal fun isCanonicalAndroidCloudEnvelope(root: JSONObject, activeUserId: String): Boolean =
-    runCatching {
-        val requiredKeys = setOf(
-            "schemaVersion",
-            "exportedAt",
-            "app",
-            "diagnostics",
-            "owner",
-            "exercises",
-            "sessions",
-            "summary"
-        )
-        require(root.keySet() == requiredKeys || root.keySet() == requiredKeys + "catalogSeedVersion")
-        require(root.exactIntegralNumber("schemaVersion") == 2L)
-        require(root.exactIntegralNumber("exportedAt") != null)
-        if (root.has("catalogSeedVersion")) {
-            require(
-                root.exactIntegralNumber("catalogSeedVersion") in
-                    0L..BuiltInExerciseCatalog.SEED_VERSION.toLong()
-            )
-        }
-        require(root.opt("app") == "GymApp")
-        require(root.opt("diagnostics") is Boolean)
-
-        val owner = root.optJSONObject("owner") ?: error("Missing owner")
-        require(owner.keySet().all { it in setOf("accountId", "userId", "email", "remote") })
-        require(
-            isRecognizedCloudAccountId(
-                accountId = owner.opt("accountId") as? String,
-                activeUserId = activeUserId
-            )
-        )
-        require(owner.opt("userId") == activeUserId)
-        require(owner.opt("remote") == true)
-
-        val exercises = root.optJSONArray("exercises") ?: error("Missing exercises")
-        require(
-            exercises.allObjectsMatch(
-                allowed = setOf("name", "catalogKey", "loadProfile"),
-                required = setOf("name")
-            )
-        )
-        repeat(exercises.length()) { exerciseIndex ->
-            val exercise = exercises.optJSONObject(exerciseIndex) ?: error("Invalid exercise")
-            if (exercise.has("loadProfile")) {
-                val profile = exercise.optJSONObject("loadProfile")
-                    ?: error("Invalid exercise load profile")
-                require(profile.keySet() == setOf("direction", "allowedWeightsKg"))
-            }
-        }
-
-        val sessions = root.optJSONArray("sessions") ?: error("Missing sessions")
-        repeat(sessions.length()) { sessionIndex ->
-            val session = sessions.optJSONObject(sessionIndex) ?: error("Invalid session")
-            require(session.keySet().all { it in setOf("date", "note", "exercises") })
-            require(session.keySet().containsAll(setOf("date", "exercises")))
-            val blocks = session.optJSONArray("exercises") ?: error("Invalid session exercises")
-            repeat(blocks.length()) { blockIndex ->
-                val block = blocks.optJSONObject(blockIndex) ?: error("Invalid exercise block")
-                require(
-                    block.keySet().all { it in setOf("name", "catalogKey", "loadProfile", "sets") }
-                )
-                require(block.keySet().containsAll(setOf("name", "sets")))
-                val sets = block.optJSONArray("sets") ?: error("Invalid exercise sets")
-                require(sets.allObjectsMatch(setOf("weight", "reps"), setOf("weight", "reps")))
-            }
-        }
-
-        val summary = root.optJSONObject("summary") ?: error("Missing summary")
-        require(summary.keySet() == setOf("exerciseCount", "sessionCount", "setCount", "totalVolume"))
-        // Run the bounded import validator as the final structural/value check. In particular,
-        // machine load profiles are part of the canonical workout digest and must round-trip
-        // without turning a snapshot produced by this Android client into an untrusted legacy row.
-        require(canonicalWorkoutPayloadDigest(root) != null)
-        true
-    }.getOrDefault(false)
-
-private fun JSONObject.keySet(): Set<String> = buildSet {
-    val iterator = keys()
-    while (iterator.hasNext()) add(iterator.next())
-}
-
-private fun JSONObject.exactIntegralNumber(key: String): Long? {
-    val value = opt(key) as? Number ?: return null
-    val number = value.toDouble()
-    if (!number.isFinite() || number % 1.0 != 0.0) return null
-    val longValue = value.toLong()
-    return longValue.takeIf { it.toDouble() == number }
-}
-
-private fun JSONArray.allObjectsMatch(allowed: Set<String>, required: Set<String>): Boolean {
-    repeat(length()) { index ->
-        val item = optJSONObject(index) ?: return false
-        val keys = item.keySet()
-        if (!keys.all { it in allowed } || !keys.containsAll(required)) return false
-    }
-    return true
-}
+    isCanonicalSharedCloudEnvelope(root, activeUserId)
 
 @OptIn(ExperimentalMaterial3Api::class, FlowPreview::class)
 @Composable
@@ -330,6 +235,12 @@ fun GymAppRoot(
     val applicationContext = LocalContext.current.applicationContext
     val cloudSyncBaselineStore = remember(applicationContext) {
         CloudSyncBaselineStore(applicationContext)
+    }
+    var sharedCloudExtensions by key(uiIsolationKey) {
+        // Extensions are populated only by a successfully validated pull. Automatic upload is
+        // never enabled before that pull, so a process restart cannot drop another client's
+        // namespace: the current remote row is fetched and its CAS revision is rebound first.
+        remember { mutableStateOf<JSONObject?>(null) }
     }
     var showIntro by rememberSaveable { mutableStateOf(true) }
     var accountDeletionInProgress by remember { mutableStateOf(false) }
@@ -381,10 +292,14 @@ fun GymAppRoot(
         val pullResult = runCatching {
             val remoteState = authManager.loadRemoteState(session)
             if (remoteState != null && remoteState.length() > 0) {
-                val isAuthoritativeCanonical = withContext(Dispatchers.Default) {
-                    isCanonicalAndroidCloudEnvelope(remoteState, session.userId)
+                val preparedSharedState = if (isSharedCloudStateCandidate(remoteState)) {
+                    withContext(Dispatchers.Default) {
+                        prepareSharedCloudState(remoteState, session.userId)
+                    }
+                } else {
+                    null
                 }
-                if (!isAuthoritativeCanonical) {
+                if (preparedSharedState == null) {
                     // Legacy cross-client rows remain readable, but they never arm an automatic
                     // write-back. Import them into the reviewed device snapshot, then require an
                     // explicit choice before publishing the canonical replacement.
@@ -404,9 +319,8 @@ fun GymAppRoot(
                     showCloudSyncConflictDialog = true
                     false
                 } else {
-                    val remoteDigest = withContext(Dispatchers.Default) {
-                        canonicalWorkoutPayloadDigest(remoteState)
-                    }
+                    sharedCloudExtensions = preparedSharedState.extensions
+                    val remoteDigest = preparedSharedState.workoutDigest
                     val localState = repository.getCloudWorkoutProjectionState()
                     when (cloudSnapshotApplyDecision(
                         localDigest = localState.digest,
@@ -480,6 +394,7 @@ fun GymAppRoot(
                     }
                 }
             } else {
+                sharedCloudExtensions = null
                 // Missing remote state may initialize only a genuinely empty account database.
                 // A non-empty projection could be stale data from a deleted remote row.
                 val localState = repository.getCloudWorkoutProjectionState()
@@ -566,7 +481,10 @@ fun GymAppRoot(
                         email = session.email,
                         remote = true
                     )
-                    val state = repository.buildCloudBackupJson(owner = owner)
+                    val state = attachSharedCloudExtensions(
+                        canonicalCore = repository.buildCloudBackupJson(owner = owner),
+                        extensions = sharedCloudExtensions
+                    )
                     val stateDigest = withContext(Dispatchers.Default) {
                         checkNotNull(canonicalWorkoutPayloadDigest(state))
                     }
@@ -625,13 +543,17 @@ fun GymAppRoot(
                 // a local upload and both reviewed digests can be checked again.
                 val remoteState = authManager.loadRemoteState(session)
                     ?.takeIf { it.length() > 0 }
-                val remoteDigest = remoteState
-                    ?.takeIf { isCanonicalAndroidCloudEnvelope(it, session.userId) }
-                    ?.let { canonicalState ->
+                val preparedRemote = remoteState?.let { candidate ->
+                    if (isSharedCloudStateCandidate(candidate)) {
                         withContext(Dispatchers.Default) {
-                            canonicalWorkoutPayloadDigest(canonicalState)
+                            prepareSharedCloudState(candidate, session.userId)
                         }
+                    } else {
+                        null
                     }
+                }
+                sharedCloudExtensions = preparedRemote?.extensions
+                val remoteDigest = preparedRemote?.workoutDigest
                 val localState = repository.getCloudWorkoutProjectionState()
 
                 runCurrentCloudSyncConflictAction(
@@ -646,10 +568,10 @@ fun GymAppRoot(
                         val acceptedRemote = checkNotNull(remoteState) {
                             "Cloud data changed on another device. Reload it before syncing again."
                         }
-                        val acceptedDigest = checkNotNull(remoteDigest)
-                        check(isCanonicalAndroidCloudEnvelope(acceptedRemote, session.userId)) {
+                        val acceptedPrepared = checkNotNull(preparedRemote) {
                             "Cloud state did not round-trip safely. Automatic upload is paused."
                         }
+                        val acceptedDigest = acceptedPrepared.workoutDigest
                         repository.replaceWithBackupJsonObject(
                             root = acceptedRemote,
                             expectedLocalState = localState,
@@ -674,7 +596,10 @@ fun GymAppRoot(
                             email = session.email,
                             remote = true
                         )
-                        val localBackup = repository.buildCloudBackupJson(owner = owner)
+                        val localBackup = attachSharedCloudExtensions(
+                            canonicalCore = repository.buildCloudBackupJson(owner = owner),
+                            extensions = sharedCloudExtensions
+                        )
                         val localDigest = withContext(Dispatchers.Default) {
                             checkNotNull(canonicalWorkoutPayloadDigest(localBackup))
                         }
@@ -1173,6 +1098,7 @@ fun GymAppRoot(
                             AddWorkoutScreen(
                                 uiState = uiState,
                                 exerciseMediaOwnerKey = checkNotNull(authState.session).databaseName(),
+                                onWorkoutDateSelected = viewModel::updateWorkoutDate,
                                 onNoteChange = viewModel::updateNote,
                                 onTrainingSplitSelected = viewModel::updateTrainingSplit,
                                 onWorkoutsPerWeekSelected = viewModel::updateWorkoutsPerWeek,

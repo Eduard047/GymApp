@@ -1,6 +1,8 @@
 package com.example.gymapp.data.catalog
 
+import com.example.gymapp.data.repository.normalizedExerciseName
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
@@ -50,6 +52,20 @@ class BuiltInExerciseCatalogTest {
         assertEquals("assisted_dip", BuiltInExerciseCatalog.inferKey("підтягування с брусьями"))
         assertEquals("assisted_dip", BuiltInExerciseCatalog.inferKey("підтягування с брусами"))
         assertEquals("dips", BuiltInExerciseCatalog.inferKey("брусья"))
+        assertEquals("bench_press", BuiltInExerciseCatalog.inferKey("  BENCH\u00a0PRESS "))
+        assertEquals("bench_press", BuiltInExerciseCatalog.inferKey("ЖИМ ЛЕЖАЧИ"))
+    }
+
+    @Test
+    fun identityNormalizationIsNfcWhitespaceAwareButKeepsAccentsAndWidthStrict() {
+        assertEquals("bíceps".normalizedExerciseName(), "bíceps".normalizedExerciseName())
+        assertEquals("custom row".normalizedExerciseName(), "custom\u00a0row".normalizedExerciseName())
+        assertEquals("custom row".normalizedExerciseName(), "\tcustom\u2007row\n".normalizedExerciseName())
+        assertEquals("custom row".normalizedExerciseName(), "custom\u0085row".normalizedExerciseName())
+        assertEquals("елка".normalizedExerciseName(), "ЁЛКА".normalizedExerciseName())
+        assertEquals("rock'n'roll".normalizedExerciseName(), "Rock’NʼRoll".normalizedExerciseName())
+        assertNotEquals("biceps".normalizedExerciseName(), "bíceps".normalizedExerciseName())
+        assertNotEquals("biceps".normalizedExerciseName(), "Ｂiceps".normalizedExerciseName())
     }
 
     @Test

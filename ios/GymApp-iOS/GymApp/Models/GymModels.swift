@@ -15,17 +15,18 @@ public struct MachineLoadProfile: Codable, Hashable, Sendable {
     public let allowedWeightsKg: [Double]
 
     public init(direction: MachineLoadDirection, allowedWeightsKg: [Double]) throws {
-        guard !allowedWeightsKg.isEmpty,
-              allowedWeightsKg.count <= Self.maximumAllowedWeightCount,
-              allowedWeightsKg.allSatisfy({
+        let normalizedWeights = allowedWeightsKg.map { $0 == 0 ? 0.0 : $0 }
+        guard !normalizedWeights.isEmpty,
+              normalizedWeights.count <= Self.maximumAllowedWeightCount,
+              normalizedWeights.allSatisfy({
                   $0.isFinite && (0 ... Self.maximumAllowedWeightKg).contains($0)
               }),
-              allowedWeightsKg == allowedWeightsKg.sorted(),
-              Set(allowedWeightsKg).count == allowedWeightsKg.count else {
+              normalizedWeights == normalizedWeights.sorted(),
+              Set(normalizedWeights).count == normalizedWeights.count else {
             throw MachineLoadProfileError.invalidAllowedWeights
         }
         self.direction = direction
-        self.allowedWeightsKg = allowedWeightsKg
+        self.allowedWeightsKg = normalizedWeights
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -121,7 +122,7 @@ public struct WorkoutSet: Codable, Identifiable, Hashable, Sendable {
 
     public init(id: UUID = UUID(), weight: Double, reps: Int) {
         self.id = id
-        self.weight = weight
+        self.weight = weight == 0 ? 0.0 : weight
         self.reps = reps
     }
 
@@ -536,6 +537,79 @@ public struct BackupExercise: Codable, Hashable, Sendable {
     }
 }
 
+/// Stable public-wire ordering shared by backup export and cloud conflict identity.
+/// It intentionally matches SQLite NOCASE for names: ASCII A-Z is folded and all other
+/// UTF-8 bytes are compared unsigned and unchanged. Remaining fields provide a total order
+/// without making catalog permutations semantically significant.
+enum BackupExercisePortableWireOrder {
+    static func precedes(_ lhs: BackupExercise, _ rhs: BackupExercise) -> Bool {
+        compare(lhs, rhs) == .orderedAscending
+    }
+
+    private static func compare(_ lhs: BackupExercise, _ rhs: BackupExercise) -> ComparisonResult {
+        let nameComparison = compareName(lhs.name, rhs.name)
+        guard nameComparison == .orderedSame else { return nameComparison }
+
+        let catalogComparison = compareOptionalString(lhs.catalogKey, rhs.catalogKey)
+        guard catalogComparison == .orderedSame else { return catalogComparison }
+
+        switch (lhs.machineLoadProfile, rhs.machineLoadProfile) {
+        case (nil, nil):
+            return .orderedSame
+        case (nil, _?):
+            return .orderedAscending
+        case (_?, nil):
+            return .orderedDescending
+        case let (left?, right?):
+            let directionComparison = compareBytes(
+                Array(left.direction.rawValue.utf8),
+                Array(right.direction.rawValue.utf8)
+            )
+            guard directionComparison == .orderedSame else { return directionComparison }
+            for (leftWeight, rightWeight) in zip(left.allowedWeightsKg, right.allowedWeightsKg) {
+                let normalizedLeft = leftWeight == 0 ? 0.0 : leftWeight
+                let normalizedRight = rightWeight == 0 ? 0.0 : rightWeight
+                if normalizedLeft < normalizedRight { return .orderedAscending }
+                if normalizedLeft > normalizedRight { return .orderedDescending }
+            }
+            if left.allowedWeightsKg.count < right.allowedWeightsKg.count { return .orderedAscending }
+            if left.allowedWeightsKg.count > right.allowedWeightsKg.count { return .orderedDescending }
+            return .orderedSame
+        }
+    }
+
+    private static func compareName(_ lhs: String, _ rhs: String) -> ComparisonResult {
+        let foldedComparison = compareBytes(sqliteNoCaseBytes(lhs), sqliteNoCaseBytes(rhs))
+        guard foldedComparison == .orderedSame else { return foldedComparison }
+        return compareBytes(Array(lhs.utf8), Array(rhs.utf8))
+    }
+
+    private static func compareOptionalString(_ lhs: String?, _ rhs: String?) -> ComparisonResult {
+        switch (lhs, rhs) {
+        case (nil, nil): return .orderedSame
+        case (nil, _?): return .orderedAscending
+        case (_?, nil): return .orderedDescending
+        case let (left?, right?): return compareBytes(Array(left.utf8), Array(right.utf8))
+        }
+    }
+
+    private static func sqliteNoCaseBytes(_ value: String) -> [UInt8] {
+        value.utf8.map { byte in
+            byte >= 65 && byte <= 90 ? byte + 32 : byte
+        }
+    }
+
+    private static func compareBytes(_ lhs: [UInt8], _ rhs: [UInt8]) -> ComparisonResult {
+        for (left, right) in zip(lhs, rhs) {
+            if left < right { return .orderedAscending }
+            if left > right { return .orderedDescending }
+        }
+        if lhs.count < rhs.count { return .orderedAscending }
+        if lhs.count > rhs.count { return .orderedDescending }
+        return .orderedSame
+    }
+}
+
 public struct BackupSet: Codable, Hashable, Sendable {
     public var weight: Double
     public var reps: Int
@@ -577,17 +651,20 @@ public struct BackupWorkoutExercise: Codable, Hashable, Sendable {
 public struct LegacyBackupSet: Codable, Hashable, Sendable {
     public var exerciseName: String?
     public var name: String?
+    public var catalogKey: String?
     public var weight: Double
     public var reps: Int
 
     public init(
         exerciseName: String? = nil,
         name: String? = nil,
+        catalogKey: String? = nil,
         weight: Double,
         reps: Int
     ) {
         self.exerciseName = exerciseName
         self.name = name
+        self.catalogKey = catalogKey
         self.weight = weight
         self.reps = reps
     }

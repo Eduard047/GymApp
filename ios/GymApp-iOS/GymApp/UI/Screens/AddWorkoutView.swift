@@ -179,7 +179,12 @@ struct AddWorkoutView: View {
                     supporting: "Notes are included in your local and cloud backup."
                 )
 
-                DatePicker("Workout date", selection: $date, displayedComponents: [.date, .hourAndMinute])
+                DatePicker(
+                    "Workout date",
+                    selection: $date,
+                    in: ...Date(),
+                    displayedComponents: [.date, .hourAndMinute]
+                )
                     .datePickerStyle(.compact)
 
                 TextField("Notes (optional)", text: $note, axis: .vertical)
@@ -761,6 +766,14 @@ struct AddWorkoutView: View {
 
     private func validationMessage() -> String? {
         guard !drafts.isEmpty else { return gymLocalized("Add at least one exercise.") }
+        guard date <= Date() else {
+            return gymText(
+                "Workout date cannot be in the future.",
+                "Дата тренування не може бути в майбутньому.",
+                "Дата тренировки не может быть в будущем.",
+                languageCode: gymCurrentLanguageCode()
+            )
+        }
         if queueForGarmin && isCloudAccount && garminCloud.selectedDevice == nil {
             return gymLocalized("Select or pair a Garmin watch in Account settings before queueing a plan.")
         }

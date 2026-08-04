@@ -1,8 +1,8 @@
 package com.example.gymapp.data.repository
 
+import com.example.gymapp.data.catalog.normalizeExerciseIdentityName
 import com.example.gymapp.data.entity.ExerciseHistoryEntry
 import com.example.gymapp.data.entity.ExerciseMuscleMappingEntity
-import java.util.Locale
 
 data class MuscleDefinition(
     val id: String,
@@ -255,12 +255,7 @@ private fun muscles(vararg values: Pair<String, Double>): List<MuscleContributio
 }
 
 fun String.normalizedExerciseName(): String {
-    return lowercase(Locale.ROOT)
-        .replace('ʼ', '\'')
-        .replace('’', '\'')
-        .replace('ё', 'е')
-        .replace(Regex("\\s+"), " ")
-        .trim()
+    return normalizeExerciseIdentityName(this)
 }
 
 private fun String.containsAny(vararg tokens: String): Boolean {

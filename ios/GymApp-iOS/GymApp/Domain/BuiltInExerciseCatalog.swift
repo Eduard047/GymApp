@@ -1,5 +1,41 @@
 import Foundation
 
+/// Portable exercise identity normalization shared with Android backup/cloud handling.
+///
+/// This deliberately is not a search normalizer: accents and character width remain
+/// significant so untrusted labels cannot silently become a built-in or another custom
+/// exercise. Only canonical Unicode composition and GymApp's established identity
+/// compatibility rules are applied.
+func normalizeExerciseIdentityName(_ value: String) -> String {
+    var collapsed = ""
+    var pendingSpace = false
+    for scalar in value.unicodeScalars {
+        // Swift's Unicode White_Space property covers Java's space characters and U+0085.
+        // Java Character.isWhitespace additionally treats the four information separators
+        // as whitespace, so include them explicitly for byte-for-byte Android parity.
+        let isPortableWhitespace = scalar.properties.isWhitespace ||
+            (0x001C ... 0x001F).contains(scalar.value)
+        if isPortableWhitespace {
+            if !collapsed.isEmpty {
+                pendingSpace = true
+            }
+        } else {
+            if pendingSpace {
+                collapsed.append(" ")
+                pendingSpace = false
+            }
+            collapsed.unicodeScalars.append(scalar)
+        }
+    }
+
+    return collapsed
+        .precomposedStringWithCanonicalMapping
+        .lowercased(with: Locale(identifier: "en_US_POSIX"))
+        .replacingOccurrences(of: "ʼ", with: "'")
+        .replacingOccurrences(of: "’", with: "'")
+        .replacingOccurrences(of: "ё", with: "е")
+}
+
 public struct BuiltInExerciseDefinition: Hashable, Sendable {
     public let key: String
     public let englishName: String
@@ -137,7 +173,12 @@ public enum BuiltInExerciseCatalog {
         for definition in definitions {
             let aliases = [definition.englishName, definition.ukrainianName] + definition.legacyAliases
             for alias in aliases {
-                result[normalizedAlias(alias)] = definition.key
+                let normalized = normalizedAlias(alias)
+                precondition(
+                    result[normalized] == nil,
+                    "Duplicate built-in exercise alias: \(alias)"
+                )
+                result[normalized] = definition.key
             }
         }
         return result
@@ -145,7 +186,10 @@ public enum BuiltInExerciseCatalog {
 
     public static func definition(forKey key: String?) -> BuiltInExerciseDefinition? {
         guard let key else { return nil }
-        return definitionByKey[key.trimmingCharacters(in: .whitespacesAndNewlines)]
+        let normalizedKey = key
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased(with: Locale(identifier: "en_US_POSIX"))
+        return definitionByKey[normalizedKey]
     }
 
     /// Recognizes only exact, case-insensitive catalog names and reviewed legacy aliases.
@@ -178,12 +222,6 @@ public enum BuiltInExerciseCatalog {
     }
 
     private static func normalizedAlias(_ value: String) -> String {
-        value
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: "ʼ", with: "'")
-            .replacingOccurrences(of: "’", with: "'")
-            .folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: Locale(identifier: "en_US_POSIX"))
-            .split(whereSeparator: { $0.isWhitespace })
-            .joined(separator: " ")
+        normalizeExerciseIdentityName(value)
     }
 }

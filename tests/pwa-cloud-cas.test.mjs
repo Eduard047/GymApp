@@ -46,6 +46,47 @@ function validGarminPlan(createdAt = "2026-07-14T00:00:00.000Z") {
   };
 }
 
+function validNativeCloudEnvelope() {
+  const machineProfile = {
+    direction: "higherIsHarder",
+    allowedWeightsKg: [0, 5, 10]
+  };
+  return {
+    schemaVersion: 2,
+    exportedAt: 1785800000000,
+    app: "GymApp",
+    diagnostics: false,
+    owner: {
+      accountId: `remote-${ACTIVE_USER_ID}`,
+      userId: ACTIVE_USER_ID,
+      remote: true
+    },
+    exercises: [
+      { name: "Lat Pulldown", catalogKey: "lat_pulldown", loadProfile: machineProfile },
+      { name: "Custom Core Move" }
+    ],
+    sessions: [{
+      date: 1785790000000,
+      note: " Strength day ",
+      exercises: [
+        {
+          name: "Lat Pulldown",
+          catalogKey: "lat_pulldown",
+          loadProfile: machineProfile,
+          sets: [{ weight: -0, reps: 10 }, { weight: 5, reps: 8 }]
+        },
+        { name: "Custom Core Move", sets: [{ weight: 0, reps: 12 }] }
+      ]
+    }],
+    summary: {
+      exerciseCount: 2,
+      sessionCount: 1,
+      setCount: 3,
+      totalVolume: 40
+    }
+  };
+}
+
 function loadContext(fetchImpl, {
   randomSeed = 1,
   sharedValues = null,
@@ -263,6 +304,458 @@ test("cloud fingerprints are stable across equivalent object key order", () => {
       remoteStateFingerprint(reordered, activeAccount.userId);
   })()`, context), true);
 });
+
+test("native cloud identity is catalog-order-insensitive but preserves workout order and multiplicity", () => {
+  const context = loadContext(async () => {
+    throw new Error("network is not used");
+  });
+  const base = validNativeCloudEnvelope();
+  const reorderedCatalog = JSON.parse(JSON.stringify(base));
+  reorderedCatalog.exercises.reverse();
+  reorderedCatalog.exportedAt += 1000;
+  reorderedCatalog.owner.accountId = ACTIVE_USER_ID;
+  reorderedCatalog.sessions[0].note = "Strength day";
+  delete reorderedCatalog.sessions[0].exercises[0].loadProfile;
+
+  const reorderedBlocks = JSON.parse(JSON.stringify(base));
+  reorderedBlocks.sessions[0].exercises.reverse();
+
+  const reorderedSets = JSON.parse(JSON.stringify(base));
+  reorderedSets.sessions[0].exercises[0].sets.reverse();
+
+  const duplicateSet = JSON.parse(JSON.stringify(base));
+  duplicateSet.sessions[0].exercises[0].sets.push({ weight: 5, reps: 8 });
+  duplicateSet.summary.setCount += 1;
+  duplicateSet.summary.totalVolume += 40;
+
+  context.__nativeBase = base;
+  context.__nativeReorderedCatalog = reorderedCatalog;
+  context.__nativeReorderedBlocks = reorderedBlocks;
+  context.__nativeReorderedSets = reorderedSets;
+  context.__nativeDuplicateSet = duplicateSet;
+
+  const fingerprints = vm.runInContext(`[
+    prepareNativeCloudEnvelope(globalThis.__nativeBase, activeAccount.userId).fingerprint,
+    prepareNativeCloudEnvelope(globalThis.__nativeReorderedCatalog, activeAccount.userId).fingerprint,
+    prepareNativeCloudEnvelope(globalThis.__nativeReorderedBlocks, activeAccount.userId).fingerprint,
+    prepareNativeCloudEnvelope(globalThis.__nativeReorderedSets, activeAccount.userId).fingerprint,
+    prepareNativeCloudEnvelope(globalThis.__nativeDuplicateSet, activeAccount.userId).fingerprint
+  ]`, context);
+
+  assert.equal(fingerprints[0], fingerprints[1], "metadata, top catalog order, padded note, and matching nested profile are non-semantic");
+  assert.notEqual(fingerprints[0], fingerprints[2], "workout block order remains semantic");
+  assert.notEqual(fingerprints[0], fingerprints[3], "set order remains semantic");
+  assert.notEqual(fingerprints[0], fingerprints[4], "duplicate set multiplicity remains semantic");
+});
+
+test("native repeated portable identity blocks enter recovery without a cloud rewrite", async () => {
+  const requests = [];
+  const context = loadContext(async (url, options) => {
+    requests.push({ url, options });
+    throw new Error("a rejected cloud row must not use the network");
+  });
+  const repeated = validNativeCloudEnvelope();
+  const latPulldown = repeated.sessions[0].exercises[0];
+  repeated.sessions[0].exercises = [
+    { ...latPulldown, sets: [latPulldown.sets[0]] },
+    repeated.sessions[0].exercises[1],
+    { ...latPulldown, sets: [latPulldown.sets[1]] }
+  ];
+  context.__repeated = repeated;
+  vm.runInContext(`
+    globalThis.__cached = defaultAppState();
+    globalThis.__cached.language = "ru";
+  `, context);
+
+  await vm.runInContext(`reconcileLoadedRemoteState({
+    userId: activeAccount.userId,
+    exists: true,
+    revision: "2026-08-04T10:01:00.000000+00:00",
+    state: globalThis.__repeated
+  }, globalThis.__cached, true)`, context);
+
+  assert.equal(vm.runInContext("state === globalThis.__cached", context), true);
+  assert.equal(vm.runInContext("state.language", context), "ru");
+  assert.equal(vm.runInContext("cloudStateRecovery.rawState === globalThis.__repeated", context), true);
+  assert.equal(
+    vm.runInContext("remoteStateSync.revision", context),
+    "2026-08-04T10:01:00.000000+00:00"
+  );
+  await assert.rejects(vm.runInContext("saveRemoteState()", context), /recovery must be resolved/);
+  assert.equal(requests.filter(request => ["PATCH", "POST"].includes(request.options?.method)).length, 0);
+});
+
+test("PWA canonical writes sort backdated workouts by date with a stable tie break", () => {
+  const context = loadContext(async () => {
+    throw new Error("network is not used");
+  });
+  const dates = vm.runInContext(`(() => {
+    const exercise = { id: 1, name: "Custom Move" };
+    const makeSession = (id, startedAt, reps) => ({
+      id,
+      startedAt,
+      note: "",
+      exerciseNames: [exercise.name],
+      sets: [{ id: id * 10, exerciseName: exercise.name, weight: 10, reps, orderIndex: 0 }]
+    });
+    const source = defaultAppState();
+    source.exercises = [exercise];
+    source.sessions = [
+      makeSession(3, 3000, 3),
+      makeSession(1, 1000, 1),
+      makeSession(2, 1000, 2)
+    ];
+    const payload = remoteStatePayload(activeAccount.userId, source);
+    return payload.sessions.map(session => ({
+      date: session.date,
+      reps: session.exercises[0].sets[0].reps
+    }));
+  })()`, context);
+
+  assert.deepEqual(JSON.parse(JSON.stringify(dates)), [
+    { date: 1000, reps: 1 },
+    { date: 1000, reps: 2 },
+    { date: 3000, reps: 3 }
+  ]);
+});
+
+test("native Android or iOS state migrates once to a writable shared envelope", async () => {
+  const requests = [];
+  const context = loadContext(async (url, options) => {
+    requests.push({ url, options });
+    if (url.includes("/user_states")) {
+      return new Response(JSON.stringify([{ updated_at: "2026-08-04T10:00:00.000001+00:00" }]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+    return new Response(null, { status: 204 });
+  });
+  const native = validNativeCloudEnvelope();
+  native.extensions = { ios: { version: 1, displayPreference: "compact" } };
+  context.__native = native;
+  await vm.runInContext(`reconcileLoadedRemoteState({
+    userId: activeAccount.userId,
+    exists: true,
+    revision: "2026-08-04T10:00:00.000000+00:00",
+    state: globalThis.__native
+  }, defaultAppState(), false)`, context);
+
+  assert.equal(vm.runInContext("cloudStateRecovery", context), null);
+  assert.deepEqual(
+    Array.from(vm.runInContext("state.exercises.map(exercise => exercise.name).sort()", context)),
+    ["Custom Core Move", "Lat Pulldown"],
+    "a missing catalog seed marker must not resurrect deleted built-ins"
+  );
+  assert.equal(vm.runInContext("state.sessions[0].sets.length", context), 3);
+  assert.equal(vm.runInContext("state.sessions[0].note", context), "Strength day");
+  const stateWrites = requests.filter(request =>
+    request.url.includes("/user_states") && request.options?.method === "PATCH"
+  );
+  assert.equal(stateWrites.length, 1, "the old native row is upgraded with its exact CAS revision");
+  const migrated = JSON.parse(stateWrites[0].options.body).state;
+  assert.equal(migrated.summary.setCount, 3);
+  assert.equal(migrated.extensions.pwa.version, 1);
+  assert.equal(migrated.extensions.ios.displayPreference, "compact");
+  assert.equal("language" in migrated, false);
+  assert.equal(vm.runInContext("loadSyncBaseline(activeAccount.userId).dirty", context), false);
+});
+
+test("legacy PWA rows migrate to the shared native core without losing PWA settings", async () => {
+  const requests = [];
+  const context = loadContext(async (url, options) => {
+    requests.push({ url, options });
+    if (url.includes("/user_states")) {
+      return new Response(JSON.stringify([{ updated_at: "2026-08-04T10:05:00.000001+00:00" }]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+    return new Response(null, { status: 204 });
+  });
+  context.__legacy = {
+    schemaVersion: 2,
+    exportedAt: 1785800100000,
+    app: "GymApp",
+    diagnostics: false,
+    owner: { accountId: ACTIVE_USER_ID, userId: ACTIVE_USER_ID, remote: true },
+    language: "ru",
+    exercises: [{ id: 77, name: "Custom Carry" }],
+    sessions: [{
+      id: 88,
+      startedAt: 1785790100000,
+      note: "Legacy PWA workout",
+      exerciseNames: ["Custom Carry"],
+      sets: [{
+        id: 99,
+        exerciseName: "Custom Carry",
+        weight: 24,
+        reps: 10,
+        orderIndex: 0
+      }]
+    }],
+    mappings: { "Custom Carry": ["forearms"] },
+    profile: {
+      split: "Full Body",
+      days: 3,
+      goal: "Strength",
+      calories: "Maintenance"
+    }
+  };
+
+  await vm.runInContext(`reconcileLoadedRemoteState({
+    userId: activeAccount.userId,
+    exists: true,
+    revision: "2026-08-04T10:05:00.000000+00:00",
+    state: globalThis.__legacy
+  }, defaultAppState(), false)`, context);
+
+  assert.equal(vm.runInContext("state.language", context), "ru");
+  assert.equal(vm.runInContext("state.profile.goal", context), "Strength");
+  assert.equal(vm.runInContext("state.sessions[0].sets[0].weight", context), 24);
+  const stateWrites = requests.filter(request =>
+    request.url.includes("/user_states") && request.options?.method === "PATCH"
+  );
+  assert.equal(stateWrites.length, 1);
+  const migrated = JSON.parse(stateWrites[0].options.body).state;
+  assert.equal(migrated.sessions[0].exercises[0].sets[0].reps, 10);
+  assert.equal(migrated.extensions.pwa.language, "ru");
+  assert.equal(migrated.extensions.pwa.profile.days, 3);
+  assert.deepEqual(migrated.extensions.pwa.mappings["custom carry"], ["forearms"]);
+  assert.equal("language" in migrated, false);
+});
+
+test("foreign-owner legacy PWA state fails closed before hydration or writes", async () => {
+  const requests = [];
+  const context = loadContext(async (url, options) => {
+    requests.push({ url, options });
+    throw new Error("foreign state must not use the network");
+  });
+  const foreignUserId = "00000000-0000-4000-8000-000000000002";
+  context.__foreignLegacy = {
+    schemaVersion: 2,
+    exportedAt: 1785800100000,
+    app: "GymApp",
+    diagnostics: false,
+    owner: { accountId: foreignUserId, userId: foreignUserId, remote: true },
+    language: "en",
+    exercises: [],
+    sessions: [],
+    mappings: {},
+    profile: {
+      split: "Full Body",
+      days: 3,
+      goal: "Balanced",
+      calories: "Maintenance"
+    }
+  };
+
+  await vm.runInContext(`reconcileLoadedRemoteState({
+    userId: activeAccount.userId,
+    exists: true,
+    revision: "2026-08-04T10:06:00.000000+00:00",
+    state: globalThis.__foreignLegacy
+  }, defaultAppState(), false)`, context);
+
+  assert.equal(vm.runInContext("cloudStateRecovery.rawState === globalThis.__foreignLegacy", context), true);
+  assert.equal(vm.runInContext("state.sessions.length", context), 0);
+  assert.equal(requests.length, 0);
+});
+
+test("the exact earliest ownerless PWA row migrates only through the authenticated cloud path", async () => {
+  const requests = [];
+  const context = loadContext(async (url, options) => {
+    requests.push({ url, options });
+    if (url.includes("/user_states")) {
+      return new Response(JSON.stringify([{ updated_at: "2026-08-04T10:07:00.000001+00:00" }]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+    return new Response(null, { status: 204 });
+  });
+  context.__ownerlessLegacy = {
+    language: "uk",
+    exercises: [],
+    sessions: [],
+    mappings: {},
+    profile: {
+      split: "Full Body",
+      days: 2,
+      goal: "Balanced",
+      calories: "Maintenance"
+    }
+  };
+
+  await vm.runInContext(`reconcileLoadedRemoteState({
+    userId: activeAccount.userId,
+    exists: true,
+    revision: "2026-08-04T10:07:00.000000+00:00",
+    state: globalThis.__ownerlessLegacy
+  }, defaultAppState(), false)`, context);
+
+  const write = requests.find(request =>
+    request.url.includes("/user_states") && request.options?.method === "PATCH"
+  );
+  assert.ok(write);
+  const migrated = JSON.parse(write.options.body).state;
+  assert.deepEqual(migrated.owner, {
+    accountId: ACTIVE_USER_ID,
+    userId: ACTIVE_USER_ID,
+    remote: true
+  });
+  assert.equal(migrated.extensions.pwa.language, "uk");
+});
+
+test("malformed, duplicate, orphaned, and profile-mismatched native rows fail closed", async () => {
+  const cases = [];
+
+  const mismatch = validNativeCloudEnvelope();
+  mismatch.sessions[0].exercises[0].loadProfile = {
+    direction: "higherIsHarder",
+    allowedWeightsKg: [0, 10]
+  };
+  cases.push(mismatch);
+
+  const orphan = validNativeCloudEnvelope();
+  orphan.sessions[0].exercises[1].name = "Orphaned Custom Move";
+  cases.push(orphan);
+
+  const unknownField = validNativeCloudEnvelope();
+  unknownField.sessions[0].exercises[0].tempo = "3-1-1";
+  cases.push(unknownField);
+
+  const mismatchedCatalogKey = validNativeCloudEnvelope();
+  mismatchedCatalogKey.exercises[0].catalogKey = "bench_press";
+  cases.push(mismatchedCatalogKey);
+
+  const duplicate = validNativeCloudEnvelope();
+  duplicate.exercises.push({ name: "Custom\u00a0Core Move" });
+  duplicate.summary.exerciseCount += 1;
+  cases.push(duplicate);
+
+  const unknownRoot = validNativeCloudEnvelope();
+  unknownRoot.lossyFutureField = { private: true };
+  cases.push(unknownRoot);
+
+  const malformedPwaExtension = validNativeCloudEnvelope();
+  malformedPwaExtension.extensions = {
+    pwa: {
+      version: 1,
+      language: "en",
+      mappings: {},
+      profile: { split: "Full Body", days: 99, goal: "Balanced", calories: "Maintenance" }
+    }
+  };
+  cases.push(malformedPwaExtension);
+
+  const nonObjectUnknownExtension = validNativeCloudEnvelope();
+  nonObjectUnknownExtension.extensions = { futureclient: ["would be lossy"] };
+  cases.push(nonObjectUnknownExtension);
+
+  const tooManyExtensionNamespaces = validNativeCloudEnvelope();
+  tooManyExtensionNamespaces.extensions = Object.fromEntries(
+    Array.from({ length: 33 }, (_, index) => [`n${index}`, {}])
+  );
+  cases.push(tooManyExtensionNamespaces);
+
+  const unsortedHistory = validNativeCloudEnvelope();
+  unsortedHistory.sessions.push({
+    ...JSON.parse(JSON.stringify(unsortedHistory.sessions[0])),
+    date: unsortedHistory.sessions[0].date - 1
+  });
+  unsortedHistory.summary.sessionCount += 1;
+  unsortedHistory.summary.setCount += 3;
+  unsortedHistory.summary.totalVolume += 40;
+  cases.push(unsortedHistory);
+
+  const incompleteNativeMetadata = validNativeCloudEnvelope();
+  delete incompleteNativeMetadata.summary;
+  delete incompleteNativeMetadata.owner;
+  cases.push(incompleteNativeMetadata);
+
+  for (const [index, native] of cases.entries()) {
+    const requests = [];
+    const context = loadContext(async (url, options) => {
+      requests.push({ url, options });
+      throw new Error("invalid native state must not use the network");
+    });
+    context.__invalidNative = native;
+    context.__invalidRevision = `2026-08-04T10:00:00.${String(index).padStart(6, "0")}+00:00`;
+    await vm.runInContext(`reconcileLoadedRemoteState({
+      userId: activeAccount.userId,
+      exists: true,
+      revision: globalThis.__invalidRevision,
+      state: globalThis.__invalidNative
+    }, defaultAppState(), false)`, context);
+
+    assert.equal(vm.runInContext("cloudStateRecovery.rawState === globalThis.__invalidNative", context), true);
+    assert.equal(vm.runInContext("state.profile.goal", context), "Balanced");
+    await assert.rejects(vm.runInContext("saveRemoteState()", context), /recovery must be resolved/);
+    assert.equal(requests.filter(request => ["PATCH", "POST"].includes(request.options?.method)).length, 0);
+  }
+});
+
+test("workout date picker uses local calendar dates and rejects future saves", () => {
+  const context = loadContext(async () => {
+    throw new Error("network is not used");
+  });
+  const result = vm.runInContext(`(() => {
+    const now = Date.now();
+    const yesterdayDate = new Date(now);
+    yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+    const tomorrowDate = new Date(now);
+    tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+    const laterToday = now + 60_000;
+    const reference = new Date(now);
+    reference.setHours(18, 37, 12, 345);
+    const yesterdayValue = localDateInputValue(yesterdayDate.getTime());
+    const timestamp = workoutTimestampForLocalDateInput(yesterdayValue, reference.getTime(), now);
+    const selected = new Date(timestamp);
+    workoutDraft = createDraft();
+    const markup = addWorkoutScreen();
+    const futureValue = localDateInputValue(tomorrowDate.getTime());
+    const originalDraftTimestamp = workoutDraft.startedAt;
+    const futureHandlerAccepted = updateWorkoutDraftDate(futureValue);
+    const futureHandlerPreservedDraft = workoutDraft.startedAt === originalDraftTimestamp;
+    const firstExercise = state.exercises[0];
+    workoutDraft = {
+      startedAt: tomorrowDate.getTime(),
+      note: "",
+      blocks: [{ exerciseName: firstExercise.name, sets: [{ weight: 10, reps: 8 }] }]
+    };
+    saveWorkout();
+    return {
+      yesterdayValue,
+      selectedValue: localDateInputValue(timestamp),
+      selectedHour: selected.getHours(),
+      referenceHour: reference.getHours(),
+      futureResult: workoutTimestampForLocalDateInput(futureValue, reference.getTime(), now),
+      invalidCalendarResult: workoutTimestampForLocalDateInput("2026-02-30", reference.getTime(), now),
+      laterTodayAllowed: isWorkoutTimestampAllowed(laterToday, now),
+      futureHandlerAccepted,
+      futureHandlerPreservedDraft,
+      defaultValue: localDateInputValue(createDraft().startedAt),
+      todayValue: localDateInputValue(now),
+      hasDateInput: /type="date"/.test(markup),
+      hasSafeMax: markup.includes(\`max="\${localDateInputValue(now)}"\`),
+      sessionCount: state.sessions.length
+    };
+  })()`, context);
+
+  assert.equal(result.selectedValue, result.yesterdayValue);
+  assert.equal(result.selectedHour, result.referenceHour);
+  assert.equal(result.futureResult, null);
+  assert.equal(result.invalidCalendarResult, null);
+  assert.equal(result.laterTodayAllowed, false);
+  assert.equal(result.futureHandlerAccepted, false);
+  assert.equal(result.futureHandlerPreservedDraft, true);
+  assert.equal(result.defaultValue, result.todayValue);
+  assert.equal(result.hasDateInput, true);
+  assert.equal(result.hasSafeMax, true);
+  assert.equal(result.sessionCount, 0, "a future draft must be rejected again at save time");
+});
+
 
 test("a clean missing-cloud baseline accepts a later cloud creation", async () => {
   const requests = [];
@@ -1188,12 +1681,94 @@ test("cloud saves require a previously validated revision and publish portable o
   assert.equal(payload.schemaVersion, 2);
   assert.equal(payload.app, "GymApp");
   assert.equal("catalogSeedVersion" in payload, false);
+  assert.equal("language" in payload, false);
+  assert.equal("mappings" in payload, false);
+  assert.equal("profile" in payload, false);
+  assert.deepEqual(JSON.parse(JSON.stringify(payload.summary)), {
+    exerciseCount: payload.exercises.length,
+    sessionCount: 0,
+    setCount: 0,
+    totalVolume: 0
+  });
+  assert.equal(payload.extensions.pwa.version, 1);
+  assert.equal(payload.extensions.pwa.language, "en");
+  assert.equal(
+    vm.runInContext(`prepareNativeCloudEnvelope(${JSON.stringify(payload)}, activeAccount.userId).fingerprint ===
+      remoteStateFingerprint(state, activeAccount.userId)`, context),
+    true
+  );
   assert.equal(vm.runInContext("state.catalogSeedVersion", context), 3);
   assert.deepEqual(JSON.parse(JSON.stringify(payload.owner)), {
     accountId: "00000000-0000-4000-8000-000000000001",
     userId: "00000000-0000-4000-8000-000000000001",
     remote: true
   });
+});
+
+test("legacy duplicate portable exercise identities fail before any cloud request", async () => {
+  const requests = [];
+  const context = loadContext(async (url, options) => {
+    requests.push({ url, options });
+    throw new Error("an ambiguous local catalog must not use the network");
+  });
+  vm.runInContext(`
+    remoteStateSync = {
+      userId: activeAccount.userId,
+      exists: true,
+      revision: "2026-08-04T10:02:00.000000+00:00"
+    };
+    state = defaultAppState();
+    state.exercises = [
+      { id: 1, name: "Caf\u00e9 Custom" },
+      { id: 2, name: "Cafe\u0301 Custom" }
+    ];
+    state.sessions = [];
+  `, context);
+
+  await assert.rejects(
+    vm.runInContext("saveRemoteState()", context),
+    /duplicate portable identity/
+  );
+  assert.equal(requests.length, 0);
+  assert.equal(vm.runInContext("loadSyncBaseline(activeAccount.userId)", context), null);
+});
+
+test("local A-B-A exercise blocks fail before baseline or cloud mutation", async () => {
+  const requests = [];
+  const context = loadContext(async (url, options) => {
+    requests.push({ url, options });
+    throw new Error("a lossy local block sequence must not use the network");
+  });
+  vm.runInContext(`
+    remoteStateSync = {
+      userId: activeAccount.userId,
+      exists: true,
+      revision: "2026-08-04T10:03:00.000000+00:00"
+    };
+    state = defaultAppState();
+    state.exercises = [
+      { id: 1, name: "Custom A" },
+      { id: 2, name: "Custom B" }
+    ];
+    state.sessions = [{
+      id: 10,
+      startedAt: 1750000000000,
+      note: "A-B-A",
+      exerciseNames: ["Custom A", "Custom B"],
+      sets: [
+        { id: 11, exerciseName: "Custom A", weight: 10, reps: 8, orderIndex: 0 },
+        { id: 12, exerciseName: "Custom B", weight: 20, reps: 8, orderIndex: 1 },
+        { id: 13, exerciseName: "Custom A", weight: 12.5, reps: 6, orderIndex: 2 }
+      ]
+    }];
+  `, context);
+
+  await assert.rejects(
+    vm.runInContext("saveRemoteState()", context),
+    /repeated non-contiguous portable identity blocks/
+  );
+  assert.equal(requests.length, 0);
+  assert.equal(vm.runInContext("loadSyncBaseline(activeAccount.userId)", context), null);
 });
 
 test("cloud revisions must be bounded RFC3339 timestamps", () => {

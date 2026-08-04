@@ -7,6 +7,927 @@ import XCTest
 
 @MainActor
 final class CoreParityTests: XCTestCase {
+    func testBackupExerciseOrderingMatchesPortableSQLiteNoCaseAcrossScripts() {
+        let input = [
+            "тяга custom",
+            "Присідання custom",
+            "deadlift custom",
+            "Жим custom",
+            "Élévation custom",
+            "bench custom",
+            "Bench custom",
+            "A custom",
+            "🏋️ custom"
+        ].map { BackupExercise(name: $0) }
+
+        XCTAssertEqual(
+            input.sorted(by: BackupExercisePortableWireOrder.precedes).map(\.name),
+            [
+                "A custom",
+                "Bench custom",
+                "bench custom",
+                "deadlift custom",
+                "Élévation custom",
+                "Жим custom",
+                "Присідання custom",
+                "тяга custom",
+                "🏋️ custom"
+            ]
+        )
+    }
+
+    func testExerciseIdentityNormalizerMatchesAndroidUnicodeRulesWithoutBroadFolding() {
+        let composed = "Bíceps"
+        let decomposed = "Bi\u{301}ceps"
+        XCTAssertEqual(
+            normalizeExerciseIdentityName(composed),
+            normalizeExerciseIdentityName(decomposed)
+        )
+        XCTAssertEqual(normalizeExerciseIdentityName("  A\tB\nC  "), "a b c")
+        XCTAssertEqual(normalizeExerciseIdentityName("A\u{00A0}B"), "a b")
+        XCTAssertEqual(normalizeExerciseIdentityName("A\u{0085}B"), "a b")
+        XCTAssertEqual(normalizeExerciseIdentityName("A\u{001C}B"), "a b")
+        XCTAssertEqual(normalizeExerciseIdentityName("A\u{2007}B"), "a b")
+        XCTAssertEqual(normalizeExerciseIdentityName("A\u{202F}B"), "a b")
+        XCTAssertEqual(normalizeExerciseIdentityName("ЁʼТЕСТ’"), "е'тест'")
+        XCTAssertEqual(
+            MuscleMappingEngine.normalizeExerciseName("A\u{00A0}B"),
+            normalizeExerciseIdentityName("A B")
+        )
+        XCTAssertNotEqual(
+            normalizeExerciseIdentityName("Biceps"),
+            normalizeExerciseIdentityName("Bíceps")
+        )
+        XCTAssertNotEqual(
+            normalizeExerciseIdentityName("Biceps"),
+            normalizeExerciseIdentityName("Ｂiceps")
+        )
+
+        var keyByNormalizedAlias: [String: String] = [:]
+        for definition in BuiltInExerciseCatalog.definitions {
+            let aliases = [definition.englishName, definition.ukrainianName] +
+                definition.legacyAliases
+            for alias in aliases {
+                let normalized = normalizeExerciseIdentityName(alias)
+                if let prior = keyByNormalizedAlias[normalized] {
+                    XCTFail("Alias collision between \(prior) and \(definition.key): \(alias)")
+                } else {
+                    keyByNormalizedAlias[normalized] = definition.key
+                }
+                XCTAssertEqual(
+                    BuiltInExerciseCatalog.canonicalKey(forName: alias),
+                    definition.key
+                )
+                XCTAssertEqual(MuscleMappingEngine.normalizeExerciseName(alias), normalized)
+            }
+        }
+    }
+
+    func testCloudWorkoutIdentityUsesExactUTF8WireAfterCanonicalValidation() throws {
+        func backup(name: String) -> GymBackup {
+            GymBackup(
+                exportedAt: 1_750_000_000_000,
+                diagnostics: false,
+                owner: nil,
+                exercises: [BackupExercise(name: name)],
+                sessions: [
+                    BackupSession(
+                        date: 1_750_000_000_000,
+                        exercises: [
+                            BackupWorkoutExercise(
+                                name: name,
+                                sets: [BackupSet(weight: -0.0, reps: 8)]
+                            )
+                        ]
+                    )
+                ],
+                summary: nil
+            )
+        }
+
+        let composedName = "Café exact custom"
+        let decomposedName = "Cafe\u{301} exact custom"
+        XCTAssertNotEqual(
+            try AppState.cloudWorkoutIdentity(backup(name: composedName)),
+            try AppState.cloudWorkoutIdentity(backup(name: decomposedName))
+        )
+
+        let duplicatePortableIdentity = GymBackup(
+            exportedAt: 1_750_000_000_000,
+            diagnostics: false,
+            owner: nil,
+            exercises: [
+                BackupExercise(name: composedName),
+                BackupExercise(name: decomposedName)
+            ],
+            sessions: [],
+            summary: nil
+        )
+        XCTAssertThrowsError(
+            try AppState.cloudWorkoutIdentity(duplicatePortableIdentity)
+        )
+    }
+
+    func testCloudIdentityCanonicalizesRawExerciseWireAndRoundTripsRestore() throws {
+        let storageKey = "raw-wire-canonical-target"
+        let owner: [String: Any] = ["accountId": storageKey, "remote": false]
+
+        func rawBackup(customCatalogKey: String) throws -> Data {
+            try JSONSerialization.data(
+                withJSONObject: [
+                    "schemaVersion": GymBackup.currentSchemaVersion,
+                    "exportedAt": 1_750_000_000_000 as Int64,
+                    "app": "GymApp",
+                    "diagnostics": false,
+                    "owner": owner,
+                    "exercises": [
+                        ["name": "  Custom Wire  ", "catalogKey": customCatalogKey],
+                        ["name": "  Squat  ", "catalogKey": "   "]
+                    ],
+                    "sessions": [[
+                        "startedAt": 1_750_000_000_000 as Int64,
+                        "note": "  canonical note  ",
+                        "exercises": [
+                            [
+                                "name": "  Custom Wire  ",
+                                "catalogKey": customCatalogKey,
+                                "sets": [
+                                    ["weight": -0.0, "reps": 10],
+                                    ["weight": 42.5, "reps": 9]
+                                ]
+                            ],
+                            [
+                                "name": "  Squat  ",
+                                "catalogKey": "not-a-real-catalog-key",
+                                "sets": [["weight": 80.0, "reps": 8]]
+                            ]
+                        ]
+                    ]]
+                ],
+                options: [.sortedKeys]
+            )
+        }
+
+        let hostileData = try rawBackup(customCatalogKey: "bench_press")
+        let blankKeyData = try rawBackup(customCatalogKey: "   ")
+        let hostileBackup = try JSONDecoder().decode(GymBackup.self, from: hostileData)
+        let blankKeyBackup = try JSONDecoder().decode(GymBackup.self, from: blankKeyData)
+        let hostileIdentity = try AppState.cloudWorkoutIdentity(hostileBackup)
+
+        XCTAssertEqual(hostileIdentity, try AppState.cloudWorkoutIdentity(blankKeyBackup))
+        XCTAssertEqual(hostileIdentity.configuredExercises.count, 1)
+        XCTAssertEqual(hostileIdentity.configuredExercises.first?.name, "Custom Wire")
+        XCTAssertNil(hostileIdentity.configuredExercises.first?.catalogKey)
+        XCTAssertEqual(
+            hostileIdentity.sessions.first?.exercises?.map(\.name),
+            ["Custom Wire", "Squat"]
+        )
+        XCTAssertEqual(
+            hostileIdentity.sessions.first?.exercises?.map(\.catalogKey),
+            [nil, "squat"]
+        )
+        XCTAssertEqual(hostileIdentity.sessions.first?.date, 1_750_000_000_000)
+        XCTAssertNil(hostileIdentity.sessions.first?.startedAt)
+        XCTAssertEqual(hostileIdentity.sessions.first?.note, "canonical note")
+        XCTAssertEqual(
+            hostileIdentity.sessions.first?.exercises?.first?.sets.first?.weight.bitPattern,
+            0.0.bitPattern
+        )
+
+        let store = try WorkoutStore(
+            accountStorageKey: storageKey,
+            directoryURL: try temporaryDirectory(named: storageKey)
+        )
+        _ = try store.restoreBackup(
+            data: hostileData,
+            activeOwner: BackupOwner(accountID: storageKey, remote: false)
+        )
+        let exported = try store.makeBackup(
+            owner: BackupOwner(accountID: storageKey, remote: false)
+        )
+        XCTAssertEqual(hostileIdentity, try AppState.cloudWorkoutIdentity(exported))
+
+        let keyOnlyData = try JSONSerialization.data(
+            withJSONObject: [
+                "schemaVersion": GymBackup.currentSchemaVersion,
+                "exportedAt": 1_750_000_000_000 as Int64,
+                "app": "GymApp",
+                "diagnostics": false,
+                "owner": owner,
+                "exercises": [["name": "   ", "catalogKey": " SQUAT "]],
+                "sessions": [[
+                    "date": 1_750_000_000_000 as Int64,
+                    "exercises": [[
+                        "name": "   ",
+                        "catalogKey": " SQUAT ",
+                        "sets": [["weight": 80.0, "reps": 8]]
+                    ]]
+                ]]
+            ],
+            options: [.sortedKeys]
+        )
+        let keyOnlyBackup = try JSONDecoder().decode(GymBackup.self, from: keyOnlyData)
+        let keyOnlyIdentity = try AppState.cloudWorkoutIdentity(keyOnlyBackup)
+        XCTAssertEqual(keyOnlyIdentity.sessions.first?.exercises?.first?.name, "Squat")
+        XCTAssertEqual(keyOnlyIdentity.sessions.first?.exercises?.first?.catalogKey, "squat")
+        _ = try store.restoreBackup(
+            data: keyOnlyData,
+            activeOwner: BackupOwner(accountID: storageKey, remote: false)
+        )
+        XCTAssertEqual(store.exercises.map(\.name), ["Squat"])
+        XCTAssertEqual(
+            keyOnlyIdentity,
+            try AppState.cloudWorkoutIdentity(store.makeBackup(
+                owner: BackupOwner(accountID: storageKey, remote: false)
+            ))
+        )
+
+        let invalidBlankName = GymBackup(
+            exportedAt: 1_750_000_000_000,
+            diagnostics: false,
+            owner: nil,
+            exercises: [BackupExercise(name: "   ", catalogKey: "not-real")],
+            sessions: [],
+            summary: nil
+        )
+        XCTAssertThrowsError(try AppState.cloudWorkoutIdentity(invalidBlankName))
+
+        let duplicateData = try JSONSerialization.data(
+            withJSONObject: [
+                "schemaVersion": GymBackup.currentSchemaVersion,
+                "exportedAt": 1_750_000_000_000 as Int64,
+                "app": "GymApp",
+                "diagnostics": false,
+                "exercises": [
+                    ["name": "  Custom Wire  ", "catalogKey": "bench_press"],
+                    ["name": "Custom\u{00A0}Wire", "catalogKey": "   "]
+                ],
+                "sessions": []
+            ],
+            options: [.sortedKeys]
+        )
+        let duplicate = try JSONDecoder().decode(GymBackup.self, from: duplicateData)
+        XCTAssertThrowsError(try AppState.cloudWorkoutIdentity(duplicate))
+
+        for duplicateNames in [
+            ["Bíceps", "Bi\u{301}ceps"],
+            ["ASCII Space", "ASCII\u{00A0}Space"]
+        ] {
+            let backup = GymBackup(
+                exportedAt: 1_750_000_000_000,
+                diagnostics: false,
+                owner: nil,
+                exercises: duplicateNames.map { BackupExercise(name: $0) },
+                sessions: [],
+                summary: nil
+            )
+            XCTAssertThrowsError(try AppState.cloudWorkoutIdentity(backup))
+        }
+
+        let strictDistinct = GymBackup(
+            exportedAt: 1_750_000_000_000,
+            diagnostics: false,
+            owner: nil,
+            exercises: ["Biceps", "Bíceps", "Ｂiceps"].map { BackupExercise(name: $0) },
+            sessions: [],
+            summary: nil
+        )
+        XCTAssertNoThrow(try AppState.cloudWorkoutIdentity(strictDistinct))
+    }
+
+    func testAuthoritativeRestorePreservesIdenticalSessionMultiplicityWhileMergeDedupes() throws {
+        let storageKey = "identical-session-restore"
+        let owner = BackupOwner(accountID: storageKey, remote: false)
+        let session = BackupSession(
+            date: 1_750_000_000_000,
+            exercises: [
+                BackupWorkoutExercise(
+                    name: "Repeated session custom",
+                    sets: [BackupSet(weight: 55, reps: 8)]
+                )
+            ]
+        )
+        let duplicateBackup = GymBackup(
+            exportedAt: 1_750_000_000_000,
+            diagnostics: false,
+            owner: owner,
+            exercises: [BackupExercise(name: "Repeated session custom")],
+            sessions: [session, session],
+            summary: nil
+        )
+        let data = try JSONEncoder().encode(duplicateBackup)
+        let restored = try WorkoutStore(
+            accountStorageKey: storageKey,
+            directoryURL: try temporaryDirectory(named: storageKey)
+        )
+
+        let restoreResult = try restored.restoreBackup(data: data, activeOwner: owner)
+        let exported = try restored.makeBackup(owner: owner)
+
+        XCTAssertEqual(restoreResult.importedSessions, 2)
+        XCTAssertEqual(restoreResult.skippedDuplicateSessions, 0)
+        XCTAssertEqual(restored.workouts.count, 2)
+        XCTAssertEqual(exported.sessions, [session, session])
+        XCTAssertEqual(
+            try AppState.cloudWorkoutIdentity(exported),
+            try AppState.cloudWorkoutIdentity(duplicateBackup)
+        )
+        var singleSessionBackup = duplicateBackup
+        singleSessionBackup.sessions = [session]
+        XCTAssertNotEqual(
+            try AppState.cloudWorkoutIdentity(duplicateBackup),
+            try AppState.cloudWorkoutIdentity(singleSessionBackup)
+        )
+
+        let mergeKey = "identical-session-merge"
+        let mergeOwner = BackupOwner(accountID: mergeKey, remote: false)
+        var mergeBackup = duplicateBackup
+        mergeBackup.owner = mergeOwner
+        let merged = try WorkoutStore(
+            accountStorageKey: mergeKey,
+            directoryURL: try temporaryDirectory(named: mergeKey)
+        )
+        let mergeResult = try merged.importBackup(
+            data: JSONEncoder().encode(mergeBackup),
+            activeOwner: mergeOwner
+        )
+        XCTAssertEqual(mergeResult.importedSessions, 1)
+        XCTAssertEqual(mergeResult.skippedDuplicateSessions, 1)
+        XCTAssertEqual(merged.workouts.count, 1)
+    }
+
+    func testLegacyPortableNameCollisionOpensAndSavesWithoutLossButCloudFailsClosed() throws {
+        struct LegacyPersistedEnvelope: Encodable {
+            let schemaVersion: Int
+            let accountStorageKey: String
+            let savedAt: Date
+            let snapshot: WorkoutDataSnapshot
+            let favoriteExerciseIDs: [UUID]
+        }
+
+        let storageKey = "legacy-portable-name-collision"
+        let directory = try temporaryDirectory(named: storageKey)
+        let placeholder = try WorkoutStore(
+            accountStorageKey: storageKey,
+            directoryURL: directory
+        )
+        // Both names were valid and distinct under the exact pre-portable iOS key,
+        // while the shared Android/iOS identity intentionally treats them as equal.
+        let first = Exercise(name: "Legacy  Custom")
+        let second = Exercise(name: "Legacy Custom")
+        let firstWorkout = WorkoutSession(
+            date: Date(timeIntervalSince1970: 1_740_000_000),
+            exercises: [
+                WorkoutExercise(
+                    exerciseID: first.id,
+                    sets: [WorkoutSet(weight: 40, reps: 10)]
+                )
+            ]
+        )
+        let secondWorkout = WorkoutSession(
+            date: Date(timeIntervalSince1970: 1_750_000_000),
+            exercises: [
+                WorkoutExercise(
+                    exerciseID: second.id,
+                    sets: [WorkoutSet(weight: 45, reps: 8)]
+                )
+            ]
+        )
+        let envelope = LegacyPersistedEnvelope(
+            schemaVersion: 2,
+            accountStorageKey: storageKey,
+            savedAt: Date(timeIntervalSince1970: 1_750_000_100),
+            snapshot: WorkoutDataSnapshot(
+                exercises: [first, second],
+                workouts: [firstWorkout, secondWorkout]
+            ),
+            favoriteExerciseIDs: []
+        )
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .millisecondsSince1970
+        encoder.outputFormatting = [.sortedKeys]
+        try encoder.encode(envelope).write(to: placeholder.storageURL, options: .atomic)
+
+        let reopened = try WorkoutStore(accountStorageKey: storageKey, directoryURL: directory)
+        XCTAssertEqual(Set(reopened.exercises.map(\.id)), Set([first.id, second.id]))
+        XCTAssertEqual(
+            Set(reopened.workouts.flatMap { $0.exercises.map(\.exerciseID) }),
+            Set([first.id, second.id])
+        )
+        XCTAssertEqual(reopened.exerciseHistory(exerciseID: first.id).map(\.weight), [40])
+        XCTAssertEqual(reopened.exerciseHistory(exerciseID: second.id).map(\.weight), [45])
+
+        _ = try reopened.toggleExerciseFavorite(id: first.id)
+        let afterUnrelatedSave = try WorkoutStore(
+            accountStorageKey: storageKey,
+            directoryURL: directory
+        )
+        XCTAssertEqual(Set(afterUnrelatedSave.exercises.map(\.id)), Set([first.id, second.id]))
+        XCTAssertEqual(afterUnrelatedSave.exerciseHistory(exerciseID: first.id).map(\.weight), [40])
+        XCTAssertEqual(afterUnrelatedSave.exerciseHistory(exerciseID: second.id).map(\.weight), [45])
+
+        XCTAssertThrowsError(try afterUnrelatedSave.addExercise(name: "Legacy\u{2007}Custom")) { error in
+            XCTAssertEqual(error as? WorkoutStoreError, .duplicateExerciseName)
+        }
+        let namedWorkout = try XCTUnwrap(try afterUnrelatedSave.createWorkout(
+            date: Date(timeIntervalSince1970: 1_760_000_000),
+            namedSets: [
+                NamedWorkoutSetDraft(exerciseName: "Legacy  Custom", weight: 50, reps: 6)
+            ]
+        ))
+        XCTAssertEqual(namedWorkout.exercises.first?.exerciseID, first.id)
+        XCTAssertEqual(afterUnrelatedSave.exercises.count, 2)
+        let snapshotBeforeAmbiguousImport = afterUnrelatedSave.snapshot
+        XCTAssertThrowsError(try afterUnrelatedSave.createWorkout(
+            date: Date(timeIntervalSince1970: 1_770_000_000),
+            namedSets: [
+                NamedWorkoutSetDraft(
+                    exerciseName: "Legacy\u{2007}Custom",
+                    weight: 55,
+                    reps: 5
+                )
+            ]
+        )) { error in
+            XCTAssertEqual(error as? WorkoutStoreError, .duplicateExerciseName)
+        }
+        XCTAssertEqual(afterUnrelatedSave.snapshot, snapshotBeforeAmbiguousImport)
+
+        let manualBackup = try afterUnrelatedSave.makeBackup(
+            owner: BackupOwner(accountID: storageKey, remote: false)
+        )
+        XCTAssertEqual(manualBackup.exercises.count, 2)
+        XCTAssertEqual(
+            Set(manualBackup.exercises.map(\.name)),
+            Set(["Legacy  Custom", "Legacy Custom"])
+        )
+        XCTAssertThrowsError(try AppState.cloudWorkoutIdentity(manualBackup))
+        XCTAssertThrowsError(try afterUnrelatedSave.exportCloudBackupData(
+            owner: BackupOwner(accountID: storageKey, remote: false)
+        ))
+
+        let savedAgain = try WorkoutStore(accountStorageKey: storageKey, directoryURL: directory)
+        XCTAssertEqual(Set(savedAgain.exercises.map(\.id)), Set([first.id, second.id]))
+        XCTAssertEqual(savedAgain.workouts.count, 3)
+        XCTAssertTrue(savedAgain.exercise(id: first.id)?.isFavorite == true)
+        XCTAssertEqual(
+            Set(savedAgain.workouts.flatMap { $0.exercises.map(\.exerciseID) }),
+            Set([first.id, second.id])
+        )
+        XCTAssertTrue(savedAgain.exerciseHistory(exerciseID: first.id).map(\.weight).contains(40))
+        XCTAssertTrue(savedAgain.exerciseHistory(exerciseID: second.id).map(\.weight).contains(45))
+
+        let secondOnlyBackup = GymBackup(
+            exportedAt: 1_780_000_000_000,
+            diagnostics: false,
+            owner: BackupOwner(accountID: storageKey, remote: false),
+            exercises: [BackupExercise(name: second.name)],
+            sessions: [],
+            summary: nil
+        )
+        _ = try savedAgain.restoreBackup(
+            data: JSONEncoder().encode(secondOnlyBackup),
+            activeOwner: BackupOwner(accountID: storageKey, remote: false)
+        )
+        XCTAssertEqual(savedAgain.exercises.map(\.name), [second.name])
+        XCTAssertFalse(try XCTUnwrap(savedAgain.exercises.first).isFavorite)
+
+        let builtInStorageKey = "legacy-catalog-favorite-collision"
+        let builtInDirectory = try temporaryDirectory(named: builtInStorageKey)
+        let builtInPlaceholder = try WorkoutStore(
+            accountStorageKey: builtInStorageKey,
+            directoryURL: builtInDirectory
+        )
+        let englishBench = Exercise(name: "Bench Press")
+        let ukrainianBench = Exercise(name: "Жим штанги лежачи")
+        let builtInEnvelope = LegacyPersistedEnvelope(
+            schemaVersion: 2,
+            accountStorageKey: builtInStorageKey,
+            savedAt: Date(timeIntervalSince1970: 1_780_000_100),
+            snapshot: WorkoutDataSnapshot(exercises: [englishBench, ukrainianBench]),
+            favoriteExerciseIDs: [englishBench.id]
+        )
+        try encoder.encode(builtInEnvelope).write(
+            to: builtInPlaceholder.storageURL,
+            options: .atomic
+        )
+        let builtInLegacy = try WorkoutStore(
+            accountStorageKey: builtInStorageKey,
+            directoryURL: builtInDirectory
+        )
+        let ukrainianOnlyBackup = GymBackup(
+            exportedAt: 1_790_000_000_000,
+            diagnostics: false,
+            owner: BackupOwner(accountID: builtInStorageKey, remote: false),
+            exercises: [BackupExercise(name: ukrainianBench.name)],
+            sessions: [],
+            summary: nil
+        )
+        _ = try builtInLegacy.restoreBackup(
+            data: JSONEncoder().encode(ukrainianOnlyBackup),
+            activeOwner: BackupOwner(accountID: builtInStorageKey, remote: false)
+        )
+        XCTAssertEqual(builtInLegacy.exercises.map(\.name), [ukrainianBench.name])
+        XCTAssertFalse(try XCTUnwrap(builtInLegacy.exercises.first).isFavorite)
+    }
+
+    func testCloudWorkoutIdentityIgnoresCatalogPermutationButNotWorkoutChanges() throws {
+        let firstExercise = BackupExercise(name: "Bench custom")
+        let secondExercise = BackupExercise(name: "Жим custom")
+        let originalSession = BackupSession(
+            date: 1_750_000_000_000,
+            exercises: [
+                BackupWorkoutExercise(
+                    name: firstExercise.name,
+                    sets: [
+                        BackupSet(weight: 80, reps: 8),
+                        BackupSet(weight: 82.5, reps: 6)
+                    ]
+                ),
+                BackupWorkoutExercise(
+                    name: secondExercise.name,
+                    sets: [BackupSet(weight: 40, reps: 10)]
+                )
+            ]
+        )
+        let original = GymBackup(
+            exportedAt: 1_750_000_000_000,
+            diagnostics: false,
+            owner: nil,
+            exercises: [firstExercise, secondExercise],
+            sessions: [originalSession],
+            summary: nil
+        )
+        let permuted = GymBackup(
+            exportedAt: original.exportedAt,
+            diagnostics: false,
+            owner: nil,
+            exercises: [secondExercise, firstExercise],
+            sessions: [originalSession],
+            summary: nil
+        )
+        let changedWorkout = GymBackup(
+            exportedAt: original.exportedAt,
+            diagnostics: false,
+            owner: nil,
+            exercises: [secondExercise, firstExercise],
+            sessions: [
+                BackupSession(
+                    date: 1_750_000_000_000,
+                    exercises: [
+                        BackupWorkoutExercise(
+                            name: firstExercise.name,
+                            sets: [
+                                BackupSet(weight: 80, reps: 9),
+                                BackupSet(weight: 82.5, reps: 6)
+                            ]
+                        ),
+                        BackupWorkoutExercise(
+                            name: secondExercise.name,
+                            sets: [BackupSet(weight: 40, reps: 10)]
+                        )
+                    ]
+                )
+            ],
+            summary: nil
+        )
+        var changedBlockOrder = original
+        changedBlockOrder.sessions[0].exercises?.reverse()
+        var changedSetOrder = original
+        changedSetOrder.sessions[0].exercises?[0].sets.reverse()
+
+        XCTAssertEqual(
+            try AppState.cloudWorkoutIdentity(original),
+            try AppState.cloudWorkoutIdentity(permuted)
+        )
+        XCTAssertNotEqual(
+            try AppState.cloudWorkoutIdentity(original),
+            try AppState.cloudWorkoutIdentity(changedWorkout)
+        )
+        XCTAssertNotEqual(
+            try AppState.cloudWorkoutIdentity(original),
+            try AppState.cloudWorkoutIdentity(changedBlockOrder)
+        )
+        XCTAssertNotEqual(
+            try AppState.cloudWorkoutIdentity(original),
+            try AppState.cloudWorkoutIdentity(changedSetOrder)
+        )
+    }
+
+    func testRestoreRejectsDuplicateCatalogIdentitiesBeforeChangingStore() throws {
+        let storageKey = "duplicate-catalog-identity-target"
+        let store = try WorkoutStore(
+            accountStorageKey: storageKey,
+            directoryURL: try temporaryDirectory(named: storageKey)
+        )
+        let preservedExercise = try store.addExercise(name: "Preserved custom exercise")
+        _ = try store.createWorkout(
+            date: Date(timeIntervalSince1970: 1_740_000_000),
+            exercises: [
+                WorkoutExerciseDraft(
+                    exerciseID: preservedExercise.id,
+                    sets: [.init(weight: 55, reps: 8)]
+                )
+            ]
+        )
+        let originalSnapshot = store.snapshot
+        let owner = BackupOwner(accountID: storageKey, remote: false)
+        let lighter = try MachineLoadProfile(
+            direction: .higherIsHarder,
+            allowedWeightsKg: [10, 20]
+        )
+        let heavier = try MachineLoadProfile(
+            direction: .higherIsHarder,
+            allowedWeightsKg: [15, 25]
+        )
+
+        for profiles in [[lighter, heavier], [heavier, lighter]] {
+            let backup = GymBackup(
+                exportedAt: 1_750_000_000_000,
+                diagnostics: false,
+                owner: owner,
+                exercises: profiles.map {
+                    BackupExercise(name: "Duplicate custom", machineLoadProfile: $0)
+                },
+                sessions: [],
+                summary: nil
+            )
+            let data = try JSONEncoder().encode(backup)
+
+            XCTAssertThrowsError(
+                try store.restoreBackup(data: data, activeOwner: owner)
+            )
+            XCTAssertEqual(store.snapshot, originalSnapshot)
+        }
+
+        let aliasBackup = GymBackup(
+            exportedAt: 1_750_000_000_000,
+            diagnostics: false,
+            owner: owner,
+            exercises: [
+                BackupExercise(name: "Squat"),
+                BackupExercise(name: "Присідання зі штангою")
+            ],
+            sessions: [],
+            summary: nil
+        )
+        XCTAssertThrowsError(
+            try store.restoreBackup(data: JSONEncoder().encode(aliasBackup), activeOwner: owner)
+        )
+        XCTAssertThrowsError(try AppState.cloudWorkoutIdentity(aliasBackup))
+        XCTAssertEqual(store.snapshot, originalSnapshot)
+    }
+
+    func testEqualTimestampSessionsKeepStoredOrderAcrossBackupRoundTrip() throws {
+        let sourceDirectory = try temporaryDirectory(named: "equal-timestamp-source")
+        let source = try WorkoutStore(
+            accountStorageKey: "equal-timestamp-source",
+            directoryURL: sourceDirectory
+        )
+        let first = try source.addExercise(name: "First timestamp custom")
+        let second = try source.addExercise(name: "Second timestamp custom")
+        let third = try source.addExercise(name: "Third timestamp custom")
+        let sharedDate = Date(timeIntervalSince1970: 1_750_000_000)
+        let firstSession = try source.createWorkout(
+            date: sharedDate,
+            exercises: [
+                WorkoutExerciseDraft(
+                    exerciseID: first.id,
+                    sets: [.init(weight: 50, reps: 8)]
+                )
+            ]
+        )
+        let secondSession = try source.createWorkout(
+            date: sharedDate,
+            exercises: [
+                WorkoutExerciseDraft(
+                    exerciseID: second.id,
+                    sets: [.init(weight: 60, reps: 6)]
+                )
+            ]
+        )
+        let thirdSession = try source.createWorkout(
+            date: sharedDate,
+            exercises: [
+                WorkoutExerciseDraft(
+                    exerciseID: third.id,
+                    sets: [.init(weight: 70, reps: 5)]
+                )
+            ]
+        )
+        let expectedWorkoutIDs = [firstSession.id, secondSession.id, thirdSession.id]
+        XCTAssertEqual(source.workouts.map(\.id), expectedWorkoutIDs)
+
+        let reopenedSource = try WorkoutStore(
+            accountStorageKey: "equal-timestamp-source",
+            directoryURL: sourceDirectory
+        )
+        XCTAssertEqual(reopenedSource.workouts.map(\.id), expectedWorkoutIDs)
+        _ = try reopenedSource.toggleExerciseFavorite(id: second.id)
+        let savedAgainSource = try WorkoutStore(
+            accountStorageKey: "equal-timestamp-source",
+            directoryURL: sourceDirectory
+        )
+        XCTAssertEqual(savedAgainSource.workouts.map(\.id), expectedWorkoutIDs)
+
+        let owner = BackupOwner(accountID: "equal-timestamp-target", remote: false)
+        let before = try savedAgainSource.makeBackup(owner: owner)
+        let beforeIdentity = try AppState.cloudWorkoutIdentity(before)
+        let target = try WorkoutStore(
+            accountStorageKey: "equal-timestamp-target",
+            directoryURL: try temporaryDirectory(named: "equal-timestamp-target")
+        )
+        _ = try target.restoreBackup(
+            data: JSONEncoder().encode(before),
+            activeOwner: owner
+        )
+        let after = try target.makeBackup(owner: owner)
+
+        XCTAssertEqual(
+            before.sessions.compactMap { $0.exercises?.first?.name },
+            ["First timestamp custom", "Second timestamp custom", "Third timestamp custom"]
+        )
+        XCTAssertEqual(after.sessions, before.sessions)
+        XCTAssertEqual(try AppState.cloudWorkoutIdentity(after), beforeIdentity)
+    }
+
+    func testNativeDuplicateWorkoutBlocksRestoreSeparatelyInOriginalOrder() throws {
+        let storageKey = "duplicate-native-blocks"
+        let owner = BackupOwner(accountID: storageKey, remote: false)
+        let catalogProfile = try MachineLoadProfile(
+            direction: .higherIsHarder,
+            allowedWeightsKg: [40, 55]
+        )
+        let backup = GymBackup(
+            exportedAt: 1_750_000_000_000,
+            diagnostics: false,
+            owner: owner,
+            exercises: [
+                BackupExercise(
+                    name: "Repeated block custom",
+                    machineLoadProfile: catalogProfile
+                )
+            ],
+            sessions: [
+                BackupSession(
+                    date: 1_750_000_000_000,
+                    exercises: [
+                        BackupWorkoutExercise(
+                            name: "Repeated block custom",
+                            machineLoadProfile: catalogProfile,
+                            sets: [BackupSet(weight: 40, reps: 10)]
+                        ),
+                        BackupWorkoutExercise(
+                            name: "Repeated block custom",
+                            machineLoadProfile: catalogProfile,
+                            sets: [BackupSet(weight: 55, reps: 6)]
+                        )
+                    ]
+                )
+            ],
+            summary: nil
+        )
+        var withoutRedundantProfiles = backup
+        withoutRedundantProfiles.sessions[0].exercises?[0].machineLoadProfile = nil
+        withoutRedundantProfiles.sessions[0].exercises?[1].machineLoadProfile = nil
+        XCTAssertEqual(
+            try AppState.cloudWorkoutIdentity(backup),
+            try AppState.cloudWorkoutIdentity(withoutRedundantProfiles)
+        )
+        let store = try WorkoutStore(
+            accountStorageKey: storageKey,
+            directoryURL: try temporaryDirectory(named: storageKey)
+        )
+        _ = try store.restoreBackup(
+            data: JSONEncoder().encode(backup),
+            activeOwner: owner
+        )
+
+        let blocks = try XCTUnwrap(store.workouts.first?.exercises)
+        XCTAssertEqual(blocks.count, 2)
+        XCTAssertEqual(blocks.map { $0.sets.map(\.weight) }, [[40], [55]])
+        XCTAssertEqual(store.exercises.first?.machineLoadProfile, catalogProfile)
+        let exported = try store.makeBackup(owner: owner)
+        XCTAssertEqual(
+            exported.sessions.first?.exercises?.map {
+                $0.sets.map(\.weight)
+            },
+            [[40], [55]]
+        )
+        XCTAssertEqual(
+            try AppState.cloudWorkoutIdentity(backup),
+            try AppState.cloudWorkoutIdentity(exported)
+        )
+    }
+
+    func testNestedLoadProfileMismatchOrOrphanRejectsWithoutChangingStore() throws {
+        let storageKey = "nested-profile-rejection"
+        let owner = BackupOwner(accountID: storageKey, remote: false)
+        let store = try WorkoutStore(
+            accountStorageKey: storageKey,
+            directoryURL: try temporaryDirectory(named: storageKey)
+        )
+        _ = try store.addExercise(name: "Preserved nested profile custom")
+        let originalSnapshot = store.snapshot
+        let catalogProfile = try MachineLoadProfile(
+            direction: .higherIsHarder,
+            allowedWeightsKg: [10, 20]
+        )
+        let conflictingProfile = try MachineLoadProfile(
+            direction: .higherIsHarder,
+            allowedWeightsKg: [15, 25]
+        )
+        let mismatched = GymBackup(
+            exportedAt: 1_750_000_000_000,
+            diagnostics: false,
+            owner: owner,
+            exercises: [
+                BackupExercise(name: "Configured custom", machineLoadProfile: catalogProfile)
+            ],
+            sessions: [
+                BackupSession(
+                    date: 1_750_000_000_000,
+                    exercises: [
+                        BackupWorkoutExercise(
+                            name: "Configured custom",
+                            machineLoadProfile: conflictingProfile,
+                            sets: [BackupSet(weight: 15, reps: 8)]
+                        )
+                    ]
+                )
+            ],
+            summary: nil
+        )
+        let orphan = GymBackup(
+            exportedAt: 1_750_000_000_000,
+            diagnostics: false,
+            owner: owner,
+            exercises: [],
+            sessions: [
+                BackupSession(
+                    date: 1_750_000_000_000,
+                    exercises: [
+                        BackupWorkoutExercise(
+                            name: "Orphan custom",
+                            machineLoadProfile: catalogProfile,
+                            sets: [BackupSet(weight: 10, reps: 8)]
+                        )
+                    ]
+                )
+            ],
+            summary: nil
+        )
+
+        for rejected in [mismatched, orphan] {
+            XCTAssertThrowsError(try AppState.cloudWorkoutIdentity(rejected))
+            XCTAssertThrowsError(
+                try store.restoreBackup(data: JSONEncoder().encode(rejected), activeOwner: owner)
+            )
+            XCTAssertEqual(store.snapshot, originalSnapshot)
+        }
+    }
+
+    func testNegativeZeroNormalizesInMachineProfilesAndImportedSets() throws {
+        let profile = try MachineLoadProfile(
+            direction: .higherIsHarder,
+            allowedWeightsKg: [-0.0, 5.0]
+        )
+        XCTAssertEqual(profile.allowedWeightsKg[0].bitPattern, 0.0.bitPattern)
+
+        let storageKey = "negative-zero-import"
+        let owner = BackupOwner(accountID: storageKey, remote: false)
+        let backup = GymBackup(
+            exportedAt: 1_750_000_000_000,
+            diagnostics: false,
+            owner: owner,
+            exercises: [BackupExercise(name: "Zero custom", machineLoadProfile: profile)],
+            sessions: [
+                BackupSession(
+                    date: 1_750_000_000_000,
+                    exercises: [
+                        BackupWorkoutExercise(
+                            name: "Zero custom",
+                            sets: [BackupSet(weight: -0.0, reps: 8)]
+                        )
+                    ]
+                )
+            ],
+            summary: nil
+        )
+        let store = try WorkoutStore(
+            accountStorageKey: storageKey,
+            directoryURL: try temporaryDirectory(named: storageKey)
+        )
+        _ = try store.restoreBackup(
+            data: JSONEncoder().encode(backup),
+            activeOwner: owner
+        )
+
+        XCTAssertEqual(
+            try XCTUnwrap(store.workouts.first?.exercises.first?.sets.first?.weight).bitPattern,
+            0.0.bitPattern
+        )
+    }
+
     func testCloudExportUsesPortableOwnerIDInsteadOfLocalStorageAlias() async throws {
         let directory = try temporaryDirectory(named: "portable-cloud-owner")
         let defaults = temporaryDefaults(named: "portable-cloud-owner")
@@ -1655,9 +2576,13 @@ final class CoreParityTests: XCTestCase {
         XCTAssertEqual(result.importedSessions, 1)
         XCTAssertEqual(target.exercises.count, 2)
         let importedWorkout = try XCTUnwrap(target.workouts.first)
-        XCTAssertEqual(importedWorkout.exercises.count, 1)
-        XCTAssertEqual(importedWorkout.exercises.first?.exerciseID, squat.id)
-        XCTAssertEqual(importedWorkout.exercises.first?.sets.count, 2)
+        XCTAssertEqual(importedWorkout.exercises.count, 2)
+        XCTAssertEqual(importedWorkout.exercises.map(\.exerciseID), [squat.id, squat.id])
+        XCTAssertEqual(importedWorkout.exercises.map { $0.sets.count }, [1, 1])
+        XCTAssertEqual(
+            importedWorkout.exercises.compactMap { $0.sets.first?.weight },
+            [80.0, 82.5]
+        )
         XCTAssertFalse(importedWorkout.exercises.contains { $0.exerciseID == bench.id })
     }
 
@@ -1779,7 +2704,7 @@ final class CoreParityTests: XCTestCase {
         XCTAssertEqual(matchingTarget.snapshot, WorkoutDataSnapshot())
     }
 
-    func testAuthenticatedPWACloudBackupsAreOwnerBoundAndReadOnly() throws {
+    func testAuthenticatedPWACloudBackupsMigrateToWritableSharedEnvelope() throws {
         let owner = BackupOwner(
             accountID: "cloud_pwa-user",
             userID: "pwa-user",
@@ -1789,7 +2714,30 @@ final class CoreParityTests: XCTestCase {
 
         let flat = try pwaFlatCloudData(exerciseName: "PWA Bench")
         let preparedFlat = try WorkoutStore.prepareCloudBackup(flat, activeOwner: owner)
-        XCTAssertFalse(preparedFlat.roundTripSafe)
+        XCTAssertTrue(preparedFlat.roundTripSafe)
+        XCTAssertTrue(preparedFlat.requiresCanonicalUpload)
+        let flatRoot = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: preparedFlat.data) as? [String: Any]
+        )
+        let flatExtensions = try XCTUnwrap(flatRoot["extensions"] as? [String: Any])
+        let flatPWA = try XCTUnwrap(flatExtensions["pwa"] as? [String: Any])
+        XCTAssertEqual(flatPWA["language"] as? String, "uk")
+        XCTAssertNil(flatRoot["language"])
+        XCTAssertNotNil(flatRoot["summary"])
+
+        var ambiguousOwnerless = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: flat) as? [String: Any]
+        )
+        ambiguousOwnerless["source"] = "unknown-ownerless-client"
+        XCTAssertThrowsError(
+            try WorkoutStore.prepareCloudBackup(
+                JSONSerialization.data(
+                    withJSONObject: ambiguousOwnerless,
+                    options: [.sortedKeys]
+                ),
+                activeOwner: owner
+            )
+        )
 
         let flatTarget = try WorkoutStore(
             accountStorageKey: owner.accountID!,
@@ -1810,7 +2758,8 @@ final class CoreParityTests: XCTestCase {
             schemaBackup,
             activeOwner: owner
         )
-        XCTAssertFalse(preparedSchema.roundTripSafe)
+        XCTAssertTrue(preparedSchema.roundTripSafe)
+        XCTAssertTrue(preparedSchema.requiresCanonicalUpload)
         let schemaTarget = try WorkoutStore(
             accountStorageKey: owner.accountID!,
             directoryURL: try temporaryDirectory(named: "pwa-schema-target")
@@ -1822,6 +2771,45 @@ final class CoreParityTests: XCTestCase {
         XCTAssertTrue(
             try WorkoutStore.prepareCloudBackup(native, activeOwner: owner).roundTripSafe
         )
+        var ownerlessNativeRoot = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: native) as? [String: Any]
+        )
+        ownerlessNativeRoot.removeValue(forKey: "owner")
+        XCTAssertThrowsError(
+            try WorkoutStore.prepareCloudBackup(
+                JSONSerialization.data(
+                    withJSONObject: ownerlessNativeRoot,
+                    options: [.sortedKeys]
+                ),
+                activeOwner: owner
+            )
+        ) { error in
+            XCTAssertEqual(error as? WorkoutStoreError, .backupOwnerMismatch)
+        }
+        var nativeFlatRoot = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: native) as? [String: Any]
+        )
+        var nativeFlatSessions = try XCTUnwrap(nativeFlatRoot["sessions"] as? [[String: Any]])
+        var nativeFlatSession = try XCTUnwrap(nativeFlatSessions.first)
+        let nativeBlocks = try XCTUnwrap(nativeFlatSession["exercises"] as? [[String: Any]])
+        let nativeBlock = try XCTUnwrap(nativeBlocks.first)
+        let nativeName = try XCTUnwrap(nativeBlock["name"] as? String)
+        let nativeSets = try XCTUnwrap(nativeBlock["sets"] as? [[String: Any]])
+        nativeFlatSession.removeValue(forKey: "exercises")
+        nativeFlatSession["sets"] = nativeSets.map { set in
+            var flatSet = set
+            flatSet["exerciseName"] = nativeName
+            return flatSet
+        }
+        nativeFlatSessions[0] = nativeFlatSession
+        nativeFlatRoot["sessions"] = nativeFlatSessions
+        let nativeFlat = try JSONSerialization.data(
+            withJSONObject: nativeFlatRoot,
+            options: [.sortedKeys]
+        )
+        XCTAssertFalse(
+            try WorkoutStore.prepareCloudBackup(nativeFlat, activeOwner: owner).roundTripSafe
+        )
 
         let foreign = try pwaSchemaCloudData(
             exerciseName: "Foreign Secret",
@@ -1832,6 +2820,694 @@ final class CoreParityTests: XCTestCase {
         ) { error in
             XCTAssertEqual(error as? WorkoutStoreError, .backupOwnerMismatch)
         }
+    }
+
+    func testFreshDeviceCloudRestoreTreatsMissingCatalogSeedMarkerAsCurrent() throws {
+        let userID = "00000000-0000-4000-8000-000000000107"
+        let owner = BackupOwner(
+            accountID: userID,
+            userID: userID,
+            email: "fresh-cloud-seed@example.com",
+            remote: true
+        )
+        let native = try remoteBackupData(
+            exerciseName: "Cloud Custom Move",
+            owner: owner
+        )
+        var nativeRoot = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: native) as? [String: Any]
+        )
+        nativeRoot.removeValue(forKey: "catalogSeedVersion")
+        let nativeWithoutMarker = try JSONSerialization.data(
+            withJSONObject: nativeRoot,
+            options: [.sortedKeys]
+        )
+
+        let preparedNative = try WorkoutStore.prepareCloudBackup(
+            nativeWithoutMarker,
+            activeOwner: owner,
+            localCatalogSeedVersion: 0
+        )
+        let decodedNative = try JSONDecoder().decode(
+            GymBackup.self,
+            from: preparedNative.data
+        )
+        XCTAssertEqual(
+            decodedNative.catalogSeedVersion,
+            BuiltInExerciseCatalog.seedVersion
+        )
+        let nativeTarget = try WorkoutStore(
+            accountStorageKey: userID,
+            directoryURL: try temporaryDirectory(named: "fresh-native-cloud-seed")
+        )
+        _ = try nativeTarget.restoreBackup(data: preparedNative.data, activeOwner: owner)
+        XCTAssertEqual(try nativeTarget.seedBuiltInExercises(), 0)
+        XCTAssertEqual(nativeTarget.exercises.map(\.name), ["Cloud Custom Move"])
+
+        let legacy = try pwaFlatCloudData(exerciseName: "Legacy Cloud Custom Move")
+        let preparedLegacy = try WorkoutStore.prepareCloudBackup(
+            legacy,
+            activeOwner: owner,
+            localCatalogSeedVersion: 0
+        )
+        let decodedLegacy = try JSONDecoder().decode(
+            GymBackup.self,
+            from: preparedLegacy.data
+        )
+        XCTAssertEqual(
+            decodedLegacy.catalogSeedVersion,
+            BuiltInExerciseCatalog.seedVersion
+        )
+        let legacyTarget = try WorkoutStore(
+            accountStorageKey: userID,
+            directoryURL: try temporaryDirectory(named: "fresh-legacy-cloud-seed")
+        )
+        _ = try legacyTarget.restoreBackup(data: preparedLegacy.data, activeOwner: owner)
+        XCTAssertEqual(try legacyTarget.seedBuiltInExercises(), 0)
+        XCTAssertEqual(legacyTarget.exercises.map(\.name), ["Legacy Cloud Custom Move"])
+    }
+
+    func testRepresentativePWAWriterEnvelopeRoundTripsThroughIOSWithAndroidExtension() throws {
+        let userID = "00000000-0000-4000-8000-000000000106"
+        let storageKey = "cloud_\(userID)"
+        let owner = BackupOwner(
+            accountID: storageKey,
+            userID: userID,
+            email: "extension-roundtrip@example.com",
+            remote: true
+        )
+        let directory = try temporaryDirectory(named: storageKey)
+        let source = try remoteBackupData(exerciseName: "Shared Extension Press", owner: owner)
+        var root = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: source) as? [String: Any]
+        )
+        // Match the exact canonical root written by the browser client: portable UUID owner,
+        // no native-local catalog marker, and namespaced client extension state.
+        root.removeValue(forKey: "catalogSeedVersion")
+        root["owner"] = [
+            "accountId": userID,
+            "userId": userID,
+            "remote": true
+        ]
+        let extensions: [String: Any] = [
+            "pwa": [
+                "version": 1,
+                "language": "ru",
+                "mappings": ["shared extension press": ["chest", "triceps"]],
+                "profile": [
+                    "split": "Upper / Lower",
+                    "days": 4,
+                    "goal": "Strength",
+                    "calories": "Maintenance"
+                ]
+            ],
+            "android": [
+                "version": 7,
+                "payload": ["nested": [1, true, NSNull(), "kept"]]
+            ]
+        ]
+        root["extensions"] = extensions
+        let sharedData = try JSONSerialization.data(
+            withJSONObject: root,
+            options: [.sortedKeys]
+        )
+        let prepared = try WorkoutStore.prepareCloudBackup(
+            sharedData,
+            activeOwner: owner
+        )
+        XCTAssertTrue(prepared.roundTripSafe)
+        XCTAssertFalse(prepared.requiresCanonicalUpload)
+
+        let store = try WorkoutStore(
+            accountStorageKey: storageKey,
+            directoryURL: directory
+        )
+        _ = try store.restoreBackup(data: prepared.data, activeOwner: owner)
+        try store.setCloudExtensionsData(prepared.extensionsData)
+        let exercise = try store.addExercise(name: "iOS Addition")
+        _ = try store.createWorkout(
+            date: Date(timeIntervalSince1970: 1_760_000_000),
+            exercises: [
+                WorkoutExerciseDraft(
+                    exerciseID: exercise.id,
+                    sets: [.init(weight: 22.5, reps: 9)]
+                )
+            ]
+        )
+
+        let reopened = try WorkoutStore(
+            accountStorageKey: storageKey,
+            directoryURL: directory
+        )
+        let written = try reopened.exportCloudBackupData(
+            owner: owner,
+            extensionsData: reopened.cloudExtensionsData
+        )
+        let writtenRoot = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: written) as? [String: Any]
+        )
+        XCTAssertEqual(
+            Set(writtenRoot.keys),
+            Set([
+                "schemaVersion", "exportedAt", "app", "diagnostics", "owner",
+                "exercises", "sessions", "summary", "extensions"
+            ])
+        )
+        XCTAssertEqual(
+            writtenRoot["extensions"] as? NSDictionary,
+            extensions as NSDictionary
+        )
+        XCTAssertTrue(
+            try WorkoutStore.prepareCloudBackup(written, activeOwner: owner).roundTripSafe
+        )
+    }
+
+    func testSharedCloudExtensionsRejectMalformedKnownAndForbiddenPayloads() throws {
+        let owner = BackupOwner(
+            accountID: "cloud_extension-validation",
+            userID: "extension-validation",
+            email: "extension-validation@example.com",
+            remote: true
+        )
+        let native = try remoteBackupData(exerciseName: "Extension Validation", owner: owner)
+        let nativeRoot = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: native) as? [String: Any]
+        )
+
+        func encoded(_ root: [String: Any]) throws -> Data {
+            try JSONSerialization.data(withJSONObject: root, options: [.sortedKeys])
+        }
+
+        var nonObject = nativeRoot
+        nonObject["extensions"] = ["not", "an", "object"]
+        XCTAssertThrowsError(
+            try WorkoutStore.prepareCloudBackup(encoded(nonObject), activeOwner: owner)
+        )
+
+        var invalidPWA = nativeRoot
+        invalidPWA["extensions"] = [
+            "pwa": [
+                "version": 1,
+                "language": "en",
+                "mappings": [:],
+                "profile": [
+                    "split": "Upper / Lower",
+                    "days": 99,
+                    "goal": "Strength",
+                    "calories": "Maintenance"
+                ]
+            ]
+        ]
+        XCTAssertThrowsError(
+            try WorkoutStore.prepareCloudBackup(encoded(invalidPWA), activeOwner: owner)
+        )
+
+        var validUnicodePWA = nativeRoot
+        validUnicodePWA["extensions"] = [
+            "pwa": [
+                "version": 1,
+                "language": "en",
+                "mappings": ["Custom carry": [String(repeating: "💪", count: 32)]],
+                "profile": [
+                    "split": "Upper / Lower",
+                    "days": 4,
+                    "goal": "Strength",
+                    "calories": "Maintenance"
+                ]
+            ]
+        ]
+        XCTAssertTrue(
+            try WorkoutStore.prepareCloudBackup(
+                encoded(validUnicodePWA),
+                activeOwner: owner
+            ).roundTripSafe
+        )
+
+        var oversizedUnicodePWA = validUnicodePWA
+        oversizedUnicodePWA["extensions"] = [
+            "pwa": [
+                "version": 1,
+                "language": "en",
+                "mappings": ["Custom carry": [String(repeating: "💪", count: 33)]],
+                "profile": [
+                    "split": "Upper / Lower",
+                    "days": 4,
+                    "goal": "Strength",
+                    "calories": "Maintenance"
+                ]
+            ]
+        ]
+        XCTAssertThrowsError(
+            try WorkoutStore.prepareCloudBackup(encoded(oversizedUnicodePWA), activeOwner: owner)
+        )
+
+        var forbidden = nativeRoot
+        forbidden["extensions"] = [
+            "future-client": ["nested": ["__proto__": ["polluted": true]]]
+        ]
+        XCTAssertThrowsError(
+            try WorkoutStore.prepareCloudBackup(encoded(forbidden), activeOwner: owner)
+        )
+
+        var invalidNamespace = nativeRoot
+        invalidNamespace["extensions"] = ["FutureClient": ["version": 1]]
+        XCTAssertThrowsError(
+            try WorkoutStore.prepareCloudBackup(encoded(invalidNamespace), activeOwner: owner)
+        )
+
+        var tooManyNamespaces = nativeRoot
+        tooManyNamespaces["extensions"] = Dictionary(
+            uniqueKeysWithValues: (0 ..< 33).map { ("client-\($0)", ["version": 1]) }
+        )
+        XCTAssertThrowsError(
+            try WorkoutStore.prepareCloudBackup(encoded(tooManyNamespaces), activeOwner: owner)
+        )
+    }
+
+    func testNativeCloudWriteGateRejectsLossyNestedShapesWithoutReencoding() throws {
+        let owner = BackupOwner(
+            accountID: "cloud_native-shape",
+            userID: "native-shape",
+            email: "native-shape@example.com",
+            remote: true
+        )
+        let native = try remoteBackupData(exerciseName: "Native Shape Custom", owner: owner)
+        let nativeRoot = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: native) as? [String: Any]
+        )
+
+        func encoded(_ root: [String: Any]) throws -> Data {
+            try JSONSerialization.data(withJSONObject: root, options: [.sortedKeys])
+        }
+
+        func assertReadOnly(
+            _ root: [String: Any],
+            file: StaticString = #filePath,
+            line: UInt = #line
+        ) throws {
+            let data = try encoded(root)
+            let prepared = try WorkoutStore.prepareCloudBackup(data, activeOwner: owner)
+            XCTAssertFalse(prepared.roundTripSafe, file: file, line: line)
+            XCTAssertEqual(prepared.data, data, file: file, line: line)
+        }
+
+        XCTAssertTrue(
+            try WorkoutStore.prepareCloudBackup(native, activeOwner: owner).roundTripSafe
+        )
+
+        var nativeWithProfile = nativeRoot
+        var profileExercises = try XCTUnwrap(nativeWithProfile["exercises"] as? [[String: Any]])
+        profileExercises[0]["loadProfile"] = [
+            "direction": "higherIsHarder",
+            "allowedWeightsKg": [50.0, 75.0, 100.0]
+        ]
+        nativeWithProfile["exercises"] = profileExercises
+        XCTAssertTrue(
+            try WorkoutStore.prepareCloudBackup(
+                encoded(nativeWithProfile),
+                activeOwner: owner
+            ).roundTripSafe
+        )
+
+        var bothShapes = nativeRoot
+        var bothShapeSessions = try XCTUnwrap(bothShapes["sessions"] as? [[String: Any]])
+        bothShapeSessions[0]["sets"] = [[
+            "exerciseName": "Native Shape Custom",
+            "weight": 100.0,
+            "reps": 8
+        ]]
+        bothShapes["sessions"] = bothShapeSessions
+        try assertReadOnly(bothShapes)
+
+        var startedAtOnly = nativeRoot
+        var startedAtOnlySessions = try XCTUnwrap(startedAtOnly["sessions"] as? [[String: Any]])
+        let timestamp = startedAtOnlySessions[0].removeValue(forKey: "date")
+        startedAtOnlySessions[0]["startedAt"] = timestamp
+        startedAtOnly["sessions"] = startedAtOnlySessions
+        try assertReadOnly(startedAtOnly)
+
+        var bothTimestamps = nativeRoot
+        var bothTimestampSessions = try XCTUnwrap(bothTimestamps["sessions"] as? [[String: Any]])
+        bothTimestampSessions[0]["startedAt"] = bothTimestampSessions[0]["date"]
+        bothTimestamps["sessions"] = bothTimestampSessions
+        try assertReadOnly(bothTimestamps)
+
+        var missingTimestamp = nativeRoot
+        var missingTimestampSessions = try XCTUnwrap(
+            missingTimestamp["sessions"] as? [[String: Any]]
+        )
+        missingTimestampSessions[0].removeValue(forKey: "date")
+        missingTimestamp["sessions"] = missingTimestampSessions
+        try assertReadOnly(missingTimestamp)
+
+        var negativeWeight = nativeRoot
+        var negativeWeightSessions = try XCTUnwrap(
+            negativeWeight["sessions"] as? [[String: Any]]
+        )
+        var negativeWeightBlocks = try XCTUnwrap(
+            negativeWeightSessions[0]["exercises"] as? [[String: Any]]
+        )
+        var negativeWeightSets = try XCTUnwrap(
+            negativeWeightBlocks[0]["sets"] as? [[String: Any]]
+        )
+        negativeWeightSets[0]["weight"] = -1.0
+        negativeWeightBlocks[0]["sets"] = negativeWeightSets
+        negativeWeightSessions[0]["exercises"] = negativeWeightBlocks
+        negativeWeight["sessions"] = negativeWeightSessions
+        try assertReadOnly(negativeWeight)
+
+        var invalidReps = nativeRoot
+        var invalidRepsSessions = try XCTUnwrap(invalidReps["sessions"] as? [[String: Any]])
+        var invalidRepsBlocks = try XCTUnwrap(
+            invalidRepsSessions[0]["exercises"] as? [[String: Any]]
+        )
+        var invalidRepsSets = try XCTUnwrap(invalidRepsBlocks[0]["sets"] as? [[String: Any]])
+        invalidRepsSets[0]["reps"] = 0
+        invalidRepsBlocks[0]["sets"] = invalidRepsSets
+        invalidRepsSessions[0]["exercises"] = invalidRepsBlocks
+        invalidReps["sessions"] = invalidRepsSessions
+        try assertReadOnly(invalidReps)
+
+        var emptyBlock = nativeRoot
+        var emptyBlockSessions = try XCTUnwrap(emptyBlock["sessions"] as? [[String: Any]])
+        var emptyBlocks = try XCTUnwrap(
+            emptyBlockSessions[0]["exercises"] as? [[String: Any]]
+        )
+        emptyBlocks[0]["sets"] = []
+        emptyBlockSessions[0]["exercises"] = emptyBlocks
+        emptyBlock["sessions"] = emptyBlockSessions
+        try assertReadOnly(emptyBlock)
+
+        var emptySession = nativeRoot
+        var emptySessionSessions = try XCTUnwrap(emptySession["sessions"] as? [[String: Any]])
+        emptySessionSessions[0]["exercises"] = []
+        emptySession["sessions"] = emptySessionSessions
+        try assertReadOnly(emptySession)
+
+        var unknownOwnerField = nativeRoot
+        var unknownOwner = try XCTUnwrap(unknownOwnerField["owner"] as? [String: Any])
+        unknownOwner["futureOwnerField"] = true
+        unknownOwnerField["owner"] = unknownOwner
+        try assertReadOnly(unknownOwnerField)
+
+        var unknownProfileField = nativeWithProfile
+        var unknownProfileExercises = try XCTUnwrap(
+            unknownProfileField["exercises"] as? [[String: Any]]
+        )
+        var unknownProfile = try XCTUnwrap(
+            unknownProfileExercises[0]["loadProfile"] as? [String: Any]
+        )
+        unknownProfile["futureProfileField"] = 1
+        unknownProfileExercises[0]["loadProfile"] = unknownProfile
+        unknownProfileField["exercises"] = unknownProfileExercises
+        try assertReadOnly(unknownProfileField)
+
+        var unknownSessionField = nativeRoot
+        var unknownSessionFields = try XCTUnwrap(
+            unknownSessionField["sessions"] as? [[String: Any]]
+        )
+        unknownSessionFields[0]["futureSessionField"] = "kept remotely"
+        unknownSessionField["sessions"] = unknownSessionFields
+        try assertReadOnly(unknownSessionField)
+
+        var unknownBlockField = nativeRoot
+        var unknownBlockSessions = try XCTUnwrap(
+            unknownBlockField["sessions"] as? [[String: Any]]
+        )
+        var unknownBlocks = try XCTUnwrap(
+            unknownBlockSessions[0]["exercises"] as? [[String: Any]]
+        )
+        unknownBlocks[0]["futureBlockField"] = ["private": "extension"]
+        unknownBlockSessions[0]["exercises"] = unknownBlocks
+        unknownBlockField["sessions"] = unknownBlockSessions
+        try assertReadOnly(unknownBlockField)
+
+        var unknownSetField = nativeRoot
+        var unknownSetSessions = try XCTUnwrap(
+            unknownSetField["sessions"] as? [[String: Any]]
+        )
+        var unknownSetBlocks = try XCTUnwrap(
+            unknownSetSessions[0]["exercises"] as? [[String: Any]]
+        )
+        var unknownSets = try XCTUnwrap(
+            unknownSetBlocks[0]["sets"] as? [[String: Any]]
+        )
+        unknownSets[0]["futureSetField"] = 99
+        unknownSetBlocks[0]["sets"] = unknownSets
+        unknownSetSessions[0]["exercises"] = unknownSetBlocks
+        unknownSetField["sessions"] = unknownSetSessions
+        try assertReadOnly(unknownSetField)
+
+        var unknownSummaryField = nativeRoot
+        var unknownSummary = try XCTUnwrap(
+            unknownSummaryField["summary"] as? [String: Any]
+        )
+        unknownSummary["futureSummaryField"] = 1
+        unknownSummaryField["summary"] = unknownSummary
+        try assertReadOnly(unknownSummaryField)
+
+        var builtInAliasMismatch = nativeRoot
+        var builtInExercises = try XCTUnwrap(
+            builtInAliasMismatch["exercises"] as? [[String: Any]]
+        )
+        builtInExercises[0]["name"] = "Squat"
+        builtInExercises[0]["catalogKey"] = "squat"
+        builtInAliasMismatch["exercises"] = builtInExercises
+        var builtInSessions = try XCTUnwrap(
+            builtInAliasMismatch["sessions"] as? [[String: Any]]
+        )
+        var builtInBlocks = try XCTUnwrap(
+            builtInSessions[0]["exercises"] as? [[String: Any]]
+        )
+        builtInBlocks[0]["name"] = "Присідання зі штангою"
+        builtInBlocks[0]["catalogKey"] = "squat"
+        builtInSessions[0]["exercises"] = builtInBlocks
+        builtInAliasMismatch["sessions"] = builtInSessions
+        try assertReadOnly(builtInAliasMismatch)
+
+        var decomposedCustomMismatch = nativeRoot
+        var decomposedExercises = try XCTUnwrap(
+            decomposedCustomMismatch["exercises"] as? [[String: Any]]
+        )
+        decomposedExercises[0]["name"] = "Café custom"
+        decomposedCustomMismatch["exercises"] = decomposedExercises
+        var decomposedSessions = try XCTUnwrap(
+            decomposedCustomMismatch["sessions"] as? [[String: Any]]
+        )
+        var decomposedBlocks = try XCTUnwrap(
+            decomposedSessions[0]["exercises"] as? [[String: Any]]
+        )
+        decomposedBlocks[0]["name"] = "Cafe\u{301} custom"
+        decomposedSessions[0]["exercises"] = decomposedBlocks
+        decomposedCustomMismatch["sessions"] = decomposedSessions
+        try assertReadOnly(decomposedCustomMismatch)
+
+        var unicodeSpaceMismatch = nativeRoot
+        var unicodeSpaceExercises = try XCTUnwrap(
+            unicodeSpaceMismatch["exercises"] as? [[String: Any]]
+        )
+        unicodeSpaceExercises[0]["name"] = "Space Custom"
+        unicodeSpaceMismatch["exercises"] = unicodeSpaceExercises
+        var unicodeSpaceSessions = try XCTUnwrap(
+            unicodeSpaceMismatch["sessions"] as? [[String: Any]]
+        )
+        var unicodeSpaceBlocks = try XCTUnwrap(
+            unicodeSpaceSessions[0]["exercises"] as? [[String: Any]]
+        )
+        unicodeSpaceBlocks[0]["name"] = "Space\u{2007}Custom"
+        unicodeSpaceSessions[0]["exercises"] = unicodeSpaceBlocks
+        unicodeSpaceMismatch["sessions"] = unicodeSpaceSessions
+        try assertReadOnly(unicodeSpaceMismatch)
+
+        var orphanBlock = nativeRoot
+        var orphanSessions = try XCTUnwrap(orphanBlock["sessions"] as? [[String: Any]])
+        var orphanBlocks = try XCTUnwrap(
+            orphanSessions[0]["exercises"] as? [[String: Any]]
+        )
+        orphanBlocks[0]["name"] = "Orphan Custom"
+        orphanSessions[0]["exercises"] = orphanBlocks
+        orphanBlock["sessions"] = orphanSessions
+        try assertReadOnly(orphanBlock)
+
+        var ascendingSessionsRoot = nativeRoot
+        let originalSession = try XCTUnwrap(
+            (ascendingSessionsRoot["sessions"] as? [[String: Any]])?.first
+        )
+        let originalDate = try XCTUnwrap(originalSession["date"] as? NSNumber).int64Value
+        var laterSession = originalSession
+        laterSession["date"] = originalDate + 1_000
+        ascendingSessionsRoot["sessions"] = [originalSession, laterSession]
+        var ascendingSummary = try XCTUnwrap(
+            ascendingSessionsRoot["summary"] as? [String: Any]
+        )
+        ascendingSummary["sessionCount"] = 2
+        ascendingSummary["setCount"] = 2
+        ascendingSummary["totalVolume"] = 1_600.0
+        ascendingSessionsRoot["summary"] = ascendingSummary
+        XCTAssertTrue(
+            try WorkoutStore.prepareCloudBackup(
+                encoded(ascendingSessionsRoot),
+                activeOwner: owner
+            ).roundTripSafe
+        )
+        var reverseSessionsRoot = ascendingSessionsRoot
+        reverseSessionsRoot["sessions"] = [laterSession, originalSession]
+        try assertReadOnly(reverseSessionsRoot)
+    }
+
+    func testNativeCloudWriteGateAcceptsOwnFloatingPointSummaryOrder() throws {
+        let storageKey = "cloud_floating-summary"
+        let owner = BackupOwner(
+            accountID: storageKey,
+            userID: "floating-summary",
+            email: "floating-summary@example.com",
+            remote: true
+        )
+        let store = try WorkoutStore(
+            accountStorageKey: storageKey,
+            directoryURL: try temporaryDirectory(named: storageKey)
+        )
+        let exercise = try store.addExercise(name: "Floating Summary Custom")
+        let weights = [
+            923_202.8538155478,
+            252_609.54225399136,
+            327_300.04706001724
+        ]
+        for (offset, weight) in weights.enumerated() {
+            _ = try store.createWorkout(
+                date: Date(timeIntervalSince1970: 1_750_000_000 + Double(offset)),
+                exercises: [
+                    WorkoutExerciseDraft(
+                        exerciseID: exercise.id,
+                        sets: [.init(weight: weight, reps: 1)]
+                    )
+                ]
+            )
+        }
+
+        let cloudData = try store.exportCloudBackupData(owner: owner)
+        XCTAssertTrue(
+            try WorkoutStore.prepareCloudBackup(
+                cloudData,
+                activeOwner: owner
+            ).roundTripSafe
+        )
+    }
+
+    func testAuthoritativeRestoreRejectsLossyMalformedSessionsWithoutMutation() throws {
+        let storageKey = "strict-authoritative-restore"
+        let owner = BackupOwner(
+            accountID: storageKey,
+            userID: "strict-authoritative",
+            email: "strict-authoritative@example.com",
+            remote: true
+        )
+        let store = try WorkoutStore(
+            accountStorageKey: storageKey,
+            directoryURL: try temporaryDirectory(named: storageKey)
+        )
+        let localExercise = try store.addExercise(name: "Preserved Local Custom")
+        _ = try store.createWorkout(
+            date: Date(timeIntervalSince1970: 1_740_000_000),
+            exercises: [
+                WorkoutExerciseDraft(
+                    exerciseID: localExercise.id,
+                    sets: [.init(weight: 75, reps: 8)]
+                )
+            ]
+        )
+        let originalSnapshot = store.snapshot
+        let remote = try remoteBackupData(
+            exerciseName: "Strict Remote Custom",
+            owner: owner
+        )
+        let remoteRoot = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: remote) as? [String: Any]
+        )
+
+        func encoded(_ root: [String: Any]) throws -> Data {
+            try JSONSerialization.data(withJSONObject: root, options: [.sortedKeys])
+        }
+
+        func assertRejected(
+            _ root: [String: Any],
+            file: StaticString = #filePath,
+            line: UInt = #line
+        ) throws {
+            XCTAssertThrowsError(
+                try store.restoreBackup(data: encoded(root), activeOwner: owner),
+                file: file,
+                line: line
+            )
+            XCTAssertEqual(store.snapshot, originalSnapshot, file: file, line: line)
+        }
+
+        func replacingFirstSet(
+            in root: [String: Any],
+            weight: Double? = nil,
+            reps: Int? = nil
+        ) throws -> [String: Any] {
+            var result = root
+            var sessions = try XCTUnwrap(result["sessions"] as? [[String: Any]])
+            var blocks = try XCTUnwrap(sessions[0]["exercises"] as? [[String: Any]])
+            var sets = try XCTUnwrap(blocks[0]["sets"] as? [[String: Any]])
+            if let weight { sets[0]["weight"] = weight }
+            if let reps { sets[0]["reps"] = reps }
+            blocks[0]["sets"] = sets
+            sessions[0]["exercises"] = blocks
+            result["sessions"] = sessions
+            return result
+        }
+
+        try assertRejected(replacingFirstSet(in: remoteRoot, weight: -1))
+        try assertRejected(replacingFirstSet(in: remoteRoot, weight: 1_000_001))
+        try assertRejected(replacingFirstSet(in: remoteRoot, reps: 0))
+        try assertRejected(replacingFirstSet(in: remoteRoot, reps: 10_001))
+
+        var emptySets = remoteRoot
+        var emptySetSessions = try XCTUnwrap(emptySets["sessions"] as? [[String: Any]])
+        var emptySetBlocks = try XCTUnwrap(
+            emptySetSessions[0]["exercises"] as? [[String: Any]]
+        )
+        emptySetBlocks[0]["sets"] = []
+        emptySetSessions[0]["exercises"] = emptySetBlocks
+        emptySets["sessions"] = emptySetSessions
+        try assertRejected(emptySets)
+
+        var emptySession = remoteRoot
+        var emptySessions = try XCTUnwrap(emptySession["sessions"] as? [[String: Any]])
+        emptySessions[0]["exercises"] = []
+        emptySession["sessions"] = emptySessions
+        try assertRejected(emptySession)
+
+        var missingTimestamp = remoteRoot
+        var missingTimestampSessions = try XCTUnwrap(
+            missingTimestamp["sessions"] as? [[String: Any]]
+        )
+        missingTimestampSessions[0].removeValue(forKey: "date")
+        missingTimestamp["sessions"] = missingTimestampSessions
+        try assertRejected(missingTimestamp)
+
+        var conflictingTimestamps = remoteRoot
+        var conflictingSessions = try XCTUnwrap(
+            conflictingTimestamps["sessions"] as? [[String: Any]]
+        )
+        let date = try XCTUnwrap(conflictingSessions[0]["date"] as? NSNumber).int64Value
+        conflictingSessions[0]["startedAt"] = date + 1
+        conflictingTimestamps["sessions"] = conflictingSessions
+        try assertRejected(conflictingTimestamps)
+
+        var conflictingShapes = remoteRoot
+        var conflictingShapeSessions = try XCTUnwrap(
+            conflictingShapes["sessions"] as? [[String: Any]]
+        )
+        conflictingShapeSessions[0]["sets"] = [[
+            "exerciseName": "Strict Remote Custom",
+            "weight": 99.0,
+            "reps": 3
+        ]]
+        conflictingShapes["sessions"] = conflictingShapeSessions
+        try assertRejected(conflictingShapes)
     }
 
     func testAuthoritativeRestoreReplacesStaleLocalSnapshot() throws {
@@ -6702,9 +8378,9 @@ final class CoreParityTests: XCTestCase {
         XCTAssertNil(auth.session)
     }
 
-    func testPWACloudActivationPausesAutomaticAndManualNativeWrites() async throws {
-        let directory = try temporaryDirectory(named: "pwa-read-only-activation")
-        let defaults = temporaryDefaults(named: "pwa-read-only-activation")
+    func testPWACloudActivationMigratesThenPreservesExtensionsOnCASWrites() async throws {
+        let directory = try temporaryDirectory(named: "pwa-shared-activation")
+        let defaults = temporaryDefaults(named: "pwa-shared-activation")
         let recorder = AuthRequestRecorder()
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [AuthURLProtocolStub.self]
@@ -6714,11 +8390,45 @@ final class CoreParityTests: XCTestCase {
             urlSession: urlSession,
             defaults: defaults
         )
-        let cloud = cloudSession(userID: "pwa-read-only-user")
+        let cloud = cloudSession(userID: "pwa-shared-user")
         let pwaData = try pwaFlatCloudData(exerciseName: "Browser Workout")
+        let pwaObject = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: pwaData) as? [String: Any]
+        )
+        let revision0 = "2026-08-04T08:00:00.000000Z"
         AuthURLProtocolStub.handler = { request in
             recorder.append(request)
-            return try AuthURLProtocolStub.response(for: request, json: "[]")
+            switch (request.url?.path, request.httpMethod) {
+            case ("/rest/v1/user_states", "GET"):
+                let response = try JSONSerialization.data(withJSONObject: [[
+                    "state": pwaObject,
+                    "updated_at": revision0
+                ]])
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    json: String(decoding: response, as: UTF8.self)
+                )
+            case ("/rest/v1/user_states", "PATCH"):
+                let body = try XCTUnwrap(request.httpBody)
+                let object = try XCTUnwrap(
+                    JSONSerialization.jsonObject(with: body) as? [String: Any]
+                )
+                let revision = try XCTUnwrap(object["updated_at"] as? String)
+                let response = try JSONSerialization.data(withJSONObject: [[
+                    "updated_at": revision
+                ]])
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    json: String(decoding: response, as: UTF8.self)
+                )
+            case ("/rest/v1/profiles", "POST"):
+                return try AuthURLProtocolStub.response(for: request, json: "{}")
+            case ("/rest/v1/leaderboard_public", "GET"):
+                return try AuthURLProtocolStub.response(for: request, json: "[]")
+            default:
+                XCTFail("Unexpected PWA shared-state request: \(request.url?.absoluteString ?? "nil")")
+                return try AuthURLProtocolStub.response(for: request, statusCode: 404, json: "{}")
+            }
         }
         defer {
             AuthURLProtocolStub.handler = nil
@@ -6728,11 +8438,7 @@ final class CoreParityTests: XCTestCase {
             auth: auth,
             defaults: defaults,
             workoutDirectoryURL: directory,
-            cloudURLSession: urlSession,
-            remoteStateLoader: { requestedUserID in
-                XCTAssertEqual(requestedUserID, cloud.userID)
-                return pwaData
-            }
+            cloudURLSession: urlSession
         )
 
         try auth.installSessionForTesting(.cloud(cloud))
@@ -6741,19 +8447,55 @@ final class CoreParityTests: XCTestCase {
                 self.customExerciseNames(in: appState.workoutStore) == ["Browser Workout"]
         }
         XCTAssertTrue(accountReady)
-        XCTAssertTrue(appState.isCloudWritePaused)
+        XCTAssertFalse(appState.isCloudWritePaused)
+        let migrationUploaded = await waitUntil {
+            recorder.requests.contains {
+                $0.url?.path == "/rest/v1/user_states" && $0.httpMethod == "PATCH"
+            }
+        }
+        XCTAssertTrue(migrationUploaded)
 
         _ = try appState.workoutStore.addExercise(name: "Native Local Change")
         appState.saveBeforeBackgrounding()
+        let nativeChangeUploaded = await waitUntil {
+            recorder.requests.contains { request in
+                guard request.url?.path == "/rest/v1/user_states",
+                      request.httpMethod == "PATCH",
+                      let body = request.httpBody else { return false }
+                return String(decoding: body, as: UTF8.self).contains("Native Local Change")
+            }
+        }
+        XCTAssertTrue(nativeChangeUploaded)
         await appState.forceCloudSync()
         let leaderboard = try await appState.refreshCloudLeaderboard()
-        try await Task.sleep(for: .milliseconds(100))
 
         XCTAssertTrue(leaderboard.isEmpty)
-        XCTAssertEqual(recorder.requests.count, 1)
-        XCTAssertEqual(recorder.requests.first?.httpMethod, "GET")
-        XCTAssertEqual(recorder.requests.first?.url?.path, "/rest/v1/leaderboard_public")
-        XCTAssertTrue(appState.isCloudWritePaused)
+        XCTAssertFalse(appState.isCloudWritePaused)
+        let patches = recorder.requests.filter {
+            $0.url?.path == "/rest/v1/user_states" && $0.httpMethod == "PATCH"
+        }
+        XCTAssertGreaterThanOrEqual(patches.count, 3)
+        for patch in patches {
+            let body = try XCTUnwrap(patch.httpBody)
+            let object = try XCTUnwrap(
+                JSONSerialization.jsonObject(with: body) as? [String: Any]
+            )
+            let state = try XCTUnwrap(object["state"] as? [String: Any])
+            let extensions = try XCTUnwrap(state["extensions"] as? [String: Any])
+            let pwa = try XCTUnwrap(extensions["pwa"] as? [String: Any])
+            XCTAssertEqual(pwa["language"] as? String, "uk")
+            XCTAssertNil(state["language"])
+        }
+
+        let reopened = try WorkoutStore(
+            accountStorageKey: AppAccountSession.cloud(cloud).storageKey,
+            directoryURL: directory
+        )
+        let persistedExtensions = try XCTUnwrap(reopened.cloudExtensionsData)
+        let persistedRoot = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: persistedExtensions) as? [String: Any]
+        )
+        XCTAssertNotNil(persistedRoot["pwa"])
     }
 
     func testForeignPWAOwnerCannotReplacePersistedAccountState() async throws {
