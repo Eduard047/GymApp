@@ -16,13 +16,11 @@ const EXERCISE_REST_TIMER_PREFIX = "gym-pwa-exercise-rest-timers-v1:";
 const ACTIVE_WORKOUT_PREFIX = "gym-pwa-active-workout-v1:";
 const ACTIVE_WORKOUT_RECOVERY_PREFIX = "gym-pwa-active-workout-recovery-v1:";
 const ACTIVE_WORKOUT_COMMIT_PREFIX = "gym-pwa-active-workout-commits-v1:";
-const ACTIVE_WORKOUT_UNDO_PREFIX = "gym-pwa-active-workout-undo-v1:";
 const ACTIVE_WORKOUT_LOCK_PREFIX = "gym-pwa-active-workout-lock-v1:";
 const LEGACY_GARMIN_DEVICE_TOKEN_KEY = "gym-pwa-garmin-device-token-v1";
 const GARMIN_DEVICE_BINDINGS_KEY = "gym-pwa-garmin-device-bindings-v2";
 const GARMIN_ENQUEUE_REQUESTS_KEY = "gym-pwa-garmin-enqueue-requests-v1";
 const PUBLIC_SITE_URL = "https://gymapptracker.com/";
-const SHARED_WORKOUT_URL = `${PUBLIC_SITE_URL}workout/`;
 const SHARED_WORKOUT_PENDING_KEY = "gym-pwa-pending-shared-workout-v1";
 const SUPPORT_URL = "https://gymapptracker.com/support.html";
 const PRIVACY_URL = "https://gymapptracker.com/privacy-policy.html";
@@ -48,7 +46,6 @@ const MAX_EXERCISE_REST_TIMERS = 100;
 const MAX_EXERCISE_REST_TIMER_MS = 24 * 60 * 60 * 1000;
 const MAX_ACTIVE_WORKOUT_STORAGE_BYTES = 2 * 1024 * 1024;
 const MAX_ACTIVE_WORKOUT_COMMIT_STORAGE_BYTES = 8 * 1024 * 1024;
-const MAX_ACTIVE_WORKOUT_UNDO_STORAGE_BYTES = 1024;
 const ACTIVE_WORKOUT_LOCK_WAIT_MS = 1500;
 const MAX_ACTIVE_WORKOUT_NOTE_LENGTH = 2000;
 const MAX_ACTIVE_WORKOUT_NOTE_BYTES = 8000;
@@ -1096,8 +1093,6 @@ const rankDefinitions = [
   ["cosmic-warlord", 80, "Cosmic Warlord", "Космічний воєвода"]
 ].map(([id, level, titleEn, titleUk]) => ({ id, level, titleEn, titleUk }));
 
-window.GymSharedWorkout?.configureBuiltInIdentityResolver?.(catalogKeyRecognizedFromName);
-
 let volatileRemoteSessionRaw = null;
 discardLegacyGarminToken();
 let activeAccount = loadActiveAccount();
@@ -1105,17 +1100,12 @@ let state = loadState();
 const initialActiveWorkoutRecord = loadActiveWorkoutRecord(activeAccount);
 let activeWorkout = initialActiveWorkoutRecord.workout;
 let activeWorkoutStorageRaw = initialActiveWorkoutRecord.raw;
-const initialActiveWorkoutUndoRecord = loadActiveWorkoutUndoRecord(activeWorkout, activeAccount);
-let activeWorkoutUndoMarker = initialActiveWorkoutUndoRecord.marker;
-let activeWorkoutUndoStorageRaw = initialActiveWorkoutUndoRecord.raw;
-let activeWorkoutUi = { status: "idle", message: "" };
 let exerciseRestTimerLedger = null;
 let nav = [{ name: "workouts" }];
 let modal = null;
 let workoutDraft = null;
 let smartWorkoutEffort = "Auto";
 let smartGeneratedPlan = null;
-let smartPlanStale = false;
 let toastTimer = null;
 const monthOffsets = { workouts: 0, progress: 0 };
 let overviewMode = "overview";
@@ -1147,7 +1137,6 @@ let cloudStateRecovery = null;
 let cloudSyncConflict = null;
 let cloudExtensions = { userId: null, value: {} };
 let cloudRecoveryInProgress = false;
-let cloudSyncUi = { userId: null, status: "idle", error: "" };
 let pendingSharedWorkout = loadStoredSharedWorkout();
 let sharedWorkoutStartupError = false;
 const authDrafts = {
@@ -1592,7 +1581,6 @@ function activeWorkoutAccountDescriptor(account = activeAccount) {
     storageKey: `${ACTIVE_WORKOUT_PREFIX}${normalized.id}`,
     recoveryKey: `${ACTIVE_WORKOUT_RECOVERY_PREFIX}${normalized.id}`,
     commitKey: `${ACTIVE_WORKOUT_COMMIT_PREFIX}${normalized.id}`,
-    undoKey: `${ACTIVE_WORKOUT_UNDO_PREFIX}${normalized.id}`,
     lockName: `${ACTIVE_WORKOUT_LOCK_PREFIX}${normalized.id}`,
   };
 }
@@ -1887,93 +1875,6 @@ function parseActiveWorkoutEnvelope(input, account = activeAccount) {
   };
 }
 
-function parseActiveWorkoutUndoEnvelope(input, workout, account = activeAccount) {
-  const descriptor = activeWorkoutAccountDescriptor(account);
-  if (!descriptor || !workout) throw new Error("Active workout undo state has no owner or workout.");
-  let value = input;
-  if (typeof input === "string") {
-    if (activeWorkoutStorageByteLength(input) > MAX_ACTIVE_WORKOUT_UNDO_STORAGE_BYTES) {
-      throw new Error("Active workout undo state is oversized.");
-    }
-    value = JSON.parse(input);
-  }
-  const root = activeWorkoutExactObject(value, "active workout undo state", [
-    "version", "owner", "workoutId", "workoutRevision", "setId"
-  ]);
-  const workoutId = activeWorkoutPositiveId(root.workoutId, "active workout undo state.workoutId");
-  if (root.version !== 1 || root.owner !== descriptor.owner || workout.owner !== descriptor.owner ||
-      workoutId !== workout.id || !Number.isSafeInteger(root.workoutRevision) ||
-      root.workoutRevision < 1 || root.workoutRevision !== workout.revision) {
-    throw new Error("Active workout undo state does not match the current workout.");
-  }
-  let setId = null;
-  if (root.setId !== null) {
-    setId = activeWorkoutPositiveId(root.setId, "active workout undo state.setId");
-    if (latestActiveCompletedEntry(workout)?.set.id !== setId) {
-      throw new Error("Active workout undo state does not identify the latest completed set.");
-    }
-  }
-  return {
-    version: 1,
-    owner: descriptor.owner,
-    workoutId,
-    workoutRevision: root.workoutRevision,
-    setId
-  };
-}
-
-function loadActiveWorkoutUndoRecord(workout, account = activeAccount) {
-  const descriptor = activeWorkoutAccountDescriptor(account);
-  if (!descriptor) return { marker: null, raw: null };
-  let raw = null;
-  try {
-    raw = localStorage.getItem(descriptor.undoKey);
-    if (raw === null || !workout ||
-        activeWorkoutStorageByteLength(raw) > MAX_ACTIVE_WORKOUT_UNDO_STORAGE_BYTES) {
-      return { marker: null, raw };
-    }
-    return { marker: parseActiveWorkoutUndoEnvelope(raw, workout, account), raw };
-  } catch {
-    return { marker: null, raw };
-  }
-}
-
-function persistActiveWorkoutUndoRecord(workout, setId, account = activeAccount, expectedRaw = undefined) {
-  const descriptor = activeWorkoutAccountDescriptor(account);
-  if (!descriptor || !workout || (setId !== null && (!Number.isSafeInteger(setId) || setId <= 0))) return null;
-  try {
-    const marker = parseActiveWorkoutUndoEnvelope({
-      version: 1,
-      owner: descriptor.owner,
-      workoutId: workout.id,
-      workoutRevision: workout.revision,
-      setId
-    }, workout, account);
-    const encoded = JSON.stringify(marker);
-    if (activeWorkoutStorageByteLength(encoded) > MAX_ACTIVE_WORKOUT_UNDO_STORAGE_BYTES) return null;
-    const current = localStorage.getItem(descriptor.undoKey);
-    if (expectedRaw !== undefined && current !== expectedRaw) return null;
-    localStorage.setItem(descriptor.undoKey, encoded);
-    if (localStorage.getItem(descriptor.undoKey) !== encoded) return null;
-    return { marker, raw: encoded };
-  } catch {
-    return null;
-  }
-}
-
-function removeActiveWorkoutUndoStorage(account = activeAccount, expectedRaw = undefined) {
-  const descriptor = activeWorkoutAccountDescriptor(account);
-  if (!descriptor) return false;
-  try {
-    const current = localStorage.getItem(descriptor.undoKey);
-    if (expectedRaw !== undefined && current !== expectedRaw) return false;
-    localStorage.removeItem(descriptor.undoKey);
-    return localStorage.getItem(descriptor.undoKey) === null;
-  } catch {
-    return false;
-  }
-}
-
 function activeWorkoutCompletedSnapshot(workout, account = activeAccount) {
   const parsed = parseActiveWorkoutEnvelope(workout, account);
   const blocks = parsed.blocks.flatMap(block => {
@@ -2257,20 +2158,14 @@ function removeActiveWorkoutStorage(account = activeAccount, expectedRaw = undef
 
 function reloadActiveWorkoutContext(account = activeAccount) {
   const loaded = loadActiveWorkoutRecord(account);
-  const undoLoaded = loadActiveWorkoutUndoRecord(loaded.workout, account);
   activeWorkout = loaded.workout;
   activeWorkoutStorageRaw = loaded.raw;
-  activeWorkoutUndoMarker = undoLoaded.marker;
-  activeWorkoutUndoStorageRaw = undoLoaded.raw;
   return activeWorkout;
 }
 
 function clearActiveWorkoutMemory() {
   activeWorkout = null;
   activeWorkoutStorageRaw = null;
-  activeWorkoutUndoMarker = null;
-  activeWorkoutUndoStorageRaw = null;
-  activeWorkoutUi = { status: "idle", message: "" };
 }
 
 function exerciseRestTimerAccountDescriptor(account = activeAccount) {
@@ -2435,25 +2330,14 @@ function startExerciseRestTimer(key, seconds, now = Date.now()) {
       now > Number.MAX_SAFE_INTEGER - seconds * 1000) return false;
   const descriptor = exerciseRestTimerAccountDescriptor();
   if (!descriptor) return false;
-  // A person can only be in one current rest interval. Replacing the ledger also
-  // prevents stale per-exercise countdowns from surviving a superset/navigation change.
-  const next = Object.create(null);
+  const next = Object.assign(Object.create(null), currentExerciseRestTimers(now));
+  if (!Object.hasOwn(next, target.key) && Object.keys(next).length >= MAX_EXERCISE_REST_TIMERS) {
+    return false;
+  }
   next[target.key] = now + seconds * 1000;
   if (!persistExerciseRestTimers(next, activeAccount, now)) return false;
   exerciseRestTimerLedger = { owner: descriptor.owner, timers: next };
   return true;
-}
-
-function adjustExerciseRestTimer(key, deltaSeconds, now = Date.now()) {
-  const target = exerciseRestTimerTarget(key);
-  if (!target || !Number.isInteger(deltaSeconds) || Math.abs(deltaSeconds) > 300) return false;
-  const deadline = currentExerciseRestTimers(now)[target.key];
-  if (!Number.isSafeInteger(deadline) || deadline <= now) return false;
-  const currentSeconds = Math.max(1, Math.ceil((deadline - now) / 1000));
-  const adjustedSeconds = currentSeconds + deltaSeconds;
-  if (adjustedSeconds <= 0) return stopExerciseRestTimer(target.key, now);
-  const nextSeconds = clamp(adjustedSeconds, 1, 30 * 60);
-  return startExerciseRestTimer(target.key, nextSeconds, now);
 }
 
 function stopExerciseRestTimer(key, now = Date.now()) {
@@ -2958,29 +2842,13 @@ async function loadRemoteState(session) {
 
 async function pullRemoteState() {
   if (!activeAccount?.remote || !remoteAuthEnabled()) return false;
-  const expectedUserId = activeAccount.userId;
-  setCloudSyncUi("checking", "", expectedUserId);
-  try {
-    const session = loadRemoteSession();
-    if (!session?.user?.id) return false;
-    const cloudState = await loadRemoteState(session);
-    if (activeAccount?.userId !== cloudState.userId || loadRemoteSession()?.user?.id !== cloudState.userId) {
-      throw new Error("Cloud state was loaded for a stale account session.");
-    }
-    const result = await reconcileLoadedRemoteState(
-      cloudState,
-      state,
-      storedAccountStateExists(activeAccount)
-    );
-    const baseline = loadSyncBaseline(expectedUserId);
-    setCloudSyncUi(baseline?.dirty || baseline?.pending ? "pending" : "synced", "", expectedUserId);
-    return result;
-  } catch (error) {
-    if (activeAccount?.userId === expectedUserId) {
-      setCloudSyncUi("error", friendlySyncError(error), expectedUserId);
-    }
-    throw error;
+  const session = loadRemoteSession();
+  if (!session?.user?.id) return false;
+  const cloudState = await loadRemoteState(session);
+  if (activeAccount?.userId !== cloudState.userId || loadRemoteSession()?.user?.id !== cloudState.userId) {
+    throw new Error("Cloud state was loaded for a stale account session.");
   }
+  return reconcileLoadedRemoteState(cloudState, state, storedAccountStateExists(activeAccount));
 }
 
 function storedAccountStateExists(account = activeAccount) {
@@ -3199,6 +3067,14 @@ function pwaCloudExtension(sourceState = state) {
     mappings: normalized.mappings,
     profile: normalized.profile
   }, "PWA cloud extension");
+}
+
+function cloudExtensionsForWrite(sourceState, expectedUserId) {
+  const preserved = cloudExtensions.userId === expectedUserId
+    ? nativeCloudClone(cloudExtensions.value, "preserved cloud extensions")
+    : {};
+  preserved.pwa = pwaCloudExtension(sourceState);
+  return nativeCloudExtensions(preserved);
 }
 
 function nativeCloudLoadProfile(value, path) {
@@ -3457,30 +3333,18 @@ function prepareNativeCloudEnvelope(value, expectedUserId) {
       sets: block.sets
     }))
   }));
-  // Synchronization deliberately uses the workout-only envelope understood by the
-  // released 2.2.9 native clients. Newer load profiles and client namespaces stay
-  // device-local: an older client rewrites the whole user_states row and cannot
-  // preserve those fields losslessly.
-  const compatibilityCatalog = canonicalCatalog.map(exercise => ({
-    name: exercise.name,
-    ...(exercise.catalogKey ? { catalogKey: exercise.catalogKey } : {})
-  }));
   const identityProjection = {
     schemaVersion: 2,
     app: "GymApp",
     diagnostics: false,
     owner,
-    exercises: compatibilityCatalog,
-    sessions: canonicalSessions,
-    summary: normalizedSummary
-  };
-  const readableProjection = {
-    ...identityProjection,
     exercises: canonicalCatalog,
+    sessions: canonicalSessions,
+    summary: normalizedSummary,
     ...(Object.keys(extensions).length ? { extensions } : {})
   };
   const appStateInput = {
-    ...nativeCloudClone(readableProjection),
+    ...nativeCloudClone(identityProjection),
     exportedAt: root.exportedAt,
     ...(extensions.pwa ? {
       language: extensions.pwa.language,
@@ -3561,11 +3425,7 @@ async function reconcileLoadedRemoteState(cloudState, cachedState, cachedStateEx
           remoteState.language = cachedState?.language || defaultAppState().language;
         }
         remoteState.catalogSeedVersion = defaultAppState().catalogSeedVersion;
-        preserveExerciseFavorites(remoteState, cachedState, {
-          preferPrevious: true,
-          preserveMissingLoadProfiles: true
-        });
-        preserveLocalProgressExerciseSelection(remoteState, cachedState);
+        preserveExerciseFavorites(remoteState, cachedState, { preferPrevious: true });
         remoteFingerprint = prepared.fingerprint;
         catalogChanged = remoteStateFingerprint(remoteState, userId) !== prepared.fingerprint;
       } else {
@@ -3579,9 +3439,8 @@ async function reconcileLoadedRemoteState(cloudState, cachedState, cachedStateEx
           preserveMissingLoadProfiles: true
         });
         ensureBuiltInExerciseCatalog(remoteState);
-        preserveLocalProgressExerciseSelection(remoteState, cachedState);
         // The semantic state is safe, but the row must be rewritten once into the
-        // workout-only native core that released 2.2.9 clients can preserve.
+        // shared native core + extensions envelope.
         catalogChanged = true;
       }
     } else {
@@ -3618,7 +3477,6 @@ async function reconcileLoadedRemoteState(cloudState, cachedState, cachedStateEx
       localFingerprint,
       dirty: localFingerprint !== remoteFingerprint || remoteFormat === "legacy-pwa" || catalogChanged,
       pending: null,
-      lastSyncedAt: baseline.lastSyncedAt ?? null,
       updatedAt: Date.now()
     });
   }
@@ -3642,7 +3500,6 @@ async function reconcileLoadedRemoteState(cloudState, cachedState, cachedStateEx
       localFingerprint,
       dirty,
       pending,
-      lastSyncedAt: dirty ? (baseline?.lastSyncedAt ?? null) : Date.now(),
       updatedAt: Date.now()
     });
     return baseline;
@@ -3672,7 +3529,6 @@ async function reconcileLoadedRemoteState(cloudState, cachedState, cachedStateEx
       localFingerprint: acceptedLocalFingerprint,
       dirty: catalogChanged,
       pending: null,
-      lastSyncedAt: catalogChanged ? (baseline?.lastSyncedAt ?? null) : Date.now(),
       updatedAt: Date.now()
     });
     if (catalogChanged) await saveRemoteState();
@@ -3692,7 +3548,6 @@ async function reconcileLoadedRemoteState(cloudState, cachedState, cachedStateEx
         localFingerprint,
         dirty: true,
         pending: pending ?? null,
-        lastSyncedAt: null,
         updatedAt: Date.now()
       });
     }
@@ -3751,7 +3606,6 @@ async function reconcileLoadedRemoteState(cloudState, cachedState, cachedStateEx
       localFingerprint: initialFingerprint,
       dirty: true,
       pending: null,
-      lastSyncedAt: null,
       updatedAt: Date.now()
     });
     bindRemoteStateRevision(cloudState);
@@ -3891,7 +3745,8 @@ function remoteStateCore(sourceState = state, expectedUserId = activeAccount?.us
     .sort(nativeCloudCatalogComparator)
     .map(exercise => ({
       name: exercise.name,
-      ...(exercise.catalogKey ? { catalogKey: exercise.catalogKey } : {})
+      ...(exercise.catalogKey ? { catalogKey: exercise.catalogKey } : {}),
+      ...(exercise.loadProfile ? { loadProfile: exercise.loadProfile } : {})
     }));
   return {
     schemaVersion: 2,
@@ -3905,7 +3760,8 @@ function remoteStateCore(sourceState = state, expectedUserId = activeAccount?.us
       sessionCount: sessions.length,
       setCount,
       totalVolume: totalVolume === 0 ? 0 : totalVolume
-    }
+    },
+    extensions: cloudExtensionsForWrite(sourceState, expectedUserId)
   };
 }
 
@@ -3919,7 +3775,8 @@ function remoteStatePayload(expectedUserId = activeAccount?.userId, sourceState 
     owner: core.owner,
     exercises: core.exercises,
     sessions: core.sessions,
-    summary: core.summary
+    summary: core.summary,
+    extensions: core.extensions
   });
   const prepared = prepareNativeCloudEnvelope(payload, expectedUserId);
   if (prepared.fingerprint !== canonicalValueFingerprint(core)) {
@@ -3944,31 +3801,6 @@ function resetRemoteSyncContext() {
   cloudSyncConflict = null;
   cloudExtensions = { userId: null, value: {} };
   cloudRecoveryInProgress = false;
-  cloudSyncUi = { userId: null, status: "idle", error: "" };
-}
-
-const CLOUD_SYNC_UI_STATUSES = new Set(["idle", "checking", "pending", "saving", "synced", "error"]);
-
-function setCloudSyncUi(status, error = "", userId = activeAccount?.userId) {
-  if (!CLOUD_SYNC_UI_STATUSES.has(status) ||
-      (userId != null && !UUID_PATTERN.test(userId)) ||
-      typeof error !== "string") return false;
-  cloudSyncUi = { userId: userId || null, status, error: error.slice(0, 512) };
-  return true;
-}
-
-function friendlySyncError(error) {
-  const message = String(error?.message || "");
-  if (/changed on another client|revision|conflict/i.test(message)) {
-    return tx(
-      "Cloud data changed elsewhere. Review the conflict before syncing.",
-      "Хмарні дані змінилися на іншому пристрої. Перевір конфлікт перед синхронізацією."
-    );
-  }
-  return tx(
-    "Sync failed. Your latest workout changes remain saved in this browser.",
-    "Синхронізація не вдалася. Останні зміни тренувань збережено в цьому браузері."
-  );
 }
 
 function resetGarminProfileContext() {
@@ -4041,9 +3873,7 @@ function normalizeSyncBaseline(value, userId) {
         (value.pending.baseExists ? !validRemoteStateRevision(value.pending.baseRevision) : value.pending.baseRevision !== null) ||
         (value.pending.baseFingerprint !== null && !validStateFingerprint(value.pending.baseFingerprint)) ||
         !Number.isSafeInteger(value.pending.startedAt) || value.pending.startedAt < 0)) ||
-      !Number.isSafeInteger(value.updatedAt) || value.updatedAt < 0 ||
-      (value.lastSyncedAt !== undefined && value.lastSyncedAt !== null &&
-        (!Number.isSafeInteger(value.lastSyncedAt) || value.lastSyncedAt < 0))) {
+      !Number.isSafeInteger(value.updatedAt) || value.updatedAt < 0) {
     return null;
   }
   return {
@@ -4061,9 +3891,6 @@ function normalizeSyncBaseline(value, userId) {
       baseFingerprint: value.pending.baseFingerprint,
       startedAt: value.pending.startedAt
     },
-    lastSyncedAt: value.lastSyncedAt == null
-      ? (value.dirty === false && value.pending == null ? value.updatedAt : null)
-      : value.lastSyncedAt,
     updatedAt: value.updatedAt
   };
 }
@@ -4102,7 +3929,6 @@ function saveSyncBaseline(baseline) {
 }
 
 function syncedBaseline(userId, cloudState, fingerprint) {
-  const now = Date.now();
   return {
     version: 1,
     userId,
@@ -4112,8 +3938,7 @@ function syncedBaseline(userId, cloudState, fingerprint) {
     localFingerprint: fingerprint,
     dirty: false,
     pending: null,
-    lastSyncedAt: now,
-    updatedAt: now
+    updatedAt: Date.now()
   };
 }
 
@@ -4132,7 +3957,6 @@ function markRemoteStateDirtyBeforeWrite(nextState = state) {
     localFingerprint: fingerprint,
     dirty: baseline?.dirty === true || baseline?.syncedFingerprint !== fingerprint,
     pending: baseline?.pending ?? null,
-    lastSyncedAt: baseline?.lastSyncedAt ?? null,
     updatedAt: Date.now()
   };
   return saveSyncBaseline(next);
@@ -4143,7 +3967,6 @@ function queueRemoteSave() {
   clearTimeout(remoteSaveTimer);
   const expectedEpoch = accountEpoch;
   const expectedUserId = activeAccount.userId;
-  setCloudSyncUi("pending", "", expectedUserId);
   remoteSaveTimer = setTimeout(() => {
     remoteSaveTimer = null;
     startRemoteSave({ expectedEpoch, expectedUserId })
@@ -4160,7 +3983,6 @@ function startRemoteSave(options = {}) {
       if (!expectedUserId || activeAccount?.userId !== expectedUserId) {
         throw new Error("Cloud save belongs to a stale account session.");
       }
-      setCloudSyncUi("saving", "", expectedUserId);
       let baseline = loadSyncBaseline(expectedUserId);
       if (baseline?.pending || (baseline?.dirty && remoteStateSync.userId !== expectedUserId)) {
         await pullRemoteState();
@@ -4182,21 +4004,8 @@ function startRemoteSave(options = {}) {
     });
   remoteSaveInFlight = operation;
   operation.then(
-    () => {
-      if (remoteSaveInFlight === operation) remoteSaveInFlight = null;
-      const expectedUserId = options.expectedUserId ?? activeAccount?.userId;
-      if (expectedUserId && activeAccount?.userId === expectedUserId) {
-        const baseline = loadSyncBaseline(expectedUserId);
-        setCloudSyncUi(baseline?.dirty || baseline?.pending ? "pending" : "synced", "", expectedUserId);
-      }
-    },
-    error => {
-      if (remoteSaveInFlight === operation) remoteSaveInFlight = null;
-      const expectedUserId = options.expectedUserId ?? activeAccount?.userId;
-      if (expectedUserId && activeAccount?.userId === expectedUserId) {
-        setCloudSyncUi("error", friendlySyncError(error), expectedUserId);
-      }
-    }
+    () => { if (remoteSaveInFlight === operation) remoteSaveInFlight = null; },
+    () => { if (remoteSaveInFlight === operation) remoteSaveInFlight = null; }
   );
   return operation;
 }
@@ -4247,9 +4056,6 @@ function showRemoteSaveResult(result) {
 
 function handleRemoteSaveError(error) {
   if (transitionToReauthentication(error)) return;
-  if (activeAccount?.remote) {
-    setCloudSyncUi("error", friendlySyncError(error), activeAccount.userId);
-  }
   const conflict = /changed on another client|revision|stale account session/i.test(String(error?.message || ""));
   showToast(conflict
     ? tx("Cloud sync conflicted. Reload before saving again.", "Хмарні зміни конфліктують. Онови дані перед повторним збереженням.")
@@ -4293,7 +4099,6 @@ async function saveRemoteState({ expectedEpoch = accountEpoch, expectedUserId = 
       baseFingerprint: baseline?.syncedFingerprint ?? null,
       startedAt: Date.now()
     },
-    lastSyncedAt: baseline?.lastSyncedAt ?? null,
     updatedAt: Date.now()
   };
   saveSyncBaseline(pendingBaseline);
@@ -4329,7 +4134,6 @@ async function saveRemoteState({ expectedEpoch = accountEpoch, expectedUserId = 
   }
   const confirmedState = { userId: expectedUserId, exists: true, revision: rows[0].updated_at };
   const currentFingerprint = remoteStateFingerprint(state, expectedUserId);
-  const confirmedAt = Date.now();
   saveSyncBaseline({
     version: 1,
     userId: expectedUserId,
@@ -4339,8 +4143,7 @@ async function saveRemoteState({ expectedEpoch = accountEpoch, expectedUserId = 
     localFingerprint: currentFingerprint,
     dirty: currentFingerprint !== attemptFingerprint,
     pending: null,
-    lastSyncedAt: confirmedAt,
-    updatedAt: confirmedAt
+    updatedAt: Date.now()
   });
   bindRemoteStateRevision(confirmedState);
   try {
@@ -5325,21 +5128,6 @@ function preserveExerciseFavorites(nextState, previousState, {
   return nextState;
 }
 
-function preserveLocalProgressExerciseSelection(nextState, previousState) {
-  if (!nextState || !Array.isArray(nextState.exercises) ||
-      !Array.isArray(previousState?.exercises)) return nextState;
-  const previousID = Number(previousState.progressExerciseId);
-  if (!Number.isSafeInteger(previousID) || previousID <= 0) return nextState;
-  const previous = previousState.exercises.find(exercise => Number(exercise?.id) === previousID);
-  if (!previous) return nextState;
-  const identity = exerciseMatchKey(previous);
-  const matches = nextState.exercises.filter(exercise => exerciseMatchKey(exercise) === identity);
-  if (matches.length === 1 && Number.isSafeInteger(Number(matches[0].id)) && Number(matches[0].id) > 0) {
-    nextState.progressExerciseId = Number(matches[0].id);
-  }
-  return nextState;
-}
-
 function saveState({ queueRemote = true, markDirty = true } = {}) {
   // Treat every mutation as a security boundary, including values produced by
   // UI event handlers. This prevents a missed range/count check from reaching
@@ -5447,11 +5235,6 @@ function back() {
     languageMenuOpen = false;
     return render();
   }
-  // Starting a workout replaces the Add route in-place. The preceding browser
-  // history entry can therefore still point at Add, which render() immediately
-  // redirects back to Active while a draft exists. Return straight to Home so
-  // the header Back action cannot become a navigation loop.
-  if (route().name === "active") return goRoot("workouts");
   if (nav.length <= 1) return;
   if (Array.isArray(history.state?.gymAppNav)) return history.back();
   const leavingAdd = route().name === "add";
@@ -5738,7 +5521,7 @@ function loginScreen() {
   return `<div class="app-shell auth-shell">
     <main class="screen auth-screen" data-scroll-key="auth">
       <section class="hero-panel auth-hero"><h2>GymApp</h2><p>${remoteEnabled ? tx("Sign in to sync workouts across devices.", "Увійди, щоб синхронізувати тренування між пристроями.") : tx("Cloud login is ready after Supabase keys are added.", "Хмарний вхід запрацює після додавання ключів Supabase.")}</p></section>
-      ${pendingSharedWorkout ? `<section class="panel highlighted shared-workout-pending"><h2>${tx("Shared workout ready", "Спільне тренування готове")}</h2><p>${tx("Sign in or enter offline mode to review the plan. It will not replace or save anything automatically.", "Увійди або відкрий офлайн-режим, щоб переглянути план. Він нічого не замінить і не збереже автоматично.")}</p>${sharedWorkoutPreviewMarkup(pendingSharedWorkout)}</section>` : ""}
+      ${pendingSharedWorkout ? `<section class="panel highlighted"><h2>${tx("Shared workout ready", "Спільне тренування готове")}</h2><p>${tx("Sign in or enter offline mode to open the editable plan. Nothing is saved until you finish and save it.", "Увійди або відкрий офлайн-режим, щоб переглянути й змінити план. Нічого не збережеться, доки ти не завершиш і не збережеш тренування.")}</p></section>` : ""}
       ${storeDownloadPanel()}
       ${remotePanel}
       ${themePreferencePanel("auth")}
@@ -5837,6 +5620,9 @@ function render() {
     requestAnimationFrame(restoreVisibleScroll);
     return;
   }
+  if (activatePendingSharedWorkout()) {
+    replaceNavigationHistory();
+  }
   let current = route();
   if (activeWorkout && current.name === "add") {
     nav[nav.length - 1] = { name: "active" };
@@ -5854,7 +5640,7 @@ function render() {
       <h1>${titleForRoute(current)}</h1>
       ${languageSelectorMarkup()}
     </header>
-    <main class="screen screen-${escapeAttr(current.name)}" data-scroll-key="${escapeAttr(routeScrollKey(current))}">${pendingSharedWorkoutCard()}${screenMarkup(current)}</main>
+    <main class="screen screen-${escapeAttr(current.name)}" data-scroll-key="${escapeAttr(routeScrollKey(current))}">${screenMarkup(current)}</main>
     ${isRootRoute(current.name) ? bottomNav() : ""}
     ${modal ? modalMarkup() : ""}
     <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
@@ -6000,7 +5786,7 @@ function focusLensCard(sessions) {
         <div><strong>${counts.completed}</strong><span>${tx("completed", "виконано")}</span></div>
         <div><strong>${counts.total}</strong><span>${tx("planned sets", "підходів у плані")}</span></div>
       </div>
-      <div class="focus-lens-actions"><button class="focus-lens-action" data-action="continue-active-workout">${svg("fitness", "small-icon")}<span>${tx("Continue workout", "Продовжити тренування")}</span></button><button class="focus-lens-discard" data-action="discard-active-workout">${tx("Discard", "Відкинути")}</button></div>
+      <button class="focus-lens-action" data-action="continue-active-workout">${svg("fitness", "small-icon")}<span>${tx("Continue workout", "Продовжити тренування")}</span></button>
     </section>`;
   }
   return `<section class="focus-lens" aria-labelledby="focus-lens-title">
@@ -6436,24 +6222,6 @@ function activeWorkoutSetCounts(workout = activeWorkout) {
   };
 }
 
-function latestActiveCompletedEntry(workout = activeWorkout) {
-  if (!workout) return null;
-  return workout.blocks.flatMap((block, blockIndex) => block.sets.flatMap((set, setIndex) =>
-    set.completed === true && Number.isSafeInteger(set.completedAt)
-      ? [{ block, blockIndex, set, setIndex }]
-      : []
-  )).sort((left, right) => right.set.completedAt - left.set.completedAt ||
-    right.set.id - left.set.id)[0] || null;
-}
-
-function smartRestSecondsForBlock(block) {
-  const analysis = analyzeSmartExercise(block);
-  if (analysis.role === "Primary") return 180;
-  if (analysis.role === "Secondary") return 120;
-  if (analysis.role === "Core") return 60;
-  return 75;
-}
-
 function activeWorkoutScreen() {
   const workout = activeWorkout;
   if (!workout) {
@@ -6461,47 +6229,31 @@ function activeWorkoutScreen() {
   }
   const counts = activeWorkoutSetCounts(workout);
   const progress = counts.total ? counts.completed / counts.total * 100 : 0;
-  const latestCompleted = latestActiveCompletedEntry(workout);
-  const latestCompletedId = latestCompleted && latestCompleted.set.id === activeWorkoutUndoMarker?.setId
-    ? latestCompleted.set.id
-    : null;
   return `<section class="hero-panel active-workout-hero">
-      <div><span class="eyebrow">${tx("ACTIVE WORKOUT", "АКТИВНЕ ТРЕНУВАННЯ")}</span><h2>${tx("Record each completed set", "Записуй кожен виконаний підхід")}</h2><p>${tx("A set is saved locally before Smart Coach starts an exercise-specific rest timer.", "Підхід спочатку зберігається локально, а потім Smart Coach запускає відпочинок відповідно до вправи.")}</p></div>
+      <div><span class="eyebrow">${tx("ACTIVE WORKOUT", "АКТИВНЕ ТРЕНУВАННЯ")}</span><h2>${tx("Record each completed set", "Записуй кожен виконаний підхід")}</h2><p>${tx("A set is saved locally before the 90-second rest starts.", "Підхід спочатку зберігається локально, а потім запускається 90-секундний відпочинок.")}</p></div>
       <div class="metric-grid three"><div><span>${tx("Exercises", "Вправи")}</span><strong>${workout.blocks.length}</strong></div><div><span>${tx("Completed", "Виконано")}</span><strong>${counts.completed}</strong></div><div><span>${tx("Planned", "Заплановано")}</span><strong>${counts.total}</strong></div></div>
-      <div class="progress" role="progressbar" aria-label="${txAttr(`Completed ${counts.completed} of ${counts.total} sets`, `Виконано ${counts.completed} із ${counts.total} підходів`)}" aria-valuemin="0" aria-valuemax="${counts.total}" aria-valuenow="${counts.completed}"><span class="${percentageClass(progress)}"></span></div>
+      <div class="progress" aria-label="${txAttr("Workout completion", "Виконання тренування")}"><span class="${percentageClass(progress)}"></span></div>
       ${workout.note ? `<p class="active-workout-note"><strong>${t("note")}:</strong> ${escapeHtml(workout.note)}</p>` : ""}
     </section>
-    ${activeWorkoutUi.message ? `<div class="inline-status ${escapeAttr(activeWorkoutUi.status)}" role="${activeWorkoutUi.status === "error" ? "alert" : "status"}" aria-live="polite">${escapeHtml(activeWorkoutUi.message)}</div>` : ""}
-    <section class="active-workout-list">${workout.blocks.map((block, index) => activeWorkoutBlockMarkup(block, index, latestCompletedId)).join("")}</section>
+    <section class="active-workout-list">${workout.blocks.map(activeWorkoutBlockMarkup).join("")}</section>
     <section class="panel active-workout-finish"><div><h2>${tx("Finish when you are done", "Заверши, коли закінчиш")}</h2><p class="muted">${tx("Only recorded sets will be added to workout history. Unfinished planned sets stay out of history.", "До історії потраплять лише записані підходи. Невиконані заплановані підходи не зберігаються в історії.")}</p></div><div class="actions vertical"><button class="button full" data-action="finish-active-workout" ${counts.completed ? "" : "disabled"}>${svg("checkCircle", "small-icon")}${tx("Finish workout", "Завершити тренування")}</button><button class="button danger full" data-action="discard-active-workout">${tx("Discard active workout", "Відкинути активне тренування")}</button></div></section>`;
 }
 
-function activeWorkoutBlockMarkup(block, blockIndex, latestCompletedId = null) {
+function activeWorkoutBlockMarkup(block, blockIndex) {
   const timerKey = `${activeWorkout.id}:${block.exerciseName}`;
   const remaining = timerRemaining(timerKey);
   const completed = block.sets.filter(set => set.completed).length;
   return `<section class="panel highlighted active-workout-exercise"><div class="section-title"><div><span class="eyebrow">${tx("Exercise", "Вправа")} ${blockIndex + 1}</span><h2>${escapeHtml(exerciseDisplayName(block))}</h2><p>${completed} / ${block.sets.length} ${tx("sets recorded", "підходів записано")}</p></div>${exerciseMediaThumbnail(block, { className: "compact" })}</div>
-    <div class="timer-row active-workout-timer"><div><strong>${tx("Rest", "Відпочинок")}</strong><span data-timer-display="${escapeAttr(timerKey)}" aria-live="polite">${remaining > 0 ? formatTimer(remaining) : tx("Ready", "Готово")}</span></div><div class="timer-actions"><button class="button ghost mini" data-action="timer-adjust" data-timer-control="${escapeAttr(timerKey)}" data-seconds="-15" data-key="${escapeAttr(timerKey)}" ${remaining ? "" : "disabled"} aria-label="${txAttr("Subtract 15 seconds", "Відняти 15 секунд")}">−15</button><button class="button ghost mini" data-action="timer-adjust" data-timer-control="${escapeAttr(timerKey)}" data-seconds="15" data-key="${escapeAttr(timerKey)}" ${remaining ? "" : "disabled"} aria-label="${txAttr("Add 15 seconds", "Додати 15 секунд")}">+15</button><button class="button ghost mini" data-action="timer-stop" data-timer-control="${escapeAttr(timerKey)}" data-timer-stop="${escapeAttr(timerKey)}" data-key="${escapeAttr(timerKey)}" ${remaining ? "" : "disabled"}>${tx("Stop", "Стоп")}</button></div></div>
-    <div class="active-set-list">${block.sets.map((set, setIndex) => activeWorkoutSetMarkup(set, setIndex, latestCompletedId)).join("")}</div>
+    <div class="timer-row active-workout-timer"><div><strong>${tx("Rest", "Відпочинок")}</strong><span data-timer-display="${escapeAttr(timerKey)}" aria-live="polite">${remaining > 0 ? formatTimer(remaining) : tx("Ready", "Готово")}</span></div><button class="button ghost mini" data-action="timer-stop" data-timer-stop="${escapeAttr(timerKey)}" data-key="${escapeAttr(timerKey)}" ${remaining ? "" : "disabled"}>${tx("Stop", "Стоп")}</button></div>
+    <div class="active-set-list">${block.sets.map((set, setIndex) => activeWorkoutSetMarkup(set, setIndex)).join("")}</div>
   </section>`;
 }
 
-function activeWorkoutSetMarkup(set, setIndex, latestCompletedId = null) {
+function activeWorkoutSetMarkup(set, setIndex) {
   const completedLabel = set.completed
     ? tx("Recorded", "Записано")
     : tx("Record set", "Записати підхід");
-  const weightControl = set.completed
-    ? `<div class="active-set-value"><span>${tx("Weight (kg)", "Вага (кг)")}</span><strong>${escapeHtml(String(set.weight))}</strong></div>`
-    : `<label><span>${tx("Weight (kg)", "Вага (кг)")}</span><input data-active-set-id="${set.id}" data-active-field="weight" inputmode="decimal" value="${escapeAttr(String(set.weight))}"></label>`;
-  const repsControl = set.completed
-    ? `<div class="active-set-value"><span>${tx("Reps", "Повтори")}</span><strong>${set.reps}</strong></div>`
-    : `<label><span>${tx("Reps", "Повтори")}</span><input data-active-set-id="${set.id}" data-active-field="reps" inputmode="numeric" value="${set.reps}"></label>`;
-  const action = set.completed
-    ? (set.id === latestCompletedId
-      ? `<button class="button ghost" data-action="undo-active-set" data-id="${set.id}">${tx("Undo last set", "Скасувати останній підхід")}</button>`
-      : `<span class="recorded-set-badge">${completedLabel}</span>`)
-    : `<button class="button" data-action="record-active-set" data-id="${set.id}">${completedLabel}</button>`;
-  return `<div class="active-set-row ${set.completed ? "completed" : ""}" data-active-set-row="${set.id}"><div class="active-set-label"><strong>${tx("Set", "Підхід")} ${setIndex + 1}</strong><span>${set.completed ? svg("checkCircle", "small-icon") + completedLabel : tx("Planned", "Заплановано")}</span></div>${weightControl}${repsControl}${action}</div>`;
+  return `<div class="active-set-row ${set.completed ? "completed" : ""}" data-active-set-row="${set.id}"><div class="active-set-label"><strong>${tx("Set", "Підхід")} ${setIndex + 1}</strong><span>${set.completed ? svg("checkCircle", "small-icon") + completedLabel : tx("Planned", "Заплановано")}</span></div><label><span>${tx("Weight (kg)", "Вага (кг)")}</span><input data-active-set-id="${set.id}" data-active-field="weight" inputmode="decimal" value="${escapeAttr(String(set.weight))}" ${set.completed ? "disabled" : ""}></label><label><span>${tx("Reps", "Повтори")}</span><input data-active-set-id="${set.id}" data-active-field="reps" inputmode="numeric" value="${set.reps}" ${set.completed ? "disabled" : ""}></label><button class="button ${set.completed ? "ghost" : ""}" data-action="record-active-set" data-id="${set.id}" ${set.completed ? "disabled" : ""}>${completedLabel}</button></div>`;
 }
 
 function trainingProfilePanel() {
@@ -6520,9 +6272,7 @@ function trainingProfilePanel() {
 
 function smartCoachPanel() {
   const effortOptions = ["Auto", "Recovery", "Standard", "Hard"];
-  const planStatus = smartPlanStale
-    ? `<div class="inline-status warning" role="status"><strong>${tx("Plan needs refresh", "План потрібно оновити")}</strong><span>${tx("Your profile or effort changed. Generate again to recalculate the Smart Coach rows; manual edits were not overwritten.", "Профіль або навантаження змінилися. Згенеруй план ще раз, щоб перерахувати рядки Smart Coach; ручні зміни не перезаписано.")}</span></div>`
-    : smartGeneratedPlan
+  const planStatus = smartGeneratedPlan
     ? `<div class="smart-plan-status"><div class="metric-grid three"><div><span>${tx("Focus", "Фокус")}</span><strong>${escapeHtml(smartFocusLabel(smartGeneratedPlan.focus))}</strong></div><div><span>${tx("Requested", "Запитано")}</span><strong>${escapeHtml(smartWorkoutEffortLabel(smartGeneratedPlan.requestedEffort))}</strong></div><div><span>${tx("Applied", "Застосовано")}</span><strong>${escapeHtml(smartWorkoutEffortLabel(smartGeneratedPlan.appliedEffort))}</strong></div></div><p class="muted">${escapeHtml(smartGeneratedPlan.adjustment)}</p><p class="smart-rir-guidance">${escapeHtml(smartWorkoutEffortGuidance(smartGeneratedPlan.appliedEffort))}</p></div>`
     : `<p class="smart-rir-guidance">${escapeHtml(smartWorkoutEffortGuidance(smartWorkoutEffort))}</p>`;
   return `<section class="panel highlighted smart-coach-panel"><div class="section-title"><div><span class="eyebrow">${t("smartCoach")}</span><h2>${t("generateSmart")}</h2><p>${tx("Smart Coach balances weekly muscle work, movement patterns, recovery, and your saved history.", "Розумний тренер балансує тижневе навантаження на м’язи, рухові патерни, відновлення та збережену історію.")}</p></div>${svg("auto", "small-icon")}</div><span class="field-caption">${tx("Today's effort", "Навантаження сьогодні")}</span><div class="chip-row smart-effort-chips">${effortOptions.map(effort => `<button class="chip buttonlike ${smartWorkoutEffort === effort ? "selected" : ""}" data-action="smart-effort" data-effort="${effort}" aria-pressed="${smartWorkoutEffort === effort}">${escapeHtml(smartWorkoutEffortLabel(effort))}</button>`).join("")}</div>${planStatus}<button class="button full" data-action="generate-smart">${svg("auto", "small-icon")}${t("generateSmart")}</button></section>`;
@@ -6732,8 +6482,8 @@ function captureSharedWorkoutFromLocation() {
       // Keep the validated plan in memory when session storage is unavailable.
     }
   } catch {
-    // A malformed or oversized incoming link must not clear an already validated
-    // pending plan. The user can still review or dismiss that earlier plan.
+    pendingSharedWorkout = null;
+    clearStoredSharedWorkout();
     sharedWorkoutStartupError = true;
   } finally {
     const safeHash = window.GymSharedWorkout.removeFromHash(window.location.hash);
@@ -6741,88 +6491,23 @@ function captureSharedWorkoutFromLocation() {
   }
 }
 
-function sharedWorkoutPreviewMarkup(plan) {
-  if (!plan?.exercises?.length) return "";
-  const setCount = plan.exercises.reduce((sum, exercise) => sum + exercise.sets.length, 0);
-  const volume = plan.exercises.reduce((sum, exercise) => sum + exercise.sets.reduce(
-    (exerciseSum, set) => exerciseSum + set.weight * set.reps,
-    0
-  ), 0);
-  return `<div class="metric-grid three shared-workout-metrics"><div><span>${tx("Exercises", "Вправи")}</span><strong>${plan.exercises.length}</strong></div><div><span>${tx("Sets", "Підходи")}</span><strong>${setCount}</strong></div><div><span>${tx("Volume", "Обсяг")}</span><strong>${escapeHtml(formatSetWeight(volume))}</strong></div></div><div class="shared-workout-preview-list">${plan.exercises.map((exercise, index) => {
-    const sets = exercise.sets.map(set => `${formatSetWeight(set.weight)} kg × ${set.reps}`).join(" · ");
-    return `<article><span>${index + 1}</span><div><strong>${escapeHtml(exerciseDisplayName(exercise))}</strong><small>${escapeHtml(sets)}</small></div></article>`;
-  }).join("")}</div>`;
-}
-
-function pendingSharedWorkoutCard() {
-  if (!pendingSharedWorkout) return "";
-  const stateCopy = activeWorkout
-    ? tx(
-      "Your active workout was left untouched. Finish or discard it before using this shared plan; the plan will stay ready here.",
-      "Активне тренування не змінено. Заверши або відкинь його перед використанням спільного плану; план залишиться тут."
-    )
-    : workoutDraft
-    ? tx(
-      "Your current draft is still intact. Replacing it with this shared plan requires a separate confirmation.",
-      "Поточна чернетка не змінена. Для заміни її спільним планом потрібне окреме підтвердження."
-    )
-    : tx(
-      "Review the exercises below. The plan becomes an editable draft only after you confirm.",
-      "Переглянь вправи нижче. План стане редагованою чернеткою лише після твого підтвердження."
-    );
-  const primaryAction = activeWorkout
-    ? `<button class="button full" data-action="continue-active-workout">${tx("Continue active workout", "Продовжити активне тренування")}</button>`
-    : `<button class="button full" data-action="accept-shared-workout">${workoutDraft ? tx("Review draft replacement", "Перевірити заміну чернетки") : tx("Use this workout plan", "Використати цей план")}</button>`;
-  return `<section class="panel highlighted shared-workout-pending" aria-labelledby="shared-workout-pending-title"><div class="section-title"><div><span class="eyebrow">${tx("SHARED WORKOUT", "СПІЛЬНЕ ТРЕНУВАННЯ")}</span><h2 id="shared-workout-pending-title">${tx("Shared workout ready", "Спільне тренування готове")}</h2><p>${escapeHtml(stateCopy)}</p></div>${svg("copy", "small-icon")}</div>${sharedWorkoutPreviewMarkup(pendingSharedWorkout)}<div class="actions vertical">${primaryAction}<button class="button ghost full" data-action="dismiss-shared-workout">${tx("Discard shared plan", "Відхилити спільний план")}</button></div></section>`;
-}
-
-function applyPendingSharedWorkout(allowDraftReplacement = false) {
-  if (!pendingSharedWorkout || !window.GymSharedWorkoutFlow?.prepareImport) return false;
-  const decision = window.GymSharedWorkoutFlow.prepareImport(pendingSharedWorkout, {
-    hasActiveWorkout: Boolean(activeWorkout),
-    hasDraft: Boolean(workoutDraft),
-    allowDraftReplacement,
-    now: Date.now()
-  });
-  if (decision.status === "blocked-active") {
-    modal = null;
-    render();
-    showToast(tx(
-      "The shared plan is still waiting. Finish or discard the active workout first.",
-      "Спільний план усе ще очікує. Спочатку заверши або відкинь активне тренування."
-    ));
-    return false;
-  }
-  if (decision.status === "confirm-replace") {
-    modal = { type: "confirm-shared-workout-replace" };
-    render();
-    return false;
-  }
-  if (decision.status !== "ready" || !decision.draft) return false;
-
-  // The validated incoming plan stays separate until this explicit commit point.
-  // No history, active workout, account state, or cloud row is mutated here.
-  workoutDraft = decision.draft;
+function activatePendingSharedWorkout() {
+  if (!pendingSharedWorkout) return false;
+  const plan = pendingSharedWorkout;
   pendingSharedWorkout = null;
   clearStoredSharedWorkout();
   smartGeneratedPlan = null;
-  smartPlanStale = false;
-  modal = null;
+  workoutDraft = {
+    startedAt: Date.now(),
+    note: "",
+    blocks: plan.exercises.map(exercise => ({
+      exerciseName: exercise.name,
+      ...(exercise.catalogKey ? { catalogKey: exercise.catalogKey } : {}),
+      sets: exercise.sets.map(set => ({ weight: set.weight, reps: set.reps }))
+    }))
+  };
   nav = [{ name: "workouts" }, { name: "add" }];
   routeScrollPositions.delete("add:root");
-  replaceNavigationHistory();
-  render();
-  showToast(tx("Shared workout opened as a draft.", "Спільне тренування відкрито як чернетку."));
-  return true;
-}
-
-function dismissPendingSharedWorkout() {
-  if (!pendingSharedWorkout) return false;
-  pendingSharedWorkout = null;
-  clearStoredSharedWorkout();
-  modal = null;
-  render();
-  showToast(tx("Shared workout discarded.", "Спільне тренування відхилено."));
   return true;
 }
 
@@ -6856,7 +6541,7 @@ function sharedWorkoutPlanFromSession(session) {
 async function shareWorkoutPlan(plan) {
   let url;
   try {
-    url = window.GymSharedWorkout.buildUrl(SHARED_WORKOUT_URL, plan);
+    url = window.GymSharedWorkout.buildUrl(PUBLIC_SITE_URL, plan);
   } catch {
     return showToast(tx(
       "Fill every exercise and set before sharing this workout.",
@@ -7239,34 +6924,19 @@ function snapshotForExerciseSession(session) {
 }
 
 function smartRepRange(analysis) {
-  const role = analysis?.role || (smartIsCompound(analysis) ? "Secondary" : "Isolation");
-  if (state.profile.goal === "Strength") {
-    if (role === "Primary") return { min: 4, max: 6 };
-    if (role === "Secondary") return { min: 5, max: 8 };
-    return { min: 8, max: 10 };
+  const compound = smartIsCompound(analysis);
+  if (state.profile.goal === "Strength") return compound ? { min: 3, max: 6 } : { min: 6, max: 10 };
+  if (state.profile.goal === "Muscle Gain" || state.profile.goal === "Aesthetic Cut") {
+    return compound ? { min: 6, max: 10 } : { min: 8, max: 10 };
   }
-  if (state.profile.goal === "Muscle Gain") {
-    return role === "Primary" ? { min: 6, max: 8 } : { min: 8, max: 10 };
-  }
-  if (state.profile.goal === "Aesthetic Cut") {
-    if (role === "Primary") return { min: 6, max: 8 };
-    if (role === "Secondary") return { min: 7, max: 9 };
-    return { min: 8, max: 10 };
-  }
-  if (role === "Primary") return { min: 5, max: 8 };
-  if (role === "Secondary") return { min: 6, max: 9 };
-  return { min: 8, max: 10 };
+  return compound ? { min: 5, max: 8 } : { min: 8, max: 10 };
 }
 
 function smartDefaultTargetReps(analysis, repRange) {
-  const role = analysis?.role || (smartIsCompound(analysis) ? "Secondary" : "Isolation");
+  const compound = smartIsCompound(analysis);
   const target = state.profile.goal === "Strength"
-    ? (role === "Primary" ? 5 : role === "Secondary" ? 7 : 8)
-    : state.profile.goal === "Muscle Gain"
-      ? (role === "Primary" ? 7 : 9)
-      : state.profile.goal === "Aesthetic Cut"
-        ? (role === "Primary" ? 7 : role === "Secondary" ? 8 : 9)
-        : (role === "Primary" ? 7 : role === "Secondary" ? 8 : 9);
+    ? (compound ? 5 : 8)
+    : (compound ? 8 : 10);
   return clamp(target, repRange.min, repRange.max);
 }
 
@@ -8630,7 +8300,6 @@ async function resolveSyncConflictWithLocal() {
       localFingerprint: remoteStateFingerprint(state, conflict.userId),
       dirty: true,
       pending: null,
-      lastSyncedAt: loadSyncBaseline(conflict.userId)?.lastSyncedAt ?? null,
       updatedAt: Date.now()
     });
     const result = await saveRemoteState();
@@ -8693,7 +8362,6 @@ async function resolveSyncConflictWithCloud() {
     localFingerprint: acceptedFingerprint,
     dirty: false,
     pending: null,
-    lastSyncedAt: Date.now(),
     updatedAt: Date.now()
   });
   cloudSyncConflict = null;
@@ -8884,7 +8552,6 @@ function purgeDeletedCloudAccountFromBrowser(account) {
   attempt(() => removeActiveWorkoutStorage(account));
   attempt(() => removeActiveWorkoutRecoveryStorage(account));
   attempt(() => removeActiveWorkoutCommitStorage(account));
-  attempt(() => removeActiveWorkoutUndoStorage(account));
   attempt(() => {
     saveAccountList(accountList().filter(item => item.id !== account.id));
     return !accountList().some(item => item.id === account.id);
@@ -9009,7 +8676,6 @@ async function deleteLocalAccount() {
           activeWorkout: localStorage.getItem(activeWorkoutDescriptor.storageKey),
           activeWorkoutRecovery: localStorage.getItem(activeWorkoutDescriptor.recoveryKey),
           activeWorkoutCommits: localStorage.getItem(activeWorkoutDescriptor.commitKey),
-          activeWorkoutUndo: localStorage.getItem(activeWorkoutDescriptor.undoKey),
           accounts: localStorage.getItem(ACCOUNT_LIST_KEY),
           auth: localStorage.getItem(AUTH_KEY)
         };
@@ -9021,14 +8687,12 @@ async function deleteLocalAccount() {
         localStorage.removeItem(activeWorkoutDescriptor.storageKey);
         localStorage.removeItem(activeWorkoutDescriptor.recoveryKey);
         localStorage.removeItem(activeWorkoutDescriptor.commitKey);
-        localStorage.removeItem(activeWorkoutDescriptor.undoKey);
         saveAccountList(accountList().filter(item => item.id !== account.id));
         if (localStorage.getItem(stateKey) !== null ||
             localStorage.getItem(timerDescriptor.storageKey) !== null ||
             localStorage.getItem(activeWorkoutDescriptor.storageKey) !== null ||
             localStorage.getItem(activeWorkoutDescriptor.recoveryKey) !== null ||
             localStorage.getItem(activeWorkoutDescriptor.commitKey) !== null ||
-            localStorage.getItem(activeWorkoutDescriptor.undoKey) !== null ||
             accountList().some(item => item.id === account.id)) {
           throw new Error("Local account cleanup was not confirmed.");
         }
@@ -9041,7 +8705,6 @@ async function deleteLocalAccount() {
             restoreStorageValue(activeWorkoutDescriptor.storageKey, snapshots.activeWorkout);
             restoreStorageValue(activeWorkoutDescriptor.recoveryKey, snapshots.activeWorkoutRecovery);
             restoreStorageValue(activeWorkoutDescriptor.commitKey, snapshots.activeWorkoutCommits);
-            restoreStorageValue(activeWorkoutDescriptor.undoKey, snapshots.activeWorkoutUndo);
             restoreStorageValue(ACCOUNT_LIST_KEY, snapshots.accounts);
             restoreStorageValue(AUTH_KEY, snapshots.auth);
           } catch {
@@ -9245,81 +8908,6 @@ function accountPanel() {
   return `<section class="panel highlighted account-card"><div class="row-head"><div><span class="eyebrow">${tx("Account", "Акаунт")}</span><h2>${escapeHtml(label)}</h2><p>${activeAccount?.remote ? tx("Cloud account with protected synchronization.", "Хмарний акаунт із захищеною синхронізацією.") : tx("Local account on this device.", "Локальний акаунт на цьому пристрої.")}</p></div><span class="pill">${activeAccount?.remote ? tx("Cloud", "Хмара") : tx("Local", "Локально")}</span></div><div class="actions account-actions"><a class="button ghost" href="${escapeAttr(GOOGLE_PLAY_APP_URL)}" target="_blank" rel="noopener noreferrer">${tx("Open Google Play", "Відкрити Google Play")}</a><a class="button ghost" href="${escapeAttr(garminStoreAppLink())}" target="_blank" rel="noopener noreferrer">${tx("Open Garmin Connect IQ", "Відкрити Garmin Connect IQ")}</a>${activeAccount?.remote ? `<button class="button ghost" data-action="change-password">${tx("Change password", "Змінити пароль")}</button>` : ""}${hasGarminBinding ? `<button class="button danger" data-action="unpair-garmin">${tx("Unpair Garmin", "Від’єднати Garmin")}</button>` : ""}<button class="button ghost" data-action="logout-account">${tx("Switch", "Змінити акаунт")}</button><button class="button danger" data-action="delete-account">${activeAccount?.remote ? tx("Delete cloud account", "Видалити хмарний акаунт") : tx("Delete local account", "Видалити локальний акаунт")}</button></div></section>`;
 }
 
-function cloudSyncStatusSnapshot() {
-  if (!activeAccount?.remote || !remoteAuthEnabled()) {
-    return { status: "local", lastSyncedAt: null, error: "" };
-  }
-  const userId = activeAccount.userId;
-  const baseline = loadSyncBaseline(userId);
-  if (cloudSyncConflict?.userId === userId || cloudStateRecovery?.userId === userId) {
-    return { status: "conflict", lastSyncedAt: baseline?.lastSyncedAt ?? null, error: "" };
-  }
-  if (cloudSyncUi.userId === userId && ["checking", "saving", "error"].includes(cloudSyncUi.status)) {
-    return {
-      status: cloudSyncUi.status,
-      lastSyncedAt: baseline?.lastSyncedAt ?? null,
-      error: cloudSyncUi.error
-    };
-  }
-  if (baseline?.pending || baseline?.dirty || remoteSaveTimer !== null) {
-    return { status: "pending", lastSyncedAt: baseline?.lastSyncedAt ?? null, error: "" };
-  }
-  if (baseline && !baseline.dirty) {
-    return { status: "synced", lastSyncedAt: baseline.lastSyncedAt ?? baseline.updatedAt, error: "" };
-  }
-  return { status: "checking", lastSyncedAt: null, error: "" };
-}
-
-function cloudSyncPanel() {
-  if (!activeAccount?.remote || !remoteAuthEnabled()) return "";
-  const snapshot = cloudSyncStatusSnapshot();
-  const labels = {
-    checking: tx("Checking cloud data", "Перевіряємо хмарні дані"),
-    saving: tx("Saving workout changes", "Зберігаємо зміни тренувань"),
-    pending: tx("Saved here · waiting to sync", "Збережено тут · очікує синхронізації"),
-    synced: tx("Workout history is synced", "Історію тренувань синхронізовано"),
-    conflict: tx("Sync needs your choice", "Синхронізація потребує твого вибору"),
-    error: tx("Sync needs attention", "Синхронізація потребує уваги")
-  };
-  const lastSynced = Number.isSafeInteger(snapshot.lastSyncedAt)
-    ? `${tx("Last confirmed", "Останнє підтвердження")}: ${new Intl.DateTimeFormat(displayLocale(), {
-        dateStyle: "medium",
-        timeStyle: "short"
-      }).format(new Date(snapshot.lastSyncedAt))}`
-    : tx("No confirmed sync yet", "Підтвердженої синхронізації ще немає");
-  const busy = snapshot.status === "checking" || snapshot.status === "saving";
-  return `<section class="panel highlighted cloud-sync-card" aria-live="polite"><div class="row-head"><div><span class="eyebrow">${tx("Cloud sync", "Хмарна синхронізація")}</span><h2>${escapeHtml(labels[snapshot.status] || labels.checking)}</h2><p>${escapeHtml(lastSynced)}</p></div><span class="sync-state-dot ${escapeAttr(snapshot.status)}" aria-hidden="true"></span></div>${snapshot.error ? `<p class="inline-status error" role="alert">${escapeHtml(snapshot.error)}</p>` : ""}<p class="muted">${tx("Only completed workout history and exercises are shared. Active workouts and Smart Coach settings stay on this device for compatibility.", "Спільними є лише завершена історія тренувань і вправи. Активні тренування та налаштування Smart Coach залишаються на цьому пристрої для сумісності.")}</p><button class="button ghost full" data-action="sync-cloud-now" ${busy ? "disabled" : ""}>${snapshot.status === "error" ? tx("Retry sync", "Повторити синхронізацію") : tx("Sync now", "Синхронізувати зараз")}</button></section>`;
-}
-
-async function syncCloudNow() {
-  if (!activeAccount?.remote || !remoteAuthEnabled() || accountTransitionInProgress) return false;
-  const expectedEpoch = accountEpoch;
-  const expectedUserId = activeAccount.userId;
-  setCloudSyncUi("checking", "", expectedUserId);
-  render();
-  try {
-    await pullRemoteState();
-    if (expectedEpoch !== accountEpoch || activeAccount?.userId !== expectedUserId) return false;
-    if (cloudSyncConflict?.userId === expectedUserId || cloudStateRecovery?.userId === expectedUserId) {
-      render();
-      return false;
-    }
-    await flushPendingRemoteSave();
-    if (expectedEpoch !== accountEpoch || activeAccount?.userId !== expectedUserId) return false;
-    setCloudSyncUi("synced", "", expectedUserId);
-    render();
-    showToast(tx("Workout history synced.", "Історію тренувань синхронізовано."));
-    return true;
-  } catch (error) {
-    if (transitionToReauthentication(error)) return false;
-    if (expectedEpoch === accountEpoch && activeAccount?.userId === expectedUserId) {
-      setCloudSyncUi("error", friendlySyncError(error), expectedUserId);
-      render();
-    }
-    return false;
-  }
-}
-
 function profileDataPanel() {
   return `<section class="panel profile-data-card"><div class="section-title"><div><span class="eyebrow">${tx("Your data", "Твої дані")}</span><h2>${t("backup")}</h2></div></div><p class="muted">${tx("A full import replaces this profile. Manual backups include favorite exercises; cloud schema-v2 intentionally keeps favorites local to this account and device.", "Повний імпорт замінює цей профіль. Ручна резервна копія містить улюблені вправи; хмарна schema-v2 навмисно зберігає їх локально для цього акаунта й пристрою.")}</p><div class="actions"><button class="button ghost" data-action="export-json">${t("exportJson")}</button><button class="button ghost" data-action="import-json">${t("importJson")}</button><button class="button ghost full" data-action="export-diagnostics">${t("diagnostics")}</button></div></section>
     <section class="panel profile-links-card"><div><span class="eyebrow">${tx("Help and trust", "Допомога й довіра")}</span><h2>${tx("Support and privacy", "Підтримка та приватність")}</h2><p class="muted">${tx("Find setup help or review how GymApp handles your data.", "Знайди допомогу з налаштуванням або переглянь, як GymApp обробляє твої дані.")}</p></div><div class="profile-links"><a class="button ghost" href="${escapeAttr(SUPPORT_URL)}" target="_blank" rel="noopener noreferrer">${tx("Support", "Підтримка")}</a><a class="button ghost" href="${escapeAttr(PRIVACY_URL)}" target="_blank" rel="noopener noreferrer">${tx("Privacy policy", "Політика конфіденційності")}</a></div></section>`;
@@ -9400,15 +8988,8 @@ async function refreshLeaderboard(force = false) {
   leaderboardRequestController = new AbortController();
   leaderboardState = { ...leaderboardState, status: "loading", source, error: "" };
   render();
-  let workoutSyncError = null;
   try {
-    try {
-      await flushPendingRemoteSave();
-    } catch (error) {
-      if (isTerminalRemoteAuthError(error)) throw error;
-      workoutSyncError = error;
-      setCloudSyncUi("error", friendlySyncError(error), expectedUserId);
-    }
+    saveRemoteState().catch(() => {});
     const rows = await supabaseRequest(
       "/rest/v1/leaderboard_public?select=profile_id,display_name,xp,level,workouts,is_current_user&order=xp.desc,workouts.desc,profile_id.asc&limit=50",
       { session, signal: leaderboardRequestController.signal, timeoutMs: 10000 }
@@ -9422,7 +9003,7 @@ async function refreshLeaderboard(force = false) {
       rows: (Array.isArray(rows) ? rows : [])
         .filter(row => Boolean(row?.is_current_user))
         .map(row => ({ ...row, isCurrent: true })),
-      error: workoutSyncError ? friendlySyncError(workoutSyncError) : ""
+      error: ""
     };
   } catch (error) {
     if (requestId !== leaderboardRequestId || requestEpoch !== accountEpoch ||
@@ -9456,7 +9037,6 @@ function leaderboardScreen() {
   return `<section class="screen-copy profile-screen-copy"><span class="eyebrow">${tx("Profile", "Профіль")}</span><h2>${tx("Account, data and progress", "Акаунт, дані та прогрес")}</h2><p>${tx("Manage your account, connected services and protected progress in one place.", "Керуй акаунтом, підключеними сервісами та захищеним прогресом в одному місці.")}</p></section>
     ${themePreferencePanel()}
     ${accountPanel()}
-    ${cloudSyncPanel()}
     ${garminProfilePanel()}
     ${profileDataPanel()}
     <section class="hero-panel profile-rating-hero"><div class="hero-split"><div><span class="eyebrow">${tx("Rating status", "Статус рейтингу")}</span><h2>${tx("Rating not available yet", "Рейтинг поки недоступний")}</h2><p>${tx("Workouts are currently scored on your device, so public ranking is disabled, not queued for review. It will appear only after a future app and server update adds verified scoring; no release date is set. Your private progress remains available.", "Зараз тренування оцінюються на пристрої, тому публічний рейтинг вимкнено, а не поставлено в чергу на перевірку. Він з’явиться лише після майбутнього оновлення застосунку й сервера з перевіреним підрахунком; дати випуску поки немає. Твій приватний прогрес залишається доступним.")}</p></div><div class="hero-stat"><span>${tx("Your XP", "Твої XP")}</span><strong>${totalXp()}</strong><small>${escapeHtml(rankTitle())}</small></div></div></section>
@@ -10273,9 +9853,6 @@ function modalMarkup() {
   if (modal.type === "history") return bottomSheet(exerciseHistoryMarkup(modal.exercise));
   if (modal.type === "map") return bottomSheet(mappingEditor(modal.name));
   if (modal.type === "edit-set") return bottomSheet(`<h2>${tx("Edit Set", "Редагувати підхід")}</h2><label>${tx("Weight (kg)", "Вага (кг)")}<input id="edit-weight" value="${modal.set.weight || ""}" inputmode="decimal"></label><label>${tx("Reps", "Повтори")}<input id="edit-reps" value="${modal.set.reps || ""}" inputmode="numeric"></label><button class="button full" data-action="apply-edit-set" data-id="${modal.set.id}">${tx("Save", "Зберегти")}</button>`);
-  if (modal.type === "confirm-shared-workout-replace") {
-    return bottomSheet(`<h2 id="shared-workout-replace-title">${tx("Replace the current draft?", "Замінити поточну чернетку?")}</h2><p class="muted" id="shared-workout-replace-description">${tx("Your current unsaved workout draft will be replaced by the shared plan. Workout history, the active workout, and cloud data will not be changed.", "Поточну незбережену чернетку тренування буде замінено спільним планом. Історія, активне тренування та хмарні дані не зміняться.")}</p>${sharedWorkoutPreviewMarkup(pendingSharedWorkout)}<div class="actions vertical"><button class="button ghost full" data-action="cancel-destructive" data-modal-initial-focus>${tx("Keep current draft", "Залишити поточну чернетку")}</button><button class="button danger full" data-action="confirm-shared-workout-replace">${tx("Replace with shared plan", "Замінити спільним планом")}</button></div>`, "shared-workout-replace-title", "alertdialog", "shared-workout-replace-description");
-  }
   if (modal.type === "confirm-discard-active") {
     const counts = activeWorkoutSetCounts(activeWorkout);
     return bottomSheet(`<h2 id="discard-active-confirm-title">${tx("Discard active workout?", "Відкинути активне тренування?")}</h2><p id="discard-active-confirm-target"><strong>${counts.completed} / ${counts.total} ${tx("sets recorded", "підходів записано")}</strong></p><p class="muted" id="discard-active-confirm-description">${tx("The local active draft and its recorded progress will be removed. Workout history and cloud data will not be changed.", "Локальну активну чернетку та записаний у ній прогрес буде видалено. Історія тренувань і хмарні дані не зміняться.")}</p><div class="actions vertical"><button class="button ghost full" data-action="cancel-destructive" data-modal-initial-focus>${tx("Keep workout", "Залишити тренування")}</button><button class="button danger full" data-action="confirm-discard-active">${tx("Discard workout", "Відкинути тренування")}</button></div>`, "discard-active-confirm-title", "alertdialog", "discard-active-confirm-target discard-active-confirm-description");
@@ -10512,7 +10089,6 @@ function handleAction(action, el) {
   if (action === "resolve-sync-conflict-cloud") return resolveSyncConflictWithCloud();
   if (action === "logout-account") return logoutAccount();
   if (action === "delete-account") return activeAccount?.remote ? deleteCloudAccount() : deleteLocalAccount();
-  if (action === "sync-cloud-now") return syncCloudNow();
   if (action === "unpair-garmin") return unpairGarmin();
   if (action === "refresh-garmin-profile") {
     garminProfileState = { status: "idle", userId: null, devices: [], error: "" };
@@ -10549,9 +10125,7 @@ function handleAction(action, el) {
   }
   if (action === "backup") { modal = { type: "backup-json", diagnostics: false, json: exportPayload(false) }; return render(); }
   if (action === "open-add") return activeWorkout ? push("active") : push("add");
-  if (action === "continue-active-workout") {
-    return route().name === "active" ? undefined : push("active");
-  }
+  if (action === "continue-active-workout") return push("active");
   if (action === "open-detail") return push("detail", { id: Number(el.dataset.id) });
   if (action === "delete-session") return deleteSession(Number(el.dataset.id));
   if (action === "finish-workout") return push("summary", { id: Number(el.dataset.id) });
@@ -10601,7 +10175,6 @@ function handleAction(action, el) {
   if (action === "smart-effort") {
     const effort = smartNormalizeWorkoutEffort(el.dataset.effort, "");
     if (!SMART_WORKOUT_EFFORTS.has(effort)) return;
-    smartPlanStale = Boolean(workoutDraft?.blocks?.some(block => block.smartGenerated === true));
     smartWorkoutEffort = effort;
     smartGeneratedPlan = null;
     return render();
@@ -10639,9 +10212,6 @@ function handleAction(action, el) {
       .then(() => showToast(tx("Workout link copied.", "Посилання на тренування скопійовано.")))
       .catch(() => showToast(tx("Clipboard write failed.", "Не вдалося записати в буфер обміну.")));
   }
-  if (action === "accept-shared-workout") return applyPendingSharedWorkout(false);
-  if (action === "confirm-shared-workout-replace") return applyPendingSharedWorkout(true);
-  if (action === "dismiss-shared-workout") return dismissPendingSharedWorkout();
   if (action === "open-exercise-media") {
     const exerciseId = Number(el.dataset.exerciseId);
     const storedExercise = Number.isSafeInteger(exerciseId) && exerciseId > 0
@@ -10707,7 +10277,6 @@ function handleAction(action, el) {
   }
   if (action === "start-workout") return startWorkout();
   if (action === "record-active-set") return recordActiveSet(Number(el.dataset.id));
-  if (action === "undo-active-set") return undoLatestActiveSet(Number(el.dataset.id));
   if (action === "finish-active-workout") return finishActiveWorkout();
   if (action === "discard-active-workout") {
     return requestDiscardActiveWorkout(destructiveReturnFocus("discard-active-workout", el));
@@ -10733,12 +10302,6 @@ function handleAction(action, el) {
   if (action === "timer-stop") {
     if (!stopExerciseRestTimer(el.dataset.key)) {
       showToast(tx("Rest timer could not be stopped.", "Не вдалося зупинити таймер відпочинку."));
-    }
-    return render();
-  }
-  if (action === "timer-adjust") {
-    if (!adjustExerciseRestTimer(el.dataset.key, Number(el.dataset.seconds))) {
-      showToast(tx("Rest timer could not be adjusted.", "Не вдалося змінити таймер відпочинку."));
     }
     return render();
   }
@@ -10774,13 +10337,7 @@ function handleAction(action, el) {
 }
 
 function isDestructiveConfirmationModal(value = modal) {
-  return [
-    "confirm-delete-exercise",
-    "confirm-delete-set",
-    "confirm-import",
-    "confirm-discard-active",
-    "confirm-shared-workout-replace"
-  ].includes(value?.type);
+  return ["confirm-delete-exercise", "confirm-delete-set", "confirm-import", "confirm-discard-active"].includes(value?.type);
 }
 
 function closeModal() {
@@ -10821,7 +10378,6 @@ function updateProfile(el) {
     if (!allowed?.includes(value)) return;
     state.profile[field] = value;
   }
-  smartPlanStale = Boolean(workoutDraft?.blocks?.some(block => block.smartGenerated === true));
   smartGeneratedPlan = null;
   saveState();
   render();
@@ -10838,7 +10394,6 @@ function generateSmartWorkout() {
   const plan = buildSmartWorkoutPlan(smartWorkoutEffort);
   if (!workoutDraft) return;
   smartGeneratedPlan = plan;
-  smartPlanStale = false;
   workoutDraft.blocks = plan.exercises.map(({ name, catalogKey, recommendation, hardSlot }) => ({
     exerciseName: name,
     ...(catalogKey ? { catalogKey } : {}),
@@ -10857,10 +10412,9 @@ function buildSmartWorkoutPlan(requestedEffort = smartWorkoutEffort) {
   const history = smartUsableHistory(allSets(), nowMillis);
   const focus = chooseWorkoutFocus(history);
   const targetMuscles = targetMusclesForFocus(focus);
-  let effort = resolveSmartWorkoutEffort(requestedEffort, history, targetMuscles, nowMillis);
+  const effort = resolveSmartWorkoutEffort(requestedEffort, history, targetMuscles, nowMillis);
   const variant = smartWorkoutVariant(focus, history);
-  let sessionSetBudget = smartSessionSetBudget(effort.appliedEffort);
-  let targetExerciseCount = smartTargetExerciseCount(effort.appliedEffort, focus);
+  const targetExerciseCount = smartTargetExerciseCount(effort.appliedEffort);
   const historyByExercise = new Map();
   history.forEach(set => {
     const key = exerciseMatchKey(set);
@@ -10903,57 +10457,31 @@ function buildSmartWorkoutPlan(requestedEffort = smartWorkoutEffort) {
     return groups;
   }, new Map()).values()];
   const weeklyEffectiveSets = smartWeeklyEffectiveSets(history, nowMillis);
-  const selectExercises = () => selectBalancedSmartExercises(
-      canonicalCandidates,
-      focus,
-      targetMuscles,
-      targetExerciseCount,
-      history,
-      variant,
-      weeklyEffectiveSets,
-      state.profile,
-      effort.appliedEffort
-    );
-  let selected = selectExercises();
-  const isEligibleHardCandidate = candidate => smartIsCompound(candidate.analysis) &&
-    candidate.sessionCount >= 2;
-  if (effort.appliedEffort === "Hard" && !selected.some(isEligibleHardCandidate)) {
-    effort = {
-      ...effort,
-      appliedEffort: "Standard",
-      adjustment: tx(
-        "Hard was adjusted to Standard because no selected compound exercise has two completed exercise-specific sessions.",
-        "Важке тренування змінено на звичайне, бо жодна обрана базова вправа ще не має двох завершених тренувань саме з цією вправою."
-      )
-    };
-    sessionSetBudget = smartSessionSetBudget(effort.appliedEffort);
-    targetExerciseCount = smartTargetExerciseCount(effort.appliedEffort, focus);
-    selected = selectExercises();
-  }
-  let hardSetSlotsRemaining = Math.min(2, Math.max(0, sessionSetBudget - selected.length * 3));
-  let remainingSetBudget = sessionSetBudget;
-  const exercises = selected.map((candidate, index) => {
+  const selected = selectBalancedSmartExercises(
+    canonicalCandidates,
+    focus,
+    targetMuscles,
+    targetExerciseCount,
+    history,
+    variant,
+    weeklyEffectiveSets,
+    state.profile,
+    effort.appliedEffort
+  );
+  let hardCompoundCount = 0;
+  const exercises = selected.map(candidate => {
     const hardSlot = effort.appliedEffort === "Hard" && smartIsCompound(candidate.analysis) &&
-      candidate.sessionCount >= 2 && hardSetSlotsRemaining > 0;
-    if (hardSlot) hardSetSlotsRemaining -= 1;
-    const recommendation = smartRecommendation(candidate.exercise, {
-      appliedEffort: effort.appliedEffort,
-      hardSlot,
-      recoverySteps: effort.recoverySteps
-    });
-    const minimumForRemainingExercises = Math.max(0, selected.length - index - 1) * 3;
-    const allowedSets = clamp(
-      remainingSetBudget - minimumForRemainingExercises,
-      3,
-      recommendation.sets.length
-    );
-    recommendation.sets = recommendation.sets.slice(0, allowedSets);
-    remainingSetBudget -= recommendation.sets.length;
+      candidate.sessionCount >= 2 && hardCompoundCount < 2;
+    if (hardSlot) hardCompoundCount += 1;
     return {
       name: candidate.exercise.name,
       ...(persistedExerciseCatalogKey(candidate.exercise) ? { catalogKey: persistedExerciseCatalogKey(candidate.exercise) } : {}),
       hardSlot,
-      recommendation
+      recommendation: smartRecommendation(candidate.exercise, {
+        appliedEffort: effort.appliedEffort,
+        hardSlot,
+        recoverySteps: effort.recoverySteps
+      })
     };
   });
   return {
@@ -10963,7 +10491,6 @@ function buildSmartWorkoutPlan(requestedEffort = smartWorkoutEffort) {
     appliedEffort: effort.appliedEffort,
     adjustment: effort.adjustment,
     recoverySteps: effort.recoverySteps,
-    setBudget: sessionSetBudget,
     exercises
   };
 }
@@ -11027,25 +10554,10 @@ function smartRecentTargetMuscleRatio(history, targetMuscles, nowMillis = Date.n
   return recentlyTrained / targets.length;
 }
 
-function smartTargetExerciseCount(appliedEffort = "Standard", focus = null) {
-  const reservedHardSets = appliedEffort === "Hard" ? 1 : 0;
-  return clamp(Math.floor((smartSessionSetBudget(appliedEffort) - reservedHardSets) / 3), 4, 8);
-}
-
-function smartSessionSetBudget(appliedEffort = "Standard", profile = state.profile) {
-  const days = clamp(Number(profile?.days) || 3, 2, 6);
-  const frequencyBase = days === 2 ? 20 : days === 3 ? 18 : days === 4 ? 16 : days === 5 ? 15 : 14;
-  const goalAdjustment = profile?.goal === "Muscle Gain" ? 2
-    : profile?.goal === "Aesthetic Cut" ? -2
-      : profile?.goal === "Strength" ? -1 : 0;
-  const calorieAdjustment = profile?.calories === "Deficit" ? -2
-    : profile?.calories === "Surplus" ? 2 : 0;
-  const effortAdjustment = appliedEffort === "Recovery" ? -3 : appliedEffort === "Hard" ? 1 : 0;
-  return clamp(
-    frequencyBase + goalAdjustment + calorieAdjustment + effortAdjustment,
-    appliedEffort === "Hard" ? 13 : 12,
-    24
-  );
+function smartTargetExerciseCount(appliedEffort = "Standard") {
+  const days = Number(state.profile.days);
+  const base = days <= 2 ? 10 : days === 3 ? 9 : days === 4 ? 8 : days === 5 ? 7 : 6;
+  return appliedEffort === "Recovery" ? Math.max(5, base - 2) : base;
 }
 
 function smartPrimaryMuscles(exercise) {
@@ -11060,26 +10572,10 @@ function smartEquipmentFamily(exercise, analysis = analyzeSmartExercise(exercise
   if (analysis.loadMode === "Assistance") return "assistance";
   if (analysis.loadMode === "Bodyweight") return "bodyweight";
   const key = resolvedExerciseCatalogKey(exercise) || "";
-  const reviewedFamily = ({
-    machine_lateral_raise: "machine",
-    plate_loaded_row: "machine",
-    bulgarian_split_squat: "dumbbell",
-    assisted_pull_up: "assistance",
-    assisted_dip: "assistance",
-    band_assisted_pull_up: "band",
-    chest_fly_machine: "machine",
-    leg_press: "machine",
-    leg_extension: "machine",
-    lying_leg_curl: "machine",
-    seated_leg_curl: "machine",
-    hip_adduction: "machine",
-    hip_abduction: "machine"
-  })[key];
-  if (reviewedFamily) return reviewedFamily;
-  if (/(machine|leg_press|leg_extension|leg_curl|hip_adduction|hip_abduction|plate_loaded|preacher)/.test(key)) return "machine";
   if (/(dumbbell|lateral_raise|hammer_curl|weighted_side_bend)/.test(key)) return "dumbbell";
   if (/(barbell|bench_press|squat|deadlift|french_press)/.test(key)) return "barbell";
   if (/(cable|pulldown|pushdown|face_pull|straight_arm)/.test(key)) return "cable";
+  if (/(machine|leg_press|leg_extension|leg_curl|hip_adduction|hip_abduction|plate_loaded|preacher)/.test(key)) return "machine";
   return "other";
 }
 
@@ -11256,11 +10752,9 @@ function chooseWorkoutFocus(history = smartUsableHistory()) {
   const latestFocus = dominantSmartFocus(latest);
   if (state.profile.split === "Upper / Lower") {
     const thisWeekSessions = sessions.filter(session => daysBetween(session.date, Date.now()) <= 6);
-    const latestRecognizedFocus = sessions
-      .map(session => dominantSmartFocus(session.sets))
-      .find(sessionFocus => isUpperFocus(sessionFocus) || isLowerFocus(sessionFocus));
-    if (isLowerFocus(latestRecognizedFocus)) return "Upper";
-    if (isUpperFocus(latestRecognizedFocus)) return "Lower";
+    const latestWeekFocus = thisWeekSessions[0]?.sets ? dominantSmartFocus(thisWeekSessions[0].sets) : latestFocus;
+    if (isLowerFocus(latestWeekFocus)) return "Upper";
+    if (isUpperFocus(latestWeekFocus)) return "Lower";
     const upperCount = thisWeekSessions.filter(session => isUpperFocus(dominantSmartFocus(session.sets))).length;
     const lowerCount = thisWeekSessions.filter(session => isLowerFocus(dominantSmartFocus(session.sets))).length;
     return lowerCount < upperCount ? "Lower" : "Upper";
@@ -11483,7 +10977,7 @@ function smartWeeklyEffectiveSets(history, nowMillis = Date.now()) {
   return result;
 }
 
-function smartWeeklyCoverageGain(candidate, selected, completedEffectiveSets, profile = state.profile, appliedEffort = "Standard") {
+function smartWeeklyCoverageScore(candidate, selected, completedEffectiveSets, profile = state.profile, appliedEffort = "Standard") {
   const projected = new Map(completedEffectiveSets);
   selected.forEach(item => {
     const plannedSets = smartTargetSetCount(item.analysis, { appliedEffort });
@@ -11493,21 +10987,10 @@ function smartWeeklyCoverageGain(candidate, selected, completedEffectiveSets, pr
   });
   const plannedSets = smartTargetSetCount(candidate.analysis, { appliedEffort });
   const contributions = smartKnownMuscleContributions(candidate.exercise);
-  return contributions.reduce((sum, { muscleId, weight }) => {
+  const coverageGain = contributions.reduce((sum, { muscleId, weight }) => {
     const deficit = Math.max(smartWeeklyMuscleTarget(muscleId, profile) - (projected.get(muscleId) || 0), 0);
     return sum + Math.min(deficit, plannedSets * weight);
   }, 0);
-}
-
-function smartWeeklyCoverageScore(candidate, selected, completedEffectiveSets, profile = state.profile, appliedEffort = "Standard") {
-  const contributions = smartKnownMuscleContributions(candidate.exercise);
-  const coverageGain = smartWeeklyCoverageGain(
-    candidate,
-    selected,
-    completedEffectiveSets,
-    profile,
-    appliedEffort
-  );
   const saturatedPenalty = coverageGain === 0
     ? 12 * contributions.reduce((sum, item) => sum + item.weight, 0)
     : 0;
@@ -11610,28 +11093,19 @@ function selectBalancedSmartExercises(candidates, focus, targetMuscles, targetEx
   }
 
   while (selected.length < targetExerciseCount && remaining.length) {
-    const ranked = remaining
+    const best = remaining
       .map(candidate => ({
         candidate,
-        coverageGain: smartWeeklyCoverageGain(
-          candidate,
-          selected,
-          weeklyEffectiveSets,
-          profile,
-          appliedEffort
-        ),
         score: balancedSmartScore(candidate, selected, coveredMuscles, targetMuscles, lastTrained) +
           smartWeeklyCoverageScore(candidate, selected, weeklyEffectiveSets, profile, appliedEffort)
       }))
-      .sort((a, b) => b.score - a.score || a.candidate.exercise.name.localeCompare(b.candidate.exercise.name));
-    if (!ranked.length || ranked[0].coverageGain <= 0) break;
-    const best = ranked[0].candidate;
+      .sort((a, b) => b.score - a.score || a.candidate.exercise.name.localeCompare(b.candidate.exercise.name))[0].candidate;
     selected.push(best);
     best.analysis.muscles.forEach(muscle => coveredMuscles.add(muscle));
     remaining = remaining.filter(candidate => candidate.exercise.id !== best.exercise.id);
   }
 
-  return smartFinalizeExerciseOrder(selected, candidates, targetExerciseCount, history, variant, focus);
+  return smartFinalizeExerciseOrder(selected, candidates, targetExerciseCount, history, variant);
 }
 
 function smartIsHyperCandidate(candidate) {
@@ -11644,7 +11118,7 @@ function smartIsTrunkCandidate(candidate) {
   return Boolean(candidate?.analysis?.patterns?.has("Core")) || smartIsHyperCandidate(candidate);
 }
 
-function smartFinalizeExerciseOrder(selected, candidates, targetExerciseCount, history, variant, focus) {
+function smartFinalizeExerciseOrder(selected, candidates, targetExerciseCount, history, variant) {
   const unique = [...selected.reduce((items, candidate) => {
     const key = candidate?.analysis?.identityKey || exerciseMatchKey(candidate?.exercise || {});
     if (key && !items.has(key)) items.set(key, candidate);
@@ -11652,14 +11126,11 @@ function smartFinalizeExerciseOrder(selected, candidates, targetExerciseCount, h
   }, new Map()).values()];
   const roleRank = candidate => candidate.analysis.role === "Primary" ? 0 :
     candidate.analysis.role === "Secondary" ? 1 : candidate.analysis.role === "Isolation" ? 2 : 3;
-  // A four-exercise Upper session needs all four press/pull planes. Other focuses
-  // reserve one final trunk slot so the total still fits the session set budget.
-  const reserveTrunk = focus !== "Upper" || targetExerciseCount > 4;
   const nonTrunk = unique
     .filter(candidate => !smartIsTrunkCandidate(candidate))
     .sort((left, right) => roleRank(left) - roleRank(right) || right.score - left.score ||
       left.exercise.name.localeCompare(right.exercise.name))
-    .slice(0, Math.max(0, targetExerciseCount - (reserveTrunk ? 1 : 0)));
+    .slice(0, Math.max(0, targetExerciseCount - 1));
   const selectedKeys = new Set(nonTrunk.map(candidate => candidate.analysis.identityKey));
   const hasHinge = nonTrunk.some(candidate => candidate.analysis.patterns.has("Hinge"));
   const recentHyperSessions = new Set(history
@@ -11667,11 +11138,11 @@ function smartFinalizeExerciseOrder(selected, candidates, targetExerciseCount, h
       ["hyperextension", "side_hyperextension"].includes(resolvedExerciseCatalogKey(set)))
     .map(set => set.session?.id))
     .size;
-  const trunkCandidates = reserveTrunk ? candidates
+  const trunkCandidates = candidates
     .filter(candidate => smartIsTrunkCandidate(candidate) &&
       candidate.analysis.role !== "Warmup" &&
       !selectedKeys.has(candidate.analysis.identityKey) &&
-      (!smartIsHyperCandidate(candidate) || (!hasHinge && recentHyperSessions < 2))) : [];
+      (!smartIsHyperCandidate(candidate) || (!hasHinge && recentHyperSessions < 2)));
   const previousTrunk = unique.find(candidate => smartIsTrunkCandidate(candidate) && trunkCandidates.some(item =>
     item.analysis.identityKey === candidate.analysis.identityKey
   ));
@@ -11690,25 +11161,7 @@ function smartFinalizeExerciseOrder(selected, candidates, targetExerciseCount, h
     .sort((left, right) => (kindOf(right) === preferredKind ? 20 : 0) -
       (kindOf(left) === preferredKind ? 20 : 0) || right.score - left.score ||
       left.exercise.name.localeCompare(right.exercise.name))[0] || null;
-  if (trunk) return [...nonTrunk, trunk].slice(0, targetExerciseCount);
-
-  // Trunk work is preferred, but it must not make the plan shorter when the
-  // user's current catalog has no eligible core or hyperextension movement.
-  const filled = [...nonTrunk];
-  const filledKeys = new Set(filled.map(candidate => candidate.analysis.identityKey));
-  const backfill = candidates
-    .filter(candidate => candidate.analysis.role !== "Warmup" &&
-      !smartIsTrunkCandidate(candidate) &&
-      !filledKeys.has(candidate.analysis.identityKey))
-    .sort((left, right) => roleRank(left) - roleRank(right) || right.score - left.score ||
-      left.exercise.name.localeCompare(right.exercise.name));
-  for (const candidate of backfill) {
-    if (filled.length >= targetExerciseCount) break;
-    if (filledKeys.has(candidate.analysis.identityKey)) continue;
-    filled.push(candidate);
-    filledKeys.add(candidate.analysis.identityKey);
-  }
-  return filled.slice(0, targetExerciseCount);
+  return trunk ? [...nonTrunk, trunk].slice(0, targetExerciseCount) : nonTrunk;
 }
 
 function patternMatchCount(candidate, patterns) {
@@ -11928,13 +11381,6 @@ function activeWorkoutMutationUnavailable(context) {
   } else {
     clearActiveWorkoutMemory();
   }
-  activeWorkoutUi = {
-    status: "error",
-    message: tx(
-      "The active workout is busy in another tab. Check the latest set and retry.",
-      "Активне тренування зайняте в іншій вкладці. Перевір останній підхід і повтори."
-    )
-  };
   render();
   showToast(tx(
     "The active workout is busy in another tab. Wait a moment and try again.",
@@ -11973,7 +11419,8 @@ async function startWorkout() {
     if (!activeWorkoutMutationContextIsCurrent(mutationContext)) return false;
     const loaded = loadActiveWorkoutRecord(mutationContext.account);
     if (loaded.workout) {
-      reloadActiveWorkoutContext(mutationContext.account);
+      activeWorkout = loaded.workout;
+      activeWorkoutStorageRaw = loaded.raw;
       nav = [{ name: "workouts" }, { name: "active" }];
       replaceNavigationHistory();
       workoutDraft = null;
@@ -11984,7 +11431,6 @@ async function startWorkout() {
       ));
       return false;
     }
-    const previousUndo = loadActiveWorkoutUndoRecord(null, mutationContext.account);
     const stored = persistActiveWorkoutRecord(candidate, mutationContext.account, null);
     if (!stored || !activeWorkoutMutationContextIsCurrent(mutationContext)) {
       reloadActiveWorkoutContext(mutationContext.account);
@@ -11997,17 +11443,8 @@ async function startWorkout() {
     }
     activeWorkout = stored.workout;
     activeWorkoutStorageRaw = stored.raw;
-    if (removeActiveWorkoutUndoStorage(mutationContext.account, previousUndo.raw)) {
-      activeWorkoutUndoMarker = null;
-      activeWorkoutUndoStorageRaw = null;
-    } else {
-      const undoLoaded = loadActiveWorkoutUndoRecord(stored.workout, mutationContext.account);
-      activeWorkoutUndoMarker = undoLoaded.marker;
-      activeWorkoutUndoStorageRaw = undoLoaded.raw;
-    }
     workoutDraft = null;
     smartGeneratedPlan = null;
-    smartPlanStale = false;
     modal = null;
     nav = [{ name: "workouts" }, { name: "active" }];
     replaceNavigationHistory();
@@ -12051,11 +11488,8 @@ async function recordActiveSet(setId) {
   const result = await withActiveWorkoutMutationLock(mutationContext.descriptor, () => {
     if (!activeWorkoutMutationContextIsCurrent(mutationContext)) return false;
     const loaded = loadActiveWorkoutRecord(mutationContext.account);
-    const loadedUndo = loadActiveWorkoutUndoRecord(loaded.workout, mutationContext.account);
     activeWorkout = loaded.workout;
     activeWorkoutStorageRaw = loaded.raw;
-    activeWorkoutUndoMarker = loadedUndo.marker;
-    activeWorkoutUndoStorageRaw = loadedUndo.raw;
     const location = activeSetLocation(setId, loaded.workout);
     if (!location || location.set.completed) {
       render();
@@ -12067,7 +11501,7 @@ async function recordActiveSet(setId) {
       }
       return false;
     }
-    const now = Math.max(Date.now(), loaded.workout.updatedAt + 1);
+    const now = Math.max(Date.now(), loaded.workout.updatedAt);
     if (!Number.isSafeInteger(now) || loaded.workout.revision >= Number.MAX_SAFE_INTEGER) {
       showToast(tx("This active workout cannot be updated safely.", "Це активне тренування неможливо безпечно оновити."));
       return false;
@@ -12103,149 +11537,15 @@ async function recordActiveSet(setId) {
     }
     activeWorkout = stored.workout;
     activeWorkoutStorageRaw = stored.raw;
-    const storedUndo = persistActiveWorkoutUndoRecord(
-      stored.workout,
-      setId,
-      mutationContext.account,
-      loadedUndo.raw
-    );
-    if (storedUndo) {
-      activeWorkoutUndoMarker = storedUndo.marker;
-      activeWorkoutUndoStorageRaw = storedUndo.raw;
-    } else {
-      const undoLoaded = loadActiveWorkoutUndoRecord(stored.workout, mutationContext.account);
-      activeWorkoutUndoMarker = undoLoaded.marker;
-      activeWorkoutUndoStorageRaw = undoLoaded.raw;
-    }
     const timerKey = `${stored.workout.id}:${location.block.exerciseName}`;
-    const restSeconds = smartRestSecondsForBlock(location.block);
-    const timerStarted = startExerciseRestTimer(timerKey, restSeconds);
-    activeWorkoutUi = timerStarted && storedUndo
-      ? {
-          status: "success",
-          message: tx(
-            "Set saved. Smart rest started.",
-            "Підхід збережено. Розумний відпочинок запущено."
-          )
-        }
-      : {
-          status: "error",
-          message: !storedUndo
-            ? tx(
-                "Set saved, but one-step Undo could not be enabled. Check the set before continuing.",
-                "Підхід збережено, але одноразове скасування не вдалося ввімкнути. Перевір підхід перед продовженням."
-              )
-            : tx(
-                "Set saved, but the rest timer could not be saved. Check it before continuing.",
-                "Підхід збережено, але таймер відпочинку не вдалося зберегти. Перевір його перед продовженням."
-              )
-        };
+    const timerStarted = startExerciseRestTimer(timerKey, 90);
     render();
-    if (!storedUndo || !timerStarted) {
-      showToast(!storedUndo
-        ? tx(
-            "Set recorded, but one-step Undo is unavailable.",
-            "Підхід записано, але одноразове скасування недоступне."
-          )
-        : tx(
-            "Set recorded, but the rest timer could not be saved.",
-            "Підхід записано, але не вдалося зберегти таймер відпочинку."
-          ));
+    if (!timerStarted) {
+      showToast(tx(
+        "Set recorded, but the rest timer could not be saved.",
+        "Підхід записано, але не вдалося зберегти таймер відпочинку."
+      ));
     }
-    return true;
-  });
-  if (!result.acquired) return activeWorkoutMutationUnavailable(mutationContext);
-  return result.value === true;
-}
-
-async function undoLatestActiveSet(setId) {
-  if (!Number.isSafeInteger(setId) || setId <= 0) return false;
-  const mutationContext = activeWorkoutMutationContext();
-  if (!mutationContext) return activeWorkoutMutationUnavailable(null);
-  const result = await withActiveWorkoutMutationLock(mutationContext.descriptor, () => {
-    if (!activeWorkoutMutationContextIsCurrent(mutationContext)) return false;
-    const loaded = loadActiveWorkoutRecord(mutationContext.account);
-    const loadedUndo = loadActiveWorkoutUndoRecord(loaded.workout, mutationContext.account);
-    activeWorkout = loaded.workout;
-    activeWorkoutStorageRaw = loaded.raw;
-    activeWorkoutUndoMarker = loadedUndo.marker;
-    activeWorkoutUndoStorageRaw = loadedUndo.raw;
-    const latest = latestActiveCompletedEntry(loaded.workout);
-    if (!latest || latest.set.id !== setId || loadedUndo.marker?.setId !== setId) {
-      activeWorkoutUi = {
-        status: "error",
-        message: tx(
-          "Only the most recently recorded set can be undone.",
-          "Скасувати можна лише останній записаний підхід."
-        )
-      };
-      render();
-      return false;
-    }
-    const now = Math.max(Date.now(), loaded.workout.updatedAt + 1);
-    if (!Number.isSafeInteger(now) || loaded.workout.revision >= Number.MAX_SAFE_INTEGER) return false;
-    const next = {
-      ...loaded.workout,
-      updatedAt: now,
-      revision: loaded.workout.revision + 1,
-      blocks: loaded.workout.blocks.map((block, blockIndex) => blockIndex === latest.blockIndex
-        ? {
-            ...block,
-            sets: block.sets.map((set, setIndex) => setIndex === latest.setIndex
-              ? { ...set, completed: false, completedAt: null }
-              : set)
-          }
-        : block)
-    };
-    const stored = persistActiveWorkoutRecord(next, mutationContext.account, loaded.raw);
-    if (!stored || !activeWorkoutMutationContextIsCurrent(mutationContext)) {
-      reloadActiveWorkoutContext(mutationContext.account);
-      activeWorkoutUi = {
-        status: "error",
-        message: tx(
-          "The latest set changed in another tab. Check it before retrying.",
-          "Останній підхід змінився в іншій вкладці. Перевір його перед повтором."
-        )
-      };
-      render();
-      return false;
-    }
-    activeWorkout = stored.workout;
-    activeWorkoutStorageRaw = stored.raw;
-    const consumedUndo = persistActiveWorkoutUndoRecord(
-      stored.workout,
-      null,
-      mutationContext.account,
-      loadedUndo.raw
-    );
-    if (consumedUndo) {
-      activeWorkoutUndoMarker = consumedUndo.marker;
-      activeWorkoutUndoStorageRaw = consumedUndo.raw;
-    } else {
-      const undoLoaded = loadActiveWorkoutUndoRecord(stored.workout, mutationContext.account);
-      activeWorkoutUndoMarker = undoLoaded.marker;
-      activeWorkoutUndoStorageRaw = undoLoaded.raw;
-    }
-    const timerKey = `${stored.workout.id}:${latest.block.exerciseName}`;
-    const timerStopped = stopExerciseRestTimer(timerKey);
-    activeWorkoutUi = {
-      status: timerStopped && consumedUndo ? "success" : "error",
-      message: !consumedUndo
-        ? tx(
-            "Last set returned for editing, but Undo state could not be finalized. Check it before continuing.",
-            "Останній підхід повернуто для редагування, але стан скасування не вдалося завершити. Перевір його перед продовженням."
-          )
-        : timerStopped
-        ? tx(
-            "Last set returned for editing. Its rest timer was stopped.",
-            "Останній підхід повернуто для редагування. Його таймер відпочинку зупинено."
-          )
-        : tx(
-            "Last set returned for editing, but the saved rest timer needs checking.",
-            "Останній підхід повернуто для редагування, але збережений таймер потрібно перевірити."
-          )
-    };
-    render();
     return true;
   });
   if (!result.acquired) return activeWorkoutMutationUnavailable(mutationContext);
@@ -12278,11 +11578,8 @@ async function finishActiveWorkout() {
 function finishActiveWorkoutLocked(mutationContext) {
   if (!activeWorkoutMutationContextIsCurrent(mutationContext)) return false;
   const loaded = loadActiveWorkoutRecord(mutationContext.account);
-  const loadedUndo = loadActiveWorkoutUndoRecord(loaded.workout, mutationContext.account);
   activeWorkout = loaded.workout;
   activeWorkoutStorageRaw = loaded.raw;
-  activeWorkoutUndoMarker = loadedUndo.marker;
-  activeWorkoutUndoStorageRaw = loadedUndo.raw;
   const workout = loaded.workout;
   if (!workout) {
     render();
@@ -12375,10 +11672,6 @@ function finishActiveWorkoutLocked(mutationContext) {
       "Виконані підходи додано до історії, але активну чернетку не вдалося очистити. Повтори завершення — підходи не дублюватимуться."
     ));
   }
-  const undoCleared = removeActiveWorkoutUndoStorage(
-    mutationContext.account,
-    activeWorkoutUndoStorageRaw
-  );
   const finishedId = workout.id;
   clearActiveWorkoutMemory();
   const timerCleared = clearActiveWorkoutRestTimers(finishedId);
@@ -12386,10 +11679,10 @@ function finishActiveWorkoutLocked(mutationContext) {
   nav = [{ name: "workouts" }, { name: "summary", id: finishedId }];
   replaceNavigationHistory();
   render();
-  if (!timerCleared || !undoCleared) {
+  if (!timerCleared) {
     showToast(tx(
-      "Workout finished, but some local workout controls could not be cleared. Clear site data if they reappear.",
-      "Тренування завершено, але деякі локальні елементи керування не вдалося очистити. Очисть дані сайту, якщо вони з’являться знову."
+      "Workout finished, but the saved rest timer could not be cleared.",
+      "Тренування завершено, але не вдалося очистити збережений таймер відпочинку."
     ));
   }
   return true;
@@ -12439,11 +11732,8 @@ function confirmDiscardActiveWorkoutLocked(intent, mutationContext) {
   if (!activeWorkoutMutationContextIsCurrent(mutationContext) ||
       modal?.type !== "confirm-discard-active" || modal.intent !== intent) return false;
   const loaded = loadActiveWorkoutRecord(mutationContext.account);
-  const loadedUndo = loadActiveWorkoutUndoRecord(loaded.workout, mutationContext.account);
   activeWorkout = loaded.workout;
   activeWorkoutStorageRaw = loaded.raw;
-  activeWorkoutUndoMarker = loadedUndo.marker;
-  activeWorkoutUndoStorageRaw = loadedUndo.raw;
   let authMarkerFingerprint = null;
   try {
     authMarkerFingerprint = destructiveImpactFingerprint(localStorage.getItem(AUTH_KEY));
@@ -12479,10 +11769,6 @@ function confirmDiscardActiveWorkoutLocked(intent, mutationContext) {
     ));
     return false;
   }
-  const undoCleared = removeActiveWorkoutUndoStorage(
-    mutationContext.account,
-    activeWorkoutUndoStorageRaw
-  );
   const discardedId = activeWorkout.id;
   clearActiveWorkoutMemory();
   clearActiveWorkoutRestTimers(discardedId);
@@ -12490,12 +11776,7 @@ function confirmDiscardActiveWorkoutLocked(intent, mutationContext) {
   nav = [{ name: "workouts" }];
   replaceNavigationHistory();
   render();
-  showToast(undoCleared
-    ? tx("Active workout discarded.", "Активне тренування відкинуто.")
-    : tx(
-        "Active workout discarded, but its local Undo state could not be cleared. Clear site data if it reappears.",
-        "Активне тренування відкинуто, але його локальний стан скасування не вдалося очистити. Очисть дані сайту, якщо він з’явиться знову."
-      ));
+  showToast(tx("Active workout discarded.", "Активне тренування відкинуто."));
   return true;
 }
 
@@ -13436,9 +12717,8 @@ function updateTimerDisplays() {
     const remaining = timerRemaining(key);
     hasActiveTimer ||= remaining > 0;
     display.textContent = remaining > 0 ? formatTimer(remaining) : tx("Ready", "Готово");
-    document.querySelectorAll(`[data-timer-control="${CSS.escape(key)}"]`).forEach(control => {
-      control.disabled = remaining <= 0;
-    });
+    const stopButton = document.querySelector(`[data-timer-stop="${CSS.escape(key)}"]`);
+    if (stopButton) stopButton.disabled = remaining <= 0;
   });
   if (!hasActiveTimer) clearInterval(timerInterval);
 }
@@ -13506,10 +12786,8 @@ window.addEventListener("storage", event => {
     ));
     return;
   }
-  if (activeDescriptor && (event.key === activeDescriptor.storageKey ||
-      event.key === activeDescriptor.undoKey || event.key === null)) {
+  if (activeDescriptor && (event.key === activeDescriptor.storageKey || event.key === null)) {
     const previousRaw = activeWorkoutStorageRaw;
-    const previousUndoRaw = activeWorkoutUndoStorageRaw;
     const discardConfirmationWasOpen = modal?.type === "confirm-discard-active";
     reloadActiveWorkoutContext();
     if (discardConfirmationWasOpen && previousRaw !== activeWorkoutStorageRaw) modal = null;
@@ -13518,7 +12796,7 @@ window.addEventListener("storage", event => {
       replaceNavigationHistory();
     }
     render();
-    if (previousRaw !== activeWorkoutStorageRaw || previousUndoRaw !== activeWorkoutUndoStorageRaw) {
+    if (previousRaw !== activeWorkoutStorageRaw) {
       showToast(tx(
         "Active workout updated from another tab.",
         "Активне тренування оновлено з іншої вкладки."

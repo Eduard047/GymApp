@@ -22,7 +22,6 @@ const LEGACY_GARMIN_DEVICE_TOKEN_KEY = "gym-pwa-garmin-device-token-v1";
 const GARMIN_DEVICE_BINDINGS_KEY = "gym-pwa-garmin-device-bindings-v2";
 const GARMIN_ENQUEUE_REQUESTS_KEY = "gym-pwa-garmin-enqueue-requests-v1";
 const PUBLIC_SITE_URL = "https://gymapptracker.com/";
-const SHARED_WORKOUT_URL = `${PUBLIC_SITE_URL}workout/`;
 const SHARED_WORKOUT_PENDING_KEY = "gym-pwa-pending-shared-workout-v1";
 const SUPPORT_URL = "https://gymapptracker.com/support.html";
 const PRIVACY_URL = "https://gymapptracker.com/privacy-policy.html";
@@ -1095,8 +1094,6 @@ const rankDefinitions = [
   ["infinite", 72, "Infinite", "Нескінченний"], ["beyond", 76, "Beyond", "Понадмежний"],
   ["cosmic-warlord", 80, "Cosmic Warlord", "Космічний воєвода"]
 ].map(([id, level, titleEn, titleUk]) => ({ id, level, titleEn, titleUk }));
-
-window.GymSharedWorkout?.configureBuiltInIdentityResolver?.(catalogKeyRecognizedFromName);
 
 let volatileRemoteSessionRaw = null;
 discardLegacyGarminToken();
@@ -5738,7 +5735,7 @@ function loginScreen() {
   return `<div class="app-shell auth-shell">
     <main class="screen auth-screen" data-scroll-key="auth">
       <section class="hero-panel auth-hero"><h2>GymApp</h2><p>${remoteEnabled ? tx("Sign in to sync workouts across devices.", "Увійди, щоб синхронізувати тренування між пристроями.") : tx("Cloud login is ready after Supabase keys are added.", "Хмарний вхід запрацює після додавання ключів Supabase.")}</p></section>
-      ${pendingSharedWorkout ? `<section class="panel highlighted shared-workout-pending"><h2>${tx("Shared workout ready", "Спільне тренування готове")}</h2><p>${tx("Sign in or enter offline mode to review the plan. It will not replace or save anything automatically.", "Увійди або відкрий офлайн-режим, щоб переглянути план. Він нічого не замінить і не збереже автоматично.")}</p>${sharedWorkoutPreviewMarkup(pendingSharedWorkout)}</section>` : ""}
+      ${pendingSharedWorkout ? `<section class="panel highlighted"><h2>${tx("Shared workout ready", "Спільне тренування готове")}</h2><p>${tx("Sign in or enter offline mode to open the editable plan. Nothing is saved until you finish and save it.", "Увійди або відкрий офлайн-режим, щоб переглянути й змінити план. Нічого не збережеться, доки ти не завершиш і не збережеш тренування.")}</p></section>` : ""}
       ${storeDownloadPanel()}
       ${remotePanel}
       ${themePreferencePanel("auth")}
@@ -5837,6 +5834,9 @@ function render() {
     requestAnimationFrame(restoreVisibleScroll);
     return;
   }
+  if (activatePendingSharedWorkout()) {
+    replaceNavigationHistory();
+  }
   let current = route();
   if (activeWorkout && current.name === "add") {
     nav[nav.length - 1] = { name: "active" };
@@ -5854,7 +5854,7 @@ function render() {
       <h1>${titleForRoute(current)}</h1>
       ${languageSelectorMarkup()}
     </header>
-    <main class="screen screen-${escapeAttr(current.name)}" data-scroll-key="${escapeAttr(routeScrollKey(current))}">${pendingSharedWorkoutCard()}${screenMarkup(current)}</main>
+    <main class="screen screen-${escapeAttr(current.name)}" data-scroll-key="${escapeAttr(routeScrollKey(current))}">${screenMarkup(current)}</main>
     ${isRootRoute(current.name) ? bottomNav() : ""}
     ${modal ? modalMarkup() : ""}
     <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
@@ -6732,8 +6732,8 @@ function captureSharedWorkoutFromLocation() {
       // Keep the validated plan in memory when session storage is unavailable.
     }
   } catch {
-    // A malformed or oversized incoming link must not clear an already validated
-    // pending plan. The user can still review or dismiss that earlier plan.
+    pendingSharedWorkout = null;
+    clearStoredSharedWorkout();
     sharedWorkoutStartupError = true;
   } finally {
     const safeHash = window.GymSharedWorkout.removeFromHash(window.location.hash);
@@ -6741,88 +6741,23 @@ function captureSharedWorkoutFromLocation() {
   }
 }
 
-function sharedWorkoutPreviewMarkup(plan) {
-  if (!plan?.exercises?.length) return "";
-  const setCount = plan.exercises.reduce((sum, exercise) => sum + exercise.sets.length, 0);
-  const volume = plan.exercises.reduce((sum, exercise) => sum + exercise.sets.reduce(
-    (exerciseSum, set) => exerciseSum + set.weight * set.reps,
-    0
-  ), 0);
-  return `<div class="metric-grid three shared-workout-metrics"><div><span>${tx("Exercises", "Вправи")}</span><strong>${plan.exercises.length}</strong></div><div><span>${tx("Sets", "Підходи")}</span><strong>${setCount}</strong></div><div><span>${tx("Volume", "Обсяг")}</span><strong>${escapeHtml(formatSetWeight(volume))}</strong></div></div><div class="shared-workout-preview-list">${plan.exercises.map((exercise, index) => {
-    const sets = exercise.sets.map(set => `${formatSetWeight(set.weight)} kg × ${set.reps}`).join(" · ");
-    return `<article><span>${index + 1}</span><div><strong>${escapeHtml(exerciseDisplayName(exercise))}</strong><small>${escapeHtml(sets)}</small></div></article>`;
-  }).join("")}</div>`;
-}
-
-function pendingSharedWorkoutCard() {
-  if (!pendingSharedWorkout) return "";
-  const stateCopy = activeWorkout
-    ? tx(
-      "Your active workout was left untouched. Finish or discard it before using this shared plan; the plan will stay ready here.",
-      "Активне тренування не змінено. Заверши або відкинь його перед використанням спільного плану; план залишиться тут."
-    )
-    : workoutDraft
-    ? tx(
-      "Your current draft is still intact. Replacing it with this shared plan requires a separate confirmation.",
-      "Поточна чернетка не змінена. Для заміни її спільним планом потрібне окреме підтвердження."
-    )
-    : tx(
-      "Review the exercises below. The plan becomes an editable draft only after you confirm.",
-      "Переглянь вправи нижче. План стане редагованою чернеткою лише після твого підтвердження."
-    );
-  const primaryAction = activeWorkout
-    ? `<button class="button full" data-action="continue-active-workout">${tx("Continue active workout", "Продовжити активне тренування")}</button>`
-    : `<button class="button full" data-action="accept-shared-workout">${workoutDraft ? tx("Review draft replacement", "Перевірити заміну чернетки") : tx("Use this workout plan", "Використати цей план")}</button>`;
-  return `<section class="panel highlighted shared-workout-pending" aria-labelledby="shared-workout-pending-title"><div class="section-title"><div><span class="eyebrow">${tx("SHARED WORKOUT", "СПІЛЬНЕ ТРЕНУВАННЯ")}</span><h2 id="shared-workout-pending-title">${tx("Shared workout ready", "Спільне тренування готове")}</h2><p>${escapeHtml(stateCopy)}</p></div>${svg("copy", "small-icon")}</div>${sharedWorkoutPreviewMarkup(pendingSharedWorkout)}<div class="actions vertical">${primaryAction}<button class="button ghost full" data-action="dismiss-shared-workout">${tx("Discard shared plan", "Відхилити спільний план")}</button></div></section>`;
-}
-
-function applyPendingSharedWorkout(allowDraftReplacement = false) {
-  if (!pendingSharedWorkout || !window.GymSharedWorkoutFlow?.prepareImport) return false;
-  const decision = window.GymSharedWorkoutFlow.prepareImport(pendingSharedWorkout, {
-    hasActiveWorkout: Boolean(activeWorkout),
-    hasDraft: Boolean(workoutDraft),
-    allowDraftReplacement,
-    now: Date.now()
-  });
-  if (decision.status === "blocked-active") {
-    modal = null;
-    render();
-    showToast(tx(
-      "The shared plan is still waiting. Finish or discard the active workout first.",
-      "Спільний план усе ще очікує. Спочатку заверши або відкинь активне тренування."
-    ));
-    return false;
-  }
-  if (decision.status === "confirm-replace") {
-    modal = { type: "confirm-shared-workout-replace" };
-    render();
-    return false;
-  }
-  if (decision.status !== "ready" || !decision.draft) return false;
-
-  // The validated incoming plan stays separate until this explicit commit point.
-  // No history, active workout, account state, or cloud row is mutated here.
-  workoutDraft = decision.draft;
+function activatePendingSharedWorkout() {
+  if (!pendingSharedWorkout) return false;
+  const plan = pendingSharedWorkout;
   pendingSharedWorkout = null;
   clearStoredSharedWorkout();
   smartGeneratedPlan = null;
-  smartPlanStale = false;
-  modal = null;
+  workoutDraft = {
+    startedAt: Date.now(),
+    note: "",
+    blocks: plan.exercises.map(exercise => ({
+      exerciseName: exercise.name,
+      ...(exercise.catalogKey ? { catalogKey: exercise.catalogKey } : {}),
+      sets: exercise.sets.map(set => ({ weight: set.weight, reps: set.reps }))
+    }))
+  };
   nav = [{ name: "workouts" }, { name: "add" }];
   routeScrollPositions.delete("add:root");
-  replaceNavigationHistory();
-  render();
-  showToast(tx("Shared workout opened as a draft.", "Спільне тренування відкрито як чернетку."));
-  return true;
-}
-
-function dismissPendingSharedWorkout() {
-  if (!pendingSharedWorkout) return false;
-  pendingSharedWorkout = null;
-  clearStoredSharedWorkout();
-  modal = null;
-  render();
-  showToast(tx("Shared workout discarded.", "Спільне тренування відхилено."));
   return true;
 }
 
@@ -6856,7 +6791,7 @@ function sharedWorkoutPlanFromSession(session) {
 async function shareWorkoutPlan(plan) {
   let url;
   try {
-    url = window.GymSharedWorkout.buildUrl(SHARED_WORKOUT_URL, plan);
+    url = window.GymSharedWorkout.buildUrl(PUBLIC_SITE_URL, plan);
   } catch {
     return showToast(tx(
       "Fill every exercise and set before sharing this workout.",
@@ -10273,9 +10208,6 @@ function modalMarkup() {
   if (modal.type === "history") return bottomSheet(exerciseHistoryMarkup(modal.exercise));
   if (modal.type === "map") return bottomSheet(mappingEditor(modal.name));
   if (modal.type === "edit-set") return bottomSheet(`<h2>${tx("Edit Set", "Редагувати підхід")}</h2><label>${tx("Weight (kg)", "Вага (кг)")}<input id="edit-weight" value="${modal.set.weight || ""}" inputmode="decimal"></label><label>${tx("Reps", "Повтори")}<input id="edit-reps" value="${modal.set.reps || ""}" inputmode="numeric"></label><button class="button full" data-action="apply-edit-set" data-id="${modal.set.id}">${tx("Save", "Зберегти")}</button>`);
-  if (modal.type === "confirm-shared-workout-replace") {
-    return bottomSheet(`<h2 id="shared-workout-replace-title">${tx("Replace the current draft?", "Замінити поточну чернетку?")}</h2><p class="muted" id="shared-workout-replace-description">${tx("Your current unsaved workout draft will be replaced by the shared plan. Workout history, the active workout, and cloud data will not be changed.", "Поточну незбережену чернетку тренування буде замінено спільним планом. Історія, активне тренування та хмарні дані не зміняться.")}</p>${sharedWorkoutPreviewMarkup(pendingSharedWorkout)}<div class="actions vertical"><button class="button ghost full" data-action="cancel-destructive" data-modal-initial-focus>${tx("Keep current draft", "Залишити поточну чернетку")}</button><button class="button danger full" data-action="confirm-shared-workout-replace">${tx("Replace with shared plan", "Замінити спільним планом")}</button></div>`, "shared-workout-replace-title", "alertdialog", "shared-workout-replace-description");
-  }
   if (modal.type === "confirm-discard-active") {
     const counts = activeWorkoutSetCounts(activeWorkout);
     return bottomSheet(`<h2 id="discard-active-confirm-title">${tx("Discard active workout?", "Відкинути активне тренування?")}</h2><p id="discard-active-confirm-target"><strong>${counts.completed} / ${counts.total} ${tx("sets recorded", "підходів записано")}</strong></p><p class="muted" id="discard-active-confirm-description">${tx("The local active draft and its recorded progress will be removed. Workout history and cloud data will not be changed.", "Локальну активну чернетку та записаний у ній прогрес буде видалено. Історія тренувань і хмарні дані не зміняться.")}</p><div class="actions vertical"><button class="button ghost full" data-action="cancel-destructive" data-modal-initial-focus>${tx("Keep workout", "Залишити тренування")}</button><button class="button danger full" data-action="confirm-discard-active">${tx("Discard workout", "Відкинути тренування")}</button></div>`, "discard-active-confirm-title", "alertdialog", "discard-active-confirm-target discard-active-confirm-description");
@@ -10549,9 +10481,7 @@ function handleAction(action, el) {
   }
   if (action === "backup") { modal = { type: "backup-json", diagnostics: false, json: exportPayload(false) }; return render(); }
   if (action === "open-add") return activeWorkout ? push("active") : push("add");
-  if (action === "continue-active-workout") {
-    return route().name === "active" ? undefined : push("active");
-  }
+  if (action === "continue-active-workout") return push("active");
   if (action === "open-detail") return push("detail", { id: Number(el.dataset.id) });
   if (action === "delete-session") return deleteSession(Number(el.dataset.id));
   if (action === "finish-workout") return push("summary", { id: Number(el.dataset.id) });
@@ -10639,9 +10569,6 @@ function handleAction(action, el) {
       .then(() => showToast(tx("Workout link copied.", "Посилання на тренування скопійовано.")))
       .catch(() => showToast(tx("Clipboard write failed.", "Не вдалося записати в буфер обміну.")));
   }
-  if (action === "accept-shared-workout") return applyPendingSharedWorkout(false);
-  if (action === "confirm-shared-workout-replace") return applyPendingSharedWorkout(true);
-  if (action === "dismiss-shared-workout") return dismissPendingSharedWorkout();
   if (action === "open-exercise-media") {
     const exerciseId = Number(el.dataset.exerciseId);
     const storedExercise = Number.isSafeInteger(exerciseId) && exerciseId > 0
@@ -10774,13 +10701,7 @@ function handleAction(action, el) {
 }
 
 function isDestructiveConfirmationModal(value = modal) {
-  return [
-    "confirm-delete-exercise",
-    "confirm-delete-set",
-    "confirm-import",
-    "confirm-discard-active",
-    "confirm-shared-workout-replace"
-  ].includes(value?.type);
+  return ["confirm-delete-exercise", "confirm-delete-set", "confirm-import", "confirm-discard-active"].includes(value?.type);
 }
 
 function closeModal() {

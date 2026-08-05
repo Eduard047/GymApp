@@ -842,58 +842,6 @@ svg.filled-icon.small-icon {
   gap: 12px;
 }
 
-.shared-workout-pending {
-  display: grid;
-  gap: 14px;
-  margin-bottom: 2px;
-}
-
-.shared-workout-metrics { margin-top: 0; }
-
-.shared-workout-preview-list {
-  display: grid;
-  gap: 8px;
-}
-
-.shared-workout-preview-list article {
-  display: grid;
-  grid-template-columns: 34px minmax(0, 1fr);
-  align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  border: 1px solid var(--outline-variant);
-  border-radius: var(--radius-lg);
-  background: var(--surface);
-}
-
-.shared-workout-preview-list article > span {
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  border-radius: 10px;
-  color: var(--primary);
-  background: color-mix(in srgb, var(--primary) 12%, transparent);
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.shared-workout-preview-list article div {
-  display: grid;
-  gap: 3px;
-  min-width: 0;
-}
-
-.shared-workout-preview-list strong,
-.shared-workout-preview-list small {
-  overflow-wrap: anywhere;
-}
-
-.shared-workout-preview-list small {
-  color: var(--muted);
-  line-height: 1.4;
-}
-
 .workout-template-panel .button + .button { margin-top: -4px; }
 .training-profile-panel > .chip-row { margin-top: -4px; }
 

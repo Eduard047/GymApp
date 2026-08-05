@@ -842,58 +842,6 @@ svg.filled-icon.small-icon {
   gap: 12px;
 }
 
-.shared-workout-pending {
-  display: grid;
-  gap: 14px;
-  margin-bottom: 2px;
-}
-
-.shared-workout-metrics { margin-top: 0; }
-
-.shared-workout-preview-list {
-  display: grid;
-  gap: 8px;
-}
-
-.shared-workout-preview-list article {
-  display: grid;
-  grid-template-columns: 34px minmax(0, 1fr);
-  align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  border: 1px solid var(--outline-variant);
-  border-radius: var(--radius-lg);
-  background: var(--surface);
-}
-
-.shared-workout-preview-list article > span {
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  border-radius: 10px;
-  color: var(--primary);
-  background: color-mix(in srgb, var(--primary) 12%, transparent);
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.shared-workout-preview-list article div {
-  display: grid;
-  gap: 3px;
-  min-width: 0;
-}
-
-.shared-workout-preview-list strong,
-.shared-workout-preview-list small {
-  overflow-wrap: anywhere;
-}
-
-.shared-workout-preview-list small {
-  color: var(--muted);
-  line-height: 1.4;
-}
-
 .workout-template-panel .button + .button { margin-top: -4px; }
 .training-profile-panel > .chip-row { margin-top: -4px; }
 
@@ -2022,27 +1970,6 @@ button:disabled {
 .focus-lens-action:hover { background: rgba(255, 255, 255, 0.25); }
 .focus-lens-action:active { transform: scale(0.98); }
 
-.focus-lens-actions {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
-  margin-top: auto;
-}
-
-.focus-lens-actions .focus-lens-action { margin-top: 0; }
-
-.focus-lens-discard {
-  min-width: 92px;
-  min-height: 54px;
-  padding: 0 18px;
-  color: #ffffff;
-  border: 1px solid rgba(255, 255, 255, 0.34);
-  border-radius: 999px;
-  background: rgba(8, 32, 65, 0.24);
-  font-weight: 700;
-  cursor: pointer;
-}
-
 .workout-section-header {
   display: flex;
   align-items: center;
@@ -2321,15 +2248,6 @@ textarea:focus {
 
 .active-workout-timer .button { justify-self: end; }
 
-.timer-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
-.timer-actions .button { min-width: 52px; min-height: 44px; }
-
 .active-set-row {
   display: grid;
   grid-template-columns: minmax(130px, 1fr) minmax(100px, 0.8fr) minmax(90px, 0.7fr) minmax(124px, auto);
@@ -2347,45 +2265,17 @@ textarea:focus {
 }
 
 .active-set-label,
-.active-set-row label,
-.active-set-value {
+.active-set-row label {
   display: grid;
   gap: 5px;
 }
 
 .active-set-label span,
-.active-set-row label > span,
-.active-set-value > span {
+.active-set-row label > span {
   color: var(--muted);
   font-size: 12px;
   line-height: 16px;
 }
-
-.active-set-value strong { min-height: 48px; display: flex; align-items: center; font-variant-numeric: tabular-nums; }
-.recorded-set-badge { min-height: 48px; display: inline-flex; align-items: center; color: var(--sage); font-weight: 700; }
-
-.inline-status {
-  display: grid;
-  gap: 4px;
-  padding: 12px 14px;
-  border: 1px solid var(--outline-variant);
-  border-radius: var(--radius-sm);
-  background: var(--surface);
-}
-
-.inline-status.success { border-color: color-mix(in srgb, var(--sage) 50%, var(--outline-variant)); }
-.inline-status.warning { border-color: color-mix(in srgb, var(--gold) 55%, var(--outline-variant)); }
-.inline-status.error { border-color: color-mix(in srgb, var(--danger) 55%, var(--outline-variant)); }
-.inline-status span { color: var(--muted); }
-
-.cloud-sync-card { display: grid; gap: 12px; }
-.sync-state-dot { width: 16px; height: 16px; border: 3px solid var(--outline-variant); border-radius: 50%; background: var(--surface-2); }
-.sync-state-dot.synced { border-color: var(--sage); background: var(--sage); }
-.sync-state-dot.pending,
-.sync-state-dot.saving,
-.sync-state-dot.checking { border-color: var(--sage); background: color-mix(in srgb, var(--sage) 30%, var(--surface)); }
-.sync-state-dot.error,
-.sync-state-dot.conflict { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 28%, var(--surface)); }
 
 .active-set-label span {
   display: inline-flex;
@@ -3158,8 +3048,6 @@ textarea:focus {
   .active-set-row .button { grid-column: 1 / -1; }
 
   .active-workout-timer .button { justify-self: stretch; }
-  .timer-actions { justify-content: stretch; }
-  .timer-actions .button { flex: 1 1 72px; }
 
   .bar-row {
     grid-template-columns: 92px 1fr;
@@ -3225,8 +3113,6 @@ textarea:focus {
   .focus-lens-metrics { gap: 10px; }
   .focus-lens-metrics strong { font-size: 22px; }
   .focus-lens-action { width: 100%; }
-  .focus-lens-actions { grid-template-columns: 1fr; }
-  .focus-lens-discard { width: 100%; }
 
   .login-actions,
   .login-row {
