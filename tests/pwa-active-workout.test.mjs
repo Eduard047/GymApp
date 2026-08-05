@@ -235,7 +235,7 @@ test("active workout markup escapes untrusted exercise names and notes", async (
     startWorkout();
   `, context);
   const markup = vm.runInContext("activeWorkoutScreen()", context);
-  assert.doesNotMatch(markup, /<script>|<img src=x onerror=/);
+  assert.doesNotMatch(markup, /<script\b|<img\b[^>]*\bonerror\s*=/i);
   assert.match(markup, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
   assert.match(markup, /&lt;img src=x onerror=alert\(1\)&gt;/);
 });
