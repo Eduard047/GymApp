@@ -8,6 +8,7 @@ import com.example.gymapp.auth.LocalDatabaseBindingStore
 import com.example.gymapp.auth.databaseName
 import com.example.gymapp.data.database.GymDatabase
 import com.example.gymapp.data.repository.GymRepository
+import com.example.gymapp.data.repository.SharedWorkoutInbox
 import com.example.gymapp.garmin.GarminSyncManager
 import com.example.gymapp.util.LanguageManager
 import com.example.gymapp.util.RestTimerController
@@ -30,6 +31,7 @@ class GymApplication : Application() {
     val trainingProfileManager: TrainingProfileManager by lazy { TrainingProfileManager(this) }
     val restTimerController: RestTimerController by lazy { RestTimerController(this) }
     val garminSyncManager: GarminSyncManager by lazy { GarminSyncManager(this) }
+    internal val sharedWorkoutInbox = SharedWorkoutInbox()
 
     override fun onCreate() {
         super.onCreate()

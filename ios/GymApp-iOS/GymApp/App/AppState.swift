@@ -6,6 +6,16 @@ func leaderboardHiddenProfilesDefaultsKey(for accountStorageKey: String) -> Stri
     "leaderboard-hidden-profile-ids.\(accountStorageKey)"
 }
 
+struct PendingSharedWorkout: Identifiable, Equatable, Sendable {
+    let id: UUID
+    let plan: SharedWorkoutPlan
+
+    init(id: UUID = UUID(), plan: SharedWorkoutPlan) {
+        self.id = id
+        self.plan = plan
+    }
+}
+
 @MainActor
 final class AppState: ObservableObject {
     enum CloudSyncPresentationStatus: Equatable {
@@ -86,6 +96,7 @@ final class AppState: ObservableObject {
     @Published private(set) var cloudSyncConflict: CloudSyncConflictSummary?
     @Published private(set) var isResolvingCloudSyncConflict = false
     @Published private(set) var cloudSyncStatus: CloudSyncPresentationStatus = .idle
+    @Published private(set) var pendingSharedWorkout: PendingSharedWorkout?
 
     private var sessionSubscription: AnyCancellable?
     private var storeSubscription: AnyCancellable?
@@ -222,6 +233,45 @@ final class AppState: ObservableObject {
 
     var backupOwner: BackupOwner {
         Self.backupOwner(for: auth.session, fallbackStorageKey: workoutStore.accountStorageKey)
+    }
+
+    /// Consumes only GymApp's exact shared-workout destinations. Recognized malformed
+    /// links fail closed and never fall through into Garmin or authentication handlers.
+    func handleSharedWorkoutURL(_ url: URL) -> Bool {
+        guard SharedWorkoutLinkDecoder.isRecognizedDestination(url) else { return false }
+        do {
+            let plan = try SharedWorkoutLinkDecoder.decode(url)
+            if let pendingSharedWorkout {
+                guard pendingSharedWorkout.plan != plan else { return true }
+                show(
+                    message: gymText(
+                        "Finish or close the current shared workout preview before opening another link.",
+                        "Заверши або закрий поточний перегляд спільного тренування, перш ніж відкривати інше посилання.",
+                        "Заверши или закрой текущий просмотр общей тренировки, прежде чем открывать другую ссылку.",
+                        languageCode: defaults.string(forKey: "app-language") ?? AppLanguage.english.rawValue
+                    ),
+                    isError: true
+                )
+                return true
+            }
+            pendingSharedWorkout = PendingSharedWorkout(plan: plan)
+        } catch {
+            show(
+                message: gymText(
+                    "This shared workout link is invalid or no longer supported.",
+                    "Це посилання на спільне тренування недійсне або більше не підтримується.",
+                    "Эта ссылка на общую тренировку недействительна или больше не поддерживается.",
+                    languageCode: defaults.string(forKey: "app-language") ?? AppLanguage.english.rawValue
+                ),
+                isError: true
+            )
+        }
+        return true
+    }
+
+    func dismissPendingSharedWorkout(id: UUID) {
+        guard pendingSharedWorkout?.id == id else { return }
+        pendingSharedWorkout = nil
     }
 
     private static func backupOwner(

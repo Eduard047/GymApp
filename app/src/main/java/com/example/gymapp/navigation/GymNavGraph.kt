@@ -1,5 +1,7 @@
 package com.example.gymapp.navigation
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -18,6 +20,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -35,6 +38,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.TopAppBarScrollBehavior
@@ -78,6 +82,8 @@ import com.example.gymapp.data.repository.BackupOwner
 import com.example.gymapp.data.repository.canonicalWorkoutPayloadDigest
 import com.example.gymapp.gymApplication
 import com.example.gymapp.data.repository.GymRepository
+import com.example.gymapp.data.repository.SharedWorkoutInbox
+import com.example.gymapp.data.repository.SharedWorkoutLink
 import com.example.gymapp.ui.screens.AddWorkoutScreen
 import com.example.gymapp.ui.screens.ActiveWorkoutScreen
 import com.example.gymapp.ui.screens.AppIntroSplash
@@ -218,11 +224,12 @@ internal fun isCanonicalAndroidCloudEnvelope(root: JSONObject, activeUserId: Str
 
 @OptIn(ExperimentalMaterial3Api::class, FlowPreview::class)
 @Composable
-fun GymAppRoot(
+internal fun GymAppRoot(
     repositoryProvider: (AccountSession?) -> GymRepository,
     authManager: CloudAuthManager,
     languageManager: LanguageManager,
-    restTimerController: RestTimerController
+    restTimerController: RestTimerController,
+    sharedWorkoutInbox: SharedWorkoutInbox
 ) {
     val authState by authManager.authState.collectAsState()
     val uiIsolationKey = accountUiIsolationKey(
@@ -239,6 +246,7 @@ fun GymAppRoot(
     val currentRoute = navBackStackEntry?.destination?.route
     val repository = remember(uiIsolationKey) { repositoryProvider(authState.session) }
     val activeWorkout by repository.observeActiveWorkout().collectAsState(initial = null)
+    val pendingSharedWorkout by sharedWorkoutInbox.pending.collectAsState()
     val coroutineScope = key(uiIsolationKey) { rememberCoroutineScope() }
     val accountDeletionScope = rememberCoroutineScope()
     val applicationContext = LocalContext.current.applicationContext
@@ -290,11 +298,38 @@ fun GymAppRoot(
     var cloudSyncConflictNoticeVersion by key(uiIsolationKey) {
         remember { mutableStateOf(0) }
     }
+    var approvedSharedWorkoutId by key(uiIsolationKey) {
+        // Consent must never survive process death: SharedWorkoutInbox is process-local and its
+        // generation counter restarts, so restoring an old numeric id could approve a new link.
+        remember { mutableStateOf<Long?>(null) }
+    }
     val snackbarHostState = key(uiIsolationKey) { remember { SnackbarHostState() } }
 
     LaunchedEffect(Unit) {
         delay(1400)
         showIntro = false
+    }
+
+    val activeWorkoutBlocksSharedImport = stringResource(
+        R.string.message_shared_workout_active_workout
+    )
+    val discardSharedLinkLabel = stringResource(R.string.action_discard_shared_link)
+    LaunchedEffect(
+        uiIsolationKey,
+        pendingSharedWorkout?.id,
+        activeWorkout != null,
+        authState.session != null
+    ) {
+        val pending = pendingSharedWorkout ?: return@LaunchedEffect
+        if (authState.session == null || activeWorkout == null) return@LaunchedEffect
+        val result = snackbarHostState.showSnackbar(
+            message = activeWorkoutBlocksSharedImport,
+            actionLabel = discardSharedLinkLabel,
+            duration = SnackbarDuration.Indefinite
+        )
+        if (result == SnackbarResult.ActionPerformed) {
+            sharedWorkoutInbox.consume(pending.id)
+        }
     }
 
     val isBottomTabRoute = AppDestination.bottomTabs.any { it.route == currentRoute }
@@ -1181,6 +1216,29 @@ fun GymAppRoot(
                             )
                             val uiState by viewModel.uiState.collectAsState()
                             val smartCoachPlanNote = stringResource(R.string.smart_coach_plan_note)
+                            val sharedWorkoutImported = stringResource(
+                                R.string.message_shared_workout_imported
+                            )
+                            val sharedWorkoutImportFailed = stringResource(
+                                R.string.message_shared_workout_import_failed
+                            )
+                            val approvedSharedWorkout = pendingSharedWorkout?.takeIf {
+                                it.id == approvedSharedWorkoutId
+                            }
+
+                            LaunchedEffect(approvedSharedWorkout?.id) {
+                                val pending = approvedSharedWorkout ?: return@LaunchedEffect
+                                val applied = viewModel.applySharedWorkoutPlan(pending.plan)
+                                sharedWorkoutInbox.consume(pending.id)
+                                approvedSharedWorkoutId = null
+                                snackbarHostState.showSnackbar(
+                                    if (applied) {
+                                        sharedWorkoutImported
+                                    } else {
+                                        sharedWorkoutImportFailed
+                                    }
+                                )
+                            }
 
                             LaunchedEffect(uiState.activeWorkoutStarted) {
                                 if (uiState.activeWorkoutStarted) {
@@ -1669,6 +1727,51 @@ fun GymAppRoot(
                 )
             }
 
+            pendingSharedWorkout
+                ?.takeIf {
+                    authState.session != null &&
+                        !authState.needsPasswordUpdate &&
+                        activeWorkout == null &&
+                        approvedSharedWorkoutId != it.id
+                }
+                ?.let { pending ->
+                    SharedWorkoutPreviewDialog(
+                        exerciseNames = pending.plan.exercises.map { it.name },
+                        exerciseCount = pending.plan.exerciseCount,
+                        setCount = pending.plan.setCount,
+                        onOpenInApp = {
+                            approvedSharedWorkoutId = pending.id
+                            navController.navigate(AppDestination.AddWorkout.route) {
+                                launchSingleTop = true
+                            }
+                        },
+                        onOpenOnWeb = {
+                            val webUrl = SharedWorkoutLink.buildWebFallbackUrl(pending.plan)
+                            val opened = runCatching {
+                                applicationContext.startActivity(
+                                    Intent(Intent.ACTION_VIEW, Uri.parse(webUrl)).apply {
+                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    }
+                                )
+                            }.isSuccess
+                            if (opened) {
+                                sharedWorkoutInbox.consume(pending.id)
+                            } else {
+                                coroutineScope.launch {
+                                    snackbarHostState.showSnackbar(
+                                        message = applicationContext.getString(
+                                            R.string.message_shared_workout_open_web_failed
+                                        )
+                                    )
+                                }
+                            }
+                        },
+                        onDismiss = {
+                            sharedWorkoutInbox.consume(pending.id)
+                        }
+                    )
+                }
+
             AnimatedVisibility(
                 visible = showIntro,
                 enter = fadeIn() + slideInVertically(initialOffsetY = { it / 8 }),
@@ -1679,6 +1782,47 @@ fun GymAppRoot(
             }
         }
     }
+}
+
+@Composable
+private fun SharedWorkoutPreviewDialog(
+    exerciseNames: List<String>,
+    exerciseCount: Int,
+    setCount: Int,
+    onOpenInApp: () -> Unit,
+    onOpenOnWeb: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val visibleNames = exerciseNames.take(6).joinToString(separator = " • ")
+    val hiddenCount = (exerciseNames.size - 6).coerceAtLeast(0)
+    val extra = if (hiddenCount > 0) {
+        "\n" + stringResource(R.string.shared_workout_more_exercises, hiddenCount)
+    } else {
+        ""
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(text = stringResource(R.string.shared_workout_preview_title)) },
+        text = {
+            Text(
+                text = stringResource(
+                    R.string.shared_workout_preview_summary,
+                    exerciseCount,
+                    setCount
+                ) + "\n\n" + visibleNames + extra
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onOpenInApp) {
+                Text(text = stringResource(R.string.action_open_shared_workout_in_app))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onOpenOnWeb) {
+                Text(text = stringResource(R.string.action_open_shared_workout_on_web))
+            }
+        }
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

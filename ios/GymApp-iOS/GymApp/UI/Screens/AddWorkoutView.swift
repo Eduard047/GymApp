@@ -31,6 +31,7 @@ struct AddWorkoutView: View {
     init(
         appState: AppState,
         activeWorkoutStore: ActiveWorkoutStore,
+        initialDrafts: [WorkoutExerciseDraft] = [],
         onStarted: @escaping (UUID) -> Void,
         onSaved: @escaping (UUID) -> Void,
         onCancel: @escaping () -> Void = {}
@@ -40,6 +41,7 @@ struct AddWorkoutView: View {
             activeWorkoutStore: activeWorkoutStore,
             garminCloud: appState.garminCloud,
             isCloudAccount: appState.auth.session?.cloud != nil,
+            initialDrafts: initialDrafts,
             onStarted: onStarted,
             onSaved: onSaved,
             onCancel: onCancel,
@@ -54,6 +56,7 @@ struct AddWorkoutView: View {
         activeWorkoutStore: ActiveWorkoutStore,
         garminCloud: GarminCloudService,
         isCloudAccount: Bool,
+        initialDrafts: [WorkoutExerciseDraft] = [],
         onStarted: @escaping (UUID) -> Void,
         onSaved: @escaping (UUID) -> Void,
         onCancel: @escaping () -> Void = {},
@@ -63,6 +66,16 @@ struct AddWorkoutView: View {
         _activeWorkoutStore = ObservedObject(wrappedValue: activeWorkoutStore)
         _garminCloud = ObservedObject(wrappedValue: garminCloud)
         _profile = State(initialValue: Self.loadProfile(storageKey: store.accountStorageKey))
+        _drafts = State(
+            initialValue: initialDrafts.map { exercise in
+                WorkoutEditorExerciseDraft(
+                    exerciseID: exercise.exerciseID,
+                    sets: exercise.sets.map {
+                        WorkoutEditorSetDraft(weight: $0.weight, reps: $0.reps)
+                    }
+                )
+            }
+        )
         self.isCloudAccount = isCloudAccount
         self.onStarted = onStarted
         self.onSaved = onSaved

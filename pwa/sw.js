@@ -1,7 +1,7 @@
 "use strict";
 
 const CACHE_PREFIX = "gym-pwa-";
-const CACHE_VERSION = "v101";
+const CACHE_VERSION = "v102";
 const CACHE_NAME = `${CACHE_PREFIX}${CACHE_VERSION}`;
 const LEGACY_GITHUB_ORIGIN = "https://eduard047.github.io";
 const LEGACY_GITHUB_SCOPE = `${LEGACY_GITHUB_ORIGIN}/GymApp/`;
@@ -30,15 +30,20 @@ const ASSETS = [
   "./confirmed.v56.js",
   "./frame-guard.v56.js",
   "./theme.v56.js",
-  "./styles.v63.css",
+  "./styles.v64.css",
   "./muscle-regions.v56.js",
   "./supabase-config.v56.js",
   "./state-contract.v68.js",
   "./garmin-cloud-sync.v57.js",
   "./progression-rules.v56.js",
-  "./shared-workout.v64.js",
-  "./russian-text.v70.js",
-  "./app.v70.js",
+  "./shared-workout.v65.js",
+  "./shared-workout-flow.v71.js",
+  "./russian-text.v71.js",
+  "./app.v71.js",
+  "./workout/",
+  "./workout/index.html",
+  "./workout/landing.v1.css",
+  "./workout/landing.v1.js",
   ...EXERCISE_MEDIA_KEYS.flatMap(key => [
     `./exercise-media/${key}_0.jpg`,
     `./exercise-media/${key}_1.jpg`
@@ -57,7 +62,15 @@ const STATIC_URLS = new Set(
 const ROOT_PATH = new URL("./", self.registration.scope).pathname;
 const INDEX_PATH = new URL("./index.html", self.registration.scope).pathname;
 const CONFIRMATION_PATH = new URL("./confirmed.html", self.registration.scope).pathname;
-const DOCUMENT_PATHS = new Set([ROOT_PATH, INDEX_PATH, CONFIRMATION_PATH]);
+const WORKOUT_PATH = new URL("./workout/", self.registration.scope).pathname;
+const WORKOUT_INDEX_PATH = new URL("./workout/index.html", self.registration.scope).pathname;
+const DOCUMENT_PATHS = new Set([
+  ROOT_PATH,
+  INDEX_PATH,
+  CONFIRMATION_PATH,
+  WORKOUT_PATH,
+  WORKOUT_INDEX_PATH
+]);
 const SENSITIVE_QUERY_KEYS = new Set([
   "access_token",
   "refresh_token",
@@ -91,6 +104,22 @@ const CONFIRMATION_CSP = [
   "base-uri 'none'",
   "form-action 'none'"
 ].join("; ");
+const WORKOUT_CSP = [
+  "default-src 'none'",
+  "script-src 'self'",
+  "style-src 'self'",
+  "img-src 'self'",
+  "connect-src 'none'",
+  "worker-src 'none'",
+  "manifest-src 'self'",
+  "object-src 'none'",
+  "frame-src 'none'",
+  "frame-ancestors 'none'",
+  "media-src 'none'",
+  "base-uri 'none'",
+  "form-action 'none'",
+  "upgrade-insecure-requests"
+].join("; ");
 
 function isSafeBaseRequest(request, url) {
   return request.method === "GET" &&
@@ -104,6 +133,7 @@ function isSafeBaseRequest(request, url) {
 
 function documentPolicy(url) {
   if (url.pathname === CONFIRMATION_PATH) return CONFIRMATION_CSP;
+  if (url.pathname === WORKOUT_PATH || url.pathname === WORKOUT_INDEX_PATH) return WORKOUT_CSP;
   if (url.pathname === ROOT_PATH || url.pathname === INDEX_PATH) return INDEX_CSP;
   return null;
 }

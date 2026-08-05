@@ -659,6 +659,90 @@ public final class WorkoutStore: ObservableObject {
         return created!
     }
 
+    /// Resolves a validated shared plan into an editable local draft in one commit.
+    /// Missing catalog/custom exercises are created only when the caller invokes this
+    /// method after explicit user confirmation; no workout session is saved here.
+    func materializeSharedWorkoutDraft(
+        _ plan: SharedWorkoutPlan
+    ) throws -> [WorkoutExerciseDraft] {
+        let validated = try SharedWorkoutLinkValidator.validate(plan)
+        var result: [WorkoutExerciseDraft] = []
+        try mutate { state in
+            var resolvedDrafts: [WorkoutExerciseDraft] = []
+            resolvedDrafts.reserveCapacity(validated.exercises.count)
+
+            for sharedExercise in validated.exercises {
+                let exerciseID: UUID
+                let trustedCatalogKey = BuiltInExerciseCatalog.canonicalKey(
+                    forName: sharedExercise.name
+                )
+                if let catalogKey = trustedCatalogKey {
+                    let matches = state.exercises.filter {
+                        BuiltInExerciseCatalog.resolvedKey(
+                            catalogKey: $0.catalogKey,
+                            name: $0.name
+                        ) == catalogKey
+                    }
+                    guard matches.count <= 1 else {
+                        throw WorkoutStoreError.invalidWorkout(
+                            "The shared exercise identity is ambiguous."
+                        )
+                    }
+                    if let existing = matches.first {
+                        exerciseID = existing.id
+                    } else {
+                        guard state.exercises.count < BackupImportLimits.standard.maximumExercises else {
+                            throw WorkoutStoreError.importLimitExceeded("exercise count")
+                        }
+                        guard let definition = BuiltInExerciseCatalog.definition(forKey: catalogKey) else {
+                            throw SharedWorkoutLinkError.invalidCatalogKey
+                        }
+                        let exercise = Exercise(
+                            name: definition.englishName,
+                            catalogKey: definition.key
+                        )
+                        guard !state.exercises.contains(where: {
+                            Self.exerciseIdentityConflicts($0, candidateName: exercise.name)
+                        }) else {
+                            throw WorkoutStoreError.duplicateExerciseName
+                        }
+                        state.exercises.append(exercise)
+                        exerciseID = exercise.id
+                    }
+                } else if let existingID = try Self.resolvedStoredExerciseID(
+                    for: sharedExercise.name,
+                    in: state.exercises
+                ) {
+                    exerciseID = existingID
+                } else {
+                    guard state.exercises.count < BackupImportLimits.standard.maximumExercises else {
+                        throw WorkoutStoreError.importLimitExceeded("exercise count")
+                    }
+                    let cleaned = try Self.validatedExerciseName(sharedExercise.name)
+                    guard !state.exercises.contains(where: {
+                        Self.exerciseIdentityConflicts($0, candidateName: cleaned)
+                    }) else {
+                        throw WorkoutStoreError.duplicateExerciseName
+                    }
+                    let exercise = Exercise(name: cleaned)
+                    state.exercises.append(exercise)
+                    exerciseID = exercise.id
+                }
+
+                resolvedDrafts.append(
+                    WorkoutExerciseDraft(
+                        exerciseID: exerciseID,
+                        sets: sharedExercise.sets.map {
+                            WorkoutSetDraft(weight: $0.weight, reps: $0.repetitions)
+                        }
+                    )
+                )
+            }
+            result = resolvedDrafts
+        }
+        return result
+    }
+
     @discardableResult
     public func createWorkout(
         date: Date,

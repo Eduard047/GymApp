@@ -371,6 +371,41 @@ class GymRepository(
         }
     }
 
+    /**
+     * Resolves a validated public workout template against this account's catalog.
+     *
+     * The operation is atomic so an invalid/over-limit link cannot leave a half-created catalog.
+     * A portable catalog key is accepted only when it agrees with a reviewed localized built-in
+     * name; otherwise the bounded raw name remains a custom exercise identity.
+     */
+    internal suspend fun resolveSharedWorkoutExerciseIds(plan: SharedWorkoutPlan): List<Long> =
+        database.withTransaction {
+            val normalizedPlan = SharedWorkoutLink.normalize(plan.exercises)
+            val existingExercises = exerciseDao.getExercisesSnapshot()
+            val identityIndex = ExerciseIdentityIndex(existingExercises)
+            var exerciseCount = existingExercises.size
+
+            normalizedPlan.exercises.map { exercise ->
+                val catalogKey = SharedWorkoutLink.resolvedCatalogKeyForImport(exercise)
+                identityIndex.resolve(exercise.name, catalogKey) ?: run {
+                    require(exerciseCount < WorkoutDataLimits.MAX_EXERCISES) {
+                        "This account has reached the exercise limit."
+                    }
+                    require(WorkoutDataLimits.isValidExerciseName(exercise.name)) {
+                        "Exercise name is outside the supported length."
+                    }
+                    val exerciseId = exerciseDao.insert(ExerciseEntity(name = exercise.name))
+                    identityIndex.add(exerciseId, exercise.name, catalogKey)
+                    exerciseCount += 1
+                    exerciseId
+                }
+            }.also { resolvedIds ->
+                require(resolvedIds.distinct().size == resolvedIds.size) {
+                    "Shared workout contains duplicate exercises."
+                }
+            }
+        }
+
     suspend fun updateExercise(exercise: ExerciseEntity) {
         require(exercise.name.length <= WorkoutDataLimits.MAX_EXERCISE_NAME_LENGTH * 2) {
             "Exercise name is outside the supported length."

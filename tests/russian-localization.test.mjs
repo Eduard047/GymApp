@@ -39,8 +39,11 @@ test("Android Russian resources cover every English string with compatible place
   assert.match(dynamic, /"Barbell Row" to "Тяга штанги в наклоне"/);
   assert.match(
     workoutDetail,
-    /parseTrustedGarminWorkoutMetrics\([\s\S]*note = details\.session\.note\.orEmpty\(\),[\s\S]*hasGarminReceipt = uiState\.hasGarminReceipt/
+    /parseGarminWorkoutPresentation\([\s\S]*note = details\.session\.note\.orEmpty\(\),[\s\S]*hasGarminReceipt = uiState\.hasGarminReceipt/
   );
+  assert.doesNotMatch(workoutDetail, /parseTrustedGarminWorkoutMetrics/);
+  assert.match(workoutDetail, /garminPresentation\?\.hasVerifiedGarminOrigin == true/);
+  assert.match(workoutDetail, /GarminSetHeartRateOverview\(points = heartRatePoints\)/);
   assert.equal(russian.get("action_add_set"), "Добавить подход");
   assert.equal(english.get("action_add_planned_set"), "Add planned set");
   assert.equal(ukrainian.get("action_add_planned_set"), "Додати запланований підхід");
@@ -62,6 +65,8 @@ test("Android Russian resources cover every English string with compatible place
   assert.equal(english.get("garmin_set_intervals_title"), "Chronological watch sets");
   assert.equal(ukrainian.get("garmin_watch_set_label"), "Підхід з годинника S%1$d");
   assert.equal(russian.get("garmin_watch_set_label"), "Подход с часов S%1$d");
+  assert.match(english.get("garmin_note_derived_sets_hint"), /do not prove watch origin/);
+  assert.match(russian.get("garmin_set_hr_overview_supporting"), /не непрерывный график пульса/);
 });
 
 test("iOS String Catalog has Russian values for every key and preserves format placeholders", async () => {
@@ -221,7 +226,12 @@ test("PWA accepts Russian state and renders Russian runtime text before app star
     ["Resend confirmation email", "Повторно отправить письмо для подтверждения"],
     ["The unseen Garmin token could not be persisted or revoked. Keep this page open and retry Garmin sync or sign-out to revoke it.", "Непоказанный токен Garmin не удалось ни сохранить, ни отозвать. Не закрывай эту страницу: повтори синхронизацию с Garmin или выйди из аккаунта, чтобы отозвать токен."],
     ["Workout summary unavailable.", "Сводка по тренировке недоступна."],
-    ["Your training history and next best move.", "Твоя история тренировок и рекомендация, что делать дальше."]
+    ["Your training history and next best move.", "Твоя история тренировок и рекомендация, что делать дальше."],
+    ["Your active workout was left untouched. Finish or discard it before using this shared plan; the plan will stay ready here.", "Активная тренировка не изменена. Завершите или отмените её перед использованием общего плана; план останется здесь."],
+    ["Your current draft is still intact. Replacing it with this shared plan requires a separate confirmation.", "Текущий черновик не изменён. Для его замены общим планом требуется отдельное подтверждение."],
+    ["Use this workout plan", "Использовать этот план"],
+    ["Replace the current draft?", "Заменить текущий черновик?"],
+    ["Replace with shared plan", "Заменить общим планом"]
   ]);
   for (const [english, russian] of auditedRussian) {
     assert.equal(window.GymRussianText.translate(english), russian, english);
@@ -233,8 +243,8 @@ test("PWA accepts Russian state and renders Russian runtime text before app star
   assert.match(appSource, /tx\("metrics parsed from the saved note", "показники прочитано зі збереженої нотатки"\)/);
   assert.match(appSource, /txAttr\("Name in English, Ukrainian, or Russian", "Назва англійською, українською або російською"\)/);
   assert.doesNotMatch(appSource, /Name in English, Ukrainian or Russian/);
-  assert.ok(indexSource.indexOf("russian-text.v70.js") < indexSource.indexOf("app.v70.js"));
-  assert.match(workerSource, /"\.\/russian-text\.v70\.js"/);
+  assert.ok(indexSource.indexOf("russian-text.v71.js") < indexSource.indexOf("app.v71.js"));
+  assert.match(workerSource, /"\.\/russian-text\.v71\.js"/);
 });
 
 test("runtime language switches invalidate cached labels on every client", async () => {

@@ -19,6 +19,8 @@ import com.example.gymapp.data.repository.SmartWorkoutEffort
 import com.example.gymapp.data.repository.SmartWorkoutEffortAdjustment
 import com.example.gymapp.data.repository.SmartWorkoutFocus
 import com.example.gymapp.data.repository.SmartWorkoutVariant
+import com.example.gymapp.data.repository.SharedWorkoutLink
+import com.example.gymapp.data.repository.SharedWorkoutPlan
 import com.example.gymapp.data.repository.MuscleContribution
 import com.example.gymapp.data.repository.defaultContributionsForExercise
 import com.example.gymapp.data.repository.normalizedExerciseName
@@ -34,6 +36,7 @@ import com.example.gymapp.util.TrainingProfile
 import com.example.gymapp.util.TrainingProfileManager
 import com.example.gymapp.util.TrainingSplit
 import com.example.gymapp.util.parseWeightInputOrNull
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -543,6 +546,44 @@ class AddWorkoutViewModel(
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = AddWorkoutUiState(exerciseDrafts = listOf(ExerciseInputState(draftId = 1L)))
     )
+
+    internal suspend fun applySharedWorkoutPlan(plan: SharedWorkoutPlan): Boolean {
+        if (isTemplateLoading.value || isSaving.value) return false
+        isTemplateLoading.value = true
+        return try {
+            val normalizedPlan = SharedWorkoutLink.normalize(plan.exercises)
+            repository.seedBuiltInExercises()
+            val exerciseIds = repository.resolveSharedWorkoutExerciseIds(normalizedPlan)
+            check(exerciseIds.size == normalizedPlan.exercises.size)
+
+            resetWatchPlanSyncResult()
+            generatedSmartPlan.value = null
+            smartAlternativePicker.value = null
+            smartWorkoutEffort.value = SmartWorkoutEffort.Auto
+            workoutDate.value = System.currentTimeMillis()
+            note.value = ""
+            exerciseDrafts.value = normalizedPlan.exercises.zip(exerciseIds).map { (exercise, id) ->
+                ExerciseInputState(
+                    draftId = nextDraftId++,
+                    exerciseId = id,
+                    sets = exercise.sets.map { set ->
+                        SetInputState(
+                            weight = formatWeight(set.weight),
+                            reps = set.reps.toString()
+                        )
+                    }
+                )
+            }
+            hasValidationError.value = false
+            true
+        } catch (error: Throwable) {
+            if (error is CancellationException) throw error
+            hasValidationError.value = true
+            false
+        } finally {
+            isTemplateLoading.value = false
+        }
+    }
 
     fun updateNote(value: String) {
         if (!WorkoutDataLimits.isValidNote(value)) {

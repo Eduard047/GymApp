@@ -72,11 +72,13 @@ import com.example.gymapp.data.repository.defaultContributionsForExercise
 import com.example.gymapp.data.repository.SharedWorkoutLink
 import com.example.gymapp.garmin.GarminSetIntervalMetrics
 import com.example.gymapp.garmin.GarminSetEvidenceMetrics
+import com.example.gymapp.garmin.GarminSetHeartRateChartPoint
 import com.example.gymapp.garmin.GarminWorkoutMetrics
 import com.example.gymapp.garmin.hasSetIntervalDetails
-import com.example.gymapp.garmin.parseTrustedGarminWorkoutMetrics
+import com.example.gymapp.garmin.parseGarminWorkoutPresentation
 import com.example.gymapp.garmin.recoverySummary
 import com.example.gymapp.garmin.rhythmSummary
+import com.example.gymapp.garmin.setHeartRateChartPoints
 import com.example.gymapp.garmin.setRecognitionSummary
 import com.example.gymapp.garmin.totalHeartRateZoneSeconds
 import com.example.gymapp.ui.components.AppPanel
@@ -256,12 +258,13 @@ fun WorkoutDetailScreen(
                     }
                 }
             }
-            val garminMetrics = remember(details.session.note, uiState.hasGarminReceipt) {
-                parseTrustedGarminWorkoutMetrics(
+            val garminPresentation = remember(details.session.note, uiState.hasGarminReceipt) {
+                parseGarminWorkoutPresentation(
                     note = details.session.note.orEmpty(),
                     hasGarminReceipt = uiState.hasGarminReceipt
                 )
             }
+            val garminMetrics = garminPresentation?.metrics
             val isGarminWorkout = garminMetrics != null
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
@@ -278,6 +281,8 @@ fun WorkoutDetailScreen(
                         GarminWorkoutHeaderCard(
                             date = DateTimeUtils.formatDate(details.session.date),
                             metrics = garminMetrics,
+                            hasVerifiedGarminOrigin =
+                                garminPresentation?.hasVerifiedGarminOrigin == true,
                             exerciseCount = details.workoutExercises.size,
                             setCount = details.workoutExercises.sumOf { it.sets.size },
                             onShare = shareWorkout,
@@ -789,6 +794,7 @@ private fun WorkoutHeaderCard(
 private fun GarminWorkoutHeaderCard(
     date: String,
     metrics: GarminWorkoutMetrics,
+    hasVerifiedGarminOrigin: Boolean,
     exerciseCount: Int,
     setCount: Int,
     onShare: () -> Unit,
@@ -805,12 +811,25 @@ private fun GarminWorkoutHeaderCard(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = stringResource(R.string.garmin_workout_title),
+                        text = stringResource(
+                            if (hasVerifiedGarminOrigin) {
+                                R.string.garmin_workout_title
+                            } else {
+                                R.string.garmin_workout_format_title
+                            }
+                        ),
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = stringResource(R.string.garmin_workout_synced_from, date),
+                        text = stringResource(
+                            if (hasVerifiedGarminOrigin) {
+                                R.string.garmin_workout_synced_from
+                            } else {
+                                R.string.garmin_workout_note_derived_from
+                            },
+                            date
+                        ),
                         style = MaterialTheme.typography.bodySmall,
                         color = Color.White.copy(alpha = 0.78f),
                         maxLines = 1,
@@ -852,7 +871,13 @@ private fun GarminWorkoutHeaderCard(
             }
             Text(
                 text = stringResource(R.string.garmin_metric_exercises_value, exerciseCount) +
-                    " · " + stringResource(R.string.garmin_synced_sets_hint),
+                    " · " + stringResource(
+                        if (hasVerifiedGarminOrigin) {
+                            R.string.garmin_synced_sets_hint
+                        } else {
+                            R.string.garmin_note_derived_sets_hint
+                        }
+                    ),
                 style = MaterialTheme.typography.bodySmall,
                 color = Color.White.copy(alpha = 0.78f)
             )
@@ -982,6 +1007,9 @@ private fun GarminWatchInsightsCard(metrics: GarminWorkoutMetrics) {
     val recovery = remember(metrics.setEvidence, metrics.setIntervals) {
         metrics.recoverySummary()
     }
+    val heartRatePoints = remember(metrics.setEvidence, metrics.setIntervals) {
+        metrics.setHeartRateChartPoints()
+    }
 
     AppPanel(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -998,6 +1026,9 @@ private fun GarminWatchInsightsCard(metrics: GarminWorkoutMetrics) {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            if (heartRatePoints.isNotEmpty()) {
+                GarminSetHeartRateOverview(points = heartRatePoints)
+            }
             rhythm?.let {
                 GarminWorkoutRhythmVisual(metrics = metrics, rhythm = it)
             }
@@ -1059,6 +1090,216 @@ private fun GarminWatchInsightsCard(metrics: GarminWorkoutMetrics) {
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun GarminSetHeartRateOverview(points: List<GarminSetHeartRateChartPoint>) {
+    val readings = points.flatMap(GarminSetHeartRateChartPoint::readings)
+    if (readings.isEmpty()) return
+
+    val firstSetNumber = points.minOf(GarminSetHeartRateChartPoint::setNumber)
+    val lastSetNumber = points.maxOf(GarminSetHeartRateChartPoint::setNumber)
+    val minimumReading = readings.minOrNull() ?: return
+    val maximumReading = readings.maxOrNull() ?: return
+    var chartMinimum = (minimumReading - 10).coerceAtLeast(1)
+    var chartMaximum = (maximumReading + 10).coerceAtMost(240)
+    if (chartMaximum - chartMinimum < 20) {
+        chartMinimum = (chartMaximum - 20).coerceAtLeast(1)
+        chartMaximum = (chartMinimum + 20).coerceAtMost(240)
+        chartMinimum = (chartMaximum - 20).coerceAtLeast(1)
+    }
+
+    val startColor = MaterialTheme.colorScheme.primary
+    val peakColor = MaterialTheme.colorScheme.tertiary
+    val endColor = MaterialTheme.colorScheme.secondary
+    val rangeColor = MaterialTheme.colorScheme.outline
+    val gridColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)
+    val accessibilityDescription = stringResource(
+        R.string.garmin_set_hr_overview_accessibility,
+        points.size,
+        minimumReading,
+        maximumReading
+    )
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.garmin_set_hr_overview_title),
+                style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier.weight(1f)
+            )
+            Text(
+                text = stringResource(
+                    R.string.garmin_set_hr_overview_range,
+                    minimumReading,
+                    maximumReading
+                ),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Canvas(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(142.dp)
+                .clip(GymCompactShape)
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f))
+                .padding(horizontal = 12.dp, vertical = 12.dp)
+                .semantics { contentDescription = accessibilityDescription }
+        ) {
+            val left = 8f
+            val right = size.width - 8f
+            val top = 8f
+            val bottom = size.height - 8f
+            val chartHeight = (bottom - top).coerceAtLeast(1f)
+            val chartWidth = (right - left).coerceAtLeast(1f)
+
+            fun xFor(setNumber: Int): Float = if (firstSetNumber == lastSetNumber) {
+                left + chartWidth / 2f
+            } else {
+                left + (
+                    (setNumber - firstSetNumber).toFloat() /
+                        (lastSetNumber - firstSetNumber).toFloat()
+                ) * chartWidth
+            }
+
+            fun yFor(value: Int): Float {
+                val normalized = (
+                    (value - chartMinimum).toFloat() /
+                        (chartMaximum - chartMinimum).toFloat()
+                ).coerceIn(0f, 1f)
+                return bottom - normalized * chartHeight
+            }
+
+            listOf(0f, 0.5f, 1f).forEach { fraction ->
+                val y = top + chartHeight * fraction
+                drawLine(
+                    color = gridColor,
+                    start = Offset(left, y),
+                    end = Offset(right, y),
+                    strokeWidth = 2f,
+                    cap = StrokeCap.Round
+                )
+            }
+
+            points.forEach { point ->
+                val x = xFor(point.setNumber)
+                val setReadings = point.readings
+                val setMinimum = setReadings.minOrNull()
+                val setMaximum = setReadings.maxOrNull()
+                if (setReadings.size > 1 && setMinimum != null && setMaximum != null) {
+                    drawLine(
+                        color = rangeColor,
+                        start = Offset(x, yFor(setMinimum)),
+                        end = Offset(x, yFor(setMaximum)),
+                        strokeWidth = 5f,
+                        cap = StrokeCap.Round
+                    )
+                }
+                point.startHeartRate?.let { value ->
+                    drawCircle(
+                        color = startColor,
+                        radius = 6f,
+                        center = Offset(x - 5f, yFor(value))
+                    )
+                }
+                point.peakHeartRate?.let { value ->
+                    drawCircle(
+                        color = peakColor,
+                        radius = 7f,
+                        center = Offset(x, yFor(value))
+                    )
+                }
+                point.endHeartRate?.let { value ->
+                    drawCircle(
+                        color = endColor,
+                        radius = 6f,
+                        center = Offset(x + 5f, yFor(value))
+                    )
+                }
+            }
+        }
+        if (firstSetNumber == lastSetNumber) {
+            Text(
+                text = "S$firstSetNumber",
+                modifier = Modifier.align(Alignment.CenterHorizontally),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "S$firstSetNumber",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = "S$lastSetNumber",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            GarminHeartRateLegendItem(
+                label = stringResource(R.string.garmin_set_hr_start),
+                color = startColor,
+                modifier = Modifier.weight(1f)
+            )
+            GarminHeartRateLegendItem(
+                label = stringResource(R.string.garmin_set_hr_peak),
+                color = peakColor,
+                modifier = Modifier.weight(1f)
+            )
+            GarminHeartRateLegendItem(
+                label = stringResource(R.string.garmin_set_hr_end),
+                color = endColor,
+                modifier = Modifier.weight(1f)
+            )
+        }
+        Text(
+            text = stringResource(R.string.garmin_set_hr_overview_supporting),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun GarminHeartRateLegendItem(
+    label: String,
+    color: Color,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(5.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(8.dp)
+                .clip(CircleShape)
+                .background(color)
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 

@@ -1347,7 +1347,11 @@ public enum RecommendationEngine {
             profile: profile,
             effort: effort
         )
-        return min(9, max(4, Int(ceil(Double(budget) / 3.0))))
+        // Every selected exercise receives at least three working sets. Do not
+        // round a partial three-set slot up into another exercise; that can make
+        // a higher-frequency plan contain more exercises when primary movements
+        // switch from four sets to three. This also matches the PWA budget rule.
+        return min(9, max(4, budget / 3))
     }
 
     /// A bounded per-session budget keeps low-frequency sessions useful without producing

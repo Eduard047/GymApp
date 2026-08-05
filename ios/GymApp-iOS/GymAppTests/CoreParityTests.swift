@@ -10514,7 +10514,13 @@ final class CoreParityTests: XCTestCase {
 
         XCTAssertEqual(url.scheme, "https")
         XCTAssertEqual(url.host, "gymapptracker.com")
-        XCTAssertEqual(url.path, "/")
+        let components = try XCTUnwrap(
+            URLComponents(url: url, resolvingAgainstBaseURL: false)
+        )
+        XCTAssertEqual(components.percentEncodedPath, "/workout/")
+        XCTAssertTrue(
+            url.absoluteString.hasPrefix("https://gymapptracker.com/workout/#workout=")
+        )
         XCTAssertNil(url.query)
         let fragment = try XCTUnwrap(url.fragment)
         XCTAssertTrue(fragment.hasPrefix("workout="))

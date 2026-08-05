@@ -411,12 +411,16 @@ private struct MainTabShell: View {
     @ObservedObject private var store: WorkoutStore
     @StateObject private var activeWorkoutStore: ActiveWorkoutStore
     @AppStorage("app-language") private var languageCode = AppLanguage.english.rawValue
+    @Environment(\.openURL) private var openURL
 
     @State private var selectedTab: Tab
     @State private var workoutPath: [WorkoutRoute] = []
     @State private var missionPath: [MissionRoute] = []
     @State private var showsAddWorkout = false
     @State private var showsActiveWorkout = false
+    @State private var showsSharedWorkoutPreview = false
+    @State private var sharedWorkoutDraftSeed: [WorkoutExerciseDraft] = []
+    @State private var sharedWorkoutDraftTransitionID: UUID?
     @State private var showingActiveDraftDiscardConfirmation = false
 
     init(appState: AppState) {
@@ -478,7 +482,9 @@ private struct MainTabShell: View {
                 AddWorkoutView(
                     appState: appState,
                     activeWorkoutStore: activeWorkoutStore,
+                    initialDrafts: sharedWorkoutDraftSeed,
                     onStarted: { _ in
+                        sharedWorkoutDraftSeed = []
                         showsAddWorkout = false
                         Task { @MainActor in
                             try? await Task.sleep(for: .milliseconds(180))
@@ -486,18 +492,40 @@ private struct MainTabShell: View {
                         }
                     },
                     onSaved: { workoutID in
+                        sharedWorkoutDraftSeed = []
                         showsAddWorkout = false
                         Task { @MainActor in
                             try? await Task.sleep(for: .milliseconds(180))
                             workoutPath.append(.summary(workoutID))
                         }
                     },
-                    onCancel: { showsAddWorkout = false }
+                    onCancel: {
+                        sharedWorkoutDraftSeed = []
+                        showsAddWorkout = false
+                    }
                 )
             }
             .environmentObject(appState)
             .environmentObject(auth)
             .environmentObject(store)
+        }
+        .sheet(
+            isPresented: $showsSharedWorkoutPreview,
+            onDismiss: dismissSharedWorkoutPreviewIfNeeded
+        ) {
+            if let pending = appState.pendingSharedWorkout {
+                SharedWorkoutPreviewView(
+                    pending: pending,
+                    languageCode: languageCode,
+                    canOpenAsDraft: activeWorkoutStore.draft == nil && !showsAddWorkout,
+                    onOpenAsDraft: { openSharedWorkoutAsDraft(pending) },
+                    onOpenWebsite: { openSharedWorkoutOnWebsite(pending) },
+                    onCancel: {
+                        appState.dismissPendingSharedWorkout(id: pending.id)
+                        showsSharedWorkoutPreview = false
+                    }
+                )
+            }
         }
         .fullScreenCover(isPresented: $showsActiveWorkout) {
             NavigationStack {
@@ -670,6 +698,100 @@ private struct MainTabShell: View {
                     isError: true
                 )
             }
+            presentSharedWorkoutPreviewIfPossible()
+        }
+        .onChange(of: appState.pendingSharedWorkout?.id) { _ in
+            presentSharedWorkoutPreviewIfPossible()
+        }
+        .onChange(of: showsAddWorkout) { isPresented in
+            if !isPresented {
+                presentSharedWorkoutPreviewIfPossible()
+            }
+        }
+        .onChange(of: showsActiveWorkout) { isPresented in
+            if !isPresented {
+                presentSharedWorkoutPreviewIfPossible()
+            }
+        }
+    }
+
+    private func presentSharedWorkoutPreviewIfPossible() {
+        guard appState.pendingSharedWorkout != nil,
+              !showsAddWorkout,
+              !showsActiveWorkout else { return }
+        showsSharedWorkoutPreview = true
+    }
+
+    private func dismissSharedWorkoutPreviewIfNeeded() {
+        if let transitionID = sharedWorkoutDraftTransitionID {
+            sharedWorkoutDraftTransitionID = nil
+            finishOpeningSharedWorkoutAsDraft(id: transitionID)
+            return
+        }
+        guard let pending = appState.pendingSharedWorkout else { return }
+        appState.dismissPendingSharedWorkout(id: pending.id)
+    }
+
+    private func openSharedWorkoutAsDraft(_ pending: PendingSharedWorkout) {
+        guard appState.pendingSharedWorkout?.id == pending.id,
+              activeWorkoutStore.draft == nil,
+              !showsAddWorkout else {
+            appState.show(
+                message: gymText(
+                    "Finish the current workout or draft before opening this shared plan.",
+                    "Заверши поточне тренування або чернетку, перш ніж відкривати цей спільний план.",
+                    "Заверши текущую тренировку или черновик, прежде чем открывать этот общий план.",
+                    languageCode: languageCode
+                ),
+                isError: true
+            )
+            return
+        }
+        // Dismiss the preview first. Its onDismiss callback completes the handoff
+        // synchronously, so exercise materialization is never separated from the
+        // editor presentation by an arbitrary timer or a late state guard.
+        sharedWorkoutDraftTransitionID = pending.id
+        showsSharedWorkoutPreview = false
+    }
+
+    private func finishOpeningSharedWorkoutAsDraft(id: UUID) {
+        guard let pending = appState.pendingSharedWorkout,
+              pending.id == id,
+              appState.workoutStore === store,
+              appState.activeAccountStorageKey == store.accountStorageKey,
+              activeWorkoutStore.draft == nil,
+              !showsAddWorkout else {
+            presentSharedWorkoutPreviewIfPossible()
+            return
+        }
+        do {
+            let seed = try store.materializeSharedWorkoutDraft(pending.plan)
+            sharedWorkoutDraftSeed = seed
+            appState.dismissPendingSharedWorkout(id: pending.id)
+            showsAddWorkout = true
+        } catch {
+            appState.show(message: gymErrorMessage(error), isError: true)
+            presentSharedWorkoutPreviewIfPossible()
+        }
+    }
+
+    private func openSharedWorkoutOnWebsite(_ pending: PendingSharedWorkout) {
+        guard appState.pendingSharedWorkout?.id == pending.id else { return }
+        do {
+            let url = try SharedWorkoutLinkEncoder.makeWebsiteURL(plan: pending.plan)
+            appState.dismissPendingSharedWorkout(id: pending.id)
+            showsSharedWorkoutPreview = false
+            openURL(url)
+        } catch {
+            appState.show(
+                message: gymText(
+                    "The website link could not be created.",
+                    "Не вдалося створити посилання на сайт.",
+                    "Не удалось создать ссылку на сайт.",
+                    languageCode: languageCode
+                ),
+                isError: true
+            )
         }
     }
 
@@ -705,6 +827,7 @@ private struct MainTabShell: View {
                     if activeWorkoutStore.draft != nil {
                         showsActiveWorkout = true
                     } else {
+                        sharedWorkoutDraftSeed = []
                         showsAddWorkout = true
                     }
                 },
@@ -770,5 +893,153 @@ private struct MainTabShell: View {
             ProfileView(appState: appState, auth: auth, store: store)
                 .gymLanguageToolbar()
         }
+    }
+}
+
+private struct SharedWorkoutPreviewView: View {
+    let pending: PendingSharedWorkout
+    let languageCode: String
+    let canOpenAsDraft: Bool
+    let onOpenAsDraft: () -> Void
+    let onOpenWebsite: () -> Void
+    let onCancel: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    HStack(spacing: 12) {
+                        Label(
+                            "\(pending.plan.exercises.count)",
+                            systemImage: "dumbbell.fill"
+                        )
+                        Spacer()
+                        Label(
+                            "\(pending.plan.totalSetCount)",
+                            systemImage: "list.number"
+                        )
+                    }
+                    .font(.headline.monospacedDigit())
+                } header: {
+                    Text(
+                        gymText(
+                            "Shared workout preview",
+                            "Перегляд спільного тренування",
+                            "Просмотр общей тренировки",
+                            languageCode: languageCode
+                        )
+                    )
+                } footer: {
+                    Text(
+                        gymText(
+                            "Nothing is saved until you choose an action. Opening as a draft lets you review and edit every set first.",
+                            "Нічого не зберігається, доки ти не вибереш дію. Після відкриття як чернетки можна перевірити й змінити кожен підхід.",
+                            "Ничего не сохраняется, пока ты не выберешь действие. После открытия как черновика можно проверить и изменить каждый подход.",
+                            languageCode: languageCode
+                        )
+                    )
+                }
+
+                Section(
+                    gymText(
+                        "Exercises",
+                        "Вправи",
+                        "Упражнения",
+                        languageCode: languageCode
+                    )
+                ) {
+                    ForEach(Array(pending.plan.exercises.enumerated()), id: \.offset) { _, exercise in
+                        HStack(alignment: .firstTextBaseline, spacing: 12) {
+                            Text(
+                                gymExerciseName(
+                                    exercise.name,
+                                    catalogKey: exercise.catalogKey,
+                                    languageCode: languageCode
+                                )
+                            )
+                            .foregroundStyle(GymTheme.textPrimary)
+                            Spacer(minLength: 8)
+                            Text(
+                                gymText(
+                                    "\(exercise.sets.count) sets",
+                                    "\(exercise.sets.count) підх.",
+                                    "\(exercise.sets.count) подх.",
+                                    languageCode: languageCode
+                                )
+                            )
+                            .font(.subheadline.monospacedDigit())
+                            .foregroundStyle(GymTheme.textSecondary)
+                        }
+                    }
+                }
+
+                Section {
+                    Button(action: onOpenAsDraft) {
+                        Label(
+                            gymText(
+                                "Open as draft",
+                                "Відкрити як чернетку",
+                                "Открыть как черновик",
+                                languageCode: languageCode
+                            ),
+                            systemImage: "square.and.pencil"
+                        )
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!canOpenAsDraft)
+
+                    if !canOpenAsDraft {
+                        Text(
+                            gymText(
+                                "Finish the active workout first. Its progress will not be replaced.",
+                                "Спочатку заверши активне тренування. Його прогрес не буде замінено.",
+                                "Сначала заверши активную тренировку. Её прогресс не будет заменён.",
+                                languageCode: languageCode
+                            )
+                        )
+                        .font(.caption)
+                        .foregroundStyle(GymTheme.textSecondary)
+                    }
+
+                    Button(action: onOpenWebsite) {
+                        Label(
+                            gymText(
+                                "Open on website",
+                                "Відкрити на сайті",
+                                "Открыть на сайте",
+                                languageCode: languageCode
+                            ),
+                            systemImage: "safari"
+                        )
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .buttonStyle(.bordered)
+
+                    Button(role: .cancel, action: onCancel) {
+                        Text(
+                            gymText(
+                                "Cancel",
+                                "Скасувати",
+                                "Отмена",
+                                languageCode: languageCode
+                            )
+                        )
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .navigationTitle(
+                gymText(
+                    "Shared workout",
+                    "Спільне тренування",
+                    "Общая тренировка",
+                    languageCode: languageCode
+                )
+            )
+            .navigationBarTitleDisplayMode(.inline)
+        }
+        .presentationDetents([.medium, .large])
     }
 }

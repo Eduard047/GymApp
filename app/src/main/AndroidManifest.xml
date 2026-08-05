@@ -37,6 +37,28 @@
                     android:path="/callback"
                     android:scheme="${authCallbackScheme}" />
             </intent-filter>
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data
+                    android:host="gymapptracker.com"
+                    android:path="/workout/"
+                    android:scheme="https" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data
+                    android:host="workout"
+                    android:path="/"
+                    android:scheme="${authCallbackScheme}" />
+            </intent-filter>
         </activity>
 
         <service

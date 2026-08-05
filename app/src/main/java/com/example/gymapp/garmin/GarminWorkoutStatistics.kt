@@ -24,6 +24,33 @@ data class GarminWorkoutMetrics(
     val completedSetCount: Int? = null
 )
 
+internal enum class GarminWorkoutPresentationOrigin {
+    VerifiedLocalReceipt,
+    SavedNote
+}
+
+internal data class GarminWorkoutPresentation(
+    val metrics: GarminWorkoutMetrics,
+    val origin: GarminWorkoutPresentationOrigin
+) {
+    val hasVerifiedGarminOrigin: Boolean
+        get() = origin == GarminWorkoutPresentationOrigin.VerifiedLocalReceipt
+}
+
+internal fun parseGarminWorkoutPresentation(
+    note: String,
+    hasGarminReceipt: Boolean
+): GarminWorkoutPresentation? = parseGarminWorkoutMetrics(note)?.let { metrics ->
+    GarminWorkoutPresentation(
+        metrics = metrics,
+        origin = if (hasGarminReceipt) {
+            GarminWorkoutPresentationOrigin.VerifiedLocalReceipt
+        } else {
+            GarminWorkoutPresentationOrigin.SavedNote
+        }
+    )
+}
+
 internal fun GarminWorkoutMetrics.hasSetIntervalDetails(): Boolean =
     setEvidence.isNotEmpty() || setIntervals.isNotEmpty() || omittedSetIntervalCount > 0
 
@@ -54,6 +81,16 @@ data class GarminSetIntervalMetrics(
 ) {
     val activeSeconds: Long
         get() = endOffsetSeconds - startOffsetSeconds
+}
+
+internal data class GarminSetHeartRateChartPoint(
+    val setNumber: Int,
+    val startHeartRate: Int?,
+    val peakHeartRate: Int?,
+    val endHeartRate: Int?
+) {
+    val readings: List<Int>
+        get() = listOfNotNull(startHeartRate, peakHeartRate, endHeartRate)
 }
 
 internal data class GarminSetRecognitionSummary(
@@ -372,6 +409,21 @@ internal fun GarminWorkoutMetrics.totalHeartRateZoneSeconds(): List<Long> {
         }
     }
     return totals.toList().takeIf { values -> values.any { it > 0L } }.orEmpty()
+}
+
+internal fun GarminWorkoutMetrics.setHeartRateChartPoints(): List<GarminSetHeartRateChartPoint> {
+    val evidence = boundedSetEvidence() ?: return emptyList()
+    return evidence
+        .sortedBy(GarminSetEvidenceMetrics::setNumber)
+        .mapNotNull { item ->
+            val point = GarminSetHeartRateChartPoint(
+                setNumber = item.setNumber,
+                startHeartRate = item.startHeartRate?.takeIf { it in 1..MAX_GARMIN_SET_HEART_RATE },
+                peakHeartRate = item.peakHeartRate?.takeIf { it in 1..MAX_GARMIN_SET_HEART_RATE },
+                endHeartRate = item.endHeartRate?.takeIf { it in 1..MAX_GARMIN_SET_HEART_RATE }
+            )
+            point.takeIf { it.readings.isNotEmpty() }
+        }
 }
 
 internal fun GarminWorkoutMetrics.setRecognitionSummary(): GarminSetRecognitionSummary? {

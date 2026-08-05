@@ -11,6 +11,8 @@ import androidx.core.view.WindowCompat
 import androidx.lifecycle.lifecycleScope
 import com.example.gymapp.auth.AuthCallbackKind
 import com.example.gymapp.auth.authErrorText
+import com.example.gymapp.data.repository.IncomingSharedWorkoutUrl
+import com.example.gymapp.data.repository.SharedWorkoutLink
 import com.example.gymapp.navigation.GymAppRoot
 import com.example.gymapp.ui.theme.GymAppTheme
 import kotlinx.coroutines.launch
@@ -26,7 +28,7 @@ class MainActivity : AppCompatActivity() {
             Log.e("MainActivity", "Failed to apply saved language", throwable)
         }
 
-        handleAuthRedirect(intent)
+        handleIncomingIntent(intent)
 
         configureEdgeToEdge()
         setContent {
@@ -35,7 +37,8 @@ class MainActivity : AppCompatActivity() {
                     repositoryProvider = app::repositoryFor,
                     authManager = app.cloudAuthManager,
                     languageManager = app.languageManager,
-                    restTimerController = app.restTimerController
+                    restTimerController = app.restTimerController,
+                    sharedWorkoutInbox = app.sharedWorkoutInbox
                 )
             }
         }
@@ -55,6 +58,37 @@ class MainActivity : AppCompatActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        handleIncomingIntent(intent)
+    }
+
+    private fun handleIncomingIntent(intent: Intent?) {
+        val uri = intent?.data
+        if (uri != null) {
+            when (
+                val sharedWorkout = SharedWorkoutLink.parseIncomingUrl(
+                    rawUrl = uri.toString(),
+                    customScheme = BuildConfig.AUTH_CALLBACK_SCHEME
+                )
+            ) {
+                IncomingSharedWorkoutUrl.NotSharedWorkout -> Unit
+                IncomingSharedWorkoutUrl.InvalidSharedWorkout -> {
+                    intent.data = null
+                    Toast.makeText(
+                        this,
+                        getString(R.string.message_shared_workout_invalid),
+                        Toast.LENGTH_LONG
+                    ).show()
+                    return
+                }
+                is IncomingSharedWorkoutUrl.Valid -> {
+                    // Do not retain a potentially large attacker-controlled template URI on the
+                    // exported Activity. The bounded immutable plan is handed to the UI instead.
+                    intent.data = null
+                    (application as GymApplication).sharedWorkoutInbox.offer(sharedWorkout.plan)
+                    return
+                }
+            }
+        }
         handleAuthRedirect(intent)
     }
 

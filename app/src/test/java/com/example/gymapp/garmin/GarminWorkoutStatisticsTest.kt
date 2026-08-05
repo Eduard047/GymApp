@@ -68,6 +68,89 @@ class GarminWorkoutStatisticsTest {
         )
         assertNotNull(trusted)
         assertEquals(250, trusted?.garminCalories)
+        assertEquals(
+            GarminWorkoutPresentationOrigin.VerifiedLocalReceipt,
+            parseGarminWorkoutPresentation(
+                note = userControlledNote,
+                hasGarminReceipt = true
+            )?.origin
+        )
+    }
+
+    @Test
+    fun screenshotWorkoutDisplaysBoundedMetricsWithoutClaimingVerifiedGarminOrigin() {
+        val screenshotNote =
+            "Garmin · Тривалість 68:49 · Gym ккал 495 · Garmin ккал 330 · " +
+                "Сер пульс 77 · Макс пульс 169 · Кінцева зона пульсу Z2 · " +
+                "S1 0s HR151/160/156 ↓49 C100% · S2 22s R776s HR142/156/150 ↓34 C85% · " +
+                "S3 34s R152s HR140/165/164 ↓47 C100% · S4 0s R49s HR157/162/159 ↓57 C100% · " +
+                "S5 0s R388s HR164/166/135 ↓54 C100% · S6 0s R247s HR149/153/150 ↓51 C100% · " +
+                "S7 0s R322s HR151/152/151 ↓33 C85% · S8 53s R196s HR140/142/131 ↓42 C85% · " +
+                "S9 0s R186s HR141/144/139 ↓67 C100% · S10 0s R153s HR105/136/136 ↓30 C100% · " +
+                "S11 0s R204s HR138/138/127 ↓35 C100% · S12 56s R368s HR144/144/140 ↓31 C100% · " +
+                "S13 16s R203s HR140/144/141 ↓34 C85% · S14 0s R54s HR141/158/148 ↓33 C85% · " +
+                "S15 2s R357s HR142/147/147 ↓26 C100%"
+
+        val presentation = parseGarminWorkoutPresentation(
+            note = screenshotNote,
+            hasGarminReceipt = false
+        )
+
+        assertNotNull(presentation)
+        assertEquals(GarminWorkoutPresentationOrigin.SavedNote, presentation?.origin)
+        assertEquals(false, presentation?.hasVerifiedGarminOrigin)
+        assertEquals(4_129L, presentation?.metrics?.durationSeconds)
+        assertEquals(495, presentation?.metrics?.gymCalories)
+        assertEquals(330, presentation?.metrics?.garminCalories)
+        assertEquals(15, presentation?.metrics?.setEvidence?.size)
+        assertEquals(15, presentation?.metrics?.setHeartRateChartPoints()?.size)
+        assertNull(parseTrustedGarminWorkoutMetrics(screenshotNote, hasGarminReceipt = false))
+    }
+
+    @Test
+    fun setHeartRateChartPointsKeepDiscreteSetGapsAndNeverInventReadings() {
+        val points = GarminWorkoutMetrics(
+            setEvidence = listOf(
+                GarminSetEvidenceMetrics(
+                    setNumber = 1,
+                    startHeartRate = 110,
+                    peakHeartRate = 150,
+                    endHeartRate = 130
+                ),
+                GarminSetEvidenceMetrics(
+                    setNumber = 2,
+                    detectionConfidence = 80
+                ),
+                GarminSetEvidenceMetrics(
+                    setNumber = 3,
+                    peakHeartRate = 155,
+                    endHeartRate = 140
+                )
+            )
+        ).setHeartRateChartPoints()
+
+        assertEquals(listOf(1, 3), points.map { it.setNumber })
+        assertEquals(listOf(110, 150, 130), points.first().readings)
+        assertNull(points.last().startHeartRate)
+        assertEquals(155, points.last().peakHeartRate)
+        assertEquals(140, points.last().endHeartRate)
+
+        val unsafe = GarminWorkoutMetrics(
+            setEvidence = listOf(
+                GarminSetEvidenceMetrics(setNumber = 1, startHeartRate = 241)
+            )
+        )
+        assertTrue(unsafe.setHeartRateChartPoints().isEmpty())
+
+        val oversized = GarminWorkoutMetrics(
+            setEvidence = List(MAX_GARMIN_WORKOUT_SETS + 1) { index ->
+                GarminSetEvidenceMetrics(
+                    setNumber = (index % MAX_GARMIN_WORKOUT_SETS) + 1,
+                    startHeartRate = 120
+                )
+            }
+        )
+        assertTrue(oversized.setHeartRateChartPoints().isEmpty())
     }
 
     @Test

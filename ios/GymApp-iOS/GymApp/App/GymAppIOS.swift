@@ -42,13 +42,16 @@ struct GymAppIOS: App {
                         .environmentObject(appState.workoutStore)
                         .environmentObject(bootstrap.auth)
                         .onOpenURL { url in
-                            if !appState.garminPhoneSync.handleOpenURL(url) {
+                            if !appState.handleSharedWorkoutURL(url),
+                               !appState.garminPhoneSync.handleOpenURL(url) {
                                 Task { await bootstrap.auth.handleOpenURL(url) }
                             }
                         }
                         .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
                             guard let url = activity.webpageURL else { return }
-                            Task { await bootstrap.auth.handleOpenURL(url) }
+                            if !appState.handleSharedWorkoutURL(url) {
+                                Task { await bootstrap.auth.handleOpenURL(url) }
+                            }
                         }
                 } else {
                     StartupFailureView(
