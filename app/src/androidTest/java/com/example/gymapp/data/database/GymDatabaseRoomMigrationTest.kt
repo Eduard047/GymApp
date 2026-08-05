@@ -262,6 +262,7 @@ class GymDatabaseRoomMigrationTest {
                 assertTrue(cursor.moveToFirst())
                 assertEquals(42L, cursor.getLong(0))
             }
+            migrated.setForeignKeyConstraintsEnabled(true)
             migrated.execSQL("DELETE FROM workout_sessions WHERE id = 42")
             migrated.query("SELECT COUNT(*) FROM garmin_workout_provenance").use { cursor ->
                 assertTrue(cursor.moveToFirst())
@@ -320,6 +321,7 @@ class GymDatabaseRoomMigrationTest {
                 }
                 assertEquals(listOf(69.0, 73.0, 77.0), weights)
             }
+            migrated.setForeignKeyConstraintsEnabled(true)
             migrated.execSQL("DELETE FROM exercises WHERE id = 7")
             migrated.query("SELECT COUNT(*) FROM exercise_load_profiles").use { cursor ->
                 assertTrue(cursor.moveToFirst())
@@ -334,11 +336,171 @@ class GymDatabaseRoomMigrationTest {
         }
     }
 
+    @Test
+    fun migrationTwelveToThirteenAddsEmptyLocalActiveWorkoutStoreAndPreservesHistory() {
+        migrationHelper.createDatabase(ACTIVE_WORKOUT_TEST_DATABASE, 12).apply {
+            execSQL(
+                "INSERT INTO exercises(id, name, isFavorite) VALUES (7, 'Keep exercise', 1)"
+            )
+            execSQL(
+                "INSERT INTO workout_sessions(id, date, note) VALUES (8, 1750000000000, 'Keep history')"
+            )
+            execSQL(
+                """
+                INSERT INTO workout_exercises(id, sessionId, exerciseId, orderIndex)
+                VALUES (9, 8, 7, 0)
+                """.trimIndent()
+            )
+            execSQL(
+                """
+                INSERT INTO set_entries(id, workoutExerciseId, weight, reps, orderIndex)
+                VALUES (10, 9, 72.5, 9, 0)
+                """.trimIndent()
+            )
+            close()
+        }
+
+        val migrated = migrationHelper.runMigrationsAndValidate(
+            ACTIVE_WORKOUT_TEST_DATABASE,
+            13,
+            true,
+            *GymDatabase.REGISTERED_MIGRATIONS
+        )
+        try {
+            migrated.query("SELECT name, isFavorite FROM exercises WHERE id = 7").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("Keep exercise", cursor.getString(0))
+                assertEquals(1, cursor.getInt(1))
+            }
+            migrated.query("SELECT note FROM workout_sessions WHERE id = 8").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("Keep history", cursor.getString(0))
+            }
+            migrated.query("SELECT weight, reps FROM set_entries WHERE id = 10").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(72.5, cursor.getDouble(0), 0.0)
+                assertEquals(9, cursor.getInt(1))
+            }
+            listOf(
+                "active_workouts",
+                "active_workout_exercises",
+                "active_workout_sets"
+            ).forEach { table ->
+                migrated.query("SELECT COUNT(*) FROM $table").use { cursor ->
+                    assertTrue(cursor.moveToFirst())
+                    assertEquals(0, cursor.getInt(0))
+                }
+            }
+
+            val exerciseRowId = "123e4567-e89b-42d3-a456-426614174000"
+            val setRowId = "123e4567-e89b-42d3-a456-426614174001"
+            migrated.execSQL(
+                """
+                INSERT INTO active_workouts(id, date, note, startedAt, revision)
+                VALUES (1, 1750000000000, 'Local only', 1750000000000, 0)
+                """.trimIndent()
+            )
+            migrated.execSQL(
+                """
+                INSERT INTO active_workout_exercises(
+                    id, activeWorkoutId, exerciseName, catalogKey, orderIndex
+                ) VALUES (?, 1, 'Keep exercise', NULL, 0)
+                """.trimIndent(),
+                arrayOf<Any>(exerciseRowId)
+            )
+            migrated.execSQL(
+                """
+                INSERT INTO active_workout_sets(
+                    id, activeWorkoutExerciseId, weight, reps, orderIndex, completedAt
+                ) VALUES (?, ?, 75.0, 8, 0, NULL)
+                """.trimIndent(),
+                arrayOf<Any>(setRowId, exerciseRowId)
+            )
+            migrated.setForeignKeyConstraintsEnabled(true)
+            migrated.execSQL("DELETE FROM exercises WHERE id = 7")
+            migrated.query("SELECT exerciseName FROM active_workout_exercises").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("Keep exercise", cursor.getString(0))
+            }
+            migrated.execSQL("DELETE FROM active_workouts WHERE id = 1")
+            migrated.query("SELECT COUNT(*) FROM active_workout_sets").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(0, cursor.getInt(0))
+            }
+        } finally {
+            migrated.close()
+        }
+    }
+
+    @Test
+    fun migrationElevenToThirteenMatchesV229UpgradeAndPreservesHistory() {
+        migrationHelper.createDatabase(V229_TO_ACTIVE_WORKOUT_TEST_DATABASE, 11).apply {
+            execSQL(
+                "INSERT INTO exercises(id, name, isFavorite) VALUES (17, 'v2.2.9 exercise', 1)"
+            )
+            execSQL(
+                "INSERT INTO workout_sessions(id, date, note) VALUES (18, 1750000000000, 'v2.2.9 history')"
+            )
+            execSQL(
+                """
+                INSERT INTO workout_exercises(id, sessionId, exerciseId, orderIndex)
+                VALUES (19, 18, 17, 0)
+                """.trimIndent()
+            )
+            execSQL(
+                """
+                INSERT INTO set_entries(id, workoutExerciseId, weight, reps, orderIndex)
+                VALUES (20, 19, 80.0, 6, 0)
+                """.trimIndent()
+            )
+            close()
+        }
+
+        val migrated = migrationHelper.runMigrationsAndValidate(
+            V229_TO_ACTIVE_WORKOUT_TEST_DATABASE,
+            13,
+            true,
+            *GymDatabase.REGISTERED_MIGRATIONS
+        )
+        try {
+            migrated.query("SELECT name, isFavorite FROM exercises WHERE id = 17").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("v2.2.9 exercise", cursor.getString(0))
+                assertEquals(1, cursor.getInt(1))
+            }
+            migrated.query("SELECT note FROM workout_sessions WHERE id = 18").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("v2.2.9 history", cursor.getString(0))
+            }
+            migrated.query("SELECT weight, reps FROM set_entries WHERE id = 20").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(80.0, cursor.getDouble(0), 0.0)
+                assertEquals(6, cursor.getInt(1))
+            }
+            listOf(
+                "exercise_load_profiles",
+                "exercise_weight_options",
+                "active_workouts",
+                "active_workout_exercises",
+                "active_workout_sets"
+            ).forEach { table ->
+                migrated.query("SELECT COUNT(*) FROM $table").use { cursor ->
+                    assertTrue(cursor.moveToFirst())
+                    assertEquals(0, cursor.getInt(0))
+                }
+            }
+        } finally {
+            migrated.close()
+        }
+    }
+
     private companion object {
         const val TEST_DATABASE = "room-migration-7-to-8"
         const val FAVORITE_TEST_DATABASE = "room-migration-8-to-9"
         const val GARMIN_INDEX_TEST_DATABASE = "room-migration-9-to-10"
         const val GARMIN_LIFECYCLE_TEST_DATABASE = "room-migration-10-to-11"
         const val LOAD_PROFILE_TEST_DATABASE = "room-migration-11-to-12"
+        const val ACTIVE_WORKOUT_TEST_DATABASE = "room-migration-12-to-13"
+        const val V229_TO_ACTIVE_WORKOUT_TEST_DATABASE = "room-migration-11-to-13"
     }
 }

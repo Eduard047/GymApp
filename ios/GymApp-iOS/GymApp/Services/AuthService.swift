@@ -239,6 +239,15 @@ final class AuthService: ObservableObject {
     private let sessionAccount = "current-session"
     private let authTransactionAccount = "pending-auth-transaction"
     private var sessionRevision: UInt64 = 0
+    private var cloudRefreshTask: Task<CloudAccountSession, Error>?
+    private var cloudRefreshIdentity: CloudRefreshIdentity?
+    private var cloudRefreshGeneration: UInt64 = 0
+
+    private struct CloudRefreshIdentity: Equatable {
+        let sessionRevision: UInt64
+        let userID: String
+        let refreshToken: String
+    }
 
     private static let pendingSecureDeletionKey = "gymapp.auth.pending-secure-session-deletion"
     private static let maximumAuthResponseBytes = 64 * 1_024
@@ -540,7 +549,7 @@ final class AuthService: ObservableObject {
         expectedUserID: String? = nil,
         forceRefresh: Bool = false
     ) async throws -> CloudAccountSession {
-        guard var cloud = session?.cloud else { throw AuthServiceError.notCloudAccount }
+        guard let cloud = session?.cloud else { throw AuthServiceError.notCloudAccount }
         guard expectedUserID == nil || expectedUserID == cloud.userID else {
             throw AuthServiceError.sessionChanged
         }
@@ -556,6 +565,50 @@ final class AuthService: ObservableObject {
         }
         guard let refreshToken = cloud.refreshToken, !refreshToken.isEmpty else { return cloud }
 
+        let refreshIdentity = CloudRefreshIdentity(
+            sessionRevision: expectedRevision,
+            userID: cloud.userID,
+            refreshToken: refreshToken
+        )
+        let task: Task<CloudAccountSession, Error>
+        let generation: UInt64
+        if let activeTask = cloudRefreshTask,
+           cloudRefreshIdentity == refreshIdentity {
+            task = activeTask
+            generation = cloudRefreshGeneration
+        } else {
+            cloudRefreshGeneration &+= 1
+            generation = cloudRefreshGeneration
+            task = Task { @MainActor [weak self] in
+                guard let self else { throw CancellationError() }
+                return try await self.refreshCloudSession(
+                    cloud,
+                    expectedRevision: expectedRevision,
+                    refreshToken: refreshToken
+                )
+            }
+            cloudRefreshIdentity = refreshIdentity
+            cloudRefreshTask = task
+        }
+
+        do {
+            let refreshed = try await task.value
+            finishCloudRefresh(generation: generation)
+            guard expectedUserID == nil || expectedUserID == refreshed.userID else {
+                throw AuthServiceError.sessionChanged
+            }
+            return refreshed
+        } catch {
+            finishCloudRefresh(generation: generation)
+            throw error
+        }
+    }
+
+    private func refreshCloudSession(
+        _ cloud: CloudAccountSession,
+        expectedRevision: UInt64,
+        refreshToken: String
+    ) async throws -> CloudAccountSession {
         let object: [String: Any]
         do {
             object = try await requestJSON(
@@ -580,13 +633,17 @@ final class AuthService: ObservableObject {
         let refreshed = try parseCloudSession(object, fallback: cloud)
         guard sessionRevision == expectedRevision,
               session?.cloud?.userID == cloud.userID,
-              refreshed.userID == cloud.userID,
-              expectedUserID == nil || expectedUserID == refreshed.userID else {
+              refreshed.userID == cloud.userID else {
             throw AuthServiceError.sessionChanged
         }
-        cloud = refreshed
-        try persist(.cloud(cloud), requiresPasswordUpdate: needsPasswordUpdate)
-        return cloud
+        try persist(.cloud(refreshed), requiresPasswordUpdate: needsPasswordUpdate)
+        return refreshed
+    }
+
+    private func finishCloudRefresh(generation: UInt64) {
+        guard cloudRefreshGeneration == generation else { return }
+        cloudRefreshTask = nil
+        cloudRefreshIdentity = nil
     }
 
     func signOut() async {

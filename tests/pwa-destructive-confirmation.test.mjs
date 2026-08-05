@@ -384,7 +384,7 @@ test("destructive alertdialog traps focus, closes on Escape, and restores its in
   assert.equal(restoredFocus, true);
 });
 
-test("full import remains pending until confirmation and is account and state bound", () => {
+test("full import remains pending until confirmation and is account and state bound", async () => {
   const context = loadContext();
   let successContextFocused = false;
   let emptyTopbarFocused = false;
@@ -432,11 +432,13 @@ test("full import remains pending until confirmation and is account and state bo
   vm.runInContext("closeModal()", context);
   assert.equal(storedState(context), beforeStored);
 
-  vm.runInContext("modal = { type: 'import' }; applyImport(); accountEpoch += 1; confirmImport()", context);
+  vm.runInContext("modal = { type: 'import' }; applyImport(); accountEpoch += 1", context);
+  await vm.runInContext("confirmImport()", context);
   assert.equal(vm.runInContext("JSON.stringify(state)", context), beforeState);
   assert.equal(storedState(context), beforeStored);
 
-  vm.runInContext("modal = { type: 'import' }; applyImport(); confirmImport()", context);
+  vm.runInContext("modal = { type: 'import' }; applyImport()", context);
+  await vm.runInContext("confirmImport()", context);
   assert.equal(vm.runInContext("state.sessions.length", context), 1);
   assert.equal(vm.runInContext("state.sessions[0].id", context), 9201);
   assert.equal(JSON.parse(storedState(context)).sessions[0].sets[0].id, 9301);

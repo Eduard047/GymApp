@@ -3,6 +3,7 @@ import SwiftUI
 @MainActor
 struct AddWorkoutView: View {
     @ObservedObject private var store: WorkoutStore
+    @ObservedObject private var activeWorkoutStore: ActiveWorkoutStore
     @ObservedObject private var garminCloud: GarminCloudService
 
     @State private var date = Date()
@@ -20,19 +21,24 @@ struct AddWorkoutView: View {
     @State private var isSaving = false
 
     private let isCloudAccount: Bool
+    private let onStarted: (UUID) -> Void
     private let onSaved: (UUID) -> Void
     private let onCancel: () -> Void
     private let reportStatus: (String, Bool) -> Void
 
     init(
         appState: AppState,
+        activeWorkoutStore: ActiveWorkoutStore,
+        onStarted: @escaping (UUID) -> Void,
         onSaved: @escaping (UUID) -> Void,
         onCancel: @escaping () -> Void = {}
     ) {
         self.init(
             store: appState.workoutStore,
+            activeWorkoutStore: activeWorkoutStore,
             garminCloud: appState.garminCloud,
             isCloudAccount: appState.auth.session?.cloud != nil,
+            onStarted: onStarted,
             onSaved: onSaved,
             onCancel: onCancel,
             onStatus: { [weak appState] message, isError in
@@ -43,16 +49,20 @@ struct AddWorkoutView: View {
 
     init(
         store: WorkoutStore,
+        activeWorkoutStore: ActiveWorkoutStore,
         garminCloud: GarminCloudService,
         isCloudAccount: Bool,
+        onStarted: @escaping (UUID) -> Void,
         onSaved: @escaping (UUID) -> Void,
         onCancel: @escaping () -> Void = {},
         onStatus: @escaping (String, Bool) -> Void = { _, _ in }
     ) {
         _store = ObservedObject(wrappedValue: store)
+        _activeWorkoutStore = ObservedObject(wrappedValue: activeWorkoutStore)
         _garminCloud = ObservedObject(wrappedValue: garminCloud)
         _profile = State(initialValue: Self.loadProfile(storageKey: store.accountStorageKey))
         self.isCloudAccount = isCloudAccount
+        self.onStarted = onStarted
         self.onSaved = onSaved
         self.onCancel = onCancel
         self.reportStatus = onStatus
@@ -464,13 +474,55 @@ struct AddWorkoutView: View {
     }
 
     private var saveButton: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Completed mode: saving immediately adds every planned row to workout history and summaries.")
+        VStack(alignment: .leading, spacing: 10) {
+            Text(
+                gymText(
+                    "Start mode keeps planned sets local. A set reaches history only after you record it and finish the workout.",
+                    "Режим тренування зберігає план локально. Підхід потрапить в історію лише після запису й завершення тренування.",
+                    "Режим тренировки хранит план локально. Подход попадёт в историю только после записи и завершения тренировки.",
+                    languageCode: gymCurrentLanguageCode()
+                )
+            )
                 .font(.caption)
                 .foregroundStyle(GymTheme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            Button(action: save) {
+            Button(action: startWorkout) {
+                Label(
+                    gymText(
+                        "Start workout",
+                        "Почати тренування",
+                        "Начать тренировку",
+                        languageCode: gymCurrentLanguageCode()
+                    ),
+                    systemImage: "play.circle.fill"
+                )
+            }
+            .buttonStyle(GymPrimaryButtonStyle())
+            .disabled(isSaving || drafts.isEmpty || activeWorkoutStore.draft != nil)
+            .accessibilityHint(
+                gymText(
+                    "Saves this plan locally so sets can be recorded one by one",
+                    "Зберігає цей план локально, щоб записувати підходи по одному",
+                    "Сохраняет этот план локально, чтобы записывать подходы по одному",
+                    languageCode: gymCurrentLanguageCode()
+                )
+            )
+
+            Divider()
+
+            Text(
+                gymText(
+                    "Completed mode remains available for workouts you already finished.",
+                    "Режим готового тренування залишається для вже виконаних занять.",
+                    "Режим готовой тренировки остаётся для уже выполненных занятий.",
+                    languageCode: gymCurrentLanguageCode()
+                )
+            )
+            .font(.caption)
+            .foregroundStyle(GymTheme.textSecondary)
+
+            Button(action: saveCompletedWorkout) {
                 if isSaving {
                     HStack(spacing: 10) {
                         ProgressView().tint(.white)
@@ -480,7 +532,7 @@ struct AddWorkoutView: View {
                     Label("Save as completed workout", systemImage: "checkmark.circle.fill")
                 }
             }
-            .buttonStyle(GymPrimaryButtonStyle())
+            .buttonStyle(GymSecondaryButtonStyle())
             .disabled(isSaving || drafts.isEmpty)
             .accessibilityHint(
                 gymLocalized(
@@ -764,7 +816,7 @@ struct AddWorkoutView: View {
         return "custom:\(MuscleMappingEngine.normalizeExerciseName(exercise.name))"
     }
 
-    private func validationMessage() -> String? {
+    private func validationMessage(includingGarminQueue: Bool) -> String? {
         guard !drafts.isEmpty else { return gymLocalized("Add at least one exercise.") }
         guard date <= Date() else {
             return gymText(
@@ -774,7 +826,7 @@ struct AddWorkoutView: View {
                 languageCode: gymCurrentLanguageCode()
             )
         }
-        if queueForGarmin && isCloudAccount && garminCloud.selectedDevice == nil {
+        if includingGarminQueue && queueForGarmin && isCloudAccount && garminCloud.selectedDevice == nil {
             return gymLocalized("Select or pair a Garmin watch in Account settings before queueing a plan.")
         }
         for draft in drafts {
@@ -799,8 +851,47 @@ struct AddWorkoutView: View {
         return nil
     }
 
-    private func save() {
-        if let message = validationMessage() {
+    private func startWorkout() {
+        if let message = validationMessage(includingGarminQueue: false) {
+            show(message, error: true)
+            return
+        }
+        do {
+            let active = try activeWorkoutStore.start(
+                workoutDate: date,
+                note: note,
+                exercises: drafts.map { exercise in
+                    ActiveWorkoutExercise(
+                        id: exercise.id,
+                        exerciseID: exercise.exerciseID,
+                        sets: exercise.sets.map { set in
+                            ActiveWorkoutSet(
+                                id: set.id,
+                                weight: set.weight,
+                                reps: set.reps
+                            )
+                        }
+                    )
+                },
+                workoutStore: store
+            )
+            reportStatus(
+                gymText(
+                    "Workout started. Record each set when it is complete.",
+                    "Тренування розпочато. Записуй кожен підхід після виконання.",
+                    "Тренировка начата. Записывай каждый подход после выполнения.",
+                    languageCode: gymCurrentLanguageCode()
+                ),
+                false
+            )
+            onStarted(active.id)
+        } catch {
+            show(gymErrorMessage(error), error: true)
+        }
+    }
+
+    private func saveCompletedWorkout() {
+        if let message = validationMessage(includingGarminQueue: true) {
             show(message, error: true)
             return
         }

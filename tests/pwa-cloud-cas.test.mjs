@@ -1933,6 +1933,7 @@ test("cloud recovery reset is explicit and uses the quarantined row revision as 
   };
   vm.runInContext(`
     state = defaultAppState();
+    localStorage.setItem(AUTH_KEY, JSON.stringify(activeAccount));
     remoteStateSync = {
       userId: activeAccount.userId,
       exists: true,
@@ -3201,7 +3202,7 @@ test("cloud deletion rejects an expanded response contract before browser cleanu
   assert.equal(JSON.parse(context.localStorage.getItem("gym-pwa-account-list-v1")).length, 1);
 });
 
-test("local account deletion removes only the confirmed local profile", () => {
+test("local account deletion removes only the confirmed local profile", async () => {
   const context = loadContext(async () => {
     throw new Error("local deletion must not use the network");
   });
@@ -3211,7 +3212,7 @@ test("local account deletion removes only the confirmed local profile", () => {
   context.window.confirm = () => true;
   context.window.prompt = () => "DELETE";
 
-  vm.runInContext("deleteLocalAccount()", context);
+  await vm.runInContext("deleteLocalAccount()", context);
 
   assert.equal(vm.runInContext("activeAccount", context), null);
   assert.equal(context.localStorage.getItem(localKey), null);

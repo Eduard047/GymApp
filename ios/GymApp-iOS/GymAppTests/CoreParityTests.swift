@@ -6473,6 +6473,58 @@ final class CoreParityTests: XCTestCase {
         XCTAssertNil(try keychain.read(account: "current-session"))
     }
 
+    func testConcurrentTokenRefreshesShareOneNetworkRequest() async throws {
+        let keychain = InMemoryKeychainStore()
+        let defaults = temporaryDefaults(named: "concurrent-refresh")
+        var expired = cloudSession(userID: "concurrent-refresh-user")
+        expired.expiresAt = Date(timeIntervalSince1970: 0)
+
+        let recorder = AuthRequestRecorder()
+        let refreshStarted = expectation(description: "shared refresh started")
+        let secondCallerStarted = expectation(description: "second refresh caller started")
+        let releaseRefresh = DispatchSemaphore(value: 0)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        let auth = AuthService(
+            keychain: keychain,
+            urlSession: urlSession,
+            defaults: defaults
+        )
+        try auth.installSessionForTesting(.cloud(expired))
+        AuthURLProtocolStub.handler = { request in
+            recorder.append(request)
+            refreshStarted.fulfill()
+            _ = releaseRefresh.wait(timeout: .now() + 5)
+            return try AuthURLProtocolStub.response(
+                for: request,
+                json: #"{"access_token":"shared-access","refresh_token":"shared-refresh","expires_in":3600,"user":{"id":"concurrent-refresh-user","email":"concurrent-refresh-user@example.com","user_metadata":{"display_name":"Concurrent Refresh"}}}"#
+            )
+        }
+        defer {
+            releaseRefresh.signal()
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+        }
+
+        let first = Task { try await auth.validCloudSession() }
+        await fulfillment(of: [refreshStarted], timeout: 2)
+        let second = Task {
+            secondCallerStarted.fulfill()
+            return try await auth.validCloudSession()
+        }
+        await fulfillment(of: [secondCallerStarted], timeout: 2)
+        await Task.yield()
+        releaseRefresh.signal()
+
+        let firstResult = try await first.value
+        let secondResult = try await second.value
+        XCTAssertEqual(firstResult, secondResult)
+        XCTAssertEqual(firstResult.accessToken, "shared-access")
+        XCTAssertEqual(recorder.requests.count, 1)
+        XCTAssertEqual(auth.session?.cloud, firstResult)
+    }
+
     func testTerminalRefreshFailureClearsMatchingPersistedSession() async throws {
         for statusCode in [400, 401] {
             let keychain = InMemoryKeychainStore()
@@ -7268,6 +7320,8 @@ final class CoreParityTests: XCTestCase {
         let recorder = AuthRequestRecorder()
         let refreshStarted = expectation(description: "initial delete token refresh started")
         let releaseRefresh = DispatchSemaphore(value: 0)
+        let gateLock = NSLock()
+        var hasBlockedRefresh = false
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [AuthURLProtocolStub.self]
         let urlSession = URLSession(configuration: configuration)
@@ -7280,14 +7334,35 @@ final class CoreParityTests: XCTestCase {
         cloud.expiresAt = Date(timeIntervalSince1970: 0)
         let accountSession = AppAccountSession.cloud(cloud)
         let owner = BackupOwner(
-            accountID: accountSession.storageKey,
+            accountID: cloud.userID,
             userID: cloud.userID,
             email: cloud.email,
             remote: true
         )
-        let remote = try pwaFlatCloudData(
-            exerciseName: "Initial Refresh Preserved Data"
+        let nativeRemote = try remoteBackupData(
+            exerciseName: "Initial Refresh Preserved Data",
+            owner: owner
         )
+        var remoteRoot = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: nativeRemote) as? [String: Any]
+        )
+        remoteRoot["catalogSeedVersion"] = BuiltInExerciseCatalog.seedVersion
+        let remote = try JSONSerialization.data(
+            withJSONObject: remoteRoot,
+            options: [.sortedKeys]
+        )
+        // This test isolates the deletion refresh window. A freshly created local
+        // store would seed the catalog during activation and legitimately queue a
+        // separate canonical cloud save before deletion starts.
+        do {
+            let seededLocalStore = try WorkoutStore(
+                accountStorageKey: accountSession.storageKey,
+                directoryURL: directory
+            )
+            _ = try seededLocalStore.seedBuiltInExercises()
+            _ = try seededLocalStore.seedDefaultMuscleMappings()
+            try seededLocalStore.saveNow()
+        }
         try auth.installSessionForTesting(accountSession)
         AuthURLProtocolStub.handler = { request in
             recorder.append(request)
@@ -7299,8 +7374,15 @@ final class CoreParityTests: XCTestCase {
                     json: "{}"
                 )
             }
-            refreshStarted.fulfill()
-            _ = releaseRefresh.wait(timeout: .now() + 5)
+            let shouldBlock = gateLock.withLock {
+                guard !hasBlockedRefresh else { return false }
+                hasBlockedRefresh = true
+                return true
+            }
+            if shouldBlock {
+                refreshStarted.fulfill()
+                _ = releaseRefresh.wait(timeout: .now() + 5)
+            }
             return try AuthURLProtocolStub.response(
                 for: request,
                 statusCode: 503,

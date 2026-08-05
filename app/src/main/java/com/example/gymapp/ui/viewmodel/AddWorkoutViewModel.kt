@@ -9,6 +9,7 @@ import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.entity.ExerciseHistoryEntry
 import com.example.gymapp.data.entity.WorkoutSessionDetails
 import com.example.gymapp.data.repository.GymRepository
+import com.example.gymapp.data.repository.StartActiveWorkoutResult
 import com.example.gymapp.data.repository.ExerciseLoadProfile
 import com.example.gymapp.data.repository.NamedWorkoutSetDraft
 import com.example.gymapp.data.repository.WorkoutRecommendation
@@ -182,7 +183,7 @@ data class AddWorkoutUiState(
     val watchPlanSyncError: LocalizedText? = null,
     val isSaving: Boolean = false,
     val hasValidationError: Boolean = false,
-    val createdSessionId: Long? = null
+    val activeWorkoutStarted: Boolean = false
 )
 
 internal fun planSyncErrorText(error: Throwable): LocalizedText {
@@ -231,7 +232,7 @@ class AddWorkoutViewModel(
         val watchPlanSyncError: LocalizedText?,
         val isSaving: Boolean,
         val hasValidationError: Boolean,
-        val createdSessionId: Long?
+        val activeWorkoutStarted: Boolean
     )
 
     private data class LocalState(
@@ -249,7 +250,7 @@ class AddWorkoutViewModel(
         val watchPlanSyncError: LocalizedText?,
         val isSaving: Boolean,
         val hasValidationError: Boolean,
-        val createdSessionId: Long?
+        val activeWorkoutStarted: Boolean
     )
 
     private data class EditorState(
@@ -299,7 +300,7 @@ class AddWorkoutViewModel(
     private val watchPlanSyncError = MutableStateFlow<LocalizedText?>(null)
     private val isSaving = MutableStateFlow(false)
     private val hasValidationError = MutableStateFlow(false)
-    private val createdSessionId = MutableStateFlow<Long?>(null)
+    private val activeWorkoutStarted = MutableStateFlow(false)
 
     private val exercises = repository.observeExercises()
     private val exerciseHistory: StateFlow<List<ExerciseHistoryEntry>> = repository.observeAllExerciseHistory()
@@ -453,15 +454,15 @@ class AddWorkoutViewModel(
         planSyncResult,
         isSaving,
         hasValidationError,
-        createdSessionId
-    ) { syncingPlan, planSyncResult, saving, validationError, createdId ->
+        activeWorkoutStarted
+    ) { syncingPlan, planSyncResult, saving, validationError, workoutStarted ->
         TransientState(
             isSyncingPlanToWatch = syncingPlan,
             didSyncPlanToWatch = planSyncResult.first,
             watchPlanSyncError = planSyncResult.second,
             isSaving = saving,
             hasValidationError = validationError,
-            createdSessionId = createdId
+            activeWorkoutStarted = workoutStarted
         )
     }
 
@@ -485,7 +486,7 @@ class AddWorkoutViewModel(
             watchPlanSyncError = transient.watchPlanSyncError,
             isSaving = transient.isSaving,
             hasValidationError = transient.hasValidationError,
-            createdSessionId = transient.createdSessionId
+            activeWorkoutStarted = transient.activeWorkoutStarted
         )
     }
 
@@ -520,7 +521,7 @@ class AddWorkoutViewModel(
             watchPlanSyncError = local.watchPlanSyncError,
             isSaving = local.isSaving,
             hasValidationError = local.hasValidationError,
-            createdSessionId = local.createdSessionId
+            activeWorkoutStarted = local.activeWorkoutStarted
         )
     }.stateIn(
         scope = viewModelScope,
@@ -944,7 +945,7 @@ class AddWorkoutViewModel(
         }
     }
 
-    fun saveWorkout() {
+    fun startWorkout() {
         viewModelScope.launch {
             val parsedExercises = parseDrafts(exerciseDrafts.value)
             val selectedWorkoutDate = workoutDate.value
@@ -960,13 +961,17 @@ class AddWorkoutViewModel(
             hasValidationError.value = false
 
             runCatching {
-                repository.createWorkoutSession(
+                repository.startActiveWorkout(
                     date = selectedWorkoutDate,
                     note = note.value,
                     workoutExercises = parsedExercises
                 )
-            }.onSuccess { sessionId ->
-                createdSessionId.value = sessionId
+            }.onSuccess { result ->
+                if (result == StartActiveWorkoutResult.Started ||
+                    result == StartActiveWorkoutResult.AlreadyActive
+                ) {
+                    activeWorkoutStarted.value = true
+                }
             }.onFailure {
                 hasValidationError.value = true
             }
@@ -1075,8 +1080,8 @@ class AddWorkoutViewModel(
         }
     }
 
-    fun consumeCreatedSession() {
-        createdSessionId.value = null
+    fun consumeActiveWorkoutStarted() {
+        activeWorkoutStarted.value = false
     }
 
     private fun applyWorkoutTemplate(template: WorkoutSessionDetails) {

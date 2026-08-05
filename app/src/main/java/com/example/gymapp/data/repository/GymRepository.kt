@@ -4,6 +4,10 @@ import androidx.room.withTransaction
 import com.example.gymapp.data.catalog.BuiltInExerciseCatalog
 import com.example.gymapp.data.dao.ExerciseDeletionCascadeRow
 import com.example.gymapp.data.database.GymDatabase
+import com.example.gymapp.data.entity.ActiveWorkoutDetails
+import com.example.gymapp.data.entity.ActiveWorkoutEntity
+import com.example.gymapp.data.entity.ActiveWorkoutExerciseEntity
+import com.example.gymapp.data.entity.ActiveWorkoutSetEntity
 import com.example.gymapp.data.entity.AppMetadataEntity
 import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.entity.ExerciseLoadProfileEntity
@@ -50,6 +54,32 @@ data class WorkoutExerciseDraft(
     val exerciseId: Long,
     val sets: List<WorkoutSetDraft>
 )
+
+enum class StartActiveWorkoutResult {
+    Started,
+    AlreadyActive
+}
+
+sealed interface RecordActiveWorkoutSetResult {
+    data class Recorded(val revision: Long) : RecordActiveWorkoutSetResult
+    data object Missing : RecordActiveWorkoutSetResult
+    data object Stale : RecordActiveWorkoutSetResult
+    data object TargetChanged : RecordActiveWorkoutSetResult
+    data object AlreadyCompleted : RecordActiveWorkoutSetResult
+}
+
+sealed interface FinishActiveWorkoutResult {
+    data class Finished(val sessionId: Long) : FinishActiveWorkoutResult
+    data object Missing : FinishActiveWorkoutResult
+    data object Stale : FinishActiveWorkoutResult
+    data object NoCompletedSets : FinishActiveWorkoutResult
+}
+
+enum class DiscardActiveWorkoutResult {
+    Discarded,
+    Missing,
+    Stale
+}
 
 enum class GarminWorkoutApplyResult {
     Applied,
@@ -205,7 +235,8 @@ data class CloudWorkoutProjectionState internal constructor(
 
 class GymRepository(
     private val database: GymDatabase,
-    private val currentTimeMillis: () -> Long = System::currentTimeMillis
+    private val currentTimeMillis: () -> Long = System::currentTimeMillis,
+    private val stableIdFactory: () -> String = { UUID.randomUUID().toString() }
 ) {
     private val exerciseDao = database.exerciseDao()
     private val exerciseLoadProfileDao = database.exerciseLoadProfileDao()
@@ -214,6 +245,7 @@ class GymRepository(
     private val setDao = database.setDao()
     private val muscleMappingDao = database.muscleMappingDao()
     private val garminWorkoutReceiptDao = database.garminWorkoutReceiptDao()
+    private val activeWorkoutDao = database.activeWorkoutDao()
     private val deletionStoreToken = UUID.randomUUID().toString()
 
     fun observeExercises(): Flow<List<ExerciseEntity>> = exerciseDao.getExercises()
@@ -1212,6 +1244,198 @@ class GymRepository(
         return combine(flows) { entries -> entries.toMap() }
     }
 
+    /**
+     * Active workouts are intentionally local-only. They live in separate Room tables and are
+     * excluded from workout history, backup JSON, cloud projection and wearable contracts until
+     * [finishActiveWorkout] commits only the completed sets to the ordinary history tables.
+     */
+    fun observeActiveWorkout(): Flow<ActiveWorkoutDetails?> =
+        activeWorkoutDao.observe(ACTIVE_WORKOUT_ID).map { details ->
+            details?.sortedActiveWorkout()
+        }
+
+    suspend fun getActiveWorkoutSnapshot(): ActiveWorkoutDetails? =
+        activeWorkoutDao.getSnapshot(ACTIVE_WORKOUT_ID)?.sortedActiveWorkout()
+
+    suspend fun startActiveWorkout(
+        date: Long,
+        note: String?,
+        workoutExercises: List<WorkoutExerciseDraft>
+    ): StartActiveWorkoutResult {
+        requireValidWorkout(date = date, note = note, workoutExercises = workoutExercises)
+        val startedAt = currentTimeMillis()
+        require(WorkoutDataLimits.isValidTimestamp(startedAt)) {
+            "Active workout start timestamp is outside the supported range."
+        }
+
+        return database.withTransaction {
+            if (activeWorkoutDao.getSnapshot(ACTIVE_WORKOUT_ID) != null) {
+                return@withTransaction StartActiveWorkoutResult.AlreadyActive
+            }
+            val exerciseSnapshots = workoutExercises.map { workoutExercise ->
+                requireNotNull(exerciseDao.getById(workoutExercise.exerciseId)) {
+                    "Exercise no longer exists."
+                }
+            }
+
+            val usedIds = hashSetOf<String>()
+            val exerciseRows = workoutExercises.mapIndexed { exerciseIndex, _ ->
+                val exercise = exerciseSnapshots[exerciseIndex]
+                require(WorkoutDataLimits.isValidExerciseName(exercise.name)) {
+                    "Exercise name is outside the supported length."
+                }
+                ActiveWorkoutExerciseEntity(
+                    id = nextStableActiveWorkoutId(usedIds),
+                    activeWorkoutId = ACTIVE_WORKOUT_ID,
+                    exerciseName = exercise.name.trim(),
+                    catalogKey = BuiltInExerciseCatalog.inferKey(exercise.name),
+                    orderIndex = exerciseIndex
+                )
+            }
+            val setRows = workoutExercises.flatMapIndexed { exerciseIndex, workoutExercise ->
+                val activeExerciseId = exerciseRows[exerciseIndex].id
+                workoutExercise.sets.mapIndexed { setIndex, set ->
+                    ActiveWorkoutSetEntity(
+                        id = nextStableActiveWorkoutId(usedIds),
+                        activeWorkoutExerciseId = activeExerciseId,
+                        weight = set.weight,
+                        reps = set.reps,
+                        orderIndex = setIndex,
+                        completedAt = null
+                    )
+                }
+            }
+
+            activeWorkoutDao.insert(
+                ActiveWorkoutEntity(
+                    id = ACTIVE_WORKOUT_ID,
+                    date = date,
+                    note = note?.trim().orEmpty().ifBlank { null },
+                    startedAt = startedAt,
+                    revision = 0L
+                )
+            )
+            activeWorkoutDao.insertExercises(exerciseRows)
+            activeWorkoutDao.insertSets(setRows)
+            StartActiveWorkoutResult.Started
+        }
+    }
+
+    suspend fun recordActiveWorkoutSet(
+        setId: String,
+        expectedRevision: Long,
+        weight: Double,
+        reps: Int
+    ): RecordActiveWorkoutSetResult {
+        require(isStableActiveWorkoutId(setId)) { "Active set identifier is invalid." }
+        require(expectedRevision in 0 until Long.MAX_VALUE) {
+            "Active workout revision is invalid."
+        }
+        requireValidSet(weight = weight, reps = reps)
+        val completedAt = currentTimeMillis()
+        require(WorkoutDataLimits.isValidTimestamp(completedAt)) {
+            "Set completion timestamp is outside the supported range."
+        }
+
+        return database.withTransaction {
+            val details = activeWorkoutDao.getSnapshot(ACTIVE_WORKOUT_ID)
+                ?.sortedActiveWorkout()
+                ?: return@withTransaction RecordActiveWorkoutSetResult.Missing
+            requireValidStoredActiveWorkout(details)
+            if (details.activeWorkout.revision != expectedRevision) {
+                return@withTransaction RecordActiveWorkoutSetResult.Stale
+            }
+            val target = details.exercises.asSequence()
+                .flatMap { exercise -> exercise.sets.asSequence() }
+                .firstOrNull { set -> set.id == setId }
+                ?: return@withTransaction RecordActiveWorkoutSetResult.TargetChanged
+            if (target.completedAt != null) {
+                return@withTransaction RecordActiveWorkoutSetResult.AlreadyCompleted
+            }
+
+            check(
+                activeWorkoutDao.advanceRevision(
+                    activeWorkoutId = ACTIVE_WORKOUT_ID,
+                    expectedRevision = expectedRevision
+                ) == 1
+            ) { "Active workout changed while recording the set." }
+            check(
+                activeWorkoutDao.completeSetIfPending(
+                    setId = setId,
+                    expectedActiveWorkoutExerciseId = target.activeWorkoutExerciseId,
+                    weight = weight,
+                    reps = reps,
+                    completedAt = completedAt
+                ) == 1
+            ) { "Active set changed while recording it." }
+            RecordActiveWorkoutSetResult.Recorded(revision = expectedRevision + 1L)
+        }
+    }
+
+    suspend fun finishActiveWorkout(
+        expectedRevision: Long
+    ): FinishActiveWorkoutResult {
+        require(expectedRevision >= 0L) { "Active workout revision is invalid." }
+        return database.withTransaction {
+            val details = activeWorkoutDao.getSnapshot(ACTIVE_WORKOUT_ID)
+                ?.sortedActiveWorkout()
+                ?: return@withTransaction FinishActiveWorkoutResult.Missing
+            requireValidStoredActiveWorkout(details)
+            if (details.activeWorkout.revision != expectedRevision) {
+                return@withTransaction FinishActiveWorkoutResult.Stale
+            }
+
+            val completedExercises = completedActiveWorkoutDrafts(details)
+            if (completedExercises.isEmpty()) {
+                return@withTransaction FinishActiveWorkoutResult.NoCompletedSets
+            }
+            requireValidWorkout(
+                date = details.activeWorkout.date,
+                note = details.activeWorkout.note,
+                workoutExercises = completedExercises
+            )
+            require(workoutDao.getSessionCount() < WorkoutDataLimits.MAX_SESSIONS) {
+                "This account has reached the workout limit."
+            }
+            val completedSetCount = completedExercises.sumOf { exercise -> exercise.sets.size }
+            require(WorkoutDataLimits.canAddSets(setDao.getTotalSetCount(), completedSetCount)) {
+                "This account has reached the total set limit."
+            }
+
+            val sessionId = insertValidatedWorkoutSession(
+                date = details.activeWorkout.date,
+                note = details.activeWorkout.note,
+                workoutExercises = completedExercises
+            )
+            check(
+                activeWorkoutDao.deleteIfRevisionMatches(
+                    activeWorkoutId = ACTIVE_WORKOUT_ID,
+                    expectedRevision = expectedRevision
+                ) == 1
+            ) { "Active workout changed while finishing it." }
+            FinishActiveWorkoutResult.Finished(sessionId)
+        }
+    }
+
+    suspend fun discardActiveWorkout(
+        expectedRevision: Long
+    ): DiscardActiveWorkoutResult {
+        require(expectedRevision >= 0L) { "Active workout revision is invalid." }
+        return database.withTransaction {
+            val activeWorkout = activeWorkoutDao.getSnapshot(ACTIVE_WORKOUT_ID)
+                ?: return@withTransaction DiscardActiveWorkoutResult.Missing
+            requireValidStoredActiveWorkout(activeWorkout.sortedActiveWorkout())
+            if (activeWorkout.activeWorkout.revision != expectedRevision) {
+                return@withTransaction DiscardActiveWorkoutResult.Stale
+            }
+            if (activeWorkoutDao.deleteIfRevisionMatches(ACTIVE_WORKOUT_ID, expectedRevision) == 1) {
+                DiscardActiveWorkoutResult.Discarded
+            } else {
+                DiscardActiveWorkoutResult.Stale
+            }
+        }
+    }
+
     fun observeWorkoutRecommendations(
         exerciseIds: List<Long>,
         trainingProfile: TrainingProfile,
@@ -1832,6 +2056,129 @@ class GymRepository(
         require(totalSets <= WorkoutDataLimits.MAX_TOTAL_SETS) { "Workout exceeds the total set limit." }
     }
 
+    private fun ActiveWorkoutDetails.sortedActiveWorkout(): ActiveWorkoutDetails = copy(
+        exercises = exercises
+            .sortedBy { exercise -> exercise.activeWorkoutExercise.orderIndex }
+            .map { exercise ->
+                exercise.copy(sets = exercise.sets.sortedBy(ActiveWorkoutSetEntity::orderIndex))
+            }
+    )
+
+    private fun requireValidStoredActiveWorkout(details: ActiveWorkoutDetails) {
+        val activeWorkout = details.activeWorkout
+        require(activeWorkout.id == ACTIVE_WORKOUT_ID) { "Stored active workout identifier is invalid." }
+        require(activeWorkout.revision in 0 until Long.MAX_VALUE) {
+            "Stored active workout revision is invalid."
+        }
+        require(WorkoutDataLimits.isValidTimestamp(activeWorkout.date)) {
+            "Stored active workout date is invalid."
+        }
+        require(WorkoutDataLimits.isValidTimestamp(activeWorkout.startedAt)) {
+            "Stored active workout start timestamp is invalid."
+        }
+        require(WorkoutDataLimits.isValidNote(activeWorkout.note)) {
+            "Stored active workout note is invalid."
+        }
+        require(details.exercises.size in 1..WorkoutDataLimits.MAX_EXERCISES_PER_SESSION) {
+            "Stored active workout exercise count is invalid."
+        }
+
+        val stableIds = hashSetOf<String>()
+        var totalSetCount = 0
+        details.exercises.forEachIndexed { exerciseIndex, exercise ->
+            val activeExercise = exercise.activeWorkoutExercise
+            require(isStableActiveWorkoutId(activeExercise.id) && stableIds.add(activeExercise.id)) {
+                "Stored active workout exercise identifier is invalid."
+            }
+            require(activeExercise.activeWorkoutId == ACTIVE_WORKOUT_ID) {
+                "Stored active workout exercise owner is invalid."
+            }
+            require(WorkoutDataLimits.isValidExerciseName(activeExercise.exerciseName)) {
+                "Stored active workout exercise name is invalid."
+            }
+            require(
+                activeExercise.catalogKey == null ||
+                    activeExercise.catalogKey.length <= WorkoutDataLimits.MAX_CATALOG_KEY_LENGTH
+            ) {
+                "Stored active workout catalog key is invalid."
+            }
+            require(activeExercise.orderIndex == exerciseIndex) {
+                "Stored active workout exercise order is invalid."
+            }
+            require(exercise.sets.size in 1..WorkoutDataLimits.MAX_SETS_PER_EXERCISE) {
+                "Stored active workout set count is invalid."
+            }
+            exercise.sets.forEachIndexed { setIndex, set ->
+                require(isStableActiveWorkoutId(set.id) && stableIds.add(set.id)) {
+                    "Stored active workout set identifier is invalid."
+                }
+                require(set.activeWorkoutExerciseId == activeExercise.id && set.orderIndex == setIndex) {
+                    "Stored active workout set owner or order is invalid."
+                }
+                requireValidSet(weight = set.weight, reps = set.reps)
+                require(
+                    set.completedAt == null || WorkoutDataLimits.isValidTimestamp(set.completedAt)
+                ) { "Stored active workout completion timestamp is invalid." }
+                totalSetCount += 1
+            }
+        }
+        require(totalSetCount in 1..WorkoutDataLimits.MAX_TOTAL_SETS) {
+            "Stored active workout total set count is invalid."
+        }
+    }
+
+    private fun nextStableActiveWorkoutId(usedIds: MutableSet<String>): String {
+        repeat(MAX_ACTIVE_WORKOUT_ID_GENERATION_ATTEMPTS) {
+            val candidate = stableIdFactory()
+            if (isStableActiveWorkoutId(candidate) && usedIds.add(candidate)) {
+                return candidate
+            }
+        }
+        error("Could not generate a unique active workout identifier.")
+    }
+
+    private fun isStableActiveWorkoutId(value: String): Boolean {
+        if (value.length != UUID_STRING_LENGTH) return false
+        return runCatching { UUID.fromString(value).toString() == value }.getOrDefault(false)
+    }
+
+    /** Must only be called inside [database]'s transaction after stored-state validation. */
+    private suspend fun completedActiveWorkoutDrafts(
+        details: ActiveWorkoutDetails
+    ): List<WorkoutExerciseDraft> {
+        val existingExercises = exerciseDao.getExercisesSnapshot()
+        val identityIndex = ExerciseIdentityIndex(existingExercises)
+        var exerciseCount = existingExercises.size
+        val result = mutableListOf<WorkoutExerciseDraft>()
+
+        details.exercises.forEach { activeExerciseDetails ->
+            val completedSets = activeExerciseDetails.sets
+                .filter { set -> set.completedAt != null }
+                .map { set -> WorkoutSetDraft(weight = set.weight, reps = set.reps) }
+            if (completedSets.isEmpty()) return@forEach
+
+            val activeExercise = activeExerciseDetails.activeWorkoutExercise
+            val exerciseId = identityIndex.resolve(
+                name = activeExercise.exerciseName,
+                catalogKey = activeExercise.catalogKey
+            ) ?: run {
+                require(exerciseCount < WorkoutDataLimits.MAX_EXERCISES) {
+                    "This account has reached the exercise limit."
+                }
+                exerciseDao.insert(ExerciseEntity(name = activeExercise.exerciseName)).also { newId ->
+                    identityIndex.add(
+                        id = newId,
+                        name = activeExercise.exerciseName,
+                        catalogKey = activeExercise.catalogKey
+                    )
+                    exerciseCount += 1
+                }
+            }
+            result += WorkoutExerciseDraft(exerciseId = exerciseId, sets = completedSets)
+        }
+        return result
+    }
+
     /** Must only be called inside [database]'s transaction after validation and capacity checks. */
     private suspend fun insertValidatedWorkoutSession(
         date: Long,
@@ -1948,6 +2295,9 @@ class GymRepository(
     }
 
     private companion object {
+        const val ACTIVE_WORKOUT_ID = 1L
+        const val UUID_STRING_LENGTH = 36
+        const val MAX_ACTIVE_WORKOUT_ID_GENERATION_ATTEMPTS = 8
         val GARMIN_OWNER_BINDING_PATTERN = Regex("^[0-9a-f]{64}$")
         val GARMIN_DEVICE_BINDING_PATTERN = Regex("^-?[0-9]{1,19}$")
         val GARMIN_REQUEST_ID_PATTERN = Regex("^[A-Za-z0-9_.:-]{16,128}$")

@@ -84,6 +84,7 @@ fun WorkoutListScreen(
     onMuscleSelected: (String) -> Unit,
     onDeleteSession: (Long) -> Unit,
     onAddWorkout: () -> Unit,
+    hasActiveWorkout: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val listState = rememberLazyListState()
@@ -137,6 +138,7 @@ fun WorkoutListScreen(
             item {
                 FocusLens(
                     stats = uiState.dashboardStats,
+                    hasActiveWorkout = hasActiveWorkout,
                     onStartWorkout = onAddWorkout
                 )
             }
@@ -512,6 +514,7 @@ private fun WorkoutSectionHeader(
 @Composable
 private fun FocusLens(
     stats: DashboardStats,
+    hasActiveWorkout: Boolean,
     onStartWorkout: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -555,7 +558,13 @@ private fun FocusLens(
                 fontWeight = FontWeight.Bold
             )
             Text(
-                text = stringResource(R.string.focus_lens_supporting),
+                text = stringResource(
+                    if (hasActiveWorkout) {
+                        R.string.focus_lens_active_workout_supporting
+                    } else {
+                        R.string.focus_lens_supporting
+                    }
+                ),
                 style = MaterialTheme.typography.bodyMedium,
                 color = Color.White.copy(alpha = 0.84f)
             )
@@ -599,7 +608,13 @@ private fun FocusLens(
             Icon(imageVector = Icons.Default.Add, contentDescription = null)
             Spacer(modifier = Modifier.width(8.dp))
             Text(
-                text = stringResource(R.string.action_start_workout),
+                text = stringResource(
+                    if (hasActiveWorkout) {
+                        R.string.action_continue_workout
+                    } else {
+                        R.string.action_start_workout
+                    }
+                ),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 fontWeight = FontWeight.Bold

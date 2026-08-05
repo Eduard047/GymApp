@@ -409,17 +409,28 @@ private struct MainTabShell: View {
     @ObservedObject var appState: AppState
     @ObservedObject private var auth: AuthService
     @ObservedObject private var store: WorkoutStore
+    @StateObject private var activeWorkoutStore: ActiveWorkoutStore
     @AppStorage("app-language") private var languageCode = AppLanguage.english.rawValue
 
     @State private var selectedTab: Tab
     @State private var workoutPath: [WorkoutRoute] = []
     @State private var missionPath: [MissionRoute] = []
     @State private var showsAddWorkout = false
+    @State private var showsActiveWorkout = false
 
     init(appState: AppState) {
         self.appState = appState
         self.auth = appState.auth
-        self.store = appState.workoutStore
+        let currentStore = appState.workoutStore
+        self.store = currentStore
+        let activeStore = ActiveWorkoutStore(
+            accountStorageKey: currentStore.accountStorageKey,
+            workoutStorageURL: currentStore.storageURL
+        )
+        try? activeStore.rebindExercises(to: currentStore)
+        _activeWorkoutStore = StateObject(
+            wrappedValue: activeStore
+        )
         let requested = ProcessInfo.processInfo.arguments
             .first(where: { $0.hasPrefix("--screenshot-tab=") })?
             .split(separator: "=", maxSplits: 1)
@@ -465,6 +476,14 @@ private struct MainTabShell: View {
             NavigationStack {
                 AddWorkoutView(
                     appState: appState,
+                    activeWorkoutStore: activeWorkoutStore,
+                    onStarted: { _ in
+                        showsAddWorkout = false
+                        Task { @MainActor in
+                            try? await Task.sleep(for: .milliseconds(180))
+                            showsActiveWorkout = true
+                        }
+                    },
                     onSaved: { workoutID in
                         showsAddWorkout = false
                         Task { @MainActor in
@@ -478,6 +497,108 @@ private struct MainTabShell: View {
             .environmentObject(appState)
             .environmentObject(auth)
             .environmentObject(store)
+        }
+        .fullScreenCover(isPresented: $showsActiveWorkout) {
+            NavigationStack {
+                if let activeDraft = activeWorkoutStore.draft {
+                    ActiveWorkoutView(
+                        workoutStore: store,
+                        activeWorkoutStore: activeWorkoutStore,
+                        restTimers: appState.restTimers,
+                        draftID: activeDraft.id,
+                        onFinished: { workoutID in
+                            showsActiveWorkout = false
+                            selectedTab = .workouts
+                            Task { @MainActor in
+                                try? await Task.sleep(for: .milliseconds(180))
+                                workoutPath.removeAll()
+                                workoutPath.append(.summary(workoutID))
+                            }
+                        },
+                        onClose: { showsActiveWorkout = false },
+                        onDiscarded: { showsActiveWorkout = false },
+                        onStatus: { message, isError in
+                            appState.show(message: message, isError: isError)
+                        }
+                    )
+                } else {
+                    GymBackground {
+                        GymContentUnavailableView {
+                            Label(
+                                gymText(
+                                    "No active workout",
+                                    "Немає активного тренування",
+                                    "Нет активной тренировки",
+                                    languageCode: languageCode
+                                ),
+                                systemImage: "figure.strengthtraining.traditional"
+                            )
+                        } description: {
+                            Button(
+                                gymText(
+                                    "Close",
+                                    "Закрити",
+                                    "Закрыть",
+                                    languageCode: languageCode
+                                )
+                            ) {
+                                showsActiveWorkout = false
+                            }
+                        }
+                    }
+                }
+            }
+            .environmentObject(appState)
+            .environmentObject(auth)
+            .environmentObject(store)
+        }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if let activeDraft = activeWorkoutStore.draft, !showsActiveWorkout {
+                Button {
+                    showsAddWorkout = false
+                    showsActiveWorkout = true
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "play.circle.fill")
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(
+                                gymText(
+                                    "Workout in progress",
+                                    "Тренування триває",
+                                    "Тренировка идёт",
+                                    languageCode: languageCode
+                                )
+                            )
+                            .font(.subheadline.bold())
+                            Text("\(activeDraft.completedSetCount) / \(activeDraft.plannedSetCount)")
+                                .font(.caption.monospacedDigit())
+                        }
+                        Spacer(minLength: 8)
+                        Text(
+                            gymText(
+                                "Resume",
+                                "Продовжити",
+                                "Продолжить",
+                                languageCode: languageCode
+                            )
+                        )
+                        .font(.subheadline.bold())
+                    }
+                    .padding(.horizontal, 16)
+                    .frame(maxWidth: .infinity, minHeight: 58)
+                    .background(.regularMaterial)
+                    .overlay(alignment: .bottom) { Divider() }
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint(
+                    gymText(
+                        "Opens the saved active workout",
+                        "Відкриває збережене активне тренування",
+                        "Открывает сохранённую активную тренировку",
+                        languageCode: languageCode
+                    )
+                )
+            }
         }
         .overlay(alignment: .top) {
             if let message = appState.statusMessage {
@@ -495,13 +616,35 @@ private struct MainTabShell: View {
                 .accessibilityHint(gymText("Double tap to dismiss", "Торкнися двічі, щоб закрити", languageCode: languageCode))
             }
         }
+        .task {
+            if activeWorkoutStore.recoveryMessage != nil {
+                appState.show(
+                    message: gymText(
+                        "Active workout storage could not be opened safely. Existing progress was not exposed or overwritten.",
+                        "Сховище активного тренування не вдалося безпечно відкрити. Наявний прогрес не розкрито й не перезаписано.",
+                        "Хранилище активной тренировки не удалось безопасно открыть. Имеющийся прогресс не раскрыт и не перезаписан.",
+                        languageCode: languageCode
+                    ),
+                    isError: true
+                )
+            }
+            if activeWorkoutStore.draft != nil {
+                showsActiveWorkout = true
+            }
+        }
     }
 
     private var workoutsTab: some View {
         NavigationStack(path: $workoutPath) {
             WorkoutsView(
                 store: store,
-                onAddWorkout: { showsAddWorkout = true },
+                onAddWorkout: {
+                    if activeWorkoutStore.draft != nil {
+                        showsActiveWorkout = true
+                    } else {
+                        showsAddWorkout = true
+                    }
+                },
                 onOpenWorkout: { workoutPath.append(.detail($0)) },
                 onOpenRanks: { workoutPath.append(.ranks) }
             )

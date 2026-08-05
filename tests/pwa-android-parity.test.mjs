@@ -12,7 +12,7 @@ const garminCloudSource = await readFile(
   "utf8"
 );
 const appSources = await Promise.all(
-  ["app.js", "app.v68.js"].map(async filename => ({
+  ["app.js", "app.v69.js"].map(async filename => ({
     filename,
     source: await readFile(new URL(`../pwa/${filename}`, import.meta.url), "utf8")
   }))
@@ -113,11 +113,13 @@ test("current PWA parity bundle remains byte-identical", () => {
   assert.equal(appSources[1].source, appSources[0].source);
 });
 
-test("PWA distinguishes planned draft rows from logged rest-timed sets", () => {
+test("PWA distinguishes planned rows from durable active and history sets", () => {
   assert.match(appSources[0].source, /data-action="add-set"[^>]*>\$\{t\("addPlannedSet"\)\}<\/button>/);
   assert.match(appSources[0].source, /data-action="detail-add-set"[^>]*>\$\{t\("logSetAndRest"\)\}<\/button>/);
-  assert.match(appSources[0].source, /data-action="save-workout"[^>]*>[\s\S]*?t\("saveCompletedWorkout"\)/);
-  assert.match(appSources[0].source, /Saving as completed records every row in history and opens the summary/);
+  assert.match(appSources[0].source, /data-action="start-workout"[^>]*>[\s\S]*?tx\("Start workout"/);
+  assert.match(appSources[0].source, /data-action="record-active-set"/);
+  assert.match(appSources[0].source, /Only recorded sets will be added to workout history/);
+  assert.doesNotMatch(appSources[0].source, /data-action="save-workout"[^>]*>[\s\S]*?t\("saveCompletedWorkout"\)/);
 });
 
 for (const { filename, source } of appSources) {

@@ -521,6 +521,10 @@ func gymSafeEnglishErrorMessage(_ error: Error) -> String {
         }
     }
 
+    if let activeWorkoutError = error as? ActiveWorkoutStoreError {
+        return activeWorkoutError.errorDescription ?? gymGenericErrorMessage
+    }
+
     return gymGenericErrorMessage
 }
 

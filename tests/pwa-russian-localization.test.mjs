@@ -111,6 +111,20 @@ test("PWA Russian dictionary covers every static runtime label", () => {
   assert.equal(vm.runInContext('n(12, "saved session", "saved sessions", "збережене тренування", "збережені тренування", "збережених тренувань")', context), "12 сохранённых тренировок");
 });
 
+test("active workout lifecycle keeps explicit Russian start, record, finish, and discard copy", () => {
+  const context = loadPwaContext();
+  const cases = new Map([
+    ["Continue workout", "Продолжить тренировку"],
+    ["Record set", "Записать подход"],
+    ["Set recorded, but the rest timer could not be saved.", "Подход записан, но таймер отдыха сохранить не удалось."],
+    ["Finish workout", "Завершить тренировку"],
+    ["Discard active workout?", "Отменить активную тренировку?"]
+  ]);
+  for (const [english, russian] of cases) {
+    assert.equal(context.window.GymRussianText.translate(english), russian, english);
+  }
+});
+
 test("audited Ukrainian runtime labels keep their intended workout, progress, auth, and Garmin meaning", () => {
   const context = loadPwaContext();
   const topLevelText = JSON.parse(vm.runInContext("JSON.stringify(text)", context));

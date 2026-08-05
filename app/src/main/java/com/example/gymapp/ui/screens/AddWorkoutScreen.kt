@@ -132,7 +132,7 @@ fun AddWorkoutScreen(
     onCloseTemplatePicker: () -> Unit,
     onCopyWorkoutTemplate: (Long) -> Unit,
     onSyncPlanToWatch: () -> Unit,
-    onSaveWorkout: () -> Unit,
+    onStartWorkout: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -464,12 +464,12 @@ fun AddWorkoutScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
-                    text = stringResource(R.string.add_workout_completed_mode_hint),
+                    text = stringResource(R.string.add_workout_active_mode_hint),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Button(
-                    onClick = onSaveWorkout,
+                    onClick = onStartWorkout,
                     modifier = Modifier.fillMaxWidth(),
                     enabled = !uiState.isSaving
                 ) {
@@ -482,7 +482,7 @@ fun AddWorkoutScreen(
                             color = MaterialTheme.colorScheme.onPrimary
                         )
                     }
-                    Text(text = stringResource(R.string.action_save_completed_workout))
+                    Text(text = stringResource(R.string.action_start_workout))
                 }
             }
         }

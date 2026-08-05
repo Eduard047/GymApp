@@ -15,7 +15,7 @@ function placeholders(value) {
 }
 
 test("Android Russian resources cover every English string with compatible placeholders", async () => {
-  const [englishSource, ukrainianSource, russianSource, manager, navigation, dynamic, workoutDetail, addWorkout] = await Promise.all([
+  const [englishSource, ukrainianSource, russianSource, manager, navigation, dynamic, workoutDetail, addWorkout, activeWorkout] = await Promise.all([
     readFile("app/src/main/res/values/strings.xml", "utf8"),
     readFile("app/src/main/res/values-uk/strings.xml", "utf8"),
     readFile("app/src/main/res/values-ru/strings.xml", "utf8"),
@@ -23,7 +23,8 @@ test("Android Russian resources cover every English string with compatible place
     readFile("app/src/main/java/com/example/gymapp/navigation/GymNavGraph.kt", "utf8"),
     readFile("app/src/main/java/com/example/gymapp/util/RussianText.kt", "utf8"),
     readFile("app/src/main/java/com/example/gymapp/ui/screens/WorkoutDetailScreen.kt", "utf8"),
-    readFile("app/src/main/java/com/example/gymapp/ui/screens/AddWorkoutScreen.kt", "utf8")
+    readFile("app/src/main/java/com/example/gymapp/ui/screens/AddWorkoutScreen.kt", "utf8"),
+    readFile("app/src/main/java/com/example/gymapp/ui/screens/ActiveWorkoutScreen.kt", "utf8")
   ]);
   const english = androidStrings(englishSource);
   const ukrainian = androidStrings(ukrainianSource);
@@ -44,14 +45,17 @@ test("Android Russian resources cover every English string with compatible place
   assert.equal(english.get("action_add_planned_set"), "Add planned set");
   assert.equal(ukrainian.get("action_add_planned_set"), "Додати запланований підхід");
   assert.equal(russian.get("action_add_planned_set"), "Добавить запланированный подход");
-  assert.equal(english.get("action_save_completed_workout"), "Save as completed workout");
-  assert.equal(russian.get("action_save_completed_workout"), "Сохранить как выполненную тренировку");
+  assert.equal(english.get("action_start_workout"), "Start workout");
+  assert.equal(russian.get("action_start_workout"), "Начать тренировку");
   assert.match(english.get("add_workout_plan_mode_hint"), /targets sent to Garmin/);
-  assert.match(english.get("add_workout_completed_mode_hint"), /immediately to workout history and summary/);
+  assert.match(english.get("add_workout_active_mode_hint"), /durable local plan/);
+  assert.match(english.get("active_workout_supporting"), /saved before the 90-second rest starts/);
   assert.match(addWorkout, /R\.string\.action_add_planned_set/);
-  assert.match(addWorkout, /R\.string\.action_save_completed_workout/);
+  assert.match(addWorkout, /R\.string\.action_start_workout/);
   assert.match(addWorkout, /R\.string\.add_workout_plan_mode_hint/);
-  assert.match(addWorkout, /R\.string\.add_workout_completed_mode_hint/);
+  assert.match(addWorkout, /R\.string\.add_workout_active_mode_hint/);
+  assert.match(activeWorkout, /R\.string\.action_log_set_and_rest/);
+  assert.match(activeWorkout, /R\.string\.active_workout_finish_supporting/);
   assert.equal(english.get("garmin_set_intervals_title"), "Chronological watch sets");
   assert.equal(ukrainian.get("garmin_watch_set_label"), "Підхід з годинника S%1$d");
   assert.equal(russian.get("garmin_watch_set_label"), "Подход с часов S%1$d");
@@ -96,7 +100,8 @@ test("iOS String Catalog has Russian values for every key and preserves format p
   assert.match(addWorkout, /Label\("Save as completed workout"/);
   assert.match(addWorkout, /Planned rows are targets\. They do not start rest timers/);
   assert.match(addWorkout, /Garmin plan mode: after saving, every planned row is sent/);
-  assert.match(addWorkout, /Completed mode: saving immediately adds every planned row/);
+  assert.match(addWorkout, /Completed mode remains available for workouts you already finished/);
+  assert.match(addWorkout, /Adds every planned row to history and summaries as completed/);
 });
 
 test("PWA accepts Russian state and renders Russian runtime text before app startup", async () => {
@@ -225,8 +230,8 @@ test("PWA accepts Russian state and renders Russian runtime text before app star
   assert.match(appSource, /tx\("metrics parsed from the saved note", "показники прочитано зі збереженої нотатки"\)/);
   assert.match(appSource, /txAttr\("Name in English, Ukrainian, or Russian", "Назва англійською, українською або російською"\)/);
   assert.doesNotMatch(appSource, /Name in English, Ukrainian or Russian/);
-  assert.ok(indexSource.indexOf("russian-text.v68.js") < indexSource.indexOf("app.v68.js"));
-  assert.match(workerSource, /"\.\/russian-text\.v68\.js"/);
+  assert.ok(indexSource.indexOf("russian-text.v69.js") < indexSource.indexOf("app.v69.js"));
+  assert.match(workerSource, /"\.\/russian-text\.v69\.js"/);
 });
 
 test("runtime language switches invalidate cached labels on every client", async () => {

@@ -1,0 +1,694 @@
+import Foundation
+import XCTest
+@testable import GymApp
+
+@MainActor
+final class ActiveWorkoutStoreTests: XCTestCase {
+    func testStartAndRecordPersistStableDraftAcrossRelaunch() throws {
+        let context = try makeContext(account: "active-relaunch")
+        let startedAt = Date(timeIntervalSince1970: 1_800_000_000)
+        let blockID = UUID()
+        let setID = UUID()
+        let started = try context.active.start(
+            workoutDate: startedAt,
+            note: "  Local progress  ",
+            exercises: [
+                ActiveWorkoutExercise(
+                    id: blockID,
+                    exerciseID: context.exercise.id,
+                    sets: [ActiveWorkoutSet(id: setID, weight: 82.5, reps: 8)]
+                )
+            ],
+            workoutStore: context.history,
+            now: startedAt
+        )
+
+        XCTAssertEqual(started.note, "Local progress")
+        XCTAssertEqual(started.exercises.first?.id, blockID)
+        XCTAssertEqual(started.exercises.first?.sets.first?.id, setID)
+        XCTAssertFalse(try XCTUnwrap(started.exercises.first?.sets.first).isCompleted)
+
+        let recorded = try context.active.recordSet(
+            draftID: started.id,
+            setID: setID,
+            expectedRevision: started.revision,
+            now: startedAt.addingTimeInterval(45)
+        )
+        XCTAssertEqual(recorded.revision, 1)
+        XCTAssertTrue(try XCTUnwrap(recorded.exercises.first?.sets.first).isCompleted)
+        let storageValues = try context.active.storageURL.resourceValues(
+            forKeys: [.isExcludedFromBackupKey]
+        )
+        XCTAssertEqual(storageValues.isExcludedFromBackup, true)
+
+        let reopened = ActiveWorkoutStore(
+            accountStorageKey: context.history.accountStorageKey,
+            workoutStorageURL: context.history.storageURL
+        )
+        XCTAssertEqual(reopened.draft, recorded)
+        XCTAssertNil(reopened.recoveryMessage)
+        XCTAssertTrue(context.history.workouts.isEmpty)
+    }
+
+    func testStaleRevisionIsRejectedWithoutMutatingRecordedSet() throws {
+        let context = try makeContext(account: "active-stale")
+        let startedAt = Date(timeIntervalSince1970: 1_800_000_100)
+        let setID = UUID()
+        let started = try startSingleSet(
+            context,
+            setID: setID,
+            weight: 40,
+            reps: 12,
+            now: startedAt
+        )
+        let recorded = try context.active.recordSet(
+            draftID: started.id,
+            setID: setID,
+            expectedRevision: started.revision,
+            now: startedAt.addingTimeInterval(30)
+        )
+
+        XCTAssertThrowsError(
+            try context.active.updateSet(
+                draftID: started.id,
+                setID: setID,
+                weight: 999,
+                reps: 1,
+                expectedRevision: started.revision,
+                now: startedAt.addingTimeInterval(31)
+            )
+        ) { error in
+            XCTAssertEqual(error as? ActiveWorkoutStoreError, .staleDraft)
+        }
+        XCTAssertEqual(context.active.draft, recorded)
+
+        let reopened = ActiveWorkoutStore(
+            accountStorageKey: context.history.accountStorageKey,
+            workoutStorageURL: context.history.storageURL
+        )
+        XCTAssertEqual(reopened.draft, recorded)
+    }
+
+    func testFinishKeepsOnlyCompletedSetsAndClearsLocalDraft() throws {
+        let context = try makeContext(account: "active-finish")
+        let startedAt = Date(timeIntervalSince1970: 1_800_000_200)
+        let blockID = UUID()
+        let completedSetID = UUID()
+        let plannedSetID = UUID()
+        let started = try context.active.start(
+            workoutDate: startedAt,
+            note: "Partial session",
+            exercises: [
+                ActiveWorkoutExercise(
+                    id: blockID,
+                    exerciseID: context.exercise.id,
+                    exerciseName: context.exercise.name,
+                    exerciseCatalogKey: context.exercise.catalogKey,
+                    sets: [
+                        ActiveWorkoutSet(id: completedSetID, weight: 100, reps: 5),
+                        ActiveWorkoutSet(id: plannedSetID, weight: 105, reps: 3)
+                    ]
+                )
+            ],
+            workoutStore: context.history,
+            now: startedAt
+        )
+        let recorded = try context.active.recordSet(
+            draftID: started.id,
+            setID: completedSetID,
+            expectedRevision: started.revision,
+            now: startedAt.addingTimeInterval(20)
+        )
+
+        let completed = try context.active.finish(
+            draftID: recorded.id,
+            expectedRevision: recorded.revision,
+            into: context.history
+        )
+
+        XCTAssertEqual(completed.id, recorded.id)
+        XCTAssertEqual(completed.exercises.first?.id, blockID)
+        XCTAssertEqual(completed.exercises.first?.sets.map(\.id), [completedSetID])
+        XCTAssertFalse(completed.exercises.first?.sets.contains(where: { $0.id == plannedSetID }) ?? true)
+        XCTAssertEqual(context.history.workouts, [completed])
+        XCTAssertNil(context.active.draft)
+
+        let reopened = ActiveWorkoutStore(
+            accountStorageKey: context.history.accountStorageKey,
+            workoutStorageURL: context.history.storageURL
+        )
+        XCTAssertNil(reopened.draft)
+    }
+
+    func testRepeatedExerciseBlocksRemainValidAndFinishSeparately() throws {
+        let context = try makeContext(account: "active-repeated-exercise")
+        let startedAt = Date(timeIntervalSince1970: 1_800_000_300)
+        let firstSetID = UUID()
+        let secondSetID = UUID()
+        let started = try context.active.start(
+            workoutDate: startedAt,
+            note: nil,
+            exercises: [
+                ActiveWorkoutExercise(
+                    exerciseID: context.exercise.id,
+                    exerciseName: context.exercise.name,
+                    exerciseCatalogKey: context.exercise.catalogKey,
+                    sets: [ActiveWorkoutSet(id: firstSetID, weight: 60, reps: 8)]
+                ),
+                ActiveWorkoutExercise(
+                    exerciseID: context.exercise.id,
+                    exerciseName: context.exercise.name,
+                    exerciseCatalogKey: context.exercise.catalogKey,
+                    sets: [ActiveWorkoutSet(id: secondSetID, weight: 55, reps: 10)]
+                )
+            ],
+            workoutStore: context.history,
+            now: startedAt
+        )
+        let firstRecorded = try context.active.recordSet(
+            draftID: started.id,
+            setID: firstSetID,
+            expectedRevision: started.revision,
+            now: startedAt.addingTimeInterval(10)
+        )
+        let secondRecorded = try context.active.recordSet(
+            draftID: started.id,
+            setID: secondSetID,
+            expectedRevision: firstRecorded.revision,
+            now: startedAt.addingTimeInterval(20)
+        )
+        let completed = try context.active.finish(
+            draftID: started.id,
+            expectedRevision: secondRecorded.revision,
+            into: context.history
+        )
+
+        XCTAssertEqual(completed.exercises.count, 2)
+        XCTAssertEqual(completed.exercises.map(\.exerciseID), [context.exercise.id, context.exercise.id])
+    }
+
+    func testSecondStartAndFinishWithoutCompletedSetsFailWithoutSideEffects() throws {
+        let context = try makeContext(account: "active-singleton")
+        let startedAt = Date(timeIntervalSince1970: 1_800_000_350)
+        let setID = UUID()
+        let started = try startSingleSet(
+            context,
+            setID: setID,
+            weight: 45,
+            reps: 8,
+            now: startedAt
+        )
+
+        XCTAssertThrowsError(
+            try context.active.start(
+                workoutDate: startedAt,
+                note: nil,
+                exercises: [
+                    ActiveWorkoutExercise(
+                        exerciseID: context.exercise.id,
+                        sets: [ActiveWorkoutSet(weight: 50, reps: 5)]
+                    )
+                ],
+                workoutStore: context.history,
+                now: startedAt
+            )
+        ) { error in
+            XCTAssertEqual(error as? ActiveWorkoutStoreError, .alreadyActive)
+        }
+        XCTAssertThrowsError(
+            try context.active.finish(
+                draftID: started.id,
+                expectedRevision: started.revision,
+                into: context.history
+            )
+        ) { error in
+            XCTAssertEqual(error as? ActiveWorkoutStoreError, .noCompletedSets)
+        }
+        XCTAssertEqual(context.active.draft, started)
+        XCTAssertTrue(context.history.workouts.isEmpty)
+    }
+
+    func testDiscardClearsDraftWithoutCreatingHistory() throws {
+        let context = try makeContext(account: "active-discard")
+        let startedAt = Date(timeIntervalSince1970: 1_800_000_375)
+        let setID = UUID()
+        let started = try startSingleSet(
+            context,
+            setID: setID,
+            weight: 35,
+            reps: 10,
+            now: startedAt
+        )
+        let recorded = try context.active.recordSet(
+            draftID: started.id,
+            setID: setID,
+            expectedRevision: started.revision,
+            now: startedAt.addingTimeInterval(30)
+        )
+
+        try context.active.discard(
+            draftID: recorded.id,
+            expectedRevision: recorded.revision
+        )
+
+        XCTAssertNil(context.active.draft)
+        XCTAssertTrue(context.history.workouts.isEmpty)
+        let reopened = ActiveWorkoutStore(
+            accountStorageKey: context.history.accountStorageKey,
+            workoutStorageURL: context.history.storageURL
+        )
+        XCTAssertNil(reopened.draft)
+    }
+
+    func testFinishRetryAfterHistoryWriteIsIdempotent() throws {
+        let context = try makeContext(account: "active-finish-retry")
+        let startedAt = Date(timeIntervalSince1970: 1_800_000_390)
+        let blockID = UUID()
+        let setID = UUID()
+        let started = try context.active.start(
+            workoutDate: startedAt,
+            note: "Retry",
+            exercises: [
+                ActiveWorkoutExercise(
+                    id: blockID,
+                    exerciseID: context.exercise.id,
+                    exerciseName: context.exercise.name,
+                    exerciseCatalogKey: context.exercise.catalogKey,
+                    sets: [ActiveWorkoutSet(id: setID, weight: 70, reps: 6)]
+                )
+            ],
+            workoutStore: context.history,
+            now: startedAt
+        )
+        let recorded = try context.active.recordSet(
+            draftID: started.id,
+            setID: setID,
+            expectedRevision: started.revision,
+            now: startedAt.addingTimeInterval(20)
+        )
+        let expectedWorkout = try context.history.commitActiveWorkout(
+            ActiveWorkoutCommitIntent(
+                workoutID: recorded.id,
+                workoutDate: recorded.workoutDate,
+                note: recorded.note,
+                preparedAt: startedAt.addingTimeInterval(25),
+                exercises: [
+                    ActiveWorkoutCommitExercise(
+                        id: blockID,
+                        preferredExerciseID: context.exercise.id,
+                        exerciseName: context.exercise.name,
+                        exerciseCatalogKey: context.exercise.catalogKey,
+                        sets: [WorkoutSet(id: setID, weight: 70, reps: 6)]
+                    )
+                ]
+            ),
+            expectedAccountStorageKey: context.history.accountStorageKey
+        )
+
+        let retried = try context.active.finish(
+            draftID: recorded.id,
+            expectedRevision: recorded.revision,
+            into: context.history
+        )
+
+        XCTAssertEqual(retried, expectedWorkout)
+        XCTAssertEqual(context.history.workouts, [expectedWorkout])
+        XCTAssertNil(context.active.draft)
+    }
+
+    func testFinishAtomicallyRestoresExerciseDeletedAfterWorkoutStarted() throws {
+        let context = try makeContext(account: "active-finish-restores-exercise")
+        let startedAt = Date(timeIntervalSince1970: 1_800_000_392)
+        let setID = UUID()
+        let started = try context.active.start(
+            workoutDate: startedAt,
+            note: "Deleted exercise recovery",
+            exercises: [
+                ActiveWorkoutExercise(
+                    exerciseID: context.exercise.id,
+                    exerciseName: context.exercise.name,
+                    exerciseCatalogKey: context.exercise.catalogKey,
+                    sets: [ActiveWorkoutSet(id: setID, weight: 72.5, reps: 7)]
+                )
+            ],
+            workoutStore: context.history,
+            now: startedAt
+        )
+        let recorded = try context.active.recordSet(
+            draftID: started.id,
+            setID: setID,
+            expectedRevision: started.revision,
+            now: startedAt.addingTimeInterval(30)
+        )
+        try context.history.deleteExercise(id: context.exercise.id)
+        XCTAssertNil(context.history.exercise(id: context.exercise.id))
+
+        let completed = try context.active.finish(
+            draftID: recorded.id,
+            expectedRevision: recorded.revision,
+            into: context.history,
+            now: startedAt.addingTimeInterval(40)
+        )
+
+        XCTAssertEqual(completed.exercises.first?.exerciseID, context.exercise.id)
+        XCTAssertEqual(context.history.exercise(id: context.exercise.id)?.name, context.exercise.name)
+        XCTAssertEqual(context.history.workouts, [completed])
+        XCTAssertNil(context.active.draft)
+    }
+
+    func testCleanupFailureLocksCommitAgainstMutationAndRetryDoesNotDuplicate() throws {
+        var activeWriteCount = 0
+        let context = try makeContext(
+            account: "active-locked-cleanup-retry",
+            envelopeWriter: { data, url in
+                activeWriteCount += 1
+                if activeWriteCount == 4 {
+                    throw InjectedFailure.cleanupWrite
+                }
+                try data.write(
+                    to: url,
+                    options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication]
+                )
+            }
+        )
+        let startedAt = Date(timeIntervalSince1970: 1_800_000_394)
+        let completedSetID = UUID()
+        let pendingSetID = UUID()
+        let started = try context.active.start(
+            workoutDate: startedAt,
+            note: "Locked completion",
+            exercises: [
+                ActiveWorkoutExercise(
+                    exerciseID: context.exercise.id,
+                    exerciseName: context.exercise.name,
+                    exerciseCatalogKey: context.exercise.catalogKey,
+                    sets: [
+                        ActiveWorkoutSet(id: completedSetID, weight: 80, reps: 6),
+                        ActiveWorkoutSet(id: pendingSetID, weight: 82.5, reps: 5)
+                    ]
+                )
+            ],
+            workoutStore: context.history,
+            now: startedAt
+        )
+        let recorded = try context.active.recordSet(
+            draftID: started.id,
+            setID: completedSetID,
+            expectedRevision: started.revision,
+            now: startedAt.addingTimeInterval(20)
+        )
+
+        XCTAssertThrowsError(
+            try context.active.finish(
+                draftID: recorded.id,
+                expectedRevision: recorded.revision,
+                into: context.history,
+                now: startedAt.addingTimeInterval(30)
+            )
+        ) { error in
+            XCTAssertEqual(error as? ActiveWorkoutStoreError, .storageUnavailable)
+        }
+        let locked = try XCTUnwrap(context.active.draft)
+        XCTAssertNotNil(locked.commitIntent)
+        XCTAssertEqual(context.history.workouts.count, 1)
+        XCTAssertEqual(context.history.workouts.first?.exercises.first?.sets.map(\.id), [completedSetID])
+
+        XCTAssertThrowsError(
+            try context.active.recordSet(
+                draftID: locked.id,
+                setID: pendingSetID,
+                expectedRevision: locked.revision,
+                now: startedAt.addingTimeInterval(31)
+            )
+        ) { error in
+            XCTAssertEqual(error as? ActiveWorkoutStoreError, .workoutFinishing)
+        }
+        XCTAssertEqual(context.active.draft, locked)
+        XCTAssertEqual(context.history.workouts.count, 1)
+
+        let reopened = ActiveWorkoutStore(
+            accountStorageKey: context.history.accountStorageKey,
+            workoutStorageURL: context.history.storageURL
+        )
+        let reopenedDraft = try XCTUnwrap(reopened.draft)
+        XCTAssertNotNil(reopenedDraft.commitIntent)
+        let retried = try reopened.finish(
+            draftID: reopenedDraft.id,
+            expectedRevision: reopenedDraft.revision,
+            into: context.history,
+            now: startedAt.addingTimeInterval(40)
+        )
+        XCTAssertEqual(retried, context.history.workouts.first)
+        XCTAssertEqual(context.history.workouts.count, 1)
+        XCTAssertNil(reopened.draft)
+    }
+
+    func testExerciseIdentityRebindSurvivesAuthoritativeUUIDReplacement() throws {
+        let context = try makeContext(account: "active-rebind")
+        let startedAt = Date(timeIntervalSince1970: 1_800_000_395)
+        let setID = UUID()
+        let started = try context.active.start(
+            workoutDate: startedAt,
+            note: nil,
+            exercises: [
+                ActiveWorkoutExercise(
+                    exerciseID: context.exercise.id,
+                    exerciseName: context.exercise.name,
+                    exerciseCatalogKey: context.exercise.catalogKey,
+                    sets: [ActiveWorkoutSet(id: setID, weight: 65, reps: 8)]
+                )
+            ],
+            workoutStore: context.history,
+            now: startedAt
+        )
+        try context.history.clearAllData()
+        let replacement = try context.history.addExercise(name: context.exercise.name)
+        XCTAssertNotEqual(replacement.id, context.exercise.id)
+
+        try context.active.rebindExercises(
+            to: context.history,
+            now: startedAt.addingTimeInterval(10)
+        )
+        let rebound = try XCTUnwrap(context.active.draft)
+        XCTAssertEqual(rebound.id, started.id)
+        XCTAssertEqual(rebound.exercises.first?.exerciseID, replacement.id)
+        XCTAssertEqual(rebound.revision, started.revision + 1)
+
+        let recorded = try context.active.recordSet(
+            draftID: rebound.id,
+            setID: setID,
+            expectedRevision: rebound.revision,
+            now: startedAt.addingTimeInterval(20)
+        )
+        let completed = try context.active.finish(
+            draftID: recorded.id,
+            expectedRevision: recorded.revision,
+            into: context.history
+        )
+        XCTAssertEqual(completed.exercises.first?.exerciseID, replacement.id)
+    }
+
+    func testActiveDraftIsAbsentFromBackupUntilFinish() throws {
+        let context = try makeContext(account: "active-backup")
+        let startedAt = Date(timeIntervalSince1970: 1_800_000_400)
+        _ = try startSingleSet(
+            context,
+            setID: UUID(),
+            weight: 30,
+            reps: 10,
+            now: startedAt
+        )
+
+        let backupData = try context.history.exportBackupData(
+            owner: BackupOwner(accountID: context.history.accountStorageKey, remote: false)
+        )
+        let backup = try JSONDecoder().decode(GymBackup.self, from: backupData)
+        XCTAssertTrue(backup.sessions.isEmpty)
+        XCTAssertTrue(context.history.workouts.isEmpty)
+        XCTAssertNotNil(context.active.draft)
+    }
+
+    func testWrongAccountEnvelopeIsQuarantinedWithoutExposure() throws {
+        let directory = try temporaryDirectory()
+        let accountA = try WorkoutStore(accountStorageKey: "active-account-a", directoryURL: directory)
+        let exercise = try accountA.addExercise(name: "Account Isolation Press")
+        let activeA = ActiveWorkoutStore(
+            accountStorageKey: accountA.accountStorageKey,
+            workoutStorageURL: accountA.storageURL
+        )
+        _ = try activeA.start(
+            workoutDate: Date(timeIntervalSince1970: 1_800_000_500),
+            note: "Private A",
+            exercises: [
+                ActiveWorkoutExercise(
+                    exerciseID: exercise.id,
+                    sets: [ActiveWorkoutSet(weight: 50, reps: 8)]
+                )
+            ],
+            workoutStore: accountA,
+            now: Date(timeIntervalSince1970: 1_800_000_500)
+        )
+
+        let accountB = try WorkoutStore(accountStorageKey: "active-account-b", directoryURL: directory)
+        let accountBActiveURL = ActiveWorkoutStore.storageURL(
+            forWorkoutStorageURL: accountB.storageURL
+        )
+        try FileManager.default.copyItem(at: activeA.storageURL, to: accountBActiveURL)
+        let activeB = ActiveWorkoutStore(
+            accountStorageKey: accountB.accountStorageKey,
+            workoutStorageURL: accountB.storageURL
+        )
+
+        XCTAssertNil(activeB.draft)
+        XCTAssertNotNil(activeB.recoveryMessage)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: accountBActiveURL.path))
+        XCTAssertNotNil(activeA.draft)
+        let quarantined = try FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil
+        ).filter { $0.lastPathComponent.contains("active-workout.recovery-") }
+        XCTAssertEqual(quarantined.count, 1)
+    }
+
+    func testOutOfRangeWeightIsRejectedDuringBoundedLoad() throws {
+        let context = try makeContext(account: "active-malformed")
+        let startedAt = Date(timeIntervalSince1970: 1_800_000_600)
+        _ = try startSingleSet(
+            context,
+            setID: UUID(),
+            weight: 20,
+            reps: 10,
+            now: startedAt
+        )
+
+        let data = try Data(contentsOf: context.active.storageURL)
+        var root = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: data) as? [String: Any]
+        )
+        var draft = try XCTUnwrap(root["draft"] as? [String: Any])
+        var exercises = try XCTUnwrap(draft["exercises"] as? [[String: Any]])
+        var firstExercise = try XCTUnwrap(exercises.first)
+        var sets = try XCTUnwrap(firstExercise["sets"] as? [[String: Any]])
+        sets[0]["weight"] = 1_000_001
+        firstExercise["sets"] = sets
+        exercises[0] = firstExercise
+        draft["exercises"] = exercises
+        root["draft"] = draft
+        try JSONSerialization.data(withJSONObject: root).write(
+            to: context.active.storageURL,
+            options: .atomic
+        )
+
+        let reopened = ActiveWorkoutStore(
+            accountStorageKey: context.history.accountStorageKey,
+            workoutStorageURL: context.history.storageURL
+        )
+        XCTAssertNil(reopened.draft)
+        XCTAssertNotNil(reopened.recoveryMessage)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: context.active.storageURL.path))
+    }
+
+    func testExcessiveJSONNestingIsRejectedBeforeTypedDecode() throws {
+        let context = try makeContext(account: "active-nesting")
+        let prefix = "{\"schemaVersion\":1,\"accountStorageKey\":\"active-nesting\",\"savedAt\":0,\"draft\":null,\"unknown\":"
+        let nested = String(repeating: "{\"value\":", count: 20) +
+            "0" + String(repeating: "}", count: 20)
+        let payload = try XCTUnwrap((prefix + nested + "}").data(using: .utf8))
+        try payload.write(to: context.active.storageURL, options: .atomic)
+
+        let reopened = ActiveWorkoutStore(
+            accountStorageKey: context.history.accountStorageKey,
+            workoutStorageURL: context.history.storageURL
+        )
+        XCTAssertNil(reopened.draft)
+        XCTAssertNotNil(reopened.recoveryMessage)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: context.active.storageURL.path))
+    }
+
+    func testAccountFileCleanupAlsoRemovesActiveDraft() throws {
+        let context = try makeContext(account: "active-cleanup")
+        _ = try startSingleSet(
+            context,
+            setID: UUID(),
+            weight: 25,
+            reps: 15,
+            now: Date(timeIntervalSince1970: 1_800_000_700)
+        )
+        XCTAssertTrue(FileManager.default.fileExists(atPath: context.active.storageURL.path))
+
+        try WorkoutStore.destroyAccountFiles(
+            accountStorageKey: context.history.accountStorageKey,
+            directoryURL: context.directory
+        )
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: context.history.storageURL.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: context.active.storageURL.path))
+    }
+
+    private struct Context {
+        let directory: URL
+        let history: WorkoutStore
+        let active: ActiveWorkoutStore
+        let exercise: Exercise
+    }
+
+    private enum InjectedFailure: Error {
+        case cleanupWrite
+    }
+
+    private func makeContext(
+        account: String,
+        envelopeWriter: ((Data, URL) throws -> Void)? = nil
+    ) throws -> Context {
+        let directory = try temporaryDirectory()
+        let history = try WorkoutStore(
+            accountStorageKey: account,
+            directoryURL: directory
+        )
+        let exercise = try history.addExercise(name: "Active Test Exercise \(UUID().uuidString)")
+        let active = ActiveWorkoutStore(
+            accountStorageKey: history.accountStorageKey,
+            workoutStorageURL: history.storageURL,
+            envelopeWriter: envelopeWriter
+        )
+        return Context(
+            directory: directory,
+            history: history,
+            active: active,
+            exercise: exercise
+        )
+    }
+
+    private func startSingleSet(
+        _ context: Context,
+        setID: UUID,
+        weight: Double,
+        reps: Int,
+        now: Date
+    ) throws -> ActiveWorkoutDraft {
+        try context.active.start(
+            workoutDate: now,
+            note: nil,
+            exercises: [
+                ActiveWorkoutExercise(
+                    exerciseID: context.exercise.id,
+                    exerciseName: context.exercise.name,
+                    exerciseCatalogKey: context.exercise.catalogKey,
+                    sets: [ActiveWorkoutSet(id: setID, weight: weight, reps: reps)]
+                )
+            ],
+            workoutStore: context.history,
+            now: now
+        )
+    }
+
+    private func temporaryDirectory() throws -> URL {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("GymApp-active-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: url)
+        }
+        return url
+    }
+}

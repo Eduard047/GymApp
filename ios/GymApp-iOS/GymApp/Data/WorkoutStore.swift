@@ -410,7 +410,8 @@ public final class WorkoutStore: ObservableObject {
         }
     }
 
-    /// Removes the primary envelope and recovery copies for exactly one account.
+    /// Removes the primary envelope, its active-workout companion, and recovery copies
+    /// for exactly one account.
     /// This does not decode the envelope, so deletion can still finish after corruption.
     public static func destroyAccountFiles(
         accountStorageKey: String,
@@ -424,7 +425,12 @@ public final class WorkoutStore: ObservableObject {
         let primaryURL = fileURL(for: key, in: directory)
         let primaryStem = primaryURL.deletingPathExtension().lastPathComponent
         let recoveryPrefix = "\(primaryStem).recovery-"
-        var candidates = [primaryURL]
+        let activeWorkoutURL = ActiveWorkoutStore.storageURL(
+            forWorkoutStorageURL: primaryURL
+        )
+        let activeWorkoutStem = activeWorkoutURL.deletingPathExtension().lastPathComponent
+        let activeWorkoutRecoveryPrefix = "\(activeWorkoutStem).recovery-"
+        var candidates = [primaryURL, activeWorkoutURL]
         do {
             let children = try fileManager.contentsOfDirectory(
                 at: directory,
@@ -433,10 +439,16 @@ public final class WorkoutStore: ObservableObject {
             )
             candidates.append(contentsOf: children.filter { child in
                 let name = child.lastPathComponent
-                guard name.hasPrefix(recoveryPrefix), name.hasSuffix(".json") else {
+                let matchedPrefix: String
+                if name.hasPrefix(recoveryPrefix) {
+                    matchedPrefix = recoveryPrefix
+                } else if name.hasPrefix(activeWorkoutRecoveryPrefix) {
+                    matchedPrefix = activeWorkoutRecoveryPrefix
+                } else {
                     return false
                 }
-                let start = name.index(name.startIndex, offsetBy: recoveryPrefix.count)
+                guard name.hasSuffix(".json") else { return false }
+                let start = name.index(name.startIndex, offsetBy: matchedPrefix.count)
                 let end = name.index(name.endIndex, offsetBy: -".json".count)
                 return UUID(uuidString: String(name[start ..< end])) != nil
             })
@@ -715,6 +727,83 @@ public final class WorkoutStore: ObservableObject {
             }
             state.workouts.removeAll { $0.id == id }
         }
+    }
+
+    /// Atomically restores any exercise identities needed by a frozen local completion
+    /// intent and inserts its workout. A retry accepts only history that matches the
+    /// immutable block/set payload and the same exercise identities.
+    @discardableResult
+    func commitActiveWorkout(
+        _ intent: ActiveWorkoutCommitIntent,
+        expectedAccountStorageKey: String
+    ) throws -> WorkoutSession {
+        guard expectedAccountStorageKey == accountStorageKey else {
+            throw WorkoutStoreError.storageAccountMismatch
+        }
+        try Self.validateActiveWorkoutCommit(intent)
+
+        var storedWorkout: WorkoutSession?
+        try mutate { state in
+            if let existing = state.workouts.first(where: { $0.id == intent.workoutID }) {
+                guard Self.workout(existing, matches: intent, exercises: state.exercises) else {
+                    throw WorkoutStoreError.invalidWorkout(
+                        "Existing history does not match the committed active workout."
+                    )
+                }
+                storedWorkout = existing
+                return
+            }
+
+            let limits = BackupImportLimits.standard
+            guard state.workouts.count < limits.maximumSessions else {
+                throw WorkoutStoreError.importLimitExceeded("session count")
+            }
+            let existingSetCount = state.workouts.reduce(0) { count, workout in
+                count + workout.setCount
+            }
+            let committedSetCount = intent.exercises.reduce(0) { $0 + $1.sets.count }
+            guard existingSetCount <= limits.maximumTotalSets - committedSetCount else {
+                throw WorkoutStoreError.importLimitExceeded("set count")
+            }
+
+            var resolvedExerciseIDs: [UUID: UUID] = [:]
+            for committedExercise in intent.exercises {
+                resolvedExerciseIDs[committedExercise.id] = try Self.resolveOrRestoreExercise(
+                    for: committedExercise,
+                    in: &state
+                )
+            }
+            var completedBlocks: [WorkoutExercise] = []
+            completedBlocks.reserveCapacity(intent.exercises.count)
+            for committedExercise in intent.exercises {
+                guard let resolvedExerciseID = resolvedExerciseIDs[committedExercise.id] else {
+                    throw WorkoutStoreError.persistenceFailure(
+                        "The active workout exercise resolution was incomplete."
+                    )
+                }
+                completedBlocks.append(
+                    WorkoutExercise(
+                        id: committedExercise.id,
+                        exerciseID: resolvedExerciseID,
+                        sets: committedExercise.sets
+                    )
+                )
+            }
+            let workout = WorkoutSession(
+                id: intent.workoutID,
+                date: intent.workoutDate,
+                note: intent.note,
+                exercises: completedBlocks
+            )
+            state.workouts.append(workout)
+            storedWorkout = workout
+        }
+        guard let storedWorkout else {
+            throw WorkoutStoreError.persistenceFailure(
+                "The committed active workout was not stored."
+            )
+        }
+        return storedWorkout
     }
 
     public func workout(id: UUID) -> WorkoutSession? {
@@ -3337,6 +3426,142 @@ public final class WorkoutStore: ObservableObject {
             catalogKey: existing.catalogKey,
             name: existing.name
         ) == candidateKey
+    }
+
+    private static func validateActiveWorkoutCommit(
+        _ intent: ActiveWorkoutCommitIntent
+    ) throws {
+        let limits = BackupImportLimits.standard
+        _ = try validatedTimestamp(intent.workoutDate, field: "session timestamp")
+        _ = try validatedTimestamp(intent.preparedAt, field: "completion timestamp")
+        guard try validatedNote(intent.note) == intent.note,
+              !intent.exercises.isEmpty,
+              intent.exercises.count <= limits.maximumExercisesPerSession,
+              Set(intent.exercises.map(\.id)).count == intent.exercises.count else {
+            throw WorkoutStoreError.invalidWorkout("Invalid active workout completion intent.")
+        }
+
+        var setIDs = Set<UUID>()
+        var totalSets = 0
+        for committedExercise in intent.exercises {
+            let cleanedName = try validatedExerciseName(committedExercise.exerciseName)
+            guard cleanedName == committedExercise.exerciseName,
+                  !committedExercise.sets.isEmpty,
+                  committedExercise.sets.count <= limits.maximumSetsPerExercise else {
+                throw WorkoutStoreError.invalidWorkout("Invalid active workout exercise snapshot.")
+            }
+            if let catalogKey = committedExercise.exerciseCatalogKey {
+                guard catalogKey == catalogKey.gymTrimmed,
+                      utf8Length(of: catalogKey, isAtMost: maximumCatalogKeyBytes),
+                      let definition = BuiltInExerciseCatalog.definition(forKey: catalogKey),
+                      BuiltInExerciseCatalog.canonicalKey(forName: cleanedName) == definition.key else {
+                    throw WorkoutStoreError.invalidWorkout("Invalid active workout catalog identity.")
+                }
+            }
+            totalSets += committedExercise.sets.count
+            guard totalSets <= limits.maximumTotalSets else {
+                throw WorkoutStoreError.importLimitExceeded("set count")
+            }
+            for set in committedExercise.sets {
+                guard setIDs.insert(set.id).inserted else {
+                    throw WorkoutStoreError.invalidWorkout("Duplicate active workout set identifier.")
+                }
+                try validate(weight: set.weight, reps: set.reps)
+            }
+        }
+    }
+
+    private static func resolveOrRestoreExercise(
+        for committedExercise: ActiveWorkoutCommitExercise,
+        in state: inout WorkoutDataSnapshot
+    ) throws -> UUID {
+        if let preferred = state.exercises.first(where: {
+            $0.id == committedExercise.preferredExerciseID
+        }), activeExercise(preferred, matches: committedExercise) {
+            return preferred.id
+        }
+
+        let matchingExercises = state.exercises.filter {
+            activeExercise($0, matches: committedExercise)
+        }
+        guard matchingExercises.count <= 1 else {
+            throw WorkoutStoreError.invalidWorkout(
+                "The active workout exercise identity is ambiguous."
+            )
+        }
+        if let matchingExercise = matchingExercises.first {
+            return matchingExercise.id
+        }
+        guard !state.exercises.contains(where: {
+            $0.id == committedExercise.preferredExerciseID
+        }) else {
+            throw WorkoutStoreError.invalidWorkout(
+                "The active workout exercise identifier is already in use."
+            )
+        }
+        guard state.exercises.count < BackupImportLimits.standard.maximumExercises else {
+            throw WorkoutStoreError.importLimitExceeded("exercise count")
+        }
+        guard !state.exercises.contains(where: {
+            exerciseIdentityConflicts($0, candidateName: committedExercise.exerciseName)
+        }) else {
+            throw WorkoutStoreError.duplicateExerciseName
+        }
+
+        let restored = Exercise(
+            id: committedExercise.preferredExerciseID,
+            name: committedExercise.exerciseName,
+            catalogKey: committedExercise.exerciseCatalogKey
+        )
+        guard activeExercise(restored, matches: committedExercise) else {
+            throw WorkoutStoreError.invalidWorkout(
+                "The active workout exercise snapshot could not be restored."
+            )
+        }
+        state.exercises.append(restored)
+        return restored.id
+    }
+
+    private static func activeExercise(
+        _ exercise: Exercise,
+        matches committedExercise: ActiveWorkoutCommitExercise
+    ) -> Bool {
+        if let expectedKey = BuiltInExerciseCatalog.canonicalKey(
+            forName: committedExercise.exerciseName
+        ) {
+            return BuiltInExerciseCatalog.resolvedKey(
+                catalogKey: exercise.catalogKey,
+                name: exercise.name
+            ) == expectedKey
+        }
+        return namesEqual(exercise.name, committedExercise.exerciseName)
+    }
+
+    private static func workout(
+        _ workout: WorkoutSession,
+        matches intent: ActiveWorkoutCommitIntent,
+        exercises: [Exercise]
+    ) -> Bool {
+        guard workout.id == intent.workoutID,
+              workout.date == intent.workoutDate,
+              workout.note == intent.note,
+              workout.exercises.count == intent.exercises.count else {
+            return false
+        }
+        let committedByBlockID = Dictionary(
+            uniqueKeysWithValues: intent.exercises.map { ($0.id, $0) }
+        )
+        for block in workout.exercises {
+            guard let committedExercise = committedByBlockID[block.id],
+                  block.sets == committedExercise.sets,
+                  let storedExercise = exercises.first(where: {
+                      $0.id == block.exerciseID
+                  }),
+                  activeExercise(storedExercise, matches: committedExercise) else {
+                return false
+            }
+        }
+        return true
     }
 
     private static func nameKey(_ value: String) -> String {

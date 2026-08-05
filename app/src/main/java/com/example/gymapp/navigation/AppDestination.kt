@@ -51,6 +51,12 @@ sealed class AppDestination(
         icon = Icons.Default.FitnessCenter
     )
 
+    data object ActiveWorkout : AppDestination(
+        route = "active_workout",
+        labelRes = R.string.active_workout_title,
+        icon = Icons.Default.FitnessCenter
+    )
+
     data object Ranks : AppDestination(
         route = "ranks",
         labelRes = R.string.title_ranks,

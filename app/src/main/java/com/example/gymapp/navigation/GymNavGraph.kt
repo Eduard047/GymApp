@@ -79,6 +79,7 @@ import com.example.gymapp.data.repository.canonicalWorkoutPayloadDigest
 import com.example.gymapp.gymApplication
 import com.example.gymapp.data.repository.GymRepository
 import com.example.gymapp.ui.screens.AddWorkoutScreen
+import com.example.gymapp.ui.screens.ActiveWorkoutScreen
 import com.example.gymapp.ui.screens.AppIntroSplash
 import com.example.gymapp.ui.screens.AuthScreen
 import com.example.gymapp.ui.screens.CloudSyncConflictDialog
@@ -93,6 +94,7 @@ import com.example.gymapp.ui.screens.PasswordUpdateScreen
 import com.example.gymapp.ui.screens.WorkoutDetailScreen
 import com.example.gymapp.ui.screens.WorkoutListScreen
 import com.example.gymapp.ui.viewmodel.AddWorkoutViewModel
+import com.example.gymapp.ui.viewmodel.ActiveWorkoutViewModel
 import com.example.gymapp.ui.viewmodel.ExerciseListViewModel
 import com.example.gymapp.ui.viewmodel.ExerciseProgressViewModel
 import com.example.gymapp.ui.viewmodel.PostWorkoutSummaryViewModel
@@ -230,6 +232,7 @@ fun GymAppRoot(
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
     val repository = remember(uiIsolationKey) { repositoryProvider(authState.session) }
+    val activeWorkout by repository.observeActiveWorkout().collectAsState(initial = null)
     val coroutineScope = key(uiIsolationKey) { rememberCoroutineScope() }
     val accountDeletionScope = rememberCoroutineScope()
     val applicationContext = LocalContext.current.applicationContext
@@ -681,6 +684,7 @@ fun GymAppRoot(
         currentRoute == AppDestination.Profile.route -> R.string.title_profile
         currentRoute == AppDestination.Ranks.route -> R.string.title_ranks
         currentRoute == AppDestination.AddWorkout.route -> R.string.title_add_workout
+        currentRoute == AppDestination.ActiveWorkout.route -> R.string.active_workout_title
         currentRoute?.startsWith("workout_detail/") == true -> R.string.title_workout_detail
         currentRoute?.startsWith("post_workout_summary/") == true -> R.string.title_post_workout_summary
         else -> R.string.app_name
@@ -1035,8 +1039,15 @@ fun GymAppRoot(
                                 onMuscleSelected = viewModel::selectMuscle,
                                 onDeleteSession = viewModel::deleteSession,
                                 onAddWorkout = {
-                                    navController.navigate(AppDestination.AddWorkout.route)
+                                    navController.navigate(
+                                        if (activeWorkout == null) {
+                                            AppDestination.AddWorkout.route
+                                        } else {
+                                            AppDestination.ActiveWorkout.route
+                                        }
+                                    )
                                 },
+                                hasActiveWorkout = activeWorkout != null,
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
@@ -1083,15 +1094,14 @@ fun GymAppRoot(
                             val uiState by viewModel.uiState.collectAsState()
                             val smartCoachPlanNote = stringResource(R.string.smart_coach_plan_note)
 
-                            LaunchedEffect(uiState.createdSessionId) {
-                                val createdSessionId = uiState.createdSessionId
-                                if (createdSessionId != null) {
-                                    navController.navigate(AppDestination.postWorkoutSummaryRoute(createdSessionId)) {
+                            LaunchedEffect(uiState.activeWorkoutStarted) {
+                                if (uiState.activeWorkoutStarted) {
+                                    navController.navigate(AppDestination.ActiveWorkout.route) {
                                         popUpTo(AppDestination.AddWorkout.route) {
                                             inclusive = true
                                         }
                                     }
-                                    viewModel.consumeCreatedSession()
+                                    viewModel.consumeActiveWorkoutStarted()
                                 }
                             }
 
@@ -1126,7 +1136,57 @@ fun GymAppRoot(
                                 onCloseTemplatePicker = viewModel::closeWorkoutTemplatePicker,
                                 onCopyWorkoutTemplate = viewModel::copyWorkoutTemplate,
                                 onSyncPlanToWatch = viewModel::syncPlanToWatch,
-                                onSaveWorkout = viewModel::saveWorkout,
+                                onStartWorkout = viewModel::startWorkout,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+
+                        composable(route = AppDestination.ActiveWorkout.route) {
+                            val viewModel: ActiveWorkoutViewModel = viewModel(
+                                factory = ActiveWorkoutViewModel.factory(
+                                    repository = repository,
+                                    restTimerController = restTimerController
+                                )
+                            )
+                            val uiState by viewModel.uiState.collectAsState()
+
+                            LaunchedEffect(
+                                uiState.finishedSessionId,
+                                uiState.wasDiscarded,
+                                uiState.isMissing
+                            ) {
+                                val finishedSessionId = uiState.finishedSessionId
+                                when {
+                                    finishedSessionId != null -> {
+                                        navController.navigate(
+                                            AppDestination.postWorkoutSummaryRoute(finishedSessionId)
+                                        ) {
+                                            popUpTo(AppDestination.ActiveWorkout.route) {
+                                                inclusive = true
+                                            }
+                                        }
+                                        viewModel.consumeNavigation()
+                                    }
+                                    uiState.wasDiscarded || uiState.isMissing -> {
+                                        navController.navigate(AppDestination.Workouts.route) {
+                                            popUpTo(AppDestination.ActiveWorkout.route) {
+                                                inclusive = true
+                                            }
+                                            launchSingleTop = true
+                                        }
+                                        viewModel.consumeNavigation()
+                                    }
+                                }
+                            }
+
+                            ActiveWorkoutScreen(
+                                uiState = uiState,
+                                onSetWeightChanged = viewModel::updateSetWeight,
+                                onSetRepsChanged = viewModel::updateSetReps,
+                                onRecordSet = viewModel::recordSet,
+                                onFinishWorkout = viewModel::finishWorkout,
+                                onDiscardWorkout = viewModel::discardWorkout,
+                                onDismissMessage = viewModel::dismissMessage,
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
