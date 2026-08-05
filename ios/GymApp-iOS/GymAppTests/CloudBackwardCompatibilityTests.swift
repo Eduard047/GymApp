@@ -15,11 +15,30 @@ final class CloudBackwardCompatibilityTests: XCTestCase {
         )
         let store = try WorkoutStore(accountStorageKey: accountID, directoryURL: directory)
         XCTAssertEqual(try store.seedBuiltInExercises(), BuiltInExerciseCatalog.definitions.count)
+        let machine = try store.addExercise(
+            name: "Compatibility Machine",
+            machineLoadProfile: try MachineLoadProfile(
+                direction: .higherIsHarder,
+                allowedWeightsKg: [10, 20, 30]
+            )
+        )
+        _ = try store.createWorkout(
+            date: Date(timeIntervalSince1970: 1_750_000_000),
+            exercises: [
+                WorkoutExerciseDraft(
+                    exerciseID: machine.id,
+                    sets: [WorkoutSetDraft(weight: 20, reps: 8)]
+                )
+            ]
+        )
 
         let localRoot = try jsonObject(store.exportBackupData(owner: owner))
         XCTAssertEqual(localRoot["catalogSeedVersion"] as? Int, BuiltInExerciseCatalog.seedVersion)
 
-        let cloudData = try store.exportCloudBackupData(owner: owner)
+        let cloudData = try store.exportCloudBackupData(
+            owner: owner,
+            extensionsData: Data(#"{"pwa":{"language":"uk"}}"#.utf8)
+        )
         let cloudRoot = try jsonObject(cloudData)
         XCTAssertEqual(
             Set(cloudRoot.keys),
@@ -35,6 +54,28 @@ final class CloudBackwardCompatibilityTests: XCTestCase {
             ])
         )
         XCTAssertNil(cloudRoot["catalogSeedVersion"])
+        XCTAssertNil(cloudRoot["extensions"])
+
+        let cloudExercises = try XCTUnwrap(cloudRoot["exercises"] as? [[String: Any]])
+        XCTAssertTrue(cloudExercises.allSatisfy {
+            Set($0.keys).isSubset(of: ["name", "catalogKey"]) && $0["loadProfile"] == nil
+        })
+        let cloudSessions = try XCTUnwrap(cloudRoot["sessions"] as? [[String: Any]])
+        let cloudBlocks = try XCTUnwrap(cloudSessions.first?["exercises"] as? [[String: Any]])
+        XCTAssertTrue(cloudBlocks.allSatisfy {
+            Set($0.keys).isSubset(of: ["name", "catalogKey", "sets"]) &&
+                $0["loadProfile"] == nil
+        })
+        let cloudSets = try XCTUnwrap(cloudBlocks.first?["sets"] as? [[String: Any]])
+        XCTAssertTrue(cloudSets.allSatisfy {
+            Set($0.keys) == Set(["weight", "reps"])
+        })
+
+        _ = try store.restoreBackup(data: cloudData, activeOwner: owner)
+        XCTAssertEqual(
+            store.exercise(named: "Compatibility Machine")?.machineLoadProfile,
+            machine.machineLoadProfile
+        )
 
         // A new reader still accepts the optional marker emitted by an earlier development
         // build, while its next cloud write returns to the legacy public shape.

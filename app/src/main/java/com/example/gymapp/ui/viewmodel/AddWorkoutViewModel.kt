@@ -108,6 +108,15 @@ internal fun smartWorkoutRecommendationPolicy(
     )
 }
 
+internal fun smartWorkoutPlanNeedsRefresh(
+    selectedEffort: SmartWorkoutEffort,
+    currentProfile: TrainingProfile,
+    generatedPlan: SmartWorkoutPlanSummaryUiModel?
+): Boolean = generatedPlan != null && (
+    generatedPlan.requestedEffort != selectedEffort ||
+        generatedPlan.trainingProfileSnapshot != currentProfile
+    )
+
 internal fun resolveWorkoutDateSelection(
     currentTimestamp: Long,
     selectedEpochDay: Long,
@@ -173,6 +182,7 @@ data class AddWorkoutUiState(
     val trainingProfile: TrainingProfile = TrainingProfile(),
     val smartWorkoutEffort: SmartWorkoutEffort = SmartWorkoutEffort.Auto,
     val generatedSmartPlan: SmartWorkoutPlanSummaryUiModel? = null,
+    val generatedSmartPlanNeedsRefresh: Boolean = false,
     val smartAlternativePicker: SmartWorkoutAlternativePickerUiState? = null,
     val canRepeatFromLast: Boolean = false,
     val workoutTemplates: List<WorkoutTemplatePreviewUiModel> = emptyList(),
@@ -511,6 +521,11 @@ class AddWorkoutViewModel(
             trainingProfile = local.trainingProfile,
             smartWorkoutEffort = local.smartWorkoutEffort,
             generatedSmartPlan = local.generatedSmartPlan,
+            generatedSmartPlanNeedsRefresh = smartWorkoutPlanNeedsRefresh(
+                selectedEffort = local.smartWorkoutEffort,
+                currentProfile = local.trainingProfile,
+                generatedPlan = local.generatedSmartPlan
+            ),
             smartAlternativePicker = local.smartAlternativePicker,
             canRepeatFromLast = templates.isNotEmpty(),
             workoutTemplates = templates,
@@ -554,28 +569,24 @@ class AddWorkoutViewModel(
 
     fun updateTrainingSplit(split: TrainingSplit) {
         resetWatchPlanSyncResult()
-        generatedSmartPlan.value = null
         smartAlternativePicker.value = null
         trainingProfileManager.updateSplit(split)
     }
 
     fun updateWorkoutsPerWeek(value: Int) {
         resetWatchPlanSyncResult()
-        generatedSmartPlan.value = null
         smartAlternativePicker.value = null
         trainingProfileManager.updateWorkoutsPerWeek(value)
     }
 
     fun updateTrainingGoal(goal: TrainingGoal) {
         resetWatchPlanSyncResult()
-        generatedSmartPlan.value = null
         smartAlternativePicker.value = null
         trainingProfileManager.updateGoal(goal)
     }
 
     fun updateCalorieMode(mode: CalorieMode) {
         resetWatchPlanSyncResult()
-        generatedSmartPlan.value = null
         smartAlternativePicker.value = null
         trainingProfileManager.updateCalorieMode(mode)
     }
@@ -583,7 +594,6 @@ class AddWorkoutViewModel(
     fun updateSmartWorkoutEffort(effort: SmartWorkoutEffort) {
         resetWatchPlanSyncResult()
         smartWorkoutEffort.value = effort
-        generatedSmartPlan.value = null
         smartAlternativePicker.value = null
     }
 

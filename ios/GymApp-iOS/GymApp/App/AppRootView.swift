@@ -417,6 +417,7 @@ private struct MainTabShell: View {
     @State private var missionPath: [MissionRoute] = []
     @State private var showsAddWorkout = false
     @State private var showsActiveWorkout = false
+    @State private var showingActiveDraftDiscardConfirmation = false
 
     init(appState: AppState) {
         self.appState = appState
@@ -553,11 +554,28 @@ private struct MainTabShell: View {
             .environmentObject(store)
         }
         .safeAreaInset(edge: .top, spacing: 0) {
-            if let activeDraft = activeWorkoutStore.draft, !showsActiveWorkout {
-                Button {
-                    showsAddWorkout = false
-                    showsActiveWorkout = true
-                } label: {
+            VStack(spacing: 0) {
+                if let message = appState.statusMessage {
+                    Button {
+                        withAnimation { appState.clearStatus() }
+                    } label: {
+                        GymStatusBanner(message: message, isError: appState.statusIsError)
+                            .frame(maxWidth: 560)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 6)
+                    .background(.ultraThinMaterial)
+                    .accessibilityHint(
+                        gymText(
+                            "Double tap to dismiss",
+                            "Торкнися двічі, щоб закрити",
+                            languageCode: languageCode
+                        )
+                    )
+                }
+
+                if let activeDraft = activeWorkoutStore.draft, !showsActiveWorkout {
                     HStack(spacing: 10) {
                         Image(systemName: "play.circle.fill")
                         VStack(alignment: .leading, spacing: 2) {
@@ -574,47 +592,71 @@ private struct MainTabShell: View {
                                 .font(.caption.monospacedDigit())
                         }
                         Spacer(minLength: 8)
-                        Text(
+                        Button {
+                            showsAddWorkout = false
+                            showsActiveWorkout = true
+                        } label: {
+                            Text(
+                                gymText(
+                                    "Continue",
+                                    "Продовжити",
+                                    "Продолжить",
+                                    languageCode: languageCode
+                                )
+                            )
+                            .font(.subheadline.bold())
+                        }
+                        .buttonStyle(.borderedProminent)
+                        Button(role: .destructive) {
+                            showingActiveDraftDiscardConfirmation = true
+                        } label: {
+                            Image(systemName: "xmark")
+                                .frame(width: 32, height: 32)
+                        }
+                        .buttonStyle(.bordered)
+                        .accessibilityLabel(
                             gymText(
-                                "Resume",
-                                "Продовжити",
-                                "Продолжить",
+                                "Discard active workout",
+                                "Відкинути активне тренування",
+                                "Удалить активную тренировку",
                                 languageCode: languageCode
                             )
                         )
-                        .font(.subheadline.bold())
                     }
                     .padding(.horizontal, 16)
                     .frame(maxWidth: .infinity, minHeight: 58)
                     .background(.regularMaterial)
                     .overlay(alignment: .bottom) { Divider() }
                 }
-                .buttonStyle(.plain)
-                .accessibilityHint(
-                    gymText(
-                        "Opens the saved active workout",
-                        "Відкриває збережене активне тренування",
-                        "Открывает сохранённую активную тренировку",
-                        languageCode: languageCode
-                    )
-                )
             }
         }
-        .overlay(alignment: .top) {
-            if let message = appState.statusMessage {
-                Button {
-                    withAnimation { appState.clearStatus() }
-                } label: {
-                    GymStatusBanner(message: message, isError: appState.statusIsError)
-                        .frame(maxWidth: 560)
-                }
-                .buttonStyle(.plain)
-                .padding(.horizontal, 14)
-                .padding(.top, 6)
-                .transition(.move(edge: .top).combined(with: .opacity))
-                .zIndex(10)
-                .accessibilityHint(gymText("Double tap to dismiss", "Торкнися двічі, щоб закрити", languageCode: languageCode))
-            }
+        .alert(
+            gymText(
+                "Discard active workout?",
+                "Відкинути активне тренування?",
+                "Удалить активную тренировку?",
+                languageCode: languageCode
+            ),
+            isPresented: $showingActiveDraftDiscardConfirmation
+        ) {
+            Button(
+                gymText("Discard", "Відкинути", "Удалить", languageCode: languageCode),
+                role: .destructive,
+                action: discardActiveDraft
+            )
+            Button(
+                gymText("Cancel", "Скасувати", "Отмена", languageCode: languageCode),
+                role: .cancel
+            ) {}
+        } message: {
+            Text(
+                gymText(
+                    "Recorded and planned sets in this active draft will be removed.",
+                    "Записані й заплановані підходи цієї чернетки буде видалено.",
+                    "Записанные и запланированные подходы этого черновика будут удалены.",
+                    languageCode: languageCode
+                )
+            )
         }
         .task {
             if activeWorkoutStore.recoveryMessage != nil {
@@ -628,9 +670,30 @@ private struct MainTabShell: View {
                     isError: true
                 )
             }
-            if activeWorkoutStore.draft != nil {
-                showsActiveWorkout = true
-            }
+        }
+    }
+
+    private func discardActiveDraft() {
+        guard let draft = activeWorkoutStore.draft else { return }
+        do {
+            try activeWorkoutStore.discard(
+                draftID: draft.id,
+                expectedRevision: draft.revision
+            )
+            appState.restTimers.cancel(
+                id: "active-workout-\(draft.id.uuidString)-rest"
+            )
+            appState.show(
+                message: gymText(
+                    "Active workout discarded.",
+                    "Активне тренування відкинуто.",
+                    "Активная тренировка удалена.",
+                    languageCode: languageCode
+                ),
+                isError: false
+            )
+        } catch {
+            appState.show(message: gymErrorMessage(error), isError: true)
         }
     }
 

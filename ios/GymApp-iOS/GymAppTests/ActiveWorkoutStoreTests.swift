@@ -36,6 +36,7 @@ final class ActiveWorkoutStoreTests: XCTestCase {
         )
         XCTAssertEqual(recorded.revision, 1)
         XCTAssertTrue(try XCTUnwrap(recorded.exercises.first?.sets.first).isCompleted)
+        XCTAssertEqual(recorded.undoableSetID, setID)
         let storageValues = try context.active.storageURL.resourceValues(
             forKeys: [.isExcludedFromBackupKey]
         )
@@ -87,6 +88,76 @@ final class ActiveWorkoutStoreTests: XCTestCase {
             workoutStorageURL: context.history.storageURL
         )
         XCTAssertEqual(reopened.draft, recorded)
+    }
+
+    func testUndoRestoresOnlyLatestRecordedSetAndKeepsValues() throws {
+        let context = try makeContext(account: "active-undo-latest")
+        let startedAt = Date(timeIntervalSince1970: 1_800_000_150)
+        let firstSetID = UUID()
+        let secondSetID = UUID()
+        let started = try context.active.start(
+            workoutDate: startedAt,
+            note: nil,
+            exercises: [
+                ActiveWorkoutExercise(
+                    exerciseID: context.exercise.id,
+                    sets: [
+                        ActiveWorkoutSet(id: firstSetID, weight: 80, reps: 8),
+                        ActiveWorkoutSet(id: secondSetID, weight: 82.5, reps: 7)
+                    ]
+                )
+            ],
+            workoutStore: context.history,
+            now: startedAt
+        )
+        let first = try context.active.recordSet(
+            draftID: started.id,
+            setID: firstSetID,
+            expectedRevision: started.revision,
+            now: startedAt.addingTimeInterval(10)
+        )
+        let second = try context.active.recordSet(
+            draftID: started.id,
+            setID: secondSetID,
+            expectedRevision: first.revision,
+            now: startedAt.addingTimeInterval(20)
+        )
+
+        XCTAssertThrowsError(
+            try context.active.undoLatestRecordedSet(
+                draftID: started.id,
+                setID: firstSetID,
+                expectedRevision: second.revision,
+                now: startedAt.addingTimeInterval(21)
+            )
+        ) { error in
+            XCTAssertEqual(error as? ActiveWorkoutStoreError, .setIsNotLatest)
+        }
+        let undone = try context.active.undoLatestRecordedSet(
+            draftID: started.id,
+            setID: secondSetID,
+            expectedRevision: second.revision,
+            now: startedAt.addingTimeInterval(22)
+        )
+
+        let sets = try XCTUnwrap(undone.exercises.first?.sets)
+        XCTAssertTrue(sets[0].isCompleted)
+        XCTAssertFalse(sets[1].isCompleted)
+        XCTAssertEqual(sets[1].weight, 82.5)
+        XCTAssertEqual(sets[1].reps, 7)
+        XCTAssertNil(undone.undoableSetID)
+
+        XCTAssertThrowsError(
+            try context.active.undoLatestRecordedSet(
+                draftID: started.id,
+                setID: firstSetID,
+                expectedRevision: undone.revision,
+                now: startedAt.addingTimeInterval(23)
+            )
+        ) { error in
+            XCTAssertEqual(error as? ActiveWorkoutStoreError, .setIsNotLatest)
+        }
+        XCTAssertEqual(context.active.draft, undone)
     }
 
     func testFinishKeepsOnlyCompletedSetsAndClearsLocalDraft() throws {

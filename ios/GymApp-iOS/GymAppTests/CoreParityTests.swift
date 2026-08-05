@@ -2970,13 +2970,16 @@ final class CoreParityTests: XCTestCase {
             Set(writtenRoot.keys),
             Set([
                 "schemaVersion", "exportedAt", "app", "diagnostics", "owner",
-                "exercises", "sessions", "summary", "extensions"
+                "exercises", "sessions", "summary"
             ])
         )
-        XCTAssertEqual(
-            writtenRoot["extensions"] as? NSDictionary,
-            extensions as NSDictionary
+        XCTAssertNil(writtenRoot["extensions"])
+        let localExtensions = try XCTUnwrap(
+            JSONSerialization.jsonObject(
+                with: try XCTUnwrap(reopened.cloudExtensionsData)
+            ) as? NSDictionary
         )
+        XCTAssertEqual(localExtensions, extensions as NSDictionary)
         XCTAssertTrue(
             try WorkoutStore.prepareCloudBackup(written, activeOwner: owner).roundTripSafe
         )
@@ -3890,10 +3893,10 @@ final class CoreParityTests: XCTestCase {
             )
         }
 
-        let minimum = recommendation(reps: 8)
+        let minimum = recommendation(reps: 6)
         XCTAssertEqual(minimum.kind, .holdAndBuild)
         XCTAssertEqual(minimum.sets.compactMap(\.weight), [50, 50, 50, 50])
-        XCTAssertEqual(minimum.sets.map(\.reps), [9, 9, 9, 9])
+        XCTAssertEqual(minimum.sets.map(\.reps), [7, 7, 7, 7])
 
         let maximumHistory = coachSession(
             exerciseID: exercise.id,
@@ -4009,7 +4012,7 @@ final class CoreParityTests: XCTestCase {
             )
         }
 
-        XCTAssertEqual(recommendation("Bench Press").sets.map(\.reps), [8, 8, 8, 8])
+        XCTAssertEqual(recommendation("Bench Press").sets.map(\.reps), [7, 7, 7, 7])
         XCTAssertEqual(recommendation("Incline Dumbbell Press").sets.map(\.reps), [8, 8, 8])
         XCTAssertEqual(recommendation("Lateral Raise").sets.map(\.reps), [10, 10, 10])
         XCTAssertEqual(recommendation("French Press").sets.map(\.reps), [10, 10, 10])
@@ -4030,13 +4033,13 @@ final class CoreParityTests: XCTestCase {
             exerciseName: exercise.name,
             date: now.addingTimeInterval(-3 * 86_400),
             weights: [0, 0, 0],
-            reps: [8, 8, 8]
+            reps: [10, 10, 10]
         ) + coachSession(
             exerciseID: exercise.id,
             exerciseName: exercise.name,
             date: now.addingTimeInterval(-86_400),
             weights: [0, 0, 0],
-            reps: [8, 8, 8]
+            reps: [10, 10, 10]
         )
         let ceiling = RecommendationEngine.buildForExercise(
             exerciseID: exercise.id,
@@ -4049,7 +4052,7 @@ final class CoreParityTests: XCTestCase {
         )
         XCTAssertEqual(ceiling.kind, .holdAndBuild)
         XCTAssertEqual(ceiling.sets.compactMap(\.weight), [0, 0, 0])
-        XCTAssertEqual(ceiling.sets.map(\.reps), [8, 8, 8])
+        XCTAssertEqual(ceiling.sets.map(\.reps), [10, 10, 10])
 
         let regressionHistory = [
             (days: 5, reps: 10),
@@ -4091,13 +4094,13 @@ final class CoreParityTests: XCTestCase {
             exerciseName: exercise.name,
             date: now.addingTimeInterval(-3 * 86_400),
             weights: [50, 50, 50],
-            reps: [8, 8, 8]
+            reps: [10, 10, 10]
         ) + coachSession(
             exerciseID: exercise.id,
             exerciseName: exercise.name,
             date: now.addingTimeInterval(-86_400),
             weights: [45, 45, 45],
-            reps: [8, 8, 8]
+            reps: [10, 10, 10]
         )
         let progression = RecommendationEngine.buildForExercise(
             exerciseID: exercise.id,
@@ -4292,7 +4295,7 @@ final class CoreParityTests: XCTestCase {
                     exerciseCatalogKey: exercise.catalogKey,
                     date: now.addingTimeInterval(-Double(5 - index * 2) * 86_400),
                     weights: [weight, weight, weight],
-                    reps: [8, 8, 8]
+                    reps: [10, 10, 10]
                 )
             }
         }
@@ -4397,8 +4400,15 @@ final class CoreParityTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(twoDays.exercises.count, 10)
-        XCTAssertEqual(sixDays.exercises.count, 6)
+        XCTAssertTrue(
+            (4 ... 9).contains(twoDays.exercises.count),
+            "two-day count: \(twoDays.exercises.count)"
+        )
+        XCTAssertTrue(
+            (4 ... 9).contains(sixDays.exercises.count),
+            "six-day count: \(sixDays.exercises.count)"
+        )
+        XCTAssertGreaterThan(twoDays.exercises.count, sixDays.exercises.count)
         func exerciseCount(
             days: Int,
             goal: TrainingGoal = .balanced,
@@ -4415,12 +4425,22 @@ final class CoreParityTests: XCTestCase {
                 )
             ).exercises.count
         }
-        XCTAssertEqual(exerciseCount(days: 3), 9)
-        XCTAssertEqual(exerciseCount(days: 4), 8)
-        XCTAssertEqual(exerciseCount(days: 5), 7)
-        XCTAssertEqual(exerciseCount(days: 3, goal: .strength), 9)
-        XCTAssertEqual(exerciseCount(days: 3, calories: .deficit), 9)
-        XCTAssertEqual(exerciseCount(days: 3, goal: .strength, calories: .deficit), 9)
+        let frequencyCounts = (2 ... 6).map { exerciseCount(days: $0) }
+        XCTAssertTrue(
+            zip(frequencyCounts, frequencyCounts.dropFirst()).allSatisfy { pair in
+                pair.0 >= pair.1
+            },
+            "frequency counts: \(frequencyCounts)"
+        )
+        XCTAssertGreaterThan(try! XCTUnwrap(frequencyCounts.first), try! XCTUnwrap(frequencyCounts.last))
+        XCTAssertLessThanOrEqual(
+            exerciseCount(days: 3, calories: .deficit),
+            exerciseCount(days: 3)
+        )
+        XCTAssertLessThanOrEqual(
+            exerciseCount(days: 3, goal: .strength, calories: .deficit),
+            exerciseCount(days: 3, goal: .strength)
+        )
 
         let duplicateID = UUID()
         let duplicatePlan = RecommendationEngine.buildWorkoutPlan(
@@ -4675,7 +4695,7 @@ final class CoreParityTests: XCTestCase {
             now: now,
             calendar: utcCalendar()
         )
-        XCTAssertEqual(upperWithoutRecentTrunk.exercises.count, 8)
+        XCTAssertTrue((4 ... 9).contains(upperWithoutRecentTrunk.exercises.count))
         XCTAssertEqual(selectedTrunkKeys(upperWithoutRecentTrunk).count, 1)
 
         let plank = try! XCTUnwrap(exercises.first { $0.catalogKey == "plank" })
@@ -4699,7 +4719,7 @@ final class CoreParityTests: XCTestCase {
             now: now,
             calendar: utcCalendar()
         )
-        XCTAssertEqual(upperWithRecentTrunk.exercises.count, 8)
+        XCTAssertTrue((4 ... 9).contains(upperWithRecentTrunk.exercises.count))
         XCTAssertEqual(selectedTrunkKeys(upperWithRecentTrunk), ["hyperextension"])
 
         let hyperextension = try! XCTUnwrap(exercises.first { $0.catalogKey == "hyperextension" })
@@ -4723,7 +4743,7 @@ final class CoreParityTests: XCTestCase {
             now: now,
             calendar: utcCalendar()
         )
-        XCTAssertEqual(upperWithRecentHyper.exercises.count, 8)
+        XCTAssertTrue((4 ... 9).contains(upperWithRecentHyper.exercises.count))
         XCTAssertEqual(selectedTrunkKeys(upperWithRecentHyper), ["plank"])
     }
 
@@ -4996,7 +5016,7 @@ final class CoreParityTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(
             Set([compositionA, compositionB, compositionC]).count,
             2,
-            "Weekly muscle deficits may converge two variants, but rotation must still change composition"
+            "Weekly muscle deficits may converge two variants, but rotation must still change composition. A=\(compositionA), B=\(compositionB), C=\(compositionC)"
         )
 
         let legacy = Data(#"{"focus":"fullBody","exercises":[]}"#.utf8)
@@ -5144,11 +5164,98 @@ final class CoreParityTests: XCTestCase {
                             trainingProfile: profile
                         )
                         XCTAssertTrue((3 ... 4).contains(recommendation.sets.count))
-                        XCTAssertTrue(recommendation.sets.allSatisfy { (3 ... 10).contains($0.reps) })
+                        XCTAssertTrue(recommendation.sets.allSatisfy { (4 ... 10).contains($0.reps) })
                     }
                 }
             }
         }
+    }
+
+    func testRoleAwareStrengthTargetsAndRestDurationsStayBounded() {
+        let profile = TrainingProfile(
+            split: .upperLower,
+            workoutsPerWeek: 4,
+            goal: .strength,
+            calorieMode: .maintenance
+        )
+        let fixtures: [(String, Int, Int)] = [
+            ("bench_press", 5, 180),
+            ("incline_dumbbell_press", 6, 120),
+            ("biceps_curl", 8, 75),
+            ("plank", 8, 75)
+        ]
+
+        for (catalogKey, expectedReps, expectedRest) in fixtures {
+            let definition = try! XCTUnwrap(
+                BuiltInExerciseCatalog.definition(forKey: catalogKey)
+            )
+            let exercise = Exercise(name: definition.englishName, catalogKey: catalogKey)
+            let recommendation = RecommendationEngine.buildForExercise(
+                exerciseID: exercise.id,
+                history: [],
+                exerciseCatalogKey: catalogKey,
+                exerciseName: exercise.name,
+                trainingProfile: profile
+            )
+            XCTAssertEqual(recommendation.sets.map(\.reps), [Int](
+                repeating: expectedReps,
+                count: recommendation.sets.count
+            ))
+            XCTAssertTrue(recommendation.sets.allSatisfy { (4 ... 10).contains($0.reps) })
+            XCTAssertEqual(
+                RecommendationEngine.restDurationSeconds(
+                    exerciseCatalogKey: catalogKey,
+                    exerciseName: exercise.name
+                ),
+                expectedRest
+            )
+        }
+    }
+
+    func testSessionSetBudgetRespondsToCaloriesGoalAndFrequency() {
+        let deficit = RecommendationEngine.targetSessionSetBudget(
+            profile: TrainingProfile(
+                split: .upperLower,
+                workoutsPerWeek: 4,
+                goal: .balanced,
+                calorieMode: .deficit
+            )
+        )
+        let maintenance = RecommendationEngine.targetSessionSetBudget(
+            profile: TrainingProfile(
+                split: .upperLower,
+                workoutsPerWeek: 4,
+                goal: .balanced,
+                calorieMode: .maintenance
+            )
+        )
+        let surplus = RecommendationEngine.targetSessionSetBudget(
+            profile: TrainingProfile(
+                split: .upperLower,
+                workoutsPerWeek: 4,
+                goal: .balanced,
+                calorieMode: .surplus
+            )
+        )
+        let hypertrophy = RecommendationEngine.targetSessionSetBudget(
+            profile: TrainingProfile(
+                split: .upperLower,
+                workoutsPerWeek: 4,
+                goal: .muscleGain,
+                calorieMode: .maintenance
+            )
+        )
+        let lowFrequency = RecommendationEngine.targetSessionSetBudget(
+            profile: TrainingProfile(workoutsPerWeek: 2, calorieMode: .maintenance)
+        )
+        let highFrequency = RecommendationEngine.targetSessionSetBudget(
+            profile: TrainingProfile(workoutsPerWeek: 6, calorieMode: .maintenance)
+        )
+
+        XCTAssertLessThan(deficit, maintenance)
+        XCTAssertLessThan(maintenance, surplus)
+        XCTAssertGreaterThan(hypertrophy, maintenance)
+        XCTAssertGreaterThan(lowFrequency, highFrequency)
     }
 
     func testBuiltInCatalogFillsEveryProfileBudgetWithExactlyOneTrunkExercise() {
@@ -5182,10 +5289,24 @@ final class CoreParityTests: XCTestCase {
                                 ),
                                 effort: effort
                             )
-                            let baseCount = 12 - workoutsPerWeek
-                            let expectedCount = effort == .recovery ? max(5, baseCount - 2) : baseCount
+                            let appliedEffort: SmartWorkoutEffort = effort == .recovery
+                                ? .recovery
+                                : .standard
+                            let budget = RecommendationEngine.targetSessionSetBudget(
+                                profile: TrainingProfile(
+                                    split: split,
+                                    workoutsPerWeek: workoutsPerWeek,
+                                    goal: goal,
+                                    calorieMode: calorieMode
+                                ),
+                                effort: appliedEffort
+                            )
+                            let plannedSets = plan.exercises.reduce(0) {
+                                $0 + $1.recommendation.sets.count
+                            }
 
-                            XCTAssertEqual(plan.exercises.count, expectedCount, context)
+                            XCTAssertTrue((4 ... 9).contains(plan.exercises.count), context)
+                            XCTAssertLessThanOrEqual(plannedSets, budget + 4, context)
                             XCTAssertEqual(plan.requestedEffort, effort, context)
                             XCTAssertEqual(
                                 plan.appliedEffort,
@@ -5218,7 +5339,7 @@ final class CoreParityTests: XCTestCase {
                             )
                             XCTAssertTrue(
                                 plan.exercises.allSatisfy { exercise in
-                                    exercise.recommendation.sets.allSatisfy { (3 ... 10).contains($0.reps) }
+                                    exercise.recommendation.sets.allSatisfy { (4 ... 10).contains($0.reps) }
                                 },
                                 "\(context) reps"
                             )
@@ -8098,6 +8219,101 @@ final class CoreParityTests: XCTestCase {
         )
     }
 
+    func testManualSyncReloadsStaleCASAndUsesPersistedThreeWayBaseline() async throws {
+        let directory = try temporaryDirectory(named: "manual-sync-three-way")
+        let defaults = temporaryDefaults(named: "manual-sync-three-way")
+        let recorder = AuthRequestRecorder()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        let auth = AuthService(
+            keychain: InMemoryKeychainStore(),
+            urlSession: urlSession,
+            defaults: defaults
+        )
+        let cloud = cloudSession(userID: "00000000-0000-4000-8000-000000000109")
+        let session = AppAccountSession.cloud(cloud)
+        let owner = BackupOwner(
+            accountID: cloud.userID,
+            userID: cloud.userID,
+            email: cloud.email,
+            remote: true
+        )
+        let baselineData = try remoteBackupData(
+            exerciseName: "Shared Baseline Exercise",
+            owner: owner
+        )
+        let changedRemoteData = try remoteBackupData(
+            exerciseName: "Other Device Exercise",
+            owner: owner
+        )
+        let baselineObject = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: baselineData) as? [String: Any]
+        )
+        let changedRemoteObject = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: changedRemoteData) as? [String: Any]
+        )
+        var getCount = 0
+        AuthURLProtocolStub.handler = { request in
+            recorder.append(request)
+            switch (request.url?.path, request.httpMethod) {
+            case ("/rest/v1/user_states", "GET"):
+                getCount += 1
+                let response: [[String: Any]] = [[
+                    "state": getCount == 1 ? baselineObject : changedRemoteObject,
+                    "updated_at": getCount == 1
+                        ? "2026-08-05T09:00:00.000000Z"
+                        : "2026-08-05T09:00:01.000000Z"
+                ]]
+                let data = try JSONSerialization.data(withJSONObject: response)
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    json: String(decoding: data, as: UTF8.self)
+                )
+            case ("/rest/v1/user_states", "PATCH"):
+                // A successful HTTP response with no returned row means the CAS predicate
+                // no longer matched and must trigger a fresh GET.
+                return try AuthURLProtocolStub.response(for: request, json: "[]")
+            default:
+                XCTFail("Unexpected manual three-way request: \(request.url?.absoluteString ?? "nil")")
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    statusCode: 404,
+                    json: "{}"
+                )
+            }
+        }
+        defer {
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+        }
+        let appState = try AppState(
+            auth: auth,
+            defaults: defaults,
+            workoutDirectoryURL: directory,
+            cloudURLSession: urlSession
+        )
+
+        try auth.installSessionForTesting(session)
+        let accountBecameReady = await waitUntil { appState.isAccountReady }
+        XCTAssertTrue(accountBecameReady)
+        _ = try appState.workoutStore.addExercise(name: "This Device Exercise")
+
+        await appState.forceCloudSync()
+
+        XCTAssertNotNil(appState.cloudSyncConflict)
+        XCTAssertEqual(appState.cloudSyncStatus, .conflict)
+        XCTAssertEqual(getCount, 2)
+        XCTAssertEqual(
+            recorder.requests.filter {
+                $0.url?.path == "/rest/v1/user_states" && $0.httpMethod == "PATCH"
+            }.count,
+            1
+        )
+        XCTAssertTrue(customExerciseNames(in: appState.workoutStore).contains("This Device Exercise"))
+        XCTAssertFalse(customExerciseNames(in: appState.workoutStore).contains("Other Device Exercise"))
+    }
+
     func testSignOutFlushesPendingWritableCloudStateBeforeLogout() async throws {
         let directory = try temporaryDirectory(named: "signout-cloud-flush")
         let defaults = temporaryDefaults(named: "signout-cloud-flush")
@@ -8460,7 +8676,7 @@ final class CoreParityTests: XCTestCase {
         XCTAssertNil(auth.session)
     }
 
-    func testPWACloudActivationMigratesThenPreservesExtensionsOnCASWrites() async throws {
+    func testPWACloudActivationKeepsExtensionsLocalAndWritesLegacyCore() async throws {
         let directory = try temporaryDirectory(named: "pwa-shared-activation")
         let defaults = temporaryDefaults(named: "pwa-shared-activation")
         let recorder = AuthRequestRecorder()
@@ -8563,10 +8779,18 @@ final class CoreParityTests: XCTestCase {
                 JSONSerialization.jsonObject(with: body) as? [String: Any]
             )
             let state = try XCTUnwrap(object["state"] as? [String: Any])
-            let extensions = try XCTUnwrap(state["extensions"] as? [String: Any])
-            let pwa = try XCTUnwrap(extensions["pwa"] as? [String: Any])
-            XCTAssertEqual(pwa["language"] as? String, "uk")
+            XCTAssertEqual(
+                Set(state.keys),
+                Set([
+                    "schemaVersion", "exportedAt", "app", "diagnostics", "owner",
+                    "exercises", "sessions", "summary"
+                ])
+            )
+            XCTAssertNil(state["extensions"])
             XCTAssertNil(state["language"])
+            XCTAssertFalse((state["exercises"] as? [[String: Any]])?.contains {
+                $0["loadProfile"] != nil
+            } ?? true)
         }
 
         let reopened = try WorkoutStore(
@@ -8740,7 +8964,7 @@ final class CoreParityTests: XCTestCase {
         XCTAssertEqual(plan.requestedEffort, .auto)
         XCTAssertEqual(plan.appliedEffort, .recovery)
         XCTAssertEqual(plan.effortAdjustment, .autoRecovery)
-        XCTAssertEqual(plan.exercises.count, 7)
+        XCTAssertTrue((4 ... 9).contains(plan.exercises.count))
         XCTAssertTrue(plan.exercises.allSatisfy { $0.recommendation.sets.count == 3 })
         XCTAssertTrue(plan.exercises.allSatisfy { $0.recommendation.targetRIR == 3 ... 4 })
         XCTAssertTrue(plan.exercises.last.map { item in
@@ -9139,7 +9363,7 @@ final class CoreParityTests: XCTestCase {
                 exerciseCatalogKey: pullUp.catalogKey,
                 date: now.addingTimeInterval(-Double(days) * 86_400),
                 weights: [0, 0, 0],
-                reps: [8, 8, 8]
+                reps: [10, 10, 10]
             )
         }
         let bodyweight = RecommendationEngine.buildForExercise(

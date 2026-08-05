@@ -49,6 +49,7 @@ function createWebLocks() {
 function loadContext({ localStorage = createStorage(), locks = createWebLocks() } = {}) {
   const sessionStorage = createStorage();
   const runtimeNodes = new Map();
+  const windowListeners = new Map();
   const appNode = {
     innerHTML: "",
     children: [],
@@ -103,7 +104,7 @@ function loadContext({ localStorage = createStorage(), locks = createWebLocks() 
     URL,
     URLSearchParams,
     window: {
-      addEventListener() {},
+      addEventListener(type, listener) { windowListeners.set(type, listener); },
       location: { search: "", hash: "", pathname: "/", replace() {} },
       GymProgressionRules: progression
     }
@@ -138,7 +139,7 @@ function loadContext({ localStorage = createStorage(), locks = createWebLocks() 
     showToast = message => { globalThis.lastToast = message; };
   `, context);
   localStorage.writes.length = 0;
-  return { appNode, context, localStorage, runtimeNodes, startupState };
+  return { appNode, context, localStorage, runtimeNodes, startupState, windowListeners };
 }
 
 async function startTwoSetWorkout(context) {
@@ -160,12 +161,19 @@ function activeStorageKey(context) {
   return vm.runInContext("activeWorkoutAccountDescriptor().storageKey", context);
 }
 
+function activeUndoStorageKey(context) {
+  return vm.runInContext("activeWorkoutAccountDescriptor().undoKey", context);
+}
+
 test("starting creates one account-scoped local active draft without changing history or backup", async () => {
   const { context, localStorage } = loadContext();
   await startTwoSetWorkout(context);
 
   const key = activeStorageKey(context);
   const stored = JSON.parse(localStorage.getItem(key));
+  assert.deepEqual(Object.keys(stored), [
+    "version", "owner", "id", "startedAt", "createdAt", "updatedAt", "revision", "note", "blocks"
+  ], "the v1 draft root must remain exact-readable by app.v69");
   assert.equal(stored.owner, `local:${LOCAL_ACCOUNT.id}`);
   assert.equal(stored.blocks.length, 1);
   assert.deepEqual(stored.blocks[0].sets.map(set => set.completed), [false, false]);
@@ -175,6 +183,7 @@ test("starting creates one account-scoped local active draft without changing hi
     ...stored.blocks[0].sets.map(set => set.id)
   ]).size, 4, "workout, block and set IDs must be stable and unique");
   assert.equal(vm.runInContext("state.sessions.length", context), 0);
+  assert.equal(localStorage.getItem(activeUndoStorageKey(context)), null);
 
   const backup = vm.runInContext("JSON.parse(exportPayload(false))", context);
   assert.equal(Object.hasOwn(backup, "activeWorkout"), false);
@@ -189,6 +198,27 @@ test("starting creates one account-scoped local active draft without changing hi
   vm.runInContext("clearActiveWorkoutMemory(); reloadActiveWorkoutContext();", context);
   assert.equal(vm.runInContext("activeWorkout.blocks[0].sets.length", context), 2);
   assert.match(vm.runInContext("focusLensCard([])", context), /continue-active-workout/);
+  assert.match(vm.runInContext("focusLensCard([])", context), /discard-active-workout/);
+});
+
+test("Back from an active workout returns Home without discarding the local draft", async () => {
+  const { context, localStorage } = loadContext();
+  await startTwoSetWorkout(context);
+  const key = activeStorageKey(context);
+  const before = localStorage.getItem(key);
+
+  vm.runInContext(`
+    nav = [{ name: "workouts" }, { name: "active" }];
+    history.state = { gymAppNav: [{ name: "workouts" }, { name: "active" }] };
+    back();
+  `, context);
+
+  assert.deepEqual(
+    JSON.parse(vm.runInContext("JSON.stringify(nav)", context)),
+    [{ name: "workouts" }]
+  );
+  assert.notEqual(vm.runInContext("activeWorkout", context), null);
+  assert.equal(localStorage.getItem(key), before);
 });
 
 test("active workout markup escapes untrusted exercise names and notes", async () => {
@@ -210,7 +240,7 @@ test("active workout markup escapes untrusted exercise names and notes", async (
   assert.match(markup, /&lt;img src=x onerror=alert\(1\)&gt;/);
 });
 
-test("recording persists the completed set before starting the durable 90-second rest", async () => {
+test("recording persists the completed set before starting the durable 180-second primary rest", async () => {
   const { context, localStorage, runtimeNodes } = loadContext();
   await startTwoSetWorkout(context);
   const setId = vm.runInContext("activeWorkout.blocks[0].sets[0].id", context);
@@ -222,8 +252,10 @@ test("recording persists the completed set before starting the durable 90-second
 
   const activeKey = activeStorageKey(context);
   const timerKey = vm.runInContext("exerciseRestTimerAccountDescriptor().storageKey", context);
-  assert.deepEqual(localStorage.writes.slice(0, 2), [activeKey, timerKey]);
+  const undoKey = activeUndoStorageKey(context);
+  assert.deepEqual(localStorage.writes.slice(0, 3), [activeKey, undoKey, timerKey]);
   const stored = JSON.parse(localStorage.getItem(activeKey));
+  assert.equal(Object.hasOwn(stored, "undoableSetId"), false);
   assert.deepEqual(stored.blocks[0].sets[0], {
     id: setId,
     weight: 81.5,
@@ -236,8 +268,131 @@ test("recording persists the completed set before starting the durable 90-second
   assert.equal(timer.entries.length, 1);
   assert.equal(timer.entries[0].sessionId, stored.id);
   assert.equal(timer.entries[0].exerciseName, "Bench Press");
-  assert.ok(timer.entries[0].deadlineMillis - stored.blocks[0].sets[0].completedAt >= 89_000);
-  assert.ok(timer.entries[0].deadlineMillis - stored.blocks[0].sets[0].completedAt <= 91_000);
+  assert.ok(timer.entries[0].deadlineMillis - stored.blocks[0].sets[0].completedAt >= 179_000);
+  assert.ok(timer.entries[0].deadlineMillis - stored.blocks[0].sets[0].completedAt <= 181_000);
+});
+
+test("smart rest uses exercise roles, supports 15-second adjustment, and keeps one timer", async () => {
+  const { context, localStorage, runtimeNodes } = loadContext();
+  await vm.runInContext(`
+    workoutDraft = {
+      startedAt: Date.now(),
+      note: "Role timers",
+      blocks: [
+        { exerciseName: "Bench Press", catalogKey: "bench_press", sets: [{ weight: 80, reps: 5 }] },
+        { exerciseName: "Lat Pulldown", catalogKey: "lat_pulldown", sets: [{ weight: 55, reps: 8 }] },
+        { exerciseName: "Lateral Raise", catalogKey: "lateral_raise", sets: [{ weight: 10, reps: 9 }] }
+      ]
+    };
+    startWorkout();
+  `, context);
+  const setIds = JSON.parse(vm.runInContext(
+    "JSON.stringify(activeWorkout.blocks.map(block => block.sets[0].id))",
+    context
+  ));
+  const expectedSeconds = [180, 120, 75];
+  const expectedNames = ["Bench Press", "Lat Pulldown", "Lateral Raise"];
+  const timerStorageKey = vm.runInContext("exerciseRestTimerAccountDescriptor().storageKey", context);
+
+  for (let index = 0; index < setIds.length; index += 1) {
+    const setId = setIds[index];
+    runtimeNodes.set(`[data-active-set-id="${setId}"][data-active-field="weight"]`, { value: String(80 - index * 20) });
+    runtimeNodes.set(`[data-active-set-id="${setId}"][data-active-field="reps"]`, { value: String(6 + index) });
+    assert.equal(await vm.runInContext(`recordActiveSet(${setId})`, context), true);
+    const workout = JSON.parse(localStorage.getItem(activeStorageKey(context)));
+    const completed = workout.blocks[index].sets[0];
+    const ledger = JSON.parse(localStorage.getItem(timerStorageKey));
+    assert.equal(ledger.entries.length, 1, "recording a new set must replace the previous timer");
+    assert.equal(ledger.entries[0].exerciseName, expectedNames[index]);
+    const duration = ledger.entries[0].deadlineMillis - completed.completedAt;
+    assert.ok(duration >= expectedSeconds[index] * 1000 - 1000);
+    assert.ok(duration <= expectedSeconds[index] * 1000 + 1000);
+  }
+
+  const latestLedger = JSON.parse(localStorage.getItem(timerStorageKey));
+  const latestKey = `${latestLedger.entries[0].sessionId}:${latestLedger.entries[0].exerciseName}`;
+  const beforeAdjust = latestLedger.entries[0].deadlineMillis;
+  assert.equal(vm.runInContext(`adjustExerciseRestTimer(${JSON.stringify(latestKey)}, 15)`, context), true);
+  const afterAdjust = JSON.parse(localStorage.getItem(timerStorageKey)).entries[0].deadlineMillis;
+  assert.ok(afterAdjust - beforeAdjust >= 14_000 && afterAdjust - beforeAdjust <= 16_000);
+  assert.equal(vm.runInContext(`stopExerciseRestTimer(${JSON.stringify(latestKey)})`, context), true);
+  assert.equal(localStorage.getItem(timerStorageKey), null);
+
+  assert.equal(vm.runInContext(`startExerciseRestTimer(${JSON.stringify(latestKey)}, 10, 1_000)`, context), true);
+  assert.equal(vm.runInContext(`adjustExerciseRestTimer(${JSON.stringify(latestKey)}, -15, 1_000)`, context), true);
+  assert.equal(localStorage.getItem(timerStorageKey), null, "subtracting past zero must stop, not increase, rest");
+});
+
+test("a separate durable marker preserves exactly one latest undo across reload without changing v1 JSON", async () => {
+  const { context, localStorage, runtimeNodes } = loadContext();
+  await startTwoSetWorkout(context);
+  const [firstSetId, secondSetId] = JSON.parse(vm.runInContext(
+    "JSON.stringify(activeWorkout.blocks[0].sets.map(set => set.id))",
+    context
+  ));
+  runtimeNodes.set(`[data-active-set-id="${firstSetId}"][data-active-field="weight"]`, { value: "81.5" });
+  runtimeNodes.set(`[data-active-set-id="${firstSetId}"][data-active-field="reps"]`, { value: "7" });
+  runtimeNodes.set(`[data-active-set-id="${secondSetId}"][data-active-field="weight"]`, { value: "83" });
+  runtimeNodes.set(`[data-active-set-id="${secondSetId}"][data-active-field="reps"]`, { value: "5" });
+  assert.equal(await vm.runInContext(`recordActiveSet(${firstSetId})`, context), true);
+  assert.equal(await vm.runInContext(`recordActiveSet(${secondSetId})`, context), true);
+
+  const undoKey = activeUndoStorageKey(context);
+  let marker = JSON.parse(localStorage.getItem(undoKey));
+  assert.deepEqual(Object.keys(marker), ["version", "owner", "workoutId", "workoutRevision", "setId"]);
+  assert.equal(marker.setId, secondSetId);
+  assert.equal(Object.hasOwn(JSON.parse(localStorage.getItem(activeStorageKey(context))), "undoableSetId"), false);
+  vm.runInContext("clearActiveWorkoutMemory(); reloadActiveWorkoutContext();", context);
+  assert.equal(vm.runInContext("activeWorkoutUndoMarker.setId", context), secondSetId);
+  assert.match(vm.runInContext("activeWorkoutScreen()", context), /Undo last set/);
+
+  assert.equal(await vm.runInContext(`undoLatestActiveSet(${firstSetId})`, context), false);
+  assert.equal(await vm.runInContext(`undoLatestActiveSet(${secondSetId})`, context), true);
+  let stored = JSON.parse(localStorage.getItem(activeStorageKey(context)));
+  assert.equal(Object.hasOwn(stored, "undoableSetId"), false);
+  marker = JSON.parse(localStorage.getItem(undoKey));
+  assert.equal(marker.setId, null, "consumption must leave a revision-bound tombstone");
+  assert.equal(stored.blocks[0].sets[0].completed, true);
+  assert.deepEqual(
+    [stored.blocks[0].sets[1].completed, stored.blocks[0].sets[1].weight, stored.blocks[0].sets[1].reps],
+    [false, 83, 5]
+  );
+  assert.equal(localStorage.getItem(vm.runInContext("exerciseRestTimerAccountDescriptor().storageKey", context)), null);
+
+  vm.runInContext("clearActiveWorkoutMemory(); reloadActiveWorkoutContext();", context);
+  assert.equal(vm.runInContext("activeWorkoutUndoMarker.setId", context), null);
+  assert.equal(await vm.runInContext(`undoLatestActiveSet(${firstSetId})`, context), false,
+    "undo must not cascade into older completed sets");
+  stored = JSON.parse(localStorage.getItem(activeStorageKey(context)));
+  assert.equal(stored.blocks[0].sets[0].completed, true);
+  const markup = vm.runInContext("activeWorkoutScreen()", context);
+  assert.doesNotMatch(markup, /Undo last set/);
+  assert.match(markup, /data-active-field="weight"[^>]*value="83"/);
+  assert.match(markup, /aria-valuenow="1"/);
+  assert.match(markup, /aria-valuemax="2"/);
+});
+
+test("storage events refresh the separate undo marker across tabs", async () => {
+  const sharedStorage = createStorage();
+  const sharedLocks = createWebLocks();
+  const recorder = loadContext({ localStorage: sharedStorage, locks: sharedLocks });
+  const observer = loadContext({ localStorage: sharedStorage, locks: sharedLocks });
+  await startTwoSetWorkout(recorder.context);
+  observer.windowListeners.get("storage")({ key: activeStorageKey(recorder.context) });
+
+  const setId = vm.runInContext("activeWorkout.blocks[0].sets[0].id", recorder.context);
+  recorder.runtimeNodes.set(`[data-active-set-id="${setId}"][data-active-field="weight"]`, { value: "80" });
+  recorder.runtimeNodes.set(`[data-active-set-id="${setId}"][data-active-field="reps"]`, { value: "8" });
+  assert.equal(await vm.runInContext(`recordActiveSet(${setId})`, recorder.context), true);
+
+  observer.windowListeners.get("storage")({ key: activeUndoStorageKey(observer.context) });
+  assert.equal(vm.runInContext("activeWorkoutUndoMarker.setId", observer.context), setId);
+  assert.match(vm.runInContext("activeWorkoutScreen()", observer.context), /Undo last set/);
+
+  assert.equal(await vm.runInContext(`undoLatestActiveSet(${setId})`, recorder.context), true);
+  observer.windowListeners.get("storage")({ key: activeUndoStorageKey(observer.context) });
+  assert.equal(vm.runInContext("activeWorkoutUndoMarker.setId", observer.context), null);
+  assert.doesNotMatch(vm.runInContext("activeWorkoutScreen()", observer.context), /Undo last set/);
 });
 
 test("overlapping Web Lock records serialize without a lost set or false success", async () => {
@@ -297,16 +452,20 @@ test("finish commits only recorded sets and clears the local active draft withou
   assert.equal(vm.runInContext("state.sessions[0].sets[0].weight", context), 85);
   assert.equal(vm.runInContext("activeWorkout", context), null);
   assert.equal(localStorage.getItem(activeStorageKey(context)), null);
+  assert.equal(localStorage.getItem(activeUndoStorageKey(context)), null);
   assert.equal(localStorage.getItem(vm.runInContext("exerciseRestTimerAccountDescriptor().storageKey", context)), null);
 
   const stateKey = vm.runInContext("activeStorageKey()", context);
   const baseState = JSON.parse(localStorage.getItem(stateKey));
   assert.equal(baseState.sessions.length, 0, "Finish must not overwrite the ordinary cross-tab state key");
-  assert.notEqual(
-    localStorage.getItem(vm.runInContext("activeWorkoutAccountDescriptor().commitKey", context)),
-    null,
-    "completed sets must be durable in the separate commit ledger"
-  );
+  const commitRaw = localStorage.getItem(vm.runInContext("activeWorkoutAccountDescriptor().commitKey", context));
+  assert.notEqual(commitRaw, null, "completed sets must be durable in the separate commit ledger");
+  const commit = JSON.parse(commitRaw);
+  assert.deepEqual(Object.keys(commit), ["version", "owner", "workouts"]);
+  assert.deepEqual(Object.keys(commit.workouts[0]), [
+    "version", "owner", "id", "startedAt", "createdAt", "updatedAt", "revision", "note", "blocks"
+  ], "commit entries must remain exact-readable by app.v69");
+  assert.equal(Object.hasOwn(commit.workouts[0], "undoableSetId"), false);
   vm.runInContext("state = loadState(activeAccount)", context);
   assert.equal(vm.runInContext("state.sessions[0].sets.length", context), 1);
   const reloaded = loadContext({ localStorage, locks: createWebLocks() });
@@ -418,9 +577,14 @@ test("Finish preserves an overlapping ordinary history write without a false suc
 });
 
 test("discard requires confirmation and removes only the local active draft", async () => {
-  const { context, localStorage } = loadContext();
+  const { context, localStorage, runtimeNodes } = loadContext();
   await startTwoSetWorkout(context);
   const key = activeStorageKey(context);
+  const setId = vm.runInContext("activeWorkout.blocks[0].sets[0].id", context);
+  runtimeNodes.set(`[data-active-set-id="${setId}"][data-active-field="weight"]`, { value: "80" });
+  runtimeNodes.set(`[data-active-set-id="${setId}"][data-active-field="reps"]`, { value: "8" });
+  assert.equal(await vm.runInContext(`recordActiveSet(${setId})`, context), true);
+  assert.notEqual(localStorage.getItem(activeUndoStorageKey(context)), null);
   vm.runInContext("requestDiscardActiveWorkout({ action: 'discard-active-workout' })", context);
   assert.equal(vm.runInContext("modal.type", context), "confirm-discard-active");
   assert.match(vm.runInContext("modalMarkup()", context), /role="alertdialog"/);
@@ -428,20 +592,28 @@ test("discard requires confirmation and removes only the local active draft", as
 
   await vm.runInContext("confirmDiscardActiveWorkout()", context);
   assert.equal(localStorage.getItem(key), null);
+  assert.equal(localStorage.getItem(activeUndoStorageKey(context)), null);
   assert.equal(vm.runInContext("activeWorkout", context), null);
   assert.equal(vm.runInContext("state.sessions.length", context), 0);
 });
 
 test("account switching clears active memory without exposing or deleting the owner's draft", async () => {
-  const { context, localStorage } = loadContext();
+  const { context, localStorage, runtimeNodes } = loadContext();
   await startTwoSetWorkout(context);
   const key = activeStorageKey(context);
+  const setId = vm.runInContext("activeWorkout.blocks[0].sets[0].id", context);
+  runtimeNodes.set(`[data-active-set-id="${setId}"][data-active-field="weight"]`, { value: "80" });
+  runtimeNodes.set(`[data-active-set-id="${setId}"][data-active-field="reps"]`, { value: "8" });
+  assert.equal(await vm.runInContext(`recordActiveSet(${setId})`, context), true);
+  const undoKey = activeUndoStorageKey(context);
   const raw = localStorage.getItem(key);
+  const undoRaw = localStorage.getItem(undoKey);
 
   await vm.runInContext("logoutAccount()", context);
   assert.equal(vm.runInContext("activeAccount", context), null);
   assert.equal(vm.runInContext("activeWorkout", context), null);
   assert.equal(localStorage.getItem(key), raw, "ordinary account switching keeps the owner's recoverable draft");
+  assert.equal(localStorage.getItem(undoKey), undoRaw, "ordinary account switching keeps its one-step Undo marker");
 
   vm.runInContext(`
     activeAccount = ${JSON.stringify(LOCAL_ACCOUNT)};
@@ -450,6 +622,7 @@ test("account switching clears active memory without exposing or deleting the ow
     reloadActiveWorkoutContext(activeAccount);
   `, context);
   assert.equal(vm.runInContext("activeWorkout.owner", context), `local:${LOCAL_ACCOUNT.id}`);
+  assert.equal(vm.runInContext("activeWorkoutUndoMarker.setId", context), setId);
 });
 
 test("active mutation refuses a stale in-memory account after its auth marker changes", async () => {
@@ -491,6 +664,7 @@ test("account deletion serialized ahead of a record cannot leave an orphan draft
   assert.equal(sharedStorage.getItem(descriptor.storageKey), null);
   assert.equal(sharedStorage.getItem(descriptor.recoveryKey), null);
   assert.equal(sharedStorage.getItem(descriptor.commitKey), null);
+  assert.equal(sharedStorage.getItem(descriptor.undoKey), null);
   assert.equal(sharedStorage.getItem(vm.runInContext("AUTH_KEY", recorder.context)), null);
 });
 
@@ -600,14 +774,26 @@ test("active parser rejects wrong owners, non-finite values, oversized rows, and
     () => vm.runInContext(`parseActiveWorkoutEnvelope("x".repeat(MAX_ACTIVE_WORKOUT_STORAGE_BYTES + 1))`, context),
     /oversized/
   );
+  assert.throws(
+    () => vm.runInContext("parseActiveWorkoutEnvelope({ ...globalThis.__candidate, undoableSetId: null })", context),
+    /unsupported fields/
+  );
 
   const recoveryKey = vm.runInContext("activeWorkoutAccountDescriptor().recoveryKey", context);
   const commitKey = vm.runInContext("activeWorkoutAccountDescriptor().commitKey", context);
+  const undoKey = activeUndoStorageKey(context);
   localStorage.setItem(recoveryKey, localStorage.getItem(key));
   localStorage.setItem(commitKey, JSON.stringify({
     version: 1,
     owner: `local:${LOCAL_ACCOUNT.id}`,
     workouts: []
+  }));
+  localStorage.setItem(undoKey, JSON.stringify({
+    version: 1,
+    owner: `local:${LOCAL_ACCOUNT.id}`,
+    workoutId: candidate.id,
+    workoutRevision: candidate.revision,
+    setId: null
   }));
 
   context.window.confirm = () => true;
@@ -616,6 +802,7 @@ test("active parser rejects wrong owners, non-finite values, oversized rows, and
   assert.equal(localStorage.getItem(key), null);
   assert.equal(localStorage.getItem(recoveryKey), null);
   assert.equal(localStorage.getItem(commitKey), null);
+  assert.equal(localStorage.getItem(undoKey), null);
   assert.equal(vm.runInContext("activeWorkout", context), null);
   assert.equal(localStorage.getItem(`gym-pwa-account:${LOCAL_ACCOUNT.id}`), null);
 });

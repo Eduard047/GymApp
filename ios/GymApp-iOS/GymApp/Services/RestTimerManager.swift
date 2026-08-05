@@ -157,6 +157,18 @@ final class RestTimerManager: ObservableObject {
     func remaining(for id: String) -> Int { timers[id]?.remaining(at: now) ?? 0 }
 
     @discardableResult
+    func adjust(id: String, by seconds: Int, title: String) -> Task<Void, Never> {
+        let currentRemaining = remaining(for: id)
+        guard currentRemaining > 0 else { return Task {} }
+        let adjusted = currentRemaining + seconds
+        if adjusted <= 0 {
+            cancel(id: id)
+            return Task {}
+        }
+        return start(id: id, seconds: adjusted, title: title)
+    }
+
+    @discardableResult
     func start(id: String, seconds: Int, title: String) -> Task<Void, Never> {
         guard hasBoundAccount,
               let ownerFingerprint = activeOwnerFingerprint,

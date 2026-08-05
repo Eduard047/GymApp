@@ -314,6 +314,7 @@ fun AddWorkoutScreen(
             SmartCoachPanel(
                 selectedEffort = uiState.smartWorkoutEffort,
                 generatedPlan = uiState.generatedSmartPlan,
+                generatedPlanNeedsRefresh = uiState.generatedSmartPlanNeedsRefresh,
                 onEffortSelected = onSmartWorkoutEffortSelected,
                 onGenerateSmartWorkout = onGenerateSmartWorkout
             )
@@ -632,6 +633,7 @@ private fun TrainingProfilePanel(
 private fun SmartCoachPanel(
     selectedEffort: SmartWorkoutEffort,
     generatedPlan: SmartWorkoutPlanSummaryUiModel?,
+    generatedPlanNeedsRefresh: Boolean,
     onEffortSelected: (SmartWorkoutEffort) -> Unit,
     onGenerateSmartWorkout: () -> Unit
 ) {
@@ -706,6 +708,13 @@ private fun SmartCoachPanel(
                                 text = adjustment.smartCoachLabel(),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        if (generatedPlanNeedsRefresh) {
+                            Text(
+                                text = stringResource(R.string.smart_coach_plan_needs_refresh),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error
                             )
                         }
                     }
@@ -1280,6 +1289,8 @@ private fun WorkoutRecommendationReason.smartCoachLabel(daysSinceLastSession: In
         WorkoutRecommendationReason.NearPersonalBest -> stringResource(R.string.smart_reason_near_best)
         WorkoutRecommendationReason.ConservativeIncrease -> stringResource(R.string.smart_reason_conservative)
         WorkoutRecommendationReason.LoadBoundaryReached -> stringResource(R.string.smart_reason_load_boundary)
+        WorkoutRecommendationReason.BodyweightProgressionNeeded ->
+            stringResource(R.string.smart_reason_bodyweight_progression)
         WorkoutRecommendationReason.AestheticGoal -> stringResource(R.string.smart_reason_aesthetic_goal)
         WorkoutRecommendationReason.CalorieDeficit -> stringResource(R.string.smart_reason_calorie_deficit)
         WorkoutRecommendationReason.FourDayUpperLower -> stringResource(R.string.smart_reason_upper_lower)

@@ -313,6 +313,48 @@ struct WorkoutDraftExerciseCard: View {
                     )
                 }
 
+                if let recommendation = draft.coachRecommendation {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 8) {
+                            Label(
+                                recommendation.kind.coachDisplayName,
+                                systemImage: "sparkles"
+                            )
+                            .font(.subheadline.weight(.semibold))
+                            Spacer(minLength: 8)
+                            Text("\(Int((recommendation.confidence * 100).rounded()))%")
+                                .font(.caption.monospacedDigit().weight(.semibold))
+                        }
+                        Text(
+                            gymText(
+                                "Target RIR \(recommendation.targetRIR.lowerBound)–\(recommendation.targetRIR.upperBound)",
+                                "Цільовий RIR \(recommendation.targetRIR.lowerBound)–\(recommendation.targetRIR.upperBound)",
+                                "Целевой RIR \(recommendation.targetRIR.lowerBound)–\(recommendation.targetRIR.upperBound)",
+                                languageCode: gymCurrentLanguageCode()
+                            )
+                        )
+                        .font(.caption)
+                        .foregroundStyle(GymTheme.textSecondary)
+                        if !recommendation.reasons.isEmpty {
+                            Text(recommendation.reasons.map(\.coachDisplayName).joined(separator: " · "))
+                                .font(.caption)
+                                .foregroundStyle(GymTheme.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .padding(10)
+                    .background(
+                        GymTheme.primary.opacity(0.07),
+                        in: RoundedRectangle(cornerRadius: 13)
+                    )
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel(
+                        "Smart Coach: \(recommendation.kind.coachDisplayName), " +
+                            "\(Int((recommendation.confidence * 100).rounded())) percent confidence, " +
+                            "RIR \(recommendation.targetRIR.lowerBound) to \(recommendation.targetRIR.upperBound)"
+                    )
+                }
+
                 if let onShowSimilar {
                     Button(action: onShowSimilar) {
                         Label("Similar exercises", systemImage: "arrow.triangle.swap")
@@ -394,6 +436,42 @@ struct WorkoutDraftExerciseCard: View {
 
     private func delete(_ id: UUID) {
         draft.sets.removeAll { $0.id == id }
+    }
+}
+
+private extension WorkoutRecommendationKind {
+    var coachDisplayName: String {
+        switch self {
+        case .newExercise: "New exercise"
+        case .progressiveOverload: "Progressive overload"
+        case .holdAndBuild: "Hold and build"
+        case .deload: "Deload"
+        case .comeback: "Comeback"
+        case .plateauBreak: "Plateau break"
+        }
+    }
+}
+
+private extension WorkoutRecommendationReason {
+    var coachDisplayName: String {
+        switch self {
+        case .noHistory: "No history"
+        case .lastSessionStrong: "Last session strong"
+        case .lastSessionUnstable: "Recent performance unstable"
+        case .recentBreak: "Returning after a break"
+        case .volumeTrendingUp: "Volume trending up"
+        case .volumeDropped: "Volume dropped"
+        case .plateauDetected: "Plateau detected"
+        case .nearPersonalBest: "Near personal best"
+        case .conservativeIncrease: "Conservative increase"
+        case .loadBoundaryReached: "Machine load limit"
+        case .harderBodyweightVariation: "Harder variation needed"
+        case .recoverySession: "Recovery session"
+        case .hardSession: "Hard session"
+        case .aestheticGoal: "Fat-loss goal"
+        case .calorieDeficit: "Calorie deficit"
+        case .fourDayUpperLower: "Four-day upper/lower"
+        }
     }
 }
 
@@ -740,23 +818,48 @@ struct WorkoutRestTimerControls: View {
 
     @ViewBuilder
     private var timerButtons: some View {
-        ForEach([60, 90, 180], id: \.self) { seconds in
-            Button(gymText("\(seconds)s", "\(seconds) с", languageCode: gymCurrentLanguageCode())) {
-                manager.start(id: timerID, seconds: seconds, title: exerciseName)
+        if remaining > 0 {
+            Button {
+                manager.adjust(id: timerID, by: -15, title: exerciseName)
+            } label: {
+                Label("−15s", systemImage: "minus.circle")
             }
             .accessibilityLabel(
                 gymText(
-                    "Start \(seconds) second rest timer for \(exerciseName)",
-                    "Запустити таймер відпочинку на \(seconds) с для «\(exerciseName)»",
+                    "Reduce rest by 15 seconds",
+                    "Зменшити відпочинок на 15 секунд",
                     languageCode: gymCurrentLanguageCode()
                 )
             )
-        }
-        if remaining > 0 {
+            Button {
+                manager.adjust(id: timerID, by: 15, title: exerciseName)
+            } label: {
+                Label("+15s", systemImage: "plus.circle")
+            }
+            .accessibilityLabel(
+                gymText(
+                    "Add 15 seconds of rest",
+                    "Додати 15 секунд відпочинку",
+                    languageCode: gymCurrentLanguageCode()
+                )
+            )
             Button(role: .destructive) {
                 manager.cancel(id: timerID)
             } label: {
                 Label("Stop", systemImage: "stop.fill")
+            }
+        } else {
+            ForEach([60, 90, 120, 180], id: \.self) { seconds in
+                Button(gymText("\(seconds)s", "\(seconds) с", languageCode: gymCurrentLanguageCode())) {
+                    manager.start(id: timerID, seconds: seconds, title: exerciseName)
+                }
+                .accessibilityLabel(
+                    gymText(
+                        "Start \(seconds) second rest timer for \(exerciseName)",
+                        "Запустити таймер відпочинку на \(seconds) с для «\(exerciseName)»",
+                        languageCode: gymCurrentLanguageCode()
+                    )
+                )
             }
         }
     }

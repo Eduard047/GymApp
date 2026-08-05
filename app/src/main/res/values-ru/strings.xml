@@ -194,6 +194,16 @@
     <string name="cloud_sync_resolution_failed">Конфликт изменился или его не удалось разрешить безопасно. Загрузи обе версии заново и повтори попытку.</string>
     <string name="cloud_sync_kept_device">Версия с этого устройства сохранена в облаке.</string>
     <string name="cloud_sync_used_cloud">Проверенная облачная версия загружена на это устройство.</string>
+    <string name="cloud_sync_status_eyebrow">СИНХРОНИЗАЦИЯ ТРЕНИРОВОК</string>
+    <string name="cloud_sync_status_checking">Проверяем данные в облаке…</string>
+    <string name="cloud_sync_status_pending">Локальные изменения ожидают отправки</string>
+    <string name="cloud_sync_status_synced">История тренировок синхронизирована</string>
+    <string name="cloud_sync_status_conflict">Выбери, какую историю сохранить</string>
+    <string name="cloud_sync_status_error">Синхронизация приостановлена после ошибки</string>
+    <string name="cloud_sync_status_last_success">Последняя успешная синхронизация: %1$s</string>
+    <string name="cloud_sync_status_never">На этом устройстве ещё не было успешной синхронизации.</string>
+    <string name="cloud_sync_now_action">Синхронизировать сейчас</string>
+    <string name="cloud_sync_retry_action">Повторить синхронизацию</string>
 
     <string name="label_note">Заметка</string>
     <string name="hint_note">Заметка к сессии</string>
@@ -248,7 +258,7 @@
     <string name="add_workout_completed_mode_hint">Режим выполненной тренировки: сохранение сразу добавляет все запланированные строки в историю и сводку.</string>
     <string name="add_workout_active_mode_hint">При старте план надёжно сохраняется на устройстве. Подход попадёт в историю только после его записи и завершения тренировки.</string>
     <string name="active_workout_title">Активная тренировка</string>
-    <string name="active_workout_supporting">Записывай каждый выполненный подход. Он сохраняется до запуска 90-секундного отдыха.</string>
+    <string name="active_workout_supporting">Записывай каждый выполненный подход. Он сохраняется до запуска умного таймера отдыха.</string>
     <string name="active_workout_progress">Выполнено подходов: %1$d из %2$d</string>
     <string name="active_workout_finish_eyebrow">КОГДА ЗАКОНЧИШЬ</string>
     <string name="active_workout_finish_supporting">В историю попадут только записанные подходы. Запланированные строки не повлияют на статистику.</string>
@@ -267,6 +277,15 @@
     <string name="active_workout_record_failed">Не удалось записать подход. Отдых не запущен.</string>
     <string name="active_workout_finish_failed">Не удалось завершить тренировку. Активный черновик остался сохранённым.</string>
     <string name="active_workout_discard_failed">Не удалось отменить тренировку. Активный черновик остался сохранённым.</string>
+    <string name="active_workout_undo_changed">Отменить можно только последний записанный подход. Показана актуальная сохранённая тренировка.</string>
+    <string name="active_workout_undo_failed">Не удалось отменить последний подход. Сохранённые данные не изменены.</string>
+    <string name="active_workout_undo_action">Отменить последний подход</string>
+    <string name="active_workout_rest_saved">Подход сохранён. Отдых</string>
+    <string name="active_workout_rest_subtract">Убавить 15 секунд</string>
+    <string name="active_workout_rest_add">Добавить 15 секунд</string>
+    <string name="active_workout_rest_stop">Остановить отдых</string>
+    <string name="active_workout_draft_title">Продолжить активную тренировку</string>
+    <string name="active_workout_draft_progress">Записано подходов: %1$d из %2$d</string>
     <string name="note_template_push">День жима</string>
     <string name="note_template_pull">День тяги</string>
     <string name="note_template_legs">День ног</string>
@@ -511,6 +530,8 @@
     <string name="smart_reason_near_best">Это близко к твоей лучшей расчетной силе в упражнении.</string>
     <string name="smart_reason_conservative">Увеличение намеренно осторожно.</string>
     <string name="smart_reason_load_boundary">Тренажёр уже на самом сложном из настроенных весов.</string>
+    <string name="smart_reason_bodyweight_progression">Ты дважды достиг верхней границы повторов. Выбери более сложный вариант с весом тела или добавь контролируемое сопротивление.</string>
+    <string name="smart_coach_plan_needs_refresh">Профиль или усилие изменились. Обнови план, прежде чем полагаться на его рекомендации.</string>
     <string name="smart_reason_aesthetic_goal">Цель — эстетика: план делает упор на качественный объём и технику.</string>
     <string name="smart_reason_calorie_deficit">При дефиците калорий прогрессия осторожнее, чтобы сохранить восстановление.</string>
     <string name="smart_reason_upper_lower">Четырёхдневный сплит «верх/низ»: нагрузка оставляет запас для следующей тренировки.</string>

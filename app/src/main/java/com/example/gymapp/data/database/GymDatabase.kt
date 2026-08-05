@@ -45,7 +45,7 @@ import java.util.concurrent.ConcurrentHashMap
         ActiveWorkoutExerciseEntity::class,
         ActiveWorkoutSetEntity::class
     ],
-    version = 13,
+    version = 14,
     exportSchema = true
 )
 abstract class GymDatabase : RoomDatabase() {
@@ -488,6 +488,12 @@ abstract class GymDatabase : RoomDatabase() {
             }
         }
 
+        internal val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE active_workouts ADD COLUMN undoableSetId TEXT")
+            }
+        }
+
         internal val REGISTERED_MIGRATIONS: Array<Migration> = arrayOf(
             MIGRATION_1_2,
             MIGRATION_2_3,
@@ -500,7 +506,8 @@ abstract class GymDatabase : RoomDatabase() {
             MIGRATION_9_10,
             MIGRATION_10_11,
             MIGRATION_11_12,
-            MIGRATION_12_13
+            MIGRATION_12_13,
+            MIGRATION_13_14
         )
 
         fun getInstance(context: Context, databaseName: String = "gym_database"): GymDatabase {

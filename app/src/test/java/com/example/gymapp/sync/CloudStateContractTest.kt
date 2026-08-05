@@ -39,7 +39,7 @@ class CloudStateContractTest {
                     .put("version", 7)
                     .put("nested", JSONObject().put("enabled", true))
             )
-        val extended = attachSharedCloudExtensions(core, extensions)
+        val extended = JSONObject(core.toString()).put("extensions", extensions)
         val prepared = prepareSharedCloudState(extended, userId)
 
         assertEquals(SharedCloudStateSource.CanonicalV2, prepared.source)
@@ -65,7 +65,7 @@ class CloudStateContractTest {
     }
 
     @Test
-    fun `representative PWA canonical row preserves pwa and ios extensions on Android rewrite`() {
+    fun `representative PWA canonical row remains readable while Android rewrite omits extensions`() {
         val pwaWritten = representativePwaCanonicalState()
         val firstRead = prepareSharedCloudState(pwaWritten, userId)
         val androidCoreRewrite = JSONObject(pwaWritten.toString()).apply {
@@ -80,14 +80,66 @@ class CloudStateContractTest {
 
         assertEquals(SharedCloudStateSource.CanonicalV2, firstRead.source)
         assertEquals(firstRead.workoutDigest, secondRead.workoutDigest)
+        assertNotNull(firstRead.extensions?.optJSONObject("pwa"))
+        assertNotNull(firstRead.extensions?.optJSONObject("ios"))
+        assertFalse(androidWritten.has("extensions"))
+        assertNull(secondRead.extensions)
+    }
+
+    @Test
+    fun `Android cloud write matches the exact v229 canonical golden shape`() {
+        val input = canonicalState().apply {
+            put("catalogSeedVersion", 3)
+            getJSONArray("exercises").getJSONObject(0).apply {
+                put("favorite", true)
+                put(
+                    "loadProfile",
+                    JSONObject()
+                        .put("direction", "higherIsHarder")
+                        .put("allowedWeightsKg", JSONArray(listOf(60.0, 80.0, 100.0)))
+                )
+            }
+            getJSONArray("sessions").getJSONObject(0)
+                .getJSONArray("exercises").getJSONObject(0)
+                .put(
+                    "loadProfile",
+                    JSONObject()
+                        .put("direction", "higherIsHarder")
+                        .put("allowedWeightsKg", JSONArray(listOf(60.0, 80.0, 100.0)))
+                )
+        }
+        val retainedReadExtensions = JSONObject().put(
+            "future.client",
+            JSONObject().put("version", 1).put("enabled", true)
+        )
+
+        val written = attachSharedCloudExtensions(input, retainedReadExtensions)
+        val golden = canonicalState()
+
+        assertEquals(golden.toString(), written.toString())
         assertEquals(
-            pwaWritten.getJSONObject("extensions").getJSONObject("pwa").toString(),
-            androidWritten.getJSONObject("extensions").getJSONObject("pwa").toString()
+            setOf(
+                "schemaVersion",
+                "exportedAt",
+                "app",
+                "diagnostics",
+                "owner",
+                "exercises",
+                "sessions",
+                "summary"
+            ),
+            written.jsonKeys()
         )
         assertEquals(
-            pwaWritten.getJSONObject("extensions").getJSONObject("ios").toString(),
-            androidWritten.getJSONObject("extensions").getJSONObject("ios").toString()
+            setOf("name", "catalogKey"),
+            written.getJSONArray("exercises").getJSONObject(0).jsonKeys()
         )
+        assertEquals(
+            setOf("name", "catalogKey", "sets"),
+            written.getJSONArray("sessions").getJSONObject(0)
+                .getJSONArray("exercises").getJSONObject(0).jsonKeys()
+        )
+        assertTrue(isCanonicalSharedCloudEnvelope(written, userId))
     }
 
     @Test
@@ -148,7 +200,7 @@ class CloudStateContractTest {
 
         assertTrue(
             isCanonicalSharedCloudEnvelope(
-                attachSharedCloudExtensions(canonicalState(), extensions),
+                canonicalState().put("extensions", extensions),
                 userId
             )
         )
@@ -172,15 +224,15 @@ class CloudStateContractTest {
                             .put("calories", "Maintenance")
                     )
             )
-            return attachSharedCloudExtensions(canonicalState(), extensions)
+            return canonicalState().put("extensions", extensions)
         }
 
         assertTrue(isCanonicalSharedCloudEnvelope(stateWithMuscle("💪".repeat(32)), userId))
         assertThrows(IllegalArgumentException::class.java) {
-            stateWithMuscle("a".repeat(65))
+            prepareSharedCloudState(stateWithMuscle("a".repeat(65)), userId)
         }
         assertThrows(IllegalArgumentException::class.java) {
-            stateWithMuscle("💪".repeat(33))
+            prepareSharedCloudState(stateWithMuscle("💪".repeat(33)), userId)
         }
     }
 
@@ -239,20 +291,21 @@ class CloudStateContractTest {
     }
 
     @Test
-    fun `canonical writes omit empty extensions and preserve unknown namespaces semantically`() {
+    fun `canonical reads preserve unknown namespaces but compatible writes omit them`() {
         val core = canonicalState()
         assertFalse(attachSharedCloudExtensions(core, JSONObject()).has("extensions"))
 
         val unknown = JSONObject()
             .put("watch.vendor", JSONObject().put("values", JSONArray(listOf(1, 2, 3))))
-        val first = attachSharedCloudExtensions(core, unknown)
+        val first = JSONObject(core.toString()).put("extensions", unknown)
         val retained = prepareSharedCloudState(first, userId).extensions
         val second = attachSharedCloudExtensions(canonicalState(), retained)
 
         assertEquals(
             unknown.toString(),
-            second.optJSONObject("extensions")?.toString()
+            retained?.toString()
         )
+        assertFalse(second.has("extensions"))
         assertNull(canonicalState().optJSONObject("extensions"))
     }
 
@@ -363,5 +416,10 @@ class CloudStateContractTest {
                         .put("preferences", JSONObject().put("chart", "heartRate"))
                 )
         )
+    }
+
+    private fun JSONObject.jsonKeys(): Set<String> = buildSet {
+        val iterator = keys()
+        while (iterator.hasNext()) add(iterator.next())
     }
 }

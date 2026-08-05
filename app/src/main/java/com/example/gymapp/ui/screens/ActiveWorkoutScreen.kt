@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -33,6 +34,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
@@ -54,6 +60,9 @@ fun ActiveWorkoutScreen(
     onSetWeightChanged: (String, String) -> Unit,
     onSetRepsChanged: (String, String) -> Unit,
     onRecordSet: (String) -> Unit,
+    onUndoLatestSet: (String) -> Unit,
+    onAdjustRestTimer: (Int) -> Unit,
+    onStopRestTimer: () -> Unit,
     onFinishWorkout: () -> Unit,
     onDiscardWorkout: () -> Unit,
     onDismissMessage: () -> Unit,
@@ -85,7 +94,7 @@ fun ActiveWorkoutScreen(
     }
 
     val operationInProgress = uiState.isFinishing || uiState.isDiscarding ||
-        uiState.setRecordingsInFlight.isNotEmpty()
+        uiState.setRecordingsInFlight.isNotEmpty() || uiState.undoingSetId != null
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
@@ -105,13 +114,24 @@ fun ActiveWorkoutScreen(
                         style = MaterialTheme.typography.bodyMedium,
                         color = Color.White.copy(alpha = 0.9f)
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        InfoPill(
-                            text = stringResource(
-                                R.string.active_workout_progress,
-                                uiState.completedSetCount,
-                                uiState.totalSetCount
+                    val progressDescription = stringResource(
+                        R.string.active_workout_progress,
+                        uiState.completedSetCount,
+                        uiState.totalSetCount
+                    )
+                    Row(
+                        modifier = Modifier.semantics {
+                            stateDescription = progressDescription
+                            progressBarRangeInfo = ProgressBarRangeInfo(
+                                current = uiState.completedSetCount.toFloat(),
+                                range = 0f..uiState.totalSetCount.coerceAtLeast(1).toFloat(),
+                                steps = (uiState.totalSetCount - 1).coerceAtLeast(0)
                             )
+                        },
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        InfoPill(
+                            text = progressDescription
                         )
                         InfoPill(text = DateTimeUtils.formatDate(uiState.date))
                     }
@@ -147,7 +167,7 @@ fun ActiveWorkoutScreen(
             }
         }
 
-        uiState.message?.let { message ->
+        uiState.message?.takeIf { uiState.messageSetId == null }?.let { message ->
             item {
                 AppPanel(
                     modifier = Modifier.fillMaxWidth(),
@@ -183,9 +203,18 @@ fun ActiveWorkoutScreen(
                 exercise = exercise,
                 operationInProgress = operationInProgress,
                 inFlightSetIds = uiState.setRecordingsInFlight,
+                latestCompletedSetId = uiState.latestCompletedSetId,
+                undoingSetId = uiState.undoingSetId,
+                restSecondsRemaining = uiState.restSecondsRemaining,
+                inlineMessage = uiState.message,
+                inlineMessageSetId = uiState.messageSetId,
                 onSetWeightChanged = onSetWeightChanged,
                 onSetRepsChanged = onSetRepsChanged,
-                onRecordSet = onRecordSet
+                onRecordSet = onRecordSet,
+                onUndoLatestSet = onUndoLatestSet,
+                onAdjustRestTimer = onAdjustRestTimer,
+                onStopRestTimer = onStopRestTimer,
+                onDismissMessage = onDismissMessage
             )
         }
 
@@ -275,9 +304,18 @@ private fun ActiveWorkoutExerciseCard(
     exercise: ActiveWorkoutExerciseUiState,
     operationInProgress: Boolean,
     inFlightSetIds: Set<String>,
+    latestCompletedSetId: String?,
+    undoingSetId: String?,
+    restSecondsRemaining: Int,
+    inlineMessage: com.example.gymapp.util.LocalizedText?,
+    inlineMessageSetId: String?,
     onSetWeightChanged: (String, String) -> Unit,
     onSetRepsChanged: (String, String) -> Unit,
-    onRecordSet: (String) -> Unit
+    onRecordSet: (String) -> Unit,
+    onUndoLatestSet: (String) -> Unit,
+    onAdjustRestTimer: (Int) -> Unit,
+    onStopRestTimer: () -> Unit,
+    onDismissMessage: () -> Unit
 ) {
     AppPanel(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -301,9 +339,22 @@ private fun ActiveWorkoutExerciseCard(
                     set = set,
                     operationInProgress = operationInProgress,
                     isRecording = set.id in inFlightSetIds,
+                    isLatestCompleted = set.id == latestCompletedSetId,
+                    isUndoing = set.id == undoingSetId,
+                    restDurationSeconds = exercise.restDurationSeconds,
+                    restSecondsRemaining = if (set.id == latestCompletedSetId) {
+                        restSecondsRemaining
+                    } else {
+                        0
+                    },
+                    inlineMessage = inlineMessage.takeIf { inlineMessageSetId == set.id },
                     onWeightChanged = { value -> onSetWeightChanged(set.id, value) },
                     onRepsChanged = { value -> onSetRepsChanged(set.id, value) },
-                    onRecord = { onRecordSet(set.id) }
+                    onRecord = { onRecordSet(set.id) },
+                    onUndo = { onUndoLatestSet(set.id) },
+                    onAdjustRestTimer = onAdjustRestTimer,
+                    onStopRestTimer = onStopRestTimer,
+                    onDismissMessage = onDismissMessage
                 )
             }
         }
@@ -315,9 +366,18 @@ private fun ActiveWorkoutSetRow(
     set: ActiveWorkoutSetUiState,
     operationInProgress: Boolean,
     isRecording: Boolean,
+    isLatestCompleted: Boolean,
+    isUndoing: Boolean,
+    restDurationSeconds: Int,
+    restSecondsRemaining: Int,
+    inlineMessage: com.example.gymapp.util.LocalizedText?,
     onWeightChanged: (String) -> Unit,
     onRepsChanged: (String) -> Unit,
-    onRecord: () -> Unit
+    onRecord: () -> Unit,
+    onUndo: () -> Unit,
+    onAdjustRestTimer: (Int) -> Unit,
+    onStopRestTimer: () -> Unit,
+    onDismissMessage: () -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(
@@ -370,7 +430,9 @@ private fun ActiveWorkoutSetRow(
             Button(
                 onClick = onRecord,
                 enabled = !operationInProgress,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
             ) {
                 if (isRecording) {
                     CircularProgressIndicator(
@@ -381,7 +443,106 @@ private fun ActiveWorkoutSetRow(
                         color = MaterialTheme.colorScheme.onPrimary
                     )
                 }
-                Text(text = stringResource(R.string.action_log_set_and_rest, 90))
+                Text(text = stringResource(R.string.action_log_set_and_rest, restDurationSeconds))
+            }
+        }
+        if (isLatestCompleted) {
+            if (restSecondsRemaining > 0) {
+                AppPanel(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .semantics {
+                            stateDescription = formatRestTime(restSecondsRemaining)
+                        },
+                    highlighted = true
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.active_workout_rest_saved),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = formatRestTime(restSecondsRemaining),
+                            style = MaterialTheme.typography.headlineSmall
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            val subtractDescription = stringResource(
+                                R.string.active_workout_rest_subtract
+                            )
+                            val addDescription = stringResource(R.string.active_workout_rest_add)
+                            OutlinedButton(
+                                onClick = { onAdjustRestTimer(-15) },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .heightIn(min = 48.dp)
+                                    .semantics {
+                                        contentDescription = subtractDescription
+                                    }
+                            ) { Text("−15") }
+                            OutlinedButton(
+                                onClick = { onAdjustRestTimer(15) },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .heightIn(min = 48.dp)
+                                    .semantics {
+                                        contentDescription = addDescription
+                                    }
+                            ) { Text("+15") }
+                            TextButton(
+                                onClick = onStopRestTimer,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .heightIn(min = 48.dp)
+                            ) {
+                                Text(stringResource(R.string.active_workout_rest_stop))
+                            }
+                        }
+                    }
+                }
+            }
+            OutlinedButton(
+                onClick = onUndo,
+                enabled = !operationInProgress,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+            ) {
+                if (isUndoing) {
+                    CircularProgressIndicator(
+                        modifier = Modifier
+                            .padding(end = 8.dp)
+                            .size(18.dp),
+                        strokeWidth = 2.dp
+                    )
+                }
+                Text(stringResource(R.string.active_workout_undo_action))
+            }
+        }
+        inlineMessage?.let { message ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = message.asString(),
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+                TextButton(
+                    onClick = onDismissMessage,
+                    modifier = Modifier.heightIn(min = 48.dp)
+                ) {
+                    Text(stringResource(R.string.action_close))
+                }
             }
         }
     }

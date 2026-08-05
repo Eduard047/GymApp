@@ -72,6 +72,9 @@ struct ActiveWorkoutDraft: Codable, Identifiable, Equatable, Sendable {
     var workoutDate: Date
     var note: String?
     var exercises: [ActiveWorkoutExercise]
+    /// The single completion that can still be undone. Clearing it after undo keeps
+    /// every earlier completion immutable instead of enabling cascading undo.
+    var undoableSetID: UUID?
     var revision: UInt64
     var lastModifiedAt: Date
     var commitIntent: ActiveWorkoutCommitIntent?
@@ -82,6 +85,7 @@ struct ActiveWorkoutDraft: Codable, Identifiable, Equatable, Sendable {
         workoutDate: Date,
         note: String? = nil,
         exercises: [ActiveWorkoutExercise],
+        undoableSetID: UUID? = nil,
         revision: UInt64 = 0,
         lastModifiedAt: Date = Date(),
         commitIntent: ActiveWorkoutCommitIntent? = nil
@@ -91,6 +95,7 @@ struct ActiveWorkoutDraft: Codable, Identifiable, Equatable, Sendable {
         self.workoutDate = workoutDate
         self.note = note
         self.exercises = exercises
+        self.undoableSetID = undoableSetID
         self.revision = revision
         self.lastModifiedAt = lastModifiedAt
         self.commitIntent = commitIntent

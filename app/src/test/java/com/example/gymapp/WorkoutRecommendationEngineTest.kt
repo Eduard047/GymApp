@@ -13,8 +13,10 @@ import com.example.gymapp.data.repository.MuscleContribution
 import com.example.gymapp.data.repository.WorkoutDataLimits
 import com.example.gymapp.data.repository.WorkoutRecommendationEngine
 import com.example.gymapp.data.repository.WorkoutRecommendationKind
+import com.example.gymapp.data.repository.WorkoutRecommendationReason
 import com.example.gymapp.ui.viewmodel.SmartWorkoutPlanSummaryUiModel
 import com.example.gymapp.ui.viewmodel.smartWorkoutRecommendationPolicy
+import com.example.gymapp.ui.viewmodel.smartWorkoutPlanNeedsRefresh
 import com.example.gymapp.util.CalorieMode
 import com.example.gymapp.util.TrainingGoal
 import com.example.gymapp.util.TrainingProfile
@@ -250,7 +252,7 @@ class WorkoutRecommendationEngineTest {
 
         assertEquals(WorkoutRecommendationKind.ProgressiveOverload, recommendation.kind)
         assertEquals(List(4) { 102.5 }, recommendation.sets.map { it.weight })
-        assertEquals(List(4) { 3 }, recommendation.sets.map { it.reps })
+        assertEquals(List(4) { 4 }, recommendation.sets.map { it.reps })
     }
 
     @Test
@@ -876,9 +878,12 @@ class WorkoutRecommendationEngineTest {
             zoneId = zoneId
         )
 
-        assertEquals(10, plan(workoutsPerWeek = 2).exercises.size)
-        assertEquals(6, plan(workoutsPerWeek = 6).exercises.size)
-        assertEquals(18, plan(workoutsPerWeek = 6).exercises.sumOf { it.recommendation.sets.size })
+        val twoDays = plan(workoutsPerWeek = 2)
+        val sixDays = plan(workoutsPerWeek = 6)
+        assertTrue(twoDays.exercises.size > sixDays.exercises.size)
+        assertTrue(twoDays.exercises.sumOf { it.recommendation.sets.size } >
+            sixDays.exercises.sumOf { it.recommendation.sets.size })
+        assertTrue(sixDays.exercises.all { it.recommendation.sets.size in 3..4 })
     }
 
     @Test
@@ -896,13 +901,13 @@ class WorkoutRecommendationEngineTest {
             zoneId = zoneId
         ).exercises.size
 
-        assertEquals(10, count(2, TrainingSplit.FullBody))
-        assertEquals(9, count(3, TrainingSplit.FullBody))
-        assertEquals(8, count(4, TrainingSplit.UpperLower))
-        assertEquals(7, count(5, TrainingSplit.UpperLower))
-        assertEquals(6, count(6, TrainingSplit.PushPullLegs))
-        assertEquals(7, count(5, TrainingSplit.FullBody))
-        assertEquals(6, count(6, TrainingSplit.FullBody))
+        val fullBodyCounts = (2..6).map { days -> count(days, TrainingSplit.FullBody) }
+        assertTrue(fullBodyCounts.zipWithNext().all { (lowerFrequency, higherFrequency) ->
+            lowerFrequency >= higherFrequency
+        })
+        assertTrue(fullBodyCounts.all { it in 4..8 })
+        assertTrue(count(4, TrainingSplit.UpperLower) >= 5)
+        assertTrue(count(6, TrainingSplit.PushPullLegs) >= 3)
     }
 
     @Test
@@ -975,7 +980,7 @@ class WorkoutRecommendationEngineTest {
         assertTrue(fullBody.exercises.sumOf { it.recommendation.sets.size } <= 28)
         assertTrue(lower.exercises.sumOf { it.recommendation.sets.size } <= 32)
         assertTrue(upperAfterCore.exercises.sumOf { it.recommendation.sets.size } <= 32)
-        assertEquals(18, pushAfterCore.exercises.sumOf { it.recommendation.sets.size })
+        assertTrue(pushAfterCore.exercises.sumOf { it.recommendation.sets.size } in 12..18)
     }
 
     @Test
@@ -1072,8 +1077,8 @@ class WorkoutRecommendationEngineTest {
         )
 
         assertEquals(SmartWorkoutFocus.Upper, plan.focus)
-        assertEquals(6, plan.exercises.size)
-        assertEquals(18, plan.exercises.sumOf { it.recommendation.sets.size })
+        assertEquals(8, plan.exercises.size)
+        assertTrue(plan.exercises.sumOf { it.recommendation.sets.size } in 24..32)
         assertTrue(plan.exerciseNames().any { it == "Bench Press" || it == "Shoulder Press" })
         assertTrue(plan.exerciseNames().any { it == "Cable Row" || it == "Pull Up" })
     }
@@ -1242,9 +1247,7 @@ class WorkoutRecommendationEngineTest {
                             nowMillis = nowMillis,
                             zoneId = zoneId
                         )
-                        val expectedCount = 12 - workoutsPerWeek
-
-                        assertEquals(context, expectedCount, plan.exercises.size)
+                        assertTrue(context, plan.exercises.size in 4..10)
                         assertEquals(
                             "$context trunk",
                             1,
@@ -1414,8 +1417,8 @@ class WorkoutRecommendationEngineTest {
         )
 
         val names = plan.exerciseNames()
-        assertEquals(1, names.count { it.contains("biceps accessory") })
-        assertTrue(names.contains("Zeta calves accessory"))
+        assertEquals(1, names.count { it.contains("accessory") })
+        assertTrue(names.any { it.contains("biceps accessory") || it == "Zeta calves accessory" })
         assertTrue(plan.exercises.all { exercise ->
             exercise.recommendation.sets.size in 3..4 &&
                 exercise.recommendation.sets.all { it.reps <= 10 }
@@ -1796,6 +1799,20 @@ class WorkoutRecommendationEngineTest {
         assertTrue(stalePolicy.hardExerciseIds.isEmpty())
         assertEquals(SmartWorkoutEffort.Standard, changedProfilePolicy.effort)
         assertTrue(changedProfilePolicy.hardExerciseIds.isEmpty())
+        assertFalse(
+            smartWorkoutPlanNeedsRefresh(
+                selectedEffort = SmartWorkoutEffort.Hard,
+                currentProfile = TrainingProfile(),
+                generatedPlan = generatedPlan
+            )
+        )
+        assertTrue(
+            smartWorkoutPlanNeedsRefresh(
+                selectedEffort = SmartWorkoutEffort.Standard,
+                currentProfile = TrainingProfile(),
+                generatedPlan = generatedPlan
+            )
+        )
 
         val names = mapOf(
             1L to "Bench Press",
@@ -1832,6 +1849,126 @@ class WorkoutRecommendationEngineTest {
 
         assertEquals(2, recommendations.count { it.targetRir == 1..2 && it.sets.size == 4 })
         assertEquals(2, recommendations.count { it.targetRir == 2..3 && it.sets.size == 3 })
+    }
+
+    @Test
+    fun everyProfileInputMateriallyChangesTheGeneratedSession() {
+        fun plan(profile: TrainingProfile) = WorkoutRecommendationEngine.buildWorkoutPlan(
+            exercises = catalog(),
+            history = emptyList(),
+            trainingProfile = profile,
+            nowMillis = nowMillis,
+            zoneId = zoneId
+        )
+        fun workingSets(profile: TrainingProfile): Int =
+            plan(profile).exercises.sumOf { it.recommendation.sets.size }
+
+        val base = TrainingProfile(
+            split = TrainingSplit.FullBody,
+            workoutsPerWeek = 4,
+            goal = TrainingGoal.Balanced,
+            calorieMode = CalorieMode.Maintenance
+        )
+        val strengthSets = workingSets(base.copy(goal = TrainingGoal.Strength))
+        val balancedSets = workingSets(base)
+        val muscleGainSets = workingSets(base.copy(goal = TrainingGoal.MuscleGain))
+        assertTrue(strengthSets < balancedSets)
+        assertTrue(balancedSets < muscleGainSets)
+
+        val deficitSets = workingSets(base.copy(calorieMode = CalorieMode.Deficit))
+        val surplusSets = workingSets(base.copy(calorieMode = CalorieMode.Surplus))
+        assertTrue(deficitSets < balancedSets)
+        assertTrue(balancedSets < surplusSets)
+
+        assertTrue(
+            workingSets(base.copy(workoutsPerWeek = 2)) >
+                workingSets(base.copy(workoutsPerWeek = 6))
+        )
+        val upperLower = plan(base.copy(split = TrainingSplit.UpperLower))
+        val pushPullLegs = plan(base.copy(split = TrainingSplit.PushPullLegs))
+        assertTrue(upperLower.focus != pushPullLegs.focus)
+        assertTrue(upperLower.exerciseNames() != pushPullLegs.exerciseNames())
+    }
+
+    @Test
+    fun saturatedWeeklyTargetsKeepRequiredMovementsAndTrunkButStopFillers() {
+        val allMuscles = listOf(
+            "chest", "shoulders", "triceps", "lats", "upperBack", "biceps", "forearms",
+            "quads", "hamstrings", "glutes", "calves", "adductors", "lowerBack", "abs", "obliques"
+        )
+        val history = List(12) { index ->
+            ExerciseHistoryEntry(
+                setId = index.toLong() + 1,
+                sessionId = index.toLong() + 100,
+                sessionDate = nowMillis - 60_000L,
+                exerciseId = 99,
+                exerciseName = "Saturation marker",
+                weight = 1.0,
+                reps = 1,
+                setOrderIndex = 0
+            )
+        }
+        val plan = WorkoutRecommendationEngine.buildWorkoutPlan(
+            exercises = listOf(
+                ExerciseEntity(1, "Bench Press"),
+                ExerciseEntity(2, "Barbell Row"),
+                ExerciseEntity(3, "Squat"),
+                ExerciseEntity(4, "Plank"),
+                ExerciseEntity(5, "Biceps Curl"),
+                ExerciseEntity(6, "Calf Raise")
+            ),
+            history = history,
+            trainingProfile = TrainingProfile(
+                split = TrainingSplit.FullBody,
+                workoutsPerWeek = 4,
+                goal = TrainingGoal.Balanced,
+                calorieMode = CalorieMode.Maintenance
+            ),
+            manualMuscleMappings = mapOf(
+                "saturation marker" to allMuscles.map { MuscleContribution(it, 1.0) }
+            ),
+            nowMillis = nowMillis,
+            zoneId = zoneId
+        )
+
+        assertEquals(setOf("Bench Press", "Barbell Row", "Squat", "Plank"), plan.exerciseNames().toSet())
+        assertTrue(plan.exercises.all { it.recommendation.sets.size in 3..4 })
+    }
+
+    @Test
+    fun recoveryBodyweightAndCanonicalEquipmentUseActionableProgrammingMetadata() {
+        val recovery = WorkoutRecommendationEngine.buildForExercise(
+            exerciseId = 1,
+            exerciseName = "Pull Up",
+            history = emptyList(),
+            effort = SmartWorkoutEffort.Recovery,
+            nowMillis = nowMillis,
+            zoneId = zoneId
+        )
+        val progressed = WorkoutRecommendationEngine.buildForExercise(
+            exerciseId = 2,
+            exerciseName = "Push Up",
+            history = exerciseSession(1, 3, List(3) { 0.0 }, List(3) { 8 }, 2, "Push Up") +
+                exerciseSession(2, 1, List(3) { 0.0 }, List(3) { 8 }, 2, "Push Up"),
+            trainingProfile = TrainingProfile(
+                goal = TrainingGoal.Balanced,
+                calorieMode = CalorieMode.Maintenance
+            ),
+            nowMillis = nowMillis,
+            zoneId = zoneId
+        )
+
+        assertEquals(List(3) { 7 }, recovery.sets.map { it.reps })
+        assertTrue(
+            progressed.reasons.toString(),
+            progressed.reasons.contains(WorkoutRecommendationReason.BodyweightProgressionNeeded)
+        )
+        assertEquals("Machine", WorkoutRecommendationEngine.canonicalEquipmentForExercise("Plate Loaded Row"))
+        assertEquals("Dumbbell", WorkoutRecommendationEngine.canonicalEquipmentForExercise("Bulgarian Split Squat"))
+        assertEquals(180, WorkoutRecommendationEngine.recommendedRestSeconds("Bench Press"))
+        assertEquals(120, WorkoutRecommendationEngine.recommendedRestSeconds("Pull Up"))
+        assertEquals(75, WorkoutRecommendationEngine.recommendedRestSeconds("Biceps Curl"))
+        assertEquals(60, WorkoutRecommendationEngine.recommendedRestSeconds("Plank"))
     }
 
     private fun pplPlanAfter(exerciseName: String, exerciseId: Long) = WorkoutRecommendationEngine.buildWorkoutPlan(

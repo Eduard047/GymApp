@@ -13,6 +13,7 @@ struct ActiveWorkoutView: View {
     private let reportStatus: (String, Bool) -> Void
 
     @State private var statusMessage: String?
+    @State private var statusIsError = false
     @State private var showingDiscardConfirmation = false
 
     init(
@@ -42,8 +43,14 @@ struct ActiveWorkoutView: View {
                     LazyVStack(spacing: 14) {
                         progressPanel(draft)
 
+                        WorkoutRestTimerControls(
+                            manager: restTimers,
+                            timerID: timerKey(draftID: draft.id),
+                            exerciseName: currentRestExerciseName(draft)
+                        )
+
                         if let statusMessage {
-                            GymStatusBanner(message: statusMessage, isError: true)
+                            GymStatusBanner(message: statusMessage, isError: statusIsError)
                         }
 
                         ForEach(draft.exercises) { exercise in
@@ -222,7 +229,22 @@ struct ActiveWorkoutView: View {
                     total: Double(max(1, draft.plannedSetCount))
                 )
                 .tint(.white)
+                .accessibilityLabel(
+                    gymText(
+                        "Workout progress",
+                        "Прогрес тренування",
+                        "Прогресс тренировки",
+                        languageCode: gymCurrentLanguageCode()
+                    )
+                )
                 .accessibilityValue("\(draft.completedSetCount) / \(draft.plannedSetCount)")
+
+                if let next = nextSetDescription(draft) {
+                    Text(next)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Color.white.opacity(0.9))
+                        .accessibilityLabel(next)
+                }
             }
         }
     }
@@ -238,8 +260,6 @@ struct ActiveWorkoutView: View {
             "Недоступное упражнение",
             languageCode: gymCurrentLanguageCode()
         )
-        let timerID = timerKey(draftID: draft.id, exerciseBlockID: exercise.id)
-
         return GymPanel(highlighted: true) {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 10) {
@@ -258,12 +278,6 @@ struct ActiveWorkoutView: View {
                         .font(.subheadline.monospacedDigit().weight(.semibold))
                         .foregroundStyle(GymTheme.textSecondary)
                 }
-
-                WorkoutRestTimerControls(
-                    manager: restTimers,
-                    timerID: timerID,
-                    exerciseName: exerciseName
-                )
 
                 ForEach(Array(exercise.sets.enumerated()), id: \.element.id) { index, set in
                     setRow(
@@ -325,6 +339,31 @@ struct ActiveWorkoutView: View {
                     )
                     .font(.caption.bold())
                     .foregroundStyle(GymTheme.secondary)
+                    if draft.undoableSetID == set.id {
+                        Button {
+                            undoLatestSet(set, draft: draft)
+                        } label: {
+                            Label(
+                                gymText(
+                                    "Undo latest",
+                                    "Скасувати останній",
+                                    "Отменить последний",
+                                    languageCode: gymCurrentLanguageCode()
+                                ),
+                                systemImage: "arrow.uturn.backward.circle"
+                            )
+                        }
+                        .buttonStyle(.borderless)
+                        .disabled(draft.commitIntent != nil)
+                        .accessibilityHint(
+                            gymText(
+                                "Restores this set for editing and stops the current rest timer",
+                                "Повертає цей підхід до редагування й зупиняє таймер",
+                                "Возвращает подход к редактированию и останавливает таймер",
+                                languageCode: gymCurrentLanguageCode()
+                            )
+                        )
+                    }
                 }
             }
 
@@ -338,6 +377,7 @@ struct ActiveWorkoutView: View {
             }
 
             if !set.isCompleted {
+                let restSeconds = restDurationSeconds(for: exercise)
                 Button {
                     recordSet(
                         set,
@@ -348,9 +388,9 @@ struct ActiveWorkoutView: View {
                 } label: {
                     Label(
                         gymText(
-                            "Record set · start 90 sec rest",
-                            "Записати підхід · відпочинок 90 с",
-                            "Записать подход · отдых 90 с",
+                            "Record set · start \(restSeconds) sec rest",
+                            "Записати підхід · відпочинок \(restSeconds) с",
+                            "Записать подход · отдых \(restSeconds) с",
                             languageCode: gymCurrentLanguageCode()
                         ),
                         systemImage: "checkmark.circle.fill"
@@ -391,6 +431,7 @@ struct ActiveWorkoutView: View {
             .keyboardType(.decimalPad)
             .gymTextFieldChrome()
             .disabled(set.isCompleted || draft.commitIntent != nil)
+            .accessibilityHidden(set.isCompleted || draft.commitIntent != nil)
         }
         .frame(maxWidth: .infinity)
 
@@ -414,6 +455,7 @@ struct ActiveWorkoutView: View {
             .padding(.vertical, 9)
             .background(GymTheme.surface.opacity(0.7), in: RoundedRectangle(cornerRadius: 14))
             .disabled(set.isCompleted || draft.commitIntent != nil)
+            .accessibilityHidden(set.isCompleted || draft.commitIntent != nil)
         }
         .frame(maxWidth: .infinity)
     }
@@ -539,14 +581,87 @@ struct ActiveWorkoutView: View {
             )
             // The atomic active-draft write above must succeed before rest begins.
             restTimers.start(
-                id: timerKey(draftID: draft.id, exerciseBlockID: exercise.id),
-                seconds: 90,
+                id: timerKey(draftID: draft.id),
+                seconds: restDurationSeconds(for: exercise),
                 title: exerciseName
             )
-            statusMessage = nil
+            statusMessage = gymText(
+                "Set recorded. Rest timer started.",
+                "Підхід записано. Таймер відпочинку запущено.",
+                "Подход записан. Таймер отдыха запущен.",
+                languageCode: gymCurrentLanguageCode()
+            )
+            statusIsError = false
         } catch {
             show(error)
         }
+    }
+
+    private func undoLatestSet(
+        _ set: ActiveWorkoutSet,
+        draft: ActiveWorkoutDraft
+    ) {
+        do {
+            try activeWorkoutStore.undoLatestRecordedSet(
+                draftID: draft.id,
+                setID: set.id,
+                expectedRevision: draft.revision
+            )
+            restTimers.cancel(id: timerKey(draftID: draft.id))
+            statusMessage = gymText(
+                "Latest set restored for editing. Rest stopped.",
+                "Останній підхід повернуто до редагування. Відпочинок зупинено.",
+                "Последний подход возвращён к редактированию. Отдых остановлен.",
+                languageCode: gymCurrentLanguageCode()
+            )
+            statusIsError = false
+        } catch {
+            show(error)
+        }
+    }
+
+    private func restDurationSeconds(for exercise: ActiveWorkoutExercise) -> Int {
+        let stored = workoutStore.exercise(id: exercise.exerciseID)
+        return RecommendationEngine.restDurationSeconds(
+            exerciseCatalogKey: stored?.catalogKey ?? exercise.exerciseCatalogKey,
+            exerciseName: stored?.name ?? exercise.exerciseName ?? ""
+        )
+    }
+
+    private func currentRestExerciseName(_ draft: ActiveWorkoutDraft) -> String {
+        guard let latestID = draft.undoableSetID,
+              let exercise = draft.exercises.first(where: {
+                  $0.sets.contains { $0.id == latestID }
+              }) else {
+            return gymText(
+                "Workout",
+                "Тренування",
+                "Тренировка",
+                languageCode: gymCurrentLanguageCode()
+            )
+        }
+        return workoutStore.exercise(id: exercise.exerciseID).map { gymExerciseName($0) } ??
+            exercise.exerciseName ?? "Workout"
+    }
+
+    private func nextSetDescription(_ draft: ActiveWorkoutDraft) -> String? {
+        for exercise in draft.exercises {
+            guard let index = exercise.sets.firstIndex(where: { !$0.isCompleted }) else { continue }
+            let name = workoutStore.exercise(id: exercise.exerciseID).map { gymExerciseName($0) } ??
+                exercise.exerciseName ?? gymText(
+                    "Exercise",
+                    "Вправа",
+                    "Упражнение",
+                    languageCode: gymCurrentLanguageCode()
+                )
+            return gymText(
+                "Current target: \(name), set \(index + 1)",
+                "Поточна ціль: \(name), підхід \(index + 1)",
+                "Текущая цель: \(name), подход \(index + 1)",
+                languageCode: gymCurrentLanguageCode()
+            )
+        }
+        return nil
     }
 
     private func appendSet(to exercise: ActiveWorkoutExercise) {
@@ -568,24 +683,12 @@ struct ActiveWorkoutView: View {
 
     private func finish(_ draft: ActiveWorkoutDraft) {
         do {
-            let timerIDs = draft.exercises.map {
-                timerKey(draftID: draft.id, exerciseBlockID: $0.id)
-            }
             let workout = try activeWorkoutStore.finish(
                 draftID: draft.id,
                 expectedRevision: draft.revision,
                 into: workoutStore
             )
-            timerIDs.forEach { restTimers.cancel(id: $0) }
-            reportStatus(
-                gymText(
-                    "Workout finished. Only recorded sets were saved.",
-                    "Тренування завершено. Збережено лише записані підходи.",
-                    "Тренировка завершена. Сохранены только записанные подходы.",
-                    languageCode: gymCurrentLanguageCode()
-                ),
-                false
-            )
+            restTimers.cancel(id: timerKey(draftID: draft.id))
             onFinished(workout.id)
         } catch {
             show(error)
@@ -598,14 +701,11 @@ struct ActiveWorkoutView: View {
             return
         }
         do {
-            let timerIDs = draft.exercises.map {
-                timerKey(draftID: draft.id, exerciseBlockID: $0.id)
-            }
             try activeWorkoutStore.discard(
                 draftID: draft.id,
                 expectedRevision: draft.revision
             )
-            timerIDs.forEach { restTimers.cancel(id: $0) }
+            restTimers.cancel(id: timerKey(draftID: draft.id))
             reportStatus(
                 gymText(
                     "Active workout discarded.",
@@ -621,11 +721,12 @@ struct ActiveWorkoutView: View {
         }
     }
 
-    private func timerKey(draftID: UUID, exerciseBlockID: UUID) -> String {
-        "active-workout-\(draftID.uuidString)-exercise-\(exerciseBlockID.uuidString)"
+    private func timerKey(draftID: UUID) -> String {
+        "active-workout-\(draftID.uuidString)-rest"
     }
 
     private func show(_ error: Error) {
         statusMessage = gymErrorMessage(error)
+        statusIsError = true
     }
 }

@@ -194,6 +194,16 @@
     <string name="cloud_sync_resolution_failed">The conflict changed or could not be resolved safely. Reload both versions and try again.</string>
     <string name="cloud_sync_kept_device">This device’s version was saved to the cloud.</string>
     <string name="cloud_sync_used_cloud">The verified cloud version was loaded on this device.</string>
+    <string name="cloud_sync_status_eyebrow">WORKOUT SYNC</string>
+    <string name="cloud_sync_status_checking">Checking cloud state…</string>
+    <string name="cloud_sync_status_pending">Local changes waiting to sync</string>
+    <string name="cloud_sync_status_synced">Workout history is synced</string>
+    <string name="cloud_sync_status_conflict">Choose which history to keep</string>
+    <string name="cloud_sync_status_error">Sync paused after an error</string>
+    <string name="cloud_sync_status_last_success">Last successful sync: %1$s</string>
+    <string name="cloud_sync_status_never">No successful sync recorded on this device yet.</string>
+    <string name="cloud_sync_now_action">Sync now</string>
+    <string name="cloud_sync_retry_action">Retry sync</string>
 
     <string name="label_note">Note</string>
     <string name="hint_note">Session note</string>
@@ -248,7 +258,7 @@
     <string name="add_workout_completed_mode_hint">Completed mode: saving writes every planned row immediately to workout history and summary.</string>
     <string name="add_workout_active_mode_hint">Starting saves a durable local plan. A set enters workout history only after you record it and finish the workout.</string>
     <string name="active_workout_title">Active workout</string>
-    <string name="active_workout_supporting">Record each completed set. It is saved before the 90-second rest starts.</string>
+    <string name="active_workout_supporting">Record each completed set. It is saved before a movement-aware rest timer starts.</string>
     <string name="active_workout_progress">Completed %1$d of %2$d sets</string>
     <string name="active_workout_finish_eyebrow">WHEN YOU ARE DONE</string>
     <string name="active_workout_finish_supporting">Only recorded sets will be added to workout history. Planned rows stay out of your statistics.</string>
@@ -267,6 +277,15 @@
     <string name="active_workout_record_failed">The set could not be recorded. Rest was not started.</string>
     <string name="active_workout_finish_failed">The workout could not be finished. The active draft is still saved.</string>
     <string name="active_workout_discard_failed">The workout could not be discarded. The active draft is still saved.</string>
+    <string name="active_workout_undo_changed">Only the latest recorded set can be undone. The saved workout has been refreshed.</string>
+    <string name="active_workout_undo_failed">The latest set could not be undone. Its saved data was not changed.</string>
+    <string name="active_workout_undo_action">Undo latest set</string>
+    <string name="active_workout_rest_saved">Set saved. Rest timer</string>
+    <string name="active_workout_rest_subtract">Subtract 15 seconds</string>
+    <string name="active_workout_rest_add">Add 15 seconds</string>
+    <string name="active_workout_rest_stop">Stop rest</string>
+    <string name="active_workout_draft_title">Continue active workout</string>
+    <string name="active_workout_draft_progress">%1$d of %2$d sets recorded</string>
     <string name="note_template_push">Push day</string>
     <string name="note_template_pull">Pull day</string>
     <string name="note_template_legs">Leg day</string>
@@ -511,6 +530,8 @@
     <string name="smart_reason_near_best">This is close to your best estimated strength for the exercise.</string>
     <string name="smart_reason_conservative">The increase is intentionally conservative.</string>
     <string name="smart_reason_load_boundary">The machine is already at the hardest configured weight.</string>
+    <string name="smart_reason_bodyweight_progression">You reached the rep ceiling twice. Choose a harder bodyweight variation or add controlled resistance.</string>
+    <string name="smart_coach_plan_needs_refresh">Your profile or effort changed. Refresh this plan before relying on its recommendations.</string>
     <string name="smart_reason_aesthetic_goal">Aesthetic goal: the plan favors clean volume and technique.</string>
     <string name="smart_reason_calorie_deficit">Calorie deficit: progression is more conservative to protect recovery.</string>
     <string name="smart_reason_upper_lower">Upper/lower 4-day plan: the load leaves room for the next session.</string>

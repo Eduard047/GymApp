@@ -1307,34 +1307,48 @@ public final class WorkoutStore: ObservableObject {
         return json
     }
 
-    /// Encodes the shared schema-v2 workout core and carries validated client-specific
-    /// namespaces forward without interpreting them. The seed marker remains local migration
-    /// metadata and never enters the shared cloud row.
+    /// Encodes only the schema-v2 workout core understood by the released 2.2.9 clients.
+    /// Client-specific extensions, catalog migration markers, and machine-load profiles stay
+    /// account-local so a newer client cannot make the shared row unreadable to an older one.
     func exportCloudBackupData(
         owner: BackupOwner,
         extensionsData: Data? = nil
     ) throws -> Data {
         let backupData = try exportBackupData(owner: owner, prettyPrinted: false)
-        let backup = try JSONDecoder().decode(GymBackup.self, from: backupData)
+        let decoded = try JSONDecoder().decode(GymBackup.self, from: backupData)
         // A legacy local store can safely retain two previously distinct spellings that now
         // share one portable identity. Never publish that ambiguity or silently merge it.
-        _ = try Self.canonicalCloudWorkoutIdentityInput(backup)
-        let parsed: Any
+        var backup = try Self.canonicalCloudWorkoutIdentityInput(decoded)
+        backup.exercises = backup.exercises.map { exercise in
+            var portable = exercise
+            portable.machineLoadProfile = nil
+            return portable
+        }
+        backup.sessions = backup.sessions.map { session in
+            var portable = session
+            portable.exercises = session.exercises?.map { block in
+                var portableBlock = block
+                portableBlock.machineLoadProfile = nil
+                return portableBlock
+            }
+            return portable
+        }
+
+        let encoded: Data
         do {
-            parsed = try JSONSerialization.jsonObject(with: backupData)
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys]
+            encoded = try encoder.encode(backup)
         } catch {
             throw WorkoutStoreError.persistenceFailure(error.localizedDescription)
         }
-        guard var root = parsed as? [String: Any] else {
+        guard var root = try JSONSerialization.jsonObject(with: encoded) as? [String: Any] else {
             throw WorkoutStoreError.persistenceFailure("Cloud backup encoding failed.")
         }
         root.removeValue(forKey: "catalogSeedVersion")
-        if let extensionsData {
-            root["extensions"] = try Self.validatedCloudExtensions(
-                extensionsData,
-                limits: .standard
-            )
-        }
+        root.removeValue(forKey: "extensions")
+        // Keep the source-compatible argument while deliberately retaining the data locally.
+        _ = extensionsData
         return try Self.encodedCloudBackup(root, limits: .standard)
     }
 
@@ -2259,6 +2273,32 @@ public final class WorkoutStore: ObservableObject {
             return portableMatches.count == 1 && portableMatches[0].isFavorite
         }
 
+        func localMachineLoadProfile(
+            name: String,
+            catalogKey: String?
+        ) -> MachineLoadProfile? {
+            let legacyKey = Self.legacyPersistedNameKey(name)
+            let exactLegacyMatches = snapshot.exercises.filter {
+                Self.legacyPersistedNameKey($0.name) == legacyKey
+            }
+            if exactLegacyMatches.count == 1 {
+                return exactLegacyMatches[0].machineLoadProfile
+            }
+            if let resolved = BuiltInExerciseCatalog.resolvedKey(
+                catalogKey: catalogKey,
+                name: name
+            ) {
+                let catalogMatches = localExercisesByCatalogKey[resolved] ?? []
+                if catalogMatches.count == 1 {
+                    return catalogMatches[0].exercise.machineLoadProfile
+                }
+            }
+            let portableMatches = localExercisesByPortableNameKey[Self.nameKey(name)] ?? []
+            return portableMatches.count == 1
+                ? portableMatches[0].machineLoadProfile
+                : nil
+        }
+
         var next = replacingExisting ? WorkoutDataSnapshot() : snapshot
         next.catalogSeedVersion = replacingExisting
             ? backup.catalogSeedVersion
@@ -2326,7 +2366,10 @@ public final class WorkoutStore: ObservableObject {
             let exercise = Exercise(
                 name: name,
                 catalogKey: resolvedCatalogKey,
-                machineLoadProfile: machineLoadProfile,
+                machineLoadProfile: machineLoadProfile ?? localMachineLoadProfile(
+                    name: name,
+                    catalogKey: resolvedCatalogKey
+                ),
                 isFavorite: isLocallyFavorite(name: name, catalogKey: resolvedCatalogKey)
             )
             next.exercises.append(exercise)

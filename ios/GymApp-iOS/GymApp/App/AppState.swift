@@ -1,4 +1,5 @@
 import Combine
+import CryptoKit
 import Foundation
 
 func leaderboardHiddenProfilesDefaultsKey(for accountStorageKey: String) -> String {
@@ -7,6 +8,16 @@ func leaderboardHiddenProfilesDefaultsKey(for accountStorageKey: String) -> Stri
 
 @MainActor
 final class AppState: ObservableObject {
+    enum CloudSyncPresentationStatus: Equatable {
+        case idle
+        case checking
+        case pending
+        case syncing
+        case synced(Date)
+        case conflict
+        case failed(String)
+    }
+
     struct CloudSyncConflictSummary: Equatable {
         let localWorkoutCount: Int
         let cloudWorkoutCount: Int
@@ -23,7 +34,7 @@ final class AppState: ObservableObject {
         /// avoiding dictionary overwrite behavior for attacker-controlled backup entries.
         let configuredExercises: [BackupExercise]
         let sessions: [BackupSession]
-        private let exactWire: Data
+        fileprivate let exactWire: Data
 
         init(
             configuredExercises: [BackupExercise],
@@ -74,6 +85,7 @@ final class AppState: ObservableObject {
     @Published private(set) var isSigningOut = false
     @Published private(set) var cloudSyncConflict: CloudSyncConflictSummary?
     @Published private(set) var isResolvingCloudSyncConflict = false
+    @Published private(set) var cloudSyncStatus: CloudSyncPresentationStatus = .idle
 
     private var sessionSubscription: AnyCancellable?
     private var storeSubscription: AnyCancellable?
@@ -99,6 +111,23 @@ final class AppState: ObservableObject {
         "gymapp.pending-account-deletion-garmin-user-id"
     private static let trainingProfileKeyPrefix = "gymapp.training-profile.v1."
     private static let hiddenLeaderboardProfilesKey = "leaderboard-hidden-profile-ids"
+    private static let cloudCheckpointKeyPrefix = "gymapp.cloud-sync-checkpoint.v1."
+
+    private struct CloudSyncCheckpoint: Codable {
+        let version: Int
+        var baselineDigest: Data?
+        var dirty: Bool
+        var pending: Bool
+        var lastSuccessfulAt: Date?
+
+        static let empty = CloudSyncCheckpoint(
+            version: 1,
+            baselineDigest: nil,
+            dirty: false,
+            pending: false,
+            lastSuccessfulAt: nil
+        )
+    }
 
     private struct AccountDeletionTarget: Equatable {
         let storageKey: String
@@ -341,6 +370,7 @@ final class AppState: ObservableObject {
         pendingCloudSyncConflict = nil
         cloudSyncConflict = nil
         isResolvingCloudSyncConflict = false
+        cloudSyncStatus = session?.cloud == nil ? .idle : .checking
         activeAccountStorageKey = nil
         accountPreparationError = nil
         isPreparingAccount = session != nil
@@ -443,9 +473,21 @@ final class AppState: ObservableObject {
                         )
                         let localIdentity = try Self.cloudWorkoutIdentity(localBackup)
                         let remoteIdentity = try Self.cloudWorkoutIdentity(remoteBackup)
+                        let persistedCheckpoint = cloudCheckpoint(for: expectedStorageKey)
+                        let baselineDigest = persistedCheckpoint.baselineDigest
+                        let localMatchesBaseline = baselineDigest ==
+                            Self.cloudIdentityDigest(localIdentity)
+                        let remoteMatchesBaseline = baselineDigest ==
+                            Self.cloudIdentityDigest(remoteIdentity)
+                        let historiesDiffer = localIdentity != remoteIdentity
+                        let keepLocalThreeWay = preparedBackup.roundTripSafe &&
+                            Self.hasUserWorkoutData(localIdentity) && historiesDiffer &&
+                            remoteMatchesBaseline && !localMatchesBaseline
                         if preparedBackup.roundTripSafe,
                            Self.hasUserWorkoutData(localIdentity),
-                           localIdentity != remoteIdentity {
+                           historiesDiffer,
+                           !localMatchesBaseline,
+                           !remoteMatchesBaseline {
                             try candidate.setCloudExtensionsData(
                                 preparedBackup.extensionsData
                             )
@@ -462,23 +504,42 @@ final class AppState: ObservableObject {
                                 localWorkoutCount: localBackup.sessions.count,
                                 cloudWorkoutCount: remoteBackup.sessions.count
                             )
+                            cloudSyncStatus = .conflict
                             isPreparingAccount = false
                             accountPreparationError = nil
                             return
                         }
-                        _ = try candidate.restoreBackup(
-                            data: preparedBackup.data,
-                            activeOwner: expectedOwner
-                        )
-                        if preparedBackup.roundTripSafe {
+                        if keepLocalThreeWay {
                             try candidate.setCloudExtensionsData(
                                 preparedBackup.extensionsData
                             )
+                            recordCloudBaseline(
+                                remoteIdentity,
+                                storageKey: expectedStorageKey,
+                                clean: false,
+                                successfulAt: nil
+                            )
+                        } else {
+                            _ = try candidate.restoreBackup(
+                                data: preparedBackup.data,
+                                activeOwner: expectedOwner
+                            )
+                            if preparedBackup.roundTripSafe {
+                                try candidate.setCloudExtensionsData(
+                                    preparedBackup.extensionsData
+                                )
+                                recordCloudBaseline(
+                                    remoteIdentity,
+                                    storageKey: expectedStorageKey,
+                                    clean: !persistedCheckpoint.pending
+                                )
+                            }
                         }
                         cloudWritesAllowed = preparedBackup.roundTripSafe
                         loadedReadOnlyUnsupportedState = !preparedBackup.roundTripSafe
-                        requiresCanonicalCloudUpload =
-                            preparedBackup.roundTripSafe && preparedBackup.requiresCanonicalUpload
+                        requiresCanonicalCloudUpload = preparedBackup.roundTripSafe &&
+                            (preparedBackup.requiresCanonicalUpload || keepLocalThreeWay ||
+                                persistedCheckpoint.pending)
                     } catch is CancellationError {
                         return
                     } catch {
@@ -512,6 +573,9 @@ final class AppState: ObservableObject {
             )
             cloudWritableAccountStorageKey = cloudWritesAllowed ? expectedStorageKey : nil
             publish(store: candidate, activeStorageKey: expectedStorageKey)
+            if expectedUserID != nil, cloudSyncStatus == .checking {
+                restoreCloudCheckpointStatus(storageKey: expectedStorageKey)
+            }
             isPreparingAccount = false
             accountPreparationError = nil
             if (seededExerciseCount > 0 || catalogSeedMarkerChanged ||
@@ -525,8 +589,14 @@ final class AppState: ObservableObject {
                     isError: true
                 )
             }
-            if let cloudError { show(error: cloudError) }
+            if let cloudError {
+                cloudSyncStatus = .failed(gymSafeEnglishErrorMessage(cloudError))
+                show(error: cloudError)
+            }
             if loadedReadOnlyUnsupportedState {
+                cloudSyncStatus = .failed(
+                    "Cloud data contains unsupported future workout fields."
+                )
                 show(
                     message: gymText(
                         "This cloud row contains unsupported future workout fields. Automatic uploads are paused so another platform's data is not lost.",
@@ -544,6 +614,7 @@ final class AppState: ObservableObject {
             activeAccountStorageKey = nil
             isPreparingAccount = false
             accountPreparationError = gymErrorMessage(error)
+            cloudSyncStatus = .failed(gymSafeEnglishErrorMessage(error))
             show(error: error)
         }
     }
@@ -606,6 +677,11 @@ final class AppState: ObservableObject {
                 )
                 catalogChanged = try pending.localStore.seedBuiltInExercises() > 0
                 _ = try pending.localStore.seedDefaultMuscleMappings()
+                recordCloudBaseline(
+                    pending.remoteIdentity,
+                    storageKey: pending.storageKey,
+                    clean: true
+                )
             } else {
                 try await cloudSync.withSyncIndicator {
                     try await self.uploadCurrentState(
@@ -656,6 +732,7 @@ final class AppState: ObservableObject {
                 "Історії тренувань змінилися до застосування вибору. Перевір обидві версії ще раз.",
                 languageCode: defaults.string(forKey: "app-language") ?? AppLanguage.english.rawValue
             )
+            cloudSyncStatus = .failed(gymSafeEnglishErrorMessage(error))
             show(error: error)
         }
     }
@@ -667,7 +744,12 @@ final class AppState: ObservableObject {
                 BuiltInExerciseCatalog.resolvedKey(
                     catalogKey: $0.catalogKey,
                     name: $0.name
-                ) == nil || $0.machineLoadProfile != nil
+                ) == nil
+            }
+            .map { exercise in
+                var portable = exercise
+                portable.machineLoadProfile = nil
+                return portable
             }
             .sorted(by: BackupExercisePortableWireOrder.precedes)
         let encoder = JSONEncoder()
@@ -687,6 +769,76 @@ final class AppState: ObservableObject {
         !identity.sessions.isEmpty || !identity.configuredExercises.isEmpty
     }
 
+    private func cloudCheckpoint(for storageKey: String) -> CloudSyncCheckpoint {
+        let key = Self.cloudCheckpointKeyPrefix + storageKey
+        guard let data = defaults.data(forKey: key),
+              data.count <= 64 * 1_024,
+              let checkpoint = try? JSONDecoder().decode(CloudSyncCheckpoint.self, from: data),
+              checkpoint.version == 1 else {
+            return .empty
+        }
+        return checkpoint
+    }
+
+    private func persistCloudCheckpoint(
+        _ checkpoint: CloudSyncCheckpoint,
+        storageKey: String
+    ) {
+        guard let data = try? JSONEncoder().encode(checkpoint),
+              data.count <= 64 * 1_024 else { return }
+        defaults.set(data, forKey: Self.cloudCheckpointKeyPrefix + storageKey)
+    }
+
+    private func markCloudPending(storageKey: String) {
+        var checkpoint = cloudCheckpoint(for: storageKey)
+        checkpoint.dirty = true
+        checkpoint.pending = true
+        persistCloudCheckpoint(checkpoint, storageKey: storageKey)
+        cloudSyncStatus = .pending
+    }
+
+    private func recordCloudBaseline(
+        _ identity: CloudWorkoutIdentity,
+        storageKey: String,
+        clean: Bool,
+        successfulAt: Date? = Date()
+    ) {
+        var checkpoint = cloudCheckpoint(for: storageKey)
+        checkpoint.baselineDigest = Self.cloudIdentityDigest(identity)
+        checkpoint.dirty = !clean
+        checkpoint.pending = !clean
+        if let successfulAt { checkpoint.lastSuccessfulAt = successfulAt }
+        persistCloudCheckpoint(checkpoint, storageKey: storageKey)
+        cloudSyncStatus = clean
+            ? .synced(checkpoint.lastSuccessfulAt ?? Date())
+            : .pending
+    }
+
+    private func restoreCloudCheckpointStatus(storageKey: String) {
+        let checkpoint = cloudCheckpoint(for: storageKey)
+        if checkpoint.pending || checkpoint.dirty {
+            cloudSyncStatus = .pending
+        } else if let lastSuccessfulAt = checkpoint.lastSuccessfulAt {
+            cloudSyncStatus = .synced(lastSuccessfulAt)
+        } else {
+            cloudSyncStatus = .pending
+        }
+    }
+
+    var cloudLastSuccessfulSyncAt: Date? {
+        switch cloudSyncStatus {
+        case .synced(let date): date
+        default:
+            activeAccountStorageKey.flatMap {
+                cloudCheckpoint(for: $0).lastSuccessfulAt
+            }
+        }
+    }
+
+    private static func cloudIdentityDigest(_ identity: CloudWorkoutIdentity) -> Data {
+        Data(SHA256.hash(data: identity.exactWire))
+    }
+
     func forceCloudSync() async {
         guard isAccountReady,
               let session = auth.session,
@@ -704,6 +856,7 @@ final class AppState: ObservableObject {
         let store = workoutStore
         let owner = Self.backupOwner(for: session, fallbackStorageKey: session.storageKey)
         do {
+            cloudSyncStatus = .syncing
             try await cloudSync.withSyncIndicator {
                 try await self.uploadCurrentState(
                     from: store,
@@ -718,7 +871,126 @@ final class AppState: ObservableObject {
                 throw AuthServiceError.sessionChanged
             }
             show(message: "Cloud data is up to date.", isError: false)
+        } catch CloudSyncError.staleRemoteState {
+            await reconcileStaleManualSync(
+                store: store,
+                session: session,
+                userID: cloud.userID,
+                owner: owner
+            )
         } catch {
+            cloudSyncStatus = .failed(gymSafeEnglishErrorMessage(error))
+            show(error: error)
+        }
+    }
+
+    private func reconcileStaleManualSync(
+        store: WorkoutStore,
+        session: AppAccountSession,
+        userID: String,
+        owner: BackupOwner
+    ) async {
+        let storageKey = session.storageKey
+        do {
+            cloudSyncStatus = .checking
+            let remoteData = try await cloudSync.withSyncIndicator {
+                if let remoteStateLoader {
+                    return try await remoteStateLoader(userID)
+                }
+                return try await self.cloudSync.loadRemoteState(expectedUserID: userID)
+            }
+            guard isAccountReady,
+                  workoutStore === store,
+                  auth.session?.storageKey == storageKey,
+                  auth.session?.cloud?.userID == userID else {
+                throw AuthServiceError.sessionChanged
+            }
+
+            guard let remoteData else {
+                // The reload established a current "missing" revision. Recreating the row is
+                // safe and still uses the normal insert conflict guard.
+                cloudSyncStatus = .syncing
+                try await cloudSync.withSyncIndicator {
+                    try await self.uploadCurrentState(
+                        from: store,
+                        owner: owner,
+                        expectedStorageKey: storageKey,
+                        expectedUserID: userID
+                    )
+                }
+                show(message: "Cloud data is up to date.", isError: false)
+                return
+            }
+
+            let prepared = try WorkoutStore.prepareCloudBackup(
+                remoteData,
+                activeOwner: owner,
+                localCatalogSeedVersion: store.catalogSeedVersion
+            )
+            guard prepared.roundTripSafe else {
+                cloudWritableAccountStorageKey = nil
+                throw CloudSyncError.requestFailed(
+                    "Cloud data contains unsupported future workout fields."
+                )
+            }
+            let remoteBackup = try JSONDecoder().decode(GymBackup.self, from: prepared.data)
+            let localBackup = try store.makeBackup(owner: owner)
+            let remoteIdentity = try Self.cloudWorkoutIdentity(remoteBackup)
+            let localIdentity = try Self.cloudWorkoutIdentity(localBackup)
+            let baselineDigest = cloudCheckpoint(for: storageKey).baselineDigest
+
+            try store.setCloudExtensionsData(prepared.extensionsData)
+            if remoteIdentity == localIdentity {
+                recordCloudBaseline(remoteIdentity, storageKey: storageKey, clean: true)
+                show(message: "Cloud data is up to date.", isError: false)
+                return
+            }
+
+            if baselineDigest == Self.cloudIdentityDigest(remoteIdentity) {
+                // Only this device changed since the last common baseline. Retry once using
+                // the freshly loaded CAS revision instead of the stale revision.
+                cloudSyncStatus = .syncing
+                try await cloudSync.withSyncIndicator {
+                    try await self.uploadCurrentState(
+                        from: store,
+                        owner: owner,
+                        expectedStorageKey: storageKey,
+                        expectedUserID: userID
+                    )
+                }
+                show(message: "Cloud data is up to date.", isError: false)
+                return
+            }
+
+            if baselineDigest == Self.cloudIdentityDigest(localIdentity) {
+                // Only the cloud changed. This is a whole-state fast-forward, not a merge.
+                applyingRemoteState = true
+                defer { applyingRemoteState = false }
+                _ = try store.restoreBackup(data: prepared.data, activeOwner: owner)
+                _ = try store.seedBuiltInExercises()
+                _ = try store.seedDefaultMuscleMappings()
+                recordCloudBaseline(remoteIdentity, storageKey: storageKey, clean: true)
+                show(message: "Newer cloud workout data was loaded.", isError: false)
+                return
+            }
+
+            pendingCloudSyncConflict = PendingCloudSyncConflict(
+                generation: accountActivationGeneration,
+                storageKey: storageKey,
+                userID: userID,
+                owner: owner,
+                localStore: store,
+                localIdentity: localIdentity,
+                remoteIdentity: remoteIdentity
+            )
+            cloudSyncConflict = CloudSyncConflictSummary(
+                localWorkoutCount: localBackup.sessions.count,
+                cloudWorkoutCount: remoteBackup.sessions.count
+            )
+            cloudSyncStatus = .conflict
+        } catch {
+            guard auth.session?.storageKey == storageKey else { return }
+            cloudSyncStatus = .failed(gymSafeEnglishErrorMessage(error))
             show(error: error)
         }
     }
@@ -993,7 +1265,9 @@ final class AppState: ObservableObject {
                 guard !self.applyingRemoteState,
                       !self.isSigningOut,
                       self.isAccountReady,
+                      let storageKey = self.auth.session?.storageKey,
                       self.auth.session?.cloud != nil else { return }
+                self.markCloudPending(storageKey: storageKey)
                 self.scheduleCloudSave()
             }
         }
@@ -1030,6 +1304,7 @@ final class AppState: ObservableObject {
                       self.auth.session?.cloud?.userID == cloud.userID,
                       self.cloudWritableAccountStorageKey == session.storageKey else { return }
                 self.cloudSavePhase = .uploading
+                self.cloudSyncStatus = .syncing
                 try await self.uploadCurrentState(
                     from: store,
                     owner: owner,
@@ -1039,6 +1314,7 @@ final class AppState: ObservableObject {
             } catch is CancellationError {
                 // Cancelling is allowed only during the debounce phase.
             } catch {
+                self.cloudSyncStatus = .failed(gymSafeEnglishErrorMessage(error))
                 self.show(error: error)
             }
         }
@@ -1085,6 +1361,8 @@ final class AppState: ObservableObject {
             owner: owner,
             extensionsData: store.cloudExtensionsData
         )
+        let uploadedBackup = try JSONDecoder().decode(GymBackup.self, from: data)
+        let uploadedIdentity = try Self.cloudWorkoutIdentity(uploadedBackup)
         try await cloudSync.saveRemoteState(
             backupData: data,
             xp: profile.xp,
@@ -1096,6 +1374,14 @@ final class AppState: ObservableObject {
               auth.session?.cloud?.userID == expectedUserID else {
             throw AuthServiceError.sessionChanged
         }
+        let currentIdentity = try Self.cloudWorkoutIdentity(
+            store.makeBackup(owner: owner)
+        )
+        recordCloudBaseline(
+            uploadedIdentity,
+            storageKey: expectedStorageKey,
+            clean: currentIdentity == uploadedIdentity
+        )
     }
 
     private func ensureActivationIsCurrent(

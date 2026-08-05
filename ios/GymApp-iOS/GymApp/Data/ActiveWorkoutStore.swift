@@ -10,6 +10,7 @@ enum ActiveWorkoutStoreError: Error, LocalizedError, Equatable, Sendable {
     case exerciseUnavailable
     case setUnavailable
     case setAlreadyCompleted
+    case setIsNotLatest
     case noCompletedSets
     case workoutFinishing
     case invalidDraft
@@ -35,6 +36,8 @@ enum ActiveWorkoutStoreError: Error, LocalizedError, Equatable, Sendable {
             "This set is no longer available."
         case .setAlreadyCompleted:
             "This set has already been recorded."
+        case .setIsNotLatest:
+            "Only the latest recorded set can be undone."
         case .noCompletedSets:
             "Record at least one set before finishing the workout."
         case .workoutFinishing:
@@ -218,6 +221,33 @@ final class ActiveWorkoutStore: ObservableObject {
             }
             try Self.validate(weight: set.weight, reps: set.reps)
             candidate.exercises[location.exercise].sets[location.set].completedAt = now
+            candidate.undoableSetID = setID
+        }
+    }
+
+    /// Only the most recently persisted completion can move back to editable state. This
+    /// keeps earlier history immutable and makes a retry deterministic after a stale view.
+    @discardableResult
+    func undoLatestRecordedSet(
+        draftID: UUID,
+        setID: UUID,
+        expectedRevision: UInt64,
+        now: Date = Date()
+    ) throws -> ActiveWorkoutDraft {
+        try mutate(
+            draftID: draftID,
+            expectedRevision: expectedRevision,
+            now: now
+        ) { candidate in
+            guard candidate.undoableSetID == setID else {
+                throw ActiveWorkoutStoreError.setIsNotLatest
+            }
+            let location = try Self.setLocation(setID: setID, in: candidate)
+            guard candidate.exercises[location.exercise].sets[location.set].completedAt != nil else {
+                throw ActiveWorkoutStoreError.invalidDraft
+            }
+            candidate.exercises[location.exercise].sets[location.set].completedAt = nil
+            candidate.undoableSetID = nil
         }
     }
 
@@ -269,7 +299,7 @@ final class ActiveWorkoutStore: ObservableObject {
         })
         guard !replacements.isEmpty else { return }
 
-        try mutate(
+        _ = try mutate(
             draftID: current.id,
             expectedRevision: current.revision,
             now: max(now, current.lastModifiedAt)
@@ -480,6 +510,7 @@ final class ActiveWorkoutStore: ObservableObject {
 
         var totalSets = 0
         var setIDs = Set<UUID>()
+        var completedSetIDs = Set<UUID>()
         for exercise in candidate.exercises {
             if let name = exercise.exerciseName {
                 guard !name.gymTrimmed.isEmpty,
@@ -516,7 +547,13 @@ final class ActiveWorkoutStore: ObservableObject {
                           completedAt <= candidate.lastModifiedAt else {
                         throw ActiveWorkoutStoreError.invalidDraft
                     }
+                    completedSetIDs.insert(set.id)
                 }
+            }
+        }
+        if let undoableSetID = candidate.undoableSetID {
+            guard completedSetIDs.contains(undoableSetID) else {
+                throw ActiveWorkoutStoreError.invalidDraft
             }
         }
         if let intent = candidate.commitIntent {

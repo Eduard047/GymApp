@@ -11,6 +11,8 @@ struct AddWorkoutView: View {
     @State private var profile = TrainingProfile()
     @State private var selectedEffort: SmartWorkoutEffort = .auto
     @State private var latestSmartPlan: SmartWorkoutPlan?
+    @State private var smartGeneratedDraftIDs = Set<UUID>()
+    @State private var smartPlanIsStale = false
     @State private var drafts: [WorkoutEditorExerciseDraft] = []
     @State private var queueForGarmin = false
     @State private var showingExercisePicker = false
@@ -131,11 +133,11 @@ struct AddWorkoutView: View {
             .presentationDetents([.medium, .large])
         }
         .onChange(of: profile) { newProfile in
-            latestSmartPlan = nil
+            smartPlanIsStale = smartPlanIsStale || !smartGeneratedDraftIDs.isEmpty
             Self.saveProfile(newProfile, storageKey: store.accountStorageKey)
         }
         .onChange(of: selectedEffort) { _ in
-            latestSmartPlan = nil
+            smartPlanIsStale = smartPlanIsStale || !smartGeneratedDraftIDs.isEmpty
         }
     }
 
@@ -360,6 +362,19 @@ struct AddWorkoutView: View {
 
                 if let latestSmartPlan {
                     VStack(alignment: .leading, spacing: 5) {
+                        if smartPlanIsStale {
+                            Label(
+                                gymText(
+                                    "Profile or effort changed. Regenerate before starting for updated targets.",
+                                    "Профіль або зусилля змінено. Перегенеруй план перед стартом.",
+                                    "Профиль или нагрузка изменены. Пересоздай план перед стартом.",
+                                    languageCode: gymCurrentLanguageCode()
+                                ),
+                                systemImage: "exclamationmark.arrow.triangle.2.circlepath"
+                            )
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(GymTheme.tertiary)
+                        }
                         Text(
                             gymText(
                                 "Focus: \(latestSmartPlan.focus.displayName) · RIR \(latestSmartPlan.rirSummary)",
@@ -389,11 +404,18 @@ struct AddWorkoutView: View {
                     .background(GymTheme.surfaceVariant.opacity(0.55), in: RoundedRectangle(cornerRadius: 14))
                 }
                 Button(action: applySmartCoach) {
-                    Label("Build smart workout", systemImage: "sparkles")
+                    Label(
+                        smartPlanIsStale ? "Regenerate smart targets" : "Build smart workout",
+                        systemImage: smartPlanIsStale ? "arrow.triangle.2.circlepath" : "sparkles"
+                    )
                 }
                 .buttonStyle(GymPrimaryButtonStyle())
                 .disabled(store.exercises.isEmpty)
-                .accessibilityHint("Replaces the editor with the recommended exercises and sets")
+                .accessibilityHint(
+                    smartPlanIsStale
+                        ? "Updates generated rows while preserving rows you edited manually"
+                        : "Builds recommended exercises and sets"
+                )
             }
         }
     }
@@ -441,6 +463,7 @@ struct AddWorkoutView: View {
                         lastWeight: store.lastWeight(exerciseID: exercise.id),
                         onShowSimilar: { showAlternatives(for: item.id) },
                         onDeleteExercise: {
+                            smartGeneratedDraftIDs.remove(item.id)
                             latestSmartPlan = nil
                             drafts.removeAll { $0.id == item.id }
                         }
@@ -551,6 +574,9 @@ struct AddWorkoutView: View {
                 guard let index = drafts.firstIndex(where: { $0.id == id }) else { return }
                 var editedValue = value
                 editedValue.coachRecommendation = nil
+                if smartGeneratedDraftIDs.remove(id) != nil {
+                    smartPlanIsStale = true
+                }
                 latestSmartPlan = nil
                 drafts[index] = editedValue
             }
@@ -572,6 +598,7 @@ struct AddWorkoutView: View {
     private func addExercise(_ exercise: Exercise) {
         guard !drafts.contains(where: { $0.exerciseID == exercise.id }) else { return }
         latestSmartPlan = nil
+        smartPlanIsStale = !smartGeneratedDraftIDs.isEmpty
         drafts.insert(
             WorkoutEditorExerciseDraft(
                 exerciseID: exercise.id,
@@ -588,6 +615,8 @@ struct AddWorkoutView: View {
 
     private func applyPreviousWorkout(_ workout: WorkoutSession) {
         latestSmartPlan = nil
+        smartGeneratedDraftIDs.removeAll()
+        smartPlanIsStale = false
         drafts = workout.exercises.map { block in
             WorkoutEditorExerciseDraft(
                 exerciseID: block.exerciseID,
@@ -602,6 +631,8 @@ struct AddWorkoutView: View {
 
     private func applyTemplate(_ preset: WorkoutTemplatePreset) {
         latestSmartPlan = nil
+        smartGeneratedDraftIDs.removeAll()
+        smartPlanIsStale = false
         if preset == .deload {
             guard let latest = store.latestWorkoutTemplate else {
                 show(gymLocalized("A deload template needs a previous workout."), error: true)
@@ -686,7 +717,7 @@ struct AddWorkoutView: View {
             show(gymLocalized("Smart Coach needs exercises in your catalog."), error: true)
             return
         }
-        drafts = plan.exercises.map { item in
+        let generatedDrafts = plan.exercises.map { item in
             WorkoutEditorExerciseDraft(
                 exerciseID: item.exercise.id,
                 sets: item.recommendation.sets.map {
@@ -695,6 +726,19 @@ struct AddWorkoutView: View {
                 coachRecommendation: item.recommendation
             )
         }
+        if smartPlanIsStale {
+            let manualDrafts = drafts.filter { !smartGeneratedDraftIDs.contains($0.id) }
+            let manualExerciseIDs = Set(manualDrafts.map(\.exerciseID))
+            let nonDuplicateGenerated = generatedDrafts.filter {
+                !manualExerciseIDs.contains($0.exerciseID)
+            }
+            drafts = manualDrafts + nonDuplicateGenerated
+            smartGeneratedDraftIDs = Set(nonDuplicateGenerated.map(\.id))
+        } else {
+            drafts = generatedDrafts
+            smartGeneratedDraftIDs = Set(generatedDrafts.map(\.id))
+        }
+        smartPlanIsStale = false
         latestSmartPlan = plan
         show(
             gymText(

@@ -161,15 +161,21 @@ struct AccountSettingsView: View {
                 )
 
                 if isCloudAccount {
+                    detailRow(label: "Status", value: cloudSyncStatusText)
                     detailRow(
                         label: "Last synced",
-                        value: appState.cloudSync.lastSyncedAt.map {
+                        value: appState.cloudLastSuccessfulSyncAt.map {
                             gymFormattedDate($0, date: .abbreviated, time: .shortened)
                         } ?? "Not yet"
                     )
 
-                    if let lastError = appState.cloudSync.lastError {
-                        GymStatusBanner(message: lastError, isError: true)
+                    if case .failed(let message) = appState.cloudSyncStatus {
+                        GymStatusBanner(message: message, isError: true)
+                    } else if case .conflict = appState.cloudSyncStatus {
+                        GymStatusBanner(
+                            message: "Workout history changed on more than one device. Choose which complete version to keep.",
+                            isError: true
+                        )
                     }
 
                     Button {
@@ -182,12 +188,17 @@ struct AccountSettingsView: View {
                                 Text("Syncing…")
                             }
                         } else {
-                            Label("Sync now", systemImage: "arrow.triangle.2.circlepath")
+                            Label(
+                                isRetryableCloudState ? "Retry sync" : "Sync now",
+                                systemImage: "arrow.triangle.2.circlepath"
+                            )
                         }
                     }
                     .buttonStyle(GymPrimaryButtonStyle())
                     .disabled(isSyncing || appState.cloudSync.isSyncing)
-                    .accessibilityHint("Uploads the current workout backup and profile statistics")
+                    .accessibilityHint(
+                        "Reloads the cloud revision, reconciles changes, and uploads only when safe"
+                    )
                 } else {
                     Label("Use Export backup on the Exercises screen before replacing or resetting this device.", systemImage: "externaldrive")
                         .font(.subheadline)
@@ -196,6 +207,23 @@ struct AccountSettingsView: View {
                 }
             }
         }
+    }
+
+    private var cloudSyncStatusText: String {
+        switch appState.cloudSyncStatus {
+        case .idle: "Idle"
+        case .checking: "Checking cloud…"
+        case .pending: "Changes pending"
+        case .syncing: "Syncing…"
+        case .synced: "Up to date"
+        case .conflict: "Choice required"
+        case .failed: "Sync failed"
+        }
+    }
+
+    private var isRetryableCloudState: Bool {
+        if case .failed = appState.cloudSyncStatus { return true }
+        return false
     }
 
     private var privacyAndSupportCard: some View {

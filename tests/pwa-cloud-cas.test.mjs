@@ -87,6 +87,27 @@ function validNativeCloudEnvelope() {
   };
 }
 
+function cloudWorkoutStateExpression({ id = 9001, startedAt = 1785790000000, reps = 8, weight = 80 } = {}) {
+  return `(() => {
+    const next = defaultAppState();
+    next.sessions = [{
+      id: ${id},
+      startedAt: ${startedAt},
+      note: "Cloud workout",
+      exerciseNames: ["Bench Press"],
+      sets: [{
+        id: ${id + 1},
+        exerciseName: "Bench Press",
+        catalogKey: "bench_press",
+        weight: ${weight},
+        reps: ${reps},
+        orderIndex: 0
+      }]
+    }];
+    return next;
+  })()`;
+}
+
 function loadContext(fetchImpl, {
   randomSeed = 1,
   sharedValues = null,
@@ -419,7 +440,7 @@ test("PWA canonical writes sort backdated workouts by date with a stable tie bre
   ]);
 });
 
-test("native Android or iOS state migrates once to a writable shared envelope", async () => {
+test("native Android or iOS state is read without rewriting newer local-only metadata", async () => {
   const requests = [];
   const context = loadContext(async (url, options) => {
     requests.push({ url, options });
@@ -452,16 +473,54 @@ test("native Android or iOS state migrates once to a writable shared envelope", 
   const stateWrites = requests.filter(request =>
     request.url.includes("/user_states") && request.options?.method === "PATCH"
   );
-  assert.equal(stateWrites.length, 1, "the old native row is upgraded with its exact CAS revision");
-  const migrated = JSON.parse(stateWrites[0].options.body).state;
-  assert.equal(migrated.summary.setCount, 3);
-  assert.equal(migrated.extensions.pwa.version, 1);
-  assert.equal(migrated.extensions.ios.displayPreference, "compact");
-  assert.equal("language" in migrated, false);
+  assert.equal(stateWrites.length, 0, "a readable native row must not be rewritten just to strip local metadata");
+  assert.equal(vm.runInContext("state.exercises.find(exercise => exercise.catalogKey === 'lat_pulldown').loadProfile.allowedWeightsKg.length", context), 3);
+  assert.equal(vm.runInContext("cloudExtensions.value.ios.displayPreference", context), "compact");
   assert.equal(vm.runInContext("loadSyncBaseline(activeAccount.userId).dirty", context), false);
 });
 
-test("legacy PWA rows migrate to the shared native core without losing PWA settings", async () => {
+test("accepted workout-only cloud updates preserve local machine profiles and progress selection", async () => {
+  const context = loadContext(async () => {
+    throw new Error("an accepted metadata-only merge must not write the cloud row");
+  });
+  const compatible = validNativeCloudEnvelope();
+  compatible.exercises.forEach(exercise => delete exercise.loadProfile);
+  compatible.sessions.forEach(session => session.exercises.forEach(exercise => delete exercise.loadProfile));
+  context.__compatible = compatible;
+  vm.runInContext(`
+    globalThis.__cached = normalizeImportedState(
+      prepareNativeCloudEnvelope(globalThis.__compatible, activeAccount.userId).appStateInput,
+      defaultAppState()
+    );
+    const selected = globalThis.__cached.exercises.find(exercise => exercise.catalogKey === "lat_pulldown");
+    selected.loadProfile = {
+      direction: "higherIsHarder",
+      allowedWeightsKg: [45, 50, 55]
+    };
+    globalThis.__cached.progressExerciseId = selected.id;
+  `, context);
+
+  await vm.runInContext(`reconcileLoadedRemoteState({
+    userId: activeAccount.userId,
+    exists: true,
+    revision: "2026-08-04T10:00:00.000000+00:00",
+    state: globalThis.__compatible
+  }, globalThis.__cached, true)`, context);
+
+  assert.deepEqual(
+    JSON.parse(vm.runInContext(`JSON.stringify(
+      state.exercises.find(exercise => exercise.catalogKey === "lat_pulldown").loadProfile
+    )`, context)),
+    { direction: "higherIsHarder", allowedWeightsKg: [45, 50, 55] }
+  );
+  assert.equal(
+    vm.runInContext(`state.exercises.find(exercise => exercise.id === state.progressExerciseId)?.catalogKey`, context),
+    "lat_pulldown"
+  );
+  assert.equal(vm.runInContext("loadSyncBaseline(activeAccount.userId).dirty", context), false);
+});
+
+test("legacy PWA rows migrate to the 2.2.9 workout core while settings stay local", async () => {
   const requests = [];
   const context = loadContext(async (url, options) => {
     requests.push({ url, options });
@@ -519,9 +578,11 @@ test("legacy PWA rows migrate to the shared native core without losing PWA setti
   assert.equal(stateWrites.length, 1);
   const migrated = JSON.parse(stateWrites[0].options.body).state;
   assert.equal(migrated.sessions[0].exercises[0].sets[0].reps, 10);
-  assert.equal(migrated.extensions.pwa.language, "ru");
-  assert.equal(migrated.extensions.pwa.profile.days, 3);
-  assert.deepEqual(migrated.extensions.pwa.mappings["custom carry"], ["forearms"]);
+  assert.deepEqual(Object.keys(migrated).sort(), [
+    "app", "diagnostics", "exercises", "exportedAt", "owner", "schemaVersion", "sessions", "summary"
+  ]);
+  assert.equal("extensions" in migrated, false);
+  assert.equal(migrated.exercises.some(exercise => "loadProfile" in exercise), false);
   assert.equal("language" in migrated, false);
 });
 
@@ -604,7 +665,8 @@ test("the exact earliest ownerless PWA row migrates only through the authenticat
     userId: ACTIVE_USER_ID,
     remote: true
   });
-  assert.equal(migrated.extensions.pwa.language, "uk");
+  assert.equal("extensions" in migrated, false);
+  assert.equal(vm.runInContext("state.language", context), "uk");
 });
 
 test("malformed, duplicate, orphaned, and profile-mismatched native rows fail closed", async () => {
@@ -757,7 +819,7 @@ test("workout date picker uses local calendar dates and rejects future saves", (
 });
 
 
-test("a clean missing-cloud baseline accepts a later cloud creation", async () => {
+test("a clean missing-cloud baseline accepts a later completed-workout creation", async () => {
   const requests = [];
   let remotePayload;
   const context = loadContext(async (url, options) => {
@@ -783,18 +845,61 @@ test("a clean missing-cloud baseline accepts a later cloud creation", async () =
       updatedAt: Date.now()
     });
   `, context);
-  remotePayload = JSON.parse(vm.runInContext(`JSON.stringify((() => {
-    const remote = defaultAppState();
-    remote.profile.goal = "Strength";
-    return remoteStatePayload(activeAccount.userId, remote);
-  })())`, context));
+  remotePayload = JSON.parse(vm.runInContext(
+    `JSON.stringify(remoteStatePayload(activeAccount.userId, ${cloudWorkoutStateExpression({ reps: 6 })}))`,
+    context
+  ));
 
   await vm.runInContext("pullRemoteState()", context);
 
   assert.equal(requests.length, 1);
-  assert.equal(vm.runInContext("state.profile.goal", context), "Strength");
+  assert.equal(vm.runInContext("state.sessions[0].sets[0].reps", context), 6);
+  assert.equal(vm.runInContext("state.profile.goal", context), "Balanced");
   assert.equal(vm.runInContext("cloudSyncConflict", context), null);
   assert.equal(vm.runInContext("loadSyncBaseline(activeAccount.userId).dirty", context), false);
+});
+
+test("Smart Coach profile edits stay local while completed workouts mark sync pending", () => {
+  const context = loadContext(async () => {
+    throw new Error("status inspection must not use the network");
+  });
+  const result = vm.runInContext(`(() => {
+    state = defaultAppState();
+    bindRemoteStateRevision({
+      userId: activeAccount.userId,
+      exists: true,
+      revision: "2026-07-20T10:30:00.000000+00:00"
+    });
+    const cleanFingerprint = remoteStateFingerprint(state, activeAccount.userId);
+    saveSyncBaseline(syncedBaseline(activeAccount.userId, remoteStateSync, cleanFingerprint));
+    const initialPayload = remoteStatePayload(activeAccount.userId, state);
+    state.profile.goal = "Strength";
+    saveState({ queueRemote: false });
+    const afterProfile = loadSyncBaseline(activeAccount.userId);
+    const profilePayload = remoteStatePayload(activeAccount.userId, state);
+    state = ${cloudWorkoutStateExpression({ id: 9051, reps: 5 })};
+    saveState({ queueRemote: false });
+    const afterWorkout = loadSyncBaseline(activeAccount.userId);
+    return {
+      profileDirty: afterProfile.dirty,
+      profilePayloadMatches: prepareNativeCloudEnvelope(initialPayload, activeAccount.userId).fingerprint ===
+        prepareNativeCloudEnvelope(profilePayload, activeAccount.userId).fingerprint,
+      workoutDirty: afterWorkout.dirty,
+      snapshotStatus: cloudSyncStatusSnapshot().status,
+      panel: cloudSyncPanel(),
+      lastSyncedAt: afterWorkout.lastSyncedAt
+    };
+  })()`, context);
+
+  assert.equal(result.profileDirty, false);
+  assert.equal(result.profilePayloadMatches, true);
+  assert.equal(vm.runInContext(`remoteStateFingerprint(defaultAppState(), activeAccount.userId) ===
+    remoteStateFingerprint(Object.assign(defaultAppState(), { profile: { split: "Full Body", days: 2, goal: "Strength", calories: "Deficit" } }), activeAccount.userId)`, context), true);
+  assert.equal(result.workoutDirty, true);
+  assert.equal(result.snapshotStatus, "pending");
+  assert.ok(Number.isSafeInteger(result.lastSyncedAt));
+  assert.match(result.panel, /Only completed workout history and exercises are shared/);
+  assert.match(result.panel, /Sync now/);
 });
 
 test("an outcome-unknown write reconciles both applied and not-applied server outcomes", async () => {
@@ -824,16 +929,21 @@ test("an outcome-unknown write reconciles both applied and not-applied server ou
       "JSON.stringify(remoteStatePayload(activeAccount.userId, defaultAppState()))",
       context
     ));
-    attemptPayload = JSON.parse(vm.runInContext(`JSON.stringify((() => {
-      const attempted = defaultAppState();
-      attempted.profile.goal = "Strength";
-      return remoteStatePayload(activeAccount.userId, attempted);
-    })())`, context));
+    attemptPayload = JSON.parse(vm.runInContext(
+      `JSON.stringify(remoteStatePayload(activeAccount.userId, ${cloudWorkoutStateExpression({ reps: 7 })}))`,
+      context
+    ));
     context.__basePayload = basePayload;
     context.__attemptPayload = attemptPayload;
     vm.runInContext(`
-      const baseStateForPending = normalizeImportedState(globalThis.__basePayload, defaultAppState());
-      state = normalizeImportedState(globalThis.__attemptPayload, defaultAppState());
+      const baseStateForPending = normalizeImportedState(
+        prepareNativeCloudEnvelope(globalThis.__basePayload, activeAccount.userId).appStateInput,
+        defaultAppState()
+      );
+      state = normalizeImportedState(
+        prepareNativeCloudEnvelope(globalThis.__attemptPayload, activeAccount.userId).appStateInput,
+        defaultAppState()
+      );
       localStorage.setItem(AUTH_KEY, JSON.stringify(activeAccount));
       saveState({ queueRemote: false, markDirty: false });
       bindRemoteStateRevision({
@@ -901,7 +1011,7 @@ test("a mutation during an in-flight cloud write remains durably dirty", async (
   const savePromise = vm.runInContext("saveRemoteState()", context);
   await new Promise(resolve => setImmediate(resolve));
   vm.runInContext(`
-    state.profile.goal = "Strength";
+    state = ${cloudWorkoutStateExpression({ reps: 9 })};
     saveState({ queueRemote: false });
   `, context);
   resolvePatch(new Response(JSON.stringify([{ updated_at: "2026-07-20T12:00:00.000001+00:00" }]), {
@@ -932,17 +1042,18 @@ test("browser and cloud edits since the confirmed baseline require an explicit c
     "JSON.stringify(remoteStatePayload(activeAccount.userId, defaultAppState()))",
     context
   ));
-  remotePayload = JSON.parse(vm.runInContext(`JSON.stringify((() => {
-    const remote = defaultAppState();
-    remote.profile.days = 6;
-    return remoteStatePayload(activeAccount.userId, remote);
-  })())`, context));
+  remotePayload = JSON.parse(vm.runInContext(
+    `JSON.stringify(remoteStatePayload(activeAccount.userId, ${cloudWorkoutStateExpression({ id: 9101, reps: 6 })}))`,
+    context
+  ));
   context.__basePayload = basePayload;
   vm.runInContext(`
-    const confirmed = normalizeImportedState(globalThis.__basePayload, defaultAppState());
+    const confirmed = normalizeImportedState(
+      prepareNativeCloudEnvelope(globalThis.__basePayload, activeAccount.userId).appStateInput,
+      defaultAppState()
+    );
     const confirmedFingerprint = remoteStateFingerprint(confirmed, activeAccount.userId);
-    state = confirmed;
-    state.profile.goal = "Strength";
+    state = ${cloudWorkoutStateExpression({ id: 9201, reps: 8 })};
     saveState({ queueRemote: false, markDirty: false });
     saveSyncBaseline({
       version: 1,
@@ -960,7 +1071,7 @@ test("browser and cloud edits since the confirmed baseline require an explicit c
   await vm.runInContext("pullRemoteState()", context);
 
   assert.equal(requests.length, 1, "conflict detection must not write either version");
-  assert.equal(vm.runInContext("state.profile.goal", context), "Strength");
+  assert.equal(vm.runInContext("state.sessions[0].sets[0].reps", context), 8);
   assert.equal(vm.runInContext("cloudSyncConflict.userId", context), ACTIVE_USER_ID);
   assert.match(vm.runInContext("cloudSyncConflictScreen()", context), /Keep browser version/);
   assert.match(vm.runInContext("cloudSyncConflictScreen()", context), /Use cloud version/);
@@ -991,7 +1102,7 @@ test("a dirty edit survives reload before debounce and uploads after reconciliat
       remoteStateSync,
       remoteStateFingerprint(state, activeAccount.userId)
     ));
-    state.profile.goal = "Strength";
+    state = ${cloudWorkoutStateExpression({ id: 9301, reps: 9 })};
     saveState();
     clearTimeout(remoteSaveTimer);
     remoteSaveTimer = null;
@@ -1023,7 +1134,7 @@ test("a dirty edit survives reload before debounce and uploads after reconciliat
   await new Promise(resolve => setTimeout(resolve, 100));
 
   assert.equal(requests.filter(request => request.options?.method === "PATCH").length, 1);
-  assert.equal(vm.runInContext("state.profile.goal", second), "Strength");
+  assert.equal(vm.runInContext("state.sessions[0].sets[0].reps", second), 9);
   assert.equal(vm.runInContext("loadSyncBaseline(activeAccount.userId).dirty", second), false);
 });
 
@@ -1064,7 +1175,7 @@ test("terminal reauthentication preserves a dirty baseline for the next login", 
       remoteStateSync,
       remoteStateFingerprint(state, activeAccount.userId)
     ));
-    state.profile.goal = "Strength";
+    state = ${cloudWorkoutStateExpression({ id: 9401, reps: 7 })};
     saveState({ queueRemote: false });
     const terminal = new Error("revoked");
     terminal.status = 401;
@@ -1081,7 +1192,7 @@ test("terminal reauthentication preserves a dirty baseline for the next login", 
   await vm.runInContext("activateRemoteSession(globalThis.__reloginSession)", context);
 
   assert.equal(requests.filter(request => request.options?.method === "PATCH").length, 1);
-  assert.equal(vm.runInContext("state.profile.goal", context), "Strength");
+  assert.equal(vm.runInContext("state.sessions[0].sets[0].reps", context), 7);
   assert.equal(vm.runInContext("loadSyncBaseline(activeAccount.userId).dirty", context), false);
 });
 
@@ -1684,14 +1795,17 @@ test("cloud saves require a previously validated revision and publish portable o
   assert.equal("language" in payload, false);
   assert.equal("mappings" in payload, false);
   assert.equal("profile" in payload, false);
+  assert.equal("extensions" in payload, false);
+  assert.deepEqual(Object.keys(payload).sort(), [
+    "app", "diagnostics", "exercises", "exportedAt", "owner", "schemaVersion", "sessions", "summary"
+  ]);
   assert.deepEqual(JSON.parse(JSON.stringify(payload.summary)), {
     exerciseCount: payload.exercises.length,
     sessionCount: 0,
     setCount: 0,
     totalVolume: 0
   });
-  assert.equal(payload.extensions.pwa.version, 1);
-  assert.equal(payload.extensions.pwa.language, "en");
+  assert.equal(payload.exercises.some(exercise => "loadProfile" in exercise), false);
   assert.equal(
     vm.runInContext(`prepareNativeCloudEnvelope(${JSON.stringify(payload)}, activeAccount.userId).fingerprint ===
       remoteStateFingerprint(state, activeAccount.userId)`, context),

@@ -180,6 +180,72 @@ class BackupCatalogKeyImportTest {
     }
 
     @Test
+    fun loadProfileStaysLocalAcrossV229CloudReplacementAndIsExcludedFromDigest() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "local-load-profile-v229-cloud-${UUID.randomUUID()}"
+        val database = GymDatabase.getInstance(context, databaseName)
+        val userId = "123e4567-e89b-12d3-a456-426614174000"
+
+        try {
+            val repository = GymRepository(database)
+            val exerciseId = repository.addExercise("Plate-loaded machine")
+            val localProfile = ExerciseLoadProfile(
+                direction = ExerciseLoadDirection.HigherIsHarder,
+                allowedWeightsKg = listOf(20.0, 40.0, 60.0)
+            )
+            repository.saveExerciseLoadProfile(exerciseId, localProfile)
+
+            val projectionBefore = repository.getCloudWorkoutProjectionState()
+            val manual = repository.buildBackupJson()
+            val cloud = repository.buildCloudBackupJson(
+                BackupOwner(accountId = userId, userId = userId, remote = true)
+            )
+
+            assertTrue(
+                manual.getJSONArray("exercises").getJSONObject(0).has("loadProfile")
+            )
+            assertFalse(
+                cloud.getJSONArray("exercises").getJSONObject(0).has("loadProfile")
+            )
+            assertEquals(canonicalWorkoutPayloadDigest(cloud), projectionBefore.digest)
+
+            repository.replaceWithBackupJsonObject(
+                root = cloud,
+                expectedLocalState = projectionBefore,
+                activeUserId = userId,
+                activeRemote = true
+            )
+
+            val restoredManual = repository.buildBackupJson()
+            val restoredProfile = restoredManual.getJSONArray("exercises").getJSONObject(0)
+                .getJSONObject("loadProfile")
+            assertEquals("higherIsHarder", restoredProfile.getString("direction"))
+            assertEquals(
+                listOf(20.0, 40.0, 60.0),
+                List(restoredProfile.getJSONArray("allowedWeightsKg").length()) { index ->
+                    restoredProfile.getJSONArray("allowedWeightsKg").getDouble(index)
+                }
+            )
+
+            val restoredExerciseId = database.exerciseDao().getExercisesSnapshot().single().id
+            repository.saveExerciseLoadProfile(
+                restoredExerciseId,
+                ExerciseLoadProfile(
+                    direction = ExerciseLoadDirection.LowerIsHarder,
+                    allowedWeightsKg = listOf(10.0, 20.0, 30.0)
+                )
+            )
+            assertEquals(
+                projectionBefore.digest,
+                repository.getCloudWorkoutProjectionState().digest
+            )
+        } finally {
+            database.close()
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
     fun catalogSeedMarkerPreservesDeletedBuiltInExercise() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val databaseName = "catalog-seed-once-${UUID.randomUUID()}"

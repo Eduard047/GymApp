@@ -39,6 +39,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.derivedStateOf
@@ -84,13 +85,15 @@ fun WorkoutListScreen(
     onMuscleSelected: (String) -> Unit,
     onDeleteSession: (Long) -> Unit,
     onAddWorkout: () -> Unit,
-    hasActiveWorkout: Boolean = false,
+    activeWorkoutProgress: Pair<Int, Int>? = null,
+    onDiscardActiveWorkout: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
     var workoutsSelected by rememberSaveable { mutableStateOf(false) }
     var sessionPendingDelete by remember { mutableStateOf<WorkoutSessionEntity?>(null) }
+    var showActiveWorkoutDiscardConfirmation by rememberSaveable { mutableStateOf(false) }
     val showTopControls by remember {
         derivedStateOf {
             listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset < 24
@@ -138,9 +141,20 @@ fun WorkoutListScreen(
             item {
                 FocusLens(
                     stats = uiState.dashboardStats,
-                    hasActiveWorkout = hasActiveWorkout,
+                    hasActiveWorkout = activeWorkoutProgress != null,
                     onStartWorkout = onAddWorkout
                 )
+            }
+
+            activeWorkoutProgress?.let { progress ->
+                item {
+                    ActiveWorkoutDraftCard(
+                        completedSetCount = progress.first,
+                        totalSetCount = progress.second,
+                        onContinue = onAddWorkout,
+                        onDiscard = { showActiveWorkoutDiscardConfirmation = true }
+                    )
+                }
             }
 
             item {
@@ -325,6 +339,69 @@ fun WorkoutListScreen(
                 }
             }
         )
+    }
+    if (showActiveWorkoutDiscardConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showActiveWorkoutDiscardConfirmation = false },
+            title = { Text(stringResource(R.string.active_workout_discard_title)) },
+            text = { Text(stringResource(R.string.active_workout_discard_message)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showActiveWorkoutDiscardConfirmation = false
+                        onDiscardActiveWorkout()
+                    }
+                ) {
+                    Text(stringResource(R.string.active_workout_discard_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showActiveWorkoutDiscardConfirmation = false }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun ActiveWorkoutDraftCard(
+    completedSetCount: Int,
+    totalSetCount: Int,
+    onContinue: () -> Unit,
+    onDiscard: () -> Unit
+) {
+    AppPanel(modifier = Modifier.fillMaxWidth(), highlighted = true) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.active_workout_draft_title),
+                style = MaterialTheme.typography.titleMedium
+            )
+            Text(
+                text = stringResource(
+                    R.string.active_workout_draft_progress,
+                    completedSetCount,
+                    totalSetCount
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Button(
+                onClick = onContinue,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+            ) {
+                Text(stringResource(R.string.action_continue_workout))
+            }
+            OutlinedButton(
+                onClick = onDiscard,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+            ) {
+                Text(stringResource(R.string.active_workout_discard_action))
+            }
+        }
     }
 }
 
@@ -538,7 +615,7 @@ private fun FocusLens(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(min = 330.dp)
+            .heightIn(min = if (hasActiveWorkout) 250.dp else 330.dp)
             .clip(lensShape)
             .background(lensBrush)
             .padding(24.dp),
@@ -593,32 +670,28 @@ private fun FocusLens(
 
         Spacer(modifier = Modifier.weight(1f))
 
-        Button(
-            onClick = onStartWorkout,
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 54.dp),
-            shape = RoundedCornerShape(50),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = Color.White.copy(alpha = 0.2f),
-                contentColor = Color.White
-            ),
-            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.34f))
-        ) {
-            Icon(imageVector = Icons.Default.Add, contentDescription = null)
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = stringResource(
-                    if (hasActiveWorkout) {
-                        R.string.action_continue_workout
-                    } else {
-                        R.string.action_start_workout
-                    }
+        if (!hasActiveWorkout) {
+            Button(
+                onClick = onStartWorkout,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 54.dp),
+                shape = RoundedCornerShape(50),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color.White.copy(alpha = 0.2f),
+                    contentColor = Color.White
                 ),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                fontWeight = FontWeight.Bold
-            )
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.34f))
+            ) {
+                Icon(imageVector = Icons.Default.Add, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = stringResource(R.string.action_start_workout),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    fontWeight = FontWeight.Bold
+                )
+            }
         }
     }
 }

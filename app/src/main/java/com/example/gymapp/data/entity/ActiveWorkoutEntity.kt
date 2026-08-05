@@ -11,7 +11,8 @@ data class ActiveWorkoutEntity(
     val date: Long,
     val note: String?,
     val startedAt: Long,
-    val revision: Long
+    val revision: Long,
+    val undoableSetId: String?
 )
 
 @Entity(

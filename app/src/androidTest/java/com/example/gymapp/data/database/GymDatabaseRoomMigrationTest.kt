@@ -433,7 +433,64 @@ class GymDatabaseRoomMigrationTest {
     }
 
     @Test
-    fun migrationElevenToThirteenMatchesV229UpgradeAndPreservesHistory() {
+    fun migrationThirteenToFourteenAddsDurableUndoMarkerAndPreservesActiveWorkout() {
+        migrationHelper.createDatabase(UNDO_MARKER_TEST_DATABASE, 13).apply {
+            val exerciseRowId = "123e4567-e89b-42d3-a456-426614174100"
+            val setRowId = "123e4567-e89b-42d3-a456-426614174101"
+            execSQL(
+                """
+                INSERT INTO active_workouts(id, date, note, startedAt, revision)
+                VALUES (1, 1750000000000, 'Keep active workout', 1750000000000, 4)
+                """.trimIndent()
+            )
+            execSQL(
+                """
+                INSERT INTO active_workout_exercises(
+                    id, activeWorkoutId, exerciseName, catalogKey, orderIndex
+                ) VALUES (?, 1, 'Keep exercise', NULL, 0)
+                """.trimIndent(),
+                arrayOf<Any>(exerciseRowId)
+            )
+            execSQL(
+                """
+                INSERT INTO active_workout_sets(
+                    id, activeWorkoutExerciseId, weight, reps, orderIndex, completedAt
+                ) VALUES (?, ?, 75.0, 8, 0, 1750000000100)
+                """.trimIndent(),
+                arrayOf<Any>(setRowId, exerciseRowId)
+            )
+            close()
+        }
+
+        val migrated = migrationHelper.runMigrationsAndValidate(
+            UNDO_MARKER_TEST_DATABASE,
+            14,
+            true,
+            *GymDatabase.REGISTERED_MIGRATIONS
+        )
+        try {
+            migrated.query(
+                "SELECT revision, undoableSetId FROM active_workouts WHERE id = 1"
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(4L, cursor.getLong(0))
+                assertTrue(cursor.isNull(1))
+            }
+            migrated.query(
+                "SELECT weight, reps, completedAt FROM active_workout_sets"
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(75.0, cursor.getDouble(0), 0.0)
+                assertEquals(8, cursor.getInt(1))
+                assertEquals(1_750_000_000_100L, cursor.getLong(2))
+            }
+        } finally {
+            migrated.close()
+        }
+    }
+
+    @Test
+    fun migrationElevenToFourteenMatchesV229UpgradeAndPreservesHistory() {
         migrationHelper.createDatabase(V229_TO_ACTIVE_WORKOUT_TEST_DATABASE, 11).apply {
             execSQL(
                 "INSERT INTO exercises(id, name, isFavorite) VALUES (17, 'v2.2.9 exercise', 1)"
@@ -458,7 +515,7 @@ class GymDatabaseRoomMigrationTest {
 
         val migrated = migrationHelper.runMigrationsAndValidate(
             V229_TO_ACTIVE_WORKOUT_TEST_DATABASE,
-            13,
+            14,
             true,
             *GymDatabase.REGISTERED_MIGRATIONS
         )
@@ -501,6 +558,7 @@ class GymDatabaseRoomMigrationTest {
         const val GARMIN_LIFECYCLE_TEST_DATABASE = "room-migration-10-to-11"
         const val LOAD_PROFILE_TEST_DATABASE = "room-migration-11-to-12"
         const val ACTIVE_WORKOUT_TEST_DATABASE = "room-migration-12-to-13"
-        const val V229_TO_ACTIVE_WORKOUT_TEST_DATABASE = "room-migration-11-to-13"
+        const val UNDO_MARKER_TEST_DATABASE = "room-migration-13-to-14"
+        const val V229_TO_ACTIVE_WORKOUT_TEST_DATABASE = "room-migration-11-to-14"
     }
 }

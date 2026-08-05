@@ -836,9 +836,14 @@ public enum RecommendationEngine {
             calendar: calendar
         )
         let appliedEffort = effortResolution.effort
-        let targetExerciseCount = targetExerciseCount(
+        let targetSessionSetBudget = targetSessionSetBudget(
             profile: trainingProfile,
             effort: appliedEffort
+        )
+        let targetExerciseCount = targetExerciseCount(
+            profile: trainingProfile,
+            effort: appliedEffort,
+            sessionSetBudget: targetSessionSetBudget
         )
         let manualContributionMap = MuscleMappingEngine.manualContributionMap(from: muscleMappings)
         let weeklyVolume = weeklyVolumeState(
@@ -928,6 +933,7 @@ public enum RecommendationEngine {
             variant: variant,
             targetMuscles: targetMuscles,
             targetExerciseCount: targetExerciseCount,
+            targetSessionSetBudget: targetSessionSetBudget,
             history: usableHistory,
             weeklyVolume: weeklyVolume,
             now: now,
@@ -1242,11 +1248,32 @@ public enum RecommendationEngine {
         _ profile: TrainingProfile,
         analysis: ExerciseAnalysis?
     ) -> ClosedRange<Int> {
-        let compound = isCompound(analysis)
+        let role = analysis?.role ?? .isolation
         switch profile.goal {
-        case .strength: return compound ? 3 ... 6 : 6 ... 10
-        case .muscleGain, .aestheticFatLoss: return compound ? 6 ... 10 : 8 ... 10
-        case .balanced: return compound ? 5 ... 8 : 8 ... 10
+        case .strength:
+            return switch role {
+            case .primary: 4 ... 6
+            case .secondary: 5 ... 8
+            case .isolation, .core, .warmup: 8 ... 10
+            }
+        case .muscleGain:
+            return switch role {
+            case .primary: 6 ... 8
+            case .secondary: 7 ... 10
+            case .isolation, .core, .warmup: 8 ... 10
+            }
+        case .aestheticFatLoss:
+            return switch role {
+            case .primary: 6 ... 8
+            case .secondary: 7 ... 10
+            case .isolation, .core, .warmup: 8 ... 10
+            }
+        case .balanced:
+            return switch role {
+            case .primary: 5 ... 8
+            case .secondary: 6 ... 10
+            case .isolation, .core, .warmup: 8 ... 10
+            }
         }
     }
 
@@ -1255,11 +1282,27 @@ public enum RecommendationEngine {
         analysis: ExerciseAnalysis?,
         repRange: ClosedRange<Int>
     ) -> Int {
-        let compound = isCompound(analysis)
+        let role = analysis?.role ?? .isolation
         let target: Int
         switch profile.goal {
-        case .strength: target = compound ? 5 : 8
-        case .muscleGain, .aestheticFatLoss, .balanced: target = compound ? 8 : 10
+        case .strength:
+            target = switch role {
+            case .primary: 5
+            case .secondary: 6
+            case .isolation, .core, .warmup: 8
+            }
+        case .muscleGain, .aestheticFatLoss:
+            target = switch role {
+            case .primary: 8
+            case .secondary: 9
+            case .isolation, .core, .warmup: 10
+            }
+        case .balanced:
+            target = switch role {
+            case .primary: 7
+            case .secondary: 8
+            case .isolation, .core, .warmup: 10
+            }
         }
         return min(repRange.upperBound, max(repRange.lowerBound, target))
     }
@@ -1267,6 +1310,17 @@ public enum RecommendationEngine {
     private static func isCompound(_ analysis: ExerciseAnalysis?) -> Bool {
         guard let analysis else { return false }
         return analysis.role == .primary || analysis.role == .secondary
+    }
+
+    static func restDurationSeconds(
+        exerciseCatalogKey: String?,
+        exerciseName: String
+    ) -> Int {
+        switch analyzeExercise(exerciseName, catalogKey: exerciseCatalogKey).role {
+        case .primary: 180
+        case .secondary: 120
+        case .isolation, .core, .warmup: 75
+        }
     }
 
     private static func setBudget(
@@ -1286,17 +1340,46 @@ public enum RecommendationEngine {
 
     private static func targetExerciseCount(
         profile: TrainingProfile,
+        effort: SmartWorkoutEffort = .standard,
+        sessionSetBudget: Int? = nil
+    ) -> Int {
+        let budget = sessionSetBudget ?? targetSessionSetBudget(
+            profile: profile,
+            effort: effort
+        )
+        return min(9, max(4, Int(ceil(Double(budget) / 3.0))))
+    }
+
+    /// A bounded per-session budget keeps low-frequency sessions useful without producing
+    /// 30-set marathons. Calories shift optional volume only; every selected movement still
+    /// receives at least three working sets through `setBudget`.
+    static func targetSessionSetBudget(
+        profile: TrainingProfile,
         effort: SmartWorkoutEffort = .standard
     ) -> Int {
-        let days = min(6, max(2, profile.workoutsPerWeek))
-        let base: Int = switch days {
-        case 2: 10
-        case 3: 9
-        case 4: 8
-        case 5: 7
-        default: 6
+        let frequencyBase: Int = switch min(6, max(2, profile.workoutsPerWeek)) {
+        case 2: 24
+        case 3: 21
+        case 4: 18
+        case 5: 16
+        default: 15
         }
-        return effort == .recovery ? max(5, base - 2) : base
+        let goalAdjustment: Int = switch profile.goal {
+        case .muscleGain: 2
+        case .strength, .balanced: 0
+        case .aestheticFatLoss: -1
+        }
+        let calorieAdjustment: Int = switch profile.calorieMode {
+        case .deficit: -3
+        case .maintenance: 0
+        case .surplus: 3
+        }
+        let effortAdjustment: Int = switch effort {
+        case .recovery: -5
+        case .hard: 2
+        case .auto, .standard: 0
+        }
+        return min(27, max(12, frequencyBase + goalAdjustment + calorieAdjustment + effortAdjustment))
     }
 
     private static func programmingPreferenceScore(
@@ -1804,6 +1887,7 @@ public enum RecommendationEngine {
         variant: SmartWorkoutVariant,
         targetMuscles: Set<String>,
         targetExerciseCount: Int,
+        targetSessionSetBudget: Int,
         history: [ExerciseHistoryEntry],
         weeklyVolume: WeeklyVolumeState,
         now: Date,
@@ -1873,9 +1957,18 @@ public enum RecommendationEngine {
         }
 
         if focus == .fullBody {
+            let variantPatterns = preferredPatterns(for: focus, variant: variant)
             for required in [SmartWorkoutFocus.push, .pull, .legs] {
-                guard let best = remaining
-                    .filter({ $0.analysis.category == required && isCompound($0.analysis) })
+                let categoryCandidates = remaining.filter {
+                    $0.analysis.category == required && isCompound($0.analysis)
+                }
+                let variantCandidates = categoryCandidates.filter {
+                    !$0.analysis.patterns.isDisjoint(with: variantPatterns)
+                }
+                let selectionPool = variantCandidates.isEmpty
+                    ? categoryCandidates
+                    : variantCandidates
+                guard let best = selectionPool
                     .max(by: {
                         let leftScore = $0.score + programmingPriority($0.analysis) +
                             weeklyVolumeScore($0, state: projectedWeeklyVolume)
@@ -1911,11 +2004,21 @@ public enum RecommendationEngine {
         let allTrunkCandidates = candidates.filter(isTrunkAccessory)
         remaining.removeAll(where: isTrunkAccessory)
         let workingExerciseTarget = allTrunkCandidates.isEmpty
-            ? targetExerciseCount
-            : max(0, targetExerciseCount - 1)
+            ? max(targetExerciseCount, selected.count)
+            : max(selected.count, targetExerciseCount - 1)
 
         while selected.count < workingExerciseTarget, !remaining.isEmpty {
-            let scored = remaining.map { candidate in
+            let usedSetBudget = selected.reduce(0) { $0 + $1.plannedSetCount }
+            let withinBudget = remaining.filter {
+                usedSetBudget + $0.plannedSetCount <= targetSessionSetBudget
+            }
+            let belowWeeklyTargets = withinBudget.filter {
+                !isWeeklyVolumeSaturated($0, state: projectedWeeklyVolume)
+            }
+            // Required movement patterns above are retained even when the week is saturated.
+            // Optional filler stops once every safe candidate is already at its weekly target.
+            let fillerCandidates = belowWeeklyTargets.isEmpty ? [] : belowWeeklyTargets
+            let scored = fillerCandidates.map { candidate in
                 (
                     candidate,
                     balancedScore(
@@ -1951,8 +2054,7 @@ public enum RecommendationEngine {
             !isHyperextension($0) ||
                 (!hasCompoundHinge && recentHyperextensionSessionCount < 2)
         }
-        if selected.count < targetExerciseCount,
-           let trunk = safeTrunkCandidates.min(by: {
+        if let trunk = safeTrunkCandidates.min(by: {
                let leftPreferred = isHyperextension($0) == prefersHyperextension
                let rightPreferred = isHyperextension($1) == prefersHyperextension
                if leftPreferred != rightPreferred { return leftPreferred }
@@ -1977,7 +2079,10 @@ public enum RecommendationEngine {
             if leftPriority != rightPriority { return leftPriority < rightPriority }
             return left.offset < right.offset
         }.map(\.element)
-        return Array(ordered.prefix(targetExerciseCount))
+        let finalCount = allTrunkCandidates.isEmpty
+            ? targetExerciseCount
+            : max(targetExerciseCount, selected.count)
+        return Array(ordered.prefix(finalCount))
     }
 
     private static func isTrunkAccessory(_ candidate: ExerciseCandidate) -> Bool {
@@ -2216,6 +2321,21 @@ public enum RecommendationEngine {
             gain += min(deficit, Double(candidate.plannedSetCount) * weight)
         }
         return gain > 0 ? gain * 18 : -12 * contributionWeight
+    }
+
+    private static func isWeeklyVolumeSaturated(
+        _ candidate: ExerciseCandidate,
+        state: WeeklyVolumeState
+    ) -> Bool {
+        let meaningful = candidate.muscleContributions.filter {
+            state.knownMuscleIDs.contains($0.muscleID) &&
+                $0.weight.isFinite && $0.weight > 0
+        }
+        guard !meaningful.isEmpty else { return false }
+        return meaningful.allSatisfy { contribution in
+            state.projectedSets[contribution.muscleID, default: 0] >=
+                state.targetSets[contribution.muscleID, default: 4]
+        }
     }
 
     private static func projectWeeklyVolume(

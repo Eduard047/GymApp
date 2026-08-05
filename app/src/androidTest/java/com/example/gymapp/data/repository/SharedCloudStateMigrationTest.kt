@@ -11,7 +11,8 @@ import java.util.UUID
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -73,7 +74,7 @@ class SharedCloudStateMigrationTest {
     }
 
     @Test
-    fun ownerlessPwaWorkoutRoundTripsThroughRoomIntoCanonicalSharedState() = runBlocking {
+    fun ownerlessPwaWorkoutRoundTripsThroughRoomIntoV229CompatibleSharedState() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val databaseName = "shared-cloud-pwa-migration-${UUID.randomUUID()}"
         val database = GymDatabase.getInstance(context, databaseName)
@@ -139,7 +140,8 @@ class SharedCloudStateMigrationTest {
             val preparedCanonical = prepareSharedCloudState(canonical, userId)
             assertEquals(SharedCloudStateSource.CanonicalV2, preparedCanonical.source)
             assertEquals(importedState.digest, preparedCanonical.workoutDigest)
-            assertNotNull(preparedCanonical.extensions?.optJSONObject("pwa"))
+            assertFalse(canonical.has("extensions"))
+            assertNull(preparedCanonical.extensions)
         } finally {
             database.close()
             context.deleteDatabase(databaseName)

@@ -3,15 +3,14 @@ package com.example.gymapp.sync
 import com.example.gymapp.data.catalog.BuiltInExerciseCatalog
 import com.example.gymapp.data.repository.BackupImportValidator
 import com.example.gymapp.data.repository.WorkoutDataLimits
-import com.example.gymapp.data.repository.canonicalWorkoutPayloadDigest
+import com.example.gymapp.data.repository.canonicalV229CloudWorkoutDigest
 import com.example.gymapp.data.repository.validateBackupOwnerContext
 import org.json.JSONObject
 
 /**
- * The shared cloud row keeps one strict workout core that every client can round-trip and an
- * optional namespaced extension bag. Extensions are deliberately excluded from the workout
- * digest, but a client that does not understand a namespace must still preserve it on its next
- * compare-and-swap write.
+ * The shared cloud row keeps one strict workout core that every supported client can round-trip.
+ * Newer extension bags and machine load profiles remain readable, but Android deliberately omits
+ * them from writes while released v2.2.9 clients must remain able to read and update the row.
  */
 internal data class PreparedSharedCloudState(
     val workoutDigest: String,
@@ -30,8 +29,9 @@ internal enum class SharedCloudStateSource {
  * Already released PWA builds used top-level language/mappings/profile fields and flat workout
  * IDs. Rows with an owner require an exact Supabase binding. Truly old ownerless PWA rows are
  * accepted only through this authenticated user_states pull path, whose query and RLS already bind
- * the row to activeUserId; the next CAS write adds the canonical owner. The fields are then moved
- * into extensions.pwa while their workout projection is interpreted by the bounded validator.
+ * the row to activeUserId; the next CAS write adds the canonical owner. The fields are represented
+ * as extensions.pwa for the validated read result while the workout projection is interpreted by
+ * the bounded validator. Compatibility writes intentionally omit that extension again.
  */
 internal fun prepareSharedCloudState(
     root: JSONObject,
@@ -59,16 +59,51 @@ internal fun isCanonicalSharedCloudEnvelope(root: JSONObject, activeUserId: Stri
         prepareSharedCloudState(root, activeUserId).source == SharedCloudStateSource.CanonicalV2
     }.getOrDefault(false)
 
+/** Historical call-site name; emits the validated v2.2.9-compatible core without extensions. */
 internal fun attachSharedCloudExtensions(
     canonicalCore: JSONObject,
     extensions: JSONObject?
 ): JSONObject {
+    // Keep validating any retained remote bag so an attacker-controlled value never becomes an
+    // implicit trusted local value. The bag is intentionally not written back while v2.2.9 must
+    // share this row; those clients reject or erase fields outside their exact canonical core.
+    extensions?.let(::validateExtensions)
     val result = JSONObject(canonicalCore.toString())
     result.remove("extensions")
-    if (extensions != null && extensions.length() > 0) {
-        validateExtensions(extensions)
-        result.put("extensions", JSONObject(extensions.toString()))
+    result.remove("catalogSeedVersion")
+    result.optJSONArray("exercises")?.let { exercises ->
+        repeat(exercises.length()) { index ->
+            exercises.optJSONObject(index)?.apply {
+                remove("favorite")
+                remove("loadProfile")
+            }
+        }
     }
+    result.optJSONArray("sessions")?.let { sessions ->
+        repeat(sessions.length()) { sessionIndex ->
+            sessions.optJSONObject(sessionIndex)
+                ?.optJSONArray("exercises")
+                ?.let { blocks ->
+                    repeat(blocks.length()) { blockIndex ->
+                        blocks.optJSONObject(blockIndex)?.apply {
+                            remove("favorite")
+                            remove("loadProfile")
+                        }
+                    }
+                }
+        }
+    }
+    require(result.keySet() == V229_CANONICAL_ROOT_KEYS) {
+        "Cloud write contains fields unsupported by v2.2.9."
+    }
+    val owner = result.optJSONObject("owner")
+        ?: throw IllegalArgumentException("Cloud owner is missing.")
+    val userId = owner.opt("userId") as? String
+        ?: throw IllegalArgumentException("Cloud owner user ID is missing.")
+    require(owner.opt("accountId") == userId) {
+        "Cloud owner account ID is not compatible with v2.2.9."
+    }
+    prepareCanonicalV2(result, userId)
     WorkoutDataLimits.requireSafeJsonEnvelope(result.toString())
     return result
 }
@@ -168,7 +203,7 @@ private fun prepareCanonicalV2(
     val extensions = root.optJSONObject("extensions")?.also(::validateExtensions)
         ?.let { JSONObject(it.toString()) }
     return PreparedSharedCloudState(
-        workoutDigest = canonicalWorkoutPayloadDigest(backup),
+        workoutDigest = canonicalV229CloudWorkoutDigest(backup),
         extensions = extensions,
         source = SharedCloudStateSource.CanonicalV2
     )
@@ -234,7 +269,7 @@ private fun prepareLegacyPwaV2(
     val extensions = JSONObject().put("pwa", pwa)
     validateExtensions(extensions)
     return PreparedSharedCloudState(
-        workoutDigest = canonicalWorkoutPayloadDigest(backup),
+        workoutDigest = canonicalV229CloudWorkoutDigest(backup),
         extensions = extensions,
         source = SharedCloudStateSource.LegacyPwaV2
     )
@@ -480,6 +515,16 @@ private const val MAX_PWA_MAPPING_MUSCLES = 32
 private const val MAX_PWA_MUSCLE_IDENTIFIER_UTF16_UNITS = 64
 private const val MAX_PWA_MUSCLE_IDENTIFIER_BYTES = 256
 private const val MAX_CLOUD_EXTENSION_NAMESPACES = 32
+private val V229_CANONICAL_ROOT_KEYS = setOf(
+    "schemaVersion",
+    "exportedAt",
+    "app",
+    "diagnostics",
+    "owner",
+    "exercises",
+    "sessions",
+    "summary"
+)
 private val PWA_PROFILE_SPLITS = setOf("Upper / Lower", "Full Body", "Push Pull Legs", "Custom")
 private val PWA_PROFILE_GOALS = setOf("Aesthetic Cut", "Muscle Gain", "Strength", "Balanced")
 private val PWA_PROFILE_CALORIES = setOf("Deficit", "Maintenance", "Surplus")

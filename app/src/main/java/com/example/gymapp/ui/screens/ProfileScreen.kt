@@ -41,6 +41,10 @@ import com.example.gymapp.ui.components.SectionTitle
 import com.example.gymapp.ui.viewmodel.ExerciseListUiState
 import com.example.gymapp.ui.viewmodel.SoloProgressUiModel
 import com.example.gymapp.util.LocalizedText
+import com.example.gymapp.sync.CloudSyncPhase
+import com.example.gymapp.sync.CloudSyncUiStatus
+import java.text.DateFormat
+import java.util.Date
 
 @Composable
 fun ProfileScreen(
@@ -50,6 +54,8 @@ fun ProfileScreen(
     isLeaderboardLoading: Boolean,
     leaderboardError: LocalizedText?,
     onRefreshLeaderboard: () -> Unit,
+    cloudSyncStatus: CloudSyncUiStatus?,
+    onSyncNow: () -> Unit,
     cloudSyncChoiceRequired: Boolean,
     cloudSyncChoiceReady: Boolean,
     onReviewCloudSync: () -> Unit,
@@ -112,6 +118,14 @@ fun ProfileScreen(
                     CloudSyncChoiceCard(
                         choiceReady = cloudSyncChoiceReady,
                         onReview = onReviewCloudSync
+                    )
+                }
+            }
+            if (accountState.isCloudAccount && cloudSyncStatus != null) {
+                item {
+                    CloudSyncStatusCard(
+                        status = cloudSyncStatus,
+                        onSyncNow = onSyncNow
                     )
                 }
             }
@@ -185,6 +199,58 @@ fun ProfileScreen(
                 onDeleteCloudAccount()
             }
         )
+    }
+}
+
+@Composable
+private fun CloudSyncStatusCard(
+    status: CloudSyncUiStatus,
+    onSyncNow: () -> Unit
+) {
+    val statusText = stringResource(
+        when (status.phase) {
+            CloudSyncPhase.Checking -> R.string.cloud_sync_status_checking
+            CloudSyncPhase.Pending -> R.string.cloud_sync_status_pending
+            CloudSyncPhase.Synced -> R.string.cloud_sync_status_synced
+            CloudSyncPhase.Conflict -> R.string.cloud_sync_status_conflict
+            CloudSyncPhase.Error -> R.string.cloud_sync_status_error
+        }
+    )
+    AppPanel(modifier = Modifier.fillMaxWidth(), highlighted = true) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            SectionTitle(
+                eyebrow = stringResource(R.string.cloud_sync_status_eyebrow),
+                title = statusText,
+                supporting = status.lastSuccessAt?.let { timestamp ->
+                    stringResource(
+                        R.string.cloud_sync_status_last_success,
+                        DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
+                            .format(Date(timestamp))
+                    )
+                } ?: stringResource(R.string.cloud_sync_status_never)
+            )
+            Button(
+                onClick = onSyncNow,
+                enabled = status.phase != CloudSyncPhase.Checking &&
+                    status.phase != CloudSyncPhase.Conflict,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+            ) {
+                Text(
+                    stringResource(
+                        if (status.phase == CloudSyncPhase.Error) {
+                            R.string.cloud_sync_retry_action
+                        } else {
+                            R.string.cloud_sync_now_action
+                        }
+                    )
+                )
+            }
+        }
     }
 }
 

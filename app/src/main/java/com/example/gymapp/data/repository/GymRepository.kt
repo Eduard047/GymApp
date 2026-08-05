@@ -35,6 +35,8 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -66,6 +68,14 @@ sealed interface RecordActiveWorkoutSetResult {
     data object Stale : RecordActiveWorkoutSetResult
     data object TargetChanged : RecordActiveWorkoutSetResult
     data object AlreadyCompleted : RecordActiveWorkoutSetResult
+}
+
+sealed interface UndoActiveWorkoutSetResult {
+    data class Undone(val revision: Long) : UndoActiveWorkoutSetResult
+    data object Missing : UndoActiveWorkoutSetResult
+    data object Stale : UndoActiveWorkoutSetResult
+    data object NotLatest : UndoActiveWorkoutSetResult
+    data object TargetChanged : UndoActiveWorkoutSetResult
 }
 
 sealed interface FinishActiveWorkoutResult {
@@ -233,6 +243,34 @@ data class CloudWorkoutProjectionState internal constructor(
             setCount == 0
 }
 
+/**
+ * Hashes only the workout fields that every v2.2.9 client can round-trip.
+ *
+ * Machine load profiles are device-local preferences while mixed-version support is active.
+ * Keeping them out of the cloud baseline prevents a local profile edit from looking like an
+ * unsynced workout change even though the compatible wire format deliberately omits it.
+ */
+internal fun canonicalV229CloudWorkoutDigest(backup: ValidatedBackup): String =
+    canonicalWorkoutPayloadDigest(
+        backup.copy(
+            exercises = backup.exercises.map { exercise ->
+                exercise.copy(isFavorite = null, loadProfile = null)
+            },
+            sessions = backup.sessions.map { session ->
+                session.copy(
+                    blocks = session.blocks.map { block ->
+                        block.copy(
+                            exercise = block.exercise.copy(
+                                isFavorite = null,
+                                loadProfile = null
+                            )
+                        )
+                    }
+                )
+            }
+        )
+    )
+
 class GymRepository(
     private val database: GymDatabase,
     private val currentTimeMillis: () -> Long = System::currentTimeMillis,
@@ -247,6 +285,7 @@ class GymRepository(
     private val garminWorkoutReceiptDao = database.garminWorkoutReceiptDao()
     private val activeWorkoutDao = database.activeWorkoutDao()
     private val deletionStoreToken = UUID.randomUUID().toString()
+    private val activeWorkoutMutationMutex = Mutex()
 
     fun observeExercises(): Flow<List<ExerciseEntity>> = exerciseDao.getExercises()
         .catch { emit(emptyList()) }
@@ -853,9 +892,27 @@ class GymRepository(
     suspend fun buildCloudBackupJson(owner: BackupOwner): JSONObject =
         buildBackupJson(owner = owner).apply {
             remove("catalogSeedVersion")
+            remove("extensions")
             optJSONArray("exercises")?.let { cloudExercises ->
                 repeat(cloudExercises.length()) { index ->
-                    cloudExercises.optJSONObject(index)?.remove("favorite")
+                    cloudExercises.optJSONObject(index)?.apply {
+                        remove("favorite")
+                        remove("loadProfile")
+                    }
+                }
+            }
+            optJSONArray("sessions")?.let { cloudSessions ->
+                repeat(cloudSessions.length()) { sessionIndex ->
+                    cloudSessions.optJSONObject(sessionIndex)
+                        ?.optJSONArray("exercises")
+                        ?.let { cloudBlocks ->
+                            repeat(cloudBlocks.length()) { blockIndex ->
+                                cloudBlocks.optJSONObject(blockIndex)?.apply {
+                                    remove("favorite")
+                                    remove("loadProfile")
+                                }
+                            }
+                        }
                 }
             }
         }
@@ -944,7 +1001,7 @@ class GymRepository(
         val backup = BackupImportValidator.validate(root)
         validateBackupOwnerContext(root, activeAccountId, activeUserId, activeRemote)
         val expectedReplacementDigest = if (replaceExisting) {
-            canonicalWorkoutPayloadDigest(backup)
+            canonicalV229CloudWorkoutDigest(backup)
         } else {
             null
         }
@@ -952,6 +1009,18 @@ class GymRepository(
 
         database.withTransaction {
             val retainedGarminProvenance = mutableMapOf<String, Int>()
+            val retainedLocalLoadProfiles = if (replaceExisting && activeRemote) {
+                val profilesByExerciseId = currentExerciseLoadProfiles(rejectInvalid = true)
+                exerciseDao.getExercisesSnapshot().mapNotNull { exercise ->
+                    val profile = profilesByExerciseId[exercise.id] ?: return@mapNotNull null
+                    ValidatedBackupExercise(
+                        name = exercise.name,
+                        catalogKey = BuiltInExerciseCatalog.inferKey(exercise.name)
+                    ).identityKey to profile
+                }.toMap()
+            } else {
+                emptyMap()
+            }
             if (replaceExisting) {
                 require(expectedLocalState != null)
                 require(currentCloudWorkoutProjectionState() == expectedLocalState) {
@@ -1039,11 +1108,16 @@ class GymRepository(
                     catalogKey = exercise.catalogKey,
                     rawName = rawName
                 )
+                // A profile already configured on this device is authoritative while the field
+                // is outside the mixed-version cloud contract. A validated profile from an older
+                // extended row is still accepted as a one-time seed on a device without one.
+                val effectiveLoadProfile = retainedLocalLoadProfiles[exercise.identityKey]
+                    ?: exercise.loadProfile
                 exerciseIdentityIndex.resolve(rawName, catalogKey)?.let { existingId ->
                     exercise.isFavorite?.let { favorite ->
                         check(exerciseDao.setFavorite(existingId, favorite) == 1)
                     }
-                    exercise.loadProfile?.let { profile ->
+                    effectiveLoadProfile?.let { profile ->
                         replaceExerciseLoadProfile(existingId, profile)
                     }
                     return existingId
@@ -1056,7 +1130,7 @@ class GymRepository(
                     )
                 )
                 exerciseIdentityIndex.add(exerciseId, rawName, catalogKey)
-                exercise.loadProfile?.let { profile ->
+                effectiveLoadProfile?.let { profile ->
                     replaceExerciseLoadProfile(exerciseId, profile)
                 }
                 return exerciseId
@@ -1168,15 +1242,13 @@ class GymRepository(
         require(setCount in 0..WorkoutDataLimits.MAX_TOTAL_SETS)
 
         val exercises = exerciseDao.getExercisesSnapshot()
-        val loadProfiles = currentExerciseLoadProfiles(rejectInvalid = true)
         val sessions = workoutDao.getAllSessionDetailsForBackup().map(::sortSessionDetails)
         val projection = ValidatedBackup(
             catalogSeedVersion = appMetadataDao.getCatalogSeedVersion() ?: 0,
             exercises = exercises.map { exercise ->
                 ValidatedBackupExercise(
                     name = exercise.name,
-                    catalogKey = BuiltInExerciseCatalog.inferKey(exercise.name),
-                    loadProfile = loadProfiles[exercise.id]
+                    catalogKey = BuiltInExerciseCatalog.inferKey(exercise.name)
                 )
             },
             sessions = sessions.map { details ->
@@ -1200,7 +1272,7 @@ class GymRepository(
             }
         )
         return CloudWorkoutProjectionState(
-            digest = canonicalWorkoutPayloadDigest(projection),
+            digest = canonicalV229CloudWorkoutDigest(projection),
             catalogSeedVersion = projection.catalogSeedVersion,
             exerciseCount = exerciseCount,
             customExerciseCount = exercises.count { exercise ->
@@ -1261,14 +1333,14 @@ class GymRepository(
         date: Long,
         note: String?,
         workoutExercises: List<WorkoutExerciseDraft>
-    ): StartActiveWorkoutResult {
+    ): StartActiveWorkoutResult = activeWorkoutMutationMutex.withLock {
         requireValidWorkout(date = date, note = note, workoutExercises = workoutExercises)
         val startedAt = currentTimeMillis()
         require(WorkoutDataLimits.isValidTimestamp(startedAt)) {
             "Active workout start timestamp is outside the supported range."
         }
 
-        return database.withTransaction {
+        val result: StartActiveWorkoutResult = database.withTransaction {
             if (activeWorkoutDao.getSnapshot(ACTIVE_WORKOUT_ID) != null) {
                 return@withTransaction StartActiveWorkoutResult.AlreadyActive
             }
@@ -1312,13 +1384,15 @@ class GymRepository(
                     date = date,
                     note = note?.trim().orEmpty().ifBlank { null },
                     startedAt = startedAt,
-                    revision = 0L
+                    revision = 0L,
+                    undoableSetId = null
                 )
             )
             activeWorkoutDao.insertExercises(exerciseRows)
             activeWorkoutDao.insertSets(setRows)
             StartActiveWorkoutResult.Started
         }
+        result
     }
 
     suspend fun recordActiveWorkoutSet(
@@ -1326,7 +1400,7 @@ class GymRepository(
         expectedRevision: Long,
         weight: Double,
         reps: Int
-    ): RecordActiveWorkoutSetResult {
+    ): RecordActiveWorkoutSetResult = activeWorkoutMutationMutex.withLock {
         require(isStableActiveWorkoutId(setId)) { "Active set identifier is invalid." }
         require(expectedRevision in 0 until Long.MAX_VALUE) {
             "Active workout revision is invalid."
@@ -1337,7 +1411,7 @@ class GymRepository(
             "Set completion timestamp is outside the supported range."
         }
 
-        return database.withTransaction {
+        val result: RecordActiveWorkoutSetResult = database.withTransaction {
             val details = activeWorkoutDao.getSnapshot(ACTIVE_WORKOUT_ID)
                 ?.sortedActiveWorkout()
                 ?: return@withTransaction RecordActiveWorkoutSetResult.Missing
@@ -1354,9 +1428,10 @@ class GymRepository(
             }
 
             check(
-                activeWorkoutDao.advanceRevision(
+                activeWorkoutDao.advanceRevisionAndSetUndoable(
                     activeWorkoutId = ACTIVE_WORKOUT_ID,
-                    expectedRevision = expectedRevision
+                    expectedRevision = expectedRevision,
+                    setId = setId
                 ) == 1
             ) { "Active workout changed while recording the set." }
             check(
@@ -1370,13 +1445,62 @@ class GymRepository(
             ) { "Active set changed while recording it." }
             RecordActiveWorkoutSetResult.Recorded(revision = expectedRevision + 1L)
         }
+        result
+    }
+
+    suspend fun undoLatestActiveWorkoutSet(
+        setId: String,
+        expectedRevision: Long
+    ): UndoActiveWorkoutSetResult = activeWorkoutMutationMutex.withLock {
+        require(isStableActiveWorkoutId(setId)) { "Active set identifier is invalid." }
+        require(expectedRevision >= 0L) { "Active workout revision is invalid." }
+
+        val result = database.withTransaction {
+            val details = activeWorkoutDao.getSnapshot(ACTIVE_WORKOUT_ID)
+                ?.sortedActiveWorkout()
+                ?: return@withTransaction UndoActiveWorkoutSetResult.Missing
+            requireValidStoredActiveWorkout(details)
+            if (details.activeWorkout.revision != expectedRevision) {
+                return@withTransaction UndoActiveWorkoutSetResult.Stale
+            }
+            if (details.activeWorkout.undoableSetId != setId) {
+                return@withTransaction UndoActiveWorkoutSetResult.NotLatest
+            }
+
+            val target = details.exercises.asSequence()
+                .mapNotNull { exercise ->
+                    exercise.sets.firstOrNull { set -> set.id == setId }
+                        ?.let { set -> exercise.activeWorkoutExercise to set }
+                }
+                .firstOrNull()
+                ?: return@withTransaction UndoActiveWorkoutSetResult.TargetChanged
+            val completedAt = target.second.completedAt
+                ?: return@withTransaction UndoActiveWorkoutSetResult.NotLatest
+
+            check(
+                activeWorkoutDao.advanceRevisionAndClearUndoable(
+                    activeWorkoutId = ACTIVE_WORKOUT_ID,
+                    expectedRevision = expectedRevision,
+                    setId = setId
+                ) == 1
+            ) { "Active workout changed while undoing the set." }
+            check(
+                activeWorkoutDao.reopenCompletedSet(
+                    setId = setId,
+                    expectedActiveWorkoutExerciseId = target.first.id,
+                    expectedCompletedAt = completedAt
+                ) == 1
+            ) { "Active set changed while undoing it." }
+            UndoActiveWorkoutSetResult.Undone(revision = expectedRevision + 1L)
+        }
+        result
     }
 
     suspend fun finishActiveWorkout(
         expectedRevision: Long
-    ): FinishActiveWorkoutResult {
+    ): FinishActiveWorkoutResult = activeWorkoutMutationMutex.withLock {
         require(expectedRevision >= 0L) { "Active workout revision is invalid." }
-        return database.withTransaction {
+        val result: FinishActiveWorkoutResult = database.withTransaction {
             val details = activeWorkoutDao.getSnapshot(ACTIVE_WORKOUT_ID)
                 ?.sortedActiveWorkout()
                 ?: return@withTransaction FinishActiveWorkoutResult.Missing
@@ -1415,13 +1539,14 @@ class GymRepository(
             ) { "Active workout changed while finishing it." }
             FinishActiveWorkoutResult.Finished(sessionId)
         }
+        result
     }
 
     suspend fun discardActiveWorkout(
         expectedRevision: Long
-    ): DiscardActiveWorkoutResult {
+    ): DiscardActiveWorkoutResult = activeWorkoutMutationMutex.withLock {
         require(expectedRevision >= 0L) { "Active workout revision is invalid." }
-        return database.withTransaction {
+        val result: DiscardActiveWorkoutResult = database.withTransaction {
             val activeWorkout = activeWorkoutDao.getSnapshot(ACTIVE_WORKOUT_ID)
                 ?: return@withTransaction DiscardActiveWorkoutResult.Missing
             requireValidStoredActiveWorkout(activeWorkout.sortedActiveWorkout())
@@ -1434,6 +1559,7 @@ class GymRepository(
                 DiscardActiveWorkoutResult.Stale
             }
         }
+        result
     }
 
     fun observeWorkoutRecommendations(
@@ -2124,6 +2250,16 @@ class GymRepository(
         }
         require(totalSetCount in 1..WorkoutDataLimits.MAX_TOTAL_SETS) {
             "Stored active workout total set count is invalid."
+        }
+        activeWorkout.undoableSetId?.let { undoableSetId ->
+            require(isStableActiveWorkoutId(undoableSetId)) {
+                "Stored undoable set identifier is invalid."
+            }
+            val undoableMatches = details.exercises.flatMap { it.sets }
+                .filter { set -> set.id == undoableSetId }
+            require(undoableMatches.size == 1 && undoableMatches.single().completedAt != null) {
+                "Stored undoable set is not a completed active-workout set."
+            }
         }
     }
 

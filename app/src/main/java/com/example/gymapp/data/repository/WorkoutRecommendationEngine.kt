@@ -38,6 +38,7 @@ enum class WorkoutRecommendationReason {
     NearPersonalBest,
     ConservativeIncrease,
     LoadBoundaryReached,
+    BodyweightProgressionNeeded,
     AestheticGoal,
     CalorieDeficit,
     FourDayUpperLower,
@@ -180,12 +181,21 @@ object WorkoutRecommendationEngine {
                 ExerciseLoadMode.Assistance,
                 null -> null
             }
+            val defaultReps = defaultTargetReps(trainingProfile, programmingAnalysis, repRange)
+            val startingReps = if (
+                appliedEffort == SmartWorkoutEffort.Recovery &&
+                programmingAnalysis?.loadMode in setOf(ExerciseLoadMode.Bodyweight, ExerciseLoadMode.None)
+            ) {
+                (defaultReps - 1).coerceIn(repRange.minimum, repRange.maximum)
+            } else {
+                defaultReps
+            }
             return WorkoutRecommendation(
                 exerciseId = exerciseId,
                 sets = List(targetSetCount) {
                     RecommendedWorkoutSet(
                         weight = startingWeight,
-                        reps = defaultTargetReps(trainingProfile, programmingAnalysis, repRange)
+                        reps = startingReps
                     )
                 },
                 kind = WorkoutRecommendationKind.NewExercise,
@@ -399,6 +409,7 @@ object WorkoutRecommendationEngine {
                 SmartWorkoutEffort.Standard -> Unit
             }
             if (earnedAtLoadBoundary) add(WorkoutRecommendationReason.LoadBoundaryReached)
+            if (needsHarderBodyweight) add(WorkoutRecommendationReason.BodyweightProgressionNeeded)
             if (latestStable) add(WorkoutRecommendationReason.LastSessionStrong)
             if (latestStrained || repeatedRegression) add(WorkoutRecommendationReason.LastSessionUnstable)
             if (daysSinceLastSession >= ComebackBreakDays) add(WorkoutRecommendationReason.RecentBreak)
@@ -494,6 +505,11 @@ object WorkoutRecommendationEngine {
             zoneId = zoneId
         )
         val targetExerciseCount = targetExerciseCount(trainingProfile, effortResolution.applied)
+        val targetWorkingSetBudget = targetWorkingSetBudget(
+            trainingProfile = trainingProfile,
+            effort = effortResolution.applied,
+            exerciseLimit = targetExerciseCount
+        )
         val weeklyTargets = weeklyMuscleTargets(trainingProfile)
         val completedWeeklySets = completedWeeklyEffectiveSets(
             history = safeHistory,
@@ -571,6 +587,7 @@ object WorkoutRecommendationEngine {
             variant = variant,
             targetMuscles = targetMuscles,
             targetExerciseCount = targetExerciseCount,
+            targetWorkingSetBudget = targetWorkingSetBudget,
             history = safeHistory,
             nowMillis = nowMillis,
             zoneId = zoneId,
@@ -848,23 +865,35 @@ object WorkoutRecommendationEngine {
         trainingProfile: TrainingProfile,
         analysis: ExerciseAnalysis?
     ): RepRange {
-        val isCompound = analysis?.isCompound == true
+        val role = analysis?.role ?: ExerciseRole.Secondary
         return when (trainingProfile.goal) {
-            TrainingGoal.Strength -> if (isCompound) {
-                RepRange(minimum = 3, maximum = 6)
-            } else {
-                RepRange(minimum = 6, maximum = 10)
+            TrainingGoal.Strength -> when (role) {
+                ExerciseRole.Primary -> RepRange(minimum = 4, maximum = 6)
+                ExerciseRole.Secondary -> RepRange(minimum = 4, maximum = 8)
+                ExerciseRole.Isolation,
+                ExerciseRole.Core,
+                ExerciseRole.Warmup -> RepRange(minimum = 8, maximum = 10)
             }
-            TrainingGoal.MuscleGain,
-            TrainingGoal.AestheticFatLoss -> if (isCompound) {
-                RepRange(minimum = 6, maximum = 10)
-            } else {
-                RepRange(minimum = 8, maximum = 10)
+            TrainingGoal.MuscleGain -> when (role) {
+                ExerciseRole.Primary -> RepRange(minimum = 6, maximum = 10)
+                ExerciseRole.Secondary -> RepRange(minimum = 7, maximum = 10)
+                ExerciseRole.Isolation,
+                ExerciseRole.Core,
+                ExerciseRole.Warmup -> RepRange(minimum = 8, maximum = 10)
             }
-            TrainingGoal.Balanced -> if (isCompound) {
-                RepRange(minimum = 5, maximum = 8)
-            } else {
-                RepRange(minimum = 8, maximum = 10)
+            TrainingGoal.AestheticFatLoss -> when (role) {
+                ExerciseRole.Primary -> RepRange(minimum = 6, maximum = 10)
+                ExerciseRole.Secondary -> RepRange(minimum = 7, maximum = 10)
+                ExerciseRole.Isolation,
+                ExerciseRole.Core,
+                ExerciseRole.Warmup -> RepRange(minimum = 8, maximum = 10)
+            }
+            TrainingGoal.Balanced -> when (role) {
+                ExerciseRole.Primary -> RepRange(minimum = 5, maximum = 8)
+                ExerciseRole.Secondary -> RepRange(minimum = 6, maximum = 8)
+                ExerciseRole.Isolation,
+                ExerciseRole.Core,
+                ExerciseRole.Warmup -> RepRange(minimum = 8, maximum = 10)
             }
         }
     }
@@ -875,10 +904,26 @@ object WorkoutRecommendationEngine {
         repRange: RepRange
     ): Int {
         val target = when (trainingProfile.goal) {
-            TrainingGoal.Strength -> if (analysis?.isCompound == true) 5 else 8
-            TrainingGoal.MuscleGain,
-            TrainingGoal.AestheticFatLoss -> if (analysis?.isCompound == true) 8 else 10
-            TrainingGoal.Balanced -> if (analysis?.isCompound == true) 8 else 10
+            TrainingGoal.Strength -> when (analysis?.role) {
+                ExerciseRole.Primary -> 5
+                ExerciseRole.Secondary -> 6
+                else -> 8
+            }
+            TrainingGoal.MuscleGain -> when (analysis?.role) {
+                ExerciseRole.Primary -> 8
+                ExerciseRole.Secondary -> 9
+                else -> 10
+            }
+            TrainingGoal.AestheticFatLoss -> when (analysis?.role) {
+                ExerciseRole.Primary -> 7
+                ExerciseRole.Secondary -> 8
+                else -> 10
+            }
+            TrainingGoal.Balanced -> when (analysis?.role) {
+                ExerciseRole.Primary -> 7
+                ExerciseRole.Secondary -> 8
+                else -> 10
+            }
         }
         return target.coerceIn(repRange.minimum, repRange.maximum)
     }
@@ -895,7 +940,16 @@ object WorkoutRecommendationEngine {
         }
         val highFrequency = trainingProfile.workoutsPerWeek.coerceIn(2, 6) >= 5
         val recoveryLimited = trainingProfile.calorieMode == CalorieMode.Deficit
-        return if (analysis?.role == ExerciseRole.Primary && !highFrequency && !recoveryLimited) 4 else 3
+        val surplusHypertrophy = trainingProfile.goal == TrainingGoal.MuscleGain &&
+            trainingProfile.calorieMode == CalorieMode.Surplus
+        return when (analysis?.role) {
+            ExerciseRole.Primary -> if (!recoveryLimited && (!highFrequency || surplusHypertrophy)) 4 else 3
+            ExerciseRole.Secondary -> if (surplusHypertrophy && !highFrequency) 4 else 3
+            ExerciseRole.Isolation,
+            ExerciseRole.Core,
+            ExerciseRole.Warmup,
+            null -> 3
+        }
     }
 
     internal fun weeklyMuscleTargets(trainingProfile: TrainingProfile): Map<String, Double> {
@@ -1052,11 +1106,10 @@ object WorkoutRecommendationEngine {
             "upright_row", "french_press" -> ExerciseEquipment.Barbell
             "dumbbell_bench_press", "incline_dumbbell_press", "lateral_raise",
             "seated_dumbbell_curl", "hammer_curl", "overhead_dumbbell_triceps_extension",
-            "lunge", "weighted_side_bend" -> ExerciseEquipment.Dumbbell
+            "bulgarian_split_squat", "lunge", "weighted_side_bend" -> ExerciseEquipment.Dumbbell
             "lat_pulldown", "straight_arm_pulldown", "seated_cable_row", "face_pull",
             "cable_curl", "triceps_pushdown", "v_bar_pushdown" -> ExerciseEquipment.Cable
-            "plate_loaded_row" -> ExerciseEquipment.PlateLoaded
-            "chest_fly_machine", "assisted_dip", "assisted_pull_up", "leg_press",
+            "plate_loaded_row", "chest_fly_machine", "assisted_dip", "assisted_pull_up", "leg_press",
             "leg_extension", "lying_leg_curl", "seated_leg_curl", "hip_adduction",
             "hip_abduction", "machine_lateral_raise", "rear_delt_fly", "preacher_curl" ->
                 ExerciseEquipment.Machine
@@ -1080,6 +1133,19 @@ object WorkoutRecommendationEngine {
         }
     }
 
+    internal fun canonicalEquipmentForExercise(exerciseName: String): String =
+        exerciseEquipment(exerciseName, analyzeExercise(exerciseName)).name
+
+    internal fun recommendedRestSeconds(exerciseName: String): Int = when (
+        analyzeExercise(exerciseName).role
+    ) {
+        ExerciseRole.Primary -> 180
+        ExerciseRole.Secondary -> 120
+        ExerciseRole.Isolation -> 75
+        ExerciseRole.Core,
+        ExerciseRole.Warmup -> 60
+    }
+
     private fun targetExerciseCount(
         trainingProfile: TrainingProfile,
         effort: SmartWorkoutEffort = SmartWorkoutEffort.Standard
@@ -1092,11 +1158,45 @@ object WorkoutRecommendationEngine {
             5 -> 7
             else -> 6
         }
-        return if (effort == SmartWorkoutEffort.Recovery) {
-            (base - 2).coerceAtLeast(5)
-        } else {
-            base
+        val goalAdjustment = when (trainingProfile.goal) {
+            TrainingGoal.MuscleGain -> 1
+            TrainingGoal.Strength,
+            TrainingGoal.AestheticFatLoss -> -1
+            TrainingGoal.Balanced -> 0
         }
+        val calorieAdjustment = when (trainingProfile.calorieMode) {
+            CalorieMode.Deficit -> -1
+            CalorieMode.Maintenance -> 0
+            CalorieMode.Surplus -> 1
+        }
+        val effortAdjustment = if (effort == SmartWorkoutEffort.Recovery) -2 else 0
+        return (base + goalAdjustment + calorieAdjustment + effortAdjustment).coerceIn(5, 10)
+    }
+
+    private fun targetWorkingSetBudget(
+        trainingProfile: TrainingProfile,
+        effort: SmartWorkoutEffort,
+        exerciseLimit: Int
+    ): Int {
+        val goalAdjustment = when (trainingProfile.goal) {
+            TrainingGoal.MuscleGain -> 2
+            TrainingGoal.Strength -> -2
+            TrainingGoal.AestheticFatLoss -> -1
+            TrainingGoal.Balanced -> 0
+        }
+        val calorieAdjustment = when (trainingProfile.calorieMode) {
+            CalorieMode.Deficit -> -3
+            CalorieMode.Maintenance -> 0
+            CalorieMode.Surplus -> 3
+        }
+        val effortAdjustment = when (effort) {
+            SmartWorkoutEffort.Recovery -> -3
+            SmartWorkoutEffort.Hard -> 2
+            SmartWorkoutEffort.Auto,
+            SmartWorkoutEffort.Standard -> 0
+        }
+        return (exerciseLimit * 3 + goalAdjustment + calorieAdjustment + effortAdjustment)
+            .coerceIn(MIN_SESSION_WORKING_SETS, exerciseLimit * 4)
     }
 
     private fun programmingPreferenceScore(
@@ -1588,6 +1688,7 @@ object WorkoutRecommendationEngine {
         variant: SmartWorkoutVariant,
         targetMuscles: Set<String>,
         targetExerciseCount: Int,
+        targetWorkingSetBudget: Int,
         history: List<ExerciseHistoryEntry>,
         nowMillis: Long,
         zoneId: ZoneId,
@@ -1601,6 +1702,7 @@ object WorkoutRecommendationEngine {
         val coveredMuscles = mutableSetOf<String>()
         val lastTrainedByMuscle = lastTrainedByMuscle(history)
         val projectedWeeklySets = completedWeeklySets.toMutableMap()
+        var plannedWorkingSets = 0
         val remaining = candidates
             .filter { candidate -> isExerciseEligibleForFocus(candidate.analysis, focus) }
             .ifEmpty {
@@ -1623,18 +1725,31 @@ object WorkoutRecommendationEngine {
             ),
             manualMuscleMappings = manualMuscleMappings
         )
+        fun plannedSets(candidate: ExerciseCandidate): Int = setBudget(
+            trainingProfile = trainingProfile,
+            analysis = candidate.analysis,
+            effort = effort,
+            hardSetEligible = false
+        )
+        fun hasUnfilledWeeklyTarget(candidate: ExerciseCandidate): Boolean {
+            val contributions = safeMuscleContributions(candidate.exercise.name, manualMuscleMappings)
+            if (contributions.isEmpty()) return true
+            return contributions.any { contribution ->
+                val target = weeklyTargets[contribution.muscleId] ?: return@any false
+                (projectedWeeklySets[contribution.muscleId] ?: 0.0) < target
+            }
+        }
+        fun fitsOptionalBudget(candidate: ExerciseCandidate): Boolean =
+            plannedWorkingSets + plannedSets(candidate) <= targetWorkingSetBudget
         fun recordSelection(candidate: ExerciseCandidate) {
+            val candidateSets = plannedSets(candidate)
             selected += candidate
             coveredMuscles += candidate.analysis.muscles
+            plannedWorkingSets += candidateSets
             addProjectedWeeklySets(
                 candidate = candidate,
                 projectedWeeklySets = projectedWeeklySets,
-                plannedSets = setBudget(
-                    trainingProfile = trainingProfile,
-                    analysis = candidate.analysis,
-                    effort = effort,
-                    hardSetEligible = false
-                ),
+                plannedSets = candidateSets,
                 manualMuscleMappings = manualMuscleMappings
             )
             remaining.removeAll { it.exercise.id == candidate.exercise.id }
@@ -1725,7 +1840,10 @@ object WorkoutRecommendationEngine {
         }
 
         while (selected.size < nonTrunkTarget && remaining.isNotEmpty()) {
-            val best = remaining.sortedWith(
+            val best = remaining
+                .filter(::hasUnfilledWeeklyTarget)
+                .filter(::fitsOptionalBudget)
+                .sortedWith(
                 compareByDescending<ExerciseCandidate> { candidate ->
                     balancedScore(
                         candidate = candidate,
@@ -1739,22 +1857,8 @@ object WorkoutRecommendationEngine {
                         + volumeScore(candidate)
                 }.thenBy { it.analysis.identityKey }
                     .thenBy { it.exercise.id }
-            ).firstOrNull() ?: break
+                ).firstOrNull() ?: break
             recordSelection(best)
-        }
-
-        if (selected.size < nonTrunkTarget) {
-            val fallback = candidates
-                .filter { candidate -> isExerciseEligibleForFocus(candidate.analysis, focus) }
-                .filterNot { candidate -> selected.any { it.exercise.id == candidate.exercise.id } }
-                .filterNot { candidate -> candidate.analysis.isTrunkExercise() }
-                .sortedWith(
-                    compareByDescending<ExerciseCandidate> { it.score + volumeScore(it) }
-                        .thenBy { it.analysis.identityKey }
-                        .thenBy { it.exercise.id }
-                )
-                .take(nonTrunkTarget - selected.size)
-            fallback.forEach(::recordSelection)
         }
 
         if (selected.size < targetExerciseCount && hasTrunkCandidate) {
@@ -1767,17 +1871,6 @@ object WorkoutRecommendationEngine {
                 volumeScore = ::volumeScore,
                 onSelected = ::recordSelection
             )
-        }
-        if (selected.size < targetExerciseCount) {
-            remaining
-                .sortedWith(
-                    compareByDescending<ExerciseCandidate> { it.score + volumeScore(it) }
-                        .thenBy { it.analysis.identityKey }
-                        .thenBy { it.exercise.id }
-                )
-                .take(targetExerciseCount - selected.size)
-                .toList()
-                .forEach(::recordSelection)
         }
 
         return selected
@@ -2082,7 +2175,6 @@ object WorkoutRecommendationEngine {
         Dumbbell,
         Cable,
         Machine,
-        PlateLoaded,
         Bodyweight,
         Band,
         Other
@@ -2203,6 +2295,7 @@ object WorkoutRecommendationEngine {
     private const val MaxHardCompoundExercises = 2
     private const val MaxWeeklyHyperextensions = 2
     private const val RecoveryMuscleFraction = 0.5
+    private const val MIN_SESSION_WORKING_SETS = 12
     private const val WEEKLY_VOLUME_WINDOW_MILLIS = 7L * 24L * 60L * 60L * 1_000L
 }
 

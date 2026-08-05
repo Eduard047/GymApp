@@ -49,7 +49,10 @@ test("Android Russian resources cover every English string with compatible place
   assert.equal(russian.get("action_start_workout"), "Начать тренировку");
   assert.match(english.get("add_workout_plan_mode_hint"), /targets sent to Garmin/);
   assert.match(english.get("add_workout_active_mode_hint"), /durable local plan/);
-  assert.match(english.get("active_workout_supporting"), /saved before the 90-second rest starts/);
+  assert.match(
+    english.get("active_workout_supporting"),
+    /saved before a movement-aware rest timer starts/
+  );
   assert.match(addWorkout, /R\.string\.action_add_planned_set/);
   assert.match(addWorkout, /R\.string\.action_start_workout/);
   assert.match(addWorkout, /R\.string\.add_workout_plan_mode_hint/);
@@ -230,8 +233,8 @@ test("PWA accepts Russian state and renders Russian runtime text before app star
   assert.match(appSource, /tx\("metrics parsed from the saved note", "показники прочитано зі збереженої нотатки"\)/);
   assert.match(appSource, /txAttr\("Name in English, Ukrainian, or Russian", "Назва англійською, українською або російською"\)/);
   assert.doesNotMatch(appSource, /Name in English, Ukrainian or Russian/);
-  assert.ok(indexSource.indexOf("russian-text.v69.js") < indexSource.indexOf("app.v69.js"));
-  assert.match(workerSource, /"\.\/russian-text\.v69\.js"/);
+  assert.ok(indexSource.indexOf("russian-text.v70.js") < indexSource.indexOf("app.v70.js"));
+  assert.match(workerSource, /"\.\/russian-text\.v70\.js"/);
 });
 
 test("runtime language switches invalidate cached labels on every client", async () => {

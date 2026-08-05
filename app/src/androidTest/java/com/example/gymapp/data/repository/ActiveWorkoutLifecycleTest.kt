@@ -138,6 +138,57 @@ class ActiveWorkoutLifecycleTest {
     }
 
     @Test
+    fun undoReopensOnlyTheNewestRecordedSetAndCannotCascadeToOlderSets() = runBlocking {
+        withDatabase("active-workout-undo") { database, repository ->
+            val exerciseId = repository.addExercise("Synthetic undo row")
+            repository.startActiveWorkout(
+                NOW,
+                null,
+                listOf(
+                    WorkoutExerciseDraft(
+                        exerciseId,
+                        listOf(
+                            WorkoutSetDraft(40.0, 10),
+                            WorkoutSetDraft(42.0, 8)
+                        )
+                    )
+                )
+            )
+            val sets = checkNotNull(repository.getActiveWorkoutSnapshot())
+                .exercises.single().sets
+            assertEquals(
+                RecordActiveWorkoutSetResult.Recorded(1L),
+                repository.recordActiveWorkoutSet(sets[0].id, 0L, 41.0, 9)
+            )
+            assertEquals(
+                RecordActiveWorkoutSetResult.Recorded(2L),
+                repository.recordActiveWorkoutSet(sets[1].id, 1L, 43.0, 7)
+            )
+            assertEquals(
+                sets[1].id,
+                repository.getActiveWorkoutSnapshot()?.activeWorkout?.undoableSetId
+            )
+
+            val restoredRepository = GymRepository(database, currentTimeMillis = { NOW })
+            assertEquals(
+                UndoActiveWorkoutSetResult.Undone(3L),
+                restoredRepository.undoLatestActiveWorkoutSet(sets[1].id, 2L)
+            )
+            assertEquals(
+                UndoActiveWorkoutSetResult.NotLatest,
+                restoredRepository.undoLatestActiveWorkoutSet(sets[0].id, 3L)
+            )
+
+            val restored = checkNotNull(restoredRepository.getActiveWorkoutSnapshot())
+            assertNull(restored.activeWorkout.undoableSetId)
+            assertNotNull(restored.exercises.single().sets[0].completedAt)
+            assertNull(restored.exercises.single().sets[1].completedAt)
+            assertEquals(43.0, restored.exercises.single().sets[1].weight, 0.0)
+            assertEquals(7, restored.exercises.single().sets[1].reps)
+        }
+    }
+
+    @Test
     fun oneActiveWorkoutPerDatabaseAndCatalogReplacementDoesNotEraseDraft() = runBlocking {
         withDatabase("active-workout-isolation") { database, repository ->
             val exerciseId = repository.addExercise("Synthetic cable row")

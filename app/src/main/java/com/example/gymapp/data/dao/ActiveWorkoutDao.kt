@@ -32,14 +32,37 @@ interface ActiveWorkoutDao {
     @Query(
         """
         UPDATE active_workouts
-        SET revision = revision + 1
+        SET revision = revision + 1,
+            undoableSetId = :setId
         WHERE id = :activeWorkoutId
             AND revision = :expectedRevision
             AND revision >= 0
             AND revision < 9223372036854775807
         """
     )
-    suspend fun advanceRevision(activeWorkoutId: Long, expectedRevision: Long): Int
+    suspend fun advanceRevisionAndSetUndoable(
+        activeWorkoutId: Long,
+        expectedRevision: Long,
+        setId: String
+    ): Int
+
+    @Query(
+        """
+        UPDATE active_workouts
+        SET revision = revision + 1,
+            undoableSetId = NULL
+        WHERE id = :activeWorkoutId
+            AND revision = :expectedRevision
+            AND undoableSetId = :setId
+            AND revision >= 0
+            AND revision < 9223372036854775807
+        """
+    )
+    suspend fun advanceRevisionAndClearUndoable(
+        activeWorkoutId: Long,
+        expectedRevision: Long,
+        setId: String
+    ): Int
 
     @Query(
         """
@@ -58,6 +81,21 @@ interface ActiveWorkoutDao {
         weight: Double,
         reps: Int,
         completedAt: Long
+    ): Int
+
+    @Query(
+        """
+        UPDATE active_workout_sets
+        SET completedAt = NULL
+        WHERE id = :setId
+            AND activeWorkoutExerciseId = :expectedActiveWorkoutExerciseId
+            AND completedAt = :expectedCompletedAt
+        """
+    )
+    suspend fun reopenCompletedSet(
+        setId: String,
+        expectedActiveWorkoutExerciseId: String,
+        expectedCompletedAt: Long
     ): Int
 
     @Query(

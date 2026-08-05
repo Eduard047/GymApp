@@ -104,6 +104,9 @@ import com.example.gymapp.sync.PhoneSyncClient
 import com.example.gymapp.sync.CloudSnapshotApplyDecision
 import com.example.gymapp.sync.CloudSyncConflictSnapshot
 import com.example.gymapp.sync.CloudSyncBaselineStore
+import com.example.gymapp.sync.CloudSyncPhase
+import com.example.gymapp.sync.CloudSyncStatusStore
+import com.example.gymapp.sync.CloudSyncUiStatus
 import com.example.gymapp.sync.attachSharedCloudExtensions
 import com.example.gymapp.sync.cloudSnapshotApplyDecision
 import com.example.gymapp.sync.isCanonicalSharedCloudEnvelope
@@ -124,6 +127,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -148,12 +152,14 @@ internal fun isSameCloudSessionGeneration(
 internal suspend fun runConfirmedAccountDeletionLocalCleanup(
     clearRoom: suspend () -> Unit,
     clearBaseline: () -> Boolean,
-    clearTrainingProfile: () -> Boolean
+    clearTrainingProfile: () -> Boolean,
+    clearSyncStatus: () -> Boolean = { true }
 ): Int {
     var failures = 0
     if (runCatching { clearRoom() }.isFailure) failures += 1
     if (runCatching { check(clearBaseline()) }.isFailure) failures += 1
     if (runCatching { check(clearTrainingProfile()) }.isFailure) failures += 1
+    if (runCatching { check(clearSyncStatus()) }.isFailure) failures += 1
     return failures
 }
 
@@ -239,6 +245,22 @@ fun GymAppRoot(
     val cloudSyncBaselineStore = remember(applicationContext) {
         CloudSyncBaselineStore(applicationContext)
     }
+    val cloudSyncStatusStore = remember(applicationContext) {
+        CloudSyncStatusStore(applicationContext)
+    }
+    var cloudSyncStatus by key(uiIsolationKey) {
+        val userId = (authState.session as? AccountSession.Cloud)?.userId
+        remember {
+            mutableStateOf(
+                userId?.let {
+                    CloudSyncUiStatus(
+                        phase = CloudSyncPhase.Checking,
+                        lastSuccessAt = cloudSyncStatusStore.readLastSuccess(it)
+                    )
+                }
+            )
+        }
+    }
     var sharedCloudExtensions by key(uiIsolationKey) {
         // Extensions are populated only by a successfully validated pull. Automatic upload is
         // never enabled before that pull, so a process restart cannot drop another client's
@@ -281,6 +303,26 @@ fun GymAppRoot(
     val cloudSession = (authState.session as? AccountSession.Cloud)
         ?.takeUnless { authState.needsPasswordUpdate }
 
+    fun updateCloudSyncPhase(session: AccountSession.Cloud, phase: CloudSyncPhase) {
+        if (isSameCloudSessionGeneration(session, authManager.authState.value.session)) {
+            cloudSyncStatus = CloudSyncUiStatus(
+                phase = phase,
+                lastSuccessAt = cloudSyncStatusStore.readLastSuccess(session.userId)
+            )
+        }
+    }
+
+    fun recordCloudSyncSuccess(session: AccountSession.Cloud) {
+        check(isSameCloudSessionGeneration(session, authManager.authState.value.session)) {
+            "Cloud account changed while recording synchronization status."
+        }
+        val timestamp = System.currentTimeMillis()
+        check(cloudSyncStatusStore.writeLastSuccess(session.userId, timestamp)) {
+            "Could not persist the last successful synchronization time."
+        }
+        cloudSyncStatus = CloudSyncUiStatus(CloudSyncPhase.Synced, timestamp)
+    }
+
     LaunchedEffect(uiIsolationKey) {
         if (authState.session is AccountSession.Local) {
             repository.seedBuiltInExercises()
@@ -290,6 +332,7 @@ fun GymAppRoot(
 
     LaunchedEffect(cloudSession?.sessionGeneration, cloudSyncRetryVersion) {
         val session = cloudSession ?: return@LaunchedEffect
+        updateCloudSyncPhase(session, CloudSyncPhase.Checking)
         cloudPullGeneration = null
         cloudSyncRetryMode = null
         val pullResult = runCatching {
@@ -319,6 +362,7 @@ fun GymAppRoot(
                         remoteDigest = null,
                         remoteExists = true
                     )
+                    updateCloudSyncPhase(session, CloudSyncPhase.Conflict)
                     showCloudSyncConflictDialog = true
                     false
                 } else {
@@ -339,6 +383,7 @@ fun GymAppRoot(
                                 remoteDigest = remoteDigest,
                                 remoteExists = true
                             )
+                            updateCloudSyncPhase(session, CloudSyncPhase.Conflict)
                             showCloudSyncConflictDialog = true
                             false
                         }
@@ -355,6 +400,7 @@ fun GymAppRoot(
                                 session,
                                 authManager.authState.value.session
                             )) { "Cloud account changed while confirming the sync baseline." }
+                            recordCloudSyncSuccess(session)
                             true
                         }
 
@@ -380,6 +426,7 @@ fun GymAppRoot(
                                 session,
                                 authManager.authState.value.session
                             )) { "Cloud account changed while confirming the sync baseline." }
+                            recordCloudSyncSuccess(session)
                             true
                         }
 
@@ -410,6 +457,7 @@ fun GymAppRoot(
                             remoteDigest = null,
                             remoteExists = false
                         )
+                        updateCloudSyncPhase(session, CloudSyncPhase.Conflict)
                         showCloudSyncConflictDialog = true
                     }
                 }
@@ -418,6 +466,7 @@ fun GymAppRoot(
         pullResult.onFailure { throwable ->
             if (throwable is CancellationException) throw throwable
             if (isSameCloudSessionGeneration(session, authManager.authState.value.session)) {
+                updateCloudSyncPhase(session, CloudSyncPhase.Error)
                 cloudSyncRetryMode = CloudSyncRetryMode.Pull
                 authManager.setMessage(
                     authErrorText(throwable, R.string.cloud_sync_load_failed)
@@ -449,6 +498,10 @@ fun GymAppRoot(
                 authManager.setMessage(
                     LocalizedText(R.string.cloud_sync_conflict)
                 )
+                updateCloudSyncPhase(
+                    session,
+                    if (cloudSyncConflict == null) CloudSyncPhase.Error else CloudSyncPhase.Conflict
+                )
             }
         }
         val activeSession = authManager.authState.value.session as? AccountSession.Cloud
@@ -469,11 +522,11 @@ fun GymAppRoot(
         combine(
             repository.observeSessions(),
             repository.observeExercises(),
-            repository.observeExerciseMuscleMappings(),
-            repository.observeExerciseLoadProfiles()
-        ) { sessions, exercises, mappings, loadProfiles ->
-            listOf(sessions.size, exercises.size, mappings.size, loadProfiles.hashCode())
+            repository.observeExerciseMuscleMappings()
+        ) { sessions, exercises, mappings ->
+            listOf(sessions.size, exercises.size, mappings.size)
         }
+            .onEach { updateCloudSyncPhase(session, CloudSyncPhase.Pending) }
             .debounce(1_500)
             .collect {
                 if (authManager.authState.value.isLoading) return@collect
@@ -510,6 +563,7 @@ fun GymAppRoot(
                         session,
                         authManager.authState.value.session
                     )) { "Cloud account changed while confirming the sync baseline." }
+                    recordCloudSyncSuccess(session)
                 }.onFailure { throwable ->
                     if (throwable is CancellationException) throw throwable
                     cloudPullGeneration = null
@@ -520,6 +574,14 @@ fun GymAppRoot(
                     ) {
                         val message = authErrorText(throwable, R.string.cloud_sync_save_failed)
                         cloudSyncRetryMode = cloudSyncRetryModeForSaveFailure(message)
+                        updateCloudSyncPhase(
+                            session,
+                            if (message.resourceId == R.string.cloud_sync_conflict) {
+                                CloudSyncPhase.Conflict
+                            } else {
+                                CloudSyncPhase.Error
+                            }
+                        )
                         authManager.setMessage(message)
                     }
                 }
@@ -633,6 +695,7 @@ fun GymAppRoot(
                     // safely accepted; autosave will then publish the additive change if needed.
                     repository.seedBuiltInExercises()
                     repository.seedDefaultExerciseMuscleMappings()
+                    recordCloudSyncSuccess(session)
                 }
             }
 
@@ -668,6 +731,7 @@ fun GymAppRoot(
                     showCloudSyncConflictDialog = false
                     cloudPullGeneration = null
                     cloudSyncRetryMode = CloudSyncRetryMode.Pull
+                    updateCloudSyncPhase(session, CloudSyncPhase.Error)
                     authManager.setMessage(
                         authErrorText(throwable, R.string.cloud_sync_resolution_failed)
                     )
@@ -1026,6 +1090,16 @@ fun GymAppRoot(
                                 factory = WorkoutListViewModel.factory(repository)
                             )
                             val uiState by viewModel.uiState.collectAsState()
+                            val activeWorkoutSets = activeWorkout?.exercises
+                                .orEmpty()
+                                .flatMap { it.sets }
+                            val activeWorkoutProgress = activeWorkout?.let {
+                                activeWorkoutSets.count { set -> set.completedAt != null } to
+                                    activeWorkoutSets.size
+                            }
+                            val discardActiveWorkoutFailed = stringResource(
+                                R.string.active_workout_discard_failed
+                            )
 
                             WorkoutListScreen(
                                 uiState = uiState,
@@ -1047,7 +1121,21 @@ fun GymAppRoot(
                                         }
                                     )
                                 },
-                                hasActiveWorkout = activeWorkout != null,
+                                activeWorkoutProgress = activeWorkoutProgress,
+                                onDiscardActiveWorkout = {
+                                    activeWorkout?.activeWorkout?.revision?.let { activeRevision ->
+                                        coroutineScope.launch {
+                                            val discarded = runCatching {
+                                                repository.discardActiveWorkout(activeRevision)
+                                            }.getOrNull() == com.example.gymapp.data.repository.DiscardActiveWorkoutResult.Discarded
+                                            if (discarded) {
+                                                runCatching { restTimerController.stop() }
+                                            } else {
+                                                snackbarHostState.showSnackbar(discardActiveWorkoutFailed)
+                                            }
+                                        }
+                                    }
+                                },
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
@@ -1184,6 +1272,9 @@ fun GymAppRoot(
                                 onSetWeightChanged = viewModel::updateSetWeight,
                                 onSetRepsChanged = viewModel::updateSetReps,
                                 onRecordSet = viewModel::recordSet,
+                                onUndoLatestSet = viewModel::undoLatestSet,
+                                onAdjustRestTimer = viewModel::adjustRestTimer,
+                                onStopRestTimer = viewModel::stopRestTimer,
                                 onFinishWorkout = viewModel::finishWorkout,
                                 onDiscardWorkout = viewModel::discardWorkout,
                                 onDismissMessage = viewModel::dismissMessage,
@@ -1407,6 +1498,14 @@ fun GymAppRoot(
                                 isLeaderboardLoading = isLoading,
                                 leaderboardError = error,
                                 onRefreshLeaderboard = { refreshLeaderboard() },
+                                cloudSyncStatus = cloudSyncStatus,
+                                onSyncNow = {
+                                    cloudSession?.let { session ->
+                                        updateCloudSyncPhase(session, CloudSyncPhase.Checking)
+                                        cloudSyncRetryMode = CloudSyncRetryMode.Pull
+                                        cloudSyncRetryVersion += 1
+                                    }
+                                },
                                 cloudSyncChoiceRequired =
                                     cloudSyncConflict != null ||
                                         authState.message?.resourceId ==
@@ -1500,6 +1599,11 @@ fun GymAppRoot(
                                                             applicationContext.gymApplication
                                                                 .trainingProfileManager
                                                                 .clearAccount(deletedSession)
+                                                        },
+                                                        clearSyncStatus = {
+                                                            cloudSyncStatusStore.clear(
+                                                                deletedSession.userId
+                                                            )
                                                         }
                                                     )
                                                 val completion = authManager
