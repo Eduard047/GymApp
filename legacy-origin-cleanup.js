@@ -3,7 +3,10 @@
 (() => {
   const LEGACY_ORIGIN = "https://eduard047.github.io";
   const LEGACY_PATH_PREFIX = "/GymApp/";
-  const LEGACY_CLEANUP_PATH = `${LEGACY_PATH_PREFIX}legacy-origin-cleanup-v61.html`;
+  const LEGACY_CLEANUP_PATHS = new Set([
+    `${LEGACY_PATH_PREFIX}legacy-origin-cleanup-v61.html`,
+    `${LEGACY_PATH_PREFIX}legacy-origin-cleanup-v62.html`
+  ]);
   const LEGACY_SERVICE_WORKER_SCOPE = `${LEGACY_ORIGIN}${LEGACY_PATH_PREFIX}`;
   const LEGACY_SCOPE_URL = new URL(LEGACY_SERVICE_WORKER_SCOPE);
   const PUBLIC_SITE_URL = "https://gymapptracker.com/";
@@ -77,8 +80,15 @@
     }
   }
 
-  function isBoundedToken(value) {
+  function isBoundedAccessToken(value) {
     return typeof value === "string" && value.length >= 16 && value.length <= 16384;
+  }
+
+  function isBoundedRefreshToken(value) {
+    // Supabase refresh tokens are opaque. Their security does not depend on a
+    // client-enforced minimum length, so accept every non-empty bounded value
+    // that the current PWA session contract accepts.
+    return typeof value === "string" && value.length > 0 && value.length <= 8192;
   }
 
   function isWithinLegacyScope(rawUrl) {
@@ -102,8 +112,8 @@
         return { complete: false, session: null };
       }
       const parsed = JSON.parse(raw);
-      const accessToken = isBoundedToken(parsed?.access_token) ? parsed.access_token : null;
-      const refreshToken = isBoundedToken(parsed?.refresh_token) ? parsed.refresh_token : null;
+      const accessToken = isBoundedAccessToken(parsed?.access_token) ? parsed.access_token : null;
+      const refreshToken = isBoundedRefreshToken(parsed?.refresh_token) ? parsed.refresh_token : null;
       if (!accessToken && !refreshToken) return { complete: false, session: null };
       return {
         complete: markerClear,
@@ -165,7 +175,7 @@
       return { status: "failed", accessToken: null };
     }
     const accessToken = JSON.parse(text)?.access_token;
-    return isBoundedToken(accessToken)
+    return isBoundedAccessToken(accessToken)
       ? { status: "refreshed", accessToken }
       : { status: "failed", accessToken: null };
   }
@@ -646,7 +656,7 @@
   async function run() {
     if (window.__GYMAPP_TOP_LEVEL__ !== true || window.top !== window.self) return;
     if (window.location.origin !== LEGACY_ORIGIN ||
-        window.location.pathname !== LEGACY_CLEANUP_PATH ||
+        !LEGACY_CLEANUP_PATHS.has(window.location.pathname) ||
         window.location.search !== "" || window.location.hash !== "") {
       setStatus("No legacy-origin cleanup is required on this site.");
       return;
