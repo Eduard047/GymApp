@@ -48,7 +48,7 @@ test("workout picker uses filtered results while legacy option helper retains cu
   const options = section("function draftExerciseOptions(", "function smartPanel(");
   const filter = section("function filteredLibraryExercises()", "function exerciseWorkoutCount(");
   const selection = section("function selectWorkoutExercise(", "function quickAddExercise(");
-  const quickAdd = section("function quickAddExercise(", "function detailAddSet(");
+  const quickAdd = section("function quickAddExercise(", "function addSavedWorkoutSet(");
 
   assert.match(options, /const options = \[\.\.\.state\.exercises\]/);
   assert.match(options, /options\.unshift/);

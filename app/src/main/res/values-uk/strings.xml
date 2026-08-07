@@ -44,6 +44,8 @@
     <string name="action_share_workout">Поділитися тренуванням</string>
     <string name="action_deleting">Видалення…</string>
     <string name="action_edit">Редагувати</string>
+    <string name="action_edit_workout">Редагувати тренування</string>
+    <string name="action_finish_editing_workout">Завершити редагування</string>
     <string name="action_cancel">Скасувати</string>
     <string name="action_save">Зберегти</string>
     <string name="action_close">Закрити</string>
@@ -328,6 +330,24 @@
 
     <string name="exercise_block_title">Вправа %1$d</string>
     <string name="exercise_set_count_compact">%1$d підх.</string>
+    <plurals name="saved_workout_set_count">
+        <item quantity="one">%1$d підхід</item>
+        <item quantity="few">%1$d підходи</item>
+        <item quantity="many">%1$d підходів</item>
+        <item quantity="other">%1$d підходу</item>
+    </plurals>
+    <plurals name="saved_workout_rep_count">
+        <item quantity="one">%1$d повтор</item>
+        <item quantity="few">%1$d повтори</item>
+        <item quantity="many">%1$d повторів</item>
+        <item quantity="other">%1$d повтору</item>
+    </plurals>
+    <plurals name="saved_workout_exercise_count">
+        <item quantity="one">%1$d вправа</item>
+        <item quantity="few">%1$d вправи</item>
+        <item quantity="many">%1$d вправ</item>
+        <item quantity="other">%1$d вправи</item>
+    </plurals>
     <string name="exercise_workout_count_compact">Тренувань: %1$d</string>
     <string name="exercise_muscles_title">Задіяні мʼязи</string>
     <string name="cd_collapse_exercise">Згорнути вправу</string>
@@ -676,9 +696,13 @@
     <string name="garmin_metric_logged">Записано</string>
     <string name="garmin_metric_sets_value">%1$d підходів</string>
     <string name="garmin_metric_exercises_value">%1$d вправ</string>
-    <string name="garmin_synced_sets_hint">Синхронізовані підходи згруповані нижче. Розкрийте вправу, щоб змінити вагу, повторення, додати пропущений підхід або видалити помилковий.</string>
+    <string name="garmin_synced_sets_hint">Синхронізовані підходи згруповані нижче. Відкрийте режим редагування, щоб виправити вагу чи повторення, додати вправу або видалити помилковий підхід.</string>
     <string name="garmin_note_derived_sets_hint">Імпортована або змінена нотатка не підтверджує походження з годинника. Збережені підходи згруповано нижче для перевірки.</string>
     <string name="garmin_metrics_title">Метрики силового Garmin</string>
+    <string name="garmin_watch_metrics_section_title">Показники годинника</string>
+    <string name="garmin_watch_metrics_section_supporting">Пульс, дані підходів і записана годинником хронологія.</string>
+    <string name="cd_expand_watch_metrics">Показати показники годинника</string>
+    <string name="cd_collapse_watch_metrics">Сховати показники годинника</string>
     <string name="garmin_metric_gym_kcal">Gym ккал</string>
     <string name="garmin_metric_garmin_kcal">Garmin ккал</string>
     <string name="garmin_metric_our_formula">наша формула</string>

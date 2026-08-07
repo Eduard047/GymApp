@@ -148,7 +148,7 @@ test("destructive controls use explicit accessible in-app confirmation markup", 
   const labelledDeleteSets = appSource.match(
     /data-action="delete-set"[^>]+data-session="[^>]+aria-label="\$\{txAttr\("Delete set"/g
   ) || [];
-  assert.ok(labelledDeleteSets.length >= 3, "every persisted-set delete control needs an accessible name");
+  assert.equal(labelledDeleteSets.length, 1, "saved-set deletion must exist only in detail edit mode");
 });
 
 test("exercise deletion cancels without persistence and rejects stale account intent", () => {

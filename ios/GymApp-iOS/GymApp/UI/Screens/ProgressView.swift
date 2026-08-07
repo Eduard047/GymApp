@@ -3,18 +3,6 @@ import SwiftUI
 
 @MainActor
 struct ExerciseProgressView: View {
-    private enum ActiveAlert: Identifiable {
-        case delete(ExerciseHistoryEntry)
-        case error(String)
-
-        var id: String {
-            switch self {
-            case let .delete(entry): "delete-\(entry.setID.uuidString)"
-            case let .error(message): "error-\(message)"
-            }
-        }
-    }
-
     @AppStorage("app-language") private var languageCode = AppLanguage.english.rawValue
     @Environment(\.calendar) private var calendar
     @ObservedObject private var store: WorkoutStore
@@ -22,7 +10,7 @@ struct ExerciseProgressView: View {
     @State private var referenceDate = Date()
     @State private var monthOffset = 0
     @State private var selectedExerciseID: UUID?
-    @State private var activeAlert: ActiveAlert?
+    @State private var showingExerciseSelector = false
 
     init(store: WorkoutStore) {
         self.store = store
@@ -66,39 +54,105 @@ struct ExerciseProgressView: View {
         .environment(\.locale, appLocale)
         .onAppear(perform: selectDefaultExerciseIfNeeded)
         .onChange(of: store.exercises) { _ in selectDefaultExerciseIfNeeded() }
-        .alert(item: $activeAlert, content: makeAlert)
+        .sheet(isPresented: $showingExerciseSelector) {
+            ProgressExerciseSelectorSheet(
+                store: store,
+                selectedExerciseID: $selectedExerciseID,
+                languageCode: languageCode
+            )
+        }
     }
 
     private var exerciseSelector: some View {
         GymPanel {
-            VStack(alignment: .leading, spacing: 8) {
-                Label(t("Exercise", "Вправа"), systemImage: "dumbbell.fill")
-                    .font(.headline)
-                    .accessibilityAddTraits(.isHeader)
+            VStack(alignment: .leading, spacing: 12) {
+                GymSectionTitle(
+                    eyebrow: gymText(
+                        "Analyze",
+                        "Аналіз",
+                        "Анализ",
+                        languageCode: languageCode
+                    ),
+                    title: gymText(
+                        "Choose an exercise",
+                        "Обери вправу",
+                        "Выберите упражнение",
+                        languageCode: languageCode
+                    ),
+                    supporting: gymText(
+                        "Search the same exercise library used throughout GymApp.",
+                        "Шукай у тій самій бібліотеці вправ, що й в усьому GymApp.",
+                        "Ищите в той же библиотеке упражнений, что и во всём GymApp.",
+                        languageCode: languageCode
+                    )
+                )
 
                 if sortedExercises.isEmpty {
                     Text(t("Add an exercise and log a workout to see progress.", "Додай вправу й запиши тренування, щоб побачити прогрес."))
                         .font(.subheadline)
                         .foregroundStyle(GymTheme.textSecondary)
-                } else {
-                    Picker(t("Exercise", "Вправа"), selection: $selectedExerciseID) {
-                        ForEach(sortedExercises) { exercise in
-                            Text(gymExerciseName(exercise)).tag(Optional(exercise.id))
+                } else if let selectedExercise {
+                    HStack(spacing: 12) {
+                        ExerciseMediaButton(
+                            exerciseName: selectedExercise.name,
+                            exerciseID: selectedExercise.id,
+                            ownerKey: store.accountStorageKey
+                        )
+
+                        Button {
+                            showingExerciseSelector = true
+                        } label: {
+                            HStack(spacing: 10) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(gymExerciseName(selectedExercise))
+                                        .font(.headline)
+                                        .foregroundStyle(GymTheme.textPrimary)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                    Text(
+                                        gymText(
+                                            "\(store.progressStats(exerciseID: selectedExercise.id).sessionCount) logged sessions",
+                                            "Записано сесій: \(store.progressStats(exerciseID: selectedExercise.id).sessionCount)",
+                                            "Записано сессий: \(store.progressStats(exerciseID: selectedExercise.id).sessionCount)",
+                                            languageCode: languageCode
+                                        )
+                                    )
+                                    .font(.caption)
+                                    .foregroundStyle(GymTheme.textSecondary)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+
+                                Image(systemName: "magnifyingglass")
+                                    .font(.headline)
+                                    .foregroundStyle(GymTheme.primary)
+                                    .frame(width: 38, height: 38)
+                                    .background(GymTheme.primary.opacity(0.1), in: Circle())
+                            }
+                            .contentShape(Rectangle())
                         }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(gymText(
+                            "Change exercise",
+                            "Змінити вправу",
+                            "Сменить упражнение",
+                            languageCode: languageCode
+                        ))
+                        .accessibilityValue(gymExerciseName(selectedExercise))
                     }
-                    .pickerStyle(.menu)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(
-                        GymTheme.surfaceVariant.opacity(0.45),
-                        in: RoundedRectangle(cornerRadius: GymTheme.controlCornerRadius)
-                    )
-                    .overlay {
-                        RoundedRectangle(cornerRadius: GymTheme.controlCornerRadius)
-                            .strokeBorder(GymTheme.outline.opacity(0.45), lineWidth: 1)
+                } else {
+                    Button {
+                        showingExerciseSelector = true
+                    } label: {
+                        Label(
+                            gymText(
+                                "Search exercises",
+                                "Пошук вправ",
+                                "Поиск упражнений",
+                                languageCode: languageCode
+                            ),
+                            systemImage: "magnifyingglass"
+                        )
                     }
-                    .accessibilityHint(t("Selects which exercise to analyze", "Обирає вправу для аналізу"))
+                    .buttonStyle(GymSecondaryButtonStyle())
                 }
             }
         }
@@ -339,36 +393,16 @@ struct ExerciseProgressView: View {
                 Spacer(minLength: 4)
                 Text(formatWeight(entry.weight))
                 Text(t("\(entry.reps) reps", "\(entry.reps) повт."))
-                deleteSetButton(entry)
             }
             VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text(t("Set \(index + 1)", "Підхід \(index + 1)"))
-                        .font(.subheadline.weight(.semibold))
-                    Spacer(minLength: 8)
-                    deleteSetButton(entry)
-                }
+                Text(t("Set \(index + 1)", "Підхід \(index + 1)"))
+                    .font(.subheadline.weight(.semibold))
                 Text("\(formatWeight(entry.weight)) • \(t("\(entry.reps) reps", "\(entry.reps) повт."))")
                     .font(.subheadline)
             }
         }
         .foregroundStyle(GymTheme.textPrimary)
         .accessibilityElement(children: .contain)
-    }
-
-    private func deleteSetButton(_ entry: ExerciseHistoryEntry) -> some View {
-        Button(role: .destructive) {
-            activeAlert = .delete(entry)
-        } label: {
-            Image(systemName: "trash")
-                .frame(width: 36, height: 36)
-                .background(GymTheme.error.opacity(0.1), in: Circle())
-        }
-        .foregroundStyle(GymTheme.error)
-        .accessibilityLabel(t("Delete set", "Видалити підхід"))
-        .accessibilityValue(
-            "\(formatWeight(entry.weight)), \(t("\(entry.reps) reps", "\(entry.reps) повторів"))"
-        )
     }
 
     private var noExerciseState: some View {
@@ -546,49 +580,6 @@ struct ExerciseProgressView: View {
         selectedExerciseID = sortedExercises.first?.id
     }
 
-    private func makeAlert(_ alert: ActiveAlert) -> Alert {
-        switch alert {
-        case let .delete(entry):
-            return Alert(
-                title: Text(t("Delete this set?", "Видалити цей підхід?")),
-                message: Text(
-                    t(
-                        "\(formatWeight(entry.weight)) × \(entry.reps) reps will be removed. If it is the final set, its exercise or workout will also be removed.",
-                        "\(formatWeight(entry.weight)) × \(entry.reps) повт. буде видалено. Якщо це останній підхід, вправу або тренування також буде видалено."
-                    )
-                ),
-                primaryButton: .destructive(Text(t("Delete", "Видалити"))) {
-                    deleteSet(entry)
-                },
-                secondaryButton: .cancel(Text(t("Cancel", "Скасувати")))
-            )
-        case let .error(message):
-            return Alert(
-                title: Text(t("Couldn’t delete set", "Не вдалося видалити підхід")),
-                message: Text(message),
-                dismissButton: .default(Text("OK"))
-            )
-        }
-    }
-
-    private func deleteSet(_ entry: ExerciseHistoryEntry) {
-        do {
-            guard let workout = store.workout(id: entry.workoutID),
-                  let block = workout.exercises.first(where: { exercise in
-                      exercise.sets.contains { $0.id == entry.setID }
-                  }) else {
-                throw WorkoutStoreError.setNotFound
-            }
-            try store.deleteSet(
-                workoutID: entry.workoutID,
-                workoutExerciseID: block.id,
-                setID: entry.setID
-            )
-        } catch {
-            activeAlert = .error(gymErrorMessage(error, languageCode: languageCode))
-        }
-    }
-
     private func formatWeight(_ value: Double) -> String {
         "\(formatDecimal(value, maximumFractionDigits: 1)) \(t("kg", "кг"))"
     }
@@ -612,6 +603,156 @@ struct ExerciseProgressView: View {
 
     private func t(_ english: String, _ ukrainian: String) -> String {
         gymText(english, ukrainian, languageCode: languageCode)
+    }
+}
+
+@MainActor
+private struct ProgressExerciseSelectorSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var store: WorkoutStore
+    @Binding var selectedExerciseID: UUID?
+
+    @State private var searchText = ""
+
+    let languageCode: String
+
+    private var sessionCounts: [UUID: Int] {
+        Dictionary(
+            uniqueKeysWithValues: store.exercises.map { exercise in
+                (exercise.id, store.progressStats(exerciseID: exercise.id).sessionCount)
+            }
+        )
+    }
+
+    private var filteredExercises: [Exercise] {
+        ExerciseFilterEngine.filtered(
+            exercises: store.exercises,
+            query: searchText,
+            bodyFilter: .all,
+            muscleFilter: nil,
+            favoritesOnly: false,
+            sortMode: .name,
+            muscleMappings: store.muscleMappings,
+            sessionCounts: sessionCounts
+        )
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if filteredExercises.isEmpty {
+                    GymContentUnavailableView.search(text: searchText)
+                        .frame(maxWidth: .infinity)
+                        .listRowBackground(Color.clear)
+                } else {
+                    ForEach(filteredExercises) { exercise in
+                        exerciseRow(exercise)
+                    }
+                }
+            }
+            .listStyle(.plain)
+            .searchable(
+                text: $searchText,
+                placement: .navigationBarDrawer(displayMode: .always),
+                prompt: gymText(
+                    "Search exercises",
+                    "Пошук вправ",
+                    "Поиск упражнений",
+                    languageCode: languageCode
+                )
+            )
+            .navigationTitle(gymText(
+                "Choose exercise",
+                "Обрати вправу",
+                "Выбрать упражнение",
+                languageCode: languageCode
+            ))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(gymText(
+                        "Cancel",
+                        "Скасувати",
+                        "Отмена",
+                        languageCode: languageCode
+                    )) {
+                        dismiss()
+                    }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+    }
+
+    private func exerciseRow(_ exercise: Exercise) -> some View {
+        HStack(spacing: 12) {
+            ExerciseMediaButton(
+                exerciseName: exercise.name,
+                exerciseID: exercise.id,
+                ownerKey: store.accountStorageKey
+            )
+
+            Button {
+                selectedExerciseID = exercise.id
+                dismiss()
+            } label: {
+                HStack(spacing: 10) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(gymExerciseName(exercise))
+                            .font(.headline)
+                            .foregroundStyle(GymTheme.textPrimary)
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        if let reason = ExerciseFilterEngine.localizedMatchReason(
+                            for: exercise,
+                            query: searchText,
+                            muscleMappings: store.muscleMappings,
+                            languageCode: languageCode
+                        ) {
+                            Text(reason)
+                                .font(.caption)
+                                .foregroundStyle(GymTheme.textSecondary)
+                                .multilineTextAlignment(.leading)
+                        } else {
+                            Text(gymText(
+                                "\(sessionCounts[exercise.id, default: 0]) sessions",
+                                "Сесій: \(sessionCounts[exercise.id, default: 0])",
+                                "Сессий: \(sessionCounts[exercise.id, default: 0])",
+                                languageCode: languageCode
+                            ))
+                            .font(.caption)
+                            .foregroundStyle(GymTheme.textSecondary)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    if selectedExerciseID == exercise.id {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.title3)
+                            .foregroundStyle(GymTheme.primary)
+                            .accessibilityHidden(true)
+                    } else {
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(GymTheme.textSecondary)
+                            .accessibilityHidden(true)
+                    }
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(gymExerciseName(exercise))
+            .accessibilityValue(gymText(
+                "\(sessionCounts[exercise.id, default: 0]) sessions",
+                "Сесій: \(sessionCounts[exercise.id, default: 0])",
+                "Сессий: \(sessionCounts[exercise.id, default: 0])",
+                languageCode: languageCode
+            ))
+            .accessibilityAddTraits(selectedExerciseID == exercise.id ? .isSelected : [])
+        }
+        .padding(.vertical, 4)
     }
 }
 

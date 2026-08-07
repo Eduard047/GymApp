@@ -1,7 +1,6 @@
 ﻿package com.example.gymapp.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -10,29 +9,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.SnackbarDuration
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -51,9 +35,7 @@ import com.example.gymapp.ui.util.currentAppLanguageTag
 import com.example.gymapp.ui.util.localizedExerciseName
 import com.example.gymapp.ui.util.localizedMuscleName
 import com.example.gymapp.ui.viewmodel.ExerciseProgressUiState
-import com.example.gymapp.ui.viewmodel.ExerciseProgressEvent
 import com.example.gymapp.util.DateTimeUtils
-import kotlinx.coroutines.flow.Flow
 import java.util.Locale
 
 private data class ProgressSessionHistoryGroup(
@@ -72,18 +54,12 @@ private data class ProgressMetricUi(
 fun ExerciseProgressScreen(
     uiState: ExerciseProgressUiState,
     exerciseMediaOwnerKey: String,
-    events: Flow<ExerciseProgressEvent>,
     onSelectExercise: (Long) -> Unit,
-    onDeleteHistoryEntry: (Long) -> Unit,
-    onConfirmDeleteHistoryEntry: () -> Unit,
-    onDismissDeleteHistoryEntry: () -> Unit,
     onPreviousMonth: () -> Unit,
     onCurrentMonth: () -> Unit,
     onNextMonth: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val snackbarHostState = remember { SnackbarHostState() }
-    val context = LocalContext.current
     val selectedRawExerciseName = uiState.selectedExerciseName
     val selectedDisplayExerciseName = if (selectedRawExerciseName != null) {
         localizedExerciseName(selectedRawExerciseName)
@@ -105,20 +81,6 @@ fun ExerciseProgressScreen(
             .associate { contribution -> contribution.muscleId to contribution.weight.toFloat() }
     }
 
-    LaunchedEffect(events, context) {
-        events.collect { event ->
-            val message = when (event) {
-                ExerciseProgressEvent.SetDeleted -> R.string.message_set_deleted
-                ExerciseProgressEvent.DeleteTargetChanged -> R.string.message_delete_target_changed
-                ExerciseProgressEvent.DeleteFailed -> R.string.message_delete_failed
-            }
-            snackbarHostState.showSnackbar(
-                message = context.getString(message),
-                duration = SnackbarDuration.Short
-            )
-        }
-    }
-
     val sessionGroups = remember(uiState.history) {
         uiState.history
             .groupBy { it.sessionId }
@@ -133,17 +95,16 @@ fun ExerciseProgressScreen(
             .sortedByDescending { it.sessionDate }
     }
 
-    Box(modifier = modifier.fillMaxSize()) {
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(
-                start = 12.dp,
-                top = 10.dp,
-                end = 12.dp,
-                bottom = 24.dp
-            ),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        contentPadding = PaddingValues(
+            start = 12.dp,
+            top = 10.dp,
+            end = 12.dp,
+            bottom = 24.dp
+        ),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
             item {
                 MonthSwitcher(
                     monthLabel = uiState.monthLabel,
@@ -156,34 +117,42 @@ fun ExerciseProgressScreen(
             }
 
             item {
-                ExerciseProgressSelector(
+                ExerciseCatalogSelector(
                     selectedExerciseId = uiState.selectedExerciseId,
-                    exercises = uiState.exercises.map { it.id to it.name },
-                    onSelectExercise = onSelectExercise
+                    exercises = uiState.exercises,
+                    frequentExerciseIds = uiState.frequentExerciseIds,
+                    exerciseWorkoutCounts = uiState.exerciseWorkoutCounts,
+                    exerciseMuscleIds = uiState.exerciseMuscleIds,
+                    exerciseMediaOwnerKey = exerciseMediaOwnerKey,
+                    onExerciseSelected = onSelectExercise
                 )
             }
 
             uiState.exercises.firstOrNull { it.id == uiState.selectedExerciseId }?.let { exercise ->
                 item(key = "selected_exercise_media_${exercise.id}") {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        ExerciseMediaPreview(
-                            exerciseId = exercise.id,
-                            exerciseName = exercise.name,
-                            ownerKey = exerciseMediaOwnerKey,
-                            width = 96.dp,
-                            height = 80.dp
-                        )
-                        Text(
-                            text = localizedExerciseName(exercise.name),
-                            style = MaterialTheme.typography.titleLarge,
-                            modifier = Modifier.weight(1f),
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
+                    AppPanel(modifier = Modifier.fillMaxWidth(), highlighted = true) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            ExerciseMediaPreview(
+                                exerciseId = exercise.id,
+                                exerciseName = exercise.name,
+                                ownerKey = exerciseMediaOwnerKey,
+                                width = 96.dp,
+                                height = 80.dp
+                            )
+                            Text(
+                                text = localizedExerciseName(exercise.name),
+                                style = MaterialTheme.typography.titleLarge,
+                                modifier = Modifier.weight(1f),
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                     }
                 }
             }
@@ -249,89 +218,11 @@ fun ExerciseProgressScreen(
                         key = { it.sessionId }
                     ) { sessionGroup ->
                         ProgressSessionHistoryCard(
-                            sessionGroup = sessionGroup,
-                            exerciseName = selectedDisplayExerciseName,
-                            onDeleteHistoryEntry = onDeleteHistoryEntry
+                            sessionGroup = sessionGroup
                         )
                     }
                 }
             }
-        }
-
-        SnackbarHost(
-            hostState = snackbarHostState,
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(12.dp)
-        )
-    }
-
-    uiState.pendingSetDeletion?.let { snapshot ->
-        SetDeleteConfirmationDialog(
-            snapshot = snapshot,
-            isDeleting = uiState.isSetDeletionInProgress,
-            error = uiState.setDeletionError,
-            onDismiss = onDismissDeleteHistoryEntry,
-            onConfirm = onConfirmDeleteHistoryEntry
-        )
-    }
-}
-
-@Composable
-private fun ExerciseProgressSelector(
-    selectedExerciseId: Long?,
-    exercises: List<Pair<Long, String>>,
-    onSelectExercise: (Long) -> Unit
-) {
-    var expanded by remember(selectedExerciseId, exercises) { mutableStateOf(false) }
-    val selectedRawName = exercises.firstOrNull { it.first == selectedExerciseId }?.second
-    val selectedName = selectedRawName?.let { localizedExerciseName(it) }
-        ?: stringResource(R.string.label_select_exercise)
-
-    AppPanel(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Text(
-                text = stringResource(R.string.label_exercise),
-                style = MaterialTheme.typography.titleMedium
-            )
-            if (exercises.isEmpty()) {
-                Text(
-                    text = stringResource(R.string.empty_exercises),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            } else {
-                Row(modifier = Modifier.fillMaxWidth()) {
-                    OutlinedButton(
-                        onClick = { expanded = true },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            text = selectedName,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                    DropdownMenu(
-                        expanded = expanded,
-                        onDismissRequest = { expanded = false }
-                    ) {
-                        exercises.forEach { exercise ->
-                            DropdownMenuItem(
-                                text = { Text(localizedExerciseName(exercise.second)) },
-                                onClick = {
-                                    onSelectExercise(exercise.first)
-                                    expanded = false
-                                }
-                            )
-                        }
-                    }
-                }
-            }
-        }
     }
 }
 
@@ -482,9 +373,7 @@ private fun ProgressSummaryCard(
 
 @Composable
 private fun ProgressSessionHistoryCard(
-    sessionGroup: ProgressSessionHistoryGroup,
-    exerciseName: String,
-    onDeleteHistoryEntry: (Long) -> Unit
+    sessionGroup: ProgressSessionHistoryGroup
 ) {
     val totalVolume = sessionGroup.sets.sumOf { it.weight * it.reps }
     val totalReps = sessionGroup.sets.sumOf { it.reps }
@@ -537,10 +426,6 @@ private fun ProgressSessionHistoryCard(
                     modifier = Modifier.weight(1f),
                     style = MaterialTheme.typography.labelLarge
                 )
-                Text(
-                    text = "",
-                    modifier = Modifier.weight(0.55f)
-                )
             }
 
             sessionGroup.sets.forEachIndexed { setIndex, set ->
@@ -564,21 +449,6 @@ private fun ProgressSessionHistoryCard(
                         modifier = Modifier.weight(1f),
                         style = MaterialTheme.typography.bodyMedium
                     )
-                    IconButton(
-                        onClick = { onDeleteHistoryEntry(set.setId) },
-                        modifier = Modifier.weight(0.55f)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Delete,
-                            contentDescription = stringResource(
-                                R.string.cd_delete_history_set_named,
-                                setIndex + 1,
-                                exerciseName,
-                                DateTimeUtils.formatDate(sessionGroup.sessionDate)
-                            ),
-                            tint = MaterialTheme.colorScheme.error
-                        )
-                    }
                 }
                 if (setIndex < sessionGroup.sets.lastIndex) {
                     HorizontalDivider(

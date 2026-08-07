@@ -1176,6 +1176,76 @@ enum WorkoutDetailDeletionTarget: Equatable, Identifiable {
     }
 }
 
+struct StoredWorkoutPRBaseline: Equatable {
+    let maxWeight: Double
+    let maxEstimatedOneRepMax: Double
+
+    init(
+        history: [ExerciseHistoryEntry],
+        currentWorkoutDate: Date,
+        currentWorkoutID: UUID
+    ) {
+        let priorHistory = history.filter { entry in
+            if entry.sessionDate != currentWorkoutDate {
+                return entry.sessionDate < currentWorkoutDate
+            }
+            return entry.workoutID.uuidString < currentWorkoutID.uuidString
+        }
+        let eligiblePriorHistory = priorHistory.filter { Self.isEligibleValue($0.weight) }
+        maxWeight = eligiblePriorHistory.lazy
+            .map(\.weight)
+            .max() ?? 0
+        maxEstimatedOneRepMax = eligiblePriorHistory.lazy
+            .map(\.estimatedOneRepMax)
+            .filter(Self.isEligibleValue)
+            .max() ?? 0
+    }
+
+    func labels(for set: WorkoutSet) -> [String] {
+        guard Self.isEligibleValue(set.weight) else { return [] }
+        var labels: [String] = []
+        if Self.isPersonalRecord(set.weight, baseline: maxWeight) {
+            labels.append("Weight PR")
+        }
+        if Self.isPersonalRecord(set.estimatedOneRepMax, baseline: maxEstimatedOneRepMax) {
+            labels.append("Estimated 1RM PR")
+        }
+        return labels
+    }
+
+    func containsPersonalRecord(in block: WorkoutExercise) -> Bool {
+        block.sets.contains { !labels(for: $0).isEmpty }
+    }
+
+    private static func isEligibleValue(_ value: Double) -> Bool {
+        value.isFinite && value > 0
+    }
+
+    private static func isPersonalRecord(_ value: Double, baseline: Double) -> Bool {
+        isEligibleValue(value) && value > baseline
+    }
+}
+
+struct StoredWorkoutExerciseSummary: Equatable {
+    let setCount: Int
+    let repCount: Int
+    let volume: Double
+    let hasPersonalRecord: Bool
+
+    init(block: WorkoutExercise, personalRecordBaseline: StoredWorkoutPRBaseline) {
+        setCount = block.sets.count
+        repCount = block.sets.reduce(0) { $0 + $1.reps }
+        volume = block.sets.reduce(0) { $0 + $1.volume }
+        hasPersonalRecord = personalRecordBaseline.containsPersonalRecord(in: block)
+    }
+}
+
+enum WorkoutDetailDisclosurePolicy {
+    static func toggledExercise(current: UUID?, tapped: UUID) -> UUID? {
+        current == tapped ? nil : tapped
+    }
+}
+
 @MainActor
 struct WorkoutDetailView: View {
     private enum ActiveAlert: Identifiable {
@@ -1191,10 +1261,11 @@ struct WorkoutDetailView: View {
     }
 
     @ObservedObject private var store: WorkoutStore
-    @ObservedObject private var restTimers: RestTimerManager
-
     @State private var date: Date
     @State private var note: String
+    @State private var isEditing = false
+    @State private var expandedExerciseID: UUID?
+    @State private var showsWatchMetrics = false
     @State private var showingExercisePicker = false
     @State private var activeAlert: ActiveAlert?
     @State private var statusMessage: String?
@@ -1202,23 +1273,23 @@ struct WorkoutDetailView: View {
     @State private var deletionTask: Task<Void, Never>?
 
     private let workoutID: UUID
-    private let onFinish: (UUID) -> Void
     private let onDeleted: () -> Void
+    private let cancelLegacyRestTimer: (String) -> Void
     private let reportStatus: (String, Bool) -> Void
     private let isStoreContextCurrent: () -> Bool
 
     init(
         appState: AppState,
         workoutID: UUID,
-        onFinish: @escaping (UUID) -> Void,
         onDeleted: @escaping () -> Void = {}
     ) {
         self.init(
             store: appState.workoutStore,
-            restTimers: appState.restTimers,
             workoutID: workoutID,
-            onFinish: onFinish,
             onDeleted: onDeleted,
+            cancelLegacyRestTimer: { [weak appState] timerID in
+                appState?.restTimers.cancel(id: timerID)
+            },
             onStatus: { [weak appState] message, isError in
                 appState?.show(message: message, isError: isError)
             },
@@ -1233,18 +1304,16 @@ struct WorkoutDetailView: View {
 
     init(
         store: WorkoutStore,
-        restTimers: RestTimerManager,
         workoutID: UUID,
-        onFinish: @escaping (UUID) -> Void,
         onDeleted: @escaping () -> Void = {},
+        cancelLegacyRestTimer: @escaping (String) -> Void = { _ in },
         onStatus: @escaping (String, Bool) -> Void = { _, _ in },
         isStoreContextCurrent: @escaping () -> Bool = { true }
     ) {
         _store = ObservedObject(wrappedValue: store)
-        _restTimers = ObservedObject(wrappedValue: restTimers)
         self.workoutID = workoutID
-        self.onFinish = onFinish
         self.onDeleted = onDeleted
+        self.cancelLegacyRestTimer = cancelLegacyRestTimer
         self.reportStatus = onStatus
         self.isStoreContextCurrent = isStoreContextCurrent
         let workout = store.workout(id: workoutID)
@@ -1260,25 +1329,34 @@ struct WorkoutDetailView: View {
                     LazyVStack(spacing: 14) {
                         hero(workout, garminSummary: garminSummary)
 
-                        if let summary = garminSummary {
-                            if summary.hasWorkoutMetrics {
-                                garminMetricsPanel(summary)
+                        if !isEditing {
+                            Button(action: beginEditing) {
+                                Label(
+                                    gymText(
+                                        "Edit workout",
+                                        "Редагувати тренування",
+                                        "Редактировать тренировку",
+                                        languageCode: gymCurrentLanguageCode()
+                                    ),
+                                    systemImage: "pencil"
+                                )
                             }
-                            if !summary.visualSetIndexes.isEmpty || summary.omittedMetricRows != nil ||
-                                (summary.completedSetCount != nil &&
-                                    (summary.plannedSetCount ?? 0) >
-                                        (summary.completedSetCount ?? Int.max)) {
-                                garminSetIntervalsPanel(summary)
-                            }
+                            .buttonStyle(GymSecondaryButtonStyle())
+                        }
+
+                        if let summary = garminSummary,
+                           summary.hasWorkoutMetrics || hasGarminSetDetails(summary) {
+                            watchMetricsSection(summary)
                         }
 
                         if let statusMessage {
                             GymStatusBanner(message: statusMessage, isError: true)
                         }
 
-                        metadataPanel(isGarminWorkout: garminSummary != nil)
+                        if isEditing {
+                            metadataPanel(isGarminWorkout: garminSummary != nil)
+                        }
                         exerciseSection(workout)
-                        finishPanel(workout)
                     }
                     .padding(.horizontal, 14)
                     .padding(.vertical, 12)
@@ -1296,13 +1374,18 @@ struct WorkoutDetailView: View {
         .navigationTitle("Workout detail")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button(role: .destructive) {
-                    presentWorkoutDeletionConfirmation()
-                } label: {
-                    Label("Delete workout", systemImage: "trash")
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                if isEditing {
+                    Button(role: .destructive) {
+                        presentWorkoutDeletionConfirmation()
+                    } label: {
+                        Label("Delete workout", systemImage: "trash")
+                    }
+                    .disabled(pendingDeletion != nil)
+
+                    Button(gymLocalized("Done"), action: finishEditing)
+                        .disabled(pendingDeletion != nil)
                 }
-                .disabled(pendingDeletion != nil)
             }
         }
         .sheet(isPresented: $showingExercisePicker) {
@@ -1313,7 +1396,7 @@ struct WorkoutDetailView: View {
                 muscleMappings: store.muscleMappings,
                 sessionCounts: exerciseSessionCounts,
                 onSelect: addExercise,
-                onCreate: { try store.addExercise(name: $0) }
+                onCreate: createExerciseForEditing
             )
             .presentationDetents([.medium, .large])
         }
@@ -1410,6 +1493,74 @@ struct WorkoutDetailView: View {
                 (exercise.id, store.progressStats(exerciseID: exercise.id).sessionCount)
             }
         )
+    }
+
+    private func hasGarminSetDetails(_ summary: GarminWorkoutNoteSummary) -> Bool {
+        !summary.visualSetIndexes.isEmpty || summary.omittedMetricRows != nil ||
+            (summary.completedSetCount != nil &&
+                (summary.plannedSetCount ?? 0) > (summary.completedSetCount ?? Int.max))
+    }
+
+    private func watchMetricsSection(_ summary: GarminWorkoutNoteSummary) -> some View {
+        GymPanel(highlighted: true) {
+            VStack(alignment: .leading, spacing: showsWatchMetrics ? 12 : 0) {
+                Button {
+                    withAnimation(.snappy(duration: 0.25)) {
+                        showsWatchMetrics.toggle()
+                    }
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "applewatch")
+                            .font(.title3.weight(.semibold))
+                            .foregroundStyle(GymTheme.primary)
+                            .frame(width: 34, height: 34)
+                            .background(GymTheme.primary.opacity(0.1), in: Circle())
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(gymText(
+                                "Watch metrics",
+                                "Показники годинника",
+                                "Показатели часов",
+                                languageCode: gymCurrentLanguageCode()
+                            ))
+                            .font(.headline)
+                            .foregroundStyle(GymTheme.textPrimary)
+                            Text(gymText(
+                                "Heart rate, timing and set insights",
+                                "Пульс, час та аналітика підходів",
+                                "Пульс, время и аналитика подходов",
+                                languageCode: gymCurrentLanguageCode()
+                            ))
+                            .font(.caption)
+                            .foregroundStyle(GymTheme.textSecondary)
+                        }
+
+                        Spacer(minLength: 8)
+                        Image(systemName: showsWatchMetrics ? "chevron.up" : "chevron.down")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(GymTheme.textSecondary)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityValue(gymText(
+                    showsWatchMetrics ? "Expanded" : "Collapsed",
+                    showsWatchMetrics ? "Розгорнуто" : "Згорнуто",
+                    showsWatchMetrics ? "Развернуто" : "Свернуто",
+                    languageCode: gymCurrentLanguageCode()
+                ))
+
+                if showsWatchMetrics {
+                    Divider()
+                    if summary.hasWorkoutMetrics {
+                        garminMetricsPanel(summary)
+                    }
+                    if hasGarminSetDetails(summary) {
+                        garminSetIntervalsPanel(summary)
+                    }
+                }
+            }
+        }
     }
 
     private func garminMetricsPanel(_ summary: GarminWorkoutNoteSummary) -> some View {
@@ -1546,7 +1697,12 @@ struct WorkoutDetailView: View {
                     title: isGarminWorkout ? "Date" : "Date and note",
                     supporting: isGarminWorkout
                         ? "Garmin receipt data is kept unchanged so charts remain accurate."
-                        : "Save changes before finishing the workout."
+                        : gymText(
+                            "Update the saved workout details.",
+                            "Онови дані збереженого тренування.",
+                            "Обновите данные сохранённой тренировки.",
+                            languageCode: gymCurrentLanguageCode()
+                        )
                 )
                 DatePicker("Workout date", selection: $date, displayedComponents: [.date, .hourAndMinute])
                 if !isGarminWorkout {
@@ -1566,18 +1722,39 @@ struct WorkoutDetailView: View {
     private func exerciseSection(_ workout: WorkoutSession) -> some View {
         HStack {
             GymSectionTitle(
-                eyebrow: "Log",
+                eyebrow: isEditing
+                    ? gymText(
+                        "Edit",
+                        "Редагування",
+                        "Редактирование",
+                        languageCode: gymCurrentLanguageCode()
+                    )
+                    : gymLocalized("Saved workout"),
                 title: "Exercises and sets",
-                supporting: "Add Set starts a 90 second rest timer."
+                supporting: isEditing
+                    ? gymText(
+                        "Open an exercise to update its saved sets.",
+                        "Відкрий вправу, щоб змінити збережені підходи.",
+                        "Откройте упражнение, чтобы изменить сохранённые подходы.",
+                        languageCode: gymCurrentLanguageCode()
+                    )
+                    : gymText(
+                        "Exercises are collapsed by default. Open one to review its sets.",
+                        "Вправи спочатку згорнуті. Відкрий вправу, щоб переглянути підходи.",
+                        "Упражнения изначально свёрнуты. Откройте упражнение, чтобы посмотреть подходы.",
+                        languageCode: gymCurrentLanguageCode()
+                    )
             )
             Spacer(minLength: 8)
-            Button {
-                showingExercisePicker = true
-            } label: {
-                Label("Add", systemImage: "plus")
+            if isEditing {
+                Button {
+                    showingExercisePicker = true
+                } label: {
+                    Label("Add", systemImage: "plus")
+                }
+                .buttonStyle(.borderedProminent)
+                .accessibilityLabel("Add exercise to workout")
             }
-            .buttonStyle(.borderedProminent)
-            .accessibilityLabel("Add exercise to workout")
         }
         .padding(.horizontal, 4)
 
@@ -1592,11 +1769,16 @@ struct WorkoutDetailView: View {
     ) -> some View {
         let exercise = store.exercise(id: block.exerciseID)
         let name = exercise.map { gymExerciseName($0) } ?? gymLocalized("Deleted exercise")
-        let priorHistory = store.exerciseHistory(exerciseID: block.exerciseID)
-            .filter { $0.workoutID != workout.id }
-        let priorMaxWeight = priorHistory.map(\.weight).max()
-        let priorEstimatedMax = priorHistory.map(\.estimatedOneRepMax).max()
-        let timerID = timerKey(blockID: block.id)
+        let personalRecordBaseline = StoredWorkoutPRBaseline(
+            history: store.exerciseHistory(exerciseID: block.exerciseID),
+            currentWorkoutDate: workout.date,
+            currentWorkoutID: workout.id
+        )
+        let summary = StoredWorkoutExerciseSummary(
+            block: block,
+            personalRecordBaseline: personalRecordBaseline
+        )
+        let isExpanded = expandedExerciseID == block.id
 
         return GymPanel(highlighted: true) {
             VStack(alignment: .leading, spacing: 14) {
@@ -1608,114 +1790,155 @@ struct WorkoutDetailView: View {
                             ownerKey: store.accountStorageKey
                         )
                     }
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(name)
-                            .font(.headline)
-                            .accessibilityAddTraits(.isHeader)
-                        Text(priorMaxWeight.map {
-                            gymText(
-                                "Previous best: \($0.formatted(.number.precision(.fractionLength(0 ... 2))))",
-                                "Попередній рекорд: \($0.formatted(.number.precision(.fractionLength(0 ... 2))))",
-                                languageCode: gymCurrentLanguageCode()
+                    Button {
+                        withAnimation(.snappy(duration: 0.25)) {
+                            expandedExerciseID = WorkoutDetailDisclosurePolicy.toggledExercise(
+                                current: expandedExerciseID,
+                                tapped: block.id
                             )
-                        } ?? gymLocalized("First logged workout"))
-                        .font(.caption)
-                        .foregroundStyle(GymTheme.textSecondary)
-                    }
-                    Spacer(minLength: 8)
-                    Button(role: .destructive) {
-                        presentDeletionConfirmation(
-                            .exercise(
-                                store: store,
-                                workout: workout,
-                                block: block,
-                                exerciseName: name
-                            )
-                        )
+                        }
                     } label: {
-                        Image(systemName: "trash")
-                            .frame(width: 44, height: 44)
-                    }
-                    .accessibilityLabel(
-                        gymText(
-                            "Delete \(name) from workout",
-                            "Видалити «\(name)» із тренування",
-                            languageCode: gymCurrentLanguageCode()
-                        )
-                    )
-                    .disabled(pendingDeletion != nil)
-                }
-
-                WorkoutRestTimerControls(
-                    manager: restTimers,
-                    timerID: timerID,
-                    exerciseName: name
-                )
-
-                ForEach(Array(visibleSets(block).enumerated()), id: \.element.id) { index, set in
-                    StoredWorkoutSetEditorRow(
-                        set: set,
-                        position: index,
-                        prLabels: prLabels(
-                            set: set,
-                            previousMaxWeight: priorMaxWeight,
-                            previousEstimatedMax: priorEstimatedMax
-                        ),
-                        lastWeight: store.lastWeight(exerciseID: block.exerciseID, before: workout.date),
-                        onSave: { weight, reps in
-                            do {
-                                try store.updateSet(
-                                    workoutID: workout.id,
-                                    workoutExerciseID: block.id,
-                                    setID: set.id,
-                                    weight: weight,
-                                    reps: reps
-                                )
-                            } catch {
-                                show(error)
+                        HStack(spacing: 8) {
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text(name)
+                                    .font(.headline)
+                                    .foregroundStyle(GymTheme.textPrimary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                Text(exerciseSummaryText(summary))
+                                    .font(.caption)
+                                    .foregroundStyle(GymTheme.textSecondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                if summary.hasPersonalRecord {
+                                    GymInfoPill(
+                                        gymText(
+                                            "Personal record",
+                                            "Особистий рекорд",
+                                            "Личный рекорд",
+                                            languageCode: gymCurrentLanguageCode()
+                                        ),
+                                        systemImage: "trophy.fill",
+                                        accent: GymTheme.tertiary
+                                    )
+                                }
                             }
-                        },
-                        onDelete: {
+                            .frame(maxWidth: .infinity, alignment: .leading)
+
+                            Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(GymTheme.textSecondary)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(
+                        "\(name), \(exerciseSummaryText(summary))"
+                    )
+                    .accessibilityHint(gymText(
+                        isExpanded ? "Collapses sets" : "Expands sets",
+                        isExpanded ? "Згортає підходи" : "Розгортає підходи",
+                        isExpanded ? "Сворачивает подходы" : "Разворачивает подходы",
+                        languageCode: gymCurrentLanguageCode()
+                    ))
+
+                    if isEditing {
+                        Button(role: .destructive) {
                             presentDeletionConfirmation(
-                                .set(
+                                .exercise(
                                     store: store,
                                     workout: workout,
                                     block: block,
-                                    set: set,
-                                    position: index,
                                     exerciseName: name
                                 )
                             )
+                        } label: {
+                            Image(systemName: "trash")
+                                .frame(width: 44, height: 44)
                         }
-                    )
-                    .disabled(pendingDeletion != nil)
+                        .accessibilityLabel(
+                            gymText(
+                                "Delete \(name) from workout",
+                                "Видалити «\(name)» із тренування",
+                                "Удалить «\(name)» из тренировки",
+                                languageCode: gymCurrentLanguageCode()
+                            )
+                        )
+                        .disabled(pendingDeletion != nil)
+                    }
                 }
 
-                Button {
-                    addSet(to: block, workout: workout, exerciseName: name)
-                } label: {
-                    Label("Add set · start 90 sec rest", systemImage: "plus.circle.fill")
-                }
-                .buttonStyle(GymSecondaryButtonStyle())
-                .accessibilityHint("Adds a set using the latest values and starts the rest timer")
-            }
-        }
-    }
+                if isExpanded {
+                    Divider()
 
-    private func finishPanel(_ workout: WorkoutSession) -> some View {
-        GymPanel(highlighted: true) {
-            VStack(alignment: .leading, spacing: 12) {
-                GymSectionTitle(
-                    eyebrow: "Finish",
-                    title: "Complete this workout",
-                    supporting: "See XP, personal records, trained muscles, missions, and badges."
-                )
-                Button {
-                    finish(workout)
-                } label: {
-                    Label("Finish and view summary", systemImage: "checkmark.seal.fill")
+                    ForEach(Array(visibleSets(block).enumerated()), id: \.element.id) { index, set in
+                        if isEditing {
+                            StoredWorkoutSetEditorRow(
+                                set: set,
+                                position: index,
+                                prLabels: personalRecordBaseline.labels(for: set),
+                                lastWeight: store.lastWeight(exerciseID: block.exerciseID, before: workout.date),
+                                onSave: { weight, reps in
+                                    guard isEditing, isStoreContextCurrent() else {
+                                        showStaleDeletion()
+                                        return
+                                    }
+                                    do {
+                                        try store.updateSet(
+                                            workoutID: workout.id,
+                                            workoutExerciseID: block.id,
+                                            setID: set.id,
+                                            weight: weight,
+                                            reps: reps
+                                        )
+                                    } catch {
+                                        show(error)
+                                    }
+                                },
+                                onDelete: {
+                                    presentDeletionConfirmation(
+                                        .set(
+                                            store: store,
+                                            workout: workout,
+                                            block: block,
+                                            set: set,
+                                            position: index,
+                                            exerciseName: name
+                                        )
+                                    )
+                                }
+                            )
+                            .disabled(pendingDeletion != nil)
+                        } else {
+                            StoredWorkoutSetSummaryRow(
+                                set: set,
+                                position: index,
+                                prLabels: personalRecordBaseline.labels(for: set)
+                            )
+                        }
+                    }
+
+                    if isEditing {
+                        Button {
+                            addSet(to: block, workout: workout)
+                        } label: {
+                            Label(
+                                gymText(
+                                    "Add set",
+                                    "Додати підхід",
+                                    "Добавить подход",
+                                    languageCode: gymCurrentLanguageCode()
+                                ),
+                                systemImage: "plus.circle.fill"
+                            )
+                        }
+                        .buttonStyle(GymSecondaryButtonStyle())
+                        .accessibilityHint(gymText(
+                            "Adds a set to this saved workout",
+                            "Додає підхід до цього збереженого тренування",
+                            "Добавляет подход в эту сохранённую тренировку",
+                            languageCode: gymCurrentLanguageCode()
+                        ))
+                    }
                 }
-                .buttonStyle(GymPrimaryButtonStyle())
             }
         }
     }
@@ -1753,18 +1976,71 @@ struct WorkoutDetailView: View {
         }
     }
 
-    private func prLabels(
-        set: WorkoutSet,
-        previousMaxWeight: Double?,
-        previousEstimatedMax: Double?
-    ) -> [String] {
-        var labels: [String] = []
-        if set.weight > (previousMaxWeight ?? -1) { labels.append("Weight PR") }
-        if set.estimatedOneRepMax > (previousEstimatedMax ?? -1) { labels.append("Estimated 1RM PR") }
-        return labels
+    private func exerciseSummaryText(_ summary: StoredWorkoutExerciseSummary) -> String {
+        let sets = gymCount(
+            summary.setCount,
+            englishOne: "set",
+            englishMany: "sets",
+            ukrainianOne: "підхід",
+            ukrainianFew: "підходи",
+            ukrainianMany: "підходів",
+            languageCode: gymCurrentLanguageCode()
+        )
+        let reps = gymCount(
+            summary.repCount,
+            englishOne: "rep",
+            englishMany: "reps",
+            ukrainianOne: "повтор",
+            ukrainianFew: "повтори",
+            ukrainianMany: "повторів",
+            languageCode: gymCurrentLanguageCode()
+        )
+        let volume = summary.volume.formatted(
+            .number
+                .locale(AppLanguage(rawValue: gymCurrentLanguageCode())?.locale ?? AppLanguage.english.locale)
+                .notation(.compactName)
+                .precision(.fractionLength(0 ... 1))
+        )
+        return gymText(
+            "\(sets) · \(reps) · \(volume) volume",
+            "\(sets) · \(reps) · обсяг \(volume)",
+            "\(sets) · \(reps) · объём \(volume)",
+            languageCode: gymCurrentLanguageCode()
+        )
+    }
+
+    private func beginEditing() {
+        guard isStoreContextCurrent(), let workout = store.workout(id: workoutID) else {
+            showStaleDeletion()
+            return
+        }
+        date = workout.date
+        note = workout.note ?? ""
+        isEditing = true
+    }
+
+    private func finishEditing() {
+        if commitPendingDeletion() { return }
+        guard isStoreContextCurrent(), store.workout(id: workoutID) != nil else {
+            showStaleDeletion()
+            return
+        }
+        do {
+            try store.updateWorkout(id: workoutID, date: date, note: note)
+            statusMessage = nil
+            reportStatus("Workout details updated.", false)
+            showingExercisePicker = false
+            isEditing = false
+        } catch {
+            show(error)
+        }
     }
 
     private func addExercise(_ exercise: Exercise) {
+        guard isEditing, isStoreContextCurrent() else {
+            showStaleDeletion()
+            return
+        }
         do {
             _ = try store.addExercise(
                 toWorkout: workoutID,
@@ -1781,9 +2057,12 @@ struct WorkoutDetailView: View {
 
     private func addSet(
         to block: WorkoutExercise,
-        workout: WorkoutSession,
-        exerciseName: String
+        workout: WorkoutSession
     ) {
+        guard isEditing, isStoreContextCurrent() else {
+            showStaleDeletion()
+            return
+        }
         let source = block.sets.last
         do {
             _ = try store.addSet(
@@ -1792,17 +2071,23 @@ struct WorkoutDetailView: View {
                 weight: source?.weight ?? store.lastWeight(exerciseID: block.exerciseID) ?? 0,
                 reps: source?.reps ?? 10
             )
-            restTimers.start(
-                id: timerKey(blockID: block.id),
-                seconds: 90,
-                title: exerciseName
-            )
         } catch {
             show(error)
         }
     }
 
+    private func createExerciseForEditing(_ name: String) throws -> Exercise {
+        guard isEditing, isStoreContextCurrent() else {
+            throw WorkoutStoreError.invalidWorkout("The workout changed. Reopen it and try again.")
+        }
+        return try store.addExercise(name: name)
+    }
+
     private func saveMetadata() {
+        guard isEditing, isStoreContextCurrent() else {
+            showStaleDeletion()
+            return
+        }
         do {
             try store.updateWorkout(id: workoutID, date: date, note: note)
             statusMessage = nil
@@ -1837,7 +2122,8 @@ struct WorkoutDetailView: View {
     }
 
     private func presentWorkoutDeletionConfirmation() {
-        guard pendingDeletion == nil,
+        guard isEditing,
+              pendingDeletion == nil,
               isStoreContextCurrent(),
               let workout = store.workout(id: workoutID) else {
             showStaleDeletion()
@@ -1849,7 +2135,8 @@ struct WorkoutDetailView: View {
     }
 
     private func presentDeletionConfirmation(_ target: WorkoutDetailDeletionTarget) {
-        guard pendingDeletion == nil,
+        guard isEditing,
+              pendingDeletion == nil,
               isStoreContextCurrent(),
               target.isCurrent(in: store, expectedWorkoutID: workoutID) else {
             showStaleDeletion()
@@ -1868,24 +2155,6 @@ struct WorkoutDetailView: View {
         stageDeletion(target)
     }
 
-    private func finish(_ workout: WorkoutSession) {
-        guard isStoreContextCurrent() else {
-            showStaleDeletion()
-            return
-        }
-        if commitPendingDeletion() { return }
-        guard store.workout(id: workout.id) != nil else {
-            onDeleted()
-            return
-        }
-        do {
-            try store.updateWorkout(id: workout.id, date: date, note: note)
-            onFinish(workout.id)
-        } catch {
-            show(error)
-        }
-    }
-
     private func deleteWorkout(_ target: WorkoutDetailWorkoutDeletionTarget) {
         guard pendingDeletion == nil,
               isStoreContextCurrent(),
@@ -1898,7 +2167,7 @@ struct WorkoutDetailView: View {
             try store.deleteWorkout(id: workoutID)
             deletionTask?.cancel()
             pendingDeletion = nil
-            timerIDs.forEach { restTimers.cancel(id: $0) }
+            timerIDs.forEach(cancelLegacyRestTimer)
             reportStatus("Workout deleted.", false)
             onDeleted()
         } catch {
@@ -1949,11 +2218,11 @@ struct WorkoutDetailView: View {
                     setID: set.id
                 )
                 if store.workout(id: workoutID)?.exercises.contains(where: { $0.id == block.id }) != true {
-                    restTimers.cancel(id: timerKey(blockID: block.id))
+                    cancelLegacyRestTimer(timerKey(blockID: block.id))
                 }
             case let .exercise(_, block, _):
                 try store.removeExercise(fromWorkout: workoutID, workoutExerciseID: block.id)
-                restTimers.cancel(id: timerKey(blockID: block.id))
+                cancelLegacyRestTimer(timerKey(blockID: block.id))
             }
             if store.workout(id: workoutID) == nil {
                 onDeleted()
@@ -1977,6 +2246,68 @@ struct WorkoutDetailView: View {
         statusMessage = gymLocalized(
             "The workout changed before deletion. Review it and try again."
         )
+    }
+}
+
+private struct StoredWorkoutSetSummaryRow: View {
+    let set: WorkoutSet
+    let position: Int
+    let prLabels: [String]
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 10) {
+                setLabel
+                Spacer(minLength: 6)
+                valueLabel
+                prPills
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    setLabel
+                    Spacer(minLength: 6)
+                    prPills
+                }
+                valueLabel
+            }
+        }
+        .padding(12)
+        .background(GymTheme.surfaceVariant.opacity(0.48), in: RoundedRectangle(cornerRadius: 16))
+        .accessibilityElement(children: .combine)
+    }
+
+    private var setLabel: some View {
+        Text(gymText(
+            "Set \(position + 1)",
+            "Підхід \(position + 1)",
+            "Подход \(position + 1)",
+            languageCode: gymCurrentLanguageCode()
+        ))
+        .font(.subheadline.weight(.bold))
+        .foregroundStyle(GymTheme.textPrimary)
+    }
+
+    private var valueLabel: some View {
+        Text(
+            "\(set.weight.formatted(.number.precision(.fractionLength(0 ... 2)))) kg × " +
+                gymText(
+                    "\(set.reps) reps",
+                    "\(set.reps) повт.",
+                    "\(set.reps) повт.",
+                    languageCode: gymCurrentLanguageCode()
+                )
+        )
+        .font(.subheadline.monospacedDigit())
+        .foregroundStyle(GymTheme.textSecondary)
+    }
+
+    private var prPills: some View {
+        HStack(spacing: 5) {
+            ForEach(prLabels, id: \.self) { label in
+                GymInfoPill(label, systemImage: "trophy.fill", accent: GymTheme.tertiary)
+            }
+        }
     }
 }
 
@@ -2016,6 +2347,7 @@ private struct StoredWorkoutSetEditorRow: View {
                     gymText(
                         "Set \(position + 1)",
                         "Підхід \(position + 1)",
+                        "Подход \(position + 1)",
                         languageCode: gymCurrentLanguageCode()
                     )
                 )
@@ -2032,6 +2364,7 @@ private struct StoredWorkoutSetEditorRow: View {
                     gymText(
                         "Delete set \(position + 1)",
                         "Видалити підхід \(position + 1)",
+                        "Удалить подход \(position + 1)",
                         languageCode: gymCurrentLanguageCode()
                     )
                 )
@@ -2068,6 +2401,7 @@ private struct StoredWorkoutSetEditorRow: View {
             gymText(
                 "Weight for set \(position + 1)",
                 "Вага для підходу \(position + 1)",
+                "Вес для подхода \(position + 1)",
                 languageCode: gymCurrentLanguageCode()
             )
         )
@@ -2076,6 +2410,7 @@ private struct StoredWorkoutSetEditorRow: View {
             Text(
                 gymText(
                     "\(reps) reps",
+                    "\(reps) повт.",
                     "\(reps) повт.",
                     languageCode: gymCurrentLanguageCode()
                 )

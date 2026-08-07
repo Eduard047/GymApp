@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import vm from "node:vm";
 
-const CURRENT_BUNDLE_NAMES = ["app.js", "app.v76.js", "app.v77.js"];
+const CURRENT_BUNDLE_NAMES = ["app.js", "app.v78.js"];
 const currentBundles = CURRENT_BUNDLE_NAMES.map(filename => ({
   filename,
   source: readFileSync(new URL(`../pwa/${filename}`, import.meta.url), "utf8")
@@ -23,8 +23,9 @@ function loadUid(source, crypto) {
 }
 
 test("current PWA bundles use one byte-identical secure numeric ID generator", () => {
-  assert.equal(currentBundles[1].source, currentBundles[0].source);
-  assert.equal(currentBundles[2].source, currentBundles[0].source);
+  for (const bundle of currentBundles.slice(1)) {
+    assert.equal(bundle.source, currentBundles[0].source, bundle.filename);
+  }
 
   for (const { filename, source } of currentBundles) {
     const uidSource = uidSourceFrom(source);

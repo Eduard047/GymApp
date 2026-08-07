@@ -44,6 +44,8 @@
     <string name="action_share_workout">Share workout</string>
     <string name="action_deleting">Deleting…</string>
     <string name="action_edit">Edit</string>
+    <string name="action_edit_workout">Edit workout</string>
+    <string name="action_finish_editing_workout">Finish editing</string>
     <string name="action_cancel">Cancel</string>
     <string name="action_save">Save</string>
     <string name="action_close">Close</string>
@@ -328,6 +330,18 @@
 
     <string name="exercise_block_title">Exercise %1$d</string>
     <string name="exercise_set_count_compact">%1$d sets</string>
+    <plurals name="saved_workout_set_count">
+        <item quantity="one">%1$d set</item>
+        <item quantity="other">%1$d sets</item>
+    </plurals>
+    <plurals name="saved_workout_rep_count">
+        <item quantity="one">%1$d rep</item>
+        <item quantity="other">%1$d reps</item>
+    </plurals>
+    <plurals name="saved_workout_exercise_count">
+        <item quantity="one">%1$d exercise</item>
+        <item quantity="other">%1$d exercises</item>
+    </plurals>
     <string name="exercise_workout_count_compact">%1$d workouts</string>
     <string name="exercise_muscles_title">Muscles worked</string>
     <string name="cd_collapse_exercise">Collapse exercise</string>
@@ -676,9 +690,13 @@
     <string name="garmin_metric_logged">Logged</string>
     <string name="garmin_metric_sets_value">%1$d sets</string>
     <string name="garmin_metric_exercises_value">%1$d exercises</string>
-    <string name="garmin_synced_sets_hint">Synced sets are grouped below. Expand an exercise to edit weight, reps, add a missed set, or delete a wrong one.</string>
+    <string name="garmin_synced_sets_hint">Synced sets are grouped below. Open Edit workout to correct weight or reps, add an exercise, or delete a wrong set.</string>
     <string name="garmin_note_derived_sets_hint">Imported or edited notes do not prove watch origin. Saved sets are grouped below for review.</string>
     <string name="garmin_metrics_title">Garmin strength metrics</string>
+    <string name="garmin_watch_metrics_section_title">Watch metrics</string>
+    <string name="garmin_watch_metrics_section_supporting">Heart rate, set insights, and the recorded watch timeline.</string>
+    <string name="cd_expand_watch_metrics">Show watch metrics</string>
+    <string name="cd_collapse_watch_metrics">Hide watch metrics</string>
     <string name="garmin_metric_gym_kcal">Gym kcal</string>
     <string name="garmin_metric_garmin_kcal">Garmin kcal</string>
     <string name="garmin_metric_our_formula">our formula</string>

@@ -16,56 +16,41 @@ import org.junit.Test
 
 class WorkoutDetailSetPersistenceTest {
     @Test
-    fun timerStartsOnlyAfterPersistenceCompletes() = runBlocking {
+    fun savedDetailSetPersistsWithoutStartingRestTimer() = runBlocking {
         val gate = PerExerciseSetAdditionGate()
         var persisted = false
-        var timerStarted = false
 
         val result = persistWorkoutDetailSet(
             workoutExerciseId = 42L,
             gate = gate,
             persist = {
-                assertFalse(timerStarted)
                 persisted = true
-            },
-            afterPersist = {
-                assertTrue(persisted)
-                timerStarted = true
-                true
             }
         )
 
-        assertEquals(WorkoutDetailSetPersistenceResult.SetSavedAndTimerStarted, result)
+        assertEquals(WorkoutDetailSetPersistenceResult.SetSaved, result)
         assertTrue(persisted)
-        assertTrue(timerStarted)
     }
 
     @Test
-    fun persistenceFailureDoesNotStartRestTimer() = runBlocking {
+    fun savedDetailSetPersistenceFailureIsReported() = runBlocking {
         val gate = PerExerciseSetAdditionGate()
-        var timerStartCount = 0
 
         val result = persistWorkoutDetailSet(
             workoutExerciseId = 42L,
             gate = gate,
-            persist = { error("database-private detail") },
-            afterPersist = {
-                timerStartCount += 1
-                true
-            }
+            persist = { error("database-private detail") }
         )
 
         assertEquals(WorkoutDetailSetPersistenceResult.PersistenceFailed, result)
-        assertEquals(0, timerStartCount)
     }
 
     @Test
-    fun immediateDoubleInvocationCreatesOneSetAndOneTimer() = runBlocking {
+    fun immediateDoubleInvocationCreatesOneSavedDetailSet() = runBlocking {
         val gate = PerExerciseSetAdditionGate()
         val firstPersistenceStarted = CompletableDeferred<Unit>()
         val releaseFirstPersistence = CompletableDeferred<Unit>()
         var persistedSetCount = 0
-        var timerStartCount = 0
 
         val first = async {
             persistWorkoutDetailSet(
@@ -75,10 +60,6 @@ class WorkoutDetailSetPersistenceTest {
                     firstPersistenceStarted.complete(Unit)
                     releaseFirstPersistence.await()
                     persistedSetCount += 1
-                },
-                afterPersist = {
-                    timerStartCount += 1
-                    true
                 }
             )
         }
@@ -87,19 +68,14 @@ class WorkoutDetailSetPersistenceTest {
             persistWorkoutDetailSet(
                 workoutExerciseId = 42L,
                 gate = gate,
-                persist = { persistedSetCount += 1 },
-                afterPersist = {
-                    timerStartCount += 1
-                    true
-                }
+                persist = { persistedSetCount += 1 }
             )
         }.await()
         releaseFirstPersistence.complete(Unit)
 
         assertEquals(WorkoutDetailSetPersistenceResult.AlreadyInFlight, duplicate)
-        assertEquals(WorkoutDetailSetPersistenceResult.SetSavedAndTimerStarted, first.await())
+        assertEquals(WorkoutDetailSetPersistenceResult.SetSaved, first.await())
         assertEquals(1, persistedSetCount)
-        assertEquals(1, timerStartCount)
     }
 
     @Test(expected = CancellationException::class)
@@ -108,18 +84,16 @@ class WorkoutDetailSetPersistenceTest {
             persistWorkoutDetailSet(
                 workoutExerciseId = 42L,
                 gate = PerExerciseSetAdditionGate(),
-                persist = { throw CancellationException("database cancelled") },
-                afterPersist = { true }
+                persist = { throw CancellationException("database cancelled") }
             )
         }
     }
 
     @Test
-    fun externalCancellationBeforeCommitCreatesNeitherSetNorTimer() = runBlocking {
+    fun externalCancellationBeforeCommitCreatesNoSavedDetailSet() = runBlocking {
         val gate = PerExerciseSetAdditionGate()
         val persistenceStarted = CompletableDeferred<Unit>()
         var persistedSetCount = 0
-        var timerStartCount = 0
         val operation = async {
             persistWorkoutDetailSet(
                 workoutExerciseId = 42L,
@@ -128,10 +102,6 @@ class WorkoutDetailSetPersistenceTest {
                     persistenceStarted.complete(Unit)
                     awaitCancellation()
                     persistedSetCount += 1
-                },
-                afterPersist = {
-                    timerStartCount += 1
-                    true
                 }
             )
         }
@@ -141,7 +111,6 @@ class WorkoutDetailSetPersistenceTest {
         runCatching { operation.await() }
 
         assertEquals(0, persistedSetCount)
-        assertEquals(0, timerStartCount)
         assertTrue(gate.inFlight.value.isEmpty())
     }
 

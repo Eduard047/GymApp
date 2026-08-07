@@ -10,17 +10,15 @@ import com.example.gymapp.R
 import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.entity.ExerciseHistoryEntry
 import com.example.gymapp.data.repository.GymRepository
-import com.example.gymapp.data.repository.SetDeletionSnapshot
+import com.example.gymapp.data.repository.defaultContributionsForExercise
+import com.example.gymapp.data.repository.normalizedExerciseName
+import com.example.gymapp.data.repository.toManualContributionMap
 import com.example.gymapp.util.DateTimeUtils
-import com.example.gymapp.util.LocalizedText
 import com.example.gymapp.util.RussianText
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
@@ -82,6 +80,9 @@ data class ExerciseProgressUiState(
     val monthOffset: Int = 0,
     val monthLabel: String = DateTimeUtils.monthLabel(0),
     val exercises: List<ExerciseEntity> = emptyList(),
+    val frequentExerciseIds: List<Long> = emptyList(),
+    val exerciseWorkoutCounts: Map<Long, Int> = emptyMap(),
+    val exerciseMuscleIds: Map<String, Set<String>> = emptyMap(),
     val selectedExerciseId: Long? = null,
     val selectedExerciseName: String? = null,
     val history: List<ExerciseHistoryEntry> = emptyList(),
@@ -89,22 +90,37 @@ data class ExerciseProgressUiState(
     val bestWeight: Double? = null,
     val averageWeight: Double? = null,
     val spotlight: ExerciseProgressSpotlightUiModel = ExerciseProgressSpotlightUiModel(),
-    val trendChart: ExerciseTrendChartUiModel = ExerciseTrendChartUiModel(),
-    val pendingSetDeletion: SetDeletionSnapshot? = null,
-    val isSetDeletionInProgress: Boolean = false,
-    val setDeletionError: LocalizedText? = null
+    val trendChart: ExerciseTrendChartUiModel = ExerciseTrendChartUiModel()
 )
 
-private data class ExerciseProgressDeletionState(
-    val pending: SetDeletionSnapshot?,
-    val isInProgress: Boolean,
-    val error: LocalizedText?
+private data class ExerciseProgressCatalog(
+    val exercises: List<ExerciseEntity>,
+    val frequentExerciseIds: List<Long>,
+    val workoutCounts: Map<Long, Int>,
+    val muscleIdsByName: Map<String, Set<String>>
 )
 
-sealed interface ExerciseProgressEvent {
-    data object SetDeleted : ExerciseProgressEvent
-    data object DeleteTargetChanged : ExerciseProgressEvent
-    data object DeleteFailed : ExerciseProgressEvent
+internal fun progressFrequentExerciseIds(
+    history: List<ExerciseHistoryEntry>,
+    limit: Int = 12
+): List<Long> {
+    if (limit <= 0) return emptyList()
+    return history
+        .groupBy(ExerciseHistoryEntry::exerciseId)
+        .map { (exerciseId, entries) ->
+            Triple(
+                exerciseId,
+                entries.map(ExerciseHistoryEntry::sessionId).distinct().size,
+                entries.maxOfOrNull(ExerciseHistoryEntry::sessionDate) ?: Long.MIN_VALUE
+            )
+        }
+        .sortedWith(
+            compareByDescending<Triple<Long, Int, Long>> { it.second }
+                .thenByDescending { it.third }
+                .thenBy { it.first }
+        )
+        .take(limit)
+        .map { it.first }
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -120,17 +136,29 @@ class ExerciseProgressViewModel(
     private val shortDateFormatter = DateTimeFormatter.ofPattern("d MMM", locale)
     private val monthOffset = MutableStateFlow(0)
     private val selectedExerciseId = MutableStateFlow<Long?>(null)
-    private val pendingSetDeletion = MutableStateFlow<SetDeletionSnapshot?>(null)
-    private val isSetDeletionInProgress = MutableStateFlow(false)
-    private val setDeletionError = MutableStateFlow<LocalizedText?>(null)
-    private val _events = MutableSharedFlow<ExerciseProgressEvent>()
-    val events = _events.asSharedFlow()
 
     private val exercises = repository.observeExercises().stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = emptyList()
     )
+    private val exerciseCatalogFlow = combine(
+        exercises,
+        repository.observeAllExerciseHistory(),
+        repository.observeExerciseMuscleMappings()
+    ) { exerciseList, history, mappings ->
+        val manualMappings = mappings.toManualContributionMap()
+        ExerciseProgressCatalog(
+            exercises = exerciseList,
+            frequentExerciseIds = progressFrequentExerciseIds(history),
+            workoutCounts = workoutCountByExercise(history),
+            muscleIdsByName = exerciseList.associate { exercise ->
+                val contributions = manualMappings[exercise.name.normalizedExerciseName()]
+                    ?: defaultContributionsForExercise(exercise.name)
+                exercise.name to contributions.mapTo(linkedSetOf()) { it.muscleId }
+            }
+        )
+    }
 
     private val historyFlow = combine(selectedExerciseId, monthOffset) { exerciseId, offset ->
         exerciseId to offset
@@ -152,11 +180,12 @@ class ExerciseProgressViewModel(
 
     private val progressState = combine(
         monthOffset,
-        exercises,
+        exerciseCatalogFlow,
         selectedExerciseId,
         historyFlow,
         fullHistoryFlow
-    ) { offset, exerciseList, selectedId, history, fullHistory ->
+    ) { offset, catalog, selectedId, history, fullHistory ->
+        val exerciseList = catalog.exercises
         val selectedExerciseName = exerciseList.firstOrNull { it.id == selectedId }?.name
         val progressPoints = history.toProgressPoints()
         val allTimePoints = fullHistory.toProgressPoints()
@@ -169,6 +198,9 @@ class ExerciseProgressViewModel(
             monthOffset = offset,
             monthLabel = DateTimeUtils.monthLabel(offset),
             exercises = exerciseList,
+            frequentExerciseIds = catalog.frequentExerciseIds,
+            exerciseWorkoutCounts = catalog.workoutCounts,
+            exerciseMuscleIds = catalog.muscleIdsByName,
             selectedExerciseId = selectedId,
             selectedExerciseName = selectedExerciseName,
             history = history,
@@ -184,28 +216,7 @@ class ExerciseProgressViewModel(
         )
     }
 
-    private val deletionState = combine(
-        pendingSetDeletion,
-        isSetDeletionInProgress,
-        setDeletionError
-    ) { pending, isInProgress, error ->
-        ExerciseProgressDeletionState(
-            pending = pending,
-            isInProgress = isInProgress,
-            error = error
-        )
-    }
-
-    val uiState: StateFlow<ExerciseProgressUiState> = combine(
-        progressState,
-        deletionState
-    ) { progress, deletion ->
-        progress.copy(
-            pendingSetDeletion = deletion.pending,
-            isSetDeletionInProgress = deletion.isInProgress,
-            setDeletionError = deletion.error
-        )
-    }.stateIn(
+    val uiState: StateFlow<ExerciseProgressUiState> = progressState.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = ExerciseProgressUiState()
@@ -241,62 +252,6 @@ class ExerciseProgressViewModel(
 
     fun currentMonth() {
         monthOffset.value = 0
-    }
-
-    fun requestDeleteHistoryEntry(setId: Long) {
-        if (isSetDeletionInProgress.value || pendingSetDeletion.value != null) return
-        val expectedEntry = uiState.value.history.firstOrNull { it.setId == setId }
-        if (expectedEntry == null) {
-            viewModelScope.launch { _events.emit(ExerciseProgressEvent.DeleteTargetChanged) }
-            return
-        }
-        isSetDeletionInProgress.value = true
-        setDeletionError.value = null
-        viewModelScope.launch {
-            try {
-                val snapshot = repository.getSetDeletionSnapshot(setId)
-                if (snapshot != null && snapshot.matchesRequestedHistoryEntry(expectedEntry)) {
-                    pendingSetDeletion.value = snapshot
-                } else {
-                    _events.emit(ExerciseProgressEvent.DeleteTargetChanged)
-                }
-            } catch (error: CancellationException) {
-                throw error
-            } catch (_: Throwable) {
-                _events.emit(ExerciseProgressEvent.DeleteFailed)
-            } finally {
-                isSetDeletionInProgress.value = false
-            }
-        }
-    }
-
-    fun dismissSetDeletion() {
-        if (isSetDeletionInProgress.value) return
-        pendingSetDeletion.value = null
-        setDeletionError.value = null
-    }
-
-    fun confirmSetDeletion() {
-        val expected = pendingSetDeletion.value ?: return
-        if (isSetDeletionInProgress.value || setDeletionError.value != null) return
-        isSetDeletionInProgress.value = true
-        viewModelScope.launch {
-            try {
-                if (repository.deleteSetIfUnchanged(expected)) {
-                    pendingSetDeletion.value = null
-                    setDeletionError.value = null
-                    _events.emit(ExerciseProgressEvent.SetDeleted)
-                } else {
-                    setDeletionError.value = LocalizedText(R.string.message_delete_target_changed)
-                }
-            } catch (error: CancellationException) {
-                throw error
-            } catch (_: Throwable) {
-                setDeletionError.value = LocalizedText(R.string.message_delete_failed)
-            } finally {
-                isSetDeletionInProgress.value = false
-            }
-        }
     }
 
     private fun List<ExerciseHistoryEntry>.toProgressPoints(): List<ExerciseProgressPoint> {

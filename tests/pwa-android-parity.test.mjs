@@ -12,7 +12,7 @@ const garminCloudSource = await readFile(
   "utf8"
 );
 const appSources = await Promise.all(
-  ["app.js", "app.v77.js"].map(async filename => ({
+  ["app.js", "app.v78.js"].map(async filename => ({
     filename,
     source: await readFile(new URL(`../pwa/${filename}`, import.meta.url), "utf8")
   }))
@@ -124,7 +124,8 @@ test("current PWA parity bundle remains byte-identical", () => {
 
 test("PWA distinguishes planned rows from durable active and history sets", () => {
   assert.match(appSources[0].source, /data-action="add-set"[^>]*>\$\{t\("addPlannedSet"\)\}<\/button>/);
-  assert.match(appSources[0].source, /data-action="detail-add-set"[^>]*>\$\{t\("logSetAndRest"\)\}<\/button>/);
+  assert.doesNotMatch(appSources[0].source, /data-action="detail-add-set"|function detailAddSet\(/);
+  assert.match(appSources[0].source, /data-action="add-saved-workout-set"/);
   assert.match(appSources[0].source, /data-action="start-workout"[^>]*>[\s\S]*?tx\("Start workout"/);
   assert.match(appSources[0].source, /data-action="record-active-set"/);
   assert.match(appSources[0].source, /Finish adds recorded sets to history/);
@@ -133,46 +134,6 @@ test("PWA distinguishes planned rows from durable active and history sets", () =
 });
 
 for (const { filename, source } of appSources) {
-  test(`${filename} logs a detail set before starting its rest timer`, () => {
-    const context = loadPwaContext(source);
-    vm.runInContext(`state = {
-      language: "en",
-      exercises: [{ id: 1, name: "Bench Press" }],
-      sessions: [{
-        id: 10,
-        startedAt: 1700000000000,
-        note: "",
-        sets: [{ id: 1, exerciseName: "Bench Press", weight: 60, reps: 8, orderIndex: 0 }]
-      }],
-      mappings: {},
-      profile: {}
-    };
-    render = () => {};
-    showToast = message => { globalThis.lastToast = message; };
-    saveState = () => { throw new Error("storage unavailable"); };
-    detailAddSet(10, "Bench Press");`, context);
-
-    assert.equal(vm.runInContext("state.sessions[0].sets.length", context), 1);
-    assert.equal(vm.runInContext("timerRemaining('10:Bench Press')", context), 0);
-    assert.equal(
-      vm.runInContext("localStorage.getItem(exerciseRestTimerAccountDescriptor().storageKey)", context),
-      null
-    );
-    assert.equal(
-      vm.runInContext("globalThis.lastToast", context),
-      "Could not log the set. Rest was not started."
-    );
-
-    vm.runInContext(`saveState = () => {};
-      detailAddSet(10, "Bench Press");`, context);
-    assert.equal(vm.runInContext("state.sessions[0].sets.length", context), 2);
-    assert.ok(vm.runInContext("timerRemaining('10:Bench Press') > 0", context));
-    assert.ok(
-      vm.runInContext("localStorage.getItem(exerciseRestTimerAccountDescriptor().storageKey) !== null", context)
-    );
-    assert.equal(vm.runInContext("t('logSetAndRest')", context), "Log set · rest 90 s");
-  });
-
   test(`${filename} restores bounded rest deadlines outside workout state`, () => {
     const context = loadPwaContext(source);
     vm.runInContext(`state = {
@@ -292,35 +253,6 @@ for (const { filename, source } of appSources) {
     assert.notEqual(
       vm.runInContext("globalThis.firstStorageKey", context),
       vm.runInContext("globalThis.secondStorageKey", context)
-    );
-  });
-
-  test(`${filename} keeps a logged set when only timer persistence fails`, () => {
-    const context = loadPwaContext(source);
-    vm.runInContext(`state = {
-      ...defaultAppState(),
-      sessions: [{
-        id: 10,
-        startedAt: 1700000000000,
-        note: "",
-        sets: [{ id: 1, exerciseName: "Bench Press", weight: 60, reps: 8, orderIndex: 0 }]
-      }]
-    };
-    render = () => {};
-    showToast = message => { globalThis.lastToast = message; };
-    saveState = () => {};
-    const originalSetItem = localStorage.setItem;
-    localStorage.setItem = (key, value) => {
-      if (String(key).startsWith(EXERCISE_REST_TIMER_PREFIX)) throw new Error("timer storage unavailable");
-      originalSetItem(key, value);
-    };
-    detailAddSet(10, "Bench Press");`, context);
-
-    assert.equal(vm.runInContext("state.sessions[0].sets.length", context), 2);
-    assert.equal(vm.runInContext("timerRemaining('10:Bench Press')", context), 0);
-    assert.equal(
-      vm.runInContext("globalThis.lastToast", context),
-      "Set logged, but the rest timer could not be saved."
     );
   });
 
@@ -499,7 +431,8 @@ for (const { filename, source } of appSources) {
     assert.equal(vm.runInContext("parseGarminWorkoutMetrics(state.sessions[0].note)", context), null);
     const html = vm.runInContext("detailScreen(10)", context);
     assert.doesNotMatch(html, /garmin-metrics|Garmin strength metrics/);
-    assert.match(html, /Log set · rest 90 s/);
+    assert.match(html, /READ MODE/);
+    assert.doesNotMatch(html, /Log set · rest 90 s|data-action="timer"/);
   });
 }
 

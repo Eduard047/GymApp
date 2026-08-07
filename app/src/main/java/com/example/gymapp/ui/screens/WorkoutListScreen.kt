@@ -29,7 +29,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -58,7 +57,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.shape.RoundedCornerShape
 import com.example.gymapp.R
-import com.example.gymapp.data.entity.WorkoutSessionEntity
 import com.example.gymapp.data.repository.DashboardStats
 import com.example.gymapp.ui.components.ActivityHeatmapCard
 import com.example.gymapp.ui.components.AppPanel
@@ -83,7 +81,6 @@ fun WorkoutListScreen(
     onNextMonth: () -> Unit,
     onMuscleMapPeriodSelected: (MuscleMapPeriod) -> Unit,
     onMuscleSelected: (String) -> Unit,
-    onDeleteSession: (Long) -> Unit,
     onAddWorkout: () -> Unit,
     activeWorkoutProgress: Pair<Int, Int>? = null,
     onDiscardActiveWorkout: () -> Unit = {},
@@ -92,7 +89,6 @@ fun WorkoutListScreen(
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
     var workoutsSelected by rememberSaveable { mutableStateOf(false) }
-    var sessionPendingDelete by remember { mutableStateOf<WorkoutSessionEntity?>(null) }
     var showActiveWorkoutDiscardConfirmation by rememberSaveable { mutableStateOf(false) }
     val showTopControls by remember {
         derivedStateOf {
@@ -244,17 +240,6 @@ fun WorkoutListScreen(
                                     modifier = Modifier.weight(1f)
                                 )
                                 InfoPill(text = stringResource(R.string.stats_sets, sessionSummary.setCount))
-                                IconButton(
-                                    onClick = { sessionPendingDelete = sessionSummary.session }
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Delete,
-                                        contentDescription = stringResource(
-                                            R.string.cd_delete_workout_on,
-                                            displayDate
-                                        )
-                                    )
-                                }
                             }
 
                             Text(
@@ -310,36 +295,6 @@ fun WorkoutListScreen(
         }
     }
 
-    val deletingSession = sessionPendingDelete
-    if (deletingSession != null) {
-        AlertDialog(
-            onDismissRequest = { sessionPendingDelete = null },
-            title = { Text(text = stringResource(R.string.dialog_delete_workout_title)) },
-            text = {
-                Text(
-                    text = stringResource(
-                        R.string.dialog_delete_workout_message,
-                        DateTimeUtils.formatDate(deletingSession.date)
-                    )
-                )
-            },
-            confirmButton = {
-                OutlinedButton(
-                    onClick = {
-                        onDeleteSession(deletingSession.id)
-                        sessionPendingDelete = null
-                    }
-                ) {
-                    Text(text = stringResource(R.string.action_delete))
-                }
-            },
-            dismissButton = {
-                OutlinedButton(onClick = { sessionPendingDelete = null }) {
-                    Text(text = stringResource(R.string.action_cancel))
-                }
-            }
-        )
-    }
     if (showActiveWorkoutDiscardConfirmation) {
         AlertDialog(
             onDismissRequest = { showActiveWorkoutDiscardConfirmation = false },

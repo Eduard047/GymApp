@@ -16,18 +16,6 @@ public struct WorkoutsView: View {
         var id: Self { self }
     }
 
-    private enum ActiveAlert: Identifiable {
-        case delete(WorkoutSessionSummary)
-        case error(String)
-
-        var id: String {
-            switch self {
-            case let .delete(workout): "delete-\(workout.id.uuidString)"
-            case let .error(message): "error-\(message)"
-            }
-        }
-    }
-
     @Environment(\.calendar) private var calendar
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
@@ -38,7 +26,7 @@ public struct WorkoutsView: View {
     @State private var section: Section = .overview
     @State private var musclePeriod: WorkoutMusclePeriod = .allTime
     @State private var selectedMuscleID: String?
-    @State private var activeAlert: ActiveAlert?
+    @State private var historyReturnWorkoutID: UUID?
 
     private let onAddWorkout: () -> Void
     private let onOpenWorkout: (UUID) -> Void
@@ -91,6 +79,13 @@ public struct WorkoutsView: View {
                         proxy.scrollTo(newSection, anchor: .top)
                     }
                 }
+                .onAppear {
+                    guard let historyReturnWorkoutID else { return }
+                    Task { @MainActor in
+                        await Task.yield()
+                        proxy.scrollTo(historyReturnWorkoutID, anchor: .center)
+                    }
+                }
                 .task {
 #if DEBUG
                     guard let anchor = screenshotSectionAnchor else { return }
@@ -100,7 +95,6 @@ public struct WorkoutsView: View {
                 }
             }
         }
-        .alert(item: $activeAlert, content: makeAlert)
     }
 
     private var screenHeader: some View {
@@ -388,6 +382,7 @@ public struct WorkoutsView: View {
         GymPanel(highlighted: true) {
             HStack(alignment: .top, spacing: 12) {
                 Button {
+                    historyReturnWorkoutID = workout.workoutID
                     onOpenWorkout(workout.workoutID)
                 } label: {
                     VStack(alignment: .leading, spacing: 10) {
@@ -455,30 +450,9 @@ public struct WorkoutsView: View {
                 )
                 .accessibilityHint("Opens workout details")
 
-                Button(role: .destructive) {
-                    activeAlert = .delete(workout)
-                } label: {
-                    Image(systemName: "trash")
-                        .frame(width: 38, height: 38)
-                        .background(GymTheme.error.opacity(0.1), in: Circle())
-                }
-                .foregroundStyle(GymTheme.error)
-                .accessibilityLabel(
-                    gymText(
-                        "Delete workout from \(gymFormattedDate(workout.date, date: .long, time: .omitted))",
-                        "Видалити тренування за \(gymFormattedDate(workout.date, date: .long, time: .omitted))",
-                        languageCode: gymCurrentLanguageCode()
-                    )
-                )
             }
         }
-        .contextMenu {
-            Button(role: .destructive) {
-                activeAlert = .delete(workout)
-            } label: {
-                Label("Delete workout", systemImage: "trash")
-            }
-        }
+        .id(workout.workoutID)
     }
 
     private func workoutStat(label: String, value: String) -> some View {
@@ -578,42 +552,6 @@ public struct WorkoutsView: View {
                 .notation(.compactName)
                 .precision(.fractionLength(0 ... 1))
         )
-    }
-
-    private func makeAlert(_ alert: ActiveAlert) -> Alert {
-        switch alert {
-        case let .delete(workout):
-            return Alert(
-                title: Text("Delete workout?"),
-                message: Text(
-                    gymCurrentLanguageCode() == "ru"
-                        ? "Тренировка за \(gymFormattedDate(workout.date, date: .long, time: .omitted)) и все её подходы будут удалены с этого устройства."
-                        : gymText(
-                            "The workout from \(gymFormattedDate(workout.date, date: .long, time: .omitted)) and all of its sets will be removed from this device.",
-                            "Тренування за \(gymFormattedDate(workout.date, date: .long, time: .omitted)) і всі його підходи буде видалено з цього пристрою.",
-                            languageCode: gymCurrentLanguageCode()
-                        )
-                ),
-                primaryButton: .destructive(Text("Delete")) {
-                    deleteWorkout(workout)
-                },
-                secondaryButton: .cancel()
-            )
-        case let .error(message):
-            return Alert(
-                title: Text("Couldn’t delete workout"),
-                message: Text(gymLocalized(message)),
-                dismissButton: .default(Text("OK"))
-            )
-        }
-    }
-
-    private func deleteWorkout(_ workout: WorkoutSessionSummary) {
-        do {
-            try store.deleteWorkout(id: workout.workoutID)
-        } catch {
-            activeAlert = .error(gymErrorMessage(error))
-        }
     }
 
     private func workoutAccessibilityValue(_ workout: WorkoutSessionSummary) -> String {

@@ -1165,7 +1165,6 @@ internal fun GymAppRoot(
                                 onNextMonth = viewModel::nextMonth,
                                 onMuscleMapPeriodSelected = viewModel::selectMuscleMapPeriod,
                                 onMuscleSelected = viewModel::selectMuscle,
-                                onDeleteSession = viewModel::deleteSession,
                                 onAddWorkout = {
                                     navController.navigate(
                                         if (activeWorkout == null) {
@@ -1420,11 +1419,7 @@ internal fun GymAppRoot(
                                 key = "workout_detail_$sessionId",
                                 factory = WorkoutDetailViewModel.factory(
                                     repository = repository,
-                                    sessionId = sessionId,
-                                    restTimerController = restTimerController,
-                                    timerAccountKey = checkNotNull(
-                                        restTimerAccountKey(authState.session)
-                                    )
+                                    sessionId = sessionId
                                 )
                             )
                             val uiState by viewModel.uiState.collectAsState()
@@ -1435,8 +1430,6 @@ internal fun GymAppRoot(
                                 events = viewModel.events,
                                 onAddExerciseToWorkout = viewModel::addExerciseToWorkout,
                                 onAddSet = viewModel::addSet,
-                                onStartExerciseRestTimer = viewModel::startExerciseRestTimer,
-                                onStopExerciseRestTimer = viewModel::stopExerciseRestTimer,
                                 onDeleteSet = viewModel::requestDeleteSet,
                                 onConfirmDeleteSet = viewModel::confirmSetDeletion,
                                 onDismissDeleteSet = viewModel::dismissSetDeletion,
@@ -1492,11 +1485,7 @@ internal fun GymAppRoot(
                             ExerciseProgressScreen(
                                 uiState = uiState,
                                 exerciseMediaOwnerKey = checkNotNull(authState.session).databaseName(),
-                                events = viewModel.events,
                                 onSelectExercise = viewModel::selectExercise,
-                                onDeleteHistoryEntry = viewModel::requestDeleteHistoryEntry,
-                                onConfirmDeleteHistoryEntry = viewModel::confirmSetDeletion,
-                                onDismissDeleteHistoryEntry = viewModel::dismissSetDeletion,
                                 onPreviousMonth = viewModel::previousMonth,
                                 onCurrentMonth = viewModel::currentMonth,
                                 onNextMonth = viewModel::nextMonth,

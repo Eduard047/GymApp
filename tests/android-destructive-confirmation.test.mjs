@@ -51,6 +51,6 @@ test("Android persisted-delete controls name the exact visible target", async ()
   assert.match(exerciseList, /R\.string\.cd_delete_exercise_named/);
   assert.match(workoutDetail, /R\.string\.cd_delete_set_named/);
   assert.match(workoutDetail, /R\.string\.cd_delete_workout_on/);
-  assert.match(exerciseProgress, /R\.string\.cd_delete_history_set_named/);
-  assert.match(workoutList, /R\.string\.cd_delete_workout_on[\s\S]*displayDate/);
+  assert.doesNotMatch(exerciseProgress, /R\.string\.cd_delete_history_set_named/);
+  assert.doesNotMatch(workoutList, /R\.string\.cd_delete_workout_on/);
 });

@@ -4,6 +4,186 @@ import XCTest
 
 @MainActor
 final class WorkoutDetailDeletionTests: XCTestCase {
+    func testSavedWorkoutDisclosureKeepsAtMostOneExerciseExpanded() {
+        let first = UUID()
+        let second = UUID()
+
+        var expanded: UUID?
+        XCTAssertNil(expanded)
+
+        expanded = WorkoutDetailDisclosurePolicy.toggledExercise(current: expanded, tapped: first)
+        XCTAssertEqual(expanded, first)
+
+        expanded = WorkoutDetailDisclosurePolicy.toggledExercise(current: expanded, tapped: second)
+        XCTAssertEqual(expanded, second)
+
+        expanded = WorkoutDetailDisclosurePolicy.toggledExercise(current: expanded, tapped: second)
+        XCTAssertNil(expanded)
+    }
+
+    func testSavedWorkoutExerciseSummaryUsesOnlyStoredSets() {
+        let exerciseID = UUID()
+        let block = WorkoutExercise(
+            exerciseID: exerciseID,
+            sets: [
+                WorkoutSet(weight: 50, reps: 8),
+                WorkoutSet(weight: 60, reps: 5)
+            ]
+        )
+        let prior = [
+            historyEntry(exerciseID: exerciseID, weight: 62.5, reps: 5)
+        ]
+        let baseline = StoredWorkoutPRBaseline(
+            history: prior,
+            currentWorkoutDate: Date(timeIntervalSince1970: 1_700_000_000),
+            currentWorkoutID: UUID()
+        )
+
+        let summary = StoredWorkoutExerciseSummary(
+            block: block,
+            personalRecordBaseline: baseline
+        )
+
+        XCTAssertEqual(summary.setCount, 2)
+        XCTAssertEqual(summary.repCount, 13)
+        XCTAssertEqual(summary.volume, 700, accuracy: 0.0001)
+        XCTAssertFalse(summary.hasPersonalRecord)
+    }
+
+    func testSavedWorkoutExerciseSummaryFlagsAvailablePersonalRecord() {
+        let exerciseID = UUID()
+        let block = WorkoutExercise(
+            exerciseID: exerciseID,
+            sets: [WorkoutSet(weight: 70, reps: 6)]
+        )
+        let prior = [historyEntry(exerciseID: exerciseID, weight: 65, reps: 6)]
+        let baseline = StoredWorkoutPRBaseline(
+            history: prior,
+            currentWorkoutDate: Date(timeIntervalSince1970: 1_700_000_000),
+            currentWorkoutID: UUID()
+        )
+
+        XCTAssertTrue(
+            StoredWorkoutExerciseSummary(
+                block: block,
+                personalRecordBaseline: baseline
+            ).hasPersonalRecord
+        )
+    }
+
+    func testSavedWorkoutPersonalRecordIgnoresFutureHistoryForSummaryAndSetLabels() {
+        let exerciseID = UUID()
+        let currentDate = Date(timeIntervalSince1970: 1_700_000_000)
+        let currentWorkoutID = UUID(uuidString: "00000000-0000-0000-0000-000000000020")!
+        let currentSet = WorkoutSet(weight: 60, reps: 6)
+        let history = [
+            historyEntry(
+                exerciseID: exerciseID,
+                workoutID: UUID(uuidString: "00000000-0000-0000-0000-000000000010")!,
+                sessionDate: currentDate.addingTimeInterval(-60),
+                weight: 50,
+                reps: 6
+            ),
+            historyEntry(
+                exerciseID: exerciseID,
+                workoutID: UUID(uuidString: "00000000-0000-0000-0000-000000000030")!,
+                sessionDate: currentDate.addingTimeInterval(60),
+                weight: 100,
+                reps: 6
+            )
+        ]
+        let baseline = StoredWorkoutPRBaseline(
+            history: history,
+            currentWorkoutDate: currentDate,
+            currentWorkoutID: currentWorkoutID
+        )
+        let summary = StoredWorkoutExerciseSummary(
+            block: WorkoutExercise(exerciseID: exerciseID, sets: [currentSet]),
+            personalRecordBaseline: baseline
+        )
+
+        XCTAssertEqual(baseline.maxWeight, 50, accuracy: 0.0001)
+        XCTAssertEqual(baseline.maxEstimatedOneRepMax, 60, accuracy: 0.0001)
+        XCTAssertEqual(baseline.labels(for: currentSet), ["Weight PR", "Estimated 1RM PR"])
+        XCTAssertTrue(summary.hasPersonalRecord)
+    }
+
+    func testSavedWorkoutPersonalRecordUsesWorkoutIDAsSameDateTieBreak() {
+        let exerciseID = UUID()
+        let date = Date(timeIntervalSince1970: 1_700_000_000)
+        let baseline = StoredWorkoutPRBaseline(
+            history: [
+                historyEntry(
+                    exerciseID: exerciseID,
+                    workoutID: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
+                    sessionDate: date,
+                    weight: 55,
+                    reps: 5
+                ),
+                historyEntry(
+                    exerciseID: exerciseID,
+                    workoutID: UUID(uuidString: "00000000-0000-0000-0000-000000000003")!,
+                    sessionDate: date,
+                    weight: 95,
+                    reps: 5
+                )
+            ],
+            currentWorkoutDate: date,
+            currentWorkoutID: UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
+        )
+
+        XCTAssertEqual(baseline.maxWeight, 55, accuracy: 0.0001)
+        XCTAssertEqual(baseline.maxEstimatedOneRepMax, 64.166_666_666_7, accuracy: 0.0001)
+    }
+
+    func testSavedWorkoutPersonalRecordRejectsZeroAndNegativeValuesAgainstZeroBaseline() {
+        let exerciseID = UUID()
+        let zero = WorkoutSet(weight: 0, reps: 10)
+        let negative = WorkoutSet(weight: -20, reps: 10)
+        let baseline = StoredWorkoutPRBaseline(
+            history: [],
+            currentWorkoutDate: Date(timeIntervalSince1970: 1_700_000_000),
+            currentWorkoutID: UUID()
+        )
+        let summary = StoredWorkoutExerciseSummary(
+            block: WorkoutExercise(exerciseID: exerciseID, sets: [zero, negative]),
+            personalRecordBaseline: baseline
+        )
+
+        XCTAssertEqual(baseline.maxWeight, 0)
+        XCTAssertEqual(baseline.maxEstimatedOneRepMax, 0)
+        XCTAssertEqual(baseline.labels(for: zero), [])
+        XCTAssertEqual(baseline.labels(for: negative), [])
+        XCTAssertFalse(summary.hasPersonalRecord)
+    }
+
+    func testSavedWorkoutSummaryRussianRepetitionCountUsesRussianPlural() {
+        XCTAssertEqual(
+            gymCount(
+                1,
+                englishOne: "rep",
+                englishMany: "reps",
+                ukrainianOne: "повтор",
+                ukrainianFew: "повтори",
+                ukrainianMany: "повторів",
+                languageCode: "ru"
+            ),
+            "1 повтор"
+        )
+        XCTAssertEqual(
+            gymCount(
+                13,
+                englishOne: "rep",
+                englishMany: "reps",
+                ukrainianOne: "повтор",
+                ukrainianFew: "повтори",
+                ukrainianMany: "повторів",
+                languageCode: "ru"
+            ),
+            "13 повторов"
+        )
+    }
+
     func testAddingExerciseToExistingWorkoutInsertsAtTopWithoutRemovingHistory() throws {
         let store = try makeStore(account: "add-exercise-at-top")
         let existing = try store.addExercise(name: "Existing Row")
@@ -28,6 +208,25 @@ final class WorkoutDetailDeletionTests: XCTestCase {
         XCTAssertEqual(refreshed.exercises.map(\.exerciseID), [added.id, existing.id])
         XCTAssertEqual(refreshed.exercises[1].sets.first?.weight, 40)
         XCTAssertEqual(store.exercises.map(\.id).contains(existing.id), true)
+    }
+
+    private func historyEntry(
+        exerciseID: UUID,
+        workoutID: UUID = UUID(),
+        sessionDate: Date = Date(timeIntervalSince1970: 1_699_000_000),
+        weight: Double,
+        reps: Int
+    ) -> ExerciseHistoryEntry {
+        ExerciseHistoryEntry(
+            setID: UUID(),
+            workoutID: workoutID,
+            sessionDate: sessionDate,
+            exerciseID: exerciseID,
+            exerciseName: "Stored Summary Exercise",
+            weight: weight,
+            reps: reps,
+            setOrderIndex: 0
+        )
     }
 
     func testAddingExerciseRejectsDuplicateAtStoreBoundaryWithoutMutation() throws {

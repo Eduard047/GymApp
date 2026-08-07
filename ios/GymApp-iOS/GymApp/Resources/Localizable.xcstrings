@@ -860,39 +860,6 @@
         }
       }
     },
-    "Add set · start 90 sec rest" : {
-      "localizations" : {
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Добавить подход · отдых 90 с"
-          }
-        },
-        "uk" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Додати підхід · відпочинок 90 с"
-          }
-        }
-      }
-    },
-    "Add Set starts a 90 second rest timer." : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "\"Добавить подход\" запускает таймер отдыха на 90 секунд."
-          }
-        },
-        "uk" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "«Додати підхід» запускає таймер відпочинку на 90 секунд."
-          }
-        }
-      }
-    },
     "Add workout" : {
       "localizations" : {
         "ru" : {

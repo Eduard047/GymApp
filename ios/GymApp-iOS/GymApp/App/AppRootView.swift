@@ -876,7 +876,6 @@ private struct MainTabShell: View {
                     WorkoutDetailView(
                         appState: appState,
                         workoutID: id,
-                        onFinish: { workoutPath.append(.summary($0)) },
                         onDeleted: {
                             if !workoutPath.isEmpty { workoutPath.removeLast() }
                         }
