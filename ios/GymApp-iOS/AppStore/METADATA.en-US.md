@@ -54,7 +54,16 @@ GymApp is a fitness log and planning tool, not a medical device. It does not dia
 
 ## What's New
 
-Adds full Russian localization and improved Garmin controls for touch devices and watches with fewer buttons, alongside workout logging, progress, missions, and sync.
+What's new across versions 3.0.0–3.0.2:
+
+• Active workouts are now durable. Completed sets, rest timer and undo state are saved so an interrupted workout can be resumed safely.
+• Smart Coach now considers your goal, nutrition target, training frequency and split, recent history, recovery, available equipment and muscle coverage, with Standard, Recovery, Auto and Hard effort modes.
+• Workout plans can be shared through secure preview links. Recipients can review exercises and sets, then import an editable draft without replacing an active workout.
+• Garmin connection, pairing repair and delivery are more reliable. Detailed reports can show duration, calories, heart-rate zones, volume and per-set timing and recovery when the watch records them.
+• Exercise search, catalog coverage and technique images have been improved.
+• Saved workouts open as compact read-only reports with collapsed exercise cards, volume and personal records. Editing is now an explicit separate mode without live-workout controls.
+• Workout History keeps its scroll position. Progress is read-only and has a fast searchable exercise picker.
+• Fixed personal-record chronology on iOS, updated English, Ukrainian and Russian text, and improved privacy, account safety and stability.
 
 ## Suggested screenshot captions
 
