@@ -6414,7 +6414,17 @@ function saveState({ queueRemote = true, markDirty = true } = {}) {
 }
 
 function uid() {
-  return Date.now() + Math.floor(Math.random() * 100000);
+  const secureCrypto = window.crypto;
+  if (!secureCrypto || typeof secureCrypto.getRandomValues !== "function") {
+    throw new Error("Secure numeric ID generation is unavailable in this browser.");
+  }
+  const words = new Uint32Array(2);
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    secureCrypto.getRandomValues(words);
+    const value = (words[0] & 0x1fffff) * 0x100000000 + words[1];
+    if (Number.isSafeInteger(value) && value > 0) return value;
+  }
+  throw new Error("Secure numeric ID generation failed.");
 }
 
 function route() {

@@ -244,7 +244,7 @@ test("PWA accepts Russian state and renders Russian runtime text before app star
   assert.match(appSource, /txAttr\("Name in English, Ukrainian, or Russian", "Назва англійською, українською або російською"\)/);
   assert.doesNotMatch(appSource, /Name in English, Ukrainian or Russian/);
   assert.ok(indexSource.indexOf("russian-text.v72.js") < indexSource.indexOf("exercise-search-vocabulary.v1.js"));
-  assert.ok(indexSource.indexOf("exercise-search-vocabulary.v1.js") < indexSource.indexOf("app.v76.js"));
+  assert.ok(indexSource.indexOf("exercise-search-vocabulary.v1.js") < indexSource.indexOf("app.v77.js"));
   assert.match(workerSource, /"\.\/russian-text\.v72\.js"/);
 });
 

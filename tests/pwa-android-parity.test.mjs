@@ -12,7 +12,7 @@ const garminCloudSource = await readFile(
   "utf8"
 );
 const appSources = await Promise.all(
-  ["app.js", "app.v76.js"].map(async filename => ({
+  ["app.js", "app.v77.js"].map(async filename => ({
     filename,
     source: await readFile(new URL(`../pwa/${filename}`, import.meta.url), "utf8")
   }))
@@ -20,6 +20,7 @@ const appSources = await Promise.all(
 
 function loadPwaContext(appSource) {
   const values = new Map();
+  let secureIdCounter = 0;
   const context = {
     console,
     Date,
@@ -29,7 +30,15 @@ function loadPwaContext(appSource) {
     URLSearchParams,
     window: {
       location: { search: "?access_token=test", hash: "", replace() {} },
-      addEventListener() {}
+      addEventListener() {},
+      crypto: {
+        getRandomValues(words) {
+          secureIdCounter += 1;
+          words[0] = 0;
+          words[1] = secureIdCounter;
+          return words;
+        }
+      }
     },
     document: {
       querySelector() {
