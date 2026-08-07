@@ -1,7 +1,55 @@
+import Foundation
 import SwiftUI
+
+enum ActiveWorkoutRestReconciliationOutcome: Equatable {
+    case synchronized
+    case restStoppedBecauseTimerUnavailable
+    case timerCleanupPending
+}
+
+/// The active-workout file owns the rest deadline. RestTimerManager is a
+/// recoverable countdown projection, so a crash between their writes is healed
+/// in this direction only and can never extend the committed rest interval.
+@MainActor
+enum ActiveWorkoutRestReconciler {
+    static func timerID(for draftID: UUID) -> String {
+        "active-workout-\(draftID.uuidString)-rest"
+    }
+
+    static func reconcile(
+        draft: ActiveWorkoutDraft,
+        store: ActiveWorkoutStore,
+        manager: RestTimerManager,
+        title: String,
+        now: Date = Date()
+    ) throws -> ActiveWorkoutRestReconciliationOutcome {
+        let timerID = timerID(for: draft.id)
+        guard let deadline = draft.timing?.restingUntil, deadline > now else {
+            return manager.synchronize(id: timerID, deadline: nil, title: title)
+                ? .synchronized
+                : .timerCleanupPending
+        }
+
+        if manager.synchronize(id: timerID, deadline: deadline, title: title) {
+            return .synchronized
+        }
+
+        // The countdown projection could not be made durable. Resume the
+        // authoritative workout clock without rolling back any recorded set.
+        _ = try store.endRest(
+            draftID: draft.id,
+            expectedRevision: draft.revision,
+            now: now
+        )
+        return manager.synchronize(id: timerID, deadline: nil, title: title)
+            ? .restStoppedBecauseTimerUnavailable
+            : .timerCleanupPending
+    }
+}
 
 @MainActor
 struct ActiveWorkoutView: View {
+    @AppStorage("app-language") private var languageCode = AppLanguage.english.rawValue
     @ObservedObject private var workoutStore: WorkoutStore
     @ObservedObject private var activeWorkoutStore: ActiveWorkoutStore
     @ObservedObject private var restTimers: RestTimerManager
@@ -15,6 +63,7 @@ struct ActiveWorkoutView: View {
     @State private var statusMessage: String?
     @State private var statusIsError = false
     @State private var showingDiscardConfirmation = false
+    @State private var collapsedExerciseIDs = Set<UUID>()
 
     init(
         workoutStore: WorkoutStore,
@@ -46,7 +95,10 @@ struct ActiveWorkoutView: View {
                         WorkoutRestTimerControls(
                             manager: restTimers,
                             timerID: timerKey(draftID: draft.id),
-                            exerciseName: currentRestExerciseName(draft)
+                            exerciseName: currentRestExerciseName(draft),
+                            onStart: startManualRest,
+                            onAdjust: adjustManualRest,
+                            onStop: stopManualRest
                         )
 
                         if let statusMessage {
@@ -172,6 +224,10 @@ struct ActiveWorkoutView: View {
                 )
             )
         }
+        .onAppear {
+            collapseCompletedExercises()
+            reconcileRestProjection()
+        }
     }
 
     private var currentDraft: ActiveWorkoutDraft? {
@@ -211,7 +267,11 @@ struct ActiveWorkoutView: View {
                 .font(.subheadline)
                 .foregroundStyle(Color.white.opacity(0.84))
 
-                HStack(spacing: 12) {
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: 108), spacing: 8)],
+                    alignment: .leading,
+                    spacing: 8
+                ) {
                     GymInfoPill(
                         "\(draft.completedSetCount) / \(draft.plannedSetCount)",
                         systemImage: "checkmark.circle.fill",
@@ -222,6 +282,21 @@ struct ActiveWorkoutView: View {
                         systemImage: "clock.fill",
                         accent: .white
                     )
+                    TimelineView(.periodic(from: .now, by: 1)) { context in
+                        GymInfoPill(
+                            Self.clock(draft.totalElapsedSeconds(at: context.date)),
+                            systemImage: "stopwatch.fill",
+                            accent: .white
+                        )
+                        .accessibilityLabel(
+                            gymText(
+                                "Workout time",
+                                "Загальний час тренування",
+                                "Общее время тренировки",
+                                languageCode: gymCurrentLanguageCode()
+                            )
+                        )
+                    }
                 }
 
                 ProgressView(
@@ -260,7 +335,10 @@ struct ActiveWorkoutView: View {
             "Недоступное упражнение",
             languageCode: gymCurrentLanguageCode()
         )
-        return GymPanel(highlighted: true) {
+        let completedCount = exercise.sets.lazy.filter(\.isCompleted).count
+        let fullyCompleted = completedCount == exercise.sets.count
+        let isCollapsed = collapsedExerciseIDs.contains(exercise.id)
+        return GymPanel(highlighted: !fullyCompleted) {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 10) {
                     if let storedExercise {
@@ -270,40 +348,66 @@ struct ActiveWorkoutView: View {
                             ownerKey: workoutStore.accountStorageKey
                         )
                     }
-                    Text(exerciseName)
-                        .font(.headline)
-                        .accessibilityAddTraits(.isHeader)
-                    Spacer(minLength: 8)
-                    Text("\(exercise.sets.lazy.filter(\.isCompleted).count) / \(exercise.sets.count)")
-                        .font(.subheadline.monospacedDigit().weight(.semibold))
-                        .foregroundStyle(GymTheme.textSecondary)
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            if isCollapsed { collapsedExerciseIDs.remove(exercise.id) }
+                            else { collapsedExerciseIDs.insert(exercise.id) }
+                        }
+                    } label: {
+                        HStack(spacing: 8) {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(exerciseName)
+                                    .font(.headline)
+                                    .foregroundStyle(GymTheme.textPrimary)
+                                Label(
+                                    "\(completedCount) / \(exercise.sets.count)",
+                                    systemImage: fullyCompleted
+                                        ? "checkmark.seal.fill"
+                                        : "circle.dotted"
+                                )
+                                .font(.subheadline.monospacedDigit().weight(.bold))
+                                .foregroundStyle(
+                                    fullyCompleted ? GymTheme.secondary : GymTheme.textSecondary
+                                )
+                            }
+                            Spacer(minLength: 8)
+                            Image(systemName: isCollapsed ? "chevron.down" : "chevron.up")
+                                .foregroundStyle(GymTheme.textSecondary)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(exerciseName)
+                    .accessibilityValue("\(completedCount) / \(exercise.sets.count)")
                 }
 
-                ForEach(Array(exercise.sets.enumerated()), id: \.element.id) { index, set in
-                    setRow(
-                        set,
-                        position: index,
-                        exercise: exercise,
-                        exerciseName: exerciseName,
-                        draft: draft
-                    )
-                }
+                if !isCollapsed {
+                    ForEach(Array(exercise.sets.enumerated()), id: \.element.id) { index, set in
+                        setRow(
+                            set,
+                            position: index,
+                            exercise: exercise,
+                            exerciseName: exerciseName,
+                            draft: draft
+                        )
+                    }
 
-                Button {
-                    appendSet(to: exercise)
-                } label: {
-                    Label(
-                        gymText(
-                            "Add planned set",
-                            "Додати запланований підхід",
-                            "Добавить запланированный подход",
-                            languageCode: gymCurrentLanguageCode()
-                        ),
-                        systemImage: "plus.circle"
-                    )
+                    Button {
+                        appendSet(to: exercise)
+                    } label: {
+                        Label(
+                            gymText(
+                                "Add planned set",
+                                "Додати запланований підхід",
+                                "Добавить запланированный подход",
+                                languageCode: gymCurrentLanguageCode()
+                            ),
+                            systemImage: "plus.circle"
+                        )
+                    }
+                    .buttonStyle(GymSecondaryButtonStyle())
+                    .disabled(storedExercise == nil || draft.commitIntent != nil)
                 }
-                .buttonStyle(GymSecondaryButtonStyle())
-                .disabled(storedExercise == nil || draft.commitIntent != nil)
             }
         }
     }
@@ -402,9 +506,16 @@ struct ActiveWorkoutView: View {
         }
         .padding(12)
         .background(
-            set.isCompleted ? GymTheme.secondary.opacity(0.08) : GymTheme.surfaceVariant.opacity(0.48),
+            set.isCompleted ? GymTheme.secondary.opacity(0.18) : GymTheme.surfaceVariant.opacity(0.48),
             in: RoundedRectangle(cornerRadius: 16)
         )
+        .overlay {
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(
+                    set.isCompleted ? GymTheme.secondary.opacity(0.65) : Color.clear,
+                    lineWidth: set.isCompleted ? 1.5 : 0
+                )
+        }
     }
 
     @ViewBuilder
@@ -477,11 +588,29 @@ struct ActiveWorkoutView: View {
                         languageCode: gymCurrentLanguageCode()
                     ),
                     supporting: gymText(
-                        "Only recorded sets will be added to workout history. Unrecorded plan rows will be left out.",
-                        "До історії потраплять лише записані підходи. Невиконані рядки плану не буде додано.",
-                        "В историю попадут только записанные подходы. Невыполненные строки плана не будут добавлены.",
+                        "Save all validates every unfinished set and records them in one write without starting rest. Finish adds recorded sets to history.",
+                        "«Зберегти всі» перевіряє кожен незавершений підхід і записує їх одним збереженням без запуску відпочинку. Завершення додає записані підходи до історії.",
+                        "«Сохранить все» проверяет каждый незавершённый подход и записывает их одним сохранением без запуска отдыха. Завершение добавляет записанные подходы в историю.",
                         languageCode: gymCurrentLanguageCode()
                     )
+                )
+                Button {
+                    recordAllSets(draft)
+                } label: {
+                    Label(
+                        gymText(
+                            "Save all sets",
+                            "Зберегти всі підходи",
+                            "Сохранить все подходы",
+                            languageCode: gymCurrentLanguageCode()
+                        ),
+                        systemImage: "checkmark.circle"
+                    )
+                }
+                .buttonStyle(GymSecondaryButtonStyle())
+                .disabled(
+                    draft.completedSetCount == draft.plannedSetCount ||
+                        draft.commitIntent != nil
                 )
                 Button {
                     finish(draft)
@@ -573,25 +702,98 @@ struct ActiveWorkoutView: View {
         exerciseName: String,
         draft: ActiveWorkoutDraft
     ) {
+        let restSeconds = restDurationSeconds(for: exercise)
         do {
-            try activeWorkoutStore.recordSet(
+            let updated = try activeWorkoutStore.recordSet(
                 draftID: draft.id,
                 setID: set.id,
-                expectedRevision: draft.revision
+                expectedRevision: draft.revision,
+                restSeconds: restSeconds
             )
-            // The atomic active-draft write above must succeed before rest begins.
-            restTimers.start(
-                id: timerKey(draftID: draft.id),
-                seconds: restDurationSeconds(for: exercise),
+            // The active draft owns the exact deadline. The countdown projection
+            // can be reconstructed from it after a crash between the two writes.
+            let restOutcome = try ActiveWorkoutRestReconciler.reconcile(
+                draft: updated,
+                store: activeWorkoutStore,
+                manager: restTimers,
                 title: exerciseName
             )
-            statusMessage = gymText(
-                "Set recorded. Rest timer started.",
-                "Підхід записано. Таймер відпочинку запущено.",
-                "Подход записан. Таймер отдыха запущен.",
-                languageCode: gymCurrentLanguageCode()
+            if let updatedExercise = updated.exercises.first(where: { $0.id == exercise.id }),
+               updatedExercise.sets.allSatisfy(\.isCompleted) {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    _ = collapsedExerciseIDs.insert(exercise.id)
+                }
+            }
+            if restOutcome == .synchronized {
+                statusMessage = gymText(
+                    "Set recorded. Rest timer started.",
+                    "Підхід записано. Таймер відпочинку запущено.",
+                    "Подход записан. Таймер отдыха запущен.",
+                    languageCode: gymCurrentLanguageCode()
+                )
+                statusIsError = false
+            } else {
+                showRestProjectionWarning(
+                    gymText(
+                        "Set recorded, but the rest timer could not be saved durably. Rest was stopped.",
+                        "Підхід записано, але таймер відпочинку не вдалося надійно зберегти. Відпочинок зупинено.",
+                        "Подход записан, но таймер отдыха не удалось надёжно сохранить. Отдых остановлен.",
+                        languageCode: gymCurrentLanguageCode()
+                    )
+                )
+            }
+        } catch {
+            show(error)
+        }
+    }
+
+    private func recordAllSets(_ draft: ActiveWorkoutDraft) {
+        let inputs = Dictionary(uniqueKeysWithValues: draft.exercises.flatMap { exercise in
+            exercise.sets.compactMap { set in
+                set.isCompleted
+                    ? nil
+                    : (
+                        set.id,
+                        ActiveWorkoutSetInput(weight: set.weight, reps: set.reps)
+                    )
+            }
+        })
+        do {
+            let updated = try activeWorkoutStore.recordAllSets(
+                draftID: draft.id,
+                expectedRevision: draft.revision,
+                inputs: inputs
             )
-            statusIsError = false
+            // Batch persistence never starts rest. Any older rest is retired only
+            // after the one atomic draft revision has succeeded.
+            let restOutcome = try ActiveWorkoutRestReconciler.reconcile(
+                draft: updated,
+                store: activeWorkoutStore,
+                manager: restTimers,
+                title: currentRestExerciseName(updated)
+            )
+            let restCleanupSucceeded = restOutcome == .synchronized
+            withAnimation(.easeInOut(duration: 0.2)) {
+                collapsedExerciseIDs.formUnion(
+                    updated.exercises.compactMap { exercise in
+                        exercise.sets.allSatisfy(\.isCompleted) ? exercise.id : nil
+                    }
+                )
+            }
+            statusMessage = restCleanupSucceeded
+                ? gymText(
+                    "All unfinished sets were saved together. Rest was stopped.",
+                    "Усі незавершені підходи збережено разом. Відпочинок зупинено.",
+                    "Все незавершённые подходы сохранены вместе. Отдых остановлен.",
+                    languageCode: gymCurrentLanguageCode()
+                )
+                : gymText(
+                    "All sets were saved, but the old rest timer could not be fully cleared.",
+                    "Усі підходи збережено, але старий таймер відпочинку не вдалося повністю очистити.",
+                    "Все подходы сохранены, но старый таймер отдыха не удалось полностью очистить.",
+                    languageCode: gymCurrentLanguageCode()
+                )
+            statusIsError = !restCleanupSucceeded
         } catch {
             show(error)
         }
@@ -602,19 +804,137 @@ struct ActiveWorkoutView: View {
         draft: ActiveWorkoutDraft
     ) {
         do {
-            try activeWorkoutStore.undoLatestRecordedSet(
+            let updated = try activeWorkoutStore.undoLatestRecordedSet(
                 draftID: draft.id,
                 setID: set.id,
                 expectedRevision: draft.revision
             )
-            restTimers.cancel(id: timerKey(draftID: draft.id))
+            let restOutcome = try ActiveWorkoutRestReconciler.reconcile(
+                draft: updated,
+                store: activeWorkoutStore,
+                manager: restTimers,
+                title: currentRestExerciseName(updated)
+            )
             statusMessage = gymText(
-                "Latest set restored for editing. Rest stopped.",
-                "Останній підхід повернуто до редагування. Відпочинок зупинено.",
-                "Последний подход возвращён к редактированию. Отдых остановлен.",
+                restOutcome == .synchronized
+                    ? "Latest set restored for editing. Rest stopped."
+                    : "Latest set restored, but old rest cleanup must be retried.",
+                restOutcome == .synchronized
+                    ? "Останній підхід повернуто до редагування. Відпочинок зупинено."
+                    : "Останній підхід відновлено, але очищення старого відпочинку треба повторити.",
+                restOutcome == .synchronized
+                    ? "Последний подход возвращён к редактированию. Отдых остановлен."
+                    : "Последний подход восстановлен, но очистку старого отдыха нужно повторить.",
                 languageCode: gymCurrentLanguageCode()
             )
-            statusIsError = false
+            statusIsError = restOutcome != .synchronized
+        } catch {
+            show(error)
+        }
+    }
+
+    private func startManualRest(_ seconds: Int) {
+        guard let draft = currentDraft else { return }
+        let title = currentRestExerciseName(draft)
+        do {
+            let updated = try activeWorkoutStore.beginRest(
+                draftID: draft.id,
+                expectedRevision: draft.revision,
+                seconds: seconds
+            )
+            let restOutcome = try ActiveWorkoutRestReconciler.reconcile(
+                draft: updated,
+                store: activeWorkoutStore,
+                manager: restTimers,
+                title: title
+            )
+            if restOutcome == .synchronized {
+                statusMessage = nil
+                statusIsError = false
+            } else {
+                showRestProjectionWarning(
+                    gymText(
+                        "The rest timer could not be saved durably, so rest was stopped.",
+                        "Таймер відпочинку не вдалося надійно зберегти, тому відпочинок зупинено.",
+                        "Таймер отдыха не удалось надёжно сохранить, поэтому отдых остановлен.",
+                        languageCode: gymCurrentLanguageCode()
+                    )
+                )
+            }
+        } catch {
+            show(error)
+        }
+    }
+
+    private func adjustManualRest(_ deltaSeconds: Int) {
+        guard let draft = currentDraft else { return }
+        let now = Date()
+        let currentRemaining = draft.timing?.restingUntil.map {
+            max(0, Int(ceil($0.timeIntervalSince(now))))
+        } ?? 0
+        let adjusted = currentRemaining + deltaSeconds
+        if adjusted <= 0 {
+            stopManualRest()
+            return
+        }
+        do {
+            let updated = try activeWorkoutStore.adjustRest(
+                draftID: draft.id,
+                expectedRevision: draft.revision,
+                remainingSeconds: adjusted,
+                now: now
+            )
+            let restOutcome = try ActiveWorkoutRestReconciler.reconcile(
+                draft: updated,
+                store: activeWorkoutStore,
+                manager: restTimers,
+                title: currentRestExerciseName(updated),
+                now: now
+            )
+            if restOutcome == .synchronized {
+                statusMessage = nil
+                statusIsError = false
+            } else {
+                showRestProjectionWarning(
+                    gymText(
+                        "The adjusted rest timer could not be saved durably, so rest was stopped.",
+                        "Скоригований таймер відпочинку не вдалося надійно зберегти, тому відпочинок зупинено.",
+                        "Изменённый таймер отдыха не удалось надёжно сохранить, поэтому отдых остановлен.",
+                        languageCode: gymCurrentLanguageCode()
+                    )
+                )
+            }
+        } catch {
+            show(error)
+        }
+    }
+
+    private func stopManualRest() {
+        guard let draft = currentDraft else { return }
+        do {
+            let updated = try activeWorkoutStore.endRest(
+                draftID: draft.id,
+                expectedRevision: draft.revision
+            )
+            let restOutcome = try ActiveWorkoutRestReconciler.reconcile(
+                draft: updated,
+                store: activeWorkoutStore,
+                manager: restTimers,
+                title: currentRestExerciseName(updated)
+            )
+            if restOutcome == .synchronized {
+                statusMessage = nil
+                statusIsError = false
+            } else {
+                showRestProjectionWarning(
+                    gymText(
+                        "Rest was stopped, but old timer cleanup must be retried.",
+                        "Відпочинок зупинено, але очищення старого таймера треба повторити.",
+                        "Отдых остановлен, но очистку старого таймера нужно повторить.",
+                        languageCode: gymCurrentLanguageCode()
+                    )
+                )
+            }
         } catch {
             show(error)
         }
@@ -722,7 +1042,54 @@ struct ActiveWorkoutView: View {
     }
 
     private func timerKey(draftID: UUID) -> String {
-        "active-workout-\(draftID.uuidString)-rest"
+        ActiveWorkoutRestReconciler.timerID(for: draftID)
+    }
+
+    private func reconcileRestProjection() {
+        guard let draft = currentDraft else { return }
+        do {
+            let outcome = try ActiveWorkoutRestReconciler.reconcile(
+                draft: draft,
+                store: activeWorkoutStore,
+                manager: restTimers,
+                title: currentRestExerciseName(draft)
+            )
+            guard outcome != .synchronized else { return }
+            showRestProjectionWarning(
+                gymText(
+                    "Workout progress was restored, but rest-timer recovery was incomplete. Rest was stopped safely.",
+                    "Прогрес тренування відновлено, але відновлення таймера відпочинку не завершено. Відпочинок безпечно зупинено.",
+                    "Прогресс тренировки восстановлен, но восстановление таймера отдыха не завершено. Отдых безопасно остановлен.",
+                    languageCode: gymCurrentLanguageCode()
+                )
+            )
+        } catch {
+            show(error)
+        }
+    }
+
+    private func showRestProjectionWarning(_ message: String) {
+        statusMessage = message
+        statusIsError = true
+    }
+
+    private func collapseCompletedExercises() {
+        guard let draft = currentDraft else { return }
+        collapsedExerciseIDs.formUnion(
+            draft.exercises.compactMap { exercise in
+                exercise.sets.allSatisfy(\.isCompleted) ? exercise.id : nil
+            }
+        )
+    }
+
+    private static func clock(_ interval: TimeInterval) -> String {
+        let seconds = max(0, Int(interval.rounded(.down)))
+        let hours = seconds / 3_600
+        let minutes = seconds % 3_600 / 60
+        let remainder = seconds % 60
+        return hours > 0
+            ? String(format: "%d:%02d:%02d", hours, minutes, remainder)
+            : String(format: "%02d:%02d", minutes, remainder)
     }
 
     private func show(_ error: Error) {

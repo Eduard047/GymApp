@@ -170,6 +170,8 @@ enum AppAccountSession: Codable, Equatable, Sendable {
 enum AuthServiceError: LocalizedError {
     case invalidEmail
     case invalidPassword
+    case invalidPasswordReauthenticationNonce
+    case passwordReauthenticationRequired
     case invalidDisplayName
     case malformedResponse
     case callbackMissingSession
@@ -184,6 +186,10 @@ enum AuthServiceError: LocalizedError {
         switch self {
         case .invalidEmail: return "Enter a valid email address."
         case .invalidPassword: return GymPasswordPolicy.errorMessage
+        case .invalidPasswordReauthenticationNonce:
+            return PasswordReauthenticationNoncePolicy.errorMessage
+        case .passwordReauthenticationRequired:
+            return "A verification code is required to change this password."
         case .invalidDisplayName: return "Display name must be 2–32 characters and use letters, numbers, spaces, dot, dash or underscore."
         case .malformedResponse: return "The cloud returned an invalid response. Try again."
         case .callbackMissingSession: return "The confirmation link did not contain a valid session."
@@ -221,6 +227,19 @@ enum GymPasswordPolicy {
     }
 }
 
+enum PasswordReauthenticationNoncePolicy {
+    static let errorMessage = "Enter the 6–8 digit verification code from your email."
+
+    static func normalized(_ value: String) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard (6 ... 8).contains(trimmed.utf8.count),
+              trimmed.utf8.allSatisfy({ (48 ... 57).contains($0) }) else {
+            return nil
+        }
+        return trimmed
+    }
+}
+
 @MainActor
 final class AuthService: ObservableObject {
     @Published private(set) var session: AppAccountSession?
@@ -230,6 +249,7 @@ final class AuthService: ObservableObject {
     @Published private(set) var pendingConfirmationEmail: String?
     @Published private(set) var pendingConfirmationEmailWasSent = false
     @Published private(set) var needsPasswordUpdate = false
+    @Published private(set) var passwordChangeRequiresNonce = false
 
     private let keychain: any KeychainStoring
     private let urlSession: URLSession
@@ -459,22 +479,65 @@ final class AuthService: ObservableObject {
     }
 
     @discardableResult
-    func updatePassword(_ password: String, currentPassword: String? = nil) async -> Bool {
+    func updatePassword(
+        _ password: String,
+        currentPassword: String? = nil,
+        nonce: String? = nil
+    ) async -> Bool {
         var updated = false
         await perform {
             try self.validatePassword(password)
             let cloud = try await self.validCloudSession()
             var body: [String: Any] = ["password": password]
+            let isSignedInChange = currentPassword != nil
             if let currentPassword {
                 guard !currentPassword.isEmpty else { throw AuthServiceError.invalidPassword }
                 body["current_password"] = currentPassword
             }
-            _ = try await self.requestAuthenticatedJSON(
-                path: "/auth/v1/user",
-                method: "PUT",
-                initialSession: cloud,
-                body: body
-            )
+
+            let cleanNonce: String?
+            if let nonce {
+                guard isSignedInChange,
+                      let normalized = PasswordReauthenticationNoncePolicy.normalized(nonce) else {
+                    throw AuthServiceError.invalidPasswordReauthenticationNonce
+                }
+                cleanNonce = normalized
+                body["nonce"] = normalized
+            } else {
+                cleanNonce = nil
+            }
+            if isSignedInChange,
+               self.passwordChangeRequiresNonce,
+               cleanNonce == nil {
+                throw AuthServiceError.invalidPasswordReauthenticationNonce
+            }
+
+            do {
+                _ = try await self.requestAuthenticatedJSON(
+                    path: "/auth/v1/user",
+                    method: "PUT",
+                    initialSession: cloud,
+                    body: body
+                )
+            } catch AuthServiceError.passwordReauthenticationRequired
+                        where isSignedInChange && cleanNonce == nil {
+                guard let reauthenticationSession = self.session?.cloud,
+                      reauthenticationSession.userID == cloud.userID else {
+                    throw AuthServiceError.sessionChanged
+                }
+                _ = try await self.requestAuthenticatedJSON(
+                    path: "/auth/v1/reauthenticate",
+                    method: "GET",
+                    initialSession: reauthenticationSession
+                )
+                self.passwordChangeRequiresNonce = true
+                self.messageIsError = false
+                self.message = "Verification code sent. Re-enter the new password with the code."
+                return
+            } catch AuthServiceError.passwordReauthenticationRequired
+                        where isSignedInChange && cleanNonce != nil {
+                throw AuthServiceError.invalidPasswordReauthenticationNonce
+            }
             guard let currentSession = self.session,
                   currentSession.cloud?.userID == cloud.userID else {
                 throw AuthServiceError.sessionChanged
@@ -636,7 +699,11 @@ final class AuthService: ObservableObject {
               refreshed.userID == cloud.userID else {
             throw AuthServiceError.sessionChanged
         }
-        try persist(.cloud(refreshed), requiresPasswordUpdate: needsPasswordUpdate)
+        try persist(
+            .cloud(refreshed),
+            requiresPasswordUpdate: needsPasswordUpdate,
+            preservePasswordChangeNonce: true
+        )
         return refreshed
     }
 
@@ -697,6 +764,7 @@ final class AuthService: ObservableObject {
         pendingConfirmationEmail = nil
         pendingConfirmationEmailWasSent = false
         needsPasswordUpdate = false
+        passwordChangeRequiresNonce = false
 
         var deletionError: Error?
         do {
@@ -737,7 +805,8 @@ final class AuthService: ObservableObject {
 
     private func persist(
         _ value: AppAccountSession,
-        requiresPasswordUpdate: Bool
+        requiresPasswordUpdate: Bool,
+        preservePasswordChangeNonce: Bool = false
     ) throws {
         let protectedState = requiresPasswordUpdate && value.cloud != nil
         let persisted = PersistedAuthState(
@@ -750,6 +819,9 @@ final class AuthService: ObservableObject {
         pendingConfirmationEmail = nil
         pendingConfirmationEmailWasSent = false
         needsPasswordUpdate = protectedState
+        if !preservePasswordChangeNonce {
+            passwordChangeRequiresNonce = false
+        }
         defaults.removeObject(forKey: Self.pendingSecureDeletionKey)
     }
 
@@ -792,6 +864,8 @@ final class AuthService: ObservableObject {
             return status == 408 || (500 ... 599).contains(status)
         case AuthServiceError.invalidEmail,
              AuthServiceError.invalidPassword,
+             AuthServiceError.invalidPasswordReauthenticationNonce,
+             AuthServiceError.passwordReauthenticationRequired,
              AuthServiceError.invalidDisplayName,
              AuthServiceError.callbackMissingSession,
              AuthServiceError.callbackNotExpected,
@@ -927,6 +1001,12 @@ final class AuthService: ObservableObject {
             if (400 ..< 500).contains(http.statusCode) {
                 onRequestDispositionChange?(.definitivelyRejected)
             }
+            if let typedError = Self.typedAuthError(
+                status: http.statusCode,
+                object: object
+            ) {
+                throw typedError
+            }
             throw AuthServiceError.requestFailed(
                 status: http.statusCode,
                 message: Self.errorMessage(status: http.statusCode, object: object)
@@ -977,19 +1057,34 @@ final class AuthService: ObservableObject {
                 forceRefresh: true
             )
             let retryRevision = sessionRevision
-            let object = try await requestJSON(
-                path: path,
-                method: method,
-                token: refreshed.accessToken,
-                headers: headers,
-                body: body,
-                onRequestDispositionChange: onRequestDispositionChange
-            )
+            let object: [String: Any]
+            do {
+                object = try await requestJSON(
+                    path: path,
+                    method: method,
+                    token: refreshed.accessToken,
+                    headers: headers,
+                    body: body,
+                    onRequestDispositionChange: onRequestDispositionChange
+                )
+            } catch {
+                guard sessionRevision == retryRevision,
+                      session?.cloud == refreshed else {
+                    throw AuthServiceError.sessionChanged
+                }
+                throw error
+            }
             guard sessionRevision == retryRevision,
                   session?.cloud == refreshed else {
                 throw AuthServiceError.sessionChanged
             }
             return object
+        } catch {
+            guard sessionRevision == firstRevision,
+                  session?.cloud == initialSession else {
+                throw AuthServiceError.sessionChanged
+            }
+            throw error
         }
     }
 
@@ -1037,6 +1132,26 @@ final class AuthService: ObservableObject {
         return raw?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
             ? raw!
             : "Cloud request failed. Check your connection and try again."
+    }
+
+    private static func typedAuthError(
+        status: Int,
+        object: [String: Any]
+    ) -> AuthServiceError? {
+        guard (400 ..< 500).contains(status),
+              let rawCode = (object["code"] as? String)
+                ?? (object["error_code"] as? String),
+              rawCode.utf8.count <= 128 else {
+            return nil
+        }
+        switch rawCode.lowercased() {
+        case "reauthentication_needed":
+            return .passwordReauthenticationRequired
+        case "reauthentication_not_valid":
+            return .invalidPasswordReauthenticationNonce
+        default:
+            return nil
+        }
     }
 
     private static func isValidAccessToken(_ value: String) -> Bool {

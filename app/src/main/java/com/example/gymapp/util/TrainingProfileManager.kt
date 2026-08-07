@@ -37,8 +37,15 @@ data class TrainingProfile(
 
 internal fun trainingProfileAccountKey(session: AccountSession?): String? {
     val stableIdentity = session?.databaseName() ?: return null
+    return trainingProfileAccountKey(stableIdentity)
+}
+
+private fun trainingProfileAccountKey(stableIdentity: String): String {
+    val identityBytes = stableIdentity.toByteArray(Charsets.UTF_8)
+    require(identityBytes.isNotEmpty() && identityBytes.size <= 512)
+    require(stableIdentity.none(Char::isISOControl))
     return MessageDigest.getInstance("SHA-256")
-        .digest("GymAppTrainingProfileAccountV1:$stableIdentity".toByteArray(Charsets.UTF_8))
+        .digest("GymAppTrainingProfileAccountV1:".toByteArray(Charsets.UTF_8) + identityBytes)
         .joinToString(separator = "") { byte -> "%02x".format(byte) }
 }
 
@@ -92,7 +99,11 @@ class TrainingProfileManager(
     }
 
     fun clearAccount(session: AccountSession): Boolean {
-        val accountKey = checkNotNull(trainingProfileAccountKey(session))
+        return clearAccountByDatabaseName(session.databaseName())
+    }
+
+    internal fun clearAccountByDatabaseName(databaseName: String): Boolean {
+        val accountKey = trainingProfileAccountKey(databaseName)
         synchronized(lock) {
             val cleared = preferences.edit()
                 .remove(scopedKey(accountKey, KEY_SPLIT))

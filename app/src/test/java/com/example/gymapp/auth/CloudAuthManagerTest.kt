@@ -69,6 +69,26 @@ class CloudAuthManagerTest {
     }
 
     @Test
+    fun localLogoutAlwaysDropsTheInMemorySessionWhenDiskClearFails() {
+        val failedPersistenceState = signedOutAuthStateAfterLocalLogout(
+            preferencesCleared = false
+        )
+
+        assertNull(failedPersistenceState.session)
+        assertFalse(failedPersistenceState.isLoading)
+        assertTrue(failedPersistenceState.messageIsError)
+        assertEquals(
+            com.example.gymapp.R.string.auth_message_logout_failed,
+            failedPersistenceState.message?.resourceId
+        )
+
+        val successfulState = signedOutAuthStateAfterLocalLogout(preferencesCleared = true)
+        assertNull(successfulState.session)
+        assertNull(successfulState.message)
+        assertFalse(successfulState.messageIsError)
+    }
+
+    @Test
     fun accountDeletionRequestAndResponseUseTheExactEdgeFunctionContract() {
         val request = cloudAccountDeletionRequest()
         val body = JSONObject(request.body)
@@ -102,6 +122,33 @@ class CloudAuthManagerTest {
         assertEquals("NewSecurePass9!", recovery.getString("password"))
         assertEquals(setOf("password", "current_password"), signedIn.keys().asSequence().toSet())
         assertEquals("CurrentSecurePass8!", signedIn.getString("current_password"))
+
+        val reauthenticated = JSONObject(
+            passwordUpdateBody(
+                newPassword = "NewSecurePass9!",
+                currentPassword = "CurrentSecurePass8!",
+                nonce = "123456"
+            )
+        )
+        assertEquals(
+            setOf("password", "current_password", "nonce"),
+            reauthenticated.keys().asSequence().toSet()
+        )
+        assertEquals("123456", reauthenticated.getString("nonce"))
+    }
+
+    @Test
+    fun passwordReauthenticationUsesOnlyBoundedNumericNoncesAndExactProviderErrors() {
+        assertTrue(isValidPasswordReauthenticationNonce("123456"))
+        assertTrue(isValidPasswordReauthenticationNonce("12345678"))
+        assertFalse(isValidPasswordReauthenticationNonce("12345"))
+        assertFalse(isValidPasswordReauthenticationNonce("123456789"))
+        assertFalse(isValidPasswordReauthenticationNonce("12345a"))
+        assertFalse(isValidPasswordReauthenticationNonce("١٢٣٤٥٦"))
+        assertTrue(isPasswordReauthenticationRequired("reauthentication_needed", null))
+        assertTrue(isPasswordReauthenticationRequired(null, "Reauthentication needed"))
+        assertFalse(isPasswordReauthenticationRequired("reauthentication_not_valid", null))
+        assertFalse(isPasswordReauthenticationRequired(null, "nonce was invalid"))
     }
 
     @Test
@@ -214,6 +261,32 @@ class CloudAuthManagerTest {
         assertEquals(
             CloudAccountDeletionSessionDisposition.PreserveDifferentSession,
             cloudAccountDeletionSessionDisposition(AccountSession.Local("Local"), deleted)
+        )
+    }
+
+    @Test
+    fun deletionJournalRetiresOnlyAfterDurableAuthCleanup() {
+        val completed = CloudAccountDeletionCompletion(
+            disposition = CloudAccountDeletionSessionDisposition.ClearCapturedSession,
+            durableAuthCleanupCompleted = true
+        )
+        val failedPreferenceCommit = completed.copy(durableAuthCleanupCompleted = false)
+        val replacementAccount = failedPreferenceCommit.copy(
+            disposition = CloudAccountDeletionSessionDisposition.PreserveDifferentSession
+        )
+
+        assertTrue(shouldRetireCloudAccountDeletionJournal(completed, localCleanupFailures = 0))
+        assertFalse(
+            shouldRetireCloudAccountDeletionJournal(completed, localCleanupFailures = 1)
+        )
+        assertFalse(
+            shouldRetireCloudAccountDeletionJournal(
+                failedPreferenceCommit,
+                localCleanupFailures = 0
+            )
+        )
+        assertFalse(
+            shouldRetireCloudAccountDeletionJournal(replacementAccount, localCleanupFailures = 0)
         )
     }
 

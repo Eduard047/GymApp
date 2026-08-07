@@ -1017,12 +1017,13 @@ private fun ExerciseDraftCard(
             }
 
             if (isExpanded) {
-            ExerciseSelector(
+            ExerciseCatalogSelector(
                 selectedExerciseId = draft.exerciseId,
                 exercises = exercises,
                 frequentExerciseIds = frequentExerciseIds,
                 exerciseWorkoutCounts = exerciseWorkoutCounts,
                 exerciseMuscleIds = exerciseMuscleIds,
+                exerciseMediaOwnerKey = exerciseMediaOwnerKey,
                 onExerciseSelected = onExerciseSelected,
                 modifier = Modifier.fillMaxWidth()
             )

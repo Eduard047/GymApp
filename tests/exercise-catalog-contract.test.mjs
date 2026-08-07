@@ -2,15 +2,25 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const [androidSource, iosSource, pwaSource, baseMigrationSource, hipAbductionMigrationSource, assistedDipMigrationSource] = await Promise.all([
+const [
+  androidSource,
+  iosSource,
+  pwaSource,
+  searchVocabularySource,
+  baseMigrationSource,
+  hipAbductionMigrationSource,
+  assistedDipMigrationSource
+] = await Promise.all([
   readFile("app/src/main/java/com/example/gymapp/data/catalog/BuiltInExerciseCatalog.kt", "utf8"),
   readFile("ios/GymApp-iOS/GymApp/Domain/BuiltInExerciseCatalog.swift", "utf8"),
   readFile("pwa/app.js", "utf8"),
+  readFile("shared/exercise-search-vocabulary.json", "utf8"),
   readFile("supabase/migrations/20260721143010_create_exercise_catalog.sql", "utf8"),
   readFile("supabase/migrations/20260721201016_add_hip_abduction_to_exercise_catalog.sql", "utf8"),
   readFile("supabase/migrations/20260803090000_add_machine_load_profiles_and_assisted_dip.sql", "utf8")
 ]);
 const migrationSource = `${baseMigrationSource}\n${hipAbductionMigrationSource}\n${assistedDipMigrationSource}`;
+const searchVocabulary = JSON.parse(searchVocabularySource);
 
 const expectedCatalog = [...pwaSource.matchAll(
   /\{ key: "([a-z0-9_]+)", names: \{ en: "([^"]+)", uk: "([^"]+)" \}/g
@@ -29,6 +39,24 @@ test("Android, iOS, and PWA expose the same built-in exercise contract", () => {
       assert.ok(source.includes(`"${ukrainian}"`), `${platform} is missing ${ukrainian}`);
     }
     assert.ok(migrationSource.includes(`('${key}', '${english.replaceAll("'", "''")}', '${ukrainian.replaceAll("'", "''")}'`));
+  }
+});
+
+test("Android, iOS, and PWA consume the shared search-only exercise vocabulary", () => {
+  const sharedSearchAliases = searchVocabulary.aliasesByKey;
+  assert.ok(Object.keys(sharedSearchAliases).length >= 50);
+  assert.match(androidSource, /ExerciseSearchVocabulary\.aliasesByKey/);
+  assert.match(iosSource, /ExerciseSearchVocabulary\.aliasesByKey/);
+  assert.match(pwaSource, /globalThis\.GymExerciseSearchVocabulary/);
+
+  for (const alias of [
+    "махи в стороны с гантелями", "махи в сторони з гантелями", "pec deck",
+    "гравитрон", "гравітрон", "OHP", "RDL", "BSS", "RFESS", "Scott curl"
+  ]) {
+    assert.ok(
+      Object.values(sharedSearchAliases).some(aliases => aliases.includes(alias)),
+      `missing reviewed search alias: ${alias}`
+    );
   }
 });
 

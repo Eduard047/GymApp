@@ -156,6 +156,10 @@
     <string name="account_management_supporting">Зміни пароль або назавжди видали цей обліковий запис Supabase та його дані.</string>
     <string name="account_change_password">Змінити пароль</string>
     <string name="account_change_password_supporting">Підтвердь поточний пароль, а потім вибери новий.</string>
+    <string name="account_password_reauthentication_supporting">Код підтвердження надіслано на твою пошту. Введи його разом із поточним і новим паролем.</string>
+    <string name="account_password_verification_code">Код підтвердження</string>
+    <string name="account_password_verification_code_required">Введи 6–8-значний код підтвердження з листа.</string>
+    <string name="account_password_verification_code_sent">Код підтвердження надіслано. Введи його, щоб завершити зміну пароля.</string>
     <string name="account_current_password">Поточний пароль</string>
     <string name="account_current_password_required">Введи поточний пароль.</string>
     <string name="account_current_password_too_long">Поточний пароль задовгий.</string>
@@ -168,6 +172,7 @@
     <string name="account_delete_confirmation_hint">Введи DELETE без змін</string>
     <string name="account_delete_confirm">Видалити назавжди</string>
     <string name="account_delete_failed">Не вдалося видалити обліковий запис. З цього пристрою нічого не видалено.</string>
+    <string name="account_delete_outcome_unknown">Відповідь про видалення втрачено. Виконано вихід, а локальні дані цього облікового запису буде очищено до наступного відкриття.</string>
     <string name="account_delete_local_cleanup_failed">Хмарний обліковий запис видалено, але частину локальних даних не вдалося очистити з цього пристрою.</string>
     <string name="cloud_sync_load_failed">Не вдалося безпечно завантажити хмарні дані. Автоматичне вивантаження призупинено.</string>
     <string name="cloud_sync_conflict">Потрібно вибрати історію тренувань.</string>
@@ -260,6 +265,7 @@
     <string name="active_workout_title">Активне тренування</string>
     <string name="active_workout_supporting">Записуй кожен виконаний підхід. Він зберігається до запуску розумного таймера відпочинку.</string>
     <string name="active_workout_progress">Виконано підходів: %1$d із %2$d</string>
+    <string name="active_workout_total_time">Загальний час тренування: %1$s</string>
     <string name="active_workout_finish_eyebrow">КОЛИ ЗАКІНЧИШ</string>
     <string name="active_workout_finish_supporting">До історії потраплять лише записані підходи. Заплановані рядки не вплинуть на статистику.</string>
     <string name="active_workout_discard_action">Скасувати активне тренування</string>
@@ -269,6 +275,7 @@
     <string name="active_workout_back_hint">Можна безпечно повернутися назад. Тренування залишиться на пристрої, доки ти його не завершиш або не скасуєш.</string>
     <string name="active_workout_exercise_number">ВПРАВА %1$d</string>
     <string name="active_workout_exercise_progress">Записано підходів: %1$d із %2$d</string>
+    <string name="active_workout_exercise_completed_collapsed">Усі підходи записано. Розгорни блок, щоб перевірити їх або скасувати останній підхід.</string>
     <string name="active_workout_set_completed">Записано</string>
     <string name="active_workout_missing_title">Немає активного тренування</string>
     <string name="active_workout_missing">Цього активного тренування більше немає в поточному акаунті.</string>
@@ -284,6 +291,10 @@
     <string name="active_workout_rest_subtract">Зменшити на 15 секунд</string>
     <string name="active_workout_rest_add">Додати 15 секунд</string>
     <string name="active_workout_rest_stop">Зупинити відпочинок</string>
+    <string name="action_save_all_pending_sets">Зберегти всі підходи, що залишилися</string>
+    <string name="active_workout_save_all_supporting">Спочатку перевіряються вага й повторення кожного незаписаного підходу, потім усі вони зберігаються однією операцією без нового відпочинку.</string>
+    <string name="active_workout_all_sets_saved">Одночасно збережено підходів: %1$d.</string>
+    <string name="active_workout_all_sets_saved_rest_failed">Усі підходи збережено, але старий таймер відпочинку не вдалося повністю зупинити.</string>
     <string name="active_workout_draft_title">Продовжити активне тренування</string>
     <string name="active_workout_draft_progress">Записано підходів: %1$d із %2$d</string>
     <string name="note_template_push">День жиму</string>
@@ -359,6 +370,7 @@
     <string name="action_open_shared_workout_in_app">Відкрити як чернетку</string>
     <string name="action_open_shared_workout_on_web">Відкрити на сайті</string>
     <string name="message_add_set_failed">Не вдалося записати підхід. Таймер відпочинку не запущено.</string>
+    <string name="message_add_exercise_failed">Не вдалося додати вправу. Онови тренування та спробуй ще раз.</string>
     <string name="message_rest_timer_save_failed">Підхід збережено, але не вдалося запустити таймер відпочинку.</string>
     <string name="message_invalid_set_input">Введіть коректні повтори та необовʼязкову вагу.</string>
     <string name="message_exercise_error">Не вдалося зберегти вправу. Назва може вже існувати.</string>
@@ -819,6 +831,11 @@
     <string name="exercise_search_no_results">Вправ не знайдено</string>
     <string name="exercise_search_no_results_supporting">Спробуйте іншу назву, частину тіла або групу м’язів.</string>
     <string name="exercise_search_result_count">Вправ: %1$d</string>
+    <string name="exercise_search_match_alias">Також відомо як: %1$s</string>
+    <string name="exercise_search_match_approximate">Схожа назва: %1$s</string>
+    <string name="exercise_search_match_muscle">Збіг за м’язом: %1$s</string>
+    <string name="exercise_search_match_equipment">Збіг за обладнанням: %1$s</string>
+    <string name="exercise_search_match_muscle_and_equipment">Збіг за м’язом і обладнанням: %1$s</string>
     <string name="exercise_picker_all">Усі</string>
     <string name="exercise_picker_frequent">Часті</string>
     <string name="exercise_picker_frequent_empty">Часто використовувані вправи з’являться тут після збереження тренувань.</string>

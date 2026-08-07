@@ -6,7 +6,7 @@ import vm from "node:vm";
 const cleanupSource = await readFile("pwa/legacy-origin-cleanup.js", "utf8");
 const legacyEntrySource = await readFile("pwa/legacy-origin-index.html", "utf8");
 const legacyAliasSource = await readFile("pwa/legacy-origin-cleanup.html", "utf8");
-const legacyCleanupDocumentSource = await readFile("pwa/legacy-origin-cleanup-v61.html", "utf8");
+const legacyCleanupDocumentSource = await readFile("pwa/legacy-origin-cleanup-v62.html", "utf8");
 const SESSION_KEY = "gym-pwa-supabase-session-v1";
 const SESSION_REVOCATION_MARKER_KEY = "gym-pwa-legacy-session-revocation-pending-v1";
 const ACCOUNT_KEY = "gym-pwa-active-account-v1";
@@ -44,7 +44,7 @@ function storage(initial = {}, {
 }
 
 function loadCleanup({
-  url = "https://eduard047.github.io/GymApp/legacy-origin-cleanup-v61.html",
+  url = "https://eduard047.github.io/GymApp/legacy-origin-cleanup-v62.html",
   fetchImpl,
   localInitial = {},
   sessionInitial = {},
@@ -265,10 +265,10 @@ test("legacy entry navigates only to the exact same-origin cleanup document", ()
   for (const source of [legacyEntrySource, legacyAliasSource]) {
     assert.match(
       source,
-      /http-equiv="refresh" content="0; url=\.\/legacy-origin-cleanup-v61\.html"/
+      /http-equiv="refresh" content="0; url=\.\/legacy-origin-cleanup-v62\.html"/
     );
-    assert.match(source, /href="\.\/legacy-origin-cleanup-v61\.html"/);
-    assert.match(source, /href="\.\/legacy-origin-cleanup\.css\?v=61"/);
+    assert.match(source, /href="\.\/legacy-origin-cleanup-v62\.html"/);
+    assert.match(source, /href="\.\/legacy-origin-cleanup\.css\?v=62"/);
     assert.doesNotMatch(source, /<script\b/i);
     assert.doesNotMatch(source, /https?:\/\//i);
   }
@@ -277,16 +277,27 @@ test("legacy entry navigates only to the exact same-origin cleanup document", ()
 test("active legacy cleanup fingerprints every mutable cleanup asset", () => {
   assert.match(
     legacyCleanupDocumentSource,
-    /href="\.\/legacy-origin-cleanup\.css\?v=61"/
+    /href="\.\/legacy-origin-cleanup\.css\?v=62"/
   );
   assert.match(
     legacyCleanupDocumentSource,
-    /src="\.\/legacy-origin-cleanup\.js\?v=61" defer/
+    /src="\.\/legacy-origin-cleanup\.js\?v=62" defer/
   );
   assert.doesNotMatch(
     legacyCleanupDocumentSource,
     /(?:href|src)="\.\/legacy-origin-cleanup\.(?:css|js)"/
   );
+});
+
+test("previous versioned cleanup path stays usable during the v62 rollout", async () => {
+  const result = loadCleanup({
+    url: "https://eduard047.github.io/GymApp/legacy-origin-cleanup-v61.html"
+  });
+
+  await settleCleanup(result);
+
+  assert.equal(result.continueLink.hidden, false);
+  assert.doesNotMatch(result.status.textContent, /not required/i);
 });
 
 test("legacy cleanup erases credentials before awaiting server revocation", async () => {
@@ -435,6 +446,37 @@ test("legacy cleanup revokes a session stored only in sessionStorage", async () 
   assert.match(result.status.textContent, /were removed/i);
 });
 
+test("legacy cleanup revokes valid short opaque refresh tokens", async () => {
+  const refreshToken = "short-opaque";
+  const requests = [];
+  const result = loadCleanup({
+    fetchImpl: async (url, options) => {
+      requests.push({ url, options });
+      if (url.includes("grant_type=refresh_token")) {
+        return new Response(JSON.stringify({
+          access_token: "refreshed-access-token-long-enough"
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      return new Response(null, { status: 204 });
+    },
+    localInitial: {
+      [SESSION_KEY]: JSON.stringify({ refresh_token: refreshToken })
+    }
+  });
+
+  await settleCleanup(result);
+
+  assert.equal(requests.length, 2);
+  assert.match(requests[0].url, /\/auth\/v1\/token\?grant_type=refresh_token$/);
+  assert.deepEqual(JSON.parse(requests[0].options.body), { refresh_token: refreshToken });
+  assert.equal(
+    requests[1].options.headers.Authorization,
+    "Bearer refreshed-access-token-long-enough"
+  );
+  assert.equal(result.localStorage.getItem(SESSION_REVOCATION_MARKER_KEY), null);
+  assert.equal(result.continueLink.hidden, false);
+});
+
 test("legacy cleanup revokes distinct bounded sessions from both stores", async () => {
   const authorizationHeaders = [];
   const result = loadCleanup({
@@ -543,7 +585,7 @@ test("oversized refresh responses fail closed before body parsing", async () => 
 test("legacy cleanup fails closed for malformed or oversized stored sessions", async () => {
   for (const raw of [
     "not-json",
-    JSON.stringify({ refresh_token: "short" }),
+    JSON.stringify({ refresh_token: "" }),
     "x".repeat(64 * 1024 + 1)
   ]) {
     const result = loadCleanup({ localInitial: { [SESSION_KEY]: raw } });
@@ -850,9 +892,9 @@ test("legacy cleanup never reports success when worker unregister fails", async 
 test("legacy cleanup refuses alternate paths and queried cleanup URLs", async () => {
   for (const url of [
     "https://eduard047.github.io/GymApp/legacy-origin-cleanup.html",
-    "https://eduard047.github.io/another-app/legacy-origin-cleanup-v61.html",
-    "https://gymapptracker.com/legacy-origin-cleanup-v61.html",
-    "https://eduard047.github.io/GymApp/legacy-origin-cleanup-v61.html?token=unexpected"
+    "https://eduard047.github.io/another-app/legacy-origin-cleanup-v62.html",
+    "https://gymapptracker.com/legacy-origin-cleanup-v62.html",
+    "https://eduard047.github.io/GymApp/legacy-origin-cleanup-v62.html?token=unexpected"
   ]) {
     let fetchCalls = 0;
     const result = loadCleanup({

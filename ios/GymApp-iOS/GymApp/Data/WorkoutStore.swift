@@ -954,11 +954,20 @@ public final class WorkoutStore: ObservableObject {
                 throw WorkoutStoreError.workoutNotFound
             }
             try Self.validate(weight: initialSet.weight, reps: initialSet.reps)
+            guard !state.workouts[workoutIndex].exercises.contains(where: {
+                $0.exerciseID == exerciseID
+            }) else {
+                throw WorkoutStoreError.invalidWorkout(
+                    "The exercise is already in this workout."
+                )
+            }
             let block = WorkoutExercise(
                 exerciseID: exerciseID,
                 sets: [WorkoutSet(weight: initialSet.weight, reps: initialSet.reps)]
             )
-            state.workouts[workoutIndex].exercises.append(block)
+            // Match new-workout creation: a manually added exercise is immediately
+            // visible at the top without deleting or rewriting any existing block.
+            state.workouts[workoutIndex].exercises.insert(block, at: 0)
             created = block
         }
         return created!

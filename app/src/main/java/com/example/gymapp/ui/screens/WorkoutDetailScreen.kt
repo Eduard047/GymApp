@@ -181,6 +181,13 @@ fun WorkoutDetailScreen(
                     )
                 }
 
+                WorkoutDetailEvent.AddExerciseFailed -> {
+                    snackbarHostState.showSnackbar(
+                        message = context.getString(R.string.message_add_exercise_failed),
+                        duration = SnackbarDuration.Short
+                    )
+                }
+
                 WorkoutDetailEvent.RestTimerFailed -> {
                     snackbarHostState.showSnackbar(
                         message = context.getString(R.string.message_rest_timer_save_failed),
@@ -328,6 +335,10 @@ fun WorkoutDetailScreen(
                 item {
                     WorkoutExerciseQuickAddCard(
                         availableExercises = uiState.availableExercisesToAdd,
+                        frequentExerciseIds = uiState.frequentExerciseIds,
+                        exerciseWorkoutCounts = uiState.exerciseWorkoutCounts,
+                        exerciseMuscleIds = uiState.exerciseMuscleIds,
+                        exerciseMediaOwnerKey = exerciseMediaOwnerKey,
                         onAddExerciseToWorkout = onAddExerciseToWorkout
                     )
                 }
@@ -1936,16 +1947,15 @@ private fun GarminMetricCell(
 @Composable
 private fun WorkoutExerciseQuickAddCard(
     availableExercises: List<ExerciseEntity>,
+    frequentExerciseIds: List<Long>,
+    exerciseWorkoutCounts: Map<Long, Int>,
+    exerciseMuscleIds: Map<String, Set<String>>,
+    exerciseMediaOwnerKey: String,
     onAddExerciseToWorkout: (Long) -> Unit
 ) {
-    var expanded by remember(availableExercises) { mutableStateOf(false) }
     var selectedExerciseId by remember(availableExercises) {
         mutableStateOf(availableExercises.firstOrNull()?.id)
     }
-    val selectedExerciseName = availableExercises
-        .firstOrNull { it.id == selectedExerciseId }
-        ?.let { localizedExerciseName(it.name) }
-        ?: stringResource(R.string.label_select_exercise)
 
     AppPanel(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -1976,33 +1986,16 @@ private fun WorkoutExerciseQuickAddCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             } else {
-                Box(modifier = Modifier.fillMaxWidth()) {
-                    OutlinedButton(
-                        onClick = { expanded = true },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            text = selectedExerciseName,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-
-                    DropdownMenu(
-                        expanded = expanded,
-                        onDismissRequest = { expanded = false }
-                    ) {
-                        availableExercises.forEach { exercise ->
-                            DropdownMenuItem(
-                                text = { Text(localizedExerciseName(exercise.name)) },
-                                onClick = {
-                                    selectedExerciseId = exercise.id
-                                    expanded = false
-                                }
-                            )
-                        }
-                    }
-                }
+                ExerciseCatalogSelector(
+                    selectedExerciseId = selectedExerciseId,
+                    exercises = availableExercises,
+                    frequentExerciseIds = frequentExerciseIds,
+                    exerciseWorkoutCounts = exerciseWorkoutCounts,
+                    exerciseMuscleIds = exerciseMuscleIds,
+                    exerciseMediaOwnerKey = exerciseMediaOwnerKey,
+                    onExerciseSelected = { selectedExerciseId = it },
+                    modifier = Modifier.fillMaxWidth()
+                )
 
                 FilledTonalButton(
                     onClick = {

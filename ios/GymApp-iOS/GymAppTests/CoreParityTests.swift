@@ -1229,6 +1229,319 @@ final class CoreParityTests: XCTestCase {
         XCTAssertEqual(body["current_password"] as? String, "CurrentSecurePass8!")
     }
 
+    func testSignedInPasswordChangeRequestsEmailNonceAndRetriesExactPayload() async throws {
+        let recorder = AuthRequestRecorder()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        let auth = AuthService(
+            keychain: InMemoryKeychainStore(),
+            urlSession: urlSession,
+            defaults: temporaryDefaults(named: "signed-in-password-reauthentication")
+        )
+        let cloud = cloudSession(userID: "password-reauthentication-user")
+        try auth.installSessionForTesting(.cloud(cloud))
+        var updateCount = 0
+        AuthURLProtocolStub.handler = { request in
+            recorder.append(request)
+            switch request.url?.path {
+            case "/auth/v1/user":
+                updateCount += 1
+                if updateCount == 1 {
+                    return try AuthURLProtocolStub.response(
+                        for: request,
+                        statusCode: 422,
+                        json: #"{"code":"reauthentication_needed"}"#
+                    )
+                }
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    json: #"{"id":"password-reauthentication-user"}"#
+                )
+            case "/auth/v1/reauthenticate":
+                return try AuthURLProtocolStub.response(for: request, json: "{}")
+            default:
+                XCTFail("Unexpected password reauthentication request: \(request.url?.absoluteString ?? "nil")")
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    statusCode: 404,
+                    json: "{}"
+                )
+            }
+        }
+        defer {
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+        }
+
+        let firstAttempt = await auth.updatePassword(
+            "NewPassword123!",
+            currentPassword: "OldPassword123!"
+        )
+
+        XCTAssertFalse(firstAttempt)
+        XCTAssertTrue(auth.passwordChangeRequiresNonce)
+        XCTAssertFalse(auth.messageIsError)
+        XCTAssertEqual(
+            auth.message,
+            "Verification code sent. Re-enter the new password with the code."
+        )
+        XCTAssertEqual(
+            recorder.requests.map(\.url?.path),
+            ["/auth/v1/user", "/auth/v1/reauthenticate"]
+        )
+        let firstBody = try jsonObject(from: recorder.requests[0])
+        XCTAssertEqual(Set(firstBody.keys), ["password", "current_password"])
+        XCTAssertEqual(firstBody["password"] as? String, "NewPassword123!")
+        XCTAssertEqual(firstBody["current_password"] as? String, "OldPassword123!")
+        let reauthenticateRequest = recorder.requests[1]
+        XCTAssertEqual(reauthenticateRequest.httpMethod, "GET")
+        XCTAssertNil(reauthenticateRequest.httpBody)
+        XCTAssertEqual(
+            reauthenticateRequest.value(forHTTPHeaderField: "Authorization"),
+            "Bearer \(cloud.accessToken)"
+        )
+
+        let secondAttempt = await auth.updatePassword(
+            "NewPassword123!",
+            currentPassword: "OldPassword123!",
+            nonce: " 123456 "
+        )
+
+        XCTAssertTrue(secondAttempt)
+        XCTAssertFalse(auth.passwordChangeRequiresNonce)
+        XCTAssertEqual(auth.message, "Password updated.")
+        XCTAssertEqual(
+            recorder.requests.map(\.url?.path),
+            ["/auth/v1/user", "/auth/v1/reauthenticate", "/auth/v1/user"]
+        )
+        let retryBody = try jsonObject(from: recorder.requests[2])
+        XCTAssertEqual(Set(retryBody.keys), ["password", "current_password", "nonce"])
+        XCTAssertEqual(retryBody["password"] as? String, "NewPassword123!")
+        XCTAssertEqual(retryBody["current_password"] as? String, "OldPassword123!")
+        XCTAssertEqual(retryBody["nonce"] as? String, "123456")
+    }
+
+    func testPasswordReauthenticationUsesRefreshedSessionAfterUnauthorizedUpdate() async throws {
+        let recorder = AuthRequestRecorder()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        let auth = AuthService(
+            keychain: InMemoryKeychainStore(),
+            urlSession: urlSession,
+            defaults: temporaryDefaults(named: "password-reauthentication-after-refresh")
+        )
+        let cloud = cloudSession(userID: "password-reauthentication-refresh-user")
+        try auth.installSessionForTesting(.cloud(cloud))
+        AuthURLProtocolStub.handler = { request in
+            recorder.append(request)
+            switch request.url?.path {
+            case "/auth/v1/user":
+                let bearer = request.value(forHTTPHeaderField: "Authorization")
+                if bearer == "Bearer \(cloud.accessToken)" {
+                    return try AuthURLProtocolStub.response(
+                        for: request,
+                        statusCode: 401,
+                        json: #"{"message":"JWT expired"}"#
+                    )
+                }
+                XCTAssertEqual(bearer, "Bearer refreshed-password-reauth-access")
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    statusCode: 422,
+                    json: #"{"code":"reauthentication_needed"}"#
+                )
+            case "/auth/v1/token":
+                XCTAssertTrue(request.url?.query?.contains("grant_type=refresh_token") == true)
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    json: #"{"access_token":"refreshed-password-reauth-access","refresh_token":"refreshed-password-reauth-refresh","expires_in":3600,"user":{"id":"password-reauthentication-refresh-user","email":"password-reauthentication-refresh-user@example.com","user_metadata":{"display_name":"Password Reauthentication"}}}"#
+                )
+            case "/auth/v1/reauthenticate":
+                XCTAssertEqual(
+                    request.value(forHTTPHeaderField: "Authorization"),
+                    "Bearer refreshed-password-reauth-access"
+                )
+                return try AuthURLProtocolStub.response(for: request, json: "{}")
+            default:
+                XCTFail("Unexpected refreshed password reauthentication request: \(request.url?.absoluteString ?? "nil")")
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    statusCode: 404,
+                    json: "{}"
+                )
+            }
+        }
+        defer {
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+        }
+
+        let updated = await auth.updatePassword(
+            "NewPassword123!",
+            currentPassword: "OldPassword123!"
+        )
+
+        XCTAssertFalse(updated)
+        XCTAssertTrue(auth.passwordChangeRequiresNonce)
+        XCTAssertFalse(auth.messageIsError)
+        XCTAssertEqual(auth.session?.cloud?.accessToken, "refreshed-password-reauth-access")
+        XCTAssertEqual(
+            recorder.requests.map(\.url?.path),
+            ["/auth/v1/user", "/auth/v1/token", "/auth/v1/user", "/auth/v1/reauthenticate"]
+        )
+    }
+
+    func testPasswordChangeRejectsMalformedNonceWithoutAnotherRequest() async throws {
+        let recorder = AuthRequestRecorder()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        let auth = AuthService(
+            keychain: InMemoryKeychainStore(),
+            urlSession: urlSession,
+            defaults: temporaryDefaults(named: "malformed-password-nonce")
+        )
+        try auth.installSessionForTesting(
+            .cloud(cloudSession(userID: "malformed-password-nonce-user"))
+        )
+        AuthURLProtocolStub.handler = { request in
+            recorder.append(request)
+            if request.url?.path == "/auth/v1/user" {
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    statusCode: 422,
+                    json: #"{"error_code":"reauthentication_needed"}"#
+                )
+            }
+            XCTAssertEqual(request.url?.path, "/auth/v1/reauthenticate")
+            return try AuthURLProtocolStub.response(for: request, json: "{}")
+        }
+        defer {
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+        }
+
+        _ = await auth.updatePassword(
+            "NewPassword123!",
+            currentPassword: "OldPassword123!"
+        )
+        XCTAssertTrue(auth.passwordChangeRequiresNonce)
+        XCTAssertEqual(recorder.requests.count, 2)
+
+        for malformed in ["", "12345", "123456789", "12345a", "１２３４５６", "123\n456"] {
+            let updated = await auth.updatePassword(
+                "NewPassword123!",
+                currentPassword: "OldPassword123!",
+                nonce: malformed
+            )
+            XCTAssertFalse(updated, "Malformed nonce should be rejected: \(malformed.debugDescription)")
+            XCTAssertTrue(auth.passwordChangeRequiresNonce)
+            XCTAssertEqual(auth.message, PasswordReauthenticationNoncePolicy.errorMessage)
+            XCTAssertTrue(auth.messageIsError)
+            XCTAssertEqual(recorder.requests.count, 2)
+        }
+
+        XCTAssertEqual(PasswordReauthenticationNoncePolicy.normalized("123456"), "123456")
+        XCTAssertEqual(PasswordReauthenticationNoncePolicy.normalized(" 12345678 "), "12345678")
+    }
+
+    func testRecoveryPasswordUpdateNeverStartsSignedInNonceFlow() async throws {
+        let recorder = AuthRequestRecorder()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        let auth = AuthService(
+            keychain: InMemoryKeychainStore(),
+            urlSession: urlSession,
+            defaults: temporaryDefaults(named: "recovery-does-not-reauthenticate")
+        )
+        try auth.installSessionForTesting(
+            .cloud(cloudSession(userID: "recovery-does-not-reauthenticate-user"))
+        )
+        AuthURLProtocolStub.handler = { request in
+            recorder.append(request)
+            return try AuthURLProtocolStub.response(
+                for: request,
+                statusCode: 422,
+                json: #"{"code":"reauthentication_needed"}"#
+            )
+        }
+        defer {
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+        }
+
+        let updated = await auth.updatePassword("RecoveredPassword123!")
+
+        XCTAssertFalse(updated)
+        XCTAssertFalse(auth.passwordChangeRequiresNonce)
+        XCTAssertTrue(auth.messageIsError)
+        XCTAssertEqual(
+            auth.message,
+            AuthServiceError.passwordReauthenticationRequired.errorDescription
+        )
+        XCTAssertEqual(recorder.requests.map(\.url?.path), ["/auth/v1/user"])
+    }
+
+    func testLatePasswordReauthenticationCannotFollowReplacementAccount() async throws {
+        let recorder = AuthRequestRecorder()
+        let reauthenticationStarted = expectation(description: "password reauthentication started")
+        let releaseReauthentication = DispatchSemaphore(value: 0)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        let auth = AuthService(
+            keychain: InMemoryKeychainStore(),
+            urlSession: urlSession,
+            defaults: temporaryDefaults(named: "late-password-reauthentication")
+        )
+        let original = cloudSession(userID: "original-password-user")
+        let replacement = cloudSession(userID: "replacement-password-user")
+        try auth.installSessionForTesting(.cloud(original))
+        AuthURLProtocolStub.handler = { request in
+            recorder.append(request)
+            if request.url?.path == "/auth/v1/user" {
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    statusCode: 422,
+                    json: #"{"code":"reauthentication_needed"}"#
+                )
+            }
+            XCTAssertEqual(request.url?.path, "/auth/v1/reauthenticate")
+            reauthenticationStarted.fulfill()
+            _ = releaseReauthentication.wait(timeout: .now() + 5)
+            return try AuthURLProtocolStub.response(for: request, json: "{}")
+        }
+        defer {
+            releaseReauthentication.signal()
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+        }
+
+        let pendingUpdate = Task {
+            await auth.updatePassword(
+                "NewPassword123!",
+                currentPassword: "OldPassword123!"
+            )
+        }
+        await fulfillment(of: [reauthenticationStarted], timeout: 2)
+        try auth.installSessionForTesting(.cloud(replacement))
+        releaseReauthentication.signal()
+
+        let pendingResult = await pendingUpdate.value
+        XCTAssertFalse(pendingResult)
+        XCTAssertEqual(auth.session?.cloud, replacement)
+        XCTAssertFalse(auth.passwordChangeRequiresNonce)
+        XCTAssertTrue(auth.messageIsError)
+        XCTAssertEqual(auth.message, AuthServiceError.sessionChanged.errorDescription)
+        XCTAssertEqual(
+            recorder.requests.map(\.url?.path),
+            ["/auth/v1/user", "/auth/v1/reauthenticate"]
+        )
+    }
+
     func testPasswordChangeForcesOneRefreshAfterDirectUnauthorized() async throws {
         let recorder = AuthRequestRecorder()
         let configuration = URLSessionConfiguration.ephemeral
@@ -10716,6 +11029,289 @@ final class CoreParityTests: XCTestCase {
         XCTAssertEqual(filtered(muscle: "calves").map(\.id), [custom.id])
         XCTAssertEqual(filtered(sort: .mostFrequent).map(\.id), [bench.id, squat.id, plank.id, custom.id])
         XCTAssertEqual(filtered(sort: .leastFrequent).map(\.id), [custom.id, plank.id, squat.id, bench.id])
+    }
+
+    func testExerciseSearchUsesBoundedSearchOnlyMultilingualAliases() throws {
+        let exercises = [
+            Exercise(name: "Lat Pulldown", catalogKey: "lat_pulldown"),
+            Exercise(name: "Upright Row", catalogKey: "upright_row"),
+            Exercise(name: "Lateral Raise", catalogKey: "lateral_raise"),
+            Exercise(name: "Shoulder Press", catalogKey: "shoulder_press"),
+            Exercise(name: "Romanian Deadlift", catalogKey: "romanian_deadlift"),
+            Exercise(name: "Machine Chest Fly", catalogKey: "chest_fly_machine"),
+            Exercise(name: "Rear Delt Fly", catalogKey: "rear_delt_fly"),
+            Exercise(name: "Bulgarian Split Squat", catalogKey: "bulgarian_split_squat"),
+            Exercise(name: "Calf Raise", catalogKey: "calf_raise"),
+            Exercise(name: "Pull Up", catalogKey: "pull_up"),
+            Exercise(name: "Custom cable move")
+        ]
+
+        func matchingKeys(_ query: String) -> Set<String> {
+            Set(
+                ExerciseFilterEngine.filtered(
+                    exercises: exercises,
+                    query: query,
+                    bodyFilter: .all,
+                    muscleFilter: nil,
+                    favoritesOnly: false,
+                    sortMode: .name,
+                    muscleMappings: [],
+                    sessionCounts: [:]
+                ).map { exercise in
+                    exercise.catalogKey ?? "custom:\(exercise.name)"
+                }
+            )
+        }
+
+        XCTAssertEqual(matchingKeys("OHP"), ["shoulder_press"])
+        XCTAssertEqual(matchingKeys("RDL"), ["romanian_deadlift"])
+        XCTAssertEqual(matchingKeys("BSS"), ["bulgarian_split_squat"])
+        XCTAssertEqual(matchingKeys("RFESS"), ["bulgarian_split_squat"])
+        XCTAssertTrue(matchingKeys("pec-deck").contains("chest_fly_machine"))
+
+        // Connectors are ignored, spelling may mix Ukrainian and Russian, and token order is free.
+        XCTAssertEqual(
+            matchingKeys("гантелями с махи в сторони"),
+            ["lateral_raise"]
+        )
+        XCTAssertEqual(
+            matchingKeys("стороны гантелями махи"),
+            ["lateral_raise"]
+        )
+        XCTAssertEqual(matchingKeys("подтягиваний на турнике"), ["pull_up"])
+        XCTAssertEqual(matchingKeys("подъём на носки"), ["calf_raise"])
+        XCTAssertEqual(matchingKeys("move-custom"), ["custom:Custom cable move"])
+
+        // The historically accepted identity alias remains valid but no longer misroutes search.
+        XCTAssertEqual(
+            BuiltInExerciseCatalog.canonicalKey(forName: "вертикальна тяга"),
+            "upright_row"
+        )
+        XCTAssertEqual(matchingKeys("вертикальна тяга"), ["lat_pulldown"])
+
+        for searchOnlyName in [
+            "OHP", "RDL", "BSS", "RFESS", "pec deck", "махи с гантелями в стороны"
+        ] {
+            XCTAssertNil(
+                BuiltInExerciseCatalog.canonicalKey(forName: searchOnlyName),
+                "Search-only alias became persisted identity: \(searchOnlyName)"
+            )
+        }
+
+        XCTAssertTrue(matchingKeys(String(repeating: "a", count: 257)).isEmpty)
+        XCTAssertTrue(
+            matchingKeys(Array(repeating: "bench", count: 17).joined(separator: " ")).isEmpty
+        )
+        XCTAssertTrue(matchingKeys("with на і під або").isEmpty)
+    }
+
+    func testExerciseSearchRanksCanonicalThenAliasBeforePartialAndCategoryMatches() throws {
+        func builtIn(_ key: String) throws -> Exercise {
+            let definition = try XCTUnwrap(BuiltInExerciseCatalog.definition(forKey: key))
+            return Exercise(name: definition.englishName, catalogKey: key)
+        }
+
+        let bench = try builtIn("bench_press")
+        let dumbbellBench = try builtIn("dumbbell_bench_press")
+        let chestFly = try builtIn("chest_fly_machine")
+        let rearFly = try builtIn("rear_delt_fly")
+        let exercises = [rearFly, dumbbellBench, chestFly, bench]
+        let counts = [rearFly.id: 100, dumbbellBench.id: 100, chestFly.id: 0, bench.id: 0]
+
+        func matchingKeys(_ query: String) -> [String] {
+            ExerciseFilterEngine.filtered(
+                exercises: exercises,
+                query: query,
+                bodyFilter: .all,
+                muscleFilter: nil,
+                favoritesOnly: false,
+                sortMode: .mostFrequent,
+                muscleMappings: [],
+                sessionCounts: counts
+            ).compactMap(\.catalogKey)
+        }
+
+        XCTAssertEqual(Array(matchingKeys("Bench Press").prefix(2)), [
+            "bench_press", "dumbbell_bench_press"
+        ])
+        XCTAssertEqual(Array(matchingKeys("pec deck").prefix(2)), [
+            "chest_fly_machine", "rear_delt_fly"
+        ])
+    }
+
+    func testExerciseSearchSupportsTyposTransliterationCategoriesAndReasons() throws {
+        func builtIn(_ key: String) throws -> Exercise {
+            let definition = try XCTUnwrap(BuiltInExerciseCatalog.definition(forKey: key))
+            return Exercise(name: definition.englishName, catalogKey: key)
+        }
+
+        let keys = [
+            "assisted_pull_up", "assisted_dip", "chest_fly_machine", "rear_delt_fly",
+            "romanian_deadlift", "lateral_raise", "incline_bench_press",
+            "incline_dumbbell_press", "bench_press", "lat_pulldown", "seated_cable_row",
+            "straight_arm_pulldown", "plate_loaded_row", "barbell_row",
+            "overhead_dumbbell_triceps_extension", "dumbbell_bench_press", "biceps_curl",
+            "triceps_pushdown", "dips"
+        ]
+        let exercises = try keys.map(builtIn)
+
+        func matchingKeys(_ query: String) -> [String] {
+            ExerciseFilterEngine.filtered(
+                exercises: exercises,
+                query: query,
+                bodyFilter: .all,
+                muscleFilter: nil,
+                favoritesOnly: false,
+                sortMode: .name,
+                muscleMappings: [],
+                sessionCounts: [:]
+            ).compactMap(\.catalogKey)
+        }
+
+        XCTAssertEqual(Set(matchingKeys("граветрон")), ["assisted_pull_up", "assisted_dip"])
+        XCTAssertEqual(matchingKeys("pecdek").first, "chest_fly_machine")
+        XCTAssertEqual(matchingKeys("ruminka"), ["romanian_deadlift"])
+        XCTAssertEqual(matchingKeys("mahi gantelyami"), ["lateral_raise"])
+        XCTAssertEqual(matchingKeys("mahi s gantelyami"), ["lateral_raise"])
+        XCTAssertEqual(Set(matchingKeys("zhim na verh grudi")), [
+            "incline_bench_press", "incline_dumbbell_press"
+        ])
+        XCTAssertTrue(matchingKeys("spina na bloke").contains("lat_pulldown"))
+        XCTAssertTrue(matchingKeys("dops").isEmpty, "Short tokens must not use fuzzy matching")
+
+        XCTAssertEqual(matchingKeys("задняя дельта"), ["rear_delt_fly"])
+        XCTAssertEqual(Set(matchingKeys("верх груди")), [
+            "incline_bench_press", "incline_dumbbell_press"
+        ])
+
+        let backBlockMatches = Set(matchingKeys("спина блок"))
+        XCTAssertTrue(backBlockMatches.contains("lat_pulldown"))
+        XCTAssertTrue(backBlockMatches.contains("seated_cable_row"))
+        XCTAssertTrue(backBlockMatches.contains("straight_arm_pulldown"))
+        XCTAssertFalse(backBlockMatches.contains("plate_loaded_row"))
+        XCTAssertFalse(backBlockMatches.contains("barbell_row"))
+
+        let dumbbellTricepsMatches = Set(matchingKeys("гантели трицепс"))
+        XCTAssertTrue(dumbbellTricepsMatches.contains("overhead_dumbbell_triceps_extension"))
+        XCTAssertTrue(dumbbellTricepsMatches.contains("dumbbell_bench_press"))
+        XCTAssertFalse(dumbbellTricepsMatches.contains("biceps_curl"))
+        XCTAssertFalse(dumbbellTricepsMatches.contains("triceps_pushdown"))
+
+        let chestFly = try XCTUnwrap(exercises.first { $0.catalogKey == "chest_fly_machine" })
+        XCTAssertNil(
+            ExerciseFilterEngine.localizedMatchReason(
+                for: chestFly,
+                query: "Machine Chest Fly",
+                muscleMappings: [],
+                languageCode: "ru"
+            )
+        )
+        XCTAssertTrue(
+            try XCTUnwrap(
+                ExerciseFilterEngine.localizedMatchReason(
+                    for: chestFly,
+                    query: "pecdek",
+                    muscleMappings: [],
+                    languageCode: "ru"
+                )
+            ).hasPrefix("Также ищут как")
+        )
+
+        let overheadTriceps = try XCTUnwrap(
+            exercises.first { $0.catalogKey == "overhead_dumbbell_triceps_extension" }
+        )
+        let ukrainianReason = try XCTUnwrap(
+            ExerciseFilterEngine.localizedMatchReason(
+                for: overheadTriceps,
+                query: "гантели трицепс",
+                muscleMappings: [],
+                languageCode: "uk"
+            )
+        )
+        XCTAssertTrue(
+            ukrainianReason.hasPrefix("Збіг за") ||
+                ukrainianReason.hasPrefix("Також шукають як")
+        )
+
+        for searchOnlyName in ["граветрон", "pecdek", "ruminka", "mahi gantelyami"] {
+            XCTAssertNil(BuiltInExerciseCatalog.canonicalKey(forName: searchOnlyName))
+        }
+    }
+
+    func testExerciseSearchKeepsSemanticCategoriesSeparateAndBoundsInputs() {
+        let definitions = BuiltInExerciseCatalog.definitions
+        XCTAssertEqual(definitions.count, 53)
+        let allBuiltIns = definitions.map { definition in
+            Exercise(name: definition.englishName, catalogKey: definition.key)
+        }
+
+        func matchingKeys(_ query: String) -> [String] {
+            ExerciseFilterEngine.filtered(
+                exercises: allBuiltIns,
+                query: query,
+                bodyFilter: .all,
+                muscleFilter: nil,
+                favoritesOnly: false,
+                sortMode: .name,
+                muscleMappings: [],
+                sessionCounts: [:]
+            ).compactMap(\.catalogKey)
+        }
+
+        // A full-body exercise must not combine "задняя" from hamstrings with
+        // "дельта" from shoulders. The explicit colloquial alias is the sole match.
+        XCTAssertEqual(matchingKeys("задняя дельта"), ["rear_delt_fly"])
+        // Shared generic words must stay within the specific multi-word muscle concept.
+        XCTAssertTrue(matchingKeys("upper back").contains("barbell_row"))
+        XCTAssertTrue(matchingKeys("верх спины").contains("barbell_row"))
+        XCTAssertNil(BuiltInExerciseCatalog.canonicalKey(forName: "upper back"))
+        XCTAssertNil(BuiltInExerciseCatalog.canonicalKey(forName: "верх спины"))
+        // Distinct muscle concepts must not be combined just because one exercise trains both.
+        XCTAssertTrue(matchingKeys("трапеции широчайшие").isEmpty)
+        // Multiple equipment concepts must not be assembled into one semantic match.
+        XCTAssertTrue(matchingKeys("гантели штанга").isEmpty)
+
+        // Two-letter equipment abbreviations are useful only with another exercise term.
+        XCTAssertTrue(matchingKeys("db").isEmpty)
+        XCTAssertTrue(matchingKeys("bb").isEmpty)
+        XCTAssertTrue(matchingKeys("db db").isEmpty)
+        XCTAssertEqual(matchingKeys("DB curl").first, "biceps_curl")
+        XCTAssertEqual(matchingKeys("BB row").first, "barbell_row")
+
+        let maximumCandidate = Exercise(name: String(repeating: "x", count: 128))
+        let overlongCandidate = Exercise(name: String(repeating: "y", count: 129))
+        func matchingCustomIDs(_ exercises: [Exercise], query: String) -> [UUID] {
+            ExerciseFilterEngine.filtered(
+                exercises: exercises,
+                query: query,
+                bodyFilter: .all,
+                muscleFilter: nil,
+                favoritesOnly: false,
+                sortMode: .name,
+                muscleMappings: [],
+                sessionCounts: [:]
+            ).map(\.id)
+        }
+
+        XCTAssertEqual(
+            matchingCustomIDs(
+                [maximumCandidate],
+                query: String(repeating: "x", count: 256)
+            ),
+            [maximumCandidate.id]
+        )
+        XCTAssertTrue(
+            matchingCustomIDs(
+                [maximumCandidate],
+                query: String(repeating: "x", count: 257)
+            ).isEmpty
+        )
+        XCTAssertTrue(
+            matchingCustomIDs(
+                [overlongCandidate],
+                query: String(repeating: "y", count: 129)
+            ).isEmpty
+        )
     }
 
     func testGarminWorkoutDetailCopyIdentifiesChronologicalWatchSetOrderInEveryLanguage() {

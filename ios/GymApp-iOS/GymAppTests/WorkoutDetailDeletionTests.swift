@@ -4,6 +4,63 @@ import XCTest
 
 @MainActor
 final class WorkoutDetailDeletionTests: XCTestCase {
+    func testAddingExerciseToExistingWorkoutInsertsAtTopWithoutRemovingHistory() throws {
+        let store = try makeStore(account: "add-exercise-at-top")
+        let existing = try store.addExercise(name: "Existing Row")
+        let added = try store.addExercise(name: "New Top Row")
+        let workout = try store.createWorkout(
+            date: Date(timeIntervalSince1970: 1_700_000_000),
+            exercises: [
+                WorkoutExerciseDraft(
+                    exerciseID: existing.id,
+                    sets: [WorkoutSetDraft(weight: 40, reps: 8)]
+                )
+            ]
+        )
+
+        _ = try store.addExercise(
+            toWorkout: workout.id,
+            exerciseID: added.id,
+            initialSet: WorkoutSetDraft(weight: 20, reps: 12)
+        )
+
+        let refreshed = try XCTUnwrap(store.workout(id: workout.id))
+        XCTAssertEqual(refreshed.exercises.map(\.exerciseID), [added.id, existing.id])
+        XCTAssertEqual(refreshed.exercises[1].sets.first?.weight, 40)
+        XCTAssertEqual(store.exercises.map(\.id).contains(existing.id), true)
+    }
+
+    func testAddingExerciseRejectsDuplicateAtStoreBoundaryWithoutMutation() throws {
+        let store = try makeStore(account: "add-exercise-duplicate")
+        let exercise = try store.addExercise(name: "Unique Saved Row")
+        let workout = try store.createWorkout(
+            date: Date(timeIntervalSince1970: 1_700_000_050),
+            exercises: [
+                WorkoutExerciseDraft(
+                    exerciseID: exercise.id,
+                    sets: [WorkoutSetDraft(weight: 40, reps: 8)]
+                )
+            ]
+        )
+        let storageBefore = try Data(contentsOf: store.storageURL)
+
+        XCTAssertThrowsError(
+            try store.addExercise(
+                toWorkout: workout.id,
+                exerciseID: exercise.id,
+                initialSet: WorkoutSetDraft(weight: 45, reps: 6)
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? WorkoutStoreError,
+                .invalidWorkout("The exercise is already in this workout.")
+            )
+        }
+
+        XCTAssertEqual(store.workout(id: workout.id), workout)
+        XCTAssertEqual(try Data(contentsOf: store.storageURL), storageBefore)
+    }
+
     func testSetDeletionTargetBindsExactStoreAccountAndSnapshot() throws {
         let store = try makeStore(account: "delete-target")
         let exercise = try store.addExercise(name: "Safety Squat")

@@ -58,11 +58,91 @@ private const val MAX_WATCH_EXERCISES = 60
 private const val MAX_WATCH_PLAN_SETS = MAX_GARMIN_WORKOUT_SETS
 private const val GARMIN_SDK_READY_TIMEOUT_MS = 60_000L
 private const val GARMIN_SEND_TIMEOUT_MS = 90_000L
-private const val GARMIN_SYNC_ACK_TIMEOUT_MS = 30_000L
+private const val GARMIN_SYNC_ACK_ATTEMPTS = 3
+private const val GARMIN_SYNC_ACK_ATTEMPT_TIMEOUT_MS = 10_000L
+private const val GARMIN_SYNC_TOTAL_TIMEOUT_MS = 40_000L
 private const val GARMIN_CONNECT_WAIT_MS = 45_000L
 private const val MAX_PROFILE_GARMIN_DEVICES = 8
 private const val MAX_PROFILE_DEVICE_NAME_CHARS = 80
 private val GARMIN_REVISION_PERSISTENCE_LOCK = Any()
+
+internal data class GarminCloudAccountLocalCleanupPlan(
+    val accountBinding: String,
+    val authTransitionKey: String,
+    val preferenceKeys: Set<String>
+)
+
+/**
+ * Resolves only keys attributable to one cloud owner. Global physical-device and monotonic revision
+ * fences are deliberately retained because they protect transitions shared by every account.
+ */
+internal fun garminCloudAccountLocalCleanupPlan(
+    existingPreferences: Map<String, *>,
+    userId: String,
+    sessionGeneration: String
+): GarminCloudAccountLocalCleanupPlan? {
+    val accountBinding = canonicalCloudGarminAccountBinding(userId) ?: return null
+    val authTarget = garminAuthTransitionTarget(accountBinding, sessionGeneration) ?: return null
+    val trustedOwnerKey = garminStorageKey(TRUSTED_DEVICE_KEY_PREFIX, accountBinding)
+    val keys = linkedSetOf(
+        trustedOwnerKey,
+        garminStorageKey(PLAN_KEY_PREFIX, accountBinding, ACCOUNT_DEFAULT_DEVICE_SCOPE)
+    )
+
+    val ownerTrustedDevice = when (val raw = existingPreferences[trustedOwnerKey]) {
+        null -> null
+        is String -> raw.takeIf(::isValidGarminTransportDeviceBinding) ?: return null
+        else -> return null
+    }
+
+    val pendingTargetPresent = existingPreferences.containsKey(PENDING_AUTH_TRANSITION_KEY)
+    val pendingBindingPresent = existingPreferences.containsKey(PENDING_AUTH_ACCOUNT_BINDING_KEY)
+    var deletedTransitionIsPending = false
+    if (pendingTargetPresent || pendingBindingPresent) {
+        val pendingTarget = existingPreferences[PENDING_AUTH_TRANSITION_KEY] as? String
+        val pendingBinding = existingPreferences[PENDING_AUTH_ACCOUNT_BINDING_KEY] as? String
+        if (pendingTarget == authTarget.key && pendingBinding == accountBinding) {
+            deletedTransitionIsPending = true
+            keys += PENDING_AUTH_TRANSITION_KEY
+            keys += PENDING_AUTH_ACCOUNT_BINDING_KEY
+        } else if (pendingTarget == authTarget.key || pendingBinding == accountBinding) {
+            // Conflicting global transition state cannot be assigned to either owner safely.
+            return null
+        }
+    }
+
+    val lastReadyBelongsToDeletedOwner =
+        existingPreferences[LAST_READY_AUTH_TRANSITION_KEY] == authTarget.key
+    if (lastReadyBelongsToDeletedOwner) keys += LAST_READY_AUTH_TRANSITION_KEY
+
+    val deviceBindings = linkedSetOf<String>()
+    ownerTrustedDevice?.let(deviceBindings::add)
+    if (lastReadyBelongsToDeletedOwner || deletedTransitionIsPending) {
+        val globalDevice = existingPreferences[GLOBAL_TRUSTED_DEVICE_KEY]
+        if (globalDevice is String && isValidGarminTransportDeviceBinding(globalDevice)) {
+            deviceBindings += globalDevice
+        }
+    }
+    deviceBindings.forEach { deviceBinding ->
+        keys += garminStorageKey(PLAN_KEY_PREFIX, accountBinding, deviceBinding)
+        keys += garminStorageKey(PAIRING_GENERATION_KEY_PREFIX, authTarget.key, deviceBinding)
+        keys += garminStorageKey(
+            PENDING_PAIRING_GENERATION_KEY_PREFIX,
+            authTarget.key,
+            deviceBinding
+        )
+        keys += garminStorageKey(
+            PAIRING_GENERATION_CAPABILITY_KEY_PREFIX,
+            authTarget.key,
+            deviceBinding
+        )
+    }
+    return GarminCloudAccountLocalCleanupPlan(
+        accountBinding = accountBinding,
+        authTransitionKey = authTarget.key,
+        preferenceKeys = keys
+    )
+}
 
 data class GarminDeviceSummary(
     val name: String,
@@ -618,6 +698,39 @@ class GarminSyncManager(
             true
             }
         }
+    }
+
+    internal fun clearCloudAccountLocalState(
+        userId: String,
+        sessionGeneration: String
+    ): Boolean {
+        val plan = synchronized(accountBindingLock) {
+            val preferences = preferences()
+            val resolved = garminCloudAccountLocalCleanupPlan(
+                existingPreferences = preferences.all,
+                userId = userId,
+                sessionGeneration = sessionGeneration
+            ) ?: return@synchronized null
+            val editor = preferences.edit()
+            resolved.preferenceKeys.forEach(editor::remove)
+            if (!editor.commit()) return@synchronized null
+            if (readyAuthTransitionKey == resolved.authTransitionKey) {
+                readyAuthTransitionKey = null
+            }
+            resolved
+        } ?: return false
+
+        pendingSyncAcks.entries.forEach { entry ->
+            val pending = entry.value
+            if ((pending.account?.binding == plan.accountBinding ||
+                    pending.authTransitionKey == plan.authTransitionKey) &&
+                pendingSyncAcks.remove(entry.key, pending)
+            ) {
+                pending.deferred.complete(false)
+            }
+        }
+        lastPlanSyncStatus = "Deleted account Garmin data cleared"
+        return true
     }
 
     private fun registerConnectedDevices() {
@@ -1466,12 +1579,49 @@ class GarminSyncManager(
         )
         if (pendingSyncAcks.putIfAbsent(syncId, pending) != null) return false
         return try {
-            val sent = sendAndWait(device, payload)
-            if (!sent) return false
-            val confirmed = withTimeoutOrNull(GARMIN_SYNC_ACK_TIMEOUT_MS) { ack.await() } ?: false
+            // Connect IQ transport SUCCESS and the app-level sync_ack are separate
+            // events. If the watch applied the plan but its acknowledgement was
+            // dropped, resend the exact same sync ID and revision. The watch's
+            // durable replay fence treats that as a successful no-op and emits the
+            // acknowledgement again; no plan mutation is repeated.
+            val confirmed = withTimeoutOrNull(GARMIN_SYNC_TOTAL_TIMEOUT_MS) {
+                for (attempt in 1..GARMIN_SYNC_ACK_ATTEMPTS) {
+                    if (!pendingContextIsCurrent(pending)) {
+                        return@withTimeoutOrNull false
+                    }
+                    if (ack.isCompleted) {
+                        return@withTimeoutOrNull ack.await()
+                    }
+                    val sent = sendAndWait(device, payload)
+                    if (ack.isCompleted) {
+                        return@withTimeoutOrNull ack.await()
+                    }
+                    if (!sent) {
+                        if (attempt == GARMIN_SYNC_ACK_ATTEMPTS) {
+                            return@withTimeoutOrNull false
+                        }
+                        continue
+                    }
+                    val acknowledged = withTimeoutOrNull(
+                        GARMIN_SYNC_ACK_ATTEMPT_TIMEOUT_MS
+                    ) {
+                        ack.await()
+                    }
+                    if (acknowledged != null) {
+                        return@withTimeoutOrNull acknowledged
+                    }
+                    if (attempt < GARMIN_SYNC_ACK_ATTEMPTS) {
+                        lastPlanSyncStatus =
+                            "Waiting for Garmin acknowledgement; retrying the same sync"
+                        Log.i(TAG, "Garmin sync acknowledgement missed; retrying idempotently")
+                    }
+                }
+                false
+            } ?: false
             if (!confirmed) {
-                lastPlanSyncStatus = "No sync_ack from watch after send SUCCESS. Open watch DEBUG screen and check SYNC status."
-                Log.i(TAG, "Garmin sync acknowledgement timed out")
+                lastPlanSyncStatus =
+                    "Garmin watch did not acknowledge the sync after bounded retries"
+                Log.i(TAG, "Garmin sync acknowledgement retries exhausted")
             }
             confirmed
         } finally {
@@ -1519,6 +1669,7 @@ class GarminSyncManager(
     ): WorkoutPersistenceResult {
         if (!isStillActive(account)) return WorkoutPersistenceResult.Rejected
         val payloadDigest = canonicalGarminWorkoutPayloadDigest(workout)
+        val legacyPayloadDigest = legacyGarminWorkoutPayloadDigestForUpgrade(workout)
         val result = runCatching {
             application.repositoryFor(account.session).applyGarminCreateWorkout(
                 ownerBinding = binding.account,
@@ -1528,7 +1679,8 @@ class GarminSyncManager(
                 payloadDigest = payloadDigest,
                 date = workout.startedAtMillis,
                 note = buildGarminWorkoutNote(workout),
-                sets = workout.sets
+                sets = workout.sets,
+                legacyPayloadDigest = legacyPayloadDigest
             )
         }.getOrElse { error ->
             Log.i(TAG, "Cannot atomically persist Garmin workout receipt", error)

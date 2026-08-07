@@ -150,18 +150,18 @@ test("large private backup sharing uses bounded FileProvider streams, never Bind
   assert.doesNotMatch(screen, /Intent\.EXTRA_TEXT/);
   assert.match(
     sheet,
-    /withContext\(Dispatchers\.IO\)\s*\{\s*createBackupJsonFile\(context, json\)/
+    /withContext\(Dispatchers\.IO\)\s*\{\s*createBackupJsonFile\(context, backupShareOwnerKey, json\)/
   );
   assert.match(
     sheet,
-    /withContext\(Dispatchers\.IO\)\s*\{\s*createBackupPdfFile\(context, json\)/
+    /withContext\(Dispatchers\.IO\)\s*\{\s*createBackupPdfFile\(context, backupShareOwnerKey, json\)/
   );
   assert.match(screen, /putExtra\(Intent\.EXTRA_STREAM, uri\)/);
   assert.match(screen, /clipData\s*=\s*ClipData\.newRawUri\(file\.name, uri\)/);
   assert.match(screen, /Intent\.FLAG_GRANT_READ_URI_PERMISSION/);
   assert.match(screen, /WorkoutDataLimits\.MAX_BACKUP_BYTES/);
   assert.doesNotMatch(screen, /MAX_PRIVATE_BACKUP_BYTES/);
-  assert.match(screen, /File\.createTempFile\(prefix, suffix, shareDirectory\)/);
+  assert.match(screen, /File\.createTempFile\(prefix, suffix, ownerDirectory\)/);
   assert.equal(
     [...screen.matchAll(/outputFile\.delete\(\)/g)].length,
     2,
@@ -183,7 +183,8 @@ test("private share cleanup preserves fresh granted URIs and fails closed at its
     helper,
     /retainedCount\s*<\s*MAX_RETAINED_PRIVATE_SHARE_FILES/
   );
-  assert.match(helper, /File\.createTempFile\(prefix, suffix, shareDirectory\)/);
+  assert.match(helper, /File\.createTempFile\(prefix, suffix, ownerDirectory\)/);
+  assert.match(helper, /privateBackupShareOwnerDirectory\(shareRoot, ownerKey\)/);
   assert.doesNotMatch(
     helper,
     /artifacts\.forEach\(File::delete\)/,

@@ -394,6 +394,12 @@ struct ExercisesView: View {
         let stats = store.progressStats(exerciseID: exercise.id)
         let mappingCount = manualMuscleIDs(for: exercise).count
         let displayName = gymExerciseName(exercise)
+        let matchReason = ExerciseFilterEngine.localizedMatchReason(
+            for: exercise,
+            query: searchText,
+            muscleMappings: store.muscleMappings,
+            languageCode: gymCurrentLanguageCode()
+        )
 
         return GymPanel {
             VStack(alignment: .leading, spacing: 13) {
@@ -403,11 +409,20 @@ struct ExercisesView: View {
                         exerciseID: exercise.id,
                         ownerKey: store.accountStorageKey
                     )
-                    Text(displayName)
-                        .font(.headline)
-                        .foregroundStyle(GymTheme.textPrimary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityAddTraits(.isHeader)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(displayName)
+                            .font(.headline)
+                            .foregroundStyle(GymTheme.textPrimary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityAddTraits(.isHeader)
+                        if let matchReason {
+                            Text(matchReason)
+                                .font(.caption)
+                                .foregroundStyle(GymTheme.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .accessibilityElement(children: .combine)
 
                     Spacer(minLength: 4)
 

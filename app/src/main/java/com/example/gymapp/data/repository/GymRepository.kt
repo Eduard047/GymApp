@@ -70,6 +70,20 @@ sealed interface RecordActiveWorkoutSetResult {
     data object AlreadyCompleted : RecordActiveWorkoutSetResult
 }
 
+data class ActiveWorkoutSetUpdate(
+    val setId: String,
+    val weight: Double,
+    val reps: Int
+)
+
+sealed interface RecordActiveWorkoutSetsResult {
+    data class Recorded(val revision: Long, val count: Int) : RecordActiveWorkoutSetsResult
+    data object Missing : RecordActiveWorkoutSetsResult
+    data object Stale : RecordActiveWorkoutSetsResult
+    data object TargetChanged : RecordActiveWorkoutSetsResult
+    data object AlreadyCompleted : RecordActiveWorkoutSetsResult
+}
+
 sealed interface UndoActiveWorkoutSetResult {
     data class Undone(val revision: Long) : UndoActiveWorkoutSetResult
     data object Missing : UndoActiveWorkoutSetResult
@@ -1483,6 +1497,78 @@ class GymRepository(
         result
     }
 
+    /**
+     * Atomically records a bounded set batch. Every target is validated before the revision or
+     * any set row changes, so stale, malformed, duplicate, or already-completed input cannot leave
+     * a partially saved workout. Batch recording intentionally clears single-set undo state.
+     */
+    suspend fun recordActiveWorkoutSets(
+        updates: List<ActiveWorkoutSetUpdate>,
+        expectedRevision: Long
+    ): RecordActiveWorkoutSetsResult = activeWorkoutMutationMutex.withLock {
+        require(updates.isNotEmpty() &&
+            updates.size <= WorkoutDataLimits.MAX_EXERCISES_PER_SESSION *
+            WorkoutDataLimits.MAX_SETS_PER_EXERCISE
+        ) { "Active set batch size is invalid." }
+        require(expectedRevision in 0 until Long.MAX_VALUE) {
+            "Active workout revision is invalid."
+        }
+        require(updates.map { it.setId }.toSet().size == updates.size) {
+            "Active set batch contains duplicate identifiers."
+        }
+        updates.forEach { update ->
+            require(isStableActiveWorkoutId(update.setId)) { "Active set identifier is invalid." }
+            requireValidSet(weight = update.weight, reps = update.reps)
+        }
+        val completedAt = currentTimeMillis()
+        require(WorkoutDataLimits.isValidTimestamp(completedAt)) {
+            "Set completion timestamp is outside the supported range."
+        }
+
+        database.withTransaction {
+            val details = activeWorkoutDao.getSnapshot(ACTIVE_WORKOUT_ID)
+                ?.sortedActiveWorkout()
+                ?: return@withTransaction RecordActiveWorkoutSetsResult.Missing
+            requireValidStoredActiveWorkout(details)
+            if (details.activeWorkout.revision != expectedRevision) {
+                return@withTransaction RecordActiveWorkoutSetsResult.Stale
+            }
+            val storedSets = details.exercises
+                .flatMap { exercise -> exercise.sets }
+                .associateBy { set -> set.id }
+            val targets = updates.map { update ->
+                val target = storedSets[update.setId]
+                    ?: return@withTransaction RecordActiveWorkoutSetsResult.TargetChanged
+                if (target.completedAt != null) {
+                    return@withTransaction RecordActiveWorkoutSetsResult.AlreadyCompleted
+                }
+                update to target
+            }
+
+            check(
+                activeWorkoutDao.advanceRevisionForBulkRecord(
+                    activeWorkoutId = ACTIVE_WORKOUT_ID,
+                    expectedRevision = expectedRevision
+                ) == 1
+            ) { "Active workout changed while recording the set batch." }
+            targets.forEach { (update, target) ->
+                check(
+                    activeWorkoutDao.completeSetIfPending(
+                        setId = update.setId,
+                        expectedActiveWorkoutExerciseId = target.activeWorkoutExerciseId,
+                        weight = update.weight,
+                        reps = update.reps,
+                        completedAt = completedAt
+                    ) == 1
+                ) { "Active set changed while recording the set batch." }
+            }
+            RecordActiveWorkoutSetsResult.Recorded(
+                revision = expectedRevision + 1L,
+                count = targets.size
+            )
+        }
+    }
+
     suspend fun undoLatestActiveWorkoutSet(
         setId: String,
         expectedRevision: Long
@@ -1790,15 +1876,29 @@ class GymRepository(
             require(WorkoutDataLimits.canAddSets(setDao.getTotalSetCount(), 1)) {
                 "This account has reached the total set limit."
             }
-            val nextOrderIndex = (workoutDao.getMaxWorkoutExerciseOrderIndex(sessionId) ?: -1) + 1
-            require(nextOrderIndex < WorkoutDataLimits.MAX_EXERCISES_PER_SESSION) {
+            require(exerciseDao.getById(exerciseId) != null) { "Exercise no longer exists." }
+            require(workoutDao.getWorkoutExerciseCountForExercise(sessionId, exerciseId) == 0) {
+                "Exercise is already part of this workout."
+            }
+            val existingCount = workoutDao.getWorkoutExerciseCount(sessionId)
+            require(existingCount < WorkoutDataLimits.MAX_EXERCISES_PER_SESSION) {
                 "Workout exceeds the exercise limit."
+            }
+            if (existingCount > 0) {
+                check(
+                    workoutDao.moveWorkoutExerciseOrderIndexesToTemporaryRange(sessionId) ==
+                        existingCount
+                ) { "Workout exercise order changed while inserting at the top." }
+                check(
+                    workoutDao.moveWorkoutExerciseOrderIndexesDownFromTop(sessionId) ==
+                        existingCount
+                ) { "Workout exercise order changed while inserting at the top." }
             }
             val workoutExerciseId = workoutDao.insertWorkoutExercise(
                 WorkoutExerciseEntity(
                     sessionId = sessionId,
                     exerciseId = exerciseId,
-                    orderIndex = nextOrderIndex
+                    orderIndex = 0
                 )
             )
             setDao.insert(
@@ -2000,7 +2100,8 @@ class GymRepository(
         payloadDigest: String,
         date: Long,
         note: String?,
-        sets: List<NamedWorkoutSetDraft>
+        sets: List<NamedWorkoutSetDraft>,
+        legacyPayloadDigest: String? = null
     ): GarminWorkoutApplyResult {
         require(ownerBinding.matches(GARMIN_OWNER_BINDING_PATTERN))
         require(
@@ -2010,6 +2111,11 @@ class GymRepository(
         require(pairingGeneration.matches(GARMIN_OWNER_BINDING_PATTERN))
         require(requestId.matches(GARMIN_REQUEST_ID_PATTERN))
         require(payloadDigest.matches(SHA256_HEX_PATTERN))
+        require(
+            legacyPayloadDigest == null ||
+                legacyPayloadDigest != payloadDigest &&
+                legacyPayloadDigest.matches(SHA256_HEX_PATTERN)
+        )
 
         return database.withTransaction {
             val receiptDao = database.garminWorkoutReceiptDao()
@@ -2030,10 +2136,29 @@ class GymRepository(
                 requestId = requestId
             )
             if (existing != null) {
-                return@withTransaction if (existing.payloadDigest == payloadDigest) {
-                    GarminWorkoutApplyResult.AlreadyApplied
-                } else {
-                    GarminWorkoutApplyResult.Rejected
+                return@withTransaction when {
+                    existing.payloadDigest == payloadDigest ->
+                        GarminWorkoutApplyResult.AlreadyApplied
+                    legacyPayloadDigest != null &&
+                        existing.payloadDigest == legacyPayloadDigest -> {
+                        // Older releases did not cover interval/progress fields in their digest.
+                        // This branch never writes a workout: it upgrades only the exact durable
+                        // receipt selected above, then acknowledges the already-committed request.
+                        val upgraded = receiptDao.upgradePayloadDigest(
+                            ownerBinding = existing.ownerBinding,
+                            deviceBinding = existing.deviceBinding,
+                            pairingGeneration = existing.pairingGeneration,
+                            requestId = existing.requestId,
+                            expectedLegacyDigest = legacyPayloadDigest,
+                            replacementDigest = payloadDigest
+                        )
+                        if (upgraded == 1) {
+                            GarminWorkoutApplyResult.AlreadyApplied
+                        } else {
+                            GarminWorkoutApplyResult.Rejected
+                        }
+                    }
+                    else -> GarminWorkoutApplyResult.Rejected
                 }
             }
 

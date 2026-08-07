@@ -243,8 +243,9 @@ test("PWA accepts Russian state and renders Russian runtime text before app star
   assert.match(appSource, /tx\("metrics parsed from the saved note", "показники прочитано зі збереженої нотатки"\)/);
   assert.match(appSource, /txAttr\("Name in English, Ukrainian, or Russian", "Назва англійською, українською або російською"\)/);
   assert.doesNotMatch(appSource, /Name in English, Ukrainian or Russian/);
-  assert.ok(indexSource.indexOf("russian-text.v71.js") < indexSource.indexOf("app.v71.js"));
-  assert.match(workerSource, /"\.\/russian-text\.v71\.js"/);
+  assert.ok(indexSource.indexOf("russian-text.v72.js") < indexSource.indexOf("exercise-search-vocabulary.v1.js"));
+  assert.ok(indexSource.indexOf("exercise-search-vocabulary.v1.js") < indexSource.indexOf("app.v76.js"));
+  assert.match(workerSource, /"\.\/russian-text\.v72\.js"/);
 });
 
 test("runtime language switches invalidate cached labels on every client", async () => {
@@ -255,7 +256,8 @@ test("runtime language switches invalidate cached labels on every client", async
   ]);
   assert.match(androidRoot, /key\(uiIsolationKey, selectedLanguage\) \{ rememberNavController\(\) \}/);
   assert.match(androidRoot, /key\(uiIsolationKey, selectedLanguage\) \{[\s\S]*GymBackground/);
-  assert.match(iosRoot, /\.id\(languageCode\)[\s\S]*\.environment\(\\\.locale/);
+  assert.match(iosRoot, /@AppStorage\("app-language"\)[\s\S]*\.environment\(\\\.locale/);
+  assert.doesNotMatch(iosRoot, /\.id\(languageCode\)/);
   assert.match(
     pwaApp,
     /if \(action === "set-language"\)[\s\S]*authNotice = null;[\s\S]*resetGarminProfileContext\(\);[\s\S]*saveState\(\);[\s\S]*return render\(\);/

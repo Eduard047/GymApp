@@ -114,6 +114,30 @@ object ExerciseMediaStore {
         customFile(context, ownerKey, exerciseId).delete()
     }
 
+    fun clearOwner(context: Context, ownerKey: String): Boolean =
+        clearOwnerDirectory(
+            File(context.filesDir, "exercise-media/${ownerFingerprint(ownerKey)}")
+        )
+
+    internal fun clearOwnerDirectory(directory: File): Boolean {
+        if (!directory.exists()) return true
+        if (!directory.isDirectory || !directory.name.matches(Regex("^[a-f0-9]{64}$"))) {
+            return false
+        }
+        val canonicalDirectory = runCatching { directory.canonicalFile }.getOrNull()
+            ?: return false
+        val children = directory.listFiles() ?: return false
+        var cleared = true
+        children.forEach { child ->
+            val hasExpectedParent = runCatching {
+                child.parentFile?.canonicalFile == canonicalDirectory
+            }.getOrDefault(false)
+            if (!hasExpectedParent || child.isDirectory || !child.delete()) cleared = false
+        }
+        if (directory.listFiles()?.isNotEmpty() != false) return false
+        return directory.delete() && cleared
+    }
+
     internal fun calculateInSampleSize(
         sourceWidth: Int,
         sourceHeight: Int,

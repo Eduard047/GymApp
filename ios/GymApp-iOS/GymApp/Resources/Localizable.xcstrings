@@ -379,6 +379,38 @@
         }
       }
     },
+    "A verification code is required to change this password." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Для смены пароля требуется код подтверждения."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Для зміни пароля потрібен код підтвердження."
+          }
+        }
+      }
+    },
+    "A verification code was sent to your email. Enter it together with the new password." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Код подтверждения отправлен на твою электронную почту. Введи его вместе с новым паролем."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Код підтвердження надіслано на твою електронну пошту. Введи його разом із новим паролем."
+          }
+        }
+      }
+    },
     "A workout exercise has no sets." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -3957,6 +3989,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Вкажи від 1 до 128 допустимих ваг тренажера в діапазоні від 0 до 1 000 000 кг."
+          }
+        }
+      }
+    },
+    "Enter the 6–8 digit verification code from your email." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Введи 6–8-значный код подтверждения из письма."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Введи 6–8-значний код підтвердження з листа."
           }
         }
       }
@@ -12415,6 +12463,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Помилка кодування UTF-8."
+          }
+        }
+      }
+    },
+    "Verification code" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Код подтверждения"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Код підтвердження"
+          }
+        }
+      }
+    },
+    "Verification code sent. Re-enter the new password with the code." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Код подтверждения отправлен. Повторно введи новый пароль вместе с кодом."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Код підтвердження надіслано. Повторно введи новий пароль разом із кодом."
           }
         }
       }

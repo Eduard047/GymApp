@@ -190,5 +190,24 @@ class AuthScreenTest {
                 "NewSecurePass9!"
             )
         )
+        assertEquals(
+            "Enter the verification code sent to your email.",
+            validateSignedInPasswordChange(
+                currentPassword = "CurrentPass8!",
+                newPassword = "NewSecurePass9!",
+                repeatedPassword = "NewSecurePass9!",
+                nonce = "12345",
+                nonceRequired = true
+            )
+        )
+        assertNull(
+            validateSignedInPasswordChange(
+                currentPassword = "CurrentPass8!",
+                newPassword = "NewSecurePass9!",
+                repeatedPassword = "NewSecurePass9!",
+                nonce = "123456",
+                nonceRequired = true
+            )
+        )
     }
 }

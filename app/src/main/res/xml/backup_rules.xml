@@ -7,6 +7,8 @@
     <!-- Auth sessions, PKCE verifiers, and Garmin credentials are device-bound. -->
     <exclude domain="sharedpref" path="gym_cloud_auth.xml" />
     <exclude domain="sharedpref" path="gym_cloud_auth.xml.bak" />
+    <exclude domain="sharedpref" path="gym_cloud_account_deletion_journal.xml" />
+    <exclude domain="sharedpref" path="gym_cloud_account_deletion_journal.xml.bak" />
     <exclude domain="sharedpref" path="gym_local_database_bindings.xml" />
     <exclude domain="sharedpref" path="gym_local_database_bindings.xml.bak" />
     <exclude domain="sharedpref" path="garmin_sync.xml" />
@@ -21,4 +23,6 @@
     <exclude domain="sharedpref" path="gym_cloud_sync_baselines.xml.bak" />
     <exclude domain="sharedpref" path="gym_exercise_rest_timers.xml" />
     <exclude domain="sharedpref" path="gym_exercise_rest_timers.xml.bak" />
+    <exclude domain="sharedpref" path="gym_active_workout_timer.xml" />
+    <exclude domain="sharedpref" path="gym_active_workout_timer.xml.bak" />
 </full-backup-content>

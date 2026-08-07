@@ -99,6 +99,70 @@ class GarminWorkoutReceiptAtomicityTest {
     }
 
     @Test
+    fun legacyExtendedDigestUpgradesOnlyAnExistingReceiptWithoutRewritingWorkout() = runBlocking {
+        withDatabase("garmin-receipt-digest-upgrade") { database, repository ->
+            val legacyDigest = "b".repeat(64)
+            val currentDigest = "c".repeat(64)
+            val sets = listOf(NamedWorkoutSetDraft("Bench Press", 80.0, 8))
+
+            assertEquals(
+                GarminWorkoutApplyResult.Applied,
+                repository.applyGarminCreateWorkout(
+                    ownerBinding = ownerBinding,
+                    deviceBinding = deviceBinding,
+                    pairingGeneration = pairingGeneration,
+                    requestId = requestId,
+                    payloadDigest = legacyDigest,
+                    date = 1_750_000_000_000L,
+                    note = "Garmin legacy",
+                    sets = sets
+                )
+            )
+
+            assertEquals(
+                GarminWorkoutApplyResult.AlreadyApplied,
+                repository.applyGarminCreateWorkout(
+                    ownerBinding = ownerBinding,
+                    deviceBinding = deviceBinding,
+                    pairingGeneration = pairingGeneration,
+                    requestId = requestId,
+                    payloadDigest = currentDigest,
+                    date = 1_750_000_001_000L,
+                    note = "Garmin retry",
+                    sets = sets,
+                    legacyPayloadDigest = legacyDigest
+                )
+            )
+            assertEquals(1, database.workoutDao().getSessionCount())
+            assertEquals(
+                currentDigest,
+                database.garminWorkoutReceiptDao().get(
+                    ownerBinding,
+                    deviceBinding,
+                    pairingGeneration,
+                    requestId
+                )?.payloadDigest
+            )
+
+            assertEquals(
+                GarminWorkoutApplyResult.Rejected,
+                repository.applyGarminCreateWorkout(
+                    ownerBinding = ownerBinding,
+                    deviceBinding = deviceBinding,
+                    pairingGeneration = pairingGeneration,
+                    requestId = requestId,
+                    payloadDigest = "d".repeat(64),
+                    date = 1_750_000_002_000L,
+                    note = "changed",
+                    sets = sets,
+                    legacyPayloadDigest = "e".repeat(64)
+                )
+            )
+            assertEquals(1, database.workoutDao().getSessionCount())
+        }
+    }
+
+    @Test
     fun partialWorkoutPersistsEveryCompletedSetWithItsOwnLoadAndReps() = runBlocking {
         withDatabase("garmin-partial-sets") { database, repository ->
             val note = "Garmin · Duration 4:00 · Completed 2/4 sets · " +

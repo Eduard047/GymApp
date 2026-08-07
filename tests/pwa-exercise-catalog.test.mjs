@@ -6,6 +6,7 @@ import vm from "node:vm";
 const appSource = await readFile("pwa/app.js", "utf8");
 const stateContractSource = await readFile("pwa/state-contract.js", "utf8");
 const russianTextSource = await readFile("pwa/russian-text.js", "utf8");
+const exerciseSearchVocabularySource = await readFile("pwa/exercise-search-vocabulary.js", "utf8");
 
 function loadPwaContext({ userAgent = "" } = {}) {
   const values = new Map();
@@ -58,6 +59,7 @@ function loadPwaContext({ userAgent = "" } = {}) {
   vm.runInContext(stateContractSource, context);
   context.window.GymStateContract = context.GymStateContract;
   vm.runInContext(russianTextSource, context);
+  vm.runInContext(exerciseSearchVocabularySource, context);
   vm.runInContext(appSource, context);
   return context;
 }
@@ -107,6 +109,23 @@ test("built-in exercise catalog persists stable keys and localizes only display 
   assert.deepEqual(defaults[0], { id: 1, name: "Bench Press", catalogKey: "bench_press" });
   assert.equal(vm.runInContext('exerciseDisplayName(defaultAppState().exercises[0], "uk")', context), "Жим штанги лежачи");
   assert.equal(vm.runInContext('exerciseDisplayName({ name: "My custom press" }, "uk")', context), "My custom press");
+});
+
+test("exercise add and rename use the native Unicode name boundary", () => {
+  const context = loadPwaContext();
+  const accepted = "😀".repeat(160);
+  const rejected = "😀".repeat(161);
+
+  assert.equal(
+    vm.runInContext(`isSupportedExerciseName(${JSON.stringify(accepted)})`, context),
+    true
+  );
+  assert.equal(
+    vm.runInContext(`isSupportedExerciseName(${JSON.stringify(rejected)})`, context),
+    false
+  );
+  assert.match(appSource, /id="new-exercise-name" maxlength="320"/);
+  assert.match(appSource, /id="rename-name" maxlength="320"/);
 });
 
 test("catalog seeding runs once and preserves later user deletions", () => {
@@ -198,6 +217,168 @@ test("canonical aliases derive their stable key while custom labels remain custo
     assert.equal(vm.runInContext(`exerciseCatalogKey(${JSON.stringify(alias)})`, context), "assisted_dip");
   }
   assert.equal(vm.runInContext('exerciseCatalogKey("брусья в гравитроне")', context), null);
+});
+
+test("colloquial exercise search is multilingual, order independent, and identity safe", () => {
+  const context = loadPwaContext();
+  const examples = [
+    ["lateral_raise", "махи в сторони с гантелями"],
+    ["lateral_raise", "гантели стороны махи"],
+    ["lateral_raise", "DB lat raises"],
+    ["shoulder_press", "OHP"],
+    ["romanian_deadlift", "RDL"],
+    ["bulgarian_split_squat", "BSS"],
+    ["bulgarian_split_squat", "RFESS"],
+    ["chest_fly_machine", "pec-deck"],
+    ["face_pull", "rope face pull"],
+    ["plate_loaded_row", "тяга у хаммері"],
+    ["hammer_curl", "молотки"],
+    ["preacher_curl", "Scott curl"],
+    ["plate_twist", "Russian twist"]
+  ];
+  for (const [catalogKey, query] of examples) {
+    assert.equal(
+      vm.runInContext(
+        `exerciseMatchesSearch({ name: builtInExerciseByKey.get(${JSON.stringify(catalogKey)}).names.en, catalogKey: ${JSON.stringify(catalogKey)} }, ${JSON.stringify(query)}, "ru")`,
+        context
+      ),
+      true,
+      `${query} should find ${catalogKey}`
+    );
+  }
+
+  for (const searchOnlyAlias of [
+    "бабочка", "OHP", "RDL", "BSS", "RFESS", "Scott curl",
+    "махи гантелями в стороны"
+  ]) {
+    assert.equal(
+      vm.runInContext(`exerciseCatalogKey(${JSON.stringify(searchOnlyAlias)})`, context),
+      null,
+      `${searchOnlyAlias} must not become a persisted identity alias`
+    );
+  }
+});
+
+test("exercise search ranks exact phrases above partial variants", () => {
+  const context = loadPwaContext();
+  vm.runInContext(`state = defaultAppState(); exerciseSortMode = "name"; exerciseSearchQuery = "Bench Press";`, context);
+  const benchKeys = jsonFrom(context, "filteredLibraryExercises().map(exercise => exercise.catalogKey)");
+  assert.equal(benchKeys[0], "bench_press");
+  assert.ok(benchKeys.includes("dumbbell_bench_press"));
+
+  vm.runInContext(`state = defaultAppState(); exerciseSortMode = "name"; exerciseSearchQuery = "pec deck";`, context);
+  const pecDeckKeys = jsonFrom(context, "filteredLibraryExercises().map(exercise => exercise.catalogKey)");
+  assert.equal(pecDeckKeys[0], "chest_fly_machine");
+  assert.ok(pecDeckKeys.includes("rear_delt_fly"));
+  assert.ok(
+    vm.runInContext(`exerciseSearchMatch(state.exercises.find(exercise => exercise.catalogKey === "chest_fly_machine"), "pec deck", "en").score`, context) >
+    vm.runInContext(`exerciseSearchMatch(state.exercises.find(exercise => exercise.catalogKey === "rear_delt_fly"), "pec deck", "en").score`, context)
+  );
+
+  vm.runInContext(`exerciseSearchQuery = "reverse pec deck";`, context);
+  const reverseKeys = jsonFrom(context, "filteredLibraryExercises().map(exercise => exercise.catalogKey)");
+  assert.equal(reverseKeys[0], "rear_delt_fly");
+  assert.equal(reverseKeys.includes("chest_fly_machine"), false);
+});
+
+test("exercise search tolerates only bounded useful typos and transliteration", () => {
+  const context = loadPwaContext();
+  for (const [catalogKey, query] of [
+    ["assisted_pull_up", "граветрон"],
+    ["chest_fly_machine", "pecdek"],
+    ["romanian_deadlift", "ruminka"],
+    ["lateral_raise", "mahi gantelyami"],
+    ["lateral_raise", "mahi s gantelyami"],
+    ["incline_dumbbell_press", "zhim na verh grudi"],
+    ["lat_pulldown", "spina na bloke"]
+  ]) {
+    assert.equal(
+      vm.runInContext(`exerciseMatchesSearch(defaultAppState().exercises.find(exercise => exercise.catalogKey === ${JSON.stringify(catalogKey)}), ${JSON.stringify(query)}, "ru")`, context),
+      true,
+      `${query} should find ${catalogKey}`
+    );
+  }
+  assert.equal(vm.runInContext(`exerciseMatchesSearch(defaultAppState().exercises[0], "db", "en")`, context), false);
+  assert.equal(vm.runInContext(`exerciseMatchesSearch(defaultAppState().exercises[0], "db db", "en")`, context), false);
+  assert.equal(vm.runInContext(`exerciseMatchesSearch(defaultAppState().exercises[0], "zzzzzz", "en")`, context), false);
+});
+
+test("exercise search combines muscle and equipment vocabulary", () => {
+  const context = loadPwaContext();
+  const matchingKeys = query => jsonFrom(
+    context,
+    `defaultAppState().exercises.filter(exercise => exerciseMatchesSearch(exercise, ${JSON.stringify(query)}, "ru")).map(exercise => exercise.catalogKey)`
+  );
+  assert.deepEqual(matchingKeys("задняя дельта"), ["rear_delt_fly"]);
+  const upperChestMatches = matchingKeys("верх груди");
+  assert.ok(upperChestMatches.includes("incline_dumbbell_press"));
+  assert.ok(upperChestMatches.includes("incline_bench_press"));
+  assert.equal(upperChestMatches.includes("lat_pulldown"), false);
+  assert.ok(matchingKeys("спина блок").includes("lat_pulldown"));
+  assert.ok(matchingKeys("спина блок").includes("seated_cable_row"));
+  assert.ok(matchingKeys("гантели трицепс").includes("overhead_dumbbell_triceps_extension"));
+});
+
+test("exercise search explains useful non-canonical matches in every UI language", () => {
+  const context = loadPwaContext();
+  for (const [language, expectedPrefix] of [
+    ["en", "Found by:"],
+    ["uk", "Знайдено за запитом:"],
+    ["ru", "Найдено по:"]
+  ]) {
+    vm.runInContext(`state = defaultAppState(); state.language = ${JSON.stringify(language)}; exerciseSearchQuery = "махи в стороны";`, context);
+    const markup = vm.runInContext(`exerciseSearchReasonMarkup(state.exercises.find(exercise => exercise.catalogKey === "lateral_raise"))`, context);
+    assert.ok(markup.includes(expectedPrefix));
+    assert.ok(markup.includes("махи в стороны"), markup);
+  }
+  vm.runInContext(`state.language = "en"; exerciseSearchQuery = "Lateral Raise";`, context);
+  assert.equal(
+    vm.runInContext(`exerciseSearchReasonMarkup(state.exercises.find(exercise => exercise.catalogKey === "lateral_raise"))`, context),
+    ""
+  );
+});
+
+test("ambiguous gym terms return honest choices without reviving a misleading legacy search alias", () => {
+  const context = loadPwaContext();
+  const matchingKeys = query => jsonFrom(
+    context,
+    `defaultAppState().exercises
+      .filter(exercise => exerciseMatchesSearch(exercise, ${JSON.stringify(query)}, "ru"))
+      .map(exercise => exercise.catalogKey)
+      .sort()`
+  );
+
+  assert.deepEqual(matchingKeys("гравитрон"), ["assisted_dip", "assisted_pull_up"]);
+  assert.deepEqual(matchingKeys("бабочка"), ["chest_fly_machine", "rear_delt_fly"]);
+  assert.ok(matchingKeys("бицепс бедра").includes("lying_leg_curl"));
+  assert.ok(matchingKeys("бицепс бедра").includes("seated_leg_curl"));
+  assert.ok(matchingKeys("вертикальная тяга").includes("lat_pulldown"));
+  assert.equal(matchingKeys("вертикальная тяга").includes("upright_row"), false);
+});
+
+test("exercise search rejects unbounded queries before scanning aliases", () => {
+  const context = loadPwaContext();
+  assert.equal(
+    vm.runInContext(
+      `exerciseMatchesSearch({ name: "Bench Press", catalogKey: "bench_press" }, ${JSON.stringify("x".repeat(257))}, "en")`,
+      context
+    ),
+    false
+  );
+  assert.equal(
+    vm.runInContext(
+      `exerciseMatchesSearch({ name: "Bench Press", catalogKey: "bench_press" }, ${JSON.stringify(Array.from({ length: 17 }, (_, index) => `word${index}`).join(" "))}, "en")`,
+      context
+    ),
+    false
+  );
+  assert.equal(
+    vm.runInContext(
+      `exerciseMatchesSearch({ name: ${JSON.stringify("y".repeat(129))} }, ${JSON.stringify("y".repeat(128))}, "en")`,
+      context
+    ),
+    false
+  );
 });
 
 test("assisted-dip upgrade preserves the legacy row and history without a duplicate", () => {

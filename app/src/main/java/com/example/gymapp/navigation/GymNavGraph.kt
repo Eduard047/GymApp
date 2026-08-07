@@ -73,11 +73,13 @@ import com.example.gymapp.R
 import com.example.gymapp.auth.AccountSession
 import com.example.gymapp.auth.CloudAccountDeletionSessionDisposition
 import com.example.gymapp.auth.CloudAuthManager
+import com.example.gymapp.auth.PasswordReauthenticationRequiredException
 import com.example.gymapp.auth.activeCloudSessionFor
 import com.example.gymapp.auth.authErrorText
 import com.example.gymapp.auth.databaseName
 import com.example.gymapp.auth.LeaderboardRow
 import com.example.gymapp.auth.requiresEmailConfirmation
+import com.example.gymapp.auth.shouldRetireCloudAccountDeletionJournal
 import com.example.gymapp.data.repository.BackupOwner
 import com.example.gymapp.data.repository.canonicalWorkoutPayloadDigest
 import com.example.gymapp.gymApplication
@@ -89,6 +91,7 @@ import com.example.gymapp.ui.screens.ActiveWorkoutScreen
 import com.example.gymapp.ui.screens.AppIntroSplash
 import com.example.gymapp.ui.screens.AuthScreen
 import com.example.gymapp.ui.screens.CloudSyncConflictDialog
+import com.example.gymapp.ui.screens.clearPrivateBackupShareArtifacts
 import com.example.gymapp.ui.screens.ExerciseListScreen
 import com.example.gymapp.ui.screens.ExerciseProgressScreen
 import com.example.gymapp.ui.screens.GymBackground
@@ -106,6 +109,7 @@ import com.example.gymapp.ui.viewmodel.ExerciseProgressViewModel
 import com.example.gymapp.ui.viewmodel.PostWorkoutSummaryViewModel
 import com.example.gymapp.ui.viewmodel.WorkoutDetailViewModel
 import com.example.gymapp.ui.viewmodel.WorkoutListViewModel
+import com.example.gymapp.ui.media.ExerciseMediaStore
 import com.example.gymapp.sync.PhoneSyncClient
 import com.example.gymapp.sync.CloudSnapshotApplyDecision
 import com.example.gymapp.sync.CloudSyncConflictSnapshot
@@ -137,6 +141,7 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import java.io.File
 import java.security.MessageDigest
 
 internal fun shouldEnableCloudAutosave(
@@ -159,13 +164,21 @@ internal suspend fun runConfirmedAccountDeletionLocalCleanup(
     clearRoom: suspend () -> Unit,
     clearBaseline: () -> Boolean,
     clearTrainingProfile: () -> Boolean,
-    clearSyncStatus: () -> Boolean = { true }
+    clearSyncStatus: () -> Boolean = { true },
+    clearCustomMedia: () -> Boolean = { true },
+    clearBackupShares: () -> Boolean = { true },
+    clearRestTimers: () -> Boolean = { true },
+    clearGarminState: () -> Boolean = { true }
 ): Int {
     var failures = 0
     if (runCatching { clearRoom() }.isFailure) failures += 1
     if (runCatching { check(clearBaseline()) }.isFailure) failures += 1
     if (runCatching { check(clearTrainingProfile()) }.isFailure) failures += 1
     if (runCatching { check(clearSyncStatus()) }.isFailure) failures += 1
+    if (runCatching { check(clearCustomMedia()) }.isFailure) failures += 1
+    if (runCatching { check(clearBackupShares()) }.isFailure) failures += 1
+    if (runCatching { check(clearRestTimers()) }.isFailure) failures += 1
+    if (runCatching { check(clearGarminState()) }.isFailure) failures += 1
     return failures
 }
 
@@ -277,6 +290,12 @@ internal fun GymAppRoot(
     }
     var showIntro by rememberSaveable { mutableStateOf(true) }
     var accountDeletionInProgress by remember { mutableStateOf(false) }
+    var passwordReauthenticationRequired by key(uiIsolationKey) {
+        remember { mutableStateOf(false) }
+    }
+    var passwordChangeSuccessVersion by key(uiIsolationKey) {
+        remember { mutableStateOf(0L) }
+    }
     var cloudPullGeneration by key(uiIsolationKey) {
         remember { mutableStateOf<String?>(null) }
     }
@@ -1291,7 +1310,10 @@ internal fun GymAppRoot(
                             val viewModel: ActiveWorkoutViewModel = viewModel(
                                 factory = ActiveWorkoutViewModel.factory(
                                     repository = repository,
-                                    restTimerController = restTimerController
+                                    restTimerController = restTimerController,
+                                    timerAccountKey = checkNotNull(
+                                        restTimerAccountKey(authState.session)
+                                    )
                                 )
                             )
                             val uiState by viewModel.uiState.collectAsState()
@@ -1327,9 +1349,11 @@ internal fun GymAppRoot(
 
                             ActiveWorkoutScreen(
                                 uiState = uiState,
+                                exerciseMediaOwnerKey = checkNotNull(authState.session).databaseName(),
                                 onSetWeightChanged = viewModel::updateSetWeight,
                                 onSetRepsChanged = viewModel::updateSetReps,
                                 onRecordSet = viewModel::recordSet,
+                                onRecordAllPendingSets = viewModel::recordAllPendingSets,
                                 onUndoLatestSet = viewModel::undoLatestSet,
                                 onAdjustRestTimer = viewModel::adjustRestTimer,
                                 onStopRestTimer = viewModel::stopRestTimer,
@@ -1551,6 +1575,7 @@ internal fun GymAppRoot(
 
                             ProfileScreen(
                                 accountState = profileState,
+                                backupShareOwnerKey = checkNotNull(authState.session).databaseName(),
                                 rows = rows,
                                 soloProgress = uiState.soloProgress,
                                 isLeaderboardLoading = isLoading,
@@ -1597,7 +1622,14 @@ internal fun GymAppRoot(
                                     authLoading = authState.isLoading,
                                     deletionInProgress = accountDeletionInProgress
                                 ),
-                                onChangePassword = changePassword@ { currentPassword, newPassword ->
+                                passwordReauthenticationRequired =
+                                    passwordReauthenticationRequired,
+                                passwordChangeSuccessVersion =
+                                    passwordChangeSuccessVersion,
+                                onChangePassword = changePassword@ {
+                                        currentPassword,
+                                        newPassword,
+                                        nonce ->
                                     if (!accountActionsEnabled(
                                             authLoading = authState.isLoading,
                                             deletionInProgress = accountDeletionInProgress
@@ -1605,21 +1637,44 @@ internal fun GymAppRoot(
                                     ) {
                                         return@changePassword
                                     }
+                                    val capturedSession = authManager.authState.value.session
+                                        as? AccountSession.Cloud ?: return@changePassword
                                     coroutineScope.launch {
                                         authManager.setLoading(true)
                                         runCatching {
                                             authManager.changePassword(
                                                 currentPassword = currentPassword,
-                                                newPassword = newPassword
+                                                newPassword = newPassword,
+                                                nonce = nonce
                                             )
+                                            passwordReauthenticationRequired = false
+                                            passwordChangeSuccessVersion += 1L
                                         }.onFailure { throwable ->
-                                            if (authManager.authState.value.session != null) {
-                                                authManager.setMessage(
-                                                    authErrorText(
-                                                        throwable,
-                                                        R.string.account_change_password_failed
+                                            if (activeCloudSessionFor(
+                                                    authManager.authState.value.session,
+                                                    capturedSession
+                                                ) != null
+                                            ) {
+                                                if (throwable is
+                                                    PasswordReauthenticationRequiredException
+                                                ) {
+                                                    passwordReauthenticationRequired = true
+                                                    authManager.setMessage(
+                                                        LocalizedText(
+                                                            R.string
+                                                                .account_password_verification_code_sent
+                                                        ),
+                                                        isError = false
                                                     )
-                                                )
+                                                } else {
+                                                    authManager.setMessage(
+                                                        authErrorText(
+                                                            throwable,
+                                                            R.string
+                                                                .account_change_password_failed
+                                                        )
+                                                    )
+                                                }
                                             }
                                         }
                                     }
@@ -1643,7 +1698,7 @@ internal fun GymAppRoot(
                                                 val deletedSession = authManager.deleteCloudAccount(
                                                     capturedSession
                                                 )
-                                                val cleanupFailures =
+                                                var cleanupFailures =
                                                     runConfirmedAccountDeletionLocalCleanup(
                                                         clearRoom = {
                                                             capturedRepository.clearAllAccountData()
@@ -1662,12 +1717,60 @@ internal fun GymAppRoot(
                                                             cloudSyncStatusStore.clear(
                                                                 deletedSession.userId
                                                             )
+                                                        },
+                                                        clearCustomMedia = {
+                                                            ExerciseMediaStore.clearOwner(
+                                                                applicationContext,
+                                                                deletedSession.databaseName()
+                                                            )
+                                                        },
+                                                        clearBackupShares = {
+                                                            clearPrivateBackupShareArtifacts(
+                                                                File(
+                                                                    applicationContext.cacheDir,
+                                                                    "backup-share"
+                                                                ),
+                                                                deletedSession.databaseName()
+                                                            )
+                                                        },
+                                                        clearRestTimers = {
+                                                            applicationContext.gymApplication
+                                                                .restTimerController
+                                                                .clearAccount(deletedSession)
+                                                        },
+                                                        clearGarminState = {
+                                                            applicationContext.gymApplication
+                                                                .garminSyncManager
+                                                                .clearCloudAccountLocalState(
+                                                                    deletedSession.userId,
+                                                                    deletedSession
+                                                                        .sessionGeneration
+                                                                )
                                                         }
                                                     )
                                                 val completion = authManager
                                                     .completeCloudAccountDeletion(deletedSession)
+                                                if (shouldRetireCloudAccountDeletionJournal(
+                                                        completion,
+                                                        cleanupFailures
+                                                    )
+                                                ) {
+                                                    if (!authManager
+                                                            .clearPendingCloudAccountDeletion(
+                                                                deletedSession
+                                                            )
+                                                    ) {
+                                                        cleanupFailures += 1
+                                                    }
+                                                } else if (cleanupFailures == 0 &&
+                                                    completion.disposition !=
+                                                    CloudAccountDeletionSessionDisposition
+                                                        .PreserveDifferentSession
+                                                ) {
+                                                    cleanupFailures += 1
+                                                }
                                                 if (cleanupFailures > 0 &&
-                                                    completion !=
+                                                    completion.disposition !=
                                                     CloudAccountDeletionSessionDisposition
                                                         .PreserveDifferentSession
                                                 ) {

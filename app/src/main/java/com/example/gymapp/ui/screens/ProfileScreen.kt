@@ -20,6 +20,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Watch
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -49,6 +50,7 @@ import java.util.Date
 @Composable
 fun ProfileScreen(
     accountState: ExerciseListUiState,
+    backupShareOwnerKey: String,
     rows: List<LeaderboardRow>,
     soloProgress: SoloProgressUiModel,
     isLeaderboardLoading: Boolean,
@@ -68,7 +70,13 @@ fun ProfileScreen(
     onImportBackup: () -> Unit,
     onLogout: () -> Unit,
     isAccountActionLoading: Boolean,
-    onChangePassword: (currentPassword: String, newPassword: String) -> Unit,
+    passwordReauthenticationRequired: Boolean,
+    passwordChangeSuccessVersion: Long,
+    onChangePassword: (
+        currentPassword: String,
+        newPassword: String,
+        nonce: String?
+    ) -> Unit,
     onDeleteCloudAccount: () -> Unit,
     garminDeviceState: GarminDeviceUiState,
     onResetGarminPairing: () -> Unit,
@@ -78,6 +86,13 @@ fun ProfileScreen(
     var showGarminResetConfirmation by rememberSaveable { mutableStateOf(false) }
     var showPasswordChange by rememberSaveable { mutableStateOf(false) }
     var showAccountDeletion by rememberSaveable { mutableStateOf(false) }
+
+    LaunchedEffect(passwordReauthenticationRequired) {
+        if (passwordReauthenticationRequired) showPasswordChange = true
+    }
+    LaunchedEffect(passwordChangeSuccessVersion) {
+        if (passwordChangeSuccessVersion > 0L) showPasswordChange = false
+    }
 
     LeaderboardScreen(
         rows = rows,
@@ -152,6 +167,7 @@ fun ProfileScreen(
 
     AccountBackupSheets(
         uiState = accountState,
+        backupShareOwnerKey = backupShareOwnerKey,
         onClearBackup = onClearBackup,
         onCloseImport = onCloseImport,
         onImportJsonChange = onImportJsonChange,
@@ -183,10 +199,13 @@ fun ProfileScreen(
 
     if (showPasswordChange) {
         ChangePasswordDialog(
-            onDismiss = { showPasswordChange = false },
-            onConfirm = { currentPassword, newPassword ->
-                showPasswordChange = false
-                onChangePassword(currentPassword, newPassword)
+            reauthenticationRequired = passwordReauthenticationRequired,
+            isLoading = isAccountActionLoading,
+            onDismiss = {
+                if (!isAccountActionLoading) showPasswordChange = false
+            },
+            onConfirm = { currentPassword, newPassword, nonce ->
+                onChangePassword(currentPassword, newPassword, nonce)
             }
         )
     }
@@ -399,12 +418,15 @@ private fun CloudAccountActionsCard(
 
 @Composable
 private fun ChangePasswordDialog(
+    reauthenticationRequired: Boolean,
+    isLoading: Boolean,
     onDismiss: () -> Unit,
-    onConfirm: (currentPassword: String, newPassword: String) -> Unit
+    onConfirm: (currentPassword: String, newPassword: String, nonce: String?) -> Unit
 ) {
     var currentPassword by remember { mutableStateOf("") }
     var newPassword by remember { mutableStateOf("") }
     var repeatedPassword by remember { mutableStateOf("") }
+    var nonce by remember { mutableStateOf("") }
     var validationMessage by remember { mutableStateOf<String?>(null) }
 
     AlertDialog(
@@ -412,7 +434,15 @@ private fun ChangePasswordDialog(
         title = { Text(stringResource(R.string.account_change_password)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(stringResource(R.string.account_change_password_supporting))
+                Text(
+                    stringResource(
+                        if (reauthenticationRequired) {
+                            R.string.account_password_reauthentication_supporting
+                        } else {
+                            R.string.account_change_password_supporting
+                        }
+                    )
+                )
                 ProfilePasswordField(
                     value = currentPassword,
                     onValueChange = {
@@ -421,6 +451,23 @@ private fun ChangePasswordDialog(
                     },
                     label = stringResource(R.string.account_current_password)
                 )
+                if (reauthenticationRequired) {
+                    OutlinedTextField(
+                        value = nonce,
+                        onValueChange = {
+                            nonce = it.filter { character -> character in '0'..'9' }.take(8)
+                            validationMessage = null
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = {
+                            Text(stringResource(R.string.account_password_verification_code))
+                        },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.NumberPassword
+                        )
+                    )
+                }
                 ProfilePasswordField(
                     value = newPassword,
                     onValueChange = {
@@ -453,14 +500,21 @@ private fun ChangePasswordDialog(
         },
         confirmButton = {
             TextButton(
+                enabled = !isLoading,
                 onClick = {
                     val validation = validateSignedInPasswordChange(
                         currentPassword = currentPassword,
                         newPassword = newPassword,
-                        repeatedPassword = repeatedPassword
+                        repeatedPassword = repeatedPassword,
+                        nonce = nonce.takeIf { reauthenticationRequired },
+                        nonceRequired = reauthenticationRequired
                     )
                     if (validation == null) {
-                        onConfirm(currentPassword, newPassword)
+                        onConfirm(
+                            currentPassword,
+                            newPassword,
+                            nonce.takeIf { reauthenticationRequired }
+                        )
                     } else {
                         validationMessage = validation
                     }
@@ -470,7 +524,7 @@ private fun ChangePasswordDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(enabled = !isLoading, onClick = onDismiss) {
                 Text(stringResource(R.string.action_cancel))
             }
         }
@@ -540,13 +594,17 @@ private fun DeleteCloudAccountDialog(
 internal fun validateSignedInPasswordChange(
     currentPassword: String,
     newPassword: String,
-    repeatedPassword: String
+    repeatedPassword: String,
+    nonce: String? = null,
+    nonceRequired: Boolean = false
 ): String? = when {
     currentPassword.isEmpty() -> "Enter your current password."
     currentPassword.toByteArray(Charsets.UTF_8).size > 1_024 ->
         "Current password is too long."
     currentPassword == newPassword ->
         "Choose a new password that differs from the current password."
+    nonceRequired && (nonce == null || !nonce.matches(Regex("^[0-9]{6,8}$"))) ->
+        "Enter the verification code sent to your email."
     else -> validatePasswordUpdateInput(newPassword, repeatedPassword)
 }
 
@@ -555,6 +613,8 @@ private fun profileAuthValidationResource(message: String): Int = when (message)
     "Current password is too long." -> R.string.account_current_password_too_long
     "Choose a new password that differs from the current password." ->
         R.string.account_new_password_must_differ
+    "Enter the verification code sent to your email." ->
+        R.string.account_password_verification_code_required
     "Enter a new password." -> R.string.auth_error_new_password_required
     "Password must contain at least 12 characters and fit within 72 UTF-8 bytes." ->
         R.string.auth_error_password_minimum

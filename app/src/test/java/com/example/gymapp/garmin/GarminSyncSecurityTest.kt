@@ -698,7 +698,7 @@ class GarminSyncSecurityTest {
         )
         val legacyParsed = checkNotNull(parseGarminWorkoutCommand(legacyView, nowMillis))
         assertEquals(4, legacyParsed.plannedSetCount)
-        assertEquals(
+        assertNotEquals(
             canonicalGarminWorkoutPayloadDigest(legacyParsed),
             canonicalGarminWorkoutPayloadDigest(parsed)
         )
@@ -934,7 +934,7 @@ class GarminSyncSecurityTest {
     }
 
     @Test
-    fun newDiagnosticFieldsDoNotBreakAckLostRetriesAcceptedByOlderAndroid() {
+    fun diagnosticFieldsAreBoundToTheWorkoutReceiptDigest() {
         val nowMillis = 1_800_000_000_000L
         val legacyParsed = checkNotNull(parseGarminWorkoutCommand(validCommand(), nowMillis))
         val upgradedParsed = checkNotNull(
@@ -951,9 +951,14 @@ class GarminSyncSecurityTest {
             )
         )
 
-        assertEquals(
+        assertNotEquals(
             canonicalGarminWorkoutPayloadDigest(legacyParsed),
             canonicalGarminWorkoutPayloadDigest(upgradedParsed)
+        )
+        assertNull(legacyGarminWorkoutPayloadDigestForUpgrade(legacyParsed))
+        assertEquals(
+            canonicalGarminWorkoutPayloadDigest(legacyParsed),
+            legacyGarminWorkoutPayloadDigestForUpgrade(upgradedParsed)
         )
     }
 
@@ -1234,6 +1239,52 @@ class GarminSyncSecurityTest {
     }
 
     @Test
+    fun canonicalWorkoutDigestDetectsEveryIntervalAndPlannedProgressChange() {
+        val nowMillis = 1_800_000_000_000L
+        val wireCommand = validCommand() + mapOf(
+            "setIntervals" to listOf(
+                listOf(0, 42, 5.5, 6, 0, 0, 10, 15, 5, 0)
+            ),
+            "plannedSetCount" to 3,
+            "plannedTargetSetCount" to 3,
+            "completedPlannedSetCount" to 1
+        )
+        val command = checkNotNull(parseGarminWorkoutCommand(wireCommand, nowMillis))
+        val sameCommand = checkNotNull(parseGarminWorkoutCommand(wireCommand, nowMillis))
+        val interval = checkNotNull(command.setIntervals.single())
+        val digest = canonicalGarminWorkoutPayloadDigest(command)
+        val changedCommands = listOf(
+            command.copy(setIntervals = listOf(interval.copy(startOffsetSeconds = 1))),
+            command.copy(setIntervals = listOf(interval.copy(endOffsetSeconds = 43))),
+            command.copy(setIntervals = listOf(interval.copy(gymCalories = 5.6))),
+            command.copy(setIntervals = listOf(interval.copy(garminCalories = 7))),
+            command.copy(
+                setIntervals = listOf(
+                    interval.copy(heartRateZoneSeconds = listOf(0, 0, 11, 15, 5, 0))
+                )
+            ),
+            command.copy(plannedSetCount = 4),
+            command.copy(plannedTargetSetCount = 2),
+            command.copy(completedPlannedSetCount = 0)
+        )
+
+        assertEquals(digest, canonicalGarminWorkoutPayloadDigest(sameCommand))
+        val legacyUpgradeDigest = checkNotNull(
+            legacyGarminWorkoutPayloadDigestForUpgrade(command)
+        )
+        assertNotEquals(digest, legacyUpgradeDigest)
+        changedCommands.forEach { changed ->
+            assertNotEquals(digest, canonicalGarminWorkoutPayloadDigest(changed))
+            // Compatibility accepts this weaker digest only when a durable receipt already
+            // exists; it cannot authorize a new workout write.
+            assertEquals(
+                legacyUpgradeDigest,
+                legacyGarminWorkoutPayloadDigestForUpgrade(changed)
+            )
+        }
+    }
+
+    @Test
     fun cacheAndReplayScopesDoNotExposeOrMixBindings() {
         val first = garminStorageKey("cached_plan", "a".repeat(64), "device-one")
         val second = garminStorageKey("cached_plan", "b".repeat(64), "device-one")
@@ -1243,6 +1294,114 @@ class GarminSyncSecurityTest {
         assertNotEquals(first, third)
         assertFalse(first.contains("device-one"))
         assertFalse(first.contains("a".repeat(64)))
+    }
+
+    @Test
+    fun deletedCloudOwnerCleanupTargetsOnlyItsPlanPairingAndTransitionKeys() {
+        val deletedUser = "00000000-0000-4000-8000-000000000001"
+        val otherUser = "00000000-0000-4000-8000-000000000002"
+        val generation = "00000000-0000-4000-8000-000000000011"
+        val device = "123456789"
+        val deletedBinding = checkNotNull(canonicalCloudGarminAccountBinding(deletedUser))
+        val otherBinding = checkNotNull(canonicalCloudGarminAccountBinding(otherUser))
+        val deletedTarget = checkNotNull(
+            garminAuthTransitionTarget(deletedBinding, generation)
+        )
+        val otherTarget = checkNotNull(garminAuthTransitionTarget(otherBinding, generation))
+        val deletedTrusted = garminStorageKey("trusted_device", deletedBinding)
+        val deletedDefaultPlan = garminStorageKey(
+            "cached_plan",
+            deletedBinding,
+            "account_default"
+        )
+        val deletedDevicePlan = garminStorageKey("cached_plan", deletedBinding, device)
+        val deletedPairing = garminStorageKey(
+            "pairing_generation_v1",
+            deletedTarget.key,
+            device
+        )
+        val deletedPendingPairing = garminStorageKey(
+            "pairing_generation_pending_v1",
+            deletedTarget.key,
+            device
+        )
+        val deletedCapability = garminStorageKey(
+            "pairing_generation_capable_v1",
+            deletedTarget.key,
+            device
+        )
+        val otherTrusted = garminStorageKey("trusted_device", otherBinding)
+        val otherPlan = garminStorageKey("cached_plan", otherBinding, "account_default")
+        val otherPairing = garminStorageKey(
+            "pairing_generation_v1",
+            otherTarget.key,
+            device
+        )
+        val globalRevision = checkNotNull(globalGarminSyncRevisionStorageKey(device))
+        val existing = linkedMapOf<String, Any>(
+            deletedTrusted to device,
+            deletedDefaultPlan to "deleted default plan",
+            deletedDevicePlan to "deleted device plan",
+            deletedPairing to "deleted generation",
+            deletedPendingPairing to "deleted pending generation",
+            deletedCapability to true,
+            otherTrusted to device,
+            otherPlan to "other plan",
+            otherPairing to "other generation",
+            "trusted_physical_device_v2" to device,
+            globalRevision to 99L,
+            "auth_transition_ready_v1" to deletedTarget.key,
+            "auth_transition_pending_key_v1" to deletedTarget.key,
+            "auth_transition_pending_binding_v1" to deletedBinding
+        )
+
+        val plan = checkNotNull(
+            garminCloudAccountLocalCleanupPlan(existing, deletedUser, generation)
+        )
+
+        assertTrue(
+            plan.preferenceKeys.containsAll(
+                setOf(
+                    deletedTrusted,
+                    deletedDefaultPlan,
+                    deletedDevicePlan,
+                    deletedPairing,
+                    deletedPendingPairing,
+                    deletedCapability,
+                    "auth_transition_ready_v1",
+                    "auth_transition_pending_key_v1",
+                    "auth_transition_pending_binding_v1"
+                )
+            )
+        )
+        assertFalse(otherTrusted in plan.preferenceKeys)
+        assertFalse(otherPlan in plan.preferenceKeys)
+        assertFalse(otherPairing in plan.preferenceKeys)
+        assertFalse("trusted_physical_device_v2" in plan.preferenceKeys)
+        assertFalse(globalRevision in plan.preferenceKeys)
+    }
+
+    @Test
+    fun cloudOwnerCleanupRejectsConflictingGlobalTransitionState() {
+        val deletedUser = "00000000-0000-4000-8000-000000000001"
+        val otherUser = "00000000-0000-4000-8000-000000000002"
+        val generation = "00000000-0000-4000-8000-000000000011"
+        val deletedBinding = checkNotNull(canonicalCloudGarminAccountBinding(deletedUser))
+        val otherBinding = checkNotNull(canonicalCloudGarminAccountBinding(otherUser))
+        val deletedTarget = checkNotNull(
+            garminAuthTransitionTarget(deletedBinding, generation)
+        )
+
+        assertNull(
+            garminCloudAccountLocalCleanupPlan(
+                existingPreferences = mapOf(
+                    "auth_transition_pending_key_v1" to deletedTarget.key,
+                    "auth_transition_pending_binding_v1" to otherBinding
+                ),
+                userId = deletedUser,
+                sessionGeneration = generation
+            )
+        )
     }
 
     private fun validCommand(): Map<Any?, Any?> = mapOf(

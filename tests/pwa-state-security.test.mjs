@@ -144,6 +144,72 @@ test("portable exercise identity uses NFC, Unicode whitespace, apostrophe, and y
   assert.equal(Object.is(normalized.sessions[0].sets[0].weight, -0), false);
 });
 
+test("exercise names and mapping keys reject C0/C1 controls on normal import", () => {
+  const mutations = [
+    backup => { backup.exercises[0].name = "Bench\u0000Press"; },
+    backup => { backup.sessions[0].exerciseNames = ["Bench\u001fPress"]; },
+    backup => { backup.sessions[0].exercises[0].name = "Bench\u007fPress"; },
+    backup => {
+      backup.sessions[0].sets = [{ exerciseName: "Bench\u0085Press", weight: 20, reps: 8 }];
+    },
+    backup => { backup.mappings = { "Bench\u009fPress": ["chest"] }; }
+  ];
+
+  for (const mutate of mutations) {
+    const backup = validBackup();
+    mutate(backup);
+    assert.throws(
+      () => contract.validateAndNormalize(JSON.stringify(backup)),
+      error => error.code === "unsupported_exercise_name"
+    );
+  }
+});
+
+test("local-only migration preserves legacy control names and removes stale catalog identity", () => {
+  const backup = validBackup();
+  backup.exercises = [{ id: 1, name: "Catalog\u0000Name", catalogKey: "bench_press" }];
+  backup.sessions = [{
+    id: 10,
+    date: 1760000000000,
+    note: "Legacy names",
+    exerciseNames: ["Explicit\u001fName"],
+    exercises: [{
+      name: "Nested\u0085Name",
+      catalogKey: "bench_press",
+      sets: [{ id: 11, catalogKey: "bench_press", weight: 20, reps: 8 }]
+    }]
+  }];
+  backup.mappings = { "Map\u007fName": ["chest"] };
+
+  const result = contract.validateAndNormalize(JSON.stringify(backup), {
+    migrateLegacyExerciseNameControls: true
+  });
+  assert.equal(result.migratedLegacyExerciseNameControls, true);
+  assert.equal(result.state.exercises[0].name, contract.migrateLegacyExerciseNameControls("Catalog\u0000Name"));
+  assert.equal(Object.hasOwn(result.state.exercises[0], "catalogKey"), false);
+  assert.deepEqual(result.state.sessions[0].exerciseNames, [
+    contract.migrateLegacyExerciseNameControls("Explicit\u001fName"),
+    contract.migrateLegacyExerciseNameControls("Nested\u0085Name")
+  ]);
+  assert.equal(
+    result.state.sessions[0].sets[0].exerciseName,
+    contract.migrateLegacyExerciseNameControls("Nested\u0085Name")
+  );
+  assert.equal(Object.hasOwn(result.state.sessions[0].sets[0], "catalogKey"), false);
+  assert.deepEqual(
+    result.state.mappings[contract.migrateLegacyExerciseNameControls("Map\u007fName")],
+    ["chest"]
+  );
+  assert.equal(
+    contract.containsUnsupportedExerciseNameControls(JSON.stringify(result.state)),
+    false
+  );
+  assert.notEqual(
+    contract.migrateLegacyExerciseNameControls("A\u0000"),
+    contract.migrateLegacyExerciseNameControls("A\u0001")
+  );
+});
+
 test("profile enums never return an attacker-controlled fallback string", () => {
   const backup = validBackup();
   backup.profile = {
@@ -272,12 +338,26 @@ test("portable timestamp and UTF-8 text boundaries match the native clients", ()
   const portable = validBackup();
   portable.sessions[0].date = contract.LIMITS.timestampMin;
   portable.sessions[0].note = "Ж".repeat(contract.LIMITS.note);
-  portable.sessions[0].exercises[0].name = "Ж".repeat(contract.LIMITS.exerciseName);
+  const astralBoundaryName = "😀".repeat(contract.LIMITS.exerciseName);
+  portable.exercises = [{ name: astralBoundaryName }];
+  portable.sessions[0].exercises[0].name = astralBoundaryName;
+  delete portable.sessions[0].exercises[0].catalogKey;
+  portable.mappings = { [astralBoundaryName]: ["chest"] };
   assert.doesNotThrow(() => contract.validateAndNormalize(portable));
+  assert.equal(astralBoundaryName.length, contract.LIMITS.exerciseName * 2);
+  assert.equal(contract.utf8ByteLength(astralBoundaryName), contract.LIMITS.exerciseNameBytes);
+  assert.equal(contract.unicodeCodePointLengthAtMost(astralBoundaryName, contract.LIMITS.exerciseName), true);
 
   const oversizedName = validBackup();
   oversizedName.sessions[0].exercises[0].name = "😀".repeat(contract.LIMITS.exerciseName + 1);
   assert.throws(() => contract.validateAndNormalize(oversizedName));
+  assert.equal(
+    contract.unicodeCodePointLengthAtMost(
+      "😀".repeat(contract.LIMITS.exerciseName + 1),
+      contract.LIMITS.exerciseName
+    ),
+    false
+  );
 
   const oversizedNote = validBackup();
   oversizedNote.sessions[0].note = "😀".repeat(contract.LIMITS.note + 1);

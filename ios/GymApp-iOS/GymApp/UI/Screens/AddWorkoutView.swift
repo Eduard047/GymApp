@@ -122,6 +122,7 @@ struct AddWorkoutView: View {
             ExercisePickerSheet(
                 exercises: store.exercises,
                 selectedExerciseIDs: Set(drafts.map(\.exerciseID)),
+                exerciseMediaOwnerKey: store.accountStorageKey,
                 muscleMappings: store.muscleMappings,
                 sessionCounts: exerciseSessionCounts,
                 onSelect: addExercise,

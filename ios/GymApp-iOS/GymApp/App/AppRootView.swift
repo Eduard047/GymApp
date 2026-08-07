@@ -47,9 +47,8 @@ struct AppRootView: View {
                 )
             }
         }
-        // A number of feature views resolve app strings through UserDefaults-backed helpers.
-        // Recreate the presentation subtree so cached labels cannot survive a language change.
-        .id(languageCode)
+        // Keep presentations alive while the in-app language changes. MainTabShell and
+        // active workout surfaces observe the same AppStorage value and redraw in place.
         .environment(\.locale, AppLanguage(rawValue: languageCode)?.locale ?? Locale(identifier: "en"))
         .allowsHitTesting(!appState.isSigningOut)
         .overlay {
@@ -698,6 +697,7 @@ private struct MainTabShell: View {
                     isError: true
                 )
             }
+            reconcilePersistedActiveRest()
             presentSharedWorkoutPreviewIfPossible()
         }
         .onChange(of: appState.pendingSharedWorkout?.id) { _ in
@@ -712,6 +712,42 @@ private struct MainTabShell: View {
             if !isPresented {
                 presentSharedWorkoutPreviewIfPossible()
             }
+        }
+    }
+
+    private func reconcilePersistedActiveRest() {
+        guard let draft = activeWorkoutStore.draft else { return }
+        let title: String
+        if let latestID = draft.undoableSetID,
+           let exercise = draft.exercises.first(where: {
+               $0.sets.contains { $0.id == latestID }
+           }) {
+            title = store.exercise(id: exercise.exerciseID).map { gymExerciseName($0) } ??
+                exercise.exerciseName ??
+                gymText("Workout", "Тренування", "Тренировка", languageCode: languageCode)
+        } else {
+            title = gymText("Workout", "Тренування", "Тренировка", languageCode: languageCode)
+        }
+
+        do {
+            let outcome = try ActiveWorkoutRestReconciler.reconcile(
+                draft: draft,
+                store: activeWorkoutStore,
+                manager: appState.restTimers,
+                title: title
+            )
+            guard outcome != .synchronized else { return }
+            appState.show(
+                message: gymText(
+                    "Workout progress was restored, but rest-timer recovery was incomplete. Rest was stopped safely.",
+                    "Прогрес тренування відновлено, але відновлення таймера відпочинку не завершено. Відпочинок безпечно зупинено.",
+                    "Прогресс тренировки восстановлен, но восстановление таймера отдыха не завершено. Отдых безопасно остановлен.",
+                    languageCode: languageCode
+                ),
+                isError: true
+            )
+        } catch {
+            appState.show(message: gymErrorMessage(error), isError: true)
         }
     }
 

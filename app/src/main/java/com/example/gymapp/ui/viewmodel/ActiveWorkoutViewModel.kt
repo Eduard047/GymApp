@@ -6,25 +6,33 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.gymapp.R
+import com.example.gymapp.data.catalog.BuiltInExerciseCatalog
 import com.example.gymapp.data.entity.ActiveWorkoutDetails
+import com.example.gymapp.data.entity.ExerciseEntity
+import com.example.gymapp.data.repository.ActiveWorkoutSetUpdate
 import com.example.gymapp.data.repository.DiscardActiveWorkoutResult
 import com.example.gymapp.data.repository.FinishActiveWorkoutResult
 import com.example.gymapp.data.repository.GymRepository
 import com.example.gymapp.data.repository.RecordActiveWorkoutSetResult
+import com.example.gymapp.data.repository.RecordActiveWorkoutSetsResult
 import com.example.gymapp.data.repository.UndoActiveWorkoutSetResult
 import com.example.gymapp.data.repository.WorkoutDataLimits
 import com.example.gymapp.data.repository.WorkoutRecommendationEngine
 import com.example.gymapp.util.LocalizedText
+import com.example.gymapp.util.ActiveWorkoutTimerSnapshot
 import com.example.gymapp.util.RestTimerController
+import com.example.gymapp.util.activeWorkoutRestSecondsRemaining
 import com.example.gymapp.util.parseWeightInputOrNull
 import java.util.Locale
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -41,6 +49,7 @@ data class ActiveWorkoutSetUiState(
 
 data class ActiveWorkoutExerciseUiState(
     val id: String,
+    val exerciseId: Long?,
     val exerciseName: String,
     val orderIndex: Int,
     val restDurationSeconds: Int,
@@ -57,10 +66,12 @@ data class ActiveWorkoutUiState(
     val exercises: List<ActiveWorkoutExerciseUiState> = emptyList(),
     val completedSetCount: Int = 0,
     val totalSetCount: Int = 0,
+    val workoutElapsedSeconds: Long = 0L,
     val restSecondsRemaining: Int = 0,
     val latestCompletedSetId: String? = null,
     val setRecordingsInFlight: Set<String> = emptySet(),
     val undoingSetId: String? = null,
+    val isRecordingAll: Boolean = false,
     val isFinishing: Boolean = false,
     val isDiscarding: Boolean = false,
     val message: LocalizedText? = null,
@@ -77,10 +88,12 @@ private data class ActiveWorkoutInput(
 private data class ActiveWorkoutSourceState(
     val details: ActiveWorkoutDetails?,
     val inputs: Map<String, ActiveWorkoutInput>,
+    val exercises: List<ExerciseEntity>,
     val hasLoaded: Boolean
 )
 
 private data class ActiveWorkoutOperationState(
+    val isRecordingAll: Boolean = false,
     val isFinishing: Boolean = false,
     val isDiscarding: Boolean = false,
     val undoingSetId: String? = null,
@@ -90,10 +103,26 @@ private data class ActiveWorkoutOperationState(
     val wasDiscarded: Boolean = false
 )
 
+private data class ActiveWorkoutClockUiState(
+    val workoutElapsedSeconds: Long = 0L,
+    val restSecondsRemaining: Int = 0
+)
+
 internal data class ParsedActiveWorkoutSet(
     val weight: Double,
     val reps: Int
 )
+
+internal data class ActiveWorkoutSetInputForBatch(
+    val setId: String,
+    val weightInput: String,
+    val repsInput: String
+)
+
+internal sealed interface ParsedActiveWorkoutSetBatch {
+    data class Valid(val updates: List<ActiveWorkoutSetUpdate>) : ParsedActiveWorkoutSetBatch
+    data class Invalid(val setId: String) : ParsedActiveWorkoutSetBatch
+}
 
 internal fun parseActiveWorkoutSetInput(
     weightInput: String,
@@ -107,6 +136,72 @@ internal fun parseActiveWorkoutSetInput(
         WorkoutDataLimits.isValidWeight(parsed.weight) &&
             WorkoutDataLimits.isValidReps(parsed.reps)
     }
+}
+
+internal fun parseActiveWorkoutSetBatch(
+    inputs: List<ActiveWorkoutSetInputForBatch>
+): ParsedActiveWorkoutSetBatch {
+    require(inputs.map { it.setId }.toSet().size == inputs.size) {
+        "Active workout batch contains duplicate set identifiers."
+    }
+    val updates = ArrayList<ActiveWorkoutSetUpdate>(inputs.size)
+    inputs.forEach { input ->
+        val parsed = parseActiveWorkoutSetInput(input.weightInput, input.repsInput)
+            ?: return ParsedActiveWorkoutSetBatch.Invalid(input.setId)
+        updates += ActiveWorkoutSetUpdate(
+            setId = input.setId,
+            weight = parsed.weight,
+            reps = parsed.reps
+        )
+    }
+    return ParsedActiveWorkoutSetBatch.Valid(updates)
+}
+
+internal fun hasCompleteActiveWorkoutSetInputs(
+    pendingSetIds: List<String>,
+    availableInputIds: Set<String>
+): Boolean = pendingSetIds.isNotEmpty() &&
+    pendingSetIds.distinct().size == pendingSetIds.size &&
+    pendingSetIds.all(availableInputIds::contains)
+
+internal fun totalWorkoutElapsedSeconds(startedAtMillis: Long?, nowMillis: Long): Long {
+    if (startedAtMillis == null ||
+        !WorkoutDataLimits.isValidTimestamp(startedAtMillis) ||
+        !WorkoutDataLimits.isValidTimestamp(nowMillis)
+    ) {
+        return 0L
+    }
+    return (nowMillis - startedAtMillis).coerceAtLeast(0L) / 1_000L
+}
+
+internal fun resolvedWorkoutElapsedSeconds(
+    startedAtMillis: Long?,
+    nowMillis: Long
+): Long = totalWorkoutElapsedSeconds(startedAtMillis, nowMillis)
+
+internal fun shouldRetireRestAfterBulkRecord(
+    undoableSetId: String?,
+    setCompletionStates: List<Boolean>
+): Boolean = undoableSetId == null &&
+    // The bulk transaction clears undo, unlike recording the final set individually.
+    setCompletionStates.isNotEmpty() &&
+    setCompletionStates.all { it }
+
+internal fun resolveActiveWorkoutExerciseId(
+    exercises: List<ExerciseEntity>,
+    exerciseName: String,
+    catalogKey: String?
+): Long? {
+    val exactMatches = exercises.filter { exercise -> exercise.name == exerciseName }
+    if (exactMatches.size == 1) return exactMatches.single().id
+    if (exactMatches.size > 1) return null
+    val resolvedCatalogKey = BuiltInExerciseCatalog.resolvedKey(catalogKey, exerciseName)
+        ?: return null
+    return exercises
+        .filter { exercise -> BuiltInExerciseCatalog.inferKey(exercise.name) == resolvedCatalogKey }
+        .map { exercise -> exercise.id }
+        .distinct()
+        .singleOrNull()
 }
 
 internal sealed interface ActiveWorkoutRecordAndRestResult {
@@ -139,7 +234,8 @@ internal suspend fun persistActiveWorkoutSetBeforeRest(
 
 class ActiveWorkoutViewModel(
     private val repository: GymRepository,
-    private val restTimerController: RestTimerController
+    private val restTimerController: RestTimerController,
+    private val timerAccountKey: String
 ) : ViewModel() {
     private val inputs = MutableStateFlow<Map<String, ActiveWorkoutInput>>(emptyMap())
     private val hasLoaded = MutableStateFlow(false)
@@ -164,6 +260,32 @@ class ActiveWorkoutViewModel(
                         }
                     }
             }
+            activeWorkout?.let { workout ->
+                val startedAt = workout.activeWorkout.startedAt
+                val timerReady = restTimerController.ensureActiveWorkoutTimer(
+                    timerAccountKey,
+                    startedAt
+                )
+                val shouldRetireRest = shouldRetireRestAfterBulkRecord(
+                    undoableSetId = workout.activeWorkout.undoableSetId,
+                    setCompletionStates = workout.exercises
+                        .flatMap { exercise -> exercise.sets }
+                        .map { set -> set.completedAt != null }
+                )
+                if (shouldRetireRest &&
+                    (!timerReady ||
+                        !restTimerController.stopActiveWorkoutRest(timerAccountKey, startedAt))
+                ) {
+                    operationState.update {
+                        it.copy(
+                            message = LocalizedText(
+                                R.string.active_workout_all_sets_saved_rest_failed
+                            ),
+                            messageSetId = null
+                        )
+                    }
+                }
+            }
             hasLoaded.value = true
         }
         .stateIn(
@@ -172,20 +294,64 @@ class ActiveWorkoutViewModel(
             initialValue = null
         )
 
-    private val sourceState = combine(details, inputs, hasLoaded) { workout, setInputs, loaded ->
-        ActiveWorkoutSourceState(workout, setInputs, loaded)
+    private val sourceState = combine(
+        details,
+        inputs,
+        repository.observeExercises(),
+        hasLoaded
+    ) { workout, setInputs, exercises, loaded ->
+        ActiveWorkoutSourceState(workout, setInputs, exercises, loaded)
+    }
+
+    private val clockNow = flow {
+        while (true) {
+            emit(System.currentTimeMillis())
+            delay(1_000L)
+        }
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = System.currentTimeMillis()
+    )
+
+    private val clockState = combine(
+        details,
+        restTimerController.activeWorkoutTimerSnapshot,
+        clockNow
+    ) { activeWorkout, timerSnapshot, now ->
+        val startedAt = activeWorkout?.activeWorkout?.startedAt
+        val matchingTimer = timerSnapshot?.takeIf { snapshot ->
+            snapshot.accountKey == timerAccountKey && snapshot.sessionStartedAt == startedAt
+        }
+        if (matchingTimer?.restEndsAt != null && now >= matchingTimer.restEndsAt) {
+            restTimerController.resumeActiveWorkoutRestIfExpired(
+                timerAccountKey,
+                matchingTimer.sessionStartedAt
+            )
+        }
+        ActiveWorkoutClockUiState(
+            // The displayed total is continuous wall-clock time and intentionally includes rest.
+            // The sidecar snapshot remains authoritative only for rest recovery/countdown.
+            workoutElapsedSeconds = resolvedWorkoutElapsedSeconds(startedAt, now),
+            restSecondsRemaining = activeWorkoutRestSecondsRemaining(matchingTimer, now)
+        )
     }
 
     val uiState: StateFlow<ActiveWorkoutUiState> = combine(
         sourceState,
         recordGate.inFlight,
-        restTimerController.remainingSeconds,
+        clockState,
         operationState
-    ) { source, inFlight, restSeconds, operation ->
+    ) { source, inFlight, clock, operation ->
         val activeWorkout = source.details
         val exercises = activeWorkout?.exercises.orEmpty().map { exercise ->
             ActiveWorkoutExerciseUiState(
                 id = exercise.activeWorkoutExercise.id,
+                exerciseId = resolveActiveWorkoutExerciseId(
+                    exercises = source.exercises,
+                    exerciseName = exercise.activeWorkoutExercise.exerciseName,
+                    catalogKey = exercise.activeWorkoutExercise.catalogKey
+                ),
                 exerciseName = exercise.activeWorkoutExercise.exerciseName,
                 orderIndex = exercise.activeWorkoutExercise.orderIndex,
                 restDurationSeconds = WorkoutRecommendationEngine.recommendedRestSeconds(
@@ -220,10 +386,12 @@ class ActiveWorkoutViewModel(
             exercises = exercises,
             completedSetCount = allSets.count(ActiveWorkoutSetUiState::isCompleted),
             totalSetCount = allSets.size,
-            restSecondsRemaining = restSeconds.coerceAtLeast(0),
+            workoutElapsedSeconds = clock.workoutElapsedSeconds.coerceAtLeast(0L),
+            restSecondsRemaining = clock.restSecondsRemaining.coerceAtLeast(0),
             latestCompletedSetId = latestCompletedSetId,
             setRecordingsInFlight = inFlight,
             undoingSetId = operation.undoingSetId,
+            isRecordingAll = operation.isRecordingAll,
             isFinishing = operation.isFinishing,
             isDiscarding = operation.isDiscarding,
             message = operation.message,
@@ -272,7 +440,9 @@ class ActiveWorkoutViewModel(
             }
             return
         }
-        if (operationState.value.undoingSetId != null || !recordGate.tryStart(setId)) return
+        if (operationState.value.undoingSetId != null || operationState.value.isRecordingAll ||
+            !recordGate.tryStart(setId)
+        ) return
 
         val restDurationSeconds = snapshot.exercises
             .firstOrNull { exercise -> exercise.sets.any { it.id == setId } }
@@ -292,7 +462,15 @@ class ActiveWorkoutViewModel(
                             reps = parsed.reps
                         )
                     },
-                    startRest = { restTimerController.start(restDurationSeconds) }
+                    startRest = {
+                        check(
+                            restTimerController.startActiveWorkoutRest(
+                                accountKey = timerAccountKey,
+                                sessionStartedAt = snapshot.activeWorkout.startedAt,
+                                seconds = restDurationSeconds
+                            )
+                        ) { "Active workout rest timer could not be persisted." }
+                    }
                 )
                 when (outcome) {
                     ActiveWorkoutRecordAndRestResult.RecordedAndTimerStarted -> Unit
@@ -328,9 +506,115 @@ class ActiveWorkoutViewModel(
         }
     }
 
+    fun recordAllPendingSets() {
+        val snapshot = details.value ?: return
+        val operation = operationState.value
+        if (recordGate.inFlight.value.isNotEmpty() || operation.isRecordingAll ||
+            operation.isFinishing || operation.isDiscarding || operation.undoingSetId != null
+        ) {
+            return
+        }
+        val pendingSets = snapshot.exercises
+            .flatMap { exercise -> exercise.sets }
+            .filter { set -> set.completedAt == null }
+        if (pendingSets.isEmpty()) return
+        val currentInputs = inputs.value
+        if (!hasCompleteActiveWorkoutSetInputs(
+                pendingSetIds = pendingSets.map { it.id },
+                availableInputIds = currentInputs.keys
+            )
+        ) {
+            operationState.update {
+                it.copy(
+                    message = LocalizedText(R.string.active_workout_changed),
+                    messageSetId = null
+                )
+            }
+            return
+        }
+        val pendingInputs = pendingSets.map { set ->
+            val input = checkNotNull(currentInputs[set.id])
+            ActiveWorkoutSetInputForBatch(set.id, input.weight, input.reps)
+        }
+        when (val parsed = parseActiveWorkoutSetBatch(pendingInputs)) {
+            is ParsedActiveWorkoutSetBatch.Invalid -> {
+                operationState.update {
+                    it.copy(
+                        message = LocalizedText(R.string.message_invalid_set_input),
+                        messageSetId = parsed.setId
+                    )
+                }
+            }
+            is ParsedActiveWorkoutSetBatch.Valid -> {
+                operationState.update {
+                    it.copy(isRecordingAll = true, message = null, messageSetId = null)
+                }
+                viewModelScope.launch {
+                    try {
+                        when (
+                            val result = repository.recordActiveWorkoutSets(
+                                updates = parsed.updates,
+                                expectedRevision = snapshot.activeWorkout.revision
+                            )
+                        ) {
+                            is RecordActiveWorkoutSetsResult.Recorded -> {
+                                val restStopped = runCatching {
+                                    restTimerController.stopActiveWorkoutRest(
+                                        timerAccountKey,
+                                        snapshot.activeWorkout.startedAt
+                                    )
+                                }.getOrDefault(false)
+                                operationState.update {
+                                    it.copy(
+                                        isRecordingAll = false,
+                                        message = if (restStopped) {
+                                            LocalizedText(
+                                                R.string.active_workout_all_sets_saved,
+                                                result.count
+                                            )
+                                        } else {
+                                            LocalizedText(
+                                                R.string.active_workout_all_sets_saved_rest_failed
+                                            )
+                                        },
+                                        messageSetId = null
+                                    )
+                                }
+                            }
+                            RecordActiveWorkoutSetsResult.Missing -> operationState.update {
+                                it.copy(
+                                    isRecordingAll = false,
+                                    message = LocalizedText(R.string.active_workout_missing)
+                                )
+                            }
+                            RecordActiveWorkoutSetsResult.Stale,
+                            RecordActiveWorkoutSetsResult.TargetChanged,
+                            RecordActiveWorkoutSetsResult.AlreadyCompleted -> operationState.update {
+                                it.copy(
+                                    isRecordingAll = false,
+                                    message = LocalizedText(R.string.active_workout_changed)
+                                )
+                            }
+                        }
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (_: Throwable) {
+                        operationState.update {
+                            it.copy(
+                                isRecordingAll = false,
+                                message = LocalizedText(R.string.active_workout_record_failed)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     fun undoLatestSet(setId: String) {
         val snapshot = details.value ?: return
-        if (recordGate.inFlight.value.isNotEmpty() || operationState.value.isFinishing ||
+        if (recordGate.inFlight.value.isNotEmpty() || operationState.value.isRecordingAll ||
+            operationState.value.isFinishing ||
             operationState.value.isDiscarding || operationState.value.undoingSetId != null
         ) {
             return
@@ -342,7 +626,12 @@ class ActiveWorkoutViewModel(
             try {
                 when (repository.undoLatestActiveWorkoutSet(setId, snapshot.activeWorkout.revision)) {
                     is UndoActiveWorkoutSetResult.Undone -> {
-                        runCatching { restTimerController.stop() }
+                        runCatching {
+                            restTimerController.stopActiveWorkoutRest(
+                                timerAccountKey,
+                                snapshot.activeWorkout.startedAt
+                            )
+                        }
                         operationState.update {
                             it.copy(undoingSetId = null)
                         }
@@ -380,21 +669,37 @@ class ActiveWorkoutViewModel(
 
     fun adjustRestTimer(deltaSeconds: Int) {
         if (deltaSeconds !in -MAX_REST_ADJUST_SECONDS..MAX_REST_ADJUST_SECONDS) return
-        val next = restTimerController.remainingSeconds.value + deltaSeconds
-        if (next <= 0) {
-            restTimerController.stop()
-        } else {
-            restTimerController.start(next.coerceAtMost(MAX_ACTIVE_REST_SECONDS))
+        if (deltaSeconds == 0) return
+        val snapshot = details.value ?: return
+        if (restTimerController.adjustActiveWorkoutRest(
+                accountKey = timerAccountKey,
+                sessionStartedAt = snapshot.activeWorkout.startedAt,
+                deltaSeconds = deltaSeconds
+            ) == null
+        ) {
+            operationState.update {
+                it.copy(message = LocalizedText(R.string.message_rest_timer_save_failed))
+            }
         }
     }
 
     fun stopRestTimer() {
-        restTimerController.stop()
+        val snapshot = details.value ?: return
+        if (!restTimerController.stopActiveWorkoutRest(
+                accountKey = timerAccountKey,
+                sessionStartedAt = snapshot.activeWorkout.startedAt
+            )
+        ) {
+            operationState.update {
+                it.copy(message = LocalizedText(R.string.message_rest_timer_save_failed))
+            }
+        }
     }
 
     fun finishWorkout() {
         val snapshot = details.value ?: return
-        if (recordGate.inFlight.value.isNotEmpty() || operationState.value.isFinishing ||
+        if (recordGate.inFlight.value.isNotEmpty() || operationState.value.isRecordingAll ||
+            operationState.value.isFinishing ||
             operationState.value.isDiscarding || operationState.value.undoingSetId != null
         ) {
             return
@@ -404,7 +709,13 @@ class ActiveWorkoutViewModel(
             try {
                 when (val result = repository.finishActiveWorkout(snapshot.activeWorkout.revision)) {
                     is FinishActiveWorkoutResult.Finished -> {
-                        runCatching { restTimerController.stop() }
+                        runCatching {
+                            restTimerController.clearActiveWorkoutTimer(
+                                timerAccountKey,
+                                snapshot.activeWorkout.startedAt
+                            )
+                            restTimerController.stop()
+                        }
                         operationState.value = ActiveWorkoutOperationState(
                             finishedSessionId = result.sessionId
                         )
@@ -449,7 +760,8 @@ class ActiveWorkoutViewModel(
 
     fun discardWorkout() {
         val snapshot = details.value ?: return
-        if (recordGate.inFlight.value.isNotEmpty() || operationState.value.isFinishing ||
+        if (recordGate.inFlight.value.isNotEmpty() || operationState.value.isRecordingAll ||
+            operationState.value.isFinishing ||
             operationState.value.isDiscarding || operationState.value.undoingSetId != null
         ) {
             return
@@ -459,7 +771,13 @@ class ActiveWorkoutViewModel(
             try {
                 when (repository.discardActiveWorkout(snapshot.activeWorkout.revision)) {
                     DiscardActiveWorkoutResult.Discarded -> {
-                        runCatching { restTimerController.stop() }
+                        runCatching {
+                            restTimerController.clearActiveWorkoutTimer(
+                                timerAccountKey,
+                                snapshot.activeWorkout.startedAt
+                            )
+                            restTimerController.stop()
+                        }
                         operationState.value = ActiveWorkoutOperationState(wasDiscarded = true)
                     }
                     DiscardActiveWorkoutResult.Missing -> {
@@ -522,15 +840,15 @@ class ActiveWorkoutViewModel(
 
     companion object {
         private const val DEFAULT_ACTIVE_REST_SECONDS = 90
-        private const val MAX_ACTIVE_REST_SECONDS = 300
         private const val MAX_REST_ADJUST_SECONDS = 15
 
         fun factory(
             repository: GymRepository,
-            restTimerController: RestTimerController
+            restTimerController: RestTimerController,
+            timerAccountKey: String
         ): ViewModelProvider.Factory = viewModelFactory {
             initializer {
-                ActiveWorkoutViewModel(repository, restTimerController)
+                ActiveWorkoutViewModel(repository, restTimerController, timerAccountKey)
             }
         }
     }

@@ -156,6 +156,62 @@ final class RestTimerManager: ObservableObject {
 
     func remaining(for id: String) -> Int { timers[id]?.remaining(at: now) ?? 0 }
 
+    /// Reconciles the visible/durable countdown to an already committed active-workout
+    /// deadline. The active-workout draft is authoritative; this method never invents
+    /// or extends a rest interval and confirms the UserDefaults write before reporting
+    /// success.
+    @discardableResult
+    func synchronize(id: String, deadline: Date?, title: String) -> Bool {
+        guard hasBoundAccount,
+              let ownerFingerprint = activeOwnerFingerprint,
+              Self.isValidOwnerFingerprint(ownerFingerprint),
+              Self.isValidTimerID(id) else {
+            return false
+        }
+        guard let deadline else { return cancel(id: id) }
+
+        let currentDate = currentDateProvider()
+        let remaining = deadline.timeIntervalSince(currentDate)
+        guard remaining.isFinite,
+              remaining > 0,
+              remaining <= TimeInterval(30 * 60),
+              timers[id] != nil || timers.count < Self.maxPersistedTimers else {
+            return false
+        }
+
+        let previousState = timers[id]
+        let duration = min(max(Int(ceil(remaining)), 5), 30 * 60)
+        let state = RestTimerState(id: id, endDate: deadline, duration: duration)
+        let expectedLifecycleGeneration = notificationLifecycleGeneration
+
+        if let previousState, previousState != state {
+            let identifiers = notificationIdentifiers(for: previousState)
+            notificationCenter.removePendingNotificationRequests(withIdentifiers: identifiers)
+            notificationCenter.removeDeliveredNotifications(withIdentifiers: identifiers)
+        }
+        timers[id] = state
+        guard persist() else {
+            if let previousState {
+                timers[id] = previousState
+            } else {
+                timers.removeValue(forKey: id)
+            }
+            return false
+        }
+
+        let safeTitle = String(title.prefix(Self.maxNotificationTitleCharacters))
+        Task { [weak self] in
+            guard let self else { return }
+            await self.scheduleNotification(
+                for: state,
+                title: safeTitle,
+                lifecycleGeneration: expectedLifecycleGeneration,
+                ownerFingerprint: ownerFingerprint
+            )
+        }
+        return true
+    }
+
     @discardableResult
     func adjust(id: String, by seconds: Int, title: String) -> Task<Void, Never> {
         let currentRemaining = remaining(for: id)
@@ -262,12 +318,13 @@ final class RestTimerManager: ObservableObject {
         }
     }
 
-    func cancel(id: String) {
+    @discardableResult
+    func cancel(id: String) -> Bool {
         let state = timers.removeValue(forKey: id)
         let identifiers = state.map(notificationIdentifiers) ?? [legacyNotificationID(id)]
         notificationCenter.removePendingNotificationRequests(withIdentifiers: identifiers)
         notificationCenter.removeDeliveredNotifications(withIdentifiers: identifiers)
-        persist()
+        return persist()
     }
 
     func cancelAll() {
@@ -299,10 +356,11 @@ final class RestTimerManager: ObservableObject {
             timers[state.id] == state
     }
 
-    private func persist() {
+    @discardableResult
+    private func persist() -> Bool {
         guard let ownerFingerprint = activeOwnerFingerprint else {
             defaults.removeObject(forKey: persistenceKey)
-            return
+            return timers.isEmpty && defaults.data(forKey: persistenceKey) == nil
         }
         let persisted = PersistedRestTimers(
             version: Self.persistenceVersion,
@@ -312,9 +370,10 @@ final class RestTimerManager: ObservableObject {
         guard let data = try? JSONEncoder().encode(persisted),
               data.count <= Self.maxPersistedBytes else {
             defaults.removeObject(forKey: persistenceKey)
-            return
+            return false
         }
         defaults.set(data, forKey: persistenceKey)
+        return defaults.data(forKey: persistenceKey) == data
     }
 
     private func discardAllState(incrementGeneration: Bool = true) {

@@ -2,8 +2,10 @@ package com.example.gymapp.data.catalog
 
 import com.example.gymapp.data.repository.normalizedExerciseName
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class BuiltInExerciseCatalogTest {
@@ -54,6 +56,72 @@ class BuiltInExerciseCatalogTest {
         assertEquals("dips", BuiltInExerciseCatalog.inferKey("брусья"))
         assertEquals("bench_press", BuiltInExerciseCatalog.inferKey("  BENCH\u00a0PRESS "))
         assertEquals("bench_press", BuiltInExerciseCatalog.inferKey("ЖИМ ЛЕЖАЧИ"))
+    }
+
+    @Test
+    fun everydaySearchAliases_areExposedButNeverBecomeExerciseIdentity() {
+        val lateralRaise = BuiltInExerciseCatalog.definitionForKey("lateral_raise")
+        assertTrue(
+            BuiltInExerciseCatalog.searchAliasesForDefinition(lateralRaise)
+                .contains("махи гантелями в стороны")
+        )
+        assertTrue(BuiltInExerciseCatalog.searchAliasesForName("Lateral Raise").contains("lat raises"))
+        assertTrue(BuiltInExerciseCatalog.searchAliasesForName("Romanian Deadlift").contains("RDL"))
+        assertTrue(BuiltInExerciseCatalog.searchAliasesForName("Shoulder Press").contains("OHP"))
+        assertTrue(BuiltInExerciseCatalog.searchAliasesForName("Bulgarian Split Squat").contains("BSS"))
+        assertTrue(BuiltInExerciseCatalog.searchAliasesForName("Bulgarian Split Squat").contains("RFESS"))
+        assertTrue(BuiltInExerciseCatalog.searchAliasesForName("Machine Chest Fly").contains("pec deck"))
+
+        listOf(
+            "махи гантелями в стороны",
+            "бабочка",
+            "pec deck",
+            "OHP",
+            "RDL",
+            "BSS",
+            "RFESS",
+            "DB bench press",
+            "BB row"
+        ).forEach { searchOnlyAlias ->
+            assertNull(searchOnlyAlias, BuiltInExerciseCatalog.inferKey(searchOnlyAlias))
+        }
+        assertTrue(BuiltInExerciseCatalog.searchAliasesForName("OHP").isEmpty())
+
+        val allSearchAliases = BuiltInExerciseCatalog.definitions.flatMap { definition ->
+            BuiltInExerciseCatalog.searchAliasesForDefinition(definition)
+        }
+        assertFalse(allSearchAliases.any { it.equals("DB", ignoreCase = true) })
+        assertFalse(allSearchAliases.any { it.equals("BB", ignoreCase = true) })
+        assertEquals(
+            ExerciseSearchVocabulary.aliasesByKey.getValue("lateral_raise").toSet(),
+            BuiltInExerciseCatalog.searchAliasesForDefinition(lateralRaise)
+        )
+    }
+
+    @Test
+    fun generatedVocabularyFacetsStayGroupedByMuscleAndEquipmentConcept() {
+        val warmUp = BuiltInExerciseCatalog.definitionForKey("warm_up")!!
+        val muscleConcepts = BuiltInExerciseCatalog
+            .searchMuscleTermConceptsForDefinition(warmUp)
+        assertTrue(muscleConcepts.any { concept -> concept.id == "shoulders" })
+        assertTrue(muscleConcepts.any { concept -> concept.id == "hamstrings" })
+        assertFalse(muscleConcepts.any { concept -> concept.terms.isEmpty() })
+
+        val pulldown = BuiltInExerciseCatalog.definitionForKey("lat_pulldown")!!
+        assertEquals(
+            setOf("cable", "machine"),
+            BuiltInExerciseCatalog.searchEquipmentTermConceptsForDefinition(pulldown)
+                .map { concept -> concept.id }
+                .toSet()
+        )
+    }
+
+    @Test
+    fun legacyVerticalPullAlias_keepsIdentityButIsExcludedFromUprightRowSearchNames() {
+        val uprightRow = BuiltInExerciseCatalog.definitionForKey("upright_row")!!
+        assertEquals("upright_row", BuiltInExerciseCatalog.inferKey("вертикальна тяга"))
+        assertFalse(BuiltInExerciseCatalog.isIdentityNameSearchable(uprightRow, "вертикальна тяга"))
+        assertTrue(BuiltInExerciseCatalog.isIdentityNameSearchable(uprightRow, "протяжка"))
     }
 
     @Test

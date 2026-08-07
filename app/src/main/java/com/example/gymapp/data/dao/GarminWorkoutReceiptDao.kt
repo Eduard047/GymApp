@@ -44,6 +44,26 @@ interface GarminWorkoutReceiptDao {
         requestId: String
     ): GarminWorkoutReceiptEntity?
 
+    @Query(
+        """
+        UPDATE garmin_workout_receipts
+        SET payloadDigest = :replacementDigest
+        WHERE ownerBinding = :ownerBinding
+            AND deviceBinding = :deviceBinding
+            AND pairingGeneration = :pairingGeneration
+            AND requestId = :requestId
+            AND payloadDigest = :expectedLegacyDigest
+        """
+    )
+    suspend fun upgradePayloadDigest(
+        ownerBinding: String,
+        deviceBinding: String,
+        pairingGeneration: String,
+        requestId: String,
+        expectedLegacyDigest: String,
+        replacementDigest: String
+    ): Int
+
     @Query("SELECT COUNT(*) FROM garmin_workout_receipts")
     suspend fun count(): Int
 

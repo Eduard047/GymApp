@@ -12,7 +12,7 @@ const garminCloudSource = await readFile(
   "utf8"
 );
 const appSources = await Promise.all(
-  ["app.js", "app.v71.js"].map(async filename => ({
+  ["app.js", "app.v76.js"].map(async filename => ({
     filename,
     source: await readFile(new URL(`../pwa/${filename}`, import.meta.url), "utf8")
   }))
@@ -118,8 +118,9 @@ test("PWA distinguishes planned rows from durable active and history sets", () =
   assert.match(appSources[0].source, /data-action="detail-add-set"[^>]*>\$\{t\("logSetAndRest"\)\}<\/button>/);
   assert.match(appSources[0].source, /data-action="start-workout"[^>]*>[\s\S]*?tx\("Start workout"/);
   assert.match(appSources[0].source, /data-action="record-active-set"/);
-  assert.match(appSources[0].source, /Only recorded sets will be added to workout history/);
-  assert.doesNotMatch(appSources[0].source, /data-action="save-workout"[^>]*>[\s\S]*?t\("saveCompletedWorkout"\)/);
+  assert.match(appSources[0].source, /Finish adds recorded sets to history/);
+  assert.match(appSources[0].source, /data-action="save-workout"[^>]*>[\s\S]*?t\("saveCompletedWorkout"\)/);
+  assert.match(appSources[0].source, /data-action="record-all-active-sets"[^>]*>[\s\S]*?tx\("Save all sets"/);
 });
 
 for (const { filename, source } of appSources) {
@@ -199,7 +200,7 @@ for (const { filename, source } of appSources) {
     );
   });
 
-  test(`${filename} rejects malformed timers and prunes stale timers`, () => {
+  test(`${filename} rejects malformed and stale timers without write-on-read pruning`, () => {
     const context = loadPwaContext(source);
     vm.runInContext(`state = {
       ...defaultAppState(),
@@ -211,14 +212,15 @@ for (const { filename, source } of appSources) {
       }]
     };
     globalThis.timerStorageKey = exerciseRestTimerAccountDescriptor().storageKey;
-    localStorage.setItem(globalThis.timerStorageKey, JSON.stringify({
+    globalThis.malformedRaw = JSON.stringify({
       version: 1,
       owner: "another-account",
       entries: []
-    }));
+    });
+    localStorage.setItem(globalThis.timerStorageKey, globalThis.malformedRaw);
     globalThis.malformedTimers = loadExerciseRestTimerLedger(null, Date.now()).timers;
     globalThis.malformedValueAfterLoad = localStorage.getItem(globalThis.timerStorageKey);
-    localStorage.setItem(globalThis.timerStorageKey, JSON.stringify({
+    globalThis.staleRaw = JSON.stringify({
       version: 1,
       owner: "guest",
       entries: [{
@@ -226,14 +228,21 @@ for (const { filename, source } of appSources) {
         exerciseName: "Bench Press",
         deadlineMillis: Date.now() - 1
       }]
-    }));
+    });
+    localStorage.setItem(globalThis.timerStorageKey, globalThis.staleRaw);
     globalThis.staleTimers = loadExerciseRestTimerLedger(null, Date.now()).timers;
     globalThis.staleValueAfterLoad = localStorage.getItem(globalThis.timerStorageKey);`, context);
 
     assert.equal(vm.runInContext("Object.keys(globalThis.malformedTimers).length", context), 0);
-    assert.equal(vm.runInContext("globalThis.malformedValueAfterLoad", context), null);
+    assert.equal(
+      vm.runInContext("globalThis.malformedValueAfterLoad === globalThis.malformedRaw", context),
+      true
+    );
     assert.equal(vm.runInContext("Object.keys(globalThis.staleTimers).length", context), 0);
-    assert.equal(vm.runInContext("globalThis.staleValueAfterLoad", context), null);
+    assert.equal(
+      vm.runInContext("globalThis.staleValueAfterLoad === globalThis.staleRaw", context),
+      true
+    );
   });
 
   test(`${filename} keeps rest timers isolated by account`, () => {

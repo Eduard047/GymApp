@@ -188,3 +188,64 @@ test("Garmin messages are bounded, account-bound, replay-aware, and acked by id"
   assert.match(app, /onSyncAckSent[\s\S]*sendNextPendingWorkout\(\)[\s\S]*GymStore\.pending\.size\(\) == 0[\s\S]*WAITING ACK/);
   assert.match(view, /GymStore\.applyCloudSync\(message\)/);
 });
+
+test("Garmin phone sync retries the same revision until an idempotent watch ack", async () => {
+  const [manager, store, app] = await Promise.all([
+    read("app/src/main/java/com/example/gymapp/garmin/GarminSyncManager.kt"),
+    read("garmin/source/GymStore.mc"),
+    read("garmin/source/GymApp.mc")
+  ]);
+  const confirmation = manager.match(
+    /private suspend fun sendAndConfirmSync\([\s\S]*?\n    private suspend fun sendAndWait/
+  )?.[0] || "";
+
+  assert.match(manager, /GARMIN_SYNC_ACK_ATTEMPTS = 3/);
+  assert.match(manager, /GARMIN_SYNC_ACK_ATTEMPT_TIMEOUT_MS = 10_000L/);
+  assert.match(manager, /GARMIN_SYNC_TOTAL_TIMEOUT_MS = 40_000L/);
+  assert.match(confirmation, /for \(attempt in 1\.\.GARMIN_SYNC_ACK_ATTEMPTS\)/);
+  assert.match(confirmation, /sendAndWait\(device, payload\)/);
+  assert.match(confirmation, /withTimeoutOrNull\(GARMIN_SYNC_TOTAL_TIMEOUT_MS\)/);
+  assert.match(confirmation, /pendingSyncAcks\.remove\(syncId, pending\)/);
+  assert.match(
+    confirmation,
+    /if \(!confirmed\)[\s\S]*Garmin watch did not acknowledge the sync after bounded retries/
+  );
+  assert.doesNotMatch(confirmation, /newGarminMessageId|allocateSyncRevision/);
+  assert.match(store, /revisionStatus == 0[\s\S]*status = "SYNC DUP"[\s\S]*return true/);
+  assert.match(app, /sendSyncAck\(message, applied\)/);
+
+  let durableMutations = 0;
+  let watchFence = null;
+  const stableCommand = Object.freeze({ syncId: "stable-sync-id", revision: 42 });
+  const receiveOnWatch = (command) => {
+    if (watchFence?.syncId === command.syncId && watchFence.revision === command.revision) {
+      return { applied: true, duplicate: true };
+    }
+    durableMutations += 1;
+    watchFence = { ...command };
+    return { applied: true, duplicate: false };
+  };
+  const ackDelivered = [false, true];
+  let attempts = 0;
+  let confirmed = false;
+  while (!confirmed && attempts < 3) {
+    const result = receiveOnWatch(stableCommand);
+    confirmed = result.applied && ackDelivered[attempts] === true;
+    attempts += 1;
+  }
+  assert.equal(confirmed, true);
+  assert.equal(attempts, 2, "one lost acknowledgement triggers one bounded resend");
+  assert.equal(durableMutations, 1, "the duplicate retry never reapplies the plan");
+
+  const totalDeadlineMs = 40_000;
+  const transportCallbackDeadlineMs = 90_000;
+  const externallyVisibleCompletionMs = Math.min(
+    totalDeadlineMs,
+    transportCallbackDeadlineMs
+  );
+  assert.equal(
+    externallyVisibleCompletionMs,
+    40_000,
+    "a missing Connect IQ send callback is cancelled by the outer deadline"
+  );
+});

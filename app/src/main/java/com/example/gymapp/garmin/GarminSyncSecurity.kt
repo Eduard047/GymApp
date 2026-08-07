@@ -168,7 +168,32 @@ internal data class GarminWorkoutParseResult(
     val issue: GarminWorkoutParseIssue?
 )
 
-internal fun canonicalGarminWorkoutPayloadDigest(command: GarminWorkoutCommand): String {
+internal fun canonicalGarminWorkoutPayloadDigest(command: GarminWorkoutCommand): String =
+    garminWorkoutPayloadDigest(command, includeExtendedReceiptFields = true)
+
+/**
+ * Returns the digest emitted by releases that persisted interval/progress payloads before those
+ * fields were covered by the receipt hash. It is accepted only to upgrade an already-committed
+ * receipt; it must never authorize a new workout write.
+ */
+internal fun legacyGarminWorkoutPayloadDigestForUpgrade(
+    command: GarminWorkoutCommand
+): String? = if (hasGarminExtendedReceiptFields(command)) {
+    garminWorkoutPayloadDigest(command, includeExtendedReceiptFields = false)
+} else {
+    null
+}
+
+private fun hasGarminExtendedReceiptFields(command: GarminWorkoutCommand): Boolean =
+    command.setIntervals.any { it != null } ||
+        command.plannedSetCount != null ||
+        command.plannedTargetSetCount != null ||
+        command.completedPlannedSetCount != null
+
+private fun garminWorkoutPayloadDigest(
+    command: GarminWorkoutCommand,
+    includeExtendedReceiptFields: Boolean
+): String {
     val digest = MessageDigest.getInstance("SHA-256")
 
     fun updateLong(value: Long) {
@@ -200,8 +225,29 @@ internal fun canonicalGarminWorkoutPayloadDigest(command: GarminWorkoutCommand):
         value?.let(::updateDouble)
     }
 
+    fun updateSetStatistics(statistics: GarminSetStatistics?) {
+        digest.update(if (statistics == null) 0.toByte() else 1.toByte())
+        statistics?.let {
+            updateOptionalLong(it.activeSeconds)
+            updateOptionalLong(it.restBeforeSeconds)
+            updateOptionalInt(it.startHeartRate)
+            updateOptionalInt(it.peakHeartRate)
+            updateOptionalInt(it.endHeartRate)
+            updateOptionalInt(it.recoveryHeartRateDrop)
+            updateOptionalInt(it.detectionConfidence)
+        }
+    }
+
     val hasSetStatistics = command.setStatistics.any { it != null }
-    updateString(if (hasSetStatistics) "gymapp-garmin-workout/v2" else "gymapp-garmin-workout/v1")
+    val hasExtendedReceiptFields =
+        includeExtendedReceiptFields && hasGarminExtendedReceiptFields(command)
+    updateString(
+        when {
+            hasExtendedReceiptFields -> "gymapp-garmin-workout/v3"
+            hasSetStatistics -> "gymapp-garmin-workout/v2"
+            else -> "gymapp-garmin-workout/v1"
+        }
+    )
     updateString(command.requestId)
     updateLong(command.startedAtMillis)
     updateInt(command.sets.size)
@@ -218,19 +264,27 @@ internal fun canonicalGarminWorkoutPayloadDigest(command: GarminWorkoutCommand):
     // Keep the v1 digest slot and wire meaning stable. Garmin sends the zone for
     // the final accepted heart-rate reading; it is not a peak or dominant zone.
     updateOptionalInt(command.endingHeartRateZone)
-    if (hasSetStatistics) {
-        command.setStatistics.forEach { statistics ->
-            digest.update(if (statistics == null) 0.toByte() else 1.toByte())
-            statistics?.let {
-                updateOptionalLong(it.activeSeconds)
-                updateOptionalLong(it.restBeforeSeconds)
-                updateOptionalInt(it.startHeartRate)
-                updateOptionalInt(it.peakHeartRate)
-                updateOptionalInt(it.endHeartRate)
-                updateOptionalInt(it.recoveryHeartRateDrop)
-                updateOptionalInt(it.detectionConfidence)
+    if (hasExtendedReceiptFields) {
+        updateInt(command.setStatistics.size)
+        command.setStatistics.forEach(::updateSetStatistics)
+        updateInt(command.setIntervals.size)
+        command.setIntervals.forEach { interval ->
+            digest.update(if (interval == null) 0.toByte() else 1.toByte())
+            interval?.let {
+                updateLong(it.startOffsetSeconds)
+                updateLong(it.endOffsetSeconds)
+                updateDouble(it.gymCalories)
+                updateOptionalInt(it.garminCalories)
+                updateInt(it.heartRateZoneSeconds.size)
+                it.heartRateZoneSeconds.forEach(::updateInt)
             }
         }
+        updateOptionalInt(command.plannedSetCount)
+        updateOptionalInt(command.plannedTargetSetCount)
+        updateOptionalInt(command.completedPlannedSetCount)
+    } else if (hasSetStatistics) {
+        // Preserve the v2 digest for legacy receipts that predate interval/progress fields.
+        command.setStatistics.forEach(::updateSetStatistics)
     }
 
     return digest.digest().joinToString(separator = "") { byte ->

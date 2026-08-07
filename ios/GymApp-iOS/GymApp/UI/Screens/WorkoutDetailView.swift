@@ -1309,6 +1309,7 @@ struct WorkoutDetailView: View {
             ExercisePickerSheet(
                 exercises: store.exercises,
                 selectedExerciseIDs: Set(store.workout(id: workoutID)?.exercises.map(\.exerciseID) ?? []),
+                exerciseMediaOwnerKey: store.accountStorageKey,
                 muscleMappings: store.muscleMappings,
                 sessionCounts: exerciseSessionCounts,
                 onSelect: addExercise,

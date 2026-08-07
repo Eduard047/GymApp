@@ -54,6 +54,11 @@ enum ActiveWorkoutStoreError: Error, LocalizedError, Equatable, Sendable {
     }
 }
 
+struct ActiveWorkoutSetInput: Equatable, Sendable {
+    let weight: Double
+    let reps: Int
+}
+
 /// One crash-safe, account-scoped active workout. It lives beside, but never inside,
 /// the shared `WorkoutStore` envelope so older clients and cloud backups ignore it.
 @MainActor
@@ -84,6 +89,7 @@ final class ActiveWorkoutStore: ObservableObject {
     private static let maximumJSONContainers = 25_000
     private static let maximumWeight = 1_000_000.0
     private static let maximumReps = 10_000
+    private static let maximumRestSeconds = 30 * 60
     private static let minimumSupportedTimestampMilliseconds: Int64 = -62_135_769_600_000
     private static let maximumSupportedTimestampMilliseconds: Int64 = 64_092_211_200_000
 
@@ -171,7 +177,8 @@ final class ActiveWorkoutStore: ObservableObject {
             note: Self.normalizedNote(note),
             exercises: boundExercises,
             revision: 0,
-            lastModifiedAt: now
+            lastModifiedAt: now,
+            timing: ActiveWorkoutTimingState(activeSince: now)
         )
         try commit(candidate)
         recoveryMessage = nil
@@ -207,6 +214,7 @@ final class ActiveWorkoutStore: ObservableObject {
         draftID: UUID,
         setID: UUID,
         expectedRevision: UInt64,
+        restSeconds: Int? = nil,
         now: Date = Date()
     ) throws -> ActiveWorkoutDraft {
         try mutate(
@@ -222,6 +230,135 @@ final class ActiveWorkoutStore: ObservableObject {
             try Self.validate(weight: set.weight, reps: set.reps)
             candidate.exercises[location.exercise].sets[location.set].completedAt = now
             candidate.undoableSetID = setID
+            if let restSeconds {
+                try Self.pauseTiming(
+                    in: &candidate,
+                    at: now,
+                    restSeconds: restSeconds
+                )
+            }
+        }
+    }
+
+    /// Validates the complete unfinished input set before changing any row, then writes
+    /// one new draft revision. A missing, extra, malformed, or stale input leaves the
+    /// current draft byte-for-byte unchanged.
+    @discardableResult
+    func recordAllSets(
+        draftID: UUID,
+        expectedRevision: UInt64,
+        inputs: [UUID: ActiveWorkoutSetInput],
+        now: Date = Date()
+    ) throws -> ActiveWorkoutDraft {
+        try mutate(
+            draftID: draftID,
+            expectedRevision: expectedRevision,
+            now: now
+        ) { candidate in
+            let unfinishedLocations = candidate.exercises.indices.flatMap { exerciseIndex in
+                candidate.exercises[exerciseIndex].sets.indices.compactMap { setIndex in
+                    candidate.exercises[exerciseIndex].sets[setIndex].isCompleted
+                        ? nil
+                        : (exercise: exerciseIndex, set: setIndex)
+                }
+            }
+            guard !unfinishedLocations.isEmpty else {
+                throw ActiveWorkoutStoreError.setAlreadyCompleted
+            }
+            let unfinishedIDs = Set(unfinishedLocations.map {
+                candidate.exercises[$0.exercise].sets[$0.set].id
+            })
+            guard unfinishedIDs.count == unfinishedLocations.count,
+                  Set(inputs.keys) == unfinishedIDs else {
+                throw ActiveWorkoutStoreError.invalidDraft
+            }
+
+            // Do not mutate the candidate until every row has passed validation.
+            for location in unfinishedLocations {
+                let setID = candidate.exercises[location.exercise].sets[location.set].id
+                guard let input = inputs[setID] else {
+                    throw ActiveWorkoutStoreError.invalidDraft
+                }
+                try Self.validate(weight: input.weight, reps: input.reps)
+            }
+
+            for location in unfinishedLocations {
+                let setID = candidate.exercises[location.exercise].sets[location.set].id
+                guard let input = inputs[setID] else {
+                    throw ActiveWorkoutStoreError.invalidDraft
+                }
+                candidate.exercises[location.exercise].sets[location.set].weight =
+                    input.weight == 0 ? 0.0 : input.weight
+                candidate.exercises[location.exercise].sets[location.set].reps = input.reps
+                candidate.exercises[location.exercise].sets[location.set].completedAt = now
+            }
+            candidate.undoableSetID = nil
+            var timing = Self.normalizedTiming(in: candidate, at: now)
+            if timing.restingUntil != nil {
+                timing.restingUntil = nil
+                timing.activeSince = now
+            }
+            candidate.timing = timing
+        }
+    }
+
+    @discardableResult
+    func beginRest(
+        draftID: UUID,
+        expectedRevision: UInt64,
+        seconds: Int,
+        now: Date = Date()
+    ) throws -> ActiveWorkoutDraft {
+        try mutate(
+            draftID: draftID,
+            expectedRevision: expectedRevision,
+            now: now
+        ) { candidate in
+            try Self.pauseTiming(in: &candidate, at: now, restSeconds: seconds)
+        }
+    }
+
+    @discardableResult
+    func adjustRest(
+        draftID: UUID,
+        expectedRevision: UInt64,
+        remainingSeconds: Int,
+        now: Date = Date()
+    ) throws -> ActiveWorkoutDraft {
+        try mutate(
+            draftID: draftID,
+            expectedRevision: expectedRevision,
+            now: now
+        ) { candidate in
+            guard (1 ... Self.maximumRestSeconds).contains(remainingSeconds) else {
+                throw ActiveWorkoutStoreError.invalidDraft
+            }
+            var timing = Self.normalizedTiming(in: candidate, at: now)
+            guard timing.restingUntil != nil else {
+                throw ActiveWorkoutStoreError.invalidDraft
+            }
+            timing.restingUntil = now.addingTimeInterval(TimeInterval(remainingSeconds))
+            candidate.timing = timing
+        }
+    }
+
+    @discardableResult
+    func endRest(
+        draftID: UUID,
+        expectedRevision: UInt64,
+        now: Date = Date()
+    ) throws -> ActiveWorkoutDraft {
+        try mutate(
+            draftID: draftID,
+            expectedRevision: expectedRevision,
+            now: now
+        ) { candidate in
+            var timing = Self.normalizedTiming(in: candidate, at: now)
+            if timing.restingUntil != nil {
+                timing.restingUntil = nil
+                timing.activeSince = now
+            }
+            candidate.timing = timing
         }
     }
 
@@ -248,6 +385,12 @@ final class ActiveWorkoutStore: ObservableObject {
             }
             candidate.exercises[location.exercise].sets[location.set].completedAt = nil
             candidate.undoableSetID = nil
+            var timing = Self.normalizedTiming(in: candidate, at: now)
+            if timing.restingUntil != nil {
+                timing.restingUntil = nil
+                timing.activeSince = now
+            }
+            candidate.timing = timing
         }
     }
 
@@ -391,6 +534,9 @@ final class ActiveWorkoutStore: ObservableObject {
             throw ActiveWorkoutStoreError.workoutFinishing
         }
         try mutation(&candidate)
+        if candidate.timing != nil {
+            candidate.timing = Self.normalizedTiming(in: candidate, at: now)
+        }
         guard candidate.revision < UInt64.max, Self.isSupportedTimestamp(now) else {
             throw ActiveWorkoutStoreError.invalidDraft
         }
@@ -556,6 +702,33 @@ final class ActiveWorkoutStore: ObservableObject {
                 throw ActiveWorkoutStoreError.invalidDraft
             }
         }
+        if let timing = candidate.timing {
+            let maximumAccumulated = max(
+                0,
+                candidate.lastModifiedAt.timeIntervalSince(candidate.startedAt)
+            ) + 1
+            guard timing.accumulatedActiveSeconds.isFinite,
+                  timing.accumulatedActiveSeconds >= 0,
+                  timing.accumulatedActiveSeconds <= maximumAccumulated,
+                  (timing.activeSince == nil) != (timing.restingUntil == nil) else {
+                throw ActiveWorkoutStoreError.invalidDraft
+            }
+            if let activeSince = timing.activeSince {
+                guard isSupportedTimestamp(activeSince),
+                      activeSince >= candidate.startedAt,
+                      activeSince <= candidate.lastModifiedAt else {
+                    throw ActiveWorkoutStoreError.invalidDraft
+                }
+            }
+            if let restingUntil = timing.restingUntil {
+                guard isSupportedTimestamp(restingUntil),
+                      restingUntil > candidate.lastModifiedAt,
+                      restingUntil.timeIntervalSince(candidate.lastModifiedAt) <=
+                        TimeInterval(maximumRestSeconds) else {
+                    throw ActiveWorkoutStoreError.invalidDraft
+                }
+            }
+        }
         if let intent = candidate.commitIntent {
             try validate(intent, matches: candidate)
         }
@@ -665,6 +838,37 @@ final class ActiveWorkoutStore: ObservableObject {
             }
         }
         throw ActiveWorkoutStoreError.setUnavailable
+    }
+
+    private static func normalizedTiming(
+        in draft: ActiveWorkoutDraft,
+        at now: Date
+    ) -> ActiveWorkoutTimingState {
+        var timing = draft.timing ?? ActiveWorkoutTimingState(activeSince: draft.startedAt)
+        if let restingUntil = timing.restingUntil, now >= restingUntil {
+            timing.restingUntil = nil
+            timing.activeSince = restingUntil
+        }
+        return timing
+    }
+
+    private static func pauseTiming(
+        in draft: inout ActiveWorkoutDraft,
+        at now: Date,
+        restSeconds: Int
+    ) throws {
+        guard (1 ... maximumRestSeconds).contains(restSeconds) else {
+            throw ActiveWorkoutStoreError.invalidDraft
+        }
+        var timing = normalizedTiming(in: draft, at: now)
+        if let activeSince = timing.activeSince {
+            let interval = max(0, now.timeIntervalSince(activeSince))
+            guard interval.isFinite else { throw ActiveWorkoutStoreError.invalidDraft }
+            timing.accumulatedActiveSeconds += interval
+        }
+        timing.activeSince = nil
+        timing.restingUntil = now.addingTimeInterval(TimeInterval(restSeconds))
+        draft.timing = timing
     }
 
     private static func makeCommitIntent(

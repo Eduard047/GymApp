@@ -156,6 +156,10 @@
     <string name="account_management_supporting">Измени пароль или навсегда удали этот аккаунт Supabase и его данные.</string>
     <string name="account_change_password">Изменить пароль</string>
     <string name="account_change_password_supporting">Подтверди текущий пароль, затем выбери новый.</string>
+    <string name="account_password_reauthentication_supporting">Код подтверждения отправлен на твою почту. Введи его вместе с текущим и новым паролем.</string>
+    <string name="account_password_verification_code">Код подтверждения</string>
+    <string name="account_password_verification_code_required">Введи 6–8-значный код подтверждения из письма.</string>
+    <string name="account_password_verification_code_sent">Код подтверждения отправлен. Введи его, чтобы завершить смену пароля.</string>
     <string name="account_current_password">Текущий пароль</string>
     <string name="account_current_password_required">Введи текущий пароль.</string>
     <string name="account_current_password_too_long">Текущий пароль слишком длинный.</string>
@@ -168,6 +172,7 @@
     <string name="account_delete_confirmation_hint">Введи DELETE без изменений</string>
     <string name="account_delete_confirm">Удалить навсегда</string>
     <string name="account_delete_failed">Не удалось удалить аккаунт. С этого устройства ничего не удалено.</string>
+    <string name="account_delete_outcome_unknown">Ответ об удалении потерян. Выполнен выход, а локальные данные этого аккаунта будут очищены до следующего открытия.</string>
     <string name="account_delete_local_cleanup_failed">Облачный аккаунт удалён, но часть локальных данных аккаунта не удалось очистить с этого устройства.</string>
     <string name="cloud_sync_load_failed">Не удалось безопасно загрузить облачные данные. Автоматическая отправка приостановлена.</string>
     <string name="cloud_sync_conflict">Нужно выбрать историю тренировок.</string>
@@ -260,6 +265,7 @@
     <string name="active_workout_title">Активная тренировка</string>
     <string name="active_workout_supporting">Записывай каждый выполненный подход. Он сохраняется до запуска умного таймера отдыха.</string>
     <string name="active_workout_progress">Выполнено подходов: %1$d из %2$d</string>
+    <string name="active_workout_total_time">Общее время тренировки: %1$s</string>
     <string name="active_workout_finish_eyebrow">КОГДА ЗАКОНЧИШЬ</string>
     <string name="active_workout_finish_supporting">В историю попадут только записанные подходы. Запланированные строки не повлияют на статистику.</string>
     <string name="active_workout_discard_action">Отменить активную тренировку</string>
@@ -269,6 +275,7 @@
     <string name="active_workout_back_hint">Можно безопасно вернуться назад. Тренировка останется на устройстве, пока ты её не завершишь или не отменишь.</string>
     <string name="active_workout_exercise_number">УПРАЖНЕНИЕ %1$d</string>
     <string name="active_workout_exercise_progress">Записано подходов: %1$d из %2$d</string>
+    <string name="active_workout_exercise_completed_collapsed">Все подходы записаны. Разверни блок, чтобы проверить их или отменить последний подход.</string>
     <string name="active_workout_set_completed">Записан</string>
     <string name="active_workout_missing_title">Нет активной тренировки</string>
     <string name="active_workout_missing">Этой активной тренировки больше нет в текущем аккаунте.</string>
@@ -284,6 +291,10 @@
     <string name="active_workout_rest_subtract">Убавить 15 секунд</string>
     <string name="active_workout_rest_add">Добавить 15 секунд</string>
     <string name="active_workout_rest_stop">Остановить отдых</string>
+    <string name="action_save_all_pending_sets">Сохранить все оставшиеся подходы</string>
+    <string name="active_workout_save_all_supporting">Сначала проверяются вес и повторы каждого незаписанного подхода, затем все они сохраняются одной операцией без нового отдыха.</string>
+    <string name="active_workout_all_sets_saved">Одновременно сохранено подходов: %1$d.</string>
+    <string name="active_workout_all_sets_saved_rest_failed">Все подходы сохранены, но старый таймер отдыха не удалось полностью остановить.</string>
     <string name="active_workout_draft_title">Продолжить активную тренировку</string>
     <string name="active_workout_draft_progress">Записано подходов: %1$d из %2$d</string>
     <string name="note_template_push">День жима</string>
@@ -359,6 +370,7 @@
     <string name="action_open_shared_workout_in_app">Открыть как черновик</string>
     <string name="action_open_shared_workout_on_web">Открыть на сайте</string>
     <string name="message_add_set_failed">Не удалось записать подход. Таймер отдыха не запущен.</string>
+    <string name="message_add_exercise_failed">Не удалось добавить упражнение. Обнови тренировку и попробуй ещё раз.</string>
     <string name="message_rest_timer_save_failed">Подход сохранён, но не удалось запустить таймер отдыха.</string>
     <string name="message_invalid_set_input">Введи корректное число повторений и при необходимости вес.</string>
     <string name="message_exercise_error">Не удалось сохранить упражнение. Возможно, такое название уже существует.</string>
@@ -819,6 +831,11 @@
     <string name="exercise_search_no_results">Упражнений не найдено</string>
     <string name="exercise_search_no_results_supporting">Попробуй другое название, часть тела или группу мышц.</string>
     <string name="exercise_search_result_count">Упражнений: %1$d</string>
+    <string name="exercise_search_match_alias">Также известно как: %1$s</string>
+    <string name="exercise_search_match_approximate">Похожее название: %1$s</string>
+    <string name="exercise_search_match_muscle">Совпадение по мышце: %1$s</string>
+    <string name="exercise_search_match_equipment">Совпадение по оборудованию: %1$s</string>
+    <string name="exercise_search_match_muscle_and_equipment">Совпадение по мышце и оборудованию: %1$s</string>
     <string name="exercise_picker_all">Все</string>
     <string name="exercise_picker_frequent">Частые</string>
     <string name="exercise_picker_frequent_empty">Часто используемые упражнения появятся здесь после сохранения тренировок.</string>

@@ -425,6 +425,10 @@ class GymNavGraphSecurityTest {
             var roomRows = 3
             var baselinePresent = true
             var trainingProfilePresent = true
+            var customMediaPresent = true
+            var backupSharesPresent = true
+            var restTimersPresent = true
+            var garminAccountStatePresent = true
 
             repeat(2) {
                 val failures = runConfirmedAccountDeletionLocalCleanup(
@@ -436,6 +440,22 @@ class GymNavGraphSecurityTest {
                     clearTrainingProfile = {
                         trainingProfilePresent = false
                         true
+                    },
+                    clearCustomMedia = {
+                        customMediaPresent = false
+                        true
+                    },
+                    clearBackupShares = {
+                        backupSharesPresent = false
+                        true
+                    },
+                    clearRestTimers = {
+                        restTimersPresent = false
+                        true
+                    },
+                    clearGarminState = {
+                        garminAccountStatePresent = false
+                        true
                     }
                 )
                 assertEquals(0, failures)
@@ -444,6 +464,10 @@ class GymNavGraphSecurityTest {
             assertEquals(0, roomRows)
             assertFalse(baselinePresent)
             assertFalse(trainingProfilePresent)
+            assertFalse(customMediaPresent)
+            assertFalse(backupSharesPresent)
+            assertFalse(restTimersPresent)
+            assertFalse(garminAccountStatePresent)
             assertEquals(
                 CloudAccountDeletionSessionDisposition.AlreadySignedOut,
                 cloudAccountDeletionSessionDisposition(null, session)

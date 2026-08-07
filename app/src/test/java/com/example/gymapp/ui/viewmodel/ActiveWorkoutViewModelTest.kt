@@ -76,6 +76,60 @@ class ActiveWorkoutViewModelTest {
     }
 
     @Test
+    fun wallClockTotalRunsContinuouslyFromDurableWorkoutStart() {
+        val startedAt = 10_000L
+
+        assertEquals(30L, totalWorkoutElapsedSeconds(startedAt, nowMillis = 40_000L))
+        assertEquals(95L, totalWorkoutElapsedSeconds(startedAt, nowMillis = 105_000L))
+        assertEquals(0L, totalWorkoutElapsedSeconds(startedAt, nowMillis = 5_000L))
+        assertEquals(0L, totalWorkoutElapsedSeconds(null, nowMillis = 105_000L))
+    }
+
+    @Test
+    fun displayedWorkoutTimeIncludesRest() {
+        assertEquals(
+            40L,
+            resolvedWorkoutElapsedSeconds(10_000L, nowMillis = 50_000L)
+        )
+        assertEquals(
+            80L,
+            resolvedWorkoutElapsedSeconds(10_000L, nowMillis = 90_000L)
+        )
+        assertEquals(
+            95L,
+            resolvedWorkoutElapsedSeconds(10_000L, nowMillis = 105_000L)
+        )
+    }
+
+    @Test
+    fun onlyBulkCompletedDraftRetiresRestDuringRecovery() {
+        assertTrue(
+            shouldRetireRestAfterBulkRecord(
+                undoableSetId = null,
+                setCompletionStates = listOf(true, true)
+            )
+        )
+        assertFalse(
+            shouldRetireRestAfterBulkRecord(
+                undoableSetId = "last-recorded-set",
+                setCompletionStates = listOf(true, true)
+            )
+        )
+        assertFalse(
+            shouldRetireRestAfterBulkRecord(
+                undoableSetId = null,
+                setCompletionStates = listOf(true, false)
+            )
+        )
+        assertFalse(
+            shouldRetireRestAfterBulkRecord(
+                undoableSetId = null,
+                setCompletionStates = emptyList()
+            )
+        )
+    }
+
+    @Test
     fun recordGateRejectsConcurrentAndReplayClicks() {
         val gate = ActiveWorkoutSetRecordGate()
 
@@ -86,5 +140,47 @@ class ActiveWorkoutViewModelTest {
 
         gate.finish("first-set")
         assertTrue(gate.tryStart("second-set"))
+    }
+
+    @Test
+    fun bulkInputValidationIsAllOrNothingAndDetectsMissingRows() {
+        val valid = parseActiveWorkoutSetBatch(
+            listOf(
+                ActiveWorkoutSetInputForBatch("first", "20", "10"),
+                ActiveWorkoutSetInputForBatch("second", "22,5", "8")
+            )
+        )
+        assertTrue(valid is ParsedActiveWorkoutSetBatch.Valid)
+        assertEquals(2, (valid as ParsedActiveWorkoutSetBatch.Valid).updates.size)
+
+        val invalid = parseActiveWorkoutSetBatch(
+            listOf(
+                ActiveWorkoutSetInputForBatch("first", "20", "10"),
+                ActiveWorkoutSetInputForBatch("second", "NaN", "8")
+            )
+        )
+        assertEquals(ParsedActiveWorkoutSetBatch.Invalid("second"), invalid)
+        assertFalse(
+            hasCompleteActiveWorkoutSetInputs(
+                pendingSetIds = listOf("first", "second"),
+                availableInputIds = setOf("first")
+            )
+        )
+        assertTrue(
+            hasCompleteActiveWorkoutSetInputs(
+                pendingSetIds = listOf("first", "second"),
+                availableInputIds = setOf("first", "second", "unrelated")
+            )
+        )
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun bulkInputValidationRejectsDuplicateSetIdentifiers() {
+        parseActiveWorkoutSetBatch(
+            listOf(
+                ActiveWorkoutSetInputForBatch("same", "20", "10"),
+                ActiveWorkoutSetInputForBatch("same", "22", "8")
+            )
+        )
     }
 }

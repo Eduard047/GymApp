@@ -873,7 +873,46 @@ class GymSession {
     (:fullLegacyState)
     static function canArmMotionCandidate() {
         return !paused && !autoLogPrompt &&
-            elapsedSeconds - lastLoggedSetSeconds >= 3;
+            (GymStore.sets.size() == 0 ||
+                elapsedSeconds - lastLoggedSetSeconds >=
+                    postSaveRestartDeadbandSeconds());
+    }
+
+    static function postSaveRestartDeadbandSeconds() {
+        return 10;
+    }
+
+    (:fullLegacyState)
+    static function hasCredibleRestRestartEvidence(risingEnough) {
+        if (GymStore.restEndsAt <= 0) {
+            return true;
+        }
+        if (elapsedSeconds - lastLoggedSetSeconds <
+            postSaveRestartDeadbandSeconds()) {
+            return false;
+        }
+        if (risingEnough) {
+            return true;
+        }
+        var candidateIsSustained = candidateZoneSeconds instanceof Lang.Array &&
+            candidateStartSeconds >= 0 && candidateStartSeconds <= elapsedSeconds &&
+            elapsedSeconds - candidateStartSeconds >= 2 &&
+            elapsedSeconds - candidateLastSignalSeconds <= 2;
+        var fullMotionIsRhythmic = motionBurstSignals == 0 ||
+            (motionBurstSignals >= 4 && motionRhythmSignals >= 3);
+        return candidateIsSustained && fullMotionIsRhythmic &&
+            motionSignalCount >= 3 && motionScore >= motionThreshold();
+    }
+
+    (:compactLegacyState)
+    static function hasCredibleRestRestartEvidence(risingEnough) {
+        if (GymStore.restEndsAt <= 0) {
+            return true;
+        }
+        return elapsedSeconds - lastLoggedSetSeconds >=
+                postSaveRestartDeadbandSeconds() &&
+            (risingEnough ||
+                (motionSignalCount >= 3 && motionScore >= motionThreshold()));
     }
 
     (:fullLegacyState)
@@ -1423,7 +1462,17 @@ class GymSession {
         var zoneEnough = zone >= activeZone && baselineDelta >= (minRiseFromBaseline / 2);
         // A high but flat recovery heart rate is not proof that another set began.
         // Require a renewed upward signal when using zone as the entry condition.
-        var zoneEntrySignal = zoneEnough && (delta >= 1 || hrTrend >= 1.0);
+        var renewedRiseDelta = 3;
+        var renewedRiseTrend = 2.0;
+        if (GymStore.sensitivityIndex == 0) {
+            renewedRiseDelta = 4;
+            renewedRiseTrend = 2.5;
+        } else if (GymStore.sensitivityIndex == 2) {
+            renewedRiseDelta = 2;
+            renewedRiseTrend = 1.5;
+        }
+        var zoneEntrySignal = zoneEnough &&
+            (delta >= renewedRiseDelta || hrTrend >= renewedRiseTrend);
         updateSetConfidence(risingEnough, zoneEntrySignal);
         if (currentSetMotionOnly && activeSetSeen && setConfidence >= 70 &&
             (risingEnough || zoneEntrySignal)) {
@@ -1449,13 +1498,14 @@ class GymSession {
                 currentSetMaxConfidence = setConfidence;
             }
         }
-        if (setConfidence >= 70) {
+        if (setConfidence >= 75 &&
+            hasCredibleRestRestartEvidence(risingEnough)) {
             activeSignalCount += 1;
         } else {
             activeSignalCount = 0;
         }
 
-        if (activeSignalCount >= 2) {
+        if (activeSignalCount >= 3) {
             if (!effortState.equals("SET ACTIVE")) {
                 if (activeSetSeen) {
                     // Resume the same not-yet-saved interval after a short pause;
@@ -1583,7 +1633,9 @@ class GymSession {
             if (risingEnough) {
                 score = 85;
             } else if (zoneEntrySignal) {
-                score = 75;
+                // A renewed zone reading is useful candidate evidence, but without
+                // motion it must not promote a set by itself.
+                score = 55;
             }
         } else {
             var threshold = adaptiveMotionThreshold();
@@ -1601,7 +1653,7 @@ class GymSession {
                 motionSignalCount = 0;
             }
             if (risingEnough) {
-                score += 45;
+                score += 55;
             } else if (zoneEntrySignal) {
                 score += 30;
             }
@@ -1611,12 +1663,12 @@ class GymSession {
             if (strongMotion && motionSignalCount >= 2) {
                 score += 75;
             } else if (strongMotion) {
-                score += 45;
+                score += 35;
             } else if (moderateMotion) {
-                score += 25;
+                score += 15;
             }
             if ((risingEnough || zoneEntrySignal) && moderateMotion) {
-                score += 10;
+                score += 5;
             }
         }
         if (score > 100) {
@@ -1635,7 +1687,7 @@ class GymSession {
             if (risingEnough) {
                 score = 85;
             } else if (zoneEntrySignal) {
-                score = 75;
+                score = 55;
             }
         } else {
             var threshold = motionThreshold();
@@ -1652,19 +1704,19 @@ class GymSession {
                 motionSignalCount = 0;
             }
             if (risingEnough) {
-                score += 45;
+                score += 55;
             } else if (zoneEntrySignal) {
                 score += 30;
             }
             if (strongMotion && motionSignalCount >= 2) {
                 score += 75;
             } else if (strongMotion) {
-                score += 45;
+                score += 35;
             } else if (moderateMotion) {
-                score += 25;
+                score += 15;
             }
             if ((risingEnough || zoneEntrySignal) && moderateMotion) {
-                score += 10;
+                score += 5;
             }
         }
         if (score > 100) {

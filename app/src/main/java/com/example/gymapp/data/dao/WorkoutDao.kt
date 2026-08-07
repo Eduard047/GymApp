@@ -86,6 +86,24 @@ interface WorkoutDao {
     @Query("SELECT COUNT(*) FROM workout_exercises WHERE sessionId = :sessionId")
     suspend fun getWorkoutExerciseCount(sessionId: Long): Int
 
+    @Query(
+        "SELECT COUNT(*) FROM workout_exercises " +
+            "WHERE sessionId = :sessionId AND exerciseId = :exerciseId"
+    )
+    suspend fun getWorkoutExerciseCountForExercise(sessionId: Long, exerciseId: Long): Int
+
+    @Query(
+        "UPDATE workout_exercises SET orderIndex = -(orderIndex + 1) " +
+            "WHERE sessionId = :sessionId"
+    )
+    suspend fun moveWorkoutExerciseOrderIndexesToTemporaryRange(sessionId: Long): Int
+
+    @Query(
+        "UPDATE workout_exercises SET orderIndex = -orderIndex " +
+            "WHERE sessionId = :sessionId AND orderIndex < 0"
+    )
+    suspend fun moveWorkoutExerciseOrderIndexesDownFromTop(sessionId: Long): Int
+
     @Query("SELECT MAX(orderIndex) FROM workout_exercises WHERE sessionId = :sessionId")
     suspend fun getMaxWorkoutExerciseOrderIndex(sessionId: Long): Int?
 

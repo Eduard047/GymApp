@@ -3288,13 +3288,43 @@ test("mandatory password update and cloud deletion validate Supabase responses b
   assert.equal(context.sessionStorage.getItem("gym-pwa-supabase-session-v1"), null);
   assert.equal(context.localStorage.getItem(`gym-pwa-account:remote-${ACTIVE_USER_ID}`), null);
   assert.equal(JSON.parse(context.localStorage.getItem("gym-pwa-account-list-v1")).length, 0);
+  assert.equal(context.localStorage.getItem("gym-pwa-cloud-account-deletion-v1"), null);
 });
 
-test("cloud deletion rejects an expanded response contract before browser cleanup", async () => {
+test("an expanded deletion response is outcome-unknown and clears local private state", async () => {
   const context = loadContext(async url => {
     if (url.endsWith("/functions/v1/delete-account")) {
       return new Response(JSON.stringify({ deleted: true, unexpected: true }), {
         status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+    throw new Error(`unexpected request: ${url}`);
+  });
+  vm.runInContext(`
+    localStorage.setItem(AUTH_KEY, JSON.stringify(activeAccount));
+    saveAccountList([activeAccount]);
+    saveState({ queueRemote: false });
+  `, context);
+  context.window.confirm = () => true;
+  context.window.prompt = () => "DELETE";
+
+  await vm.runInContext("deleteCloudAccount()", context);
+
+  assert.equal(vm.runInContext("activeAccount", context), null);
+  assert.equal(context.sessionStorage.getItem("gym-pwa-supabase-session-v1"), null);
+  assert.equal(JSON.parse(context.localStorage.getItem("gym-pwa-account-list-v1")).length, 0);
+  assert.equal(context.localStorage.getItem("gym-pwa-cloud-account-deletion-v1"), null);
+});
+
+test("deterministic cloud deletion rejection disarms the journal and preserves the account", async () => {
+  let context;
+  let requestSawJournal = false;
+  context = loadContext(async url => {
+    if (url.endsWith("/functions/v1/delete-account")) {
+      requestSawJournal = context.localStorage.getItem("gym-pwa-cloud-account-deletion-v1") !== null;
+      return new Response(JSON.stringify({ message: "recent login required" }), {
+        status: 422,
         headers: { "Content-Type": "application/json" }
       });
     }
@@ -3311,9 +3341,141 @@ test("cloud deletion rejects an expanded response contract before browser cleanu
 
   await vm.runInContext("deleteCloudAccount()", context);
 
+  assert.equal(requestSawJournal, true, "the owner-bound journal must exist before dispatch");
   assert.equal(vm.runInContext("activeAccount.userId", context), ACTIVE_USER_ID);
   assert.equal(context.sessionStorage.getItem("gym-pwa-supabase-session-v1"), sessionBefore);
   assert.equal(JSON.parse(context.localStorage.getItem("gym-pwa-account-list-v1")).length, 1);
+  assert.equal(context.localStorage.getItem("gym-pwa-cloud-account-deletion-v1"), null);
+});
+
+test("startup completes a durable cloud deletion cleanup before exposing its account", async () => {
+  const account = {
+    id: `remote-${ACTIVE_USER_ID}`,
+    name: "Deleted owner",
+    email: "deleted@example.test",
+    userId: ACTIVE_USER_ID,
+    remote: "supabase"
+  };
+  const journalRaw = JSON.stringify({
+    version: 1,
+    owner: `supabase:${ACTIVE_USER_ID}`,
+    account,
+    createdAt: Date.now()
+  });
+  const values = new Map([
+    ["gym-pwa-active-account-v1", JSON.stringify(account)],
+    ["gym-pwa-account-list-v1", JSON.stringify([account])],
+    [`gym-pwa-account:${account.id}`, JSON.stringify({ private: "workouts" })],
+    ["gym-pwa-cloud-account-deletion-v1", journalRaw]
+  ]);
+  const sessionValues = new Map([[
+    "gym-pwa-supabase-session-v1",
+    JSON.stringify({
+      access_token: unsignedJwtFor(ACTIVE_USER_ID),
+      refresh_token: "opaque-refresh-token",
+      user: { id: ACTIVE_USER_ID }
+    })
+  ]]);
+  const context = loadContext(async () => {
+    throw new Error("startup recovery must not use the network");
+  }, {
+    sharedValues: values,
+    sharedSessionValues: sessionValues,
+    seedActiveSession: false,
+    locationSearch: ""
+  });
+
+  assert.equal(vm.runInContext("activeAccount", context), null, "deleted state is hidden synchronously");
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(values.get(`gym-pwa-account:${account.id}`), undefined);
+  assert.equal(values.get("gym-pwa-active-account-v1"), undefined);
+  assert.equal(values.get("gym-pwa-cloud-account-deletion-v1"), undefined);
+  assert.equal(sessionValues.get("gym-pwa-supabase-session-v1"), undefined);
+});
+
+test("startup deletion recovery preserves a different current local account", async () => {
+  const deleted = {
+    id: `remote-${ACTIVE_USER_ID}`,
+    name: "Deleted owner",
+    email: "deleted@example.test",
+    userId: ACTIVE_USER_ID,
+    remote: "supabase"
+  };
+  const current = {
+    id: "local-v2-22222222222222222222222222222222",
+    name: "Current local",
+    localIdVersion: 2
+  };
+  const localState = {
+    language: "en",
+    catalogSeedVersion: 3,
+    exercises: [],
+    sessions: [],
+    mappings: {},
+    profile: { split: "Push Pull Legs", days: 4, goal: "Balanced", calories: "Maintenance" }
+  };
+  const values = new Map([
+    ["gym-pwa-active-account-v1", JSON.stringify(current)],
+    ["gym-pwa-account-list-v1", JSON.stringify([deleted, current])],
+    [`gym-pwa-account:${deleted.id}`, JSON.stringify({ private: "deleted" })],
+    [`gym-pwa-account:${current.id}`, JSON.stringify(localState)],
+    ["gym-pwa-cloud-account-deletion-v1", JSON.stringify({
+      version: 1,
+      owner: `supabase:${ACTIVE_USER_ID}`,
+      account: deleted,
+      createdAt: Date.now()
+    })]
+  ]);
+  const context = loadContext(async () => {
+    throw new Error("local account recovery must not use the network");
+  }, { sharedValues: values, seedActiveSession: false, locationSearch: "" });
+
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(vm.runInContext("activeAccount.id", context), current.id);
+  assert.equal(JSON.parse(values.get("gym-pwa-active-account-v1")).id, current.id);
+  assert.notEqual(values.get(`gym-pwa-account:${current.id}`), undefined);
+  assert.equal(values.get(`gym-pwa-account:${deleted.id}`), undefined);
+  assert.deepEqual(JSON.parse(values.get("gym-pwa-account-list-v1")).map(item => item.id), [current.id]);
+  assert.equal(values.get("gym-pwa-cloud-account-deletion-v1"), undefined);
+});
+
+test("an unreadable deletion journal hides remote state without destroying the journal", async () => {
+  const account = {
+    id: `remote-${ACTIVE_USER_ID}`,
+    name: "Remote owner",
+    email: "owner@example.test",
+    userId: ACTIVE_USER_ID,
+    remote: "supabase"
+  };
+  const malformed = "{not-valid-json";
+  const values = new Map([
+    ["gym-pwa-active-account-v1", JSON.stringify(account)],
+    ["gym-pwa-account-list-v1", JSON.stringify([account])],
+    [`gym-pwa-account:${account.id}`, JSON.stringify({ private: "must stay hidden" })],
+    ["gym-pwa-cloud-account-deletion-v1", malformed]
+  ]);
+  const sessionValues = new Map([[
+    "gym-pwa-supabase-session-v1",
+    JSON.stringify({
+      access_token: unsignedJwtFor(ACTIVE_USER_ID),
+      refresh_token: "opaque-refresh-token",
+      user: { id: ACTIVE_USER_ID }
+    })
+  ]]);
+  const context = loadContext(async () => {
+    throw new Error("unreadable recovery must not use the network");
+  }, {
+    sharedValues: values,
+    sharedSessionValues: sessionValues,
+    seedActiveSession: false,
+    locationSearch: ""
+  });
+
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(vm.runInContext("activeAccount", context), null);
+  assert.equal(sessionValues.get("gym-pwa-supabase-session-v1"), undefined);
+  assert.equal(values.get("gym-pwa-cloud-account-deletion-v1"), malformed);
+  assert.notEqual(values.get(`gym-pwa-account:${account.id}`), undefined, "unknown owner data is not guessed or purged");
 });
 
 test("local account deletion removes only the confirmed local profile", async () => {

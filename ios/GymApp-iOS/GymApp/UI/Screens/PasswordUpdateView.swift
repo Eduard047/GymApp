@@ -35,6 +35,7 @@ struct PasswordUpdateView: View {
     let onDone: () -> Void
 
     @State private var currentPassword = ""
+    @State private var verificationCode = ""
     @State private var password = ""
     @State private var repeatedPassword = ""
     @State private var reveal = false
@@ -59,7 +60,7 @@ struct PasswordUpdateView: View {
                             VStack(alignment: .leading, spacing: 7) {
                                 Label(mode.title, systemImage: "key.fill")
                                     .font(.title2.bold())
-                                Text(mode.supportingText)
+                                Text(gymLocalized(supportingText))
                                     .font(.subheadline)
                                     .foregroundStyle(Color.white.opacity(0.84))
                             }
@@ -77,6 +78,19 @@ struct PasswordUpdateView: View {
                                     }
                                     .textContentType(.password)
                                     .gymTextFieldChrome()
+                                }
+
+                                if showsVerificationCode {
+                                    TextField("Verification code", text: $verificationCode)
+                                        .textContentType(.oneTimeCode)
+                                        .keyboardType(.numberPad)
+                                        .gymTextFieldChrome()
+                                        .onChange(of: verificationCode) { value in
+                                            let bounded = String(value.prefix(8))
+                                            if bounded != value {
+                                                verificationCode = bounded
+                                            }
+                                        }
                                 }
 
                                 Group {
@@ -124,6 +138,17 @@ struct PasswordUpdateView: View {
         .interactiveDismissDisabled(auth.needsPasswordUpdate)
     }
 
+    private var showsVerificationCode: Bool {
+        mode == .signedIn && auth.passwordChangeRequiresNonce
+    }
+
+    private var supportingText: String {
+        if showsVerificationCode {
+            return "A verification code was sent to your email. Enter it together with the new password."
+        }
+        return mode.supportingText
+    }
+
     private func updatePassword() {
         localError = nil
         if mode.requiresCurrentPassword && currentPassword.isEmpty {
@@ -138,10 +163,21 @@ struct PasswordUpdateView: View {
             localError = GymPasswordPolicy.errorMessage
             return
         }
+        let nonce: String?
+        if showsVerificationCode {
+            guard let normalized = PasswordReauthenticationNoncePolicy.normalized(verificationCode) else {
+                localError = PasswordReauthenticationNoncePolicy.errorMessage
+                return
+            }
+            nonce = normalized
+        } else {
+            nonce = nil
+        }
         Task {
             let updated = await auth.updatePassword(
                 password,
-                currentPassword: mode.requiresCurrentPassword ? currentPassword : nil
+                currentPassword: mode.requiresCurrentPassword ? currentPassword : nil,
+                nonce: nonce
             )
             if updated { onDone() }
         }

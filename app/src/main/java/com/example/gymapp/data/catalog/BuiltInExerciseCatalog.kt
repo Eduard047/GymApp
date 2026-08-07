@@ -12,6 +12,11 @@ data class BuiltInExerciseDefinition(
     val introducedInSeedVersion: Int = 1
 )
 
+data class ExerciseSearchTermConcept(
+    val id: String,
+    val terms: List<String>
+)
+
 /**
  * Stable identities and localized display names for the exercises shipped by GymApp.
  *
@@ -20,6 +25,10 @@ data class BuiltInExerciseDefinition(
  */
 object BuiltInExerciseCatalog {
     const val SEED_VERSION: Int = 3
+
+    private const val MAX_SEARCH_TERMS_PER_ENTRY = 96
+    private const val MAX_SEARCH_TERM_CHARS = 128
+    private const val MAX_EQUIPMENT_IDS_PER_EXERCISE = 16
 
     val definitions: List<BuiltInExerciseDefinition> = listOf(
         definition("bench_press", "Bench Press", "Жим штанги лежачи", "chest", "triceps", "shoulders", aliases = setOf("жим лежачи")),
@@ -117,6 +126,56 @@ object BuiltInExerciseCatalog {
     )
 
     private val definitionsByKey = definitions.associateBy { it.key }
+
+    private val validatedSearchVocabulary: Boolean by lazy(LazyThreadSafetyMode.PUBLICATION) {
+        val knownKeys = definitionsByKey.keys
+        require(ExerciseSearchVocabulary.aliasesByKey.keys.all(knownKeys::contains)) {
+            "Search aliases must reference known built-in exercise keys"
+        }
+        require(ExerciseSearchVocabulary.equipmentIdsByKey.keys.all(knownKeys::contains)) {
+            "Search equipment must reference known built-in exercise keys"
+        }
+        require(
+            ExerciseSearchVocabulary.connectorTokens.size <= MAX_SEARCH_TERMS_PER_ENTRY &&
+                ExerciseSearchVocabulary.connectorTokens.all(::isBoundedSearchTerm)
+        ) {
+            "Search connector vocabulary must be bounded"
+        }
+        require(
+            sequenceOf(
+                ExerciseSearchVocabulary.aliasesByKey.values,
+                ExerciseSearchVocabulary.muscleTermsById.values,
+                ExerciseSearchVocabulary.equipmentTermsById.values
+            ).flatMap { it.asSequence() }.all { terms ->
+                terms.size <= MAX_SEARCH_TERMS_PER_ENTRY && terms.all(::isBoundedSearchTerm)
+            }
+        ) {
+            "Exercise search terms must be non-blank and bounded"
+        }
+        require(ExerciseSearchVocabulary.equipmentIdsByKey.values.all { equipmentIds ->
+            equipmentIds.size <= MAX_EQUIPMENT_IDS_PER_EXERCISE &&
+                equipmentIds.all { equipmentId ->
+                    isBoundedSearchTerm(equipmentId) &&
+                        ExerciseSearchVocabulary.equipmentTermsById.containsKey(equipmentId)
+                }
+        }) {
+            "Exercise equipment ids must be known and bounded"
+        }
+        true
+    }
+
+    private fun isBoundedSearchTerm(value: String): Boolean {
+        return value.isNotBlank() && value.length <= MAX_SEARCH_TERM_CHARS
+    }
+
+    private fun ensureSearchVocabularyIsValid() {
+        check(validatedSearchVocabulary)
+    }
+
+    private val excludedIdentitySearchAliasesByKey: Map<String, Set<String>> = mapOf(
+        "upright_row" to setOf(normalizeExerciseIdentityName("вертикальна тяга"))
+    )
+
     private val definitionsByName = buildMap {
         definitions.forEach { definition ->
             sequenceOf(definition.nameEn, definition.nameUk)
@@ -140,6 +199,61 @@ object BuiltInExerciseCatalog {
     fun definitionForName(rawName: String?): BuiltInExerciseDefinition? {
         val normalized = rawName?.let(::normalizeExerciseIdentityName).orEmpty()
         return definitionsByName[normalized]
+    }
+
+    fun searchAliasesForDefinition(definition: BuiltInExerciseDefinition?): Set<String> {
+        val key = definition?.key ?: return emptySet()
+        ensureSearchVocabularyIsValid()
+        return ExerciseSearchVocabulary.aliasesByKey[key].orEmpty().toSet()
+    }
+
+    fun searchAliasesForName(rawName: String?): Set<String> {
+        return searchAliasesForDefinition(definitionForName(rawName))
+    }
+
+    fun searchConnectorTokens(): Set<String> {
+        ensureSearchVocabularyIsValid()
+        return ExerciseSearchVocabulary.connectorTokens
+    }
+
+    fun searchMuscleTermConceptsForDefinition(
+        definition: BuiltInExerciseDefinition?
+    ): List<ExerciseSearchTermConcept> {
+        definition ?: return emptyList()
+        ensureSearchVocabularyIsValid()
+        return definition.muscleIds.asSequence()
+            .mapNotNull { muscleId ->
+                ExerciseSearchVocabulary.muscleTermsById[muscleId]
+                    ?.take(MAX_SEARCH_TERMS_PER_ENTRY)
+                    ?.takeIf { terms -> terms.isNotEmpty() }
+                    ?.let { terms -> ExerciseSearchTermConcept(muscleId, terms) }
+            }
+            .take(MAX_SEARCH_TERMS_PER_ENTRY)
+            .toList()
+    }
+
+    fun searchEquipmentTermConceptsForDefinition(
+        definition: BuiltInExerciseDefinition?
+    ): List<ExerciseSearchTermConcept> {
+        val key = definition?.key ?: return emptyList()
+        ensureSearchVocabularyIsValid()
+        return ExerciseSearchVocabulary.equipmentIdsByKey[key].orEmpty().asSequence()
+            .take(MAX_EQUIPMENT_IDS_PER_EXERCISE)
+            .mapNotNull { equipmentId ->
+                ExerciseSearchVocabulary.equipmentTermsById[equipmentId]
+                    ?.take(MAX_SEARCH_TERMS_PER_ENTRY)
+                    ?.takeIf { terms -> terms.isNotEmpty() }
+                    ?.let { terms -> ExerciseSearchTermConcept(equipmentId, terms) }
+            }
+            .toList()
+    }
+
+    fun isIdentityNameSearchable(
+        definition: BuiltInExerciseDefinition,
+        candidateName: String
+    ): Boolean {
+        val excluded = excludedIdentitySearchAliasesByKey[definition.key].orEmpty()
+        return normalizeExerciseIdentityName(candidateName) !in excluded
     }
 
     fun inferKey(rawName: String?): String? = definitionForName(rawName)?.key

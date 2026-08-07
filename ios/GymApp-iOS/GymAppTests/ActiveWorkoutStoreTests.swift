@@ -1,4 +1,5 @@
 import Foundation
+import UserNotifications
 import XCTest
 @testable import GymApp
 
@@ -49,6 +50,357 @@ final class ActiveWorkoutStoreTests: XCTestCase {
         XCTAssertEqual(reopened.draft, recorded)
         XCTAssertNil(reopened.recoveryMessage)
         XCTAssertTrue(context.history.workouts.isEmpty)
+    }
+
+    func testTimingSidecarExcludesRestWhileDisplayedWorkoutTimeRemainsContinuousAcrossRelaunch() throws {
+        let context = try makeContext(account: "active-stopwatch")
+        let startedAt = Date(timeIntervalSince1970: 1_800_000_050)
+        let setID = UUID()
+        let started = try startSingleSet(
+            context,
+            setID: setID,
+            weight: 60,
+            reps: 8,
+            now: startedAt
+        )
+
+        let resting = try context.active.recordSet(
+            draftID: started.id,
+            setID: setID,
+            expectedRevision: started.revision,
+            restSeconds: 90,
+            now: startedAt.addingTimeInterval(40)
+        )
+        XCTAssertEqual(resting.activeElapsedSeconds(at: startedAt.addingTimeInterval(70)), 40)
+        XCTAssertEqual(resting.totalElapsedSeconds(at: startedAt.addingTimeInterval(70)), 70)
+
+        let adjusted = try context.active.adjustRest(
+            draftID: resting.id,
+            expectedRevision: resting.revision,
+            remainingSeconds: 120,
+            now: startedAt.addingTimeInterval(70)
+        )
+        XCTAssertEqual(adjusted.activeElapsedSeconds(at: startedAt.addingTimeInterval(100)), 40)
+        XCTAssertEqual(adjusted.totalElapsedSeconds(at: startedAt.addingTimeInterval(100)), 100)
+
+        let resumed = try context.active.endRest(
+            draftID: adjusted.id,
+            expectedRevision: adjusted.revision,
+            now: startedAt.addingTimeInterval(110)
+        )
+        XCTAssertEqual(resumed.activeElapsedSeconds(at: startedAt.addingTimeInterval(125)), 55)
+        XCTAssertEqual(resumed.totalElapsedSeconds(at: startedAt.addingTimeInterval(125)), 125)
+
+        let reopened = ActiveWorkoutStore(
+            accountStorageKey: context.history.accountStorageKey,
+            workoutStorageURL: context.history.storageURL
+        )
+        let restored = try XCTUnwrap(reopened.draft)
+        XCTAssertEqual(restored.activeElapsedSeconds(at: startedAt.addingTimeInterval(125)), 55)
+        XCTAssertEqual(restored.totalElapsedSeconds(at: startedAt.addingTimeInterval(125)), 125)
+    }
+
+    func testRestProjectionReconcilesStartAdjustAndStopCrashWindows() throws {
+        let context = try makeContext(account: "active-rest-reconciliation")
+        let base = Date()
+        let setID = UUID()
+        let started = try startSingleSet(
+            context,
+            setID: setID,
+            weight: 60,
+            reps: 8,
+            now: base
+        )
+        let resting = try context.active.recordSet(
+            draftID: started.id,
+            setID: setID,
+            expectedRevision: started.revision,
+            restSeconds: 90,
+            now: base.addingTimeInterval(10)
+        )
+        let timerID = ActiveWorkoutRestReconciler.timerID(for: resting.id)
+        let clock = ActiveWorkoutRestTestClock(base.addingTimeInterval(20))
+        let defaults = makeRestTimerDefaults()
+        let manager = RestTimerManager(
+            notificationCenter: SilentActiveWorkoutRestNotifications(),
+            defaults: defaults,
+            currentDateProvider: { clock.date }
+        )
+        manager.bindToAccount(
+            ownerFingerprint: RestTimerManager.ownerFingerprint(
+                for: context.history.accountStorageKey
+            )
+        )
+
+        // Crash after committing the draft deadline but before writing the timer.
+        XCTAssertNil(manager.timers[timerID])
+        XCTAssertEqual(
+            try ActiveWorkoutRestReconciler.reconcile(
+                draft: resting,
+                store: context.active,
+                manager: manager,
+                title: "Reconciliation test",
+                now: clock.date
+            ),
+            .synchronized
+        )
+        XCTAssertEqual(manager.timers[timerID]?.endDate, resting.timing?.restingUntil)
+        let reopenedAfterStart = RestTimerManager(
+            notificationCenter: SilentActiveWorkoutRestNotifications(),
+            defaults: defaults,
+            currentDateProvider: { clock.date }
+        )
+        reopenedAfterStart.bindToAccount(
+            ownerFingerprint: RestTimerManager.ownerFingerprint(
+                for: context.history.accountStorageKey
+            )
+        )
+        XCTAssertEqual(reopenedAfterStart.timers[timerID]?.endDate, resting.timing?.restingUntil)
+
+        // Crash after adjusting the draft while the durable timer still has the old deadline.
+        clock.date = base.addingTimeInterval(30)
+        let oldDeadline = manager.timers[timerID]?.endDate
+        let adjusted = try context.active.adjustRest(
+            draftID: resting.id,
+            expectedRevision: resting.revision,
+            remainingSeconds: 120,
+            now: clock.date
+        )
+        XCTAssertNotEqual(adjusted.timing?.restingUntil, oldDeadline)
+        XCTAssertEqual(manager.timers[timerID]?.endDate, oldDeadline)
+        XCTAssertEqual(
+            try ActiveWorkoutRestReconciler.reconcile(
+                draft: adjusted,
+                store: context.active,
+                manager: manager,
+                title: "Reconciliation test",
+                now: clock.date
+            ),
+            .synchronized
+        )
+        XCTAssertEqual(manager.timers[timerID]?.endDate, adjusted.timing?.restingUntil)
+        let reopenedAfterAdjust = RestTimerManager(
+            notificationCenter: SilentActiveWorkoutRestNotifications(),
+            defaults: defaults,
+            currentDateProvider: { clock.date }
+        )
+        reopenedAfterAdjust.bindToAccount(
+            ownerFingerprint: RestTimerManager.ownerFingerprint(
+                for: context.history.accountStorageKey
+            )
+        )
+        XCTAssertEqual(reopenedAfterAdjust.timers[timerID]?.endDate, adjusted.timing?.restingUntil)
+
+        // Crash after stopping rest in the draft while the timer remains durable.
+        clock.date = base.addingTimeInterval(40)
+        let resumed = try context.active.endRest(
+            draftID: adjusted.id,
+            expectedRevision: adjusted.revision,
+            now: clock.date
+        )
+        XCTAssertNotNil(manager.timers[timerID])
+        XCTAssertEqual(
+            try ActiveWorkoutRestReconciler.reconcile(
+                draft: resumed,
+                store: context.active,
+                manager: manager,
+                title: "Reconciliation test",
+                now: clock.date
+            ),
+            .synchronized
+        )
+        XCTAssertNil(manager.timers[timerID])
+
+        let reopenedManager = RestTimerManager(
+            notificationCenter: SilentActiveWorkoutRestNotifications(),
+            defaults: defaults,
+            currentDateProvider: { clock.date }
+        )
+        reopenedManager.bindToAccount(
+            ownerFingerprint: RestTimerManager.ownerFingerprint(
+                for: context.history.accountStorageKey
+            )
+        )
+        XCTAssertNil(reopenedManager.timers[timerID])
+    }
+
+    func testUnavailableRestProjectionStopsRestWithoutRollingBackRecordedSet() throws {
+        let context = try makeContext(account: "active-rest-projection-failure")
+        let base = Date()
+        let setID = UUID()
+        let started = try startSingleSet(
+            context,
+            setID: setID,
+            weight: 72.5,
+            reps: 6,
+            now: base
+        )
+        let resting = try context.active.recordSet(
+            draftID: started.id,
+            setID: setID,
+            expectedRevision: started.revision,
+            restSeconds: 90,
+            now: base.addingTimeInterval(10)
+        )
+        let unboundManager = RestTimerManager(
+            notificationCenter: SilentActiveWorkoutRestNotifications(),
+            defaults: makeRestTimerDefaults(),
+            currentDateProvider: { base.addingTimeInterval(20) }
+        )
+
+        XCTAssertEqual(
+            try ActiveWorkoutRestReconciler.reconcile(
+                draft: resting,
+                store: context.active,
+                manager: unboundManager,
+                title: "Projection failure",
+                now: base.addingTimeInterval(20)
+            ),
+            .timerCleanupPending
+        )
+
+        let recovered = try XCTUnwrap(context.active.draft)
+        XCTAssertTrue(try XCTUnwrap(recovered.exercises.first?.sets.first).isCompleted)
+        XCTAssertNil(recovered.timing?.restingUntil)
+        XCTAssertEqual(recovered.timing?.activeSince, base.addingTimeInterval(20))
+    }
+
+    func testRecordAllSetsCommitsOneRevisionAndStopsExistingRest() throws {
+        var writeCount = 0
+        let context = try makeContext(
+            account: "active-record-all",
+            envelopeWriter: { data, url in
+                writeCount += 1
+                try data.write(
+                    to: url,
+                    options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication]
+                )
+            }
+        )
+        let startedAt = Date(timeIntervalSince1970: 1_800_000_075)
+        let firstSetID = UUID()
+        let secondSetID = UUID()
+        let started = try context.active.start(
+            workoutDate: startedAt,
+            note: nil,
+            exercises: [
+                ActiveWorkoutExercise(
+                    exerciseID: context.exercise.id,
+                    sets: [
+                        ActiveWorkoutSet(id: firstSetID, weight: 80, reps: 8),
+                        ActiveWorkoutSet(id: secondSetID, weight: 82.5, reps: 6)
+                    ]
+                )
+            ],
+            workoutStore: context.history,
+            now: startedAt
+        )
+        let resting = try context.active.beginRest(
+            draftID: started.id,
+            expectedRevision: started.revision,
+            seconds: 120,
+            now: startedAt.addingTimeInterval(20)
+        )
+        let writesBeforeBatch = writeCount
+        let completedAt = startedAt.addingTimeInterval(35)
+
+        let completed = try context.active.recordAllSets(
+            draftID: resting.id,
+            expectedRevision: resting.revision,
+            inputs: [
+                firstSetID: ActiveWorkoutSetInput(weight: 81.5, reps: 7),
+                secondSetID: ActiveWorkoutSetInput(weight: 84, reps: 5)
+            ],
+            now: completedAt
+        )
+
+        XCTAssertEqual(writeCount, writesBeforeBatch + 1)
+        XCTAssertEqual(completed.revision, resting.revision + 1)
+        XCTAssertEqual(completed.exercises[0].sets.map(\.weight), [81.5, 84])
+        XCTAssertEqual(completed.exercises[0].sets.map(\.reps), [7, 5])
+        XCTAssertEqual(completed.exercises[0].sets.map(\.completedAt), [completedAt, completedAt])
+        XCTAssertNil(completed.undoableSetID)
+        XCTAssertNil(completed.timing?.restingUntil)
+        XCTAssertEqual(completed.timing?.activeSince, completedAt)
+        XCTAssertEqual(completed.activeElapsedSeconds(at: completedAt.addingTimeInterval(10)), 30)
+    }
+
+    func testRecordAllSetsRollsBackMissingOrInvalidInputAndRejectsStaleRevision() throws {
+        let context = try makeContext(account: "active-record-all-rollback")
+        let startedAt = Date(timeIntervalSince1970: 1_800_000_090)
+        let firstSetID = UUID()
+        let secondSetID = UUID()
+        let started = try context.active.start(
+            workoutDate: startedAt,
+            note: nil,
+            exercises: [
+                ActiveWorkoutExercise(
+                    exerciseID: context.exercise.id,
+                    sets: [
+                        ActiveWorkoutSet(id: firstSetID, weight: 50, reps: 10),
+                        ActiveWorkoutSet(id: secondSetID, weight: 55, reps: 8)
+                    ]
+                )
+            ],
+            workoutStore: context.history,
+            now: startedAt
+        )
+        let originalData = try Data(contentsOf: context.active.storageURL)
+
+        XCTAssertThrowsError(
+            try context.active.recordAllSets(
+                draftID: started.id,
+                expectedRevision: started.revision,
+                inputs: [firstSetID: ActiveWorkoutSetInput(weight: 52.5, reps: 9)],
+                now: startedAt.addingTimeInterval(10)
+            )
+        ) { error in
+            XCTAssertEqual(error as? ActiveWorkoutStoreError, .invalidDraft)
+        }
+        XCTAssertEqual(context.active.draft, started)
+        XCTAssertEqual(try Data(contentsOf: context.active.storageURL), originalData)
+
+        XCTAssertThrowsError(
+            try context.active.recordAllSets(
+                draftID: started.id,
+                expectedRevision: started.revision,
+                inputs: [
+                    firstSetID: ActiveWorkoutSetInput(weight: 52.5, reps: 9),
+                    secondSetID: ActiveWorkoutSetInput(weight: .infinity, reps: 7)
+                ],
+                now: startedAt.addingTimeInterval(11)
+            )
+        ) { error in
+            XCTAssertEqual(error as? ActiveWorkoutStoreError, .invalidWeight)
+        }
+        XCTAssertEqual(context.active.draft, started)
+        XCTAssertEqual(try Data(contentsOf: context.active.storageURL), originalData)
+
+        let newer = try context.active.updateSet(
+            draftID: started.id,
+            setID: firstSetID,
+            weight: 60,
+            reps: 6,
+            expectedRevision: started.revision,
+            now: startedAt.addingTimeInterval(12)
+        )
+        let newerData = try Data(contentsOf: context.active.storageURL)
+        XCTAssertThrowsError(
+            try context.active.recordAllSets(
+                draftID: started.id,
+                expectedRevision: started.revision,
+                inputs: [
+                    firstSetID: ActiveWorkoutSetInput(weight: 61, reps: 5),
+                    secondSetID: ActiveWorkoutSetInput(weight: 57.5, reps: 7)
+                ],
+                now: startedAt.addingTimeInterval(13)
+            )
+        ) { error in
+            XCTAssertEqual(error as? ActiveWorkoutStoreError, .staleDraft)
+        }
+        XCTAssertEqual(context.active.draft, newer)
+        XCTAssertEqual(try Data(contentsOf: context.active.storageURL), newerData)
+        XCTAssertTrue(newer.exercises[0].sets.allSatisfy { !$0.isCompleted })
     }
 
     func testStaleRevisionIsRejectedWithoutMutatingRecordedSet() throws {
@@ -762,4 +1114,34 @@ final class ActiveWorkoutStoreTests: XCTestCase {
         }
         return url
     }
+
+    private func makeRestTimerDefaults() -> UserDefaults {
+        let suiteName = "GymApp-active-rest-tests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        addTeardownBlock {
+            UserDefaults.standard.removePersistentDomain(forName: suiteName)
+        }
+        return defaults
+    }
+}
+
+@MainActor
+private final class ActiveWorkoutRestTestClock {
+    var date: Date
+
+    init(_ date: Date) {
+        self.date = date
+    }
+}
+
+@MainActor
+private final class SilentActiveWorkoutRestNotifications: RestNotificationCenterClient {
+    func authorizationStatus() async -> UNAuthorizationStatus { .denied }
+    func requestAuthorization() async -> Bool { false }
+    func add(_ request: UNNotificationRequest) async throws {}
+    func removePendingNotificationRequests(withIdentifiers identifiers: [String]) {}
+    func removeDeliveredNotifications(withIdentifiers identifiers: [String]) {}
+    func removeAllPendingNotificationRequests() {}
+    func removeAllDeliveredNotifications() {}
 }

@@ -1,14 +1,14 @@
 "use strict";
 
 const CACHE_PREFIX = "gym-pwa-";
-const CACHE_VERSION = "v103";
+const CACHE_VERSION = "v108";
 const CACHE_NAME = `${CACHE_PREFIX}${CACHE_VERSION}`;
 const LEGACY_GITHUB_ORIGIN = "https://eduard047.github.io";
 const LEGACY_GITHUB_SCOPE = `${LEGACY_GITHUB_ORIGIN}/GymApp/`;
 const LEGACY_GITHUB_SCOPE_URL = new URL(LEGACY_GITHUB_SCOPE);
 const IS_LEGACY_GITHUB_ORIGIN = self.location.origin === LEGACY_GITHUB_ORIGIN &&
   self.registration.scope === LEGACY_GITHUB_SCOPE;
-const LEGACY_CLEANUP_URL = new URL("./legacy-origin-cleanup-v61.html", self.registration.scope);
+const LEGACY_CLEANUP_URL = new URL("./legacy-origin-cleanup-v62.html", self.registration.scope);
 const LEGACY_CONFIRMATION_URL = new URL("./confirmed.html", self.registration.scope);
 const EXERCISE_MEDIA_KEYS = [
   "bench_press", "dumbbell_bench_press", "incline_dumbbell_press", "incline_bench_press",
@@ -30,16 +30,17 @@ const ASSETS = [
   "./confirmed.v56.js",
   "./frame-guard.v56.js",
   "./theme.v56.js",
-  "./styles.v64.css",
+  "./styles.v66.css",
   "./muscle-regions.v56.js",
   "./supabase-config.v56.js",
-  "./state-contract.v68.js",
+  "./state-contract.v69.js",
   "./garmin-cloud-sync.v57.js",
   "./progression-rules.v56.js",
   "./shared-workout.v65.js",
   "./shared-workout-flow.v71.js",
-  "./russian-text.v71.js",
-  "./app.v71.js",
+  "./russian-text.v72.js",
+  "./exercise-search-vocabulary.v1.js",
+  "./app.v76.js",
   "./workout/",
   "./workout/index.html",
   "./workout/landing.v1.css",

@@ -146,6 +146,44 @@ class WorkoutDetailSetPersistenceTest {
     }
 
     @Test
+    fun immediateDuplicateExerciseAddPersistsOnce() = runBlocking {
+        val gate = PerExerciseSetAdditionGate()
+        val firstPersistenceStarted = CompletableDeferred<Unit>()
+        val releaseFirstPersistence = CompletableDeferred<Unit>()
+        var persistedExerciseCount = 0
+
+        val first = async {
+            persistWorkoutDetailExercise(exerciseId = 7L, gate = gate) {
+                firstPersistenceStarted.complete(Unit)
+                releaseFirstPersistence.await()
+                persistedExerciseCount += 1
+            }
+        }
+        firstPersistenceStarted.await()
+        val duplicate = persistWorkoutDetailExercise(exerciseId = 7L, gate = gate) {
+            persistedExerciseCount += 1
+        }
+        releaseFirstPersistence.complete(Unit)
+
+        assertEquals(WorkoutDetailExercisePersistenceResult.AlreadyInFlight, duplicate)
+        assertEquals(WorkoutDetailExercisePersistenceResult.ExerciseSaved, first.await())
+        assertEquals(1, persistedExerciseCount)
+        assertTrue(gate.inFlight.value.isEmpty())
+    }
+
+    @Test
+    fun exerciseAddFailureIsBoundedAndReleasesGate() = runBlocking {
+        val gate = PerExerciseSetAdditionGate()
+
+        val result = persistWorkoutDetailExercise(exerciseId = 7L, gate = gate) {
+            error("database-private detail")
+        }
+
+        assertEquals(WorkoutDetailExercisePersistenceResult.PersistenceFailed, result)
+        assertTrue(gate.inFlight.value.isEmpty())
+    }
+
+    @Test
     fun durableDeadlineSurvivesControllerRecreationAndClearsOnAccountSwitch() {
         val persistence = InMemoryExerciseRestTimerPersistence()
         val firstAccount = "a".repeat(64)

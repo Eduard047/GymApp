@@ -12,6 +12,9 @@ import com.example.gymapp.data.entity.WorkoutSessionDetails
 import com.example.gymapp.data.repository.GymRepository
 import com.example.gymapp.data.repository.SetDeletionSnapshot
 import com.example.gymapp.data.repository.WorkoutDataLimits
+import com.example.gymapp.data.repository.defaultContributionsForExercise
+import com.example.gymapp.data.repository.normalizedExerciseName
+import com.example.gymapp.data.repository.toManualContributionMap
 import com.example.gymapp.garmin.WorkoutComparison
 import com.example.gymapp.garmin.buildWorkoutComparisonForSession
 import com.example.gymapp.garmin.isWorkoutEarlier
@@ -44,6 +47,9 @@ data class WorkoutDetailUiState(
     val exerciseRestDeadlineMillis: Map<Long, Long> = emptyMap(),
     val setAdditionsInFlight: Set<Long> = emptySet(),
     val availableExercisesToAdd: List<ExerciseEntity> = emptyList(),
+    val frequentExerciseIds: List<Long> = emptyList(),
+    val exerciseWorkoutCounts: Map<Long, Int> = emptyMap(),
+    val exerciseMuscleIds: Map<String, Set<String>> = emptyMap(),
     val workoutComparison: WorkoutComparison? = null
 )
 
@@ -62,11 +68,20 @@ private data class SetDeletionState(
 private data class WorkoutRestTimerState(
     val restSecondsRemaining: Int,
     val exerciseRestDeadlineMillis: Map<Long, Long>,
-    val setAdditionsInFlight: Set<Long>
+    val setAdditionsInFlight: Set<Long>,
+    val exerciseAdditionsInFlight: Set<Long>
+)
+
+private data class WorkoutDetailExerciseCatalog(
+    val exercises: List<ExerciseEntity>,
+    val frequentExerciseIds: List<Long>,
+    val workoutCounts: Map<Long, Int>,
+    val muscleIdsByName: Map<String, Set<String>>
 )
 
 sealed interface WorkoutDetailEvent {
     data object AddSetFailed : WorkoutDetailEvent
+    data object AddExerciseFailed : WorkoutDetailEvent
     data object RestTimerFailed : WorkoutDetailEvent
     data object SetDeleted : WorkoutDetailEvent
     data object SessionDeleted : WorkoutDetailEvent
@@ -83,6 +98,7 @@ class WorkoutDetailViewModel(
     private val timerAccountKey: String
 ) : ViewModel() {
     private val setAdditionGate = PerExerciseSetAdditionGate()
+    private val exerciseAdditionGate = PerExerciseSetAdditionGate()
     private val exerciseRestDeadlines = restTimerController.exerciseRestDeadlineMillis.map {
         deadlines ->
         deadlines.entries
@@ -95,6 +111,40 @@ class WorkoutDetailViewModel(
     private val sessionDetailsFlow = repository.observeSessionDetails(sessionId)
     private val allExercisesFlow = repository.observeExercises()
     private val allExerciseHistoryFlow = repository.observeAllExerciseHistory()
+    private val exerciseCatalogFlow = combine(
+        allExercisesFlow,
+        allExerciseHistoryFlow,
+        repository.observeExerciseMuscleMappings()
+    ) { exercises, history, mappings ->
+        val manualMappings = mappings.toManualContributionMap()
+        val workoutCounts = workoutCountByExercise(history)
+        val frequentIds = history
+            .groupBy { it.exerciseId }
+            .map { (exerciseId, entries) ->
+                Triple(
+                    exerciseId,
+                    entries.map { it.sessionId }.distinct().size,
+                    entries.maxOfOrNull { it.sessionDate } ?: Long.MIN_VALUE
+                )
+            }
+            .sortedWith(
+                compareByDescending<Triple<Long, Int, Long>> { it.second }
+                    .thenByDescending { it.third }
+                    .thenBy { it.first }
+            )
+            .take(12)
+            .map { it.first }
+        WorkoutDetailExerciseCatalog(
+            exercises = exercises,
+            frequentExerciseIds = frequentIds,
+            workoutCounts = workoutCounts,
+            muscleIdsByName = exercises.associate { exercise ->
+                val contributions = manualMappings[exercise.name.normalizedExerciseName()]
+                    ?: defaultContributionsForExercise(exercise.name)
+                exercise.name to contributions.mapTo(linkedSetOf()) { it.muscleId }
+            }
+        )
+    }
     private val sessionContextFlow = combine(
         sessionDetailsFlow,
         repository.observeSessions(),
@@ -173,12 +223,15 @@ class WorkoutDetailViewModel(
     private val restTimerState = combine(
         restTimerController.remainingSeconds,
         exerciseRestDeadlines,
-        setAdditionGate.inFlight
-    ) { restSecondsRemaining, exerciseRestDeadlineMillis, setAdditionsInFlight ->
+        setAdditionGate.inFlight,
+        exerciseAdditionGate.inFlight
+    ) { restSecondsRemaining, exerciseRestDeadlineMillis, setAdditionsInFlight,
+        exerciseAdditionsInFlight ->
         WorkoutRestTimerState(
             restSecondsRemaining = restSecondsRemaining,
             exerciseRestDeadlineMillis = exerciseRestDeadlineMillis,
-            setAdditionsInFlight = setAdditionsInFlight
+            setAdditionsInFlight = setAdditionsInFlight,
+            exerciseAdditionsInFlight = exerciseAdditionsInFlight
         )
     }
 
@@ -187,8 +240,8 @@ class WorkoutDetailViewModel(
         setDeletionState,
         personalRecordFlags,
         restTimerState,
-        allExercisesFlow
-    ) { sessionContext, deletion, prFlags, timers, allExercises ->
+        exerciseCatalogFlow
+    ) { sessionContext, deletion, prFlags, timers, catalog ->
         val details = sessionContext.details
         val selectedExerciseIds = details
             ?.workoutExercises
@@ -205,7 +258,12 @@ class WorkoutDetailViewModel(
             restSecondsRemaining = timers.restSecondsRemaining,
             exerciseRestDeadlineMillis = timers.exerciseRestDeadlineMillis,
             setAdditionsInFlight = timers.setAdditionsInFlight,
-            availableExercisesToAdd = allExercises.filterNot { it.id in selectedExerciseIds },
+            availableExercisesToAdd = catalog.exercises.filterNot {
+                it.id in selectedExerciseIds || it.id in timers.exerciseAdditionsInFlight
+            },
+            frequentExerciseIds = catalog.frequentExerciseIds,
+            exerciseWorkoutCounts = catalog.workoutCounts,
+            exerciseMuscleIds = catalog.muscleIdsByName,
             workoutComparison = sessionContext.comparison
         )
     }.stateIn(
@@ -267,23 +325,36 @@ class WorkoutDetailViewModel(
 
     fun addExerciseToWorkout(exerciseId: Long) {
         viewModelScope.launch {
-            val currentDetails = uiState.value.sessionDetails ?: return@launch
-            val alreadyAdded = currentDetails.workoutExercises.any {
-                it.workoutExercise.exerciseId == exerciseId
+            when (
+                persistWorkoutDetailExercise(
+                    exerciseId = exerciseId,
+                    gate = exerciseAdditionGate
+                ) {
+                    val currentDetails = uiState.value.sessionDetails ?: return@persistWorkoutDetailExercise
+                    val alreadyAdded = currentDetails.workoutExercises.any {
+                        it.workoutExercise.exerciseId == exerciseId
+                    }
+                    if (alreadyAdded) return@persistWorkoutDetailExercise
+
+                    val historicalWeight = repository.getLastWeightBeforeDate(
+                        exerciseId = exerciseId,
+                        beforeDate = currentDetails.session.date
+                    ) ?: 20.0
+
+                    repository.addExerciseToSession(
+                        sessionId = currentDetails.session.id,
+                        exerciseId = exerciseId,
+                        initialWeight = historicalWeight,
+                        initialReps = 10
+                    )
+                }
+            ) {
+                WorkoutDetailExercisePersistenceResult.PersistenceFailed -> {
+                    _events.emit(WorkoutDetailEvent.AddExerciseFailed)
+                }
+                WorkoutDetailExercisePersistenceResult.AlreadyInFlight,
+                WorkoutDetailExercisePersistenceResult.ExerciseSaved -> Unit
             }
-            if (alreadyAdded) return@launch
-
-            val historicalWeight = repository.getLastWeightBeforeDate(
-                exerciseId = exerciseId,
-                beforeDate = currentDetails.session.date
-            ) ?: 20.0
-
-            repository.addExerciseToSession(
-                sessionId = currentDetails.session.id,
-                exerciseId = exerciseId,
-                initialWeight = historicalWeight,
-                initialReps = 10
-            )
         }
     }
 
@@ -432,6 +503,12 @@ internal enum class WorkoutDetailSetPersistenceResult {
     SetSavedAndTimerStarted
 }
 
+internal enum class WorkoutDetailExercisePersistenceResult {
+    AlreadyInFlight,
+    PersistenceFailed,
+    ExerciseSaved
+}
+
 internal class PerExerciseSetAdditionGate {
     private val lock = Any()
     private val _inFlight = MutableStateFlow<Set<Long>>(emptySet())
@@ -479,5 +556,27 @@ internal suspend fun persistWorkoutDetailSet(
         }
     } finally {
         gate.finish(workoutExerciseId)
+    }
+}
+
+internal suspend fun persistWorkoutDetailExercise(
+    exerciseId: Long,
+    gate: PerExerciseSetAdditionGate,
+    persist: suspend () -> Unit
+): WorkoutDetailExercisePersistenceResult {
+    if (!gate.tryStart(exerciseId)) {
+        return WorkoutDetailExercisePersistenceResult.AlreadyInFlight
+    }
+    return try {
+        try {
+            persist()
+            WorkoutDetailExercisePersistenceResult.ExerciseSaved
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Throwable) {
+            WorkoutDetailExercisePersistenceResult.PersistenceFailed
+        }
+    } finally {
+        gate.finish(exerciseId)
     }
 }

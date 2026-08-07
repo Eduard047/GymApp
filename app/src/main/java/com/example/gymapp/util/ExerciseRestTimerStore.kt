@@ -33,11 +33,34 @@ internal interface ExerciseRestTimerPersistence {
 }
 
 internal fun restTimerAccountKey(session: AccountSession?): String? {
-    val stableIdentity = when (session) {
+    return when (session) {
         null -> return null
-        is AccountSession.Cloud -> "${session.databaseName()}:${session.sessionGeneration}"
-        is AccountSession.Local -> session.databaseName()
+        is AccountSession.Cloud -> restTimerAccountKey(
+            databaseName = session.databaseName(),
+            sessionGeneration = session.sessionGeneration
+        )
+        is AccountSession.Local -> restTimerAccountKey(
+            databaseName = session.databaseName(),
+            sessionGeneration = null
+        )
     }
+}
+
+internal fun restTimerAccountKey(
+    databaseName: String,
+    sessionGeneration: String?
+): String? {
+    if (databaseName.isEmpty() || databaseName.length > 512 || databaseName.any(Char::isISOControl)) {
+        return null
+    }
+    if (sessionGeneration != null &&
+        (sessionGeneration.isEmpty() ||
+            sessionGeneration.length > 128 ||
+            sessionGeneration.any(Char::isISOControl))
+    ) {
+        return null
+    }
+    val stableIdentity = sessionGeneration?.let { "$databaseName:$it" } ?: databaseName
     return MessageDigest.getInstance("SHA-256")
         .digest("GymAppExerciseRestTimerAccountV1:$stableIdentity".toByteArray(Charsets.UTF_8))
         .joinToString(separator = "") { byte -> "%02x".format(byte) }
@@ -127,6 +150,20 @@ internal class ExerciseRestTimerLedger(
         }
         _deadlines.value = next
         true
+    }
+
+    fun clearAccount(expectedAccountKey: String): Boolean = synchronized(lock) {
+        if (!ACCOUNT_KEY_PATTERN.matches(expectedAccountKey)) return@synchronized false
+        if (activeAccountKey == expectedAccountKey) {
+            if (!persistence.save(ExerciseRestTimerSnapshot(null, emptyMap()))) {
+                return@synchronized false
+            }
+            _deadlines.value = emptyMap()
+            return@synchronized true
+        }
+        val stored = persistence.load()
+        if (stored.accountKey != expectedAccountKey) return@synchronized true
+        persistence.save(ExerciseRestTimerSnapshot(null, emptyMap()))
     }
 
     private fun sanitizedDeadlines(

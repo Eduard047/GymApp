@@ -213,6 +213,16 @@ internal enum class CloudAccountDeletionSessionDisposition {
     PreserveDifferentSession
 }
 
+internal data class CloudAccountDeletionCompletion(
+    val disposition: CloudAccountDeletionSessionDisposition,
+    val durableAuthCleanupCompleted: Boolean
+)
+
+internal fun shouldRetireCloudAccountDeletionJournal(
+    completion: CloudAccountDeletionCompletion,
+    localCleanupFailures: Int
+): Boolean = localCleanupFailures == 0 && completion.durableAuthCleanupCompleted
+
 internal fun cloudAccountDeletionSessionDisposition(
     current: AccountSession?,
     deletedSession: AccountSession.Cloud
@@ -221,6 +231,30 @@ internal fun cloudAccountDeletionSessionDisposition(
         CloudAccountDeletionSessionDisposition.ClearCapturedSession
     current == null -> CloudAccountDeletionSessionDisposition.AlreadySignedOut
     else -> CloudAccountDeletionSessionDisposition.PreserveDifferentSession
+}
+
+internal class AccountDeletionPreparationException : IllegalStateException(
+    "Account deletion could not be prepared safely on this device."
+)
+
+internal suspend fun <T> runPreparedAccountDeletionRequest(
+    persistIntent: () -> Boolean,
+    request: suspend () -> T
+): T {
+    if (!persistIntent()) throw AccountDeletionPreparationException()
+    return request()
+}
+
+internal fun authStateAfterUnknownAccountDeletionOutcome(
+    current: AccountSession?,
+    deletedSession: AccountSession.Cloud
+): AuthUiState? = if (activeCloudSessionFor(current, deletedSession) != null) {
+    AuthUiState(
+        message = LocalizedText(R.string.account_delete_outcome_unknown),
+        messageIsError = true
+    )
+} else {
+    null
 }
 
 internal class CloudLogoutRequest(
@@ -267,13 +301,28 @@ internal fun isSuccessfulCloudAccountDeletionResponse(response: String): Boolean
 
 internal fun passwordUpdateBody(
     newPassword: String,
-    currentPassword: String? = null
+    currentPassword: String? = null,
+    nonce: String? = null
 ): String = JSONObject()
     .put("password", newPassword)
     .apply {
         if (currentPassword != null) put("current_password", currentPassword)
+        if (nonce != null) put("nonce", nonce)
     }
     .toString()
+
+internal fun isValidPasswordReauthenticationNonce(value: String): Boolean =
+    value.matches(Regex("^[0-9]{6,8}$"))
+
+internal fun isPasswordReauthenticationRequired(
+    errorCode: String?,
+    providerMessage: String?
+): Boolean = errorCode.equals("reauthentication_needed", ignoreCase = true) ||
+    providerMessage?.trim()?.equals("reauthentication needed", ignoreCase = true) == true
+
+internal class PasswordReauthenticationRequiredException : IllegalStateException(
+    "Enter the verification code sent to your email."
+)
 
 internal fun isTerminalRefreshFailure(
     responseCode: Int,
@@ -352,6 +401,16 @@ private fun isStructurallyValidSupabaseAccessToken(value: String, expectedUserId
 
 internal fun clearAuthPreferencesSynchronously(preferences: SharedPreferences): Boolean =
     preferences.edit().clear().commit()
+
+internal fun signedOutAuthStateAfterLocalLogout(preferencesCleared: Boolean): AuthUiState =
+    AuthUiState(
+        message = if (preferencesCleared) {
+            null
+        } else {
+            LocalizedText(R.string.auth_message_logout_failed)
+        },
+        messageIsError = !preferencesCleared
+    )
 
 internal sealed interface RemoteStateRevision {
     data object Missing : RemoteStateRevision
@@ -458,6 +517,7 @@ class CloudAuthManager(context: Context) {
 
     private val prefs = context.applicationContext.getSharedPreferences("gym_cloud_auth", Context.MODE_PRIVATE)
     private val localDatabaseBindingStore = LocalDatabaseBindingStore(context.applicationContext)
+    private val accountDeletionJournal = CloudAccountDeletionJournal(context.applicationContext)
     private val authStateLock = Any()
     private val refreshMutex = Mutex()
     private val remoteStateMutex = Mutex()
@@ -660,15 +720,13 @@ class CloudAuthManager(context: Context) {
             val capturedRequest = localCloudLogoutRequest(_authState.value.session)
             authMutationVersion += 1
             remoteStateRevisions.clear()
-            if (!clearAuthPreferencesSynchronously(prefs)) {
-                _authState.value = _authState.value.copy(
-                    isLoading = false,
-                    message = LocalizedText(R.string.auth_message_logout_failed),
-                    messageIsError = true
-                )
-                return@synchronized null
+            val preferencesCleared = clearAuthPreferencesSynchronously(prefs)
+            if (!preferencesCleared) {
+                // A storage failure must never keep the captured access token active in memory.
+                // Retry the disk clear asynchronously while the process remains signed out.
+                prefs.edit().clear().apply()
             }
-            _authState.value = AuthUiState()
+            _authState.value = signedOutAuthStateAfterLocalLogout(preferencesCleared)
             capturedRequest
         }
         if (revokeRequest != null) {
@@ -801,7 +859,8 @@ class CloudAuthManager(context: Context) {
 
     suspend fun changePassword(
         currentPassword: String,
-        newPassword: String
+        newPassword: String,
+        nonce: String? = null
     ) = withContext(Dispatchers.IO) {
         require(currentPassword.isNotEmpty()) { "Enter your current password." }
         require(currentPassword.toByteArray(Charsets.UTF_8).size <= 1_024) {
@@ -811,19 +870,47 @@ class CloudAuthManager(context: Context) {
         require(currentPassword != newPassword) {
             "Choose a new password that differs from the current password."
         }
+        if (nonce != null) {
+            require(isValidPasswordReauthenticationNonce(nonce)) {
+                "Enter the verification code sent to your email."
+            }
+        }
         val session = synchronized(authStateLock) {
             _authState.value.session as? AccountSession.Cloud
         } ?: error(INACTIVE_CLOUD_SESSION_MESSAGE)
         val freshSession = freshCloudSession(session)
-        authenticatedRequest(
-            session = freshSession,
-            path = "/auth/v1/user",
-            method = "PUT",
-            body = passwordUpdateBody(
-                newPassword = newPassword,
-                currentPassword = currentPassword
+        try {
+            authenticatedRequest(
+                session = freshSession,
+                path = "/auth/v1/user",
+                method = "PUT",
+                body = passwordUpdateBody(
+                    newPassword = newPassword,
+                    currentPassword = currentPassword,
+                    nonce = nonce
+                )
             )
-        )
+        } catch (error: SupabaseHttpException) {
+            if (nonce == null && isPasswordReauthenticationRequired(
+                    error.errorCode,
+                    error.providerMessage
+                )
+            ) {
+                authenticatedRequest(
+                    session = freshSession,
+                    path = "/auth/v1/reauthenticate",
+                    method = "GET",
+                    maxResponseBytes = MAX_CLOUD_ERROR_RESPONSE_BYTES
+                )
+                synchronized(authStateLock) {
+                    check(activeCloudSessionFor(_authState.value.session, freshSession) != null) {
+                        INACTIVE_CLOUD_SESSION_MESSAGE
+                    }
+                }
+                throw PasswordReauthenticationRequiredException()
+            }
+            throw error
+        }
         synchronized(authStateLock) {
             val activeSession = activeCloudSessionFor(_authState.value.session, freshSession)
                 ?: error(INACTIVE_CLOUD_SESSION_MESSAGE)
@@ -844,33 +931,88 @@ class CloudAuthManager(context: Context) {
             activeCloudSessionFor(_authState.value.session, expectedSession)
         } ?: error(INACTIVE_CLOUD_SESSION_MESSAGE)
         val freshSession = freshCloudSession(session)
+        val requestSession = requireActiveCloudSession(freshSession)
         val deletionRequest = cloudAccountDeletionRequest()
-        val response = authenticatedRequest(
-            session = freshSession,
-            path = deletionRequest.path,
-            method = deletionRequest.method,
-            body = deletionRequest.body,
-            additionalHeaders = deletionRequest.headers
-        )
-        check(isSuccessfulCloudAccountDeletionResponse(response)) {
-            "Cloud account deletion returned an invalid response."
+        val deletionRecord = checkNotNull(
+            PendingCloudAccountDeletion.fromSession(freshSession)
+        ) { "Cloud account identity is invalid." }
+        val response = try {
+            runPreparedAccountDeletionRequest(
+                persistIntent = {
+                    accountDeletionJournal.markPending(freshSession)
+                },
+                request = {
+                    request(
+                        path = deletionRequest.path,
+                        method = deletionRequest.method,
+                        token = requestSession.accessToken,
+                        body = deletionRequest.body,
+                        additionalHeaders = deletionRequest.headers
+                    )
+                }
+            )
+        } catch (error: AccountDeletionPreparationException) {
+            // Nothing crossed the network boundary, so the current account remains authoritative.
+            throw error
+        } catch (error: SupabaseHttpException) {
+            if (error.responseCode in 400..499) {
+                // A bounded 4xx proves this attempt did not delete the account.
+                accountDeletionJournal.clear(deletionRecord)
+                if (error.responseCode == 401) expireCloudSession(freshSession)
+            } else {
+                signOutAfterUnknownAccountDeletionOutcome(freshSession)
+            }
+            throw error
+        } catch (error: Throwable) {
+            // Network failure, cancellation, response overflow, and malformed transport state can
+            // all happen after dispatch. Keep the owner marker and make local state inaccessible.
+            signOutAfterUnknownAccountDeletionOutcome(freshSession)
+            throw error
+        }
+        if (!isSuccessfulCloudAccountDeletionResponse(response)) {
+            signOutAfterUnknownAccountDeletionOutcome(freshSession)
+            error("Cloud account deletion returned an invalid response.")
         }
         // The exact success response is the commit point. A concurrent local logout must
         // not turn a completed remote deletion into an apparent failure or skip cleanup.
         freshSession
     }
 
+    internal fun clearPendingCloudAccountDeletion(
+        expectedSession: AccountSession.Cloud
+    ): Boolean {
+        val record = PendingCloudAccountDeletion.fromSession(expectedSession) ?: return false
+        return accountDeletionJournal.clear(record)
+    }
+
+    private fun signOutAfterUnknownAccountDeletionOutcome(
+        expectedSession: AccountSession.Cloud
+    ) = synchronized(authStateLock) {
+        val fallbackState = authStateAfterUnknownAccountDeletionOutcome(
+            current = _authState.value.session,
+            deletedSession = expectedSession
+        ) ?: return@synchronized
+        authMutationVersion += 1
+        remoteStateRevisions.clear()
+        if (!clearAuthPreferencesSynchronously(prefs)) {
+            prefs.edit().clear().apply()
+        }
+        _authState.value = fallbackState
+    }
+
     internal fun completeCloudAccountDeletion(
         expectedSession: AccountSession.Cloud
-    ): CloudAccountDeletionSessionDisposition = synchronized(authStateLock) {
+    ): CloudAccountDeletionCompletion = synchronized(authStateLock) {
         val disposition = cloudAccountDeletionSessionDisposition(
             current = _authState.value.session,
             deletedSession = expectedSession
         )
+        var durableAuthCleanupCompleted = false
         if (disposition == CloudAccountDeletionSessionDisposition.ClearCapturedSession) {
             authMutationVersion += 1
             remoteStateRevisions.clear()
             val preferencesCleared = clearAuthPreferencesSynchronously(prefs)
+            durableAuthCleanupCompleted = preferencesCleared
             if (!preferencesCleared) {
                 // The server-side account is already gone. Keep the process signed out and
                 // schedule a second best-effort disk clear instead of reviving a dead session.
@@ -884,8 +1026,20 @@ class CloudAuthManager(context: Context) {
                 },
                 messageIsError = !preferencesCleared
             )
+        } else if (disposition == CloudAccountDeletionSessionDisposition.AlreadySignedOut) {
+            // A concurrent logout may have cleared only the in-memory state. Retry the durable
+            // clear before allowing the deletion journal to retire.
+            durableAuthCleanupCompleted = clearAuthPreferencesSynchronously(prefs)
+            if (!durableAuthCleanupCompleted) prefs.edit().clear().apply()
         }
-        disposition
+        // When another account has already become active, retain the owner-bound journal until
+        // startup recovery. This avoids a crash window where an asynchronous preference write
+        // could otherwise leave the deleted session on disk, and the journal never targets the
+        // replacement owner.
+        CloudAccountDeletionCompletion(
+            disposition = disposition,
+            durableAuthCleanupCompleted = durableAuthCleanupCompleted
+        )
     }
 
     suspend fun freshCloudSession(session: AccountSession.Cloud): AccountSession.Cloud {
@@ -1356,6 +1510,14 @@ class CloudAuthManager(context: Context) {
     }
 
     private fun persist(session: AccountSession.Cloud) {
+        check(
+            !shouldSuppressRestoredCloudSession(
+                accountDeletionJournal.snapshot(),
+                session.userId
+            )
+        ) {
+            "Local deletion cleanup is still pending for this account. Restart GymApp and try again."
+        }
         prefs.edit()
             .putString("mode", "cloud")
             .putString(
@@ -1395,8 +1557,26 @@ class CloudAuthManager(context: Context) {
                 }
             }
             "cloud" -> parseStoredCloudSession(prefs.getString("cloud", null))
-                ?.let { StoredSessionRead(session = it) }
-                ?: run {
+                ?.let { session ->
+                    if (shouldSuppressRestoredCloudSession(
+                            accountDeletionJournal.snapshot(),
+                            session.userId
+                        )
+                    ) {
+                        // A deletion request with an unknown or successful outcome must never
+                        // restore that owner's local session while durable cleanup is retried.
+                        if (!clearAuthPreferencesSynchronously(prefs)) {
+                            prefs.edit().clear().apply()
+                        }
+                        StoredSessionRead(
+                            recoveryMessage = LocalizedText(
+                                R.string.account_delete_outcome_unknown
+                            )
+                        )
+                    } else {
+                        StoredSessionRead(session = session)
+                    }
+                } ?: run {
                     prefs.edit()
                         .remove("mode")
                         .remove("cloud")

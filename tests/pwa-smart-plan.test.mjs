@@ -310,6 +310,52 @@ test("PWA Strength 5-rep work builds to six without a false deload and preserves
   ]);
 });
 
+test("PWA rep ranges and fresh targets match the canonical iOS role matrix", () => {
+  const context = loadPwaContext();
+  const roles = ["Primary", "Secondary", "Isolation", "Core", "Warmup"];
+  const expectedByGoal = {
+    Strength: [
+      { min: 4, max: 6, target: 5 },
+      { min: 5, max: 8, target: 6 },
+      { min: 8, max: 10, target: 8 },
+      { min: 8, max: 10, target: 8 },
+      { min: 8, max: 10, target: 8 }
+    ],
+    "Muscle Gain": [
+      { min: 6, max: 8, target: 8 },
+      { min: 7, max: 10, target: 9 },
+      { min: 8, max: 10, target: 10 },
+      { min: 8, max: 10, target: 10 },
+      { min: 8, max: 10, target: 10 }
+    ],
+    "Aesthetic Cut": [
+      { min: 6, max: 8, target: 8 },
+      { min: 7, max: 10, target: 9 },
+      { min: 8, max: 10, target: 10 },
+      { min: 8, max: 10, target: 10 },
+      { min: 8, max: 10, target: 10 }
+    ],
+    Balanced: [
+      { min: 5, max: 8, target: 7 },
+      { min: 6, max: 10, target: 8 },
+      { min: 8, max: 10, target: 10 },
+      { min: 8, max: 10, target: 10 },
+      { min: 8, max: 10, target: 10 }
+    ]
+  };
+
+  for (const [goal, expected] of Object.entries(expectedByGoal)) {
+    const actual = JSON.parse(vm.runInContext(`(() => {
+      state.profile = { split: "Full Body", days: 4, goal: ${JSON.stringify(goal)}, calories: "Maintenance" };
+      return JSON.stringify(${JSON.stringify(roles)}.map(role => {
+        const range = smartRepRange({ role });
+        return { ...range, target: smartDefaultTargetReps({ role }, range) };
+      }));
+    })()`, context));
+    assert.deepEqual(actual, expected, goal);
+  }
+});
+
 test("PWA double progression adds load after every Strength set reaches the top range twice", () => {
   const context = loadPwaContext();
   const recommendation = recommendationFor(context, {
@@ -397,8 +443,8 @@ test("PWA assistance progression makes the gravitron harder and return makes it 
     profile,
     exercise: "Assisted Pull Up",
     sessions: [
-      exerciseSession(1, 3, "Assisted Pull Up", [[50, 9], [50, 9], [50, 9]]),
-      exerciseSession(2, 1, "Assisted Pull Up", [[50, 9], [50, 9], [50, 9]])
+      exerciseSession(1, 3, "Assisted Pull Up", [[50, 10], [50, 10], [50, 10]]),
+      exerciseSession(2, 1, "Assisted Pull Up", [[50, 10], [50, 10], [50, 10]])
     ]
   });
   const comeback = recommendationFor(context, {
@@ -423,8 +469,8 @@ test("PWA machine profiles snap to real stack values and respect assistance dire
       loadProfile: { direction: "higherIsHarder", allowedWeightsKg: [45, 50, 55, 59, 64, 69, 73] }
     },
     sessions: [
-      exerciseSession(1, 3, "Lat Pulldown", [[69, 9], [69, 9], [69, 9]]),
-      exerciseSession(2, 1, "Lat Pulldown", [[69, 9], [69, 9], [69, 9]])
+      exerciseSession(1, 3, "Lat Pulldown", [[69, 10], [69, 10], [69, 10]]),
+      exerciseSession(2, 1, "Lat Pulldown", [[69, 10], [69, 10], [69, 10]])
     ]
   });
   const assistedDip = recommendationFor(context, {
@@ -434,8 +480,8 @@ test("PWA machine profiles snap to real stack values and respect assistance dire
       loadProfile: { direction: "lowerIsHarder", allowedWeightsKg: [35, 40, 45, 50, 55] }
     },
     sessions: [
-      exerciseSession(3, 3, "Assisted Dip", [[50, 9], [50, 9], [50, 9]]),
-      exerciseSession(4, 1, "Assisted Dip", [[50, 9], [50, 9], [50, 9]])
+      exerciseSession(3, 3, "Assisted Dip", [[50, 10], [50, 10], [50, 10]]),
+      exerciseSession(4, 1, "Assisted Dip", [[50, 10], [50, 10], [50, 10]])
     ]
   });
 
@@ -486,8 +532,8 @@ test("PWA assistance treats 50 to 45 as improvement and repeated increases as de
     profile,
     exercise,
     sessions: [
-      exerciseSession(1, 3, "Assisted Dip", [[50, 9], [50, 9], [50, 9]]),
-      exerciseSession(2, 1, "Assisted Dip", [[45, 9], [45, 9], [45, 9]])
+      exerciseSession(1, 3, "Assisted Dip", [[50, 10], [50, 10], [50, 10]]),
+      exerciseSession(2, 1, "Assisted Dip", [[45, 10], [45, 10], [45, 10]])
     ]
   });
   const declined = recommendationFor(context, {
@@ -789,7 +835,7 @@ test("PWA no-history loads and Recovery bodyweight targets keep truthful zero/nu
   assert.ok(pushUp.sets.every(set => set.weight === 0));
   assert.ok(assisted.sets.every(set => set.weight === null));
   assert.ok(bench.sets.every(set => set.weight === null));
-  assert.ok(recoveryPushUp.sets.every(set => set.weight === 0 && set.reps === 8));
+  assert.ok(recoveryPushUp.sets.every(set => set.weight === 0 && set.reps === 9));
   assert.equal(hardWithoutEnoughExerciseHistory.sets.length, 3);
   assert.ok(hardWithoutEnoughExerciseHistory.rirGuidance.includes("2–3"));
   const labels = vm.runInContext(`({

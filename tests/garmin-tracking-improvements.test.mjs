@@ -79,7 +79,12 @@ test("Garmin tracking prefers activity HR, diagnoses both sources, and expires s
   assert.match(session, /elapsedSeconds - lastValidHrSeconds >= 5/);
   assert.match(session, /var a = olderFilterHr[\s\S]*var b = previousFilterHr[\s\S]*var c = value/);
   assert.match(session, /updateEffortState\(filteredHr\)/);
-  assert.match(session, /var zoneEntrySignal = zoneEnough && \(delta >= 1 \|\| hrTrend >= 1\.0\)/);
+  assert.match(session, /var renewedRiseDelta = 3/);
+  assert.match(session, /var renewedRiseTrend = 2\.0/);
+  assert.match(
+    session,
+    /var zoneEntrySignal = zoneEnough &&\s*\(delta >= renewedRiseDelta \|\| hrTrend >= renewedRiseTrend\)/
+  );
   assert.match(session, /static function hasValidHeartRateZones\(\)/);
   assert.match(view, /"ACT", GymSession\.activityHr/);
   assert.match(view, /"SNS", GymSession\.sensorHr/);
@@ -401,7 +406,11 @@ test("Garmin fuses bounded motion evidence with HR and falls back safely", async
   assert.match(confidence, /strongMotion[\s\S]*moderateMotion/);
   assert.match(confidence, /strongMotion && motionSignalCount >= 2[\s\S]*score \+= 75/);
   assert.match(session, /motionSignalCount > 4[\s\S]*motionSignalCount = 4/);
-  assert.match(session, /if \(setConfidence >= 70\)[\s\S]*activeSignalCount \+= 1/);
+  assert.match(
+    session,
+    /if \(setConfidence >= 75 &&[\s\S]*hasCredibleRestRestartEvidence\(risingEnough\)[\s\S]*activeSignalCount \+= 1/
+  );
+  assert.match(session, /if \(activeSignalCount >= 3\)/);
   assert.match(view, /SET MAYBE/);
   assert.match(view, /confidenceLabel\(\)/);
 });
@@ -445,7 +454,10 @@ test("Garmin motion lifecycle uses gyro opportunistically, rejects noise, and as
 
   const lifecycle = section(session, "static function updateMotionLifecycle()", "static function activeSetSeconds()");
   assert.match(lifecycle, /motionBurstSignals >= 4 && motionRhythmSignals >= 3/);
-  assert.match(session, /static function canArmMotionCandidate\(\)[\s\S]*elapsedSeconds - lastLoggedSetSeconds >= 3/);
+  assert.match(
+    session,
+    /static function canArmMotionCandidate\(\)[\s\S]*elapsedSeconds - lastLoggedSetSeconds >=[\s\S]*postSaveRestartDeadbandSeconds\(\)/
+  );
   assert.match(lifecycle, /quietSeconds >= motionQuietWindowSeconds\(\)/);
   assert.match(lifecycle, /motionDuration >= motionMinimumSetSeconds\(\)[\s\S]*endSetFromMotion\(\)[\s\S]*else if \(currentSetMotionOnly\)[\s\S]*discardShortMotionInterval\(\)/);
   assert.match(lifecycle, /if \(!GymStore\.autoPromptEnabled\) \{\s*return;/);
@@ -1285,13 +1297,15 @@ test("Garmin atomically resumes bounded interval timelines without mixing segmen
     "static function restoreActiveWorkoutSnapshot("
   );
   assert.match(snapshotValidation, /snapshot\.size\(\) != 7/);
-  assert.match(snapshotValidation, /snapshot\[0\] != 2/);
+  assert.match(snapshotValidation, /snapshot\[0\] != 2 && snapshot\[0\] != 3/);
   assert.match(snapshotValidation, /isValidAccountBinding\(snapshot\[1\]\)/);
   assert.match(snapshotValidation, /isBoundedText\(snapshot\[2\], maxBindingLength\)/);
   assert.match(snapshotValidation, /isValidOptionalAccountBinding\(snapshot\[3\]\)/);
-  assert.match(snapshotValidation, /isValidSetList\(snapshot\[5\], maxWorkoutSets, true\)/);
+  assert.match(snapshotValidation, /snapshotVersion == 2[\s\S]*isValidSetList\(snapshotSets, maxWorkoutSets, true\)/);
+  assert.match(snapshotValidation, /snapshotVersion == 3[\s\S]*isValidCompactActiveSetArrays\(snapshot\)/);
   assert.match(snapshotValidation, /startedAtSeconds == null && checkpoint != null/);
   assert.match(snapshotValidation, /startedAtSeconds != null &&[\s\S]*!isValidWorkoutStartedAtSeconds\(startedAtSeconds\)/);
+  assert.match(snapshotValidation, /snapshotVersion == 3[\s\S]*isValidSetIntervalsList\(snapshot\[9\], snapshotSets\)/);
   assert.match(snapshotValidation, /areSnapshotIntervalsConsistent\(snapshotSets, checkpoint\)/);
 
   const validOriginState = ({ setCount, startedAt, checkpoint }) => {
@@ -1308,7 +1322,9 @@ test("Garmin atomically resumes bounded interval timelines without mixing segmen
     "static function persistActiveWorkoutSnapshot(",
     "static function persistEmptyActiveWorkoutSnapshot("
   );
-  assert.match(persist, /var snapshot = \[[\s\S]*2,/);
+  assert.match(persist, /var names = \[\];[\s\S]*var metrics = \[\];/);
+  assert.match(persist, /var compactSets = compatibilityActiveSetList\(nextSets\)/);
+  assert.match(persist, /var snapshot = \[[\s\S]*3,/);
   assert.match(persist, /Storage\.setValue\("activeWorkoutV1", snapshot\)/);
   assert.doesNotMatch(persist, /Storage\.setValue\("sets"/);
   const addSet = section(store, "static function addSet()", "static function canUndoLastSet()");
@@ -1432,8 +1448,9 @@ test("Garmin atomically resumes bounded interval timelines without mixing segmen
   const save = section(store, "static function save()", "static function isUk()");
   assert.match(save, /activeWorkoutSnapshotValid && hasAccountBinding\(\)/);
   assert.match(save, /currentTimelineCheckpoint\(0\.0\)/);
-  assert.match(save, /Storage\.setValue\("sets", \[\]\)/);
-  assert.match(save, /Storage\.setValue\("activeWorkoutStartedAtSeconds", null\)/);
+  assert.match(save, /var compatibleSets = compatibilityActiveSetList\(sets\)/);
+  assert.match(save, /Storage\.setValue\("sets", compatibleSets\)/);
+  assert.match(save, /sets\.size\(\) == 0 \? null : activeWorkoutStartedAtSeconds/);
   const budget = section(store, "static function isWithinStorageBudget()", "static function isValidWorkoutStartedAtSeconds(");
   assert.match(budget, /estimatedValueBytes\(activeWorkoutStartedAtSeconds\)/);
   const timestampValidation = section(
@@ -1489,4 +1506,184 @@ test("Garmin set metrics are bounded, persisted, undo-aware, and synchronized wi
   assert.match(androidSecurity, /gymapp-garmin-workout\/v2/);
   assert.match(androidManager, /statistics\.recoveryHeartRateDrop/);
   assert.match(androidManager, /statistics\.detectionConfidence/);
+});
+
+test("Garmin ignores one-bpm and weak post-save noise before suspending rest", async () => {
+  const session = await readFile("garmin/source/GymSession.mc", "utf8");
+  const effort = section(session, "static function updateEffortState(value)", "static function updateSetConfidence");
+  const restart = section(
+    session,
+    "static function hasCredibleRestRestartEvidence(",
+    "static function updateMotionLifecycle()"
+  );
+
+  assert.doesNotMatch(effort, /delta >= 1 \|\| hrTrend >= 1\.0/);
+  assert.match(effort, /renewedRiseDelta = 3/);
+  assert.match(effort, /renewedRiseTrend = 2\.0/);
+  assert.match(effort, /setConfidence >= 75/);
+  assert.match(effort, /activeSignalCount >= 3/);
+  assert.match(restart, /GymStore\.restEndsAt <= 0/);
+  assert.match(restart, /postSaveRestartDeadbandSeconds\(\)/);
+  assert.match(restart, /motionSignalCount >= 3/);
+  assert.match(restart, /motionBurstSignals >= 4 && motionRhythmSignals >= 3/);
+
+  const renewedZoneRise = (delta, trend, sensitivity = 1) => {
+    const deltaThreshold = sensitivity === 0 ? 4 : sensitivity === 2 ? 2 : 3;
+    const trendThreshold = sensitivity === 0 ? 2.5 : sensitivity === 2 ? 1.5 : 2;
+    return delta >= deltaThreshold || trend >= trendThreshold;
+  };
+  for (const sensitivity of [0, 1, 2]) {
+    assert.equal(
+      renewedZoneRise(1, 1, sensitivity),
+      false,
+      `+1 bpm noise must not arm sensitivity ${sensitivity}`
+    );
+  }
+
+  const canRestartRest = ({ age, deadband = 10, rising, strong, signals, burst, rhythm }) =>
+    age >= deadband &&
+    (rising || (strong && signals >= 3 && burst >= 4 && rhythm >= 3));
+  assert.equal(
+    canRestartRest({ age: 3, rising: false, strong: true, signals: 4, burst: 4, rhythm: 3 }),
+    false,
+    "even strong handling motion is suppressed inside the post-save deadband"
+  );
+  assert.equal(
+    canRestartRest({ age: 20, rising: false, strong: false, signals: 1, burst: 1, rhythm: 0 }),
+    false,
+    "weak motion during the 90-second rest cannot cancel it"
+  );
+  assert.equal(
+    canRestartRest({ age: 20, rising: false, strong: true, signals: 3, burst: 4, rhythm: 3 }),
+    true,
+    "sustained rep-like movement can still start the next set early"
+  );
+});
+
+test("Garmin compact snapshots preserve many completed sets across restart with bounded state", async () => {
+  const store = await readFile("garmin/source/GymStore.mc", "utf8");
+  const persist = section(
+    store,
+    "static function persistActiveWorkoutSnapshot(",
+    "static function persistEmptyActiveWorkoutSnapshot("
+  );
+  const validation = section(
+    store,
+    "static function isValidActiveWorkoutSnapshot(",
+    "static function isValidTimelineCheckpoint("
+  );
+  const budget = section(
+    store,
+    "static function isWithinStorageBudget()",
+    "static function isValidWorkoutStartedAtSeconds("
+  );
+  const addSet = section(store, "static function addSet()", "static function canUndoLastSet()");
+
+  assert.match(validation, /snapshot\[0\] != 2 && snapshot\[0\] != 3/);
+  assert.match(validation, /isValidCompactActiveSetArrays\(snapshot\)/);
+  assert.match(validation, /weights\.size\(\) != names\.size\(\)/);
+  assert.match(validation, /isValidSetMetricsList\(snapshot\[8\], names\)/);
+  assert.match(validation, /\(:compactLegacyState\)[\s\S]*isValidSetList\(snapshot\[5\], maxWorkoutSets, true\)/);
+  assert.match(
+    store,
+    /\(:fullLegacyState\)[\s\S]*static function restoreActiveWorkoutSnapshot\(snapshot\)[\s\S]*snapshot\[8\]\[i\]\[k\][\s\S]*copySetInterval\(snapshot\[9\]\[i\]\)/
+  );
+  assert.match(
+    store,
+    /\(:compactLegacyState\)[\s\S]*static function restoreActiveWorkoutSnapshot\(snapshot\)[\s\S]*normalizedSetList\(snapshot\[5\]\)/
+  );
+  assert.match(store, /static function compatibilityActiveSetList\(source\)/);
+  assert.match(store, /"exerciseName" => item\.get\("exerciseName"\)\.toString\(\)[\s\S]*"weight" => item\.get\("weight"\)[\s\S]*"reps" => item\.get\("reps"\)/);
+  assert.match(store, /safe\.put\("setInterval", item\.get\("setInterval"\)\)/);
+  assert.match(store, /Storage\.setValue\("sets", compatibleSets\)/);
+  assert.match(persist, /var names = \[\];[\s\S]*var metrics = \[\];[\s\S]*Storage\.setValue\("activeWorkoutV1", snapshot\)/);
+  assert.match(persist, /var compactSets = compatibilityActiveSetList\(nextSets\)[\s\S]*var snapshot = \[[\s\S]*3,/);
+  assert.match(persist, /catch \(e\) \{[\s\S]*status = "SAVE FAIL";[\s\S]*return false/);
+  assert.doesNotMatch(persist, /normalizedSetList\(nextSets\)/);
+  assert.match(budget, /if \(activeWorkoutSnapshotValid && hasAccountBinding\(\)\)[\s\S]*setListNameBytes\(sets\)[\s\S]*estimatedValueBytes\(sets\)/);
+  assert.match(store, /persistActiveWorkoutSnapshot\(nextSets[\s\S]*previousSets = null[\s\S]*sets = nextSets/);
+  assert.ok(
+    addSet.indexOf("persistActiveWorkoutSnapshot(nextSets") < addSet.indexOf("sets = nextSets"),
+    "a thrown compact Storage write returns before publishing the new in-memory set list"
+  );
+
+  const manySets = Array.from({ length: 60 }, (_, index) => ({
+    exerciseName: `Exercise ${index % 8}`,
+    weight: 40 + index * 0.5,
+    reps: 8 + (index % 5),
+    activeSeconds: 30 + (index % 10),
+    restBeforeSeconds: index === 0 ? null : 90,
+    startHeartRate: 110 + (index % 15),
+    peakHeartRate: 135 + (index % 20),
+    endHeartRate: 125 + (index % 15),
+    recoveryHeartRateDrop: index === 59 ? null : 12,
+    detectionConfidence: 86,
+    setInterval: [index * 120, index * 120 + 35, 2.2, 2, 0, 5, 15, 10, 5, 0]
+  }));
+  const names = manySets.map((item) => item.exerciseName);
+  const weights = manySets.map((item) => item.weight);
+  const reps = manySets.map((item) => item.reps);
+  const metrics = manySets.map((item) => [
+    item.activeSeconds,
+    item.restBeforeSeconds,
+    item.startHeartRate,
+    item.peakHeartRate,
+    item.endHeartRate,
+    item.recoveryHeartRateDrop,
+    item.detectionConfidence
+  ]);
+  const intervals = manySets.map((item) => item.setInterval);
+  const fullCompact = [names, weights, reps, metrics, intervals];
+  const restored = names.map((exerciseName, index) => ({
+    exerciseName,
+    weight: weights[index],
+    reps: reps[index],
+    activeSeconds: metrics[index][0],
+    restBeforeSeconds: metrics[index][1],
+    startHeartRate: metrics[index][2],
+    peakHeartRate: metrics[index][3],
+    endHeartRate: metrics[index][4],
+    recoveryHeartRateDrop: metrics[index][5],
+    detectionConfidence: metrics[index][6],
+    setInterval: intervals[index]
+  }));
+  assert.deepEqual(restored, manySets, "ordinary watches restore every v3 metric");
+  assert.ok(
+    JSON.stringify(fullCompact).length < JSON.stringify(manySets).length * 0.55,
+    "parallel arrays must materially reduce long-workout storage and allocation pressure"
+  );
+
+  assert.equal(names.length, 60, "the full bounded watch workout remains representable");
+  assert.equal([...names, names[0]].length > 60, true, "a 61st set is outside the bound");
+
+  const compatibilityMirror = manySets.map(({ exerciseName, weight, reps, setInterval }) => ({
+    exerciseName,
+    weight,
+    reps,
+    setInterval
+  }));
+  assert.equal(compatibilityMirror.length, 60);
+  assert.deepEqual(
+    (({ exerciseName, weight, reps }) => ({ exerciseName, weight, reps }))(compatibilityMirror[59]),
+    { exerciseName: "Exercise 3", weight: 69.5, reps: 12 },
+    "an older reader retains the final exercise/kg/reps without understanding v3"
+  );
+  assert.deepEqual(
+    compatibilityMirror[59].setInterval,
+    manySets[59].setInterval,
+    "the 96 KiB v3 tier also restores the final set interval and timeline"
+  );
+
+  const legacyV2SnapshotSets = manySets.slice(0, 18).map((item) => ({ ...item }));
+  const restoredFromV2 = legacyV2SnapshotSets.map((item) => ({ ...item }));
+  assert.deepEqual(
+    restoredFromV2,
+    legacyV2SnapshotSets,
+    "the v3 loader keeps accepting already-persisted v2 dictionary snapshots"
+  );
+
+  const committedBeforeCrash = compatibilityMirror.slice(0, 59);
+  const crashSafeCommit = (writeCompleted) => writeCompleted ? compatibilityMirror : committedBeforeCrash;
+  assert.equal(crashSafeCommit(false).length, 59, "a failed 60th write keeps the prior partial workout");
+  assert.equal(crashSafeCommit(true).length, 60, "a completed atomic write restores the new workout");
 });

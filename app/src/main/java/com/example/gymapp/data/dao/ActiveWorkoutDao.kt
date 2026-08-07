@@ -66,6 +66,22 @@ interface ActiveWorkoutDao {
 
     @Query(
         """
+        UPDATE active_workouts
+        SET revision = revision + 1,
+            undoableSetId = NULL
+        WHERE id = :activeWorkoutId
+            AND revision = :expectedRevision
+            AND revision >= 0
+            AND revision < 9223372036854775807
+        """
+    )
+    suspend fun advanceRevisionForBulkRecord(
+        activeWorkoutId: Long,
+        expectedRevision: Long
+    ): Int
+
+    @Query(
+        """
         UPDATE active_workout_sets
         SET weight = :weight,
             reps = :reps,

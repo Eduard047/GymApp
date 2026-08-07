@@ -156,6 +156,10 @@
     <string name="account_management_supporting">Change your password or permanently delete this Supabase account and its data.</string>
     <string name="account_change_password">Change password</string>
     <string name="account_change_password_supporting">Confirm your current password, then choose a new one.</string>
+    <string name="account_password_reauthentication_supporting">A verification code was sent to your email. Enter it with your current and new password.</string>
+    <string name="account_password_verification_code">Verification code</string>
+    <string name="account_password_verification_code_required">Enter the 6–8 digit verification code sent to your email.</string>
+    <string name="account_password_verification_code_sent">Verification code sent. Enter it to finish changing your password.</string>
     <string name="account_current_password">Current password</string>
     <string name="account_current_password_required">Enter your current password.</string>
     <string name="account_current_password_too_long">Current password is too long.</string>
@@ -168,6 +172,7 @@
     <string name="account_delete_confirmation_hint">Type DELETE exactly to continue</string>
     <string name="account_delete_confirm">Delete permanently</string>
     <string name="account_delete_failed">Account could not be deleted. Nothing was removed from this device.</string>
+    <string name="account_delete_outcome_unknown">The deletion response was lost. You were signed out, and this account’s local data will be cleared before it can be opened again.</string>
     <string name="account_delete_local_cleanup_failed">The cloud account was deleted, but some local account data could not be cleared from this device.</string>
     <string name="cloud_sync_load_failed">Cloud data could not be loaded safely. Automatic upload is paused.</string>
     <string name="cloud_sync_conflict">Workout sync needs your choice.</string>
@@ -260,6 +265,7 @@
     <string name="active_workout_title">Active workout</string>
     <string name="active_workout_supporting">Record each completed set. It is saved before a movement-aware rest timer starts.</string>
     <string name="active_workout_progress">Completed %1$d of %2$d sets</string>
+    <string name="active_workout_total_time">Workout time: %1$s</string>
     <string name="active_workout_finish_eyebrow">WHEN YOU ARE DONE</string>
     <string name="active_workout_finish_supporting">Only recorded sets will be added to workout history. Planned rows stay out of your statistics.</string>
     <string name="active_workout_discard_action">Discard active workout</string>
@@ -269,6 +275,7 @@
     <string name="active_workout_back_hint">You can go back safely. This active workout will remain on this device until you finish or discard it.</string>
     <string name="active_workout_exercise_number">EXERCISE %1$d</string>
     <string name="active_workout_exercise_progress">%1$d of %2$d sets recorded</string>
+    <string name="active_workout_exercise_completed_collapsed">All sets recorded. Tap expand to review them or undo the latest set.</string>
     <string name="active_workout_set_completed">Recorded</string>
     <string name="active_workout_missing_title">No active workout</string>
     <string name="active_workout_missing">This active workout no longer exists for the current account.</string>
@@ -284,6 +291,10 @@
     <string name="active_workout_rest_subtract">Subtract 15 seconds</string>
     <string name="active_workout_rest_add">Add 15 seconds</string>
     <string name="active_workout_rest_stop">Stop rest</string>
+    <string name="action_save_all_pending_sets">Save all remaining sets</string>
+    <string name="active_workout_save_all_supporting">Every pending weight and rep value is validated first, then all remaining sets are saved together without starting another rest.</string>
+    <string name="active_workout_all_sets_saved">Saved %1$d remaining sets together.</string>
+    <string name="active_workout_all_sets_saved_rest_failed">All sets were saved, but the old rest timer could not be fully stopped.</string>
     <string name="active_workout_draft_title">Continue active workout</string>
     <string name="active_workout_draft_progress">%1$d of %2$d sets recorded</string>
     <string name="note_template_push">Push day</string>
@@ -359,6 +370,7 @@
     <string name="action_open_shared_workout_in_app">Open as draft</string>
     <string name="action_open_shared_workout_on_web">Open on website</string>
     <string name="message_add_set_failed">Could not log the set. Rest was not started.</string>
+    <string name="message_add_exercise_failed">Could not add the exercise. Refresh the workout and try again.</string>
     <string name="message_rest_timer_save_failed">The set was saved, but the rest timer could not be started.</string>
     <string name="message_invalid_set_input">Enter valid reps and optional weight.</string>
     <string name="message_exercise_error">Unable to save exercise. Name may already exist.</string>
@@ -819,6 +831,11 @@
     <string name="exercise_search_no_results">No matching exercises</string>
     <string name="exercise_search_no_results_supporting">Try another name, body area, or muscle group.</string>
     <string name="exercise_search_result_count">%1$d exercises</string>
+    <string name="exercise_search_match_alias">Also known as: %1$s</string>
+    <string name="exercise_search_match_approximate">Close name match: %1$s</string>
+    <string name="exercise_search_match_muscle">Muscle match: %1$s</string>
+    <string name="exercise_search_match_equipment">Equipment match: %1$s</string>
+    <string name="exercise_search_match_muscle_and_equipment">Muscle and equipment match: %1$s</string>
     <string name="exercise_picker_all">All</string>
     <string name="exercise_picker_frequent">Frequent</string>
     <string name="exercise_picker_frequent_empty">Your frequently used exercises will appear here after you save some workouts.</string>

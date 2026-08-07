@@ -42,6 +42,10 @@ public struct BuiltInExerciseDefinition: Hashable, Sendable {
     public let ukrainianName: String
     public let muscleIDs: [String]
     public let legacyAliases: [String]
+    /// Informal and alternate labels used by the exercise picker only.
+    ///
+    /// These values must never participate in persisted exercise identity resolution.
+    public let searchAliases: [String]
     public let introducedInSeedVersion: Int
 
     public init(
@@ -50,6 +54,7 @@ public struct BuiltInExerciseDefinition: Hashable, Sendable {
         ukrainianName: String,
         muscleIDs: [String],
         legacyAliases: [String] = [],
+        searchAliases: [String] = [],
         introducedInSeedVersion: Int = 1
     ) {
         self.key = key
@@ -57,6 +62,7 @@ public struct BuiltInExerciseDefinition: Hashable, Sendable {
         self.ukrainianName = ukrainianName
         self.muscleIDs = muscleIDs
         self.legacyAliases = legacyAliases
+        self.searchAliases = searchAliases
         self.introducedInSeedVersion = introducedInSeedVersion
     }
 }
@@ -160,6 +166,7 @@ public enum BuiltInExerciseCatalog {
             ukrainianName: ukrainianName,
             muscleIDs: muscleIDs,
             legacyAliases: aliases,
+            searchAliases: ExerciseSearchVocabulary.aliasesByKey[key] ?? [],
             introducedInSeedVersion: introducedInSeedVersion
         )
     }

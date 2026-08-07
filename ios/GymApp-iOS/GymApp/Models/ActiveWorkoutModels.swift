@@ -66,6 +66,25 @@ struct ActiveWorkoutCommitIntent: Codable, Equatable, Sendable {
     let exercises: [ActiveWorkoutCommitExercise]
 }
 
+/// Local-only stopwatch state. The workout's editable envelope remains backward
+/// compatible because older app builds ignore this optional field, while current
+/// builds can restore active time without counting a persisted rest interval.
+struct ActiveWorkoutTimingState: Codable, Equatable, Sendable {
+    var accumulatedActiveSeconds: Double
+    var activeSince: Date?
+    var restingUntil: Date?
+
+    init(
+        accumulatedActiveSeconds: Double = 0,
+        activeSince: Date? = nil,
+        restingUntil: Date? = nil
+    ) {
+        self.accumulatedActiveSeconds = accumulatedActiveSeconds
+        self.activeSince = activeSince
+        self.restingUntil = restingUntil
+    }
+}
+
 struct ActiveWorkoutDraft: Codable, Identifiable, Equatable, Sendable {
     let id: UUID
     let startedAt: Date
@@ -78,6 +97,9 @@ struct ActiveWorkoutDraft: Codable, Identifiable, Equatable, Sendable {
     var revision: UInt64
     var lastModifiedAt: Date
     var commitIntent: ActiveWorkoutCommitIntent?
+    /// Optional so active drafts written by releases before the active stopwatch
+    /// continue to decode without a schema-version change.
+    var timing: ActiveWorkoutTimingState?
 
     init(
         id: UUID = UUID(),
@@ -88,7 +110,8 @@ struct ActiveWorkoutDraft: Codable, Identifiable, Equatable, Sendable {
         undoableSetID: UUID? = nil,
         revision: UInt64 = 0,
         lastModifiedAt: Date = Date(),
-        commitIntent: ActiveWorkoutCommitIntent? = nil
+        commitIntent: ActiveWorkoutCommitIntent? = nil,
+        timing: ActiveWorkoutTimingState? = nil
     ) {
         self.id = id
         self.startedAt = startedAt
@@ -99,6 +122,7 @@ struct ActiveWorkoutDraft: Codable, Identifiable, Equatable, Sendable {
         self.revision = revision
         self.lastModifiedAt = lastModifiedAt
         self.commitIntent = commitIntent
+        self.timing = timing
     }
 
     var completedSetCount: Int {
@@ -109,5 +133,26 @@ struct ActiveWorkoutDraft: Codable, Identifiable, Equatable, Sendable {
 
     var plannedSetCount: Int {
         exercises.reduce(0) { $0 + $1.sets.count }
+    }
+
+    /// User-facing workout duration. It is a continuous wall-clock value from
+    /// the durable workout start and intentionally includes rest intervals.
+    func totalElapsedSeconds(at date: Date = Date()) -> TimeInterval {
+        max(0, date.timeIntervalSince(startedAt))
+    }
+
+    func activeElapsedSeconds(at date: Date = Date()) -> TimeInterval {
+        guard let timing else {
+            return max(0, date.timeIntervalSince(startedAt))
+        }
+        let runningSeconds: TimeInterval
+        if let activeSince = timing.activeSince {
+            runningSeconds = max(0, date.timeIntervalSince(activeSince))
+        } else if let restingUntil = timing.restingUntil, date > restingUntil {
+            runningSeconds = max(0, date.timeIntervalSince(restingUntil))
+        } else {
+            runningSeconds = 0
+        }
+        return max(0, timing.accumulatedActiveSeconds + runningSeconds)
     }
 }

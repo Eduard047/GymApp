@@ -865,24 +865,26 @@ object WorkoutRecommendationEngine {
         trainingProfile: TrainingProfile,
         analysis: ExerciseAnalysis?
     ): RepRange {
-        val role = analysis?.role ?: ExerciseRole.Secondary
+        // A missing/invalid exercise name has no evidence that it is a compound movement.
+        // Match iOS/PWA and use the conservative isolation prescription.
+        val role = analysis?.role ?: ExerciseRole.Isolation
         return when (trainingProfile.goal) {
             TrainingGoal.Strength -> when (role) {
                 ExerciseRole.Primary -> RepRange(minimum = 4, maximum = 6)
-                ExerciseRole.Secondary -> RepRange(minimum = 4, maximum = 8)
+                ExerciseRole.Secondary -> RepRange(minimum = 5, maximum = 8)
                 ExerciseRole.Isolation,
                 ExerciseRole.Core,
                 ExerciseRole.Warmup -> RepRange(minimum = 8, maximum = 10)
             }
             TrainingGoal.MuscleGain -> when (role) {
-                ExerciseRole.Primary -> RepRange(minimum = 6, maximum = 10)
+                ExerciseRole.Primary -> RepRange(minimum = 6, maximum = 8)
                 ExerciseRole.Secondary -> RepRange(minimum = 7, maximum = 10)
                 ExerciseRole.Isolation,
                 ExerciseRole.Core,
                 ExerciseRole.Warmup -> RepRange(minimum = 8, maximum = 10)
             }
             TrainingGoal.AestheticFatLoss -> when (role) {
-                ExerciseRole.Primary -> RepRange(minimum = 6, maximum = 10)
+                ExerciseRole.Primary -> RepRange(minimum = 6, maximum = 8)
                 ExerciseRole.Secondary -> RepRange(minimum = 7, maximum = 10)
                 ExerciseRole.Isolation,
                 ExerciseRole.Core,
@@ -890,7 +892,7 @@ object WorkoutRecommendationEngine {
             }
             TrainingGoal.Balanced -> when (role) {
                 ExerciseRole.Primary -> RepRange(minimum = 5, maximum = 8)
-                ExerciseRole.Secondary -> RepRange(minimum = 6, maximum = 8)
+                ExerciseRole.Secondary -> RepRange(minimum = 6, maximum = 10)
                 ExerciseRole.Isolation,
                 ExerciseRole.Core,
                 ExerciseRole.Warmup -> RepRange(minimum = 8, maximum = 10)
@@ -915,8 +917,8 @@ object WorkoutRecommendationEngine {
                 else -> 10
             }
             TrainingGoal.AestheticFatLoss -> when (analysis?.role) {
-                ExerciseRole.Primary -> 7
-                ExerciseRole.Secondary -> 8
+                ExerciseRole.Primary -> 8
+                ExerciseRole.Secondary -> 9
                 else -> 10
             }
             TrainingGoal.Balanced -> when (analysis?.role) {
@@ -940,11 +942,9 @@ object WorkoutRecommendationEngine {
         }
         val highFrequency = trainingProfile.workoutsPerWeek.coerceIn(2, 6) >= 5
         val recoveryLimited = trainingProfile.calorieMode == CalorieMode.Deficit
-        val surplusHypertrophy = trainingProfile.goal == TrainingGoal.MuscleGain &&
-            trainingProfile.calorieMode == CalorieMode.Surplus
         return when (analysis?.role) {
-            ExerciseRole.Primary -> if (!recoveryLimited && (!highFrequency || surplusHypertrophy)) 4 else 3
-            ExerciseRole.Secondary -> if (surplusHypertrophy && !highFrequency) 4 else 3
+            ExerciseRole.Primary -> if (!recoveryLimited && !highFrequency) 4 else 3
+            ExerciseRole.Secondary -> 3
             ExerciseRole.Isolation,
             ExerciseRole.Core,
             ExerciseRole.Warmup,

@@ -276,6 +276,111 @@ class ActiveWorkoutLifecycleTest {
     }
 
     @Test
+    fun bulkRecordRejectsChangedTargetsWithoutPartialWrites() = runBlocking {
+        withDatabase("active-workout-bulk") { _, repository ->
+            val exerciseId = repository.addExercise("Synthetic bulk row")
+            repository.startActiveWorkout(
+                NOW,
+                null,
+                listOf(
+                    WorkoutExerciseDraft(
+                        exerciseId,
+                        listOf(
+                            WorkoutSetDraft(40.0, 10),
+                            WorkoutSetDraft(42.0, 8),
+                            WorkoutSetDraft(44.0, 6)
+                        )
+                    )
+                )
+            )
+            val sets = checkNotNull(repository.getActiveWorkoutSnapshot())
+                .exercises.single().sets
+            assertTrue(
+                repository.recordActiveWorkoutSet(sets[0].id, 0L, 41.0, 9) is
+                    RecordActiveWorkoutSetResult.Recorded
+            )
+
+            assertEquals(
+                RecordActiveWorkoutSetsResult.AlreadyCompleted,
+                repository.recordActiveWorkoutSets(
+                    updates = listOf(
+                        ActiveWorkoutSetUpdate(sets[0].id, 50.0, 5),
+                        ActiveWorkoutSetUpdate(sets[1].id, 43.0, 7)
+                    ),
+                    expectedRevision = 1L
+                )
+            )
+            var unchanged = checkNotNull(repository.getActiveWorkoutSnapshot())
+            assertEquals(1L, unchanged.activeWorkout.revision)
+            assertNull(unchanged.exercises.single().sets[1].completedAt)
+
+            assertEquals(
+                RecordActiveWorkoutSetsResult.TargetChanged,
+                repository.recordActiveWorkoutSets(
+                    updates = listOf(
+                        ActiveWorkoutSetUpdate(UUID.randomUUID().toString(), 43.0, 7),
+                        ActiveWorkoutSetUpdate(sets[2].id, 45.0, 5)
+                    ),
+                    expectedRevision = 1L
+                )
+            )
+            unchanged = checkNotNull(repository.getActiveWorkoutSnapshot())
+            assertEquals(1L, unchanged.activeWorkout.revision)
+            assertNull(unchanged.exercises.single().sets[1].completedAt)
+            assertNull(unchanged.exercises.single().sets[2].completedAt)
+
+            val recorded = repository.recordActiveWorkoutSets(
+                updates = listOf(
+                    ActiveWorkoutSetUpdate(sets[1].id, 43.0, 7),
+                    ActiveWorkoutSetUpdate(sets[2].id, 45.0, 5)
+                ),
+                expectedRevision = 1L
+            )
+            assertEquals(RecordActiveWorkoutSetsResult.Recorded(2L, 2), recorded)
+            val completed = checkNotNull(repository.getActiveWorkoutSnapshot())
+            assertEquals(2L, completed.activeWorkout.revision)
+            assertNull(completed.activeWorkout.undoableSetId)
+            assertNotNull(completed.exercises.single().sets[1].completedAt)
+            assertEquals(
+                completed.exercises.single().sets[1].completedAt,
+                completed.exercises.single().sets[2].completedAt
+            )
+        }
+    }
+
+    @Test
+    fun exerciseAddedToSavedWorkoutMovesToTopWithoutChangingExistingHistory() = runBlocking {
+        withDatabase("workout-add-exercise-top") { database, repository ->
+            val firstExerciseId = repository.addExercise("Existing first exercise")
+            val secondExerciseId = repository.addExercise("Existing second exercise")
+            val newExerciseId = repository.addExercise("New top exercise")
+            val sessionId = repository.createWorkoutSession(
+                date = NOW,
+                note = "preserve rows",
+                workoutExercises = listOf(
+                    WorkoutExerciseDraft(firstExerciseId, listOf(WorkoutSetDraft(10.0, 10))),
+                    WorkoutExerciseDraft(secondExerciseId, listOf(WorkoutSetDraft(20.0, 8)))
+                )
+            )
+            val before = checkNotNull(database.workoutDao().getSessionDetailsSnapshot(sessionId))
+            val existingSetIds = before.workoutExercises.flatMap { it.sets }.map { it.id }
+
+            repository.addExerciseToSession(
+                sessionId = sessionId,
+                exerciseId = newExerciseId,
+                initialWeight = 30.0,
+                initialReps = 6
+            )
+
+            val after = checkNotNull(database.workoutDao().getSessionDetailsSnapshot(sessionId))
+            assertEquals(newExerciseId, after.workoutExercises.first().exercise.id)
+            assertEquals(listOf(0, 1, 2), after.workoutExercises.map { it.workoutExercise.orderIndex })
+            assertTrue(after.workoutExercises.flatMap { it.sets }.map { it.id }.containsAll(existingSetIds))
+            assertEquals("preserve rows", after.session.note)
+        }
+    }
+
+    @Test
     fun accountScopedDatabasesCannotReadOrMutateEachOthersActiveWorkout() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val firstName = "active-workout-account-a-${UUID.randomUUID()}"
