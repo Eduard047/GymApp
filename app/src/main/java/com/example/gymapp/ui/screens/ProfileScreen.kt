@@ -79,6 +79,7 @@ fun ProfileScreen(
     ) -> Unit,
     onDeleteCloudAccount: () -> Unit,
     garminDeviceState: GarminDeviceUiState,
+    onRefreshGarminDevices: () -> Unit,
     onResetGarminPairing: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -92,6 +93,9 @@ fun ProfileScreen(
     }
     LaunchedEffect(passwordChangeSuccessVersion) {
         if (passwordChangeSuccessVersion > 0L) showPasswordChange = false
+    }
+    LaunchedEffect(Unit) {
+        onRefreshGarminDevices()
     }
 
     LeaderboardScreen(

@@ -79,7 +79,8 @@ test("Garmin queues account-bound sets durably before FIT save while unbound FIT
     stopAndSave.indexOf("if (!saved)") < stopAndSave.indexOf("session = null"),
     "A failed FIT save must retain the session so the user can retry"
   );
-  assert.match(stopAndSave, /status = "SAVED";[\s\S]*return true;/);
+  assert.match(stopAndSave, /fitSaved = true;[\s\S]*return true;/);
+  assert.match(stopAndSave, /session == null[\s\S]*return !recording && fitSaved/);
 
   const clearActiveWorkout = section(
     store,

@@ -1,4 +1,5 @@
 import Combine
+import ConnectIQ
 import SwiftUI
 import CryptoKit
 import Foundation
@@ -11413,6 +11414,739 @@ final class CoreParityTests: XCTestCase {
         XCTAssertEqual(defaults.string(forKey: unrelatedKey), "keep")
     }
 
+    func testGarminPhoneAuthTransitionPayloadAndAcknowledgementAreExactlyFenced() throws {
+        let binding = GarminPhoneBinding(
+            account: String(repeating: "a", count: 64),
+            device: "11111111-2222-3333-4444-555555555555",
+            pairingGeneration: String(repeating: "b", count: 64)
+        )
+        let pending = GarminPhonePendingAuthTransition(
+            binding: binding,
+            syncID: "sync-11111111-2222-3333-4444-555555555555",
+            revision: 1_750_000_000_001,
+            language: "en",
+            exercises: [],
+            handshake: .reset
+        )
+        let reset = try XCTUnwrap(
+            GarminPhoneSyncProtocol.syncPayload(
+                binding: binding,
+                syncID: pending.syncID,
+                revision: pending.revision,
+                language: "en",
+                exercises: ["Bench Press"],
+                resetWorkout: true
+            )
+        )
+        XCTAssertEqual(reset["resetWorkout"] as? Bool, true)
+        XCTAssertEqual(reset["planNames"] as? [String], [])
+        XCTAssertEqual(reset["planWeights"] as? [Double], [])
+        XCTAssertEqual(reset["planReps"] as? [Int], [])
+        XCTAssertEqual(reset["exercises"] as? [String], [])
+        XCTAssertEqual(reset["bindingSource"] as? String, "phone")
+        XCTAssertEqual(reset["syncRevision"] as? Int64, pending.revision)
+
+        let ordinary = try XCTUnwrap(
+            GarminPhoneSyncProtocol.syncPayload(
+                binding: binding,
+                syncID: "sync-ordinary-1234567890",
+                revision: pending.revision + 1,
+                language: "uk",
+                exercises: ["Bench Press"],
+                resetWorkout: false
+            )
+        )
+        XCTAssertEqual(ordinary["resetWorkout"] as? Bool, false)
+        XCTAssertEqual(ordinary["exercises"] as? [String], ["Bench Press"])
+
+        let longExercise = String(repeating: "Ж", count: 160)
+        let boundedCatalog = GarminPhoneSyncProtocol.boundedExerciseCatalog(
+            Array(repeating: longExercise, count: 60)
+        )
+        XCTAssertEqual(boundedCatalog.count, 37)
+        XCTAssertLessThanOrEqual(
+            boundedCatalog.reduce(0) { $0 + $1.utf8.count },
+            GarminPhoneWorkoutParser.maximumTotalExerciseBytes
+        )
+        XCTAssertEqual(
+            GarminPhoneSyncProtocol.boundedExerciseCatalog([
+                "  Bench Press  ",
+                "Bad\u{0000}Name",
+                String(repeating: "x", count: 161)
+            ]),
+            ["Bench Press"]
+        )
+
+        let acknowledgement: [String: Any] = [
+            "type": "sync_ack",
+            "bindingVersion": GarminPhoneWorkoutParser.bindingVersion,
+            "syncId": pending.syncID,
+            "requestId": pending.syncID,
+            "syncRevision": pending.revision,
+            "accountBinding": binding.account,
+            "deviceBinding": binding.device,
+            "pairingGeneration": binding.pairingGeneration,
+            "applied": true
+        ]
+        XCTAssertTrue(
+            GarminPhoneSyncProtocol.acknowledgementMatches(
+                acknowledgement,
+                expected: pending,
+                sourceDeviceBinding: binding.device
+            )
+        )
+
+        for mutation in [
+            ("accountBinding", String(repeating: "c", count: 64) as Any),
+            ("deviceBinding", "99999999-2222-3333-4444-555555555555" as Any),
+            ("pairingGeneration", String(repeating: "d", count: 64) as Any),
+            ("syncRevision", pending.revision + 1 as Any),
+            ("syncId", "sync-stale-1234567890" as Any),
+            ("requestId", "sync-stale-1234567890" as Any),
+            ("applied", false as Any)
+        ] {
+            var changed = acknowledgement
+            changed[mutation.0] = mutation.1
+            XCTAssertFalse(
+                GarminPhoneSyncProtocol.acknowledgementMatches(
+                    changed,
+                    expected: pending,
+                    sourceDeviceBinding: binding.device
+                ),
+                "Accepted mismatched \(mutation.0)"
+            )
+        }
+        XCTAssertFalse(
+            GarminPhoneSyncProtocol.acknowledgementMatches(
+                acknowledgement,
+                expected: pending,
+                sourceDeviceBinding: "99999999-2222-3333-4444-555555555555"
+            )
+        )
+
+        let request: [String: Any] = [
+            "type": "request_sync",
+            "bindingVersion": GarminPhoneWorkoutParser.bindingVersion,
+            "requestId": "request-11111111-2222-3333-4444-555555555555",
+            "accountBinding": binding.account,
+            "deviceBinding": binding.device,
+            "pairingGeneration": binding.pairingGeneration,
+            "pairingGenerationSupported": true,
+            "watchVersion": "2026.08.01.1232",
+            "status": "SYNC REQ"
+        ]
+        XCTAssertEqual(
+            GarminPhoneSyncProtocol.syncRequestClaim(
+                request,
+                sourceDeviceBinding: binding.device
+            ),
+            GarminPhoneSyncRequestClaim(
+                account: binding.account,
+                device: binding.device,
+                pairingGeneration: binding.pairingGeneration
+            )
+        )
+        XCTAssertNil(
+            GarminPhoneSyncProtocol.syncRequestClaim(
+                request,
+                sourceDeviceBinding: "99999999-2222-3333-4444-555555555555"
+            )
+        )
+        var malformedRequest = request
+        malformedRequest["unknown"] = "mutate-nothing"
+        XCTAssertNil(
+            GarminPhoneSyncProtocol.syncRequestClaim(
+                malformedRequest,
+                sourceDeviceBinding: binding.device
+            )
+        )
+
+        XCTAssertEqual(
+            GarminPhoneSyncProtocol.nextRevision(
+                lastRevision: 1_750_000_000_010,
+                nowMilliseconds: 1_750_000_000_000
+            ),
+            1_750_000_000_011
+        )
+        XCTAssertEqual(
+            GarminPhoneSyncProtocol.nextRevision(
+                lastRevision: 10,
+                nowMilliseconds: 1_750_000_000_000
+            ),
+            1_750_000_000_000
+        )
+        XCTAssertNil(
+            GarminPhoneSyncProtocol.nextRevision(
+                lastRevision: GarminPhoneSyncProtocol.maximumSyncRevision,
+                nowMilliseconds: 1_750_000_000_000
+            )
+        )
+    }
+
+    func testGarminPhoneTargetClaimCannotConsumePendingResetWithoutExactAcknowledgement() async throws {
+        let defaults = temporaryDefaults(named: "garmin-phone-target-claim-reset")
+        let auth = AuthService(keychain: InMemoryKeychainStore(), defaults: defaults)
+        let account = AppAccountSession.local(id: "garmin-reset-target", displayName: "Target")
+        try auth.installSessionForTesting(account)
+        let store = try WorkoutStore(
+            accountStorageKey: account.storageKey,
+            directoryURL: try temporaryDirectory(named: "garmin-reset-target")
+        )
+        let transport = FakeGarminPhoneConnectIQTransport()
+        let deviceID = UUID(uuidString: "10101010-2020-3030-4040-505050505050")!
+        let device = try XCTUnwrap(
+            IQDevice(id: deviceID, modelName: "Venu 3", friendlyName: "Reset Watch")
+        )
+        transport.selectionResponse = [device]
+        transport.statuses[deviceID] = .connected
+        let service = GarminPhoneSyncService(
+            auth: auth,
+            defaults: defaults,
+            connectIQ: transport
+        )
+        service.bind(workoutStore: store)
+        XCTAssertTrue(
+            service.handleOpenURL(URL(string: "com.setforge.gymapp.ios://devices")!)
+        )
+        let initialResetSent = await waitUntil { transport.sent.count == 1 }
+        XCTAssertTrue(initialResetSent)
+        let stagedReset = transport.sent[0]
+        XCTAssertEqual(stagedReset.message["resetWorkout"] as? Bool, true)
+
+        // request_sync has no reset transaction correlation. Even when its
+        // account/device/generation look like the target, it cannot consume the
+        // staged reset or substitute for its exact applied acknowledgement.
+        service.receivedMessage(
+            syncRequest(claiming: stagedReset.message),
+            from: stagedReset.app
+        )
+        let targetClaimRetrySent = await waitUntil { transport.sent.count == 2 }
+        XCTAssertTrue(targetClaimRetrySent)
+        let targetClaimRetry = transport.sent[1].message
+        XCTAssertEqual(targetClaimRetry["resetWorkout"] as? Bool, true)
+        XCTAssertEqual(
+            targetClaimRetry["syncId"] as? String,
+            stagedReset.message["syncId"] as? String
+        )
+        XCTAssertEqual(
+            targetClaimRetry["syncRevision"] as? Int64,
+            stagedReset.message["syncRevision"] as? Int64
+        )
+
+        service.deviceCharacteristicsDiscovered(device)
+        let reconnectRetrySent = await waitUntil { transport.sent.count == 3 }
+        XCTAssertTrue(reconnectRetrySent)
+        XCTAssertEqual(
+            transport.sent[2].message["syncId"] as? String,
+            stagedReset.message["syncId"] as? String
+        )
+        XCTAssertEqual(transport.sent[2].message["resetWorkout"] as? Bool, true)
+
+        service.receivedMessage(
+            syncAcknowledgement(for: stagedReset.message),
+            from: stagedReset.app
+        )
+        let ordinarySyncSent = await waitUntil { transport.sent.count == 4 }
+        XCTAssertTrue(ordinarySyncSent)
+        XCTAssertEqual(transport.sent[3].message["resetWorkout"] as? Bool, false)
+        XCTAssertNotEqual(
+            transport.sent[3].message["syncId"] as? String,
+            stagedReset.message["syncId"] as? String
+        )
+    }
+
+    func testGarminPhoneSelectionConnectionAndAccountChangeSynchronizeProactively() async throws {
+        let defaults = temporaryDefaults(named: "garmin-phone-proactive-sync")
+        let auth = AuthService(keychain: InMemoryKeychainStore(), defaults: defaults)
+        let accountA = AppAccountSession.local(id: "garmin-account-a", displayName: "A")
+        try auth.installSessionForTesting(accountA)
+        let storeA = try WorkoutStore(
+            accountStorageKey: accountA.storageKey,
+            directoryURL: try temporaryDirectory(named: "garmin-account-a")
+        )
+        _ = try storeA.addExercise(name: "Garmin bootstrap exercise")
+        let transport = FakeGarminPhoneConnectIQTransport()
+        let deviceID = UUID(uuidString: "11111111-2222-3333-4444-555555555555")!
+        let device = try XCTUnwrap(
+            IQDevice(id: deviceID, modelName: "Venu 3", friendlyName: "Gym Watch")
+        )
+        transport.selectionResponse = [device]
+        transport.statuses[deviceID] = .connected
+
+        let service = GarminPhoneSyncService(
+            auth: auth,
+            defaults: defaults,
+            connectIQ: transport
+        )
+        service.bind(workoutStore: storeA)
+        XCTAssertTrue(
+            service.handleOpenURL(URL(string: "com.setforge.gymapp.ios://devices")!)
+        )
+        let selectedSyncSent = await waitUntil { transport.sent.count == 1 }
+        XCTAssertTrue(selectedSyncSent)
+
+        let firstTransition = transport.sent[0]
+        XCTAssertEqual(firstTransition.message["resetWorkout"] as? Bool, true)
+        XCTAssertEqual(firstTransition.message["planNames"] as? [String], [])
+        XCTAssertEqual(firstTransition.message["exercises"] as? [String], [])
+        let firstRevision = try XCTUnwrap(firstTransition.message["syncRevision"] as? Int64)
+        let firstAccountBinding = try XCTUnwrap(
+            firstTransition.message["accountBinding"] as? String
+        )
+
+        // A lost acknowledgement must retry the exact staged transition. The
+        // watch treats the duplicate revision/id as already applied, so it does
+        // not run destructive account-transition cleanup a second time.
+        defaults.set(AppLanguage.russian.rawValue, forKey: "app-language")
+        try? await Task.sleep(for: .milliseconds(20))
+        service.deviceCharacteristicsDiscovered(device)
+        let lostAckRetrySent = await waitUntil { transport.sent.count >= 2 }
+        XCTAssertTrue(lostAckRetrySent)
+        let lostAckRetry = transport.sent[1]
+        XCTAssertEqual(lostAckRetry.message["resetWorkout"] as? Bool, true)
+        XCTAssertEqual(
+            lostAckRetry.message["syncId"] as? String,
+            firstTransition.message["syncId"] as? String
+        )
+        XCTAssertEqual(
+            lostAckRetry.message["syncRevision"] as? Int64,
+            firstRevision
+        )
+        XCTAssertEqual(
+            lostAckRetry.message["language"] as? String,
+            firstTransition.message["language"] as? String
+        )
+
+        let callbackDevice = try XCTUnwrap(
+            IQDevice(id: deviceID, modelName: "Venu 3", friendlyName: "Callback Watch")
+        )
+        let wrongCallbackApp = try XCTUnwrap(
+            IQApp(
+                uuid: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
+                store: UUID(uuidString: "fe82a300-4d9f-4588-8b10-365d75280b8f")!,
+                device: callbackDevice
+            )
+        )
+        service.receivedMessage(
+            syncAcknowledgement(for: lostAckRetry.message),
+            from: wrongCallbackApp
+        )
+        try? await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(transport.sent.count, 2)
+
+        let equivalentCallbackApp = try XCTUnwrap(
+            IQApp(
+                uuid: UUID(uuidString: "A72A5B9F-4E3D-4E5A-8B72-C1D9F6123E40")!,
+                store: UUID(uuidString: "fe82a300-4d9f-4588-8b10-365d75280b8f")!,
+                device: callbackDevice
+            )
+        )
+        XCTAssertFalse(equivalentCallbackApp === lostAckRetry.app)
+        service.receivedMessage(
+            syncAcknowledgement(for: lostAckRetry.message),
+            from: equivalentCallbackApp
+        )
+        let postBindingSyncSent = await waitUntil { transport.sent.count >= 3 }
+        XCTAssertTrue(postBindingSyncSent)
+        let firstOrdinary = transport.sent[2].message
+        XCTAssertEqual(firstOrdinary["resetWorkout"] as? Bool, false)
+        XCTAssertEqual(firstOrdinary["language"] as? String, "ru")
+        XCTAssertFalse((firstOrdinary["exercises"] as? [String] ?? []).isEmpty)
+
+        let beforeReconnect = transport.sent.count
+        transport.statuses[deviceID] = .connected
+        service.deviceStatusChanged(device, status: .connected)
+        let reconnectSyncSent = await waitUntil { transport.sent.count > beforeReconnect }
+        XCTAssertTrue(reconnectSyncSent)
+        XCTAssertEqual(transport.sent.last?.message["resetWorkout"] as? Bool, false)
+
+        let accountB = AppAccountSession.local(id: "garmin-account-b", displayName: "B")
+        try auth.installSessionForTesting(accountB)
+        let accountActivated = await waitUntil { service.devices.isEmpty }
+        XCTAssertTrue(accountActivated)
+        let storeB = try WorkoutStore(
+            accountStorageKey: accountB.storageKey,
+            directoryURL: try temporaryDirectory(named: "garmin-account-b")
+        )
+        service.bind(workoutStore: storeB)
+        transport.selectionResponse = [device]
+        let beforeAccountBSelection = transport.sent.count
+        XCTAssertTrue(
+            service.handleOpenURL(URL(string: "com.setforge.gymapp.ios://devices")!)
+        )
+        let accountTransitionSent = await waitUntil {
+            transport.sent.count > beforeAccountBSelection
+        }
+        XCTAssertTrue(accountTransitionSent)
+
+        let accountTransition = try XCTUnwrap(transport.sent.last)
+        XCTAssertEqual(accountTransition.message["resetWorkout"] as? Bool, true)
+        XCTAssertEqual(accountTransition.message["planNames"] as? [String], [])
+        XCTAssertEqual(accountTransition.message["exercises"] as? [String], [])
+        XCTAssertNotEqual(
+            accountTransition.message["accountBinding"] as? String,
+            firstAccountBinding
+        )
+        XCTAssertEqual(
+            accountTransition.message["deviceBinding"] as? String,
+            deviceID.uuidString.lowercased()
+        )
+        XCTAssertGreaterThan(
+            try XCTUnwrap(accountTransition.message["syncRevision"] as? Int64),
+            firstRevision
+        )
+
+        let countBeforeStaleAck = transport.sent.count
+        service.receivedMessage(
+            syncAcknowledgement(for: firstTransition.message),
+            from: firstTransition.app
+        )
+        try? await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(transport.sent.count, countBeforeStaleAck)
+
+        service.receivedMessage(
+            syncAcknowledgement(for: accountTransition.message),
+            from: accountTransition.app
+        )
+        let accountBOrdinarySyncSent = await waitUntil {
+            transport.sent.count > countBeforeStaleAck
+        }
+        XCTAssertTrue(accountBOrdinarySyncSent)
+        XCTAssertEqual(transport.sent.last?.message["resetWorkout"] as? Bool, false)
+
+        // A historically confirmed account is not assumed to still own the
+        // physical watch after another account was confirmed in between.
+        try auth.installSessionForTesting(accountA)
+        try? await Task.sleep(for: .milliseconds(50))
+        let beforeReturningToAccountA = transport.sent.count
+        service.bind(workoutStore: storeA)
+        let returnTransitionSent = await waitUntil {
+            transport.sent.count > beforeReturningToAccountA
+        }
+        XCTAssertTrue(returnTransitionSent)
+        XCTAssertEqual(transport.sent.last?.message["resetWorkout"] as? Bool, true)
+        XCTAssertEqual(
+            transport.sent.last?.message["accountBinding"] as? String,
+            firstAccountBinding
+        )
+    }
+
+    func testGarminPhoneLegacyCountersAndLostAccountAckUsePreservingProof() async throws {
+        let defaults = temporaryDefaults(named: "garmin-phone-legacy-proof")
+        let auth = AuthService(keychain: InMemoryKeychainStore(), defaults: defaults)
+        let accountA = AppAccountSession.local(id: "garmin-legacy-a", displayName: "A")
+        let accountB = AppAccountSession.local(id: "garmin-legacy-b", displayName: "B")
+        let deviceID = UUID(uuidString: "12121212-3434-5656-7878-909090909090")!
+        let deviceBinding = deviceID.uuidString.lowercased()
+        let bindingA = String(repeating: "a", count: 64)
+        let bindingB = String(repeating: "b", count: 64)
+        let generationA = String(repeating: "c", count: 64)
+        let generationB = String(repeating: "d", count: 64)
+        seedLegacyGarminAttempt(
+            defaults: defaults,
+            session: accountA,
+            accountBinding: bindingA,
+            deviceBinding: deviceBinding,
+            pairingGeneration: generationA,
+            revision: 41
+        )
+        seedLegacyGarminAttempt(
+            defaults: defaults,
+            session: accountB,
+            accountBinding: bindingB,
+            deviceBinding: deviceBinding,
+            pairingGeneration: generationB,
+            revision: 42
+        )
+        try auth.installSessionForTesting(accountA)
+        let storeA = try WorkoutStore(
+            accountStorageKey: accountA.storageKey,
+            directoryURL: try temporaryDirectory(named: "garmin-legacy-a")
+        )
+        _ = try storeA.addExercise(name: "Legacy proof exercise")
+        let transport = FakeGarminPhoneConnectIQTransport()
+        let device = try XCTUnwrap(
+            IQDevice(id: deviceID, modelName: "Venu 3", friendlyName: "Legacy Watch")
+        )
+        transport.selectionResponse = [device]
+        transport.statuses[deviceID] = .connected
+        let service = GarminPhoneSyncService(
+            auth: auth,
+            defaults: defaults,
+            connectIQ: transport
+        )
+        service.bind(workoutStore: storeA)
+        XCTAssertTrue(
+            service.handleOpenURL(URL(string: "com.setforge.gymapp.ios://devices")!)
+        )
+        let proofASent = await waitUntil { transport.sent.count == 1 }
+        XCTAssertTrue(proofASent)
+        let proofA = transport.sent[0]
+        XCTAssertEqual(proofA.message["accountBinding"] as? String, bindingA)
+        XCTAssertEqual(proofA.message["resetWorkout"] as? Bool, false)
+        XCTAssertEqual(
+            proofA.message["exercises"] as? [String],
+            ["Legacy proof exercise"]
+        )
+
+        defaults.set(AppLanguage.ukrainian.rawValue, forKey: "app-language")
+        service.deviceCharacteristicsDiscovered(device)
+        let proofRetrySent = await waitUntil { transport.sent.count == 2 }
+        XCTAssertTrue(proofRetrySent)
+        let proofRetry = transport.sent[1]
+        XCTAssertEqual(proofRetry.message["syncId"] as? String, proofA.message["syncId"] as? String)
+        XCTAssertEqual(
+            proofRetry.message["syncRevision"] as? Int64,
+            proofA.message["syncRevision"] as? Int64
+        )
+        XCTAssertEqual(proofRetry.message["language"] as? String, proofA.message["language"] as? String)
+        XCTAssertEqual(
+            proofRetry.message["exercises"] as? [String],
+            proofA.message["exercises"] as? [String]
+        )
+
+        // A cross-device claim is rejected before any binding marker changes.
+        var crossDeviceRequest = syncRequest(claiming: [
+            "bindingVersion": GarminPhoneWorkoutParser.bindingVersion,
+            "accountBinding": bindingB,
+            "deviceBinding": deviceBinding,
+            "pairingGeneration": generationB
+        ])
+        crossDeviceRequest["deviceBinding"] = "99999999-2222-3333-4444-555555555555"
+        service.receivedMessage(crossDeviceRequest, from: proofRetry.app)
+        try? await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(transport.sent.count, 2)
+
+        // A same-device foreign claim is still untrusted when the phone has no
+        // separately persisted transition that names its exact prior binding.
+        service.receivedMessage(
+            syncRequest(claiming: [
+                "bindingVersion": GarminPhoneWorkoutParser.bindingVersion,
+                "accountBinding": bindingB,
+                "deviceBinding": deviceBinding,
+                "pairingGeneration": generationB
+            ]),
+            from: proofRetry.app
+        )
+        try? await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(transport.sent.count, 2)
+        XCTAssertEqual(transport.sent.last?.message["resetWorkout"] as? Bool, false)
+
+        service.receivedMessage(
+            syncAcknowledgement(for: proofRetry.message),
+            from: proofRetry.app
+        )
+        let ordinaryASent = await waitUntil { transport.sent.count == 3 }
+        XCTAssertTrue(ordinaryASent)
+        XCTAssertEqual(transport.sent[2].message["resetWorkout"] as? Bool, false)
+        XCTAssertNotEqual(
+            transport.sent[2].message["syncId"] as? String,
+            proofA.message["syncId"] as? String
+        )
+
+        // B receives an explicit staged transition, but its ACK is lost after
+        // the watch may already have applied it.
+        try auth.installSessionForTesting(accountB)
+        let accountBActivated = await waitUntil { service.devices.isEmpty }
+        XCTAssertTrue(accountBActivated)
+        let storeB = try WorkoutStore(
+            accountStorageKey: accountB.storageKey,
+            directoryURL: try temporaryDirectory(named: "garmin-legacy-b")
+        )
+        service.bind(workoutStore: storeB)
+        transport.selectionResponse = [device]
+        XCTAssertTrue(
+            service.handleOpenURL(URL(string: "com.setforge.gymapp.ios://devices")!)
+        )
+        let resetBSent = await waitUntil { transport.sent.count == 4 }
+        XCTAssertTrue(resetBSent)
+        let resetB = transport.sent[3]
+        XCTAssertEqual(resetB.message["accountBinding"] as? String, bindingB)
+        XCTAssertEqual(resetB.message["resetWorkout"] as? Bool, true)
+
+        // Returning to A cannot assume either that B applied or that it did not.
+        // It sends a preserving proof first, then an exact B claim from this
+        // physical watch authorizes a new explicit reset transition to A.
+        try auth.installSessionForTesting(accountA)
+        try? await Task.sleep(for: .milliseconds(50))
+        service.bind(workoutStore: storeA)
+        let ambiguousAProofSent = await waitUntil { transport.sent.count >= 5 }
+        guard ambiguousAProofSent, let ambiguousAProof = transport.sent.last else {
+            XCTFail("Returning to A did not send a preserving ownership proof")
+            return
+        }
+        XCTAssertEqual(ambiguousAProof.message["accountBinding"] as? String, bindingA)
+        XCTAssertEqual(ambiguousAProof.message["resetWorkout"] as? Bool, false)
+        let proofScope = Data(
+            "\(bindingA)\u{0}\(deviceBinding)\u{0}\(generationA)".utf8
+        ).garminTestSHA256Hex
+        let resetAuthorizationKey = "garmin-phone-reset-authorization.v1.\(proofScope)"
+        XCTAssertNotNil(defaults.data(forKey: resetAuthorizationKey))
+
+        var staleBClaim = syncRequest(claiming: resetB.message)
+        staleBClaim["pairingGeneration"] = String(repeating: "e", count: 64)
+        let beforeStaleBClaim = transport.sent.count
+        service.receivedMessage(staleBClaim, from: ambiguousAProof.app)
+        try? await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(transport.sent.count, beforeStaleBClaim)
+        XCTAssertEqual(transport.sent.last?.message["resetWorkout"] as? Bool, false)
+        XCTAssertNotNil(defaults.data(forKey: resetAuthorizationKey))
+
+        service.receivedMessage(
+            syncRequest(claiming: resetB.message),
+            from: ambiguousAProof.app
+        )
+        let explicitResetASent = await waitUntil { transport.sent.count >= 6 }
+        guard explicitResetASent, let explicitResetA = transport.sent.last?.message else {
+            XCTFail("The proven B claim did not stage an explicit reset to A")
+            return
+        }
+        XCTAssertEqual(explicitResetA["accountBinding"] as? String, bindingA)
+        XCTAssertEqual(explicitResetA["resetWorkout"] as? Bool, true)
+        XCTAssertNil(defaults.data(forKey: resetAuthorizationKey))
+        XCTAssertGreaterThan(
+            try XCTUnwrap(explicitResetA["syncRevision"] as? Int64),
+            try XCTUnwrap(resetB.message["syncRevision"] as? Int64)
+        )
+    }
+
+    func testGarminPhoneMissingCompletionTimesOutAndAccountReactivationUnblocksDevice() async throws {
+        let defaults = temporaryDefaults(named: "garmin-phone-timeout")
+        let auth = AuthService(keychain: InMemoryKeychainStore(), defaults: defaults)
+        let accountA = AppAccountSession.local(id: "garmin-timeout-a", displayName: "A")
+        try auth.installSessionForTesting(accountA)
+        let storeA = try WorkoutStore(
+            accountStorageKey: accountA.storageKey,
+            directoryURL: try temporaryDirectory(named: "garmin-timeout-a")
+        )
+        let transport = FakeGarminPhoneConnectIQTransport()
+        transport.sendCompletionResult = nil
+        let deviceID = UUID(uuidString: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")!
+        let device = try XCTUnwrap(
+            IQDevice(id: deviceID, modelName: "Venu 3", friendlyName: "Timeout Watch")
+        )
+        transport.selectionResponse = [device]
+        transport.statuses[deviceID] = .connected
+        let service = GarminPhoneSyncService(
+            auth: auth,
+            defaults: defaults,
+            connectIQ: transport,
+            syncDeliveryTimeout: .milliseconds(20)
+        )
+        service.bind(workoutStore: storeA)
+        XCTAssertTrue(
+            service.handleOpenURL(URL(string: "com.setforge.gymapp.ios://devices")!)
+        )
+        let initialSend = await waitUntil { transport.sent.count == 1 }
+        XCTAssertTrue(initialSend)
+        let first = transport.sent[0].message
+
+        try? await Task.sleep(for: .milliseconds(50))
+        service.deviceStatusChanged(device, status: .connected)
+        let retryAfterTimeout = await waitUntil { transport.sent.count == 2 }
+        XCTAssertTrue(retryAfterTimeout)
+        XCTAssertEqual(transport.sent[1].message["syncId"] as? String, first["syncId"] as? String)
+        XCTAssertEqual(
+            transport.sent[1].message["syncRevision"] as? Int64,
+            first["syncRevision"] as? Int64
+        )
+
+        // Reactivation must also cancel an in-flight attempt whose SDK callback
+        // never arrives, so the same physical device is not wedged for the next account.
+        let accountB = AppAccountSession.local(id: "garmin-timeout-b", displayName: "B")
+        try auth.installSessionForTesting(accountB)
+        let accountActivated = await waitUntil { service.devices.isEmpty }
+        XCTAssertTrue(accountActivated)
+        let storeB = try WorkoutStore(
+            accountStorageKey: accountB.storageKey,
+            directoryURL: try temporaryDirectory(named: "garmin-timeout-b")
+        )
+        service.bind(workoutStore: storeB)
+        transport.sendCompletionResult = true
+        transport.selectionResponse = [device]
+        XCTAssertTrue(
+            service.handleOpenURL(URL(string: "com.setforge.gymapp.ios://devices")!)
+        )
+        let accountBTransitionSent = await waitUntil { transport.sent.count == 3 }
+        XCTAssertTrue(accountBTransitionSent)
+        // The missing A completion makes the physical owner ambiguous. B first
+        // sends a preserving proof; an authenticated request claiming A then
+        // escalates to a separately persisted explicit reset for B.
+        XCTAssertEqual(transport.sent[2].message["resetWorkout"] as? Bool, false)
+        XCTAssertNotEqual(
+            transport.sent[2].message["accountBinding"] as? String,
+            first["accountBinding"] as? String
+        )
+        service.receivedMessage(
+            syncRequest(claiming: first),
+            from: transport.sent[2].app
+        )
+        let explicitBTransitionSent = await waitUntil { transport.sent.count == 4 }
+        XCTAssertTrue(explicitBTransitionSent)
+        XCTAssertEqual(transport.sent[3].message["resetWorkout"] as? Bool, true)
+        XCTAssertEqual(
+            transport.sent[3].message["accountBinding"] as? String,
+            transport.sent[2].message["accountBinding"] as? String
+        )
+    }
+
+    private func syncAcknowledgement(for message: [String: Any]) -> [String: Any] {
+        [
+            "type": "sync_ack",
+            "bindingVersion": message["bindingVersion"] as Any,
+            "syncId": message["syncId"] as Any,
+            "requestId": message["requestId"] as Any,
+            "syncRevision": message["syncRevision"] as Any,
+            "accountBinding": message["accountBinding"] as Any,
+            "deviceBinding": message["deviceBinding"] as Any,
+            "pairingGeneration": message["pairingGeneration"] as Any,
+            "applied": true
+        ]
+    }
+
+    private func syncRequest(claiming message: [String: Any]) -> [String: Any] {
+        [
+            "type": "request_sync",
+            "bindingVersion": message["bindingVersion"] as Any,
+            "requestId": "request-\(UUID().uuidString.lowercased())",
+            "accountBinding": message["accountBinding"] as Any,
+            "deviceBinding": message["deviceBinding"] as Any,
+            "pairingGeneration": message["pairingGeneration"] as Any,
+            "pairingGenerationSupported": true,
+            "watchVersion": "2026.08.01.1232",
+            "status": "SYNC REQ"
+        ]
+    }
+
+    private func seedLegacyGarminAttempt(
+        defaults: UserDefaults,
+        session: AppAccountSession,
+        accountBinding: String,
+        deviceBinding: String,
+        pairingGeneration: String,
+        revision: Int64
+    ) {
+        let storageScope = Data(session.storageKey.utf8).garminTestSHA256Hex
+        defaults.set(
+            accountBinding,
+            forKey: "garmin-phone-local-account.v1.\(storageScope)"
+        )
+        let generationScope = Data(
+            "\(accountBinding)\u{0}\(deviceBinding)".utf8
+        ).garminTestSHA256Hex
+        defaults.set(
+            pairingGeneration,
+            forKey: "garmin-phone-generation.v1.\(generationScope)"
+        )
+        let bindingScope = Data(
+            "\(accountBinding)\u{0}\(deviceBinding)\u{0}\(pairingGeneration)".utf8
+        ).garminTestSHA256Hex
+        defaults.set(
+            revision,
+            forKey: "garmin-phone-sync-revision.v1.\(bindingScope)"
+        )
+    }
+
     private func temporaryDefaults(named name: String) -> UserDefaults {
         let suiteName = "GymAppTests.\(name).\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
@@ -11438,6 +12172,64 @@ final class CoreParityTests: XCTestCase {
                 name: exercise.name
             ) == nil
         }.map(\.name)
+    }
+}
+
+private final class FakeGarminPhoneConnectIQTransport: GarminPhoneConnectIQTransport {
+    struct SentMessage {
+        let message: [String: Any]
+        let app: IQApp
+    }
+
+    var selectionResponse: [IQDevice]?
+    var statuses: [UUID: IQDeviceStatus] = [:]
+    var sendCompletionResult: Bool? = true
+    private(set) var sent: [SentMessage] = []
+    private(set) var initializedURLScheme: String?
+    private(set) var initializedRestorationIdentifier: String?
+    private var deviceDelegates: [UUID: IQDeviceEventDelegate] = [:]
+    private var appDelegates: [UUID: IQAppMessageDelegate] = [:]
+
+    func initialize(urlScheme: String, restorationIdentifier: String) {
+        initializedURLScheme = urlScheme
+        initializedRestorationIdentifier = restorationIdentifier
+    }
+
+    func showDeviceSelection() {}
+
+    func parseDeviceSelectionResponse(from _: URL) -> [IQDevice]? {
+        selectionResponse
+    }
+
+    func registerDeviceEvents(_ device: IQDevice, delegate: IQDeviceEventDelegate) {
+        deviceDelegates[device.uuid as UUID] = delegate
+    }
+
+    func unregisterAllDeviceEvents(delegate _: IQDeviceEventDelegate) {
+        deviceDelegates.removeAll()
+    }
+
+    func deviceStatus(_ device: IQDevice) -> IQDeviceStatus {
+        statuses[device.uuid as UUID] ?? .notConnected
+    }
+
+    func registerAppMessages(_ app: IQApp, delegate: IQAppMessageDelegate) {
+        appDelegates[app.device.uuid as UUID] = delegate
+    }
+
+    func unregisterAllAppMessages(delegate _: IQAppMessageDelegate) {
+        appDelegates.removeAll()
+    }
+
+    func send(
+        _ message: [String: Any],
+        to app: IQApp,
+        completion: @escaping (Bool) -> Void
+    ) {
+        sent.append(SentMessage(message: message, app: app))
+        if let sendCompletionResult {
+            completion(sendCompletionResult)
+        }
     }
 }
 
@@ -11608,5 +12400,11 @@ private final class RemovalFailingFileManager: FileManager, @unchecked Sendable 
             throw NSError(domain: "GymAppTests.ForcedRemovalFailure", code: 1)
         }
         try super.removeItem(at: URL)
+    }
+}
+
+private extension Data {
+    var garminTestSHA256Hex: String {
+        SHA256.hash(data: self).map { String(format: "%02x", $0) }.joined()
     }
 }

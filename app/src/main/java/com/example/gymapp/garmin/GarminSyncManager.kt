@@ -300,8 +300,10 @@ class GarminSyncManager(
     private val latestDeviceStatuses =
         ConcurrentHashMap<Long, IQDevice.IQDeviceStatus>()
     private val pendingSyncAcks = ConcurrentHashMap<String, PendingSyncAck>()
-    private val inboundWorkCommands =
+    private val inboundWorkoutCommands =
         newBoundedGarminInboundChannel<QueuedGarminCommand>(MAX_GARMIN_PENDING_WORK_COMMANDS)
+    private val inboundSyncRequests =
+        newBoundedGarminInboundChannel<QueuedGarminCommand>(MAX_GARMIN_PENDING_SYNC_REQUESTS)
     private val inboundAckCommands =
         newBoundedGarminInboundChannel<QueuedGarminCommand>(MAX_GARMIN_PENDING_ACK_COMMANDS)
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -346,22 +348,37 @@ class GarminSyncManager(
         val workout: GarminWorkoutCommand
     )
 
+    private data class InboundPairingGeneration(
+        val value: String,
+        val completesPendingReset: Boolean
+    )
+
     private enum class WorkoutPersistenceResult {
         Created,
         AlreadyProcessed,
+        PairingLimitReached,
         Rejected
     }
 
     init {
-        // Garmin callbacks are attacker-controlled transport input. Keep a fixed
-        // number of long-lived consumers and apply bounded channel backpressure
-        // instead of launching one coroutine per message.
+        // Garmin callbacks are attacker-controlled transport input. Workouts get
+        // their own bounded consumer, so a slow/flooded read-only sync cannot delay
+        // durable workout persistence. Sync requests are coalesced to one queued item.
         scope.launch {
-            for (queued in inboundWorkCommands) {
+            for (queued in inboundWorkoutCommands) {
                 try {
-                    handleQueuedWorkCommand(queued.device, queued.command)
+                    createWorkout(queued.device, queued.command)
                 } catch (error: Exception) {
-                    Log.i(TAG, "Rejected Garmin work command after processing failure", error)
+                    Log.i(TAG, "Rejected Garmin workout after processing failure", error)
+                }
+            }
+        }
+        scope.launch {
+            for (queued in inboundSyncRequests) {
+                try {
+                    pushSync(queued.device, queued.command)
+                } catch (error: Exception) {
+                    Log.i(TAG, "Rejected Garmin sync request after processing failure", error)
                 }
             }
         }
@@ -431,6 +448,16 @@ class GarminSyncManager(
             startSdk()
         } else {
             mainHandler.post(startSdk)
+        }
+    }
+
+    /** Refreshes Garmin SDK inventory/status when the Profile screen becomes visible. */
+    fun refreshGarminDevices() {
+        startAuthObserverIfNeeded()
+        scope.launch {
+            if (!ensureSdkReady()) {
+                refreshDeviceUiState()
+            }
         }
     }
 
@@ -808,7 +835,10 @@ class GarminSyncManager(
                         // trySend is deliberately non-blocking. A full queue drops
                         // the command; the watch must retry with its stable request ID.
                         when (envelope.kind) {
-                            GarminInboundCommandKind.Work -> inboundWorkCommands.trySend(queued)
+                            GarminInboundCommandKind.Workout ->
+                                inboundWorkoutCommands.trySend(queued)
+                            GarminInboundCommandKind.SyncRequest ->
+                                inboundSyncRequests.trySend(queued)
                             GarminInboundCommandKind.Acknowledgement -> inboundAckCommands.trySend(queued)
                         }
                     }
@@ -830,7 +860,8 @@ class GarminSyncManager(
         val sourceBinding = deviceBinding(device)
         if (!isValidGarminTransportDeviceBinding(sourceBinding)) return false
         return when (envelope.kind) {
-            GarminInboundCommandKind.Work -> {
+            GarminInboundCommandKind.Workout,
+            GarminInboundCommandKind.SyncRequest -> {
                 val account = activeAccountContext() ?: return false
                 trustedDeviceBinding(account) == sourceBinding
             }
@@ -847,16 +878,6 @@ class GarminSyncManager(
                         expectedRevision = pending.revision
                     )
             }
-        }
-    }
-
-    private suspend fun handleQueuedWorkCommand(
-        device: IQDevice,
-        command: Map<Any?, Any?>
-    ) {
-        when (command["type"] as? String ?: return) {
-            "request_sync" -> pushSync(device, command)
-            "create_workout" -> createWorkout(device, command)
         }
     }
 
@@ -900,15 +921,12 @@ class GarminSyncManager(
             return
         }
         val advertisesGeneration = garminCommandAdvertisesPairingGeneration(command)
+        val storedGenerationCapability =
+            pairingGenerationSupported(account, sourceDeviceBinding)
         val supportsGeneration = advertisesGeneration ||
-            pairingGenerationSupported(account, sourceDeviceBinding) ||
+            storedGenerationCapability ||
             command["pairingGeneration"] is String
-        if (
-            advertisesGeneration &&
-            !recordPairingGenerationCapability(account, sourceDeviceBinding)
-        ) {
-            return
-        }
+        val capabilityProofPending = supportsGeneration && !storedGenerationCapability
         val pairingGeneration = if (supportsGeneration) {
             activePairingGeneration(account, sourceDeviceBinding) ?: return
         } else {
@@ -937,7 +955,8 @@ class GarminSyncManager(
                     device = device,
                     account = account,
                     generationSupportOverride = true,
-                    repairPairing = true
+                    repairPairing = true,
+                    capabilityProofPending = capabilityProofPending
                 )
                 return
             }
@@ -946,7 +965,12 @@ class GarminSyncManager(
             Log.i(TAG, "Rejected Garmin sync request: ${mismatch.name}")
             return
         }
-        pushSyncForContext(device, account, supportsGeneration)
+        pushSyncForContext(
+            device = device,
+            account = account,
+            generationSupportOverride = supportsGeneration,
+            capabilityProofPending = capabilityProofPending
+        )
     }
 
     private suspend fun createWorkout(device: IQDevice, command: Map<Any?, Any?>) {
@@ -959,19 +983,26 @@ class GarminSyncManager(
             }
             val rawGeneration = command["pairingGeneration"]
             val supportsGeneration = pairingGenerationSupported(account, sourceDeviceBinding)
-            val pairingGeneration = when (rawGeneration) {
+            val inboundGeneration = when (rawGeneration) {
                 null -> {
                     if (supportsGeneration) return@withLock null
-                    LEGACY_GARMIN_FALLBACK_GENERATION
+                    InboundPairingGeneration(
+                        value = LEGACY_GARMIN_FALLBACK_GENERATION,
+                        completesPendingReset = false
+                    )
                 }
-                is String -> activePairingGeneration(account, sourceDeviceBinding)
+                is String -> inboundPairingGeneration(
+                    account = account,
+                    deviceBinding = sourceDeviceBinding,
+                    claimedGeneration = rawGeneration
+                )
                     ?: return@withLock null
                 else -> return@withLock null
             }
             val binding = GarminBinding(
                 account = account.binding,
                 device = sourceDeviceBinding,
-                pairingGeneration = pairingGeneration
+                pairingGeneration = inboundGeneration.value
             )
             if (
                 garminBindingDecision(
@@ -1000,8 +1031,32 @@ class GarminSyncManager(
                 return@withLock null
             }
 
+            if (
+                inboundGeneration.completesPendingReset &&
+                !finalizePendingPairingGeneration(
+                    account = account,
+                    binding = binding
+                )
+            ) {
+                return@withLock null
+            }
+
             when (persistWorkout(account, binding, workout)) {
                 WorkoutPersistenceResult.Rejected -> null
+                WorkoutPersistenceResult.PairingLimitReached -> {
+                    val repairedBinding = rolloverPairingGenerationForPendingWorkout(
+                        device = device,
+                        account = account,
+                        exhaustedBinding = binding
+                    ) ?: return@withLock null
+                    when (persistWorkout(account, repairedBinding, workout)) {
+                        WorkoutPersistenceResult.Created,
+                        WorkoutPersistenceResult.AlreadyProcessed ->
+                            AcceptedGarminWorkout(account, repairedBinding, workout)
+                        WorkoutPersistenceResult.PairingLimitReached,
+                        WorkoutPersistenceResult.Rejected -> null
+                    }
+                }
                 WorkoutPersistenceResult.Created,
                 WorkoutPersistenceResult.AlreadyProcessed ->
                     AcceptedGarminWorkout(account, binding, workout)
@@ -1025,11 +1080,120 @@ class GarminSyncManager(
         }
     }
 
+    /**
+     * Rotates only the receipt generation after its bounded replay store fills.
+     * The watch keeps its active workout and queued create_workout request, then
+     * the exact same request ID is persisted under the acknowledged generation.
+     */
+    private suspend fun rolloverPairingGenerationForPendingWorkout(
+        device: IQDevice,
+        account: GarminAccountContext,
+        exhaustedBinding: GarminBinding
+    ): GarminBinding? = outboundSyncMutex.withLock {
+        val sourceDeviceBinding = deviceBinding(device)
+        if (
+            !isStillActive(account) ||
+            sourceDeviceBinding != exhaustedBinding.device ||
+            trustedDeviceBinding(account) != exhaustedBinding.device ||
+            exhaustedBinding.account != account.binding ||
+            exhaustedBinding.pairingGeneration == LEGACY_GARMIN_FALLBACK_GENERATION ||
+            !pairingGenerationSupported(account, exhaustedBinding.device)
+        ) {
+            return@withLock null
+        }
+        val currentGeneration = pairingGenerationForReset(
+            account = account,
+            deviceBinding = exhaustedBinding.device
+        )
+        if (currentGeneration != exhaustedBinding.pairingGeneration) {
+            return@withLock null
+        }
+
+        val repository = application.repositoryFor(account.session)
+        val exercises = repository.getExerciseNamesForSync(limit = MAX_WATCH_EXERCISES)
+        if (
+            !isStillActive(account) ||
+            trustedDeviceBinding(account) != exhaustedBinding.device ||
+            deviceBinding(device) != exhaustedBinding.device
+        ) {
+            return@withLock null
+        }
+        val plan = cachedPlan(account, exhaustedBinding.device)
+        val pendingGeneration = beginPairingGenerationReset(
+            account = account,
+            deviceBinding = exhaustedBinding.device,
+            currentGeneration = currentGeneration
+        ) ?: run {
+            lastPlanSyncStatus = "Cannot stage secure Garmin pairing refresh"
+            return@withLock null
+        }
+        val repairedBinding = exhaustedBinding.copy(
+            pairingGeneration = pendingGeneration
+        )
+        val syncId = newGarminMessageId()
+        val revision = allocateSyncRevision(repairedBinding) ?: run {
+            lastPlanSyncStatus = "Cannot persist Garmin pairing refresh revision"
+            return@withLock null
+        }
+        val payload = boundGarminPairingRolloverPayload(
+            payload = syncPayload(
+                exercises = exercises,
+                plan = plan,
+                syncId = syncId,
+                resetWorkout = false,
+                repairPairing = true
+            ),
+            previousBinding = exhaustedBinding,
+            nextPairingGeneration = pendingGeneration,
+            syncRevision = revision
+        ) ?: run {
+            lastPlanSyncStatus = "Rejected unsafe Garmin pairing refresh payload"
+            return@withLock null
+        }
+
+        lastPlanSyncStatus = "Refreshing secure Garmin pairing without clearing workouts"
+        val confirmed = sendAndConfirmSync(
+            device = device,
+            payload = payload,
+            syncId = syncId,
+            account = account,
+            authTransitionKey = account.authTransitionKey,
+            requireReadyAccount = true,
+            binding = repairedBinding,
+            revision = revision
+        )
+        if (
+            !confirmed ||
+            !isStillActive(account) ||
+            trustedDeviceBinding(account) != exhaustedBinding.device ||
+            deviceBinding(device) != exhaustedBinding.device
+        ) {
+            // Keep the staged generation. If delivery failed, an old-generation
+            // retry resumes this repair. If only sync_ack was lost, the watch's
+            // next pending delivery proves the new generation and finalizes it.
+            return@withLock null
+        }
+        if (!finalizePendingPairingGeneration(account, repairedBinding)) {
+            return@withLock null
+        }
+        if (
+            !isStillActive(account) ||
+            trustedDeviceBinding(account) != repairedBinding.device ||
+            activePairingGeneration(account, repairedBinding.device) !=
+            repairedBinding.pairingGeneration
+        ) {
+            return@withLock null
+        }
+        lastPlanSyncStatus = "Secure Garmin pairing refreshed; saving pending workout"
+        repairedBinding
+    }
+
     private suspend fun pushSyncForContext(
         device: IQDevice,
         account: GarminAccountContext,
         generationSupportOverride: Boolean? = null,
-        repairPairing: Boolean = false
+        repairPairing: Boolean = false,
+        capabilityProofPending: Boolean = false
     ) {
         outboundSyncMutex.withLock {
             if (!isStillActive(account)) return@withLock
@@ -1073,7 +1237,7 @@ class GarminSyncManager(
             )
                 ?: return@withLock
             Log.i(TAG, "Replying to Garmin sync request payload=${payloadSummary(payload)}")
-            sendAndConfirmSync(
+            val confirmed = sendAndConfirmSync(
                 device = device,
                 payload = payload,
                 syncId = syncId,
@@ -1083,6 +1247,18 @@ class GarminSyncManager(
                 binding = binding,
                 revision = revision
             )
+            if (
+                shouldCommitGarminPairingGenerationCapability(
+                    capabilityProofPending = capabilityProofPending,
+                    syncConfirmed = confirmed
+                ) &&
+                (!isStillActive(account) ||
+                    trustedDeviceBinding(account) != deviceBinding ||
+                    !recordPairingGenerationCapability(account, deviceBinding))
+            ) {
+                lastPlanSyncStatus =
+                    "Garmin sync acknowledged but generation capability was not saved"
+            }
             Unit
         }
     }
@@ -1217,7 +1393,6 @@ class GarminSyncManager(
             Log.i(TAG, lastPlanSyncStatus)
             return false
         }
-
         Log.i(TAG, "Sending sync to ${targets.size} Garmin device(s) payload=${payloadSummary(basePayload)}")
         targets.forEach { device ->
             if (!isStillActive(account)) {
@@ -1240,9 +1415,9 @@ class GarminSyncManager(
                 device = deviceBinding,
                 pairingGeneration = pairingGeneration
             )
-            // The single physical watch pin is committed before the first
-            // account-bound payload can mutate a device. A failed send keeps a
-            // conservative pin and must be retried against the same watch.
+            // Pin before the first account-bound mutation. Removing this ordering
+            // requires a durable provisional-pairing handshake; an ACK-only change
+            // could orphan a watch if the ACK is lost after the watch applied sync.
             if (!trustDevice(account, binding.device)) {
                 lastPlanSyncStatus = "Cannot persist trusted Garmin device"
                 return false
@@ -1511,12 +1686,14 @@ class GarminSyncManager(
         // Device callbacks already carry the new status. Do not call getDeviceStatus
         // from inside that callback: some Garmin Connect versions synchronously
         // dispatch another status callback and can recurse until the process dies.
-        val knownDevices = knownDevicesById.values
-            .sortedBy { it.deviceIdentifier }
+        val knownDevices = prioritizedGarminProfileDeviceIds(
+            deviceIdentifiers = knownDevicesById.keys,
+            trustedDeviceBinding = trustedBinding,
+            maximumCount = MAX_PROFILE_GARMIN_DEVICES
+        ).mapNotNull(knownDevicesById::get)
         _deviceUiState.value = GarminDeviceUiState(
             sdkReady = true,
             devices = knownDevices
-                .take(MAX_PROFILE_GARMIN_DEVICES)
                 .map { device ->
                     val name = runCatching { device.friendlyName }
                         .getOrNull()
@@ -1691,11 +1868,18 @@ class GarminSyncManager(
             GarminWorkoutApplyResult.Applied -> WorkoutPersistenceResult.Created
             GarminWorkoutApplyResult.AlreadyApplied -> WorkoutPersistenceResult.AlreadyProcessed
             GarminWorkoutApplyResult.RateLimited -> {
-                lastPlanSyncStatus = "Garmin workout rate limit reached; retry later"
+                lastPlanSyncStatus =
+                    "Garmin daily safety limit reached; workout remains queued on the watch"
                 WorkoutPersistenceResult.Rejected
             }
             GarminWorkoutApplyResult.PairingLimitReached -> {
-                lastPlanSyncStatus = "Garmin secure pairing workout limit reached; reset pairing"
+                lastPlanSyncStatus =
+                    "Garmin secure pairing workout limit reached; refreshing automatically"
+                WorkoutPersistenceResult.PairingLimitReached
+            }
+            GarminWorkoutApplyResult.ReceiptStoreFull -> {
+                lastPlanSyncStatus =
+                    "Garmin receipt storage safety limit reached; workout remains queued on the watch"
                 WorkoutPersistenceResult.Rejected
             }
             GarminWorkoutApplyResult.Rejected -> WorkoutPersistenceResult.Rejected
@@ -1893,6 +2077,104 @@ class GarminSyncManager(
                 preferences.edit().putString(activeKey, generated).commit()
             }
         }
+    }
+
+    /**
+     * Accepts the active generation while a repair is in flight so the same
+     * pending workout can resume a failed transport attempt. A command carrying
+     * the staged generation is proof that the trusted watch applied the repair.
+     */
+    private fun inboundPairingGeneration(
+        account: GarminAccountContext,
+        deviceBinding: String,
+        claimedGeneration: String
+    ): InboundPairingGeneration? {
+        if (
+            !isStillActive(account) ||
+            !isValidGarminTransportDeviceBinding(deviceBinding) ||
+            !isValidGarminPairingGeneration(claimedGeneration)
+        ) {
+            return null
+        }
+        val activeGeneration = pairingGenerationForReset(account, deviceBinding) ?: return null
+        val pendingGeneration = pendingPairingGeneration(account, deviceBinding)
+        return when (
+            garminInboundPairingGenerationMatch(
+                claimedGeneration = claimedGeneration,
+                activeGeneration = activeGeneration,
+                pendingGeneration = pendingGeneration
+            )
+        ) {
+            GarminInboundPairingGenerationMatch.Active -> InboundPairingGeneration(
+                value = activeGeneration,
+                completesPendingReset = false
+            )
+            GarminInboundPairingGenerationMatch.Pending -> InboundPairingGeneration(
+                value = claimedGeneration,
+                completesPendingReset = true
+            )
+            GarminInboundPairingGenerationMatch.Rejected -> null
+        }
+    }
+
+    private fun pendingPairingGeneration(
+        account: GarminAccountContext,
+        deviceBinding: String
+    ): String? {
+        if (!isStillActive(account) || !isValidGarminTransportDeviceBinding(deviceBinding)) {
+            return null
+        }
+        val pendingKey = garminStorageKey(
+            PENDING_PAIRING_GENERATION_KEY_PREFIX,
+            account.authTransitionKey,
+            deviceBinding
+        )
+        synchronized(accountBindingLock) {
+            val preferences = preferences()
+            val pending = preferences.getStringSafely(pendingKey)
+            if (!preferences.contains(pendingKey)) return null
+            return pending?.takeIf(::isValidGarminPairingGeneration)
+        }
+    }
+
+    private suspend fun finalizePendingPairingGeneration(
+        account: GarminAccountContext,
+        binding: GarminBinding
+    ): Boolean {
+        if (
+            !isStillActive(account) ||
+            binding.account != account.binding ||
+            trustedDeviceBinding(account) != binding.device ||
+            pendingPairingGeneration(account, binding.device) != binding.pairingGeneration
+        ) {
+            return false
+        }
+        val receiptsRetired = runCatching {
+            application.repositoryFor(account.session).activateGarminPairingGeneration(
+                ownerBinding = binding.account,
+                deviceBinding = binding.device,
+                pairingGeneration = binding.pairingGeneration
+            )
+        }.onFailure { error ->
+            Log.i(TAG, "Cannot retire Garmin receipts after pairing refresh", error)
+        }.isSuccess
+        if (!receiptsRetired) {
+            lastPlanSyncStatus =
+                "Garmin pairing refresh applied but local receipts were not updated"
+            return false
+        }
+        if (
+            !isStillActive(account) ||
+            trustedDeviceBinding(account) != binding.device ||
+            pendingPairingGeneration(account, binding.device) != binding.pairingGeneration
+        ) {
+            return false
+        }
+        if (!completePairingGenerationReset(account, binding.device, binding.pairingGeneration)) {
+            lastPlanSyncStatus = "Garmin pairing refresh local state was not saved"
+            return false
+        }
+        return isStillActive(account) && trustedDeviceBinding(account) == binding.device
     }
 
     private fun pairingGenerationSupported(

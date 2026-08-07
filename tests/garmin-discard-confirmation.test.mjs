@@ -37,7 +37,14 @@ test("Garmin workout discard requires an explicit safe-default confirmation", as
 
   const confirmHandler = section(view, "function handleDiscardConfirmation()", "function activate(");
   assert.match(confirmHandler, /if \(view\.discardSelected == 0\)[\s\S]*cancelDiscardConfirmation\(\);[\s\S]*return;/);
-  assert.match(confirmHandler, /GymStore\.clearWorkout\(\);[\s\S]*GymSession\.discard\(\);[\s\S]*System\.exit\(\);/);
+  assert.match(
+    confirmHandler,
+    /if \(!GymSession\.discard\(\)\)[\s\S]*return;[\s\S]*if \(!GymStore\.clearWorkout\(\)\)[\s\S]*return;[\s\S]*System\.exit\(\);/
+  );
+  assert.ok(
+    confirmHandler.indexOf("GymSession.discard()") < confirmHandler.indexOf("GymStore.clearWorkout()"),
+    "a failed FIT discard must not erase the recoverable workout"
+  );
 
   const backHandler = section(view, "function onBack()", "function onTap(");
   assert.match(backHandler, /if \(view\.page == 6\)[\s\S]*cancelDiscardConfirmation\(\);[\s\S]*return true;/);

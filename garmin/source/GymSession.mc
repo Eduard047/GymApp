@@ -46,7 +46,10 @@ class GymSession {
     static var lastMet = 0.0;
     static var lastKcalPerMinute = 0.0;
     static var setBoostCalories = 0.0;
-    static var status = "READY";
+    // FIT completion is separate from the app-level workout queue. Keep only the
+    // state needed to make a post-save cleanup retry idempotent; diagnostic UI
+    // uses GymStore.status.
+    static var fitSaved = false;
     static var gymKcalField = null;
     static var gymZoneField = null;
     static var effortState = "WARMUP";
@@ -73,7 +76,7 @@ class GymSession {
     static var gyroAvailable = false;
     static var gyroScore = 0.0;
     static var motionNoiseFloor = 0.0;
-    static var lastMotionTimerMs = 0;
+    static var lastMotionTimerMs = null;
     static var lastCredibleMotionSeconds = 0;
     static var motionSignalCount = 0;
     static var motionBurstSignals = 0;
@@ -155,7 +158,7 @@ class GymSession {
         gyroAvailable = false;
         gyroScore = 0.0;
         motionNoiseFloor = 0.0;
-        lastMotionTimerMs = 0;
+        lastMotionTimerMs = null;
         lastCredibleMotionSeconds = 0;
         motionSignalCount = 0;
         motionBurstSignals = 0;
@@ -175,7 +178,7 @@ class GymSession {
         recoveryPeakHr = null;
         recoveryLowestHr = null;
         debugText = "init";
-        status = "REC";
+        fitSaved = false;
         paused = false;
 
         if (Toybox has :ActivityRecording) {
@@ -186,41 +189,69 @@ class GymSession {
                     :subSport => Activity.SUB_SPORT_STRENGTH_TRAINING
                 });
                 createFitFields();
-                session.start();
-                recording = true;
+                if (session.start()) {
+                    recording = true;
+                } else {
+                    session.discard();
+                    session = null;
+                    gymKcalField = null;
+                    gymZoneField = null;
+                    recording = false;
+                    GymStore.status = "REC FAIL";
+                }
             } catch (ex) {
                 session = null;
+                gymKcalField = null;
+                gymZoneField = null;
                 recording = false;
-                status = "REC ERR";
+                GymStore.status = "REC FAIL";
             }
         }
         // High-frequency sensor listeners are most portable after the activity
         // recording session has been created (or definitively failed).
         startSensors();
+        return recording;
     }
 
     static function pause() {
         if (paused) {
-            return;
+            return true;
+        }
+        if (session != null) {
+            try {
+                if (session.isRecording() && !session.stop()) {
+                    GymStore.status = "PAUSE FAIL";
+                    return false;
+                }
+            } catch (ex) {
+                GymStore.status = "PAUSE FAIL";
+                return false;
+            }
         }
         paused = true;
         pausedAt = Time.now().value();
         stopSensors();
-        if (session != null) {
-            try {
-                if (session.isRecording()) {
-                    session.stop();
-                }
-            } catch (ex) {
-            }
-        }
-        status = "PAUSED";
         effortState = "PAUSED";
+        return true;
     }
 
     static function resume() {
         if (!paused) {
-            return;
+            return true;
+        }
+        // Restart the authoritative FIT session first. Some older products reject
+        // a high-frequency listener while activity recording is stopped; a failed
+        // Session.start() must leave the workout visibly paused.
+        if (session != null) {
+            try {
+                if (!session.isRecording() && !session.start()) {
+                    GymStore.status = "RESUME FAIL";
+                    return false;
+                }
+            } catch (ex) {
+                GymStore.status = "RESUME FAIL";
+                return false;
+            }
         }
         var now = Time.now().value();
         if (pausedAt > 0) {
@@ -229,24 +260,10 @@ class GymSession {
         pausedAt = 0;
         paused = false;
         startSensors();
-        if (session != null) {
-            try {
-                session.start();
-            } catch (ex) {
-            }
-        }
-        status = "REC";
         // Paused time is already removed from elapsedSeconds. It is not a set
         // boundary, so keep every active motion/HR snapshot intact across resume.
         effortState = activeSetSeen ? "SET ACTIVE" : "READY";
-    }
-
-    static function togglePause() {
-        if (paused) {
-            resume();
-        } else {
-            pause();
-        }
+        return true;
     }
 
     static function stopAndSave() {
@@ -254,12 +271,11 @@ class GymSession {
         if (session == null) {
             // A successful FIT save can be followed by a retry when clearing the
             // app's local workout state failed. Treat that retry as idempotent.
-            return !recording && status.equals("SAVED");
+            return !recording && fitSaved;
         }
         var saved = false;
         try {
             if (session.isRecording() && !session.stop()) {
-                status = "STOP ERR";
                 return false;
             }
             saved = session.save();
@@ -267,7 +283,6 @@ class GymSession {
             saved = false;
         }
         if (!saved) {
-            status = "SAVE ERR";
             return false;
         }
         session = null;
@@ -275,33 +290,37 @@ class GymSession {
         gymZoneField = null;
         recording = false;
         paused = false;
-        status = "SAVED";
+        fitSaved = true;
         return true;
     }
 
     static function discard() {
         stopSensors();
+        if (session == null) {
+            recording = false;
+            paused = false;
+            fitSaved = false;
+            return true;
+        }
         var discarded = false;
-        if (session != null) {
-            try {
+        try {
+            if (!session.isRecording() || session.stop()) {
                 discarded = session.discard();
-            } catch (ex) {
-                try {
-                    if (session.isRecording()) {
-                        session.stop();
-                    }
-                    discarded = session.discard();
-                } catch (ex2) {
-                    discarded = false;
-                }
             }
+        } catch (ex) {
+            discarded = false;
+        }
+        if (!discarded) {
+            GymStore.status = "FIT FAIL";
+            return false;
         }
         session = null;
         gymKcalField = null;
         gymZoneField = null;
         recording = false;
         paused = false;
-        status = discarded ? "DISCARD" : "DISC ERR";
+        fitSaved = false;
+        return true;
     }
 
     static function resetForAccountTransition() {
@@ -328,13 +347,14 @@ class GymSession {
         zone = 0;
         recording = false;
         paused = false;
+        fitSaved = false;
         autoLogPrompt = false;
         activeSetSeen = false;
         motionScore = 0.0;
         gyroAvailable = false;
         gyroScore = 0.0;
         motionNoiseFloor = 0.0;
-        lastMotionTimerMs = 0;
+        lastMotionTimerMs = null;
         lastCredibleMotionSeconds = 0;
         motionSignalCount = 0;
         motionBurstSignals = 0;
@@ -498,7 +518,7 @@ class GymSession {
                 gyroAvailable = false;
                 motionScore = 0.0;
                 gyroScore = 0.0;
-                lastMotionTimerMs = 0;
+                lastMotionTimerMs = null;
             }
         }
     }
@@ -532,7 +552,7 @@ class GymSession {
             motionListenerRegistered = false;
             motionAvailable = false;
             motionScore = 0.0;
-            lastMotionTimerMs = 0;
+            lastMotionTimerMs = null;
         }
     }
 
@@ -547,7 +567,7 @@ class GymSession {
         motionScore = 0.0;
         gyroAvailable = false;
         gyroScore = 0.0;
-        lastMotionTimerMs = 0;
+        lastMotionTimerMs = null;
         if (!activeSetSeen) {
             lastCredibleMotionSeconds = 0;
             motionSignalCount = 0;
@@ -781,10 +801,10 @@ class GymSession {
     }
 
     static function isMotionFresh() {
-        if (!motionAvailable || lastMotionTimerMs <= 0) {
+        if (!motionAvailable || lastMotionTimerMs == null) {
             return false;
         }
-        var age = System.getTimer() - lastMotionTimerMs;
+        var age = GymStore.timerElapsedMs(lastMotionTimerMs);
         return age >= 0 && age <= 2500;
     }
 
@@ -875,20 +895,16 @@ class GymSession {
         return !paused && !autoLogPrompt &&
             (GymStore.sets.size() == 0 ||
                 elapsedSeconds - lastLoggedSetSeconds >=
-                    postSaveRestartDeadbandSeconds());
-    }
-
-    static function postSaveRestartDeadbandSeconds() {
-        return 10;
+                    10);
     }
 
     (:fullLegacyState)
     static function hasCredibleRestRestartEvidence(risingEnough) {
-        if (GymStore.restEndsAt <= 0) {
+        if (GymStore.restDurationMs <= 0) {
             return true;
         }
         if (elapsedSeconds - lastLoggedSetSeconds <
-            postSaveRestartDeadbandSeconds()) {
+            10) {
             return false;
         }
         if (risingEnough) {
@@ -906,11 +922,11 @@ class GymSession {
 
     (:compactLegacyState)
     static function hasCredibleRestRestartEvidence(risingEnough) {
-        if (GymStore.restEndsAt <= 0) {
+        if (GymStore.restDurationMs <= 0) {
             return true;
         }
         return elapsedSeconds - lastLoggedSetSeconds >=
-                postSaveRestartDeadbandSeconds() &&
+                10 &&
             (risingEnough ||
                 (motionSignalCount >= 3 && motionScore >= motionThreshold()));
     }
@@ -962,7 +978,6 @@ class GymSession {
         // before the minimum bounded set duration, clear only transient detector
         // state—never create a set, rest timer, prompt, or durable payload.
         clearAutoPrompt();
-        status = "MOTION SHORT";
         GymStore.status = "MOTION SHORT";
         lastAutoReason = "short motion ignored";
         debugText = "short motion";
@@ -1313,7 +1328,6 @@ class GymSession {
                     debugText = "save set";
                 } else {
                     clearAutoPrompt();
-                    status = "HR SHORT";
                     GymStore.status = "HR SHORT";
                     lastAutoReason = "short hr ignored";
                     debugText = "short hr";
@@ -1374,7 +1388,6 @@ class GymSession {
                 lastAutoReason = "hr signal lost";
             } else {
                 clearAutoPrompt();
-                status = "HR SHORT";
                 GymStore.status = "HR SHORT";
             }
             return;
@@ -1571,7 +1584,6 @@ class GymSession {
                 // false start, not an indefinitely pending set. Clearing it also
                 // lets WorkoutView restore a rest countdown suspended for it.
                 clearAutoPrompt();
-                status = "HR SHORT";
                 GymStore.status = "HR SHORT";
                 lastAutoReason = "short hr ignored";
                 debugText = "short hr";
@@ -2067,11 +2079,6 @@ class GymSession {
         return drop;
     }
 
-    static function clearRecoveryTracking() {
-        recoveryPeakHr = null;
-        recoveryLowestHr = null;
-    }
-
     static function clearAutoPrompt() {
         autoLogPrompt = false;
         activeSetSeen = false;
@@ -2081,7 +2088,7 @@ class GymSession {
         motionSignalCount = 0;
         motionScore = 0.0;
         gyroScore = 0.0;
-        lastMotionTimerMs = 0;
+        lastMotionTimerMs = null;
         lastCredibleMotionSeconds = 0;
         motionBurstSignals = 0;
         motionRhythmSignals = 0;
@@ -2113,7 +2120,6 @@ class GymSession {
             return false;
         }
         clearAutoPrompt();
-        status = "SET SKIPPED";
         GymStore.status = "SET SKIPPED";
         lastAutoReason = "set rejected";
         debugText = "set rejected";

@@ -11,10 +11,362 @@ struct GarminPhoneDeviceSummary: Identifiable, Equatable {
     let connected: Bool
 }
 
-struct GarminPhoneBinding: Equatable {
+struct GarminPhoneBinding: Codable, Equatable {
     let account: String
     let device: String
     let pairingGeneration: String
+}
+
+enum GarminPhoneBindingHandshake: String, Codable, Equatable {
+    case proof
+    case repair
+    case reset
+}
+
+struct GarminPhonePendingAuthTransition: Codable, Equatable {
+    let binding: GarminPhoneBinding
+    let syncID: String
+    let revision: Int64
+    let language: String
+    let exercises: [String]
+    let handshake: GarminPhoneBindingHandshake
+}
+
+struct GarminPhoneSyncRequestClaim: Equatable {
+    let account: String
+    let device: String
+    let pairingGeneration: String?
+}
+
+private struct GarminPhoneDeviceHandshakeMarker: Codable, Equatable {
+    let bindingScope: String
+    let syncID: String
+    let revision: Int64
+}
+
+private struct GarminPhoneResetAuthorization: Codable, Equatable {
+    let deviceBinding: String
+    let targetBindingScope: String
+    let proofSyncID: String
+    let proofRevision: Int64
+    let previousBindingScope: String
+    let previousSyncID: String
+    let previousRevision: Int64
+}
+
+enum GarminPhoneSyncProtocol {
+    static let maximumSyncRevision: Int64 = 9_007_199_254_740_991
+    static let maximumMessageEntries = 16
+
+    static func nextRevision(lastRevision: Int64?, nowMilliseconds: Int64) -> Int64? {
+        guard nowMilliseconds > 0,
+              nowMilliseconds <= maximumSyncRevision,
+              lastRevision.map({ (0 ... maximumSyncRevision).contains($0) }) ?? true else {
+            return nil
+        }
+        guard let lastRevision else { return nowMilliseconds }
+        guard lastRevision < maximumSyncRevision else { return nil }
+        return max(nowMilliseconds, lastRevision + 1)
+    }
+
+    static func boundedExerciseCatalog(_ candidates: [String]) -> [String] {
+        var totalBytes = 0
+        var values: [String] = []
+        values.reserveCapacity(min(candidates.count, GarminPhoneWorkoutParser.maximumSets))
+        for candidate in candidates {
+            guard values.count < GarminPhoneWorkoutParser.maximumSets else { break }
+            let trimmed = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
+            let bytes = trimmed.utf8.count
+            guard !trimmed.isEmpty,
+                  trimmed.utf16.count <= GarminPhoneWorkoutParser.maximumExerciseCharacters,
+                  bytes <= GarminPhoneWorkoutParser.maximumExerciseBytes,
+                  !trimmed.unicodeScalars.contains(where: {
+                      CharacterSet.controlCharacters.contains($0)
+                  }) else {
+                continue
+            }
+            guard totalBytes <= GarminPhoneWorkoutParser.maximumTotalExerciseBytes - bytes else {
+                break
+            }
+            totalBytes += bytes
+            values.append(trimmed)
+        }
+        return values
+    }
+
+    static func syncPayload(
+        binding: GarminPhoneBinding,
+        syncID: String,
+        revision: Int64,
+        language: String,
+        exercises: [String],
+        resetWorkout: Bool,
+        repairPairing: Bool = false
+    ) -> [String: Any]? {
+        guard binding.account.isGarminBinding,
+              binding.device.utf8.count <= 128,
+              !binding.device.isEmpty,
+              binding.pairingGeneration.isGarminBinding,
+              isValidMessageID(syncID),
+              (1 ... maximumSyncRevision).contains(revision),
+              ["en", "uk", "ru"].contains(language),
+              !(resetWorkout && repairPairing),
+              exercises.count <= GarminPhoneWorkoutParser.maximumSets else {
+            return nil
+        }
+
+        let boundedExercises: [String]
+        if resetWorkout {
+            boundedExercises = []
+        } else {
+            var totalBytes = 0
+            var values: [String] = []
+            values.reserveCapacity(exercises.count)
+            for exercise in exercises {
+                let trimmed = exercise.trimmingCharacters(in: .whitespacesAndNewlines)
+                let bytes = trimmed.utf8.count
+                guard !trimmed.isEmpty,
+                      trimmed.utf16.count <= GarminPhoneWorkoutParser.maximumExerciseCharacters,
+                      bytes <= GarminPhoneWorkoutParser.maximumExerciseBytes,
+                      totalBytes <= GarminPhoneWorkoutParser.maximumTotalExerciseBytes - bytes,
+                      !trimmed.unicodeScalars.contains(where: {
+                          CharacterSet.controlCharacters.contains($0)
+                      }) else {
+                    return nil
+                }
+                totalBytes += bytes
+                values.append(trimmed)
+            }
+            boundedExercises = values
+        }
+
+        var payload: [String: Any] = [
+            "type": "sync",
+            "bindingVersion": GarminPhoneWorkoutParser.bindingVersion,
+            "syncId": syncID,
+            "requestId": syncID,
+            "bindingSource": "phone",
+            "accountBinding": binding.account,
+            "deviceBinding": binding.device,
+            "pairingGeneration": binding.pairingGeneration,
+            "syncRevision": revision,
+            "language": language,
+            "planNames": [],
+            "planWeights": [],
+            "planReps": [],
+            "exercises": boundedExercises
+        ]
+        if repairPairing {
+            payload["repairPairing"] = true
+        } else {
+            payload["resetWorkout"] = resetWorkout
+        }
+        return payload
+    }
+
+    static func syncRequestClaim(
+        _ rawMessage: Any,
+        sourceDeviceBinding: String
+    ) -> GarminPhoneSyncRequestClaim? {
+        let allowedKeys = Set([
+            "type", "bindingVersion", "requestId", "accountBinding", "deviceBinding",
+            "pairingGeneration", "pairingGenerationSupported", "watchVersion", "status"
+        ])
+        guard sourceDeviceBinding.utf8.count <= 128,
+              !sourceDeviceBinding.isEmpty,
+              let message = dictionary(rawMessage),
+              message.count <= allowedKeys.count,
+              message.keys.allSatisfy({ key in
+                  guard let key = key as? String else { return false }
+                  return allowedKeys.contains(key)
+              }),
+              message["type"] as? String == "request_sync",
+              integer(message["bindingVersion"]) ==
+                Int64(GarminPhoneWorkoutParser.bindingVersion),
+              let requestID = message["requestId"] as? String,
+              isValidMessageID(requestID),
+              let account = message["accountBinding"] as? String,
+              account.isGarminBinding,
+              let device = message["deviceBinding"] as? String,
+              device == sourceDeviceBinding else {
+            return nil
+        }
+        let generation: String?
+        if let rawGeneration = message["pairingGeneration"] {
+            guard let rawGeneration = rawGeneration as? String,
+                  rawGeneration.isGarminBinding else {
+                return nil
+            }
+            generation = rawGeneration
+        } else {
+            generation = nil
+        }
+        if let supported = message["pairingGenerationSupported"],
+           boolean(supported) == nil {
+            return nil
+        }
+        if let rawVersion = message["watchVersion"] {
+            guard let version = rawVersion as? String,
+                  version.utf8.count <= 64 else {
+                return nil
+            }
+        }
+        if let rawStatus = message["status"] {
+            guard let status = rawStatus as? String,
+                  status.utf8.count <= 64 else {
+                return nil
+            }
+        }
+        return GarminPhoneSyncRequestClaim(
+            account: account,
+            device: device,
+            pairingGeneration: generation
+        )
+    }
+
+    static func acknowledgementMatches(
+        _ rawMessage: Any,
+        expected: GarminPhonePendingAuthTransition,
+        sourceDeviceBinding: String
+    ) -> Bool {
+        guard sourceDeviceBinding == expected.binding.device,
+              expected.binding.account.isGarminBinding,
+              expected.binding.pairingGeneration.isGarminBinding,
+              isValidMessageID(expected.syncID),
+              (1 ... maximumSyncRevision).contains(expected.revision),
+              let message = dictionary(rawMessage),
+              message.count <= maximumMessageEntries,
+              message["type"] as? String == "sync_ack",
+              integer(message["bindingVersion"]) == Int64(GarminPhoneWorkoutParser.bindingVersion),
+              message["syncId"] as? String == expected.syncID,
+              message["requestId"] as? String == expected.syncID,
+              integer(message["syncRevision"]) == expected.revision,
+              message["accountBinding"] as? String == expected.binding.account,
+              message["deviceBinding"] as? String == expected.binding.device,
+              message["pairingGeneration"] as? String == expected.binding.pairingGeneration,
+              boolean(message["applied"]) == true else {
+            return false
+        }
+        return true
+    }
+
+    private static func dictionary(_ value: Any) -> [AnyHashable: Any]? {
+        if let value = value as? [AnyHashable: Any] { return value }
+        guard let value = value as? NSDictionary,
+              value.count <= maximumMessageEntries else {
+            return nil
+        }
+        var result: [AnyHashable: Any] = [:]
+        for (key, item) in value {
+            guard let key = key as? AnyHashable else { return nil }
+            result[key] = item
+        }
+        return result
+    }
+
+    private static func integer(_ value: Any?) -> Int64? {
+        guard let number = value as? NSNumber,
+              CFGetTypeID(number) != CFBooleanGetTypeID() else {
+            return nil
+        }
+        let raw = number.doubleValue
+        guard raw.isFinite,
+              raw.rounded(.towardZero) == raw,
+              raw >= 0,
+              raw <= Double(maximumSyncRevision) else {
+            return nil
+        }
+        return Int64(raw)
+    }
+
+    private static func boolean(_ value: Any?) -> Bool? {
+        guard let number = value as? NSNumber,
+              CFGetTypeID(number) == CFBooleanGetTypeID() else {
+            return nil
+        }
+        return number.boolValue
+    }
+
+    static func isValidMessageID(_ value: String) -> Bool {
+        value.utf8.count >= 16 && value.utf8.count <= 128 &&
+            value.unicodeScalars.allSatisfy {
+                CharacterSet.alphanumerics.contains($0) || "-_.:".unicodeScalars.contains($0)
+            }
+    }
+}
+
+protocol GarminPhoneConnectIQTransport: AnyObject {
+    func initialize(urlScheme: String, restorationIdentifier: String)
+    func showDeviceSelection()
+    func parseDeviceSelectionResponse(from url: URL) -> [IQDevice]?
+    func registerDeviceEvents(_ device: IQDevice, delegate: IQDeviceEventDelegate)
+    func unregisterAllDeviceEvents(delegate: IQDeviceEventDelegate)
+    func deviceStatus(_ device: IQDevice) -> IQDeviceStatus
+    func registerAppMessages(_ app: IQApp, delegate: IQAppMessageDelegate)
+    func unregisterAllAppMessages(delegate: IQAppMessageDelegate)
+    func send(
+        _ message: [String: Any],
+        to app: IQApp,
+        completion: @escaping (Bool) -> Void
+    )
+}
+
+private final class LiveGarminPhoneConnectIQTransport: GarminPhoneConnectIQTransport {
+    private let connectIQ: ConnectIQ
+
+    init(connectIQ: ConnectIQ = ConnectIQ.sharedInstance()) {
+        self.connectIQ = connectIQ
+    }
+
+    func initialize(urlScheme: String, restorationIdentifier: String) {
+        self.connectIQ.initialize(
+            withUrlScheme: urlScheme,
+            uiOverrideDelegate: nil,
+            stateRestorationIdentifier: restorationIdentifier
+        )
+    }
+
+    func showDeviceSelection() {
+        connectIQ.showDeviceSelection()
+    }
+
+    func parseDeviceSelectionResponse(from url: URL) -> [IQDevice]? {
+        connectIQ.parseDeviceSelectionResponse(from: url) as? [IQDevice]
+    }
+
+    func registerDeviceEvents(_ device: IQDevice, delegate: IQDeviceEventDelegate) {
+        connectIQ.register(forDeviceEvents: device, delegate: delegate)
+    }
+
+    func unregisterAllDeviceEvents(delegate: IQDeviceEventDelegate) {
+        connectIQ.unregister(forAllDeviceEvents: delegate)
+    }
+
+    func deviceStatus(_ device: IQDevice) -> IQDeviceStatus {
+        connectIQ.getDeviceStatus(device)
+    }
+
+    func registerAppMessages(_ app: IQApp, delegate: IQAppMessageDelegate) {
+        connectIQ.register(forAppMessages: app, delegate: delegate)
+    }
+
+    func unregisterAllAppMessages(delegate: IQAppMessageDelegate) {
+        connectIQ.unregister(forAllAppMessages: delegate)
+    }
+
+    func send(
+        _ message: [String: Any],
+        to app: IQApp,
+        completion: @escaping (Bool) -> Void
+    ) {
+        connectIQ.sendMessage(
+            message,
+            to: app,
+            progress: { _, _ in },
+            completion: { completion($0 == .success) },
+            isTransient: false
+        )
+    }
 }
 
 struct GarminPhoneSetStatistics: Codable, Equatable {
@@ -1286,22 +1638,30 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
 
     private let auth: AuthService
     private let defaults: UserDefaults
-    private let connectIQ: ConnectIQ
+    private let connectIQ: GarminPhoneConnectIQTransport
+    private let syncDeliveryTimeout: Duration
     private weak var workoutStore: WorkoutStore?
     private var sessionSubscription: AnyCancellable?
     private var activeStorageKey: String?
     private var rawDevices: [UUID: IQDevice] = [:]
     private var apps: [UUID: IQApp] = [:]
+    private var syncInFlight: [UUID: UUID] = [:]
+    private var syncDeliveryTimeoutTasks: [UUID: Task<Void, Never>] = [:]
 
-    init(auth: AuthService, defaults: UserDefaults = .standard) {
+    init(
+        auth: AuthService,
+        defaults: UserDefaults = .standard,
+        connectIQ: GarminPhoneConnectIQTransport? = nil,
+        syncDeliveryTimeout: Duration = .seconds(15)
+    ) {
         self.auth = auth
         self.defaults = defaults
-        self.connectIQ = ConnectIQ.sharedInstance()
+        self.connectIQ = connectIQ ?? LiveGarminPhoneConnectIQTransport()
+        self.syncDeliveryTimeout = syncDeliveryTimeout
         super.init()
-        connectIQ.initialize(
-            withUrlScheme: Self.returnURLScheme,
-            uiOverrideDelegate: nil,
-            stateRestorationIdentifier: Self.restorationIdentifier
+        self.connectIQ.initialize(
+            urlScheme: Self.returnURLScheme,
+            restorationIdentifier: Self.restorationIdentifier
         )
         sessionSubscription = auth.$session
             .removeDuplicates(by: { $0?.storageKey == $1?.storageKey })
@@ -1312,12 +1672,13 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
     }
 
     deinit {
-        connectIQ.unregister(forAllDeviceEvents: self)
-        connectIQ.unregister(forAllAppMessages: self)
+        connectIQ.unregisterAllDeviceEvents(delegate: self)
+        connectIQ.unregisterAllAppMessages(delegate: self)
     }
 
     func bind(workoutStore: WorkoutStore) {
         self.workoutStore = workoutStore
+        synchronizeConnectedDevices()
     }
 
     func selectDevices() {
@@ -1331,7 +1692,7 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
     @discardableResult
     func handleOpenURL(_ url: URL) -> Bool {
         guard url.scheme?.lowercased() == Self.returnURLScheme else { return false }
-        guard let selected = connectIQ.parseDeviceSelectionResponse(from: url) as? [IQDevice]
+        guard let selected = connectIQ.parseDeviceSelectionResponse(from: url)
         else {
             return false
         }
@@ -1349,6 +1710,7 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
             return true
         }
         registerDevices()
+        synchronizeConnectedDevices()
         publishStatus(
             selected.isEmpty
                 ? "No Garmin watches are connected to this iPhone."
@@ -1359,11 +1721,14 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
     }
 
     private func activate(_ session: AppAccountSession?) {
-        connectIQ.unregister(forAllDeviceEvents: self)
-        connectIQ.unregister(forAllAppMessages: self)
+        connectIQ.unregisterAllDeviceEvents(delegate: self)
+        connectIQ.unregisterAllAppMessages(delegate: self)
         apps.removeAll()
         rawDevices.removeAll()
         devices.removeAll()
+        syncDeliveryTimeoutTasks.values.forEach { $0.cancel() }
+        syncDeliveryTimeoutTasks.removeAll()
+        syncInFlight.removeAll()
         activeStorageKey = session?.storageKey
         guard session != nil else { return }
         restoreDevices()
@@ -1371,18 +1736,20 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
     }
 
     private func registerDevices() {
-        connectIQ.unregister(forAllDeviceEvents: self)
-        connectIQ.unregister(forAllAppMessages: self)
+        connectIQ.unregisterAllDeviceEvents(delegate: self)
+        connectIQ.unregisterAllAppMessages(delegate: self)
         apps.removeAll()
         for device in rawDevices.values {
-            connectIQ.register(forDeviceEvents: device, delegate: self)
-            let app = IQApp(
+            connectIQ.registerDeviceEvents(device, delegate: self)
+            guard let app = IQApp(
                 uuid: Self.appUUID,
                 store: Self.storeUUID,
                 device: device
-            )
+            ) else {
+                continue
+            }
             apps[device.uuid as UUID] = app
-            connectIQ.register(forAppMessages: app, delegate: self)
+            connectIQ.registerAppMessages(app, delegate: self)
         }
         refreshDeviceSummaries()
     }
@@ -1390,7 +1757,7 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
     private func refreshDeviceSummaries() {
         devices = rawDevices.values
             .map { device in
-                let connected = connectIQ.getDeviceStatus(device) == .connected
+                let connected = connectIQ.deviceStatus(device) == .connected
                 return GarminPhoneDeviceSummary(
                     id: (device.uuid as UUID).uuidString.lowercased(),
                     name: device.friendlyName,
@@ -1399,6 +1766,17 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
                 )
             }
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    private func synchronizeConnectedDevices() {
+        guard readyWorkoutStore() != nil else { return }
+        for (deviceID, app) in apps {
+            guard let device = rawDevices[deviceID],
+                  connectIQ.deviceStatus(device) == .connected else {
+                continue
+            }
+            sendSync(to: app)
+        }
     }
 
     private func persistDevices() -> Bool {
@@ -1451,6 +1829,16 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
     }
 
     private func process(_ rawMessage: Any, app: IQApp) {
+        let sourceDeviceID = app.device.uuid as UUID
+        guard let registeredApp = apps[sourceDeviceID],
+              rawDevices[sourceDeviceID] != nil,
+              registeredApp.device.uuid as UUID == sourceDeviceID,
+              registeredApp.uuid as UUID == Self.appUUID,
+              app.uuid as UUID == Self.appUUID,
+              registeredApp.storeUuid as UUID == Self.storeUUID,
+              app.storeUuid as UUID == Self.storeUUID else {
+            return
+        }
         let messages: [Any]
         if let batch = rawMessage as? [Any],
            batch.count <= Self.maximumInboundBatch,
@@ -1462,7 +1850,9 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
         for message in messages {
             switch GarminPhoneWorkoutParser.messageType(message) {
             case "request_sync":
-                sendSync(to: app)
+                receiveSyncRequest(message, from: app)
+            case "sync_ack":
+                receiveSyncAcknowledgement(message, from: app)
             case "create_workout":
                 receiveWorkout(message, from: app)
             default:
@@ -1476,33 +1866,260 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
               let store = readyWorkoutStore() else {
             return
         }
-        let syncID = UUID().uuidString.lowercased()
-        let revision = nextSyncRevision(binding: binding)
-        let language = normalizedLanguage(defaults.string(forKey: "app-language"))
-        let names = Array(
-            store.exercises
-                .map(\.name)
-                .filter { !$0.isEmpty && $0.utf8.count <= 640 }
-                .prefix(60)
+        let deviceID = app.device.uuid as UUID
+        guard syncInFlight[deviceID] == nil else { return }
+        let attemptID = UUID()
+        syncInFlight[deviceID] = attemptID
+        let currentLanguage = normalizedLanguage(defaults.string(forKey: "app-language"))
+        let currentExercises = GarminPhoneSyncProtocol.boundedExerciseCatalog(
+            store.exercises.map(\.name)
         )
-        let payload: [String: Any] = [
-            "type": "sync",
-            "bindingVersion": GarminPhoneWorkoutParser.bindingVersion,
-            "syncId": syncID,
-            "requestId": syncID,
-            "bindingSource": "phone",
-            "accountBinding": binding.account,
-            "deviceBinding": binding.device,
-            "pairingGeneration": binding.pairingGeneration,
-            "syncRevision": revision,
-            "resetWorkout": false,
-            "language": language,
-            "planNames": [],
-            "planWeights": [],
-            "planReps": [],
-            "exercises": names
-        ]
-        send(payload, to: app)
+
+        let transition: GarminPhonePendingAuthTransition?
+        if isBindingConfirmed(binding) {
+            removePendingAuthTransitionFile(binding)
+            transition = nil
+        } else if let existing = pendingAuthTransition(binding),
+                  existing.binding == binding {
+            transition = existing
+        } else {
+            guard let revision = nextSyncRevision(binding: binding) else {
+                syncInFlight.removeValue(forKey: deviceID)
+                publishStatus("The Garmin sync revision could not be stored safely.", isError: true)
+                return
+            }
+            let previousMarker = deviceHandshakeMarker(binding)
+            let handshake: GarminPhoneBindingHandshake =
+                shouldStartWithPreservingProof(
+                    binding,
+                    deviceMarker: previousMarker
+                ) ? .proof : .reset
+            let pending = GarminPhonePendingAuthTransition(
+                binding: binding,
+                syncID: UUID().uuidString.lowercased(),
+                revision: revision,
+                language: currentLanguage,
+                exercises: handshake == .reset ? [] : currentExercises,
+                handshake: handshake
+            )
+            guard savePendingAuthTransition(
+                pending,
+                resetAuthorizationFrom: handshake == .proof ? previousMarker : nil
+            ) else {
+                syncInFlight.removeValue(forKey: deviceID)
+                publishStatus("The Garmin account transition could not be stored safely.", isError: true)
+                return
+            }
+            transition = pending
+        }
+
+        let syncID = transition?.syncID ?? UUID().uuidString.lowercased()
+        let revision: Int64
+        if let transition {
+            revision = transition.revision
+        } else {
+            guard let next = nextSyncRevision(binding: binding) else {
+                syncInFlight.removeValue(forKey: deviceID)
+                publishStatus("The Garmin sync revision could not be stored safely.", isError: true)
+                return
+            }
+            revision = next
+        }
+        let language = transition?.language ?? currentLanguage
+        guard let payload = GarminPhoneSyncProtocol.syncPayload(
+            binding: binding,
+            syncID: syncID,
+            revision: revision,
+            language: language,
+            exercises: transition?.exercises ?? currentExercises,
+            resetWorkout: transition?.handshake == .reset,
+            repairPairing: transition?.handshake == .repair
+        ) else {
+            syncInFlight.removeValue(forKey: deviceID)
+            publishStatus("The Garmin sync payload is outside the supported limits.", isError: true)
+            return
+        }
+        let deliveryTimeout = syncDeliveryTimeout
+        syncDeliveryTimeoutTasks[deviceID]?.cancel()
+        syncDeliveryTimeoutTasks[deviceID] = Task { [weak self] in
+            do {
+                try await Task.sleep(for: deliveryTimeout)
+            } catch {
+                return
+            }
+            guard let self else { return }
+            self.finishSyncAttempt(
+                deviceID: deviceID,
+                attemptID: attemptID,
+                app: app,
+                binding: binding,
+                transition: transition,
+                delivered: false,
+                timedOut: true
+            )
+        }
+        send(payload, to: app) { [weak self] delivered in
+            self?.finishSyncAttempt(
+                deviceID: deviceID,
+                attemptID: attemptID,
+                app: app,
+                binding: binding,
+                transition: transition,
+                delivered: delivered,
+                timedOut: false
+            )
+        }
+    }
+
+    private func finishSyncAttempt(
+        deviceID: UUID,
+        attemptID: UUID,
+        app: IQApp,
+        binding: GarminPhoneBinding,
+        transition: GarminPhonePendingAuthTransition?,
+        delivered: Bool,
+        timedOut: Bool
+    ) {
+        guard syncInFlight[deviceID] == attemptID else { return }
+        syncInFlight.removeValue(forKey: deviceID)
+        if timedOut {
+            syncDeliveryTimeoutTasks.removeValue(forKey: deviceID)
+        } else {
+            syncDeliveryTimeoutTasks.removeValue(forKey: deviceID)?.cancel()
+        }
+        guard self.binding(for: app.device) == binding else { return }
+        let transitionConfirmed = transition != nil && isBindingConfirmed(binding)
+        if !delivered && !transitionConfirmed {
+            publishStatus(
+                timedOut
+                    ? "Garmin message delivery timed out. Reconnect the watch to retry."
+                    : "Garmin message delivery failed. Keep both apps open and retry.",
+                isError: true
+            )
+        }
+        if transitionConfirmed {
+            sendSync(to: app)
+        }
+    }
+
+    private func receiveSyncAcknowledgement(_ rawMessage: Any, from app: IQApp) {
+        guard let binding = binding(for: app.device),
+              let pending = pendingAuthTransition(binding),
+              pending.binding == binding,
+              GarminPhoneSyncProtocol.acknowledgementMatches(
+                  rawMessage,
+                  expected: pending,
+                  sourceDeviceBinding: (app.device.uuid as UUID).uuidString.lowercased()
+              ) else {
+            return
+        }
+        guard confirmBinding(binding) else {
+            publishStatus("The Garmin account binding could not be stored safely.", isError: true)
+            return
+        }
+        removePendingAuthTransition(pending)
+        publishStatus("Garmin watch synchronized securely.", isError: false)
+        sendSync(to: app)
+    }
+
+    private func receiveSyncRequest(_ rawMessage: Any, from app: IQApp) {
+        guard let binding = binding(for: app.device),
+              let claim = GarminPhoneSyncProtocol.syncRequestClaim(
+                  rawMessage,
+                  sourceDeviceBinding: (app.device.uuid as UUID).uuidString.lowercased()
+              ) else {
+            return
+        }
+
+        if claim.account != binding.account {
+            guard let claimedGeneration = claim.pairingGeneration,
+                  resetAuthorization(
+                      for: binding,
+                      claimedPreviousBinding: GarminPhoneBinding(
+                          account: claim.account,
+                          device: claim.device,
+                          pairingGeneration: claimedGeneration
+                      )
+                  ) != nil else {
+                // A watch claim is untrusted. It can only select the destructive
+                // path when it exactly proves the previous side of a transition
+                // that the phone already staged and durably correlated.
+                return
+            }
+            stageHandshake(.reset, binding: binding, to: app)
+            return
+        }
+        guard claim.device == binding.device else { return }
+        if claim.pairingGeneration == binding.pairingGeneration {
+            if pendingAuthTransition(binding)?.handshake == .reset {
+                // A target-shaped request_sync is not the acknowledgement for a
+                // destructive reset. Preserve and resend the exact transaction;
+                // only its fully correlated sync_ack may confirm the binding.
+                cancelSyncAttempt(deviceID: app.device.uuid as UUID)
+                sendSync(to: app)
+                return
+            }
+            // A matching request is sufficient for proof (non-destructive) and
+            // repair (the watch already presents the repaired generation).
+            guard confirmBinding(binding) else {
+                publishStatus("The Garmin account binding could not be stored safely.", isError: true)
+                return
+            }
+            if let pending = pendingAuthTransition(binding) {
+                removePendingAuthTransition(pending)
+            }
+            cancelSyncAttempt(deviceID: app.device.uuid as UUID)
+            sendSync(to: app)
+        } else if claim.pairingGeneration == nil {
+            // Older same-owner watches can adopt the generation without clearing
+            // an active workout. The exact applied acknowledgement confirms it.
+            stageHandshake(.proof, binding: binding, to: app)
+        } else {
+            // The watch proves the same account/device but an older generation.
+            // Its repairPairing path rotates pending workout ownership in place.
+            stageHandshake(.repair, binding: binding, to: app)
+        }
+    }
+
+    private func stageHandshake(
+        _ handshake: GarminPhoneBindingHandshake,
+        binding: GarminPhoneBinding,
+        to app: IQApp
+    ) {
+        if let existing = pendingAuthTransition(binding),
+           existing.handshake == handshake {
+            sendSync(to: app)
+            return
+        }
+        guard let store = readyWorkoutStore(),
+              let revision = nextSyncRevision(binding: binding) else {
+            publishStatus("The Garmin sync revision could not be stored safely.", isError: true)
+            return
+        }
+        let exercises = handshake == .reset
+            ? []
+            : GarminPhoneSyncProtocol.boundedExerciseCatalog(
+                store.exercises.map(\.name)
+            )
+        let pending = GarminPhonePendingAuthTransition(
+            binding: binding,
+            syncID: UUID().uuidString.lowercased(),
+            revision: revision,
+            language: normalizedLanguage(defaults.string(forKey: "app-language")),
+            exercises: exercises,
+            handshake: handshake
+        )
+        guard savePendingAuthTransition(pending) else {
+            publishStatus("The Garmin account transition could not be stored safely.", isError: true)
+            return
+        }
+        cancelSyncAttempt(deviceID: app.device.uuid as UUID)
+        sendSync(to: app)
+    }
+
+    private func cancelSyncAttempt(deviceID: UUID) {
+        syncDeliveryTimeoutTasks.removeValue(forKey: deviceID)?.cancel()
+        syncInFlight.removeValue(forKey: deviceID)
     }
 
     private func receiveWorkout(_ rawMessage: Any, from app: IQApp) {
@@ -1612,22 +2229,24 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
         )
     }
 
-    private func send(_ message: [String: Any], to app: IQApp) {
-        connectIQ.sendMessage(
-            message,
-            to: app,
-            progress: { _, _ in },
-            completion: { [weak self] result in
-                guard result != .success else { return }
-                Task { @MainActor in
-                    self?.publishStatus(
+    private func send(
+        _ message: [String: Any],
+        to app: IQApp,
+        completion: (@MainActor (Bool) -> Void)? = nil
+    ) {
+        connectIQ.send(message, to: app) { [weak self] delivered in
+            Task { @MainActor in
+                guard let self else { return }
+                if let completion {
+                    completion(delivered)
+                } else if !delivered {
+                    self.publishStatus(
                         "Garmin message delivery failed. Keep both apps open and retry.",
                         isError: true
                     )
                 }
-            },
-            isTransient: false
-        )
+            }
+        }
     }
 
     private func readyWorkoutStore() -> WorkoutStore? {
@@ -1696,15 +2315,19 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
         )
     }
 
-    private func nextSyncRevision(binding: GarminPhoneBinding) -> Int64 {
-        let scope = "\(binding.account)\u{0}\(binding.device)\u{0}\(binding.pairingGeneration)"
-        let key = "garmin-phone-sync-revision.v1.\(Data(scope.utf8).garminSHA256Hex)"
-        let current = defaults.object(forKey: key) as? NSNumber
-        let value = max(0, current?.int64Value ?? 0)
-        let next = value >= 9_007_199_254_740_990 ? 1 : value + 1
+    private func nextSyncRevision(binding: GarminPhoneBinding) -> Int64? {
+        let key = deviceSyncRevisionKey(deviceBinding: binding.device)
+        let current = (defaults.object(forKey: key) as? NSNumber)?.int64Value
+        let nowMilliseconds = Int64(Date().timeIntervalSince1970 * 1_000)
+        guard let next = GarminPhoneSyncProtocol.nextRevision(
+            lastRevision: current,
+            nowMilliseconds: nowMilliseconds
+        ) else {
+            return nil
+        }
         defaults.set(next, forKey: key)
-        if let activeStorageKey {
-            rememberStateKey(key, storageKey: activeStorageKey)
+        guard (defaults.object(forKey: key) as? NSNumber)?.int64Value == next else {
+            return nil
         }
         return next
     }
@@ -1975,6 +2598,308 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
         "garmin-phone-local-account.v1.\(Data(storageKey.utf8).garminSHA256Hex)"
     }
 
+    private func bindingStateScope(_ binding: GarminPhoneBinding) -> String {
+        Data(
+            "\(binding.account)\u{0}\(binding.device)\u{0}\(binding.pairingGeneration)".utf8
+        ).garminSHA256Hex
+    }
+
+    private func confirmedBindingKey(_ binding: GarminPhoneBinding) -> String {
+        "garmin-phone-confirmed-binding.v1.\(bindingStateScope(binding))"
+    }
+
+    private func currentDeviceBindingKey(_ binding: GarminPhoneBinding) -> String {
+        "garmin-phone-current-binding.v1.\(Data(binding.device.utf8).garminSHA256Hex)"
+    }
+
+    private func deviceHandshakeMarkerKey(_ binding: GarminPhoneBinding) -> String {
+        "garmin-phone-device-handshake.v1.\(Data(binding.device.utf8).garminSHA256Hex)"
+    }
+
+    private func pendingAuthTransitionKey(_ binding: GarminPhoneBinding) -> String {
+        "garmin-phone-pending-transition.v1.\(bindingStateScope(binding))"
+    }
+
+    private func resetAuthorizationKey(_ binding: GarminPhoneBinding) -> String {
+        "garmin-phone-reset-authorization.v1.\(bindingStateScope(binding))"
+    }
+
+    private func legacySyncRevisionKey(_ binding: GarminPhoneBinding) -> String {
+        "garmin-phone-sync-revision.v1.\(bindingStateScope(binding))"
+    }
+
+    private func deviceSyncRevisionKey(deviceBinding: String) -> String {
+        "garmin-phone-device-revision.v2.\(Data(deviceBinding.utf8).garminSHA256Hex)"
+    }
+
+    private func isBindingConfirmed(_ binding: GarminPhoneBinding) -> Bool {
+        let key = confirmedBindingKey(binding)
+        let currentKey = currentDeviceBindingKey(binding)
+        let expectedScope = bindingStateScope(binding)
+        return deviceHandshakeMarker(binding) == nil &&
+            defaults.string(forKey: currentKey) == expectedScope &&
+            defaults.bool(forKey: key)
+    }
+
+    private func shouldStartWithPreservingProof(
+        _ binding: GarminPhoneBinding,
+        deviceMarker: GarminPhoneDeviceHandshakeMarker?
+    ) -> Bool {
+        if deviceMarker != nil {
+            // An unacknowledged transition may or may not have reached the watch.
+            // Probe non-destructively; a bound watch request can then prove whether
+            // an explicit reset or pairing repair is actually required.
+            return true
+        }
+        guard defaults.string(forKey: currentDeviceBindingKey(binding)) == nil,
+              let legacy = defaults.object(
+                  forKey: legacySyncRevisionKey(binding)
+              ) as? NSNumber,
+              CFGetTypeID(legacy) != CFBooleanGetTypeID() else {
+            return false
+        }
+        // Released iOS persisted this counter before transport completion, so it
+        // is evidence of an attempted sync only. A reset=false proof preserves a
+        // same-owner active workout and never silently treats the attempt as ACKed.
+        return (1 ... GarminPhoneSyncProtocol.maximumSyncRevision)
+            .contains(legacy.int64Value)
+    }
+
+    private func confirmBinding(_ binding: GarminPhoneBinding) -> Bool {
+        guard let activeStorageKey else { return false }
+        let currentKey = currentDeviceBindingKey(binding)
+        let expectedScope = bindingStateScope(binding)
+        defaults.set(expectedScope, forKey: currentKey)
+        guard defaults.string(forKey: currentKey) == expectedScope else { return false }
+        let key = confirmedBindingKey(binding)
+        defaults.set(true, forKey: key)
+        guard defaults.bool(forKey: key) else { return false }
+        rememberStateKey(key, storageKey: activeStorageKey)
+        return true
+    }
+
+    private func pendingAuthTransition(
+        _ binding: GarminPhoneBinding
+    ) -> GarminPhonePendingAuthTransition? {
+        let key = pendingAuthTransitionKey(binding)
+        guard let data = defaults.data(forKey: key) else { return nil }
+        guard data.count <= 32 * 1_024,
+              let pending = try? JSONDecoder().decode(
+                  GarminPhonePendingAuthTransition.self,
+                  from: data
+              ),
+              pending.binding == binding,
+              GarminPhoneSyncProtocol.syncPayload(
+                  binding: pending.binding,
+                  syncID: pending.syncID,
+                  revision: pending.revision,
+                  language: pending.language,
+                  exercises: pending.exercises,
+                  resetWorkout: pending.handshake == .reset,
+                  repairPairing: pending.handshake == .repair
+              ) != nil,
+              deviceHandshakeMarker(binding) == handshakeMarker(for: pending) else {
+            defaults.removeObject(forKey: key)
+            return nil
+        }
+        return pending
+    }
+
+    private func savePendingAuthTransition(
+        _ pending: GarminPhonePendingAuthTransition,
+        resetAuthorizationFrom previousMarker: GarminPhoneDeviceHandshakeMarker? = nil
+    ) -> Bool {
+        let targetScope = bindingStateScope(pending.binding)
+        let resetAuthorization: GarminPhoneResetAuthorization?
+        if let previousMarker,
+           pending.handshake == .proof,
+           previousMarker.bindingScope != targetScope {
+            guard previousMarker.bindingScope.isGarminBinding,
+                  GarminPhoneSyncProtocol.isValidMessageID(previousMarker.syncID),
+                  (1 ... GarminPhoneSyncProtocol.maximumSyncRevision)
+                    .contains(previousMarker.revision),
+                  pending.revision > previousMarker.revision else {
+                return false
+            }
+            resetAuthorization = GarminPhoneResetAuthorization(
+                deviceBinding: pending.binding.device,
+                targetBindingScope: targetScope,
+                proofSyncID: pending.syncID,
+                proofRevision: pending.revision,
+                previousBindingScope: previousMarker.bindingScope,
+                previousSyncID: previousMarker.syncID,
+                previousRevision: previousMarker.revision
+            )
+        } else {
+            resetAuthorization = nil
+        }
+        let authorizationData: Data?
+        if let resetAuthorization {
+            guard let encoded = try? JSONEncoder().encode(resetAuthorization),
+                  encoded.count <= 2 * 1_024 else {
+                return false
+            }
+            authorizationData = encoded
+        } else {
+            authorizationData = nil
+        }
+        guard let activeStorageKey,
+              GarminPhoneSyncProtocol.syncPayload(
+                  binding: pending.binding,
+                  syncID: pending.syncID,
+                  revision: pending.revision,
+                  language: pending.language,
+                  exercises: pending.exercises,
+                  resetWorkout: pending.handshake == .reset,
+                  repairPairing: pending.handshake == .repair
+              ) != nil,
+              let data = try? JSONEncoder().encode(pending),
+              data.count <= 32 * 1_024,
+              let markerData = try? JSONEncoder().encode(handshakeMarker(for: pending)),
+              markerData.count <= 1_024 else {
+            return false
+        }
+        let key = pendingAuthTransitionKey(pending.binding)
+        let markerKey = deviceHandshakeMarkerKey(pending.binding)
+        let authorizationKey = resetAuthorizationKey(pending.binding)
+        let previousPendingData = defaults.data(forKey: key)
+        let previousMarkerData = defaults.data(forKey: markerKey)
+        let previousAuthorizationData = defaults.data(forKey: authorizationKey)
+        let rollback = {
+            self.restoreData(previousPendingData, forKey: key)
+            self.restoreData(previousMarkerData, forKey: markerKey)
+            self.restoreData(previousAuthorizationData, forKey: authorizationKey)
+        }
+        defaults.set(data, forKey: key)
+        guard defaults.data(forKey: key) == data else {
+            rollback()
+            return false
+        }
+        defaults.set(markerData, forKey: markerKey)
+        guard defaults.data(forKey: markerKey) == markerData else {
+            rollback()
+            return false
+        }
+        if resetAuthorization != nil {
+            guard let authorizationData else {
+                rollback()
+                return false
+            }
+            defaults.set(authorizationData, forKey: authorizationKey)
+            guard defaults.data(forKey: authorizationKey) == authorizationData else {
+                rollback()
+                return false
+            }
+        } else {
+            defaults.removeObject(forKey: authorizationKey)
+            guard defaults.data(forKey: authorizationKey) == nil else {
+                rollback()
+                return false
+            }
+        }
+        rememberStateKey(key, storageKey: activeStorageKey)
+        rememberStateKey(authorizationKey, storageKey: activeStorageKey)
+        return true
+    }
+
+    private func removePendingAuthTransitionFile(_ binding: GarminPhoneBinding) {
+        defaults.removeObject(forKey: pendingAuthTransitionKey(binding))
+        defaults.removeObject(forKey: resetAuthorizationKey(binding))
+    }
+
+    private func restoreData(_ data: Data?, forKey key: String) {
+        if let data {
+            defaults.set(data, forKey: key)
+        } else {
+            defaults.removeObject(forKey: key)
+        }
+    }
+
+    private func removePendingAuthTransition(_ pending: GarminPhonePendingAuthTransition) {
+        removePendingAuthTransitionFile(pending.binding)
+        guard deviceHandshakeMarker(pending.binding) == handshakeMarker(for: pending) else {
+            return
+        }
+        defaults.removeObject(forKey: deviceHandshakeMarkerKey(pending.binding))
+    }
+
+    private func handshakeMarker(
+        for pending: GarminPhonePendingAuthTransition
+    ) -> GarminPhoneDeviceHandshakeMarker {
+        GarminPhoneDeviceHandshakeMarker(
+            bindingScope: bindingStateScope(pending.binding),
+            syncID: pending.syncID,
+            revision: pending.revision
+        )
+    }
+
+    private func deviceHandshakeMarker(
+        _ binding: GarminPhoneBinding
+    ) -> GarminPhoneDeviceHandshakeMarker? {
+        let key = deviceHandshakeMarkerKey(binding)
+        guard let data = defaults.data(forKey: key) else { return nil }
+        guard data.count <= 1_024,
+              let marker = try? JSONDecoder().decode(
+                  GarminPhoneDeviceHandshakeMarker.self,
+                  from: data
+              ),
+              marker.bindingScope.isGarminBinding,
+              marker.syncID.utf8.count >= 16,
+              marker.syncID.utf8.count <= 128,
+              marker.syncID.unicodeScalars.allSatisfy({
+                  CharacterSet.alphanumerics.contains($0) ||
+                    "-_.:".unicodeScalars.contains($0)
+              }),
+              (1 ... GarminPhoneSyncProtocol.maximumSyncRevision)
+                .contains(marker.revision) else {
+            defaults.removeObject(forKey: key)
+            return nil
+        }
+        return marker
+    }
+
+    private func resetAuthorization(
+        for binding: GarminPhoneBinding,
+        claimedPreviousBinding: GarminPhoneBinding
+    ) -> GarminPhoneResetAuthorization? {
+        let key = resetAuthorizationKey(binding)
+        guard let data = defaults.data(forKey: key) else { return nil }
+        let targetScope = bindingStateScope(binding)
+        let previousScope = bindingStateScope(claimedPreviousBinding)
+        guard data.count <= 2 * 1_024,
+              let authorization = try? JSONDecoder().decode(
+                  GarminPhoneResetAuthorization.self,
+                  from: data
+              ),
+              authorization.deviceBinding == binding.device,
+              authorization.targetBindingScope == targetScope,
+              authorization.previousBindingScope != targetScope,
+              authorization.targetBindingScope.isGarminBinding,
+              authorization.previousBindingScope.isGarminBinding,
+              GarminPhoneSyncProtocol.isValidMessageID(authorization.proofSyncID),
+              GarminPhoneSyncProtocol.isValidMessageID(authorization.previousSyncID),
+              (1 ... GarminPhoneSyncProtocol.maximumSyncRevision)
+                .contains(authorization.proofRevision),
+              (1 ... GarminPhoneSyncProtocol.maximumSyncRevision)
+                .contains(authorization.previousRevision),
+              authorization.proofRevision > authorization.previousRevision,
+              let proof = pendingAuthTransition(binding),
+              proof.handshake == .proof,
+              proof.syncID == authorization.proofSyncID,
+              proof.revision == authorization.proofRevision,
+              deviceHandshakeMarker(binding) == handshakeMarker(for: proof) else {
+            defaults.removeObject(forKey: key)
+            return nil
+        }
+        guard claimedPreviousBinding.device == binding.device,
+              authorization.previousBindingScope == previousScope else {
+            // A rejected watch claim must not consume a legitimate phone-side
+            // transition authorization; the exact expected watch may retry.
+            return nil
+        }
+        return authorization
+    }
+
     private func pairingGenerationKey(
         accountBinding: String,
         deviceBinding: String
@@ -2003,13 +2928,26 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
 extension GarminPhoneSyncService: IQDeviceEventDelegate {
     nonisolated func deviceStatusChanged(_ device: IQDevice!, status: IQDeviceStatus) {
         Task { @MainActor [weak self] in
-            self?.refreshDeviceSummaries()
+            guard let self else { return }
+            self.refreshDeviceSummaries()
+            guard status == .connected,
+                  let device,
+                  let app = self.apps[device.uuid as UUID] else {
+                return
+            }
+            self.sendSync(to: app)
         }
     }
 
     nonisolated func deviceCharacteristicsDiscovered(_ device: IQDevice!) {
         Task { @MainActor [weak self] in
-            self?.refreshDeviceSummaries()
+            guard let self else { return }
+            self.refreshDeviceSummaries()
+            guard let device,
+                  let app = self.apps[device.uuid as UUID] else {
+                return
+            }
+            self.sendSync(to: app)
         }
     }
 }

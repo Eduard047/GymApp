@@ -13,8 +13,9 @@ class GymStore {
     static var exerciseIndex = 0;
     static var weight = 50.0;
     static var reps = 10;
-    static var restEndsAt = 0;
-    static var lastSetUndoUntil = 0;
+    static var restDurationMs = 0;
+    static var restStartedAt = null;
+    static var lastSetUndoStartedAt = null;
     static var lastSetBoost = 0.0;
     static var lastSetWasAutoPrompt = false;
     static var lastSetStatistics = null;
@@ -162,6 +163,7 @@ class GymStore {
         if (isValidReps(savedReps)) {
             reps = savedReps;
         }
+        var savedCurrentEntry = Storage.getValue("currentEntryV1");
         var savedWeightStep = Storage.getValue("weightStep");
         if (isValidWeight(savedWeightStep) && savedWeightStep > 0.0 && savedWeightStep <= 100.0) {
             weightStep = savedWeightStep;
@@ -212,21 +214,6 @@ class GymStore {
         var savedProcessedSyncIds = Storage.getValue("processedSyncIds");
         processedSyncIds = isValidProcessedSyncIds(savedProcessedSyncIds) ? savedProcessedSyncIds : [];
         var savedActiveWorkout = Storage.getValue("activeWorkoutV1");
-        if (savedActiveWorkout != null) {
-            if (scopedStateValid && isValidActiveWorkoutSnapshot(savedActiveWorkout) &&
-                activeWorkoutSnapshotMatchesBindings(savedActiveWorkout)) {
-                restoreActiveWorkoutSnapshot(savedActiveWorkout);
-            } else {
-                // A present atomic snapshot is authoritative even when it is corrupt or belongs
-                // to a stale device/pairing generation. Never fall back to the downgrade mirror:
-                // that would resurrect a different or partially persisted active workout. The
-                // mirror remains a compatibility path only for installs that truly predate the
-                // atomic value.
-                sets = [];
-                activeWorkoutStartedAtSeconds = null;
-                resumedWorkoutIntervalsInvalid = false;
-            }
-        }
         var phoneFence = Storage.getValue("phoneSyncFence");
         if (phoneFence instanceof Lang.Dictionary && isValidPhoneSyncFence(phoneFence)) {
             lastPhoneSyncRevision = phoneFence.get("revision").toLong();
@@ -259,6 +246,56 @@ class GymStore {
         if (legacyUpgrade && !adoptLegacyStateOwner()) {
             scopedStateValid = false;
         }
+        var previousPairingGeneration = pairingGeneration;
+        var pairingRecoveryTarget = scopedStateValid ? stagedPairingRecoveryTarget() : null;
+        var recoveredPairing = false;
+        if (pairingRecoveryTarget != null) {
+            pairingGeneration = pairingRecoveryTarget;
+            if (rotatePairingGenerationForPending(
+                    previousPairingGeneration,
+                    pairingGeneration
+                )) {
+                recoveredPairing = true;
+            } else {
+                pairingGeneration = previousPairingGeneration;
+            }
+        }
+        if (savedActiveWorkout != null) {
+            var validActiveSnapshot = scopedStateValid &&
+                isValidActiveWorkoutSnapshot(savedActiveWorkout);
+            var snapshotMatches = validActiveSnapshot &&
+                activeWorkoutSnapshotMatchesBindings(savedActiveWorkout);
+            if (!snapshotMatches && recoveredPairing && validActiveSnapshot) {
+                pairingGeneration = previousPairingGeneration;
+                snapshotMatches = activeWorkoutSnapshotMatchesBindings(savedActiveWorkout);
+                pairingGeneration = pairingRecoveryTarget;
+            }
+            if (snapshotMatches) {
+                restoreActiveWorkoutSnapshot(savedActiveWorkout);
+            } else {
+                // A present atomic snapshot is authoritative even when it is corrupt or belongs
+                // to a stale device/pairing generation. Never fall back to the downgrade mirror:
+                // that would resurrect a different or partially persisted active workout. The
+                // mirror remains a compatibility path only for installs that truly predate the
+                // atomic value.
+                sets = [];
+                activeWorkoutStartedAtSeconds = null;
+                resumedWorkoutIntervalsInvalid = false;
+            }
+        }
+        exerciseIndex = 0;
+        var currentEntryRestored = savedCurrentEntry instanceof Lang.Array &&
+            savedCurrentEntry.size() == 2 &&
+            isBoundedInteger(savedCurrentEntry[0], 0, maxWorkoutSets) &&
+            savedCurrentEntry[0] == sets.size() &&
+            isValidExerciseName(savedCurrentEntry[1]) &&
+            selectExerciseByName(savedCurrentEntry[1].toString());
+        if (!currentEntryRestored &&
+            !selectNextPlanSlotInGlobalOrder() && sets.size() > 0) {
+            selectExerciseByName(
+                sets[sets.size() - 1].get("exerciseName").toString()
+            );
+        }
         if (legacyUnboundState) {
             // HEAD releases had no account owner marker. Preserve their validated local
             // workout state in-place, but keep it unbound and unsendable until a trusted
@@ -280,6 +317,15 @@ class GymStore {
         } else {
             pruneAccountScopedState();
             recoverQueuedWorkout();
+            if (recoveredPairing && !save()) {
+                // Keep the durable stage for the next load/retry, but do not expose
+                // a generation that failed to commit to outbound pending messages.
+                pairingGeneration = previousPairingGeneration;
+                for (var i = 0; i < pending.size(); i += 1) {
+                    pending[i].put("pairingGeneration", previousPairingGeneration);
+                }
+                status = "SAVE FAIL";
+            }
         }
     }
 
@@ -321,6 +367,10 @@ class GymStore {
                 status = "LEGACY FULL";
                 return false;
             }
+            // Couple the selected exercise to the active set count in one value.
+            // If a crash commits a new active snapshot first, a stale selection is
+            // rejected on load instead of silently switching the next set.
+            Storage.setValue("currentEntryV1", [sets.size(), currentExercise()]);
             Storage.setValue("exercises", exercises);
             // A valid snapshot is authoritative for this release. Preserve only
             // the core cross-version set fields in the per-key mirror so a user
@@ -1136,10 +1186,12 @@ class GymStore {
         lastSetStatistics = statistics;
         lastSetPreviousLoggedEnd = lastLoggedSetEndSeconds;
         lastLoggedSetEndSeconds = statistics.get("setEndedSeconds");
-        lastSetUndoUntil = System.getTimer() + undoWindowMs;
+        var actionTimerMs = System.getTimer();
+        lastSetUndoStartedAt = actionTimerMs;
         GymSession.beginRecoveryTracking(statistics);
         GymSession.clearAutoPrompt();
-        restEndsAt = System.getTimer() + (restSecondsDefault * 1000);
+        restDurationMs = restSecondsDefault * 1000;
+        restStartedAt = actionTimerMs;
         // The atomic snapshot is the commit; compatibility mirror failures do
         // not turn a successfully stored athlete action into a UI error.
         status = "SET SAVED";
@@ -1147,10 +1199,10 @@ class GymStore {
     }
 
     static function canUndoLastSet() {
-        if (sets.size() == 0 || lastSetUndoUntil <= 0) {
+        if (sets.size() == 0 || lastSetUndoStartedAt == null) {
             return false;
         }
-        if (System.getTimer() > lastSetUndoUntil) {
+        if (timerElapsedMs(lastSetUndoStartedAt) > undoWindowMs) {
             clearTransientSetActions();
             return false;
         }
@@ -1233,7 +1285,8 @@ class GymStore {
         }
         clearTransientSetActions();
         lastLoggedSetEndSeconds = previousLoggedEnd;
-        restEndsAt = 0;
+        restDurationMs = 0;
+        restStartedAt = null;
         // Both automatic and manual commits clear the detector after saving. Undo
         // must restore the captured interval/HR/calorie snapshot in either case;
         // only the prompt visibility differs.
@@ -1243,15 +1296,11 @@ class GymStore {
     }
 
     static function clearTransientSetActions() {
-        lastSetUndoUntil = 0;
+        lastSetUndoStartedAt = null;
         lastSetBoost = 0.0;
         lastSetWasAutoPrompt = false;
         lastSetStatistics = null;
         lastSetPreviousLoggedEnd = 0;
-    }
-
-    static function cycleWeightStep() {
-        adjustWeightStep(1);
     }
 
     static function adjustWeightStep(delta) {
@@ -1271,10 +1320,6 @@ class GymStore {
             weightStep = 2.5;
         }
         save();
-    }
-
-    static function cycleRestDefault() {
-        adjustRestDefault(1);
     }
 
     static function adjustRestDefault(delta) {
@@ -1308,10 +1353,6 @@ class GymStore {
         save();
     }
 
-    static function cycleSensitivity() {
-        adjustSensitivity(1);
-    }
-
     static function adjustSensitivity(delta) {
         sensitivityIndex = (sensitivityIndex + (delta < 0 ? 2 : 1)) % 3;
         save();
@@ -1329,17 +1370,18 @@ class GymStore {
     static function clearWorkout() {
         if (hasAccountBinding() && !persistEmptyActiveWorkoutSnapshot()) {
             status = "SAVE FAIL";
-            return;
+            return false;
         }
         sets = [];
         plan = [];
         activeWorkoutStartedAtSeconds = null;
         resumedWorkoutIntervalsInvalid = false;
-        restEndsAt = 0;
+        restDurationMs = 0;
+        restStartedAt = null;
         lastLoggedSetEndSeconds = 0;
         clearTransientSetActions();
         applyDeferredSyncIfIdle();
-        save();
+        return save();
     }
 
     static function markWorkoutResumed() {
@@ -1360,7 +1402,8 @@ class GymStore {
         sets = [];
         activeWorkoutStartedAtSeconds = null;
         resumedWorkoutIntervalsInvalid = false;
-        restEndsAt = 0;
+        restDurationMs = 0;
+        restStartedAt = null;
         lastLoggedSetEndSeconds = 0;
         clearTransientSetActions();
         applyDeferredSyncIfIdle();
@@ -1369,15 +1412,25 @@ class GymStore {
     }
 
     static function restSeconds() {
-        if (restEndsAt <= 0) {
+        if (restDurationMs <= 0 || restStartedAt == null) {
             return 0;
         }
-        var remaining = restEndsAt - System.getTimer();
+        var remaining = restDurationMs.toLong() - timerElapsedMs(restStartedAt);
         if (remaining <= 0) {
-            restEndsAt = 0;
+            restDurationMs = 0;
+            restStartedAt = null;
             return 0;
         }
-        return (remaining / 1000).toNumber();
+        return (remaining / 1000l).toNumber();
+    }
+
+    // System.getTimer() is a signed 32-bit millisecond counter. It crosses from
+    // positive to negative after roughly 25 days, so deadlines based on raw
+    // comparisons fail on watches that remain powered on. Compute elapsed time
+    // modulo 2^32 instead; every caller uses a short bounded window.
+    static function timerElapsedMs(startedAt) {
+        var elapsed = System.getTimer().toLong() - startedAt.toLong();
+        return elapsed < 0l ? elapsed + 4294967296l : elapsed;
     }
 
     static function workoutMessage() {
@@ -1552,13 +1605,6 @@ class GymStore {
                 return false;
             }
         }
-        if (repairPairing &&
-            (resetWorkout || accountChanged || !isValidAccountBinding(pairingGeneration) ||
-                !isValidAccountBinding(nextPairingGeneration) ||
-                pairingGeneration.toString().equals(nextPairingGeneration.toString()))) {
-            status = "BAD BIND";
-            return false;
-        }
         if (bindingSource.equals("cloud") && cloudDeviceBinding != null &&
             !cloudDeviceBinding.toString().equals(nextDeviceBinding)) {
             status = "BAD BIND";
@@ -1569,6 +1615,19 @@ class GymStore {
         // account-scoped state is cleared. A delayed message from the previous account can
         // therefore never switch the watch back after a newer account transition.
         var revisionStatus = syncRevisionStatus(safeMessage, bindingSource);
+        var repairReplay = repairPairing &&
+            isValidAccountBinding(pairingGeneration) &&
+            isValidAccountBinding(nextPairingGeneration) &&
+            pairingGeneration.toString().equals(nextPairingGeneration.toString()) &&
+            (revisionStatus == 0 || isExactStagedSync(safeMessage, bindingSource));
+        if (repairPairing &&
+            (resetWorkout || accountChanged || !isValidAccountBinding(pairingGeneration) ||
+                !isValidAccountBinding(nextPairingGeneration) ||
+                (pairingGeneration.toString().equals(nextPairingGeneration.toString()) &&
+                    !repairReplay))) {
+            status = "BAD BIND";
+            return false;
+        }
         if (revisionStatus < 0) {
             status = "SYNC OLD";
             return false;
@@ -1637,12 +1696,7 @@ class GymStore {
                 isValidAccountBinding(nextPairingGeneration);
             pairingGeneration = isValidAccountBinding(nextPairingGeneration) ?
                 nextPairingGeneration.toString() : null;
-            if (shouldUpgradePending && !adoptPairingGenerationForPending()) {
-                load();
-                status = "SAVE FAIL";
-                return false;
-            }
-            if (repairPairing &&
+            if ((shouldUpgradePending || repairPairing) &&
                 !rotatePairingGenerationForPending(
                     previousPairingGeneration,
                     pairingGeneration
@@ -1998,30 +2052,31 @@ class GymStore {
     }
 
     static function removePendingByRequestId(requestId) {
-        if (!isBoundedText(requestId, maxBindingLength)) {
+        if (!isBoundedText(requestId, maxBindingLength) || pending.size() == 0) {
             return false;
         }
         var requestText = requestId.toString();
-        for (var i = 0; i < pending.size(); i += 1) {
-            var item = pending[i];
-            if (item instanceof Lang.Dictionary) {
-                var itemRequestId = item.get("requestId");
-                if (isBoundedText(itemRequestId, maxBindingLength) &&
-                    itemRequestId.toString().equals(requestText)) {
-                    pending.remove(item);
-                    if (save()) {
-                        return true;
-                    }
-                    load();
-                    return false;
-                }
-            }
+        var item = pending[0];
+        if (!(item instanceof Lang.Dictionary)) {
+            return false;
         }
+        var itemRequestId = item.get("requestId");
+        if (!isBoundedText(itemRequestId, maxBindingLength) ||
+            !itemRequestId.toString().equals(requestText)) {
+            return false;
+        }
+        pending.remove(item);
+        if (save()) {
+            return true;
+        }
+        load();
         return false;
     }
 
-    static function adoptPairingGenerationForPending() {
-        if (!isValidAccountBinding(pairingGeneration)) {
+    static function rotatePairingGenerationForPending(previousGeneration, nextGeneration) {
+        if (!isValidOptionalAccountBinding(previousGeneration) ||
+            !isValidAccountBinding(nextGeneration) ||
+            !hasAccountBinding()) {
             return false;
         }
         for (var i = 0; i < pending.size(); i += 1) {
@@ -2029,25 +2084,10 @@ class GymStore {
             if (!(item instanceof Lang.Dictionary) || !isValidWorkoutMessage(item)) {
                 return false;
             }
-            item.put("pairingGeneration", pairingGeneration.toString());
-        }
-        return isValidPendingList(pending);
-    }
-
-    static function rotatePairingGenerationForPending(previousGeneration, nextGeneration) {
-        if (!isValidAccountBinding(previousGeneration) ||
-            !isValidAccountBinding(nextGeneration) ||
-            previousGeneration.toString().equals(nextGeneration.toString()) ||
-            !hasAccountBinding()) {
-            return false;
-        }
-        for (var i = 0; i < pending.size(); i += 1) {
-            var item = pending[i];
-            if (!(item instanceof Lang.Dictionary) || !isValidWorkoutMessage(item) ||
-                !isValidAccountBinding(item.get("pairingGeneration")) ||
-                !item.get("pairingGeneration").toString().equals(
-                    previousGeneration.toString()
-                ) ||
+            var itemGeneration = item.get("pairingGeneration");
+            var matchesPrevious = sameOptionalText(previousGeneration, itemGeneration);
+            var matchesNext = sameOptionalText(nextGeneration, itemGeneration);
+            if ((!matchesPrevious && !matchesNext) ||
                 !accountBinding.toString().equals(item.get("accountBinding").toString()) ||
                 !deviceBinding.toString().equals(item.get("deviceBinding").toString())) {
                 return false;
@@ -2105,7 +2145,8 @@ class GymStore {
         plan = [];
         activeWorkoutStartedAtSeconds = null;
         resumedWorkoutIntervalsInvalid = false;
-        restEndsAt = 0;
+        restDurationMs = 0;
+        restStartedAt = null;
         lastLoggedSetEndSeconds = 0;
         clearTransientSetActions();
         applyDeferredSyncIfIdle();
@@ -2147,7 +2188,8 @@ class GymStore {
             plan = [];
             activeWorkoutStartedAtSeconds = null;
             resumedWorkoutIntervalsInvalid = false;
-            restEndsAt = 0;
+            restDurationMs = 0;
+            restStartedAt = null;
             lastLoggedSetEndSeconds = 0;
             clearTransientSetActions();
             applyDeferredSyncIfIdle();
@@ -2238,7 +2280,8 @@ class GymStore {
         // delayed prior-account sync from undoing a newer transition.
         lastCloudPlanRevision = 0;
         lastCloudPlanId = null;
-        restEndsAt = 0;
+        restDurationMs = 0;
+        restStartedAt = null;
         lastLoggedSetEndSeconds = 0;
         clearTransientSetActions();
         weight = 50.0;
@@ -2569,6 +2612,27 @@ class GymStore {
             }
         }
         return "phone";
+    }
+
+    static function stagedPairingRecoveryTarget() {
+        var message = stagedPhoneSyncMessage;
+        if (!(message instanceof Lang.Dictionary) || !hasAccountBinding() ||
+            syncRevisionStatus(message, "phone") < 0 ||
+            !accountBinding.toString().equals(message.get("accountBinding").toString()) ||
+            !deviceBinding.toString().equals(message.get("deviceBinding").toString()) ||
+            message.get("resetWorkout") == true ||
+            !isValidAccountBinding(message.get("pairingGeneration"))) {
+            return null;
+        }
+        var nextGeneration = message.get("pairingGeneration").toString();
+        var repair = message.get("repairPairing") == true;
+        if (isValidAccountBinding(pairingGeneration)) {
+            if (pairingGeneration.toString().equals(nextGeneration)) {
+                return null;
+            }
+            return repair ? nextGeneration : null;
+        }
+        return repair ? null : nextGeneration;
     }
 
     static function loadSyncStage(source) {

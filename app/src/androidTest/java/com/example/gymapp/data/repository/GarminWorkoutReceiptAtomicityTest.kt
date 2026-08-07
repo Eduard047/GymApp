@@ -441,6 +441,10 @@ class GarminWorkoutReceiptAtomicityTest {
     fun freshRequestsAreRateAndLifetimeBoundButDuplicatesStillRetry() = runBlocking {
         var now = 1_750_000_100_000L
         withDatabase("garmin-admission", nowProvider = { now }) { database, repository ->
+            assertEquals(
+                GARMIN_WATCH_PENDING_WORKOUT_CAPACITY,
+                MAX_GARMIN_WORKOUTS_PER_ROLLING_DAY
+            )
             repeat(MAX_GARMIN_WORKOUTS_PER_ROLLING_DAY) { index ->
                 val result = repository.applyGarminCreateWorkout(
                     ownerBinding = ownerBinding,
@@ -467,6 +471,10 @@ class GarminWorkoutReceiptAtomicityTest {
             )
             assertEquals(GarminWorkoutApplyResult.RateLimited, rateLimited)
             assertEquals(MAX_GARMIN_WORKOUTS_PER_ROLLING_DAY, database.workoutDao().getSessionCount())
+            assertEquals(
+                MAX_GARMIN_WORKOUTS_PER_ROLLING_DAY,
+                database.garminWorkoutReceiptDao().count()
+            )
 
             val duplicateAtLimit = repository.applyGarminCreateWorkout(
                 ownerBinding = ownerBinding,
@@ -498,7 +506,7 @@ class GarminWorkoutReceiptAtomicityTest {
     }
 
     @Test
-    fun pairingGenerationCapAndAcknowledgedResetKeepReceiptStorageBounded() = runBlocking {
+    fun pairingGenerationRolloverPersistsTheSamePendingRequestExactlyOnce() = runBlocking {
         val now = 1_750_000_200_000L
         withDatabase("garmin-pairing-cap", nowProvider = { now }) { database, repository ->
             repeat(MAX_GARMIN_WORKOUTS_PER_PAIRING_GENERATION) { index ->
@@ -509,24 +517,27 @@ class GarminWorkoutReceiptAtomicityTest {
                         pairingGeneration = pairingGeneration,
                         requestId = "seed-request-${index.toString().padStart(4, '0')}",
                         payloadDigest = index.toString().padStart(64, 'a'),
-                        createdAt = now - GARMIN_WORKOUT_RATE_WINDOW_MS - index
+                        createdAt = now - GARMIN_WORKOUT_RATE_WINDOW_MS - 1L - index
                     )
                 )
             }
 
+            val pendingRequestId = "pairing-cap-pending-request"
+            val pendingDigest = "b".repeat(64)
             assertEquals(
                 GarminWorkoutApplyResult.PairingLimitReached,
                 repository.applyGarminCreateWorkout(
                     ownerBinding = ownerBinding,
                     deviceBinding = deviceBinding,
                     pairingGeneration = pairingGeneration,
-                    requestId = "pairing-cap-request",
-                    payloadDigest = "b".repeat(64),
+                    requestId = pendingRequestId,
+                    payloadDigest = pendingDigest,
                     date = 1_750_000_000_000L,
                     note = "Garmin",
                     sets = listOf(NamedWorkoutSetDraft("Bench Press", 80.0, 8))
                 )
             )
+            assertEquals(0, database.workoutDao().getSessionCount())
 
             val nextGeneration = "2".repeat(64)
             repository.activateGarminPairingGeneration(
@@ -541,14 +552,134 @@ class GarminWorkoutReceiptAtomicityTest {
                     ownerBinding = ownerBinding,
                     deviceBinding = deviceBinding,
                     pairingGeneration = nextGeneration,
-                    requestId = "next-generation-request",
-                    payloadDigest = "c".repeat(64),
+                    requestId = pendingRequestId,
+                    payloadDigest = pendingDigest,
                     date = 1_750_000_000_000L,
                     note = "Garmin",
                     sets = listOf(NamedWorkoutSetDraft("Bench Press", 80.0, 8))
                 )
             )
+            assertEquals(
+                GarminWorkoutApplyResult.AlreadyApplied,
+                repository.applyGarminCreateWorkout(
+                    ownerBinding = ownerBinding,
+                    deviceBinding = deviceBinding,
+                    pairingGeneration = nextGeneration,
+                    requestId = pendingRequestId,
+                    payloadDigest = pendingDigest,
+                    date = 1_750_000_000_000L,
+                    note = "Garmin",
+                    sets = listOf(NamedWorkoutSetDraft("Bench Press", 80.0, 8))
+                )
+            )
+            assertEquals(
+                GarminWorkoutApplyResult.Rejected,
+                repository.applyGarminCreateWorkout(
+                    ownerBinding = ownerBinding,
+                    deviceBinding = deviceBinding,
+                    pairingGeneration = nextGeneration,
+                    requestId = pendingRequestId,
+                    payloadDigest = "c".repeat(64),
+                    date = 1_750_000_001_000L,
+                    note = "changed",
+                    sets = listOf(NamedWorkoutSetDraft("Bench Press", 80.0, 9))
+                )
+            )
             assertEquals(1, database.garminWorkoutReceiptDao().count())
+            assertEquals(1, database.workoutDao().getSessionCount())
+            assertNotNull(
+                database.garminWorkoutReceiptDao().get(
+                    ownerBinding,
+                    deviceBinding,
+                    nextGeneration,
+                    pendingRequestId
+                )
+            )
+            assertTrue(database.workoutDao().getSessions().first().single().hasGarminReceipt)
+        }
+    }
+
+    @Test
+    fun pairingGenerationRolloverCannotResetTheBoundDeviceDailyAdmissionWindow() = runBlocking {
+        var now = 1_750_000_250_000L
+        withDatabase("garmin-pairing-daily-cap", nowProvider = { now }) { database, repository ->
+            repeat(MAX_GARMIN_WORKOUTS_PER_PAIRING_GENERATION) { index ->
+                database.garminWorkoutReceiptDao().insert(
+                    GarminWorkoutReceiptEntity(
+                        ownerBinding = ownerBinding,
+                        deviceBinding = deviceBinding,
+                        pairingGeneration = pairingGeneration,
+                        requestId = "daily-rollover-seed-${index.toString().padStart(4, '0')}",
+                        payloadDigest = index.toString().padStart(64, 'a'),
+                        createdAt = if (index < MAX_GARMIN_WORKOUTS_PER_ROLLING_DAY) {
+                            now - index
+                        } else {
+                            now - GARMIN_WORKOUT_RATE_WINDOW_MS - 1L - index
+                        }
+                    )
+                )
+            }
+
+            val requestId = "daily-rollover-pending-request"
+            val payloadDigest = "b".repeat(64)
+            assertEquals(
+                GarminWorkoutApplyResult.PairingLimitReached,
+                repository.applyGarminCreateWorkout(
+                    ownerBinding = ownerBinding,
+                    deviceBinding = deviceBinding,
+                    pairingGeneration = pairingGeneration,
+                    requestId = requestId,
+                    payloadDigest = payloadDigest,
+                    date = now,
+                    note = "Garmin",
+                    sets = listOf(NamedWorkoutSetDraft("Bench Press", 80.0, 8))
+                )
+            )
+
+            val nextGeneration = "2".repeat(64)
+            repository.activateGarminPairingGeneration(
+                ownerBinding = ownerBinding,
+                deviceBinding = deviceBinding,
+                pairingGeneration = nextGeneration
+            )
+            assertEquals(
+                MAX_GARMIN_WORKOUTS_PER_ROLLING_DAY,
+                database.garminWorkoutReceiptDao().count()
+            )
+            assertEquals(
+                GarminWorkoutApplyResult.RateLimited,
+                repository.applyGarminCreateWorkout(
+                    ownerBinding = ownerBinding,
+                    deviceBinding = deviceBinding,
+                    pairingGeneration = nextGeneration,
+                    requestId = requestId,
+                    payloadDigest = payloadDigest,
+                    date = now,
+                    note = "Garmin",
+                    sets = listOf(NamedWorkoutSetDraft("Bench Press", 80.0, 8))
+                )
+            )
+            assertEquals(0, database.workoutDao().getSessionCount())
+
+            now += GARMIN_WORKOUT_RATE_WINDOW_MS + 1L
+            assertEquals(
+                GarminWorkoutApplyResult.Applied,
+                repository.applyGarminCreateWorkout(
+                    ownerBinding = ownerBinding,
+                    deviceBinding = deviceBinding,
+                    pairingGeneration = nextGeneration,
+                    requestId = requestId,
+                    payloadDigest = payloadDigest,
+                    date = now,
+                    note = "Garmin",
+                    sets = listOf(NamedWorkoutSetDraft("Bench Press", 80.0, 8))
+                )
+            )
+            assertEquals(1, database.workoutDao().getSessionCount())
+            assertEquals(
+                MAX_GARMIN_WORKOUTS_PER_ROLLING_DAY + 1,
+                database.garminWorkoutReceiptDao().count()
+            )
         }
     }
 
@@ -637,7 +768,7 @@ class GarminWorkoutReceiptAtomicityTest {
             }
 
             assertEquals(
-                GarminWorkoutApplyResult.PairingLimitReached,
+                GarminWorkoutApplyResult.ReceiptStoreFull,
                 repository.applyGarminCreateWorkout(
                     ownerBinding = ownerBinding,
                     deviceBinding = deviceBinding,
@@ -671,16 +802,18 @@ class GarminWorkoutReceiptAtomicityTest {
     }
 
     @Test
-    fun absoluteReceiptCapIsAtomicUnderConcurrentFreshRequestsAndStillAllowsRetry() = runBlocking {
+    fun otherDevicesReceiptExhaustionIsDistinctAndAtomicButStillAllowsRetry() = runBlocking {
         val now = 1_750_000_500_000L
-        val migratedLegacyGeneration = "0".repeat(64)
+        val otherOwnerBinding = "e".repeat(64)
+        val otherPairingGeneration = "3".repeat(64)
         withDatabase("garmin-absolute-cap", nowProvider = { now }) { database, repository ->
             repeat(MAX_GARMIN_DURABLE_RECEIPTS - 1) { index ->
+                val deviceBucket = index / MAX_GARMIN_WORKOUTS_PER_PAIRING_GENERATION
                 database.garminWorkoutReceiptDao().insert(
                     GarminWorkoutReceiptEntity(
-                        ownerBinding = ownerBinding,
-                        deviceBinding = deviceBinding,
-                        pairingGeneration = migratedLegacyGeneration,
+                        ownerBinding = otherOwnerBinding,
+                        deviceBinding = (987_654_000L + deviceBucket).toString(),
+                        pairingGeneration = otherPairingGeneration,
                         requestId = "absolute-cap-seed-${index.toString().padStart(4, '0')}",
                         payloadDigest = "a".repeat(64),
                         createdAt = now - GARMIN_WORKOUT_RATE_WINDOW_MS - 1L
@@ -706,7 +839,7 @@ class GarminWorkoutReceiptAtomicityTest {
             }
 
             assertEquals(1, results.count { it == GarminWorkoutApplyResult.Applied })
-            assertEquals(1, results.count { it == GarminWorkoutApplyResult.PairingLimitReached })
+            assertEquals(1, results.count { it == GarminWorkoutApplyResult.ReceiptStoreFull })
             assertEquals(MAX_GARMIN_DURABLE_RECEIPTS, database.garminWorkoutReceiptDao().count())
 
             val appliedIndex = results.indexOf(GarminWorkoutApplyResult.Applied)

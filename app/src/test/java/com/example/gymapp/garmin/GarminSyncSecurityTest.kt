@@ -2,6 +2,8 @@ package com.example.gymapp.garmin
 
 import com.example.gymapp.data.repository.NamedWorkoutSetDraft
 import com.example.gymapp.data.repository.WorkoutDataLimits
+import com.example.gymapp.data.repository.GARMIN_WATCH_PENDING_WORKOUT_CAPACITY
+import com.example.gymapp.data.repository.MAX_GARMIN_WORKOUTS_PER_ROLLING_DAY
 import com.example.gymapp.util.AppLanguage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -269,6 +271,144 @@ class GarminSyncSecurityTest {
     }
 
     @Test
+    fun pairingRolloverPayloadIsRevisionedBoundAndStrictlyNonDestructive() {
+        val previousBinding = GarminBinding(
+            account = "a".repeat(64),
+            device = "123456789",
+            pairingGeneration = "1".repeat(64)
+        )
+        val nextGeneration = "2".repeat(64)
+        val revision = 1_800_000_000_124L
+        val base = mapOf<String, Any>(
+            "type" to "sync",
+            "syncId" to "pairing-rollover-1234567890",
+            "requestId" to "pairing-rollover-1234567890",
+            "repairPairing" to true,
+            "resetWorkout" to false
+        )
+
+        val payload = boundGarminPairingRolloverPayload(
+            payload = base,
+            previousBinding = previousBinding,
+            nextPairingGeneration = nextGeneration,
+            syncRevision = revision
+        )
+
+        assertNotNull(payload)
+        checkNotNull(payload)
+        assertEquals(previousBinding.account, payload["accountBinding"])
+        assertEquals(previousBinding.device, payload["deviceBinding"])
+        assertEquals(nextGeneration, payload["pairingGeneration"])
+        assertEquals(revision, payload["syncRevision"])
+        assertEquals(true, payload["repairPairing"])
+        assertEquals(false, payload["resetWorkout"])
+
+        assertNull(
+            boundGarminPairingRolloverPayload(
+                base + ("resetWorkout" to true),
+                previousBinding,
+                nextGeneration,
+                revision
+            )
+        )
+        assertNull(
+            boundGarminPairingRolloverPayload(
+                base + ("repairPairing" to false),
+                previousBinding,
+                nextGeneration,
+                revision
+            )
+        )
+        assertNull(
+            boundGarminPairingRolloverPayload(
+                base,
+                previousBinding,
+                previousBinding.pairingGeneration,
+                revision
+            )
+        )
+        assertNull(
+            boundGarminPairingRolloverPayload(
+                base,
+                previousBinding.copy(account = "not-an-account"),
+                nextGeneration,
+                revision
+            )
+        )
+        assertNull(
+            boundGarminPairingRolloverPayload(
+                base,
+                previousBinding.copy(device = "not-a-device"),
+                nextGeneration,
+                revision
+            )
+        )
+        assertNull(
+            boundGarminPairingRolloverPayload(
+                base,
+                previousBinding,
+                LEGACY_GARMIN_FALLBACK_GENERATION,
+                revision
+            )
+        )
+        assertNull(
+            boundGarminPairingRolloverPayload(
+                base,
+                previousBinding,
+                nextGeneration,
+                0L
+            )
+        )
+    }
+
+    @Test
+    fun pendingPairingGenerationSupportsBothRepairRetryAndAckLossRecovery() {
+        val activeGeneration = "1".repeat(64)
+        val pendingGeneration = "2".repeat(64)
+
+        assertEquals(
+            GarminInboundPairingGenerationMatch.Active,
+            garminInboundPairingGenerationMatch(
+                claimedGeneration = activeGeneration,
+                activeGeneration = activeGeneration,
+                pendingGeneration = pendingGeneration
+            )
+        )
+        assertEquals(
+            GarminInboundPairingGenerationMatch.Pending,
+            garminInboundPairingGenerationMatch(
+                claimedGeneration = pendingGeneration,
+                activeGeneration = activeGeneration,
+                pendingGeneration = pendingGeneration
+            )
+        )
+        assertEquals(
+            GarminInboundPairingGenerationMatch.Rejected,
+            garminInboundPairingGenerationMatch(
+                claimedGeneration = "3".repeat(64),
+                activeGeneration = activeGeneration,
+                pendingGeneration = pendingGeneration
+            )
+        )
+        assertEquals(
+            GarminInboundPairingGenerationMatch.Rejected,
+            garminInboundPairingGenerationMatch(
+                claimedGeneration = activeGeneration,
+                activeGeneration = activeGeneration,
+                pendingGeneration = activeGeneration
+            )
+        )
+        assertEquals(
+            GarminInboundPairingGenerationMatch.Rejected,
+            garminInboundPairingGenerationMatch(
+                claimedGeneration = "malformed",
+                activeGeneration = activeGeneration,
+                pendingGeneration = pendingGeneration
+            )
+        )
+    }
+
+    @Test
     fun syncAckMustEchoExactRequestAndLongRevision() {
         val syncId = "sync-request-1234567890"
         val revision = 1_800_000_000_123L
@@ -288,7 +428,7 @@ class GarminSyncSecurityTest {
     }
 
     @Test
-    fun callbackAdmissionCapsHugeBatchesAndQueueFloods() {
+    fun callbackAdmissionSeparatesWorkoutsFromCoalescedSyncFloods() {
         val work = mapOf<Any?, Any?>(
             "type" to "request_sync",
             "requestId" to "request-1234567890"
@@ -298,12 +438,22 @@ class GarminSyncSecurityTest {
         val envelopes = boundedGarminInboundEnvelopes(messages)
 
         assertEquals(MAX_GARMIN_EVENT_BATCH, envelopes.size)
-        assertTrue(envelopes.all { it.kind == GarminInboundCommandKind.Work })
+        assertTrue(envelopes.all { it.kind == GarminInboundCommandKind.SyncRequest })
 
-        val channel = newBoundedGarminInboundChannel<Int>(MAX_GARMIN_PENDING_WORK_COMMANDS)
-        val accepted = (0 until 10_000).count { channel.trySend(it).isSuccess }
-        assertEquals(MAX_GARMIN_PENDING_WORK_COMMANDS, accepted)
-        channel.cancel()
+        val syncChannel =
+            newBoundedGarminInboundChannel<Int>(MAX_GARMIN_PENDING_SYNC_REQUESTS)
+        val acceptedSyncs = (0 until 10_000).count { syncChannel.trySend(it).isSuccess }
+        assertEquals(MAX_GARMIN_PENDING_SYNC_REQUESTS, acceptedSyncs)
+        syncChannel.cancel()
+
+        val workout = work + ("type" to "create_workout")
+        val workoutEnvelope = boundedGarminInboundEnvelopes(listOf(workout)).single()
+        assertEquals(GarminInboundCommandKind.Workout, workoutEnvelope.kind)
+        val workoutChannel =
+            newBoundedGarminInboundChannel<Int>(MAX_GARMIN_PENDING_WORK_COMMANDS)
+        val acceptedWorkouts = (0 until 10_000).count { workoutChannel.trySend(it).isSuccess }
+        assertEquals(MAX_GARMIN_PENDING_WORK_COMMANDS, acceptedWorkouts)
+        workoutChannel.cancel()
 
         val malformedAckFlood = List(10_000) {
             mapOf<Any?, Any?>(
@@ -315,6 +465,59 @@ class GarminSyncSecurityTest {
             )
         }
         assertTrue(boundedGarminInboundEnvelopes(malformedAckFlood).isEmpty())
+    }
+
+    @Test
+    fun phoneDailyAdmissionCoversTheEntireBoundedWatchQueue() {
+        assertEquals(
+            GARMIN_WATCH_PENDING_WORKOUT_CAPACITY,
+            MAX_GARMIN_WORKOUTS_PER_ROLLING_DAY
+        )
+        assertEquals(8, MAX_GARMIN_WORKOUTS_PER_ROLLING_DAY)
+    }
+
+    @Test
+    fun trustedProfileDeviceIsPrioritizedBeforeTheDisplayLimit() {
+        val trustedId = 99L
+
+        val visible = prioritizedGarminProfileDeviceIds(
+            deviceIdentifiers = (1L..12L).toList() + trustedId + 1L,
+            trustedDeviceBinding = trustedId.toString(),
+            maximumCount = 8
+        )
+
+        assertEquals(8, visible.size)
+        assertEquals(trustedId, visible.first())
+        assertEquals(listOf(1L, 2L, 3L, 4L, 5L, 6L, 7L), visible.drop(1))
+        assertTrue(
+            prioritizedGarminProfileDeviceIds(
+                deviceIdentifiers = listOf(3L, 2L, 1L),
+                trustedDeviceBinding = "malformed",
+                maximumCount = 0
+            ).isEmpty()
+        )
+    }
+
+    @Test
+    fun generationCapabilityCommitsOnlyAfterAcknowledgement() {
+        assertFalse(
+            shouldCommitGarminPairingGenerationCapability(
+                capabilityProofPending = true,
+                syncConfirmed = false
+            )
+        )
+        assertTrue(
+            shouldCommitGarminPairingGenerationCapability(
+                capabilityProofPending = true,
+                syncConfirmed = true
+            )
+        )
+        assertFalse(
+            shouldCommitGarminPairingGenerationCapability(
+                capabilityProofPending = false,
+                syncConfirmed = true
+            )
+        )
     }
 
     @Test

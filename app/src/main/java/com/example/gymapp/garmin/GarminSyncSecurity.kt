@@ -45,6 +45,7 @@ internal const val MAX_GARMIN_COMMAND_ENTRIES = 32
 internal const val MAX_GARMIN_SET_ENTRIES = 8
 internal const val MAX_GARMIN_EVENT_BATCH = 8
 internal const val MAX_GARMIN_PENDING_WORK_COMMANDS = 16
+internal const val MAX_GARMIN_PENDING_SYNC_REQUESTS = 1
 internal const val MAX_GARMIN_PENDING_ACK_COMMANDS = 8
 internal const val MAX_GARMIN_SYNC_REVISION = 9_007_199_254_740_991L
 internal const val MAX_GARMIN_DURATION_SECONDS = 7 * 24 * 60 * 60L
@@ -67,7 +68,8 @@ internal data class GarminBinding(
 )
 
 internal enum class GarminInboundCommandKind {
-    Work,
+    Workout,
+    SyncRequest,
     Acknowledgement
 }
 
@@ -87,6 +89,12 @@ internal enum class GarminSyncRequestBindingMismatch {
     Account,
     Device,
     PairingGeneration
+}
+
+internal enum class GarminInboundPairingGenerationMatch {
+    Active,
+    Pending,
+    Rejected
 }
 
 internal data class GarminWorkoutCommand(
@@ -420,8 +428,87 @@ internal fun boundGarminSyncPayload(
     }
 }
 
+/**
+ * Builds the only sync payload allowed to rotate a live secure pairing generation.
+ *
+ * A rollover preserves the watch's active workout and durable pending queue. Keep
+ * these checks separate from the generic sync builder so a future caller cannot
+ * accidentally turn receipt maintenance into a destructive workout reset.
+ */
+internal fun boundGarminPairingRolloverPayload(
+    payload: Map<String, Any>,
+    previousBinding: GarminBinding,
+    nextPairingGeneration: String,
+    syncRevision: Long
+): Map<String, Any>? {
+    if (
+        payload["type"] != "sync" ||
+        payload["repairPairing"] != true ||
+        payload["resetWorkout"] != false ||
+        !isValidGarminAccountBinding(previousBinding.account) ||
+        !isValidGarminTransportDeviceBinding(previousBinding.device) ||
+        !isValidGarminPairingGeneration(previousBinding.pairingGeneration) ||
+        previousBinding.pairingGeneration == LEGACY_GARMIN_FALLBACK_GENERATION ||
+        !isValidGarminPairingGeneration(nextPairingGeneration) ||
+        nextPairingGeneration == LEGACY_GARMIN_FALLBACK_GENERATION ||
+        nextPairingGeneration == previousBinding.pairingGeneration
+    ) {
+        return null
+    }
+    return boundGarminSyncPayload(
+        payload = payload,
+        binding = previousBinding.copy(pairingGeneration = nextPairingGeneration),
+        syncRevision = syncRevision,
+        includePairingGeneration = true
+    )
+}
+
 internal fun garminCommandAdvertisesPairingGeneration(command: Map<Any?, Any?>): Boolean =
     command["pairingGenerationSupported"] == true
+
+internal fun shouldCommitGarminPairingGenerationCapability(
+    capabilityProofPending: Boolean,
+    syncConfirmed: Boolean
+): Boolean = capabilityProofPending && syncConfirmed
+
+internal fun prioritizedGarminProfileDeviceIds(
+    deviceIdentifiers: Collection<Long>,
+    trustedDeviceBinding: String?,
+    maximumCount: Int
+): List<Long> {
+    if (maximumCount <= 0) return emptyList()
+    val trustedDeviceId = trustedDeviceBinding
+        ?.takeIf(::isValidGarminTransportDeviceBinding)
+        ?.toLongOrNull()
+    return deviceIdentifiers
+        .distinct()
+        .sortedWith(
+            compareByDescending<Long> { trustedDeviceId != null && it == trustedDeviceId }
+                .thenBy { it }
+        )
+        .take(maximumCount)
+}
+
+internal fun garminInboundPairingGenerationMatch(
+    claimedGeneration: String,
+    activeGeneration: String,
+    pendingGeneration: String?
+): GarminInboundPairingGenerationMatch {
+    if (
+        !isValidGarminPairingGeneration(claimedGeneration) ||
+        !isValidGarminPairingGeneration(activeGeneration) ||
+        (pendingGeneration != null &&
+            (!isValidGarminPairingGeneration(pendingGeneration) ||
+                pendingGeneration == activeGeneration))
+    ) {
+        return GarminInboundPairingGenerationMatch.Rejected
+    }
+    return when (claimedGeneration) {
+        activeGeneration -> GarminInboundPairingGenerationMatch.Active
+        pendingGeneration -> GarminInboundPairingGenerationMatch.Pending
+        else -> GarminInboundPairingGenerationMatch.Rejected
+    }
+}
 
 internal fun nextGarminSyncRevision(
     lastRevision: Long?,
@@ -470,7 +557,11 @@ internal fun boundedGarminInboundEnvelopes(
                 "request_sync", "create_workout" -> {
                     val requestId = command["requestId"] as? String ?: continue
                     if (!isValidGarminMessageId(requestId, MAX_GARMIN_REQUEST_ID_LENGTH)) continue
-                    GarminInboundCommandKind.Work
+                    if (type == "create_workout") {
+                        GarminInboundCommandKind.Workout
+                    } else {
+                        GarminInboundCommandKind.SyncRequest
+                    }
                 }
                 "sync_ack" -> {
                     val syncId = command["syncId"] as? String ?: continue

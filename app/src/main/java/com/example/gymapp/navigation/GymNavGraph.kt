@@ -1801,6 +1801,10 @@ internal fun GymAppRoot(
                                 },
                                 garminDeviceState = applicationContext.gymApplication
                                     .garminSyncManager.deviceUiState.collectAsState().value,
+                                onRefreshGarminDevices = {
+                                    applicationContext.gymApplication.garminSyncManager
+                                        .refreshGarminDevices()
+                                },
                                 onResetGarminPairing = {
                                     coroutineScope.launch {
                                         applicationContext.gymApplication.garminSyncManager

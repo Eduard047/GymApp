@@ -99,14 +99,12 @@ interface GarminWorkoutReceiptDao {
         FROM garmin_workout_receipts
         WHERE ownerBinding = :ownerBinding
             AND deviceBinding = :deviceBinding
-            AND pairingGeneration = :pairingGeneration
             AND createdAt >= :notBefore
         """
     )
-    suspend fun countForPairingGenerationSince(
+    suspend fun countForDeviceSince(
         ownerBinding: String,
         deviceBinding: String,
-        pairingGeneration: String,
         notBefore: Long
     ): Int
 
@@ -130,12 +128,14 @@ interface GarminWorkoutReceiptDao {
         WHERE ownerBinding = :ownerBinding
             AND deviceBinding = :deviceBinding
             AND pairingGeneration != :activePairingGeneration
+            AND createdAt < :retainFrom
         """
     )
-    suspend fun deleteOtherPairingGenerations(
+    suspend fun deleteInactivePairingGenerationsBefore(
         ownerBinding: String,
         deviceBinding: String,
-        activePairingGeneration: String
+        activePairingGeneration: String,
+        retainFrom: Long
     ): Int
 
     @Insert(onConflict = OnConflictStrategy.ABORT)

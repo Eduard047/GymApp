@@ -14,11 +14,10 @@ class WorkoutView extends Ui.View {
     var ticker;
     var restWasActive = false;
     var autoPromptWasActive = false;
-    var pauseFlashUntil = 0;
-    var savedSetFlashUntil = 0;
+    var savedSetFlashStartedAt = null;
     var savedSetNumber = 0;
-    var lastSyncRequestAt = 0;
-    var lastCloudSyncRequestAt = 0;
+    var lastSyncRequestAt = null;
+    var lastCloudSyncRequestAt = null;
     var cloudAutoTimer;
     var cloudAutoAttempts = 0;
     var cloudAutoSyncActive = false;
@@ -33,17 +32,17 @@ class WorkoutView extends Ui.View {
 
     function onShow() {
         ticker.start(method(:tick), 1000, true);
-        if (!GymSession.recording) {
+        if (!GymSession.recording && !GymSession.fitSaved) {
             if (GymStore.sets.size() > 0) {
                 GymStore.markWorkoutResumed();
             }
-            GymSession.start();
-            if (GymStore.sets.size() > 0) {
+            var started = GymSession.start();
+            if (started && GymStore.sets.size() > 0) {
                 // Sets are intentionally durable. A process restart starts a fresh FIT
                 // segment but never silently discards the unfinished workout.
                 GymStore.status = "RESUMED";
             }
-        } else {
+        } else if (GymSession.recording && !GymSession.paused) {
             GymSession.startSensors();
         }
         autoPromptWasActive = GymSession.autoLogPrompt;
@@ -66,19 +65,24 @@ class WorkoutView extends Ui.View {
         getApp().pollMailbox();
         GymSession.tick();
         var rest = GymStore.restSeconds();
-        if (GymStore.restEndsAt > 0 && GymSession.effortState.equals("SET ACTIVE")) {
+        if (GymStore.restStartedAt != null &&
+            GymSession.effortState.equals("SET ACTIVE")) {
             // Freeze rather than destroy the prior rest. A short false detection or
-            // explicit BACK rejection can restore it. A negative value is an
-            // in-memory suspended duration; ordinary rest deadlines stay positive.
-            GymStore.restEndsAt = System.getTimer() - GymStore.restEndsAt;
+            // explicit BACK rejection can restore it. Store a bounded remaining
+            // duration instead of a signed timer deadline so timer rollover is safe.
+            var remainingRest = GymStore.restDurationMs.toLong() -
+                GymStore.timerElapsedMs(GymStore.restStartedAt);
+            GymStore.restDurationMs = remainingRest > 0l ? remainingRest.toNumber() : 0;
+            GymStore.restStartedAt = null;
         }
-        if (GymStore.restEndsAt < 0) {
+        if (GymStore.restDurationMs > 0 && GymStore.restStartedAt == null) {
             rest = 0;
             restWasActive = false;
             dismissSetSavedFlash();
             GymStore.status = "SET ACTIVE";
         }
-        if (GymStore.restEndsAt < 0 && !GymSession.activeSetSeen &&
+        if (GymStore.restDurationMs > 0 && GymStore.restStartedAt == null &&
+            !GymSession.activeSetSeen &&
             !GymSession.autoLogPrompt) {
             restoreSuspendedRest();
             rest = GymStore.restSeconds();
@@ -94,7 +98,8 @@ class WorkoutView extends Ui.View {
             notifyAutoPrompt();
         }
         autoPromptWasActive = GymSession.autoLogPrompt;
-        if ((System.getTimer() - lastSyncRequestAt) > 20000) {
+        if (lastSyncRequestAt == null ||
+            GymStore.timerElapsedMs(lastSyncRequestAt) > 20000l) {
             requestSyncNow();
         }
         Ui.requestUpdate();
@@ -124,8 +129,8 @@ class WorkoutView extends Ui.View {
     }
 
     function restoreSuspendedRest() {
-        if (GymStore.restEndsAt < 0) {
-            GymStore.restEndsAt = System.getTimer() - GymStore.restEndsAt;
+        if (GymStore.restDurationMs > 0 && GymStore.restStartedAt == null) {
+            GymStore.restStartedAt = System.getTimer();
             restWasActive = true;
             GymStore.status = "REST RESUMED";
         }
@@ -157,8 +162,12 @@ class WorkoutView extends Ui.View {
             return;
         }
         var now = System.getTimer();
-        if (lastCloudSyncRequestAt != 0 && (now - lastCloudSyncRequestAt) < 8000) {
-            return;
+        if (lastCloudSyncRequestAt != null) {
+            var sinceLastCloudRequest = GymStore.timerElapsedMs(lastCloudSyncRequestAt);
+            if (sinceLastCloudRequest < 8000l) {
+                scheduleCloudSyncOnOpen((8001l - sinceLastCloudRequest).toNumber());
+                return;
+            }
         }
         if (cloudAutoAttempts >= 4) {
             return;
@@ -195,7 +204,7 @@ class WorkoutView extends Ui.View {
             }
         } else {
             if (cloudAutoSyncActive && cloudAutoAttempts < 4 && !status.equals("NO TOKEN")) {
-                scheduleCloudSyncOnOpen(5000);
+                scheduleCloudSyncOnOpen(8000);
             } else {
                 GymStore.status = status;
                 cloudAutoSyncActive = false;
@@ -208,7 +217,7 @@ class WorkoutView extends Ui.View {
         if (!ok) {
             GymStore.status = "CLOUD RETRY";
             if (cloudAutoAttempts < 4) {
-                scheduleCloudSyncOnOpen(5000);
+                scheduleCloudSyncOnOpen(8000);
             }
         }
         Ui.requestUpdate();
@@ -317,7 +326,7 @@ class WorkoutView extends Ui.View {
         }
         drawPageDots(dc, w, h);
 
-        if (System.getTimer() < savedSetFlashUntil) {
+        if (isUndoOverlayActive()) {
             drawSetSavedOverlay(dc, w, h);
         }
     }
@@ -595,21 +604,19 @@ class WorkoutView extends Ui.View {
         dc.drawText(w / 2, sy(h, 210), Gfx.FONT_SYSTEM_XTINY, fitted, Gfx.TEXT_JUSTIFY_CENTER);
     }
 
-    function showPauseFlash() {
-        pauseFlashUntil = System.getTimer() + 1800;
-    }
-
     function showSetSavedFlash(number) {
         savedSetNumber = number;
-        savedSetFlashUntil = System.getTimer() + GymStore.undoWindowMs;
+        savedSetFlashStartedAt = System.getTimer();
     }
 
     function isUndoOverlayActive() {
-        return System.getTimer() < savedSetFlashUntil && GymStore.canUndoLastSet();
+        return savedSetFlashStartedAt != null &&
+            GymStore.timerElapsedMs(savedSetFlashStartedAt) <= GymStore.undoWindowMs &&
+            GymStore.canUndoLastSet();
     }
 
     function dismissSetSavedFlash() {
-        savedSetFlashUntil = 0;
+        savedSetFlashStartedAt = null;
     }
 
     function drawSetSavedOverlay(dc, w, h) {
@@ -640,17 +647,6 @@ class WorkoutView extends Ui.View {
     function drawPausedOverlay(dc, w, h) {
         dc.setColor(Gfx.COLOR_RED, Gfx.COLOR_TRANSPARENT);
         dc.drawCircle(w / 2, h / 2, sr(w, h, 124));
-        if (System.getTimer() < pauseFlashUntil) {
-            dc.fillRectangle((w / 2) - sr(w, h, 14), sy(h, 22), sr(w, h, 10), sr(w, h, 28));
-            dc.fillRectangle((w / 2) + sr(w, h, 4), sy(h, 22), sr(w, h, 10), sr(w, h, 28));
-        }
-    }
-
-    function drawCompactValue(dc, w, h, baseX, baseY, label, value) {
-        dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(sx(w, baseX), sy(h, baseY), Gfx.FONT_XTINY, label, Gfx.TEXT_JUSTIFY_CENTER);
-        dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(sx(w, baseX), sy(h, baseY + 16), Gfx.FONT_XTINY, value, Gfx.TEXT_JUSTIFY_CENTER);
     }
 
     function drawHeartRateZones(dc, w, h, baseY) {
@@ -688,21 +684,6 @@ class WorkoutView extends Ui.View {
             return Gfx.COLOR_RED;
         }
         return Gfx.COLOR_WHITE;
-    }
-
-    function zoneLabel(zone) {
-        if (zone == 1) {
-            return "Zone 1 Easy";
-        } else if (zone == 2) {
-            return "Zone 2 Fat burn";
-        } else if (zone == 3) {
-            return "Zone 3 Tempo";
-        } else if (zone == 4) {
-            return "Zone 4 Hard";
-        } else if (zone >= 5) {
-            return "Zone 5 Max";
-        }
-        return "No zone";
     }
 
     function stateColor(state) {
@@ -1394,6 +1375,7 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         return true;
     }
 
+    (:fullLegacyState)
     function onTap(evt) {
         var coordinates = evt.getCoordinates();
         var x = coordinates[0];
@@ -1451,6 +1433,7 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         return true;
     }
 
+    (:fullLegacyState)
     function rowAt(y, firstBaseY, step, count) {
         var contentSize = view.screenWidth < view.screenHeight ? view.screenWidth : view.screenHeight;
         var contentScale = contentSize.toFloat() / 286.0;
@@ -1465,6 +1448,7 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         return -1;
     }
 
+    (:fullLegacyState)
     function onSwipe(evt) {
         var direction = evt.getDirection();
         if (view.isUndoOverlayActive()) {
@@ -1558,8 +1542,9 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
     }
 
     function openPauseMenu() {
-        if (!GymSession.paused) {
-            GymSession.pause();
+        if (!GymSession.paused && !GymSession.pause()) {
+            Ui.requestUpdate();
+            return;
         }
         view.pauseSelected = 0;
         view.page = 2;
@@ -1592,8 +1577,9 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
 
     function handlePauseMenu() {
         if (view.pauseSelected == 0) {
-            GymSession.resume();
-            view.page = 0;
+            if (GymSession.resume()) {
+                view.page = 0;
+            }
         } else if (view.pauseSelected == 1) {
             view.page = 3;
         } else {
@@ -1624,8 +1610,15 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
             cancelDiscardConfirmation();
             return;
         }
-        GymStore.clearWorkout();
-        GymSession.discard();
+        if (!GymSession.discard()) {
+            Ui.requestUpdate();
+            return;
+        }
+        if (!GymStore.clearWorkout()) {
+            GymStore.status = "SAVE FAIL";
+            Ui.requestUpdate();
+            return;
+        }
         System.exit();
     }
 
@@ -1678,7 +1671,8 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         // set is being evaluated, but never let undo restore that snapshot over
         // live detector/recovery state. A rejected false candidate restores rest
         // first, after which undo remains available if its short window is open.
-        if (GymStore.restEndsAt < 0 || GymSession.activeSetSeen ||
+        if ((GymStore.restDurationMs > 0 && GymStore.restStartedAt == null) ||
+            GymSession.activeSetSeen ||
             GymSession.autoLogPrompt) {
             GymStore.status = "SET ACTIVE";
             return;

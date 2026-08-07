@@ -110,11 +110,15 @@ enum class GarminWorkoutApplyResult {
     AlreadyApplied,
     RateLimited,
     PairingLimitReached,
+    ReceiptStoreFull,
     Rejected
 }
 
 internal const val MAX_GARMIN_WORKOUTS_PER_PAIRING_GENERATION = 256
-internal const val MAX_GARMIN_WORKOUTS_PER_ROLLING_DAY = 6
+// A full offline watch queue must fit through the phone boundary without partial ACK/loss.
+internal const val GARMIN_WATCH_PENDING_WORKOUT_CAPACITY = 8
+internal const val MAX_GARMIN_WORKOUTS_PER_ROLLING_DAY =
+    GARMIN_WATCH_PENDING_WORKOUT_CAPACITY
 internal const val MAX_LEGACY_GARMIN_RECEIPTS_WITHIN_HORIZON =
     MAX_GARMIN_WORKOUTS_PER_ROLLING_DAY * 90
 internal const val MAX_GARMIN_DURABLE_RECEIPTS =
@@ -2088,9 +2092,11 @@ class GymRepository(
      *
      * The pairing generation is issued by the phone and persisted by the watch before it can send
      * a workout. Duplicate IDs are checked before the admission budgets so delivery retries remain
-     * idempotent even when the current generation has reached a limit. Generationless released
-     * watches use a bounded 90-day receipt horizon so they do not become permanently unusable;
-     * replay protection for those legacy messages intentionally ends when that horizon expires.
+     * idempotent even when the current generation has reached a limit. The rolling admission
+     * budget is scoped to the bound owner/device, but deliberately spans pairing generations so
+     * an automatic receipt rollover cannot admit extra workouts. Generationless released watches
+     * use a bounded 90-day receipt horizon so they do not become permanently unusable; replay
+     * protection for those legacy messages intentionally ends when that horizon expires.
      */
     suspend fun applyGarminCreateWorkout(
         ownerBinding: String,
@@ -2162,9 +2168,6 @@ class GymRepository(
                 }
             }
 
-            if (receiptDao.count() >= MAX_GARMIN_DURABLE_RECEIPTS) {
-                return@withTransaction GarminWorkoutApplyResult.PairingLimitReached
-            }
             val generationLimit = if (pairingGeneration == LEGACY_GARMIN_FALLBACK_GENERATION) {
                 MAX_LEGACY_GARMIN_RECEIPTS_WITHIN_HORIZON
             } else {
@@ -2177,14 +2180,22 @@ class GymRepository(
                     pairingGeneration
                 ) >= generationLimit
             ) {
-                return@withTransaction GarminWorkoutApplyResult.PairingLimitReached
+                return@withTransaction if (
+                    pairingGeneration == LEGACY_GARMIN_FALLBACK_GENERATION
+                ) {
+                    GarminWorkoutApplyResult.ReceiptStoreFull
+                } else {
+                    GarminWorkoutApplyResult.PairingLimitReached
+                }
+            }
+            if (receiptDao.count() >= MAX_GARMIN_DURABLE_RECEIPTS) {
+                return@withTransaction GarminWorkoutApplyResult.ReceiptStoreFull
             }
             val notBefore = (now - GARMIN_WORKOUT_RATE_WINDOW_MS).coerceAtLeast(0L)
             if (
-                receiptDao.countForPairingGenerationSince(
+                receiptDao.countForDeviceSince(
                     ownerBinding,
                     deviceBinding,
-                    pairingGeneration,
                     notBefore
                 ) >= MAX_GARMIN_WORKOUTS_PER_ROLLING_DAY
             ) {
@@ -2214,8 +2225,9 @@ class GymRepository(
     }
 
     /**
-     * Retires replay state only after the watch acknowledged a destructive generation reset.
-     * Old-generation messages are rejected by the protocol before reaching this database.
+     * Retires replay state only after the trusted watch proved or acknowledged a generation
+     * transition. Receipts still inside the rolling admission window remain bound to the same
+     * owner/device so a queue-preserving repair cannot reset either idempotency or the daily cap.
      */
     suspend fun activateGarminPairingGeneration(
         ownerBinding: String,
@@ -2229,10 +2241,18 @@ class GymRepository(
         )
         require(pairingGeneration.matches(GARMIN_OWNER_BINDING_PATTERN))
         database.withTransaction {
-            database.garminWorkoutReceiptDao().deleteOtherPairingGenerations(
+            val now = currentTimeMillis()
+            val retainFrom = if (now in 1L..WorkoutDataLimits.MAX_TIMESTAMP_MILLIS) {
+                (now - GARMIN_WORKOUT_RATE_WINDOW_MS).coerceAtLeast(0L)
+            } else {
+                // An invalid clock must fail closed: retain replay/admission state.
+                0L
+            }
+            database.garminWorkoutReceiptDao().deleteInactivePairingGenerationsBefore(
                 ownerBinding = ownerBinding,
                 deviceBinding = deviceBinding,
-                activePairingGeneration = pairingGeneration
+                activePairingGeneration = pairingGeneration,
+                retainFrom = retainFrom
             )
         }
     }

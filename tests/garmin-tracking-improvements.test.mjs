@@ -106,27 +106,27 @@ test("Garmin rest countdown never blocks or hides a detected next set", async ()
   const tick = section(view, "function tick()", "function requestSyncNow()");
   assert.match(
     tick,
-    /GymStore\.restEndsAt > 0 && GymSession\.effortState\.equals\("SET ACTIVE"\)[\s\S]*GymStore\.restEndsAt = System\.getTimer\(\) - GymStore\.restEndsAt/
+    /GymStore\.restStartedAt != null[\s\S]*GymSession\.effortState\.equals\("SET ACTIVE"\)[\s\S]*GymStore\.timerElapsedMs\(GymStore\.restStartedAt\)[\s\S]*GymStore\.restStartedAt = null/
   );
   assert.ok(
     tick.indexOf("restWasActive = false") < tick.indexOf('GymStore.status = "REST DONE"'),
     "suspending rest for a possible set must not vibrate as if the timer completed"
   );
-  const dashboard = section(view, "function drawDashboard(", "function showPauseFlash()");
+  const dashboard = section(view, "function drawDashboard(", "function showSetSavedFlash(");
   assert.match(dashboard, /var setActive = GymSession\.effortState\.equals\("SET ACTIVE"\)/);
   assert.ok(
     dashboard.indexOf("setActive ?") < dashboard.indexOf("rest > 0 ?"),
     "active-set status must take visual priority over the countdown"
   );
   assert.doesNotMatch(tick, /clearTransientSetActions\(\)/);
-  assert.match(tick, /GymStore\.restEndsAt < 0[\s\S]*dismissSetSavedFlash\(\)/);
+  assert.match(tick, /GymStore\.restDurationMs > 0 && GymStore\.restStartedAt == null[\s\S]*dismissSetSavedFlash\(\)/);
   assert.match(tick, /!GymSession\.activeSetSeen[\s\S]*!GymSession\.autoLogPrompt[\s\S]*restoreSuspendedRest\(\)/);
   const restore = section(view, "function restoreSuspendedRest()", "function onSyncSent(");
-  assert.match(restore, /GymStore\.restEndsAt = System\.getTimer\(\) - GymStore\.restEndsAt/);
+  assert.match(restore, /GymStore\.restStartedAt = System\.getTimer\(\)/);
   assert.match(restore, /restWasActive = true/);
   assert.match(restore, /REST RESUMED/);
   const undoDelegate = section(view, "function undoLastSet()", "function handleSettings(");
-  assert.match(undoDelegate, /GymStore\.restEndsAt < 0 \|\| GymSession\.activeSetSeen/);
+  assert.match(undoDelegate, /GymStore\.restDurationMs > 0 && GymStore\.restStartedAt == null[\s\S]*GymSession\.activeSetSeen/);
   assert.ok(
     undoDelegate.indexOf("return;") < undoDelegate.indexOf("GymStore.undoLastSet()"),
     "undo must not restore the previous set snapshot over a live candidate"
@@ -152,16 +152,16 @@ test("Garmin set commit clears residual motion while preserving genuinely new de
   assert.match(clear, /activeSignalCount = 0/);
   assert.match(clear, /motionSignalCount = 0/);
   assert.match(clear, /motionScore = 0\.0/);
-  assert.match(clear, /lastMotionTimerMs = 0/);
+  assert.match(clear, /lastMotionTimerMs = null/);
   assert.match(clear, /lastCredibleMotionSeconds = 0/);
   assert.match(clear, /clearSetCandidate\(\)/);
   assert.match(clear, /effortState = "REST"/);
-  assert.doesNotMatch(clear, /clearTransientSetActions|lastSetUndoUntil/);
+  assert.doesNotMatch(clear, /clearTransientSetActions|lastSetUndoStartedAt/);
 
   const addSet = section(store, "static function addSet()", "static function canUndoLastSet()");
   assert.ok(
-    addSet.indexOf("lastSetUndoUntil =") < addSet.indexOf("GymSession.clearAutoPrompt()") &&
-      addSet.indexOf("GymSession.clearAutoPrompt()") < addSet.indexOf("restEndsAt ="),
+    addSet.indexOf("lastSetUndoStartedAt =") < addSet.indexOf("GymSession.clearAutoPrompt()") &&
+      addSet.indexOf("GymSession.clearAutoPrompt()") < addSet.indexOf("restDurationMs ="),
     "commit must retain undo, clear old motion, and only then start rest"
   );
 
@@ -170,11 +170,12 @@ test("Garmin set commit clears residual motion while preserving genuinely new de
     "static function isMotionFresh()",
     "static function readHeartRateFromSensor("
   );
-  assert.match(freshness, /lastMotionTimerMs <= 0[\s\S]*return false/);
+  assert.match(freshness, /lastMotionTimerMs == null[\s\S]*return false/);
+  assert.match(freshness, /GymStore\.timerElapsedMs\(lastMotionTimerMs\)/);
 
   const tick = section(view, "function tick()", "function requestSyncNow()");
-  assert.match(tick, /GymStore\.restEndsAt > 0 && GymSession\.effortState\.equals\("SET ACTIVE"\)/);
-  assert.match(tick, /System\.getTimer\(\) - GymStore\.restEndsAt/);
+  assert.match(tick, /GymStore\.restStartedAt != null[\s\S]*GymSession\.effortState\.equals\("SET ACTIVE"\)/);
+  assert.match(tick, /GymStore\.timerElapsedMs\(GymStore\.restStartedAt\)/);
   assert.match(store, /static function canUndoLastSet\(\)/);
 
   const sensorCallback = section(
@@ -217,7 +218,7 @@ test("Garmin workout clock, pause lifecycle, and calorie display keep advancing 
   const viewTick = section(view, "function tick()", "function requestSyncNow()");
   const sessionTick = section(session, "static function tick()", "static function startSensors()");
   const pause = section(session, "static function pause()", "static function resume()");
-  const resume = section(session, "static function resume()", "static function togglePause()");
+  const resume = section(session, "static function resume()", "static function stopAndSave()");
   const calories = section(session, "static function updateCalories()", "static function setBoostFor(");
 
   assert.match(onShow, /ticker\.start\(method\(:tick\), 1000, true\)/);
@@ -229,8 +230,16 @@ test("Garmin workout clock, pause lifecycle, and calorie display keep advancing 
     "a paused frame must first capture the exact elapsed time at pause"
   );
   assert.match(pause, /pausedAt = Time\.now\(\)\.value\(\)/);
+  assert.ok(
+    pause.indexOf("session.stop()") < pause.indexOf("paused = true"),
+    "the UI must remain unpaused when Garmin refuses to stop recording"
+  );
   assert.match(resume, /pausedAccumSeconds \+= now - pausedAt/);
   assert.match(resume, /session\.start\(\)/);
+  assert.ok(
+    resume.indexOf("session.start()") < resume.indexOf("paused = false"),
+    "the UI must remain paused when Garmin refuses to resume recording"
+  );
 
   assert.match(calories, /deltaSeconds = elapsedSeconds - lastCalorieSeconds/);
   assert.match(calories, /if \(deltaSeconds > 30\)[\s\S]*deltaSeconds = 30/);
@@ -272,12 +281,13 @@ test("Garmin can undo only the most recent set inside a bounded window", async (
   assert.match(undo, /if \(nextSets\.size\(\) == 0\)[\s\S]*nextWorkoutStartedAt = null/);
   assert.match(undo, /if \(!compatibilitySaved && !usedAtomicSnapshot && !legacySnapshotCommitted\)[\s\S]*sets = previousSets[\s\S]*GymSession\.restoreSetBoost\(boost\)/);
   assert.match(undo, /if \(!save\(\)\)[\s\S]*status = "RECOVERY FAIL"/);
-  assert.match(undo, /restEndsAt = 0/);
+  assert.match(undo, /restDurationMs = 0[\s\S]*restStartedAt = null/);
   assert.match(session, /static function restoreSetAfterUndo\(statistics, restorePrompt\)/);
   assert.match(undo, /GymSession\.restoreSetAfterUndo\(restoreStatistics, restorePrompt\)/);
   assert.match(view, /function isUndoOverlayActive\(\)/);
   assert.match(view, /GymStore\.tr\("TAP \/ BACK: UNDO"/);
-  assert.match(view, /savedSetFlashUntil = System\.getTimer\(\) \+ GymStore\.undoWindowMs/);
+  assert.match(view, /savedSetFlashStartedAt = System\.getTimer\(\)/);
+  assert.match(view, /GymStore\.timerElapsedMs\(savedSetFlashStartedAt\) <= GymStore\.undoWindowMs/);
   assert.match(view, /function onBack\(\)[\s\S]*if \(view\.isUndoOverlayActive\(\)\)[\s\S]*undoLastSet\(\)/);
   assert.match(view, /if \(x < \(view\.screenWidth \/ 2\)\)[\s\S]*undoLastSet\(\)[\s\S]*recordSet\(\)/);
 });
@@ -456,7 +466,7 @@ test("Garmin motion lifecycle uses gyro opportunistically, rejects noise, and as
   assert.match(lifecycle, /motionBurstSignals >= 4 && motionRhythmSignals >= 3/);
   assert.match(
     session,
-    /static function canArmMotionCandidate\(\)[\s\S]*elapsedSeconds - lastLoggedSetSeconds >=[\s\S]*postSaveRestartDeadbandSeconds\(\)/
+    /static function canArmMotionCandidate\(\)[\s\S]*elapsedSeconds - lastLoggedSetSeconds >=[\s\S]*10/
   );
   assert.match(lifecycle, /quietSeconds >= motionQuietWindowSeconds\(\)/);
   assert.match(lifecycle, /motionDuration >= motionMinimumSetSeconds\(\)[\s\S]*endSetFromMotion\(\)[\s\S]*else if \(currentSetMotionOnly\)[\s\S]*discardShortMotionInterval\(\)/);
@@ -543,7 +553,7 @@ test("Garmin motion lifecycle uses gyro opportunistically, rejects noise, and as
   assert.match(viewTick, /!autoPromptWasActive && GymSession\.autoLogPrompt/);
   assert.match(viewTick, /Attention\.vibrate\(\[[\s\S]*CONFIRM SET/);
   assert.match(viewTick, /autoPromptWasActive = GymSession\.autoLogPrompt/);
-  assert.match(viewTick, /GymStore\.restEndsAt = System\.getTimer\(\) - GymStore\.restEndsAt/);
+  assert.match(viewTick, /GymStore\.timerElapsedMs\(GymStore\.restStartedAt\)[\s\S]*GymStore\.restStartedAt = null/);
   assert.match(viewTick, /!GymSession\.activeSetSeen[\s\S]*restoreSuspendedRest\(\)/);
   assert.doesNotMatch(viewTick, /GymStore\.cancelRest\(\)/);
   assert.doesNotMatch(viewTick, /clearTransientSetActions\(\)/);
@@ -750,7 +760,7 @@ test("Garmin preserves active evidence, suspended rest, and prompts across UI tr
   assert.match(capture, /lastSetEndSeconds > 0 && lastSetEndSeconds >= activeStartSeconds/);
   const pause = section(session, "static function pause()", "static function resume()");
   assert.doesNotMatch(pause, /lastSetEndSeconds =|currentSetEndGymCalories =|currentSetEndGarminCalories =/);
-  const resume = section(session, "static function resume()", "static function togglePause()");
+  const resume = section(session, "static function resume()", "static function stopAndSave()");
   assert.match(resume, /effortState = activeSetSeen \? "SET ACTIVE" : "READY"/);
   assert.doesNotMatch(resume, /lastSetEndSeconds =|currentSetEndGymCalories =|currentSetEndGarminCalories =/);
 
@@ -1522,8 +1532,8 @@ test("Garmin ignores one-bpm and weak post-save noise before suspending rest", a
   assert.match(effort, /renewedRiseTrend = 2\.0/);
   assert.match(effort, /setConfidence >= 75/);
   assert.match(effort, /activeSignalCount >= 3/);
-  assert.match(restart, /GymStore\.restEndsAt <= 0/);
-  assert.match(restart, /postSaveRestartDeadbandSeconds\(\)/);
+  assert.match(restart, /GymStore\.restDurationMs <= 0/);
+  assert.match(restart, /lastLoggedSetSeconds >=[\s\S]*10/);
   assert.match(restart, /motionSignalCount >= 3/);
   assert.match(restart, /motionBurstSignals >= 4 && motionRhythmSignals >= 3/);
 
