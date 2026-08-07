@@ -2463,9 +2463,11 @@ class GymSession {
     }
 
     static function elapsedText() {
-        var h = (elapsedSeconds / 3600).toNumber();
-        var m = ((elapsedSeconds % 3600) / 60).toNumber();
-        var s = (elapsedSeconds % 60).toNumber();
+        var totalElapsed = (GymStore.timelineBase == null ? 0 :
+            GymStore.timelineBase[0]) + elapsedSeconds;
+        var h = (totalElapsed / 3600).toNumber();
+        var m = ((totalElapsed % 3600) / 60).toNumber();
+        var s = (totalElapsed % 60).toNumber();
         if (h > 0) {
             return h.format("%d") + ":" + m.format("%02d") + ":" + s.format("%02d");
         }

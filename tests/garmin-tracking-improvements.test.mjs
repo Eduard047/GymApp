@@ -193,7 +193,7 @@ test("Garmin dashboard renders the selected live workout hierarchy without stati
 
   assert.match(dashboard, /GymSession\.hr == null \? "--" : GymSession\.hr\.toString\(\)/);
   assert.match(dashboard, /GymSession\.elapsedText\(\)/);
-  assert.match(dashboard, /GymSession\.gymCalories\.format\("%\.1f"\)/);
+  assert.match(dashboard, /GymStore\.totalGymCalories\(\)\.format\("%\.1f"\)/);
   assert.match(dashboard, /dashboardSetProgressText\(\)/);
   assert.match(dashboard, /GymStore\.currentExerciseLabel\(\)/);
   assert.match(dashboard, /setSummaryText\(\)/);
@@ -245,7 +245,7 @@ test("Garmin workout clock, pause lifecycle, and calorie display keep advancing 
   assert.match(calories, /if \(deltaSeconds > 30\)[\s\S]*deltaSeconds = 30/);
   assert.match(calories, /gymCalories \+= lastKcalPerMinute \* \(deltaSeconds \/ 60\.0\)/);
   assert.match(calories, /lastCalorieSeconds = elapsedSeconds/);
-  assert.equal((view.match(/GymSession\.gymCalories\.format\("%\.1f"\)/g) || []).length, 3);
+  assert.equal((view.match(/GymStore\.totalGymCalories\(\)\.format\("%\.1f"\)/g) || []).length, 3);
 
   const displayedCalories = (value) => value.toFixed(1);
   assert.equal(displayedCalories(0), "0.0");
@@ -1189,6 +1189,11 @@ test("Garmin active-workout copy-on-write has only old-or-new crash outcomes", a
   );
   assert.match(clear, /persistActiveWorkoutSnapshot\(\[\], null, emptyTimelineCheckpoint\(\)\)/);
   const load = section(store, "static function load()", "static function save()");
+  const fullActiveRestore = section(
+    store,
+    "(:fullLegacyState)\n    static function restoreActiveWorkoutSnapshot(",
+    "(:compactLegacyState)\n    static function restoreActiveWorkoutSnapshot("
+  );
   assert.ok(
     load.indexOf('Storage.getValue("activeWorkoutV1")') <
       load.indexOf("restoreActiveWorkoutSnapshot(savedActiveWorkout)"),
@@ -1475,6 +1480,331 @@ test("Garmin atomically resumes bounded interval timelines without mixing segmen
 
   const malformedCheckpoint = { elapsedSeconds: -1 };
   assert.equal(Number.isInteger(malformedCheckpoint.elapsedSeconds) && malformedCheckpoint.elapsedSeconds >= 0, false);
+});
+
+test("Garmin active runtime checkpoint is bounded, owner-scoped, and restart-safe", async () => {
+  const [store, session, view, app] = await Promise.all([
+    readFile("garmin/source/GymStore.mc", "utf8"),
+    readFile("garmin/source/GymSession.mc", "utf8"),
+    readFile("garmin/source/WorkoutView.mc", "utf8"),
+    readFile("garmin/source/GymApp.mc", "utf8")
+  ]);
+
+  const load = section(store, "static function load()", "static function save()");
+  const validation = section(
+    store,
+    "static function isValidRuntimeCheckpoint(",
+    "static function restoreRuntimeCheckpoint("
+  );
+  const restore = section(
+    store,
+    "static function restoreRuntimeCheckpoint(",
+    "static function activeWorkoutSnapshotMatchesBindings("
+  );
+  const writer = section(
+    store,
+    "static function checkpointLiveWorkout(",
+    "static function consumeRecoveredPause("
+  );
+  const fullActiveRestore = section(
+    store,
+    "(:fullLegacyState)\n    static function restoreActiveWorkoutSnapshot(",
+    "(:compactLegacyState)\n    static function restoreActiveWorkoutSnapshot("
+  );
+
+  assert.match(fullActiveRestore, /Storage\.getValue\("activeRuntimeV1"\)/);
+  assert.match(
+    fullActiveRestore,
+    /isValidRuntimeCheckpoint\(runtime\)[\s\S]*activeWorkoutSnapshotMatchesBindings\(runtime\)/
+  );
+  assert.match(validation, /snapshot\.size\(\) != 11/);
+  assert.match(validation, /snapshot\[0\] != 1/);
+  assert.match(validation, /isValidAccountBinding\(snapshot\[1\]\)/);
+  assert.match(validation, /isBoundedText\(snapshot\[2\], maxBindingLength\)/);
+  assert.match(validation, /isValidOptionalAccountBinding\(snapshot\[3\]\)/);
+  assert.match(validation, /isBoundedInteger\(snapshot\[4\], 0, maxWorkoutSets\)/);
+  assert.match(validation, /isValidWorkoutStartedAtSeconds\(snapshot\[5\]\)/);
+  assert.match(validation, /isValidWorkoutStartedAtSeconds\(snapshot\[6\]\)/);
+  assert.match(validation, /isValidTimelineCheckpoint\(snapshot\[7\]\)/);
+  assert.match(validation, /snapshot\[8\] instanceof Lang\.Boolean/);
+  assert.match(validation, /isBoundedInteger\(snapshot\[9\], 0, 2\)/);
+  assert.match(validation, /estimatedValueBytes\(snapshot\) > maxRuntimeCheckpointBytes/);
+  assert.match(validation, /restMode == 0[\s\S]*restValue instanceof Lang\.Number && restValue == 0/);
+  assert.match(validation, /restMode == 1[\s\S]*restValue >= snapshot\[5\][\s\S]*restValue - snapshot\[5\] <= 3600/);
+  assert.match(validation, /isBoundedInteger\(restValue, 1, 3600\)/);
+  assert.match(
+    writer,
+    /var snapshot = \[\s*1,\s*accountBinding\.toString\(\),\s*deviceBinding\.toString\(\),[\s\S]*sets\.size\(\),\s*savedAt,\s*origin,\s*checkpoint,\s*GymSession\.paused,\s*restMode,\s*restValue\s*\]/
+  );
+  assert.match(writer, /Storage\.setValue\("activeRuntimeV1", snapshot\)/);
+
+  assert.match(restore, /!activeWorkoutSnapshotMatchesBindings\(snapshot\)/);
+  assert.match(restore, /snapshot\[4\] != sets\.size\(\)/);
+  assert.match(restore, /activeWorkoutStartedAtSeconds != origin/);
+  assert.match(restore, /areSnapshotIntervalsConsistent\(sets, checkpoint\)/);
+  assert.match(store, /private static const runtimeCheckpointIntervalMs = 15000/);
+  assert.match(store, /private static const maxRuntimeClockRecoverySeconds = 30/);
+  assert.match(
+    writer,
+    /!force[\s\S]*timerElapsedMs\(lastRuntimeCheckpointTimerMs\) <[\s\S]*runtimeCheckpointIntervalMs\.toLong\(\)/
+  );
+  assert.match(
+    restore,
+    /!snapshot\[8\] && recoveryGap >= 0 &&[\s\S]*recoveryGap <= maxRuntimeClockRecoverySeconds[\s\S]*restoredCheckpoint\[0\] \+= recoveryGap/
+  );
+
+  assert.match(writer, /restMode = 1;[\s\S]*restValue = savedAt \+ remaining/);
+  assert.match(writer, /restMode = 2;[\s\S]*restValue = suspendedSeconds/);
+  assert.match(
+    restore,
+    /snapshot\[9\] == 1[\s\S]*remaining = snapshot\[10\] - now[\s\S]*restStartedAt = System\.getTimer\(\)/
+  );
+  assert.match(
+    restore,
+    /snapshot\[9\] == 2[\s\S]*restDurationMs = snapshot\[10\] \* 1000/
+  );
+
+  const totalGym = section(
+    store,
+    "static function totalGymCalories()",
+    "static function totalGarminCalories()"
+  );
+  const totalGarmin = section(
+    store,
+    "static function totalGarminCalories()",
+    "static function checkpointLiveWorkout("
+  );
+  assert.match(totalGym, /timelineBase == null \? 0\.0 : timelineBase\[1\]/);
+  assert.match(totalGym, /GymSession\.gymCalories/);
+  assert.match(totalGarmin, /timelineBase == null \? null : timelineBase\[2\]/);
+  assert.match(totalGarmin, /GymSession\.garminCalories/);
+  assert.match(session, /elapsedText\(\)[\s\S]*GymStore\.timelineBase == null[\s\S]*GymStore\.timelineBase\[0\][\s\S]*elapsedSeconds/);
+  assert.match(view, /GymStore\.totalGymCalories\(\)/);
+  assert.match(view, /GymStore\.totalGarminCalories\(\)/);
+
+  const onShow = section(view, "function onShow()", "function onHide()");
+  const onHide = section(view, "function onHide()", "function tick()");
+  const tick = section(view, "function tick()", "function requestSyncNow()");
+  const onStop = section(app, "function onStop(state)", "function getInitialView()");
+  const pause = section(session, "static function pause()", "static function resume()");
+  const resume = section(session, "static function resume()", "static function stopAndSave()");
+  const addSet = section(store, "static function addSet()", "static function canUndoLastSet()");
+  const undo = section(store, "static function undoLastSet()", "static function clearTransientSetActions()");
+  assert.match(tick, /checkpointLiveWorkout\(false\)/);
+  assert.match(onHide, /GymStore\.save\(\)/);
+  assert.match(onStop, /GymStore\.save\(\)/);
+  assert.match(writer, /runtimePausePending[\s\S]*GymSession\.pause\(\)/);
+  assert.match(
+    writer,
+    /if \(!GymSession\.pause\(\)\)[\s\S]*return false;[\s\S]*runtimePausePending = false;/
+  );
+  assert.match(
+    writer,
+    /\(:compactLegacyState\)[\s\S]*GymSession\.fitSaved \|\| GymSession\.paused[\s\S]*GymSession\.elapsedSeconds % 15 != 1[\s\S]*persistActiveWorkoutSnapshot\(sets, origin, checkpoint\)/
+  );
+
+  const saveAndExit = section(view, "function saveAndExit()", "function onUpdate(");
+  const clearActive = section(
+    store,
+    "static function clearActiveWorkout()",
+    "static function restSeconds()"
+  );
+  const clearRuntime = section(
+    store,
+    "static function clearRuntimeCheckpoint()",
+    "static function emptyTimelineCheckpoint()"
+  );
+  const clearSnapshot = section(
+    store,
+    "static function persistEmptyActiveWorkoutSnapshot()",
+    "static function isUk()"
+  );
+  const accountTransition = section(
+    store,
+    "static function beginAccountTransition()",
+    "static function clearCloudSyncStageForAccountTransition()"
+  );
+  const clearAccount = section(
+    store,
+    "static function clearAccountScopedState()",
+    "(:fullLegacyState)"
+  );
+  assert.match(saveAndExit, /GymStore\.clearActiveWorkout\(\)/);
+  assert.doesNotMatch(saveAndExit, /sets\.size\(\) > 0 && !GymStore\.clearActiveWorkout\(\)/);
+  assert.match(clearActive, /persistEmptyActiveWorkoutSnapshot\(\)/);
+  assert.match(clearSnapshot, /clearRuntimeCheckpoint\(\)/);
+  assert.ok(
+    clearSnapshot.indexOf("persistActiveWorkoutSnapshot([], null, emptyTimelineCheckpoint())") <
+      clearSnapshot.indexOf("clearRuntimeCheckpoint()"),
+    "the empty active snapshot must commit before the runtime journal is removed"
+  );
+  assert.match(clearRuntime, /Storage\.deleteValue\("activeRuntimeV1"\)/);
+  assert.match(accountTransition, /Storage\.deleteValue\("activeRuntimeV1"\)/);
+  assert.match(accountTransition, /resetRuntimeCheckpointState\(\)/);
+  assert.match(clearAccount, /Storage\.deleteValue\("activeRuntimeV1"\)/);
+  assert.match(clearAccount, /resetRuntimeCheckpointState\(\)/);
+
+  const OWNER = "a".repeat(64);
+  const OTHER_OWNER = "b".repeat(64);
+  const DEVICE = "garmin-device";
+  const GENERATION = "c".repeat(64);
+  const ORIGIN = 1_800_000_000;
+  const SAVED_AT = ORIGIN + 120;
+  const checkpoint = [120, 40.0, 38, 12_000, 100, 165, 140, 3];
+  const runtime = [
+    1,
+    OWNER,
+    DEVICE,
+    GENERATION,
+    2,
+    SAVED_AT,
+    ORIGIN,
+    checkpoint,
+    false,
+    1,
+    SAVED_AT + 60
+  ];
+  assert.equal(runtime.length, 11);
+
+  const boundedInteger = (value, min, max) =>
+    Number.isInteger(value) && value >= min && value <= max;
+  const validAccount = (value) =>
+    typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
+  const validTime = (value) => boundedInteger(value, 946_684_800, 2_147_483_647);
+  const validTimeline = (value) =>
+    Array.isArray(value) &&
+    value.length === 8 &&
+    boundedInteger(value[0], 0, 604_800) &&
+    Number.isFinite(value[1]) && value[1] >= 0 && value[1] <= 10_000_000 &&
+    (value[2] == null || boundedInteger(value[2], 0, 10_000_000)) &&
+    boundedInteger(value[3], 0, 200_000_000) &&
+    boundedInteger(value[4], 0, 604_800) &&
+    boundedInteger(value[5], 0, 300) &&
+    (value[6] == null || boundedInteger(value[6], 0, 300)) &&
+    boundedInteger(value[7], 0, 5) &&
+    (value[4] > 0 || value[3] === 0) &&
+    value[3] <= value[4] * 240;
+  const validRuntime = (value) => {
+    if (!Array.isArray(value) || value.length !== 11 || value[0] !== 1 ||
+        !validAccount(value[1]) || typeof value[2] !== "string" ||
+        value[2].length === 0 || value[2].length > 128 ||
+        !(value[3] == null || validAccount(value[3])) ||
+        !boundedInteger(value[4], 0, 60) ||
+        !validTime(value[5]) || !validTime(value[6]) ||
+        value[6] > value[5] || value[5] - value[6] > 604_800 ||
+        !validTimeline(value[7]) || typeof value[8] !== "boolean" ||
+        !boundedInteger(value[9], 0, 2)) {
+      return false;
+    }
+    if (value[9] === 0) return value[10] === 0;
+    if (value[9] === 1) {
+      return validTime(value[10]) && value[10] >= value[5] &&
+        value[10] - value[5] <= 3_600;
+    }
+    return boundedInteger(value[10], 1, 3_600);
+  };
+  const restoreModel = (value, {
+    now,
+    owner = OWNER,
+    device = DEVICE,
+    generation = GENERATION,
+    setCount = 2,
+    activeOrigin = ORIGIN,
+    activeSnapshotValid = true,
+    intervalsConsistent = true
+  }) => {
+    if (!validRuntime(value) ||
+        value[1] !== owner || value[2] !== device || value[3] !== generation ||
+        value[4] !== setCount) {
+      return null;
+    }
+    if (setCount > 0 &&
+        (!activeSnapshotValid || activeOrigin !== value[6] || !intervalsConsistent)) {
+      return null;
+    }
+    if (setCount === 0 && (activeOrigin != null || value[9] !== 0)) {
+      return null;
+    }
+    const restored = value[7].slice();
+    const gap = now - value[5];
+    if (!value[8] && gap >= 0 && gap <= 30 && restored[0] + gap <= 604_800) {
+      restored[0] += gap;
+    }
+    let rest = null;
+    if (value[9] === 1) {
+      const remaining = value[10] - now;
+      if (remaining > 0 && remaining <= 3_600) {
+        rest = { mode: "running", seconds: remaining };
+      }
+    } else if (value[9] === 2) {
+      rest = { mode: "suspended", seconds: value[10] };
+    }
+    return { checkpoint: restored, paused: value[8], rest };
+  };
+
+  const recovered = restoreModel(runtime, { now: SAVED_AT + 20 });
+  assert.equal(recovered.checkpoint[0], 140, "a running gap of at most 30 seconds resumes the clock");
+  assert.deepEqual(recovered.rest, { mode: "running", seconds: 40 });
+  const longGap = restoreModel(runtime, { now: SAVED_AT + 31 });
+  assert.equal(longGap.checkpoint[0], 120, "a longer gap cannot inflate elapsed time");
+
+  const pausedRuntime = runtime.slice();
+  pausedRuntime[8] = true;
+  assert.equal(
+    restoreModel(pausedRuntime, { now: SAVED_AT + 30 }).checkpoint[0],
+    120,
+    "a recovered paused workout does not count the process gap"
+  );
+  const suspendedRuntime = runtime.slice();
+  suspendedRuntime[9] = 2;
+  suspendedRuntime[10] = 47;
+  assert.deepEqual(
+    restoreModel(suspendedRuntime, { now: SAVED_AT + 20 }).rest,
+    { mode: "suspended", seconds: 47 }
+  );
+
+  assert.equal(
+    restoreModel(runtime, { now: SAVED_AT + 1, setCount: 3 }),
+    null,
+    "a runtime checkpoint from an older completed-set revision is stale"
+  );
+  assert.equal(
+    restoreModel(runtime, { now: SAVED_AT + 1, activeOrigin: ORIGIN + 1 }),
+    null,
+    "a runtime checkpoint from another workout origin is stale"
+  );
+  assert.equal(restoreModel(runtime, { now: SAVED_AT + 1, owner: OTHER_OWNER }), null);
+  assert.equal(restoreModel(runtime, { now: SAVED_AT + 1, device: "other-device" }), null);
+  assert.equal(restoreModel(runtime, { now: SAVED_AT + 1, generation: OTHER_OWNER }), null);
+  assert.equal(restoreModel(runtime.slice(0, 10), { now: SAVED_AT + 1 }), null);
+  const malformedRest = runtime.slice();
+  malformedRest[10] = SAVED_AT - 1;
+  assert.equal(restoreModel(malformedRest, { now: SAVED_AT + 1 }), null);
+
+  const shouldCheckpoint = ({ force, lastTimer, nowTimer }) =>
+    force || lastTimer == null || nowTimer - lastTimer >= 15_000;
+  assert.equal(shouldCheckpoint({ force: false, lastTimer: 10_000, nowTimer: 24_999 }), false);
+  assert.equal(shouldCheckpoint({ force: false, lastTimer: 10_000, nowTimer: 25_000 }), true);
+  assert.equal(shouldCheckpoint({ force: true, lastTimer: 10_000, nowTimer: 10_001 }), true);
+
+  const shouldCheckpointCompact = ({ elapsed, paused = false, fitSaved = false }) =>
+    !paused && !fitSaved && elapsed % 15 === 1;
+  assert.equal(shouldCheckpointCompact({ elapsed: 1 }), true);
+  assert.equal(shouldCheckpointCompact({ elapsed: 16 }), true);
+  assert.equal(shouldCheckpointCompact({ elapsed: 17 }), false);
+  assert.equal(shouldCheckpointCompact({ elapsed: 16, paused: true }), false);
+  assert.equal(shouldCheckpointCompact({ elapsed: 16, fitSaved: true }), false);
+
+  const totalModel = (base, live) => ({
+    elapsed: Math.min(604_800, Math.max(0, base[0] + live.elapsed)),
+    gym: Math.max(0, base[1] + live.gym),
+    garmin: live.garmin == null ? base[2] : (base[2] == null ? 0 : base[2]) + live.garmin
+  });
+  assert.deepEqual(
+    totalModel(checkpoint, { elapsed: 5, gym: 1.5, garmin: 2 }),
+    { elapsed: 125, gym: 41.5, garmin: 40 }
+  );
+  assert.equal(totalModel(checkpoint, { elapsed: 0, gym: 0, garmin: null }).garmin, 38);
 });
 
 test("Garmin set metrics are bounded, persisted, undo-aware, and synchronized without raw motion", async () => {

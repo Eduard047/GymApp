@@ -102,6 +102,7 @@ class WorkoutView extends Ui.View {
             GymStore.timerElapsedMs(lastSyncRequestAt) > 20000l) {
             requestSyncNow();
         }
+        GymStore.checkpointLiveWorkout(false);
         Ui.requestUpdate();
     }
 
@@ -288,7 +289,7 @@ class WorkoutView extends Ui.View {
             Ui.requestUpdate();
             return;
         }
-        if (GymStore.sets.size() > 0 && !GymStore.clearActiveWorkout()) {
+        if (!GymStore.clearActiveWorkout()) {
             // Keep the already saved FIT session closed and retry only the local
             // cleanup. Never silently resurrect these sets as a new activity.
             GymStore.status = "SAVE FAIL";
@@ -358,7 +359,7 @@ class WorkoutView extends Ui.View {
         drawDashboardMetric(dc, w, h, 78, 113,
             GymStore.tr("ELAPSED", "ЧАС", "ВРЕМЯ"), GymSession.elapsedText());
         drawDashboardMetric(dc, w, h, 182, 113,
-            GymStore.tr("CALORIES", "ККАЛ", "ККАЛ"), GymSession.gymCalories.format("%.1f"));
+            GymStore.tr("CALORIES", "ККАЛ", "ККАЛ"), GymStore.totalGymCalories().format("%.1f"));
         dc.setColor(Gfx.COLOR_DK_GRAY, Gfx.COLOR_TRANSPARENT);
         dc.drawLine(w / 2, sy(h, 113), w / 2, sy(h, 148));
         drawDashboardDivider(dc, w, h, 153);
@@ -405,7 +406,7 @@ class WorkoutView extends Ui.View {
         drawCompactMetric(dc, centerX - 39, 87,
             GymStore.tr("TIME", "ЧАС", "ВРЕМЯ"), GymSession.elapsedText());
         drawCompactMetric(dc, centerX + 39, 87,
-            GymStore.tr("KCAL", "ККАЛ", "ККАЛ"), GymSession.gymCalories.format("%.1f"));
+            GymStore.tr("KCAL", "ККАЛ", "ККАЛ"), GymStore.totalGymCalories().format("%.1f"));
         dc.setColor(Gfx.COLOR_DK_GRAY, Gfx.COLOR_TRANSPARENT);
         dc.drawLine(centerX, 87, centerX, 116);
         drawCompactDivider(dc, w, 120);
@@ -442,7 +443,7 @@ class WorkoutView extends Ui.View {
         drawCompactMetric(dc, centerX - 31, 68,
             GymStore.tr("TIME", "ЧАС", "ВРЕМЯ"), GymSession.elapsedText());
         drawCompactMetric(dc, centerX + 31, 68,
-            GymStore.tr("KCAL", "ККАЛ", "ККАЛ"), GymSession.gymCalories.format("%.1f"));
+            GymStore.tr("KCAL", "ККАЛ", "ККАЛ"), GymStore.totalGymCalories().format("%.1f"));
         dc.setColor(Gfx.COLOR_DK_GRAY, Gfx.COLOR_TRANSPARENT);
         dc.drawLine(centerX, 68, centerX, 95);
         drawTinyDivider(dc, w, 99);
@@ -863,8 +864,9 @@ class WorkoutView extends Ui.View {
 
         dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
         dc.drawText(w / 2, sy(h, 54), Gfx.FONT_XTINY, GymSession.elapsedText(), Gfx.TEXT_JUSTIFY_CENTER);
-        drawSummaryValue(dc, w, h, 78, 86, "GYM", GymSession.gymCalories.format("%.0f"));
-        var garminKcal = GymSession.garminCalories == null ? "--" : GymSession.garminCalories.toString();
+        drawSummaryValue(dc, w, h, 78, 86, "GYM", GymStore.totalGymCalories().format("%.0f"));
+        var totalGarminCalories = GymStore.totalGarminCalories();
+        var garminKcal = totalGarminCalories == null ? "--" : totalGarminCalories.toString();
         drawSummaryValue(dc, w, h, 182, 86, "GAR", garminKcal);
         drawSummaryValue(dc, w, h, 78, 132, GymStore.tr("AVG", "СЕР", "СРЕД"), GymSession.avgHr.toString());
         drawSummaryValue(dc, w, h, 182, 132, "MAX", GymSession.maxHr.toString());

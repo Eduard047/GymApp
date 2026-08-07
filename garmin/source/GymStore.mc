@@ -31,6 +31,15 @@ class GymStore {
     // duplicating every timeline field as a separate static and keeps low-memory
     // devices within their Connect IQ program limit.
     static var timelineBase = null;
+    // Full devices refresh a small owner/device-bound runtime journal while a
+    // workout is live. The five 96 KiB products reuse their compact atomic
+    // active-workout snapshot so clock, calories, and completed sets still survive
+    // a process termination without exceeding their executable-size ceiling.
+    static var runtimeWorkoutStartedAtSeconds = null;
+    (:fullLegacyState)
+    static var runtimePausePending = false;
+    (:fullLegacyState)
+    static var lastRuntimeCheckpointTimerMs = null;
     // A validated activeWorkoutV1 checkpoint lets a restarted session shift new
     // intervals onto the durable timeline. Legacy sets without that checkpoint
     // stay fail-closed and omit optional interval diagnostics.
@@ -89,12 +98,19 @@ class GymStore {
     static var maxCloudPlanRevision = 2147483647;
     private static const maxEstimatedStoreBytes = 24000;
     private static const maxLegacyStoredValueBytes = 32768;
+    (:fullLegacyState)
+    private static const maxRuntimeCheckpointBytes = 2048;
+    (:fullLegacyState)
+    private static const runtimeCheckpointIntervalMs = 15000;
+    (:fullLegacyState)
+    private static const maxRuntimeClockRecoverySeconds = 30;
 
     static function load() {
         clearTransientSetActions();
         lastLoggedSetEndSeconds = 0;
         resumedWorkoutIntervalsInvalid = false;
         resetActiveWorkoutSnapshotState();
+        resetRuntimeCheckpointState();
         var savedAccountBinding = Storage.getValue("accountBinding");
         accountBinding = isValidAccountBinding(savedAccountBinding) ? savedAccountBinding.toString() : null;
         var savedStateOwnerBinding = Storage.getValue("stateOwnerBinding");
@@ -338,7 +354,9 @@ class GymStore {
                 return false;
             }
             if (activeWorkoutSnapshotValid && hasAccountBinding()) {
-                var checkpoint = sets.size() == 0 ? emptyTimelineCheckpoint() :
+                var checkpoint = sets.size() == 0 ?
+                    (runtimeWorkoutStartedAtSeconds == null ?
+                        emptyTimelineCheckpoint() : currentTimelineCheckpoint(0.0)) :
                     (activeWorkoutTimelineValid ? currentTimelineCheckpoint(0.0) : null);
                 if (sets.size() > 0 && activeWorkoutTimelineValid && checkpoint == null) {
                     status = "SAVE FAIL";
@@ -445,6 +463,105 @@ class GymStore {
         activeWorkoutSnapshotValid = false;
         activeWorkoutTimelineValid = false;
         timelineBase = null;
+    }
+
+    (:fullLegacyState)
+    static function resetRuntimeCheckpointState() {
+        runtimeWorkoutStartedAtSeconds = null;
+        runtimePausePending = false;
+        lastRuntimeCheckpointTimerMs = null;
+    }
+
+    (:compactLegacyState)
+    static function resetRuntimeCheckpointState() {
+        runtimeWorkoutStartedAtSeconds = null;
+    }
+
+    (:fullLegacyState)
+    static function isValidRuntimeCheckpoint(snapshot) {
+        if (!(snapshot instanceof Lang.Array) || snapshot.size() != 11 ||
+            !(snapshot[0] instanceof Lang.Number) || snapshot[0] != 1 ||
+            !isValidAccountBinding(snapshot[1]) ||
+            !isBoundedText(snapshot[2], maxBindingLength) ||
+            !isValidOptionalAccountBinding(snapshot[3]) ||
+            !isBoundedInteger(snapshot[4], 0, maxWorkoutSets) ||
+            !isValidWorkoutStartedAtSeconds(snapshot[5]) ||
+            !isValidWorkoutStartedAtSeconds(snapshot[6]) ||
+            snapshot[6] > snapshot[5] || snapshot[5] - snapshot[6] > 604800 ||
+            !isValidTimelineCheckpoint(snapshot[7]) ||
+            !(snapshot[8] instanceof Lang.Boolean) ||
+            !isBoundedInteger(snapshot[9], 0, 2) ||
+            estimatedValueBytes(snapshot) > maxRuntimeCheckpointBytes) {
+            return false;
+        }
+        var restMode = snapshot[9];
+        var restValue = snapshot[10];
+        if (restMode == 0) {
+            return restValue instanceof Lang.Number && restValue == 0;
+        }
+        if (restMode == 1) {
+            return isValidWorkoutStartedAtSeconds(restValue) &&
+                restValue >= snapshot[5] && restValue - snapshot[5] <= 3600;
+        }
+        return isBoundedInteger(restValue, 1, 3600);
+    }
+
+    (:fullLegacyState)
+    static function restoreRuntimeCheckpoint(snapshot) {
+        if (!isValidRuntimeCheckpoint(snapshot) ||
+            !activeWorkoutSnapshotMatchesBindings(snapshot) ||
+            snapshot[4] != sets.size()) {
+            return false;
+        }
+        var origin = snapshot[6];
+        var checkpoint = snapshot[7];
+        if (sets.size() > 0) {
+            if (!activeWorkoutSnapshotValid ||
+                !isValidWorkoutStartedAtSeconds(activeWorkoutStartedAtSeconds) ||
+                activeWorkoutStartedAtSeconds != origin ||
+                !areSnapshotIntervalsConsistent(sets, checkpoint)) {
+                return false;
+            }
+        } else if (activeWorkoutStartedAtSeconds != null || snapshot[9] != 0) {
+            return false;
+        }
+
+        var restoredCheckpoint = [
+            checkpoint[0], checkpoint[1], checkpoint[2], checkpoint[3],
+            checkpoint[4], checkpoint[5], checkpoint[6], checkpoint[7]
+        ];
+        var now = Time.now().value();
+        var recoveryGap = now - snapshot[5];
+        if (!snapshot[8] && recoveryGap >= 0 &&
+            recoveryGap <= maxRuntimeClockRecoverySeconds &&
+            restoredCheckpoint[0] + recoveryGap <= 604800) {
+            // A short app-restart gap is part of a still-running workout. Longer
+            // absences are intentionally not counted, preventing a next-day open
+            // from inflating a forgotten session by hours.
+            restoredCheckpoint[0] += recoveryGap;
+        }
+        if (!isValidTimelineCheckpoint(restoredCheckpoint)) {
+            return false;
+        }
+
+        timelineBase = restoredCheckpoint;
+        activeWorkoutTimelineValid = true;
+        resumedWorkoutIntervalsInvalid = false;
+        runtimeWorkoutStartedAtSeconds = origin;
+        runtimePausePending = snapshot[8];
+        restDurationMs = 0;
+        restStartedAt = null;
+        if (snapshot[9] == 1) {
+            var remaining = snapshot[10] - now;
+            if (remaining > 0 && remaining <= 3600) {
+                restDurationMs = remaining * 1000;
+                restStartedAt = System.getTimer();
+            }
+        } else if (snapshot[9] == 2) {
+            restDurationMs = snapshot[10] * 1000;
+        }
+        lastRuntimeCheckpointTimerMs = System.getTimer();
+        return true;
     }
 
     static function activeWorkoutSnapshotMatchesBindings(snapshot) {
@@ -670,6 +787,11 @@ class GymStore {
             resumedWorkoutIntervalsInvalid = sets.size() > 0;
             timelineBase = null;
         }
+        var runtime = Storage.getValue("activeRuntimeV1");
+        if (runtime != null && isValidRuntimeCheckpoint(runtime) &&
+            activeWorkoutSnapshotMatchesBindings(runtime)) {
+            restoreRuntimeCheckpoint(runtime);
+        }
     }
 
     (:compactLegacyState)
@@ -712,6 +834,151 @@ class GymStore {
         var checkpoint = [elapsed, gymTotal, garminTotal, sum, samples,
             maximum, lastHeartRate, lastZone];
         return isValidTimelineCheckpoint(checkpoint) ? checkpoint : null;
+    }
+
+    static function totalGymCalories() {
+        return (timelineBase == null ? 0.0 : timelineBase[1]) +
+            GymSession.gymCalories;
+    }
+
+    (:fullLegacyState)
+    static function totalGarminCalories() {
+        var base = timelineBase == null ? null : timelineBase[2];
+        if (GymSession.garminCalories != null) {
+            return (base == null ? 0 : base) + GymSession.garminCalories;
+        }
+        return base;
+    }
+
+    (:fullLegacyState)
+    static function checkpointLiveWorkout(force) {
+        if (runtimePausePending) {
+            if (!GymSession.pause()) {
+                status = "PAUSE FAIL";
+                return false;
+            }
+            runtimePausePending = false;
+        }
+        if (!hasAccountBinding() || GymSession.startedAt <= 0 ||
+            GymSession.fitSaved) {
+            return true;
+        }
+        if (!force && lastRuntimeCheckpointTimerMs != null &&
+            timerElapsedMs(lastRuntimeCheckpointTimerMs) <
+                runtimeCheckpointIntervalMs.toLong()) {
+            return true;
+        }
+        var checkpoint = currentTimelineCheckpoint(0.0);
+        if (checkpoint == null ||
+            (sets.size() > 0 && !areSnapshotIntervalsConsistent(sets, checkpoint))) {
+            return false;
+        }
+        if (sets.size() == 0 && !activeWorkoutSnapshotValid &&
+            !persistActiveWorkoutSnapshot([], null, checkpoint)) {
+            return false;
+        }
+        var origin = activeWorkoutStartedAtSeconds;
+        if (origin == null) {
+            origin = runtimeWorkoutStartedAtSeconds;
+        }
+        if (origin == null) {
+            origin = GymSession.startedAt;
+        }
+        if (!isValidWorkoutStartedAtSeconds(origin)) {
+            return false;
+        }
+        var savedAt = Time.now().value();
+        if (!isValidWorkoutStartedAtSeconds(savedAt) || origin > savedAt ||
+            savedAt - origin > 604800) {
+            return false;
+        }
+
+        var restMode = 0;
+        var restValue = 0;
+        if (sets.size() > 0 && restDurationMs > 0) {
+            if (restStartedAt != null) {
+                var remaining = restSeconds();
+                if (remaining > 0) {
+                    restMode = 1;
+                    restValue = savedAt + remaining;
+                }
+            } else {
+                var suspendedSeconds =
+                    ((restDurationMs.toLong() + 999l) / 1000l).toNumber();
+                if (suspendedSeconds > 0 && suspendedSeconds <= 3600) {
+                    restMode = 2;
+                    restValue = suspendedSeconds;
+                }
+            }
+        }
+        var snapshot = [
+            1,
+            accountBinding.toString(),
+            deviceBinding.toString(),
+            isValidAccountBinding(pairingGeneration) ?
+                pairingGeneration.toString() : null,
+            sets.size(),
+            savedAt,
+            origin,
+            checkpoint,
+            GymSession.paused,
+            restMode,
+            restValue
+        ];
+        if (!isValidRuntimeCheckpoint(snapshot)) {
+            return false;
+        }
+        try {
+            Storage.setValue("activeRuntimeV1", snapshot);
+            runtimeWorkoutStartedAtSeconds = origin;
+            lastRuntimeCheckpointTimerMs = System.getTimer();
+            return true;
+        } catch (e) {
+            if (force) {
+                status = "RECOVERY FAIL";
+            }
+            return false;
+        }
+    }
+
+    (:compactLegacyState)
+    static function checkpointLiveWorkout(force) {
+        if (!hasAccountBinding() || GymSession.startedAt <= 0 ||
+            GymSession.fitSaved || GymSession.paused) {
+            return true;
+        }
+        if (GymSession.elapsedSeconds % 15 != 1) {
+            return true;
+        }
+        var checkpoint = currentTimelineCheckpoint(0.0);
+        var origin = sets.size() == 0 ? null : activeWorkoutStartedAtSeconds;
+        if (checkpoint == null ||
+            !persistActiveWorkoutSnapshot(sets, origin, checkpoint)) {
+            return false;
+        }
+        if (runtimeWorkoutStartedAtSeconds == null) {
+            runtimeWorkoutStartedAtSeconds = GymSession.startedAt;
+        }
+        return true;
+    }
+
+    (:fullLegacyState)
+    static function consumeRecoveredPause() {
+        var recovered = runtimePausePending;
+        runtimePausePending = false;
+        return recovered;
+    }
+
+    (:fullLegacyState)
+    static function clearRuntimeCheckpoint() {
+        try {
+            Storage.deleteValue("activeRuntimeV1");
+            resetRuntimeCheckpointState();
+            return true;
+        } catch (e) {
+            status = "RECOVERY FAIL";
+            return false;
+        }
     }
 
     static function emptyTimelineCheckpoint() {
@@ -821,10 +1088,27 @@ class GymStore {
         }
     }
 
+    (:fullLegacyState)
     static function persistEmptyActiveWorkoutSnapshot() {
         if (!persistActiveWorkoutSnapshot([], null, emptyTimelineCheckpoint())) {
             return false;
         }
+        if (!clearRuntimeCheckpoint()) {
+            return false;
+        }
+        resetActiveWorkoutSnapshotState();
+        activeWorkoutSnapshotValid = true;
+        activeWorkoutTimelineValid = true;
+        resumedWorkoutIntervalsInvalid = false;
+        return true;
+    }
+
+    (:compactLegacyState)
+    static function persistEmptyActiveWorkoutSnapshot() {
+        if (!persistActiveWorkoutSnapshot([], null, emptyTimelineCheckpoint())) {
+            return false;
+        }
+        runtimeWorkoutStartedAtSeconds = null;
         resetActiveWorkoutSnapshotState();
         activeWorkoutSnapshotValid = true;
         activeWorkoutTimelineValid = true;
@@ -1088,10 +1372,13 @@ class GymStore {
         var nextWorkoutStartedAt = activeWorkoutStartedAtSeconds;
         if (nextWorkoutStartedAt == null &&
             !resumedWorkoutIntervalsInvalid && hasAccountBinding() &&
-            isValidWorkoutStartedAtSeconds(GymSession.startedAt)) {
+            (isValidWorkoutStartedAtSeconds(runtimeWorkoutStartedAtSeconds) ||
+                isValidWorkoutStartedAtSeconds(GymSession.startedAt))) {
             // Commit the logical origin with the first durable set. Subsequent
             // process restarts can then label every persisted set with its real date.
-            nextWorkoutStartedAt = GymSession.startedAt;
+            nextWorkoutStartedAt =
+                isValidWorkoutStartedAtSeconds(runtimeWorkoutStartedAtSeconds) ?
+                    runtimeWorkoutStartedAtSeconds : GymSession.startedAt;
         }
         var previousSets = sets;
         var nextSets = normalizedSetList(sets);
@@ -2214,7 +2501,9 @@ class GymStore {
         try {
             Storage.deleteValue("queuedActiveRequestId");
             Storage.deleteValue("activeWorkoutV1");
+            Storage.deleteValue("activeRuntimeV1");
             resetActiveWorkoutSnapshotState();
+            resetRuntimeCheckpointState();
             return true;
         } catch (e) {
             // The owner deletion is the irreversible security boundary. Never allow
@@ -2260,6 +2549,7 @@ class GymStore {
             // account-bound wearable cache as well so a later lifecycle cannot revive
             // stale data even if durable owner metadata is externally repaired.
             Storage.deleteValue("activeWorkoutV1");
+            Storage.deleteValue("activeRuntimeV1");
         } catch (e) {
             // Binding validation remains the fail-closed authorization boundary.
         }
@@ -2274,6 +2564,7 @@ class GymStore {
         activeWorkoutStartedAtSeconds = null;
         resumedWorkoutIntervalsInvalid = false;
         resetActiveWorkoutSnapshotState();
+        resetRuntimeCheckpointState();
         deferredSync = null;
         processedSyncIds = [];
         // The phone fence is device-global, not account-scoped. Keeping it prevents a
@@ -2897,7 +3188,7 @@ class GymStore {
     }
 
     static function isWithinStorageBudget() {
-        var estimate = 4096;
+        var estimate = 4096 + 2048;
         estimate += estimatedValueBytes(exercises);
         // The rich active dictionaries live only in memory. Current releases
         // budget the compact atomic snapshot separately and retain only a small
@@ -2920,7 +3211,7 @@ class GymStore {
     }
 
     static function isWithinStorageBudgetForActiveSnapshot(snapshot) {
-        var estimate = 4096;
+        var estimate = 4096 + 2048;
         estimate += estimatedValueBytes(exercises);
         estimate += estimatedValueBytes(snapshot);
         estimate += 16 + (snapshot[5].size() * 112) +

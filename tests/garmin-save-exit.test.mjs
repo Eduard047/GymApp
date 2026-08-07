@@ -64,7 +64,12 @@ test("Garmin queues account-bound sets durably before FIT save while unbound FIT
   );
   assert.match(
     saveAndExit,
-    /GymStore\.sets\.size\(\) > 0 && !GymStore\.clearActiveWorkout\(\)[\s\S]*return;/
+    /if \(!GymStore\.clearActiveWorkout\(\)\)[\s\S]*return;/
+  );
+  assert.doesNotMatch(
+    saveAndExit,
+    /GymStore\.sets\.size\(\) > 0 && !GymStore\.clearActiveWorkout\(\)/,
+    "a zero-set FIT save must clear its runtime checkpoint too"
   );
   assert.ok(
     saveAndExit.indexOf("GymSession.stopAndSave()") < saveAndExit.indexOf("System.exit()"),
