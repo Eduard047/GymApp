@@ -69,6 +69,10 @@ struct PostWorkoutSummaryView: View {
         store.gamificationSnapshot(calendar: calendar)
     }
 
+    private var languageCode: String {
+        gymCurrentLanguageCode()
+    }
+
     private var sessionSummary: WorkoutSessionSummary? {
         store.workoutSummaries.first { $0.workoutID == workoutID }
     }
@@ -133,7 +137,7 @@ struct PostWorkoutSummaryView: View {
     }
 
     private var completedMissions: [MissionSnapshot] {
-        (gamification.missions.daily + gamification.missions.weekly).filter(\.completed)
+        gamification.missions.all.filter(\.completed)
     }
 
     private var highlightedBadges: [BadgeSnapshot] {
@@ -331,30 +335,42 @@ struct PostWorkoutSummaryView: View {
         GymPanel {
             VStack(alignment: .leading, spacing: 12) {
                 GymSectionTitle(
-                    eyebrow: "Missions",
-                    title: completedMissions.isEmpty ? "Next targets" : "Completed",
+                    eyebrow: gymText("Missions", "Місії", "Миссии", languageCode: languageCode),
+                    title: completedMissions.isEmpty
+                        ? gymText("Next targets", "Наступні цілі", "Следующие цели", languageCode: languageCode)
+                        : gymText("Completed", "Виконано", "Выполнено", languageCode: languageCode),
                     supporting: completedMissions.isEmpty
-                        ? "Keep logging sets to complete daily and weekly missions."
-                        : "Completed mission rewards are included in your progression."
+                        ? gymText(
+                            "Keep logging workouts and sets toward your daily, weekly, and monthly goals.",
+                            "Продовжуй записувати тренування й підходи для щоденних, щотижневих і щомісячних цілей.",
+                            "Продолжай записывать тренировки и подходы для ежедневных, еженедельных и ежемесячных целей.",
+                            languageCode: languageCode
+                        )
+                        : gymText(
+                            "Calendar goals track consistency; session XP stays separate.",
+                            "Календарні цілі відстежують сталість; XP за тренування нараховується окремо.",
+                            "Календарные цели отслеживают регулярность; XP за тренировку начисляется отдельно.",
+                            languageCode: languageCode
+                        )
                 )
 
                 let missions = completedMissions.isEmpty
-                    ? Array((gamification.missions.daily + gamification.missions.weekly).prefix(4))
+                    ? Array(gamification.missions.all.filter { !$0.completed }.prefix(4))
                     : completedMissions
                 ForEach(missions) { mission in
                     VStack(alignment: .leading, spacing: 6) {
                         HStack {
                             Label(
-                                gymLocalized(mission.title),
+                                mission.title.resolved(languageCode: languageCode),
                                 systemImage: mission.completed ? "checkmark.circle.fill" : "circle"
                             )
                             .font(.subheadline.weight(.semibold))
                             Spacer(minLength: 8)
-                            Text("+\(mission.rewardXP) XP")
-                                .font(.caption.weight(.bold))
-                                .foregroundStyle(GymTheme.primary)
+                            Text("\(missionValue(mission.progress)) / \(missionValue(mission.target))")
+                                .font(.caption.monospacedDigit().weight(.semibold))
+                                .foregroundStyle(GymTheme.textSecondary)
                         }
-                        ProgressView(value: min(mission.progress, mission.target), total: max(1, mission.target))
+                        ProgressView(value: mission.fraction)
                             .tint(mission.completed ? GymTheme.primary : GymTheme.secondary)
                     }
                     .accessibilityElement(children: .combine)
@@ -426,6 +442,10 @@ struct PostWorkoutSummaryView: View {
             return load.muscleID
         }
         return gymText(definition.titleEn, definition.titleUk, languageCode: gymCurrentLanguageCode())
+    }
+
+    private func missionValue(_ value: Double) -> String {
+        value.formatted(.number.precision(.fractionLength(0)))
     }
 
     private func badgeColor(_ rarity: BadgeRarity) -> Color {

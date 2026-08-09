@@ -52,7 +52,6 @@ import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.AchievementPreviewCard
 import com.example.gymapp.ui.components.EmptyStatePanel
 import com.example.gymapp.ui.components.HeroPanel
-import com.example.gymapp.ui.components.InfoPill
 import com.example.gymapp.ui.components.MetricTile
 import com.example.gymapp.ui.theme.GymCompactShape
 import com.example.gymapp.ui.viewmodel.MissionProgressUiModel
@@ -334,11 +333,6 @@ private fun MissionCard(
                         overflow = TextOverflow.Ellipsis
                     )
                 }
-
-                InfoPill(
-                    text = stringResource(R.string.post_workout_xp_gain, mission.xpReward),
-                    accent = accentColor
-                )
             }
 
             LinearProgressIndicator(

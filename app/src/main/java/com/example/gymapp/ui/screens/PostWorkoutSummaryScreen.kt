@@ -560,18 +560,7 @@ private fun MissionCard(mission: CompletedMissionUiState) {
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                Column(
-                    horizontalAlignment = Alignment.End,
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    InfoPill(text = mission.cadence)
-                    Text(
-                        text = stringResource(R.string.post_workout_reward_points, mission.rewardXp),
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
+                InfoPill(text = mission.cadence)
             }
         }
     }

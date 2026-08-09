@@ -1,12 +1,10 @@
 package com.example.gymapp.data.repository
 
 import com.example.gymapp.data.entity.WorkoutSessionSummary
-import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
-import java.time.temporal.TemporalAdjusters
 import kotlin.math.max
 import kotlin.math.roundToInt
 
@@ -14,14 +12,6 @@ object GamificationEngine {
     internal const val MAX_SESSION_XP = 5_000
     private const val DAILY_HEATMAP_DAYS = 365
     private const val TREND_WINDOW_DAYS = 30
-    private const val DAILY_WORKOUT_TARGET = 1.0
-    private const val DAILY_SET_TARGET = 8.0
-    private const val DAILY_EXERCISE_TARGET = 3.0
-    private const val DAILY_VOLUME_TARGET = 1_000.0
-    private const val WEEKLY_WORKOUT_DAY_TARGET = 3.0
-    private const val WEEKLY_WORKOUT_TARGET = 4.0
-    private const val WEEKLY_SET_TARGET = 30.0
-    private const val WEEKLY_VOLUME_TARGET = 5_000.0
 
     fun buildSnapshot(
         sessions: List<WorkoutSessionSummary>,
@@ -54,15 +44,12 @@ object GamificationEngine {
         val bonusXp = 0
         val totalXp = saturatedXpAdd(baseXp, bonusXp)
         val progression = buildProgression(baseXp, bonusXp, totalXp)
-        val missions = buildMissionBoard(dayAggregates, today)
-
         return GamificationSnapshot(
             generatedAt = nowMillis,
             summary = summary,
             progression = progression,
             streak = streak,
             comeback = comeback,
-            missions = missions,
             achievements = achievements,
             unlockedBadges = achievements.filter { it.unlocked }.map { it.badge },
             heatmap = buildHeatmap(dayAggregates, today),
@@ -196,95 +183,6 @@ object GamificationEngine {
             gapDays = gapDays,
             multiplier = multiplier,
             bonusXp = bonusXp
-        )
-    }
-
-    private fun buildMissionBoard(
-        dayAggregates: Map<Long, DayAggregate>,
-        today: LocalDate
-    ): MissionBoardSnapshot {
-        val todayEpochDay = today.toEpochDay()
-        val todayAggregate = dayAggregates[todayEpochDay] ?: DayAggregate()
-        val weekStart = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
-        val weekAggregates = dayAggregates.filterKeys { epochDay ->
-            val date = LocalDate.ofEpochDay(epochDay)
-            !date.isBefore(weekStart) && !date.isAfter(today)
-        }
-
-        val weeklyWorkoutDays = weekAggregates.keys.size.toDouble()
-        val weeklyWorkoutCount = weekAggregates.values.sumOf { it.workoutCount }.toDouble()
-        val weeklySetCount = weekAggregates.values.sumOf { it.setCount }.toDouble()
-        val weeklyVolume = weekAggregates.values.sumOf { it.volume }
-
-        return MissionBoardSnapshot(
-            daily = listOf(
-                mission(
-                    id = "daily_workout",
-                    title = "Complete a workout",
-                    description = "Finish at least one workout today.",
-                    target = DAILY_WORKOUT_TARGET,
-                    progress = todayAggregate.workoutCount.toDouble(),
-                    rewardXp = 30
-                ),
-                mission(
-                    id = "daily_sets",
-                    title = "Log 8 sets",
-                    description = "Accumulate eight sets in a single day.",
-                    target = DAILY_SET_TARGET,
-                    progress = todayAggregate.setCount.toDouble(),
-                    rewardXp = 25
-                ),
-                mission(
-                    id = "daily_exercises",
-                    title = "Train 3 exercises",
-                    description = "Touch three different exercise entries today.",
-                    target = DAILY_EXERCISE_TARGET,
-                    progress = todayAggregate.exerciseCount.toDouble(),
-                    rewardXp = 35
-                ),
-                mission(
-                    id = "daily_volume",
-                    title = "Move 1,000 volume",
-                    description = "Reach one thousand total volume today.",
-                    target = DAILY_VOLUME_TARGET,
-                    progress = todayAggregate.volume,
-                    rewardXp = 40
-                )
-            ),
-            weekly = listOf(
-                mission(
-                    id = "weekly_days",
-                    title = "Train on 3 days",
-                    description = "Work out on three separate days this week.",
-                    target = WEEKLY_WORKOUT_DAY_TARGET,
-                    progress = weeklyWorkoutDays,
-                    rewardXp = 60
-                ),
-                mission(
-                    id = "weekly_workouts",
-                    title = "Complete 4 workouts",
-                    description = "Finish four workouts this week.",
-                    target = WEEKLY_WORKOUT_TARGET,
-                    progress = weeklyWorkoutCount,
-                    rewardXp = 70
-                ),
-                mission(
-                    id = "weekly_sets",
-                    title = "Log 30 sets",
-                    description = "Accumulate thirty sets this week.",
-                    target = WEEKLY_SET_TARGET,
-                    progress = weeklySetCount,
-                    rewardXp = 80
-                ),
-                mission(
-                    id = "weekly_volume",
-                    title = "Move 5,000 volume",
-                    description = "Reach five thousand total volume this week.",
-                    target = WEEKLY_VOLUME_TARGET,
-                    progress = weeklyVolume,
-                    rewardXp = 100
-                )
-            )
         )
     }
 
@@ -585,25 +483,6 @@ object GamificationEngine {
                 xp = aggregate.xp
             )
         }
-    }
-
-    private fun mission(
-        id: String,
-        title: String,
-        description: String,
-        target: Double,
-        progress: Double,
-        rewardXp: Int
-    ): MissionSnapshot {
-        return MissionSnapshot(
-            id = id,
-            title = title,
-            description = description,
-            target = target,
-            progress = progress.coerceAtLeast(0.0),
-            rewardXp = rewardXp,
-            completed = progress >= target
-        )
     }
 
     fun xpForSession(session: WorkoutSessionSummary): Int {

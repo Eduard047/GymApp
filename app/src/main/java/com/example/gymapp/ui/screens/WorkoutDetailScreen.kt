@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -142,6 +143,11 @@ internal fun nextExpandedWorkoutExerciseId(
 } else {
     selectedExerciseId
 }
+
+internal fun selectedWorkoutExerciseQuickAddId(
+    selectedExerciseId: Long?,
+    availableExerciseIds: Set<Long>
+): Long? = selectedExerciseId?.takeIf { it in availableExerciseIds }
 
 internal fun shareWorkoutUrl(
     context: Context,
@@ -2094,8 +2100,15 @@ private fun WorkoutExerciseQuickAddCard(
     onAddExerciseToWorkout: (Long) -> Unit
 ) {
     var selectedExerciseId by remember(availableExercises) {
-        mutableStateOf(availableExercises.firstOrNull()?.id)
+        mutableStateOf<Long?>(null)
     }
+    val availableExerciseIds = remember(availableExercises) {
+        availableExercises.mapTo(linkedSetOf()) { it.id }
+    }
+    val addableExerciseId = selectedWorkoutExerciseQuickAddId(
+        selectedExerciseId = selectedExerciseId,
+        availableExerciseIds = availableExerciseIds
+    )
 
     AppPanel(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -2127,7 +2140,7 @@ private fun WorkoutExerciseQuickAddCard(
                 )
             } else {
                 ExerciseCatalogSelector(
-                    selectedExerciseId = selectedExerciseId,
+                    selectedExerciseId = addableExerciseId,
                     exercises = availableExercises,
                     frequentExerciseIds = frequentExerciseIds,
                     exerciseWorkoutCounts = exerciseWorkoutCounts,
@@ -2137,12 +2150,13 @@ private fun WorkoutExerciseQuickAddCard(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                FilledTonalButton(
+                Button(
                     onClick = {
-                        val selectedId = selectedExerciseId ?: return@FilledTonalButton
+                        val selectedId = addableExerciseId ?: return@Button
                         onAddExerciseToWorkout(selectedId)
                     },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = addableExerciseId != null
                 ) {
                     Text(text = stringResource(R.string.action_add_to_workout))
                 }

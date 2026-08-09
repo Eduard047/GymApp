@@ -52,6 +52,72 @@ final class SharedWorkoutLinkTests: XCTestCase {
         )
     }
 
+    func testEditorDraftEncoderUsesCurrentV1PlanAndExcludesExerciseMetadata() throws {
+        let exerciseID = UUID()
+        let loadProfile = try MachineLoadProfile(
+            direction: .higherIsHarder,
+            allowedWeightsKg: [20, 30, 40]
+        )
+        let exercise = Exercise(
+            id: exerciseID,
+            name: "Bench Press",
+            machineLoadProfile: loadProfile,
+            isFavorite: true
+        )
+        let drafts = [
+            WorkoutEditorExerciseDraft(
+                exerciseID: exerciseID,
+                sets: [
+                    WorkoutEditorSetDraft(weight: 72.5, reps: 8),
+                    WorkoutEditorSetDraft(weight: 75, reps: 6)
+                ]
+            )
+        ]
+
+        let url = try makeSharedWorkoutDraftURL(
+            drafts: drafts,
+            exercises: [exerciseID: exercise]
+        )
+        let plan = try SharedWorkoutLinkDecoder.decode(url)
+        let payload = try decodedPayload(from: url)
+        let root = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: payload) as? [String: Any]
+        )
+
+        XCTAssertEqual(url.absoluteString.split(separator: "#").first, "https://gymapptracker.com/workout/")
+        XCTAssertEqual(Set(root.keys), Set(["v", "e"]))
+        XCTAssertEqual((root["v"] as? NSNumber)?.intValue, 1)
+        XCTAssertEqual(plan.exercises.count, 1)
+        XCTAssertEqual(plan.exercises[0].sets.map(\.weight), [72.5, 75])
+        XCTAssertEqual(plan.exercises[0].sets.map(\.repetitions), [8, 6])
+        XCTAssertNil(payload.range(of: Data(exerciseID.uuidString.utf8)))
+        XCTAssertNil(payload.range(of: Data("allowedWeightsKg".utf8)))
+        XCTAssertNil(payload.range(of: Data("isFavorite".utf8)))
+    }
+
+    func testEditorDraftEncoderRejectsUnresolvedRecommendedWeight() throws {
+        let exerciseID = UUID()
+        let draft = WorkoutEditorExerciseDraft(
+            exerciseID: exerciseID,
+            sets: [
+                WorkoutEditorSetDraft(
+                    weight: 0,
+                    reps: 10,
+                    requiresWeightSelection: true
+                )
+            ]
+        )
+
+        XCTAssertThrowsError(
+            try makeSharedWorkoutDraftURL(
+                drafts: [draft],
+                exercises: [exerciseID: Exercise(id: exerciseID, name: "Bench Press")]
+            )
+        ) { error in
+            XCTAssertEqual(error as? SharedWorkoutLinkError, .invalidWeight)
+        }
+    }
+
     func testDecoderRejectsNonCanonicalRoutesAndFragments() throws {
         let invalidURLs = [
             "http://gymapptracker.com/workout/#workout=\(goldenPayload)",
@@ -247,6 +313,18 @@ final class SharedWorkoutLinkTests: XCTestCase {
         return try XCTUnwrap(
             URL(string: "https://gymapptracker.com/workout/#workout=\(encoded)")
         )
+    }
+
+    private func decodedPayload(from url: URL) throws -> Data {
+        let fragment = try XCTUnwrap(
+            URLComponents(url: url, resolvingAgainstBaseURL: false)?.fragment
+        )
+        XCTAssertTrue(fragment.hasPrefix("workout="))
+        var base64 = String(fragment.dropFirst("workout=".count))
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        base64 += String(repeating: "=", count: (4 - base64.count % 4) % 4)
+        return try XCTUnwrap(Data(base64Encoded: base64))
     }
 
     private func temporaryDirectory() throws -> URL {

@@ -2,6 +2,7 @@ package com.example.gymapp.ui.viewmodel
 
 import com.example.gymapp.data.repository.GamificationEngine
 import com.example.gymapp.util.RussianText
+import java.time.LocalDate
 import java.time.ZoneId
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -10,20 +11,22 @@ import org.junit.Test
 
 class PostWorkoutLocalizationCoverageTest {
     @Test
-    fun ukrainianMissionCopyCoversEveryMissionEmittedByGamificationEngine() {
-        val snapshot = GamificationEngine.buildSnapshot(
+    fun sharedMissionBoardCarriesUkrainianCopyForEveryCadence() {
+        val board = AdaptiveMissionBoardSource.build(
             sessions = emptyList(),
-            nowMillis = 1_800_000_000_000L,
+            anchorDate = LocalDate.of(2027, 1, 15),
             zoneId = ZoneId.of("UTC")
         )
-        val emittedIds = (snapshot.missions.daily + snapshot.missions.weekly)
-            .mapTo(linkedSetOf()) { it.id }
+        val missions = board.daily + board.weekly + board.monthly
 
-        assertEquals(emptySet<String>(), emittedIds - POST_WORKOUT_MISSION_UK.keys)
-        emittedIds.forEach { id ->
-            val copy = requireNotNull(POST_WORKOUT_MISSION_UK[id])
-            assertTrue("Mission title is blank for '$id'", copy.first.isNotBlank())
-            assertTrue("Mission description is blank for '$id'", copy.second.isNotBlank())
+        assertEquals(3, board.daily.size)
+        assertEquals(3, board.weekly.size)
+        assertEquals(2, board.monthly.size)
+        missions.forEach { mission ->
+            assertTrue("English mission title is blank for '${mission.id}'", mission.titleEn.isNotBlank())
+            assertTrue("Ukrainian mission title is blank for '${mission.id}'", mission.titleUk.isNotBlank())
+            assertTrue("English mission summary is blank for '${mission.id}'", mission.summaryEn.isNotBlank())
+            assertTrue("Ukrainian mission summary is blank for '${mission.id}'", mission.summaryUk.isNotBlank())
         }
     }
 
@@ -46,20 +49,33 @@ class PostWorkoutLocalizationCoverageTest {
     }
 
     @Test
-    fun russianCopyCoversEveryGeneratedPostWorkoutMissionAndAchievementField() {
+    fun russianCopyCoversEveryMissionCatalogAndAchievementField() {
+        AdaptiveMissionBoardSource.allCatalogMissions().forEach { mission ->
+            assertNotEquals(
+                mission.titleEn,
+                mission.titleEn,
+                RussianText.translate(mission.titleEn)
+            )
+            assertNotEquals(
+                mission.summaryEn,
+                mission.summaryEn,
+                RussianText.translate(mission.summaryEn)
+            )
+            assertNotEquals(
+                mission.unitEn,
+                mission.unitEn,
+                RussianText.translate(mission.unitEn)
+            )
+            assertTrue("Russian mission unit is blank for '${mission.id}'", mission.unitRu.isNotBlank())
+        }
+        listOf("Daily", "Weekly", "Monthly", "Today", "This week", "This month").forEach { label ->
+            assertNotEquals(label, label, RussianText.translate(label))
+        }
         val snapshot = GamificationEngine.buildSnapshot(
             sessions = emptyList(),
             nowMillis = 1_800_000_000_000L,
             zoneId = ZoneId.of("UTC")
         )
-        (snapshot.missions.daily + snapshot.missions.weekly).forEach { mission ->
-            assertNotEquals(mission.title, mission.title, RussianText.translate(mission.title))
-            assertNotEquals(
-                mission.description,
-                mission.description,
-                RussianText.translate(mission.description)
-            )
-        }
         snapshot.achievements.forEach { achievement ->
             assertNotEquals(
                 achievement.title,

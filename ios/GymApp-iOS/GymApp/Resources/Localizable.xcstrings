@@ -2443,23 +2443,6 @@
         }
       }
     },
-    "Completed mission rewards are included in your progression." : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Награды за исполненные миссии учтены в твоем прогрессе."
-          }
-        },
-        "uk" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Нагороди за виконані місії враховано у твоєму прогресі."
-          }
-        }
-      }
-    },
     "Completed mode: saving immediately adds every planned row to workout history and summaries." : {
       "localizations" : {
         "ru" : {
@@ -5459,23 +5442,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Продовжуй прогресувати"
-          }
-        }
-      }
-    },
-    "Keep logging sets to complete daily and weekly missions." : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Продолжай записывать подходы, чтобы выполнять ежедневные и еженедельные миссии."
-          }
-        },
-        "uk" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Продовжуй записувати підходи, щоб виконувати щоденні й щотижневі місії."
           }
         }
       }

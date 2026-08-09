@@ -12165,6 +12165,177 @@ final class CoreParityTests: XCTestCase {
         return condition()
     }
 
+    func testMissionCalibrationUsesTypicalHistoryAndConservativeFallbacks() {
+        XCTAssertEqual(
+            MissionTargetCalibration.target([8, 10, 12, 80], fallback: 10, range: 8 ... 22),
+            10
+        )
+        XCTAssertEqual(
+            MissionTargetCalibration.target([], fallback: 24, range: 16 ... 48),
+            24
+        )
+        XCTAssertEqual(
+            MissionTargetCalibration.target([200], fallback: 24, range: 16 ... 48),
+            24
+        )
+    }
+
+    func testMissionBoardHasOneThreeThreeTwoLocalizedContract() throws {
+        let calendar = utcCalendar()
+        let now = try utcDate(year: 2026, month: 8, day: 15, calendar: calendar)
+            .addingTimeInterval(12 * 60 * 60)
+        let board = GamificationEngine.buildSnapshot(
+            sessions: [],
+            now: now,
+            calendar: calendar
+        ).missions
+
+        XCTAssertEqual(board.daily.count, 3)
+        XCTAssertEqual(board.weekly.count, 3)
+        XCTAssertEqual(board.monthly.count, 2)
+        XCTAssertEqual(board.all, board.daily + board.weekly + board.monthly)
+        XCTAssertEqual(board.missions(for: .daily), board.daily)
+        XCTAssertEqual(board.missions(for: .weekly), board.weekly)
+        XCTAssertEqual(board.missions(for: .monthly), board.monthly)
+        XCTAssertEqual(Set(board.all.map(\.id)).count, 8)
+
+        for mission in board.all {
+            XCTAssertTrue(mission.id.hasPrefix(mission.cadence.rawValue + "_"), mission.id)
+            let titles = ["en", "uk", "ru"].map { mission.title.resolved(languageCode: $0) }
+            let descriptions = ["en", "uk", "ru"].map { mission.description.resolved(languageCode: $0) }
+            XCTAssertTrue(titles.allSatisfy { !$0.isEmpty }, mission.id)
+            XCTAssertTrue(descriptions.allSatisfy { !$0.isEmpty }, mission.id)
+            XCTAssertEqual(Set(titles).count, 3, mission.id)
+            XCTAssertEqual(Set(descriptions).count, 3, mission.id)
+        }
+    }
+
+    func testMissionBoardLoneHighOutlierCannotRaiseFallbackTargets() throws {
+        let calendar = utcCalendar()
+        let now = try utcDate(year: 2026, month: 8, day: 15, calendar: calendar)
+            .addingTimeInterval(12 * 60 * 60)
+        let outlierDate = try utcDate(year: 2026, month: 7, day: 20, calendar: calendar)
+            .addingTimeInterval(12 * 60 * 60)
+        let snapshot = GamificationEngine.buildSnapshot(
+            sessions: [missionSummary(date: outlierDate, exerciseCount: 100, setCount: 1_000)],
+            now: now,
+            calendar: calendar
+        )
+
+        XCTAssertEqual(try mission("daily_sets", in: snapshot).target, 8)
+        XCTAssertEqual(try mission("daily_exercises", in: snapshot).target, 3)
+        XCTAssertEqual(try mission("weekly_workouts", in: snapshot).target, 3)
+        XCTAssertEqual(try mission("weekly_days", in: snapshot).target, 2)
+        XCTAssertEqual(try mission("weekly_sets", in: snapshot).target, 24)
+        XCTAssertEqual(try mission("monthly_workouts", in: snapshot).target, 8)
+        XCTAssertEqual(try mission("monthly_sets", in: snapshot).target, 64)
+    }
+
+    func testMissionBoardStaleHistoryUsesFallbackTargets() throws {
+        let calendar = utcCalendar()
+        let now = try utcDate(year: 2026, month: 8, day: 15, calendar: calendar)
+            .addingTimeInterval(12 * 60 * 60)
+        let staleDate = try utcDate(year: 2026, month: 1, day: 1, calendar: calendar)
+            .addingTimeInterval(12 * 60 * 60)
+        let snapshot = GamificationEngine.buildSnapshot(
+            sessions: [
+                missionSummary(date: staleDate, exerciseCount: 100, setCount: 1_000),
+                missionSummary(date: staleDate.addingTimeInterval(24 * 60 * 60), exerciseCount: 100, setCount: 1_000)
+            ],
+            now: now,
+            calendar: calendar
+        )
+
+        XCTAssertEqual(try mission("daily_sets", in: snapshot).target, 8)
+        XCTAssertEqual(try mission("weekly_sets", in: snapshot).target, 24)
+        XCTAssertEqual(try mission("monthly_sets", in: snapshot).target, 64)
+    }
+
+    func testMissionBoardCurrentIncompletePeriodsAffectProgressNotCalibration() throws {
+        let calendar = utcCalendar()
+        let now = try utcDate(year: 2026, month: 8, day: 15, calendar: calendar)
+            .addingTimeInterval(12 * 60 * 60)
+        let snapshot = GamificationEngine.buildSnapshot(
+            sessions: [
+                missionSummary(
+                    date: now.addingTimeInterval(-60 * 60),
+                    exerciseCount: 100,
+                    setCount: 500
+                )
+            ],
+            now: now,
+            calendar: calendar
+        )
+
+        let dailySets = try mission("daily_sets", in: snapshot)
+        let weeklySets = try mission("weekly_sets", in: snapshot)
+        let monthlySets = try mission("monthly_sets", in: snapshot)
+        XCTAssertEqual(dailySets.target, 8)
+        XCTAssertEqual(weeklySets.target, 24)
+        XCTAssertEqual(monthlySets.target, 64)
+        XCTAssertEqual(dailySets.progress, 500)
+        XCTAssertEqual(weeklySets.progress, 500)
+        XCTAssertEqual(monthlySets.progress, 500)
+    }
+
+    func testMissionViewsShareBoardAndDoNotClaimCalendarMissionRewards() throws {
+        let missionsSource = try iosSource("GymApp/UI/Screens/MissionsView.swift")
+        let summarySource = try iosSource("GymApp/UI/Screens/PostWorkoutSummaryView.swift")
+        let stringsSource = try iosSource("GymApp/Resources/Localizable.xcstrings")
+
+        XCTAssertTrue(missionsSource.contains("snapshot.missions.missions(for: period)"))
+        XCTAssertFalse(missionsSource.contains("MissionCardModel"))
+        XCTAssertTrue(summarySource.contains("gamification.missions.all"))
+        XCTAssertFalse(missionsSource.contains("rewardXP"))
+        XCTAssertFalse(summarySource.contains("mission.rewardXP"))
+        XCTAssertFalse(summarySource.contains("Completed mission rewards"))
+        XCTAssertFalse(stringsSource.contains("Completed mission rewards"))
+        XCTAssertTrue(summarySource.contains("GamificationEngine.xpForSession"))
+
+        let calendar = utcCalendar()
+        let now = try utcDate(year: 2026, month: 8, day: 15, calendar: calendar)
+        let missions = GamificationEngine.buildSnapshot(
+            sessions: [],
+            now: now,
+            calendar: calendar
+        ).missions.all
+        let encoded = try JSONEncoder().encode(missions)
+        let contract = try XCTUnwrap(String(data: encoded, encoding: .utf8))
+        XCTAssertFalse(contract.contains("rewardXP"))
+    }
+
+    private func missionSummary(
+        date: Date,
+        exerciseCount: Int,
+        setCount: Int
+    ) -> WorkoutSessionSummary {
+        WorkoutSessionSummary(
+            workoutID: UUID(),
+            date: date,
+            note: nil,
+            exerciseCount: exerciseCount,
+            setCount: setCount,
+            totalVolume: 0
+        )
+    }
+
+    private func mission(
+        _ id: String,
+        in snapshot: GamificationSnapshot
+    ) throws -> MissionSnapshot {
+        try XCTUnwrap(snapshot.missions.all.first { $0.id == id })
+    }
+
+    private func iosSource(_ relativePath: String) throws -> String {
+        let projectRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        return try String(
+            contentsOf: projectRoot.appendingPathComponent(relativePath),
+            encoding: .utf8
+        )
+    }
+
     private func customExerciseNames(in store: WorkoutStore) -> [String] {
         store.exercises.filter { exercise in
             BuiltInExerciseCatalog.resolvedKey(

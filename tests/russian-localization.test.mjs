@@ -244,7 +244,7 @@ test("PWA accepts Russian state and renders Russian runtime text before app star
   assert.match(appSource, /txAttr\("Name in English, Ukrainian, or Russian", "Назва англійською, українською або російською"\)/);
   assert.doesNotMatch(appSource, /Name in English, Ukrainian or Russian/);
   assert.ok(indexSource.indexOf("russian-text.v73.js") < indexSource.indexOf("exercise-search-vocabulary.v1.js"));
-  assert.ok(indexSource.indexOf("exercise-search-vocabulary.v1.js") < indexSource.indexOf("app.v78.js"));
+  assert.ok(indexSource.indexOf("exercise-search-vocabulary.v1.js") < indexSource.indexOf("app.v80.js"));
   assert.match(workerSource, /"\.\/russian-text\.v73\.js"/);
 });
 
@@ -265,14 +265,16 @@ test("runtime language switches invalidate cached labels on every client", async
 });
 
 test("Garmin accepts Russian language sync and uses direct touch hit targets", async () => {
-  const [manifest, store, view, russianResources, ukrainianResources, buildScript] = await Promise.all([
+  const [manifest, store, view, russianResources, ukrainianResources, buildScript, exerciseLabelsSource] = await Promise.all([
     readFile("garmin/manifest.xml", "utf8"),
     readFile("garmin/source/GymStore.mc", "utf8"),
     readFile("garmin/source/WorkoutView.mc", "utf8"),
     readFile("garmin/resources-rus/strings.xml", "utf8"),
     readFile("garmin/resources-ukr/strings.xml", "utf8"),
-    readFile("scripts/build-garmin.sh", "utf8")
+    readFile("scripts/build-garmin.sh", "utf8"),
+    readFile("garmin/resources/exercise-labels.json", "utf8")
   ]);
+  const exerciseLabels = JSON.parse(exerciseLabelsSource);
   assert.match(manifest, /<iq:language>rus<\/iq:language>/);
   assert.match(store, /language\.equals\("ru"\)/);
   assert.match(store, /static function tr\(en, uk, ru\)/);
@@ -280,11 +282,12 @@ test("Garmin accepts Russian language sync and uses direct touch hit targets", a
   assert.match(store, /System\.LANGUAGE_UKR/);
   assert.match(store, /return "Exercise";/);
   assert.match(store, /static function currentExerciseLabel\(\)/);
-  assert.match(store, /name\.equals\("Bench Press"\)[\s\S]*Жим штанги лежачи[\s\S]*Жим штанги лежа/);
-  assert.match(store, /name\.equals\("Squat"\)[\s\S]*Присідання зі штангою[\s\S]*Приседания со штангой/);
-  assert.match(store, /name\.equals\("Deadlift"\)[\s\S]*Станова тяга[\s\S]*Становая тяга/);
-  assert.match(store, /name\.equals\("Overhead Press"\)[\s\S]*Жим над головою[\s\S]*Жим над головой/);
-  assert.match(store, /name\.equals\("Curl"\)[\s\S]*Згинання рук[\s\S]*Сгибание рук/);
+  assert.match(store, /App\.loadResource\(Rez\.JsonData\.ExerciseLabels\) as Lang\.Dictionary/);
+  assert.deepEqual(exerciseLabels["Bench Press"], ["Жим штанги лежачи", "Жим штанги лежа"]);
+  assert.deepEqual(exerciseLabels.Squat, ["Присідання зі штангою", "Приседания со штангой"]);
+  assert.deepEqual(exerciseLabels.Deadlift, ["Станова тяга", "Становая тяга"]);
+  assert.deepEqual(exerciseLabels["Overhead Press"], ["Жим над головою", "Жим над головой"]);
+  assert.deepEqual(exerciseLabels.Curl, ["Згинання рук", "Сгибание рук"]);
   assert.match(store, /"exerciseName" => currentExercise\(\)/);
   assert.match(view, /evt\.getCoordinates\(\)/);
   assert.match(view, /function rowAt\(/);

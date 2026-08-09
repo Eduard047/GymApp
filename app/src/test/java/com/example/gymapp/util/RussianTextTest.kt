@@ -12,7 +12,7 @@ class RussianTextTest {
             RussianText.translate("Accumulate thirty sets this week.")
         )
         assertEquals(
-            "Выполни 12 подходов сегодня.",
+            "Подходов сегодня: 12.",
             RussianText.translate("Reach 12 total sets today.")
         )
     }

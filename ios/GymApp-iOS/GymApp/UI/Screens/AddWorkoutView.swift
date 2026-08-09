@@ -1,5 +1,42 @@
 import SwiftUI
 
+func makeSharedWorkoutDraftURL(
+    drafts: [WorkoutEditorExerciseDraft],
+    exercises: [UUID: Exercise]
+) throws -> URL {
+    guard !drafts.isEmpty,
+          drafts.count <= SharedWorkoutLinkEncoder.maximumExercises else {
+        throw SharedWorkoutLinkError.invalidExerciseCount
+    }
+    var totalSetCount = 0
+    let sharedExercises = try drafts.map { draft -> SharedWorkoutPlanExercise in
+        guard let exercise = exercises[draft.exerciseID] else {
+            throw SharedWorkoutLinkError.missingExercise
+        }
+        guard !draft.sets.isEmpty,
+              draft.sets.count <= SharedWorkoutLinkEncoder.maximumSetsPerExercise else {
+            throw SharedWorkoutLinkError.invalidSetCount
+        }
+        totalSetCount += draft.sets.count
+        guard totalSetCount <= SharedWorkoutLinkEncoder.maximumTotalSets else {
+            throw SharedWorkoutLinkError.tooManySets
+        }
+        guard !draft.sets.contains(where: \.requiresWeightSelection) else {
+            throw SharedWorkoutLinkError.invalidWeight
+        }
+        return SharedWorkoutPlanExercise(
+            catalogKey: exercise.catalogKey,
+            name: exercise.name,
+            sets: draft.sets.map {
+                SharedWorkoutPlanSet(weight: $0.weight, repetitions: $0.reps)
+            }
+        )
+    }
+    return try SharedWorkoutLinkEncoder.makeURL(
+        plan: SharedWorkoutPlan(exercises: sharedExercises)
+    )
+}
+
 @MainActor
 struct AddWorkoutView: View {
     @ObservedObject private var store: WorkoutStore
@@ -524,6 +561,8 @@ struct AddWorkoutView: View {
                 .foregroundStyle(GymTheme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
 
+            shareDraftButton
+
             Button(action: startWorkout) {
                 Label(
                     gymText(
@@ -577,6 +616,97 @@ struct AddWorkoutView: View {
                         ? "Adds every planned row to history as completed and also queues the rows as Garmin targets"
                         : "Adds every planned row to history and summaries as completed"
                 )
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var shareDraftButton: some View {
+        let languageCode = gymCurrentLanguageCode()
+        if let shareURL = sharedWorkoutDraftURL {
+            ShareLink(
+                item: shareURL,
+                subject: Text(gymLocalized("GymApp workout")),
+                message: Text(
+                    GarminWorkoutDetailCopy.shareMessage(languageCode: languageCode)
+                )
+            ) {
+                Label(
+                    GarminWorkoutDetailCopy.shareWorkout(languageCode: languageCode),
+                    systemImage: "square.and.arrow.up"
+                )
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(GymSecondaryButtonStyle())
+            .disabled(isSaving)
+            .accessibilityHint(
+                GarminWorkoutDetailCopy.sharePrivacy(languageCode: languageCode)
+            )
+        } else {
+            Button(action: showDraftShareError) {
+                Label(
+                    GarminWorkoutDetailCopy.shareWorkout(languageCode: languageCode),
+                    systemImage: "square.and.arrow.up"
+                )
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(GymSecondaryButtonStyle())
+            .disabled(isSaving || drafts.isEmpty)
+            .accessibilityHint(
+                GarminWorkoutDetailCopy.sharePrivacy(languageCode: languageCode)
+            )
+        }
+
+        Text(GarminWorkoutDetailCopy.sharePrivacy(languageCode: languageCode))
+            .font(.caption)
+            .foregroundStyle(GymTheme.textSecondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var sharedWorkoutDraftURL: URL? {
+        try? makeSharedWorkoutDraftURL(
+            drafts: drafts,
+            exercises: sharedWorkoutExercisesByID
+        )
+    }
+
+    private var sharedWorkoutExercisesByID: [UUID: Exercise] {
+        var exercisesByID: [UUID: Exercise] = [:]
+        for exercise in store.exercises {
+            exercisesByID[exercise.id] = exercise
+        }
+        return exercisesByID
+    }
+
+    private func showDraftShareError() {
+        do {
+            _ = try makeSharedWorkoutDraftURL(
+                drafts: drafts,
+                exercises: sharedWorkoutExercisesByID
+            )
+        } catch SharedWorkoutLinkError.missingExercise {
+            show(gymLocalized("One selected exercise no longer exists."), error: true)
+        } catch SharedWorkoutLinkError.invalidWeight {
+            show(
+                gymText(
+                    "Choose a working weight before sharing.",
+                    "Обери робочу вагу перед поширенням.",
+                    "Выбери рабочий вес перед отправкой.",
+                    languageCode: gymCurrentLanguageCode()
+                ),
+                error: true
+            )
+        } catch SharedWorkoutLinkError.invalidRepetitions {
+            show(gymLocalized("Repetitions must be at least one."), error: true)
+        } catch {
+            show(
+                gymText(
+                    "This plan cannot be shared. Use no more than 20 exercises, 12 sets per exercise, and 120 sets total.",
+                    "Цим планом не можна поділитися. Використай не більше 20 вправ, 12 підходів на вправу та 120 підходів загалом.",
+                    "Этим планом нельзя поделиться. Используй не больше 20 упражнений, 12 подходов на упражнение и 120 подходов всего.",
+                    languageCode: gymCurrentLanguageCode()
+                ),
+                error: true
             )
         }
     }

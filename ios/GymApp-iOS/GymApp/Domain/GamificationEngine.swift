@@ -60,16 +60,72 @@ public struct ComebackSnapshot: Codable, Hashable, Sendable {
 public struct MissionBoardSnapshot: Codable, Hashable, Sendable {
     public let daily: [MissionSnapshot]
     public let weekly: [MissionSnapshot]
+    public let monthly: [MissionSnapshot]
+
+    public var all: [MissionSnapshot] {
+        daily + weekly + monthly
+    }
+
+    public func missions(for cadence: MissionCadence) -> [MissionSnapshot] {
+        switch cadence {
+        case .daily: daily
+        case .weekly: weekly
+        case .monthly: monthly
+        }
+    }
+}
+
+public enum MissionCadence: String, Codable, CaseIterable, Identifiable, Sendable {
+    case daily, weekly, monthly
+
+    public var id: String { rawValue }
+}
+
+public struct LocalizedMissionText: Codable, Hashable, Sendable {
+    public let english: String
+    public let ukrainian: String
+    public let russian: String
+
+    public func resolved(languageCode: String) -> String {
+        switch languageCode.prefix(2).lowercased() {
+        case "uk": ukrainian
+        case "ru": russian
+        default: english
+        }
+    }
 }
 
 public struct MissionSnapshot: Codable, Identifiable, Hashable, Sendable {
     public let id: String
-    public let title: String
-    public let description: String
+    public let cadence: MissionCadence
+    public let title: LocalizedMissionText
+    public let description: LocalizedMissionText
+    public let systemImage: String
     public let target: Double
     public let progress: Double
-    public let rewardXP: Int
     public let completed: Bool
+
+    public var fraction: Double {
+        guard target > 0 else { return 0 }
+        return min(1, max(0, progress / target))
+    }
+}
+
+enum MissionTargetCalibration {
+    static func target(
+        _ values: [Int],
+        fallback: Int,
+        range: ClosedRange<Int>,
+        minimumSampleCount: Int = 2
+    ) -> Double {
+        let safeFallback = min(range.upperBound, max(range.lowerBound, fallback))
+        let sorted = values.filter { $0 > 0 }.sorted()
+        guard sorted.count >= minimumSampleCount else {
+            return Double(safeFallback)
+        }
+        let lowerMedian = sorted[(sorted.count - 1) / 2]
+        return Double(min(range.upperBound, max(range.lowerBound, lowerMedian)))
+    }
 }
 
 public struct AchievementSnapshot: Codable, Identifiable, Hashable, Sendable {
@@ -121,6 +177,9 @@ public enum GamificationEngine {
     private static let dailyHeatmapDays = 365
     private static let trendWindowDays = 30
     private static let maximumXPPerSession = 5_000
+    private static let missionDailyLookbackDays = 42
+    private static let missionWeeklyLookbackWeeks = 8
+    private static let missionMonthlyLookbackMonths = 6
 
     private struct DayAggregate {
         var workoutCount = 0
@@ -128,6 +187,13 @@ public enum GamificationEngine {
         var setCount = 0
         var volume = 0.0
         var xp = 0
+    }
+
+    private struct MissionPeriodAggregate {
+        var workoutCount = 0
+        var workoutDays: Set<Int64> = []
+        var exerciseCount = 0
+        var setCount = 0
     }
 
     public static func buildSnapshot(
@@ -167,7 +233,7 @@ public enum GamificationEngine {
             progression: buildProgression(baseXP: baseXP, bonusXP: bonusXP, totalXP: totalXP),
             streak: streak,
             comeback: comeback,
-            missions: buildMissionBoard(dayAggregates: dayAggregates, today: today),
+            missions: buildMissionBoard(sessions: sessions, now: now, calendar: calendar),
             achievements: achievements,
             unlockedBadges: achievements.filter(\.unlocked).map(\.badge),
             heatmap: buildHeatmap(dayAggregates: dayAggregates, today: today),
@@ -400,33 +466,266 @@ public enum GamificationEngine {
     }
 
     private static func buildMissionBoard(
-        dayAggregates: [Int64: DayAggregate],
-        today: Int64
+        sessions: [WorkoutSessionSummary],
+        now: Date,
+        calendar: Calendar
     ) -> MissionBoardSnapshot {
-        let todayAggregate = dayAggregates[today, default: DayAggregate()]
-        // 1970-01-01 was Thursday. Modulo maps Monday to zero.
-        let daysSinceMonday = Int((today + 3).positiveModulo(7))
-        let weekStart = today - Int64(daysSinceMonday)
-        let week = dayAggregates.filter { $0.key >= weekStart && $0.key <= today }
-        let weeklyWorkoutDays = Double(week.count)
-        let weeklyWorkoutCount = Double(week.values.reduce(0) { $0 + $1.workoutCount })
-        let weeklySetCount = Double(week.values.reduce(0) { $0 + $1.setCount })
-        let weeklyVolume = week.values.reduce(0) { $0 + $1.volume }
+        let dayStart = calendar.startOfDay(for: now)
+        let weekStart = calendar.gymMondayStart(of: now)
+        let monthStart = calendar.dateInterval(of: .month, for: now)?.start ?? dayStart
+
+        let today = missionAggregate(
+            sessions: sessions,
+            from: dayStart,
+            through: now,
+            calendar: calendar
+        )
+        let currentWeek = missionAggregate(
+            sessions: sessions,
+            from: weekStart,
+            through: now,
+            calendar: calendar
+        )
+        let currentMonth = missionAggregate(
+            sessions: sessions,
+            from: monthStart,
+            through: now,
+            calendar: calendar
+        )
+
+        // Each calibration window is bounded and ends at the start of the current
+        // period. A still-in-progress day, week, or month can change progress, but
+        // can never inflate its own target.
+        let recentDays = completedMissionAggregates(
+            sessions: sessions,
+            from: calendar.date(byAdding: .day, value: -missionDailyLookbackDays, to: dayStart),
+            before: dayStart,
+            cadence: .daily,
+            calendar: calendar
+        )
+        let recentWeeks = completedMissionAggregates(
+            sessions: sessions,
+            from: calendar.date(byAdding: .weekOfYear, value: -missionWeeklyLookbackWeeks, to: weekStart),
+            before: weekStart,
+            cadence: .weekly,
+            calendar: calendar
+        )
+        let recentMonths = completedMissionAggregates(
+            sessions: sessions,
+            from: calendar.date(byAdding: .month, value: -missionMonthlyLookbackMonths, to: monthStart),
+            before: monthStart,
+            cadence: .monthly,
+            calendar: calendar
+        )
+
+        let dailySetTarget = MissionTargetCalibration.target(
+            recentDays.map(\.setCount),
+            fallback: 8,
+            range: 8 ... 22
+        )
+        let dailyExerciseTarget = MissionTargetCalibration.target(
+            recentDays.map(\.exerciseCount),
+            fallback: 3,
+            range: 3 ... 10
+        )
+        let weeklyWorkoutTarget = MissionTargetCalibration.target(
+            recentWeeks.map(\.workoutCount),
+            fallback: 3,
+            range: 2 ... 3
+        )
+        let weeklyDayTarget = MissionTargetCalibration.target(
+            recentWeeks.map { $0.workoutDays.count },
+            fallback: 2,
+            range: 2 ... 3
+        )
+        let weeklySetTarget = MissionTargetCalibration.target(
+            recentWeeks.map(\.setCount),
+            fallback: 24,
+            range: 16 ... 48
+        )
+        let monthlyWorkoutTarget = MissionTargetCalibration.target(
+            recentMonths.map(\.workoutCount),
+            fallback: 8,
+            range: 6 ... 14
+        )
+        let monthlySetTarget = MissionTargetCalibration.target(
+            recentMonths.map(\.setCount),
+            fallback: 64,
+            range: 48 ... 160
+        )
 
         return MissionBoardSnapshot(
             daily: [
-                mission("daily_workout", "Complete a workout", "Finish at least one workout today.", 1, Double(todayAggregate.workoutCount), 30),
-                mission("daily_sets", "Log 8 sets", "Accumulate eight sets in a single day.", 8, Double(todayAggregate.setCount), 25),
-                mission("daily_exercises", "Train 3 exercises", "Touch three different exercise entries today.", 3, Double(todayAggregate.exerciseCount), 35),
-                mission("daily_volume", "Move 1,000 volume", "Reach one thousand total volume today.", 1_000, todayAggregate.volume, 40)
+                mission(
+                    "daily_workout",
+                    cadence: .daily,
+                    title: missionText("Show up", "Прийди на тренування", "Приди на тренировку"),
+                    description: missionText(
+                        "Complete one workout today.",
+                        "Заверши одне тренування сьогодні.",
+                        "Заверши одну тренировку сегодня."
+                    ),
+                    systemImage: "figure.strengthtraining.traditional",
+                    target: 1,
+                    progress: Double(today.workoutCount)
+                ),
+                mission(
+                    "daily_sets",
+                    cadence: .daily,
+                    title: missionText("Quality sets", "Якісні підходи", "Качественные подходы"),
+                    description: missionText(
+                        "Complete a sustainable number of working sets today.",
+                        "Виконай реалістичну кількість робочих підходів сьогодні.",
+                        "Выполни реалистичное количество рабочих подходов сегодня."
+                    ),
+                    systemImage: "list.number",
+                    target: dailySetTarget,
+                    progress: Double(today.setCount)
+                ),
+                mission(
+                    "daily_exercises",
+                    cadence: .daily,
+                    title: missionText("Balanced session", "Збалансована сесія", "Сбалансированная сессия"),
+                    description: missionText(
+                        "Train a realistic number of exercises today.",
+                        "Виконай реалістичну кількість вправ сьогодні.",
+                        "Выполни реалистичное количество упражнений сегодня."
+                    ),
+                    systemImage: "square.grid.2x2",
+                    target: dailyExerciseTarget,
+                    progress: Double(today.exerciseCount)
+                )
             ],
             weekly: [
-                mission("weekly_days", "Train on 3 days", "Work out on three separate days this week.", 3, weeklyWorkoutDays, 60),
-                mission("weekly_workouts", "Complete 4 workouts", "Finish four workouts this week.", 4, weeklyWorkoutCount, 70),
-                mission("weekly_sets", "Log 30 sets", "Accumulate thirty sets this week.", 30, weeklySetCount, 80),
-                mission("weekly_volume", "Move 5,000 volume", "Reach five thousand total volume this week.", 5_000, weeklyVolume, 100)
+                mission(
+                    "weekly_workouts",
+                    cadence: .weekly,
+                    title: missionText("Weekly rhythm", "Ритм тижня", "Ритм недели"),
+                    description: missionText(
+                        "Match a sustainable recent workout rhythm this week.",
+                        "Підтримай цього тижня сталий ритм недавніх тренувань.",
+                        "Поддержи на этой неделе стабильный ритм недавних тренировок."
+                    ),
+                    systemImage: "calendar",
+                    target: weeklyWorkoutTarget,
+                    progress: Double(currentWeek.workoutCount)
+                ),
+                mission(
+                    "weekly_days",
+                    cadence: .weekly,
+                    title: missionText("Active days", "Активні дні", "Активные дни"),
+                    description: missionText(
+                        "Train on a realistic number of separate days this week.",
+                        "Тренуйся реалістичну кількість окремих днів цього тижня.",
+                        "Тренируйся реалистичное количество отдельных дней на этой неделе."
+                    ),
+                    systemImage: "calendar.badge.checkmark",
+                    target: weeklyDayTarget,
+                    progress: Double(currentWeek.workoutDays.count)
+                ),
+                mission(
+                    "weekly_sets",
+                    cadence: .weekly,
+                    title: missionText("Steady sets", "Сталі підходи", "Стабильные подходы"),
+                    description: missionText(
+                        "Build a typical recent week's number of working sets.",
+                        "Виконай типову для недавнього тижня кількість робочих підходів.",
+                        "Выполни типичное для недавней недели количество рабочих подходов."
+                    ),
+                    systemImage: "list.number",
+                    target: weeklySetTarget,
+                    progress: Double(currentWeek.setCount)
+                )
+            ],
+            monthly: [
+                mission(
+                    "monthly_workouts",
+                    cadence: .monthly,
+                    title: missionText("Monthly base", "Основа місяця", "Основа месяца"),
+                    description: missionText(
+                        "Build on a sustainable recent month of workouts.",
+                        "Спирайся на сталий ритм тренувань недавнього місяця.",
+                        "Опирайся на стабильный ритм тренировок недавнего месяца."
+                    ),
+                    systemImage: "calendar",
+                    target: monthlyWorkoutTarget,
+                    progress: Double(currentMonth.workoutCount)
+                ),
+                mission(
+                    "monthly_sets",
+                    cadence: .monthly,
+                    title: missionText("Sustainable sets", "Сталий обсяг підходів", "Стабильный объём подходов"),
+                    description: missionText(
+                        "Accumulate a realistic number of working sets this month.",
+                        "Набери реалістичну кількість робочих підходів цього місяця.",
+                        "Набери реалистичное количество рабочих подходов в этом месяце."
+                    ),
+                    systemImage: "list.number",
+                    target: monthlySetTarget,
+                    progress: Double(currentMonth.setCount)
+                )
             ]
         )
+    }
+
+    private static func missionAggregate(
+        sessions: [WorkoutSessionSummary],
+        from start: Date,
+        through end: Date,
+        calendar: Calendar
+    ) -> MissionPeriodAggregate {
+        var aggregate = MissionPeriodAggregate()
+        for session in sessions where session.date >= start && session.date <= end {
+            add(session, to: &aggregate, calendar: calendar)
+        }
+        return aggregate
+    }
+
+    private static func completedMissionAggregates(
+        sessions: [WorkoutSessionSummary],
+        from start: Date?,
+        before end: Date,
+        cadence: MissionCadence,
+        calendar: Calendar
+    ) -> [MissionPeriodAggregate] {
+        guard let start, start < end else { return [] }
+        var grouped: [Int64: MissionPeriodAggregate] = [:]
+        for session in sessions where session.date >= start && session.date < end {
+            let key = missionPeriodKey(for: session.date, cadence: cadence, calendar: calendar)
+            var aggregate = grouped[key, default: MissionPeriodAggregate()]
+            add(session, to: &aggregate, calendar: calendar)
+            grouped[key] = aggregate
+        }
+        return grouped.keys.sorted().compactMap { grouped[$0] }
+    }
+
+    private static func missionPeriodKey(
+        for date: Date,
+        cadence: MissionCadence,
+        calendar: Calendar
+    ) -> Int64 {
+        switch cadence {
+        case .daily:
+            calendar.gymEpochDay(for: date)
+        case .weekly:
+            calendar.gymEpochDay(for: calendar.gymMondayStart(of: date))
+        case .monthly:
+            calendar.gymEpochDay(
+                for: calendar.dateInterval(of: .month, for: date)?.start
+                    ?? calendar.startOfDay(for: date)
+            )
+        }
+    }
+
+    private static func add(
+        _ session: WorkoutSessionSummary,
+        to aggregate: inout MissionPeriodAggregate,
+        calendar: Calendar
+    ) {
+        aggregate.workoutCount = saturatingAdd(aggregate.workoutCount, 1)
+        aggregate.workoutDays.insert(calendar.gymEpochDay(for: session.date))
+        aggregate.exerciseCount = saturatingAdd(aggregate.exerciseCount, max(0, session.exerciseCount))
+        aggregate.setCount = saturatingAdd(aggregate.setCount, max(0, session.setCount))
     }
 
     private static func buildAchievements(
@@ -478,20 +777,36 @@ public enum GamificationEngine {
 
     private static func mission(
         _ id: String,
-        _ title: String,
-        _ description: String,
-        _ target: Double,
-        _ progress: Double,
-        _ rewardXP: Int
+        cadence: MissionCadence,
+        title: LocalizedMissionText,
+        description: LocalizedMissionText,
+        systemImage: String,
+        target: Double,
+        progress: Double
     ) -> MissionSnapshot {
-        MissionSnapshot(
+        let safeTarget = max(1, target.isFinite ? target : 1)
+        let safeProgress = max(0, progress.isFinite ? progress : 0)
+        return MissionSnapshot(
             id: id,
+            cadence: cadence,
             title: title,
             description: description,
-            target: target,
-            progress: max(0, progress),
-            rewardXP: rewardXP,
-            completed: progress >= target
+            systemImage: systemImage,
+            target: safeTarget,
+            progress: safeProgress,
+            completed: safeProgress >= safeTarget
+        )
+    }
+
+    private static func missionText(
+        _ english: String,
+        _ ukrainian: String,
+        _ russian: String
+    ) -> LocalizedMissionText {
+        LocalizedMissionText(
+            english: english,
+            ukrainian: ukrainian,
+            russian: russian
         )
     }
 

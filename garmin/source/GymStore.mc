@@ -1,3 +1,4 @@
+using Toybox.Application as App;
 using Toybox.Application.Storage as Storage;
 using Toybox.Lang as Lang;
 using Toybox.System as System;
@@ -51,6 +52,9 @@ class GymStore {
     static var autoPromptEnabled = true;
     static var sensitivityIndex = 1;
     static var language = "en";
+    static var exerciseLabelCacheName = null;
+    static var exerciseLabelCacheLanguage = null;
+    static var exerciseLabelCacheValue = null;
     static var accountBinding = null;
     static var stateOwnerBinding = null;
     static var deviceBinding = null;
@@ -1166,24 +1170,24 @@ class GymStore {
 
     static function localizedExerciseName(value) {
         var name = value == null ? "Exercise" : value.toString();
-        if (name.equals("Exercise")) {
-            return tr("Exercise", "Вправа", "Упражнение");
-        } else if (name.equals("Bench Press")) {
-            return tr(name, "Жим штанги лежачи", "Жим штанги лежа");
-        } else if (name.equals("Squat")) {
-            return tr(name, "Присідання зі штангою", "Приседания со штангой");
-        } else if (name.equals("Deadlift")) {
-            return tr(name, "Станова тяга", "Становая тяга");
-        } else if (name.equals("Pull Up")) {
-            return tr(name, "Підтягування", "Подтягивание");
-        } else if (name.equals("Overhead Press")) {
-            return tr(name, "Жим над головою", "Жим над головой");
-        } else if (name.equals("Curl")) {
-            return tr(name, "Згинання рук", "Сгибание рук");
-        } else if (name.equals("Biceps Curl")) {
-            return tr(name, "Згинання рук на біцепс", "Сгибание рук на бицепс");
+        if (exerciseLabelCacheName != null &&
+            name.equals(exerciseLabelCacheName) &&
+            language.equals(exerciseLabelCacheLanguage)) {
+            return exerciseLabelCacheValue;
         }
-        return name;
+
+        var label = name;
+        if (isUk() || isRu()) {
+            var table = App.loadResource(Rez.JsonData.ExerciseLabels) as Lang.Dictionary;
+            var labels = table.get(name);
+            if (labels instanceof Lang.Array && labels.size() == 2) {
+                label = labels[isUk() ? 0 : 1].toString();
+            }
+        }
+        exerciseLabelCacheName = name;
+        exerciseLabelCacheLanguage = language;
+        exerciseLabelCacheValue = label;
+        return label;
     }
 
     static function applyCurrentPlanSet() {

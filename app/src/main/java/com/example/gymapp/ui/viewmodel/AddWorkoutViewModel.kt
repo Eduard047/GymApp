@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.gymapp.R
+import com.example.gymapp.data.catalog.BuiltInExerciseCatalog
 import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.entity.ExerciseHistoryEntry
 import com.example.gymapp.data.entity.WorkoutSessionDetails
@@ -20,7 +21,9 @@ import com.example.gymapp.data.repository.SmartWorkoutEffortAdjustment
 import com.example.gymapp.data.repository.SmartWorkoutFocus
 import com.example.gymapp.data.repository.SmartWorkoutVariant
 import com.example.gymapp.data.repository.SharedWorkoutLink
+import com.example.gymapp.data.repository.SharedWorkoutExercise
 import com.example.gymapp.data.repository.SharedWorkoutPlan
+import com.example.gymapp.data.repository.SharedWorkoutSet
 import com.example.gymapp.data.repository.MuscleContribution
 import com.example.gymapp.data.repository.defaultContributionsForExercise
 import com.example.gymapp.data.repository.normalizedExerciseName
@@ -62,6 +65,53 @@ data class ExerciseInputState(
     val exerciseId: Long? = null,
     val sets: List<SetInputState> = listOf(SetInputState())
 )
+
+internal fun buildSharedWorkoutDraftUrl(
+    drafts: List<ExerciseInputState>,
+    exercises: List<ExerciseEntity>
+): String {
+    val selectedDrafts = drafts.filter { it.exerciseId != null }
+    require(selectedDrafts.size in 1..SharedWorkoutLink.MAX_EXERCISES) {
+        "Shared workout exercise count is invalid."
+    }
+    val exercisesById = exercises.associateBy(ExerciseEntity::id)
+    var totalSetCount = 0
+    val sharedExercises = selectedDrafts.map { draft ->
+        val exerciseId = requireNotNull(draft.exerciseId)
+        val exercise = requireNotNull(exercisesById[exerciseId]) {
+            "Shared workout exercise is unavailable."
+        }
+        require(draft.sets.size in 1..SharedWorkoutLink.MAX_SETS_PER_EXERCISE) {
+            "Shared workout set count is invalid."
+        }
+        totalSetCount += draft.sets.size
+        require(totalSetCount <= SharedWorkoutLink.MAX_TOTAL_SETS) {
+            "Shared workout contains too many sets."
+        }
+
+        SharedWorkoutExercise(
+            catalogKey = BuiltInExerciseCatalog.inferKey(exercise.name),
+            name = exercise.name,
+            sets = draft.sets.map { set ->
+                val weight = parseWeightInputOrNull(set.weight)
+                val repsText = set.reps.trim()
+                val reps = repsText
+                    .takeIf { it.length <= SHARED_WORKOUT_REPS_INPUT_MAX_LENGTH }
+                    ?.toIntOrNull()
+                require(
+                    weight != null &&
+                        reps != null &&
+                        WorkoutDataLimits.isValidWeight(weight) &&
+                        WorkoutDataLimits.isValidReps(reps)
+                ) { "Shared workout set is invalid." }
+                SharedWorkoutSet(weight = weight, reps = reps)
+            }
+        )
+    }
+    return SharedWorkoutLink.buildUrl(sharedExercises)
+}
+
+private const val SHARED_WORKOUT_REPS_INPUT_MAX_LENGTH = 10
 
 data class WorkoutTemplatePreviewUiModel(
     val sessionId: Long,
@@ -1029,6 +1079,17 @@ class AddWorkoutViewModel(
 
             isSaving.value = false
         }
+    }
+
+    fun prepareSharedWorkoutUrl(): String? {
+        val result = runCatching {
+            buildSharedWorkoutDraftUrl(
+                drafts = exerciseDrafts.value,
+                exercises = exerciseCatalogState.value.exercises
+            )
+        }
+        hasValidationError.value = result.isFailure
+        return result.getOrNull()
     }
 
     fun syncPlanToWatch() {

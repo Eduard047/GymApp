@@ -14,8 +14,6 @@ import com.example.gymapp.data.repository.GamificationEngine
 import com.example.gymapp.data.repository.GamificationSnapshot
 import com.example.gymapp.data.repository.GymRepository
 import com.example.gymapp.data.repository.MUSCLE_DEFINITIONS
-import com.example.gymapp.data.repository.MissionBoardSnapshot
-import com.example.gymapp.data.repository.MissionSnapshot
 import com.example.gymapp.data.repository.RANK_DEFINITIONS
 import com.example.gymapp.data.repository.estimatedLoad
 import com.example.gymapp.data.repository.muscleContributionsForExercise
@@ -29,15 +27,17 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import java.time.Instant
 import java.time.ZoneId
 import java.util.Locale
 import kotlin.math.pow
 import kotlin.math.roundToInt
 
 data class CompletedMissionUiState(
+    val id: String,
     val title: String,
     val description: String,
-    val rewardXp: Int,
+    val target: Int,
     val cadence: String
 )
 
@@ -107,17 +107,6 @@ internal data class PostWorkoutAchievementTranslation(
     val title: String,
     val description: String,
     val badgeName: String
-)
-
-internal val POST_WORKOUT_MISSION_UK = mapOf(
-    "daily_workout" to Pair("Завершити тренування", "Заверши хоча б одне тренування сьогодні."),
-    "daily_sets" to Pair("Записати 8 підходів", "Виконай вісім підходів за один день."),
-    "daily_exercises" to Pair("Виконати 3 вправи", "Виконай три різні вправи сьогодні."),
-    "daily_volume" to Pair("Набрати обсяг 1 000", "Набери загальний обсяг 1 000 сьогодні."),
-    "weekly_days" to Pair("Тренуватися 3 дні", "Тренуйся у три різні дні цього тижня."),
-    "weekly_workouts" to Pair("Завершити 4 тренування", "Заверши чотири тренування цього тижня."),
-    "weekly_sets" to Pair("Записати 30 підходів", "Виконай тридцять підходів цього тижня."),
-    "weekly_volume" to Pair("Набрати обсяг 5 000", "Набери загальний обсяг 5 000 цього тижня.")
 )
 
 internal val POST_WORKOUT_ACHIEVEMENT_UK = mapOf(
@@ -207,10 +196,21 @@ class PostWorkoutSummaryViewModel(
                 nowMillis = anchorTime,
                 zoneId = zoneId
             )
+            val anchorDate = Instant.ofEpochMilli(anchorTime).atZone(zoneId).toLocalDate()
+            val afterMissionBoard = AdaptiveMissionBoardSource.build(
+                sessions = sessionsThroughCurrent,
+                anchorDate = anchorDate,
+                zoneId = zoneId
+            )
+            val beforeMissionBoard = AdaptiveMissionBoardSource.build(
+                sessions = previousSessions,
+                anchorDate = anchorDate,
+                zoneId = zoneId
+            )
 
             val completedMissions = completedMissionDiff(
-                before = beforeSnapshot.missions,
-                after = afterSnapshot.missions
+                before = beforeMissionBoard,
+                after = afterMissionBoard
             )
             val newBadges = newBadgeDiff(
                 before = beforeSnapshot,
@@ -285,28 +285,11 @@ class PostWorkoutSummaryViewModel(
     )
 
     private fun completedMissionDiff(
-        before: MissionBoardSnapshot,
-        after: MissionBoardSnapshot
+        before: AdaptiveMissionBoard,
+        after: AdaptiveMissionBoard
     ): List<CompletedMissionUiState> {
-        val beforeDailyIds = before.daily.filter { it.completed }.map { it.id }.toSet()
-        val beforeWeeklyIds = before.weekly.filter { it.completed }.map { it.id }.toSet()
-
-        val newDaily = after.daily
-            .filter { it.completed && it.id !in beforeDailyIds }
-            .map {
-                it.toCompletedMissionUiState(
-                    cadence = localizedText(en = "Daily", uk = "Щоденна")
-                )
-            }
-        val newWeekly = after.weekly
-            .filter { it.completed && it.id !in beforeWeeklyIds }
-            .map {
-                it.toCompletedMissionUiState(
-                    cadence = localizedText(en = "Weekly", uk = "Щотижнева")
-                )
-            }
-
-        return newDaily + newWeekly
+        return AdaptiveMissionBoardSource.newlyCompleted(before, after)
+            .map { mission -> mission.toCompletedMissionUiState() }
     }
 
     private fun newBadgeDiff(
@@ -409,13 +392,18 @@ class PostWorkoutSummaryViewModel(
             .sortedByDescending { it.weight }
     }
 
-    private fun MissionSnapshot.toCompletedMissionUiState(cadence: String): CompletedMissionUiState {
-        val translation = POST_WORKOUT_MISSION_UK[id]
+    private fun AdaptiveMission.toCompletedMissionUiState(): CompletedMissionUiState {
+        val cadenceLabel = when (cadence) {
+            MissionCadence.Daily -> localizedText(en = "Daily", uk = "Щоденна")
+            MissionCadence.Weekly -> localizedText(en = "Weekly", uk = "Щотижнева")
+            MissionCadence.Monthly -> localizedText(en = "Monthly", uk = "Щомісячна")
+        }
         return CompletedMissionUiState(
-            title = localizedText(en = title, uk = translation?.first ?: title),
-            description = localizedText(en = description, uk = translation?.second ?: description),
-            rewardXp = rewardXp,
-            cadence = cadence
+            id = id,
+            title = localizedText(en = titleEn, uk = titleUk),
+            description = localizedText(en = summaryEn, uk = summaryUk),
+            target = goal,
+            cadence = cadenceLabel
         )
     }
 

@@ -22,6 +22,31 @@ class WorkoutDetailPresentationTest {
     }
 
     @Test
+    fun quickAddRequiresAnExplicitCurrentlyAvailableSelection() {
+        val availableExerciseIds = setOf(10L, 20L)
+
+        assertNull(
+            selectedWorkoutExerciseQuickAddId(
+                selectedExerciseId = null,
+                availableExerciseIds = availableExerciseIds
+            )
+        )
+        assertEquals(
+            20L,
+            selectedWorkoutExerciseQuickAddId(
+                selectedExerciseId = 20L,
+                availableExerciseIds = availableExerciseIds
+            )
+        )
+        assertNull(
+            selectedWorkoutExerciseQuickAddId(
+                selectedExerciseId = 30L,
+                availableExerciseIds = availableExerciseIds
+            )
+        )
+    }
+
+    @Test
     fun readModeHasNoMutationOrTimerControls() {
         val controls = workoutDetailControlVisibility(isEditingWorkout = false)
 

@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material3.Button
@@ -132,6 +133,7 @@ fun AddWorkoutScreen(
     onCloseTemplatePicker: () -> Unit,
     onCopyWorkoutTemplate: (Long) -> Unit,
     onSyncPlanToWatch: () -> Unit,
+    onShareWorkout: () -> Unit,
     onStartWorkout: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -469,6 +471,18 @@ fun AddWorkoutScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                OutlinedButton(
+                    onClick = onShareWorkout,
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = selectedExerciseCount > 0 && !uiState.isSaving
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Share,
+                        contentDescription = null
+                    )
+                    Spacer(modifier = Modifier.size(8.dp))
+                    Text(text = stringResource(R.string.action_share_workout))
+                }
                 Button(
                     onClick = onStartWorkout,
                     modifier = Modifier.fillMaxWidth(),

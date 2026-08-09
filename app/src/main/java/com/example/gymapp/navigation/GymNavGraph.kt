@@ -102,6 +102,7 @@ import com.example.gymapp.ui.screens.PostWorkoutSummaryScreen
 import com.example.gymapp.ui.screens.PasswordUpdateScreen
 import com.example.gymapp.ui.screens.WorkoutDetailScreen
 import com.example.gymapp.ui.screens.WorkoutListScreen
+import com.example.gymapp.ui.screens.shareWorkoutUrl
 import com.example.gymapp.ui.viewmodel.AddWorkoutViewModel
 import com.example.gymapp.ui.viewmodel.ActiveWorkoutViewModel
 import com.example.gymapp.ui.viewmodel.ExerciseListViewModel
@@ -1240,6 +1241,12 @@ internal fun GymAppRoot(
                             val sharedWorkoutImportFailed = stringResource(
                                 R.string.message_shared_workout_import_failed
                             )
+                            val shareWorkoutChooserTitle = stringResource(
+                                R.string.action_share_workout
+                            )
+                            val shareWorkoutFailed = stringResource(
+                                R.string.message_share_workout_failed
+                            )
                             val approvedSharedWorkout = pendingSharedWorkout?.takeIf {
                                 it.id == approvedSharedWorkoutId
                             }
@@ -1300,6 +1307,21 @@ internal fun GymAppRoot(
                                 onCloseTemplatePicker = viewModel::closeWorkoutTemplatePicker,
                                 onCopyWorkoutTemplate = viewModel::copyWorkoutTemplate,
                                 onSyncPlanToWatch = viewModel::syncPlanToWatch,
+                                onShareWorkout = {
+                                    val url = viewModel.prepareSharedWorkoutUrl()
+                                    val didOpenShareSheet = url != null && runCatching {
+                                        shareWorkoutUrl(
+                                            context = context,
+                                            url = url,
+                                            chooserTitle = shareWorkoutChooserTitle
+                                        )
+                                    }.isSuccess
+                                    if (!didOpenShareSheet) {
+                                        coroutineScope.launch {
+                                            snackbarHostState.showSnackbar(shareWorkoutFailed)
+                                        }
+                                    }
+                                },
                                 onStartWorkout = viewModel::startWorkout,
                                 modifier = Modifier.fillMaxSize()
                             )

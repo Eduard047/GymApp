@@ -6,7 +6,6 @@ data class GamificationSnapshot(
     val progression: ProgressionSnapshot,
     val streak: StreakSnapshot,
     val comeback: ComebackSnapshot,
-    val missions: MissionBoardSnapshot,
     val achievements: List<AchievementSnapshot>,
     val unlockedBadges: List<BadgeSnapshot>,
     val heatmap: List<HeatmapPoint>,
@@ -59,21 +58,6 @@ data class ComebackSnapshot(
     val gapDays: Int?,
     val multiplier: Double,
     val bonusXp: Int
-)
-
-data class MissionBoardSnapshot(
-    val daily: List<MissionSnapshot>,
-    val weekly: List<MissionSnapshot>
-)
-
-data class MissionSnapshot(
-    val id: String,
-    val title: String,
-    val description: String,
-    val target: Double,
-    val progress: Double,
-    val rewardXp: Int,
-    val completed: Boolean
 )
 
 data class AchievementSnapshot(

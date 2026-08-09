@@ -788,11 +788,11 @@
     <string name="dialog_delete_set_impact_workout">Це останній підхід у тренуванні. Усе тренування також буде видалено.</string>
     <string name="post_workout_unavailable_title">Підсумок тренування недоступний</string>
     <string name="post_workout_unavailable_supporting">Не вдалося завантажити це тренування.</string>
-    <string name="post_workout_rewards_eyebrow">Нагороди</string>
-    <string name="post_workout_rewards_title">Прогрес місій</string>
+    <string name="post_workout_rewards_eyebrow">Прогрес</string>
+    <string name="post_workout_rewards_title">Місії та значки</string>
     <string name="post_workout_rewards_supporting">Виконані місії та нові значки, відкриті після цього збереження.</string>
-    <string name="post_workout_no_unlocks_title">Поки що без нових відкриттів</string>
-    <string name="post_workout_no_unlocks_supporting">Продовжуйте тренуватися, щоб закривати місії та отримувати значки.</string>
+    <string name="post_workout_no_unlocks_title">Нових етапів поки немає</string>
+    <string name="post_workout_no_unlocks_supporting">Продовжуй тренуватися, щоб виконувати місії та відкривати значки.</string>
     <string name="post_workout_view_workout">Переглянути тренування</string>
     <string name="post_workout_back_to_workouts">Назад до тренувань</string>
     <string name="post_workout_complete_title">Тренування завершено</string>

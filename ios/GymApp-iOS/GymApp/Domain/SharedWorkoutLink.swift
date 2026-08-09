@@ -70,8 +70,12 @@ enum SharedWorkoutLinkEncoder {
                 }
             )
         }
-        return try makeURL(
-            plan: SharedWorkoutPlan(exercises: sharedExercises),
+        return try makeURL(plan: SharedWorkoutPlan(exercises: sharedExercises))
+    }
+
+    static func makeURL(plan: SharedWorkoutPlan) throws -> URL {
+        try makeURL(
+            plan: plan,
             prefix: "https://gymapptracker.com/workout/#workout="
         )
     }

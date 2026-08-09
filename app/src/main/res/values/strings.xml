@@ -782,11 +782,11 @@
     <string name="dialog_delete_set_impact_workout">This is the last set in the workout. The entire workout will also be deleted.</string>
     <string name="post_workout_unavailable_title">Workout summary unavailable</string>
     <string name="post_workout_unavailable_supporting">This workout could not be loaded.</string>
-    <string name="post_workout_rewards_eyebrow">Rewards</string>
-    <string name="post_workout_rewards_title">Mission progress</string>
+    <string name="post_workout_rewards_eyebrow">Progress</string>
+    <string name="post_workout_rewards_title">Missions and badges</string>
     <string name="post_workout_rewards_supporting">Completed missions and newly unlocked badges from this save.</string>
-    <string name="post_workout_no_unlocks_title">No new unlocks yet</string>
-    <string name="post_workout_no_unlocks_supporting">Keep stacking workouts to complete missions and earn badges.</string>
+    <string name="post_workout_no_unlocks_title">No new milestones yet</string>
+    <string name="post_workout_no_unlocks_supporting">Keep stacking workouts to complete missions and unlock badges.</string>
     <string name="post_workout_view_workout">View workout</string>
     <string name="post_workout_back_to_workouts">Back to workouts</string>
     <string name="post_workout_complete_title">Workout complete</string>
