@@ -1,59 +1,23 @@
 import Foundation
 
-struct LeaderboardEntry: Identifiable, Codable, Equatable, Sendable {
-    let id: String
-    let userID: String
-    let displayName: String
-    let xp: Int
-    let level: Int
-    let workouts: Int
-    let isCurrentUser: Bool
-
-    init(
-        id: String? = nil,
-        userID: String,
-        displayName: String,
-        xp: Int,
-        level: Int,
-        workouts: Int,
-        isCurrentUser: Bool
-    ) {
-        self.id = id ?? Self.localOpaqueIdentifier(for: userID)
-        self.userID = userID
-        self.displayName = displayName
-        self.xp = xp
-        self.level = level
-        self.workouts = workouts
-        self.isCurrentUser = isCurrentUser
-    }
-
-    private static func localOpaqueIdentifier(for value: String) -> String {
-        var hash: UInt64 = 14_695_981_039_346_656_037
-        for byte in value.utf8 {
-            hash ^= UInt64(byte)
-            hash = hash &* 1_099_511_628_211
-        }
-        return "leaderboard-local-\(String(hash, radix: 16))"
-    }
-}
-
 enum CloudSyncError: LocalizedError {
     case invalidPayload
-    case invalidLeaderboardProfile
+    case invalidSocialProfile
+    case invalidFriendship
+    case invalidWorkoutInvite
     case invalidResponse
     case staleRemoteState
-    case reportAlreadySubmitted
     case requestFailed(String)
 
     var errorDescription: String? {
         switch self {
         case .invalidPayload: return "The local backup is not valid JSON."
-        case .invalidLeaderboardProfile: return "This leaderboard profile is no longer available."
+        case .invalidSocialProfile: return "This social profile is no longer available."
+        case .invalidFriendship: return "This friend request is no longer available."
+        case .invalidWorkoutInvite: return "This workout invitation is no longer available."
         case .invalidResponse: return "The cloud returned an invalid response."
         case .staleRemoteState:
             return "Cloud data changed on another device. Reload it before syncing again."
-        case .reportAlreadySubmitted:
-            return "You already reported this display name."
         case .requestFailed(let message): return message
         }
     }
@@ -219,64 +183,287 @@ final class CloudSyncService: ObservableObject {
         lastError = nil
     }
 
-    func leaderboard(
-        limit: Int = 50,
-        expectedUserID: String? = nil
-    ) async throws -> [LeaderboardEntry] {
-        let session = try await auth.validCloudSession(expectedUserID: expectedUserID)
-        let userID = expectedUserID ?? session.userID
-        guard session.userID == userID else { throw AuthServiceError.sessionChanged }
-        let safeLimit = min(max(limit, 1), 100)
-        let data = try await request(
-            path: "/rest/v1/leaderboard_public?select=profile_id,display_name,xp,level,workouts,is_current_user&order=xp.desc,workouts.desc,display_name.asc&limit=\(safeLimit)",
-            method: "GET",
-            expectedUserID: userID
+    func socialDashboard(expectedUserID: String? = nil) async throws -> SocialDashboard {
+        let (data, _) = try await socialRequest(
+            path: "/rest/v1/rpc/social_dashboard",
+            expectedUserID: expectedUserID,
+            body: [:],
+            maximumResponseBytes: SocialPayloadParser.maximumResponseBytes
         )
-        guard auth.session?.cloud?.userID == userID else {
-            throw AuthServiceError.sessionChanged
-        }
-        guard let rows = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+        do {
+            return try SocialPayloadParser.dashboard(from: data)
+        } catch {
             throw CloudSyncError.invalidResponse
-        }
-        return rows.compactMap { row in
-            guard let profileID = row["profile_id"] as? String,
-                  Self.isValidPublicProfileID(profileID) else { return nil }
-            let isCurrentUser = row["is_current_user"] as? Bool ?? false
-            guard isCurrentUser else { return nil }
-            return LeaderboardEntry(
-                id: profileID,
-                // Kept for existing in-process UI correlation only; no other user's
-                // Supabase UUID is requested or received from the public view.
-                userID: session.userID,
-                displayName: (row["display_name"] as? String)?.nonEmpty ?? "GymApp user",
-                xp: (row["xp"] as? NSNumber)?.intValue ?? 0,
-                level: max(1, (row["level"] as? NSNumber)?.intValue ?? 1),
-                workouts: max(0, (row["workouts"] as? NSNumber)?.intValue ?? 0),
-                isCurrentUser: isCurrentUser
-            )
         }
     }
 
-    /// Reports the only public user-generated field in GymApp: a leaderboard display name.
-    /// The server derives and validates the reporter from the bearer token; no free-form
-    /// report text is accepted or uploaded.
-    func reportLeaderboardDisplayName(profileID: String) async throws {
-        guard Self.isValidPublicProfileID(profileID) else { throw CloudSyncError.invalidLeaderboardProfile }
-        let session = try await auth.validCloudSession()
+    func socialFriendDetails(
+        profileID: String,
+        expectedUserID: String? = nil
+    ) async throws -> SocialFriendDetails {
+        guard SocialPayloadParser.isValidProfileID(profileID) else {
+            throw CloudSyncError.invalidSocialProfile
+        }
+        let (data, _) = try await socialRequest(
+            path: "/rest/v1/rpc/social_friend_details",
+            expectedUserID: expectedUserID,
+            body: ["p_profile_id": profileID],
+            maximumResponseBytes: SocialPayloadParser.maximumResponseBytes
+        )
         do {
-            _ = try await request(
-                path: "/rest/v1/leaderboard_reports",
-                method: "POST",
-                expectedUserID: session.userID,
-                prefer: "return=minimal",
-                body: [[
-                    "reported_profile_id": profileID,
-                    "reason": "inappropriate_name"
-                ]]
+            let details = try SocialPayloadParser.friendDetails(from: data)
+            guard details.friend.profileID == profileID else {
+                throw SocialPayloadError.invalidResponse
+            }
+            return details
+        } catch {
+            throw CloudSyncError.invalidResponse
+        }
+    }
+
+    func socialSendFriendRequest(
+        friendCode: String,
+        expectedUserID: String? = nil
+    ) async throws {
+        guard SocialPayloadParser.isValidProfileID(friendCode) else {
+            throw CloudSyncError.invalidSocialProfile
+        }
+        let (data, _) = try await socialRequest(
+            path: "/rest/v1/rpc/social_send_friend_request",
+            expectedUserID: expectedUserID,
+            body: ["p_friend_code": friendCode],
+            maximumResponseBytes: SocialPayloadParser.maximumMutationResponseBytes
+        )
+        do {
+            try SocialPayloadParser.submittedFriendRequest(from: data)
+        } catch {
+            throw CloudSyncError.invalidResponse
+        }
+    }
+
+    func socialRespondFriendRequest(
+        friendshipID: String,
+        decision: String,
+        expectedRevision: Int,
+        expectedUserID: String? = nil
+    ) async throws -> SocialFriendshipMutation {
+        guard SocialPayloadParser.isValidFriendshipID(friendshipID),
+              ["accept", "decline"].contains(decision),
+              (1 ... 2_147_483_647).contains(expectedRevision) else {
+            throw CloudSyncError.invalidFriendship
+        }
+        let (data, _) = try await socialRequest(
+            path: "/rest/v1/rpc/social_respond_friend_request",
+            expectedUserID: expectedUserID,
+            body: [
+                "p_friendship_id": friendshipID,
+                "p_decision": decision,
+                "p_expected_revision": expectedRevision
+            ],
+            maximumResponseBytes: SocialPayloadParser.maximumMutationResponseBytes
+        )
+        do {
+            let result = try SocialPayloadParser.friendshipMutation(from: data)
+            let expectedStatus: SocialFriendshipMutation.Status =
+                decision == "accept" ? .accepted : .declined
+            guard result.friendshipID == friendshipID,
+                  result.status == expectedStatus else {
+                throw SocialPayloadError.invalidResponse
+            }
+            return result
+        } catch {
+            throw CloudSyncError.invalidResponse
+        }
+    }
+
+    func socialCancelFriendRequest(
+        friendshipID: String,
+        expectedRevision: Int,
+        expectedUserID: String? = nil
+    ) async throws -> SocialFriendshipMutation {
+        try await socialFriendshipRemovalRPC(
+            path: "/rest/v1/rpc/social_cancel_friend_request",
+            friendshipID: friendshipID,
+            expectedRevision: expectedRevision,
+            expectedUserID: expectedUserID
+        )
+    }
+
+    func socialRemoveFriend(
+        friendshipID: String,
+        expectedRevision: Int,
+        expectedUserID: String? = nil
+    ) async throws -> SocialFriendshipMutation {
+        try await socialFriendshipRemovalRPC(
+            path: "/rest/v1/rpc/social_remove_friend",
+            friendshipID: friendshipID,
+            expectedRevision: expectedRevision,
+            expectedUserID: expectedUserID
+        )
+    }
+
+    func socialBlockProfile(
+        profileID: String,
+        expectedUserID: String? = nil
+    ) async throws -> SocialBlockMutation {
+        try await socialBlockRPC(
+            path: "/rest/v1/rpc/social_block_profile",
+            profileID: profileID,
+            expectedUserID: expectedUserID
+        )
+    }
+
+    func socialUnblockProfile(
+        profileID: String,
+        expectedUserID: String? = nil
+    ) async throws -> SocialBlockMutation {
+        try await socialBlockRPC(
+            path: "/rest/v1/rpc/social_unblock_profile",
+            profileID: profileID,
+            expectedUserID: expectedUserID
+        )
+    }
+
+    func socialUpdatePrivacy(
+        _ privacy: SocialPrivacy,
+        expectedRevision: Int,
+        expectedUserID: String? = nil
+    ) async throws -> (SocialPrivacy, Int) {
+        guard (1 ... 2_147_483_647).contains(expectedRevision) else {
+            throw CloudSyncError.invalidResponse
+        }
+        let (data, _) = try await socialRequest(
+            path: "/rest/v1/rpc/social_update_privacy",
+            expectedUserID: expectedUserID,
+            body: [
+                "p_allow_requests": privacy.allowRequests,
+                "p_share_progress": privacy.shareProgress,
+                "p_share_recent_workouts": privacy.shareRecentWorkouts,
+                "p_share_records": privacy.shareRecords,
+                "p_expected_revision": expectedRevision
+            ],
+            maximumResponseBytes: SocialPayloadParser.maximumMutationResponseBytes
+        )
+        do {
+            return try SocialPayloadParser.privacyMutation(from: data)
+        } catch {
+            throw CloudSyncError.invalidResponse
+        }
+    }
+
+    func socialWorkoutInbox(expectedUserID: String? = nil) async throws -> SocialWorkoutInbox {
+        let (data, _) = try await socialRequest(
+            path: "/rest/v1/rpc/social_workout_inbox",
+            expectedUserID: expectedUserID,
+            body: [:],
+            maximumResponseBytes: SocialPayloadParser.maximumResponseBytes
+        )
+        do {
+            return try SocialPayloadParser.workoutInbox(from: data)
+        } catch {
+            throw CloudSyncError.invalidResponse
+        }
+    }
+
+    func socialSendWorkoutInvite(
+        profileID: String,
+        clientRequestID: UUID,
+        workout: SharedWorkoutPlan,
+        expectedUserID: String? = nil
+    ) async throws {
+        guard SocialPayloadParser.isValidProfileID(profileID) else {
+            throw CloudSyncError.invalidSocialProfile
+        }
+        let workoutObject: [String: Any]
+        do {
+            workoutObject = try SocialPayloadParser.workoutObject(for: workout)
+        } catch {
+            throw CloudSyncError.invalidPayload
+        }
+        let (data, _) = try await socialRequest(
+            path: "/rest/v1/rpc/social_send_workout_invite",
+            expectedUserID: expectedUserID,
+            body: [
+                "p_profile_id": profileID,
+                "p_client_request_id": clientRequestID.uuidString.lowercased(),
+                "p_workout": workoutObject
+            ],
+            maximumResponseBytes: SocialPayloadParser.maximumMutationResponseBytes
+        )
+        do {
+            try SocialPayloadParser.submittedWorkoutInvite(from: data)
+        } catch {
+            throw CloudSyncError.invalidResponse
+        }
+    }
+
+    func socialRespondWorkoutInvite(
+        inviteID: String,
+        decision: String,
+        expectedRevision: Int,
+        expectedUserID: String? = nil
+    ) async throws -> SocialWorkoutInviteMutation {
+        guard SocialPayloadParser.isValidInviteID(inviteID),
+              ["accept", "decline"].contains(decision),
+              (1 ... 2_147_483_647).contains(expectedRevision) else {
+            throw CloudSyncError.invalidWorkoutInvite
+        }
+        let (data, _) = try await socialRequest(
+            path: "/rest/v1/rpc/social_respond_workout_invite",
+            expectedUserID: expectedUserID,
+            body: [
+                "p_invite_id": inviteID,
+                "p_decision": decision,
+                "p_expected_revision": expectedRevision
+            ],
+            maximumResponseBytes: SocialPayloadParser.maximumMutationResponseBytes
+        )
+        do {
+            let result = try SocialPayloadParser.workoutInviteMutation(
+                from: data,
+                permitsWorkout: true
             )
-        } catch CloudSyncError.requestFailed(let message)
-                    where message.localizedCaseInsensitiveContains("duplicate") {
-            throw CloudSyncError.reportAlreadySubmitted
+            let expectedStatus: SocialWorkoutInviteStatus =
+                decision == "accept" ? .accepted : .declined
+            guard result.inviteID == inviteID,
+                  result.status == expectedStatus else {
+                throw SocialPayloadError.invalidResponse
+            }
+            return result
+        } catch {
+            throw CloudSyncError.invalidResponse
+        }
+    }
+
+    func socialCancelWorkoutInvite(
+        inviteID: String,
+        expectedRevision: Int,
+        expectedUserID: String? = nil
+    ) async throws -> SocialWorkoutInviteMutation {
+        guard SocialPayloadParser.isValidInviteID(inviteID),
+              (1 ... 2_147_483_647).contains(expectedRevision) else {
+            throw CloudSyncError.invalidWorkoutInvite
+        }
+        let (data, _) = try await socialRequest(
+            path: "/rest/v1/rpc/social_cancel_workout_invite",
+            expectedUserID: expectedUserID,
+            body: [
+                "p_invite_id": inviteID,
+                "p_expected_revision": expectedRevision
+            ],
+            maximumResponseBytes: SocialPayloadParser.maximumMutationResponseBytes
+        )
+        do {
+            let result = try SocialPayloadParser.workoutInviteMutation(
+                from: data,
+                permitsWorkout: false
+            )
+            guard result.inviteID == inviteID else {
+                throw SocialPayloadError.invalidResponse
+            }
+            return result
+        } catch {
+            throw CloudSyncError.invalidResponse
         }
     }
 
@@ -289,6 +476,82 @@ final class CloudSyncService: ObservableObject {
             lastError = gymSafeEnglishErrorMessage(error)
             throw error
         }
+    }
+
+    private func socialFriendshipRemovalRPC(
+        path: String,
+        friendshipID: String,
+        expectedRevision: Int,
+        expectedUserID: String?
+    ) async throws -> SocialFriendshipMutation {
+        guard SocialPayloadParser.isValidFriendshipID(friendshipID),
+              (1 ... 2_147_483_647).contains(expectedRevision) else {
+            throw CloudSyncError.invalidFriendship
+        }
+        let (data, _) = try await socialRequest(
+            path: path,
+            expectedUserID: expectedUserID,
+            body: [
+                "p_friendship_id": friendshipID,
+                "p_expected_revision": expectedRevision
+            ],
+            maximumResponseBytes: SocialPayloadParser.maximumMutationResponseBytes
+        )
+        do {
+            let result = try SocialPayloadParser.friendshipMutation(from: data)
+            guard result.friendshipID == friendshipID,
+                  result.status == .removed else {
+                throw SocialPayloadError.invalidResponse
+            }
+            return result
+        } catch {
+            throw CloudSyncError.invalidResponse
+        }
+    }
+
+    private func socialBlockRPC(
+        path: String,
+        profileID: String,
+        expectedUserID: String?
+    ) async throws -> SocialBlockMutation {
+        guard SocialPayloadParser.isValidProfileID(profileID) else {
+            throw CloudSyncError.invalidSocialProfile
+        }
+        let (data, _) = try await socialRequest(
+            path: path,
+            expectedUserID: expectedUserID,
+            body: ["p_profile_id": profileID],
+            maximumResponseBytes: SocialPayloadParser.maximumMutationResponseBytes
+        )
+        do {
+            return try SocialPayloadParser.blockMutation(from: data)
+        } catch {
+            throw CloudSyncError.invalidResponse
+        }
+    }
+
+    private func socialRequest(
+        path: String,
+        expectedUserID: String?,
+        body: Any,
+        maximumResponseBytes: Int
+    ) async throws -> (Data, String) {
+        let expectedOperation = operationRevision
+        let session = try await auth.validCloudSession(expectedUserID: expectedUserID)
+        let userID = expectedUserID ?? session.userID
+        guard session.userID == userID else { throw AuthServiceError.sessionChanged }
+        let data = try await request(
+            path: path,
+            method: "POST",
+            expectedUserID: userID,
+            maximumResponseBytes: maximumResponseBytes,
+            body: body
+        )
+        guard operationRevision == expectedOperation,
+              auth.session?.cloud?.userID == userID else {
+            throw AuthServiceError.sessionChanged
+        }
+        return (data, userID)
     }
 
     private func request(
@@ -409,10 +672,6 @@ final class CloudSyncService: ObservableObject {
     private static func queryValue(_ value: String) -> String {
         let unreserved = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
         return value.addingPercentEncoding(withAllowedCharacters: unreserved) ?? value
-    }
-
-    private static func isValidPublicProfileID(_ value: String) -> Bool {
-        value.range(of: #"^p_[0-9a-f]{32}$"#, options: .regularExpression) != nil
     }
 
     private static func singleUpdatedAt(in data: Data) -> String? {

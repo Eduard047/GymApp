@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import android.net.Uri
 import com.example.gymapp.BuildConfig
 import com.example.gymapp.R
+import com.example.gymapp.data.repository.SharedWorkoutPlan
 import com.example.gymapp.data.repository.WorkoutDataLimits
 import com.example.gymapp.util.LocalizedText
 import kotlinx.coroutines.CoroutineScope
@@ -179,23 +180,6 @@ internal fun isStructurallySafePKCECallback(
         hasDescription &&
         (descriptions.isEmpty() || hasError)
 }
-
-data class LeaderboardRow(
-    val profileId: String? = null,
-    val displayName: String,
-    val xp: Int,
-    val level: Int,
-    val workouts: Int,
-    val isCurrentUser: Boolean = false
-)
-
-data class CloudProfile(
-    val userId: String,
-    val displayName: String,
-    val xp: Int,
-    val level: Int,
-    val workouts: Int
-)
 
 internal fun activeCloudSessionFor(
     current: AccountSession?,
@@ -1166,48 +1150,248 @@ class CloudAuthManager(context: Context) {
         }
     }
 
-    suspend fun loadOwnProfile(session: AccountSession.Cloud): CloudProfile? = withContext(Dispatchers.IO) {
-        val freshSession = freshCloudSession(session)
-        val response = authenticatedRequest(
-            session = freshSession,
-            path = "/rest/v1/profiles?select=user_id,display_name,xp,level,workouts" +
-                "&user_id=eq.${encodePostgrestQueryValue(freshSession.userId)}&limit=1",
-            method = "GET"
-        )
-        requireActiveCloudSession(freshSession)
-        val row = JSONArray(response).optJSONObject(0) ?: return@withContext null
-        CloudProfile(
-            userId = row.optString("user_id"),
-            displayName = row.optString("display_name").ifBlank { session.displayName },
-            xp = row.optInt("xp"),
-            level = row.optInt("level", 1),
-            workouts = row.optInt("workouts")
+    internal suspend fun loadSocialDashboard(session: AccountSession.Cloud): SocialDashboard =
+        socialRpc(session, "social_dashboard", JSONObject()) { response ->
+            parseSocialDashboard(response)
+        }
+
+    internal suspend fun loadSocialFriendDetails(
+        session: AccountSession.Cloud,
+        profileId: String
+    ): SocialFriendDetails {
+        require(isValidSocialProfileId(profileId)) { "Friend profile ID is invalid." }
+        return socialRpc(
+            session = session,
+            function = "social_friend_details",
+            body = JSONObject().put("p_profile_id", profileId),
+            parser = ::parseSocialFriendDetails
+        ).also { details ->
+            require(details.friend.profileId == profileId) { "Social response is invalid." }
+        }
+    }
+
+    internal suspend fun sendSocialFriendRequest(
+        session: AccountSession.Cloud,
+        friendCode: String
+    ) {
+        val normalized = requireNotNull(normalizeSocialFriendCode(friendCode)) {
+            "Friend code is invalid."
+        }
+        socialRpc(
+            session = session,
+            function = "social_send_friend_request",
+            body = JSONObject().put("p_friend_code", normalized),
+            parser = ::parseSocialSubmittedMutation
         )
     }
 
-    suspend fun loadLeaderboard(session: AccountSession.Cloud, limit: Int = 50): List<LeaderboardRow> =
-        withContext(Dispatchers.IO) {
-            val freshSession = freshCloudSession(session)
-            val safeLimit = limit.coerceIn(1, 100)
-            val response = authenticatedRequest(
-                session = freshSession,
-                path = "/rest/v1/leaderboard_public?select=profile_id,display_name,xp,level,workouts,is_current_user&order=xp.desc,workouts.desc,profile_id.asc&limit=$safeLimit",
-                method = "GET"
-            )
-            requireActiveCloudSession(freshSession)
-            val rows = JSONArray(response)
-            List(rows.length()) { index ->
-                val row = rows.optJSONObject(index) ?: JSONObject()
-                LeaderboardRow(
-                    profileId = row.optString("profile_id").takeIf { it.isNotBlank() },
-                    displayName = row.optString("display_name"),
-                    xp = row.optInt("xp"),
-                    level = row.optInt("level", 1),
-                    workouts = row.optInt("workouts"),
-                    isCurrentUser = row.optBoolean("is_current_user")
-                )
-            }.filter(LeaderboardRow::isCurrentUser)
+    internal suspend fun respondSocialFriendRequest(
+        session: AccountSession.Cloud,
+        friendshipId: String,
+        decision: String,
+        expectedRevision: Int
+    ): SocialFriendshipMutation {
+        require(isValidSocialFriendshipId(friendshipId)) { "Friend request ID is invalid." }
+        require(decision in setOf("accept", "decline")) { "Friend request decision is invalid." }
+        require(expectedRevision > 0) { "Friend request revision is invalid." }
+        val expectedStatus = if (decision == "accept") "accepted" else "declined"
+        return socialRpc(
+            session = session,
+            function = "social_respond_friend_request",
+            body = JSONObject()
+                .put("p_friendship_id", friendshipId)
+                .put("p_decision", decision)
+                .put("p_expected_revision", expectedRevision)
+        ) { response ->
+            parseSocialFriendshipMutation(response, setOf(expectedStatus))
+        }.also { mutation ->
+            require(mutation.friendshipId == friendshipId) { "Social response is invalid." }
         }
+    }
+
+    internal suspend fun cancelSocialFriendRequest(
+        session: AccountSession.Cloud,
+        friendshipId: String,
+        expectedRevision: Int
+    ): SocialFriendshipMutation = socialFriendshipRemovalRpc(
+        session = session,
+        function = "social_cancel_friend_request",
+        friendshipId = friendshipId,
+        expectedRevision = expectedRevision
+    )
+
+    internal suspend fun removeSocialFriend(
+        session: AccountSession.Cloud,
+        friendshipId: String,
+        expectedRevision: Int
+    ): SocialFriendshipMutation = socialFriendshipRemovalRpc(
+        session = session,
+        function = "social_remove_friend",
+        friendshipId = friendshipId,
+        expectedRevision = expectedRevision
+    )
+
+    internal suspend fun blockSocialProfile(
+        session: AccountSession.Cloud,
+        profileId: String
+    ): SocialBlockMutation = socialBlockRpc(session, profileId, shouldBlock = true)
+
+    internal suspend fun unblockSocialProfile(
+        session: AccountSession.Cloud,
+        profileId: String
+    ): SocialBlockMutation = socialBlockRpc(session, profileId, shouldBlock = false)
+
+    internal suspend fun updateSocialPrivacy(
+        session: AccountSession.Cloud,
+        privacy: SocialPrivacy,
+        expectedRevision: Int
+    ): SocialPrivacyMutation {
+        require(expectedRevision > 0) { "Privacy revision is invalid." }
+        return socialRpc(
+            session = session,
+            function = "social_update_privacy",
+            body = JSONObject()
+                .put("p_allow_requests", privacy.allowRequests)
+                .put("p_share_progress", privacy.shareProgress)
+                .put("p_share_recent_workouts", privacy.shareRecentWorkouts)
+                .put("p_share_records", privacy.shareRecords)
+                .put("p_expected_revision", expectedRevision),
+            parser = ::parseSocialPrivacyMutation
+        ).also { mutation ->
+            require(mutation.privacy == privacy) { "Social response is invalid." }
+        }
+    }
+
+    internal suspend fun sendSocialWorkoutInvite(
+        session: AccountSession.Cloud,
+        profileId: String,
+        clientRequestId: String,
+        workout: SharedWorkoutPlan
+    ) {
+        require(isValidSocialProfileId(profileId)) { "Friend profile ID is invalid." }
+        require(isValidSocialClientRequestId(clientRequestId)) { "Workout request ID is invalid." }
+        val workoutJson = socialWorkoutJson(workout)
+        socialRpc(
+            session = session,
+            function = "social_send_workout_invite",
+            body = JSONObject()
+                .put("p_profile_id", profileId)
+                .put("p_client_request_id", clientRequestId)
+                .put("p_workout", workoutJson),
+            parser = ::parseSocialSubmittedMutation
+        )
+    }
+
+    internal suspend fun loadSocialWorkoutInbox(
+        session: AccountSession.Cloud
+    ): SocialWorkoutInbox = socialRpc(
+        session = session,
+        function = "social_workout_inbox",
+        body = JSONObject(),
+        parser = ::parseSocialWorkoutInbox
+    )
+
+    internal suspend fun respondSocialWorkoutInvite(
+        session: AccountSession.Cloud,
+        inviteId: String,
+        decision: String,
+        expectedRevision: Int
+    ): SocialWorkoutInviteMutation {
+        require(isValidSocialWorkoutInviteId(inviteId)) { "Workout invite ID is invalid." }
+        require(decision in setOf("accept", "decline")) { "Workout invite decision is invalid." }
+        require(expectedRevision > 0) { "Workout invite revision is invalid." }
+        val expectedStatus = if (decision == "accept") "accepted" else "declined"
+        return socialRpc(
+            session = session,
+            function = "social_respond_workout_invite",
+            body = JSONObject()
+                .put("p_invite_id", inviteId)
+                .put("p_decision", decision)
+                .put("p_expected_revision", expectedRevision),
+            parser = ::parseSocialWorkoutInviteMutation
+        ).also { mutation ->
+            require(mutation.inviteId == inviteId && mutation.status == expectedStatus) {
+                "Social response is invalid."
+            }
+        }
+    }
+
+    internal suspend fun cancelSocialWorkoutInvite(
+        session: AccountSession.Cloud,
+        inviteId: String,
+        expectedRevision: Int
+    ): SocialWorkoutInviteCancellation {
+        require(isValidSocialWorkoutInviteId(inviteId)) { "Workout invite ID is invalid." }
+        require(expectedRevision > 0) { "Workout invite revision is invalid." }
+        return socialRpc(
+            session = session,
+            function = "social_cancel_workout_invite",
+            body = JSONObject()
+                .put("p_invite_id", inviteId)
+                .put("p_expected_revision", expectedRevision),
+            parser = ::parseSocialWorkoutInviteCancellation
+        ).also { mutation ->
+            require(mutation.inviteId == inviteId) { "Social response is invalid." }
+        }
+    }
+
+    private suspend fun socialFriendshipRemovalRpc(
+        session: AccountSession.Cloud,
+        function: String,
+        friendshipId: String,
+        expectedRevision: Int
+    ): SocialFriendshipMutation {
+        require(isValidSocialFriendshipId(friendshipId)) { "Friendship ID is invalid." }
+        require(expectedRevision > 0) { "Friendship revision is invalid." }
+        return socialRpc(
+            session = session,
+            function = function,
+            body = JSONObject()
+                .put("p_friendship_id", friendshipId)
+                .put("p_expected_revision", expectedRevision)
+        ) { response ->
+            parseSocialFriendshipMutation(response, setOf("removed"))
+        }.also { mutation ->
+            require(mutation.friendshipId == friendshipId) { "Social response is invalid." }
+        }
+    }
+
+    private suspend fun socialBlockRpc(
+        session: AccountSession.Cloud,
+        profileId: String,
+        shouldBlock: Boolean
+    ): SocialBlockMutation {
+        require(isValidSocialProfileId(profileId)) { "Friend profile ID is invalid." }
+        val function = if (shouldBlock) "social_block_profile" else "social_unblock_profile"
+        return socialRpc(
+            session = session,
+            function = function,
+            body = JSONObject().put("p_profile_id", profileId),
+            parser = ::parseSocialBlockMutation
+        ).also { mutation ->
+            require(mutation.profileId == profileId && mutation.blocked == shouldBlock) {
+                "Social response is invalid."
+            }
+        }
+    }
+
+    private suspend fun <T> socialRpc(
+        session: AccountSession.Cloud,
+        function: String,
+        body: JSONObject,
+        parser: (String) -> T
+    ): T = withContext(Dispatchers.IO) {
+        require(function.matches(Regex("^social_[a-z_]{1,64}$"))) { "Social RPC is invalid." }
+        val freshSession = freshCloudSession(session)
+        val response = authenticatedRequest(
+            session = freshSession,
+            path = "/rest/v1/rpc/$function",
+            method = "POST",
+            body = body.toString()
+        )
+        requireActiveCloudSession(freshSession)
+        parser(response)
+    }
 
     private fun beginAuthAttempt(): Long = synchronized(authStateLock) {
         authMutationVersion += 1

@@ -9035,8 +9035,37 @@ final class CoreParityTests: XCTestCase {
                 )
             case ("/rest/v1/profiles", "POST"):
                 return try AuthURLProtocolStub.response(for: request, json: "{}")
-            case ("/rest/v1/leaderboard_public", "GET"):
-                return try AuthURLProtocolStub.response(for: request, json: "[]")
+            case ("/rest/v1/rpc/social_dashboard", "POST"):
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    json: """
+                    {
+                      "version": 1,
+                      "self": {
+                        "profileId": "p_00000000000000000000000000000001",
+                        "friendCode": "p_00000000000000000000000000000001",
+                        "displayName": "Cloud Athlete",
+                        "xp": 0,
+                        "level": 1,
+                        "workouts": 0,
+                        "statsAvailable": true,
+                        "progressUpdatedAt": "2026-08-09T12:00:00Z",
+                        "privacy": {
+                          "allowRequests": true,
+                          "shareProgress": true,
+                          "shareRecentWorkouts": true,
+                          "shareRecords": true
+                        },
+                        "settingsRevision": 1
+                      },
+                      "friends": [],
+                      "incoming": [],
+                      "outgoing": [],
+                      "blocked": [],
+                      "pendingWorkoutInviteCount": 0
+                    }
+                    """
+                )
             default:
                 XCTFail("Unexpected PWA shared-state request: \(request.url?.absoluteString ?? "nil")")
                 return try AuthURLProtocolStub.response(for: request, statusCode: 404, json: "{}")
@@ -9079,9 +9108,9 @@ final class CoreParityTests: XCTestCase {
         }
         XCTAssertTrue(nativeChangeUploaded)
         await appState.forceCloudSync()
-        let leaderboard = try await appState.refreshCloudLeaderboard()
+        let dashboard = try await appState.refreshSocialDashboard()
 
-        XCTAssertTrue(leaderboard.isEmpty)
+        XCTAssertTrue(dashboard.friends.isEmpty)
         XCTAssertFalse(appState.isCloudWritePaused)
         let patches = recorder.requests.filter {
             $0.url?.path == "/rest/v1/user_states" && $0.httpMethod == "PATCH"

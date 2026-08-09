@@ -2,45 +2,38 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-test("clients use the authenticated owner-only leaderboard compatibility view", async () => {
-  const [android, ios, pwa] = await Promise.all([
+test("current clients use bounded account-bound social RPCs and never query the legacy leaderboard", async () => {
+  const [android, androidContract, ios, iosContract, pwa] = await Promise.all([
     readFile("app/src/main/java/com/example/gymapp/auth/CloudAuthManager.kt", "utf8"),
+    readFile("app/src/main/java/com/example/gymapp/auth/SocialContract.kt", "utf8"),
     readFile("ios/GymApp-iOS/GymApp/Services/CloudSyncService.swift", "utf8"),
+    readFile("ios/GymApp-iOS/GymApp/Services/SocialModels.swift", "utf8"),
     readFile("pwa/app.js", "utf8")
   ]);
 
-  assert.match(
-    android,
-    /\/rest\/v1\/leaderboard_public\?select=profile_id,display_name,xp,level,workouts,is_current_user/
-  );
-  assert.match(android, /profileId = row\.optString\("profile_id"\)/);
-  assert.match(android, /isCurrentUser = row\.optBoolean\("is_current_user"\)/);
-  assert.match(android, /\.filter\(LeaderboardRow::isCurrentUser\)/);
-  assert.doesNotMatch(
-    android,
-    /\/rest\/v1\/profiles\?select=user_id,display_name,xp,level,workouts,updated_at/
-  );
+  for (const client of [android, ios, pwa]) {
+    assert.doesNotMatch(client, /\/rest\/v1\/leaderboard_public/);
+    assert.match(client, /social_dashboard/);
+    assert.match(client, /social_friend_details/);
+    assert.match(client, /social_workout_inbox/);
+  }
 
-  assert.match(
-    ios,
-    /\/rest\/v1\/leaderboard_public\?select=profile_id,display_name,xp,level,workouts,is_current_user/
-  );
-  assert.match(ios, /guard isCurrentUser else \{ return nil \}/);
-  assert.match(ios, /userID: session\.userID/);
+  assert.match(android, /val freshSession = freshCloudSession\(session\)/);
+  assert.match(android, /requireActiveCloudSession\(freshSession\)\s*\n\s*parser\(response\)/);
+  assert.match(android, /MAX_CLOUD_RESPONSE_BYTES = 256 \* 1_024/);
+  assert.match(androidContract, /requireExactKeys/);
+  assert.match(androidContract, /SOCIAL_MAX_FRIENDS = 200/);
 
-  assert.match(
-    pwa,
-    /\/rest\/v1\/leaderboard_public\?select=profile_id,display_name,xp,level,workouts,is_current_user/
-  );
-  assert.match(pwa, /\{ session, signal: leaderboardRequestController\.signal/);
-  assert.match(pwa, /\.filter\(row => Boolean\(row\?\.is_current_user\)\)/);
-  assert.match(pwa, /\.map\(row => \(\{ \.\.\.row, isCurrent: true \}\)\)/);
-  assert.match(pwa, /if \(!cloudMode\)/);
-  assert.doesNotMatch(
-    pwa,
-    /\/rest\/v1\/profiles\?select=user_id,display_name,xp,level,workouts,updated_at/
-  );
-  assert.doesNotMatch(pwa, /state: payload, updated_at:/);
+  assert.match(ios, /let expectedOperation = operationRevision/);
+  assert.match(ios, /auth\.validCloudSession\(expectedUserID: expectedUserID\)/);
+  assert.match(ios, /guard operationRevision == expectedOperation/);
+  assert.match(iosContract, /maximumResponseBytes = 256 \* 1_024/);
+  assert.match(iosContract, /object\(try json\(from: data\), keys:/);
+
+  assert.match(pwa, /const MAX_SOCIAL_RESPONSE_BYTES = 256 \* 1024/);
+  assert.match(pwa, /const SOCIAL_RPC_NAMES = new Set/);
+  assert.match(pwa, /socialIdentityIsCurrent\(requestEpoch, expectedUserId\)/);
+  assert.match(pwa, /socialRequestController\?\.abort\(\)/);
 });
 
 test("legacy schema entrypoint fails closed and hardened migrations are ordered", async () => {

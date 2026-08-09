@@ -1,0 +1,617 @@
+package com.example.gymapp.auth
+
+import com.example.gymapp.data.repository.SharedWorkoutExercise
+import com.example.gymapp.data.repository.SharedWorkoutPlan
+import com.example.gymapp.data.repository.SharedWorkoutSet
+import org.json.JSONArray
+import org.json.JSONObject
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class SocialContractTest {
+    @Test
+    fun dashboardParsesBoundedV1AndRanksOnlyAvailableFriendProgress() {
+        val dashboardJson = validDashboard()
+        dashboardJson.getJSONArray("friends").put(
+            friend(
+                friendshipId = friendshipId('2'),
+                profileId = profileId('2'),
+                displayName = "Private Friend",
+                xp = null,
+                level = null,
+                workouts = null,
+                progressShared = false,
+                statsAvailable = false,
+                progressUpdatedAt = null
+            )
+        )
+
+        val parsed = parseSocialDashboard(dashboardJson.toString())
+
+        assertEquals(profileId('0'), parsed.self.profileId)
+        assertEquals(2, parsed.friends.size)
+        assertEquals(profileId('1'), rankedSocialFriends(parsed.friends).first().profileId)
+        assertEquals(1, parsed.pendingWorkoutInviteCount)
+        assertFalse(parsed.friends.last().statsAvailable)
+    }
+
+    @Test
+    fun dashboardRejectsCoercedNumbersExtraKeysAndOversizedArrays() {
+        val coerced = validDashboard().apply {
+            getJSONObject("self").put("xp", "900")
+        }
+        assertThrows(IllegalArgumentException::class.java) { parseSocialDashboard(coerced.toString()) }
+
+        val extra = validDashboard().apply { put("userId", "secret-auth-id") }
+        assertThrows(IllegalArgumentException::class.java) { parseSocialDashboard(extra.toString()) }
+
+        val oversized = validDashboard().apply {
+            put(
+                "friends",
+                JSONArray().also { array ->
+                    repeat(SOCIAL_MAX_FRIENDS + 1) { index ->
+                        array.put(
+                            friend(
+                                friendshipId = "f_${index.toString(16).padStart(32, '0')}",
+                                profileId = "p_${(index + 1).toString(16).padStart(32, '0')}"
+                            )
+                        )
+                    }
+                }
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) { parseSocialDashboard(oversized.toString()) }
+    }
+
+    @Test
+    fun dashboardRejectsPrivateStatsThatLeakValuesAndDuplicateCrossListProfiles() {
+        val leaked = validDashboard().apply {
+            getJSONArray("friends").getJSONObject(0)
+                .put("statsAvailable", false)
+                .put("xp", 100)
+        }
+        assertThrows(IllegalArgumentException::class.java) { parseSocialDashboard(leaked.toString()) }
+
+        val duplicated = validDashboard().apply {
+            getJSONArray("incoming").put(
+                friendRequest(friendshipId('3'), profileId('1'), "Same profile")
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) { parseSocialDashboard(duplicated.toString()) }
+    }
+
+    @Test
+    fun dashboardRequiresCanonicalSelfCodeAndTimestampForEveryAvailableStatsRow() {
+        val wrongFriendCode = validDashboard().apply {
+            getJSONObject("self").put("friendCode", profileId('e'))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            parseSocialDashboard(wrongFriendCode.toString())
+        }
+
+        val selfWithoutTimestamp = validDashboard().apply {
+            getJSONObject("self").put("progressUpdatedAt", JSONObject.NULL)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            parseSocialDashboard(selfWithoutTimestamp.toString())
+        }
+
+        val friendWithoutTimestamp = validDashboard().apply {
+            getJSONArray("friends").getJSONObject(0)
+                .put("progressUpdatedAt", JSONObject.NULL)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            parseSocialDashboard(friendWithoutTimestamp.toString())
+        }
+    }
+
+    @Test
+    fun socialNamesPreserveNbspAtEdgesAndInsideButRejectAsciiSpaceEdges() {
+        val nbspName = "\u00a0Current\u00a0User\u00a0"
+        val dashboard = validDashboard().apply {
+            getJSONObject("self").put("displayName", nbspName)
+        }
+        assertEquals(nbspName, parseSocialDashboard(dashboard.toString()).self.displayName)
+
+        val inbox = validWorkoutInbox().apply {
+            val incoming = getJSONArray("incoming").getJSONObject(0)
+            incoming.getJSONObject("workout").getJSONArray("exercises").getJSONObject(0)
+                .put("name", nbspName)
+            incoming.getJSONObject("summary")
+                .put("exerciseNames", JSONArray().put(nbspName))
+        }
+        val parsedInvite = parseSocialWorkoutInbox(inbox.toString()).incoming.single()
+        assertEquals(nbspName, parsedInvite.workout.exercises.single().name)
+        assertEquals(nbspName, parsedInvite.summary.exerciseNames.single())
+
+        val asciiEdgeDisplayName = validDashboard().apply {
+            getJSONObject("self").put("displayName", " Current User")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            parseSocialDashboard(asciiEdgeDisplayName.toString())
+        }
+
+        val asciiEdgeExerciseName = validWorkoutInbox().apply {
+            val incoming = getJSONArray("incoming").getJSONObject(0)
+            incoming.getJSONObject("workout").getJSONArray("exercises").getJSONObject(0)
+                .put("name", "Bench Press ")
+            incoming.getJSONObject("summary")
+                .put("exerciseNames", JSONArray().put("Bench Press "))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            parseSocialWorkoutInbox(asciiEdgeExerciseName.toString())
+        }
+
+        val whitespaceOnlyExerciseName = validWorkoutInbox().apply {
+            val incoming = getJSONArray("incoming").getJSONObject(0)
+            incoming.getJSONObject("workout").getJSONArray("exercises").getJSONObject(0)
+                .put("name", "\u00a0")
+            incoming.getJSONObject("summary")
+                .put("exerciseNames", JSONArray().put("\u00a0"))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            parseSocialWorkoutInbox(whitespaceOnlyExerciseName.toString())
+        }
+    }
+
+    @Test
+    fun friendDetailsParseSelfReportedRecordsAndPrivateSectionsFailClosed() {
+        val details = validFriendDetails()
+        val parsed = parseSocialFriendDetails(details.toString())
+
+        assertEquals("self_reported", parsed.integrity)
+        assertEquals(1, parsed.recentWorkouts.size)
+        assertEquals(100.5, parsed.exerciseRecords.single().bestWeightKg, 0.0)
+
+        details.getJSONObject("sharing").put("records", false)
+        assertThrows(IllegalArgumentException::class.java) { parseSocialFriendDetails(details.toString()) }
+
+        val wrongIntegrity = validFriendDetails().put("integrity", "verified")
+        assertThrows(IllegalArgumentException::class.java) {
+            parseSocialFriendDetails(wrongIntegrity.toString())
+        }
+    }
+
+    @Test
+    fun recentWorkoutAllowsTotalExerciseCountAboveTheTwentyVisibleLabels() {
+        val details = validFriendDetails()
+        val labels = JSONArray().also { array ->
+            repeat(SOCIAL_MAX_WORKOUT_EXERCISES) { index ->
+                array.put(
+                    JSONObject()
+                        .put("catalogKey", JSONObject.NULL)
+                        .put("name", "Exercise ${index + 1}")
+                )
+            }
+        }
+        details.getJSONArray("recentWorkouts").put(
+            0,
+            JSONObject()
+                .put("workoutDay", "2026-08-08")
+                .put("exerciseCount", 25)
+                .put("setCount", 125)
+                .put("exercises", labels)
+        )
+
+        val workout = parseSocialFriendDetails(details.toString()).recentWorkouts.single()
+
+        assertEquals(25, workout.exerciseCount)
+        assertEquals(20, workout.exercises.size)
+    }
+
+    @Test
+    fun friendDetailsRequireCoherentActivityTimestampAndUniqueRecordIdentities() {
+        val missingTimestamp = validFriendDetails().put("activityUpdatedAt", JSONObject.NULL)
+        assertThrows(IllegalArgumentException::class.java) {
+            parseSocialFriendDetails(missingTimestamp.toString())
+        }
+
+        val timestampWithoutSharing = validFriendDetails().apply {
+            getJSONObject("sharing")
+                .put("recentWorkouts", false)
+                .put("records", false)
+            put("recentWorkouts", JSONArray())
+            put("exerciseRecords", JSONArray())
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            parseSocialFriendDetails(timestampWithoutSharing.toString())
+        }
+
+        val duplicateWorkoutDay = validFriendDetails().apply {
+            val workouts = getJSONArray("recentWorkouts")
+            workouts.put(JSONObject(workouts.getJSONObject(0).toString()))
+        }
+        assertEquals(2, parseSocialFriendDetails(duplicateWorkoutDay.toString()).recentWorkouts.size)
+
+        val duplicateRecordIdentity = validFriendDetails().apply {
+            val records = getJSONArray("exerciseRecords")
+            records.put(JSONObject(records.getJSONObject(0).toString()).put("name", "Renamed"))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            parseSocialFriendDetails(duplicateRecordIdentity.toString())
+        }
+    }
+
+    @Test
+    fun workoutInvitePayloadUsesExactCanonicalV1Shape() {
+        val plan = SharedWorkoutPlan(
+            exercises = listOf(
+                SharedWorkoutExercise(
+                    catalogKey = "bench_press",
+                    name = "Bench Press",
+                    sets = listOf(SharedWorkoutSet(100.5, 5), SharedWorkoutSet(90.0, 8))
+                )
+            )
+        )
+
+        val json = socialWorkoutJson(plan)
+        val exercise = json.getJSONArray("exercises").getJSONObject(0)
+
+        assertEquals(setOf("version", "exercises"), json.keys().asSequence().toSet())
+        assertEquals(setOf("catalogKey", "name", "sets"), exercise.keys().asSequence().toSet())
+        assertEquals(setOf("weight", "reps"),
+            exercise.getJSONArray("sets").getJSONObject(0).keys().asSequence().toSet())
+        assertTrue(json.toString().toByteArray().size <= SOCIAL_MAX_INVITE_JSON_BYTES)
+    }
+
+    @Test
+    fun workoutInboxParsesIncomingPayloadButRejectsOutgoingPayloadAndSummaryMismatch() {
+        val inbox = validWorkoutInbox()
+        val parsed = parseSocialWorkoutInbox(inbox.toString())
+
+        assertEquals(1, parsed.pendingIncomingCount)
+        assertEquals(2, parsed.incoming.single().workout.setCount)
+        assertFalse(parsed.outgoing.single().let { it.status == "accepted" })
+
+        val outgoingLeak = validWorkoutInbox().apply {
+            getJSONArray("outgoing").getJSONObject(0).put("workout", workoutJson())
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            parseSocialWorkoutInbox(outgoingLeak.toString())
+        }
+
+        val mismatch = validWorkoutInbox().apply {
+            getJSONArray("incoming").getJSONObject(0)
+                .getJSONObject("summary")
+                .put("setCount", 3)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            parseSocialWorkoutInbox(mismatch.toString())
+        }
+
+        val duplicateCatalog = validWorkoutInbox().apply {
+            val incoming = getJSONArray("incoming").getJSONObject(0)
+            incoming.getJSONObject("workout").getJSONArray("exercises").put(
+                JSONObject()
+                    .put("catalogKey", "bench_press")
+                    .put("name", "Different custom name")
+                    .put("sets", JSONArray().put(JSONObject().put("weight", 1).put("reps", 1)))
+            )
+            incoming.put(
+                "summary",
+                JSONObject()
+                    .put("exerciseCount", 2)
+                    .put("setCount", 3)
+                    .put(
+                        "exerciseNames",
+                        JSONArray().put("Bench Press").put("Different custom name")
+                    )
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            parseSocialWorkoutInbox(duplicateCatalog.toString())
+        }
+    }
+
+    @Test
+    fun workoutInboxUsesServerPortableIdentityInsteadOfLocalBuiltInAliases() {
+        val inbox = validWorkoutInbox().apply {
+            val incoming = getJSONArray("incoming").getJSONObject(0)
+            incoming.getJSONObject("workout").getJSONArray("exercises").put(
+                JSONObject()
+                    .put("catalogKey", "bench_press_uk")
+                    .put("name", "Жим штанги лежачи")
+                    .put("sets", JSONArray().put(JSONObject().put("weight", 80).put("reps", 8)))
+            )
+            incoming.put(
+                "summary",
+                JSONObject()
+                    .put("exerciseCount", 2)
+                    .put("setCount", 3)
+                    .put(
+                        "exerciseNames",
+                        JSONArray().put("Bench Press").put("Жим штанги лежачи")
+                    )
+            )
+        }
+
+        val workout = parseSocialWorkoutInbox(inbox.toString()).incoming.single().workout
+
+        assertEquals(listOf("Bench Press", "Жим штанги лежачи"), workout.exercises.map { it.name })
+        assertEquals(listOf("bench_press", "bench_press_uk"), workout.exercises.map { it.catalogKey })
+    }
+
+    @Test
+    fun workoutInboxRejectsNamesThatDuplicateUnderServerPortableNormalization() {
+        listOf(
+            "Café" to "Cafe\u0301",
+            "Bench Press" to "\u00a0Bench\u00a0Press\u00a0",
+            "Ёжʼ" to "ЕЖ'"
+        ).forEach { (firstName, secondName) ->
+            val inbox = validWorkoutInbox().apply {
+                val incoming = getJSONArray("incoming").getJSONObject(0)
+                val exercises = incoming.getJSONObject("workout").getJSONArray("exercises")
+                exercises.getJSONObject(0)
+                    .put("catalogKey", "portable_one")
+                    .put("name", firstName)
+                exercises.put(
+                    JSONObject()
+                        .put("catalogKey", "portable_two")
+                        .put("name", secondName)
+                        .put("sets", JSONArray().put(JSONObject().put("weight", 80).put("reps", 8)))
+                )
+                incoming.put(
+                    "summary",
+                    JSONObject()
+                        .put("exerciseCount", 2)
+                        .put("setCount", 3)
+                        .put("exerciseNames", JSONArray().put(firstName).put(secondName))
+                )
+            }
+
+            assertThrows(IllegalArgumentException::class.java) {
+                parseSocialWorkoutInbox(inbox.toString())
+            }
+        }
+    }
+
+    @Test
+    fun workoutInboxAcceptsOnlyLiveIncomingRowsAndCoherentResponseTimes() {
+        val accepted = validWorkoutInbox().apply {
+            getJSONArray("incoming").getJSONObject(0)
+                .put("status", "accepted")
+                .put("respondedAt", TIMESTAMP)
+            put("pendingIncomingCount", 0)
+        }
+        assertEquals("accepted", parseSocialWorkoutInbox(accepted.toString()).incoming.single().status)
+
+        val expiredIncoming = validWorkoutInbox().apply {
+            getJSONArray("incoming").getJSONObject(0)
+                .put("status", "expired")
+                .put("respondedAt", TIMESTAMP)
+            put("pendingIncomingCount", 0)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            parseSocialWorkoutInbox(expiredIncoming.toString())
+        }
+
+        val acceptedWithoutResponseTime = validWorkoutInbox().apply {
+            getJSONArray("incoming").getJSONObject(0).put("status", "accepted")
+            put("pendingIncomingCount", 0)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            parseSocialWorkoutInbox(acceptedWithoutResponseTime.toString())
+        }
+
+        val terminalOutgoingWithoutResponseTime = validWorkoutInbox().apply {
+            getJSONArray("outgoing").getJSONObject(0).put("status", "declined")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            parseSocialWorkoutInbox(terminalOutgoingWithoutResponseTime.toString())
+        }
+    }
+
+    @Test
+    fun inviteMutationsRequirePayloadOnlyForAcceptedDecision() {
+        val accepted = JSONObject()
+            .put("version", 1)
+            .put("inviteId", inviteId('1'))
+            .put("status", "accepted")
+            .put("inviteRevision", 2)
+            .put("workout", workoutJson())
+        assertEquals(2, parseSocialWorkoutInviteMutation(accepted.toString()).workout?.setCount)
+
+        val declined = JSONObject(accepted.toString())
+            .put("status", "declined")
+            .put("workout", JSONObject.NULL)
+        assertNull(parseSocialWorkoutInviteMutation(declined.toString()).workout)
+
+        val acceptedWithoutWorkout = JSONObject(accepted.toString()).put("workout", JSONObject.NULL)
+        assertThrows(IllegalArgumentException::class.java) {
+            parseSocialWorkoutInviteMutation(acceptedWithoutWorkout.toString())
+        }
+    }
+
+    @Test
+    fun identifiersAndFriendCodesAreStrictAndCanonical() {
+        assertEquals(profileId('a'), normalizeSocialFriendCode("  ${profileId('a').uppercase()}  "))
+        assertNull(normalizeSocialFriendCode("p_short"))
+        assertTrue(isValidSocialWorkoutInviteId(inviteId('f')))
+        assertFalse(isValidSocialWorkoutInviteId("wi_${"F".repeat(32)}"))
+        assertTrue(isValidSocialClientRequestId("123e4567-e89b-42d3-a456-426614174000"))
+        assertFalse(isValidSocialClientRequestId("123E4567-E89B-42D3-A456-426614174000"))
+    }
+
+    private fun validDashboard(): JSONObject = JSONObject()
+        .put("version", 1)
+        .put(
+            "self",
+            JSONObject()
+                .put("profileId", profileId('0'))
+                .put("friendCode", profileId('0'))
+                .put("displayName", "Current User")
+                .put("xp", 800)
+                .put("level", 4)
+                .put("workouts", 12)
+                .put("statsAvailable", true)
+                .put("progressUpdatedAt", TIMESTAMP)
+                .put("privacy", privacy())
+                .put("settingsRevision", 3)
+        )
+        .put(
+            "friends",
+            JSONArray().put(friend(friendshipId('1'), profileId('1')))
+        )
+        .put("incoming", JSONArray())
+        .put("outgoing", JSONArray())
+        .put("blocked", JSONArray())
+        .put("pendingWorkoutInviteCount", 1)
+
+    private fun friend(
+        friendshipId: String,
+        profileId: String,
+        displayName: String = "Training Friend",
+        xp: Int? = 1200,
+        level: Int? = 5,
+        workouts: Int? = 20,
+        progressShared: Boolean = true,
+        statsAvailable: Boolean = true,
+        progressUpdatedAt: String? = TIMESTAMP
+    ): JSONObject = JSONObject()
+        .put("friendshipId", friendshipId)
+        .put("profileId", profileId)
+        .put("displayName", displayName)
+        .put("xp", xp ?: JSONObject.NULL)
+        .put("level", level ?: JSONObject.NULL)
+        .put("workouts", workouts ?: JSONObject.NULL)
+        .put("progressShared", progressShared)
+        .put("statsAvailable", statsAvailable)
+        .put("progressUpdatedAt", progressUpdatedAt ?: JSONObject.NULL)
+        .put("friendshipRevision", 2)
+        .put("status", "accepted")
+
+    private fun friendRequest(friendshipId: String, profileId: String, name: String): JSONObject =
+        JSONObject()
+            .put("friendshipId", friendshipId)
+            .put("profileId", profileId)
+            .put("displayName", name)
+            .put("requestedAt", TIMESTAMP)
+            .put("friendshipRevision", 1)
+            .put("status", "pending")
+
+    private fun validFriendDetails(): JSONObject = JSONObject()
+        .put("version", 1)
+        .put(
+            "friend",
+            JSONObject()
+                .put("profileId", profileId('1'))
+                .put("displayName", "Training Friend")
+                .put("xp", 1200)
+                .put("level", 5)
+                .put("workouts", 20)
+                .put("progressShared", true)
+                .put("statsAvailable", true)
+                .put("progressUpdatedAt", TIMESTAMP)
+        )
+        .put(
+            "sharing",
+            JSONObject()
+                .put("progress", true)
+                .put("recentWorkouts", true)
+                .put("records", true)
+        )
+        .put("activityUpdatedAt", TIMESTAMP)
+        .put(
+            "recentWorkouts",
+            JSONArray().put(
+                JSONObject()
+                    .put("workoutDay", "2026-08-08")
+                    .put("exerciseCount", 1)
+                    .put("setCount", 2)
+                    .put(
+                        "exercises",
+                        JSONArray().put(
+                            JSONObject().put("catalogKey", "bench_press").put("name", "Bench Press")
+                        )
+                    )
+            )
+        )
+        .put(
+            "exerciseRecords",
+            JSONArray().put(
+                JSONObject()
+                    .put("catalogKey", "bench_press")
+                    .put("name", "Bench Press")
+                    .put("bestWeightKg", 100.5)
+                    .put("bestReps", 5)
+                    .put("workoutCount", 4)
+                    .put("lastWorkoutDay", "2026-08-08")
+            )
+        )
+        .put("integrity", "self_reported")
+
+    private fun validWorkoutInbox(): JSONObject = JSONObject()
+        .put("version", 1)
+        .put("pendingIncomingCount", 1)
+        .put(
+            "incoming",
+            JSONArray().put(
+                JSONObject()
+                    .put("inviteId", inviteId('1'))
+                    .put("profileId", profileId('1'))
+                    .put("displayName", "Training Friend")
+                    .put("status", "pending")
+                    .put("inviteRevision", 1)
+                    .put("createdAt", TIMESTAMP)
+                    .put("expiresAt", "2026-08-10T10:00:00Z")
+                    .put("respondedAt", JSONObject.NULL)
+                    .put("summary", workoutSummary())
+                    .put("workout", workoutJson())
+            )
+        )
+        .put(
+            "outgoing",
+            JSONArray().put(
+                JSONObject()
+                    .put("inviteId", inviteId('2'))
+                    .put("profileId", profileId('2'))
+                    .put("displayName", "Other Friend")
+                    .put("status", "pending")
+                    .put("inviteRevision", 1)
+                    .put("createdAt", TIMESTAMP)
+                    .put("expiresAt", "2026-08-10T10:00:00Z")
+                    .put("respondedAt", JSONObject.NULL)
+                    .put("summary", workoutSummary())
+            )
+        )
+
+    private fun workoutSummary(): JSONObject = JSONObject()
+        .put("exerciseCount", 1)
+        .put("setCount", 2)
+        .put("exerciseNames", JSONArray().put("Bench Press"))
+
+    private fun workoutJson(): JSONObject = JSONObject()
+        .put("version", 1)
+        .put(
+            "exercises",
+            JSONArray().put(
+                JSONObject()
+                    .put("catalogKey", "bench_press")
+                    .put("name", "Bench Press")
+                    .put(
+                        "sets",
+                        JSONArray()
+                            .put(JSONObject().put("weight", 100.5).put("reps", 5))
+                            .put(JSONObject().put("weight", 90.0).put("reps", 8))
+                    )
+            )
+        )
+
+    private fun privacy(): JSONObject = JSONObject()
+        .put("allowRequests", true)
+        .put("shareProgress", true)
+        .put("shareRecentWorkouts", true)
+        .put("shareRecords", true)
+
+    private fun profileId(character: Char): String = "p_${character.toString().repeat(32)}"
+    private fun friendshipId(character: Char): String = "f_${character.toString().repeat(32)}"
+    private fun inviteId(character: Char): String = "wi_${character.toString().repeat(32)}"
+
+    private companion object {
+        const val TIMESTAMP = "2026-08-09T10:00:00Z"
+    }
+}

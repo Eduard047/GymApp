@@ -224,6 +224,16 @@ function loadContext(fetchImpl, {
       accountEpoch = 7;
     `, context);
   }
+  // These tests exercise cloud-state/auth/Garmin boundaries, not the independent
+  // Friends polling lifecycle. Keep background social refresh from adding
+  // unrelated requests to their exact network assertions.
+  vm.runInContext(`socialState = {
+    status: "loaded",
+    source: socialSourceKey(),
+    dashboard: null,
+    inbox: null,
+    error: ""
+  };`, context);
   context.appNode = appNode;
   context.runtimeNodes = runtimeNodes;
   context.storageValues = values;
@@ -898,7 +908,7 @@ test("Smart Coach profile edits stay local while completed workouts mark sync pe
   assert.equal(result.workoutDirty, true);
   assert.equal(result.snapshotStatus, "pending");
   assert.ok(Number.isSafeInteger(result.lastSyncedAt));
-  assert.match(result.panel, /Only completed workout history and exercises are shared/);
+  assert.match(result.panel, /Cloud sync stores completed workout history and exercises/);
   assert.match(result.panel, /Sync now/);
 });
 

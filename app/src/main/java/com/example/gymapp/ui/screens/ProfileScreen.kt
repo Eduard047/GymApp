@@ -34,28 +34,42 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.saveable.rememberSaveable
 import com.example.gymapp.R
-import com.example.gymapp.auth.LeaderboardRow
+import com.example.gymapp.auth.SocialBlockedProfile
+import com.example.gymapp.auth.SocialFriend
+import com.example.gymapp.auth.SocialFriendRequest
+import com.example.gymapp.auth.SocialIncomingWorkoutInvite
+import com.example.gymapp.auth.SocialOutgoingWorkoutInvite
+import com.example.gymapp.auth.SocialPrivacy
 import com.example.gymapp.garmin.openGymWorkoutTrackerInGarminStore
 import com.example.gymapp.garmin.GarminDeviceUiState
 import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.SectionTitle
 import com.example.gymapp.ui.viewmodel.ExerciseListUiState
-import com.example.gymapp.ui.viewmodel.SoloProgressUiModel
-import com.example.gymapp.util.LocalizedText
+import com.example.gymapp.ui.viewmodel.FriendsUiState
 import com.example.gymapp.sync.CloudSyncPhase
 import com.example.gymapp.sync.CloudSyncUiStatus
 import java.text.DateFormat
 import java.util.Date
 
 @Composable
-fun ProfileScreen(
+internal fun ProfileScreen(
     accountState: ExerciseListUiState,
     backupShareOwnerKey: String,
-    rows: List<LeaderboardRow>,
-    soloProgress: SoloProgressUiModel,
-    isLeaderboardLoading: Boolean,
-    leaderboardError: LocalizedText?,
-    onRefreshLeaderboard: () -> Unit,
+    friendsState: FriendsUiState,
+    onRefreshFriends: () -> Unit,
+    onSendFriendRequest: (String) -> Unit,
+    onAcceptFriendRequest: (SocialFriendRequest) -> Unit,
+    onDeclineFriendRequest: (SocialFriendRequest) -> Unit,
+    onCancelFriendRequest: (SocialFriendRequest) -> Unit,
+    onOpenFriend: (SocialFriend) -> Unit,
+    onBlockProfile: (String) -> Unit,
+    onUnblockProfile: (SocialBlockedProfile) -> Unit,
+    onUpdatePrivacy: (SocialPrivacy) -> Unit,
+    onAcceptWorkoutInvite: (SocialIncomingWorkoutInvite) -> Unit,
+    onDeclineWorkoutInvite: (SocialIncomingWorkoutInvite) -> Unit,
+    onReuseWorkoutInvite: (SocialIncomingWorkoutInvite) -> Unit,
+    onCancelWorkoutInvite: (SocialOutgoingWorkoutInvite) -> Unit,
+    onClearFriendsMessages: () -> Unit,
     cloudSyncStatus: CloudSyncUiStatus?,
     onSyncNow: () -> Unit,
     cloudSyncChoiceRequired: Boolean,
@@ -98,12 +112,22 @@ fun ProfileScreen(
         onRefreshGarminDevices()
     }
 
-    LeaderboardScreen(
-        rows = rows,
-        soloProgress = soloProgress,
-        isLoading = isLeaderboardLoading,
-        error = leaderboardError,
-        onRefresh = onRefreshLeaderboard,
+    FriendsScreen(
+        uiState = friendsState,
+        onRefresh = onRefreshFriends,
+        onSendFriendRequest = onSendFriendRequest,
+        onAcceptFriendRequest = onAcceptFriendRequest,
+        onDeclineFriendRequest = onDeclineFriendRequest,
+        onCancelFriendRequest = onCancelFriendRequest,
+        onOpenFriend = onOpenFriend,
+        onBlockProfile = onBlockProfile,
+        onUnblockProfile = onUnblockProfile,
+        onUpdatePrivacy = onUpdatePrivacy,
+        onAcceptWorkoutInvite = onAcceptWorkoutInvite,
+        onDeclineWorkoutInvite = onDeclineWorkoutInvite,
+        onReuseWorkoutInvite = onReuseWorkoutInvite,
+        onCancelWorkoutInvite = onCancelWorkoutInvite,
+        onClearMessages = onClearFriendsMessages,
         headerContent = {
             item {
                 Text(

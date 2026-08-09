@@ -21,6 +21,8 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -43,6 +45,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -63,6 +66,9 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -77,7 +83,6 @@ import com.example.gymapp.auth.PasswordReauthenticationRequiredException
 import com.example.gymapp.auth.activeCloudSessionFor
 import com.example.gymapp.auth.authErrorText
 import com.example.gymapp.auth.databaseName
-import com.example.gymapp.auth.LeaderboardRow
 import com.example.gymapp.auth.requiresEmailConfirmation
 import com.example.gymapp.auth.shouldRetireCloudAccountDeletionJournal
 import com.example.gymapp.data.repository.BackupOwner
@@ -86,6 +91,7 @@ import com.example.gymapp.gymApplication
 import com.example.gymapp.data.repository.GymRepository
 import com.example.gymapp.data.repository.SharedWorkoutInbox
 import com.example.gymapp.data.repository.SharedWorkoutLink
+import com.example.gymapp.data.repository.SharedWorkoutPlan
 import com.example.gymapp.ui.screens.AddWorkoutScreen
 import com.example.gymapp.ui.screens.ActiveWorkoutScreen
 import com.example.gymapp.ui.screens.AppIntroSplash
@@ -93,6 +99,7 @@ import com.example.gymapp.ui.screens.AuthScreen
 import com.example.gymapp.ui.screens.CloudSyncConflictDialog
 import com.example.gymapp.ui.screens.clearPrivateBackupShareArtifacts
 import com.example.gymapp.ui.screens.ExerciseListScreen
+import com.example.gymapp.ui.screens.FriendDetailScreen
 import com.example.gymapp.ui.screens.ExerciseProgressScreen
 import com.example.gymapp.ui.screens.GymBackground
 import com.example.gymapp.ui.screens.MissionsScreen
@@ -102,11 +109,14 @@ import com.example.gymapp.ui.screens.PostWorkoutSummaryScreen
 import com.example.gymapp.ui.screens.PasswordUpdateScreen
 import com.example.gymapp.ui.screens.WorkoutDetailScreen
 import com.example.gymapp.ui.screens.WorkoutListScreen
+import com.example.gymapp.ui.screens.WorkoutShareSheet
 import com.example.gymapp.ui.screens.shareWorkoutUrl
 import com.example.gymapp.ui.viewmodel.AddWorkoutViewModel
 import com.example.gymapp.ui.viewmodel.ActiveWorkoutViewModel
 import com.example.gymapp.ui.viewmodel.ExerciseListViewModel
 import com.example.gymapp.ui.viewmodel.ExerciseProgressViewModel
+import com.example.gymapp.ui.viewmodel.FriendsViewModel
+import com.example.gymapp.ui.viewmodel.FriendsUiState
 import com.example.gymapp.ui.viewmodel.PostWorkoutSummaryViewModel
 import com.example.gymapp.ui.viewmodel.WorkoutDetailViewModel
 import com.example.gymapp.ui.viewmodel.WorkoutListViewModel
@@ -193,6 +203,39 @@ internal fun shouldInitializeMissingRemoteState(localProjectionEmpty: Boolean): 
 
 internal fun shouldSeedCatalogAfterCloudPull(canonicalRoundTripSafe: Boolean): Boolean =
     canonicalRoundTripSafe
+
+internal fun canAcceptSocialWorkoutInvite(activeWorkoutExists: Boolean): Boolean =
+    !activeWorkoutExists
+
+internal fun shouldConsumeAcceptedSocialWorkout(appliedToDraft: Boolean): Boolean =
+    appliedToDraft
+
+internal fun pendingSocialWorkoutInviteBadgeCount(
+    inboxCount: Int?,
+    dashboardCount: Int?
+): Int = inboxCount ?: dashboardCount ?: 0
+
+internal enum class WorkoutInviteSendFeedback {
+    Idle,
+    Sending,
+    Succeeded,
+    Failed
+}
+
+internal fun workoutInviteSendFeedback(
+    trackedProfileId: String?,
+    actionsInFlight: Set<String>,
+    hasNotice: Boolean,
+    hasError: Boolean
+): WorkoutInviteSendFeedback {
+    val profileId = trackedProfileId ?: return WorkoutInviteSendFeedback.Idle
+    if ("send-workout-$profileId" in actionsInFlight) return WorkoutInviteSendFeedback.Sending
+    return when {
+        hasError -> WorkoutInviteSendFeedback.Failed
+        hasNotice -> WorkoutInviteSendFeedback.Succeeded
+        else -> WorkoutInviteSendFeedback.Idle
+    }
+}
 
 internal enum class CloudSyncRetryMode {
     Pull,
@@ -357,6 +400,37 @@ internal fun GymAppRoot(
         currentRoute == AppDestination.Exercises.route
     val cloudSession = (authState.session as? AccountSession.Cloud)
         ?.takeUnless { authState.needsPasswordUpdate }
+    val rootGraphRoute = remember(uiIsolationKey) { "gym-root-$uiIsolationKey" }
+    val rootGraphEntry = remember(navBackStackEntry, rootGraphRoute) {
+        runCatching { navController.getBackStackEntry(rootGraphRoute) }.getOrNull()
+    }
+    val friendsViewModel = rootGraphEntry?.let { owner ->
+        viewModel<FriendsViewModel>(
+            viewModelStoreOwner = owner,
+            key = "friends",
+            factory = FriendsViewModel.factory(authManager, cloudSession)
+        )
+    }
+    val friendsState = friendsViewModel?.uiState?.collectAsState()?.value
+    val workoutInviteBadgeCount = pendingSocialWorkoutInviteBadgeCount(
+        inboxCount = friendsState?.workoutInbox?.pendingIncomingCount,
+        dashboardCount = friendsState?.dashboard?.pendingWorkoutInviteCount
+    )
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, friendsViewModel) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) friendsViewModel?.refreshAll()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    LaunchedEffect(friendsState?.acceptedWorkout?.inviteId, activeWorkout != null) {
+        if (friendsState?.acceptedWorkout != null && activeWorkout == null) {
+            navController.navigate(AppDestination.AddWorkout.route) {
+                launchSingleTop = true
+            }
+        }
+    }
 
     fun updateCloudSyncPhase(session: AccountSession.Cloud, phase: CloudSyncPhase) {
         if (isSameCloudSessionGeneration(session, authManager.authState.value.session)) {
@@ -801,6 +875,7 @@ internal fun GymAppRoot(
         currentRoute == AppDestination.Exercises.route -> R.string.title_exercises
         currentRoute == AppDestination.Progress.route -> R.string.title_progress
         currentRoute == AppDestination.Profile.route -> R.string.title_profile
+        currentRoute?.startsWith("friend/") == true -> R.string.friend_details_title
         currentRoute == AppDestination.Ranks.route -> R.string.title_ranks
         currentRoute == AppDestination.AddWorkout.route -> R.string.title_add_workout
         currentRoute == AppDestination.ActiveWorkout.route -> R.string.active_workout_title
@@ -1052,6 +1127,13 @@ internal fun GymAppRoot(
                                     tonalElevation = 0.dp
                                 ) {
                                     AppDestination.bottomTabs.forEach { tab ->
+                                        val tabWorkoutInviteCount = if (
+                                            tab == AppDestination.Profile
+                                        ) {
+                                            workoutInviteBadgeCount
+                                        } else {
+                                            0
+                                        }
                                         NavigationBarItem(
                                             selected = currentRoute == tab.route,
                                             onClick = {
@@ -1071,15 +1153,34 @@ internal fun GymAppRoot(
                                                 unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
                                             ),
                                             icon = {
-                                                Box(
-                                                    modifier = Modifier.size(24.dp),
-                                                    contentAlignment = Alignment.Center
+                                                BadgedBox(
+                                                    badge = {
+                                                        if (tabWorkoutInviteCount > 0) {
+                                                            Badge {
+                                                                Text(tabWorkoutInviteCount.toString())
+                                                            }
+                                                        }
+                                                    }
                                                 ) {
-                                                    Icon(
-                                                        imageVector = tab.icon,
-                                                        contentDescription = stringResource(tab.labelRes),
-                                                        modifier = Modifier.size(20.dp)
-                                                    )
+                                                    Box(
+                                                        modifier = Modifier.size(24.dp),
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = tab.icon,
+                                                            contentDescription = if (
+                                                                tabWorkoutInviteCount > 0
+                                                            ) {
+                                                                stringResource(
+                                                                    R.string.workout_invites_pending_count,
+                                                                    tabWorkoutInviteCount
+                                                                )
+                                                            } else {
+                                                                stringResource(tab.labelRes)
+                                                            },
+                                                            modifier = Modifier.size(20.dp)
+                                                        )
+                                                    }
                                                 }
                                             },
                                             label = {
@@ -1137,7 +1238,7 @@ internal fun GymAppRoot(
                     NavHost(
                         navController = navController,
                         startDestination = AppDestination.Workouts.route,
-                        route = "gym-root-$uiIsolationKey",
+                        route = rootGraphRoute,
                         modifier = Modifier.fillMaxSize()
                     ) {
                         composable(route = AppDestination.Workouts.route) {
@@ -1247,8 +1348,57 @@ internal fun GymAppRoot(
                             val shareWorkoutFailed = stringResource(
                                 R.string.message_share_workout_failed
                             )
+                            val workoutInviteSent = stringResource(R.string.workout_invite_sent)
+                            val workoutInviteSendFailed = stringResource(
+                                R.string.workout_invite_send_failed
+                            )
+                            var workoutPlanToShare by remember {
+                                mutableStateOf<SharedWorkoutPlan?>(null)
+                            }
+                            var workoutInviteSendProfileId by remember {
+                                mutableStateOf<String?>(null)
+                            }
                             val approvedSharedWorkout = pendingSharedWorkout?.takeIf {
                                 it.id == approvedSharedWorkoutId
+                            }
+                            val acceptedSocialWorkout = friendsState?.acceptedWorkout
+
+                            LaunchedEffect(Unit) {
+                                friendsViewModel?.refreshAll()
+                            }
+
+                            val workoutInviteNotice = friendsState?.notice?.asString()
+                            val workoutInviteError = friendsState?.error?.asString()
+                            val workoutInviteFeedback = workoutInviteSendFeedback(
+                                trackedProfileId = workoutInviteSendProfileId,
+                                actionsInFlight = friendsState?.actionsInFlight.orEmpty(),
+                                hasNotice = workoutInviteNotice != null,
+                                hasError = workoutInviteError != null
+                            )
+                            LaunchedEffect(
+                                workoutInviteFeedback,
+                                workoutInviteNotice,
+                                workoutInviteError
+                            ) {
+                                when (workoutInviteFeedback) {
+                                    WorkoutInviteSendFeedback.Succeeded -> {
+                                        workoutPlanToShare = null
+                                        workoutInviteSendProfileId = null
+                                        friendsViewModel?.clearMessages()
+                                        snackbarHostState.showSnackbar(
+                                            workoutInviteNotice ?: workoutInviteSent
+                                        )
+                                    }
+                                    WorkoutInviteSendFeedback.Failed -> {
+                                        workoutInviteSendProfileId = null
+                                        friendsViewModel?.clearMessages()
+                                        snackbarHostState.showSnackbar(
+                                            workoutInviteError ?: workoutInviteSendFailed
+                                        )
+                                    }
+                                    WorkoutInviteSendFeedback.Idle,
+                                    WorkoutInviteSendFeedback.Sending -> Unit
+                                }
                             }
 
                             LaunchedEffect(approvedSharedWorkout?.id) {
@@ -1262,6 +1412,18 @@ internal fun GymAppRoot(
                                     } else {
                                         sharedWorkoutImportFailed
                                     }
+                                )
+                            }
+
+                            LaunchedEffect(acceptedSocialWorkout?.inviteId, activeWorkout != null) {
+                                val accepted = acceptedSocialWorkout ?: return@LaunchedEffect
+                                if (activeWorkout != null) return@LaunchedEffect
+                                val applied = viewModel.applySharedWorkoutPlan(accepted.plan)
+                                if (shouldConsumeAcceptedSocialWorkout(applied)) {
+                                    friendsViewModel?.consumeAcceptedWorkout(accepted.inviteId)
+                                }
+                                snackbarHostState.showSnackbar(
+                                    if (applied) sharedWorkoutImported else sharedWorkoutImportFailed
                                 )
                             }
 
@@ -1308,23 +1470,57 @@ internal fun GymAppRoot(
                                 onCopyWorkoutTemplate = viewModel::copyWorkoutTemplate,
                                 onSyncPlanToWatch = viewModel::syncPlanToWatch,
                                 onShareWorkout = {
-                                    val url = viewModel.prepareSharedWorkoutUrl()
-                                    val didOpenShareSheet = url != null && runCatching {
-                                        shareWorkoutUrl(
-                                            context = context,
-                                            url = url,
-                                            chooserTitle = shareWorkoutChooserTitle
-                                        )
-                                    }.isSuccess
-                                    if (!didOpenShareSheet) {
+                                    val plan = viewModel.prepareSharedWorkoutPlan()
+                                    if (plan == null) {
                                         coroutineScope.launch {
                                             snackbarHostState.showSnackbar(shareWorkoutFailed)
                                         }
+                                    } else {
+                                        workoutPlanToShare = plan
                                     }
                                 },
                                 onStartWorkout = viewModel::startWorkout,
                                 modifier = Modifier.fillMaxSize()
                             )
+
+                            workoutPlanToShare?.let { plan ->
+                                WorkoutShareSheet(
+                                    friends = friendsState?.dashboard?.friends.orEmpty(),
+                                    isCloudAccount = cloudSession != null,
+                                    actionsInFlight = friendsState?.actionsInFlight.orEmpty(),
+                                    onShareLink = {
+                                        val didOpenShareSheet = runCatching {
+                                            shareWorkoutUrl(
+                                                context = context,
+                                                url = SharedWorkoutLink.buildUrl(plan.exercises),
+                                                chooserTitle = shareWorkoutChooserTitle
+                                            )
+                                        }.isSuccess
+                                        if (didOpenShareSheet) {
+                                            workoutPlanToShare = null
+                                        } else {
+                                            coroutineScope.launch {
+                                                snackbarHostState.showSnackbar(shareWorkoutFailed)
+                                            }
+                                        }
+                                    },
+                                    onSendToFriend = { friend ->
+                                        val socialViewModel = friendsViewModel
+                                        if (socialViewModel == null) {
+                                            coroutineScope.launch {
+                                                snackbarHostState.showSnackbar(
+                                                    workoutInviteSendFailed
+                                                )
+                                            }
+                                        } else {
+                                            socialViewModel.clearMessages()
+                                            workoutInviteSendProfileId = friend.profileId
+                                            socialViewModel.sendWorkoutInvite(friend.profileId, plan)
+                                        }
+                                    },
+                                    onDismiss = { workoutPlanToShare = null }
+                                )
+                            }
                         }
 
                         composable(route = AppDestination.ActiveWorkout.route) {
@@ -1516,82 +1712,87 @@ internal fun GymAppRoot(
                         }
 
                         composable(route = AppDestination.Profile.route) {
-                            val viewModel: WorkoutListViewModel = viewModel(
-                                factory = WorkoutListViewModel.factory(repository)
-                            )
-                            val uiState by viewModel.uiState.collectAsState()
                             val profileViewModel: ExerciseListViewModel = viewModel(
                                 key = "profile_account_tools",
                                 factory = ExerciseListViewModel.factory(repository, authManager)
                             )
                             val profileState by profileViewModel.uiState.collectAsState()
-                            var rows by remember { mutableStateOf<List<LeaderboardRow>>(emptyList()) }
-                            var isLoading by remember { mutableStateOf(false) }
-                            var error by remember { mutableStateOf<LocalizedText?>(null) }
-
-                            fun refreshLeaderboard() {
-                                val session = authState.session as? AccountSession.Cloud
-                                if (session == null) {
-                                    error = LocalizedText(R.string.leaderboard_login_required)
-                                    rows = emptyList()
-                                    return
-                                }
-                                coroutineScope.launch {
-                                    isLoading = true
-                                    error = null
-                                    val localRows = runCatching {
-                                        val remoteProfile = authManager.loadOwnProfile(session)
-                                        val localStats = repository.getSyncProfileStats()
-                                        LeaderboardRow(
-                                            displayName = remoteProfile?.displayName ?: session.displayName,
-                                            xp = localStats.xp,
-                                            level = localStats.level,
-                                            workouts = localStats.workouts,
-                                            isCurrentUser = true
-                                        )
-                                    }.getOrElse {
-                                        LeaderboardRow(
-                                            displayName = session.displayName,
-                                            xp = uiState.soloProgress.totalXp,
-                                            level = uiState.soloProgress.level,
-                                            workouts = uiState.dashboardStats.workoutCount,
-                                            isCurrentUser = true
-                                        )
-                                    }
-
-                                    runCatching {
-                                        val loadedRows = authManager.loadLeaderboard(session)
-                                        if (loadedRows.any { it.isCurrentUser }) {
-                                            loadedRows
-                                        } else {
-                                            listOf(localRows) + loadedRows
-                                        }
-                                    }.onSuccess { loadedRows ->
-                                        rows = loadedRows
-                                        isLoading = false
-                                    }.onFailure { throwable ->
-                                        error = authErrorText(
-                                            throwable,
-                                            R.string.leaderboard_load_failed
-                                        )
-                                        rows = listOf(localRows)
-                                        isLoading = false
-                                    }
-                                }
-                            }
-
-                            LaunchedEffect(cloudSession?.userId) {
-                                refreshLeaderboard()
+                            val socialState = friendsState ?: FriendsUiState(
+                                isCloudAccount = cloudSession != null
+                            )
+                            LaunchedEffect(Unit) {
+                                friendsViewModel?.refreshAll()
                             }
 
                             ProfileScreen(
                                 accountState = profileState,
                                 backupShareOwnerKey = checkNotNull(authState.session).databaseName(),
-                                rows = rows,
-                                soloProgress = uiState.soloProgress,
-                                isLeaderboardLoading = isLoading,
-                                leaderboardError = error,
-                                onRefreshLeaderboard = { refreshLeaderboard() },
+                                friendsState = socialState,
+                                onRefreshFriends = { friendsViewModel?.refreshAll() },
+                                onSendFriendRequest = { code ->
+                                    friendsViewModel?.sendFriendRequest(code)
+                                },
+                                onAcceptFriendRequest = { request ->
+                                    friendsViewModel?.acceptFriendRequest(request)
+                                },
+                                onDeclineFriendRequest = { request ->
+                                    friendsViewModel?.declineFriendRequest(request)
+                                },
+                                onCancelFriendRequest = { request ->
+                                    friendsViewModel?.cancelFriendRequest(request)
+                                },
+                                onOpenFriend = { friend ->
+                                    navController.navigate(
+                                        AppDestination.friendDetailRoute(friend.profileId)
+                                    )
+                                },
+                                onBlockProfile = { profileId ->
+                                    friendsViewModel?.blockProfile(profileId)
+                                },
+                                onUnblockProfile = { profile ->
+                                    friendsViewModel?.unblockProfile(profile)
+                                },
+                                onUpdatePrivacy = { privacy ->
+                                    friendsViewModel?.updatePrivacy(privacy)
+                                },
+                                onAcceptWorkoutInvite = { invite ->
+                                    if (!canAcceptSocialWorkoutInvite(activeWorkout != null)) {
+                                        coroutineScope.launch {
+                                            snackbarHostState.showSnackbar(
+                                                applicationContext.getString(
+                                                    R.string.workout_invite_active_blocked
+                                                )
+                                            )
+                                        }
+                                    } else {
+                                        friendsViewModel?.acceptWorkoutInvite(invite)
+                                    }
+                                },
+                                onDeclineWorkoutInvite = { invite ->
+                                    friendsViewModel?.declineWorkoutInvite(invite)
+                                },
+                                onReuseWorkoutInvite = { invite ->
+                                    if (!canAcceptSocialWorkoutInvite(activeWorkout != null)) {
+                                        coroutineScope.launch {
+                                            snackbarHostState.showSnackbar(
+                                                applicationContext.getString(
+                                                    R.string.workout_invite_active_blocked
+                                                )
+                                            )
+                                        }
+                                    } else {
+                                        friendsViewModel?.reuseAcceptedWorkoutInvite(invite)
+                                    }
+                                },
+                                onCancelWorkoutInvite = { invite ->
+                                    friendsViewModel?.cancelWorkoutInvite(
+                                        invite.inviteId,
+                                        invite.inviteRevision
+                                    )
+                                },
+                                onClearFriendsMessages = {
+                                    friendsViewModel?.clearMessages()
+                                },
                                 cloudSyncStatus = cloudSyncStatus,
                                 onSyncNow = {
                                     cloudSession?.let { session ->
@@ -1821,6 +2022,50 @@ internal fun GymAppRoot(
                                         applicationContext.gymApplication.garminSyncManager
                                             .resetSecureGarminPairing()
                                     }
+                                },
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+
+                        composable(
+                            route = AppDestination.FriendDetail.route,
+                            arguments = listOf(
+                                navArgument("profileId") { type = NavType.StringType }
+                            )
+                        ) { backStackEntry ->
+                            val profileId = backStackEntry.arguments?.getString("profileId")
+                                .orEmpty()
+                            val socialState = friendsState ?: FriendsUiState(
+                                isCloudAccount = cloudSession != null
+                            )
+                            val friend = socialState.dashboard?.friends
+                                ?.firstOrNull { it.profileId == profileId }
+                            LaunchedEffect(profileId, friend?.friendshipRevision) {
+                                if (friend != null) friendsViewModel?.openFriend(profileId)
+                            }
+                            DisposableEffect(profileId) {
+                                onDispose { friendsViewModel?.closeFriend() }
+                            }
+
+                            FriendDetailScreen(
+                                friend = friend,
+                                details = socialState.selectedFriendDetails.takeIf {
+                                    socialState.selectedProfileId == profileId
+                                },
+                                isLoading = socialState.isDetailsLoading,
+                                error = socialState.error,
+                                actionInFlight = friend?.let {
+                                    "friend-${it.friendshipId}" in socialState.actionsInFlight ||
+                                        "profile-${it.profileId}" in socialState.actionsInFlight
+                                } == true,
+                                onRetry = { friendsViewModel?.openFriend(profileId) },
+                                onRemove = { target ->
+                                    friendsViewModel?.removeFriend(target)
+                                    navController.popBackStack()
+                                },
+                                onBlock = { target ->
+                                    friendsViewModel?.blockProfile(target.profileId)
+                                    navController.popBackStack()
                                 },
                                 modifier = Modifier.fillMaxSize()
                             )

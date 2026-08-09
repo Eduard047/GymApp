@@ -1,558 +1,1303 @@
 import SwiftUI
+import UIKit
+
+enum SocialActivityPresentationState: Equatable {
+    case privateData
+    case temporarilyUnavailable
+    case empty
+    case available
+}
+
+func socialActivityPresentationState(
+    isShared: Bool,
+    activityUpdatedAt: String?,
+    itemCount: Int
+) -> SocialActivityPresentationState {
+    guard isShared else { return .privateData }
+    guard activityUpdatedAt != nil else { return .temporarilyUnavailable }
+    return itemCount == 0 ? .empty : .available
+}
+
+struct SocialRecentWorkoutRow: Identifiable, Equatable {
+    let id: Int
+    let workout: SocialRecentWorkout
+}
+
+func socialRecentWorkoutRows(_ workouts: [SocialRecentWorkout]) -> [SocialRecentWorkoutRow] {
+    workouts.enumerated().map { SocialRecentWorkoutRow(id: $0.offset, workout: $0.element) }
+}
+
+enum SocialWorkoutInvitePreparationDecision: Equatable {
+    case blockedByActiveWorkout
+    case confirmEditableCopy
+    case confirmPendingReplacement(UUID)
+}
+
+func socialWorkoutInvitePreparationDecision(
+    canAcceptWorkoutInvites: Bool,
+    pendingSharedWorkoutID: UUID?
+) -> SocialWorkoutInvitePreparationDecision {
+    guard canAcceptWorkoutInvites else { return .blockedByActiveWorkout }
+    if let pendingSharedWorkoutID {
+        return .confirmPendingReplacement(pendingSharedWorkoutID)
+    }
+    return .confirmEditableCopy
+}
+
+struct SocialRecordMetricLabels: Equatable {
+    let maximumWeight: String
+    let maximumRepetitions: String
+}
+
+func socialRecordMetricLabels(
+    _ record: SocialExerciseRecord,
+    languageCode: String
+) -> SocialRecordMetricLabels {
+    let weight = record.bestWeightKg.formatted(.number.precision(.fractionLength(0 ... 2)))
+    return SocialRecordMetricLabels(
+        maximumWeight: "\(gymText("Max weight", "Макс. вага", "Макс. вес", languageCode: languageCode)): \(weight) kg",
+        maximumRepetitions: "\(gymText("Max reps", "Макс. повтори", "Макс. повторы", languageCode: languageCode)): \(record.bestReps)"
+    )
+}
 
 @MainActor
-struct LeaderboardView: View {
+struct FriendsView: View {
     @AppStorage("app-language") private var languageCode = AppLanguage.english.rawValue
-    @AppStorage private var hiddenProfileIDsJSON: String
-    @ObservedObject private var store: WorkoutStore
     @ObservedObject private var appState: AppState
-    @ObservedObject private var cloudSync: CloudSyncService
     @ObservedObject private var auth: AuthService
-    private let embedded: Bool
 
-    @State private var remoteRows: [LeaderboardEntry] = []
+    private let canAcceptWorkoutInvites: Bool
+
+    @State private var friendCode = ""
     @State private var errorMessage: String?
-    @State private var isShowingLocalFallback = true
-    @State private var lastRefreshedAt: Date?
-    @State private var pendingReport: LeaderboardEntry?
-    @State private var safetyMessage: String?
-    @State private var safetyMessageIsError = false
+    @State private var statusMessage: String?
+    @State private var isLoading = false
+    @State private var activeActionID: String?
+    @State private var privacyDraft: SocialPrivacy?
+    @State private var privacyIsDirty = false
+    @State private var confirmation: FriendsConfirmation?
 
     init(
-        store: WorkoutStore,
         appState: AppState,
         auth: AuthService,
-        embedded: Bool = false
+        canAcceptWorkoutInvites: Bool
     ) {
-        self.store = store
         self.appState = appState
-        self.cloudSync = appState.cloudSync
         self.auth = auth
-        self.embedded = embedded
-        _hiddenProfileIDsJSON = AppStorage(
-            wrappedValue: "[]",
-            leaderboardHiddenProfilesDefaultsKey(for: store.accountStorageKey)
-        )
+        self.canAcceptWorkoutInvites = canAcceptWorkoutInvites
     }
 
     var body: some View {
-        configuredContent
-            .environment(\.locale, appLocale)
-            .task(id: auth.session?.storageKey) {
-                await refreshLeaderboard()
-            }
-            .alert(item: $pendingReport) { row in
-                Alert(
-                    title: Text(t("Report this display name?", "Поскаржитися на це ім’я?")),
-                    message: Text(
-                        t(
-                            "GymApp will send the profile identifier and a fixed offensive-name reason to the moderation queue. No free-form text is sent.",
-                            "GymApp надішле ідентифікатор профілю та фіксовану причину щодо неприйнятного імені до черги модерації. Довільний текст не надсилається."
-                        )
-                    ),
-                    primaryButton: .destructive(Text(t("Report", "Поскаржитися"))) {
-                        Task { await reportDisplayName(row) }
-                    },
-                    secondaryButton: .cancel(Text(t("Cancel", "Скасувати")))
-                )
-            }
-    }
-
-    @ViewBuilder
-    private var configuredContent: some View {
-        if embedded {
-            leaderboardContent
-        } else {
-            GymBackground {
-                ScrollView {
-                    leaderboardContent
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 10)
-                        .padding(.bottom, 20)
-                }
-                .scrollIndicators(.hidden)
-                .refreshable {
-                    await refreshLeaderboard()
-                }
-            }
-            .navigationTitle(t("Rating status", "Статус рейтингу"))
-        }
-    }
-
-    private var leaderboardContent: some View {
         LazyVStack(spacing: 12) {
-            ratingHero
-            refreshCard
-
-            if isShowingLocalFallback {
-                fallbackCard
-            }
-
-            if let errorMessage {
-                GymStatusBanner(message: errorMessage, isError: true)
-            }
-
-            if let safetyMessage {
-                GymStatusBanner(message: safetyMessage, isError: safetyMessageIsError)
-            }
-
-            if displayedRows.isEmpty, !cloudSync.isSyncing {
-                emptyState
+            if !isCloudAccount {
+                localAccountState
             } else {
-                ForEach(Array(displayedRows.enumerated()), id: \.element.id) { index, row in
-                    leaderboardRow(row, place: index + 1)
+                hero
+
+                if let errorMessage {
+                    GymStatusBanner(message: errorMessage, isError: true)
+                }
+                if let statusMessage {
+                    GymStatusBanner(message: statusMessage, isError: false)
+                }
+
+                if let dashboard = appState.socialDashboard {
+                    friendCodeCard(dashboard)
+                    addFriendCard
+                    requestsCard(dashboard)
+                    workoutInvitesCard
+                    friendsRankingCard(dashboard)
+                    privacyCard(dashboard)
+                    blockedCard(dashboard)
+                } else if isLoading {
+                    GymPanel {
+                        HStack(spacing: 12) {
+                            ProgressView()
+                            Text(t("Loading Friends…", "Завантажуємо друзів…", "Загружаем друзей…"))
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                } else {
+                    unavailableCard
                 }
             }
         }
+        .task(id: auth.session?.storageKey) {
+            privacyDraft = nil
+            privacyIsDirty = false
+            await refreshAll()
+        }
+        .onChange(of: appState.socialDashboard?.currentUser.settingsRevision) { _ in
+            guard !privacyIsDirty else { return }
+            privacyDraft = appState.socialDashboard?.currentUser.privacy
+        }
+        .alert(item: $confirmation, content: confirmationAlert)
     }
 
-    private var ratingHero: some View {
-        GymHeroPanel {
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .top, spacing: 16) {
-                    heroCopy
-                    Spacer(minLength: 8)
-                    yourStats
-                        .frame(minWidth: 138)
-                }
-                VStack(alignment: .leading, spacing: 14) {
-                    heroCopy
-                    yourStats
-                }
-            }
-        }
+    private var isCloudAccount: Bool {
+        auth.session?.cloud != nil
     }
 
-    private var heroCopy: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Label(
-                t("Rating not available yet", "Рейтинг поки недоступний"),
-                systemImage: "lock.shield.fill"
-            )
-                .font(.title.bold())
-                .accessibilityAddTraits(.isHeader)
-            Text(
-                t(
-                    "Workouts are currently scored on your device, so public ranking is disabled, not queued for review. It will appear only after a future app and server update adds verified scoring; no release date is set. Your private progress remains available.",
-                    "Зараз тренування оцінюються на пристрої, тому публічний рейтинг вимкнено, а не поставлено в чергу на перевірку. Він з’явиться лише після майбутнього оновлення застосунку й сервера з перевіреним підрахунком; дати випуску поки немає. Твій приватний прогрес залишається доступним."
-                )
-            )
-                .font(.subheadline)
-                .foregroundStyle(Color.white.opacity(0.84))
-                .fixedSize(horizontal: false, vertical: true)
-
-            Text(t("Private progress only", "Лише приватний прогрес"))
-                .font(.caption.weight(.semibold))
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(Color.white.opacity(0.13), in: Capsule())
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var yourStats: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(t("YOUR PROGRESS", "ТВІЙ ПРОГРЕС"))
-                .font(.caption2.weight(.bold))
-                .tracking(0.5)
-                .foregroundStyle(Color.white.opacity(0.72))
-            Text("\(localStats.xp.formatted()) XP")
-                .font(.title2.bold())
-                .contentTransition(.numericText())
-            Text(
-                "\(t("Level", "Рівень")) \(localStats.level) • " + workoutCount(localStats.workouts)
-            )
-            .font(.caption)
-            .foregroundStyle(Color.white.opacity(0.8))
-        }
-        .padding(13)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white.opacity(0.11), in: RoundedRectangle(cornerRadius: 18))
-        .overlay {
-            RoundedRectangle(cornerRadius: 18)
-                .strokeBorder(Color.white.opacity(0.14), lineWidth: 1)
-        }
-        .accessibilityElement(children: .combine)
-    }
-
-    private var refreshCard: some View {
+    private var localAccountState: some View {
         GymPanel(highlighted: true) {
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .center, spacing: 12) {
-                    refreshCopy
-                    Spacer(minLength: 8)
-                    refreshButton
-                        .fixedSize(horizontal: true, vertical: false)
-                }
-                VStack(alignment: .leading, spacing: 12) {
-                    refreshCopy
-                    refreshButton
-                }
-            }
-        }
-    }
-
-    private var refreshCopy: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 7) {
-                Image(systemName: isShowingLocalFallback ? "iphone" : "cloud.fill")
-                    .foregroundStyle(isShowingLocalFallback ? GymTheme.secondary : GymTheme.primary)
-                    .accessibilityHidden(true)
-                Text(t("Your synced progress", "Твій синхронізований прогрес"))
-                    .font(.headline)
-                    .accessibilityAddTraits(.isHeader)
-            }
-
-            if cloudSync.isSyncing {
-                Text(t("Loading protected cloud progress…", "Завантажуємо захищений хмарний прогрес…"))
-                    .font(.subheadline)
-                    .foregroundStyle(GymTheme.textSecondary)
-            } else if let lastRefreshedAt, !isShowingLocalFallback {
+            VStack(alignment: .leading, spacing: 10) {
+                Label(
+                    t("Friends need a cloud account", "Для друзів потрібен хмарний акаунт", "Для друзей нужен облачный аккаунт"),
+                    systemImage: "person.2.slash"
+                )
+                .font(.headline)
                 Text(
                     t(
-                        "Updated \(lastRefreshedAt.formatted(.relative(presentation: .named).locale(appLocale)))",
-                        "Оновлено \(lastRefreshedAt.formatted(.relative(presentation: .named).locale(appLocale)))"
+                        "Sign in from the Account card above to add friends. Offline workouts stay on this iPhone.",
+                        "Увійди через картку акаунта вище, щоб додавати друзів. Офлайн-тренування залишаться на цьому iPhone.",
+                        "Войди через карточку аккаунта выше, чтобы добавлять друзей. Офлайн-тренировки останутся на этом iPhone."
                     )
                 )
                 .font(.subheadline)
                 .foregroundStyle(GymTheme.textSecondary)
-            } else {
-                Text(
-                    isShowingLocalFallback
-                        ? t("Showing on-device stats.", "Показано дані з цього пристрою.")
-                        : t("Your own cloud progress is up to date.", "Твій власний хмарний прогрес актуальний.")
-                )
-                .font(.subheadline)
-                .foregroundStyle(GymTheme.textSecondary)
             }
+        }
+    }
 
-            if !cloudSync.isSyncing {
+    private var hero: some View {
+        GymHeroPanel {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .top, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Label(t("Friends", "Друзі", "Друзья"), systemImage: "person.2.fill")
+                            .font(.title2.bold())
+                        Text(
+                            t(
+                                "Compare synced progress only with people you accept.",
+                                "Порівнюй синхронізований прогрес лише з тими, кого прийняв у друзі.",
+                                "Сравнивай синхронизированный прогресс только с теми, кого принял в друзья."
+                            )
+                        )
+                        .font(.subheadline)
+                        .foregroundStyle(Color.white.opacity(0.84))
+                    }
+                    Spacer(minLength: 8)
+                    if let dashboard = appState.socialDashboard,
+                       dashboard.currentUser.statsAvailable,
+                       let xp = dashboard.currentUser.xp,
+                       let level = dashboard.currentUser.level {
+                        VStack(alignment: .trailing, spacing: 2) {
+                            Text("\(xp) XP").font(.title3.bold().monospacedDigit())
+                            Text("\(t("Level", "Рівень", "Уровень")) \(level)")
+                                .font(.caption)
+                                .foregroundStyle(Color.white.opacity(0.76))
+                        }
+                    }
+                }
                 Text(
                     t(
-                        "Refresh updates only your own cloud XP. It does not start a rating check.",
-                        "Оновлення завантажує лише твої власні XP із хмари. Воно не запускає перевірку рейтингу."
+                        "XP comes from self-reported synced workouts. This is a friends comparison, not a verified sports ranking.",
+                        "XP походять із самостійно записаних синхронізованих тренувань. Це порівняння між друзями, а не перевірений спортивний рейтинг.",
+                        "XP берутся из самостоятельно записанных синхронизированных тренировок. Это сравнение между друзьями, а не проверенный спортивный рейтинг."
                     )
                 )
                 .font(.caption)
-                .foregroundStyle(GymTheme.textSecondary)
-            }
-
-            if !hiddenProfileIDs.isEmpty {
-                Button(t("Show blocked athletes again", "Знову показувати заблокованих атлетів")) {
-                    hiddenProfileIDsJSON = "[]"
-                    safetyMessageIsError = false
-                    safetyMessage = t("Blocked athletes are visible again.", "Заблокованих атлетів знову видно.")
+                .foregroundStyle(Color.white.opacity(0.76))
+                Button {
+                    Task { await refreshAll(force: true) }
+                } label: {
+                    Label(
+                        isLoading
+                            ? t("Refreshing…", "Оновлюємо…", "Обновляем…")
+                            : t("Refresh Friends", "Оновити друзів", "Обновить друзей"),
+                        systemImage: "arrow.clockwise"
+                    )
                 }
-                .font(.caption.weight(.semibold))
+                .buttonStyle(.bordered)
+                .tint(.white)
+                .disabled(isLoading)
             }
         }
     }
 
-    private var refreshButton: some View {
-        Button {
-            Task { await refreshLeaderboard() }
-        } label: {
-            HStack(spacing: 8) {
-                if cloudSync.isSyncing {
-                    SwiftUI.ProgressView()
-                        .controlSize(.small)
-                        .tint(.white)
-                        .accessibilityHidden(true)
-                } else {
-                    Image(systemName: "arrow.clockwise")
-                        .accessibilityHidden(true)
-                }
-                Text(
-                    cloudSync.isSyncing
-                        ? t("Loading", "Завантаження")
-                        : t("Refresh progress", "Оновити прогрес")
+    private func friendCodeCard(_ dashboard: SocialDashboard) -> some View {
+        return GymPanel {
+            VStack(alignment: .leading, spacing: 10) {
+                GymSectionTitle(
+                    eyebrow: t("Invite", "Запрошення", "Приглашение"),
+                    title: t("Your friend code", "Твій код друга", "Твой код друга"),
+                    supporting: t(
+                        "Share this random code. It is not your email or account ID.",
+                        "Поділися цим випадковим кодом. Це не твоя пошта й не ID акаунта.",
+                        "Поделись этим случайным кодом. Это не твоя почта и не ID аккаунта."
+                    )
                 )
+                Text(dashboard.currentUser.friendCode)
+                    .font(.caption.monospaced())
+                    .textSelection(.enabled)
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(GymTheme.surfaceVariant, in: RoundedRectangle(cornerRadius: 12))
+                HStack(spacing: 8) {
+                    Button {
+                        UIPasteboard.general.string = dashboard.currentUser.friendCode
+                        statusMessage = t("Friend code copied.", "Код друга скопійовано.", "Код друга скопирован.")
+                    } label: {
+                        Label(t("Copy", "Копіювати", "Копировать"), systemImage: "doc.on.doc")
+                    }
+                    .buttonStyle(.bordered)
+                    ShareLink(
+                        item: dashboard.currentUser.friendCode,
+                        subject: Text(t("GymApp friend code", "Код друга GymApp", "Код друга GymApp")),
+                        message: Text(
+                            t(
+                                "Add me in GymApp with this friend code.",
+                                "Додай мене в GymApp за цим кодом друга.",
+                                "Добавь меня в GymApp по этому коду друга."
+                            )
+                        )
+                    ) {
+                        Label(t("Share", "Поділитися", "Поделиться"), systemImage: "square.and.arrow.up")
+                    }
+                    .buttonStyle(.bordered)
+                }
             }
         }
-        .buttonStyle(GymPrimaryButtonStyle())
-        .disabled(cloudSync.isSyncing || auth.session?.cloud == nil)
-        .accessibilityHint(
-            auth.session?.cloud == nil
-                ? t("Sign in with a cloud account to refresh", "Увійди у хмарний акаунт, щоб оновити")
-                : t(
-                    "Refreshes only your cloud progress; it does not start a rating check",
-                    "Оновлює лише твій хмарний прогрес і не запускає перевірку рейтингу"
-                )
-        )
     }
 
-    private var fallbackCard: some View {
-        GymPanel {
-            HStack(alignment: .top, spacing: 11) {
-                Image(systemName: auth.session?.cloud == nil ? "person.crop.circle.badge.exclamationmark" : "wifi.slash")
-                    .font(.title3)
-                    .foregroundStyle(GymTheme.secondary)
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(t("Local progress", "Локальний прогрес"))
-                        .font(.subheadline.weight(.semibold))
-                    Text(fallbackExplanation)
+    private var addFriendCard: some View {
+        GymPanel(highlighted: true) {
+            VStack(alignment: .leading, spacing: 10) {
+                GymSectionTitle(
+                    eyebrow: t("Add", "Додати", "Добавить"),
+                    title: t("Add a friend", "Додати друга", "Добавить друга"),
+                    supporting: t(
+                        "Paste a p_… friend code. GymApp never searches by email or exposes account IDs.",
+                        "Встав код друга p_…. GymApp не шукає за поштою й не розкриває ID акаунтів.",
+                        "Вставь код друга p_…. GymApp не ищет по почте и не раскрывает ID аккаунтов."
+                    )
+                )
+                TextField(t("Friend code", "Код друга", "Код друга"), text: $friendCode)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .font(.body.monospaced())
+                    .textFieldStyle(.roundedBorder)
+                Button {
+                    Task { await sendFriendRequest() }
+                } label: {
+                    Label(t("Send request", "Надіслати запит", "Отправить запрос"), systemImage: "person.badge.plus")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(GymPrimaryButtonStyle())
+                .disabled(activeActionID != nil || !validEnteredFriendCode)
+            }
+        }
+    }
+
+    private func requestsCard(_ dashboard: SocialDashboard) -> some View {
+        return GymPanel {
+            VStack(alignment: .leading, spacing: 12) {
+                GymSectionTitle(
+                    eyebrow: t("Requests", "Запити", "Запросы"),
+                    title: t("Friend requests", "Запити в друзі", "Запросы в друзья"),
+                    supporting: t(
+                        "Accepting shares only the categories enabled in Privacy below.",
+                        "Після прийняття друг побачить лише категорії, увімкнені в налаштуваннях приватності нижче.",
+                        "После принятия друг увидит только категории, включённые в настройках приватности ниже."
+                    )
+                )
+                if dashboard.incoming.isEmpty, dashboard.outgoing.isEmpty {
+                    empty(t("No pending friend requests.", "Немає запитів у друзі.", "Нет запросов в друзья."))
+                }
+                ForEach(dashboard.incoming) { request in
+                    requestRow(request, incoming: true)
+                }
+                ForEach(dashboard.outgoing) { request in
+                    requestRow(request, incoming: false)
+                }
+            }
+        }
+    }
+
+    private func requestRow(_ request: SocialFriendRequest, incoming: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(request.displayName).font(.headline)
+                    Text(incoming
+                         ? t("Wants to be your friend", "Хоче додатися в друзі", "Хочет добавиться в друзья")
+                         : t("Waiting for a response", "Очікує відповіді", "Ожидает ответа"))
                         .font(.caption)
                         .foregroundStyle(GymTheme.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
+                if activeActionID == request.friendshipID { ProgressView() }
+            }
+            HStack(spacing: 8) {
+                if incoming {
+                    Button(t("Accept", "Прийняти", "Принять")) {
+                        Task { await respond(request, accept: true) }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    Button(t("Decline", "Відхилити", "Отклонить"), role: .destructive) {
+                        Task { await respond(request, accept: false) }
+                    }
+                    .buttonStyle(.bordered)
+                    Button(t("Block", "Заблокувати", "Заблокировать"), role: .destructive) {
+                        confirmation = .blockRequest(request)
+                    }
+                    .buttonStyle(.bordered)
+                } else {
+                    Button(t("Cancel request", "Скасувати запит", "Отменить запрос"), role: .destructive) {
+                        Task { await cancel(request) }
+                    }
+                    .buttonStyle(.bordered)
                 }
             }
-            .accessibilityElement(children: .combine)
+            .disabled(activeActionID != nil)
         }
+        .padding(.vertical, 4)
     }
 
-    private var emptyState: some View {
+    private var workoutInvitesCard: some View {
         GymPanel {
-            GymContentUnavailableView {
-                Label(t("No synced progress yet", "Синхронізованого прогресу ще немає"), systemImage: "person.crop.circle")
-            } description: {
-                Text(t("Sign in and sync to restore your protected progress here.", "Увійди та синхронізуй дані, щоб відновити тут свій захищений прогрес."))
+            VStack(alignment: .leading, spacing: 12) {
+                GymSectionTitle(
+                    eyebrow: t("Workout inbox", "Вхідні тренування", "Входящие тренировки"),
+                    title: t("Workout invitations", "Запрошення на тренування", "Приглашения на тренировку"),
+                    supporting: t(
+                        "Accepting creates an independent local copy. Later edits are never synchronized between friends.",
+                        "Після прийняття створюється незалежна локальна копія. Подальші зміни між друзями не синхронізуються.",
+                        "После принятия создаётся независимая локальная копия. Дальнейшие изменения между друзьями не синхронизируются."
+                    )
+                )
+                if let inbox = appState.socialWorkoutInbox {
+                    let incoming = inbox.incoming
+                    let outgoing = inbox.outgoing.filter { $0.status == .pending }
+                    if incoming.isEmpty, outgoing.isEmpty {
+                        empty(t("No workout invitations.", "Немає запрошень на тренування.", "Нет приглашений на тренировку."))
+                    }
+                    ForEach(incoming) { invite in
+                        workoutInviteRow(invite, incoming: true)
+                    }
+                    ForEach(outgoing) { invite in
+                        workoutInviteRow(invite, incoming: false)
+                    }
+                } else if isLoading {
+                    ProgressView()
+                } else {
+                    empty(t("Workout inbox is unavailable.", "Вхідні тренування недоступні.", "Входящие тренировки недоступны."))
+                }
             }
-            .frame(maxWidth: .infinity)
         }
     }
 
-    private func leaderboardRow(_ row: LeaderboardEntry, place: Int) -> some View {
-        GymPanel(highlighted: row.isCurrentUser) {
-            VStack(alignment: .leading, spacing: 10) {
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 12) {
-                        placeBadge(place, isCurrentUser: row.isCurrentUser)
-                        rowIdentity(row)
-                        Spacer(minLength: 8)
-                        xpLabel(row)
-                    }
-                    VStack(alignment: .leading, spacing: 10) {
-                        HStack(alignment: .top, spacing: 10) {
-                            placeBadge(place, isCurrentUser: row.isCurrentUser)
-                            rowIdentity(row)
-                        }
-                        xpLabel(row)
-                    }
+    private func workoutInviteRow(_ invite: SocialWorkoutInvite, incoming: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(invite.displayName).font(.headline)
+                    Text(
+                        "\(invite.summary.exerciseCount) \(t("exercises", "вправ", "упражнений")) · \(invite.summary.setCount) \(t("sets", "підходів", "подходов"))"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(GymTheme.textSecondary)
                 }
-
-                if !row.isCurrentUser, auth.session?.cloud != nil {
-                    HStack {
-                        Spacer()
-                        Menu {
-                            Button(role: .destructive) {
-                                pendingReport = row
-                            } label: {
-                                Label(t("Report display name", "Поскаржитися на ім’я"), systemImage: "exclamationmark.bubble")
-                            }
-
-                            Button {
-                                blockFromLeaderboard(row)
-                            } label: {
-                                Label(t("Block from leaderboard", "Заблокувати в рейтингу"), systemImage: "person.crop.circle.badge.xmark")
-                            }
-                        } label: {
-                            Label(t("Safety options", "Параметри безпеки"), systemImage: "ellipsis.circle")
-                                .font(.caption.weight(.semibold))
-                        }
+                Spacer()
+                if activeActionID == invite.inviteID { ProgressView() }
+            }
+            Text(invite.summary.exerciseNames.prefix(3).map(localizedExerciseName).joined(separator: " · "))
+                .font(.caption)
+                .foregroundStyle(GymTheme.textSecondary)
+                .lineLimit(2)
+            if incoming, invite.status == .accepted {
+                Text(
+                    t(
+                        "Accepted · recovery copy available",
+                        "Прийнято · доступна копія для відновлення",
+                        "Принято · доступна копия для восстановления"
+                    )
+                )
+                .font(.caption.bold())
+                .foregroundStyle(GymTheme.primary)
+            }
+            HStack(spacing: 8) {
+                if incoming, invite.status == .pending {
+                    Button(t("Accept workout", "Прийняти тренування", "Принять тренировку")) {
+                        prepareWorkoutInvite(invite, action: .accept)
                     }
+                    .buttonStyle(.borderedProminent)
+                    Button(t("Decline", "Відхилити", "Отклонить"), role: .destructive) {
+                        Task { await respondWorkoutInvite(invite, accept: false) }
+                    }
+                    .buttonStyle(.bordered)
+                } else if incoming, invite.status == .accepted {
+                    Button(t("Open local copy", "Відкрити локальну копію", "Открыть локальную копию")) {
+                        prepareWorkoutInvite(invite, action: .recover)
+                    }
+                    .buttonStyle(.borderedProminent)
+                } else {
+                    Button(t("Cancel invite", "Скасувати запрошення", "Отменить приглашение"), role: .destructive) {
+                        Task { await cancelWorkoutInvite(invite) }
+                    }
+                    .buttonStyle(.bordered)
                 }
             }
-            .accessibilityElement(children: .contain)
-            .accessibilityLabel(
-                t(
-                    "Protected progress for \(gymLocalized(row.displayName, languageCode: languageCode))",
-                    "Захищений прогрес: \(gymLocalized(row.displayName, languageCode: languageCode))"
+            .disabled(activeActionID != nil)
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func friendsRankingCard(_ dashboard: SocialDashboard) -> some View {
+        let ranked = rankedProfiles(dashboard)
+        let unranked = dashboard.friends.filter { !$0.statsAvailable }
+        return GymPanel(highlighted: true) {
+            VStack(alignment: .leading, spacing: 12) {
+                GymSectionTitle(
+                    eyebrow: t("Friends only", "Лише друзі", "Только друзья"),
+                    title: t("Friends ranking", "Рейтинг друзів", "Рейтинг друзей"),
+                    supporting: t(
+                        "Only you and accepted friends are included.",
+                        "У списку лише ти та прийняті друзі.",
+                        "В списке только ты и принятые друзья."
+                    )
                 )
-            )
-            .accessibilityValue(
-                t(
-                    "\(row.xp) XP, level \(row.level), \(workoutCount(row.workouts))" +
-                        (row.isCurrentUser ? ", current user" : ""),
-                    "\(row.xp) XP, рівень \(row.level), \(workoutCount(row.workouts))" +
-                        (row.isCurrentUser ? ", поточний користувач" : "")
-                )
-            )
+                if dashboard.friends.isEmpty {
+                    empty(t("Add a friend to start comparing progress.", "Додай друга, щоб порівнювати прогрес.", "Добавь друга, чтобы сравнивать прогресс."))
+                }
+                ForEach(Array(ranked.enumerated()), id: \.element.id) { index, item in
+                    rankedRow(item, place: index + 1)
+                }
+                ForEach(unranked) { friend in
+                    NavigationLink {
+                        FriendDetailView(friend: friend, appState: appState)
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: "lock.shield")
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(friend.displayName).font(.headline)
+                                Text(friend.progressShared
+                                     ? t("Synced progress unavailable", "Синхронізований прогрес недоступний", "Синхронизированный прогресс недоступен")
+                                     : t("Progress is private", "Прогрес приватний", "Прогресс скрыт"))
+                                    .font(.caption)
+                                    .foregroundStyle(GymTheme.textSecondary)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
         }
     }
 
-    private func placeBadge(_ place: Int, isCurrentUser: Bool) -> some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 13)
-                .fill(placeColor(place).opacity(0.15))
-            if isCurrentUser {
-                Image(systemName: "person.fill")
-                    .font(.headline)
-            } else if place <= 3 {
-                VStack(spacing: 1) {
-                    Image(systemName: "medal.fill")
-                        .font(.caption)
-                    Text("\(place)")
-                        .font(.headline.bold())
+    private func rankedRow(_ item: RankedSocialProfile, place: Int) -> some View {
+        Group {
+            if let friend = item.friend {
+                NavigationLink {
+                    FriendDetailView(friend: friend, appState: appState)
+                } label: {
+                    rankingRowContent(item, place: place)
                 }
+                .buttonStyle(.plain)
             } else {
-                Text("\(place)")
-                    .font(.headline.bold())
+                rankingRowContent(item, place: place)
             }
         }
-        .foregroundStyle(placeColor(place))
-        .frame(width: 50, height: 50)
-        .overlay {
-            RoundedRectangle(cornerRadius: 13)
-                .strokeBorder(placeColor(place).opacity(0.28), lineWidth: 1)
-        }
-        .accessibilityHidden(true)
     }
 
-    private func rowIdentity(_ row: LeaderboardEntry) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 7) {
-                Text(gymLocalized(row.displayName, languageCode: languageCode))
-                    .font(.headline)
-                    .lineLimit(2)
-                if row.isCurrentUser {
-                    GymInfoPill(t("You", "Ти"), systemImage: "location.fill")
+    private func rankingRowContent(_ item: RankedSocialProfile, place: Int) -> some View {
+        HStack(spacing: 10) {
+            Text("\(place)")
+                .font(.headline.monospacedDigit())
+                .frame(width: 26, height: 26)
+                .background(place <= 3 ? GymTheme.primary.opacity(0.16) : GymTheme.surfaceVariant)
+                .clipShape(Circle())
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(item.displayName).font(.headline)
+                    if item.isCurrentUser {
+                        Text(t("You", "Ти", "Ты"))
+                            .font(.caption2.bold())
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(GymTheme.primary.opacity(0.14), in: Capsule())
+                    }
+                }
+                Text("\(t("Level", "Рівень", "Уровень")) \(item.level) · \(item.workouts) \(t("workouts", "тренувань", "тренировок"))")
+                    .font(.caption)
+                    .foregroundStyle(GymTheme.textSecondary)
+            }
+            Spacer()
+            Text("\(item.xp) XP").font(.subheadline.bold().monospacedDigit())
+            if item.friend != nil { Image(systemName: "chevron.right").font(.caption) }
+        }
+        .contentShape(Rectangle())
+    }
+
+    private func privacyCard(_ dashboard: SocialDashboard) -> some View {
+        let draft = privacyDraft ?? dashboard.currentUser.privacy
+        return GymPanel {
+            VStack(alignment: .leading, spacing: 10) {
+                GymSectionTitle(
+                    eyebrow: t("Privacy", "Приватність", "Приватность"),
+                    title: t("What friends can see", "Що бачать друзі", "Что видят друзья"),
+                    supporting: t(
+                        "Changes apply server-side to every accepted friend.",
+                        "Зміни застосовуються на сервері для всіх прийнятих друзів.",
+                        "Изменения применяются на сервере для всех принятых друзей."
+                    )
+                )
+                privacyToggle(
+                    t("Allow new friend requests", "Дозволити нові запити в друзі", "Разрешить новые запросы в друзья"),
+                    value: draft.allowRequests,
+                    keyPath: \.allowRequests
+                )
+                privacyToggle(
+                    t("Share XP, level and workout count", "Показувати XP, рівень і кількість тренувань", "Показывать XP, уровень и число тренировок"),
+                    value: draft.shareProgress,
+                    keyPath: \.shareProgress
+                )
+                privacyToggle(
+                    t("Share five recent workout summaries", "Показувати п’ять останніх тренувань", "Показывать пять последних тренировок"),
+                    value: draft.shareRecentWorkouts,
+                    keyPath: \.shareRecentWorkouts
+                )
+                privacyToggle(
+                    t("Share exercise records", "Показувати рекорди у вправах", "Показывать рекорды в упражнениях"),
+                    value: draft.shareRecords,
+                    keyPath: \.shareRecords
+                )
+                Button {
+                    Task { await savePrivacy() }
+                } label: {
+                    Label(t("Save privacy", "Зберегти приватність", "Сохранить приватность"), systemImage: "lock.shield")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(GymSecondaryButtonStyle())
+                .disabled(!privacyIsDirty || activeActionID != nil)
+            }
+        }
+    }
+
+    private func privacyToggle(
+        _ title: String,
+        value: Bool,
+        keyPath: WritableKeyPath<SocialPrivacy, Bool>
+    ) -> some View {
+        Toggle(title, isOn: Binding(
+            get: { (privacyDraft ?? appState.socialDashboard?.currentUser.privacy)?[keyPath: keyPath] ?? value },
+            set: { newValue in
+                guard var next = privacyDraft ?? appState.socialDashboard?.currentUser.privacy else { return }
+                next[keyPath: keyPath] = newValue
+                privacyDraft = next
+                privacyIsDirty = true
+            }
+        ))
+    }
+
+    private func blockedCard(_ dashboard: SocialDashboard) -> some View {
+        Group {
+            if !dashboard.blocked.isEmpty {
+                GymPanel {
+                    VStack(alignment: .leading, spacing: 10) {
+                        GymSectionTitle(
+                            eyebrow: t("Safety", "Безпека", "Безопасность"),
+                            title: t("Blocked people", "Заблоковані користувачі", "Заблокированные пользователи"),
+                            supporting: t(
+                                "Blocked people cannot send friend or workout requests.",
+                                "Заблоковані користувачі не можуть надсилати запити в друзі чи тренування.",
+                                "Заблокированные пользователи не могут отправлять запросы в друзья или тренировки."
+                            )
+                        )
+                        ForEach(dashboard.blocked) { profile in
+                            HStack {
+                                Text(profile.displayName).font(.headline)
+                                Spacer()
+                                Button(t("Unblock", "Розблокувати", "Разблокировать")) {
+                                    Task { await unblock(profile) }
+                                }
+                                .buttonStyle(.bordered)
+                                .disabled(activeActionID != nil)
+                            }
+                        }
+                    }
                 }
             }
-            Text(
-                "\(t("Level", "Рівень")) \(row.level) • " + workoutCount(row.workouts)
-            )
-            .font(.subheadline)
-            .foregroundStyle(GymTheme.textSecondary)
         }
     }
 
-    private func xpLabel(_ row: LeaderboardEntry) -> some View {
-        Text("\(row.xp.formatted()) XP")
-            .font(.title3.bold())
-            .foregroundStyle(row.isCurrentUser ? GymTheme.primary : GymTheme.textPrimary)
-            .contentTransition(.numericText())
+    private var unavailableCard: some View {
+        GymPanel {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(t("Friends are unavailable", "Друзі недоступні", "Друзья недоступны"))
+                    .font(.headline)
+                Text(t("Try refreshing. Your workout history was not changed.", "Спробуй оновити. Історію тренувань не змінено.", "Попробуй обновить. История тренировок не изменена."))
+                    .font(.subheadline)
+                    .foregroundStyle(GymTheme.textSecondary)
+                Button(t("Try again", "Спробувати ще", "Повторить")) {
+                    Task { await refreshAll(force: true) }
+                }
+                .buttonStyle(.bordered)
+            }
+        }
     }
 
-    private var appLocale: Locale {
-        AppLanguage(rawValue: languageCode)?.locale ?? AppLanguage.english.locale
+    private var validEnteredFriendCode: Bool {
+        SocialPayloadParser.isValidProfileID(friendCode.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
-    private var localStats: SyncProfileStats {
-        store.syncProfileStats()
+    private func rankedProfiles(_ dashboard: SocialDashboard) -> [RankedSocialProfile] {
+        var profiles: [RankedSocialProfile] = []
+        let current = dashboard.currentUser
+        if current.statsAvailable,
+           let xp = current.xp,
+           let level = current.level,
+           let workouts = current.workouts {
+            profiles.append(RankedSocialProfile(
+                id: current.profileID,
+                displayName: current.displayName,
+                xp: xp,
+                level: level,
+                workouts: workouts,
+                isCurrentUser: true,
+                friend: nil
+            ))
+        }
+        profiles.append(contentsOf: dashboard.friends.compactMap { friend in
+            guard friend.statsAvailable,
+                  let xp = friend.xp,
+                  let level = friend.level,
+                  let workouts = friend.workouts else { return nil }
+            return RankedSocialProfile(
+                id: friend.profileID,
+                displayName: friend.displayName,
+                xp: xp,
+                level: level,
+                workouts: workouts,
+                isCurrentUser: false,
+                friend: friend
+            )
+        })
+        return profiles.sorted {
+            if $0.xp != $1.xp { return $0.xp > $1.xp }
+            if $0.workouts != $1.workouts { return $0.workouts > $1.workouts }
+            let nameOrder = $0.displayName.localizedCaseInsensitiveCompare($1.displayName)
+            if nameOrder != .orderedSame { return nameOrder == .orderedAscending }
+            return $0.id < $1.id
+        }
     }
 
-    private var localEntry: LeaderboardEntry {
-        LeaderboardEntry(
-            userID: auth.session?.cloud?.userID ?? auth.session?.storageKey ?? "local",
-            displayName: auth.session?.displayName ?? t("Local Athlete", "Локальний атлет"),
-            xp: localStats.xp,
-            level: localStats.level,
-            workouts: localStats.workouts,
-            isCurrentUser: true
-        )
-    }
-
-    private var displayedRows: [LeaderboardEntry] {
-        isShowingLocalFallback
-            ? [localEntry]
-            : remoteRows.filter { $0.isCurrentUser || !hiddenProfileIDs.contains($0.id) }
-    }
-
-    private var hiddenProfileIDs: Set<String> {
-        guard let data = hiddenProfileIDsJSON.data(using: .utf8),
-              let values = try? JSONDecoder().decode([String].self, from: data) else { return [] }
-        return Set(values)
-    }
-
-    private var fallbackExplanation: String {
-        if auth.session?.cloud == nil {
-            return t(
-                "This is an offline account. Sign in with a cloud account to protect and synchronize your progress; your workouts remain available on this device.",
-                "Це офлайн-акаунт. Увійди у хмарний акаунт, щоб захистити й синхронізувати прогрес; твої тренування залишаються на цьому пристрої."
+    private func refreshAll(force: Bool = false) async {
+        guard isCloudAccount, !isLoading else { return }
+        isLoading = true
+        errorMessage = nil
+        defer { isLoading = false }
+        do {
+            let dashboard = try await appState.refreshSocialDashboard()
+            if !privacyIsDirty { privacyDraft = dashboard.currentUser.privacy }
+        } catch {
+            errorMessage = socialError(
+                t("Could not refresh Friends. Try again.", "Не вдалося оновити друзів. Спробуй ще раз.", "Не удалось обновить друзей. Попробуй ещё раз.")
             )
         }
-        return t(
-            "Protected cloud progress is unavailable, so the latest on-device XP, level and workouts are shown. Pull down or tap Refresh to try again.",
-            "Захищений хмарний прогрес недоступний, тому показано актуальні XP, рівень і тренування з цього пристрою. Потягни вниз або натисни «Оновити», щоб спробувати ще раз."
-        )
+        do {
+            _ = try await appState.refreshSocialWorkoutInbox()
+        } catch {
+            if appState.socialWorkoutInbox == nil {
+                errorMessage = socialError(
+                    t("Could not load workout invitations.", "Не вдалося завантажити запрошення на тренування.", "Не удалось загрузить приглашения на тренировку.")
+                )
+            }
+        }
     }
 
-    private func refreshLeaderboard() async {
-        guard let cloudAccount = auth.session?.cloud else {
-            remoteRows = []
-            errorMessage = nil
-            isShowingLocalFallback = true
-            lastRefreshedAt = nil
+    private func sendFriendRequest() async {
+        let code = friendCode.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard SocialPayloadParser.isValidProfileID(code) else { return }
+        await perform(id: "send-friend") {
+            try await appState.sendFriendRequest(friendCode: code)
+            friendCode = ""
+            statusMessage = t(
+                "Request submitted if this code can receive requests.",
+                "Запит надіслано, якщо цей код може приймати запити.",
+                "Запрос отправлен, если этот код может принимать запросы."
+            )
+        }
+    }
+
+    private func respond(_ request: SocialFriendRequest, accept: Bool) async {
+        await perform(id: request.friendshipID) {
+            try await appState.respondFriendRequest(request, accept: accept)
+            statusMessage = accept
+                ? t("Friend added.", "Друга додано.", "Друг добавлен.")
+                : t("Request declined.", "Запит відхилено.", "Запрос отклонён.")
+        }
+    }
+
+    private func cancel(_ request: SocialFriendRequest) async {
+        await perform(id: request.friendshipID) {
+            try await appState.cancelFriendRequest(request)
+            statusMessage = t("Request cancelled.", "Запит скасовано.", "Запрос отменён.")
+        }
+    }
+
+    private func prepareWorkoutInvite(
+        _ invite: SocialWorkoutInvite,
+        action: WorkoutInvitePreparation.Action
+    ) {
+        let decision = socialWorkoutInvitePreparationDecision(
+            canAcceptWorkoutInvites: canAcceptWorkoutInvites,
+            pendingSharedWorkoutID: appState.pendingSharedWorkout?.id
+        )
+        guard decision != .blockedByActiveWorkout else {
+            errorMessage = t(
+                "Finish the active workout before opening this invitation. It remains safely available in Friends.",
+                "Заверши активне тренування, перш ніж відкривати це запрошення. Воно безпечно залишиться в Друзях.",
+                "Заверши активную тренировку, прежде чем открывать это приглашение. Оно безопасно останется в Друзьях."
+            )
             return
         }
-
-        errorMessage = nil
-        do {
-            let loaded = try await appState.refreshCloudLeaderboard()
-
-            var merged = loaded
-            if !merged.contains(where: { $0.userID == cloudAccount.userID }) {
-                merged.append(localEntry)
-            }
-            remoteRows = merged.sorted(by: leaderboardOrder)
-            isShowingLocalFallback = false
-            lastRefreshedAt = Date()
-        } catch {
-            remoteRows = []
-            isShowingLocalFallback = true
-            errorMessage = gymErrorMessage(error, languageCode: languageCode)
-        }
-    }
-
-    private func reportDisplayName(_ row: LeaderboardEntry) async {
-        guard !row.isCurrentUser else { return }
-        do {
-            try await cloudSync.reportLeaderboardDisplayName(profileID: row.id)
-            safetyMessageIsError = false
-            safetyMessage = t(
-                "Report sent. The display name was added to the moderation queue.",
-                "Скаргу надіслано. Ім’я додано до черги модерації."
+        guard (action == .accept && invite.status == .pending) ||
+                (action == .recover && invite.status == .accepted) else {
+            errorMessage = t(
+                "This invitation changed. Refresh Friends before trying again.",
+                "Це запрошення змінилося. Онови Друзів і спробуй ще раз.",
+                "Это приглашение изменилось. Обнови Друзей и попробуй ещё раз."
             )
+            return
+        }
+        let pendingID: UUID?
+        if case .confirmPendingReplacement(let id) = decision {
+            pendingID = id
+        } else {
+            pendingID = nil
+        }
+        confirmation = .workout(WorkoutInvitePreparation(
+            invite: invite,
+            action: action,
+            pendingID: pendingID
+        ))
+    }
+
+    private func commitWorkoutInvite(_ preparation: WorkoutInvitePreparation) async {
+        switch preparation.action {
+        case .accept:
+            await respondWorkoutInvite(
+                preparation.invite,
+                accept: true,
+                replacingPendingID: preparation.pendingID
+            )
+        case .recover:
+            await perform(id: preparation.invite.inviteID) {
+                _ = try appState.recoverAcceptedWorkoutInvite(
+                    preparation.invite,
+                    replacingPendingSharedWorkoutID: preparation.pendingID
+                )
+                statusMessage = t(
+                    "Accepted workout reopened as a local preview.",
+                    "Прийняте тренування знову відкрито в локальному перегляді.",
+                    "Принятая тренировка снова открыта в локальном просмотре."
+                )
+            }
+        }
+    }
+
+    private func respondWorkoutInvite(
+        _ invite: SocialWorkoutInvite,
+        accept: Bool,
+        replacingPendingID: UUID? = nil
+    ) async {
+        await perform(id: invite.inviteID) {
+            _ = try await appState.respondWorkoutInvite(
+                invite,
+                accept: accept,
+                replacingPendingSharedWorkoutID: replacingPendingID
+            )
+            statusMessage = accept
+                ? t("Workout copied to a local preview.", "Тренування скопійовано в локальний перегляд.", "Тренировка скопирована в локальный просмотр.")
+                : t("Workout invitation declined.", "Запрошення на тренування відхилено.", "Приглашение на тренировку отклонено.")
+        }
+    }
+
+    private func cancelWorkoutInvite(_ invite: SocialWorkoutInvite) async {
+        await perform(id: invite.inviteID) {
+            try await appState.cancelWorkoutInvite(invite)
+            statusMessage = t("Workout invitation cancelled.", "Запрошення на тренування скасовано.", "Приглашение на тренировку отменено.")
+        }
+    }
+
+    private func block(_ request: SocialFriendRequest) async {
+        await perform(id: request.profileID) {
+            try await appState.blockSocialProfile(profileID: request.profileID)
+            statusMessage = t(
+                "Request sender blocked.",
+                "Відправника запиту заблоковано.",
+                "Отправитель запроса заблокирован."
+            )
+        }
+    }
+
+    private func confirmationAlert(_ confirmation: FriendsConfirmation) -> Alert {
+        switch confirmation {
+        case .blockRequest(let request):
+            return Alert(
+                title: Text(t("Block this person?", "Заблокувати користувача?", "Заблокировать пользователя?")),
+                message: Text(
+                    t(
+                        "The friend request is removed, and this person cannot send new friend or workout requests until you unblock them.",
+                        "Запит у друзі буде видалено, і користувач не зможе надсилати нові запити в друзі чи тренування, доки ти його не розблокуєш.",
+                        "Запрос в друзья будет удалён, и пользователь не сможет отправлять новые запросы в друзья или тренировки, пока ты его не разблокируешь."
+                    )
+                ),
+                primaryButton: .destructive(Text(t("Block", "Заблокувати", "Заблокировать"))) {
+                    Task { await block(request) }
+                },
+                secondaryButton: .cancel(Text(t("Cancel", "Скасувати", "Отмена")))
+            )
+        case .workout(let preparation):
+            let replacesPending = preparation.pendingID != nil
+            let title = replacesPending
+                ? t("Replace shared workout?", "Замінити спільне тренування?", "Заменить общую тренировку?")
+                : preparation.action == .accept
+                    ? t("Accept workout invitation?", "Прийняти запрошення на тренування?", "Принять приглашение на тренировку?")
+                    : t("Open accepted workout?", "Відкрити прийняте тренування?", "Открыть принятую тренировку?")
+            let message = replacesPending
+                ? t(
+                    "The plan currently waiting in preview will be replaced. Your workout history is not changed.",
+                    "План, який зараз очікує в перегляді, буде замінено. Історія тренувань не зміниться.",
+                    "План, который сейчас ждёт в просмотре, будет заменён. История тренировок не изменится."
+                )
+                : t(
+                    "GymApp will open an independent editable local copy. Later changes are not synchronized with your friend.",
+                    "GymApp відкриє незалежну редаговану локальну копію. Подальші зміни не синхронізуються з другом.",
+                    "GymApp откроет независимую редактируемую локальную копию. Дальнейшие изменения не синхронизируются с другом."
+                )
+            let actionTitle = replacesPending
+                ? t("Replace", "Замінити", "Заменить")
+                : t("Open copy", "Відкрити копію", "Открыть копию")
+            let primary: Alert.Button = replacesPending
+                ? .destructive(Text(actionTitle)) { Task { await commitWorkoutInvite(preparation) } }
+                : .default(Text(actionTitle)) { Task { await commitWorkoutInvite(preparation) } }
+            return Alert(
+                title: Text(title),
+                message: Text(message),
+                primaryButton: primary,
+                secondaryButton: .cancel(
+                    Text(replacesPending
+                         ? t("Keep current", "Залишити поточне", "Оставить текущее")
+                         : t("Cancel", "Скасувати", "Отмена"))
+                )
+            )
+        }
+    }
+
+    private func savePrivacy() async {
+        guard let privacyDraft else { return }
+        await perform(id: "privacy") {
+            try await appState.updateSocialPrivacy(privacyDraft)
+            privacyIsDirty = false
+            self.privacyDraft = appState.socialDashboard?.currentUser.privacy
+            statusMessage = t("Privacy updated.", "Приватність оновлено.", "Приватность обновлена.")
+        }
+    }
+
+    private func unblock(_ profile: SocialBlockedProfile) async {
+        await perform(id: profile.profileID) {
+            try await appState.unblockSocialProfile(profileID: profile.profileID)
+            statusMessage = t("Person unblocked.", "Користувача розблоковано.", "Пользователь разблокирован.")
+        }
+    }
+
+    private func perform(id: String, action: () async throws -> Void) async {
+        guard activeActionID == nil else { return }
+        activeActionID = id
+        errorMessage = nil
+        statusMessage = nil
+        defer { activeActionID = nil }
+        do {
+            try await action()
         } catch {
-            safetyMessageIsError = true
-            safetyMessage = gymErrorMessage(error, languageCode: languageCode)
+            errorMessage = socialError(
+                t("This action could not be completed safely. Refresh and try again.", "Не вдалося безпечно виконати дію. Онови дані й спробуй ще раз.", "Не удалось безопасно выполнить действие. Обнови данные и попробуй ещё раз.")
+            )
         }
     }
 
-    private func blockFromLeaderboard(_ row: LeaderboardEntry) {
-        guard !row.isCurrentUser else { return }
-        var values = hiddenProfileIDs
-        values.insert(row.id)
-        if let data = try? JSONEncoder().encode(values.sorted()),
-           let encoded = String(data: data, encoding: .utf8) {
-            hiddenProfileIDsJSON = encoded
+    private func socialError(_ fallback: String) -> String {
+        if auth.session?.cloud == nil {
+            return t("Your cloud session ended. Sign in again.", "Хмарна сесія завершилася. Увійди знову.", "Облачная сессия завершилась. Войди снова.")
         }
-        safetyMessageIsError = false
-        safetyMessage = t(
-            "Athlete blocked from your leaderboard.",
-            "Атлета заблоковано у твоєму рейтингу."
+        return fallback
+    }
+
+    private func localizedExerciseName(_ rawName: String) -> String {
+        gymExerciseName(rawName, languageCode: languageCode)
+    }
+
+    private func empty(_ text: String) -> some View {
+        Text(text)
+            .font(.subheadline)
+            .foregroundStyle(GymTheme.textSecondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 4)
+    }
+
+    private func t(_ english: String, _ ukrainian: String, _ russian: String) -> String {
+        gymText(english, ukrainian, russian, languageCode: languageCode)
+    }
+}
+
+private struct WorkoutInvitePreparation {
+    enum Action: String {
+        case accept
+        case recover
+    }
+
+    let invite: SocialWorkoutInvite
+    let action: Action
+    let pendingID: UUID?
+}
+
+private enum FriendsConfirmation: Identifiable {
+    case blockRequest(SocialFriendRequest)
+    case workout(WorkoutInvitePreparation)
+
+    var id: String {
+        switch self {
+        case .blockRequest(let request):
+            return "block-\(request.profileID)"
+        case .workout(let preparation):
+            return "workout-\(preparation.action.rawValue)-\(preparation.invite.inviteID)"
+        }
+    }
+}
+
+private struct RankedSocialProfile: Identifiable {
+    let id: String
+    let displayName: String
+    let xp: Int
+    let level: Int
+    let workouts: Int
+    let isCurrentUser: Bool
+    let friend: SocialFriendSummary?
+}
+
+@MainActor
+private struct FriendDetailView: View {
+    private enum Confirmation: String, Identifiable {
+        case remove
+        case block
+
+        var id: String { rawValue }
+    }
+
+    @Environment(\.dismiss) private var dismiss
+    @AppStorage("app-language") private var languageCode = AppLanguage.english.rawValue
+    @ObservedObject private var appState: AppState
+
+    let friend: SocialFriendSummary
+
+    @State private var details: SocialFriendDetails?
+    @State private var isLoading = false
+    @State private var isMutating = false
+    @State private var errorMessage: String?
+    @State private var confirmation: Confirmation?
+    @State private var loadRequestRevision: UInt64 = 0
+
+    init(friend: SocialFriendSummary, appState: AppState) {
+        self.friend = friend
+        self.appState = appState
+    }
+
+    var body: some View {
+        GymBackground {
+            ScrollView {
+                LazyVStack(spacing: 12) {
+                    header
+                    if let errorMessage {
+                        GymStatusBanner(message: errorMessage, isError: true)
+                    }
+                    if let details {
+                        progressCard(details)
+                        recentWorkoutsCard(details)
+                        recordsCard(details)
+                        safetyCard
+                    } else if isLoading {
+                        ProgressView(t("Loading friend…", "Завантажуємо друга…", "Загружаем друга…"))
+                            .frame(maxWidth: .infinity)
+                            .padding(30)
+                    } else {
+                        GymPanel {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(t("Friend profile unavailable", "Профіль друга недоступний", "Профиль друга недоступен"))
+                                    .font(.headline)
+                                Text(t("The friendship may have changed. Return to Friends and refresh.", "Дружба могла змінитися. Повернися до друзів і онови дані.", "Дружба могла измениться. Вернись к друзьям и обнови данные."))
+                                    .font(.subheadline)
+                                    .foregroundStyle(GymTheme.textSecondary)
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .padding(.bottom, 24)
+            }
+            .refreshable { await load() }
+        }
+        .navigationTitle(friend.displayName)
+        .navigationBarTitleDisplayMode(.inline)
+        .task(id: appState.socialDashboardRefreshRevision) { await load() }
+        .alert(item: $confirmation) { confirmation in
+            switch confirmation {
+            case .remove:
+                return Alert(
+                    title: Text(t("Remove friend?", "Видалити друга?", "Удалить друга?")),
+                    message: Text(t("Both people immediately lose access to shared friend details.", "Обидва користувачі одразу втратять доступ до даних друга.", "Оба пользователя сразу потеряют доступ к данным друга.")),
+                    primaryButton: .destructive(Text(t("Remove", "Видалити", "Удалить"))) {
+                        Task { await removeFriend() }
+                    },
+                    secondaryButton: .cancel(Text(t("Cancel", "Скасувати", "Отмена")))
+                )
+            case .block:
+                return Alert(
+                    title: Text(t("Block this person?", "Заблокувати користувача?", "Заблокировать пользователя?")),
+                    message: Text(t("Blocking also removes the friendship and prevents new friend or workout requests.", "Блокування також видалить дружбу й заборонить нові запити в друзі та тренування.", "Блокировка также удалит дружбу и запретит новые запросы в друзья и тренировки.")),
+                    primaryButton: .destructive(Text(t("Block", "Заблокувати", "Заблокировать"))) {
+                        Task { await blockFriend() }
+                    },
+                    secondaryButton: .cancel(Text(t("Cancel", "Скасувати", "Отмена")))
+                )
+            }
+        }
+    }
+
+    private var header: some View {
+        GymHeroPanel {
+            VStack(alignment: .leading, spacing: 8) {
+                Label(friend.displayName, systemImage: "person.crop.circle.fill")
+                    .font(.title2.bold())
+                Text(t("Accepted friend", "Прийнятий друг", "Принятый друг"))
+                    .font(.subheadline)
+                    .foregroundStyle(Color.white.opacity(0.82))
+                Text(t("Synced workout data is self-reported and may be edited by its owner.", "Синхронізовані тренування записує сам власник і може їх редагувати.", "Синхронизированные тренировки записывает сам владелец и может их редактировать."))
+                    .font(.caption)
+                    .foregroundStyle(Color.white.opacity(0.72))
+            }
+        }
+    }
+
+    private func progressCard(_ details: SocialFriendDetails) -> some View {
+        GymPanel(highlighted: true) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(t("Progress", "Прогрес", "Прогресс")).font(.headline)
+                if details.friend.statsAvailable,
+                   let xp = details.friend.xp,
+                   let level = details.friend.level,
+                   let workouts = details.friend.workouts {
+                    HStack(spacing: 10) {
+                        metric("XP", "\(xp)")
+                        metric(t("Level", "Рівень", "Уровень"), "\(level)")
+                        metric(t("Workouts", "Тренування", "Тренировки"), "\(workouts)")
+                    }
+                } else {
+                    Text(details.sharing.progress
+                         ? t("Synced progress is temporarily unavailable.", "Синхронізований прогрес тимчасово недоступний.", "Синхронизированный прогресс временно недоступен.")
+                         : t("This friend keeps progress private.", "Цей друг приховує прогрес.", "Этот друг скрывает прогресс."))
+                        .font(.subheadline)
+                        .foregroundStyle(GymTheme.textSecondary)
+                }
+            }
+        }
+    }
+
+    private func recentWorkoutsCard(_ details: SocialFriendDetails) -> some View {
+        let state = socialActivityPresentationState(
+            isShared: details.sharing.recentWorkouts,
+            activityUpdatedAt: details.activityUpdatedAt,
+            itemCount: details.recentWorkouts.count
+        )
+        return GymPanel {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(t("Recent workouts", "Останні тренування", "Недавние тренировки")).font(.headline)
+                if state == .privateData {
+                    Text(t("This friend keeps recent workouts private.", "Цей друг приховує останні тренування.", "Этот друг скрывает недавние тренировки."))
+                        .font(.subheadline).foregroundStyle(GymTheme.textSecondary)
+                } else if state == .temporarilyUnavailable {
+                    Text(t("Synced workouts are temporarily unavailable.", "Синхронізовані тренування тимчасово недоступні.", "Синхронизированные тренировки временно недоступны."))
+                        .font(.subheadline).foregroundStyle(GymTheme.textSecondary)
+                } else if state == .empty {
+                    Text(t("No synced workouts yet.", "Ще немає синхронізованих тренувань.", "Синхронизированных тренировок пока нет."))
+                        .font(.subheadline).foregroundStyle(GymTheme.textSecondary)
+                } else {
+                    ForEach(socialRecentWorkoutRows(details.recentWorkouts)) { row in
+                        let workout = row.workout
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text(formatDay(workout.workoutDay)).font(.headline)
+                                Spacer()
+                                Text("\(workout.exerciseCount) · \(workout.setCount)")
+                                    .font(.caption.monospacedDigit())
+                                    .foregroundStyle(GymTheme.textSecondary)
+                            }
+                            Text(workout.exercises.map {
+                                gymExerciseName($0.name, catalogKey: $0.catalogKey, languageCode: languageCode)
+                            }.joined(separator: " · "))
+                            .font(.caption)
+                            .foregroundStyle(GymTheme.textSecondary)
+                            .lineLimit(3)
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+            }
+        }
+    }
+
+    private func recordsCard(_ details: SocialFriendDetails) -> some View {
+        let state = socialActivityPresentationState(
+            isShared: details.sharing.records,
+            activityUpdatedAt: details.activityUpdatedAt,
+            itemCount: details.exerciseRecords.count
+        )
+        return GymPanel {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(t("Exercise records", "Рекорди у вправах", "Рекорды в упражнениях")).font(.headline)
+                if state == .privateData {
+                    Text(t("This friend keeps exercise records private.", "Цей друг приховує рекорди у вправах.", "Этот друг скрывает рекорды в упражнениях."))
+                        .font(.subheadline).foregroundStyle(GymTheme.textSecondary)
+                } else if state == .temporarilyUnavailable {
+                    Text(t("Synced records are temporarily unavailable.", "Синхронізовані рекорди тимчасово недоступні.", "Синхронизированные рекорды временно недоступны."))
+                        .font(.subheadline).foregroundStyle(GymTheme.textSecondary)
+                } else if state == .empty {
+                    Text(t("No synced records yet.", "Ще немає синхронізованих рекордів.", "Синхронизированных рекордов пока нет."))
+                        .font(.subheadline).foregroundStyle(GymTheme.textSecondary)
+                } else {
+                    ForEach(details.exerciseRecords) { record in
+                        let metrics = socialRecordMetricLabels(record, languageCode: languageCode)
+                        HStack(alignment: .top, spacing: 10) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(gymExerciseName(record.name, catalogKey: record.catalogKey, languageCode: languageCode))
+                                    .font(.headline)
+                                Text("\(record.workoutCount) \(t("workouts", "тренувань", "тренировок")) · \(formatDay(record.lastWorkoutDay))")
+                                    .font(.caption)
+                                    .foregroundStyle(GymTheme.textSecondary)
+                            }
+                            Spacer()
+                            VStack(alignment: .trailing, spacing: 2) {
+                                Text(metrics.maximumWeight)
+                                Text(metrics.maximumRepetitions)
+                            }
+                            .font(.subheadline.bold().monospacedDigit())
+                            .multilineTextAlignment(.trailing)
+                        }
+                        .padding(.vertical, 3)
+                    }
+                }
+            }
+        }
+    }
+
+    private var safetyCard: some View {
+        GymPanel {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(t("Friend controls", "Керування другом", "Управление другом")).font(.headline)
+                Button(t("Remove friend", "Видалити друга", "Удалить друга"), role: .destructive) {
+                    confirmation = .remove
+                }
+                .buttonStyle(.bordered)
+                .disabled(isMutating)
+                Button(t("Block person", "Заблокувати користувача", "Заблокировать пользователя"), role: .destructive) {
+                    confirmation = .block
+                }
+                .buttonStyle(.bordered)
+                .disabled(isMutating)
+            }
+        }
+    }
+
+    private func metric(_ title: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title).font(.caption).foregroundStyle(GymTheme.textSecondary)
+            Text(value).font(.headline.monospacedDigit())
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func load() async {
+        loadRequestRevision &+= 1
+        let requestRevision = loadRequestRevision
+        details = nil
+        isLoading = true
+        errorMessage = nil
+        guard appState.socialDashboard?.friends.contains(where: {
+            $0.profileID == friend.profileID
+        }) == true else {
+            isLoading = false
+            errorMessage = t("This friend profile is unavailable. Refresh Friends before trying again.", "Профіль друга недоступний. Онови список друзів і спробуй ще раз.", "Профиль друга недоступен. Обнови список друзей и попробуй ещё раз.")
+            return
+        }
+        do {
+            let loaded = try await appState.socialFriendDetails(profileID: friend.profileID)
+            guard requestRevision == loadRequestRevision,
+                  appState.socialDashboard?.friends.contains(where: {
+                      $0.profileID == friend.profileID
+                  }) == true else {
+                if requestRevision == loadRequestRevision {
+                    details = nil
+                    isLoading = false
+                }
+                return
+            }
+            details = loaded
+        } catch {
+            guard requestRevision == loadRequestRevision else { return }
+            // Friend data is never retained after a failed authorization/relation check.
+            details = nil
+            errorMessage = t("This friend profile is unavailable. Refresh Friends before trying again.", "Профіль друга недоступний. Онови список друзів і спробуй ще раз.", "Профиль друга недоступен. Обнови список друзей и попробуй ещё раз.")
+        }
+        if requestRevision == loadRequestRevision { isLoading = false }
+    }
+
+    private func removeFriend() async {
+        guard !isMutating else { return }
+        isMutating = true
+        defer { isMutating = false }
+        do {
+            try await appState.removeFriend(friend)
+            details = nil
+            dismiss()
+        } catch {
+            details = nil
+            errorMessage = t("The friend could not be removed safely. Refresh and try again.", "Не вдалося безпечно видалити друга. Онови дані й спробуй ще раз.", "Не удалось безопасно удалить друга. Обнови данные и попробуй ещё раз.")
+        }
+    }
+
+    private func blockFriend() async {
+        guard !isMutating else { return }
+        isMutating = true
+        defer { isMutating = false }
+        do {
+            try await appState.blockSocialProfile(profileID: friend.profileID)
+            details = nil
+            dismiss()
+        } catch {
+            details = nil
+            errorMessage = t("The person could not be blocked safely. Refresh and try again.", "Не вдалося безпечно заблокувати користувача. Онови дані й спробуй ще раз.", "Не удалось безопасно заблокировать пользователя. Обнови данные и попробуй ещё раз.")
+        }
+    }
+
+    private func formatDay(_ raw: String) -> String {
+        let parser = DateFormatter()
+        parser.calendar = Calendar(identifier: .gregorian)
+        parser.locale = Locale(identifier: "en_US_POSIX")
+        parser.timeZone = TimeZone(secondsFromGMT: 0)
+        parser.dateFormat = "yyyy-MM-dd"
+        guard let date = parser.date(from: raw) else { return raw }
+        return date.formatted(
+            Date.FormatStyle(date: .abbreviated, time: .omitted)
+                .locale(AppLanguage(rawValue: languageCode)?.locale ?? Locale(identifier: "en"))
         )
     }
 
-    private func leaderboardOrder(_ lhs: LeaderboardEntry, _ rhs: LeaderboardEntry) -> Bool {
-        if lhs.xp != rhs.xp { return lhs.xp > rhs.xp }
-        if lhs.workouts != rhs.workouts { return lhs.workouts > rhs.workouts }
-        return lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName) == .orderedAscending
-    }
-
-    private func placeColor(_ place: Int) -> Color {
-        switch place {
-        case 1: GymTheme.tertiary
-        case 2: GymTheme.secondary
-        case 3: GymTheme.primary
-        default: GymTheme.textSecondary
-        }
-    }
-
-    private func t(_ english: String, _ ukrainian: String) -> String {
-        gymText(english, ukrainian, languageCode: languageCode)
-    }
-
-    private func workoutCount(_ count: Int) -> String {
-        gymCount(
-            count,
-            englishOne: "workout",
-            englishMany: "workouts",
-            ukrainianOne: "тренування",
-            ukrainianFew: "тренування",
-            ukrainianMany: "тренувань",
-            languageCode: languageCode
-        )
+    private func t(_ english: String, _ ukrainian: String, _ russian: String) -> String {
+        gymText(english, ukrainian, russian, languageCode: languageCode)
     }
 }

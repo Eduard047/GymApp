@@ -80,6 +80,14 @@ final class AppState: ObservableObject {
         let remoteIdentity: CloudWorkoutIdentity
     }
 
+    private struct PendingWorkoutInviteRequestKey: Hashable {
+        let generation: UInt64
+        let storageKey: String
+        let userID: String
+        let profileID: String
+        let canonicalWorkout: Data
+    }
+
     let auth: AuthService
     let restTimers: RestTimerManager
     let cloudSync: CloudSyncService
@@ -97,6 +105,9 @@ final class AppState: ObservableObject {
     @Published private(set) var isResolvingCloudSyncConflict = false
     @Published private(set) var cloudSyncStatus: CloudSyncPresentationStatus = .idle
     @Published private(set) var pendingSharedWorkout: PendingSharedWorkout?
+    @Published private(set) var socialDashboard: SocialDashboard?
+    @Published private(set) var socialWorkoutInbox: SocialWorkoutInbox?
+    @Published private(set) var socialDashboardRefreshRevision: UInt64 = 0
 
     private var sessionSubscription: AnyCancellable?
     private var storeSubscription: AnyCancellable?
@@ -113,6 +124,8 @@ final class AppState: ObservableObject {
     private var applyingRemoteState = false
     private var cloudWritableAccountStorageKey: String?
     private var pendingCloudSyncConflict: PendingCloudSyncConflict?
+    private var socialCacheGeneration: UInt64 = 0
+    private var pendingWorkoutInviteRequestIDs: [PendingWorkoutInviteRequestKey: UUID] = [:]
     private let defaults: UserDefaults
     private let workoutDirectoryURL: URL?
     private let remoteStateLoader: (@MainActor (String) async throws -> Data?)?
@@ -123,6 +136,7 @@ final class AppState: ObservableObject {
     private static let trainingProfileKeyPrefix = "gymapp.training-profile.v1."
     private static let hiddenLeaderboardProfilesKey = "leaderboard-hidden-profile-ids"
     private static let cloudCheckpointKeyPrefix = "gymapp.cloud-sync-checkpoint.v1."
+    static let maximumPendingWorkoutInviteRequests = 25
 
     private struct CloudSyncCheckpoint: Codable {
         let version: Int
@@ -206,8 +220,7 @@ final class AppState: ObservableObject {
         sessionSubscription = auth.$session
             .removeDuplicates(by: { $0?.storageKey == $1?.storageKey })
             .sink { [weak self] session in
-                guard let self else { return }
-                Task { @MainActor in self.scheduleActivation(session) }
+                self?.scheduleActivation(session)
             }
     }
 
@@ -241,8 +254,9 @@ final class AppState: ObservableObject {
         guard SharedWorkoutLinkDecoder.isRecognizedDestination(url) else { return false }
         do {
             let plan = try SharedWorkoutLinkDecoder.decode(url)
-            if let pendingSharedWorkout {
-                guard pendingSharedWorkout.plan != plan else { return true }
+            do {
+                try stageSharedWorkoutPlan(plan)
+            } catch {
                 show(
                     message: gymText(
                         "Finish or close the current shared workout preview before opening another link.",
@@ -252,9 +266,7 @@ final class AppState: ObservableObject {
                     ),
                     isError: true
                 )
-                return true
             }
-            pendingSharedWorkout = PendingSharedWorkout(plan: plan)
         } catch {
             show(
                 message: gymText(
@@ -272,6 +284,20 @@ final class AppState: ObservableObject {
     func dismissPendingSharedWorkout(id: UUID) {
         guard pendingSharedWorkout?.id == id else { return }
         pendingSharedWorkout = nil
+    }
+
+    func stageSharedWorkoutPlan(
+        _ plan: SharedWorkoutPlan,
+        replacingPendingID: UUID? = nil
+    ) throws {
+        let validated = try SharedWorkoutLinkValidator.validate(plan)
+        if let pendingSharedWorkout {
+            if pendingSharedWorkout.plan == validated { return }
+            guard replacingPendingID == pendingSharedWorkout.id else {
+                throw CloudSyncError.invalidWorkoutInvite
+            }
+        }
+        pendingSharedWorkout = PendingSharedWorkout(plan: validated)
     }
 
     private static func backupOwner(
@@ -416,6 +442,12 @@ final class AppState: ObservableObject {
         accountActivationGeneration &+= 1
         abandonPendingCloudSave()
         cloudSync.resetForAccountTransition()
+        socialDashboard = nil
+        socialWorkoutInbox = nil
+        socialCacheGeneration &+= 1
+        socialDashboardRefreshRevision &+= 1
+        pendingWorkoutInviteRequestIDs.removeAll(keepingCapacity: false)
+        pendingSharedWorkout = nil
         cloudWritableAccountStorageKey = nil
         pendingCloudSyncConflict = nil
         cloudSyncConflict = nil
@@ -1045,14 +1077,26 @@ final class AppState: ObservableObject {
         }
     }
 
-    func refreshCloudLeaderboard() async throws -> [LeaderboardEntry] {
+    func refreshSocialDashboard() async throws -> SocialDashboard {
         guard isAccountReady,
               let session = auth.session,
               let cloud = session.cloud else {
             throw AuthServiceError.notCloudAccount
         }
+        let generation = accountActivationGeneration
+        let cacheGeneration = socialCacheGeneration
         let store = workoutStore
         let owner = Self.backupOwner(for: session, fallbackStorageKey: session.storageKey)
+        defer {
+            // Every completed refresh attempt invalidates an open detail, including a
+            // failed foreground refresh. The detail surface then refetches or clears.
+            if accountActivationGeneration == generation,
+               auth.session?.storageKey == session.storageKey,
+               auth.session?.cloud?.userID == cloud.userID,
+               socialCacheGeneration == cacheGeneration {
+                socialDashboardRefreshRevision &+= 1
+            }
+        }
         return try await cloudSync.withSyncIndicator {
             // An unsupported future row is intentionally read-only: fetching standings
             // must never become an alternate path that overwrites its unknown core fields.
@@ -1064,17 +1108,369 @@ final class AppState: ObservableObject {
                     expectedUserID: cloud.userID
                 )
             }
-            let entries = try await self.cloudSync.leaderboard(
+            guard self.socialCacheGeneration == cacheGeneration else {
+                throw AuthServiceError.sessionChanged
+            }
+            let dashboard = try await self.cloudSync.socialDashboard(
                 expectedUserID: cloud.userID
             )
             guard self.isAccountReady,
+                  self.accountActivationGeneration == generation,
                   self.workoutStore === store,
                   self.auth.session?.storageKey == session.storageKey,
-                  self.auth.session?.cloud?.userID == cloud.userID else {
+                  self.auth.session?.cloud?.userID == cloud.userID,
+                  self.socialCacheGeneration == cacheGeneration else {
                 throw AuthServiceError.sessionChanged
             }
-            return entries
+            self.socialDashboard = dashboard
+            return dashboard
         }
+    }
+
+    func socialFriendDetails(profileID: String) async throws -> SocialFriendDetails {
+        let context = try socialContext()
+        let cacheGeneration = socialCacheGeneration
+        let details = try await cloudSync.socialFriendDetails(
+            profileID: profileID,
+            expectedUserID: context.userID
+        )
+        try validateSocialContext(context)
+        guard socialCacheGeneration == cacheGeneration else {
+            throw AuthServiceError.sessionChanged
+        }
+        return details
+    }
+
+    func sendFriendRequest(friendCode: String) async throws {
+        let context = try socialContext()
+        try await cloudSync.socialSendFriendRequest(
+            friendCode: friendCode,
+            expectedUserID: context.userID
+        )
+        try validateSocialContext(context)
+        _ = try await refreshSocialDashboard()
+    }
+
+    func respondFriendRequest(
+        _ request: SocialFriendRequest,
+        accept: Bool
+    ) async throws {
+        let context = try socialContext()
+        guard socialDashboard?.incoming.contains(request) == true else {
+            throw CloudSyncError.invalidFriendship
+        }
+        _ = try await cloudSync.socialRespondFriendRequest(
+            friendshipID: request.friendshipID,
+            decision: accept ? "accept" : "decline",
+            expectedRevision: request.friendshipRevision,
+            expectedUserID: context.userID
+        )
+        try validateSocialContext(context)
+        _ = try await refreshSocialDashboard()
+    }
+
+    func cancelFriendRequest(_ request: SocialFriendRequest) async throws {
+        let context = try socialContext()
+        guard socialDashboard?.outgoing.contains(request) == true else {
+            throw CloudSyncError.invalidFriendship
+        }
+        _ = try await cloudSync.socialCancelFriendRequest(
+            friendshipID: request.friendshipID,
+            expectedRevision: request.friendshipRevision,
+            expectedUserID: context.userID
+        )
+        try validateSocialContext(context)
+        _ = try await refreshSocialDashboard()
+    }
+
+    func removeFriend(_ friend: SocialFriendSummary) async throws {
+        let context = try socialContext()
+        guard socialDashboard?.friends.contains(friend) == true else {
+            throw CloudSyncError.invalidFriendship
+        }
+        // A relationship mutation may commit even if its response is lost. Hide every
+        // relationship-derived surface and fence older reads before crossing the network.
+        invalidateSocialRelationshipCaches()
+        _ = try await cloudSync.socialRemoveFriend(
+            friendshipID: friend.friendshipID,
+            expectedRevision: friend.friendshipRevision,
+            expectedUserID: context.userID
+        )
+        try validateSocialContext(context)
+        _ = try await refreshSocialDashboard()
+        _ = try await refreshSocialWorkoutInbox()
+    }
+
+    func blockSocialProfile(profileID: String) async throws {
+        let context = try socialContext()
+        // Blocking revokes friend summaries, details, and workout-invite access. Fail closed
+        // before the RPC in case the server commits but the client misses the response.
+        invalidateSocialRelationshipCaches()
+        let result = try await cloudSync.socialBlockProfile(
+            profileID: profileID,
+            expectedUserID: context.userID
+        )
+        guard result.profileID == profileID, result.blocked else {
+            throw CloudSyncError.invalidResponse
+        }
+        try validateSocialContext(context)
+        _ = try await refreshSocialDashboard()
+        _ = try await refreshSocialWorkoutInbox()
+    }
+
+    func unblockSocialProfile(profileID: String) async throws {
+        let context = try socialContext()
+        let result = try await cloudSync.socialUnblockProfile(
+            profileID: profileID,
+            expectedUserID: context.userID
+        )
+        guard result.profileID == profileID, !result.blocked else {
+            throw CloudSyncError.invalidResponse
+        }
+        try validateSocialContext(context)
+        _ = try await refreshSocialDashboard()
+    }
+
+    func updateSocialPrivacy(_ privacy: SocialPrivacy) async throws {
+        let context = try socialContext()
+        guard let current = socialDashboard?.currentUser else {
+            throw CloudSyncError.invalidResponse
+        }
+        let result = try await cloudSync.socialUpdatePrivacy(
+            privacy,
+            expectedRevision: current.settingsRevision,
+            expectedUserID: context.userID
+        )
+        guard result.0 == privacy else { throw CloudSyncError.invalidResponse }
+        try validateSocialContext(context)
+        _ = try await refreshSocialDashboard()
+    }
+
+    func refreshSocialWorkoutInbox() async throws -> SocialWorkoutInbox {
+        let context = try socialContext()
+        let cacheGeneration = socialCacheGeneration
+        let inbox = try await cloudSync.socialWorkoutInbox(expectedUserID: context.userID)
+        try validateSocialContext(context)
+        guard socialCacheGeneration == cacheGeneration else {
+            throw AuthServiceError.sessionChanged
+        }
+        socialWorkoutInbox = inbox
+        return inbox
+    }
+
+    func sendWorkoutInvite(
+        to profileID: String,
+        plan: SharedWorkoutPlan
+    ) async throws {
+        let context = try socialContext()
+        guard socialDashboard?.friends.contains(where: { $0.profileID == profileID }) == true else {
+            throw CloudSyncError.invalidSocialProfile
+        }
+        let requestKey = try workoutInviteRequestKey(
+            context: context,
+            profileID: profileID,
+            plan: plan
+        )
+        let clientRequestID: UUID
+        if let pendingID = pendingWorkoutInviteRequestIDs[requestKey] {
+            clientRequestID = pendingID
+        } else {
+            guard pendingWorkoutInviteRequestIDs.count < Self.maximumPendingWorkoutInviteRequests else {
+                throw CloudSyncError.requestFailed(
+                    "Too many workout invitation attempts are awaiting a confirmed outcome."
+                )
+            }
+            clientRequestID = UUID()
+            pendingWorkoutInviteRequestIDs[requestKey] = clientRequestID
+        }
+
+        try await cloudSync.socialSendWorkoutInvite(
+            profileID: profileID,
+            clientRequestID: clientRequestID,
+            workout: plan,
+            expectedUserID: context.userID
+        )
+        try validateSocialContext(context)
+        pendingWorkoutInviteRequestIDs.removeValue(forKey: requestKey)
+
+        do {
+            _ = try await refreshSocialWorkoutInbox()
+        } catch {
+            // The mutation itself has a confirmed generic outcome. Do not make the UI
+            // retry it with a fresh UUID merely because the follow-up inbox read failed.
+            try validateSocialContext(context)
+            socialWorkoutInbox = nil
+        }
+    }
+
+    func respondWorkoutInvite(
+        _ invite: SocialWorkoutInvite,
+        accept: Bool,
+        replacingPendingSharedWorkoutID: UUID? = nil
+    ) async throws -> SharedWorkoutPlan? {
+        let context = try socialContext()
+        guard invite.status == .pending,
+              socialWorkoutInbox?.incoming.contains(invite) == true else {
+            throw CloudSyncError.invalidWorkoutInvite
+        }
+        if accept, let pendingSharedWorkout {
+            guard replacingPendingSharedWorkoutID == pendingSharedWorkout.id else {
+                throw CloudSyncError.invalidWorkoutInvite
+            }
+        }
+        if accept {
+            guard let plan = invite.workout else {
+                throw CloudSyncError.invalidWorkoutInvite
+            }
+            // The social wire contract intentionally does not infer local catalog aliases.
+            // Preflight the local-copy boundary before accepting so a server-portable plan
+            // that is ambiguous on this device stays pending and does not mutate remotely.
+            try validateWorkoutInviteForLocalImport(plan)
+        }
+        let result = try await cloudSync.socialRespondWorkoutInvite(
+            inviteID: invite.inviteID,
+            decision: accept ? "accept" : "decline",
+            expectedRevision: invite.inviteRevision,
+            expectedUserID: context.userID
+        )
+        try validateSocialContext(context)
+        if accept {
+            guard result.status == .accepted, let plan = result.workout else {
+                throw CloudSyncError.invalidResponse
+            }
+            try stageWorkoutInvitePlan(
+                plan,
+                replacingPendingID: replacingPendingSharedWorkoutID
+            )
+        } else if result.status != .declined || result.workout != nil {
+            throw CloudSyncError.invalidResponse
+        }
+        _ = try await refreshSocialWorkoutInbox()
+        return result.workout
+    }
+
+    func recoverAcceptedWorkoutInvite(
+        _ invite: SocialWorkoutInvite,
+        replacingPendingSharedWorkoutID: UUID? = nil
+    ) throws -> SharedWorkoutPlan {
+        let context = try socialContext()
+        guard invite.status == .accepted,
+              let plan = invite.workout,
+              socialWorkoutInbox?.incoming.contains(invite) == true,
+              socialDashboard?.friends.contains(where: { $0.profileID == invite.profileID }) == true else {
+            throw CloudSyncError.invalidWorkoutInvite
+        }
+        try validateSocialContext(context)
+        try stageWorkoutInvitePlan(
+            plan,
+            replacingPendingID: replacingPendingSharedWorkoutID
+        )
+        try validateSocialContext(context)
+        return plan
+    }
+
+    func cancelWorkoutInvite(_ invite: SocialWorkoutInvite) async throws {
+        let context = try socialContext()
+        guard invite.status == .pending,
+              socialWorkoutInbox?.outgoing.contains(invite) == true else {
+            throw CloudSyncError.invalidWorkoutInvite
+        }
+        let result = try await cloudSync.socialCancelWorkoutInvite(
+            inviteID: invite.inviteID,
+            expectedRevision: invite.inviteRevision,
+            expectedUserID: context.userID
+        )
+        guard result.status == .cancelled else { throw CloudSyncError.invalidResponse }
+        try validateSocialContext(context)
+        _ = try await refreshSocialWorkoutInbox()
+    }
+
+    private struct SocialContext {
+        let generation: UInt64
+        let storageKey: String
+        let userID: String
+        let store: WorkoutStore
+    }
+
+    private func socialContext() throws -> SocialContext {
+        guard isAccountReady,
+              let session = auth.session,
+              let cloud = session.cloud else {
+            throw AuthServiceError.notCloudAccount
+        }
+        return SocialContext(
+            generation: accountActivationGeneration,
+            storageKey: session.storageKey,
+            userID: cloud.userID,
+            store: workoutStore
+        )
+    }
+
+    private func validateSocialContext(_ context: SocialContext) throws {
+        guard isAccountReady,
+              accountActivationGeneration == context.generation,
+              workoutStore === context.store,
+              auth.session?.storageKey == context.storageKey,
+              auth.session?.cloud?.userID == context.userID else {
+            throw AuthServiceError.sessionChanged
+        }
+    }
+
+    private func invalidateSocialRelationshipCaches() {
+        socialCacheGeneration &+= 1
+        socialDashboard = nil
+        socialWorkoutInbox = nil
+        // FriendDetailView keys its refetch lifecycle to this revision. Increment it
+        // synchronously so visible private data disappears before the mutation awaits.
+        socialDashboardRefreshRevision &+= 1
+    }
+
+    private func validateWorkoutInviteForLocalImport(_ plan: SharedWorkoutPlan) throws {
+        do {
+            _ = try SharedWorkoutLinkValidator.validate(plan)
+        } catch {
+            throw CloudSyncError.invalidWorkoutInvite
+        }
+    }
+
+    private func stageWorkoutInvitePlan(
+        _ plan: SharedWorkoutPlan,
+        replacingPendingID: UUID?
+    ) throws {
+        do {
+            try stageSharedWorkoutPlan(plan, replacingPendingID: replacingPendingID)
+        } catch {
+            // Never expose raw imported names or validator internals to the social UI.
+            throw CloudSyncError.invalidWorkoutInvite
+        }
+    }
+
+    private func workoutInviteRequestKey(
+        context: SocialContext,
+        profileID: String,
+        plan: SharedWorkoutPlan
+    ) throws -> PendingWorkoutInviteRequestKey {
+        guard SocialPayloadParser.isValidProfileID(profileID) else {
+            throw CloudSyncError.invalidSocialProfile
+        }
+        let object: [String: Any]
+        let canonicalWorkout: Data
+        do {
+            object = try SocialPayloadParser.workoutObject(for: plan)
+            canonicalWorkout = try JSONSerialization.data(
+                withJSONObject: object,
+                options: [.sortedKeys]
+            )
+        } catch {
+            throw CloudSyncError.invalidPayload
+        }
+        return PendingWorkoutInviteRequestKey(
+            generation: context.generation,
+            storageKey: context.storageKey,
+            userID: context.userID,
+            profileID: profileID,
+            canonicalWorkout: canonicalWorkout
+        )
     }
 
     func importBackup(_ data: Data) throws -> BackupImportResult {

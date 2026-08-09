@@ -11,8 +11,8 @@
 
 ## Version information
 
-- **Promotional text (170 characters max):** Plan workouts, track sets and volume, map muscle load, follow Smart Coach guidance, and stay motivated with missions, XP, and ranks.
-- **Keywords (100 bytes max):** workout,gym,fitness,strength,training,sets,reps,progress,exercise,tracker,coach
+- **Promotional text (170 characters max):** Plan workouts, share editable plans with confirmed friends, compare self-reported XP, track progress, and train with Smart Coach, missions, and Garmin.
+- **Keywords (100 bytes max):** workout,gym,fitness,strength,training,sets,reps,progress,exercise,friends,coach
 - **Support URL:** https://gymapptracker.com/support.html
 - **Marketing URL (optional):** https://gymapptracker.com/
 - **Privacy Policy URL:** https://gymapptracker.com/privacy-policy.html
@@ -39,10 +39,16 @@ PROGRESS THAT STAYS USEFUL
 • Review workout details and post-workout summaries
 • Export or import a JSON backup and share a readable diagnostics PDF
 
+FRIENDS AND SHARED PLANS
+• Add someone by a random friend code; both accounts must confirm
+• Choose whether friends see XP/level/count, five recent summaries, or recorded exercise bests
+• Share an editable workout by link or send it directly to a confirmed friend
+• Each person starts an independent local workout; sets are not synchronized live
+
 MOTIVATION
 • Complete daily, weekly, and monthly missions
 • Earn XP, levels, titles, achievements, and badges
-• Keep XP, levels, and workout counts in an owner-only protected progress view
+• Compare self-reported XP and levels only inside your confirmed friend circle
 
 CLOUD AND GARMIN
 • Sign in with email to sync your GymApp state securely through Supabase
@@ -54,7 +60,7 @@ GymApp is a fitness log and planning tool, not a medical device. It does not dia
 
 ## What's New
 
-Adds full Russian localization and improved Garmin controls for touch devices and watches with fewer buttons, alongside workout logging, progress, missions, and sync.
+Removes the global rating and adds mutual friends, privacy controls, friends-only self-reported progress, recent workout/record views, and direct editable workout invitations.
 
 ## Suggested screenshot captions
 
@@ -65,7 +71,7 @@ Adds full Russian localization and improved Garmin controls for touch devices an
 5. Turn consistency into progress
 6. Track strength and volume over time
 7. Complete missions and earn ranks
-8. Review protected progress in your profile
+8. Train and share with confirmed friends
 
 ## Final metadata checks
 

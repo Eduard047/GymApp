@@ -79,19 +79,35 @@ struct AppRootView: View {
         .onChange(of: auth.needsPasswordUpdate) { needsUpdate in
             showsPasswordUpdate = needsUpdate
         }
+        .onChange(of: appState.isAccountReady) { isReady in
+            guard isReady, auth.session?.cloud != nil else { return }
+            Task { await refreshSocialSurfaces() }
+        }
         .onChange(of: scenePhase) { phase in
-            if phase == .background { appState.saveBeforeBackgrounding() }
+            if phase == .background {
+                appState.saveBeforeBackgrounding()
+            } else if phase == .active, appState.isAccountReady, auth.session?.cloud != nil {
+                Task { await refreshSocialSurfaces() }
+            }
         }
         .task {
 #if DEBUG
             await appState.bootstrapDemoIfRequested()
 #endif
+            if appState.isAccountReady, auth.session?.cloud != nil {
+                await refreshSocialSurfaces()
+            }
             showsPasswordUpdate = auth.needsPasswordUpdate
             try? await Task.sleep(for: .milliseconds(1_400))
             withAnimation(.easeOut(duration: 0.28)) {
                 showsIntro = false
             }
         }
+    }
+
+    private func refreshSocialSurfaces() async {
+        _ = try? await appState.refreshSocialDashboard()
+        _ = try? await appState.refreshSocialWorkoutInbox()
     }
 }
 
@@ -440,7 +456,7 @@ private struct MainTabShell: View {
             .split(separator: "=", maxSplits: 1)
             .last
             .map(String.init)
-        let initialTab = requested == "rating"
+        let initialTab = requested == "rating" || requested == "friends"
             ? Tab.profile
             : requested.flatMap(Tab.init(rawValue:))
         _selectedTab = State(initialValue: initialTab ?? .workouts)
@@ -470,6 +486,7 @@ private struct MainTabShell: View {
 
             profileTab
                 .tabItem { Label(Tab.profile.title(languageCode), systemImage: Tab.profile.icon) }
+                .badge(appState.socialWorkoutInbox?.pendingIncomingCount ?? 0)
                 .tag(Tab.profile)
                 .accessibilityIdentifier("tab-profile")
         }
@@ -597,6 +614,55 @@ private struct MainTabShell: View {
                         gymText(
                             "Double tap to dismiss",
                             "Торкнися двічі, щоб закрити",
+                            languageCode: languageCode
+                        )
+                    )
+                }
+
+                if (appState.socialWorkoutInbox?.pendingIncomingCount ?? 0) > 0,
+                   selectedTab != .profile {
+                    Button {
+                        selectedTab = .profile
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: "envelope.badge.fill")
+                                .foregroundStyle(GymTheme.primary)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(
+                                    gymText(
+                                        "Workout invitation waiting",
+                                        "Очікує запрошення на тренування",
+                                        "Ожидает приглашение на тренировку",
+                                        languageCode: languageCode
+                                    )
+                                )
+                                .font(.subheadline.bold())
+                                Text(
+                                    gymText(
+                                        "Open Friends to review it. This is an in-app notice, not a push notification.",
+                                        "Відкрий Друзів, щоб переглянути його. Це сповіщення в застосунку, а не push-повідомлення.",
+                                        "Открой Друзей, чтобы посмотреть его. Это уведомление в приложении, а не push-уведомление.",
+                                        languageCode: languageCode
+                                    )
+                                )
+                                .font(.caption)
+                                .foregroundStyle(GymTheme.textSecondary)
+                            }
+                            Spacer(minLength: 8)
+                            Image(systemName: "chevron.right")
+                                .font(.caption.bold())
+                        }
+                        .padding(.horizontal, 16)
+                        .frame(maxWidth: .infinity, minHeight: 58)
+                        .background(.regularMaterial)
+                        .overlay(alignment: .bottom) { Divider() }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint(
+                        gymText(
+                            "Opens Friends in Profile",
+                            "Відкриває Друзів у Профілі",
+                            "Открывает Друзей в Профиле",
                             languageCode: languageCode
                         )
                     )
@@ -925,7 +991,12 @@ private struct MainTabShell: View {
 
     private var profileTab: some View {
         NavigationStack {
-            ProfileView(appState: appState, auth: auth, store: store)
+            ProfileView(
+                appState: appState,
+                auth: auth,
+                store: store,
+                canAcceptWorkoutInvites: activeWorkoutStore.draft == nil
+            )
                 .gymLanguageToolbar()
         }
     }

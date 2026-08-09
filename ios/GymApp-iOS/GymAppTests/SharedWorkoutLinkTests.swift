@@ -281,11 +281,29 @@ final class SharedWorkoutLinkTests: XCTestCase {
         XCTAssertEqual(appState.pendingSharedWorkout?.id, firstPending.id)
         XCTAssertEqual(appState.pendingSharedWorkout?.plan, firstPending.plan)
 
+        let replacementPlan = try SharedWorkoutLinkDecoder.decode(secondURL)
+        try appState.stageSharedWorkoutPlan(
+            replacementPlan,
+            replacingPendingID: firstPending.id
+        )
+        let replacedPending = try XCTUnwrap(appState.pendingSharedWorkout)
+        XCTAssertNotEqual(replacedPending.id, firstPending.id)
+        XCTAssertEqual(replacedPending.plan, replacementPlan)
+
+        XCTAssertThrowsError(
+            try appState.stageSharedWorkoutPlan(
+                firstPending.plan,
+                replacingPendingID: UUID()
+            )
+        )
+        XCTAssertEqual(appState.pendingSharedWorkout?.id, replacedPending.id)
+        XCTAssertEqual(appState.pendingSharedWorkout?.plan, replacementPlan)
+
         let malformed = try XCTUnwrap(
             URL(string: "https://gymapptracker.com/workout/#workout=not+base64")
         )
         XCTAssertTrue(appState.handleSharedWorkoutURL(malformed))
-        XCTAssertEqual(appState.pendingSharedWorkout?.id, firstPending.id)
+        XCTAssertEqual(appState.pendingSharedWorkout?.id, replacedPending.id)
 
         let malformedNamespaceURLs = [
             "com.setforge.gymapp.ios://workout/import#workout=\(goldenPayload)",
@@ -296,12 +314,12 @@ final class SharedWorkoutLinkTests: XCTestCase {
             let url = try XCTUnwrap(URL(string: rawURL))
             XCTAssertTrue(SharedWorkoutLinkDecoder.isRecognizedDestination(url), rawURL)
             XCTAssertTrue(appState.handleSharedWorkoutURL(url), rawURL)
-            XCTAssertEqual(appState.pendingSharedWorkout?.id, firstPending.id, rawURL)
+            XCTAssertEqual(appState.pendingSharedWorkout?.id, replacedPending.id, rawURL)
         }
 
         let authURL = try XCTUnwrap(URL(string: "com.setforge.gymapp.ios://auth/callback?code=test"))
         XCTAssertFalse(appState.handleSharedWorkoutURL(authURL))
-        appState.dismissPendingSharedWorkout(id: firstPending.id)
+        appState.dismissPendingSharedWorkout(id: replacedPending.id)
         XCTAssertNil(appState.pendingSharedWorkout)
     }
 

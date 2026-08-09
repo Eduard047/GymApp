@@ -8,6 +8,12 @@ const migrationNamePattern = /^(\d{14})_([a-z0-9_]+)\.sql$/;
 const productionFirstRecordedVersion = "20260629115900";
 const productionLastRecordedVersion = "20260803090000";
 const productionMigrationCount = 23;
+const reviewedForwardMigrations = [
+  "20260809202407_prepare_friend_social_graph.sql",
+  "20260809202422_backfill_friend_activity_projection.sql",
+  "20260809202432_activate_friend_social_api.sql",
+  "20260809210834_normalize_friend_exercise_names_nfc.sql",
+];
 
 function migrationVersion(fileName) {
   const match = migrationNamePattern.exec(fileName);
@@ -82,7 +88,7 @@ test("local Supabase uses the PostgreSQL major required by the migration chain",
   );
 });
 
-test("verified production migration history matches the repository snapshot", async () => {
+test("verified production history is followed only by reviewed forward migrations", async () => {
   const files = await orderedMigrationFiles();
   const versions = files.map(migrationVersion);
   const preHistory = files.filter(
@@ -92,9 +98,9 @@ test("verified production migration history matches the repository snapshot", as
     (fileName) => migrationVersion(fileName) > productionLastRecordedVersion
   );
 
-  assert.equal(files.length, productionMigrationCount);
+  assert.equal(files.length, productionMigrationCount + reviewedForwardMigrations.length);
   assert.equal(versions[0], productionFirstRecordedVersion);
-  assert.equal(versions.at(-1), productionLastRecordedVersion);
+  assert.equal(versions[productionMigrationCount - 1], productionLastRecordedVersion);
   assert.deepEqual(preHistory, []);
-  assert.deepEqual(forwardDrift, []);
+  assert.deepEqual(forwardDrift, reviewedForwardMigrations);
 });

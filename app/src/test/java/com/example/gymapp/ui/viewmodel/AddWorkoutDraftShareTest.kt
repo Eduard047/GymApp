@@ -1,14 +1,97 @@
 package com.example.gymapp.ui.viewmodel
 
+import com.example.gymapp.auth.SocialIncomingWorkoutInvite
+import com.example.gymapp.auth.SocialWorkoutInviteSummary
 import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.repository.IncomingSharedWorkoutUrl
+import com.example.gymapp.data.repository.SharedWorkoutExercise
 import com.example.gymapp.data.repository.SharedWorkoutLink
+import com.example.gymapp.data.repository.SharedWorkoutPlan
+import com.example.gymapp.data.repository.SharedWorkoutSet
+import com.example.gymapp.navigation.shouldConsumeAcceptedSocialWorkout
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AddWorkoutDraftShareTest {
+    @Test
+    fun directInviteDraftUsesExactlyTheExistingPortableWorkoutPlan() {
+        val drafts = listOf(
+            ExerciseInputState(
+                draftId = 1L,
+                exerciseId = 2L,
+                sets = listOf(SetInputState(weight = "80", reps = "8"))
+            )
+        )
+        val exercises = listOf(ExerciseEntity(id = 2L, name = "Bench Press"))
+
+        val directPlan = buildSharedWorkoutDraftPlan(drafts, exercises)
+        val linkPlan = SharedWorkoutLink.parseIncomingUrl(
+            rawUrl = buildSharedWorkoutDraftUrl(drafts, exercises),
+            customScheme = "com.setforge.gymapp"
+        ) as IncomingSharedWorkoutUrl.Valid
+
+        assertEquals(linkPlan.plan, directPlan)
+        assertEquals(setOf("bench_press"), directPlan.exercises.mapNotNull { it.catalogKey }.toSet())
+    }
+
+    @Test
+    fun acceptedInboxRowCanRecoverItsEditableCopyAfterProcessRestartWithoutRespondingAgain() {
+        val plan = SharedWorkoutPlan(
+            exercises = listOf(
+                SharedWorkoutExercise(
+                    catalogKey = "bench_press",
+                    name = "Bench Press",
+                    sets = listOf(SharedWorkoutSet(weight = 80.0, reps = 8))
+                )
+            )
+        )
+        val acceptedInvite = SocialIncomingWorkoutInvite(
+            inviteId = "wi_${"a".repeat(32)}",
+            profileId = "p_${"b".repeat(32)}",
+            displayName = "Training Friend",
+            status = "accepted",
+            inviteRevision = 2,
+            createdAt = "2026-08-09T10:00:00Z",
+            expiresAt = "2026-08-16T10:00:00Z",
+            respondedAt = "2026-08-09T10:01:00Z",
+            summary = SocialWorkoutInviteSummary(1, 1, listOf("Bench Press")),
+            workout = plan
+        )
+
+        val recovered = acceptedSocialWorkoutForReuse(acceptedInvite)
+
+        assertEquals(acceptedInvite.inviteId, recovered?.inviteId)
+        assertEquals(plan, recovered?.plan)
+        assertNull(acceptedSocialWorkoutForReuse(acceptedInvite.copy(status = "pending")))
+    }
+
+    @Test
+    fun localImportRejectsBuiltInAliasCollisionBeforeTheAcceptedPayloadIsConsumed() {
+        val plan = SharedWorkoutPlan(
+            exercises = listOf(
+                SharedWorkoutExercise(
+                    catalogKey = "bench_press",
+                    name = "Bench Press",
+                    sets = listOf(SharedWorkoutSet(weight = 80.0, reps = 8))
+                ),
+                SharedWorkoutExercise(
+                    catalogKey = "bench_press_uk",
+                    name = "Жим штанги лежачи",
+                    sets = listOf(SharedWorkoutSet(weight = 75.0, reps = 10))
+                )
+            )
+        )
+
+        assertThrows(IllegalArgumentException::class.java) {
+            normalizeSharedWorkoutPlanForDraftImport(plan)
+        }
+        assertFalse(shouldConsumeAcceptedSocialWorkout(appliedToDraft = false))
+    }
+
     @Test
     fun validDraftBuildsTheExistingPortableShareContractInEditorOrder() {
         val url = buildSharedWorkoutDraftUrl(

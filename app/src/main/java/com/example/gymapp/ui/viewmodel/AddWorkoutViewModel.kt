@@ -69,7 +69,14 @@ data class ExerciseInputState(
 internal fun buildSharedWorkoutDraftUrl(
     drafts: List<ExerciseInputState>,
     exercises: List<ExerciseEntity>
-): String {
+): String = SharedWorkoutLink.buildUrl(
+    buildSharedWorkoutDraftPlan(drafts, exercises).exercises
+)
+
+internal fun buildSharedWorkoutDraftPlan(
+    drafts: List<ExerciseInputState>,
+    exercises: List<ExerciseEntity>
+): SharedWorkoutPlan {
     val selectedDrafts = drafts.filter { it.exerciseId != null }
     require(selectedDrafts.size in 1..SharedWorkoutLink.MAX_EXERCISES) {
         "Shared workout exercise count is invalid."
@@ -108,8 +115,11 @@ internal fun buildSharedWorkoutDraftUrl(
             }
         )
     }
-    return SharedWorkoutLink.buildUrl(sharedExercises)
+    return SharedWorkoutLink.normalize(sharedExercises)
 }
+
+internal fun normalizeSharedWorkoutPlanForDraftImport(plan: SharedWorkoutPlan): SharedWorkoutPlan =
+    SharedWorkoutLink.normalize(plan.exercises)
 
 private const val SHARED_WORKOUT_REPS_INPUT_MAX_LENGTH = 10
 
@@ -601,7 +611,7 @@ class AddWorkoutViewModel(
         if (isTemplateLoading.value || isSaving.value) return false
         isTemplateLoading.value = true
         return try {
-            val normalizedPlan = SharedWorkoutLink.normalize(plan.exercises)
+            val normalizedPlan = normalizeSharedWorkoutPlanForDraftImport(plan)
             repository.seedBuiltInExercises()
             val exerciseIds = repository.resolveSharedWorkoutExerciseIds(normalizedPlan)
             check(exerciseIds.size == normalizedPlan.exercises.size)
@@ -1084,6 +1094,17 @@ class AddWorkoutViewModel(
     fun prepareSharedWorkoutUrl(): String? {
         val result = runCatching {
             buildSharedWorkoutDraftUrl(
+                drafts = exerciseDrafts.value,
+                exercises = exerciseCatalogState.value.exercises
+            )
+        }
+        hasValidationError.value = result.isFailure
+        return result.getOrNull()
+    }
+
+    internal fun prepareSharedWorkoutPlan(): SharedWorkoutPlan? {
+        val result = runCatching {
+            buildSharedWorkoutDraftPlan(
                 drafts = exerciseDrafts.value,
                 exercises = exerciseCatalogState.value.exercises
             )

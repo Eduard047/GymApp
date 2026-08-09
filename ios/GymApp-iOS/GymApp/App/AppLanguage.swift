@@ -464,10 +464,11 @@ func gymSafeEnglishErrorMessage(_ error: Error) -> String {
     if let cloudError = error as? CloudSyncError {
         switch cloudError {
         case .invalidPayload,
-             .invalidLeaderboardProfile,
+             .invalidSocialProfile,
+             .invalidFriendship,
+             .invalidWorkoutInvite,
              .invalidResponse,
-             .staleRemoteState,
-             .reportAlreadySubmitted:
+             .staleRemoteState:
             return cloudError.errorDescription ?? gymGenericErrorMessage
         case .requestFailed:
             return gymGenericErrorMessage

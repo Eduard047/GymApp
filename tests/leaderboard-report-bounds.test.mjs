@@ -29,7 +29,7 @@ const triggerFunction = section(
   "comment on function public.prepare_leaderboard_report()"
 );
 
-test("report admission serializes once per reporter before target-dependent work", () => {
+test("legacy report admission stays server-bounded while current iOS no longer exposes global reports", () => {
   const lockAt = triggerFunction.indexOf("pg_catalog.pg_advisory_xact_lock");
   const targetLookupAt = triggerFunction.indexOf("from public.profiles as profile");
   const pendingCheckAt = triggerFunction.indexOf("if exists (");
@@ -85,10 +85,7 @@ test("report admission serializes once per reporter before target-dependent work
     triggerFunction,
     /errcode = '23505'[\s\S]*message = 'Duplicate pending leaderboard report\.'/
   );
-  assert.match(
-    iosCloudClient,
-    /message\.localizedCaseInsensitiveContains\("duplicate"\)[\s\S]*throw CloudSyncError\.reportAlreadySubmitted/
-  );
+  assert.doesNotMatch(iosCloudClient, /leaderboard_reports|reportLeaderboardProfile|reportAlreadySubmitted/);
 });
 
 test("the transactional index rollout bounds write-lock acquisition and duration", () => {

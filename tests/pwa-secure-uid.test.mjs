@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import vm from "node:vm";
 
-const CURRENT_BUNDLE_NAMES = ["app.js", "app.v80.js"];
+const CURRENT_BUNDLE_NAMES = ["app.js", "app.v81.js"];
 const currentBundles = CURRENT_BUNDLE_NAMES.map(filename => ({
   filename,
   source: readFileSync(new URL(`../pwa/${filename}`, import.meta.url), "utf8")

@@ -31,13 +31,20 @@ struct ProfileView: View {
     @State private var exportContentType: UTType = .json
     @State private var exportFilename = "GymApp-backup"
     @State private var resultMessage: String?
+    private let canAcceptWorkoutInvites: Bool
 
-    init(appState: AppState, auth: AuthService, store: WorkoutStore) {
+    init(
+        appState: AppState,
+        auth: AuthService,
+        store: WorkoutStore,
+        canAcceptWorkoutInvites: Bool = true
+    ) {
         self.appState = appState
         self.auth = auth
         self.store = store
         self.garminCloud = appState.garminCloud
         self.garminPhoneSync = appState.garminPhoneSync
+        self.canAcceptWorkoutInvites = canAcceptWorkoutInvites
     }
 
     var body: some View {
@@ -54,11 +61,10 @@ struct ProfileView: View {
                     }
 
                     backupCard
-                    LeaderboardView(
-                        store: store,
+                    FriendsView(
                         appState: appState,
                         auth: auth,
-                        embedded: true
+                        canAcceptWorkoutInvites: canAcceptWorkoutInvites
                     )
                 }
                 .padding(.horizontal, 16)

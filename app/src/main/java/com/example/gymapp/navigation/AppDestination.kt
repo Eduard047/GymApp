@@ -45,6 +45,12 @@ sealed class AppDestination(
         icon = Icons.Default.Person
     )
 
+    data object FriendDetail : AppDestination(
+        route = "friend/{profileId}",
+        labelRes = R.string.friend_details_title,
+        icon = Icons.Default.Person
+    )
+
     data object AddWorkout : AppDestination(
         route = "add_workout",
         labelRes = R.string.title_add_workout,
@@ -84,6 +90,13 @@ sealed class AppDestination(
 
         fun postWorkoutSummaryRoute(sessionId: Long): String {
             return "post_workout_summary/$sessionId"
+        }
+
+        fun friendDetailRoute(profileId: String): String {
+            require(profileId.matches(Regex("^p_[0-9a-f]{32}$"))) {
+                "Friend profile ID is invalid."
+            }
+            return "friend/$profileId"
         }
     }
 }
