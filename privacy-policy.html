@@ -29,7 +29,7 @@
     <p class="eyebrow">Privacy, in plain language</p>
     <h1>Know what GymApp stores — and why.</h1>
     <p class="hero-copy">A readable overview comes first. The complete policy remains available section by section below.</p>
-    <p class="meta">Effective July 21, 2026 · Чинна з 21 липня 2026 року · Действует с 21 июля 2026 года</p>
+    <p class="meta">Effective August 9, 2026 · Чинна з 9 серпня 2026 року · Действует с 9 августа 2026 года</p>
   </header>
 
   <div class="language-bar">
@@ -49,7 +49,7 @@
       <li><div class="summary-card"><strong>Account &amp; sync</strong><span>Email, display name, account ID, and cloud workout state support sign-in and sync.</span></div></li>
       <li><div class="summary-card"><strong>On your device</strong><span>Training Profile, preferences, local cache, and timer scheduling stay local as described below.</span></div></li>
       <li><div class="summary-card"><strong>No ad tracking</strong><span>No ads, third-party analytics SDK, IDFA access, cross-app tracking, or sale of personal data.</span></div></li>
-      <li><div class="summary-card"><strong>Your control</strong><span>Export a backup, choose optional features, sign out, or permanently delete your account.</span></div></li>
+      <li><div class="summary-card"><strong>Your control</strong><span>Choose what confirmed friends can see, remove or block them, export a backup, sign out, or permanently delete your account.</span></div></li>
     </ul>
     <nav class="policy-toc" aria-label="English policy contents">
       <strong>On this page</strong>
@@ -82,11 +82,12 @@
           <tr><td>Account and contact data</td><td>Email address, Supabase user UUID, and display name that you provide when creating or using an account. Supabase handles credentials; GymApp does not store your plaintext password.</td><td>Account creation, confirmation, authentication, security, cloud sync, support, and deletion.</td></tr>
           <tr><td>Workout and fitness data</td><td>Workout dates, exercise names, sets, weights, repetitions, plans, completed sessions, volume, personal records, and derived XP, level, missions, achievements, and workout count.</td><td>Workout logging, sync, progress, Smart Coach guidance, muscle-load views, and gamification.</td></tr>
           <tr><td>User content</td><td>Free-form workout notes you enter.</td><td>Save and display your workout history.</td></tr>
-          <tr><td>Protected progress profile</td><td>Random profile ID, display name, XP, level, and workout count.</td><td>Show synchronized progress only to the signed-in owner. Competitive cross-account standings are disabled while GymApp builds a trusted scoring source; these fields are not shown to other users.</td></tr>
+          <tr><td>Friends and shared progress</td><td>Random friend/profile code, display name, friend requests and relationship/block/privacy state; optional XP, level, workout count, up to five date-only workout summaries, up to 100 entered exercise bests; and bounded exercise/planned-set workout invitations.</td><td>Let mutually confirmed, unblocked friends compare self-reported progress, view only the categories each friend enables, and send an editable workout plan. The global leaderboard is removed; friend progress is not presented as verified competition.</td></tr>
           <tr><td>Legacy leaderboard safety reports</td><td>Reporter account UUID, reported profile ID, time, and the fixed <code>inappropriate_name</code> category. New cross-account reporting is unavailable while competitive standings are disabled.</td><td>Retain and finish reviewing reports submitted before the leaderboard was restricted.</td></tr>
           <tr><td>Optional Garmin data</td><td>Opaque paired-device token, workout plans, sync status, and imported duration, calories, or heart-rate details when present.</td><td>Pair a Garmin device, deliver plans, and import completed workout details.</td></tr>
         </tbody>
       </table>
+      <p>The friend API never returns email, Supabase Auth UUID, raw cloud state, full set history, workout notes, Garmin token, or heart-rate/calorie details. A direct invitation contains only exercise names/identities and planned weight/repetition sets, opens as an editable local draft after acceptance, and does not synchronize live sets.</p>
     </section>
 
     <section>
@@ -100,7 +101,7 @@
       <ul>
         <li>provide, secure, troubleshoot, and maintain account and sync functions;</li>
         <li>display workout history, progress, charts, muscle load, missions, achievements, ranks, and personalized training suggestions;</li>
-        <li>show protected progress to its signed-in owner; competitive cross-account ranking remains disabled until scoring has a trusted server-side source;</li>
+        <li>manage mutual friend requests, privacy choices, removals and blocks; show enabled self-reported progress only to confirmed friends; and deliver bounded workout-plan invitations that expire after seven days if unanswered;</li>
         <li>provide Garmin pairing and workout transfer when you choose to use it;</li>
         <li>respond to support, privacy, and account-deletion requests; and</li>
         <li>meet legal obligations and protect users and the service from abuse.</li>
@@ -121,14 +122,14 @@
 
     <section>
       <h3 id="en-retention">7. Retention and account deletion</h3>
-      <p>We retain active account and cloud data while your account exists so GymApp can sync and provide its features. Pending safety reports remain until review; resolved reports are normally removed within 90 days, and reports are also deleted when the reporter or reported profile is deleted. On iOS, permanently delete your account through <strong>Profile → Account, privacy &amp; deletion → Delete Account</strong> and confirm the irreversible request. In another GymApp version without that control, contact support for deletion. A successful request deletes the Supabase Auth user and associated active cloud records, including user state, profile, reports, and Garmin cloud records. The app then clears the local account session and account data on that device.</p>
+      <p>We retain active account and cloud data while your account exists so GymApp can sync and provide its features. Unanswered workout invitations expire after seven days. The exercise/plan payload becomes eligible for tombstoning 24 hours after decline, cancellation, or expiry, or 30 days after acceptance; bounded cleanup runs when either participant next refreshes Friends or the workout-invitation inbox, so a fully dormant row may retain its payload until that cleanup or account deletion. The ID/status/revision/idempotency tombstone and other friend/request/block/privacy lifecycle records remain account data until removed by product lifecycle rules or account deletion. Pending safety reports remain until review; resolved reports are normally removed within 90 days, and reports are also deleted when the reporter or reported profile is deleted. On iOS, permanently delete your account through <strong>Profile → Account, privacy &amp; deletion → Delete Account</strong> and confirm the irreversible request. In another GymApp version without that control, contact support for deletion. A successful request deletes the Supabase Auth user and associated active cloud records, including user state, profile, private social graph/projections/invitations, reports, and Garmin cloud records. The app then clears the local account session and account data on that device.</p>
       <p>Deleting the app from a device does not by itself delete the cloud account. Operational backups and security records may remain isolated until the service provider’s limited backup cycle expires, and information that law requires us to retain may be kept only for that required period. Such records are not restored as an active account or used for product personalization.</p>
       <p>If in-app deletion cannot complete or you no longer have access to the account, contact <a href="mailto:support@gymapptracker.com">support@gymapptracker.com</a>.</p>
     </section>
 
     <section>
       <h3 id="en-rights">8. Your choices and rights</h3>
-      <p>You can edit or delete workouts, decline local notifications, choose not to connect Garmin, export a workout backup, sign out, and delete your account. Competitive leaderboard reporting and blocking are unavailable while cross-account standings are disabled. Depending on your location, you may also have rights to access, correct, erase, restrict, object to, or receive a portable copy of personal data, and to complain to a data protection authority. Contact us to exercise a right; we may need to verify the account before acting.</p>
+      <p>You can edit or delete workouts, decline local notifications, choose not to connect Garmin, control each friend-visible category, decline or cancel requests/invitations, remove or block a friend, export a workout backup, sign out, and delete your account. Removing or blocking immediately denies that profile friend-detail access and closes pending workout invitations. Depending on your location, you may also have rights to access, correct, erase, restrict, object to, or receive a portable copy of personal data, and to complain to a data protection authority. Contact us to exercise a right; we may need to verify the account before acting.</p>
     </section>
 
     <section>
@@ -154,7 +155,7 @@
       <li><div class="summary-card"><strong>Акаунт і синхронізація</strong><span>Email, відображуване ім’я, ID акаунта та хмарний стан тренувань потрібні для входу й синхронізації.</span></div></li>
       <li><div class="summary-card"><strong>На вашому пристрої</strong><span>Training Profile, налаштування, локальний кеш і таймер залишаються локальними, як описано нижче.</span></div></li>
       <li><div class="summary-card"><strong>Без рекламного стеження</strong><span>Без реклами, стороннього analytics SDK, IDFA, міжзастосункового стеження та продажу персональних даних.</span></div></li>
-      <li><div class="summary-card"><strong>Ваш контроль</strong><span>Експортуйте копію, обирайте необов’язкові функції, виходьте або назавжди видаляйте акаунт.</span></div></li>
+      <li><div class="summary-card"><strong>Ваш контроль</strong><span>Обирайте, що бачать підтверджені друзі, видаляйте чи блокуйте їх, експортуйте копію, виходьте або назавжди видаляйте акаунт.</span></div></li>
     </ul>
     <nav class="policy-toc" aria-label="Зміст політики українською">
       <strong>На цій сторінці</strong>
@@ -187,11 +188,12 @@
           <tr><td>Облікові та контактні дані</td><td>Email, UUID користувача Supabase та відображуване ім’я, які ви надаєте для облікового запису. Облікові дані обробляє Supabase; GymApp не зберігає пароль у відкритому вигляді.</td><td>Реєстрація, підтвердження, вхід, безпека, хмарна синхронізація, підтримка й видалення.</td></tr>
           <tr><td>Дані тренувань і фітнесу</td><td>Дати, назви вправ, підходи, вага, повтори, плани, завершені сесії, обсяг, особисті рекорди та похідні XP, рівень, місії, досягнення й кількість тренувань.</td><td>Щоденник, синхронізація, прогрес, Smart Coach, навантаження м’язів і гейміфікація.</td></tr>
           <tr><td>Користувацький вміст</td><td>Довільні нотатки до тренувань.</td><td>Збереження та показ історії тренувань.</td></tr>
-          <tr><td>Профіль захищеного прогресу</td><td>Випадковий ID профілю, відображуване ім’я, XP, рівень і кількість тренувань.</td><td>Показ синхронізованого прогресу лише авторизованому власнику. Змагальний рейтинг між акаунтами вимкнено, доки GymApp створює довірене джерело балів; інші користувачі цих полів не бачать.</td></tr>
+          <tr><td>Друзі та спільний прогрес</td><td>Випадковий код друга/профілю, відображуване ім’я, запити, стан дружби/блокування/приватності; за вибором — XP, рівень, кількість тренувань, до п’яти підсумків із датою та до 100 внесених рекордів у вправах; а також обмежені запрошення з вправами й плановими підходами.</td><td>Щоб взаємно підтверджені й незаблоковані друзі могли порівнювати самостійно внесений прогрес, бачити лише дозволені категорії та надсилати редагований план. Загальний рейтинг видалено; прогрес друзів не подається як перевірене змагання.</td></tr>
           <tr><td>Старі скарги щодо рейтингу</td><td>UUID акаунта заявника, ID профілю, час і фіксована категорія <code>inappropriate_name</code>. Нові скарги між акаунтами недоступні, поки змагальний рейтинг вимкнено.</td><td>Зберігання та завершення перевірки скарг, поданих до обмеження рейтингу.</td></tr>
           <tr><td>Необов’язкові дані Garmin</td><td>Непрозорий токен під’єднаного пристрою, плани, статус синхронізації та імпортовані тривалість, калорії або дані пульсу, якщо вони є.</td><td>Під’єднання Garmin, передавання планів та імпорт завершених тренувань.</td></tr>
         </tbody>
       </table>
+      <p>API друзів ніколи не повертає email, UUID Supabase Auth, сирий хмарний стан, повну історію підходів, нотатки, Garmin-токен або дані пульсу/калорій. Пряме запрошення містить лише назви/ідентичність вправ і планові підходи з вагою/повторами, після прийняття відкривається як локальна редагована чернетка й не синхронізує підходи наживо.</p>
     </section>
 
     <section>
@@ -205,7 +207,7 @@
       <ul>
         <li>надаємо, захищаємо, діагностуємо й підтримуємо обліковий запис і синхронізацію;</li>
         <li>показуємо історію, прогрес, графіки, навантаження м’язів, місії, досягнення, ранги та персоналізовані тренувальні рекомендації;</li>
-        <li>показуємо захищений прогрес лише його авторизованому власнику; змагальний рейтинг між акаунтами вимкнено до появи довіреного серверного джерела балів;</li>
+        <li>керуємо взаємними запитами в друзі, налаштуваннями видимості, видаленням і блокуванням; показуємо дозволений самостійно внесений прогрес лише підтвердженим друзям; доставляємо обмежені запрошення з планом, які без відповіді спливають через сім днів;</li>
         <li>забезпечуємо Garmin-синхронізацію, якщо ви її обрали;</li>
         <li>відповідаємо на запити підтримки, конфіденційності й видалення; та</li>
         <li>виконуємо вимоги закону й захищаємо користувачів і сервіс від зловживань.</li>
@@ -225,14 +227,14 @@
 
     <section>
       <h3 id="uk-retention">7. Зберігання та видалення облікового запису</h3>
-      <p>Ми зберігаємо активні облікові й хмарні дані, поки існує обліковий запис. Скарги зі статусом очікування зберігаються до перевірки; закриті скарги зазвичай видаляються впродовж 90 днів, а також видаляються разом із заявником або профілем, на який поскаржилися. На iOS для остаточного видалення відкрийте <strong>Профіль → Обліковий запис, конфіденційність і видалення → Видалити обліковий запис</strong> і підтвердьте незворотний запит. В іншій версії GymApp без такого елемента зверніться до підтримки. Успішний запит видаляє користувача Supabase Auth і пов’язані активні хмарні записи, зокрема стан, профіль, скарги й Garmin-дані. Після цього застосунок очищає локальну сесію та дані облікового запису на відповідному пристрої.</p>
+      <p>Ми зберігаємо активні облікові й хмарні дані, поки існує обліковий запис. Запрошення на тренування без відповіді спливає через сім днів. Вміст вправ/плану стає придатним до знеособленого очищення через 24 години після відхилення, скасування чи спливу або через 30 днів після прийняття; обмежене очищення запускається, коли будь-який учасник наступного разу оновлює екран «Друзі» або вхідні запрошення на тренування, тому повністю неактивний запис може зберігати вміст до такого запуску або видалення акаунта. Технічний запис ID/статусу/ревізії/ідемпотентності та інші записи життєвого циклу дружби/запитів/блокувань/приватності лишаються даними акаунта до очищення правилами продукту або видалення акаунта. Скарги зі статусом очікування зберігаються до перевірки; закриті скарги зазвичай видаляються впродовж 90 днів, а також видаляються разом із заявником або профілем, на який поскаржилися. На iOS для остаточного видалення відкрийте <strong>Профіль → Обліковий запис, конфіденційність і видалення → Видалити обліковий запис</strong> і підтвердьте незворотний запит. В іншій версії GymApp без такого елемента зверніться до підтримки. Успішний запит видаляє користувача Supabase Auth і пов’язані активні хмарні записи, зокрема стан, профіль, приватний соціальний граф/проєкції/запрошення, скарги й Garmin-дані. Після цього застосунок очищає локальну сесію та дані облікового запису на відповідному пристрої.</p>
       <p>Саме видалення застосунку не видаляє хмарний обліковий запис. Операційні резервні копії та записи безпеки можуть залишатися ізольованими до завершення обмеженого циклу резервного зберігання постачальника, а дані, які необхідно зберігати за законом, — лише протягом обов’язкового строку. Їх не відновлюють як активний обліковий запис і не використовують для персоналізації.</p>
       <p>Якщо видалення в застосунку не завершується або ви втратили доступ, напишіть на <a href="mailto:support@gymapptracker.com">support@gymapptracker.com</a>.</p>
     </section>
 
     <section>
       <h3 id="uk-rights">8. Ваш вибір і права</h3>
-      <p>Ви можете редагувати або видаляти тренування, відмовитися від локальних сповіщень, не під’єднувати Garmin, експортувати резервну копію, вийти й видалити обліковий запис. Скарги та блокування профілів рейтингу недоступні, поки змагальний рейтинг між акаунтами вимкнено. Залежно від країни ви також можете мати право на доступ, виправлення, видалення, обмеження, заперечення, перенесення даних і скаргу до органу захисту даних. Для виконання запиту нам може знадобитися підтвердження облікового запису.</p>
+      <p>Ви можете редагувати або видаляти тренування, відмовитися від локальних сповіщень, не під’єднувати Garmin, окремо керувати кожною видимою друзям категорією, відхиляти чи скасовувати запити/запрошення, видаляти або блокувати друга, експортувати резервну копію, виходити й видаляти обліковий запис. Видалення чи блокування одразу закриває цьому профілю доступ до деталей друга та незавершені запрошення. Залежно від країни ви також можете мати право на доступ, виправлення, видалення, обмеження, заперечення, перенесення даних і скаргу до органу захисту даних. Для виконання запиту нам може знадобитися підтвердження облікового запису.</p>
     </section>
 
     <section>
@@ -258,7 +260,7 @@
       <li><div class="summary-card"><strong>Аккаунт и синхронизация</strong><span>Email, отображаемое имя, ID аккаунта и облачное состояние тренировок нужны для входа и синхронизации.</span></div></li>
       <li><div class="summary-card"><strong>На вашем устройстве</strong><span>Training Profile, настройки, локальный кэш и таймер остаются локальными, как описано ниже.</span></div></li>
       <li><div class="summary-card"><strong>Без рекламного трекинга</strong><span>Без рекламы, стороннего analytics SDK, IDFA, межприложенческого трекинга и продажи персональных данных.</span></div></li>
-      <li><div class="summary-card"><strong>Ваш контроль</strong><span>Экспортируйте копию, выбирайте необязательные функции, выходите или навсегда удаляйте аккаунт.</span></div></li>
+      <li><div class="summary-card"><strong>Ваш контроль</strong><span>Выбирайте, что видят подтверждённые друзья, удаляйте или блокируйте их, экспортируйте копию, выходите или навсегда удаляйте аккаунт.</span></div></li>
     </ul>
     <nav class="policy-toc" aria-label="Содержание политики на русском">
       <strong>На этой странице</strong>
@@ -291,11 +293,12 @@
           <tr><td>Данные учётной записи и контактные данные</td><td>Адрес электронной почты, UUID пользователя Supabase и отображаемое имя, которые вы предоставляете при создании или использовании учётной записи. Учётные данные обрабатывает Supabase; GymApp не хранит ваш пароль в открытом виде.</td><td>Создание и подтверждение учётной записи, аутентификация, безопасность, облачная синхронизация, поддержка и удаление.</td></tr>
           <tr><td>Данные о тренировках и физической активности</td><td>Даты тренировок, названия упражнений, подходы, веса, повторения, планы, завершённые тренировки, объём, личные рекорды, а также производные показатели XP, уровень, миссии, достижения и количество тренировок.</td><td>Ведение журнала тренировок, синхронизация, отслеживание прогресса, рекомендации Smart Coach, представление нагрузки на мышцы и геймификация.</td></tr>
           <tr><td>Пользовательский контент</td><td>Введённые вами заметки к тренировкам в свободной форме.</td><td>Сохранение и отображение истории тренировок.</td></tr>
-          <tr><td>Профиль защищённого прогресса</td><td>Случайный идентификатор профиля, отображаемое имя, XP, уровень и количество тренировок.</td><td>Показ синхронизированного прогресса только авторизованному владельцу. Соревновательный рейтинг между аккаунтами отключён, пока GymApp создаёт доверенный источник баллов; другие пользователи не видят эти поля.</td></tr>
+          <tr><td>Друзья и общий прогресс</td><td>Случайный код друга/профиля, отображаемое имя, запросы, состояние дружбы/блокировки/приватности; по выбору — XP, уровень, число тренировок, до пяти итогов с датой и до 100 внесённых рекордов по упражнениям; а также ограниченные приглашения с упражнениями и плановыми подходами.</td><td>Чтобы взаимно подтверждённые и незаблокированные друзья могли сравнивать самостоятельно внесённый прогресс, видеть только разрешённые категории и отправлять редактируемый план. Общий рейтинг удалён; прогресс друзей не представляется как проверенное соревнование.</td></tr>
           <tr><td>Старые жалобы на рейтинг</td><td>UUID учётной записи заявителя, идентификатор профиля, время и фиксированная категория <code>inappropriate_name</code>. Новые жалобы между аккаунтами недоступны, пока соревновательный рейтинг отключён.</td><td>Хранение и завершение проверки жалоб, поданных до ограничения рейтинга.</td></tr>
           <tr><td>Необязательные данные Garmin</td><td>Непрозрачный токен сопряжённого устройства, планы тренировок, статус синхронизации и импортированные сведения о продолжительности, калориях или пульсе, если они имеются.</td><td>Сопряжение устройства Garmin, передача планов и импорт сведений о завершённых тренировках.</td></tr>
         </tbody>
       </table>
+      <p>API друзей никогда не возвращает email, UUID Supabase Auth, исходное облачное состояние, полную историю подходов, заметки, токен Garmin или данные пульса/калорий. Прямое приглашение содержит только названия/идентичность упражнений и плановые подходы с весом/повторами, после принятия открывается как локальный редактируемый черновик и не синхронизирует подходы в реальном времени.</p>
     </section>
 
     <section>
@@ -309,7 +312,7 @@
       <ul>
         <li>предоставляем, защищаем, диагностируем и поддерживаем функции учётной записи и синхронизации;</li>
         <li>отображаем историю тренировок, прогресс, графики, нагрузку на мышцы, миссии, достижения, ранги и персонализированные рекомендации по тренировкам;</li>
-        <li>показываем защищённый прогресс только его авторизованному владельцу; соревновательный рейтинг между аккаунтами отключён до появления доверенного серверного источника баллов;</li>
+        <li>управляем взаимными запросами в друзья, настройками видимости, удалением и блокировкой; показываем разрешённый самостоятельно внесённый прогресс только подтверждённым друзьям; доставляем ограниченные приглашения с планом, которые без ответа истекают через семь дней;</li>
         <li>обеспечиваем сопряжение с Garmin и передачу тренировок, если вы решите использовать эту функцию;</li>
         <li>отвечаем на запросы в службу поддержки, запросы по вопросам конфиденциальности и удаления учётной записи; и</li>
         <li>выполняем юридические обязательства и защищаем пользователей и сервис от злоупотреблений.</li>
@@ -330,14 +333,14 @@
 
     <section>
       <h3 id="ru-retention">7. Хранение и удаление учётной записи</h3>
-      <p>Мы храним данные активной учётной записи и облачные данные, пока существует ваша учётная запись, чтобы GymApp мог обеспечивать синхронизацию и работу своих функций. Жалобы, ожидающие рассмотрения, хранятся до проверки; рассмотренные жалобы обычно удаляются в течение 90 дней, а также удаляются при удалении заявителя или профиля, на который подана жалоба. На iOS для окончательного удаления учётной записи откройте <strong>Профиль → Аккаунт, конфиденциальность и удаление → Удалить учётную запись</strong> и подтвердите необратимый запрос. В другой версии GymApp, где такой элемент управления отсутствует, обратитесь в службу поддержки для удаления. Успешный запрос удаляет пользователя Supabase Auth и связанные активные облачные записи, включая состояние пользователя, профиль, жалобы и облачные записи Garmin. Затем приложение удаляет локальный сеанс учётной записи и данные учётной записи на этом устройстве.</p>
+      <p>Мы храним данные активной учётной записи и облачные данные, пока существует ваша учётная запись, чтобы GymApp мог обеспечивать синхронизацию и работу своих функций. Приглашение на тренировку без ответа истекает через семь дней. Содержимое упражнений/плана становится доступным для обезличенной очистки через 24 часа после отклонения, отмены или истечения либо через 30 дней после принятия; ограниченная очистка запускается, когда любой участник в следующий раз обновляет экран «Друзья» или входящие приглашения на тренировку, поэтому полностью неактивная запись может сохранять содержимое до такого запуска или удаления аккаунта. Техническая запись ID/статуса/ревизии/идемпотентности и другие записи жизненного цикла дружбы/запросов/блокировок/приватности остаются данными аккаунта до очистки правилами продукта или удаления аккаунта. Жалобы, ожидающие рассмотрения, хранятся до проверки; рассмотренные жалобы обычно удаляются в течение 90 дней, а также удаляются при удалении заявителя или профиля, на который подана жалоба. На iOS для окончательного удаления учётной записи откройте <strong>Профиль → Аккаунт, конфиденциальность и удаление → Удалить учётную запись</strong> и подтвердите необратимый запрос. В другой версии GymApp, где такой элемент управления отсутствует, обратитесь в службу поддержки для удаления. Успешный запрос удаляет пользователя Supabase Auth и связанные активные облачные записи, включая состояние пользователя, профиль, приватный социальный граф/проекции/приглашения, жалобы и облачные записи Garmin. Затем приложение удаляет локальный сеанс учётной записи и данные учётной записи на этом устройстве.</p>
       <p>Удаление приложения с устройства само по себе не удаляет облачную учётную запись. Операционные резервные копии и записи безопасности могут оставаться изолированными до завершения ограниченного цикла резервного копирования поставщика услуг, а информация, которую мы обязаны хранить по закону, может сохраняться только в течение обязательного срока. Такие записи не восстанавливаются в качестве активной учётной записи и не используются для персонализации продукта.</p>
       <p>Если удаление в приложении не удаётся завершить или у вас больше нет доступа к учётной записи, напишите на <a href="mailto:support@gymapptracker.com">support@gymapptracker.com</a>.</p>
     </section>
 
     <section>
       <h3 id="ru-rights">8. Ваш выбор и права</h3>
-      <p>Вы можете редактировать или удалять тренировки, отказаться от локальных уведомлений, не подключать Garmin, экспортировать резервную копию тренировок, выйти из учётной записи и удалить её. Жалобы и блокировка профилей рейтинга недоступны, пока соревновательный рейтинг между аккаунтами отключён. В зависимости от вашего местонахождения вы также можете иметь право на доступ, исправление, удаление, ограничение обработки, возражение против обработки или получение переносимой копии персональных данных, а также право подать жалобу в орган по защите данных. Чтобы воспользоваться правом, свяжитесь с нами; перед выполнением запроса нам может потребоваться подтвердить учётную запись.</p>
+      <p>Вы можете редактировать или удалять тренировки, отказаться от локальных уведомлений, не подключать Garmin, отдельно управлять каждой видимой друзьям категорией, отклонять или отменять запросы/приглашения, удалять или блокировать друга, экспортировать резервную копию, выходить и удалять учётную запись. Удаление или блокировка сразу закрывает этому профилю доступ к деталям друга и незавершённые приглашения. В зависимости от вашего местонахождения вы также можете иметь право на доступ, исправление, удаление, ограничение обработки, возражение против обработки или получение переносимой копии персональных данных, а также право подать жалобу в орган по защите данных. Чтобы воспользоваться правом, свяжитесь с нами; перед выполнением запроса нам может потребоваться подтвердить учётную запись.</p>
     </section>
 
     <section>
