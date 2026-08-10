@@ -179,6 +179,7 @@ Deno.test("Web Push endpoints are HTTPS allowlisted and SSRF lookalikes fail clo
     const endpoint of [
       undefined,
       null,
+      // nosemgrep: gymapp-hardcoded-cleartext-url -- Intentional denied cleartext fixture.
       "http://fcm.googleapis.com/fcm/send/abcdefghijklmnopqrstuvwxyz0123456789",
       "https://fcm.googleapis.com.evil.example/fcm/send/abcdefghijklmnopqrstuvwxyz",
       "https://user@fcm.googleapis.com/fcm/send/abcdefghijklmnopqrstuvwxyz",
