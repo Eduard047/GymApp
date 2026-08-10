@@ -204,6 +204,7 @@ jobs:
             --severity ERROR \
             --error \
             --strict \
+            --timeout 60 \
             --metrics off \
             --max-target-bytes 2000000 \
             --exclude .gradle \
