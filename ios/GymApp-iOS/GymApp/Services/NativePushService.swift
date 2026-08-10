@@ -121,7 +121,7 @@ enum NativePushPayloadParser {
                 "version", "bindingId", "kind", "roomId", "roomRevision"
             ], let eventType = liveKinds[kind],
                let roomID = boundedString(payload["roomId"], maximumBytes: 35),
-               roomID.range(of: #"^lr_[0-9a-f]{32}$"#, options: .regularExpression) != nil,
+               roomID.range(of: "^lr_[0-9a-f]{32}$", options: .regularExpression) != nil,
                let revision = boundedRevision(payload["roomRevision"]) else {
                 return nil
             }
@@ -143,8 +143,8 @@ enum NativePushPayloadParser {
             return nil
         }
         let expectedPattern = typeString.hasPrefix("friend_")
-            ? #"^f_[0-9a-f]{32}$"#
-            : #"^wi_[0-9a-f]{32}$"#
+            ? "^f_[0-9a-f]{32}$"
+            : "^wi_[0-9a-f]{32}$"
         guard objectID.range(of: expectedPattern, options: .regularExpression) != nil else {
             return nil
         }
@@ -222,7 +222,7 @@ enum NativePushPayloadParser {
     private static func versionFourUUID(_ value: String) -> UUID? {
         guard value.utf8.count == 36,
               value.range(
-                of: #"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"#,
+                of: "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
                 options: .regularExpression
               ) != nil else {
             return nil
@@ -288,7 +288,7 @@ struct NativePushBindingStore: NativePushBindingStoring {
               binding.userID.utf8.count == 36,
               UUID(uuidString: binding.userID) != nil,
               binding.tokenDigest.range(
-                of: #"^[0-9a-f]{64}$"#,
+                of: "^[0-9a-f]{64}$",
                 options: .regularExpression
               ) != nil,
               (1 ... 2_147_483_647).contains(binding.registrationRevision) else {
@@ -303,7 +303,7 @@ struct NativePushBindingStore: NativePushBindingStoring {
               binding.userID.utf8.count == 36,
               UUID(uuidString: binding.userID) != nil,
               binding.tokenDigest.range(
-                of: #"^[0-9a-f]{64}$"#,
+                of: "^[0-9a-f]{64}$",
                 options: .regularExpression
               ) != nil,
               (1 ... 2_147_483_647).contains(binding.registrationRevision) else {
@@ -439,7 +439,7 @@ final class SupabaseNativePushBackendClient: NativePushBackendServing {
         appVersion: String?,
         expectedUserID: String
     ) async throws -> NativePushRegistrationResponse {
-        guard token.range(of: #"^[0-9a-f]{32,200}$"#, options: .regularExpression) != nil,
+        guard token.range(of: "^[0-9a-f]{32,200}$", options: .regularExpression) != nil,
               token.utf8.count.isMultiple(of: 2) else {
             throw NativePushError.invalidState
         }
@@ -567,7 +567,7 @@ final class SupabaseNativePushBackendClient: NativePushBackendServing {
               object["environment"] as? String == expectedEnvironment.rawValue,
               let bindingString = object["bindingId"] as? String,
               bindingString.range(
-                of: #"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"#,
+                of: "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
                 options: .regularExpression
               ) != nil,
               let bindingID = UUID(uuidString: bindingString),
@@ -1116,7 +1116,7 @@ final class NativePushManager: ObservableObject {
         let raw = Locale.current.identifier.replacingOccurrences(of: "_", with: "-")
         guard raw.utf8.count <= 35,
               raw.range(
-                of: #"^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8}){0,2}$"#,
+                of: "^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8}){0,2}$",
                 options: .regularExpression
               ) != nil else {
             return nil
@@ -1128,7 +1128,7 @@ final class NativePushManager: ObservableObject {
         guard let value = Bundle.main.object(
             forInfoDictionaryKey: "CFBundleShortVersionString"
         ) as? String,
-        value.range(of: #"^[A-Za-z0-9._+-]{1,32}$"#, options: .regularExpression) != nil else {
+        value.range(of: "^[A-Za-z0-9._+-]{1,32}$", options: .regularExpression) != nil else {
             return nil
         }
         return value

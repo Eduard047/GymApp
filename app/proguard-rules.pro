@@ -30,3 +30,7 @@
 -keep class com.example.gymapp.push.PushReconciliationWorker {
     public <init>(android.content.Context, androidx.work.WorkerParameters);
 }
+
+# kotlinx-coroutines-slf4j supports an optional SLF4J 1.x binding. GymApp does
+# not install that backend, so its legacy discovery class is intentionally absent.
+-dontwarn org.slf4j.impl.StaticLoggerBinder
