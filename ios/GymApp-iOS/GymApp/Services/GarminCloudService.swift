@@ -59,21 +59,24 @@ struct GarminPendingRevocation: Codable, Equatable, Sendable {
     let userID: String
     let deviceID: String
     let cleanupKind: GarminPendingCleanupKind
+    let creationRequestID: String?
 
     init(
         version: Int,
         userID: String,
         deviceID: String,
-        cleanupKind: GarminPendingCleanupKind = .revoke
+        cleanupKind: GarminPendingCleanupKind = .revoke,
+        creationRequestID: String? = nil
     ) {
         self.version = version
         self.userID = userID
         self.deviceID = deviceID
         self.cleanupKind = cleanupKind
+        self.creationRequestID = creationRequestID
     }
 
     private enum CodingKeys: String, CodingKey {
-        case version, userID, deviceID, cleanupKind
+        case version, userID, deviceID, cleanupKind, creationRequestID
     }
 
     init(from decoder: any Decoder) throws {
@@ -87,6 +90,10 @@ struct GarminPendingRevocation: Codable, Equatable, Sendable {
             GarminPendingCleanupKind.self,
             forKey: .cleanupKind
         ) ?? .revoke
+        creationRequestID = try container.decodeIfPresent(
+            String.self,
+            forKey: .creationRequestID
+        )
     }
 }
 
@@ -165,7 +172,10 @@ struct GarminDeviceBindingStore {
               let value = try? decoder.decode(GarminPendingRevocation.self, from: data),
               value.version == GarminDeviceBinding.currentVersion,
               value.userID == userID,
-              canonicalUUID(value.deviceID) == value.deviceID else {
+              canonicalUUID(value.deviceID) == value.deviceID,
+              value.creationRequestID.map({
+                  canonicalVersion4UUIDString($0) == $0
+              }) ?? true else {
             throw GarminCloudError.invalidBinding
         }
         return value
@@ -174,10 +184,14 @@ struct GarminDeviceBindingStore {
     func savePendingRevocation(
         userID: String,
         deviceID: String,
-        cleanupKind: GarminPendingCleanupKind = .revoke
+        cleanupKind: GarminPendingCleanupKind = .revoke,
+        creationRequestID: String? = nil
     ) throws {
         let userID = try canonicalUserID(userID)
-        guard canonicalUUID(deviceID) == deviceID else {
+        guard canonicalUUID(deviceID) == deviceID,
+              creationRequestID.map({
+                  canonicalVersion4UUIDString($0) == $0
+              }) ?? true else {
             throw GarminCloudError.invalidBinding
         }
         let data = try encoder.encode(
@@ -185,7 +199,8 @@ struct GarminDeviceBindingStore {
                 version: GarminDeviceBinding.currentVersion,
                 userID: userID,
                 deviceID: deviceID,
-                cleanupKind: cleanupKind
+                cleanupKind: cleanupKind,
+                creationRequestID: creationRequestID
             )
         )
         guard data.count <= Self.maximumRecordBytes else {
@@ -254,7 +269,8 @@ struct GarminDeviceBindingStore {
             try savePendingRevocation(
                 userID: userID,
                 deviceID: creation.deviceID,
-                cleanupKind: cleanupKind
+                cleanupKind: cleanupKind,
+                creationRequestID: creation.requestID
             )
         }
         try keychain.delete(account: account)
@@ -284,7 +300,10 @@ struct GarminDeviceBindingStore {
     ) throws {
         let userID = try canonicalUserID(cleanup.userID)
         guard cleanup.version == GarminDeviceBinding.currentVersion,
-              canonicalUUID(cleanup.deviceID) == cleanup.deviceID else {
+              canonicalUUID(cleanup.deviceID) == cleanup.deviceID,
+              cleanup.creationRequestID.map({
+                  canonicalVersion4UUIDString($0) == $0
+              }) ?? true else {
             throw GarminCloudError.invalidBinding
         }
         let account = pendingCreationAccount(for: userID)
@@ -296,11 +315,20 @@ struct GarminDeviceBindingStore {
             try keychain.delete(account: account)
             throw GarminCloudError.invalidBinding
         }
-        let creationKind: GarminPendingCleanupKind = creation.legacyFallbackAttempted
-            ? .legacyRecovery
-            : .revoke
-        guard creation.deviceID == cleanup.deviceID,
-              creationKind == cleanup.cleanupKind else {
+        let matchesCleanup: Bool
+        if let requestID = cleanup.creationRequestID {
+            // Legacy createDevice generated its own device ID. The original
+            // CSPRNG request ID is the only exact, nonsecret correlation that
+            // survives a successful response and a later Keychain delete failure.
+            matchesCleanup = creation.requestID == requestID
+        } else {
+            let creationKind: GarminPendingCleanupKind = creation.legacyFallbackAttempted
+                ? .legacyRecovery
+                : .revoke
+            matchesCleanup = creation.deviceID == cleanup.deviceID
+                && creationKind == cleanup.cleanupKind
+        }
+        guard matchesCleanup else {
             throw GarminCloudError.pendingRevocation
         }
         try keychain.delete(account: account)
@@ -739,6 +767,7 @@ final class GarminCloudService: ObservableObject {
             result,
             identity: identity,
             token: session.accessToken,
+            creationRequestID: creation.requestID,
             clearPendingCreation: true
         )
         lastMessage = "Device token created. Paste it into Garmin Connect IQ settings."
@@ -1156,12 +1185,14 @@ final class GarminCloudService: ObservableObject {
         _ result: ParsedPairingResult,
         identity: ActiveIdentity,
         token: String,
+        creationRequestID: String,
         clearPendingCreation: Bool
     ) async throws {
         do {
             try bindingStore.savePendingRevocation(
                 userID: identity.canonicalUserID,
-                deviceID: result.summary.id
+                deviceID: result.summary.id,
+                creationRequestID: creationRequestID
             )
         } catch {
             if await bestEffortRevoke(
@@ -1172,6 +1203,7 @@ final class GarminCloudService: ObservableObject {
                 try? clearConfirmedCreationCleanup(
                     userID: identity.canonicalUserID,
                     deviceID: result.summary.id,
+                    creationRequestID: creationRequestID,
                     clearPendingCreation: clearPendingCreation
                 )
             }
@@ -1189,6 +1221,7 @@ final class GarminCloudService: ObservableObject {
                 try? clearConfirmedCreationCleanup(
                     userID: identity.canonicalUserID,
                     deviceID: result.summary.id,
+                    creationRequestID: creationRequestID,
                     clearPendingCreation: clearPendingCreation
                 )
             }
@@ -1205,6 +1238,7 @@ final class GarminCloudService: ObservableObject {
             try clearConfirmedCreationCleanup(
                 userID: identity.canonicalUserID,
                 deviceID: result.summary.id,
+                creationRequestID: creationRequestID,
                 clearPendingCreation: clearPendingCreation
             )
         } catch {
@@ -1217,6 +1251,7 @@ final class GarminCloudService: ObservableObject {
                 try? clearConfirmedCreationCleanup(
                     userID: identity.canonicalUserID,
                     deviceID: result.summary.id,
+                    creationRequestID: creationRequestID,
                     clearPendingCreation: clearPendingCreation
                 )
             }
@@ -1227,7 +1262,8 @@ final class GarminCloudService: ObservableObject {
         } catch {
             try? bindingStore.savePendingRevocation(
                 userID: identity.canonicalUserID,
-                deviceID: result.summary.id
+                deviceID: result.summary.id,
+                creationRequestID: creationRequestID
             )
             if await bestEffortRevoke(
                 deviceID: result.summary.id,
@@ -1238,6 +1274,7 @@ final class GarminCloudService: ObservableObject {
                 try? clearConfirmedCreationCleanup(
                     userID: identity.canonicalUserID,
                     deviceID: result.summary.id,
+                    creationRequestID: creationRequestID,
                     clearPendingCreation: clearPendingCreation
                 )
             }
@@ -1250,16 +1287,18 @@ final class GarminCloudService: ObservableObject {
     private func clearConfirmedCreationCleanup(
         userID: String,
         deviceID: String,
+        creationRequestID: String,
         clearPendingCreation: Bool
     ) throws {
         let expected = GarminPendingRevocation(
             version: GarminDeviceBinding.currentVersion,
             userID: userID,
-            deviceID: deviceID
+            deviceID: deviceID,
+            creationRequestID: creationRequestID
         )
         if clearPendingCreation {
-            // Exact owner/device/kind scrubbing must precede marker removal.
-            // If Keychain deletion fails, the marker remains to block replay.
+            // Exact owner/request scrubbing must precede marker removal. This
+            // also covers the legacy endpoint's server-generated device ID.
             try bindingStore.clearPendingCreation(matching: expected)
         }
         if let pending = try bindingStore.pendingRevocation(for: userID) {

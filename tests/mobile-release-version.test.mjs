@@ -6,9 +6,9 @@ const expected = Object.freeze({
   marketingVersion: "3.0.6",
   androidVersionCode: "2000305332",
   iosBuildNumber: "24",
-  pwaBundle: "app.v83.js",
+  pwaBundle: "app.v84.js",
   pwaRussianBundle: "russian-text.v76.js",
-  pwaCache: "gym-pwa-v119",
+  pwaCache: "gym-pwa-v120",
 });
 
 const [

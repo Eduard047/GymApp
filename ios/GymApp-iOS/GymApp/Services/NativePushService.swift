@@ -324,6 +324,18 @@ struct NativePushPendingRevocation: Codable, Equatable, Sendable {
     let registrationRevision: Int
 }
 
+/// Restart-safe proof that an installation may have been registered for this exact
+/// account session even when the registration response was fenced before a binding
+/// could be stored. Provider tokens never enter this record.
+struct NativePushInstallationCleanupIntent: Codable, Equatable, Hashable, Sendable {
+    static let currentVersion = 1
+
+    let version: Int
+    let installationID: UUID
+    let userID: String
+    let authSessionID: String
+}
+
 private struct NativePushDeliveryRecord: Codable, Equatable, Sendable {
     let key: String
     let revision: Int
@@ -346,11 +358,17 @@ protocol NativePushBindingStoring {
     func loadLegacyBinding() throws -> NativePushLegacyBinding?
     func saveBinding(_ binding: NativePushBinding) throws
     func clearBinding() throws
+    func clearBinding(_ expected: NativePushBinding) throws -> Bool
     func clearLegacyBinding(_ expected: NativePushLegacyBinding) throws -> Bool
     func clearDeliveryState() throws
     func loadPendingRevocation() throws -> NativePushPendingRevocation?
     func savePendingRevocation(_ pending: NativePushPendingRevocation) throws
     func clearPendingRevocation(_ expected: NativePushPendingRevocation) throws -> Bool
+    func loadInstallationCleanupIntents() throws -> [NativePushInstallationCleanupIntent]
+    func saveInstallationCleanupIntent(_ intent: NativePushInstallationCleanupIntent) throws
+    func clearInstallationCleanupIntent(
+        _ expected: NativePushInstallationCleanupIntent
+    ) throws -> Bool
     func canDisplay(_ event: NativePushRemoteEvent, binding: NativePushBinding) throws -> Bool
     func commitDisplayed(_ event: NativePushRemoteEvent, binding: NativePushBinding) throws -> Bool
 }
@@ -360,12 +378,15 @@ struct NativePushBindingStore: NativePushBindingStoring {
     private let installationAccount = "native-push-installation-v1"
     private let bindingAccount = "native-push-binding-v1"
     private let pendingRevocationAccount = "native-push-pending-revocation-v1"
+    private let installationCleanupAccount = "native-push-installation-cleanup-v1"
     private let deliveryStateAccount = "native-push-delivery-state-v1"
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
 
     private static let maximumBindingBytes = 2 * 1_024
     private static let maximumPendingRevocationBytes = 2 * 1_024
+    private static let maximumInstallationCleanupBytes = 8 * 1_024
+    private static let maximumInstallationCleanupIntents = 8
     private static let maximumDeliveryStateBytes = 32 * 1_024
     private static let maximumDeliveryRecords = 128
 
@@ -444,6 +465,13 @@ struct NativePushBindingStore: NativePushBindingStoring {
         if let firstError { throw firstError }
     }
 
+    func clearBinding(_ expected: NativePushBinding) throws -> Bool {
+        guard let current = try loadBinding() else { return true }
+        guard current == expected else { return false }
+        try clearBinding()
+        return true
+    }
+
     func clearLegacyBinding(_ expected: NativePushLegacyBinding) throws -> Bool {
         guard let data = try keychain.read(account: bindingAccount) else { return true }
         guard data.count <= Self.maximumBindingBytes,
@@ -485,6 +513,65 @@ struct NativePushBindingStore: NativePushBindingStoring {
         guard current == expected else { return false }
         try keychain.delete(account: pendingRevocationAccount)
         return true
+    }
+
+    func loadInstallationCleanupIntents() throws -> [NativePushInstallationCleanupIntent] {
+        guard let data = try keychain.read(account: installationCleanupAccount) else { return [] }
+        guard data.count <= Self.maximumInstallationCleanupBytes,
+              let intents = try? decoder.decode(
+                  [NativePushInstallationCleanupIntent].self,
+                  from: data
+              ),
+              intents.count <= Self.maximumInstallationCleanupIntents,
+              Set(intents).count == intents.count,
+              intents.allSatisfy(Self.isValid) else {
+            throw NativePushError.invalidState
+        }
+        return intents
+    }
+
+    func saveInstallationCleanupIntent(
+        _ intent: NativePushInstallationCleanupIntent
+    ) throws {
+        guard Self.isValid(intent) else { throw NativePushError.invalidState }
+        var intents = try loadInstallationCleanupIntents()
+        if !intents.contains(intent) {
+            guard intents.count < Self.maximumInstallationCleanupIntents else {
+                throw NativePushError.invalidState
+            }
+            intents.append(intent)
+        }
+        try saveInstallationCleanupIntents(intents)
+    }
+
+    func clearInstallationCleanupIntent(
+        _ expected: NativePushInstallationCleanupIntent
+    ) throws -> Bool {
+        var intents = try loadInstallationCleanupIntents()
+        guard let index = intents.firstIndex(of: expected) else { return true }
+        intents.remove(at: index)
+        if intents.isEmpty {
+            try keychain.delete(account: installationCleanupAccount)
+        } else {
+            try saveInstallationCleanupIntents(intents)
+        }
+        return true
+    }
+
+    private func saveInstallationCleanupIntents(
+        _ intents: [NativePushInstallationCleanupIntent]
+    ) throws {
+        guard !intents.isEmpty,
+              intents.count <= Self.maximumInstallationCleanupIntents,
+              Set(intents).count == intents.count,
+              intents.allSatisfy(Self.isValid) else {
+            throw NativePushError.invalidState
+        }
+        let data = try encoder.encode(intents)
+        guard data.count <= Self.maximumInstallationCleanupBytes else {
+            throw NativePushError.invalidState
+        }
+        try keychain.save(data, account: installationCleanupAccount)
     }
 
     func canDisplay(
@@ -591,6 +678,13 @@ struct NativePushBindingStore: NativePushBindingStoring {
             && canonicalUUID(pending.authSessionID) != nil
             && isVersionFourUUID(pending.bindingID)
             && (1 ... 2_147_483_647).contains(pending.registrationRevision)
+    }
+
+    private static func isValid(_ intent: NativePushInstallationCleanupIntent) -> Bool {
+        intent.version == NativePushInstallationCleanupIntent.currentVersion
+            && isVersionFourUUID(intent.installationID)
+            && canonicalUUID(intent.userID) != nil
+            && canonicalUUID(intent.authSessionID) != nil
     }
 
     private static func isValid(_ state: NativePushDeliveryState) -> Bool {
@@ -727,7 +821,7 @@ protocol NativePushBackendServing: AnyObject {
         expectedUserID: String
     ) async throws -> NativePushRegistrationResponse
 
-    func revoke(installationID: UUID, expectedUserID: String) async throws
+    func revoke(installationID: UUID, expectedUserID: String) async throws -> Bool
 }
 
 enum NativePushError: LocalizedError {
@@ -798,7 +892,7 @@ final class SupabaseNativePushBackendClient: NativePushBackendServing {
         )
     }
 
-    func revoke(installationID: UUID, expectedUserID: String) async throws {
+    func revoke(installationID: UUID, expectedUserID: String) async throws -> Bool {
         let data = try await authenticatedRequest(
             path: "/rest/v1/rpc/notification_revoke_installation",
             body: ["p_installation_id": installationID.uuidString.lowercased()],
@@ -809,9 +903,10 @@ final class SupabaseNativePushBackendClient: NativePushBackendServing {
               Self.exactInteger(object["version"]) == 1,
               let returnedID = object["installationId"] as? String,
               UUID(uuidString: returnedID) == installationID,
-              object["revoked"] is Bool else {
+              let revoked = Self.exactBoolean(object["revoked"]) else {
             throw NativePushError.invalidResponse
         }
+        return revoked
     }
 
     private func authenticatedRequest(
@@ -931,6 +1026,14 @@ final class SupabaseNativePushBackendClient: NativePushBackendServing {
             return nil
         }
         return Int(double)
+    }
+
+    private static func exactBoolean(_ value: Any?) -> Bool? {
+        guard let number = value as? NSNumber,
+              CFGetTypeID(number) == CFBooleanGetTypeID() else {
+            return nil
+        }
+        return number.boolValue
     }
 }
 
@@ -1065,6 +1168,7 @@ final class NativePushManager: ObservableObject {
 
     private var binding: NativePushBinding?
     private var pendingRevocation: NativePushPendingRevocation?
+    private var installationCleanupIntents: [NativePushInstallationCleanupIntent] = []
     private var legacyRevocationSource: NativePushLegacyBinding?
     private var deviceToken: Data?
     private var currentUserID: String?
@@ -1083,6 +1187,7 @@ final class NativePushManager: ObservableObject {
     private static let enabledDefaultsKey = "gymapp.native-push.enabled.v1"
     private static let revocationFenceBindingDefaultsKey =
         "gymapp.native-push.revocation-fence-binding.v1"
+    private static let maximumInstallationCleanupIntents = 8
 
     var isEnabled: Bool { defaults.bool(forKey: Self.enabledDefaultsKey) }
 
@@ -1108,11 +1213,18 @@ final class NativePushManager: ObservableObject {
             let installationID = try store.installationID()
             self.installationID = installationID
             var pending = try store.loadPendingRevocation()
+            let installationCleanupIntents = try store.loadInstallationCleanupIntents()
+            self.installationCleanupIntents = installationCleanupIntents
             let stored = try store.loadBinding()
             let legacy = stored == nil ? try store.loadLegacyBinding() : nil
             var fenceBindingID = try revocationFenceBindingID()
             var storageUnavailable = false
             if let pending, pending.installationID != installationID {
+                throw NativePushError.invalidState
+            }
+            if installationCleanupIntents.contains(where: {
+                $0.installationID != installationID
+            }) {
                 throw NativePushError.invalidState
             }
             if let stored, stored.installationID != installationID {
@@ -1163,7 +1275,14 @@ final class NativePushManager: ObservableObject {
                 let matchesCurrentOwner = stored.userID == currentUserID
                     && stored.authSessionID == currentAuthSessionID
                     && stored.environment == environment
-                if !isEnabled || fenceBindingID != nil || !matchesCurrentOwner {
+                if !installationCleanupIntents.isEmpty {
+                    binding = nil
+                    do {
+                        try store.clearDeliveryState()
+                    } catch {
+                        storageUnavailable = true
+                    }
+                } else if !isEnabled || fenceBindingID != nil || !matchesCurrentOwner {
                     let recovered = Self.pendingRevocation(for: stored)
                     pendingRevocation = recovered
                     binding = nil
@@ -1198,7 +1317,7 @@ final class NativePushManager: ObservableObject {
                 } catch {
                     storageUnavailable = true
                 }
-            } else if fenceBindingID != nil {
+            } else if fenceBindingID != nil, installationCleanupIntents.isEmpty {
                 // UserDefaults can be restored while this-device-only Keychain records
                 // cannot. With no durable source, the opaque fence cannot authorize a
                 // revoke and must not permanently brick future registration.
@@ -1210,14 +1329,19 @@ final class NativePushManager: ObservableObject {
                     storageUnavailable = true
                 }
             }
-            isFenced = currentUserID == nil || currentAuthSessionID == nil
-            if storageUnavailable || (isFenced && currentUserID != nil) {
+            isFenced = currentUserID == nil
+                || currentAuthSessionID == nil
+                || !installationCleanupIntents.isEmpty
+            if storageUnavailable {
                 status = .unavailable
-            } else if pendingRevocation?.userID == currentUserID
+            } else if !installationCleanupIntents.isEmpty
+                        || pendingRevocation?.userID == currentUserID
                         || legacyRevocationSource.map({
                             Self.sameUserID($0.userID, currentUserID)
                         }) == true {
                 status = .revocationPending
+            } else if isFenced && currentUserID != nil {
+                status = .unavailable
             } else {
                 status = isEnabled && binding != nil && !isFenced ? .active : .disabled
             }
@@ -1225,6 +1349,7 @@ final class NativePushManager: ObservableObject {
             installationID = nil
             binding = nil
             pendingRevocation = nil
+            installationCleanupIntents = []
             legacyRevocationSource = nil
             isFenced = true
             status = .unavailable
@@ -1246,6 +1371,19 @@ final class NativePushManager: ObservableObject {
             authSessionID: binding.authSessionID,
             bindingID: binding.bindingID,
             registrationRevision: binding.registrationRevision
+        )
+    }
+
+    private static func installationCleanupIntent(
+        installationID: UUID,
+        userID: String,
+        authSessionID: String
+    ) -> NativePushInstallationCleanupIntent {
+        NativePushInstallationCleanupIntent(
+            version: NativePushInstallationCleanupIntent.currentVersion,
+            installationID: installationID,
+            userID: userID,
+            authSessionID: authSessionID
         )
     }
 
@@ -1282,6 +1420,37 @@ final class NativePushManager: ObservableObject {
             return false
         }
         return left == right
+    }
+
+    private static func binding(
+        _ binding: NativePushBinding,
+        matches intent: NativePushInstallationCleanupIntent
+    ) -> Bool {
+        binding.installationID == intent.installationID
+            && binding.userID == intent.userID
+            && binding.authSessionID == intent.authSessionID
+    }
+
+    private static func binding(
+        _ binding: NativePushBinding,
+        matches pending: NativePushPendingRevocation
+    ) -> Bool {
+        binding.installationID == pending.installationID
+            && binding.userID == pending.userID
+            && binding.authSessionID == pending.authSessionID
+            && binding.bindingID == pending.bindingID
+    }
+
+    private func clearRevocationFenceIfNoDurableSources() throws {
+        let storedBinding = try store.loadBinding()
+        let storedLegacy = storedBinding == nil ? try store.loadLegacyBinding() : nil
+        guard storedBinding == nil,
+              storedLegacy == nil,
+              try store.loadPendingRevocation() == nil,
+              try store.loadInstallationCleanupIntents().isEmpty else {
+            return
+        }
+        guard clearRevocationFence() else { throw NativePushError.invalidState }
     }
 
     private func revocationFenceBindingID() throws -> UUID? {
@@ -1335,6 +1504,13 @@ final class NativePushManager: ObservableObject {
               sessionEndUserID != userID else {
             return
         }
+        guard await retryInstallationCleanupIntentsIfPossible(
+            expectedUserID: userID,
+            expectedAuthSessionID: authSessionID
+        ) else {
+            status = .revocationPending
+            return
+        }
         guard await retryPendingRevocationIfPossible(
             expectedUserID: userID,
             expectedAuthSessionID: authSessionID
@@ -1350,6 +1526,14 @@ final class NativePushManager: ObservableObject {
             return
         }
         guard ensureForeignRevocationSourceIsDurable(expectedUserID: userID) else {
+            isFenced = true
+            status = .unavailable
+            return
+        }
+        guard ensureInstallationCleanupIntentsAreDurable(
+            expectedUserID: userID,
+            expectedAuthSessionID: authSessionID
+        ) else {
             isFenced = true
             status = .unavailable
             return
@@ -1409,7 +1593,9 @@ final class NativePushManager: ObservableObject {
         defaults.set(false, forKey: Self.enabledDefaultsKey)
         let userID = auth.session?.cloud?.userID
         await fenceAndRevoke(expectedUserID: userID)
-        status = pendingRevocation == nil && legacyRevocationSource == nil
+        status = installationCleanupIntents.isEmpty
+            && pendingRevocation == nil
+            && legacyRevocationSource == nil
             ? (permissionState == .denied ? .denied : .disabled)
             : .revocationPending
     }
@@ -1566,6 +1752,25 @@ final class NativePushManager: ObservableObject {
         let authSessionID = NativePushAuthSessionIdentity.sessionID(from: cloud)
         guard userID != currentUserID || authSessionID != currentAuthSessionID else { return }
         let previousUserID = currentUserID
+        let previousAuthSessionID = currentAuthSessionID
+        let hasPossiblePreviousRegistration = pendingRegistrationKey != nil
+            || binding.map({
+                $0.userID == previousUserID && $0.authSessionID == previousAuthSessionID
+            }) == true
+            || pendingRevocation.map({
+                $0.userID == previousUserID && $0.authSessionID == previousAuthSessionID
+            }) == true
+            || legacyRevocationSource.map({
+                Self.sameUserID($0.userID, previousUserID)
+            }) == true
+        if hasPossiblePreviousRegistration,
+           let previousUserID,
+           let previousAuthSessionID {
+            _ = prepareInstallationCleanupIntent(
+                expectedUserID: previousUserID,
+                expectedAuthSessionID: previousAuthSessionID
+            )
+        }
         if let binding {
             _ = persistPendingRevocation(for: binding)
         }
@@ -1602,13 +1807,35 @@ final class NativePushManager: ObservableObject {
     }
 
     private func fenceAndRevoke(expectedUserID: String?) async {
+        let expectedAuthSessionID = currentAuthSessionID
+        let hasPossibleRegistration = pendingRegistrationKey != nil
+            || binding.map({
+                expectedUserID == nil || $0.userID == expectedUserID
+            }) == true
+            || pendingRevocation.map({
+                expectedUserID == nil || $0.userID == expectedUserID
+            }) == true
+            || legacyRevocationSource.map({
+                expectedUserID == nil || Self.sameUserID($0.userID, expectedUserID)
+            }) == true
+        let installationCleanupIntent: NativePushInstallationCleanupIntent?
+        if hasPossibleRegistration,
+           let expectedUserID,
+           let expectedAuthSessionID,
+           currentUserID == expectedUserID {
+            installationCleanupIntent = prepareInstallationCleanupIntent(
+                expectedUserID: expectedUserID,
+                expectedAuthSessionID: expectedAuthSessionID
+            )
+        } else {
+            installationCleanupIntent = nil
+        }
         if let binding,
            expectedUserID == nil || binding.userID == expectedUserID {
             _ = persistPendingRevocation(for: binding)
         }
         lifecycleGeneration &+= 1
         let generation = lifecycleGeneration
-        let expectedAuthSessionID = currentAuthSessionID
         lifecycleCleanupPending = true
         deliveryTail?.cancel()
         isFenced = true
@@ -1628,8 +1855,16 @@ final class NativePushManager: ObservableObject {
             expectedAuthSessionID: expectedAuthSessionID,
             reactivate: false
         )
+        let serverCleanup = installationCleanupIntent.map {
+            enqueueInstallationCleanup($0)
+        }
         await cleanup.value
+        await serverCleanup?.value
         guard lifecycleGeneration == generation else { return }
+        if let installationCleanupIntent,
+           installationCleanupIntents.contains(installationCleanupIntent) {
+            return
+        }
         guard let expectedUserID,
               let authSessionID = expectedAuthSessionID,
               currentAuthSessionID == authSessionID,
@@ -1711,6 +1946,69 @@ final class NativePushManager: ObservableObject {
         }
     }
 
+    /// Persists a provider-token-free cleanup source before delivery is fenced. The
+    /// returned value is also queued for an immediate best-effort revoke when a write
+    /// fails, while the manager remains unavailable rather than rearming delivery.
+    private func prepareInstallationCleanupIntent(
+        expectedUserID: String,
+        expectedAuthSessionID: String
+    ) -> NativePushInstallationCleanupIntent? {
+        guard let installationID else {
+            status = .unavailable
+            return nil
+        }
+        let intent = Self.installationCleanupIntent(
+            installationID: installationID,
+            userID: expectedUserID,
+            authSessionID: expectedAuthSessionID
+        )
+        do {
+            try store.saveInstallationCleanupIntent(intent)
+            let durable = try store.loadInstallationCleanupIntents()
+            guard durable.contains(intent),
+                  durable.allSatisfy({ $0.installationID == installationID }) else {
+                throw NativePushError.invalidState
+            }
+            installationCleanupIntents = durable
+        } catch {
+            if !installationCleanupIntents.contains(intent),
+               installationCleanupIntents.count < Self.maximumInstallationCleanupIntents {
+                installationCleanupIntents.append(intent)
+            }
+            status = .unavailable
+        }
+        return intent
+    }
+
+    /// Re-commit every unresolved foreign-owner intent before a replacement account
+    /// is allowed to contact registration. A successful replacement can then clear
+    /// only the exact snapshot it durably superseded.
+    private func ensureInstallationCleanupIntentsAreDurable(
+        expectedUserID: String,
+        expectedAuthSessionID: String
+    ) -> Bool {
+        guard !installationCleanupIntents.contains(where: {
+            $0.userID == expectedUserID && $0.authSessionID == expectedAuthSessionID
+        }) else {
+            return false
+        }
+        do {
+            for intent in installationCleanupIntents {
+                try store.saveInstallationCleanupIntent(intent)
+            }
+            let durable = try store.loadInstallationCleanupIntents()
+            guard Set(installationCleanupIntents).isSubset(of: Set(durable)),
+                  durable.allSatisfy({ $0.installationID == installationID }) else {
+                throw NativePushError.invalidState
+            }
+            installationCleanupIntents = durable
+            return true
+        } catch {
+            status = .unavailable
+            return false
+        }
+    }
+
     /// A different account can replace a server binding only after the previous
     /// owner's cleanup source is known to survive a process restart. Rewriting and
     /// reading the marker back avoids treating an in-memory value from a failed
@@ -1785,6 +2083,141 @@ final class NativePushManager: ObservableObject {
         }
     }
 
+    private func clearInstallationCleanupIntentsSupersededByRegistration(
+        _ intents: [NativePushInstallationCleanupIntent],
+        replacement: NativePushBinding
+    ) throws {
+        guard try store.loadBinding() == replacement,
+              intents.allSatisfy({ $0.installationID == replacement.installationID }) else {
+            throw NativePushError.invalidState
+        }
+        for intent in intents {
+            guard try store.clearInstallationCleanupIntent(intent) else {
+                throw NativePushError.invalidState
+            }
+            installationCleanupIntents.removeAll { $0 == intent }
+        }
+    }
+
+    private func retryInstallationCleanupIntentsIfPossible(
+        expectedUserID: String,
+        expectedAuthSessionID: String
+    ) async -> Bool {
+        guard currentUserID == expectedUserID,
+              currentAuthSessionID == expectedAuthSessionID,
+              authIdentityMatches(
+                  userID: expectedUserID,
+                  authSessionID: expectedAuthSessionID
+              ) else {
+            return false
+        }
+        let matching = installationCleanupIntents.filter {
+            $0.userID == expectedUserID
+        }
+        for intent in matching {
+            let task = enqueueInstallationCleanup(intent)
+            await task.value
+            if installationCleanupIntents.contains(intent) {
+                return false
+            }
+        }
+        return true
+    }
+
+    /// This operation deliberately has no lifecycle-generation guard. It is appended
+    /// to `backendTail`, so an earlier registration finishes first and the revoke is
+    /// still attempted even when that registration response is no longer eligible to
+    /// mutate local state.
+    private func enqueueInstallationCleanup(
+        _ intent: NativePushInstallationCleanupIntent
+    ) -> Task<Void, Never> {
+        enqueueBackendOperation { [weak self] in
+            guard let self else { return }
+            let revoked: Bool
+            do {
+                revoked = try await self.backend.revoke(
+                    installationID: intent.installationID,
+                    expectedUserID: intent.userID
+                )
+            } catch {
+                if self.installationCleanupIntents.contains(intent),
+                   self.currentUserID == intent.userID {
+                    self.status = .revocationPending
+                }
+                return
+            }
+
+            do {
+                let storedPending = try self.store.loadPendingRevocation()
+                let pendingMatchesIntent = storedPending.map {
+                    $0.installationID == intent.installationID
+                        && $0.userID == intent.userID
+                        && $0.authSessionID == intent.authSessionID
+                } == true
+                let canClearWholeInstallation = revoked && pendingMatchesIntent
+                if canClearWholeInstallation {
+                    // A durable post-registration marker proves this owner replaced
+                    // any older installation row. A `true` response additionally
+                    // proves that this owner was the current server row, so every
+                    // older local source for the same installation is stale.
+                    try self.store.clearBinding()
+                    self.binding = nil
+                    self.legacyRevocationSource = nil
+                } else if let stored = try self.store.loadBinding(),
+                          Self.binding(stored, matches: intent) {
+                    guard try self.store.clearBinding(stored) else {
+                        throw NativePushError.invalidState
+                    }
+                    if self.binding == stored { self.binding = nil }
+                }
+                if let pending = storedPending,
+                   pendingMatchesIntent {
+                    guard try self.store.clearPendingRevocation(pending) else {
+                        throw NativePushError.invalidState
+                    }
+                    if self.pendingRevocation == pending {
+                        self.pendingRevocation = nil
+                    }
+                }
+                if !canClearWholeInstallation,
+                   let legacy = try self.store.loadLegacyBinding(),
+                   legacy.installationID == intent.installationID,
+                   Self.sameUserID(legacy.userID, intent.userID) {
+                    guard try self.store.clearLegacyBinding(legacy) else {
+                        throw NativePushError.invalidState
+                    }
+                    if self.legacyRevocationSource == legacy {
+                        self.legacyRevocationSource = nil
+                    }
+                }
+                let intentsToClear: [NativePushInstallationCleanupIntent]
+                if canClearWholeInstallation {
+                    let durable = try self.store.loadInstallationCleanupIntents()
+                    intentsToClear = Array(Set(
+                        durable.filter { $0.installationID == intent.installationID }
+                            + self.installationCleanupIntents.filter {
+                                $0.installationID == intent.installationID
+                            }
+                    ))
+                } else {
+                    intentsToClear = [intent]
+                }
+                for cleanupIntent in intentsToClear {
+                    guard try self.store.clearInstallationCleanupIntent(cleanupIntent) else {
+                        throw NativePushError.invalidState
+                    }
+                }
+                self.installationCleanupIntents = try self.store
+                    .loadInstallationCleanupIntents()
+                try self.clearRevocationFenceIfNoDurableSources()
+            } catch {
+                if self.currentUserID == intent.userID {
+                    self.status = .unavailable
+                }
+            }
+        }
+    }
+
     private func retryPendingRevocationIfPossible(
         expectedUserID: String,
         expectedAuthSessionID: String
@@ -1812,8 +2245,9 @@ final class NativePushManager: ObservableObject {
                   ) else {
                 return
             }
+            let revoked: Bool
             do {
-                try await self.backend.revoke(
+                revoked = try await self.backend.revoke(
                     installationID: pending.installationID,
                     expectedUserID: expectedUserID
                 )
@@ -1838,13 +2272,37 @@ final class NativePushManager: ObservableObject {
                 return
             }
             do {
-                try self.store.clearBinding()
-                guard self.clearRevocationFence(),
-                      try self.store.clearPendingRevocation(pending) else {
+                if revoked {
+                    try self.store.clearBinding()
+                    self.binding = nil
+                    self.legacyRevocationSource = nil
+                } else if let stored = try self.store.loadBinding(),
+                          Self.binding(stored, matches: pending) {
+                    guard try self.store.clearBinding(stored) else {
+                        throw NativePushError.invalidState
+                    }
+                    if self.binding == stored { self.binding = nil }
+                }
+                if !revoked,
+                   let legacy = try self.store.loadLegacyBinding(),
+                   legacy.installationID == pending.installationID,
+                   Self.sameUserID(legacy.userID, pending.userID),
+                   legacy.bindingID == pending.bindingID {
+                    guard try self.store.clearLegacyBinding(legacy) else {
+                        throw NativePushError.invalidState
+                    }
+                    if self.legacyRevocationSource == legacy {
+                        self.legacyRevocationSource = nil
+                    }
+                }
+                guard try self.store.clearPendingRevocation(pending) else {
                     self.status = .unavailable
                     return
                 }
-                self.pendingRevocation = nil
+                if self.pendingRevocation == pending {
+                    self.pendingRevocation = nil
+                }
+                try self.clearRevocationFenceIfNoDurableSources()
             } catch {
                 self.status = .unavailable
             }
@@ -1881,7 +2339,7 @@ final class NativePushManager: ObservableObject {
                 return
             }
             do {
-                try await self.backend.revoke(
+                _ = try await self.backend.revoke(
                     installationID: legacy.installationID,
                     expectedUserID: expectedUserID
                 )
@@ -1906,12 +2364,14 @@ final class NativePushManager: ObservableObject {
                 return
             }
             do {
-                guard try self.store.clearLegacyBinding(legacy),
-                      self.clearRevocationFence() else {
+                guard try self.store.clearLegacyBinding(legacy) else {
                     self.status = .unavailable
                     return
                 }
-                self.legacyRevocationSource = nil
+                if self.legacyRevocationSource == legacy {
+                    self.legacyRevocationSource = nil
+                }
+                try self.clearRevocationFenceIfNoDurableSources()
             } catch {
                 self.status = .unavailable
             }
@@ -1937,6 +2397,7 @@ final class NativePushManager: ObservableObject {
         let generation = lifecycleGeneration
         let pendingBeforeRegistration = pendingRevocation
         let legacyBeforeRegistration = legacyRevocationSource
+        let cleanupIntentsBeforeRegistration = installationCleanupIntents
         let key = "\(generation):\(expectedUserID):\(expectedAuthSessionID):\(environment.rawValue):\(digest)"
         if pendingRegistrationKey == key { return }
         if let binding,
@@ -1963,6 +2424,7 @@ final class NativePushManager: ObservableObject {
                   self.currentAuthSessionID == expectedAuthSessionID,
                   self.pendingRevocation == pendingBeforeRegistration,
                   self.legacyRevocationSource == legacyBeforeRegistration,
+                  self.installationCleanupIntents == cleanupIntentsBeforeRegistration,
                   self.authIdentityMatches(
                     userID: expectedUserID,
                     authSessionID: expectedAuthSessionID
@@ -1984,6 +2446,7 @@ final class NativePushManager: ObservableObject {
                       self.currentAuthSessionID == expectedAuthSessionID,
                       self.pendingRevocation == pendingBeforeRegistration,
                       self.legacyRevocationSource == legacyBeforeRegistration,
+                      self.installationCleanupIntents == cleanupIntentsBeforeRegistration,
                       self.authIdentityMatches(
                         userID: expectedUserID,
                         authSessionID: expectedAuthSessionID
@@ -2022,6 +2485,10 @@ final class NativePushManager: ObservableObject {
                         }
                         self.legacyRevocationSource = nil
                     }
+                    try self.clearInstallationCleanupIntentsSupersededByRegistration(
+                        cleanupIntentsBeforeRegistration,
+                        replacement: stored
+                    )
                 } catch {
                     self.isFenced = true
                     self.binding = nil
@@ -2032,24 +2499,36 @@ final class NativePushManager: ObservableObject {
                         previousLegacy: legacyBeforeRegistration
                     )
                     do {
-                        try await self.backend.revoke(
+                        let revoked = try await self.backend.revoke(
                             installationID: installationID,
                             expectedUserID: expectedUserID
                         )
                         if self.lifecycleGeneration == generation,
                            self.currentUserID == expectedUserID,
                            self.currentAuthSessionID == expectedAuthSessionID {
-                            try self.store.clearBinding()
-                            guard self.clearRevocationFence() else {
-                                throw NativePushError.invalidState
+                            if revoked {
+                                try self.store.clearBinding()
+                                self.binding = nil
+                                self.legacyRevocationSource = nil
+                            } else if let exact = try self.store.loadBinding(),
+                                      exact == stored {
+                                guard try self.store.clearBinding(exact) else {
+                                    throw NativePushError.invalidState
+                                }
+                                if self.binding == exact { self.binding = nil }
                             }
-                            if let pending = self.pendingRevocation {
+                            let storedPending = try self.store.loadPendingRevocation()
+                            let replacementPending = Self.pendingRevocation(for: stored)
+                            if let pending = storedPending,
+                               revoked || pending == replacementPending {
                                 guard try self.store.clearPendingRevocation(pending) else {
                                     throw NativePushError.invalidState
                                 }
-                                self.pendingRevocation = nil
+                                if self.pendingRevocation == pending {
+                                    self.pendingRevocation = nil
+                                }
                             }
-                            self.legacyRevocationSource = nil
+                            try self.clearRevocationFenceIfNoDurableSources()
                         }
                     } catch {
                         // The durable marker remains for an authenticated retry.

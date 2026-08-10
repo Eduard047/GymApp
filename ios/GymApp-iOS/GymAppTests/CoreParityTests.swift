@@ -6380,6 +6380,179 @@ final class CoreParityTests: XCTestCase {
         XCTAssertNil(try bindingStore.pendingCreation(for: userID))
     }
 
+    func testGarminSuccessfulLegacyCreateCorrelatesServerDeviceByExactRequestID() async throws {
+        let userID = "00000000-0000-4000-8000-0000000000a1"
+        let serverDeviceID = "30000000-0000-4000-8000-000000000003"
+        let serverToken = String(repeating: "ab", count: 32)
+        let recorder = AuthRequestRecorder()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        let auth = AuthService(
+            keychain: InMemoryKeychainStore(),
+            urlSession: urlSession,
+            defaults: temporaryDefaults(named: "garmin-legacy-created-correlation")
+        )
+        try auth.installSessionForTesting(.cloud(cloudSession(userID: userID)))
+        let keychain = InMemoryKeychainStore()
+        let bindingStore = GarminDeviceBindingStore(keychain: keychain)
+        let garmin = GarminCloudService(
+            auth: auth,
+            urlSession: urlSession,
+            bindingStore: bindingStore
+        )
+        AuthURLProtocolStub.handler = { request in
+            recorder.append(request)
+            let body = try garminRequestBody(request)
+            switch body["action"] as? String {
+            case "createDeviceIdempotent":
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    statusCode: 501,
+                    json: #"{"error":"Idempotent device creation unavailable"}"#
+                )
+            case "createDevice":
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    json: """
+                    {"device":{"id":"\(serverDeviceID)","device_token":"\(serverToken)","display_name":"Legacy Success","created_at":"2026-08-10T12:00:00Z","last_seen_at":null,"binding_version":2,"token_revision":1}}
+                    """
+                )
+            default:
+                XCTFail("Unexpected Garmin legacy-success action")
+                return try AuthURLProtocolStub.response(for: request, statusCode: 400, json: "{}")
+            }
+        }
+        defer {
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+        }
+
+        let credential = try await garmin.createDevice(displayName: "Legacy Success")
+        let firstBody = try garminRequestBody(try XCTUnwrap(recorder.requests.first))
+        let clientDeviceID = try XCTUnwrap(firstBody["deviceId"] as? String)
+        let requestID = try XCTUnwrap(firstBody["requestId"] as? String)
+        let clientToken = try XCTUnwrap(firstBody["deviceNonce"] as? String)
+
+        XCTAssertNotEqual(clientDeviceID, serverDeviceID)
+        XCTAssertTrue(garminTestUUIDv4(requestID))
+        XCTAssertEqual(credential.id, serverDeviceID)
+        XCTAssertEqual(credential.deviceToken, serverToken)
+        XCTAssertEqual(garmin.selectedDevice?.deviceID, serverDeviceID)
+        XCTAssertEqual(try bindingStore.binding(for: userID)?.deviceID, serverDeviceID)
+        XCTAssertNil(try bindingStore.pendingCreation(for: userID))
+        XCTAssertNil(try bindingStore.pendingRevocation(for: userID))
+        XCTAssertEqual(
+            try recorder.requests.map { try garminRequestBody($0)["action"] as? String },
+            ["createDeviceIdempotent", "createDevice"]
+        )
+        XCTAssertFalse(keychain.allData.contains {
+            let text = String(decoding: $0, as: UTF8.self)
+            return text.contains(clientToken) || text.contains(serverToken)
+        })
+    }
+
+    func testGarminLegacyRawDeleteFailureRetriesExactCleanupAfterRestart() async throws {
+        let userID = "00000000-0000-4000-8000-0000000000a1"
+        let serverDeviceID = "30000000-0000-4000-8000-000000000003"
+        let serverToken = String(repeating: "cd", count: 32)
+        let pendingCreationAccount = "pending-creation-v1.\(userID)"
+        let recorder = AuthRequestRecorder()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        let auth = AuthService(
+            keychain: InMemoryKeychainStore(),
+            urlSession: urlSession,
+            defaults: temporaryDefaults(named: "garmin-legacy-delete-restart")
+        )
+        try auth.installSessionForTesting(.cloud(cloudSession(userID: userID)))
+        let keychain = InMemoryKeychainStore()
+        keychain.accountsThatFailDeletion = [pendingCreationAccount]
+        let bindingStore = GarminDeviceBindingStore(keychain: keychain)
+        let firstService = GarminCloudService(
+            auth: auth,
+            urlSession: urlSession,
+            bindingStore: bindingStore
+        )
+        AuthURLProtocolStub.handler = { request in
+            recorder.append(request)
+            let body = try garminRequestBody(request)
+            switch body["action"] as? String {
+            case "createDeviceIdempotent":
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    statusCode: 501,
+                    json: #"{"error":"Idempotent device creation unavailable"}"#
+                )
+            case "createDevice":
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    json: """
+                    {"device":{"id":"\(serverDeviceID)","device_token":"\(serverToken)","display_name":"Legacy Restart","created_at":"2026-08-10T12:00:00Z","last_seen_at":null,"binding_version":2,"token_revision":1}}
+                    """
+                )
+            case "revokeDevice":
+                XCTAssertEqual(body["deviceId"] as? String, serverDeviceID)
+                return try AuthURLProtocolStub.response(for: request, json: #"{"status":"revoked"}"#)
+            case "listDevices":
+                return try AuthURLProtocolStub.response(for: request, json: #"{"devices":[]}"#)
+            default:
+                XCTFail("Unexpected Garmin legacy-restart action")
+                return try AuthURLProtocolStub.response(for: request, statusCode: 400, json: "{}")
+            }
+        }
+        defer {
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+        }
+
+        do {
+            _ = try await firstService.createDevice(displayName: "Legacy Restart")
+            XCTFail("Raw credential deletion failure must not return the pairing token.")
+        } catch GarminCloudError.bindingPersistenceFailed {
+            // Expected: the remote row was revoked, while both durable cleanup
+            // records remain until their exact Keychain deletion can succeed.
+        }
+        let firstBody = try garminRequestBody(try XCTUnwrap(recorder.requests.first))
+        let requestID = try XCTUnwrap(firstBody["requestId"] as? String)
+        let clientToken = try XCTUnwrap(firstBody["deviceNonce"] as? String)
+        let raw = try XCTUnwrap(bindingStore.pendingCreation(for: userID))
+        let cleanup = try XCTUnwrap(bindingStore.pendingRevocation(for: userID))
+        XCTAssertTrue(raw.legacyFallbackAttempted)
+        XCTAssertEqual(raw.requestID, requestID)
+        XCTAssertEqual(cleanup.deviceID, serverDeviceID)
+        XCTAssertEqual(cleanup.creationRequestID, requestID)
+        XCTAssertNil(try bindingStore.binding(for: userID))
+
+        keychain.accountsThatFailDeletion = []
+        let restarted = GarminCloudService(
+            auth: auth,
+            urlSession: urlSession,
+            bindingStore: bindingStore
+        )
+        try await restarted.refreshDevices()
+
+        XCTAssertNil(try bindingStore.pendingCreation(for: userID))
+        XCTAssertNil(try bindingStore.pendingRevocation(for: userID))
+        XCTAssertNil(try bindingStore.binding(for: userID))
+        XCTAssertTrue(restarted.availableDevices.isEmpty)
+        XCTAssertEqual(
+            try recorder.requests.map { try garminRequestBody($0)["action"] as? String },
+            [
+                "createDeviceIdempotent",
+                "createDevice",
+                "revokeDevice",
+                "revokeDevice",
+                "listDevices"
+            ]
+        )
+        XCTAssertFalse(keychain.allData.contains {
+            let text = String(decoding: $0, as: UTF8.self)
+            return text.contains(clientToken) || text.contains(serverToken)
+        })
+    }
+
     func testGarminLegacyEmptyOwnerListStartsFreshIdempotentRequestOnly() async throws {
         let userID = "00000000-0000-4000-8000-0000000000a1"
         let spentRequestID = "10000000-0000-4000-8000-000000000001"
@@ -6558,6 +6731,60 @@ final class CoreParityTests: XCTestCase {
         let expiredCleanup = try XCTUnwrap(bindingStore.pendingRevocation(for: userA))
         XCTAssertEqual(expiredCleanup.deviceID, request.deviceID)
         XCTAssertEqual(expiredCleanup.cleanupKind, .revoke)
+    }
+
+    func testGarminPendingRevocationDecodesRecordWithoutCreationRequestID() throws {
+        let userID = "00000000-0000-4000-8000-0000000000a1"
+        let deviceID = "20000000-0000-4000-8000-000000000002"
+        let keychain = InMemoryKeychainStore()
+        try keychain.save(
+            Data(
+                """
+                {"version":2,"userID":"\(userID)","deviceID":"\(deviceID)","cleanupKind":"revoke"}
+                """.utf8
+            ),
+            account: "pending-revocation-v2.\(userID)"
+        )
+
+        let pending = try XCTUnwrap(
+            GarminDeviceBindingStore(keychain: keychain).pendingRevocation(for: userID)
+        )
+        XCTAssertEqual(pending.deviceID, deviceID)
+        XCTAssertEqual(pending.cleanupKind, .revoke)
+        XCTAssertNil(pending.creationRequestID)
+    }
+
+    func testGarminCleanupWithDifferentCreationRequestCannotScrubRawCredential() throws {
+        let userID = "00000000-0000-4000-8000-0000000000a1"
+        let raw = GarminPendingDeviceCreation(
+            version: GarminPendingDeviceCreation.currentVersion,
+            userID: userID,
+            requestID: "10000000-0000-4000-8000-000000000001",
+            deviceID: "20000000-0000-4000-8000-000000000002",
+            deviceToken: String(repeating: "ab", count: 32),
+            displayName: "Legacy Watch",
+            createdAt: Date(),
+            legacyFallbackAttempted: true
+        )
+        let keychain = InMemoryKeychainStore()
+        let bindingStore = GarminDeviceBindingStore(keychain: keychain)
+        try bindingStore.save(pendingCreation: raw)
+        let unrelatedCleanup = GarminPendingRevocation(
+            version: GarminDeviceBinding.currentVersion,
+            userID: userID,
+            deviceID: "30000000-0000-4000-8000-000000000003",
+            creationRequestID: "40000000-0000-4000-8000-000000000004"
+        )
+
+        XCTAssertThrowsError(
+            try bindingStore.clearPendingCreation(matching: unrelatedCleanup)
+        ) { error in
+            guard case GarminCloudError.pendingRevocation = error else {
+                return XCTFail("Unexpected cleanup mismatch error: \(error)")
+            }
+        }
+        XCTAssertEqual(try bindingStore.pendingCreation(for: userID), raw)
+        XCTAssertNotNil(try keychain.read(account: "pending-creation-v1.\(userID)"))
     }
 
     func testGarminPendingCreationPromotionKeepsMarkerUntilRawDeletionSucceeds() throws {

@@ -109,6 +109,23 @@ final class NativePushTests: XCTestCase {
             pending
         )
 
+        let cleanupIntent = NativePushInstallationCleanupIntent(
+            version: NativePushInstallationCleanupIntent.currentVersion,
+            installationID: installation,
+            userID: userA,
+            authSessionID: sessionA
+        )
+        try first.saveInstallationCleanupIntent(cleanupIntent)
+        XCTAssertEqual(
+            try NativePushBindingStore(keychain: keychain).loadInstallationCleanupIntents(),
+            [cleanupIntent]
+        )
+        let cleanupData = try XCTUnwrap(
+            keychain.read(account: "native-push-installation-cleanup-v1")
+        )
+        let cleanupJSON = try XCTUnwrap(String(data: cleanupData, encoding: .utf8))
+        XCTAssertFalse(cleanupJSON.localizedCaseInsensitiveContains("token"))
+
         try keychain.save(Data(#"{"version":999}"#.utf8), account: "native-push-binding-v1")
         XCTAssertNil(try first.loadBinding())
         XCTAssertNil(try keychain.read(account: "native-push-binding-v1"))
@@ -292,6 +309,295 @@ final class NativePushTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(harness.system.unregisterCallCount, 1)
     }
 
+    func testSessionEndQueuesCleanupBehindSuspendedFirstRegistration() async throws {
+        let harness = try makeHarness(userID: userA)
+        defer { harness.cleanup() }
+        harness.backend.suspendRegistration(for: userA)
+        await harness.manager.activateIfNeeded()
+        harness.manager.didReceiveDeviceToken(Data(repeating: 0x57, count: 32))
+        let registrationStarted = await waitUntil {
+            harness.backend.operations == ["register:\(self.userA)"]
+        }
+        XCTAssertTrue(registrationStarted)
+
+        let ending = Task { @MainActor in
+            await harness.manager.prepareForSessionEnd(expectedUserID: self.userA)
+        }
+        let intentPersisted = await waitUntil {
+            harness.store.installationCleanupIntents == [
+                NativePushInstallationCleanupIntent(
+                    version: NativePushInstallationCleanupIntent.currentVersion,
+                    installationID: self.installationID,
+                    userID: self.userA,
+                    authSessionID: self.sessionA
+                )
+            ]
+        }
+        XCTAssertTrue(intentPersisted)
+        try? await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(harness.backend.operations, ["register:\(userA)"])
+
+        harness.backend.resumeSuspendedRegistration()
+        await ending.value
+
+        XCTAssertEqual(harness.backend.operations, [
+            "register:\(userA)",
+            "revoke:\(userA)"
+        ])
+        XCTAssertNil(harness.store.binding)
+        XCTAssertNil(harness.store.pendingRevocation)
+        XCTAssertTrue(harness.store.installationCleanupIntents.isEmpty)
+        XCTAssertNotEqual(harness.manager.status, .active)
+    }
+
+    func testSuspendedRegistrationCleanupFailureRetriesAfterRestart() async throws {
+        let harness = try makeHarness(userID: userA)
+        defer { harness.cleanup() }
+        harness.backend.suspendRegistration(for: userA)
+        harness.backend.failNextRevoke()
+        await harness.manager.activateIfNeeded()
+        harness.manager.didReceiveDeviceToken(Data(repeating: 0x58, count: 32))
+        let registrationStarted = await waitUntil {
+            harness.backend.operations == ["register:\(self.userA)"]
+        }
+        XCTAssertTrue(registrationStarted)
+
+        let ending = Task { @MainActor in
+            await harness.manager.prepareForSessionEnd(expectedUserID: self.userA)
+        }
+        let intentPersisted = await waitUntil {
+            !harness.store.installationCleanupIntents.isEmpty
+        }
+        XCTAssertTrue(intentPersisted)
+        harness.backend.resumeSuspendedRegistration()
+        await ending.value
+
+        XCTAssertEqual(harness.manager.status, .revocationPending)
+        XCTAssertEqual(harness.backend.operations, [
+            "register:\(userA)",
+            "revoke:\(userA)"
+        ])
+        XCTAssertEqual(harness.store.installationCleanupIntents.count, 1)
+        XCTAssertNil(harness.store.binding)
+
+        let restarted = NativePushManager(
+            auth: harness.auth,
+            defaults: harness.defaults,
+            store: harness.store,
+            backend: harness.backend,
+            system: harness.system,
+            environment: .sandbox
+        )
+        XCTAssertEqual(restarted.status, .revocationPending)
+        await restarted.activateIfNeeded()
+
+        XCTAssertEqual(harness.backend.operations, [
+            "register:\(userA)",
+            "revoke:\(userA)",
+            "revoke:\(userA)"
+        ])
+        XCTAssertTrue(harness.store.installationCleanupIntents.isEmpty)
+        XCTAssertNil(harness.store.binding)
+        XCTAssertEqual(restarted.status, .waitingForDeviceToken)
+    }
+
+    func testRestartedSameOwnerNewSessionRetriesOldIntentWhileDisabled() async throws {
+        let harness = try makeHarness(userID: userA)
+        defer { harness.cleanup() }
+        await harness.manager.activateIfNeeded()
+        harness.manager.didReceiveDeviceToken(Data(repeating: 0x59, count: 32))
+        let active = await waitUntil { harness.manager.status == .active }
+        XCTAssertTrue(active)
+        harness.backend.failNextRevoke()
+
+        await harness.manager.prepareForSessionEnd(expectedUserID: userA)
+        XCTAssertEqual(harness.manager.status, .revocationPending)
+        XCTAssertEqual(harness.store.installationCleanupIntents.map(\.authSessionID), [sessionA])
+        XCTAssertEqual(harness.backend.operations, [
+            "register:\(userA)",
+            "revoke:\(userA)"
+        ])
+
+        harness.defaults.set(false, forKey: "gymapp.native-push.enabled.v1")
+        let replacementSession = "50000000-0000-4000-8000-000000000005"
+        let restartedAuth = AuthService(
+            keychain: PushTestKeychain(),
+            defaults: harness.defaults
+        )
+        try restartedAuth.installSessionForTesting(
+            cloudSession(userID: userA, authSessionID: replacementSession)
+        )
+        let restarted = NativePushManager(
+            auth: restartedAuth,
+            defaults: harness.defaults,
+            store: harness.store,
+            backend: harness.backend,
+            system: harness.system,
+            environment: .sandbox
+        )
+        XCTAssertEqual(restarted.status, .revocationPending)
+
+        await restarted.activateIfNeeded()
+
+        XCTAssertEqual(harness.backend.operations, [
+            "register:\(userA)",
+            "revoke:\(userA)",
+            "revoke:\(userA)"
+        ])
+        XCTAssertTrue(harness.store.installationCleanupIntents.isEmpty)
+        XCTAssertNil(harness.store.pendingRevocation)
+        XCTAssertNil(harness.store.binding)
+        XCTAssertEqual(restarted.status, .disabled)
+        XCTAssertEqual(harness.system.registerCallCount, 1)
+    }
+
+    func testFalseIntentRevokePreservesNewerForeignBindingAndIntent() async throws {
+        let suiteName = "NativePushFalseIntentRevokeTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set(false, forKey: "gymapp.native-push.enabled.v1")
+        let auth = AuthService(keychain: PushTestKeychain(), defaults: defaults)
+        try auth.installSessionForTesting(cloudSession(userID: userA))
+        let stalePendingA = NativePushPendingRevocation(
+            version: NativePushPendingRevocation.currentVersion,
+            installationID: installationID,
+            userID: userA,
+            authSessionID: sessionA,
+            bindingID: bindingA,
+            registrationRevision: 4
+        )
+        let intentA = NativePushInstallationCleanupIntent(
+            version: NativePushInstallationCleanupIntent.currentVersion,
+            installationID: installationID,
+            userID: userA,
+            authSessionID: sessionA
+        )
+        let intentB = NativePushInstallationCleanupIntent(
+            version: NativePushInstallationCleanupIntent.currentVersion,
+            installationID: installationID,
+            userID: userB,
+            authSessionID: sessionB
+        )
+        let newerBindingB = nativeBinding(
+            userID: userB,
+            authSessionID: sessionB,
+            bindingID: bindingB,
+            revision: 9
+        )
+        let store = PushBindingMemoryStore(
+            installationID: installationID,
+            binding: newerBindingB,
+            pendingRevocation: stalePendingA,
+            installationCleanupIntents: [intentA, intentB]
+        )
+        let backend = PushBackendFake(bindings: [userA: bindingA, userB: bindingB])
+        backend.respondToNextRevoke(with: false)
+        let system = PushSystemFake(permission: .authorized)
+        let manager = NativePushManager(
+            auth: auth,
+            defaults: defaults,
+            store: store,
+            backend: backend,
+            system: system,
+            environment: .sandbox
+        )
+
+        XCTAssertEqual(manager.status, .revocationPending)
+        await manager.activateIfNeeded()
+
+        XCTAssertEqual(backend.operations, ["revoke:\(userA)"])
+        XCTAssertEqual(store.binding, newerBindingB)
+        XCTAssertNil(store.pendingRevocation)
+        XCTAssertEqual(store.installationCleanupIntents, [intentB])
+        XCTAssertEqual(manager.status, .disabled)
+        XCTAssertEqual(system.registerCallCount, 0)
+        XCTAssertNotNil(defaults.object(
+            forKey: "gymapp.native-push.revocation-fence-binding.v1"
+        ))
+    }
+
+    func testFalsePendingRevokeClearsExactPendingButPreservesForeignBinding() async throws {
+        let suiteName = "NativePushFalsePendingRevokeTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set(false, forKey: "gymapp.native-push.enabled.v1")
+        let auth = AuthService(keychain: PushTestKeychain(), defaults: defaults)
+        try auth.installSessionForTesting(cloudSession(userID: userA))
+        let pendingA = NativePushPendingRevocation(
+            version: NativePushPendingRevocation.currentVersion,
+            installationID: installationID,
+            userID: userA,
+            authSessionID: sessionA,
+            bindingID: bindingA,
+            registrationRevision: 4
+        )
+        let foreignBinding = nativeBinding(
+            userID: userB,
+            authSessionID: sessionB,
+            bindingID: bindingB,
+            revision: 9
+        )
+        let store = PushBindingMemoryStore(
+            installationID: installationID,
+            binding: foreignBinding,
+            pendingRevocation: pendingA
+        )
+        let backend = PushBackendFake(bindings: [userA: bindingA])
+        backend.respondToNextRevoke(with: false)
+        let manager = NativePushManager(
+            auth: auth,
+            defaults: defaults,
+            store: store,
+            backend: backend,
+            system: PushSystemFake(permission: .authorized),
+            environment: .sandbox
+        )
+
+        await manager.activateIfNeeded()
+
+        XCTAssertEqual(backend.operations, ["revoke:\(userA)"])
+        XCTAssertEqual(store.binding, foreignBinding)
+        XCTAssertNil(store.pendingRevocation)
+        XCTAssertEqual(manager.status, .disabled)
+    }
+
+    func testFalsePostRegisterRevokePreservesPriorOwnerBinding() async throws {
+        let harness = try makeHarness(userID: userA)
+        defer { harness.cleanup() }
+        await harness.manager.activateIfNeeded()
+        harness.manager.didReceiveDeviceToken(Data(repeating: 0x5a, count: 32))
+        let firstActive = await waitUntil { harness.manager.status == .active }
+        XCTAssertTrue(firstActive)
+        let priorBinding = try XCTUnwrap(harness.store.binding)
+        harness.store.failNextBindingSave()
+        harness.backend.respondToNextRevoke(with: false)
+
+        try harness.auth.installSessionForTesting(cloudSession(userID: userB))
+        let cleanupFinished = await waitUntil {
+            harness.backend.operations == [
+                "register:\(self.userA)",
+                "register:\(self.userB)",
+                "revoke:\(self.userB)"
+            ] && harness.manager.status == .unavailable
+        }
+
+        XCTAssertTrue(cleanupFinished)
+        XCTAssertEqual(harness.store.binding, priorBinding)
+        XCTAssertNil(harness.store.pendingRevocation)
+        XCTAssertEqual(harness.store.installationCleanupIntents, [
+            NativePushInstallationCleanupIntent(
+                version: NativePushInstallationCleanupIntent.currentVersion,
+                installationID: installationID,
+                userID: userA,
+                authSessionID: sessionA
+            )
+        ])
+        let oldDelivery = await harness.manager.handleRemoteNotification(
+            socialPayload(bindingID: bindingA)
+        )
+        XCTAssertEqual(oldDelivery, .noData)
+    }
+
     func testFailedRevocationStaysDurableAndRetriesWithoutReenablingDelivery() async throws {
         let harness = try makeHarness(userID: userA)
         defer { harness.cleanup() }
@@ -355,12 +661,13 @@ final class NativePushTests: XCTestCase {
             system: harness.system,
             environment: .sandbox
         )
-        XCTAssertNotNil(harness.store.pendingRevocation)
+        XCTAssertEqual(harness.store.installationCleanupIntents.map(\.userID), [userA])
         XCTAssertNotEqual(restarted.status, .active)
         await restarted.activateIfNeeded()
 
         XCTAssertNil(harness.store.binding)
         XCTAssertNil(harness.store.pendingRevocation)
+        XCTAssertTrue(harness.store.installationCleanupIntents.isEmpty)
         XCTAssertNil(harness.defaults.object(
             forKey: "gymapp.native-push.revocation-fence-binding.v1"
         ))
@@ -594,6 +901,7 @@ final class NativePushTests: XCTestCase {
         try auth.installSessionForTesting(cloudSession(userID: userA))
         let store = NativePushBindingStore(keychain: keychain)
         let backend = PushBackendFake(bindings: [userA: bindingA])
+        backend.respondToNextRevoke(with: false)
         let system = PushSystemFake(permission: .authorized)
         let manager = NativePushManager(
             auth: auth,
@@ -818,6 +1126,7 @@ final class NativePushTests: XCTestCase {
         XCTAssertEqual(harness.system.scheduled.count, 1)
         XCTAssertEqual(harness.backend.operations, [
             "register:\(userA)",
+            "revoke:\(userA)",
             "register:\(userB)"
         ])
     }
@@ -835,6 +1144,7 @@ final class NativePushTests: XCTestCase {
 
         try harness.auth.installSessionForTesting(cloudSession(userID: userB))
         XCTAssertEqual(harness.backend.operations, ["register:\(userA)"])
+        XCTAssertEqual(harness.store.installationCleanupIntents.map(\.userID), [userA])
         harness.backend.resumeSuspendedRegistration()
 
         let switched = await waitUntil {
@@ -847,6 +1157,7 @@ final class NativePushTests: XCTestCase {
             "register:\(userB)"
         ])
         XCTAssertEqual(harness.store.binding?.bindingID, bindingB)
+        XCTAssertTrue(harness.store.installationCleanupIntents.isEmpty)
     }
 
     func testAccountSwitchDuringLocalSchedulingRemovesLateNotification() async throws {
@@ -974,8 +1285,11 @@ final class NativePushTests: XCTestCase {
                 {"version":1,"installationId":"\(self.installationID.uuidString.lowercased())","provider":"apns","environment":"sandbox","bindingId":"\(self.bindingA.uuidString.lowercased())","registrationRevision":3,"registeredAt":"2026-08-10T08:00:00Z"}
                 """
             case "/rest/v1/rpc/notification_revoke_installation":
+                let revokeCount = requests.requests.filter {
+                    $0.url?.path == "/rest/v1/rpc/notification_revoke_installation"
+                }.count
                 body = """
-                {"version":1,"installationId":"\(self.installationID.uuidString.lowercased())","revoked":true}
+                {"version":1,"installationId":"\(self.installationID.uuidString.lowercased())","revoked":\(revokeCount == 1 ? "true" : "false")}
                 """
             default:
                 body = #"{"message":"not found"}"#
@@ -1002,10 +1316,20 @@ final class NativePushTests: XCTestCase {
             expectedUserID: userA
         )
         XCTAssertEqual(registered.bindingID, bindingA)
-        try await client.revoke(installationID: installationID, expectedUserID: userA)
+        let firstRevoked = try await client.revoke(
+            installationID: installationID,
+            expectedUserID: userA
+        )
+        let secondRevoked = try await client.revoke(
+            installationID: installationID,
+            expectedUserID: userA
+        )
+        XCTAssertTrue(firstRevoked)
+        XCTAssertFalse(secondRevoked)
 
         XCTAssertEqual(requests.requests.map { $0.url?.path }, [
             "/rest/v1/rpc/notification_register_installation",
+            "/rest/v1/rpc/notification_revoke_installation",
             "/rest/v1/rpc/notification_revoke_installation"
         ])
         XCTAssertTrue(requests.requests.allSatisfy { request in
@@ -1028,6 +1352,10 @@ final class NativePushTests: XCTestCase {
         XCTAssertTrue(registerBody["p_web_push_auth"] is NSNull)
         XCTAssertEqual(
             Set(try requestObject(requests.requests[1]).keys),
+            ["p_installation_id"]
+        )
+        XCTAssertEqual(
+            Set(try requestObject(requests.requests[2]).keys),
             ["p_installation_id"]
         )
     }
@@ -1271,6 +1599,7 @@ private final class PushBindingMemoryStore: NativePushBindingStoring {
     let fixedInstallationID: UUID
     private(set) var binding: NativePushBinding?
     private(set) var pendingRevocation: NativePushPendingRevocation?
+    private(set) var installationCleanupIntents: [NativePushInstallationCleanupIntent]
     private var deliveryScope: NativePushBinding?
     private var deliveryRecords: [(key: String, revision: Int)] = []
     private var pendingSaveFailuresRemaining = 0
@@ -1279,11 +1608,13 @@ private final class PushBindingMemoryStore: NativePushBindingStoring {
     init(
         installationID: UUID,
         binding: NativePushBinding? = nil,
-        pendingRevocation: NativePushPendingRevocation? = nil
+        pendingRevocation: NativePushPendingRevocation? = nil,
+        installationCleanupIntents: [NativePushInstallationCleanupIntent] = []
     ) {
         fixedInstallationID = installationID
         self.binding = binding
         self.pendingRevocation = pendingRevocation
+        self.installationCleanupIntents = installationCleanupIntents
     }
 
     func installationID() throws -> UUID { fixedInstallationID }
@@ -1304,6 +1635,12 @@ private final class PushBindingMemoryStore: NativePushBindingStoring {
         binding = nil
         try clearDeliveryState()
     }
+    func clearBinding(_ expected: NativePushBinding) throws -> Bool {
+        guard let current = binding else { return true }
+        guard current == expected else { return false }
+        try clearBinding()
+        return true
+    }
     func clearLegacyBinding(_ expected: NativePushLegacyBinding) throws -> Bool {
         true
     }
@@ -1323,6 +1660,28 @@ private final class PushBindingMemoryStore: NativePushBindingStoring {
         guard let current = pendingRevocation else { return true }
         guard current == expected else { return false }
         pendingRevocation = nil
+        return true
+    }
+    func loadInstallationCleanupIntents() throws -> [NativePushInstallationCleanupIntent] {
+        installationCleanupIntents
+    }
+    func saveInstallationCleanupIntent(
+        _ intent: NativePushInstallationCleanupIntent
+    ) throws {
+        if !installationCleanupIntents.contains(intent) {
+            guard installationCleanupIntents.count < 8 else {
+                throw NativePushError.invalidState
+            }
+            installationCleanupIntents.append(intent)
+        }
+    }
+    func clearInstallationCleanupIntent(
+        _ expected: NativePushInstallationCleanupIntent
+    ) throws -> Bool {
+        guard let index = installationCleanupIntents.firstIndex(of: expected) else {
+            return true
+        }
+        installationCleanupIntents.remove(at: index)
         return true
     }
     func failNextPendingRevocationSave() {
@@ -1379,6 +1738,7 @@ private final class PushBackendFake: NativePushBackendServing {
     private var shouldSuspendRevoke = false
     private var revokeContinuation: CheckedContinuation<Void, Never>?
     private var revokeFailuresRemaining = 0
+    private var revokeResults: [Bool] = []
 
     init(bindings: [String: UUID]) {
         self.bindings = bindings
@@ -1410,7 +1770,7 @@ private final class PushBackendFake: NativePushBackendServing {
         )
     }
 
-    func revoke(installationID: UUID, expectedUserID: String) async throws {
+    func revoke(installationID: UUID, expectedUserID: String) async throws -> Bool {
         operations.append("revoke:\(expectedUserID)")
         if shouldSuspendRevoke {
             shouldSuspendRevoke = false
@@ -1422,6 +1782,7 @@ private final class PushBackendFake: NativePushBackendServing {
             revokeFailuresRemaining -= 1
             throw NativePushError.requestFailed
         }
+        return revokeResults.isEmpty ? true : revokeResults.removeFirst()
     }
 
     func suspendRegistration(for userID: String) {
@@ -1439,6 +1800,10 @@ private final class PushBackendFake: NativePushBackendServing {
 
     func failNextRevoke() {
         revokeFailuresRemaining += 1
+    }
+
+    func respondToNextRevoke(with result: Bool) {
+        revokeResults.append(result)
     }
 
     func resumeSuspendedRevoke() {

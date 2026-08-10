@@ -334,13 +334,18 @@ test("PWA and iOS persist bounded owner-bound retry material and clear it after 
 const pwaCleanupHarness = (initial = {}) => {
   const values = new Map(Object.entries(initial));
   const failures = { createDelete: false };
+  const storageEvents = [];
   const localStorage = {
     getItem: (key) => values.get(key) ?? null,
-    setItem: (key, value) => values.set(key, String(value)),
+    setItem: (key, value) => {
+      storageEvents.push({ operation: "set", key });
+      values.set(key, String(value));
+    },
     removeItem: (key) => {
       if (failures.createDelete && key === "gym-pwa-garmin-create-requests-v1") {
         throw new Error("synthetic create-record delete failure");
       }
+      storageEvents.push({ operation: "remove", key });
       values.delete(key);
     },
   };
@@ -381,13 +386,14 @@ const pwaCleanupHarness = (initial = {}) => {
     "forgetGarminPendingRevocation",
     "saveGarminCreateRequests",
     "loadGarminCreateRequests",
+    "removeGarminCreateRequestForUser",
     "removeGarminCreateRequestMatchingCleanup",
     "promoteGarminCreateRequestToCleanup",
     "prepareGarminCreateRequest",
   ]) {
     vm.runInContext(functionSource(pwa, name), context);
   }
-  return { context, values, failures };
+  return { context, values, failures, storageEvents };
 };
 
 test("PWA expiry and logout promotion strip raw nonce only after durable cleanup", () => {
@@ -407,6 +413,7 @@ test("PWA expiry and logout promotion strip raw nonce only after durable cleanup
     deviceId: record.deviceId,
     cleanupKind: "revoke",
     createdAt: expiredCleanup[record.userId].createdAt,
+    creationRequestId: record.requestId,
   });
   assert.doesNotMatch(expiredHarness.values.get(cleanupKey), /deviceNonce|a{64}/);
 
@@ -438,11 +445,13 @@ test("PWA partial storage failure retains marker until exact raw scrub succeeds"
   assert.equal(harness.values.has(cleanupKey), true, "cleanup marker must already be durable");
 
   const cleanup = harness.context.pendingGarminRevocationForUser(record.userId);
+  assert.equal(cleanup.creationRequestId, record.requestId);
   harness.failures.createDelete = false;
   harness.context.removeGarminCreateRequestMatchingCleanup(
     record.userId,
     cleanup.deviceId,
     cleanup.cleanupKind,
+    cleanup.creationRequestId,
   );
   assert.equal(harness.values.has(createKey), false);
   assert.equal(harness.values.has(cleanupKey), true, "marker gates replay until raw is gone");
@@ -462,6 +471,221 @@ test("PWA partial storage failure retains marker until exact raw scrub succeeds"
       absence.indexOf("removeGarminBinding"),
     "recoveryPending authoritative absence must scrub raw, then marker, then binding",
   );
+});
+
+test("PWA pending cleanup accepts only exact legacy or request-correlated record shapes", () => {
+  const record = browserRecord({ createdAt: Date.now() });
+  const cleanupKey = "gym-pwa-garmin-pending-revocations-v1";
+  const legacy = {
+    version: 1,
+    userId: record.userId,
+    deviceId: record.deviceId,
+    cleanupKind: "revoke",
+    createdAt: Date.now(),
+  };
+  const legacyHarness = pwaCleanupHarness({
+    [cleanupKey]: JSON.stringify({ [record.userId]: legacy }),
+  });
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(
+      legacyHarness.context.pendingGarminRevocationForUser(record.userId),
+    )),
+    legacy,
+  );
+
+  const correlated = { ...legacy, creationRequestId: record.requestId.toUpperCase() };
+  const correlatedHarness = pwaCleanupHarness({
+    [cleanupKey]: JSON.stringify({ [record.userId]: correlated }),
+  });
+  assert.equal(
+    correlatedHarness.context.pendingGarminRevocationForUser(record.userId)
+      .creationRequestId,
+    record.requestId,
+  );
+
+  for (const malformed of [
+    { ...legacy, creationRequestId: "not-a-uuid" },
+    { ...legacy, unexpected: true },
+    { ...correlated, unexpected: true },
+  ]) {
+    const malformedHarness = pwaCleanupHarness({
+      [cleanupKey]: JSON.stringify({ [record.userId]: malformed }),
+    });
+    assert.throws(
+      () => malformedHarness.context.loadGarminPendingRevocations(),
+      /invalid/,
+    );
+  }
+});
+
+test("PWA legacy response correlates server cleanup to raw request across delete failure and restart", async () => {
+  const record = browserRecord({ createdAt: Date.now() });
+  const serverDeviceId = "90000000-0000-4000-8000-000000000009";
+  const createKey = "gym-pwa-garmin-create-requests-v1";
+  const cleanupKey = "gym-pwa-garmin-pending-revocations-v1";
+  const harness = pwaCleanupHarness({
+    [createKey]: JSON.stringify({ [record.userId]: record }),
+  });
+  const { context } = harness;
+  const session = { user: { id: record.userId } };
+  let currentBinding = null;
+  const revokedDeviceIds = [];
+  const lifecycleEvents = [];
+  Object.assign(context, {
+    GARMIN_CAPABILITY_VERSION: 2,
+    activeAccount: { userId: record.userId },
+    accountEpoch: 7,
+    loadRemoteSession: () => session,
+    garminBindingForUser: () => currentBinding,
+    removeGarminBinding: () => {
+      lifecycleEvents.push("binding-removed");
+      currentBinding = null;
+    },
+    listGarminDevices: async () => [],
+    chooseGarminDeviceForRecovery: () => null,
+    recoverGarminDeviceBinding: async () => {
+      throw new Error("unexpected recovery");
+    },
+    normalizedGarminDevice: (device) => ({
+      id: device.id,
+      tokenRevision: 1,
+      displayName: record.displayName,
+      deviceToken: "legacy-response-token",
+    }),
+    saveGarminBinding: (binding) => {
+      lifecycleEvents.push("binding-saved");
+      currentBinding = structuredClone(binding);
+    },
+    tx: (english) => english,
+    userVisibleError: (english) => new Error(english),
+    window: { confirm: () => true, prompt: () => "confirmed" },
+    requestGarminDeviceCreation: async (_session, creation) => {
+      const requests = context.loadGarminCreateRequests();
+      requests[record.userId] = {
+        ...requests[record.userId],
+        legacyFallbackAttempted: true,
+      };
+      context.saveGarminCreateRequests(requests);
+      return {
+        response: {
+          device: {
+            id: serverDeviceId,
+            device_token: "legacy-response-token",
+          },
+        },
+        idempotent: false,
+      };
+    },
+    supabaseRequest: async (_path, options) => {
+      const body = JSON.parse(options.body);
+      revokedDeviceIds.push(body.deviceId);
+      return { status: "already_revoked" };
+    },
+  });
+  vm.runInContext(functionSource(pwa, "revokeGarminDeviceById"), context);
+  vm.runInContext(functionSource(pwa, "ensureGarminDeviceBinding"), context);
+
+  harness.failures.createDelete = true;
+  await assert.rejects(
+    context.ensureGarminDeviceBinding(session),
+    /synthetic create-record delete failure/,
+  );
+  assert.deepEqual(revokedDeviceIds, [serverDeviceId]);
+  assert.equal(currentBinding.deviceId, serverDeviceId);
+  assert.equal(currentBinding.recoveryPending, true);
+  const retainedRaw = JSON.parse(harness.values.get(createKey))[record.userId];
+  assert.equal(retainedRaw.deviceId, record.deviceId);
+  assert.equal(retainedRaw.legacyFallbackAttempted, true);
+  const retainedMarker = JSON.parse(harness.values.get(cleanupKey))[record.userId];
+  assert.equal(retainedMarker.deviceId, serverDeviceId);
+  assert.equal(retainedMarker.cleanupKind, "revoke");
+  assert.equal(retainedMarker.creationRequestId, record.requestId);
+
+  harness.failures.createDelete = false;
+  harness.storageEvents.length = 0;
+  lifecycleEvents.length = 0;
+  await assert.rejects(
+    context.ensureGarminDeviceBinding(session),
+    /no longer active/,
+  );
+  assert.deepEqual(revokedDeviceIds, [serverDeviceId, serverDeviceId]);
+  assert.equal(harness.values.has(createKey), false);
+  assert.equal(harness.values.has(cleanupKey), false);
+  assert.equal(currentBinding, null);
+  const rawRemovedAt = harness.storageEvents.findIndex(
+    event => event.operation === "remove" && event.key === createKey,
+  );
+  const markerRemovedAt = harness.storageEvents.findIndex(
+    event => event.operation === "remove" && event.key === cleanupKey,
+  );
+  assert.ok(rawRemovedAt >= 0 && markerRemovedAt > rawRemovedAt);
+  assert.deepEqual(lifecycleEvents, ["binding-removed"]);
+});
+
+test("PWA request-correlated scrub rejects the wrong request while old markers remain compatible", () => {
+  const record = browserRecord({
+    createdAt: Date.now(),
+    legacyFallbackAttempted: true,
+  });
+  const createKey = "gym-pwa-garmin-create-requests-v1";
+  const cleanupKey = "gym-pwa-garmin-pending-revocations-v1";
+  const serverDeviceId = "90000000-0000-4000-8000-000000000009";
+  const wrongRequestId = "80000000-0000-4000-8000-000000000008";
+  const correlatedHarness = pwaCleanupHarness({
+    [createKey]: JSON.stringify({ [record.userId]: record }),
+  });
+  correlatedHarness.context.rememberGarminPendingRevocation(
+    record.userId,
+    serverDeviceId,
+    "revoke",
+    record.requestId,
+  );
+  assert.throws(
+    () => correlatedHarness.context.removeGarminCreateRequestMatchingCleanup(
+      record.userId,
+      serverDeviceId,
+      "revoke",
+      wrongRequestId,
+    ),
+    /does not match the pending creation request/,
+  );
+  assert.equal(correlatedHarness.values.has(createKey), true);
+  assert.equal(correlatedHarness.values.has(cleanupKey), true);
+  correlatedHarness.context.removeGarminCreateRequestMatchingCleanup(
+    record.userId,
+    serverDeviceId,
+    "revoke",
+    record.requestId,
+  );
+  assert.equal(correlatedHarness.values.has(createKey), false);
+
+  const oldMarkerRecord = browserRecord({
+    createdAt: Date.now(),
+    legacyFallbackAttempted: false,
+  });
+  const oldMarker = {
+    version: 1,
+    userId: oldMarkerRecord.userId,
+    deviceId: oldMarkerRecord.deviceId,
+    cleanupKind: "revoke",
+    createdAt: Date.now(),
+  };
+  const oldHarness = pwaCleanupHarness({
+    [createKey]: JSON.stringify({ [oldMarkerRecord.userId]: oldMarkerRecord }),
+    [cleanupKey]: JSON.stringify({ [oldMarkerRecord.userId]: oldMarker }),
+  });
+  const loadedOld = oldHarness.context.pendingGarminRevocationForUser(
+    oldMarkerRecord.userId,
+  );
+  assert.equal(loadedOld.creationRequestId, undefined);
+  oldHarness.context.removeGarminCreateRequestMatchingCleanup(
+    oldMarkerRecord.userId,
+    loadedOld.deviceId,
+    loadedOld.cleanupKind,
+    loadedOld.creationRequestId ?? null,
+  );
+  assert.equal(oldHarness.values.has(createKey), false);
+  assert.equal(oldHarness.values.has(cleanupKey), true);
 });
 
 test("PWA authoritative empty list discards only spent legacy retry before fresh create", () => {
