@@ -9355,7 +9355,8 @@ final class CoreParityTests: XCTestCase {
             auth: auth,
             defaults: defaults,
             workoutDirectoryURL: directory,
-            cloudURLSession: urlSession
+            cloudURLSession: urlSession,
+            garminBindingStore: GarminDeviceBindingStore(keychain: InMemoryKeychainStore())
         )
         try auth.installSessionForTesting(.cloud(cloud))
         let accountReady = await waitUntil { appState.isAccountReady }
@@ -9531,7 +9532,8 @@ final class CoreParityTests: XCTestCase {
             auth: auth,
             defaults: defaults,
             workoutDirectoryURL: directory,
-            cloudURLSession: urlSession
+            cloudURLSession: urlSession,
+            garminBindingStore: GarminDeviceBindingStore(keychain: InMemoryKeychainStore())
         )
         try auth.installSessionForTesting(accountSession)
         let accountReady = await waitUntil { appState.isAccountReady }
@@ -9641,7 +9643,8 @@ final class CoreParityTests: XCTestCase {
             auth: auth,
             defaults: defaults,
             workoutDirectoryURL: directory,
-            cloudURLSession: urlSession
+            cloudURLSession: urlSession,
+            garminBindingStore: GarminDeviceBindingStore(keychain: InMemoryKeychainStore())
         )
         try auth.installSessionForTesting(accountSession)
         let accountReady = await waitUntil { appState.isAccountReady }
