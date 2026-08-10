@@ -1,0 +1,14 @@
+{
+  "imports": {
+    "@supabase/supabase-js": "npm:@supabase/supabase-js@2.110.2",
+    "web-push-neo": "npm:web-push-neo@0.1.2"
+  },
+  "lock": {
+    "path": "./deno.lock",
+    "frozen": true
+  },
+  "nodeModulesDir": "none",
+  "compilerOptions": {
+    "strict": true
+  }
+}

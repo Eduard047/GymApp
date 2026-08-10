@@ -1398,8 +1398,8 @@ test("local logout keeps the account active until its owned marker is verifiably
   vm.runInContext(`
     activeAccount = null;
     clearRemoteSession();
-    loginAccount("Local Owner");
   `, context);
+  await vm.runInContext('loginAccount("Local Owner")', context);
   const markerBefore = context.localStorage.getItem(authKey);
   const localAccountId = vm.runInContext("activeAccount.id", context);
   const removeItem = context.localStorage.removeItem;
@@ -1920,10 +1920,10 @@ test("new local account IDs are random and do not collide for lossy legacy names
     state = defaultAppState();
   `, context);
 
-  vm.runInContext('loginAccount("a b")', context);
+  await vm.runInContext('loginAccount("a b")', context);
   const firstId = vm.runInContext("activeAccount.id", context);
   await vm.runInContext("logoutAccount()", context);
-  vm.runInContext('loginAccount("a-b")', context);
+  await vm.runInContext('loginAccount("a-b")', context);
   const secondId = vm.runInContext("activeAccount.id", context);
 
   assert.match(firstId, /^local-v2-[a-f0-9]{32}$/);
@@ -1951,7 +1951,7 @@ test("Unicode and formerly truncated local names retain separate stable storage 
   ];
   const ids = [];
   for (const name of names) {
-    vm.runInContext(`loginAccount(${JSON.stringify(name)})`, context);
+    await vm.runInContext(`loginAccount(${JSON.stringify(name)})`, context);
     ids.push(vm.runInContext("activeAccount.id", context));
     await vm.runInContext("logoutAccount()", context);
   }
@@ -1963,7 +1963,7 @@ test("Unicode and formerly truncated local names retain separate stable storage 
   );
 });
 
-test("legacy account keys remain stable while ambiguous collisions fail closed", () => {
+test("legacy account keys remain stable while ambiguous collisions fail closed", async () => {
   const context = loadContext(async () => {
     throw new Error("network is not used");
   });
@@ -1975,7 +1975,7 @@ test("legacy account keys remain stable while ambiguous collisions fail closed",
   ]));
   vm.runInContext(`activeAccount = null; localStorage.removeItem(AUTH_KEY); state = defaultAppState();`, context);
 
-  vm.runInContext('loginAccount("Legacy Owner")', context);
+  await vm.runInContext('loginAccount("Legacy Owner")', context);
   assert.equal(vm.runInContext("activeAccount.id", context), "legacy-key");
   assert.equal(vm.runInContext("state.language", context), "uk");
 
@@ -1988,7 +1988,7 @@ test("legacy account keys remain stable while ambiguous collisions fail closed",
     ]));
     localStorage.setItem(ACCOUNT_PREFIX + "shared-legacy-key", JSON.stringify(defaultAppState()));
   `, context);
-  vm.runInContext('loginAccount("a-b")', context);
+  await vm.runInContext('loginAccount("a-b")', context);
   assert.equal(vm.runInContext("activeAccount", context), null);
   assert.equal(context.localStorage.getItem("gym-pwa-active-account-v1"), null);
 });
@@ -3492,7 +3492,8 @@ test("local account deletion removes only the confirmed local profile", async ()
   const context = loadContext(async () => {
     throw new Error("local deletion must not use the network");
   });
-  vm.runInContext("activeAccount = null; clearRemoteSession(); loginAccount('Local Owner');", context);
+  vm.runInContext("activeAccount = null; clearRemoteSession();", context);
+  await vm.runInContext("loginAccount('Local Owner')", context);
   const localId = vm.runInContext("activeAccount.id", context);
   const localKey = `gym-pwa-account:${localId}`;
   context.window.confirm = () => true;

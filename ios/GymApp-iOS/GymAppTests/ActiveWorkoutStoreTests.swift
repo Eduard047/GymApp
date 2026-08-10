@@ -5,6 +5,30 @@ import XCTest
 
 @MainActor
 final class ActiveWorkoutStoreTests: XCTestCase {
+    func testRecoveredLiveStartDoesNotPublishDraftWhenBindingPersistenceFails() throws {
+        let context = try makeContext(account: "active-live-binding-first")
+        let startedAt = Date(timeIntervalSince1970: 1_800_000_000)
+        let setID = UUID()
+
+        XCTAssertThrowsError(
+            try context.active.startRecoveredLiveWorkout(
+                startedAt: startedAt,
+                exercises: [
+                    ActiveWorkoutExercise(
+                        exerciseID: context.exercise.id,
+                        sets: [ActiveWorkoutSet(id: setID, weight: 80, reps: 8)]
+                    )
+                ],
+                undoableSetID: nil,
+                workoutStore: context.history,
+                now: startedAt,
+                persistBindingBeforeCommit: { _ in throw SyntheticActiveStoreError() }
+            )
+        )
+        XCTAssertNil(context.active.draft)
+        XCTAssertTrue(context.history.workouts.isEmpty)
+    }
+
     func testStartAndRecordPersistStableDraftAcrossRelaunch() throws {
         let context = try makeContext(account: "active-relaunch")
         let startedAt = Date(timeIntervalSince1970: 1_800_000_000)
@@ -1037,7 +1061,17 @@ final class ActiveWorkoutStoreTests: XCTestCase {
             reps: 15,
             now: Date(timeIntervalSince1970: 1_800_000_700)
         )
+        let liveURL = LiveWorkoutSidecarStore.storageURL(
+            forWorkoutStorageURL: context.history.storageURL
+        )
+        let liveRecoveryURL = liveURL
+            .deletingPathExtension()
+            .appendingPathExtension("recovery-\(UUID().uuidString.lowercased()).json")
+        try Data("private live state".utf8).write(to: liveURL, options: .atomic)
+        try Data("private recovery state".utf8).write(to: liveRecoveryURL, options: .atomic)
         XCTAssertTrue(FileManager.default.fileExists(atPath: context.active.storageURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: liveURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: liveRecoveryURL.path))
 
         try WorkoutStore.destroyAccountFiles(
             accountStorageKey: context.history.accountStorageKey,
@@ -1046,6 +1080,8 @@ final class ActiveWorkoutStoreTests: XCTestCase {
 
         XCTAssertFalse(FileManager.default.fileExists(atPath: context.history.storageURL.path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: context.active.storageURL.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: liveURL.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: liveRecoveryURL.path))
     }
 
     private struct Context {
@@ -1125,6 +1161,8 @@ final class ActiveWorkoutStoreTests: XCTestCase {
         return defaults
     }
 }
+
+private struct SyntheticActiveStoreError: Error {}
 
 @MainActor
 private final class ActiveWorkoutRestTestClock {

@@ -3,8 +3,8 @@
     <cloud-backup>
         <!-- Workout databases contain private account-scoped data and are restored in-app instead. -->
         <exclude domain="database" path="." />
-        <exclude domain="file" path="exercise-media/" />
-        <!-- Auth sessions, PKCE verifiers, and Garmin credentials are device-bound. -->
+        <exclude domain="file" path="." />
+        <!-- Auth sessions, PKCE verifiers, push bindings, and Garmin credentials are device-bound. -->
         <exclude domain="sharedpref" path="gym_cloud_auth.xml" />
         <exclude domain="sharedpref" path="gym_cloud_auth.xml.bak" />
         <exclude domain="sharedpref" path="gym_cloud_account_deletion_journal.xml" />
@@ -25,10 +25,18 @@
         <exclude domain="sharedpref" path="gym_exercise_rest_timers.xml.bak" />
         <exclude domain="sharedpref" path="gym_active_workout_timer.xml" />
         <exclude domain="sharedpref" path="gym_active_workout_timer.xml.bak" />
+        <exclude domain="sharedpref" path="gym_live_workout_sidecar.xml" />
+        <exclude domain="sharedpref" path="gym_live_workout_sidecar.xml.bak" />
+        <exclude domain="sharedpref" path="gym_push_installation.xml" />
+        <exclude domain="sharedpref" path="gym_push_installation.xml.bak" />
+        <exclude domain="sharedpref" path="com.google.android.gms.appid.xml" />
+        <exclude domain="sharedpref" path="com.google.android.gms.appid.xml.bak" />
+        <exclude domain="sharedpref" path="com.google.firebase.messaging.xml" />
+        <exclude domain="sharedpref" path="com.google.firebase.messaging.xml.bak" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="database" path="." />
-        <exclude domain="file" path="exercise-media/" />
+        <exclude domain="file" path="." />
         <exclude domain="sharedpref" path="gym_cloud_auth.xml" />
         <exclude domain="sharedpref" path="gym_cloud_auth.xml.bak" />
         <exclude domain="sharedpref" path="gym_cloud_account_deletion_journal.xml" />
@@ -49,5 +57,13 @@
         <exclude domain="sharedpref" path="gym_exercise_rest_timers.xml.bak" />
         <exclude domain="sharedpref" path="gym_active_workout_timer.xml" />
         <exclude domain="sharedpref" path="gym_active_workout_timer.xml.bak" />
+        <exclude domain="sharedpref" path="gym_live_workout_sidecar.xml" />
+        <exclude domain="sharedpref" path="gym_live_workout_sidecar.xml.bak" />
+        <exclude domain="sharedpref" path="gym_push_installation.xml" />
+        <exclude domain="sharedpref" path="gym_push_installation.xml.bak" />
+        <exclude domain="sharedpref" path="com.google.android.gms.appid.xml" />
+        <exclude domain="sharedpref" path="com.google.android.gms.appid.xml.bak" />
+        <exclude domain="sharedpref" path="com.google.firebase.messaging.xml" />
+        <exclude domain="sharedpref" path="com.google.firebase.messaging.xml.bak" />
     </device-transfer>
 </data-extraction-rules>

@@ -126,6 +126,7 @@ final class AppState: ObservableObject {
     private var pendingCloudSyncConflict: PendingCloudSyncConflict?
     private var socialCacheGeneration: UInt64 = 0
     private var pendingWorkoutInviteRequestIDs: [PendingWorkoutInviteRequestKey: UUID] = [:]
+    private weak var nativePushManager: NativePushManager?
     private let defaults: UserDefaults
     private let workoutDirectoryURL: URL?
     private let remoteStateLoader: (@MainActor (String) async throws -> Data?)?
@@ -235,6 +236,10 @@ final class AppState: ObservableObject {
         return !isPreparingAccount &&
             activeAccountStorageKey == expectedKey &&
             workoutStore.accountStorageKey == expectedKey
+    }
+
+    func attachNativePushManager(_ manager: NativePushManager) {
+        nativePushManager = manager
     }
 
     /// Unknown future core fields remain read-only. Shared PWA extension namespaces are
@@ -418,6 +423,9 @@ final class AppState: ObservableObject {
                 show(error: error)
                 return false
             }
+        }
+        if let cloudUserID = auth.session?.cloud?.userID {
+            await nativePushManager?.prepareForSessionEnd(expectedUserID: cloudUserID)
         }
         clearRestTimersForAccountTransition(to: nil)
         await auth.signOut()
@@ -1544,6 +1552,7 @@ final class AppState: ObservableObject {
         do {
             try ensureDeletionTargetIsCurrent(target, deletingStore: deletingStore)
             if let cloudUserID = target.cloudUserID {
+                await nativePushManager?.prepareForSessionEnd(expectedUserID: cloudUserID)
                 try await auth.deleteCloudAccountOnServer(
                     expectedUserID: cloudUserID,
                     onRequestDispositionChange: { disposition in
@@ -1566,6 +1575,11 @@ final class AppState: ObservableObject {
             }
         } catch {
             if requestDisposition != .outcomeUnknown {
+                if let cloudUserID = target.cloudUserID {
+                    await nativePushManager?.resumeAfterFailedSessionEnd(
+                        expectedUserID: cloudUserID
+                    )
+                }
                 // No delete request crossed the network boundary, or the server returned an
                 // authoritative 4xx rejection. The local account remains authoritative.
                 defaults.removeObject(forKey: Self.pendingDeletionStorageKey)

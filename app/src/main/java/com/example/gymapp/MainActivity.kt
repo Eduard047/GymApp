@@ -38,7 +38,9 @@ class MainActivity : AppCompatActivity() {
                     authManager = app.cloudAuthManager,
                     languageManager = app.languageManager,
                     restTimerController = app.restTimerController,
-                    sharedWorkoutInbox = app.sharedWorkoutInbox
+                    sharedWorkoutInbox = app.sharedWorkoutInbox,
+                    pushManager = app.pushManager,
+                    pushNavigationInbox = app.pushNavigationInbox
                 )
             }
         }
@@ -61,7 +63,17 @@ class MainActivity : AppCompatActivity() {
         handleIncomingIntent(intent)
     }
 
+    override fun onResume() {
+        super.onResume()
+        (application as GymApplication).pushManager.refreshSystemState()
+    }
+
     private fun handleIncomingIntent(intent: Intent?) {
+        if (intent != null && intent.action?.startsWith(PUSH_TAP_ACTION_PREFIX) == true) {
+            val app = application as GymApplication
+            app.pushManager.consumeNotificationTap(intent)?.let(app.pushNavigationInbox::offer)
+            return
+        }
         val uri = intent?.data
         if (uri != null) {
             when (
@@ -128,3 +140,5 @@ class MainActivity : AppCompatActivity() {
         }
     }
 }
+
+private const val PUSH_TAP_ACTION_PREFIX = "com.setforge.gymapp.action.PUSH_TAP."

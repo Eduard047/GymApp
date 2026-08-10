@@ -1,6 +1,8 @@
 ﻿package com.example.gymapp.data.repository
 
 import androidx.room.withTransaction
+import com.example.gymapp.auth.LiveCanonicalPlan
+import com.example.gymapp.auth.LiveProgress
 import com.example.gymapp.data.catalog.BuiltInExerciseCatalog
 import com.example.gymapp.data.dao.ExerciseDeletionCascadeRow
 import com.example.gymapp.data.database.GymDatabase
@@ -27,6 +29,7 @@ import java.nio.ByteBuffer
 import java.security.MessageDigest
 import java.time.Instant
 import java.time.LocalDate
+import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
@@ -60,6 +63,15 @@ data class WorkoutExerciseDraft(
 enum class StartActiveWorkoutResult {
     Started,
     AlreadyActive
+}
+
+sealed interface StartLiveCanonicalWorkoutResult {
+    data class Started(
+        val serverToLocalSetIds: Map<String, String>,
+        val startedAt: Long
+    ) : StartLiveCanonicalWorkoutResult
+
+    data object AlreadyActive : StartLiveCanonicalWorkoutResult
 }
 
 sealed interface RecordActiveWorkoutSetResult {
@@ -1448,6 +1460,146 @@ class GymRepository(
         result
     }
 
+    /**
+     * Imports the server-canonical live plan and creates its local active workout in one Room
+     * transaction. The account-bound sidecar is durably prepared before Room commits; a failed
+     * sidecar write rolls the Room transaction back. Server IDs never become trusted Room keys.
+     */
+    internal suspend fun preflightLiveCanonicalWorkout(plan: LiveCanonicalPlan) {
+        val sharedPlan = normalizeLiveCanonicalPlan(plan)
+        database.withTransaction {
+            validateLiveCanonicalExerciseResolution(
+                plan = sharedPlan,
+                existingExercises = exerciseDao.getExercisesSnapshot()
+            )
+        }
+    }
+
+    internal suspend fun startLiveCanonicalWorkout(
+        plan: LiveCanonicalPlan,
+        startedAt: Long,
+        initialProgress: LiveProgress = LiveProgress(
+            revision = 1,
+            completedSets = emptyList(),
+            undoableSetId = null,
+            finishedAt = null
+        ),
+        persistBindingBeforeCommit: (StartLiveCanonicalWorkoutResult.Started) -> Boolean = { true }
+    ): StartLiveCanonicalWorkoutResult = activeWorkoutMutationMutex.withLock {
+        require(WorkoutDataLimits.isValidTimestamp(startedAt)) {
+            "Live workout start timestamp is outside the supported range."
+        }
+        val sharedPlan = normalizeLiveCanonicalPlan(plan)
+        require(initialProgress.revision > 0 && initialProgress.finishedAt == null &&
+            initialProgress.completedSets.map { it.setId }.toSet().size ==
+            initialProgress.completedSets.size &&
+            initialProgress.completedSets.all { completed ->
+                completed.setId in plan.setIds && completed.weight.isFinite() &&
+                    completed.weight in 0.0..SharedWorkoutLink.MAX_WEIGHT &&
+                    completed.reps in 1..SharedWorkoutLink.MAX_REPS
+            } &&
+            (initialProgress.undoableSetId == null) == initialProgress.completedSets.isEmpty() &&
+            (initialProgress.undoableSetId == null ||
+                initialProgress.completedSets.lastOrNull()?.setId == initialProgress.undoableSetId)
+        ) { "Live workout progress is invalid." }
+        val completedByServerId = initialProgress.completedSets.associateBy { it.setId }
+        val completedAtByServerId = initialProgress.completedSets.associate { completed ->
+            val completedAt = runCatching {
+                OffsetDateTime.parse(completed.completedAt).toInstant().toEpochMilli()
+            }.getOrElse { throw IllegalArgumentException("Live workout progress is invalid.") }
+            require(WorkoutDataLimits.isValidTimestamp(completedAt) && completedAt >= startedAt) {
+                "Live workout progress is invalid."
+            }
+            completed.setId to completedAt
+        }
+
+        database.withTransaction {
+            if (activeWorkoutDao.getSnapshot(ACTIVE_WORKOUT_ID) != null) {
+                return@withTransaction StartLiveCanonicalWorkoutResult.AlreadyActive
+            }
+
+            val existingExercises = exerciseDao.getExercisesSnapshot()
+            validateLiveCanonicalExerciseResolution(sharedPlan, existingExercises)
+            val identityIndex = ExerciseIdentityIndex(existingExercises)
+            var exerciseCount = existingExercises.size
+            val exerciseSnapshots = sharedPlan.exercises.map { exercise ->
+                val catalogKey = SharedWorkoutLink.resolvedCatalogKeyForImport(exercise)
+                val exerciseId = identityIndex.resolve(exercise.name, catalogKey) ?: run {
+                    require(exerciseCount < WorkoutDataLimits.MAX_EXERCISES) {
+                        "This account has reached the exercise limit."
+                    }
+                    require(WorkoutDataLimits.isValidExerciseName(exercise.name)) {
+                        "Exercise name is outside the supported length."
+                    }
+                    exerciseDao.insert(ExerciseEntity(name = exercise.name)).also { insertedId ->
+                        identityIndex.add(insertedId, exercise.name, catalogKey)
+                        exerciseCount += 1
+                    }
+                }
+                requireNotNull(exerciseDao.getById(exerciseId)) { "Exercise no longer exists." }
+            }
+            require(exerciseSnapshots.map { it.id }.toSet().size == exerciseSnapshots.size) {
+                "Live workout contains duplicate exercises."
+            }
+
+            val usedIds = hashSetOf<String>()
+            val exerciseRows = plan.exercises.mapIndexed { index, canonicalExercise ->
+                val resolved = exerciseSnapshots[index]
+                ActiveWorkoutExerciseEntity(
+                    id = nextStableActiveWorkoutId(usedIds),
+                    activeWorkoutId = ACTIVE_WORKOUT_ID,
+                    exerciseName = resolved.name.trim(),
+                    catalogKey = BuiltInExerciseCatalog.inferKey(resolved.name),
+                    orderIndex = index
+                )
+            }
+            val serverToLocalSetIds = linkedMapOf<String, String>()
+            val setRows = plan.exercises.flatMapIndexed { exerciseIndex, canonicalExercise ->
+                canonicalExercise.sets.mapIndexed { setIndex, canonicalSet ->
+                    val localId = nextStableActiveWorkoutId(usedIds)
+                    check(serverToLocalSetIds.put(canonicalSet.setId, localId) == null) {
+                        "Live workout contains duplicate set identifiers."
+                    }
+                    ActiveWorkoutSetEntity(
+                        id = localId,
+                        activeWorkoutExerciseId = exerciseRows[exerciseIndex].id,
+                        weight = completedByServerId[canonicalSet.setId]?.weight
+                            ?: canonicalSet.weight,
+                        reps = completedByServerId[canonicalSet.setId]?.reps
+                            ?: canonicalSet.reps,
+                        orderIndex = setIndex,
+                        completedAt = completedAtByServerId[canonicalSet.setId]
+                    )
+                }
+            }
+            val localUndoableSetId = initialProgress.undoableSetId?.let { serverSetId ->
+                checkNotNull(serverToLocalSetIds[serverSetId]) {
+                    "Live workout progress is invalid."
+                }
+            }
+            activeWorkoutDao.insert(
+                ActiveWorkoutEntity(
+                    id = ACTIVE_WORKOUT_ID,
+                    date = startedAt,
+                    note = null,
+                    startedAt = startedAt,
+                    revision = initialProgress.revision.toLong() - 1L,
+                    undoableSetId = localUndoableSetId
+                )
+            )
+            activeWorkoutDao.insertExercises(exerciseRows)
+            activeWorkoutDao.insertSets(setRows)
+            val started = StartLiveCanonicalWorkoutResult.Started(
+                serverToLocalSetIds = serverToLocalSetIds,
+                startedAt = startedAt
+            )
+            check(persistBindingBeforeCommit(started)) {
+                "Live workout binding could not be persisted."
+            }
+            started
+        }
+    }
+
     suspend fun recordActiveWorkoutSet(
         setId: String,
         expectedRevision: Long,
@@ -2618,6 +2770,77 @@ class GymRepository(
         val GARMIN_DEVICE_BINDING_PATTERN = Regex("^-?[0-9]{1,19}$")
         val GARMIN_REQUEST_ID_PATTERN = Regex("^[A-Za-z0-9_.:-]{16,128}$")
         val SHA256_HEX_PATTERN = Regex("^[0-9a-f]{64}$")
+    }
+}
+
+internal fun normalizeLiveCanonicalPlan(plan: LiveCanonicalPlan): SharedWorkoutPlan {
+    require(plan.exercises.isNotEmpty() && plan.exercises.size <= SharedWorkoutLink.MAX_EXERCISES) {
+        "Live workout exercise count is invalid."
+    }
+    require(plan.exercises.sumOf { it.sets.size } in 1..SharedWorkoutLink.MAX_TOTAL_SETS) {
+        "Live workout set count is invalid."
+    }
+    require(plan.exercises.map { it.exerciseId }.toSet().size == plan.exercises.size &&
+        plan.exercises.flatMap { it.sets }.map { it.setId }.toSet().size ==
+        plan.exercises.sumOf { it.sets.size }) { "Live workout identifiers are invalid." }
+    plan.exercises.forEachIndexed { exerciseIndex, exercise ->
+        require(exercise.exerciseId ==
+            "e_${(exerciseIndex + 1).toString().padStart(2, '0')}") {
+            "Live workout exercise identifier is invalid."
+        }
+        exercise.sets.forEachIndexed { setIndex, set ->
+            require(set.setId ==
+                "s_${(exerciseIndex + 1).toString().padStart(2, '0')}_${
+                    (setIndex + 1).toString().padStart(2, '0')
+                }") { "Live workout set identifier is invalid." }
+        }
+    }
+    return SharedWorkoutLink.normalize(
+        plan.exercises.map { exercise ->
+            SharedWorkoutExercise(
+                catalogKey = exercise.catalogKey,
+                name = exercise.name,
+                sets = exercise.sets.map { set ->
+                    SharedWorkoutSet(weight = set.weight, reps = set.reps)
+                }
+            )
+        }
+    )
+}
+
+internal fun validateLiveCanonicalExerciseResolution(
+    plan: SharedWorkoutPlan,
+    existingExercises: List<ExerciseEntity>
+) {
+    val identityIndex = ExerciseIdentityIndex(existingExercises)
+    val usedIds = existingExercises.mapTo(hashSetOf()) { it.id }
+    var nextSyntheticId = -1L
+    var exerciseCount = existingExercises.size
+    val resolvedIds = plan.exercises.map { exercise ->
+        val catalogKey = SharedWorkoutLink.resolvedCatalogKeyForImport(exercise)
+        identityIndex.resolve(exercise.name, catalogKey) ?: run {
+            require(exerciseCount < WorkoutDataLimits.MAX_EXERCISES) {
+                "This account has reached the exercise limit."
+            }
+            require(WorkoutDataLimits.isValidExerciseName(exercise.name)) {
+                "Exercise name is outside the supported length."
+            }
+            while (nextSyntheticId in usedIds) {
+                require(nextSyntheticId > Long.MIN_VALUE) {
+                    "Exercise catalog cannot be validated."
+                }
+                nextSyntheticId -= 1L
+            }
+            val resolvedId = nextSyntheticId
+            usedIds += resolvedId
+            if (nextSyntheticId > Long.MIN_VALUE) nextSyntheticId -= 1L
+            identityIndex.add(resolvedId, exercise.name, catalogKey)
+            exerciseCount += 1
+            resolvedId
+        }
+    }
+    require(resolvedIds.distinct().size == resolvedIds.size) {
+        "Live workout contains duplicate exercises."
     }
 }
 

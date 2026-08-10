@@ -29,11 +29,14 @@ internal fun WorkoutShareSheet(
     friends: List<SocialFriend>,
     isCloudAccount: Boolean,
     actionsInFlight: Set<String>,
+    liveActionsInFlight: Set<String>,
     onShareLink: () -> Unit,
     onSendToFriend: (SocialFriend) -> Unit,
+    onStartLiveWithFriend: (SocialFriend) -> Unit,
     onDismiss: () -> Unit
 ) {
     val isWorkoutInviteSending = actionsInFlight.any { it.startsWith("send-workout-") }
+    val isLiveInviteSending = liveActionsInFlight.any { it.startsWith("send-") }
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = MaterialTheme.colorScheme.background,
@@ -83,7 +86,7 @@ internal fun WorkoutShareSheet(
             }
             item {
                 Text(
-                    stringResource(R.string.workout_share_friend_title),
+                    stringResource(R.string.workout_share_copy_friend_title),
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.padding(top = 4.dp)
                 )
@@ -112,7 +115,52 @@ internal fun WorkoutShareSheet(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
-                            friend.displayName,
+                            stringResource(R.string.workout_share_copy_friend_action, friend.displayName),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+            item {
+                Text(
+                    stringResource(R.string.workout_share_live_friend_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+            }
+            item {
+                Text(
+                    stringResource(R.string.workout_share_live_friend_supporting),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            if (!isCloudAccount) {
+                item {
+                    Text(
+                        stringResource(R.string.workout_share_friend_login_required),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            } else if (friends.isEmpty()) {
+                item {
+                    Text(
+                        stringResource(R.string.workout_share_friend_empty),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            } else {
+                items(rankedSocialFriends(friends), key = { "live-${it.profileId}" }) { friend ->
+                    OutlinedButton(
+                        onClick = { onStartLiveWithFriend(friend) },
+                        enabled = !isLiveInviteSending,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            stringResource(R.string.workout_share_live_friend_action, friend.displayName),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )

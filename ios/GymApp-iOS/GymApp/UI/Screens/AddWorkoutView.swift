@@ -82,11 +82,13 @@ struct AddWorkoutView: View {
     private let reportStatus: (String, Bool) -> Void
     private let loadSocialDashboard: (() async throws -> SocialDashboard)?
     private let sendSocialWorkoutInvite: ((String, SharedWorkoutPlan) async throws -> Void)?
+    private let sendLiveWorkoutInvite: ((String, SharedWorkoutPlan) async throws -> Void)?
     private let refreshSocialWorkoutInbox: (() async throws -> Void)?
 
     init(
         appState: AppState,
         activeWorkoutStore: ActiveWorkoutStore,
+        liveWorkoutCoordinator: LiveWorkoutCoordinator? = nil,
         initialDrafts: [WorkoutExerciseDraft] = [],
         onStarted: @escaping (UUID) -> Void,
         onSaved: @escaping (UUID) -> Void,
@@ -108,6 +110,11 @@ struct AddWorkoutView: View {
             sendSocialWorkoutInvite: { profileID, plan in
                 try await appState.sendWorkoutInvite(to: profileID, plan: plan)
             },
+            sendLiveWorkoutInvite: liveWorkoutCoordinator.map { coordinator in
+                { profileID, plan in
+                    try await coordinator.sendInvite(to: profileID, plan: plan)
+                }
+            },
             refreshSocialWorkoutInbox: {
                 _ = try await appState.refreshSocialWorkoutInbox()
             }
@@ -126,6 +133,7 @@ struct AddWorkoutView: View {
         onStatus: @escaping (String, Bool) -> Void = { _, _ in },
         loadSocialDashboard: (() async throws -> SocialDashboard)? = nil,
         sendSocialWorkoutInvite: ((String, SharedWorkoutPlan) async throws -> Void)? = nil,
+        sendLiveWorkoutInvite: ((String, SharedWorkoutPlan) async throws -> Void)? = nil,
         refreshSocialWorkoutInbox: (() async throws -> Void)? = nil
     ) {
         _store = ObservedObject(wrappedValue: store)
@@ -149,6 +157,7 @@ struct AddWorkoutView: View {
         self.reportStatus = onStatus
         self.loadSocialDashboard = loadSocialDashboard
         self.sendSocialWorkoutInvite = sendSocialWorkoutInvite
+        self.sendLiveWorkoutInvite = sendLiveWorkoutInvite
         self.refreshSocialWorkoutInbox = refreshSocialWorkoutInbox
     }
 
@@ -673,9 +682,9 @@ struct AddWorkoutView: View {
         .disabled(isSaving || drafts.isEmpty)
         .accessibilityHint(
             t(
-                "Choose a shareable link or an accepted friend",
-                "Обери посилання або прийнятого друга",
-                "Выбери ссылку или принятого друга"
+                "Choose a link, a separate copy, or a live workout with a friend",
+                "Обери посилання, окрему копію або живе тренування з другом",
+                "Выбери ссылку, отдельную копию или живую тренировку с другом"
             )
         )
 
@@ -699,9 +708,9 @@ struct AddWorkoutView: View {
                                 .font(.title2.bold())
                                 Text(
                                     t(
-                                        "Choose a link or send this plan directly to an accepted friend.",
-                                        "Обери посилання або надішли цей план безпосередньо прийнятому другу.",
-                                        "Выбери ссылку или отправь этот план напрямую принятому другу."
+                                        "Share a link, send an editable copy, or invite a friend to train live.",
+                                        "Поділися посиланням, надішли редаговану копію або запроси друга тренуватися наживо.",
+                                        "Поделись ссылкой, отправь редактируемую копию или пригласи друга тренироваться вживую."
                                     )
                                 )
                                 .font(.subheadline)
@@ -752,11 +761,11 @@ struct AddWorkoutView: View {
                             VStack(alignment: .leading, spacing: 10) {
                                 GymSectionTitle(
                                     eyebrow: t("Friends", "Друзі", "Друзья"),
-                                    title: t("Send directly", "Надіслати напряму", "Отправить напрямую"),
+                                    title: t("Copy or live", "Копія або наживо", "Копия или вживую"),
                                     supporting: t(
-                                        "Your friend receives an independent local copy. Future edits are not synchronized.",
-                                        "Друг отримає незалежну локальну копію. Подальші зміни не синхронізуються.",
-                                        "Друг получит независимую локальную копию. Дальнейшие изменения не синхронизируются."
+                                        "A copy stays independent. Live freezes the plan for two people and shows each person's set progress.",
+                                        "Копія залишається незалежною. Наживо фіксує план для двох і показує прогрес підходів кожного.",
+                                        "Копия остаётся независимой. Живой режим фиксирует план для двоих и показывает прогресс подходов каждого."
                                     )
                                 )
 
@@ -787,9 +796,7 @@ struct AddWorkoutView: View {
                                     .foregroundStyle(GymTheme.textSecondary)
                                 } else {
                                     ForEach(shareFriends) { friend in
-                                        Button {
-                                            Task { await sendWorkoutInvite(to: friend) }
-                                        } label: {
+                                        VStack(alignment: .leading, spacing: 8) {
                                             HStack(spacing: 10) {
                                                 Image(systemName: "person.crop.circle.fill")
                                                 Text(friend.displayName)
@@ -797,13 +804,34 @@ struct AddWorkoutView: View {
                                                 Spacer()
                                                 if sharingFriendID == friend.profileID {
                                                     ProgressView()
-                                                } else {
-                                                    Image(systemName: "paperplane.fill")
                                                 }
                                             }
                                             .frame(maxWidth: .infinity, alignment: .leading)
+                                            HStack(spacing: 8) {
+                                                Button {
+                                                    Task { await sendWorkoutInvite(to: friend, live: false) }
+                                                } label: {
+                                                    Label(
+                                                        t("Send copy", "Надіслати копію", "Отправить копию"),
+                                                        systemImage: "doc.on.doc"
+                                                    )
+                                                }
+                                                .buttonStyle(.bordered)
+
+                                                Button {
+                                                    Task { await sendWorkoutInvite(to: friend, live: true) }
+                                                } label: {
+                                                    Label(
+                                                        t("Invite live", "Запросити наживо", "Пригласить вживую"),
+                                                        systemImage: "wave.3.right.circle.fill"
+                                                    )
+                                                }
+                                                .buttonStyle(.borderedProminent)
+                                                .disabled(sendLiveWorkoutInvite == nil)
+                                            }
                                         }
-                                        .buttonStyle(.bordered)
+                                        .padding(10)
+                                        .background(GymTheme.surfaceVariant.opacity(0.55), in: RoundedRectangle(cornerRadius: 14))
                                         .disabled(sharingFriendID != nil)
                                     }
                                 }
@@ -825,9 +853,9 @@ struct AddWorkoutView: View {
 
                         Text(
                             t(
-                                "Only exercise names and planned weight/repetition rows are sent. Notes, dates, account data and Health data stay on this iPhone.",
-                                "Надсилаються лише назви вправ і заплановані вага та повторення. Нотатки, дати, дані акаунта й Health залишаються на цьому iPhone.",
-                                "Отправляются только названия упражнений и запланированные вес и повторения. Заметки, даты, данные аккаунта и Health остаются на этом iPhone."
+                                "Only the plan is sent before acceptance. In live mode, completed set values and live progress are visible only to the two participants. Notes, Health data and account secrets stay private.",
+                                "До прийняття надсилається лише план. У живому режимі значення виконаних підходів і прогрес бачать лише двоє учасників. Нотатки, дані Health і секрети акаунта залишаються приватними.",
+                                "До принятия отправляется только план. В живом режиме значения выполненных подходов и прогресс видят только двое участников. Заметки, данные Health и секреты аккаунта остаются приватными."
                             )
                         )
                         .font(.caption)
@@ -940,21 +968,27 @@ struct AddWorkoutView: View {
         }
     }
 
-    private func sendWorkoutInvite(to friend: SocialFriendSummary) async {
+    private func sendWorkoutInvite(to friend: SocialFriendSummary, live: Bool) async {
         guard sharingFriendID == nil,
               let plan = sharingPlan,
-              let sendSocialWorkoutInvite else { return }
+              let sender = live ? sendLiveWorkoutInvite : sendSocialWorkoutInvite else { return }
         sharingFriendID = friend.profileID
         shareChooserMessage = nil
         shareChooserMessageIsError = false
         defer { sharingFriendID = nil }
         do {
-            try await sendSocialWorkoutInvite(friend.profileID, plan)
-            shareChooserMessage = t(
-                "Invitation submitted. If this friend is available, it will appear in their workout inbox.",
-                "Запрошення надіслано. Якщо друг доступний, воно з’явиться в його вхідних тренуваннях.",
-                "Приглашение отправлено. Если друг доступен, оно появится в его входящих тренировках."
-            )
+            try await sender(friend.profileID, plan)
+            shareChooserMessage = live
+                ? t(
+                    "Live invitation sent. The plan is frozen; your friend joins the lobby before you start.",
+                    "Живе запрошення надіслано. План зафіксовано; друг приєднається до лобі до твого старту.",
+                    "Живое приглашение отправлено. План зафиксирован; друг присоединится к лобби до твоего старта."
+                )
+                : t(
+                    "Copy invitation submitted. If this friend is available, it will appear in their workout inbox.",
+                    "Запрошення з копією надіслано. Якщо друг доступний, воно з’явиться у вхідних тренуваннях.",
+                    "Приглашение с копией отправлено. Если друг доступен, оно появится во входящих тренировках."
+                )
         } catch {
             shareChooserMessage = t(
                 "The invitation could not be submitted safely. Refresh friends and try again.",

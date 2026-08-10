@@ -3,6 +3,7 @@ import SwiftUI
 @MainActor
 final class AppBootstrap: ObservableObject {
     let auth: AuthService
+    let nativePush: NativePushManager
 
     @Published private(set) var appState: AppState?
     @Published private(set) var startupErrorMessage: String?
@@ -10,12 +11,17 @@ final class AppBootstrap: ObservableObject {
     init() {
         let auth = AuthService()
         self.auth = auth
+        let nativePush = NativePushManager(auth: auth)
+        self.nativePush = nativePush
+        NativePushAppDelegate.manager = nativePush
         start()
     }
 
     func start() {
         do {
-            appState = try AppState(auth: auth)
+            let state = try AppState(auth: auth)
+            state.attachNativePushManager(nativePush)
+            appState = state
             startupErrorMessage = nil
         } catch {
             appState = nil
@@ -27,6 +33,7 @@ final class AppBootstrap: ObservableObject {
 @main
 @MainActor
 struct GymAppIOS: App {
+    @UIApplicationDelegateAdaptor(NativePushAppDelegate.self) private var appDelegate
     @StateObject private var bootstrap: AppBootstrap
 
     init() {
@@ -37,10 +44,11 @@ struct GymAppIOS: App {
         WindowGroup {
             Group {
                 if let appState = bootstrap.appState {
-                    AppRootView(appState: appState)
+                    AppRootView(appState: appState, nativePush: bootstrap.nativePush)
                         .environmentObject(appState)
                         .environmentObject(appState.workoutStore)
                         .environmentObject(bootstrap.auth)
+                        .environmentObject(bootstrap.nativePush)
                         .onOpenURL { url in
                             if !appState.handleSharedWorkoutURL(url),
                                !appState.garminPhoneSync.handleOpenURL(url) {

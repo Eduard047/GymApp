@@ -1,6 +1,7 @@
 {
   "private": true,
   "scripts": {
+    "build:pwa-realtime": "node scripts/build-pwa-realtime.mjs",
     "generate:exercise-search": "node scripts/generate-exercise-search-vocabulary.mjs",
     "check:exercise-search": "node scripts/generate-exercise-search-vocabulary.mjs --check",
     "test": "node --test tests/*.test.mjs",
@@ -9,5 +10,9 @@
     "test:leaderboard-privacy": "node --test tests/leaderboard-privacy.test.mjs",
     "test:pwa-smart-plan": "node --test tests/pwa-smart-plan.test.mjs",
     "test:pwa-security": "node --test tests/pwa-service-worker.test.mjs"
+  },
+  "devDependencies": {
+    "@supabase/realtime-js": "2.110.2",
+    "esbuild": "0.25.10"
   }
 }

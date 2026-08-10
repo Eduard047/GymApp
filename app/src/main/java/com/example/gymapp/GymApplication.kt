@@ -12,6 +12,8 @@ import com.example.gymapp.data.database.GymDatabase
 import com.example.gymapp.data.repository.GymRepository
 import com.example.gymapp.data.repository.SharedWorkoutInbox
 import com.example.gymapp.garmin.GarminSyncManager
+import com.example.gymapp.push.AndroidPushManager
+import com.example.gymapp.push.PushNavigationInbox
 import com.example.gymapp.sync.CloudSyncBaselineStore
 import com.example.gymapp.sync.CloudSyncStatusStore
 import com.example.gymapp.ui.media.ExerciseMediaStore
@@ -40,6 +42,10 @@ class GymApplication : Application() {
     val restTimerController: RestTimerController by lazy { RestTimerController(this) }
     val garminSyncManager: GarminSyncManager by lazy { GarminSyncManager(this) }
     internal val sharedWorkoutInbox = SharedWorkoutInbox()
+    internal val pushNavigationInbox = PushNavigationInbox()
+    internal val pushManager: AndroidPushManager by lazy {
+        AndroidPushManager(this, cloudAuthManager, pushNavigationInbox)
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -48,6 +54,7 @@ class GymApplication : Application() {
         val profileManager = trainingProfileManager
         val timerController = restTimerController
         val garminManager = garminSyncManager
+        val nativePushManager = pushManager
         val pendingAccountDeletions = cloudAccountDeletionJournal.pending()
         applicationScope.launch(start = CoroutineStart.UNDISPATCHED) {
             authManager.authState.collect { state ->
@@ -103,6 +110,7 @@ class GymApplication : Application() {
             }
         }
         garminManager.initialize()
+        nativePushManager.initialize()
     }
 
     fun repositoryFor(session: AccountSession?): GymRepository {

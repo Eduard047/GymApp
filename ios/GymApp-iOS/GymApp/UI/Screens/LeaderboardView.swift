@@ -65,8 +65,10 @@ struct FriendsView: View {
     @AppStorage("app-language") private var languageCode = AppLanguage.english.rawValue
     @ObservedObject private var appState: AppState
     @ObservedObject private var auth: AuthService
+    @ObservedObject private var liveWorkoutCoordinator: LiveWorkoutCoordinator
 
     private let canAcceptWorkoutInvites: Bool
+    private let onOpenLiveWorkout: () -> Void
 
     @State private var friendCode = ""
     @State private var errorMessage: String?
@@ -80,11 +82,15 @@ struct FriendsView: View {
     init(
         appState: AppState,
         auth: AuthService,
-        canAcceptWorkoutInvites: Bool
+        canAcceptWorkoutInvites: Bool,
+        liveWorkoutCoordinator: LiveWorkoutCoordinator,
+        onOpenLiveWorkout: @escaping () -> Void
     ) {
         self.appState = appState
         self.auth = auth
         self.canAcceptWorkoutInvites = canAcceptWorkoutInvites
+        self.liveWorkoutCoordinator = liveWorkoutCoordinator
+        self.onOpenLiveWorkout = onOpenLiveWorkout
     }
 
     var body: some View {
@@ -105,6 +111,7 @@ struct FriendsView: View {
                     friendCodeCard(dashboard)
                     addFriendCard
                     requestsCard(dashboard)
+                    liveWorkoutCard
                     workoutInvitesCard
                     friendsRankingCard(dashboard)
                     privacyCard(dashboard)
@@ -384,6 +391,167 @@ struct FriendsView: View {
                     empty(t("Workout inbox is unavailable.", "Вхідні тренування недоступні.", "Входящие тренировки недоступны."))
                 }
             }
+        }
+    }
+
+    private var liveWorkoutCard: some View {
+        GymPanel(highlighted: liveWorkoutCoordinator.pendingInvitationCount > 0) {
+            VStack(alignment: .leading, spacing: 12) {
+                GymSectionTitle(
+                    eyebrow: t("Live together", "Разом наживо", "Вместе вживую"),
+                    title: t("Live workouts", "Живі тренування", "Живые тренировки"),
+                    supporting: t(
+                        "The plan is frozen for two people. The owner starts only after the friend accepts; completed sets then update live.",
+                        "План зафіксований для двох. Власник стартує лише після прийняття другом; виконані підходи далі оновлюються наживо.",
+                        "План зафиксирован для двоих. Владелец стартует только после принятия другом; выполненные подходы затем обновляются вживую."
+                    )
+                )
+
+                if let message = liveWorkoutCoordinator.lastError {
+                    GymStatusBanner(message: message, isError: true)
+                } else if let message = liveWorkoutCoordinator.lastStatus {
+                    GymStatusBanner(message: message, isError: false)
+                }
+
+                let invitations = liveWorkoutCoordinator.inbox?.invitations ?? []
+                let rooms = liveWorkoutCoordinator.inbox?.rooms ?? []
+                if invitations.isEmpty, rooms.isEmpty {
+                    empty(t("No live workout invitations.", "Немає живих запрошень.", "Нет живых приглашений."))
+                }
+
+                ForEach(invitations) { invitation in
+                    VStack(alignment: .leading, spacing: 8) {
+                        liveWorkoutSummary(
+                            name: invitation.owner.displayName,
+                            summary: invitation.summary,
+                            state: t("Invites you to train live", "Запрошує тренуватися наживо", "Приглашает тренироваться вживую")
+                        )
+                        HStack(spacing: 8) {
+                            Button(t("Join lobby", "Увійти в лобі", "Войти в лобби")) {
+                                Task { await respondToLiveInvitation(invitation, accept: true) }
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(!canAcceptWorkoutInvites || appState.pendingSharedWorkout != nil)
+
+                            Button(t("Decline", "Відхилити", "Отклонить"), role: .destructive) {
+                                Task { await respondToLiveInvitation(invitation, accept: false) }
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                        .disabled(activeActionID != nil)
+                        if !canAcceptWorkoutInvites || appState.pendingSharedWorkout != nil {
+                            Text(
+                                t(
+                                    "Finish or close the current workout draft before joining.",
+                                    "Заверши або закрий поточну чернетку тренування перед приєднанням.",
+                                    "Заверши или закрой текущий черновик тренировки перед присоединением."
+                                )
+                            )
+                            .font(.caption)
+                            .foregroundStyle(GymTheme.textSecondary)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+
+                ForEach(rooms) { room in
+                    VStack(alignment: .leading, spacing: 8) {
+                        liveWorkoutSummary(
+                            name: room.peer.displayName,
+                            summary: room.summary,
+                            state: liveRoomState(room)
+                        )
+                        HStack(spacing: 8) {
+                            if room.status == .ready, room.role == .owner {
+                                Button(t("Start together", "Почати разом", "Начать вместе")) {
+                                    Task { await startLiveRoom(room) }
+                                }
+                                .buttonStyle(.borderedProminent)
+                            } else if room.status == .active {
+                                Button(t("Open workout", "Відкрити тренування", "Открыть тренировку")) {
+                                    Task { await openLiveRoom(room) }
+                                }
+                                .buttonStyle(.borderedProminent)
+                            }
+
+                            if room.role == .owner {
+                                Button(t("Cancel room", "Скасувати кімнату", "Отменить комнату"), role: .destructive) {
+                                    Task { await closeLiveRoom(room, leave: false) }
+                                }
+                                .buttonStyle(.bordered)
+                            } else {
+                                Button(t("Leave room", "Вийти з кімнати", "Выйти из комнаты"), role: .destructive) {
+                                    Task { await closeLiveRoom(room, leave: true) }
+                                }
+                                .buttonStyle(.bordered)
+                            }
+                        }
+                        .disabled(activeActionID != nil)
+                    }
+                    .padding(.vertical, 4)
+                }
+
+                HStack(spacing: 8) {
+                    Label(
+                        liveWorkoutCoordinator.realtimeConnected
+                            ? t("Live updates connected", "Живі оновлення підключено", "Живые обновления подключены")
+                            : t("Live updates with polling fallback", "Живі оновлення з резервним опитуванням", "Живые обновления с резервным опросом"),
+                        systemImage: liveWorkoutCoordinator.realtimeConnected ? "bolt.horizontal.circle.fill" : "arrow.clockwise.circle"
+                    )
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(GymTheme.textSecondary)
+                    Spacer()
+                    Button {
+                        Task { await liveWorkoutCoordinator.refreshAll(showErrors: true) }
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(liveWorkoutCoordinator.isRefreshing)
+                    .accessibilityLabel(t("Refresh live workouts", "Оновити живі тренування", "Обновить живые тренировки"))
+                }
+            }
+        }
+    }
+
+    private func liveWorkoutSummary(
+        name: String,
+        summary: LiveWorkoutSummary,
+        state: String
+    ) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "wave.3.right.circle.fill")
+                .foregroundStyle(GymTheme.primary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(name).font(.headline)
+                Text(state).font(.caption.bold()).foregroundStyle(GymTheme.primary)
+                Text(
+                    "\(summary.exerciseCount) \(t("exercises", "вправ", "упражнений")) · \(summary.setCount) \(t("sets", "підходів", "подходов"))"
+                )
+                .font(.caption)
+                .foregroundStyle(GymTheme.textSecondary)
+                Text(summary.exerciseNames.prefix(3).map(localizedExerciseName).joined(separator: " · "))
+                    .font(.caption)
+                    .foregroundStyle(GymTheme.textSecondary)
+                    .lineLimit(2)
+            }
+            Spacer(minLength: 4)
+            if activeActionID?.contains(name) == true { ProgressView() }
+        }
+    }
+
+    private func liveRoomState(_ room: LiveWorkoutOpenRoom) -> String {
+        switch room.status {
+        case .waiting:
+            return t("Waiting for acceptance", "Очікуємо прийняття", "Ожидаем принятия")
+        case .ready:
+            return room.role == .owner
+                ? t("Both ready · you start", "Обоє готові · стартуєш ти", "Оба готовы · стартуешь ты")
+                : t("Both ready · owner starts", "Обоє готові · стартує власник", "Оба готовы · стартует владелец")
+        case .active:
+            return t("Workout is live", "Тренування наживо", "Тренировка вживую")
+        default:
+            return t("Room closed", "Кімнату закрито", "Комната закрыта")
         }
     }
 
@@ -706,6 +874,79 @@ struct FriendsView: View {
                     t("Could not load workout invitations.", "Не вдалося завантажити запрошення на тренування.", "Не удалось загрузить приглашения на тренировку.")
                 )
             }
+        }
+        await liveWorkoutCoordinator.refreshAll(showErrors: false)
+    }
+
+    private func respondToLiveInvitation(
+        _ invitation: LiveWorkoutInvitation,
+        accept: Bool
+    ) async {
+        guard activeActionID == nil else { return }
+        if accept, (!canAcceptWorkoutInvites || appState.pendingSharedWorkout != nil) {
+            errorMessage = t(
+                "Finish or close the current workout draft before joining this live room.",
+                "Заверши або закрий поточну чернетку тренування перед приєднанням до живої кімнати.",
+                "Заверши или закрой текущий черновик тренировки перед присоединением к живой комнате."
+            )
+            return
+        }
+        activeActionID = "live-\(invitation.roomID)"
+        errorMessage = nil
+        defer { activeActionID = nil }
+        do {
+            try await liveWorkoutCoordinator.respond(to: invitation, accept: accept)
+            statusMessage = accept
+                ? t("Joined the live lobby.", "Приєднано до живого лобі.", "Ты в живом лобби.")
+                : t("Live invitation declined.", "Живе запрошення відхилено.", "Живое приглашение отклонено.")
+        } catch {
+            errorMessage = gymSafeEnglishErrorMessage(error)
+        }
+    }
+
+    private func startLiveRoom(_ room: LiveWorkoutOpenRoom) async {
+        guard activeActionID == nil else { return }
+        activeActionID = "live-\(room.roomID)"
+        errorMessage = nil
+        defer { activeActionID = nil }
+        do {
+            try await liveWorkoutCoordinator.startRoom(room)
+            onOpenLiveWorkout()
+        } catch {
+            errorMessage = gymSafeEnglishErrorMessage(error)
+        }
+    }
+
+    private func openLiveRoom(_ room: LiveWorkoutOpenRoom) async {
+        guard activeActionID == nil else { return }
+        activeActionID = "live-\(room.roomID)"
+        errorMessage = nil
+        defer { activeActionID = nil }
+        do {
+            try await liveWorkoutCoordinator.openRoom(room.roomID)
+            guard liveWorkoutCoordinator.isAttachedToCurrentDraft else {
+                throw LiveWorkoutSidecarError.invalidState
+            }
+            onOpenLiveWorkout()
+        } catch {
+            errorMessage = gymSafeEnglishErrorMessage(error)
+        }
+    }
+
+    private func closeLiveRoom(_ room: LiveWorkoutOpenRoom, leave: Bool) async {
+        guard activeActionID == nil else { return }
+        activeActionID = "live-\(room.roomID)"
+        errorMessage = nil
+        defer { activeActionID = nil }
+        do {
+            try await liveWorkoutCoordinator.openRoom(room.roomID)
+            if leave {
+                try await liveWorkoutCoordinator.leaveRoom()
+            } else {
+                try await liveWorkoutCoordinator.cancelRoom()
+            }
+        } catch {
+            errorMessage = gymSafeEnglishErrorMessage(error)
         }
     }
 

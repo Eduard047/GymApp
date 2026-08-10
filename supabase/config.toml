@@ -22,3 +22,15 @@ verify_jwt = false
 # function performs its additional live-session check before the admin delete.
 [functions.delete-account]
 verify_jwt = true
+
+# Social/live calls authenticate a user JWT again with Auth getUser, then pass
+# only an allowlisted, bounded action through the durable gateway perimeter.
+[functions.social-live-gateway]
+verify_jwt = true
+
+# Dispatch is server-to-server only. pg_net sends a dedicated high-entropy
+# PUSH_DISPATCH_SERVER_KEY in apikey plus an independent dispatcher token.
+# JWT gateway verification stays disabled; the Supabase secret/service-role key
+# is reserved for internal RPCs and is never copied into Vault or cron headers.
+[functions.push-dispatch]
+verify_jwt = false

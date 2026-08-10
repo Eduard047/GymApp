@@ -15,18 +15,92 @@ const VERSIONED_ASSET_PAIRS = [
   ["theme.js", "theme.v56.js"],
   ["styles.css", "styles.v68.css"],
   ["muscle-regions.js", "muscle-regions.v56.js"],
-  ["supabase-config.js", "supabase-config.v56.js"],
+  ["supabase-config.js", "supabase-config.v58.js"],
   ["state-contract.js", "state-contract.v69.js"],
   ["garmin-cloud-sync.js", "garmin-cloud-sync.v57.js"],
   ["progression-rules.js", "progression-rules.v56.js"],
   ["shared-workout.js", "shared-workout.v65.js"],
   ["shared-workout-flow.js", "shared-workout-flow.v71.js"],
-  ["russian-text.js", "russian-text.v74.js"],
+  ["russian-text.js", "russian-text.v75.js"],
   ["exercise-search-vocabulary.js", "exercise-search-vocabulary.v1.js"],
-  ["app.js", "app.v81.js"],
+  ["supabase-realtime.js", "supabase-realtime.v1.js"],
+  ["live-workout.js", "live-workout.v1.js"],
+  ["live-workout-state.js", "live-workout-state.v1.js"],
+  ["app.js", "app.v82.js"],
   ["workout/landing.css", "workout/landing.v1.css"],
   ["workout/landing.js", "workout/landing.v2.js"]
 ];
+
+function fakeIndexedDb(initialBinding = null) {
+  const values = new Map(initialBinding ? [["current", initialBinding]] : []);
+  let storeCreated = initialBinding !== null;
+  const requestFor = (transaction, operation) => {
+    const request = { result: undefined, error: null, onsuccess: null, onerror: null };
+    transaction.pending += 1;
+    queueMicrotask(() => {
+      try {
+        request.result = operation();
+        request.onsuccess?.();
+      } catch (error) {
+        request.error = error;
+        request.onerror?.();
+        transaction.error = error;
+        transaction.onerror?.();
+        transaction.onabort?.();
+      } finally {
+        transaction.pending -= 1;
+        if (transaction.pending === 0 && !transaction.error) {
+          queueMicrotask(() => transaction.pending === 0 && transaction.oncomplete?.());
+        }
+      }
+    });
+    return request;
+  };
+  const database = {
+    objectStoreNames: { contains: name => storeCreated && name === "current-bindings" },
+    createObjectStore(name) {
+      if (name !== "current-bindings" || storeCreated) throw new Error("invalid store");
+      storeCreated = true;
+    },
+    transaction(name) {
+      if (name !== "current-bindings" || !storeCreated) throw new Error("missing store");
+      const transaction = {
+        pending: 0,
+        error: null,
+        onabort: null,
+        onerror: null,
+        oncomplete: null,
+        objectStore() {
+          return {
+            get: key => requestFor(transaction, () => values.get(key)),
+            put: (value, key) => requestFor(transaction, () => values.set(key, value)),
+            delete: key => requestFor(transaction, () => values.delete(key))
+          };
+        }
+      };
+      return transaction;
+    },
+    close() {}
+  };
+  return {
+    open() {
+      const request = {
+        result: database,
+        error: null,
+        onupgradeneeded: null,
+        onsuccess: null,
+        onerror: null,
+        onblocked: null
+      };
+      queueMicrotask(() => {
+        if (!storeCreated) request.onupgradeneeded?.();
+        request.onsuccess?.();
+      });
+      return request;
+    },
+    values
+  };
+}
 
 function loadWorker(scope = "https://example.test/GymApp/", options = {}) {
   const listeners = new Map();
@@ -41,7 +115,10 @@ function loadWorker(scope = "https://example.test/GymApp/", options = {}) {
   let claimCount = 0;
   let matchAllCount = 0;
   let skipWaitingCount = 0;
+  const notifications = [];
+  const openedWindows = [];
   const cacheContents = new Map();
+  const indexedDB = fakeIndexedDb(options.pushBinding ?? null);
   const cacheFor = name => {
     if (!cacheContents.has(name)) {
       const entries = new Map((options.cacheEntries?.[name] || []).map(rawUrl => {
@@ -53,7 +130,14 @@ function loadWorker(scope = "https://example.test/GymApp/", options = {}) {
     return cacheContents.get(name);
   };
   const self = {
-    registration: { scope },
+    registration: {
+      scope,
+      showNotification(title, notificationOptions) {
+        notifications.push({ title, options: notificationOptions });
+        return Promise.resolve();
+      }
+    },
+    indexedDB,
     location: new URL(scope),
     clients: {
       claim() {
@@ -63,6 +147,10 @@ function loadWorker(scope = "https://example.test/GymApp/", options = {}) {
       matchAll() {
         matchAllCount += 1;
         return Promise.resolve(options.clients || []);
+      },
+      openWindow(url) {
+        openedWindows.push(url);
+        return Promise.resolve({ url });
       }
     },
     skipWaiting() {
@@ -140,7 +228,10 @@ function loadWorker(scope = "https://example.test/GymApp/", options = {}) {
     fetchCount: () => fetchCount,
     claimCount: () => claimCount,
     matchAllCount: () => matchAllCount,
-    skipWaitingCount: () => skipWaitingCount
+    skipWaitingCount: () => skipWaitingCount,
+    notifications,
+    openedWindows,
+    pushBindingValues: indexedDB.values
   };
 }
 
@@ -175,7 +266,7 @@ test("service worker caches only exact immutable current same-origin assets", ()
   for (const scope of ["https://example.test/", "https://example.test/GymApp/"]) {
     const handler = loadWorker(scope).listeners.get("fetch");
 
-    assert.equal(isIntercepted(handler, new URL("./app.v81.js", scope)), true);
+    assert.equal(isIntercepted(handler, new URL("./app.v82.js", scope)), true);
     assert.equal(isIntercepted(handler, new URL("./shared-workout.v65.js", scope)), true);
     assert.equal(isIntercepted(handler, new URL("./shared-workout-flow.v71.js", scope)), true);
     assert.equal(isIntercepted(handler, new URL("./workout/", scope)), true);
@@ -192,6 +283,192 @@ test("service worker caches only exact immutable current same-origin assets", ()
   }
 });
 
+test("push handler accepts only the minimal opaque notification contract", async () => {
+  const bindingId = "55555555-5555-4555-8555-555555555555";
+  const worker = loadWorker("https://gymapptracker.com/", {
+    pushBinding: {
+      version: 1,
+      bindingId,
+      ownerId: "11111111-1111-4111-8111-111111111111"
+    }
+  });
+  const handler = worker.listeners.get("push");
+  let wait = null;
+  handler({
+    data: {
+      json: () => ({
+        version: 1,
+        notification: {
+          title: "Live workout invitation",
+          body: "Open GymApp to join the workout.",
+          tag: "live_room"
+        },
+        data: {
+          version: 1,
+          bindingId,
+          kind: "invite",
+          roomId: `lr_${"a".repeat(32)}`,
+          roomRevision: 3
+        }
+      })
+    },
+    waitUntil(value) { wait = value; }
+  });
+  await wait;
+  assert.equal(worker.notifications.length, 1);
+  assert.equal(worker.notifications[0].title, "Live workout invitation");
+  assert.deepEqual(JSON.parse(JSON.stringify(worker.notifications[0].options.data)), {
+    version: 1,
+    bindingId,
+    kind: "invite",
+    roomId: `lr_${"a".repeat(32)}`,
+    roomRevision: 3
+  });
+  assert.equal(JSON.stringify(worker.notifications[0]).includes("weight"), false);
+
+  worker.pushBindingValues.set("transition", {
+    version: 1,
+    nextOwnerId: "33333333-3333-4333-8333-333333333333"
+  });
+  let transitionWait = null;
+  handler({
+    data: {
+      json: () => ({
+        version: 1,
+        notification: { title: "Old invite", body: "Open GymApp", tag: "live_room" },
+        data: {
+          version: 1,
+          bindingId,
+          kind: "invite",
+          roomId: `lr_${"a".repeat(32)}`,
+          roomRevision: 3
+        }
+      })
+    },
+    waitUntil(value) { transitionWait = value; }
+  });
+  await transitionWait;
+  assert.equal(worker.notifications.length, 1);
+  worker.pushBindingValues.delete("transition");
+
+  let rejectedWait = null;
+  handler({
+    data: {
+      json: () => ({
+        version: 1,
+        notification: { title: "Invite", body: "Open GymApp", tag: "live" },
+        data: {
+          version: 1,
+          bindingId,
+          kind: "invite",
+          roomId: `lr_${"a".repeat(32)}`,
+          roomRevision: 3,
+          url: "https://evil.example/"
+        }
+      })
+    },
+    waitUntil(value) { rejectedWait = value; }
+  });
+  assert.equal(rejectedWait, null);
+  assert.equal(worker.notifications.length, 1);
+});
+
+test("service worker drops a delivery and click from a superseded account binding", async () => {
+  const oldBindingId = "55555555-5555-4555-8555-555555555555";
+  const worker = loadWorker("https://gymapptracker.com/", {
+    pushBinding: {
+      version: 1,
+      bindingId: "66666666-6666-4666-8666-666666666666",
+      ownerId: "33333333-3333-4333-8333-333333333333"
+    }
+  });
+  const data = {
+    version: 1,
+    bindingId: oldBindingId,
+    kind: "invite",
+    roomId: `lr_${"a".repeat(32)}`,
+    roomRevision: 3
+  };
+  let wait = null;
+  worker.listeners.get("push")({
+    data: {
+      json: () => ({
+        version: 1,
+        notification: { title: "Old invite", body: "Open GymApp", tag: "live_room" },
+        data
+      })
+    },
+    waitUntil(value) { wait = value; }
+  });
+  await wait;
+  assert.equal(worker.notifications.length, 0);
+
+  let closed = 0;
+  wait = null;
+  worker.listeners.get("notificationclick")({
+    notification: { data, close() { closed += 1; } },
+    waitUntil(value) { wait = value; }
+  });
+  await wait;
+  assert.equal(closed, 1);
+  assert.deepEqual(worker.openedWindows, []);
+});
+
+test("notification clicks focus an existing app or open only an allowlisted same-origin route", async () => {
+  const bindingId = "55555555-5555-4555-8555-555555555555";
+  const pushBinding = {
+    version: 1,
+    bindingId,
+    ownerId: "11111111-1111-4111-8111-111111111111"
+  };
+  const messages = [];
+  let focused = 0;
+  const existingClient = {
+    url: "https://gymapptracker.com/",
+    postMessage(value) { messages.push(value); },
+    focus() { focused += 1; return Promise.resolve(); }
+  };
+  const existingWorker = loadWorker("https://gymapptracker.com/", {
+    clients: [existingClient], pushBinding
+  });
+  let wait = null;
+  let closed = 0;
+  const data = {
+    version: 1,
+    bindingId,
+    kind: "started",
+    roomId: `lr_${"b".repeat(32)}`,
+    roomRevision: 8
+  };
+  existingWorker.listeners.get("notificationclick")({
+    notification: { data, close() { closed += 1; } },
+    waitUntil(value) { wait = value; }
+  });
+  await wait;
+  assert.equal(closed, 1);
+  assert.equal(focused, 1);
+  assert.deepEqual(JSON.parse(JSON.stringify(messages)), [{
+    version: 1,
+    type: "gymapp_notification_click",
+    target: "live"
+  }]);
+  assert.deepEqual(existingWorker.openedWindows, []);
+
+  const newWorker = loadWorker("https://gymapptracker.com/GymApp/", { pushBinding });
+  wait = null;
+  newWorker.listeners.get("notificationclick")({
+    notification: { data, close() {} },
+    waitUntil(value) { wait = value; }
+  });
+  await wait;
+  assert.equal(newWorker.openedWindows.length, 1);
+  const opened = new URL(newWorker.openedWindows[0]);
+  assert.equal(opened.origin, "https://gymapptracker.com");
+  assert.equal(opened.pathname, "/GymApp/");
+  assert.equal(opened.searchParams.get("notification"), "live");
+  assert.equal(opened.searchParams.has("room"), false);
+});
+
 test("current versioned pathname assets cannot be mistaken for predecessor assets", () => {
   const predecessorPaths = new Set([
     "confirmed.css", "confirmed.js", "frame-guard.js", "theme.js", "styles.css",
@@ -201,9 +478,10 @@ test("current versioned pathname assets cannot be mistaken for predecessor asset
   ]);
   const currentPaths = [
     "confirmed.v56.css", "confirmed.v56.js", "frame-guard.v56.js", "theme.v56.js", "styles.v68.css",
-    "muscle-regions.v56.js", "supabase-config.v56.js", "state-contract.v69.js",
+    "muscle-regions.v56.js", "supabase-config.v58.js", "state-contract.v69.js",
     "garmin-cloud-sync.v57.js", "progression-rules.v56.js", "shared-workout.v65.js",
-    "shared-workout-flow.v71.js", "russian-text.v74.js", "exercise-search-vocabulary.v1.js", "app.v81.js",
+    "shared-workout-flow.v71.js", "supabase-realtime.v1.js", "live-workout.v1.js",
+    "live-workout-state.v1.js", "russian-text.v75.js", "exercise-search-vocabulary.v1.js", "app.v82.js",
     "workout/landing.v1.css", "workout/landing.v2.js"
   ];
 
@@ -250,19 +528,19 @@ test("install surfaces use dedicated any, maskable, favicon, and Apple icons", (
 test("service worker ignores credential-bearing, partial-content, and non-GET requests", () => {
   const handler = loadWorker().listeners.get("fetch");
 
-  assert.equal(isIntercepted(handler, "https://example.test/GymApp/app.v81.js", {
+  assert.equal(isIntercepted(handler, "https://example.test/GymApp/app.v82.js", {
     headers: { Authorization: "Bearer test-token" }
   }), false);
   assert.equal(isIntercepted(handler, "https://example.test/GymApp/index.html", {
     headers: { apikey: "test-key" }
   }), false);
-  assert.equal(isIntercepted(handler, "https://example.test/GymApp/app.v81.js", {
+  assert.equal(isIntercepted(handler, "https://example.test/GymApp/app.v82.js", {
     headers: { Range: "bytes=0-10" }
   }), false);
   assert.equal(isIntercepted(handler, "https://example.test/GymApp/index.html", {
     headers: { "If-Range": "etag" }
   }), false);
-  assert.equal(isIntercepted(handler, "https://example.test/GymApp/app.v81.js", { method: "POST" }), false);
+  assert.equal(isIntercepted(handler, "https://example.test/GymApp/app.v82.js", { method: "POST" }), false);
 });
 
 test("searched auth callbacks are network-only but receive enforceable anti-framing headers", async () => {
@@ -321,7 +599,7 @@ test("sensitive callback network failures never fall back to cached HTML", async
 
 test("token-like asset queries are neither intercepted nor cached", () => {
   const handler = loadWorker().listeners.get("fetch");
-  assert.equal(isIntercepted(handler, "https://example.test/GymApp/app.v81.js?provider_token=secret"), false);
+  assert.equal(isIntercepted(handler, "https://example.test/GymApp/app.v82.js?provider_token=secret"), false);
   assert.equal(isIntercepted(handler, "https://example.test/GymApp/icon-512.png?access_token=secret"), false);
 });
 
@@ -331,7 +609,7 @@ test("cached documents receive the same anti-framing policy", async () => {
   const response = await responsePromiseFor(handler, "https://example.test/GymApp/");
 
   assert.equal(await response.text(), "cached");
-  assert.deepEqual(worker.openedCaches, ["gym-pwa-v116"]);
+  assert.deepEqual(worker.openedCaches, ["gym-pwa-v118"]);
   assert.match(response.headers.get("Content-Security-Policy"), /style-src 'self'/);
   assert.match(response.headers.get("Content-Security-Policy"), /frame-ancestors 'none'/);
   assert.doesNotMatch(response.headers.get("Content-Security-Policy"), /unsafe-inline/);
@@ -347,7 +625,7 @@ test("shared workout documents use the stricter offline chooser policy", async (
     const policy = response.headers.get("Content-Security-Policy");
 
     assert.equal(await response.text(), "cached");
-    assert.deepEqual(worker.openedCaches, ["gym-pwa-v116"]);
+    assert.deepEqual(worker.openedCaches, ["gym-pwa-v118"]);
     assert.match(policy, /default-src 'none'/);
     assert.match(policy, /connect-src 'none'/);
     assert.match(policy, /worker-src 'none'/);
@@ -366,9 +644,9 @@ test("install reloads one internally consistent version without taking over old 
   handler({ waitUntil(value) { installPromise = value; } });
   await installPromise;
 
-  assert.deepEqual(worker.openedCaches, ["gym-pwa-v116"]);
+  assert.deepEqual(worker.openedCaches, ["gym-pwa-v118"]);
   assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/exercise-search-vocabulary.v1.js")));
-  assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/app.v81.js")));
+  assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/app.v82.js")));
   assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/shared-workout.v65.js")));
   assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/shared-workout-flow.v71.js")));
   assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/workout/")));
@@ -467,7 +745,7 @@ test("a sibling github.io project scope never enters GymApp legacy cleanup", asy
   await installPromise;
 
   assert.equal(worker.skipWaitingCount(), 0);
-  assert.deepEqual(worker.openedCaches, ["gym-pwa-v116"]);
+  assert.deepEqual(worker.openedCaches, ["gym-pwa-v118"]);
   assert.equal(worker.claimCount(), 0);
   assert.equal(isIntercepted(worker.listeners.get("fetch"), scope), true);
 });

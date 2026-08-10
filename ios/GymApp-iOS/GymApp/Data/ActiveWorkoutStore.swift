@@ -185,6 +185,67 @@ final class ActiveWorkoutStore: ObservableObject {
         return candidate
     }
 
+    /// Restores an active live workout from the authenticated server snapshot. The
+    /// caller supplies server-canonical completion values and timestamps; this method
+    /// binds only the local exercise UUIDs and commits the whole recovered draft once.
+    @discardableResult
+    func startRecoveredLiveWorkout(
+        startedAt: Date,
+        exercises: [ActiveWorkoutExercise],
+        undoableSetID: UUID?,
+        workoutStore: WorkoutStore,
+        now: Date = Date(),
+        persistBindingBeforeCommit: (ActiveWorkoutDraft) throws -> Void = { _ in }
+    ) throws -> ActiveWorkoutDraft {
+        guard !writesBlocked else { throw ActiveWorkoutStoreError.storageUnavailable }
+        guard draft == nil else { throw ActiveWorkoutStoreError.alreadyActive }
+        guard workoutStore.accountStorageKey == accountStorageKey else {
+            throw ActiveWorkoutStoreError.accountMismatch
+        }
+        let knownExercises = workoutStore.exercises
+        guard Set(knownExercises.map(\.id)).count == knownExercises.count else {
+            throw ActiveWorkoutStoreError.invalidDraft
+        }
+        let knownByID = Dictionary(uniqueKeysWithValues: knownExercises.map { ($0.id, $0) })
+        let boundExercises = try exercises.map { exercise -> ActiveWorkoutExercise in
+            guard let storedExercise = knownByID[exercise.exerciseID] else {
+                throw ActiveWorkoutStoreError.exerciseUnavailable
+            }
+            return ActiveWorkoutExercise(
+                id: exercise.id,
+                exerciseID: storedExercise.id,
+                exerciseName: storedExercise.name,
+                exerciseCatalogKey: storedExercise.catalogKey,
+                sets: exercise.sets
+            )
+        }
+        let completedDates = boundExercises.flatMap { exercise in
+            exercise.sets.compactMap(\.completedAt)
+        }
+        guard Self.isSupportedTimestamp(startedAt), Self.isSupportedTimestamp(now),
+              completedDates.allSatisfy({
+                  Self.isSupportedTimestamp($0) && $0 >= startedAt
+              }) else {
+            throw ActiveWorkoutStoreError.invalidDraft
+        }
+        let lastModifiedAt = completedDates.reduce(max(now, startedAt), max)
+        let candidate = ActiveWorkoutDraft(
+            startedAt: startedAt,
+            workoutDate: startedAt,
+            note: nil,
+            exercises: boundExercises,
+            undoableSetID: undoableSetID,
+            revision: 0,
+            lastModifiedAt: lastModifiedAt,
+            timing: ActiveWorkoutTimingState(activeSince: startedAt)
+        )
+        try Self.validate(candidate)
+        try persistBindingBeforeCommit(candidate)
+        try commit(candidate)
+        recoveryMessage = nil
+        return candidate
+    }
+
     @discardableResult
     func updateSet(
         draftID: UUID,

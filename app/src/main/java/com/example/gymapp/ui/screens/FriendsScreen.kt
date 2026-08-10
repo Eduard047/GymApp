@@ -45,6 +45,8 @@ import com.example.gymapp.auth.SocialFriendRequest
 import com.example.gymapp.auth.SocialIncomingWorkoutInvite
 import com.example.gymapp.auth.SocialOutgoingWorkoutInvite
 import com.example.gymapp.auth.SocialPrivacy
+import com.example.gymapp.auth.LiveInvitation
+import com.example.gymapp.auth.LiveInboxRoom
 import com.example.gymapp.auth.rankedSocialFriends
 import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.EmptyStatePanel
@@ -52,11 +54,14 @@ import com.example.gymapp.ui.components.HeroPanel
 import com.example.gymapp.ui.components.SectionTitle
 import com.example.gymapp.ui.util.localizedExerciseName
 import com.example.gymapp.ui.viewmodel.FriendsUiState
+import com.example.gymapp.ui.viewmodel.LiveConnectionMode
+import com.example.gymapp.ui.viewmodel.LiveWorkoutUiState
 import com.example.gymapp.util.asString
 
 @Composable
 internal fun FriendsScreen(
     uiState: FriendsUiState,
+    liveUiState: LiveWorkoutUiState,
     onRefresh: () -> Unit,
     onSendFriendRequest: (String) -> Unit,
     onAcceptFriendRequest: (SocialFriendRequest) -> Unit,
@@ -71,6 +76,12 @@ internal fun FriendsScreen(
     onReuseWorkoutInvite: (SocialIncomingWorkoutInvite) -> Unit,
     onCancelWorkoutInvite: (SocialOutgoingWorkoutInvite) -> Unit,
     onClearMessages: () -> Unit,
+    onAcceptLiveInvitation: (LiveInvitation) -> Unit,
+    onDeclineLiveInvitation: (LiveInvitation) -> Unit,
+    onStartLiveRoom: (LiveInboxRoom) -> Unit,
+    onCloseLiveRoom: (LiveInboxRoom) -> Unit,
+    onOpenLiveRoom: (LiveInboxRoom) -> Unit,
+    onClearLiveMessages: () -> Unit,
     modifier: Modifier = Modifier,
     headerContent: LazyListScope.() -> Unit = {}
 ) {
@@ -125,6 +136,16 @@ internal fun FriendsScreen(
                 )
             }
         }
+        liveUiState.error?.let { error ->
+            item {
+                MessagePanel(error.asString(), true, onClearLiveMessages)
+            }
+        }
+        liveUiState.notice?.let { notice ->
+            item {
+                MessagePanel(notice.asString(), false, onClearLiveMessages)
+            }
+        }
 
         if (!uiState.isCloudAccount) {
             item {
@@ -144,6 +165,15 @@ internal fun FriendsScreen(
                 onRefresh = onRefresh
             )
         }
+
+        liveWorkoutLobby(
+            state = liveUiState,
+            onAccept = onAcceptLiveInvitation,
+            onDecline = onDeclineLiveInvitation,
+            onStart = onStartLiveRoom,
+            onClose = onCloseLiveRoom,
+            onOpen = onOpenLiveRoom
+        )
 
         if (dashboard == null) {
             if (uiState.isDashboardLoading) {
@@ -365,6 +395,119 @@ internal fun FriendsScreen(
                 }
             }
         )
+    }
+}
+
+private fun LazyListScope.liveWorkoutLobby(
+    state: LiveWorkoutUiState,
+    onAccept: (LiveInvitation) -> Unit,
+    onDecline: (LiveInvitation) -> Unit,
+    onStart: (LiveInboxRoom) -> Unit,
+    onClose: (LiveInboxRoom) -> Unit,
+    onOpen: (LiveInboxRoom) -> Unit
+) {
+    val invitations = state.inbox?.invitations.orEmpty()
+    val rooms = state.inbox?.rooms.orEmpty()
+    if (invitations.isEmpty() && rooms.isEmpty()) return
+
+    item {
+        SectionTitle(
+            eyebrow = stringResource(R.string.live_workout_lobby_eyebrow),
+            title = stringResource(R.string.live_workout_lobby_title),
+            supporting = stringResource(
+                when (state.connectionMode) {
+                    LiveConnectionMode.Realtime -> R.string.live_workout_connection_realtime
+                    LiveConnectionMode.Polling -> R.string.live_workout_connection_polling
+                    LiveConnectionMode.Offline -> R.string.live_workout_connection_offline
+                }
+            )
+        )
+    }
+    items(invitations, key = { "live-invite-${it.roomId}" }) { invitation ->
+        AppPanel(modifier = Modifier.fillMaxWidth(), highlighted = true) {
+            Column(
+                modifier = Modifier.padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    stringResource(R.string.live_workout_invited_by, invitation.owner.displayName),
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Text(
+                    stringResource(
+                        R.string.live_workout_plan_summary,
+                        invitation.summary.exerciseCount,
+                        invitation.summary.setCount
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = { onAccept(invitation) },
+                        enabled = "respond-${invitation.roomId}" !in state.actionsInFlight,
+                        modifier = Modifier.weight(1f)
+                    ) { Text(stringResource(R.string.action_accept)) }
+                    OutlinedButton(
+                        onClick = { onDecline(invitation) },
+                        enabled = "respond-${invitation.roomId}" !in state.actionsInFlight,
+                        modifier = Modifier.weight(1f)
+                    ) { Text(stringResource(R.string.action_decline)) }
+                }
+            }
+        }
+    }
+    items(rooms, key = { "live-room-${it.roomId}" }) { room ->
+        AppPanel(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    stringResource(R.string.live_workout_with_friend, room.peer.displayName),
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Text(
+                    stringResource(
+                        when (room.status) {
+                            "waiting" -> R.string.live_workout_status_waiting
+                            "ready" -> R.string.live_workout_status_ready
+                            else -> R.string.live_workout_status_active
+                        }
+                    ),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (room.role == "owner" && room.status == "ready") {
+                        Button(
+                            onClick = { onStart(room) },
+                            enabled = "start-${room.roomId}" !in state.actionsInFlight,
+                            modifier = Modifier.weight(1f)
+                        ) { Text(stringResource(R.string.live_workout_start_action)) }
+                    } else if (room.status == "active") {
+                        Button(
+                            onClick = { onOpen(room) },
+                            modifier = Modifier.weight(1f)
+                        ) { Text(stringResource(R.string.live_workout_open_action)) }
+                    }
+                    OutlinedButton(
+                        onClick = { onClose(room) },
+                        enabled = "close-${room.roomId}" !in state.actionsInFlight,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            stringResource(
+                                if (room.role == "owner") {
+                                    R.string.live_workout_cancel_action
+                                } else {
+                                    R.string.live_workout_leave_action
+                                }
+                            )
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 

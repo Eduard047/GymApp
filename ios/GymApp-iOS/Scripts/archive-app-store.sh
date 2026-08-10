@@ -5,8 +5,8 @@ set -eu
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 BUNDLE_ID="${BUNDLE_ID:-com.setforge.gymapp.ios}"
-MARKETING_VERSION="${MARKETING_VERSION:-3.0.4}"
-BUILD_NUMBER="${BUILD_NUMBER:-22}"
+MARKETING_VERSION="${MARKETING_VERSION:-3.0.5}"
+BUILD_NUMBER="${BUILD_NUMBER:-23}"
 ARCHIVE_PATH="${ARCHIVE_PATH:-$ROOT/build/GymApp.xcarchive}"
 EXPORT_PATH="${EXPORT_PATH:-$ROOT/build/AppStoreExport}"
 EXPORT_OPTIONS="$ROOT/build/ExportOptions.plist"

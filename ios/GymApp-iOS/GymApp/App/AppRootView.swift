@@ -7,13 +7,15 @@ struct AppRootView: View {
     @AppStorage("app-language") private var languageCode = AppLanguage.english.rawValue
     @ObservedObject private var appState: AppState
     @ObservedObject private var auth: AuthService
+    @ObservedObject private var nativePush: NativePushManager
 
     @State private var showsIntro = true
     @State private var showsPasswordUpdate = false
 
-    init(appState: AppState) {
+    init(appState: AppState, nativePush: NativePushManager) {
         self.appState = appState
         self.auth = appState.auth
+        self.nativePush = nativePush
     }
 
     var body: some View {
@@ -35,7 +37,7 @@ struct AppRootView: View {
                     signOut: { Task { _ = await appState.signOut() } }
                 )
             } else if appState.isAccountReady {
-                MainTabShell(appState: appState)
+                MainTabShell(appState: appState, nativePush: nativePush)
                     .environmentObject(appState.workoutStore)
                     .id(appState.activeAccountStorageKey)
             } else {
@@ -81,13 +83,19 @@ struct AppRootView: View {
         }
         .onChange(of: appState.isAccountReady) { isReady in
             guard isReady, auth.session?.cloud != nil else { return }
-            Task { await refreshSocialSurfaces() }
+            Task {
+                await nativePush.activateIfNeeded()
+                await refreshSocialSurfaces()
+            }
         }
         .onChange(of: scenePhase) { phase in
             if phase == .background {
                 appState.saveBeforeBackgrounding()
             } else if phase == .active, appState.isAccountReady, auth.session?.cloud != nil {
-                Task { await refreshSocialSurfaces() }
+                Task {
+                    await nativePush.activateIfNeeded()
+                    await refreshSocialSurfaces()
+                }
             }
         }
         .task {
@@ -95,6 +103,7 @@ struct AppRootView: View {
             await appState.bootstrapDemoIfRequested()
 #endif
             if appState.isAccountReady, auth.session?.cloud != nil {
+                await nativePush.activateIfNeeded()
                 await refreshSocialSurfaces()
             }
             showsPasswordUpdate = auth.needsPasswordUpdate
@@ -424,7 +433,9 @@ private struct MainTabShell: View {
     @ObservedObject var appState: AppState
     @ObservedObject private var auth: AuthService
     @ObservedObject private var store: WorkoutStore
+    @ObservedObject private var nativePush: NativePushManager
     @StateObject private var activeWorkoutStore: ActiveWorkoutStore
+    @StateObject private var liveWorkoutCoordinator: LiveWorkoutCoordinator
     @AppStorage("app-language") private var languageCode = AppLanguage.english.rawValue
     @Environment(\.openURL) private var openURL
 
@@ -438,9 +449,10 @@ private struct MainTabShell: View {
     @State private var sharedWorkoutDraftTransitionID: UUID?
     @State private var showingActiveDraftDiscardConfirmation = false
 
-    init(appState: AppState) {
+    init(appState: AppState, nativePush: NativePushManager) {
         self.appState = appState
         self.auth = appState.auth
+        self.nativePush = nativePush
         let currentStore = appState.workoutStore
         self.store = currentStore
         let activeStore = ActiveWorkoutStore(
@@ -450,6 +462,13 @@ private struct MainTabShell: View {
         try? activeStore.rebindExercises(to: currentStore)
         _activeWorkoutStore = StateObject(
             wrappedValue: activeStore
+        )
+        _liveWorkoutCoordinator = StateObject(
+            wrappedValue: LiveWorkoutCoordinator(
+                auth: appState.auth,
+                workoutStore: currentStore,
+                activeWorkoutStore: activeStore
+            )
         )
         let requested = ProcessInfo.processInfo.arguments
             .first(where: { $0.hasPrefix("--screenshot-tab=") })?
@@ -486,7 +505,10 @@ private struct MainTabShell: View {
 
             profileTab
                 .tabItem { Label(Tab.profile.title(languageCode), systemImage: Tab.profile.icon) }
-                .badge(appState.socialWorkoutInbox?.pendingIncomingCount ?? 0)
+                .badge(
+                    (appState.socialWorkoutInbox?.pendingIncomingCount ?? 0) +
+                        liveWorkoutCoordinator.pendingInvitationCount
+                )
                 .tag(Tab.profile)
                 .accessibilityIdentifier("tab-profile")
         }
@@ -498,6 +520,7 @@ private struct MainTabShell: View {
                 AddWorkoutView(
                     appState: appState,
                     activeWorkoutStore: activeWorkoutStore,
+                    liveWorkoutCoordinator: liveWorkoutCoordinator,
                     initialDrafts: sharedWorkoutDraftSeed,
                     onStarted: { _ in
                         sharedWorkoutDraftSeed = []
@@ -549,6 +572,7 @@ private struct MainTabShell: View {
                     ActiveWorkoutView(
                         workoutStore: store,
                         activeWorkoutStore: activeWorkoutStore,
+                        liveWorkoutCoordinator: liveWorkoutCoordinator,
                         restTimers: appState.restTimers,
                         draftID: activeDraft.id,
                         onFinished: { workoutID in
@@ -668,6 +692,47 @@ private struct MainTabShell: View {
                     )
                 }
 
+                if liveWorkoutCoordinator.pendingInvitationCount > 0,
+                   selectedTab != .profile {
+                    Button {
+                        selectedTab = .profile
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: "wave.3.right.circle.fill")
+                                .foregroundStyle(GymTheme.primary)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(
+                                    gymText(
+                                        "Live workout invitation",
+                                        "Запрошення на живе тренування",
+                                        "Приглашение на живую тренировку",
+                                        languageCode: languageCode
+                                    )
+                                )
+                                .font(.subheadline.bold())
+                                Text(
+                                    gymText(
+                                        "Open Friends to join the lobby. The owner starts after both are ready.",
+                                        "Відкрий Друзів, щоб увійти в лобі. Власник стартує, коли обоє готові.",
+                                        "Открой Друзей, чтобы войти в лобби. Владелец стартует, когда оба готовы.",
+                                        languageCode: languageCode
+                                    )
+                                )
+                                .font(.caption)
+                                .foregroundStyle(GymTheme.textSecondary)
+                            }
+                            Spacer(minLength: 8)
+                            Image(systemName: "chevron.right")
+                                .font(.caption.bold())
+                        }
+                        .padding(.horizontal, 16)
+                        .frame(maxWidth: .infinity, minHeight: 58)
+                        .background(.regularMaterial)
+                        .overlay(alignment: .bottom) { Divider() }
+                    }
+                    .buttonStyle(.plain)
+                }
+
                 if let activeDraft = activeWorkoutStore.draft, !showsActiveWorkout {
                     HStack(spacing: 10) {
                         Image(systemName: "play.circle.fill")
@@ -700,21 +765,23 @@ private struct MainTabShell: View {
                             .font(.subheadline.bold())
                         }
                         .buttonStyle(.borderedProminent)
-                        Button(role: .destructive) {
-                            showingActiveDraftDiscardConfirmation = true
-                        } label: {
-                            Image(systemName: "xmark")
-                                .frame(width: 32, height: 32)
-                        }
-                        .buttonStyle(.bordered)
-                        .accessibilityLabel(
-                            gymText(
-                                "Discard active workout",
-                                "Відкинути активне тренування",
-                                "Удалить активную тренировку",
-                                languageCode: languageCode
+                        if !liveWorkoutCoordinator.isAttachedToCurrentDraft {
+                            Button(role: .destructive) {
+                                showingActiveDraftDiscardConfirmation = true
+                            } label: {
+                                Image(systemName: "xmark")
+                                    .frame(width: 32, height: 32)
+                            }
+                            .buttonStyle(.bordered)
+                            .accessibilityLabel(
+                                gymText(
+                                    "Discard active workout",
+                                    "Відкинути активне тренування",
+                                    "Удалить активную тренировку",
+                                    languageCode: languageCode
+                                )
                             )
-                        )
+                        }
                     }
                     .padding(.horizontal, 16)
                     .frame(maxWidth: .infinity, minHeight: 58)
@@ -752,6 +819,8 @@ private struct MainTabShell: View {
             )
         }
         .task {
+            liveWorkoutCoordinator.startMonitoring()
+            openPendingPushRouteIfNeeded()
             if activeWorkoutStore.recoveryMessage != nil {
                 appState.show(
                     message: gymText(
@@ -766,6 +835,9 @@ private struct MainTabShell: View {
             reconcilePersistedActiveRest()
             presentSharedWorkoutPreviewIfPossible()
         }
+        .onDisappear {
+            liveWorkoutCoordinator.stopMonitoring()
+        }
         .onChange(of: appState.pendingSharedWorkout?.id) { _ in
             presentSharedWorkoutPreviewIfPossible()
         }
@@ -777,6 +849,28 @@ private struct MainTabShell: View {
         .onChange(of: showsActiveWorkout) { isPresented in
             if !isPresented {
                 presentSharedWorkoutPreviewIfPossible()
+            }
+        }
+        .onChange(of: liveWorkoutCoordinator.sidecar.attachment?.localDraftID) { draftID in
+            guard let draftID, activeWorkoutStore.draft?.id == draftID else { return }
+            showsAddWorkout = false
+            showsActiveWorkout = true
+        }
+        .onChange(of: nativePush.pendingRoute?.id) { _ in
+            openPendingPushRouteIfNeeded()
+        }
+    }
+
+    private func openPendingPushRouteIfNeeded() {
+        guard let route = nativePush.consumePendingRoute() else { return }
+        selectedTab = .profile
+        Task {
+            switch route.destination {
+            case .live:
+                await liveWorkoutCoordinator.refreshAll(showErrors: false)
+            case .social:
+                _ = try? await appState.refreshSocialDashboard()
+                _ = try? await appState.refreshSocialWorkoutInbox()
             }
         }
     }
@@ -899,6 +993,18 @@ private struct MainTabShell: View {
 
     private func discardActiveDraft() {
         guard let draft = activeWorkoutStore.draft else { return }
+        guard !liveWorkoutCoordinator.isAttachedToCurrentDraft else {
+            appState.show(
+                message: gymText(
+                    "A live workout cannot be discarded silently. Cancel or leave its room from Friends.",
+                    "Живе тренування не можна непомітно відкинути. Скасуй кімнату або вийди з неї у Друзях.",
+                    "Живую тренировку нельзя незаметно удалить. Отмени комнату или выйди из неё в Друзьях.",
+                    languageCode: languageCode
+                ),
+                isError: true
+            )
+            return
+        }
         do {
             try activeWorkoutStore.discard(
                 draftID: draft.id,
@@ -995,7 +1101,12 @@ private struct MainTabShell: View {
                 appState: appState,
                 auth: auth,
                 store: store,
-                canAcceptWorkoutInvites: activeWorkoutStore.draft == nil
+                canAcceptWorkoutInvites: activeWorkoutStore.draft == nil,
+                liveWorkoutCoordinator: liveWorkoutCoordinator,
+                onOpenLiveWorkout: {
+                    showsAddWorkout = false
+                    showsActiveWorkout = true
+                }
             )
                 .gymLanguageToolbar()
         }

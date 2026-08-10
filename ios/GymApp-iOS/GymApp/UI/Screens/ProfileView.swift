@@ -20,6 +20,7 @@ struct ProfileView: View {
     @ObservedObject private var store: WorkoutStore
     @ObservedObject private var garminCloud: GarminCloudService
     @ObservedObject private var garminPhoneSync: GarminPhoneSyncService
+    @ObservedObject private var liveWorkoutCoordinator: LiveWorkoutCoordinator
     @AppStorage("app-language") private var languageCode = AppLanguage.english.rawValue
 
     @State private var activeAlert: ActiveAlert?
@@ -32,12 +33,15 @@ struct ProfileView: View {
     @State private var exportFilename = "GymApp-backup"
     @State private var resultMessage: String?
     private let canAcceptWorkoutInvites: Bool
+    private let onOpenLiveWorkout: () -> Void
 
     init(
         appState: AppState,
         auth: AuthService,
         store: WorkoutStore,
-        canAcceptWorkoutInvites: Bool = true
+        canAcceptWorkoutInvites: Bool = true,
+        liveWorkoutCoordinator: LiveWorkoutCoordinator,
+        onOpenLiveWorkout: @escaping () -> Void
     ) {
         self.appState = appState
         self.auth = auth
@@ -45,6 +49,8 @@ struct ProfileView: View {
         self.garminCloud = appState.garminCloud
         self.garminPhoneSync = appState.garminPhoneSync
         self.canAcceptWorkoutInvites = canAcceptWorkoutInvites
+        self.liveWorkoutCoordinator = liveWorkoutCoordinator
+        self.onOpenLiveWorkout = onOpenLiveWorkout
     }
 
     var body: some View {
@@ -64,7 +70,9 @@ struct ProfileView: View {
                     FriendsView(
                         appState: appState,
                         auth: auth,
-                        canAcceptWorkoutInvites: canAcceptWorkoutInvites
+                        canAcceptWorkoutInvites: canAcceptWorkoutInvites,
+                        liveWorkoutCoordinator: liveWorkoutCoordinator,
+                        onOpenLiveWorkout: onOpenLiveWorkout
                     )
                 }
                 .padding(.horizontal, 16)

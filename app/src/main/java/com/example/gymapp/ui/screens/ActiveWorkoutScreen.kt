@@ -57,6 +57,7 @@ import com.example.gymapp.ui.components.SectionTitle
 import com.example.gymapp.ui.viewmodel.ActiveWorkoutExerciseUiState
 import com.example.gymapp.ui.viewmodel.ActiveWorkoutSetUiState
 import com.example.gymapp.ui.viewmodel.ActiveWorkoutUiState
+import com.example.gymapp.ui.viewmodel.LiveConnectionMode
 import com.example.gymapp.ui.theme.GymControlShape
 import com.example.gymapp.ui.util.localizedExerciseName
 import com.example.gymapp.util.DateTimeUtils
@@ -162,6 +163,47 @@ fun ActiveWorkoutScreen(
                             ),
                             style = MaterialTheme.typography.titleMedium,
                             color = Color.White
+                        )
+                    }
+                }
+            }
+        }
+
+        uiState.livePeerName?.let { peerName ->
+            item {
+                AppPanel(modifier = Modifier.fillMaxWidth(), highlighted = true) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.live_workout_peer_title, peerName),
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            text = if (uiState.livePeerFinished) {
+                                stringResource(R.string.live_workout_peer_finished)
+                            } else {
+                                stringResource(
+                                    R.string.live_workout_peer_progress,
+                                    uiState.livePeerCompletedSetCount,
+                                    uiState.livePeerTotalSetCount
+                                )
+                            },
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Text(
+                            text = stringResource(
+                                when (uiState.liveConnectionMode) {
+                                    LiveConnectionMode.Realtime -> R.string.live_workout_active_realtime
+                                    LiveConnectionMode.Polling -> R.string.live_workout_active_polling
+                                    LiveConnectionMode.Offline,
+                                    null -> R.string.live_workout_active_offline
+                                },
+                                uiState.livePendingOperationCount
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }

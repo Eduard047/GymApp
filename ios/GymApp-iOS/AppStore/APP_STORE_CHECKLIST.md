@@ -1,26 +1,27 @@
 # GymApp — App Store release checklist
 
-Status date: 2026-07-22. Apple changes requirements over time; recheck [Upcoming Requirements](https://developer.apple.com/news/upcoming-requirements/) and the current [App Review Guidelines](https://developer.apple.com/app-store/review/guidelines/) before every submission.
+Status date: 2026-08-10. Apple changes requirements over time; recheck [Upcoming Requirements](https://developer.apple.com/news/upcoming-requirements/) and the current [App Review Guidelines](https://developer.apple.com/app-store/review/guidelines/) before every submission.
 
 ## 1. Manual ownership, team, signing, and identifiers
 
 - [x] **Apple Developer legal owner:** Martynenko Eduard.
 - [ ] **Apple Team ID:** replace `REPLACE_WITH_APPLE_TEAM_ID` in [ExportOptions.plist](ExportOptions.plist) and select the same Team in the GymApp target's Signing & Capabilities pane.
-- [ ] **Bundle ID:** the project uses `com.setforge.gymapp.ios`; register it in the Apple Developer account and ensure the App Store Connect record matches exactly.
+- [x] **Bundle ID:** `com.setforge.gymapp.ios` is registered in the Apple Developer account with Push Notifications enabled. Ensure the App Store Connect record matches it exactly.
 - [x] **SKU selected:** use permanent internal SKU `GYMAPP-IOS-2026` when creating the App Store Connect record.
-- [ ] **Signing:** enable Automatically manage signing for Release, or create an App Store distribution certificate and matching provisioning profile. Archive must show no signing warnings.
-- [x] **Version/build:** current source values are `2.2.1` (`7`). Increment the build before a replacement upload and never reuse a processed build number.
-- [x] **Capabilities:** the project contains no ATT, HealthKit, Location, Camera, Microphone, Contacts, Push, Sign in with Apple, or IAP entitlement. Keep the signed target limited to capabilities actually used.
+- [x] **Signing:** Release uses the App Store profile `GymApp App Store 3.0.5 Push` (UUID `d7539fc3-5102-4405-9d15-64e9a0953f5a`) for Team `XZ84SZH2PV`. A signed archive readback on 2026-08-10 confirmed the distribution identity, bundle ID, profile, and production push entitlement.
+- [x] **Version/build:** current GymApp target source values are `3.0.5` (`23`). Increment the build before a replacement upload and never reuse a processed build number.
+- [x] **Capabilities:** the GymApp target contains the Push Notifications and remote-notification background capabilities used by native social/live alerts. It contains no ATT, HealthKit, Location, Camera, Microphone, Contacts, Sign in with Apple, or IAP entitlement. Keep the signed target limited to capabilities actually used.
+- [ ] **Physical APNs verification remains:** source registration, strict data-only parsing, tap handling, the production `aps-environment` entitlement, App Store profile, APNs provider credential, and production dispatcher are configured. No development profile can be created until an iPhone is registered, and neither sandbox nor production delivery/tap behavior has been proven on a signed physical iPhone. Do not treat the successful signed archive, simulator, backend smoke, or provider mock as production APNs delivery proof.
 - [ ] **Agreements:** Account Holder accepts current agreements. If the app or IAP is paid, sign the Paid Apps Agreement and complete banking/tax details: [Apple agreements](https://developer.apple.com/help/app-store-connect/manage-agreements/sign-and-update-agreements/).
 
 Current upload minimum: builds uploaded after 2026-04-28 must use **Xcode 26 or later and the iOS 26 SDK or later**: [Apple SDK minimum](https://developer.apple.com/news/upcoming-requirements/?id=02032026a).
 
 ## 2. Final binary audit
 
-- [x] `GymApp/Resources/PrivacyInfo.xcprivacy` is included in the GymApp target and was present in the built app on 2026-07-11. It declares first-party `UserDefaults` reason `CA92.1`, no tracking, and the server-collected Name, Email Address, Health, Fitness, Other User Content, User ID, and Garmin Device ID categories. Re-audit if code or SDKs change: [Required Reason APIs](https://developer.apple.com/documentation/bundleresources/describing-use-of-required-reason-api).
+- [x] `GymApp/Resources/PrivacyInfo.xcprivacy` is included in the GymApp target and was present in the built app on 2026-07-11. It declares first-party `UserDefaults` reason `CA92.1`, no tracking, and the server-collected Name, Email Address, Health, Fitness, Other User Content, User ID, and Device ID categories. `APP_PRIVACY.md` now treats optional notification installation IDs/tokens/endpoints and the Garmin token within Device ID; re-audit the final manifest/archive and App Store answers if notification code or another SDK changes: [Required Reason APIs](https://developer.apple.com/documentation/bundleresources/describing-use-of-required-reason-api).
 - [ ] Generate an Xcode privacy report and inspect every embedded framework/SDK. Update both the manifest and App Privacy answers if the final archive differs: [Privacy manifest files](https://developer.apple.com/documentation/bundleresources/privacy-manifest-files).
 - [x] Source/archive audit found no analytics, advertising, IDFA access, fingerprinting, tracking domain, or ATT prompt. Re-audit if any dependency changes.
-- [x] Source/archive audit found no protected-resource API references. Local rest-timer notifications use the system notification authorization flow but no Info.plist purpose string. If another protected resource is added, provide specific, localized purpose strings and just-in-time permission handling: [Protected resources](https://developer.apple.com/documentation/uikit/requesting-access-to-protected-resources).
+- [x] Source/archive audit found no protected-resource API references. Local rest-timer notifications use the system notification authorization flow but no Info.plist purpose string. Optional system social/live alerts must also use a user-initiated, contextual notification-permission flow; denial must leave workout logging and in-app live sync usable. If another protected resource is added, provide specific, localized purpose strings and just-in-time permission handling: [Protected resources](https://developer.apple.com/documentation/uikit/requesting-access-to-protected-resources).
 - [x] Network traffic uses HTTPS/ATS and the production Supabase/support/privacy endpoints; no privileged secret is embedded in the app.
 - [x] Supabase Auth uses `https://gymapptracker.com/` as Site URL. The redirect
   allowlist contains exact web/legacy Android, state-bound iOS/Android
@@ -28,7 +29,8 @@ Current upload minimum: builds uploaded after 2026-04-28 must use **Xcode 26 or 
   callback for legacy clients/already-sent messages; Dashboard readback
   confirmed all seven entries on 2026-07-22.
 - [ ] Test signup and recovery PKCE exchange on the same physical device, an expired link, an unsolicited callback, and a callback containing raw access/refresh tokens (which the app must reject).
-- [x] Production Supabase history matches all 22 repository migrations through `20260722013200`. The bounded state backfill produced 37/37 projections with zero quarantine or mismatch. Evidence and exact scope: [PRODUCTION_BACKEND_VERIFICATION.md](PRODUCTION_BACKEND_VERIFICATION.md).
+- [x] Production Supabase history matches all 36 repository migrations through `20260810092029`. The live-room, Realtime, provider-neutral notification backend, social/live gateway, push-dispatch scheduler, exact Auth-session binding, and forward token-validation fix are deployed. Earlier bounded-state evidence remains documented in [PRODUCTION_BACKEND_VERIFICATION.md](PRODUCTION_BACKEND_VERIFICATION.md).
+- [x] Production `social-live-gateway` version 3 and `push-dispatch` version 4 are `ACTIVE`; APNs, FCM, and Web Push credentials plus the dedicated dispatcher authorization are configured outside clients. The minute dispatcher and monitor returned successful production results on 2026-08-10 with zero registered installations/outbox work, so this proves scheduling and authorization—not physical notification delivery.
 - [x] Production `garmin-sync` version 6 is `ACTIVE`; OPTIONS, invalid input/token denial, valid-device fetch/ack/replay, token rotation, and post-cutover v2 continuity passed on 2026-07-22.
 - [x] A disposable valid-device Edge Function fetch/ack smoke confirmed the existing per-device limiter path. Upstream gateway throttling remains recommended for volumetric traffic.
 - [x] No separate staging project is currently used. If one is introduced, apply every canonical migration from the repository-root `supabase/migrations/` directory in order and repeat the verification runbook there.
@@ -58,7 +60,7 @@ Current upload minimum: builds uploaded after 2026-04-28 must use **Xcode 26 or 
 ## 4. App Store Connect metadata and assets
 
 - [ ] Create the iOS app record with the final Bundle ID, SKU, primary language, developer name, and category.
-- [ ] Paste and proofread `METADATA.en-US.md` and `METADATA.uk.md`. Confirm every claim is visible in the submitted build.
+- [ ] Paste and proofread `METADATA.en-US.md`, `METADATA.uk.md`, and `METADATA.ru.md`. Confirm every claim is visible in the submitted build. APNs is configured, but keep delivery claims conditional until a signed physical iPhone has passed production notification receipt, denial/revocation, account-switch fencing, and tap tests.
 - [x] Required URL values are ready and live: Privacy Policy `https://gymapptracker.com/privacy-policy.html`; Support `https://gymapptracker.com/support.html`. Enter them in the new App Store Connect record.
 - [ ] Select the most accurate primary category (expected: Health & Fitness) and optional secondary category.
 - [ ] Complete Content Rights. Upload written licenses/authorizations in Review attachments when needed.
@@ -89,7 +91,7 @@ Complete these in App Store Connect and `REVIEW_NOTES.md` immediately before sub
 - [x] OTP/2FA path or bypass: not applicable; the demo email/password account has no OTP or 2FA.
 - [x] Demo account expiry: non-expiring and must remain active through review.
 - [x] Required reviewer hardware, QR, sample data, region restrictions, or feature flags: none. Fictional workout history is preloaded in cloud state.
-- [ ] Production backend status was verified on 2026-07-11; recheck immediately before submission and monitor it throughout review.
+- [x] Production backend deployment/readback was verified on 2026-08-10; recheck immediately before submission and monitor it throughout review.
 - [x] Account deletion path and confirmation text are implemented and the production server contract passed E2E; repeat once with the final signed physical-device build.
 
 Apple requires a final, fully functional submission, complete metadata, live backend, and full reviewer access: [App Review submission guidance](https://developer.apple.com/app-store/review/guidelines/#before-you-submit) and [App Review information](https://developer.apple.com/help/app-store-connect/reference/app-information/platform-version-information).

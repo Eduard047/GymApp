@@ -11,7 +11,7 @@
 
 ## Version information
 
-- **Promotional text (170 characters max):** Plan workouts, share editable plans with confirmed friends, compare self-reported XP, track progress, and train with Smart Coach, missions, and Garmin.
+- **Promotional text (170 characters max):** Plan workouts, train live with a confirmed friend, compare self-reported progress, and use Smart Coach, missions, optional alerts, and Garmin.
 - **Keywords (100 bytes max):** workout,gym,fitness,strength,training,sets,reps,progress,exercise,friends,coach
 - **Support URL:** https://gymapptracker.com/support.html
 - **Marketing URL (optional):** https://gymapptracker.com/
@@ -39,28 +39,30 @@ PROGRESS THAT STAYS USEFUL
 • Review workout details and post-workout summaries
 • Export or import a JSON backup and share a readable diagnostics PDF
 
-FRIENDS AND SHARED PLANS
+FRIENDS AND SHARED WORKOUTS
 • Add someone by a random friend code; both accounts must confirm
 • Choose whether friends see XP/level/count, five recent summaries, or recorded exercise bests
-• Share an editable workout by link or send it directly to a confirmed friend
-• Each person starts an independent local workout; sets are not synchronized live
+• Share an editable independent workout by link or send it directly to a confirmed friend
+• Invite one confirmed friend to a two-person live workout with a frozen plan
+• After acceptance, the owner starts and both see each participant's completed sets, entered weight, and repetitions in real time
 
 MOTIVATION
 • Complete daily, weekly, and monthly missions
 • Earn XP, levels, titles, achievements, and badges
 • Compare self-reported XP and levels only inside your confirmed friend circle
 
-CLOUD AND GARMIN
+CLOUD, NOTIFICATIONS, AND GARMIN
 • Sign in with email to sync your GymApp state securely through Supabase
+• Where supported, configured, and permitted, receive optional system alerts for friend/live invitation, join, start, finish, and close events; per-set progress syncs inside GymApp, not by push
 • Optionally send workout plans to the existing paired Garmin cloud queue
 
-GymApp contains no advertising, tracking, or in-app purchases. Rest-timer alerts use local notifications only and remain optional.
+GymApp contains no advertising, tracking, or in-app purchases. Rest-timer alerts remain local; optional friend/live system alerts require notification permission and platform availability.
 
 GymApp is a fitness log and planning tool, not a medical device. It does not diagnose, treat, cure, or prevent any condition. Exercise within your abilities and consult a qualified professional before making health decisions.
 
 ## What's New
 
-Removes the global rating and adds mutual friends, privacy controls, friends-only self-reported progress, recent workout/record views, and direct editable workout invitations.
+Removes the global rating and adds mutual friends, privacy controls, friends-only self-reported progress, two-person live workouts, and optional lifecycle alerts where available.
 
 ## Suggested screenshot captions
 

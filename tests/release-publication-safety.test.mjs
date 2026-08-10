@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
+import { promisify } from "node:util";
 import test from "node:test";
+
+const execFileAsync = promisify(execFile);
 
 const [script, gitignore, dependabot] = await Promise.all([
   readFile("scripts/publish-debug-release.ps1", "utf8"),
@@ -48,7 +52,6 @@ test("the disabled script neither builds nor handles distributable artifacts", (
 
 test("Git ignores local context, secrets, diagnostics, and distributable archives", () => {
   for (const required of [
-    /^\/AGENTS\.md$/m,
     /^\/security-reports\/$/m,
     /^\.env$/m,
     /^\.env\.\*$/m,
@@ -63,6 +66,13 @@ test("Git ignores local context, secrets, diagnostics, and distributable archive
   ]) {
     assert.match(gitignore, required);
   }
+});
+
+test("the local AGENTS context file is not tracked", async () => {
+  await assert.rejects(
+    execFileAsync("git", ["ls-files", "--error-unmatch", "AGENTS.md"]),
+    "AGENTS.md must remain local-only via .git/info/exclude"
+  );
 });
 
 test("Dependabot stays low-noise without delaying security updates", () => {

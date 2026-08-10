@@ -8,10 +8,84 @@ const stateContractSource = await readFile("pwa/state-contract.js", "utf8");
 const russianTextSource = await readFile("pwa/russian-text.js", "utf8");
 const exerciseSearchVocabularySource = await readFile("pwa/exercise-search-vocabulary.js", "utf8");
 const sharedWorkoutSource = await readFile("pwa/shared-workout.js", "utf8");
+const liveWorkoutSource = await readFile("pwa/live-workout.js", "utf8");
+const liveWorkoutStateSource = await readFile("pwa/live-workout-state.js", "utf8");
 
-function loadPwaContext({ userAgent = "" } = {}) {
+function fakeIndexedDb(initialBinding = null) {
+  const values = new Map(initialBinding ? [["current", initialBinding]] : []);
+  let storeCreated = initialBinding !== null;
+  const requestFor = (transaction, operation) => {
+    const request = { result: undefined, error: null, onsuccess: null, onerror: null };
+    transaction.pending += 1;
+    queueMicrotask(() => {
+      try {
+        request.result = operation();
+        request.onsuccess?.();
+      } catch (error) {
+        request.error = error;
+        request.onerror?.();
+        transaction.error = error;
+        transaction.onerror?.();
+        transaction.onabort?.();
+      } finally {
+        transaction.pending -= 1;
+        if (transaction.pending === 0 && !transaction.error) {
+          queueMicrotask(() => transaction.pending === 0 && transaction.oncomplete?.());
+        }
+      }
+    });
+    return request;
+  };
+  const database = {
+    objectStoreNames: { contains: name => storeCreated && name === "current-bindings" },
+    createObjectStore(name) {
+      if (name !== "current-bindings" || storeCreated) throw new Error("invalid store");
+      storeCreated = true;
+    },
+    transaction(name) {
+      if (name !== "current-bindings" || !storeCreated) throw new Error("missing store");
+      const transaction = {
+        pending: 0,
+        error: null,
+        onabort: null,
+        onerror: null,
+        oncomplete: null,
+        objectStore() {
+          return {
+            get: key => requestFor(transaction, () => values.get(key)),
+            put: (value, key) => requestFor(transaction, () => values.set(key, value)),
+            delete: key => requestFor(transaction, () => values.delete(key))
+          };
+        }
+      };
+      return transaction;
+    },
+    close() {}
+  };
+  return {
+    open() {
+      const request = {
+        result: database,
+        error: null,
+        onupgradeneeded: null,
+        onsuccess: null,
+        onerror: null,
+        onblocked: null
+      };
+      queueMicrotask(() => {
+        if (!storeCreated) request.onupgradeneeded?.();
+        request.onsuccess?.();
+      });
+      return request;
+    },
+    values
+  };
+}
+
+function loadPwaContext({ userAgent = "", push = null, fetchImpl = null } = {}) {
   const values = new Map();
   const sessionValues = new Map();
+  const indexedDB = fakeIndexedDb(push?.binding ?? null);
   const context = {
     console,
     Date,
@@ -20,10 +94,18 @@ function loadPwaContext({ userAgent = "" } = {}) {
     TextDecoder,
     TextEncoder,
     AbortController,
+    AbortSignal,
+    Headers,
+    Response,
+    URL,
+    crypto,
+    atob,
+    btoa,
     URLSearchParams,
     window: {
       location: { search: "?access_token=test", hash: "", replace() {} },
       addEventListener() {},
+      indexedDB,
       GymProgressionRules: {
         sessionXP: () => 100,
         MAX_SUPPORTED_XP: 2147483647,
@@ -45,7 +127,8 @@ function loadPwaContext({ userAgent = "" } = {}) {
     localStorage: {
       getItem: key => values.get(key) ?? null,
       setItem: (key, value) => values.set(key, String(value)),
-      removeItem: key => values.delete(key)
+      removeItem: key => values.delete(key),
+      entries: () => [...values.entries()]
     },
     sessionStorage: {
       getItem: key => sessionValues.get(key) ?? null,
@@ -57,24 +140,48 @@ function loadPwaContext({ userAgent = "" } = {}) {
     setTimeout,
     clearInterval,
     setInterval,
-    fetch: () => Promise.reject(new Error("network disabled in tests"))
+    fetch: fetchImpl || (() => Promise.reject(new Error("network disabled in tests")))
   };
+  if (push) {
+    if (typeof push.registration.getNotifications !== "function") {
+      push.registration.getNotifications = async () => [];
+    }
+    context.window.PushManager = function PushManager() {};
+    context.window.Notification = push.notification;
+    context.window.GYM_SUPABASE = {
+      url: "https://project.supabase.co",
+      anonKey: "sb_publishable_test_key",
+      webPushVapidPublicKey: push.vapidPublicKey
+    };
+    context.navigator.serviceWorker = {
+      ready: Promise.resolve(push.registration),
+      getRegistration: async () => push.registration,
+      register: async () => push.registration,
+      addEventListener() {}
+    };
+  }
   context.window.document = context.document;
   context.window.navigator = context.navigator;
   context.window.history = context.history;
   context.window.localStorage = context.localStorage;
   context.window.sessionStorage = context.sessionStorage;
+  context.window.crypto = context.crypto;
   context.window.self = context.window;
   context.window.top = context.window;
   context.window.__GYMAPP_TOP_LEVEL__ = true;
   vm.createContext(context);
   vm.runInContext(sharedWorkoutSource, context);
   context.window.GymSharedWorkout = context.GymSharedWorkout;
+  vm.runInContext(liveWorkoutSource, context);
+  context.window.GymLiveWorkout = context.GymLiveWorkout;
+  vm.runInContext(liveWorkoutStateSource, context);
+  context.window.GymLiveWorkoutState = context.GymLiveWorkoutState;
   vm.runInContext(stateContractSource, context);
   context.window.GymStateContract = context.GymStateContract;
   vm.runInContext(russianTextSource, context);
   vm.runInContext(exerciseSearchVocabularySource, context);
   vm.runInContext(appSource, context);
+  context.pushBindingValues = indexedDB.values;
   return context;
 }
 
@@ -131,6 +238,15 @@ function sharedWorkoutFixture() {
       sets: [{ weight: 80, reps: 8 }]
     }]
   };
+}
+
+function testAccessToken(userId, sessionId) {
+  const encode = value => Buffer.from(JSON.stringify(value)).toString("base64url");
+  return `${encode({ alg: "none", typ: "JWT" })}.${encode({
+    sub: userId,
+    session_id: sessionId,
+    exp: 4102444800
+  })}.test-signature`;
 }
 
 test("Garmin store link opens our public listing and isolates the new tab", () => {
@@ -1702,9 +1818,1355 @@ test("workout share chooser keeps link fallback and targets confirmed friends on
   const markup = vm.runInContext("workoutShareSheetMarkup()", context);
   assert.match(markup, /data-action="share-workout-link"/);
   assert.match(markup, /data-action="send-workout-invite"/);
+  assert.match(markup, /data-action="send-live-workout-invite"/);
   assert.match(markup, /p_22222222222222222222222222222222/);
-  assert.match(markup, /not synchronized live/);
+  assert.match(markup, /Live keeps both set-progress lanes synchronized/);
   assert.doesNotMatch(markup, /accountId|userId|private note|must-not-leak/);
+});
+
+test("live gateway uses the versioned Edge envelope and binds the response parser", async () => {
+  const context = loadPwaContext();
+  const result = await vm.runInContext(`
+    capturedLiveGateway = null;
+    supabaseRequest = async (path, options) => {
+      capturedLiveGateway = { path, options };
+      return {
+        version: 1,
+        result: {
+          version: 1,
+          result: "submitted",
+          roomId: "lr_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          status: "waiting",
+          roomRevision: 1
+        }
+      };
+    };
+    liveGateway("live_send_invite", {
+      profileId: "p_22222222222222222222222222222222",
+      clientRequestId: "33333333-3333-4333-8333-333333333333",
+      workout: ${JSON.stringify(sharedWorkoutFixture())}
+    }, window.GymLiveWorkout.sendResult)
+  `, context);
+  assert.equal(result.roomId, "lr_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+  const captured = jsonFrom(context, "capturedLiveGateway");
+  assert.equal(captured.path, "/functions/v1/social-live-gateway");
+  assert.deepEqual(JSON.parse(captured.options.body), {
+    version: 1,
+    action: "live_send_invite",
+    payload: {
+      profileId: "p_22222222222222222222222222222222",
+      clientRequestId: "33333333-3333-4333-8333-333333333333",
+      workout: sharedWorkoutFixture()
+    }
+  });
+});
+
+test("unknown live invitation outcomes reuse ids and never evict at capacity", () => {
+  const context = loadPwaContext();
+  vm.runInContext(`
+    liveSourceKey = () => "cloud:test";
+    newUuidV4 = (() => {
+      let value = 0;
+      return () => "00000000-0000-4000-8000-" + String(++value).padStart(12, "0");
+    })();
+  `, context);
+  const first = jsonFrom(context, `prepareLiveRequest(liveWorkoutInviteRequests, {
+    profileId: "p_22222222222222222222222222222222",
+    workout: ${JSON.stringify(sharedWorkoutFixture())}
+  })`);
+  const retry = jsonFrom(context, `prepareLiveRequest(liveWorkoutInviteRequests, {
+    profileId: "p_22222222222222222222222222222222",
+    workout: ${JSON.stringify(sharedWorkoutFixture())}
+  })`);
+  assert.equal(retry.requestId, first.requestId);
+  vm.runInContext(`
+    for (let index = 1; index < MAX_PENDING_LIVE_REQUESTS; index += 1) {
+      prepareLiveRequest(liveWorkoutInviteRequests, { profileId: "p_" + String(index).padStart(32, "0") });
+    }
+  `, context);
+  assert.equal(vm.runInContext("liveWorkoutInviteRequests.size", context), 25);
+  assert.throws(() => vm.runInContext(
+    `prepareLiveRequest(liveWorkoutInviteRequests, { profileId: "p_99999999999999999999999999999999" })`,
+    context
+  ));
+  assert.equal(jsonFrom(context, `liveWorkoutInviteRequests.get(${JSON.stringify(first.key)})`).requestId, first.requestId);
+});
+
+test("live invitation UI escapes friend data and exposes join or decline only", () => {
+  const context = loadPwaContext();
+  vm.runInContext(`
+    liveWorkoutState = {
+      status: "loaded",
+      source: "test",
+      error: "",
+      snapshot: null,
+      inbox: window.GymLiveWorkout.inbox({
+        version: 1,
+        invitations: [{
+          roomId: "lr_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          status: "waiting",
+          roomRevision: 1,
+          createdAt: "2026-08-10T08:00:00Z",
+          inviteExpiresAt: "2026-08-10T08:30:00Z",
+          summary: { exerciseCount: 1, setCount: 2, exerciseNames: ["Bench Press"] },
+          owner: { profileId: "p_22222222222222222222222222222222", displayName: "<Friend>" }
+        }],
+        rooms: []
+      })
+    };
+  `, context);
+  const markup = vm.runInContext("liveWorkoutInboxMarkup()", context);
+  assert.match(markup, /&lt;Friend&gt;/);
+  assert.match(markup, /data-action="respond-live-invite" data-decision="accept"/);
+  assert.match(markup, /data-decision="decline"/);
+  assert.doesNotMatch(markup, /<Friend>|userId|sessionId|completedSets/);
+});
+
+test("opening a live push keeps invitation actions visible when a waiting snapshot is available", () => {
+  const context = loadPwaContext();
+  vm.runInContext(`
+    const pushedInvitation = {
+      roomId: "lr_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      status: "waiting",
+      roomRevision: 1,
+      createdAt: "2026-08-10T08:00:00Z",
+      inviteExpiresAt: "2026-08-17T08:00:00Z",
+      summary: { exerciseCount: 1, setCount: 1, exerciseNames: ["Bench Press"] },
+      owner: { profileId: "p_22222222222222222222222222222222", displayName: "Friend" }
+    };
+    liveWorkoutState = {
+      status: "loaded",
+      source: "test",
+      error: "",
+      inbox: window.GymLiveWorkout.inbox({ version: 1, invitations: [pushedInvitation], rooms: [] }),
+      snapshot: window.GymLiveWorkout.snapshot({
+        version: 1,
+        room: {
+          roomId: pushedInvitation.roomId,
+          status: "waiting",
+          roomRevision: 1,
+          closeReason: null,
+          createdAt: pushedInvitation.createdAt,
+          inviteExpiresAt: pushedInvitation.inviteExpiresAt,
+          startedAt: null,
+          activeExpiresAt: null,
+          endedAt: null,
+          summary: pushedInvitation.summary
+        },
+        plan: {
+          version: 1,
+          exercises: [{
+            exerciseId: "e_01",
+            catalogKey: "bench_press",
+            name: "Bench Press",
+            sets: [{ setId: "s_01_01", weight: 80, reps: 8 }]
+          }]
+        },
+        participants: [{
+          isSelf: false,
+          profile: pushedInvitation.owner,
+          role: "owner",
+          state: "joined",
+          membershipRevision: 1,
+          joinedAt: pushedInvitation.createdAt,
+          finishedAt: null,
+          departedAt: null,
+          progress: null
+        }, {
+          isSelf: true,
+          profile: { profileId: "p_11111111111111111111111111111111", displayName: "Me" },
+          role: "participant",
+          state: "invited",
+          membershipRevision: 1,
+          joinedAt: null,
+          finishedAt: null,
+          departedAt: null,
+          progress: null
+        }]
+      })
+    };
+    modal = { type: "live-workout-room", roomId: pushedInvitation.roomId };
+  `, context);
+  const markup = vm.runInContext("liveWorkoutRoomMarkup()", context);
+  assert.match(markup, /data-action="respond-live-invite" data-decision="accept"/);
+  assert.match(markup, /data-decision="decline"/);
+  assert.doesNotMatch(markup, /Open synchronized workout|Room unavailable/);
+});
+
+test("a finished guest can leave directly from an active snapshot", async () => {
+  const context = loadPwaContext();
+  vm.runInContext(`
+    liveWorkoutState = {
+      status: "loaded",
+      source: "test",
+      error: "",
+      inbox: { version: 1, invitations: [], rooms: [] },
+      snapshot: {
+        version: 1,
+        room: {
+          roomId: "lr_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          status: "active",
+          roomRevision: 7,
+          closeReason: null,
+          createdAt: "2026-08-10T08:00:00Z",
+          inviteExpiresAt: "2026-08-17T08:00:00Z",
+          startedAt: "2026-08-10T08:05:00Z",
+          activeExpiresAt: "2026-08-11T08:05:00Z",
+          endedAt: null,
+          summary: { exerciseCount: 1, setCount: 1, exerciseNames: ["Bench Press"] }
+        },
+        plan: { version: 1, exercises: [] },
+        participants: [{
+          isSelf: false,
+          profile: { profileId: "p_22222222222222222222222222222222", displayName: "Friend" },
+          role: "owner",
+          state: "joined",
+          membershipRevision: 2,
+          joinedAt: "2026-08-10T08:01:00Z",
+          finishedAt: null,
+          departedAt: null,
+          progress: null
+        }, {
+          isSelf: true,
+          profile: { profileId: "p_11111111111111111111111111111111", displayName: "Me" },
+          role: "participant",
+          state: "finished",
+          membershipRevision: 4,
+          joinedAt: "2026-08-10T08:01:00Z",
+          finishedAt: "2026-08-10T08:30:00Z",
+          departedAt: null,
+          progress: null
+        }]
+      }
+    };
+    modal = { type: "live-workout-room", roomId: "lr_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" };
+  `, context);
+
+  const markup = vm.runInContext("liveWorkoutRoomMarkup()", context);
+  assert.match(markup, /data-action="leave-live-room"/);
+  assert.match(markup, /data-membership-revision="4"/);
+
+  vm.runInContext(`
+    globalThis.capturedFinishedLeave = null;
+    executeLiveWorkoutMutation = async (action, payload) => {
+      globalThis.capturedFinishedLeave = { action, payload };
+      return {
+        version: 1,
+        result: "left",
+        roomId: "lr_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        status: "cancelled",
+        roomRevision: 8,
+        membershipRevision: 5,
+        endedAt: "2026-08-10T08:31:00Z"
+      };
+    };
+    refreshLiveWorkoutData = async () => true;
+    showToast = () => {};
+  `, context);
+  const closed = await vm.runInContext(`closeLiveWorkoutRoom({ dataset: {
+    roomId: "lr_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    membershipRevision: "4",
+    roomRevision: "7"
+  } }, "leave")`, context);
+  assert.equal(closed, true);
+  const captured = jsonFrom(context, "capturedFinishedLeave");
+  assert.equal(captured.action, "live_leave");
+  assert.equal(captured.payload.roomId, "lr_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+  assert.equal(captured.payload.expectedMembershipRevision, 4);
+  assert.match(captured.payload.clientOperationId, /^[0-9a-f-]{36}$/);
+});
+
+test("an unimportable live plan stays waiting and never reaches the accept mutation", async () => {
+  const context = loadPwaContext();
+  const userId = "11111111-1111-4111-8111-111111111111";
+  const sessionId = "22222222-2222-4222-8222-222222222222";
+  vm.runInContext(`
+    activeAccount = {
+      id: "remote-${userId}", userId: "${userId}", remote: "supabase", name: "Owner"
+    };
+    localStorage.setItem(AUTH_KEY, JSON.stringify(activeAccount));
+    saveRemoteSession({
+      access_token: ${JSON.stringify(testAccessToken(userId, sessionId))},
+      refresh_token: "refresh-token-test",
+      user: { id: "${userId}", email: "owner@example.test" }
+    });
+    const poisonedInvite = {
+      roomId: "lr_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      status: "waiting",
+      roomRevision: 1,
+      createdAt: "2026-08-10T08:00:00Z",
+      inviteExpiresAt: "2026-08-17T08:00:00Z",
+      summary: {
+        exerciseCount: 2,
+        setCount: 2,
+        exerciseNames: ["Bench Press", "Жим штанги лежачи"]
+      },
+      owner: { profileId: "p_22222222222222222222222222222222", displayName: "Friend" }
+    };
+    liveWorkoutState = {
+      status: "loaded",
+      source: "test",
+      error: "",
+      snapshot: null,
+      inbox: window.GymLiveWorkout.inbox({ version: 1, invitations: [poisonedInvite], rooms: [] })
+    };
+    poisonedSnapshot = window.GymLiveWorkout.snapshot({
+      version: 1,
+      room: {
+        roomId: poisonedInvite.roomId,
+        status: "waiting",
+        roomRevision: 1,
+        closeReason: null,
+        createdAt: poisonedInvite.createdAt,
+        inviteExpiresAt: poisonedInvite.inviteExpiresAt,
+        startedAt: null,
+        activeExpiresAt: null,
+        endedAt: null,
+        summary: poisonedInvite.summary
+      },
+      plan: {
+        version: 1,
+        exercises: [{
+          exerciseId: "e_01",
+          name: "Bench Press",
+          sets: [{ setId: "s_01_01", weight: 80, reps: 8 }]
+        }, {
+          exerciseId: "e_02",
+          name: "Жим штанги лежачи",
+          sets: [{ setId: "s_02_01", weight: 40, reps: 12 }]
+        }]
+      },
+      participants: [{
+        isSelf: false,
+        profile: poisonedInvite.owner,
+        role: "owner",
+        state: "joined",
+        membershipRevision: 1,
+        joinedAt: poisonedInvite.createdAt,
+        finishedAt: null,
+        departedAt: null,
+        progress: null
+      }, {
+        isSelf: true,
+        profile: { profileId: "p_11111111111111111111111111111111", displayName: "Me" },
+        role: "participant",
+        state: "invited",
+        membershipRevision: 1,
+        joinedAt: null,
+        finishedAt: null,
+        departedAt: null,
+        progress: null
+      }]
+    });
+    liveGateway = async () => poisonedSnapshot;
+    liveAcceptMutationCount = 0;
+    executeLiveWorkoutMutation = async () => {
+      liveAcceptMutationCount += 1;
+      return null;
+    };
+    render = () => {};
+    showToast = message => { poisonedToast = message; };
+  `, context);
+  const result = await vm.runInContext(`respondLiveWorkoutInvite({ dataset: {
+    roomId: "lr_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", decision: "accept", revision: "1"
+  } })`, context);
+  assert.equal(result, false);
+  assert.equal(vm.runInContext("liveAcceptMutationCount", context), 0);
+  assert.equal(vm.runInContext("liveWorkoutState.inbox.invitations.length", context), 1);
+  assert.match(vm.runInContext("poisonedToast", context), /cannot be imported safely/);
+});
+
+test("a locally finished live workout restores its durable finish intent after reload", () => {
+  const context = loadPwaContext();
+  vm.runInContext(`
+    activeWorkout = null;
+    state.sessions = [{ id: 700, startedAt: 1, sets: [] }];
+    liveWorkoutBinding = {
+      version: 1,
+      userId: "11111111-1111-4111-8111-111111111111",
+      sessionId: "22222222-2222-4222-8222-222222222222",
+      roomId: "lr_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      role: "owner",
+      peerProfileId: "p_22222222222222222222222222222222",
+      peerDisplayName: "Friend",
+      roomRevision: 3,
+      membershipRevision: 1,
+      progressRevision: 2,
+      localWorkoutId: 700,
+      serverToLocalSetIds: { s_01_01: 701 },
+      pendingOperations: []
+    };
+    recoveredFinishRequest = null;
+    enqueueLiveWorkoutOperation = request => {
+      recoveredFinishRequest = request;
+      return true;
+    };
+    recoveredFinishSnapshot = {
+      room: { roomId: liveWorkoutBinding.roomId, status: "active" },
+      participants: [{
+        isSelf: true,
+        state: "joined",
+        progress: { finishedAt: null }
+      }]
+    };
+  `, context);
+  assert.equal(vm.runInContext("recoverFinishedLiveWorkoutIntent(recoveredFinishSnapshot)", context), true);
+  assert.deepEqual(jsonFrom(context, "recoveredFinishRequest"), {
+    kind: "finish",
+    serverSetId: null,
+    weight: null,
+    reps: null
+  });
+  vm.runInContext("liveWorkoutBinding.pendingOperations = [{ kind: 'finish' }]", context);
+  assert.equal(vm.runInContext("recoverFinishedLiveWorkoutIntent(recoveredFinishSnapshot)", context), false);
+});
+
+test("live snapshot reconciliation removes confirmed undos and overlays pending local operations", () => {
+  const context = loadPwaContext();
+  vm.runInContext(`
+    activeAccount = { id: "remote-a", userId: "11111111-1111-4111-8111-111111111111", remote: "supabase", name: "A" };
+    activeWorkoutStorageRaw = "before";
+    activeWorkout = {
+      id: 700,
+      revision: 4,
+      updatedAt: 1000,
+      blocks: [{ id: 10, exerciseName: "Bench Press", sets: [
+        { id: 701, weight: 80, reps: 8, completed: true, completedAt: 900 },
+        { id: 702, weight: 70, reps: 10, completed: true, completedAt: 950 }
+      ] }]
+    };
+    reconciledBinding = {
+      localWorkoutId: 700,
+      serverToLocalSetIds: { s_01_01: 701, s_01_02: 702 },
+      pendingOperations: [
+        { kind: "undo_set", serverSetId: "s_01_01" },
+        { kind: "complete_set", serverSetId: "s_01_02", weight: 72.5, reps: 9 }
+      ]
+    };
+    reconciledSnapshot = { participants: [{
+      isSelf: true,
+      progress: { completedSets: [
+        { setId: "s_01_01", weight: 80, reps: 8, completedAt: "2026-08-10T01:00:00Z" }
+      ] }
+    }] };
+    persistActiveWorkoutRecord = value => ({ workout: value, raw: "after" });
+  `, context);
+  assert.equal(
+    vm.runInContext("applyLiveSnapshotProgressToLocal(reconciledSnapshot, reconciledBinding)", context),
+    true
+  );
+  const sets = jsonFrom(context, "activeWorkout.blocks[0].sets");
+  assert.deepEqual(sets[0], {
+    id: 701, weight: 80, reps: 8, completed: false, completedAt: null
+  });
+  assert.deepEqual(sets[1], {
+    id: 702, weight: 72.5, reps: 9, completed: true, completedAt: 950
+  });
+});
+
+test("a prepared live completion restores the intended local set before network drain", () => {
+  const context = loadPwaContext();
+  vm.runInContext(`
+    activeAccount = { id: "local-a", userId: "11111111-1111-4111-8111-111111111111", remote: "supabase", name: "A" };
+    activeWorkoutStorageRaw = "before";
+    activeWorkout = {
+      id: 700,
+      revision: 4,
+      updatedAt: 1000,
+      blocks: [{ id: 10, exerciseName: "Bench Press", sets: [
+        { id: 701, weight: 80, reps: 8, completed: false, completedAt: null }
+      ] }]
+    };
+    crashBinding = {
+      localWorkoutId: 700,
+      serverToLocalSetIds: { s_01_01: 701 },
+      pendingOperations: [{
+        kind: "complete_set", serverSetId: "s_01_01", weight: 82.5, reps: 7,
+        localMutationAt: 1786334400000
+      }]
+    };
+    crashSnapshot = { participants: [{
+      isSelf: true,
+      progress: { completedSets: [] }
+    }] };
+    persistActiveWorkoutRecord = value => ({ workout: value, raw: "after" });
+  `, context);
+  assert.equal(
+    vm.runInContext("applyLiveSnapshotProgressToLocal(crashSnapshot, crashBinding)", context),
+    true
+  );
+  assert.deepEqual(jsonFrom(context, "activeWorkout.blocks[0].sets[0]"), {
+    id: 701,
+    weight: 82.5,
+    reps: 7,
+    completed: true,
+    completedAt: 1786334400000
+  });
+});
+
+test("a late pre-ack live snapshot cannot undo a locally completed set", () => {
+  const context = loadPwaContext();
+  vm.runInContext(`
+    activeWorkoutStorageRaw = "current";
+    activeWorkout = {
+      id: 700, revision: 5, updatedAt: 2000,
+      blocks: [{ id: 10, exerciseName: "Bench Press", sets: [
+        { id: 701, weight: 82.5, reps: 7, completed: true, completedAt: 1900 }
+      ] }]
+    };
+    staleBinding = {
+      localWorkoutId: 700,
+      progressRevision: 5,
+      serverToLocalSetIds: { s_01_01: 701 },
+      pendingOperations: []
+    };
+    staleSnapshot = { participants: [{
+      isSelf: true,
+      progress: { revision: 4, completedSets: [] }
+    }] };
+    stalePersistCalls = 0;
+    persistActiveWorkoutRecord = () => { stalePersistCalls += 1; return null; };
+  `, context);
+  assert.equal(
+    vm.runInContext("applyLiveSnapshotProgressToLocal(staleSnapshot, staleBinding)", context),
+    true
+  );
+  assert.equal(vm.runInContext("stalePersistCalls", context), 0);
+  assert.equal(vm.runInContext("activeWorkout.blocks[0].sets[0].completed", context), true);
+});
+
+test("live set and finish intents are persisted before their local mutation commits", () => {
+  const recordStart = appSource.indexOf("async function recordActiveSet(setId)");
+  const recordEnd = appSource.indexOf("async function undoLatestActiveSet", recordStart);
+  const recordSource = appSource.slice(recordStart, recordEnd);
+  assert.ok(recordSource.indexOf("prepareLiveSetOperationBatch") <
+    recordSource.indexOf("persistActiveWorkoutRecord(next"));
+
+  const bulkStart = appSource.indexOf("async function recordAllActiveSets()");
+  const bulkEnd = appSource.indexOf("async function recordActiveSet", bulkStart);
+  const bulkSource = appSource.slice(bulkStart, bulkEnd);
+  assert.ok(bulkSource.indexOf("prepareLiveSetOperationBatch") <
+    bulkSource.indexOf("persistActiveWorkoutRecord(next"));
+
+  const undoStart = appSource.indexOf("async function undoLatestActiveSet(setId)");
+  const undoEnd = appSource.indexOf("function activeCompletedEntries", undoStart);
+  const undoSource = appSource.slice(undoStart, undoEnd);
+  assert.ok(undoSource.indexOf("prepareLiveSetOperationBatch") <
+    undoSource.indexOf("persistActiveWorkoutRecord(next"));
+
+  const finishStart = appSource.indexOf("function finishActiveWorkoutLocked");
+  const finishEnd = appSource.indexOf("function requestDiscardActiveWorkout", finishStart);
+  const finishSource = appSource.slice(finishStart, finishEnd);
+  assert.ok(finishSource.indexOf("prepareLiveWorkoutOperationBatch") <
+    finishSource.indexOf("persistActiveWorkoutCommit"));
+});
+
+test("conflicting remote live progress detaches instead of blindly rebasing", async () => {
+  const context = loadPwaContext();
+  vm.runInContext(`
+    conflictOperation = {
+      clientOperationId: "55555555-5555-4555-8555-555555555555",
+      kind: "complete_set", expectedProgressRevision: 1, serverSetId: "s_01_01",
+      weight: 82.5, reps: 7, localMutationAt: 1786334400000
+    };
+    liveWorkoutBinding = {
+      roomId: "lr_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      localWorkoutId: 700,
+      pendingOperations: [conflictOperation]
+    };
+    liveGateway = async () => ({
+      room: { roomId: liveWorkoutBinding.roomId, status: "active", roomRevision: 4 },
+      participants: [{
+        isSelf: true, state: "joined", membershipRevision: 2,
+        progress: {
+          revision: 3,
+          completedSets: [{ setId: "s_01_01", weight: 100, reps: 2 }],
+          undoableSetId: "s_01_01", finishedAt: null
+        }
+      }]
+    });
+    conflictToast = "";
+    clearLiveWorkoutBinding = () => { liveWorkoutBinding = null; };
+    showToast = value => { conflictToast = value; };
+    render = () => {};
+  `, context);
+  assert.equal(
+    await vm.runInContext("recoverLiveWorkoutQueue(null, conflictOperation, () => true)", context),
+    "detached"
+  );
+  assert.equal(vm.runInContext("liveWorkoutBinding", context), null);
+  assert.match(vm.runInContext("conflictToast", context), /changed on another device/);
+});
+
+test("an unresolved live conflict stops after one bounded attempt without a hot loop", async () => {
+  const context = loadPwaContext();
+  const userId = "11111111-1111-4111-8111-111111111111";
+  const sessionId = "22222222-2222-4222-8222-222222222222";
+  vm.runInContext(`
+    activeAccount = { id: "remote-a", userId: "${userId}", remote: "supabase", name: "A" };
+    saveRemoteSession({
+      access_token: ${JSON.stringify(testAccessToken(userId, sessionId))},
+      refresh_token: "refresh-a", user: { id: "${userId}" }
+    });
+    activeWorkout = { id: 700, blocks: [] };
+    liveWorkoutBinding = {
+      version: 1, userId: "${userId}", sessionId: "${sessionId}",
+      roomId: "lr_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", role: "owner",
+      peerProfileId: "p_22222222222222222222222222222222", peerDisplayName: "Friend",
+      roomRevision: 2, membershipRevision: 1, progressRevision: 1, localWorkoutId: 700,
+      serverToLocalSetIds: { s_01_01: 701 },
+      pendingOperations: [{
+        clientOperationId: "55555555-5555-4555-8555-555555555555",
+        kind: "complete_set", expectedProgressRevision: 1, serverSetId: "s_01_01",
+        weight: 80, reps: 8, localMutationAt: 1786334400000
+      }]
+    };
+    liveCalls = 0;
+    localLiveOperationReflection = () => "reflected";
+    liveGateway = async () => { liveCalls += 1; throw Object.assign(new Error("conflict"), { status: 409 }); };
+    recoverLiveWorkoutQueue = async () => false;
+    transitionToReauthentication = () => false;
+    scheduleLiveWorkoutPoll = () => {};
+    render = () => {};
+  `, context);
+  await vm.runInContext("drainLiveWorkoutOperations()", context);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(vm.runInContext("liveCalls", context), 1);
+  assert.equal(vm.runInContext("liveWorkoutBinding.pendingOperations.length", context), 1);
+  assert.equal(vm.runInContext("liveWorkoutOperationDrain", context), null);
+});
+
+test("live attach rolls back its sidecar when the local active workout cannot commit", async () => {
+  const context = loadPwaContext();
+  const userId = "11111111-1111-4111-8111-111111111111";
+  const sessionId = "22222222-2222-4222-8222-222222222222";
+  vm.runInContext(`
+    activeAccount = { id: "remote-a", userId: "${userId}", remote: "supabase", name: "A" };
+    localStorage.setItem(AUTH_KEY, JSON.stringify(activeAccount));
+    saveRemoteSession({ access_token: ${JSON.stringify(testAccessToken(userId, sessionId))},
+      refresh_token: "refresh-a", user: { id: "${userId}" } });
+    state = defaultAppState();
+    workoutDraft = { startedAt: Date.parse("2026-08-10T01:00:00Z"), note: "", blocks: [{
+      exerciseName: "Bench Press", catalogKey: "bench_press", sets: [{ weight: 80, reps: 8 }]
+    }] };
+    attachSnapshot = window.GymLiveWorkout.snapshot({
+      version: 1,
+      room: {
+        roomId: "lr_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", status: "active", roomRevision: 3,
+        closeReason: null, createdAt: "2026-08-10T00:58:00Z",
+        inviteExpiresAt: "2026-08-17T00:58:00Z", startedAt: "2026-08-10T01:00:00Z",
+        activeExpiresAt: "2026-08-11T01:00:00Z", endedAt: null,
+        summary: { exerciseCount: 1, setCount: 1, exerciseNames: ["Bench Press"] }
+      },
+      plan: { version: 1, exercises: [{ exerciseId: "e_01", catalogKey: "bench_press",
+        name: "Bench Press", sets: [{ setId: "s_01_01", weight: 80, reps: 8 }] }] },
+      participants: [{
+        isSelf: false,
+        profile: { profileId: "p_22222222222222222222222222222222", displayName: "Friend" },
+        role: "owner", state: "joined", membershipRevision: 1,
+        joinedAt: "2026-08-10T00:58:00Z", finishedAt: null, departedAt: null,
+        progress: { version: 1, revision: 1, completedSets: [], undoableSetId: null, finishedAt: null }
+      }, {
+        isSelf: true,
+        profile: { profileId: "p_11111111111111111111111111111111", displayName: "Me" },
+        role: "participant", state: "joined", membershipRevision: 2,
+        joinedAt: "2026-08-10T00:59:00Z", finishedAt: null, departedAt: null,
+        progress: { version: 1, revision: 1, completedSets: [], undoableSetId: null, finishedAt: null }
+      }]
+    });
+    withActiveWorkoutMutationLock = async (_descriptor, operation) => ({
+      acquired: true, value: await operation()
+    });
+    persistActiveWorkoutRecord = () => null;
+    render = () => {};
+    showToast = () => {};
+  `, context);
+  assert.equal(await vm.runInContext(`startWorkout({
+    liveSnapshot: attachSnapshot,
+    liveIdentity: liveSessionIdentity()
+  })`, context), false);
+  assert.equal(vm.runInContext("activeWorkout", context), null);
+  assert.equal(vm.runInContext("liveWorkoutBinding", context), null);
+  assert.equal(
+    vm.runInContext(`localStorage.getItem(liveWorkoutBindingKey("${userId}"))`, context),
+    null
+  );
+});
+
+test("a stale live drain cannot clear the next account binding", async () => {
+  const context = loadPwaContext();
+  const userA = "11111111-1111-4111-8111-111111111111";
+  const sessionA = "22222222-2222-4222-8222-222222222222";
+  const userB = "33333333-3333-4333-8333-333333333333";
+  const sessionB = "44444444-4444-4444-8444-444444444444";
+  vm.runInContext(`
+    activeAccount = { id: "remote-a", userId: "${userA}", remote: "supabase", name: "A" };
+    saveRemoteSession({
+      access_token: ${JSON.stringify(testAccessToken(userA, sessionA))},
+      refresh_token: "refresh-a",
+      user: { id: "${userA}" }
+    });
+    liveWorkoutBinding = {
+      version: 1, userId: "${userA}", sessionId: "${sessionA}",
+      roomId: "lr_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", role: "owner",
+      peerProfileId: "p_22222222222222222222222222222222", peerDisplayName: "Friend",
+      roomRevision: 2, membershipRevision: 1, progressRevision: 1, localWorkoutId: 700,
+      serverToLocalSetIds: { s_01_01: 701 },
+      pendingOperations: [{
+        clientOperationId: "55555555-5555-4555-8555-555555555555",
+        kind: "finish", expectedProgressRevision: 1, serverSetId: null, weight: null, reps: null
+      }]
+    };
+    activeWorkout = null;
+    state.sessions = [{ id: 700, startedAt: 1, note: "", sets: [] }];
+    localLiveOperationReflection = () => "reflected";
+    render = () => {};
+    scheduleLiveWorkoutPoll = () => {};
+    liveGateway = () => new Promise(resolve => { resolveStaleDrain = resolve; });
+  `, context);
+  const pending = vm.runInContext("drainLiveWorkoutOperations()", context);
+  await Promise.resolve();
+  vm.runInContext(`
+    resetLiveWorkoutContext({ eraseBinding: false });
+    clearRemoteSession();
+    activeAccount = { id: "remote-b", userId: "${userB}", remote: "supabase", name: "B" };
+    saveRemoteSession({
+      access_token: ${JSON.stringify(testAccessToken(userB, sessionB))},
+      refresh_token: "refresh-b",
+      user: { id: "${userB}" }
+    });
+    liveWorkoutBinding = {
+      version: 1, userId: "${userB}", sessionId: "${sessionB}",
+      roomId: "lr_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", role: "participant",
+      peerProfileId: "p_33333333333333333333333333333333", peerDisplayName: "Peer",
+      roomRevision: 3, membershipRevision: 2, progressRevision: 1, localWorkoutId: 800,
+      serverToLocalSetIds: { s_01_01: 801 }, pendingOperations: []
+    };
+    resolveStaleDrain({ version: 1, result: "closed", roomId: "lr_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      status: "expired", roomRevision: 3, endedAt: "2026-08-10T01:00:00Z" });
+  `, context);
+  await pending;
+  assert.equal(
+    vm.runInContext("liveWorkoutBinding.roomId", context),
+    "lr_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  );
+  assert.equal(vm.runInContext("liveWorkoutState.status", context), "idle");
+});
+
+test("Web Push permission is user-triggered, account-bound, and revoked without storing subscription secrets", async () => {
+  const userId = "11111111-1111-4111-8111-111111111111";
+  const sessionId = "22222222-2222-4222-8222-222222222222";
+  const calls = [];
+  let activeSubscription = null;
+  let unsubscribeCount = 0;
+  let notificationCloseCount = 0;
+  let subscribeOptions = null;
+  const subscription = {
+    options: { applicationServerKey: null },
+    toJSON: () => ({
+      endpoint: "https://fcm.googleapis.com/fcm/send/abcdefghijklmnopqrstuvwxyz0123456789",
+      expirationTime: null,
+      keys: { p256dh: `B${"a".repeat(86)}`, auth: "b".repeat(22) }
+    }),
+    async unsubscribe() {
+      unsubscribeCount += 1;
+      activeSubscription = null;
+      return true;
+    }
+  };
+  const registration = {
+    async getNotifications() {
+      return [{ close() { notificationCloseCount += 1; } }];
+    },
+    pushManager: {
+      async getSubscription() { return activeSubscription; },
+      async subscribe(options) {
+        subscribeOptions = options;
+        activeSubscription = subscription;
+        return subscription;
+      }
+    }
+  };
+  const notification = {
+    permission: "default",
+    async requestPermission() {
+      notification.permission = "granted";
+      return "granted";
+    }
+  };
+  const context = loadPwaContext({
+    push: {
+      notification,
+      registration,
+      vapidPublicKey: "BMEAMVQN7DgWWPB_EhMDG_KgW3ElI399HoWuVHMvc6tZpz7sHbRMkSsjRg08DV3tT2jOMUtmfN7UreS1qsbVgqg"
+    },
+    fetchImpl: async (url, options) => {
+      const body = JSON.parse(options.body);
+      calls.push({ url, body });
+      if (String(url).endsWith("/notification_register_installation")) {
+        return new Response(JSON.stringify({
+          version: 1,
+          installationId: body.p_installation_id,
+          provider: "web_push",
+          environment: "production",
+          bindingId: "55555555-5555-4555-8555-555555555555",
+          registrationRevision: 1,
+          registeredAt: "2026-08-10T01:00:00Z"
+        }), { status: 200 });
+      }
+      return new Response(JSON.stringify({
+        version: 1,
+        installationId: body.p_installation_id,
+        revoked: true
+      }), { status: 200 });
+    }
+  });
+  vm.runInContext(`
+    activeAccount = {
+      id: "remote-${userId}", userId: "${userId}", remote: "supabase", name: "Owner"
+    };
+    localStorage.setItem(AUTH_KEY, JSON.stringify(activeAccount));
+    saveRemoteSession({
+      access_token: ${JSON.stringify(testAccessToken(userId, sessionId))},
+      refresh_token: "refresh-token-test",
+      user: { id: "${userId}", email: "owner@example.test" }
+    });
+    render = () => {};
+  `, context);
+  context.testSubscription = subscription;
+  assert.equal(vm.runInContext("webPushPublicKeyBytes()?.byteLength", context), 65);
+  assert.match(vm.runInContext("webPushInstallationId()", context), /^[0-9a-f-]{36}$/);
+  assert.equal(
+    vm.runInContext("webPushSubscriptionMaterial(testSubscription).endpoint", context),
+    subscription.toJSON().endpoint
+  );
+
+  assert.equal(await vm.runInContext("registerWebPush({ prompt: false })", context), false);
+  assert.equal(calls.length, 0);
+  assert.equal(notification.permission, "default");
+  const registrationResult = await vm.runInContext("registerWebPush({ prompt: true })", context);
+  assert.equal(registrationResult, true, JSON.stringify({
+    calls,
+    state: jsonFrom(context, "webPushState"),
+    permission: notification.permission,
+    subscribed: Boolean(activeSubscription)
+  }));
+  assert.equal(notification.permission, "granted");
+  assert.equal(calls.length, 1);
+  assert.equal(vm.runInContext("webPushMutationInProgress", context), false);
+  assert.equal(calls[0].body.p_platform, "web");
+  assert.equal(calls[0].body.p_provider, "web_push");
+  assert.equal(calls[0].body.p_environment, "production");
+  assert.equal(subscribeOptions.userVisibleOnly, true);
+  assert.equal(new Uint8Array(subscribeOptions.applicationServerKey).byteLength, 65);
+  assert.equal(vm.runInContext("webPushPreferenceEnabled()", context), true);
+  assert.deepEqual(JSON.parse(JSON.stringify(context.pushBindingValues.get("current"))), {
+    version: 1,
+    bindingId: "55555555-5555-4555-8555-555555555555",
+    ownerId: userId
+  });
+  const storedValues = context.localStorage.entries().map(([, value]) => value).join("\n");
+  assert.equal(storedValues.includes(calls[0].body.p_provider_token), false);
+  assert.equal(storedValues.includes(calls[0].body.p_web_push_p256dh), false);
+  assert.equal(storedValues.includes(calls[0].body.p_web_push_auth), false);
+
+  assert.equal(await vm.runInContext("revokeWebPush()", context), true);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1].body.p_installation_id, calls[0].body.p_installation_id);
+  assert.equal(unsubscribeCount, 1);
+  assert.equal(notificationCloseCount, 1);
+  assert.equal(context.pushBindingValues.has("current"), false);
+  assert.equal(vm.runInContext("webPushPreferenceEnabled()", context), false);
+});
+
+test("Web Push permission completion cannot bind a superseded account", async () => {
+  const userId = "11111111-1111-4111-8111-111111111111";
+  const sessionId = "22222222-2222-4222-8222-222222222222";
+  let resolvePermission;
+  let subscribeCount = 0;
+  const calls = [];
+  const notification = {
+    permission: "default",
+    requestPermission() {
+      return new Promise(resolve => { resolvePermission = resolve; });
+    }
+  };
+  const context = loadPwaContext({
+    push: {
+      notification,
+      registration: {
+        pushManager: {
+          async getSubscription() { return null; },
+          async subscribe() {
+            subscribeCount += 1;
+            throw new Error("A stale account must never subscribe.");
+          }
+        }
+      },
+      vapidPublicKey: "BMEAMVQN7DgWWPB_EhMDG_KgW3ElI399HoWuVHMvc6tZpz7sHbRMkSsjRg08DV3tT2jOMUtmfN7UreS1qsbVgqg"
+    },
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      throw new Error("A stale account must never reach the registration RPC.");
+    }
+  });
+  vm.runInContext(`
+    activeAccount = {
+      id: "remote-${userId}", userId: "${userId}", remote: "supabase", name: "Owner"
+    };
+    localStorage.setItem(AUTH_KEY, JSON.stringify(activeAccount));
+    saveRemoteSession({
+      access_token: ${JSON.stringify(testAccessToken(userId, sessionId))},
+      refresh_token: "refresh-token-test",
+      user: { id: "${userId}", email: "owner@example.test" }
+    });
+    render = () => {};
+  `, context);
+
+  const pending = vm.runInContext("registerWebPush({ prompt: true })", context);
+  await Promise.resolve();
+  vm.runInContext(`
+    accountTransitionInProgress = true;
+    accountEpoch += 1;
+    activeAccount = null;
+    clearRemoteSession();
+  `, context);
+  notification.permission = "granted";
+  resolvePermission("granted");
+
+  assert.equal(await pending, false);
+  assert.equal(subscribeCount, 0);
+  assert.equal(calls.length, 0);
+  assert.equal(vm.runInContext("webPushPreferenceEnabled()", context), false);
+});
+
+test("remote activation does not publish the new account while binding cleanup is delayed", async () => {
+  const userA = "11111111-1111-4111-8111-111111111111";
+  const userB = "33333333-3333-4333-8333-333333333333";
+  const sessionB = "44444444-4444-4444-8444-444444444444";
+  let releaseCleanup;
+  const context = loadPwaContext();
+  context.delayedBindingCleanup = new Promise(resolve => { releaseCleanup = resolve; });
+  vm.runInContext(`
+    activeAccount = { id: "remote-${userA}", userId: "${userA}", remote: "supabase", name: "A" };
+    localStorage.setItem(AUTH_KEY, JSON.stringify(activeAccount));
+    fenceWebPushBeforeAccountChange = () => delayedBindingCleanup;
+    render = () => {};
+  `, context);
+  const pending = vm.runInContext(`beginRemoteActivation({
+    access_token: ${JSON.stringify(testAccessToken(userB, sessionB))},
+    refresh_token: "refresh-b",
+    expires_in: 3600,
+    expires_at: 4102444800,
+    token_type: "bearer",
+    user: { id: "${userB}", email: "b@example.test" }
+  })`, context);
+  await Promise.resolve();
+  assert.equal(
+    JSON.parse(context.localStorage.getItem("gym-pwa-active-account-v1")).userId,
+    userA
+  );
+  assert.equal(vm.runInContext("activeAccount.userId", context), userA);
+  releaseCleanup(true);
+  await pending;
+  assert.equal(
+    JSON.parse(context.localStorage.getItem("gym-pwa-active-account-v1")).userId,
+    userB
+  );
+  assert.equal(vm.runInContext("activeAccount.userId", context), userB);
+});
+
+test("delayed push fencing serializes rapid local account activation", async () => {
+  let releaseFence;
+  const context = loadPwaContext();
+  context.delayedPushFence = new Promise(resolve => { releaseFence = resolve; });
+  vm.runInContext(`
+    let localFenceCalls = 0;
+    fenceWebPushBeforeAccountChange = () => {
+      localFenceCalls += 1;
+      return delayedPushFence;
+    };
+    render = () => {};
+  `, context);
+  const first = vm.runInContext('loginAccount("Alpha")', context);
+  await Promise.resolve();
+  const second = vm.runInContext('loginAccount("Beta")', context);
+  assert.equal(vm.runInContext("accountTransitionInProgress", context), true);
+  assert.equal(vm.runInContext("localFenceCalls", context), 1);
+  releaseFence(true);
+  await Promise.all([first, second]);
+  assert.equal(vm.runInContext("activeAccount.name", context), "Alpha");
+  assert.deepEqual(
+    JSON.parse(context.localStorage.getItem("gym-pwa-account-list-v1")).map(account => account.name),
+    ["Alpha"]
+  );
+  assert.equal(vm.runInContext("accountTransitionInProgress", context), false);
+});
+
+test("local account activation stays available when IndexedDB and Push are unavailable", async () => {
+  const context = loadPwaContext();
+  vm.runInContext(`window.indexedDB = undefined; render = () => {};`, context);
+  await vm.runInContext('loginAccount("Offline")', context);
+  assert.equal(vm.runInContext("activeAccount.name", context), "Offline");
+  assert.equal(vm.runInContext("webPushPreferenceEnabled()", context), false);
+  assert.equal(vm.runInContext("accountTransitionInProgress", context), false);
+});
+
+test("no-IndexedDB remote activation closes notifications and unsubscribes before marker swap", async () => {
+  const userA = "11111111-1111-4111-8111-111111111111";
+  const userB = "33333333-3333-4333-8333-333333333333";
+  const sessionB = "44444444-4444-4444-8444-444444444444";
+  let closed = 0;
+  let unsubscribed = 0;
+  const context = loadPwaContext({
+    push: {
+      notification: { permission: "granted", requestPermission: async () => "granted" },
+      registration: {
+        async getNotifications() { return [{ close() { closed += 1; } }]; },
+        pushManager: {
+          async getSubscription() {
+            return { async unsubscribe() { unsubscribed += 1; return true; } };
+          }
+        }
+      },
+      vapidPublicKey: "BMEAMVQN7DgWWPB_EhMDG_KgW3ElI399HoWuVHMvc6tZpz7sHbRMkSsjRg08DV3tT2jOMUtmfN7UreS1qsbVgqg"
+    }
+  });
+  vm.runInContext(`
+    window.indexedDB = undefined;
+    activeAccount = { id: "remote-${userA}", userId: "${userA}", remote: "supabase", name: "A" };
+    localStorage.setItem(AUTH_KEY, JSON.stringify(activeAccount));
+    localStorage.setItem(WEB_PUSH_ENABLED_KEY, "1");
+    render = () => {};
+  `, context);
+  await vm.runInContext(`beginRemoteActivation({
+    access_token: ${JSON.stringify(testAccessToken(userB, sessionB))},
+    refresh_token: "refresh-b",
+    expires_in: 3600,
+    expires_at: 4102444800,
+    token_type: "bearer",
+    user: { id: "${userB}", email: "b@example.test" }
+  })`, context);
+  assert.equal(closed, 1);
+  assert.equal(unsubscribed, 1);
+  assert.equal(vm.runInContext("activeAccount.userId", context), userB);
+  assert.equal(vm.runInContext("webPushPreferenceEnabled()", context), false);
+});
+
+test("shared push transition sentinel blocks the old owner until the target account prepares", async () => {
+  const userA = "11111111-1111-4111-8111-111111111111";
+  const userB = "33333333-3333-4333-8333-333333333333";
+  const bindingA = "55555555-5555-4555-8555-555555555555";
+  const bindingB = "66666666-6666-4666-8666-666666666666";
+  const context = loadPwaContext({
+    push: {
+      binding: { version: 1, ownerId: userA, bindingId: bindingA },
+      notification: { permission: "granted", requestPermission: async () => "granted" },
+      registration: {
+        pushManager: { async getSubscription() { return null; } }
+      },
+      vapidPublicKey: "BMEAMVQN7DgWWPB_EhMDG_KgW3ElI399HoWuVHMvc6tZpz7sHbRMkSsjRg08DV3tT2jOMUtmfN7UreS1qsbVgqg"
+    }
+  });
+  assert.equal(
+    await vm.runInContext(`beginStoredWebPushTransition("${userB}")`, context),
+    true
+  );
+  assert.equal(context.pushBindingValues.has("current"), false);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(context.pushBindingValues.get("transition"))),
+    { version: 1, nextOwnerId: userB }
+  );
+  assert.equal(
+    await vm.runInContext(`storeWebPushBinding("${userA}", "${bindingA}")`, context),
+    false
+  );
+  assert.equal(
+    await vm.runInContext(`prepareStoredWebPushBinding("${userA}")`, context),
+    false
+  );
+  assert.equal(
+    await vm.runInContext(`prepareStoredWebPushBinding("${userB}")`, context),
+    true
+  );
+  assert.equal(context.pushBindingValues.has("transition"), false);
+  assert.equal(
+    await vm.runInContext(`storeWebPushBinding("${userB}", "${bindingB}")`, context),
+    true
+  );
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(context.pushBindingValues.get("current"))),
+    { version: 1, ownerId: userB, bindingId: bindingB }
+  );
+});
+
+test("Web Push account switching serializes and safely rebinds the shared endpoint", async () => {
+  const userA = "11111111-1111-4111-8111-111111111111";
+  const sessionA = "22222222-2222-4222-8222-222222222222";
+  const userB = "33333333-3333-4333-8333-333333333333";
+  const sessionB = "44444444-4444-4444-8444-444444444444";
+  let activeSubscription = null;
+  let subscriptionCounter = 0;
+  let firstRegistrationResponse;
+  const unsubscribed = [];
+  const registration = {
+    pushManager: {
+      async getSubscription() { return activeSubscription; },
+      async subscribe() {
+        subscriptionCounter += 1;
+        const endpoint = `https://fcm.googleapis.com/fcm/send/${"x".repeat(40)}${subscriptionCounter}`;
+        const subscription = {
+          endpoint,
+          options: { applicationServerKey: null },
+          toJSON: () => ({
+            endpoint,
+            expirationTime: null,
+            keys: { p256dh: `B${"a".repeat(86)}`, auth: "b".repeat(22) }
+          }),
+          async unsubscribe() {
+            unsubscribed.push(endpoint);
+            if (activeSubscription === subscription) activeSubscription = null;
+            return true;
+          }
+        };
+        activeSubscription = subscription;
+        return subscription;
+      }
+    }
+  };
+  let registerCalls = 0;
+  const context = loadPwaContext({
+    push: {
+      notification: { permission: "granted", requestPermission: async () => "granted" },
+      registration,
+      vapidPublicKey: "BMEAMVQN7DgWWPB_EhMDG_KgW3ElI399HoWuVHMvc6tZpz7sHbRMkSsjRg08DV3tT2jOMUtmfN7UreS1qsbVgqg"
+    },
+    fetchImpl: async (url, options) => {
+      const body = JSON.parse(options.body);
+      if (String(url).endsWith("/notification_register_installation")) {
+        registerCalls += 1;
+        if (registerCalls === 1) {
+          return new Promise(resolve => { firstRegistrationResponse = () => resolve(new Response(JSON.stringify({
+            version: 1,
+            installationId: body.p_installation_id,
+            provider: "web_push",
+            environment: "production",
+            bindingId: "55555555-5555-4555-8555-555555555555",
+            registrationRevision: 1,
+            registeredAt: "2026-08-10T01:00:00Z"
+          }), { status: 200 })); });
+        }
+        return new Response(JSON.stringify({
+          version: 1,
+          installationId: body.p_installation_id,
+          provider: "web_push",
+          environment: "production",
+          bindingId: "66666666-6666-4666-8666-666666666666",
+          registrationRevision: 2,
+          registeredAt: "2026-08-10T01:01:00Z"
+        }), { status: 200 });
+      }
+      return new Response(JSON.stringify({
+        version: 1,
+        installationId: body.p_installation_id,
+        revoked: true
+      }), { status: 200 });
+    }
+  });
+  vm.runInContext(`
+    activeAccount = { id: "remote-${userA}", userId: "${userA}", remote: "supabase", name: "A" };
+    localStorage.setItem(AUTH_KEY, JSON.stringify(activeAccount));
+    saveRemoteSession({ access_token: ${JSON.stringify(testAccessToken(userA, sessionA))},
+      refresh_token: "refresh-a", user: { id: "${userA}" } });
+    render = () => {};
+  `, context);
+  assert.equal(vm.runInContext("webPushSupported()", context), true);
+  assert.equal(vm.runInContext("Boolean(webPushSource())", context), true);
+  assert.equal(vm.runInContext("webPushMutationInProgress", context), false);
+  assert.equal(vm.runInContext("accountTransitionInProgress", context), false);
+  const first = vm.runInContext("registerWebPush({ prompt: false })", context);
+  for (let attempt = 0; attempt < 20 && !firstRegistrationResponse; attempt += 1) {
+    await new Promise(resolve => setTimeout(resolve, 0));
+  }
+  assert.equal(typeof firstRegistrationResponse, "function");
+  vm.runInContext(`
+    accountEpoch += 1;
+    resetWebPushContext();
+    clearRemoteSession();
+    activeAccount = { id: "remote-${userB}", userId: "${userB}", remote: "supabase", name: "B" };
+    localStorage.setItem(AUTH_KEY, JSON.stringify(activeAccount));
+    saveRemoteSession({ access_token: ${JSON.stringify(testAccessToken(userB, sessionB))},
+      refresh_token: "refresh-b", user: { id: "${userB}" } });
+  `, context);
+  const second = vm.runInContext("registerWebPush({ prompt: false })", context);
+  firstRegistrationResponse();
+  assert.equal(await first, false);
+  assert.equal(await second, true);
+  assert.equal(registerCalls, 2);
+  assert.equal(subscriptionCounter, 1);
+  assert.equal(unsubscribed.length, 0);
+  assert.equal(activeSubscription?.endpoint.endsWith("1"), true);
+  assert.equal(vm.runInContext("webPushState.status", context), "registered");
+});
+
+test("a stale tab cannot rebind or unsubscribe the shared browser push endpoint", async () => {
+  const userA = "11111111-1111-4111-8111-111111111111";
+  const sessionA = "22222222-2222-4222-8222-222222222222";
+  const userB = "33333333-3333-4333-8333-333333333333";
+  let unsubscribeCount = 0;
+  const subscription = {
+    options: { applicationServerKey: null },
+    toJSON: () => ({
+      endpoint: `https://fcm.googleapis.com/fcm/send/${"x".repeat(48)}`,
+      expirationTime: null,
+      keys: { p256dh: `B${"a".repeat(86)}`, auth: "b".repeat(22) }
+    }),
+    async unsubscribe() { unsubscribeCount += 1; return true; }
+  };
+  const context = loadPwaContext({
+    push: {
+      notification: { permission: "granted", requestPermission: async () => "granted" },
+      registration: {
+        pushManager: {
+          async getSubscription() { return subscription; },
+          async subscribe() { throw new Error("stale tab must not subscribe"); }
+        }
+      },
+      vapidPublicKey: "BMEAMVQN7DgWWPB_EhMDG_KgW3ElI399HoWuVHMvc6tZpz7sHbRMkSsjRg08DV3tT2jOMUtmfN7UreS1qsbVgqg"
+    },
+    fetchImpl: async () => { throw new Error("stale tab must not call push RPCs"); }
+  });
+  vm.runInContext(`
+    activeAccount = { id: "remote-${userA}", userId: "${userA}", remote: "supabase", name: "A" };
+    saveRemoteSession({ access_token: ${JSON.stringify(testAccessToken(userA, sessionA))},
+      refresh_token: "refresh-a", user: { id: "${userA}" } });
+    localStorage.setItem(AUTH_KEY, JSON.stringify({
+      id: "remote-${userB}", userId: "${userB}", remote: "supabase", name: "B"
+    }));
+    localStorage.setItem(WEB_PUSH_ENABLED_KEY, "1");
+    render = () => {};
+  `, context);
+  assert.equal(vm.runInContext("webPushSource()", context), null);
+  assert.equal(vm.runInContext("syncWebPushIfEnabled()", context), false);
+  assert.equal(await vm.runInContext("revokeWebPush()", context), false);
+  assert.equal(unsubscribeCount, 0);
+});
+
+test("a delayed reset cannot unsubscribe a newer account's shared push endpoint", async () => {
+  const userA = "11111111-1111-4111-8111-111111111111";
+  const userB = "33333333-3333-4333-8333-333333333333";
+  let releaseSubscription;
+  let getSubscriptionStarted;
+  const started = new Promise(resolve => { getSubscriptionStarted = resolve; });
+  const delayedSubscription = new Promise(resolve => { releaseSubscription = resolve; });
+  let unsubscribeCount = 0;
+  const subscription = {
+    async unsubscribe() { unsubscribeCount += 1; return true; }
+  };
+  const context = loadPwaContext({
+    push: {
+      notification: { permission: "granted", requestPermission: async () => "granted" },
+      registration: {
+        pushManager: {
+          async getSubscription() {
+            getSubscriptionStarted();
+            return delayedSubscription;
+          }
+        }
+      },
+      vapidPublicKey: "BMEAMVQN7DgWWPB_EhMDG_KgW3ElI399HoWuVHMvc6tZpz7sHbRMkSsjRg08DV3tT2jOMUtmfN7UreS1qsbVgqg"
+    }
+  });
+  vm.runInContext(`
+    activeAccount = { id: "remote-${userA}", userId: "${userA}", remote: "supabase", name: "A" };
+    localStorage.setItem(AUTH_KEY, JSON.stringify(activeAccount));
+    render = () => {};
+    resetWebPushContext();
+  `, context);
+  await started;
+  vm.runInContext(`
+    localStorage.setItem(AUTH_KEY, JSON.stringify({
+      id: "remote-${userB}", userId: "${userB}", remote: "supabase", name: "B"
+    }));
+  `, context);
+  releaseSubscription(subscription);
+  await vm.runInContext("webPushLifecycleTail", context);
+  assert.equal(unsubscribeCount, 0);
+});
+
+test("PWA joins only its private Realtime topic and treats broadcasts as refresh hints", async () => {
+  const context = loadPwaContext();
+  const userId = "11111111-1111-4111-8111-111111111111";
+  const sessionId = "22222222-2222-4222-8222-222222222222";
+  vm.runInContext(`
+    activeAccount = {
+      id: "remote-${userId}", userId: "${userId}", remote: "supabase", name: "Owner"
+    };
+    saveRemoteSession({
+      access_token: ${JSON.stringify(testAccessToken(userId, sessionId))},
+      refresh_token: "refresh-token-test",
+      user: { id: "${userId}" }
+    });
+    window.GYM_SUPABASE = {
+      url: "https://project.supabase.co",
+      anonKey: "sb_publishable_test_key"
+    };
+    let realtimeCalls = [];
+    let realtimeMessageCallback = null;
+    let realtimeRefreshCount = 0;
+    class TestRealtimeClient {
+      constructor(endpoint, options) {
+        realtimeCalls.push({ kind: "client", endpoint, options });
+      }
+      async setAuth(token) { realtimeCalls.push({ kind: "auth", token }); }
+      channel(topic, options) {
+        realtimeCalls.push({ kind: "channel", topic, options });
+        return {
+          on(type, filter, callback) {
+            realtimeCalls.push({ kind: "on", type, filter });
+            realtimeMessageCallback = callback;
+            return this;
+          },
+          subscribe(callback) {
+            realtimeCalls.push({ kind: "subscribe" });
+            callback("SUBSCRIBED");
+            return this;
+          }
+        };
+      }
+      async removeChannel() {}
+      async disconnect() {}
+    }
+    window.GymSupabaseRealtime = { RealtimeClient: TestRealtimeClient };
+    refreshLiveWorkoutData = async () => { realtimeRefreshCount += 1; return true; };
+    render = () => {};
+  `, context);
+  assert.equal(await vm.runInContext("ensureLiveWorkoutRealtime()", context), true);
+  const calls = jsonFrom(context, "realtimeCalls");
+  const channel = calls.find(call => call.kind === "channel");
+  assert.equal(channel.topic, `gymapp:user:${userId}`);
+  assert.deepEqual(channel.options, {
+    config: { private: true, broadcast: { ack: false, self: false } }
+  });
+  assert.equal(calls.find(call => call.kind === "on").filter.event, "gymapp_live_changed");
+  vm.runInContext(`realtimeMessageCallback({ payload: {
+    version: 1,
+    kind: "invite",
+    roomId: "lr_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    roomRevision: 1
+  } })`, context);
+  await new Promise(resolve => setTimeout(resolve, 120));
+  assert.equal(vm.runInContext("realtimeRefreshCount", context), 1);
+  vm.runInContext(`realtimeMessageCallback({ payload: {
+    version: 1,
+    kind: "invite",
+    roomId: "lr_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    roomRevision: 1,
+    privateWorkout: true
+  } })`, context);
+  await new Promise(resolve => setTimeout(resolve, 120));
+  assert.equal(vm.runInContext("realtimeRefreshCount", context), 1);
+  vm.runInContext("clearTimeout(liveWorkoutPollTimer); liveWorkoutPollTimer = null; stopLiveWorkoutRealtime();", context);
 });
 
 test("an outcome-unknown workout invitation retries the exact client request id", async () => {

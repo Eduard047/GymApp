@@ -29,11 +29,13 @@ struct AccountSettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var auth: AuthService
+    @EnvironmentObject private var nativePush: NativePushManager
 
     @State private var prompt: Prompt?
     @State private var deletionConfirmationTarget: AccountDeletionConfirmationTarget?
     @State private var showsPasswordChange = false
     @State private var isSyncing = false
+    @State private var isChangingPushSetting = false
 
     private let showsCloseButton: Bool
 
@@ -53,6 +55,9 @@ struct AccountSettingsView: View {
 
                     accountDetailsCard
                     syncCard
+                    if isCloudAccount {
+                        notificationsCard
+                    }
                     if isCloudAccount {
                         GarminSettingsCard(
                             garminCloud: appState.garminCloud,
@@ -218,6 +223,89 @@ struct AccountSettingsView: View {
         case .synced: "Up to date"
         case .conflict: "Choice required"
         case .failed: "Sync failed"
+        }
+    }
+
+    private var notificationsCard: some View {
+        GymPanel {
+            VStack(alignment: .leading, spacing: 14) {
+                GymSectionTitle(
+                    eyebrow: "Updates",
+                    title: "Friend notifications",
+                    supporting: "Receive account-bound friend, workout, and live-workout updates on this device. GymApp validates the current account before showing each notification."
+                )
+
+                detailRow(label: "Status", value: pushStatusText)
+
+                if nativePush.permissionState == .denied {
+                    Button {
+                        guard let url = URL(string: UIApplication.openSettingsURLString) else {
+                            return
+                        }
+                        UIApplication.shared.open(url)
+                    } label: {
+                        Label("Open notification settings", systemImage: "gear")
+                    }
+                    .buttonStyle(GymSecondaryButtonStyle())
+                } else {
+                    Button {
+                        isChangingPushSetting = true
+                        Task {
+                            if nativePush.isEnabled {
+                                await nativePush.disable()
+                            } else {
+                                await nativePush.enable()
+                            }
+                            isChangingPushSetting = false
+                        }
+                    } label: {
+                        if isChangingPushSetting || pushStatusIsWorking {
+                            HStack(spacing: 9) {
+                                ProgressView()
+                                    .tint(nativePush.isEnabled ? GymTheme.primary : .white)
+                                Text("Updating…")
+                            }
+                        } else {
+                            Label(
+                                nativePush.isEnabled
+                                    ? "Turn off notifications"
+                                    : "Turn on notifications",
+                                systemImage: nativePush.isEnabled ? "bell.slash" : "bell.badge"
+                            )
+                        }
+                    }
+                    .buttonStyle(GymSecondaryButtonStyle())
+                    .disabled(isChangingPushSetting || pushStatusIsWorking)
+                }
+
+                Label(
+                    "Notification payloads contain opaque IDs only. Names, workout details, and credentials are not sent through APNs.",
+                    systemImage: "lock.shield"
+                )
+                .font(.caption)
+                .foregroundStyle(GymTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var pushStatusText: String {
+        switch nativePush.status {
+        case .disabled: "Off"
+        case .requestingPermission: "Requesting permission…"
+        case .waitingForDeviceToken: "Waiting for Apple Push Notification service…"
+        case .registering: "Securing this device…"
+        case .active: "On"
+        case .denied: "Blocked in iOS Settings"
+        case .unavailable: "Secure device storage unavailable"
+        case .failed: "Could not register — try again"
+        }
+    }
+
+    private var pushStatusIsWorking: Bool {
+        switch nativePush.status {
+        case .requestingPermission, .registering: true
+        default: false
         }
     }
 

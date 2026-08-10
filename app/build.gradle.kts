@@ -1,3 +1,4 @@
+import groovy.json.JsonSlurper
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDateTime
@@ -21,6 +22,81 @@ val appVersionCode = (findProperty("appVersionCode") as String?)?.toIntOrNull() 
 val appVersionName = (findProperty("appVersionName") as String?) ?: LocalDateTime.now()
     .format(DateTimeFormatter.ofPattern("yyyy.MM.dd.HHmm"))
 val useDevApplicationIdSuffix = (findProperty("devApplicationIdSuffix") as String?) != "false"
+data class FirebaseClientBuildConfig(
+    val projectId: String,
+    val applicationId: String,
+    val apiKey: String,
+    val senderId: String
+)
+
+fun firebaseClientBuildConfigs(): Map<String, FirebaseClientBuildConfig> {
+    val configuredPath = (findProperty("gymappFirebaseConfigFile") as String?)
+        ?.trim()
+        ?.takeIf(String::isNotEmpty)
+        ?: return emptyMap()
+    val configFile = rootProject.file(configuredPath)
+    require(configFile.isFile) {
+        "gymappFirebaseConfigFile must point to a readable google-services.json file."
+    }
+    val root = JsonSlurper().parse(configFile) as? Map<*, *>
+        ?: error("google-services.json must contain a JSON object.")
+    val projectInfo = root["project_info"] as? Map<*, *>
+        ?: error("google-services.json is missing project_info.")
+    val projectId = projectInfo["project_id"] as? String
+        ?: error("google-services.json is missing project_info.project_id.")
+    val senderId = projectInfo["project_number"] as? String
+        ?: error("google-services.json is missing project_info.project_number.")
+    require(projectId.matches(Regex("^[a-z][a-z0-9-]{4,28}[a-z0-9]$"))) {
+        "google-services.json contains an invalid Firebase project ID."
+    }
+    require(senderId.matches(Regex("^[0-9]{6,32}$"))) {
+        "google-services.json contains an invalid Firebase sender ID."
+    }
+    val clients = root["client"] as? List<*>
+        ?: error("google-services.json is missing client entries.")
+    return clients.mapNotNull { rawClient ->
+        val client = rawClient as? Map<*, *> ?: return@mapNotNull null
+        val clientInfo = client["client_info"] as? Map<*, *> ?: return@mapNotNull null
+        val androidInfo = clientInfo["android_client_info"] as? Map<*, *>
+            ?: return@mapNotNull null
+        val packageName = androidInfo["package_name"] as? String ?: return@mapNotNull null
+        if (packageName !in setOf("com.setforge.gymapp", "com.setforge.gymapp.dev")) {
+            return@mapNotNull null
+        }
+        val applicationId = clientInfo["mobilesdk_app_id"] as? String
+            ?: error("Firebase client $packageName is missing mobilesdk_app_id.")
+        val apiKeys = client["api_key"] as? List<*>
+            ?: error("Firebase client $packageName is missing api_key.")
+        val apiKey = apiKeys.asSequence()
+            .mapNotNull { it as? Map<*, *> }
+            .mapNotNull { it["current_key"] as? String }
+            .firstOrNull()
+            ?: error("Firebase client $packageName is missing api_key.current_key.")
+        require(applicationId.matches(Regex("^1:[0-9]{6,32}:android:[0-9a-f]{16,64}$"))) {
+            "Firebase client $packageName contains an invalid mobilesdk_app_id."
+        }
+        require(apiKey.matches(Regex("^AIza[A-Za-z0-9_-]{20,200}$"))) {
+            "Firebase client $packageName contains an invalid API key."
+        }
+        packageName to FirebaseClientBuildConfig(
+            projectId = projectId,
+            applicationId = applicationId,
+            apiKey = apiKey,
+            senderId = senderId
+        )
+    }.toMap().also {
+        require(it.isNotEmpty()) {
+            "google-services.json has no GymApp Android client."
+        }
+    }
+}
+
+fun buildConfigString(value: String): String =
+    "\"${value.replace("\\", "\\\\").replace("\"", "\\\"")}\""
+
+val firebaseClients = firebaseClientBuildConfigs()
+val productionFirebaseClient = firebaseClients["com.setforge.gymapp"]
+val developmentFirebaseClient = firebaseClients["com.setforge.gymapp.dev"]
 val keystorePropertiesFile = rootProject.file("keystore.properties")
 val keystoreProperties = Properties().apply {
     if (keystorePropertiesFile.exists()) {
@@ -47,6 +123,11 @@ android {
         manifestPlaceholders["authCallbackScheme"] = "com.setforge.gymapp"
         buildConfigField("String", "AUTH_CALLBACK_SCHEME", "\"com.setforge.gymapp\"")
         buildConfigField("String", "AUTH_BRIDGE_VARIANT_QUERY", "\"\"")
+        buildConfigField("boolean", "FIREBASE_CONFIGURED", "false")
+        buildConfigField("String", "FIREBASE_PROJECT_ID", "\"\"")
+        buildConfigField("String", "FIREBASE_APPLICATION_ID", "\"\"")
+        buildConfigField("String", "FIREBASE_API_KEY", "\"\"")
+        buildConfigField("String", "FIREBASE_SENDER_ID", "\"\"")
     }
 
     signingConfigs {
@@ -69,6 +150,36 @@ android {
             manifestPlaceholders["authCallbackScheme"] = "com.setforge.gymapp.dev"
             buildConfigField("String", "AUTH_CALLBACK_SCHEME", "\"com.setforge.gymapp.dev\"")
             buildConfigField("String", "AUTH_BRIDGE_VARIANT_QUERY", "\"&variant=qa\"")
+            val firebaseClient = if (useDevApplicationIdSuffix) {
+                developmentFirebaseClient
+            } else {
+                productionFirebaseClient
+            }
+            buildConfigField(
+                "boolean",
+                "FIREBASE_CONFIGURED",
+                "${firebaseClient != null}"
+            )
+            buildConfigField(
+                "String",
+                "FIREBASE_PROJECT_ID",
+                buildConfigString(firebaseClient?.projectId.orEmpty())
+            )
+            buildConfigField(
+                "String",
+                "FIREBASE_APPLICATION_ID",
+                buildConfigString(firebaseClient?.applicationId.orEmpty())
+            )
+            buildConfigField(
+                "String",
+                "FIREBASE_API_KEY",
+                buildConfigString(firebaseClient?.apiKey.orEmpty())
+            )
+            buildConfigField(
+                "String",
+                "FIREBASE_SENDER_ID",
+                buildConfigString(firebaseClient?.senderId.orEmpty())
+            )
         }
         release {
             isMinifyEnabled = true
@@ -80,6 +191,31 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            buildConfigField(
+                "boolean",
+                "FIREBASE_CONFIGURED",
+                "${productionFirebaseClient != null}"
+            )
+            buildConfigField(
+                "String",
+                "FIREBASE_PROJECT_ID",
+                buildConfigString(productionFirebaseClient?.projectId.orEmpty())
+            )
+            buildConfigField(
+                "String",
+                "FIREBASE_APPLICATION_ID",
+                buildConfigString(productionFirebaseClient?.applicationId.orEmpty())
+            )
+            buildConfigField(
+                "String",
+                "FIREBASE_API_KEY",
+                buildConfigString(productionFirebaseClient?.apiKey.orEmpty())
+            )
+            buildConfigField(
+                "String",
+                "FIREBASE_SENDER_ID",
+                buildConfigString(productionFirebaseClient?.senderId.orEmpty())
+            )
         }
         create("qa") {
             initWith(getByName("release"))
@@ -90,6 +226,31 @@ android {
             manifestPlaceholders["authCallbackScheme"] = "com.setforge.gymapp.dev"
             buildConfigField("String", "AUTH_CALLBACK_SCHEME", "\"com.setforge.gymapp.dev\"")
             buildConfigField("String", "AUTH_BRIDGE_VARIANT_QUERY", "\"&variant=qa\"")
+            buildConfigField(
+                "boolean",
+                "FIREBASE_CONFIGURED",
+                "${developmentFirebaseClient != null}"
+            )
+            buildConfigField(
+                "String",
+                "FIREBASE_PROJECT_ID",
+                buildConfigString(developmentFirebaseClient?.projectId.orEmpty())
+            )
+            buildConfigField(
+                "String",
+                "FIREBASE_APPLICATION_ID",
+                buildConfigString(developmentFirebaseClient?.applicationId.orEmpty())
+            )
+            buildConfigField(
+                "String",
+                "FIREBASE_API_KEY",
+                buildConfigString(developmentFirebaseClient?.apiKey.orEmpty())
+            )
+            buildConfigField(
+                "String",
+                "FIREBASE_SENDER_ID",
+                buildConfigString(developmentFirebaseClient?.senderId.orEmpty())
+            )
             matchingFallbacks += listOf("release")
         }
     }
@@ -131,6 +292,12 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    implementation("androidx.work:work-runtime-ktx:2.11.2")
+    implementation(platform("com.google.firebase:firebase-bom:34.16.0"))
+    implementation("com.google.firebase:firebase-messaging")
+    implementation(platform("io.github.jan-tennert.supabase:bom:2.6.1"))
+    implementation("io.github.jan-tennert.supabase:realtime-kt")
+    implementation("io.ktor:ktor-client-okhttp:2.3.12")
     implementation("com.garmin.connectiq:ciq-companion-app-sdk:2.4.0@aar")
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)

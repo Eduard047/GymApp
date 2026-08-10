@@ -52,6 +52,7 @@ struct ActiveWorkoutView: View {
     @AppStorage("app-language") private var languageCode = AppLanguage.english.rawValue
     @ObservedObject private var workoutStore: WorkoutStore
     @ObservedObject private var activeWorkoutStore: ActiveWorkoutStore
+    @ObservedObject private var liveWorkoutCoordinator: LiveWorkoutCoordinator
     @ObservedObject private var restTimers: RestTimerManager
 
     private let draftID: UUID
@@ -68,6 +69,7 @@ struct ActiveWorkoutView: View {
     init(
         workoutStore: WorkoutStore,
         activeWorkoutStore: ActiveWorkoutStore,
+        liveWorkoutCoordinator: LiveWorkoutCoordinator,
         restTimers: RestTimerManager,
         draftID: UUID,
         onFinished: @escaping (UUID) -> Void,
@@ -77,6 +79,7 @@ struct ActiveWorkoutView: View {
     ) {
         _workoutStore = ObservedObject(wrappedValue: workoutStore)
         _activeWorkoutStore = ObservedObject(wrappedValue: activeWorkoutStore)
+        _liveWorkoutCoordinator = ObservedObject(wrappedValue: liveWorkoutCoordinator)
         _restTimers = ObservedObject(wrappedValue: restTimers)
         self.draftID = draftID
         self.onFinished = onFinished
@@ -91,6 +94,10 @@ struct ActiveWorkoutView: View {
                 ScrollView {
                     LazyVStack(spacing: 14) {
                         progressPanel(draft)
+
+                        if liveWorkoutCoordinator.isAttachedToCurrentDraft {
+                            livePeerPanel(draft)
+                        }
 
                         WorkoutRestTimerControls(
                             manager: restTimers,
@@ -168,7 +175,8 @@ struct ActiveWorkoutView: View {
                     )
                 )
             }
-            ToolbarItem(placement: .destructiveAction) {
+            if !liveWorkoutCoordinator.isAttachedToCurrentDraft {
+                ToolbarItem(placement: .destructiveAction) {
                 Button(role: .destructive) {
                     showingDiscardConfirmation = true
                 } label: {
@@ -183,6 +191,7 @@ struct ActiveWorkoutView: View {
                     )
                 }
                 .disabled(currentDraft?.commitIntent != nil)
+                }
             }
         }
         .interactiveDismissDisabled(false)
@@ -324,6 +333,52 @@ struct ActiveWorkoutView: View {
         }
     }
 
+    private func livePeerPanel(_ draft: ActiveWorkoutDraft) -> some View {
+        let peer = liveWorkoutCoordinator.peerProgress
+        let completed = peer?.completedSets.count ?? 0
+        return GymPanel(highlighted: true) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 10) {
+                    Label(
+                        gymText(
+                            "Live with \(liveWorkoutCoordinator.peerDisplayName ?? "friend")",
+                            "Наживо з \(liveWorkoutCoordinator.peerDisplayName ?? "другом")",
+                            "Вживую с \(liveWorkoutCoordinator.peerDisplayName ?? "другом")",
+                            languageCode: gymCurrentLanguageCode()
+                        ),
+                        systemImage: "wave.3.right.circle.fill"
+                    )
+                    .font(.headline)
+                    Spacer()
+                    Text("\(completed) / \(draft.plannedSetCount)")
+                        .font(.headline.monospacedDigit())
+                }
+                ProgressView(
+                    value: Double(completed),
+                    total: Double(max(1, draft.plannedSetCount))
+                )
+                .tint(GymTheme.primary)
+                Text(
+                    peer?.finishedAt == nil
+                        ? gymText(
+                            "Your friend's completed sets refresh live. The frozen plan cannot gain extra sets.",
+                            "Виконані підходи друга оновлюються наживо. До зафіксованого плану не можна додавати підходи.",
+                            "Выполненные подходы друга обновляются вживую. В зафиксированный план нельзя добавлять подходы.",
+                            languageCode: gymCurrentLanguageCode()
+                        )
+                        : gymText(
+                            "Your friend finished. Your local progress remains safe until you finish too.",
+                            "Друг завершив. Твій локальний прогрес залишається в безпеці, доки ти теж не завершиш.",
+                            "Друг завершил. Твой локальный прогресс остаётся в безопасности, пока ты тоже не завершишь.",
+                            languageCode: gymCurrentLanguageCode()
+                        )
+                )
+                .font(.caption)
+                .foregroundStyle(GymTheme.textSecondary)
+            }
+        }
+    }
+
     private func exercisePanel(
         _ exercise: ActiveWorkoutExercise,
         draft: ActiveWorkoutDraft
@@ -406,7 +461,10 @@ struct ActiveWorkoutView: View {
                         )
                     }
                     .buttonStyle(GymSecondaryButtonStyle())
-                    .disabled(storedExercise == nil || draft.commitIntent != nil)
+                    .disabled(
+                        storedExercise == nil || draft.commitIntent != nil ||
+                            liveWorkoutCoordinator.planIsFrozenForCurrentDraft
+                    )
                 }
             }
         }
@@ -710,6 +768,15 @@ struct ActiveWorkoutView: View {
                 expectedRevision: draft.revision,
                 restSeconds: restSeconds
             )
+            do {
+                try liveWorkoutCoordinator.localSetWasCompleted(
+                    localSetID: set.id,
+                    weight: set.weight,
+                    reps: set.reps
+                )
+            } catch {
+                reportStatus(gymSafeEnglishErrorMessage(error), true)
+            }
             // The active draft owns the exact deadline. The countdown projection
             // can be reconstructed from it after a crash between the two writes.
             let restOutcome = try ActiveWorkoutRestReconciler.reconcile(
@@ -748,7 +815,7 @@ struct ActiveWorkoutView: View {
     }
 
     private func recordAllSets(_ draft: ActiveWorkoutDraft) {
-        let inputs = Dictionary(uniqueKeysWithValues: draft.exercises.flatMap { exercise in
+        let orderedInputs = draft.exercises.flatMap { exercise in
             exercise.sets.compactMap { set in
                 set.isCompleted
                     ? nil
@@ -757,13 +824,23 @@ struct ActiveWorkoutView: View {
                         ActiveWorkoutSetInput(weight: set.weight, reps: set.reps)
                     )
             }
-        })
+        }
+        let inputs = Dictionary(uniqueKeysWithValues: orderedInputs)
+        let liveInputs = orderedInputs.map {
+            (id: $0.0, weight: $0.1.weight, reps: $0.1.reps)
+        }
         do {
+            try liveWorkoutCoordinator.preflightLocalSetsCompletion(liveInputs)
             let updated = try activeWorkoutStore.recordAllSets(
                 draftID: draft.id,
                 expectedRevision: draft.revision,
                 inputs: inputs
             )
+            do {
+                try liveWorkoutCoordinator.localSetsWereCompleted(liveInputs)
+            } catch {
+                reportStatus(gymSafeEnglishErrorMessage(error), true)
+            }
             // Batch persistence never starts rest. Any older rest is retired only
             // after the one atomic draft revision has succeeded.
             let restOutcome = try ActiveWorkoutRestReconciler.reconcile(
@@ -809,6 +886,11 @@ struct ActiveWorkoutView: View {
                 setID: set.id,
                 expectedRevision: draft.revision
             )
+            do {
+                try liveWorkoutCoordinator.localSetWasUndone(localSetID: set.id)
+            } catch {
+                reportStatus(gymSafeEnglishErrorMessage(error), true)
+            }
             let restOutcome = try ActiveWorkoutRestReconciler.reconcile(
                 draft: updated,
                 store: activeWorkoutStore,
@@ -986,6 +1068,10 @@ struct ActiveWorkoutView: View {
 
     private func appendSet(to exercise: ActiveWorkoutExercise) {
         guard let draft = currentDraft else { return }
+        guard !liveWorkoutCoordinator.planIsFrozenForCurrentDraft else {
+            show(LiveWorkoutSidecarError.invalidState)
+            return
+        }
         let source = exercise.sets.last
         do {
             try activeWorkoutStore.appendSet(
@@ -1008,6 +1094,11 @@ struct ActiveWorkoutView: View {
                 expectedRevision: draft.revision,
                 into: workoutStore
             )
+            do {
+                try liveWorkoutCoordinator.localWorkoutWasFinished(localDraftID: draft.id)
+            } catch {
+                reportStatus(gymSafeEnglishErrorMessage(error), true)
+            }
             restTimers.cancel(id: timerKey(draftID: draft.id))
             onFinished(workout.id)
         } catch {
@@ -1016,6 +1107,10 @@ struct ActiveWorkoutView: View {
     }
 
     private func discard() {
+        guard !liveWorkoutCoordinator.isAttachedToCurrentDraft else {
+            show(LiveWorkoutSidecarError.invalidState)
+            return
+        }
         guard let draft = currentDraft else {
             onDiscarded()
             return

@@ -1,0 +1,4 @@
+allowBuilds:
+  # Reviewed, pinned build-only binary used to vendor the official Supabase
+  # Realtime browser client. No other dependency lifecycle scripts are allowed.
+  esbuild: true

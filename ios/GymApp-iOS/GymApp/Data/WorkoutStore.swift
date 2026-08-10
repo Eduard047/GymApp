@@ -410,8 +410,8 @@ public final class WorkoutStore: ObservableObject {
         }
     }
 
-    /// Removes the primary envelope, its active-workout companion, and recovery copies
-    /// for exactly one account.
+    /// Removes the primary envelope, its active/live-workout companions, and recovery
+    /// copies for exactly one account.
     /// This does not decode the envelope, so deletion can still finish after corruption.
     public static func destroyAccountFiles(
         accountStorageKey: String,
@@ -430,7 +430,12 @@ public final class WorkoutStore: ObservableObject {
         )
         let activeWorkoutStem = activeWorkoutURL.deletingPathExtension().lastPathComponent
         let activeWorkoutRecoveryPrefix = "\(activeWorkoutStem).recovery-"
-        var candidates = [primaryURL, activeWorkoutURL]
+        let liveWorkoutURL = LiveWorkoutSidecarStore.storageURL(
+            forWorkoutStorageURL: primaryURL
+        )
+        let liveWorkoutStem = liveWorkoutURL.deletingPathExtension().lastPathComponent
+        let liveWorkoutRecoveryPrefix = "\(liveWorkoutStem).recovery-"
+        var candidates = [primaryURL, activeWorkoutURL, liveWorkoutURL]
         do {
             let children = try fileManager.contentsOfDirectory(
                 at: directory,
@@ -444,6 +449,8 @@ public final class WorkoutStore: ObservableObject {
                     matchedPrefix = recoveryPrefix
                 } else if name.hasPrefix(activeWorkoutRecoveryPrefix) {
                     matchedPrefix = activeWorkoutRecoveryPrefix
+                } else if name.hasPrefix(liveWorkoutRecoveryPrefix) {
+                    matchedPrefix = liveWorkoutRecoveryPrefix
                 } else {
                     return false
                 }
@@ -659,6 +666,18 @@ public final class WorkoutStore: ObservableObject {
         return created!
     }
 
+    /// Runs the exact shared-plan resolver against a copy of the current catalog. This
+    /// proves identity ambiguity and exercise-capacity constraints without creating rows.
+    func preflightSharedWorkoutMaterialization(_ plan: SharedWorkoutPlan) throws {
+        let validated = try SharedWorkoutLinkValidator.validate(plan)
+        var simulatedExercises = exercises
+        _ = try Self.resolveSharedWorkoutDrafts(
+            validated,
+            exercises: &simulatedExercises,
+            maximumExercises: BackupImportLimits.standard.maximumExercises
+        )
+    }
+
     /// Resolves a validated shared plan into an editable local draft in one commit.
     /// Missing catalog/custom exercises are created only when the caller invokes this
     /// method after explicit user confirmation; no workout session is saved here.
@@ -668,79 +687,91 @@ public final class WorkoutStore: ObservableObject {
         let validated = try SharedWorkoutLinkValidator.validate(plan)
         var result: [WorkoutExerciseDraft] = []
         try mutate { state in
-            var resolvedDrafts: [WorkoutExerciseDraft] = []
-            resolvedDrafts.reserveCapacity(validated.exercises.count)
+            result = try Self.resolveSharedWorkoutDrafts(
+                validated,
+                exercises: &state.exercises,
+                maximumExercises: BackupImportLimits.standard.maximumExercises
+            )
+        }
+        return result
+    }
 
-            for sharedExercise in validated.exercises {
-                let exerciseID: UUID
-                let trustedCatalogKey = BuiltInExerciseCatalog.canonicalKey(
-                    forName: sharedExercise.name
-                )
-                if let catalogKey = trustedCatalogKey {
-                    let matches = state.exercises.filter {
-                        BuiltInExerciseCatalog.resolvedKey(
-                            catalogKey: $0.catalogKey,
-                            name: $0.name
-                        ) == catalogKey
-                    }
-                    guard matches.count <= 1 else {
-                        throw WorkoutStoreError.invalidWorkout(
-                            "The shared exercise identity is ambiguous."
-                        )
-                    }
-                    if let existing = matches.first {
-                        exerciseID = existing.id
-                    } else {
-                        guard state.exercises.count < BackupImportLimits.standard.maximumExercises else {
-                            throw WorkoutStoreError.importLimitExceeded("exercise count")
-                        }
-                        guard let definition = BuiltInExerciseCatalog.definition(forKey: catalogKey) else {
-                            throw SharedWorkoutLinkError.invalidCatalogKey
-                        }
-                        let exercise = Exercise(
-                            name: definition.englishName,
-                            catalogKey: definition.key
-                        )
-                        guard !state.exercises.contains(where: {
-                            Self.exerciseIdentityConflicts($0, candidateName: exercise.name)
-                        }) else {
-                            throw WorkoutStoreError.duplicateExerciseName
-                        }
-                        state.exercises.append(exercise)
-                        exerciseID = exercise.id
-                    }
-                } else if let existingID = try Self.resolvedStoredExerciseID(
-                    for: sharedExercise.name,
-                    in: state.exercises
-                ) {
-                    exerciseID = existingID
+    private static func resolveSharedWorkoutDrafts(
+        _ validated: SharedWorkoutPlan,
+        exercises: inout [Exercise],
+        maximumExercises: Int
+    ) throws -> [WorkoutExerciseDraft] {
+        var resolvedDrafts: [WorkoutExerciseDraft] = []
+        resolvedDrafts.reserveCapacity(validated.exercises.count)
+
+        for sharedExercise in validated.exercises {
+            let exerciseID: UUID
+            let trustedCatalogKey = BuiltInExerciseCatalog.canonicalKey(
+                forName: sharedExercise.name
+            )
+            if let catalogKey = trustedCatalogKey {
+                let matches = exercises.filter {
+                    BuiltInExerciseCatalog.resolvedKey(
+                        catalogKey: $0.catalogKey,
+                        name: $0.name
+                    ) == catalogKey
+                }
+                guard matches.count <= 1 else {
+                    throw WorkoutStoreError.invalidWorkout(
+                        "The shared exercise identity is ambiguous."
+                    )
+                }
+                if let existing = matches.first {
+                    exerciseID = existing.id
                 } else {
-                    guard state.exercises.count < BackupImportLimits.standard.maximumExercises else {
+                    guard exercises.count < maximumExercises else {
                         throw WorkoutStoreError.importLimitExceeded("exercise count")
                     }
-                    let cleaned = try Self.validatedExerciseName(sharedExercise.name)
-                    guard !state.exercises.contains(where: {
-                        Self.exerciseIdentityConflicts($0, candidateName: cleaned)
+                    guard let definition = BuiltInExerciseCatalog.definition(forKey: catalogKey) else {
+                        throw SharedWorkoutLinkError.invalidCatalogKey
+                    }
+                    let exercise = Exercise(
+                        name: definition.englishName,
+                        catalogKey: definition.key
+                    )
+                    guard !exercises.contains(where: {
+                        exerciseIdentityConflicts($0, candidateName: exercise.name)
                     }) else {
                         throw WorkoutStoreError.duplicateExerciseName
                     }
-                    let exercise = Exercise(name: cleaned)
-                    state.exercises.append(exercise)
+                    exercises.append(exercise)
                     exerciseID = exercise.id
                 }
-
-                resolvedDrafts.append(
-                    WorkoutExerciseDraft(
-                        exerciseID: exerciseID,
-                        sets: sharedExercise.sets.map {
-                            WorkoutSetDraft(weight: $0.weight, reps: $0.repetitions)
-                        }
-                    )
-                )
+            } else if let existingID = try resolvedStoredExerciseID(
+                for: sharedExercise.name,
+                in: exercises
+            ) {
+                exerciseID = existingID
+            } else {
+                guard exercises.count < maximumExercises else {
+                    throw WorkoutStoreError.importLimitExceeded("exercise count")
+                }
+                let cleaned = try validatedExerciseName(sharedExercise.name)
+                guard !exercises.contains(where: {
+                    exerciseIdentityConflicts($0, candidateName: cleaned)
+                }) else {
+                    throw WorkoutStoreError.duplicateExerciseName
+                }
+                let exercise = Exercise(name: cleaned)
+                exercises.append(exercise)
+                exerciseID = exercise.id
             }
-            result = resolvedDrafts
+
+            resolvedDrafts.append(
+                WorkoutExerciseDraft(
+                    exerciseID: exerciseID,
+                    sets: sharedExercise.sets.map {
+                        WorkoutSetDraft(weight: $0.weight, reps: $0.repetitions)
+                    }
+                )
+            )
         }
-        return result
+        return resolvedDrafts
     }
 
     @discardableResult

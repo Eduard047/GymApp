@@ -2,9 +2,9 @@
 <full-backup-content>
     <!-- Workout databases contain private account-scoped data and are restored in-app instead. -->
     <exclude domain="database" path="." />
-    <!-- User-selected exercise images stay device-local and account-bound. -->
-    <exclude domain="file" path="exercise-media/" />
-    <!-- Auth sessions, PKCE verifiers, and Garmin credentials are device-bound. -->
+    <!-- App files include account-bound media and Firebase installation identity. -->
+    <exclude domain="file" path="." />
+    <!-- Auth sessions, PKCE verifiers, push bindings, and Garmin credentials are device-bound. -->
     <exclude domain="sharedpref" path="gym_cloud_auth.xml" />
     <exclude domain="sharedpref" path="gym_cloud_auth.xml.bak" />
     <exclude domain="sharedpref" path="gym_cloud_account_deletion_journal.xml" />
@@ -25,4 +25,12 @@
     <exclude domain="sharedpref" path="gym_exercise_rest_timers.xml.bak" />
     <exclude domain="sharedpref" path="gym_active_workout_timer.xml" />
     <exclude domain="sharedpref" path="gym_active_workout_timer.xml.bak" />
+    <exclude domain="sharedpref" path="gym_live_workout_sidecar.xml" />
+    <exclude domain="sharedpref" path="gym_live_workout_sidecar.xml.bak" />
+    <exclude domain="sharedpref" path="gym_push_installation.xml" />
+    <exclude domain="sharedpref" path="gym_push_installation.xml.bak" />
+    <exclude domain="sharedpref" path="com.google.android.gms.appid.xml" />
+    <exclude domain="sharedpref" path="com.google.android.gms.appid.xml.bak" />
+    <exclude domain="sharedpref" path="com.google.firebase.messaging.xml" />
+    <exclude domain="sharedpref" path="com.google.firebase.messaging.xml.bak" />
 </full-backup-content>

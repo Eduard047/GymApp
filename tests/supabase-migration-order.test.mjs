@@ -6,14 +6,9 @@ const migrationsDirectory = "supabase/migrations";
 const migrationNamePattern = /^(\d{14})_([a-z0-9_]+)\.sql$/;
 
 const productionFirstRecordedVersion = "20260629115900";
-const productionLastRecordedVersion = "20260803090000";
-const productionMigrationCount = 23;
-const reviewedForwardMigrations = [
-  "20260809202407_prepare_friend_social_graph.sql",
-  "20260809202422_backfill_friend_activity_projection.sql",
-  "20260809202432_activate_friend_social_api.sql",
-  "20260809210834_normalize_friend_exercise_names_nfc.sql",
-];
+const productionLastRecordedVersion = "20260810092029";
+const productionMigrationCount = 36;
+const reviewedForwardMigrations = [];
 
 function migrationVersion(fileName) {
   const match = migrationNamePattern.exec(fileName);

@@ -1,5 +1,10 @@
 package com.example.gymapp.ui.screens
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -32,6 +37,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.compose.runtime.saveable.rememberSaveable
 import com.example.gymapp.R
 import com.example.gymapp.auth.SocialBlockedProfile
@@ -40,12 +46,16 @@ import com.example.gymapp.auth.SocialFriendRequest
 import com.example.gymapp.auth.SocialIncomingWorkoutInvite
 import com.example.gymapp.auth.SocialOutgoingWorkoutInvite
 import com.example.gymapp.auth.SocialPrivacy
+import com.example.gymapp.auth.LiveInvitation
+import com.example.gymapp.auth.LiveInboxRoom
 import com.example.gymapp.garmin.openGymWorkoutTrackerInGarminStore
 import com.example.gymapp.garmin.GarminDeviceUiState
+import com.example.gymapp.push.PushUiState
 import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.SectionTitle
 import com.example.gymapp.ui.viewmodel.ExerciseListUiState
 import com.example.gymapp.ui.viewmodel.FriendsUiState
+import com.example.gymapp.ui.viewmodel.LiveWorkoutUiState
 import com.example.gymapp.sync.CloudSyncPhase
 import com.example.gymapp.sync.CloudSyncUiStatus
 import java.text.DateFormat
@@ -55,7 +65,12 @@ import java.util.Date
 internal fun ProfileScreen(
     accountState: ExerciseListUiState,
     backupShareOwnerKey: String,
+    pushUiState: PushUiState,
+    onEnablePush: () -> Unit,
+    onDisablePush: () -> Unit,
+    onOpenPushSettings: () -> Unit,
     friendsState: FriendsUiState,
+    liveWorkoutState: LiveWorkoutUiState,
     onRefreshFriends: () -> Unit,
     onSendFriendRequest: (String) -> Unit,
     onAcceptFriendRequest: (SocialFriendRequest) -> Unit,
@@ -70,6 +85,12 @@ internal fun ProfileScreen(
     onReuseWorkoutInvite: (SocialIncomingWorkoutInvite) -> Unit,
     onCancelWorkoutInvite: (SocialOutgoingWorkoutInvite) -> Unit,
     onClearFriendsMessages: () -> Unit,
+    onAcceptLiveInvitation: (LiveInvitation) -> Unit,
+    onDeclineLiveInvitation: (LiveInvitation) -> Unit,
+    onStartLiveRoom: (LiveInboxRoom) -> Unit,
+    onCloseLiveRoom: (LiveInboxRoom) -> Unit,
+    onOpenLiveRoom: (LiveInboxRoom) -> Unit,
+    onClearLiveMessages: () -> Unit,
     cloudSyncStatus: CloudSyncUiStatus?,
     onSyncNow: () -> Unit,
     cloudSyncChoiceRequired: Boolean,
@@ -101,6 +122,11 @@ internal fun ProfileScreen(
     var showGarminResetConfirmation by rememberSaveable { mutableStateOf(false) }
     var showPasswordChange by rememberSaveable { mutableStateOf(false) }
     var showAccountDeletion by rememberSaveable { mutableStateOf(false) }
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) onEnablePush()
+    }
 
     LaunchedEffect(passwordReauthenticationRequired) {
         if (passwordReauthenticationRequired) showPasswordChange = true
@@ -114,6 +140,7 @@ internal fun ProfileScreen(
 
     FriendsScreen(
         uiState = friendsState,
+        liveUiState = liveWorkoutState,
         onRefresh = onRefreshFriends,
         onSendFriendRequest = onSendFriendRequest,
         onAcceptFriendRequest = onAcceptFriendRequest,
@@ -128,6 +155,12 @@ internal fun ProfileScreen(
         onReuseWorkoutInvite = onReuseWorkoutInvite,
         onCancelWorkoutInvite = onCancelWorkoutInvite,
         onClearMessages = onClearFriendsMessages,
+        onAcceptLiveInvitation = onAcceptLiveInvitation,
+        onDeclineLiveInvitation = onDeclineLiveInvitation,
+        onStartLiveRoom = onStartLiveRoom,
+        onCloseLiveRoom = onCloseLiveRoom,
+        onOpenLiveRoom = onOpenLiveRoom,
+        onClearLiveMessages = onClearLiveMessages,
         headerContent = {
             item {
                 Text(
@@ -169,6 +202,29 @@ internal fun ProfileScreen(
                     CloudSyncStatusCard(
                         status = cloudSyncStatus,
                         onSyncNow = onSyncNow
+                    )
+                }
+            }
+            if (accountState.isCloudAccount) {
+                item {
+                    PushNotificationCard(
+                        state = pushUiState,
+                        onEnable = {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                                ContextCompat.checkSelfPermission(
+                                    context,
+                                    Manifest.permission.POST_NOTIFICATIONS
+                                ) != PackageManager.PERMISSION_GRANTED
+                            ) {
+                                notificationPermissionLauncher.launch(
+                                    Manifest.permission.POST_NOTIFICATIONS
+                                )
+                            } else {
+                                onEnablePush()
+                            }
+                        },
+                        onDisable = onDisablePush,
+                        onOpenSettings = onOpenPushSettings
                     )
                 }
             }
@@ -246,6 +302,77 @@ internal fun ProfileScreen(
                 onDeleteCloudAccount()
             }
         )
+    }
+}
+
+@Composable
+private fun PushNotificationCard(
+    state: PushUiState,
+    onEnable: () -> Unit,
+    onDisable: () -> Unit,
+    onOpenSettings: () -> Unit
+) {
+    val systemBlocked = !state.permissionGranted || !state.channelEnabled
+    val blockedBySystem = state.enabled && systemBlocked
+    val supporting = stringResource(
+        when {
+            !state.configured -> R.string.push_status_unavailable
+            state.hasError -> R.string.push_status_error
+            !state.enabled -> R.string.push_status_disabled
+            !state.permissionGranted -> R.string.push_status_permission_required
+            !state.channelEnabled -> R.string.push_status_channel_blocked
+            state.isSyncing -> R.string.push_status_syncing
+            state.registered -> R.string.push_status_ready
+            else -> R.string.push_status_waiting
+        }
+    )
+    AppPanel(modifier = Modifier.fillMaxWidth(), highlighted = state.registered) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            SectionTitle(
+                eyebrow = stringResource(R.string.push_settings_eyebrow),
+                title = stringResource(R.string.push_settings_title),
+                supporting = supporting
+            )
+            Button(
+                onClick = when {
+                    blockedBySystem -> onOpenSettings
+                    state.enabled -> onDisable
+                    else -> onEnable
+                },
+                enabled = state.configured && !state.isSyncing,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    stringResource(
+                        when {
+                            blockedBySystem -> R.string.push_open_settings
+                            state.enabled -> R.string.push_disable_action
+                            else -> R.string.push_enable_action
+                        }
+                    )
+                )
+            }
+            if (blockedBySystem) {
+                OutlinedButton(
+                    onClick = onDisable,
+                    enabled = !state.isSyncing,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(stringResource(R.string.push_disable_action))
+                }
+            } else if (state.configured && systemBlocked) {
+                OutlinedButton(
+                    onClick = onOpenSettings,
+                    enabled = !state.isSyncing,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(stringResource(R.string.push_open_settings))
+                }
+            }
+        }
     }
 }
 

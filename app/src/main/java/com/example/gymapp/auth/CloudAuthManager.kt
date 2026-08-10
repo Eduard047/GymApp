@@ -5,8 +5,17 @@ import android.content.SharedPreferences
 import android.net.Uri
 import com.example.gymapp.BuildConfig
 import com.example.gymapp.R
+import com.example.gymapp.data.repository.SharedWorkoutLink
 import com.example.gymapp.data.repository.SharedWorkoutPlan
+import com.example.gymapp.data.repository.LiveWorkoutSidecarStore
 import com.example.gymapp.data.repository.WorkoutDataLimits
+import com.example.gymapp.push.PushRegistration
+import com.example.gymapp.push.PushRevocation
+import com.example.gymapp.push.PushRpcSerialGate
+import com.example.gymapp.push.parsePushRegistrationResponse
+import com.example.gymapp.push.parsePushRevocationResponse
+import com.example.gymapp.push.pushRegistrationRequestJson
+import com.example.gymapp.push.pushRevocationRequestJson
 import com.example.gymapp.util.LocalizedText
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -32,8 +41,8 @@ import java.util.Base64
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
-private const val SUPABASE_URL = "https://owrcbsrectdgaotndtxy.supabase.co"
-private const val SUPABASE_KEY = "sb_publishable_vvOMzx6V_sPBpD-b3VZfzg_y14u8kIg"
+internal const val SUPABASE_URL = "https://owrcbsrectdgaotndtxy.supabase.co"
+internal const val SUPABASE_KEY = "sb_publishable_vvOMzx6V_sPBpD-b3VZfzg_y14u8kIg"
 private val AUTH_REDIRECT_URL =
     "https://gymapptracker.com/confirmed.html?platform=android${BuildConfig.AUTH_BRIDGE_VARIANT_QUERY}"
 private const val NEEDS_PASSWORD_UPDATE_KEY = "needs_password_update"
@@ -308,6 +317,18 @@ internal class PasswordReauthenticationRequiredException : IllegalStateException
     "Enter the verification code sent to your email."
 )
 
+internal class LiveWorkoutGatewayException(
+    val responseCode: Int,
+    val errorCode: String?,
+    safeMessage: String
+) : IllegalStateException(safeMessage) {
+    val isConflict: Boolean
+        get() = responseCode == 409 && errorCode == "conflict"
+
+    val isResourceUnavailable: Boolean
+        get() = responseCode == 404 && errorCode == "resource_unavailable"
+}
+
 internal fun isTerminalRefreshFailure(
     responseCode: Int,
     errorCode: String?,
@@ -501,11 +522,15 @@ class CloudAuthManager(context: Context) {
 
     private val prefs = context.applicationContext.getSharedPreferences("gym_cloud_auth", Context.MODE_PRIVATE)
     private val localDatabaseBindingStore = LocalDatabaseBindingStore(context.applicationContext)
+    private val liveWorkoutSidecarStore = LiveWorkoutSidecarStore(context.applicationContext)
     private val accountDeletionJournal = CloudAccountDeletionJournal(context.applicationContext)
     private val authStateLock = Any()
     private val refreshMutex = Mutex()
     private val remoteStateMutex = Mutex()
+    private val pushRpcGate = PushRpcSerialGate()
     private val logoutRevokeScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    @Volatile
+    private var pushInstallationForLogout: ((AccountSession.Cloud) -> String?)? = null
     private val remoteStateRevisions = ConcurrentHashMap<RemoteRevisionKey, RemoteStateRevision>()
     private var authMutationVersion = 0L
     private val initialSessionRead = readSession()
@@ -638,6 +663,7 @@ class CloudAuthManager(context: Context) {
             ?: throw IllegalArgumentException("Local account name is invalid or too long.")
         val session = AccountSession.Local(validatedName)
         synchronized(authStateLock) {
+            liveWorkoutSidecarStore.clearAll()
             check(localDatabaseBindingStore.registerNewSession(session)) {
                 "The local workout database could not be safely registered."
             }
@@ -700,10 +726,16 @@ class CloudAuthManager(context: Context) {
     }
 
     fun logout() {
+        var pushInstallationId: String? = null
         val revokeRequest = synchronized(authStateLock) {
-            val capturedRequest = localCloudLogoutRequest(_authState.value.session)
+            val capturedSession = _authState.value.session
+            val capturedRequest = localCloudLogoutRequest(capturedSession)
+            pushInstallationId = (capturedSession as? AccountSession.Cloud)?.let { session ->
+                runCatching { pushInstallationForLogout?.invoke(session) }.getOrNull()
+            }
             authMutationVersion += 1
             remoteStateRevisions.clear()
+            liveWorkoutSidecarStore.clearAll()
             val preferencesCleared = clearAuthPreferencesSynchronously(prefs)
             if (!preferencesCleared) {
                 // A storage failure must never keep the captured access token active in memory.
@@ -715,6 +747,25 @@ class CloudAuthManager(context: Context) {
         }
         if (revokeRequest != null) {
             logoutRevokeScope.launch {
+                pushInstallationId?.let { installationId ->
+                    // Revoke the account-bound delivery address before revoking the auth token.
+                    // Local push state was already cleared synchronously by the provider.
+                    // The mutex drains an in-flight registration first, so that this final
+                    // revocation cannot be followed by a stale server-side re-registration.
+                    pushRpcGate.runExclusive {
+                        try {
+                            request(
+                                path = "/rest/v1/rpc/notification_revoke_installation",
+                                method = "POST",
+                                token = revokeRequest.accessToken,
+                                body = pushRevocationRequestJson(installationId),
+                                maxResponseBytes = 4 * 1_024
+                            )
+                        } catch (_: Exception) {
+                            // Offline logout must remain local-first and successful.
+                        }
+                    }
+                }
                 // This request is deliberately detached from auth state. Its captured token
                 // belongs to the locally invalidated generation, so a late result cannot
                 // restore or otherwise alter a newer session.
@@ -730,6 +781,12 @@ class CloudAuthManager(context: Context) {
                 }
             }
         }
+    }
+
+    internal fun setPushInstallationForLogout(
+        provider: (AccountSession.Cloud) -> String?
+    ) {
+        pushInstallationForLogout = provider
     }
 
     suspend fun completeAuthCallback(uri: Uri): AuthCallbackResult = withContext(Dispatchers.IO) {
@@ -978,6 +1035,7 @@ class CloudAuthManager(context: Context) {
         ) ?: return@synchronized
         authMutationVersion += 1
         remoteStateRevisions.clear()
+        liveWorkoutSidecarStore.clearAll()
         if (!clearAuthPreferencesSynchronously(prefs)) {
             prefs.edit().clear().apply()
         }
@@ -995,6 +1053,7 @@ class CloudAuthManager(context: Context) {
         if (disposition == CloudAccountDeletionSessionDisposition.ClearCapturedSession) {
             authMutationVersion += 1
             remoteStateRevisions.clear()
+            liveWorkoutSidecarStore.clearAll()
             val preferencesCleared = clearAuthPreferencesSynchronously(prefs)
             durableAuthCleanupCompleted = preferencesCleared
             if (!preferencesCleared) {
@@ -1013,6 +1072,7 @@ class CloudAuthManager(context: Context) {
         } else if (disposition == CloudAccountDeletionSessionDisposition.AlreadySignedOut) {
             // A concurrent logout may have cleared only the in-memory state. Retry the durable
             // clear before allowing the deletion journal to retire.
+            liveWorkoutSidecarStore.clearAll()
             durableAuthCleanupCompleted = clearAuthPreferencesSynchronously(prefs)
             if (!durableAuthCleanupCompleted) prefs.edit().clear().apply()
         }
@@ -1333,6 +1393,302 @@ class CloudAuthManager(context: Context) {
         ).also { mutation ->
             require(mutation.inviteId == inviteId) { "Social response is invalid." }
         }
+    }
+
+    internal suspend fun loadLiveWorkoutInbox(
+        session: AccountSession.Cloud
+    ): LiveWorkoutInbox = liveWorkoutGateway(
+        session = session,
+        action = "live_inbox",
+        body = JSONObject(),
+        parser = ::parseLiveWorkoutInbox
+    )
+
+    internal suspend fun sendLiveWorkoutInvite(
+        session: AccountSession.Cloud,
+        profileId: String,
+        clientRequestId: String,
+        workout: SharedWorkoutPlan
+    ): LiveSendInviteResult {
+        require(isValidSocialProfileId(profileId)) { "Friend profile ID is invalid." }
+        require(isValidSocialClientRequestId(clientRequestId)) { "Workout request ID is invalid." }
+        return liveWorkoutGateway(
+            session = session,
+            action = "live_send_invite",
+            body = JSONObject()
+                .put("profileId", profileId)
+                .put("clientRequestId", clientRequestId)
+                .put("workout", liveSendWorkoutJson(workout)),
+            parser = ::parseLiveSendInviteResult
+        )
+    }
+
+    internal suspend fun respondLiveWorkoutInvite(
+        session: AccountSession.Cloud,
+        roomId: String,
+        decision: String,
+        expectedRoomRevision: Int,
+        clientOperationId: String
+    ): LiveRespondInviteResult {
+        requireLiveMutationInput(roomId, clientOperationId)
+        require(decision in setOf("accept", "decline")) { "Live workout decision is invalid." }
+        require(expectedRoomRevision > 0) { "Live workout revision is invalid." }
+        return liveWorkoutGateway(
+            session = session,
+            action = "live_respond_invite",
+            body = JSONObject()
+                .put("roomId", roomId)
+                .put("decision", decision)
+                .put("expectedRoomRevision", expectedRoomRevision)
+                .put("clientOperationId", clientOperationId),
+            parser = ::parseLiveRespondInviteResult
+        ).also { require(it.roomId == roomId) { "Live workout response is invalid." } }
+    }
+
+    internal suspend fun startLiveWorkout(
+        session: AccountSession.Cloud,
+        roomId: String,
+        expectedRoomRevision: Int,
+        clientOperationId: String
+    ): LiveStartResult {
+        requireLiveMutationInput(roomId, clientOperationId)
+        require(expectedRoomRevision > 0) { "Live workout revision is invalid." }
+        return liveWorkoutGateway(
+            session = session,
+            action = "live_start",
+            body = JSONObject()
+                .put("roomId", roomId)
+                .put("expectedRoomRevision", expectedRoomRevision)
+                .put("clientOperationId", clientOperationId),
+            parser = ::parseLiveStartResult
+        ).also { result ->
+            val returnedRoomId = when (result) {
+                is LiveStartResult.Started -> result.value.roomId
+                is LiveStartResult.Closed -> result.value.roomId
+            }
+            require(returnedRoomId == roomId) { "Live workout response is invalid." }
+        }
+    }
+
+    internal suspend fun loadLiveWorkoutSnapshot(
+        session: AccountSession.Cloud,
+        roomId: String
+    ): LiveWorkoutSnapshot {
+        require(isValidLiveRoomId(roomId)) { "Live workout room ID is invalid." }
+        return liveWorkoutGateway(
+            session = session,
+            action = "live_snapshot",
+            body = JSONObject().put("roomId", roomId),
+            parser = ::parseLiveWorkoutSnapshot
+        ).also { require(it.room.roomId == roomId) { "Live workout response is invalid." } }
+    }
+
+    internal suspend fun applyLiveWorkoutSet(
+        session: AccountSession.Cloud,
+        roomId: String,
+        clientOperationId: String,
+        expectedProgressRevision: Int,
+        kind: String,
+        setId: String,
+        weight: Double? = null,
+        reps: Int? = null
+    ): LiveApplyResult {
+        requireLiveMutationInput(roomId, clientOperationId)
+        require(expectedProgressRevision > 0) { "Live workout progress revision is invalid." }
+        require(Regex("^s_[0-9]{2}_[0-9]{2}$").matches(setId)) {
+            "Live workout set ID is invalid."
+        }
+        require(kind in setOf("complete_set", "undo_set")) {
+            "Live workout operation is invalid."
+        }
+        val operation = JSONObject().put("kind", kind).put("setId", setId)
+        if (kind == "complete_set") {
+            require(weight != null && weight.isFinite() && weight in 0.0..SharedWorkoutLink.MAX_WEIGHT) {
+                "Live workout weight is invalid."
+            }
+            require(reps != null && reps in 1..SharedWorkoutLink.MAX_REPS) {
+                "Live workout repetitions are invalid."
+            }
+            operation.put("weight", weight).put("reps", reps)
+        } else {
+            require(weight == null && reps == null) { "Live workout operation is invalid." }
+        }
+        return liveWorkoutGateway(
+            session = session,
+            action = "live_apply",
+            body = JSONObject()
+                .put("roomId", roomId)
+                .put("clientOperationId", clientOperationId)
+                .put("expectedProgressRevision", expectedProgressRevision)
+                .put("operation", operation),
+            parser = ::parseLiveApplyResult
+        ).also { result ->
+            val returnedRoomId = when (result) {
+                is LiveApplyResult.Applied -> result.value.roomId.also {
+                    require(result.value.kind == kind && result.value.setId == setId) {
+                        "Live workout response is invalid."
+                    }
+                }
+                is LiveApplyResult.Closed -> result.value.roomId
+            }
+            require(returnedRoomId == roomId) { "Live workout response is invalid." }
+        }
+    }
+
+    internal suspend fun finishLiveWorkout(
+        session: AccountSession.Cloud,
+        roomId: String,
+        clientOperationId: String,
+        expectedProgressRevision: Int
+    ): LiveFinishResult {
+        requireLiveMutationInput(roomId, clientOperationId)
+        require(expectedProgressRevision > 0) { "Live workout progress revision is invalid." }
+        return liveWorkoutGateway(
+            session = session,
+            action = "live_finish",
+            body = JSONObject()
+                .put("roomId", roomId)
+                .put("clientOperationId", clientOperationId)
+                .put("expectedProgressRevision", expectedProgressRevision),
+            parser = ::parseLiveFinishResult
+        ).also { result ->
+            val returnedRoomId = when (result) {
+                is LiveFinishResult.Finished -> result.value.roomId
+                is LiveFinishResult.Closed -> result.value.roomId
+            }
+            require(returnedRoomId == roomId) { "Live workout response is invalid." }
+        }
+    }
+
+    internal suspend fun leaveLiveWorkout(
+        session: AccountSession.Cloud,
+        roomId: String,
+        clientOperationId: String,
+        expectedMembershipRevision: Int
+    ): LiveEndedResult {
+        requireLiveMutationInput(roomId, clientOperationId)
+        require(expectedMembershipRevision > 0) { "Live workout membership revision is invalid." }
+        return liveWorkoutGateway(
+            session = session,
+            action = "live_leave",
+            body = JSONObject()
+                .put("roomId", roomId)
+                .put("clientOperationId", clientOperationId)
+                .put("expectedMembershipRevision", expectedMembershipRevision)
+        ) { parseLiveEndedResult(it, "left") }
+            .also { require(it.roomId == roomId) { "Live workout response is invalid." } }
+    }
+
+    internal suspend fun cancelLiveWorkout(
+        session: AccountSession.Cloud,
+        roomId: String,
+        clientOperationId: String,
+        expectedRoomRevision: Int
+    ): LiveEndedResult {
+        requireLiveMutationInput(roomId, clientOperationId)
+        require(expectedRoomRevision > 0) { "Live workout revision is invalid." }
+        return liveWorkoutGateway(
+            session = session,
+            action = "live_cancel",
+            body = JSONObject()
+                .put("roomId", roomId)
+                .put("clientOperationId", clientOperationId)
+                .put("expectedRoomRevision", expectedRoomRevision)
+        ) { parseLiveEndedResult(it, "cancelled") }
+            .also { require(it.roomId == roomId) { "Live workout response is invalid." } }
+    }
+
+    internal suspend fun freshLiveAccessToken(
+        session: AccountSession.Cloud
+    ): String = withContext(Dispatchers.IO) {
+        val freshSession = freshCloudSession(session)
+        requireActiveCloudSession(freshSession).accessToken
+    }
+
+    internal fun isLiveSessionActive(session: AccountSession.Cloud): Boolean =
+        synchronized(authStateLock) {
+            activeCloudSessionFor(_authState.value.session, session) != null
+        }
+
+    internal suspend fun registerPushInstallation(
+        session: AccountSession.Cloud,
+        installationId: String,
+        providerToken: String,
+        locale: String?,
+        appVersion: String
+    ): PushRegistration = withContext(Dispatchers.IO) {
+        pushRpcGate.runExclusive {
+            val body = pushRegistrationRequestJson(
+                installationId = installationId,
+                providerToken = providerToken,
+                locale = locale,
+                appVersion = appVersion
+            )
+            val freshSession = freshCloudSession(session)
+            val response = authenticatedRequest(
+                session = freshSession,
+                path = "/rest/v1/rpc/notification_register_installation",
+                method = "POST",
+                body = body,
+                maxResponseBytes = 4 * 1_024
+            )
+            requireActiveCloudSession(freshSession)
+            parsePushRegistrationResponse(response, installationId)
+        }
+    }
+
+    internal suspend fun revokePushInstallation(
+        session: AccountSession.Cloud,
+        installationId: String
+    ): PushRevocation = withContext(Dispatchers.IO) {
+        pushRpcGate.runExclusive {
+            val body = pushRevocationRequestJson(installationId)
+            val freshSession = freshCloudSession(session)
+            val response = authenticatedRequest(
+                session = freshSession,
+                path = "/rest/v1/rpc/notification_revoke_installation",
+                method = "POST",
+                body = body,
+                maxResponseBytes = 4 * 1_024
+            )
+            requireActiveCloudSession(freshSession)
+            parsePushRevocationResponse(response, installationId)
+        }
+    }
+
+    private fun requireLiveMutationInput(roomId: String, clientOperationId: String) {
+        require(isValidLiveRoomId(roomId)) { "Live workout room ID is invalid." }
+        require(isValidSocialClientRequestId(clientOperationId)) {
+            "Live workout operation ID is invalid."
+        }
+    }
+
+    private suspend fun <T> liveWorkoutGateway(
+        session: AccountSession.Cloud,
+        action: String,
+        body: JSONObject,
+        parser: (String) -> T
+    ): T = withContext(Dispatchers.IO) {
+        val requestBody = liveGatewayRequestJson(action, body)
+        val freshSession = freshCloudSession(session)
+        val response = try {
+            authenticatedRequest(
+                session = freshSession,
+                path = "/functions/v1/social-live-gateway",
+                method = "POST",
+                body = requestBody,
+                maxResponseBytes = MAX_CLOUD_RESPONSE_BYTES
+            )
+        } catch (error: SupabaseHttpException) {
+            throw LiveWorkoutGatewayException(
+                responseCode = error.responseCode,
+                errorCode = error.errorCode,
+                safeMessage = error.providerMessage?.take(512)
+                    ?: "Live workout request failed."
+            )
+        }
+        requireActiveCloudSession(freshSession)
+        parser(unwrapLiveGatewaySuccess(response))
     }
 
     private suspend fun socialFriendshipRemovalRpc(
@@ -1702,6 +2058,10 @@ class CloudAuthManager(context: Context) {
         ) {
             "Local deletion cleanup is still pending for this account. Restart GymApp and try again."
         }
+        val current = _authState.value.session as? AccountSession.Cloud
+        if (current == null || activeCloudSessionFor(current, session) == null) {
+            liveWorkoutSidecarStore.clearAll()
+        }
         prefs.edit()
             .putString("mode", "cloud")
             .putString(
@@ -1789,6 +2149,7 @@ class CloudAuthManager(context: Context) {
             if (activeCloudSessionFor(_authState.value.session, expectedSession) == null) return
             authMutationVersion += 1
             remoteStateRevisions.clear()
+            liveWorkoutSidecarStore.clearAll()
             if (!clearAuthPreferencesSynchronously(prefs)) {
                 prefs.edit().clear().apply()
             }
@@ -1937,11 +2298,19 @@ class CloudAuthManager(context: Context) {
 
     private fun parseSupabaseError(text: String): SupabaseErrorFields {
         val parsed = runCatching { JSONObject(text) }.getOrNull()
+        val nested = parsed?.optJSONObject("error")
         return SupabaseErrorFields(
-            code = parsed?.optString("error_code")
+            code = nested?.optString("code")
                 ?.takeIf { it.isNotBlank() }
-                ?: parsed?.optString("code")?.takeIf { it.isNotBlank() },
-            message = parsed?.optString("msg")
+                ?: parsed?.optString("error_code")
+                ?.takeIf { it.isNotBlank() }
+                ?: parsed?.optString("code")?.takeIf { it.isNotBlank() }
+                ?: (parsed?.opt("error") as? String)?.takeIf {
+                    it.matches(Regex("^[a-z][a-z0-9_]{0,63}$"))
+                },
+            message = nested?.optString("message")
+                ?.takeIf { it.isNotBlank() }
+                ?: parsed?.optString("msg")
                 ?.takeIf { it.isNotBlank() }
                 ?: parsed?.optString("message")?.takeIf { it.isNotBlank() }
                 ?: parsed?.optString("error_description")?.takeIf { it.isNotBlank() }

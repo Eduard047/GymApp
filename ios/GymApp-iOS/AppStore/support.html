@@ -65,7 +65,7 @@
         </details>
         <details class="faq-item">
           <summary>How do I delete my account?</summary>
-          <div class="faq-answer"><p>Open <strong>Profile → Account, privacy &amp; deletion → Delete Account</strong>, review the warning, and confirm the irreversible deletion. This removes the Auth account and associated active cloud profile, workout state, friend/request/block/privacy/invitation records, and Garmin cloud records, then clears local account data. Deleting the app alone does not delete the cloud account. If in-app deletion fails, contact support.</p></div>
+          <div class="faq-answer"><p>Open <strong>Profile → Account, privacy &amp; deletion → Delete Account</strong>, review the warning, and confirm the irreversible deletion. This removes the Auth account and associated active cloud profile, workout state, friend/request/block/privacy/invitation/live-room records, notification installations/outbox, and Garmin cloud records, then clears local account data. Deleting the app alone does not delete the cloud account. If in-app deletion fails, contact support.</p></div>
         </details>
         <details class="faq-item">
           <summary>How do backups work?</summary>
@@ -73,11 +73,11 @@
         </details>
         <details class="faq-item">
           <summary>How do friends and workout invitations work?</summary>
-          <div class="faq-answer"><p>The global leaderboard was removed because device-entered workout history is not verified competitive scoring. Add someone with a random GymApp friend code; both accounts must confirm before either can see the categories each friend enables. Friend XP, levels, recent summaries, and exercise bests are synchronized self-reported data. From a workout plan, choose Share → Link or a confirmed friend. Accepting a direct invitation opens an editable local draft; each person starts an independent workout and sets are not synchronized live. Remove or block a friend to revoke access and close pending invitations.</p></div>
+          <div class="faq-answer"><p>The global leaderboard was removed because device-entered workout history is not verified competitive scoring. Add someone with a random GymApp friend code; both accounts must confirm before either can see the categories each friend enables. Friend XP, levels, recent summaries, and exercise bests are synchronized self-reported data. Share → Link or a standard friend invitation creates an independent editable draft. For a live workout, invite one confirmed friend: after acceptance the owner starts the frozen plan, and both participants see each person's committed set completion, entered weight, and repetitions in real time. The room contains no notes, email, or Auth UUID. It needs a network connection and safely refreshes after reconnect. Remove or block the friend to revoke access and close pending invitations or the live room.</p></div>
         </details>
         <details class="faq-item">
-          <summary>Why didn't the rest timer alert me?</summary>
-          <div class="faq-answer"><p>GymApp requests local notification permission only when you choose timer alerts. Check Settings → Notifications → GymApp. Workout logging still works if notifications are denied. GymApp does not use remote promotional push notifications.</p></div>
+          <summary>Why didn't I receive a timer or live-workout alert?</summary>
+          <div class="faq-answer"><p>Check Settings → Notifications → GymApp. Rest-timer alerts are local. Optional system alerts for friend/live invite, join, start, finish, and close events require your notification permission and must be available and configured on that platform. GymApp does not send promotional push. Per-set weight, repetitions, and completion are synchronized directly inside the open live room through Realtime, not through push, so refresh or reopen the live screen after reconnecting. Workout logging and in-app live sync still work when system notifications are denied.</p></div>
         </details>
         <details class="faq-item">
           <summary>Garmin won't sync</summary>
@@ -114,7 +114,7 @@
         </details>
         <details class="faq-item">
           <summary>Як видалити обліковий запис?</summary>
-          <div class="faq-answer"><p>Відкрийте <strong>Профіль → Обліковий запис, конфіденційність і видалення → Видалити обліковий запис</strong>, прочитайте попередження й підтвердьте незворотне видалення. Буде видалено Auth-акаунт і пов’язані активні хмарні профіль, стан тренувань, дружбу/запити/блокування/приватність/запрошення та Garmin-записи, після чого застосунок очистить локальні дані акаунта. Саме видалення застосунку не видаляє хмарний акаунт. Якщо дія не завершується, зверніться до підтримки.</p></div>
+          <div class="faq-answer"><p>Відкрийте <strong>Профіль → Обліковий запис, конфіденційність і видалення → Видалити обліковий запис</strong>, прочитайте попередження й підтвердьте незворотне видалення. Буде видалено Auth-акаунт і пов’язані активні хмарні профіль, стан тренувань, дружбу/запити/блокування/приватність/запрошення/live-кімнати, інсталяції/чергу сповіщень та Garmin-записи, після чого застосунок очистить локальні дані акаунта. Саме видалення застосунку не видаляє хмарний акаунт. Якщо дія не завершується, зверніться до підтримки.</p></div>
         </details>
         <details class="faq-item">
           <summary>Як працюють резервні копії?</summary>
@@ -122,11 +122,11 @@
         </details>
         <details class="faq-item">
           <summary>Як працюють друзі та запрошення на тренування?</summary>
-          <div class="faq-answer"><p>Загальний рейтинг видалено, бо внесена з пристроїв історія не є перевіреним змагальним результатом. Додайте людину за випадковим кодом друга GymApp; обидва акаунти мають підтвердити дружбу, перш ніж побачать дозволені одне одним категорії. XP, рівні, недавні підсумки й рекорди друзів — це синхронізовані дані, внесені самими користувачами. У плані тренування оберіть «Поділитися» → посилання або підтвердженого друга. Прийняття прямого запрошення відкриває локальну редаговану чернетку; кожен запускає незалежне тренування, а підходи не синхронізуються наживо. Видаліть або заблокуйте друга, щоб відкликати доступ і закрити запрошення.</p></div>
+          <div class="faq-answer"><p>Загальний рейтинг видалено, бо внесена з пристроїв історія не є перевіреним змагальним результатом. Додайте людину за випадковим кодом друга GymApp; обидва акаунти мають підтвердити дружбу, перш ніж побачать дозволені одне одним категорії. XP, рівні, недавні підсумки й рекорди друзів — це синхронізовані дані, внесені самими користувачами. «Поділитися» → посилання або звичайне запрошення другу створює незалежну редаговану чернетку. Для live-тренування запросіть одного підтвердженого друга: після прийняття власник починає зафіксований план, а обоє наживо бачать завершення підходів, внесену вагу й повтори кожного учасника. Кімната не містить нотаток, email або Auth UUID; потрібна мережа, а після відновлення з’єднання стан безпечно оновлюється. Видаліть або заблокуйте друга, щоб відкликати доступ і закрити запрошення чи live-кімнату.</p></div>
         </details>
         <details class="faq-item">
-          <summary>Чому таймер не сповістив?</summary>
-          <div class="faq-answer"><p>GymApp запитує дозвіл на локальні сповіщення, лише коли ви обираєте сигнали таймера. Перевірте Параметри → Сповіщення → GymApp. Щоденник працює і без дозволу. GymApp не надсилає віддалені рекламні push-сповіщення.</p></div>
+          <summary>Чому не надійшло сповіщення таймера або live-тренування?</summary>
+          <div class="faq-answer"><p>Перевірте Параметри → Сповіщення → GymApp. Таймер відпочинку сповіщає локально. Необов’язкові системні сповіщення про запрошення друга/live, приєднання, старт, завершення й закриття потребують вашого дозволу та мають бути доступні й налаштовані на цій платформі. GymApp не надсилає рекламні push-сповіщення. Вага, повтори й завершення підходів синхронізуються безпосередньо у відкритій live-кімнаті через Realtime, а не через push, тому після відновлення мережі оновіть або знову відкрийте екран. Щоденник і live-синхронізація в застосунку працюють навіть без дозволу на системні сповіщення.</p></div>
         </details>
         <details class="faq-item">
           <summary>Garmin не синхронізується</summary>
@@ -163,7 +163,7 @@
         </details>
         <details class="faq-item">
           <summary>Как удалить учётную запись?</summary>
-          <div class="faq-answer"><p>Откройте <strong>Профиль → Аккаунт, конфиденциальность и удаление → Удалить учётную запись</strong>, прочитайте предупреждение и подтвердите необратимое удаление. При этом удаляются учётная запись Auth и связанные активные облачные профиль, состояние тренировок, дружба/запросы/блокировки/приватность/приглашения и записи Garmin, а затем локальные данные учётной записи. Удаление только приложения не удаляет облачную учётную запись. Если удаление в приложении не удаётся завершить, обратитесь в службу поддержки.</p></div>
+          <div class="faq-answer"><p>Откройте <strong>Профиль → Аккаунт, конфиденциальность и удаление → Удалить учётную запись</strong>, прочитайте предупреждение и подтвердите необратимое удаление. При этом удаляются учётная запись Auth и связанные активные облачные профиль, состояние тренировок, дружба/запросы/блокировки/приватность/приглашения/live-комнаты, установки/очередь уведомлений и записи Garmin, а затем локальные данные учётной записи. Удаление только приложения не удаляет облачную учётную запись. Если удаление в приложении не удаётся завершить, обратитесь в службу поддержки.</p></div>
         </details>
         <details class="faq-item">
           <summary>Как работают резервные копии?</summary>
@@ -171,11 +171,11 @@
         </details>
         <details class="faq-item">
           <summary>Как работают друзья и приглашения на тренировку?</summary>
-          <div class="faq-answer"><p>Общий рейтинг удалён, потому что внесённая с устройств история не является проверенным соревновательным результатом. Добавьте человека по случайному коду друга GymApp; оба аккаунта должны подтвердить дружбу, прежде чем увидят разрешённые друг другом категории. XP, уровни, недавние итоги и рекорды друзей — синхронизированные данные, внесённые самими пользователями. В плане тренировки выберите «Поделиться» → ссылку или подтверждённого друга. Принятие прямого приглашения открывает локальный редактируемый черновик; каждый запускает независимую тренировку, а подходы не синхронизируются в реальном времени. Удалите или заблокируйте друга, чтобы отозвать доступ и закрыть приглашения.</p></div>
+          <div class="faq-answer"><p>Общий рейтинг удалён, потому что внесённая с устройств история не является проверенным соревновательным результатом. Добавьте человека по случайному коду друга GymApp; оба аккаунта должны подтвердить дружбу, прежде чем увидят разрешённые друг другом категории. XP, уровни, недавние итоги и рекорды друзей — синхронизированные данные, внесённые самими пользователями. «Поделиться» → ссылка или обычное приглашение другу создаёт независимый редактируемый черновик. Для live-тренировки пригласите одного подтверждённого друга: после принятия владелец запускает зафиксированный план, а оба участника в реальном времени видят завершение подходов, внесённый вес и повторения каждого. Комната не содержит заметок, email или Auth UUID; нужна сеть, а после восстановления соединения состояние безопасно обновляется. Удалите или заблокируйте друга, чтобы отозвать доступ и закрыть приглашение или live-комнату.</p></div>
         </details>
         <details class="faq-item">
-          <summary>Почему таймер отдыха не уведомил меня?</summary>
-          <div class="faq-answer"><p>GymApp запрашивает разрешение на локальные уведомления только тогда, когда вы включаете сигналы таймера. Проверьте Настройки → Уведомления → GymApp. Ведение журнала тренировок работает, даже если уведомления запрещены. GymApp не использует удалённые рекламные push-уведомления.</p></div>
+          <summary>Почему не пришло уведомление таймера или live-тренировки?</summary>
+          <div class="faq-answer"><p>Проверьте Настройки → Уведомления → GymApp. Таймер отдыха уведомляет локально. Необязательные системные уведомления о приглашении друга/live, присоединении, старте, завершении и закрытии требуют вашего разрешения и должны быть доступны и настроены на этой платформе. GymApp не отправляет рекламные push-уведомления. Вес, повторения и завершение подходов синхронизируются напрямую в открытой live-комнате через Realtime, а не через push, поэтому после восстановления сети обновите или снова откройте экран. Журнал и live-синхронизация в приложении работают даже без разрешения на системные уведомления.</p></div>
         </details>
         <details class="faq-item">
           <summary>Garmin не синхронизируется</summary>

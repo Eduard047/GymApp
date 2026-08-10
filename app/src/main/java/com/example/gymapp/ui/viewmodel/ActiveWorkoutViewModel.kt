@@ -25,6 +25,7 @@ import com.example.gymapp.util.activeWorkoutRestSecondsRemaining
 import com.example.gymapp.util.parseWeightInputOrNull
 import java.util.Locale
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
@@ -37,6 +38,7 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class ActiveWorkoutSetUiState(
     val id: String,
@@ -77,7 +79,13 @@ data class ActiveWorkoutUiState(
     val message: LocalizedText? = null,
     val messageSetId: String? = null,
     val finishedSessionId: Long? = null,
-    val wasDiscarded: Boolean = false
+    val wasDiscarded: Boolean = false,
+    val livePeerName: String? = null,
+    val livePeerCompletedSetCount: Int = 0,
+    val livePeerTotalSetCount: Int = 0,
+    val livePeerFinished: Boolean = false,
+    val liveConnectionMode: LiveConnectionMode? = null,
+    val livePendingOperationCount: Int = 0
 )
 
 private data class ActiveWorkoutInput(
@@ -235,7 +243,8 @@ internal suspend fun persistActiveWorkoutSetBeforeRest(
 class ActiveWorkoutViewModel(
     private val repository: GymRepository,
     private val restTimerController: RestTimerController,
-    private val timerAccountKey: String
+    private val timerAccountKey: String,
+    private val liveSync: ActiveLiveWorkoutSync? = null
 ) : ViewModel() {
     private val inputs = MutableStateFlow<Map<String, ActiveWorkoutInput>>(emptyMap())
     private val hasLoaded = MutableStateFlow(false)
@@ -341,8 +350,9 @@ class ActiveWorkoutViewModel(
         sourceState,
         recordGate.inFlight,
         clockState,
-        operationState
-    ) { source, inFlight, clock, operation ->
+        operationState,
+        liveSync?.activeLiveUiState ?: kotlinx.coroutines.flow.flowOf(ActiveLiveWorkoutUiState())
+    ) { source, inFlight, clock, operation, live ->
         val activeWorkout = source.details
         val exercises = activeWorkout?.exercises.orEmpty().map { exercise ->
             ActiveWorkoutExerciseUiState(
@@ -397,7 +407,13 @@ class ActiveWorkoutViewModel(
             message = operation.message,
             messageSetId = operation.messageSetId,
             finishedSessionId = operation.finishedSessionId,
-            wasDiscarded = operation.wasDiscarded
+            wasDiscarded = operation.wasDiscarded,
+            livePeerName = live.peerProgress?.displayName,
+            livePeerCompletedSetCount = live.peerProgress?.completedSetCount ?: 0,
+            livePeerTotalSetCount = live.peerProgress?.totalSetCount ?: 0,
+            livePeerFinished = live.peerProgress?.isFinished == true,
+            liveConnectionMode = live.connectionMode.takeIf { live.activeRoomId != null },
+            livePendingOperationCount = live.pendingOperationCount
         )
     }.stateIn(
         scope = viewModelScope,
@@ -452,15 +468,39 @@ class ActiveWorkoutViewModel(
             ?: DEFAULT_ACTIVE_REST_SECONDS
         operationState.update { state -> state.copy(message = null, messageSetId = null) }
         viewModelScope.launch {
+            var preparation: LiveLocalMutationPreparation = LiveLocalMutationPreparation.Standalone
+            var localCommitted = false
             try {
+                preparation = liveSync?.prepareLocalSetCompleted(
+                    localSetId = setId,
+                    expectedLocalRevision = snapshot.activeWorkout.revision,
+                    weight = parsed.weight,
+                    reps = parsed.reps
+                ) ?: LiveLocalMutationPreparation.Standalone
+                if (preparation == LiveLocalMutationPreparation.Rejected) {
+                    operationState.update {
+                        it.copy(
+                            message = LocalizedText(R.string.live_workout_queue_save_failed),
+                            messageSetId = setId
+                        )
+                    }
+                    return@launch
+                }
                 val outcome = persistActiveWorkoutSetBeforeRest(
                     persist = {
-                        repository.recordActiveWorkoutSet(
+                        val result = repository.recordActiveWorkoutSet(
                             setId = target.id,
                             expectedRevision = snapshot.activeWorkout.revision,
                             weight = parsed.weight,
                             reps = parsed.reps
                         )
+                        if (result is RecordActiveWorkoutSetResult.Recorded) {
+                            localCommitted = true
+                            (preparation as? LiveLocalMutationPreparation.Prepared)?.let {
+                                liveSync?.commitPreparedLocalMutation(it)
+                            }
+                        }
+                        result
                     },
                     startRest = {
                         check(
@@ -501,6 +541,13 @@ class ActiveWorkoutViewModel(
                     )
                 }
             } finally {
+                if (!localCommitted) {
+                    (preparation as? LiveLocalMutationPreparation.Prepared)?.let { prepared ->
+                        withContext(NonCancellable) {
+                            liveSync?.cancelPreparedLocalMutation(prepared)
+                        }
+                    }
+                }
                 recordGate.finish(setId)
             }
         }
@@ -550,7 +597,23 @@ class ActiveWorkoutViewModel(
                     it.copy(isRecordingAll = true, message = null, messageSetId = null)
                 }
                 viewModelScope.launch {
+                    var preparation: LiveLocalMutationPreparation =
+                        LiveLocalMutationPreparation.Standalone
+                    var localCommitted = false
                     try {
+                        preparation = liveSync?.prepareLocalSetsCompleted(
+                            updates = parsed.updates,
+                            expectedLocalRevision = snapshot.activeWorkout.revision
+                        ) ?: LiveLocalMutationPreparation.Standalone
+                        if (preparation == LiveLocalMutationPreparation.Rejected) {
+                            operationState.update {
+                                it.copy(
+                                    isRecordingAll = false,
+                                    message = LocalizedText(R.string.live_workout_queue_save_failed)
+                                )
+                            }
+                            return@launch
+                        }
                         when (
                             val result = repository.recordActiveWorkoutSets(
                                 updates = parsed.updates,
@@ -558,6 +621,10 @@ class ActiveWorkoutViewModel(
                             )
                         ) {
                             is RecordActiveWorkoutSetsResult.Recorded -> {
+                                localCommitted = true
+                                (preparation as? LiveLocalMutationPreparation.Prepared)?.let {
+                                    liveSync?.commitPreparedLocalMutation(it)
+                                }
                                 val restStopped = runCatching {
                                     restTimerController.stopActiveWorkoutRest(
                                         timerAccountKey,
@@ -605,6 +672,14 @@ class ActiveWorkoutViewModel(
                                 message = LocalizedText(R.string.active_workout_record_failed)
                             )
                         }
+                    } finally {
+                        if (!localCommitted) {
+                            (preparation as? LiveLocalMutationPreparation.Prepared)?.let { prepared ->
+                                withContext(NonCancellable) {
+                                    liveSync?.cancelPreparedLocalMutation(prepared)
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -623,9 +698,29 @@ class ActiveWorkoutViewModel(
             it.copy(undoingSetId = setId, message = null, messageSetId = null)
         }
         viewModelScope.launch {
+            var preparation: LiveLocalMutationPreparation = LiveLocalMutationPreparation.Standalone
+            var localCommitted = false
             try {
+                preparation = liveSync?.prepareLocalSetUndone(
+                    localSetId = setId,
+                    expectedLocalRevision = snapshot.activeWorkout.revision
+                ) ?: LiveLocalMutationPreparation.Standalone
+                if (preparation == LiveLocalMutationPreparation.Rejected) {
+                    operationState.update {
+                        it.copy(
+                            undoingSetId = null,
+                            message = LocalizedText(R.string.live_workout_queue_save_failed),
+                            messageSetId = setId
+                        )
+                    }
+                    return@launch
+                }
                 when (repository.undoLatestActiveWorkoutSet(setId, snapshot.activeWorkout.revision)) {
                     is UndoActiveWorkoutSetResult.Undone -> {
+                        localCommitted = true
+                        (preparation as? LiveLocalMutationPreparation.Prepared)?.let {
+                            liveSync?.commitPreparedLocalMutation(it)
+                        }
                         runCatching {
                             restTimerController.stopActiveWorkoutRest(
                                 timerAccountKey,
@@ -633,7 +728,11 @@ class ActiveWorkoutViewModel(
                             )
                         }
                         operationState.update {
-                            it.copy(undoingSetId = null)
+                            it.copy(
+                                undoingSetId = null,
+                                message = it.message,
+                                messageSetId = it.messageSetId
+                            )
                         }
                     }
                     UndoActiveWorkoutSetResult.Missing -> operationState.update {
@@ -662,6 +761,14 @@ class ActiveWorkoutViewModel(
                         message = LocalizedText(R.string.active_workout_undo_failed),
                         messageSetId = setId
                     )
+                }
+            } finally {
+                if (!localCommitted) {
+                    (preparation as? LiveLocalMutationPreparation.Prepared)?.let { prepared ->
+                        withContext(NonCancellable) {
+                            liveSync?.cancelPreparedLocalMutation(prepared)
+                        }
+                    }
                 }
             }
         }
@@ -706,9 +813,27 @@ class ActiveWorkoutViewModel(
         }
         operationState.update { it.copy(isFinishing = true, message = null) }
         viewModelScope.launch {
+            var preparation: LiveLocalMutationPreparation = LiveLocalMutationPreparation.Standalone
+            var localCommitted = false
             try {
+                preparation = liveSync?.prepareLocalWorkoutFinished(
+                    expectedLocalRevision = snapshot.activeWorkout.revision
+                ) ?: LiveLocalMutationPreparation.Standalone
+                if (preparation == LiveLocalMutationPreparation.Rejected) {
+                    operationState.update {
+                        it.copy(
+                            isFinishing = false,
+                            message = LocalizedText(R.string.live_workout_queue_save_failed)
+                        )
+                    }
+                    return@launch
+                }
                 when (val result = repository.finishActiveWorkout(snapshot.activeWorkout.revision)) {
                     is FinishActiveWorkoutResult.Finished -> {
+                        localCommitted = true
+                        (preparation as? LiveLocalMutationPreparation.Prepared)?.let {
+                            liveSync?.commitPreparedLocalMutation(it)
+                        }
                         runCatching {
                             restTimerController.clearActiveWorkoutTimer(
                                 timerAccountKey,
@@ -754,6 +879,14 @@ class ActiveWorkoutViewModel(
                         message = LocalizedText(R.string.active_workout_finish_failed)
                     )
                 }
+            } finally {
+                if (!localCommitted) {
+                    (preparation as? LiveLocalMutationPreparation.Prepared)?.let { prepared ->
+                        withContext(NonCancellable) {
+                            liveSync?.cancelPreparedLocalMutation(prepared)
+                        }
+                    }
+                }
             }
         }
     }
@@ -771,6 +904,7 @@ class ActiveWorkoutViewModel(
             try {
                 when (repository.discardActiveWorkout(snapshot.activeWorkout.revision)) {
                     DiscardActiveWorkoutResult.Discarded -> {
+                        liveSync?.afterLocalWorkoutDiscarded()
                         runCatching {
                             restTimerController.clearActiveWorkoutTimer(
                                 timerAccountKey,
@@ -845,10 +979,11 @@ class ActiveWorkoutViewModel(
         fun factory(
             repository: GymRepository,
             restTimerController: RestTimerController,
-            timerAccountKey: String
+            timerAccountKey: String,
+            liveSync: ActiveLiveWorkoutSync? = null
         ): ViewModelProvider.Factory = viewModelFactory {
             initializer {
-                ActiveWorkoutViewModel(repository, restTimerController, timerAccountKey)
+                ActiveWorkoutViewModel(repository, restTimerController, timerAccountKey, liveSync)
             }
         }
     }
