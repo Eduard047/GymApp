@@ -249,6 +249,82 @@ function testAccessToken(userId, sessionId) {
   })}.test-signature`;
 }
 
+test("activity heatmap cells stay out of the tab order and expose useful labels", () => {
+  const context = loadPwaContext();
+  const html = vm.runInContext(`(() => {
+    state = defaultAppState();
+    const startedAt = Date.now();
+    state.sessions = [{
+      id: 1,
+      startedAt,
+      note: "",
+      sets: [{
+        id: 2,
+        exerciseName: "Bench Press",
+        catalogKey: "bench_press",
+        weight: 50,
+        reps: 8,
+        orderIndex: 0
+      }]
+    }];
+    return activityHeatmapCard();
+  })()`, context);
+  const cells = html.match(/<button[^>]*class="heat-cell[^"]*"[^>]*>/g) || [];
+  const outsideCells = cells.filter(cell => /class="heat-cell outside"/.test(cell));
+  const dayCells = cells.filter(cell => !/class="heat-cell outside"/.test(cell));
+
+  assert.ok(cells.length >= 28 && cells.length <= 42);
+  assert.ok(cells.every(cell => /tabindex="-1"/.test(cell)));
+  assert.ok(outsideCells.length > 0);
+  assert.ok(outsideCells.every(cell => /aria-hidden="true"/.test(cell)));
+  assert.ok(dayCells.every(cell => /aria-disabled="true"/.test(cell)));
+  assert.ok(dayCells.every(cell => /aria-label="[^"]+: \d+ load"/.test(cell)));
+});
+
+test("saved workout cards activate from Enter and Space", () => {
+  const context = loadPwaContext();
+  const html = vm.runInContext(`workoutItem({
+    id: 10,
+    startedAt: Date.now(),
+    note: "",
+    sets: [{
+      id: 11,
+      exerciseName: "Bench Press",
+      catalogKey: "bench_press",
+      weight: 50,
+      reps: 8,
+      orderIndex: 0
+    }]
+  })`, context);
+  assert.match(html, /<article class="workout-item clickable" role="button" tabindex="0" data-action="open-detail"/);
+  assert.match(appSource, /addEventListener\("keydown", activateDataActionFromKeyboard\)/);
+
+  const activation = jsonFrom(context, `(() => {
+    let clicks = 0;
+    let prevented = 0;
+    const currentTarget = { click() { clicks += 1; } };
+    const event = key => ({
+      key,
+      currentTarget,
+      preventDefault() { prevented += 1; }
+    });
+    return {
+      enter: activateDataActionFromKeyboard(event("Enter")),
+      space: activateDataActionFromKeyboard(event(" ")),
+      escape: activateDataActionFromKeyboard(event("Escape")),
+      clicks,
+      prevented
+    };
+  })()`);
+  assert.deepEqual(activation, {
+    enter: true,
+    space: true,
+    escape: false,
+    clicks: 2,
+    prevented: 2
+  });
+});
+
 test("Garmin store link opens our public listing and isolates the new tab", () => {
   const context = loadPwaContext();
   const html = vm.runInContext("accountPanel()", context);

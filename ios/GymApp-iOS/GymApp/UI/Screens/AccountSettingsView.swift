@@ -298,6 +298,7 @@ struct AccountSettingsView: View {
         case .active: "On"
         case .denied: "Blocked in iOS Settings"
         case .unavailable: "Secure device storage unavailable"
+        case .revocationPending: "Off — server cleanup will retry"
         case .failed: "Could not register — try again"
         }
     }

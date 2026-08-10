@@ -8,7 +8,10 @@ const migrationNamePattern = /^(\d{14})_([a-z0-9_]+)\.sql$/;
 const productionFirstRecordedVersion = "20260629115900";
 const productionLastRecordedVersion = "20260810092029";
 const productionMigrationCount = 36;
-const reviewedForwardMigrations = [];
+const reviewedForwardMigrations = [
+  "20260810131353_add_idempotent_garmin_device_creation.sql",
+  "20260810135453_fix_garmin_validation_error_ambiguity.sql",
+];
 
 function migrationVersion(fileName) {
   const match = migrationNamePattern.exec(fileName);

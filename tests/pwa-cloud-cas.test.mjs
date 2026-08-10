@@ -28,6 +28,18 @@ function garminTestCreatedDevice(deviceId, deviceToken) {
   };
 }
 
+function garminIdempotentCreatePayload(body) {
+  assert.equal(body.action, "createDeviceIdempotent");
+  assert.match(body.requestId, UUID_V4_PATTERN_FOR_TEST);
+  assert.match(body.deviceId, UUID_V4_PATTERN_FOR_TEST);
+  assert.match(body.deviceNonce, /^[a-f0-9]{64}$/);
+  return {
+    status: "created",
+    requestId: body.requestId,
+    device: garminTestCreatedDevice(body.deviceId, body.deviceNonce),
+  };
+}
+
 function unsignedJwtFor(userId, exp = 4102444800) {
   const header = Buffer.from(JSON.stringify({ alg: "none", typ: "JWT" })).toString("base64url");
   const payload = Buffer.from(JSON.stringify({ sub: userId, exp })).toString("base64url");
@@ -1530,7 +1542,10 @@ test("account transitions clear timers while durable Garmin revocation stays exp
   const logoutSource = appSource.slice(appSource.indexOf("async function logoutAccount"), appSource.indexOf("async function unpairGarmin"));
   const unpairSource = appSource.slice(appSource.indexOf("async function unpairGarmin"), appSource.indexOf("function accountPanel"));
   assert.doesNotMatch(logoutSource, /revokeGarminBinding/);
-  assert.match(logoutSource, /pendingGarminRevocations[\s\S]*revokeGarminDeviceById/);
+  assert.match(
+    logoutSource,
+    /promoteGarminCreateRequestToCleanup[\s\S]*revokeGarminDeviceById[\s\S]*forgetGarminPendingRevocation/
+  );
   assert.match(unpairSource, /window\.confirm\(warning\)[\s\S]*await revokeGarminBinding\(session\)/);
   assert.match(logoutSource, /clearRemoteSession\(\)/);
   assert.match(
@@ -2084,13 +2099,17 @@ test("cloud recovery reset is explicit and uses the quarantined row revision as 
 });
 
 test("Garmin binding is persisted before the one-time token is shown", async () => {
-  const deviceId = "00000000-0000-4000-8000-000000000081";
-  const token = garminTestCapability(deviceId, "a".repeat(64));
+  let deviceId = null;
+  let token = null;
   const context = loadContext(async (_url, options) => {
-    const action = JSON.parse(options.body).action;
-    const payload = action === "listDevices"
+    const body = JSON.parse(options.body);
+    const payload = body.action === "listDevices"
       ? { devices: [] }
-      : { device: garminTestCreatedDevice(deviceId, token) };
+      : garminIdempotentCreatePayload(body);
+    if (body.action === "createDeviceIdempotent") {
+      deviceId = body.deviceId;
+      token = body.deviceNonce;
+    }
     return new Response(JSON.stringify(payload), {
       status: 200,
       headers: { "Content-Type": "application/json" }
@@ -2116,12 +2135,13 @@ test("Garmin binding is persisted before the one-time token is shown", async () 
     Object.hasOwn(JSON.parse(context.localStorage.getItem("gym-pwa-garmin-device-bindings-v2"))[ACTIVE_USER_ID], "recoveryPending"),
     false
   );
-  assert.equal(vm.runInContext("pendingGarminRevocations.size", context), 0);
+  assert.equal(
+    vm.runInContext(`pendingGarminRevocationForUser(${JSON.stringify(ACTIVE_USER_ID)})`, context),
+    null
+  );
 });
 
 test("Garmin storage failure revokes the unseen token before any prompt", async () => {
-  const deviceId = "00000000-0000-4000-8000-000000000082";
-  const token = garminTestCapability(deviceId, "b".repeat(64));
   const actions = [];
   const context = loadContext(async (_url, options) => {
     const body = JSON.parse(options.body);
@@ -2132,10 +2152,11 @@ test("Garmin storage failure revokes the unseen token before any prompt", async 
         headers: { "Content-Type": "application/json" }
       });
     }
-    if (body.action === "createDevice") {
-      return new Response(JSON.stringify({
-        device: garminTestCreatedDevice(deviceId, token)
-      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    if (body.action === "createDeviceIdempotent") {
+      return new Response(JSON.stringify(garminIdempotentCreatePayload(body)), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
     }
     return new Response(JSON.stringify({ status: "revoked" }), {
       status: 200,
@@ -2158,14 +2179,15 @@ test("Garmin storage failure revokes the unseen token before any prompt", async 
     vm.runInContext("ensureGarminDeviceBinding(loadRemoteSession())", context),
     /unseen token was revoked/
   );
-  assert.deepEqual(actions, ["listDevices", "createDevice", "revokeDevice"]);
+  assert.deepEqual(actions, ["listDevices", "createDeviceIdempotent", "revokeDevice"]);
   assert.equal(promptCalls, 0);
-  assert.equal(vm.runInContext("pendingGarminRevocations.size", context), 0);
+  assert.equal(
+    vm.runInContext(`pendingGarminRevocationForUser(${JSON.stringify(ACTIVE_USER_ID)})`, context),
+    null
+  );
 });
 
 test("cancelled Garmin token prompt stays recoverable when revocation fails", async () => {
-  const deviceId = "00000000-0000-4000-8000-000000000085";
-  const token = garminTestCapability(deviceId, "e".repeat(64));
   const actions = [];
   const context = loadContext(async (_url, options) => {
     const body = JSON.parse(options.body);
@@ -2176,10 +2198,11 @@ test("cancelled Garmin token prompt stays recoverable when revocation fails", as
         headers: { "Content-Type": "application/json" }
       });
     }
-    if (body.action === "createDevice") {
-      return new Response(JSON.stringify({
-        device: garminTestCreatedDevice(deviceId, token)
-      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    if (body.action === "createDeviceIdempotent") {
+      return new Response(JSON.stringify(garminIdempotentCreatePayload(body)), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
     }
     throw new Error("revocation offline");
   });
@@ -2191,7 +2214,7 @@ test("cancelled Garmin token prompt stays recoverable when revocation fails", as
     /Use Unpair Garmin/
   );
 
-  assert.deepEqual(actions, ["listDevices", "createDevice", "revokeDevice"]);
+  assert.deepEqual(actions, ["listDevices", "createDeviceIdempotent", "revokeDevice"]);
   assert.equal(
     vm.runInContext(`garminBindingForUser(${JSON.stringify(ACTIVE_USER_ID)}).recoveryPending`, context),
     true
@@ -2516,8 +2539,7 @@ test("Garmin token revision conflict refreshes metadata and fails closed", async
 });
 
 test("concurrent Garmin sync clicks run one list-create-queue path", async () => {
-  const deviceId = "00000000-0000-4000-8000-000000000087";
-  const token = garminTestCapability(deviceId, "1".repeat(64));
+  let deviceId = null;
   const actions = [];
   let releaseList;
   const listGate = new Promise(resolve => {
@@ -2534,9 +2556,12 @@ test("concurrent Garmin sync clicks run one list-create-queue path", async () =>
           headers: { "Content-Type": "application/json" }
         });
       }
-      return new Response(JSON.stringify({
-        device: garminTestCreatedDevice(deviceId, token)
-      }), { status: 200, headers: { "Content-Type": "application/json" } });
+      const payload = garminIdempotentCreatePayload(body);
+      deviceId = body.deviceId;
+      return new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
     }
     actions.push("queuePlan");
     const body = JSON.parse(options.body);
@@ -2573,7 +2598,7 @@ test("concurrent Garmin sync clicks run one list-create-queue path", async () =>
   releaseList();
   await Promise.all([first, second]);
 
-  assert.deepEqual(actions, ["listDevices", "createDevice", "queuePlan"]);
+  assert.deepEqual(actions, ["listDevices", "createDeviceIdempotent", "queuePlan"]);
   assert.equal(vm.runInContext("garminSyncInProgress", context), false);
   assert.equal(
     vm.runInContext(`garminBindingForUser(${JSON.stringify(ACTIVE_USER_ID)}).deviceId`, context),
@@ -2582,8 +2607,7 @@ test("concurrent Garmin sync clicks run one list-create-queue path", async () =>
 });
 
 test("a shared Web Lock allows only one cross-tab Garmin create and enqueue path", async () => {
-  const deviceId = "00000000-0000-4000-8000-000000000086";
-  const token = garminTestCapability(deviceId, "2".repeat(64));
+  let deviceId = null;
   const actions = [];
   const heldLocks = new Set();
   const lockManager = {
@@ -2609,9 +2633,12 @@ test("a shared Web Lock allows only one cross-tab Garmin create and enqueue path
           headers: { "Content-Type": "application/json" }
         });
       }
-      return new Response(JSON.stringify({
-        device: garminTestCreatedDevice(deviceId, token)
-      }), { status: 200, headers: { "Content-Type": "application/json" } });
+      const payload = garminIdempotentCreatePayload(body);
+      deviceId = body.deviceId;
+      return new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
     }
     actions.push("queuePlan");
     return new Response(JSON.stringify({
@@ -2640,7 +2667,7 @@ test("a shared Web Lock allows only one cross-tab Garmin create and enqueue path
   releaseList();
   await first;
 
-  assert.deepEqual(actions, ["listDevices", "createDevice", "queuePlan"]);
+  assert.deepEqual(actions, ["listDevices", "createDeviceIdempotent", "queuePlan"]);
   assert.equal(heldLocks.size, 0);
   assert.equal(
     vm.runInContext(`garminBindingForUser(${JSON.stringify(ACTIVE_USER_ID)}).deviceId`, firstTab),

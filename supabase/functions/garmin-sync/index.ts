@@ -5,6 +5,7 @@ import {
   verifyGarminCapability,
 } from "../_shared/garmin-capability.ts";
 import { validateGarminPlan } from "../_shared/garmin-plan-contract.ts";
+import { scheduleBestEffortGarminTelemetry } from "../_shared/garmin-telemetry.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -29,6 +30,11 @@ const DEVICE_NONCE_PATTERN = /^[a-f0-9]{64}$/;
 const CAPABILITY_HMAC_SECRET_PATTERN = /^[a-f0-9]{64}$/;
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const UUID_V4_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+// Control characters are intentionally rejected from user-visible device names.
+// deno-lint-ignore no-control-regex
+const CONTROL_CHARACTER_PATTERN = /[\u0000-\u001f\u007f]/;
 const RFC3339_PATTERN =
   /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/;
 
@@ -40,6 +46,8 @@ type RequestBody = {
   replacementToken?: unknown;
   replacementNonce?: unknown;
   expectedTokenRevision?: unknown;
+  requestId?: unknown;
+  deviceNonce?: unknown;
   displayName?: unknown;
   planId?: unknown;
   planRevision?: unknown;
@@ -113,7 +121,7 @@ function isObject(value: unknown): value is Record<string, unknown> {
 function validDisplayName(value: unknown): value is string {
   return typeof value === "string" && value === value.trim() &&
     value.length > 0 &&
-    value.length <= 80 && !/[\u0000-\u001f\u007f]/.test(value) &&
+    value.length <= 80 && !CONTROL_CHARACTER_PATTERN.test(value) &&
     new TextEncoder().encode(value).byteLength <= 320;
 }
 
@@ -289,25 +297,30 @@ async function resolveGarminCapability(
   return null;
 }
 
-async function recordCapabilityUse(
+function scheduleCapabilityUse(
   supabaseUrl: string,
   databaseSecretKey: string,
   capability: GarminCapabilityContext,
-): Promise<void> {
-  const { error } = await capabilityClient(supabaseUrl, databaseSecretKey).rpc(
-    "garmin_record_capability_use",
-    {
-      p_device_token: capability.nonce,
-      p_capability_version: capability.version,
-    },
-  );
+): void {
   // The telemetry RPC is deployed by the ACL migration after this Edge bundle.
   // It is operational evidence for retirement, never an authorization input.
-  if (error && error.code !== "PGRST202") {
-    console.warn("Garmin capability telemetry failed", {
-      code: String(error.code || "unknown").slice(0, 32),
-    });
-  }
+  scheduleBestEffortGarminTelemetry(
+    () =>
+      capabilityClient(supabaseUrl, databaseSecretKey).rpc(
+        "garmin_record_capability_use",
+        {
+          p_device_token: capability.nonce,
+          p_capability_version: capability.version,
+        },
+      ),
+    (task) => {
+      const runtime = (globalThis as typeof globalThis & {
+        EdgeRuntime?: { waitUntil(value: Promise<unknown>): void };
+      }).EdgeRuntime;
+      if (!runtime) throw new Error("Edge background scheduler unavailable");
+      runtime.waitUntil(task);
+    },
+  );
 }
 
 Deno.serve(async (request) => {
@@ -346,6 +359,116 @@ Deno.serve(async (request) => {
 
   const body = await readBody(request);
   if (!body) return json({ error: "Invalid or oversized request body" }, 400);
+
+  if (body.action === "createDeviceIdempotent") {
+    const capabilityVersion = requestedCapabilityVersion(
+      body.capabilityVersion,
+    );
+    if (!capabilityVersion) {
+      return json({ error: "Unsupported Garmin capability version" }, 400);
+    }
+    if (capabilityVersion === 2 && !legacyCapabilitiesEnabled) {
+      return json({ error: "Garmin client upgrade required" }, 426);
+    }
+    const userClient = authenticatedClient(request, supabaseUrl, anonKey);
+    if (!userClient) return json({ error: "Unauthorized" }, 401);
+    const { data: userData, error: userError } = await userClient.auth
+      .getUser();
+    if (userError || !userData.user) {
+      return json({ error: "Unauthorized" }, 401);
+    }
+    if (
+      capabilityVersion === 3 &&
+      !await deriveGarminAccountBinding(userData.user.id)
+    ) {
+      return json({ error: "Invalid account identity" }, 500);
+    }
+
+    const requestId = typeof body.requestId === "string"
+      ? body.requestId.trim().toLowerCase()
+      : "";
+    const deviceId = typeof body.deviceId === "string"
+      ? body.deviceId.trim().toLowerCase()
+      : "";
+    const deviceNonce = typeof body.deviceNonce === "string"
+      ? body.deviceNonce
+      : "";
+    const displayName = typeof body.displayName === "string"
+      ? body.displayName.trim()
+      : "Garmin watch";
+    if (
+      !UUID_V4_PATTERN.test(requestId) ||
+      !UUID_V4_PATTERN.test(deviceId) ||
+      !DEVICE_NONCE_PATTERN.test(deviceNonce) ||
+      !validDisplayName(displayName)
+    ) {
+      return json({ error: "Invalid device creation request" }, 400);
+    }
+
+    const { data, error } = await userClient.rpc(
+      "garmin_create_device_idempotent",
+      {
+        p_request_id: requestId,
+        p_device_id: deviceId,
+        p_device_token: deviceNonce,
+        p_display_name: displayName,
+      },
+    );
+    if (error?.code === "PGRST202") {
+      // Safe mixed-version rollout: this action has not called the legacy
+      // creator, so a new client may explicitly fall back exactly once.
+      return json({ error: "Idempotent device creation unavailable" }, 501);
+    }
+    if (data?.error === "Device creation limit reached") {
+      return json({ error: data.error }, 429);
+    }
+    if (data?.error === "Unauthorized") {
+      return json({ error: data.error }, 401);
+    }
+    if (
+      data?.error === "Invalid device creation request" ||
+      data?.error === "Invalid display name"
+    ) {
+      return json({ error: data.error }, 400);
+    }
+    if (data?.status === "conflict") {
+      return json({ error: "Device creation conflict" }, 409);
+    }
+    const device = safeDevice(data?.device, {
+      requireToken: true,
+      expectedId: deviceId,
+    });
+    if (
+      error || data?.error || !device ||
+      !["created", "already_created"].includes(data?.status) ||
+      device.device_token !== deviceNonce || device.token_revision !== 1
+    ) {
+      return json({ error: "Device creation failed" }, 500);
+    }
+    const deviceToken = capabilityVersion === 3
+      ? await createGarminCapability({
+        userId: userData.user.id,
+        deviceId: device.id,
+        nonce: device.device_token,
+        secretHex: capabilityHmacSecret,
+      })
+      : device.device_token;
+    if (!deviceToken) {
+      // The retry key still owns the row. Do not revoke an exact replay or
+      // create an outcome-dependent second identity; the caller can retry.
+      return json({ error: "Device capability creation failed" }, 500);
+    }
+    return json(
+      {
+        status: data.status,
+        requestId,
+        device: { ...device, device_token: deviceToken },
+        capabilityVersion,
+      },
+      200,
+      capabilityVersionHeaders(capabilityVersion),
+    );
+  }
 
   if (body.action === "createDevice") {
     const capabilityVersion = requestedCapabilityVersion(
@@ -611,7 +734,7 @@ Deno.serve(async (request) => {
     if (fetchError) return json({ error: "Plan fetch failed" }, 500);
     const versionHeaders = capabilityVersionHeaders(capability.version);
     if (candidate?.error !== "Invalid device") {
-      await recordCapabilityUse(
+      scheduleCapabilityUse(
         supabaseUrl,
         databaseSecretKey,
         capability,
@@ -763,7 +886,7 @@ Deno.serve(async (request) => {
     if (ackError) return json({ error: "Plan acknowledgement failed" }, 500);
     const versionHeaders = capabilityVersionHeaders(capability.version);
     if (acknowledged?.error !== "Invalid device") {
-      await recordCapabilityUse(
+      scheduleCapabilityUse(
         supabaseUrl,
         databaseSecretKey,
         capability,

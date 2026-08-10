@@ -141,13 +141,23 @@ internal class AndroidPushManager(
         val session = authManager.authState.value.session as? AccountSession.Cloud
         val preferenceSaved = store.setEnabled(false)
         val pending = preparePendingRevocation(session, deleteProviderToken = true)
-        val invalidation = invalidateDelivery(clearBinding = true)
+        val invalidation = invalidateDelivery(
+            clearBinding = canClearPushBindingAfterRevocationPreparation(
+                pending.marker,
+                pending.saved
+            )
+        )
         messaging?.isAutoInitEnabled = false
         refreshUiState(
             hasError = !preferenceSaved || !pending.saved || !invalidation.bindingCleared
         )
         scope.launch {
-            executeRevocation(session, pending.marker, deleteProviderToken = true)
+            executeRevocation(
+                session,
+                pending.marker,
+                pendingMarkerSaved = pending.saved,
+                deleteProviderToken = true
+            )
         }
         workScheduler.enqueue(replace = true)
     }
@@ -161,13 +171,26 @@ internal class AndroidPushManager(
         val hasStoredBinding = store.binding() != null
         when {
             pending != null && session?.userId == pending.userId -> {
-                val invalidation = invalidateDelivery(clearBinding = true)
+                // Re-commit even an in-memory marker before letting any later
+                // clear depend on it. SharedPreferences may expose values from
+                // a commit that returned false even though they are not durable.
+                val prepared = preparePendingRevocation(
+                    session,
+                    deleteProviderToken = pending.deleteProviderToken
+                )
+                val invalidation = invalidateDelivery(
+                    clearBinding = canClearPushBindingAfterRevocationPreparation(
+                        prepared.marker,
+                        prepared.saved
+                    )
+                )
                 refreshUiState(hasError = !invalidation.bindingCleared)
                 scope.launch {
                     executeRevocation(
                         session,
-                        pending,
-                        deleteProviderToken = pending.deleteProviderToken
+                        prepared.marker,
+                        pendingMarkerSaved = prepared.saved,
+                        deleteProviderToken = prepared.marker?.deleteProviderToken == true
                     )
                     if (canRegisterNow(
                             authManager.authState.value.session as? AccountSession.Cloud
@@ -182,7 +205,12 @@ internal class AndroidPushManager(
                     session,
                     deleteProviderToken = true
                 )
-                val invalidation = invalidateDelivery(clearBinding = true)
+                val invalidation = invalidateDelivery(
+                    clearBinding = canClearPushBindingAfterRevocationPreparation(
+                        prepared.marker,
+                        prepared.saved
+                    )
+                )
                 refreshUiState(
                     hasError = !prepared.saved || !invalidation.bindingCleared
                 )
@@ -190,6 +218,7 @@ internal class AndroidPushManager(
                     executeRevocation(
                         session,
                         prepared.marker,
+                        pendingMarkerSaved = prepared.saved,
                         deleteProviderToken = true
                     )
                 }
@@ -199,7 +228,12 @@ internal class AndroidPushManager(
                     session,
                     deleteProviderToken = false
                 )
-                val invalidation = invalidateDelivery(clearBinding = true)
+                val invalidation = invalidateDelivery(
+                    clearBinding = canClearPushBindingAfterRevocationPreparation(
+                        prepared.marker,
+                        prepared.saved
+                    )
+                )
                 refreshUiState(
                     hasError = !prepared.saved || !invalidation.bindingCleared
                 )
@@ -207,6 +241,7 @@ internal class AndroidPushManager(
                     executeRevocation(
                         session,
                         prepared.marker,
+                        pendingMarkerSaved = prepared.saved,
                         deleteProviderToken = false
                     )
                 }
@@ -224,10 +259,15 @@ internal class AndroidPushManager(
         var session = authManager.authState.value.session as? AccountSession.Cloud
         val pending = store.pendingRevocation()
         if (pending != null && session?.userId == pending.userId) {
+            val prepared = preparePendingRevocation(
+                session,
+                deleteProviderToken = pending.deleteProviderToken
+            )
             if (!executeRevocation(
                     session,
-                    pending,
-                    deleteProviderToken = pending.deleteProviderToken
+                    prepared.marker,
+                    pendingMarkerSaved = prepared.saved,
+                    deleteProviderToken = prepared.marker?.deleteProviderToken == true
                 )
             ) {
                 return false
@@ -243,11 +283,17 @@ internal class AndroidPushManager(
                 session,
                 deleteProviderToken = false
             )
-            val invalidation = invalidateDelivery(clearBinding = true)
+            val invalidation = invalidateDelivery(
+                clearBinding = canClearPushBindingAfterRevocationPreparation(
+                    prepared.marker,
+                    prepared.saved
+                )
+            )
             if (!prepared.saved || !invalidation.bindingCleared) return false
             return executeRevocation(
                 session,
                 prepared.marker,
+                pendingMarkerSaved = prepared.saved,
                 deleteProviderToken = false
             )
         }
@@ -347,23 +393,29 @@ internal class AndroidPushManager(
         var transitionError = false
         if (generationChanged) {
             val binding = store.binding()
+            var prepared = PreparedPushRevocation(marker = null, saved = true)
             if (previous != null && binding?.matches(
                     previous,
                     binding.installationId,
                     binding.bindingId
-                ) == true
+            ) == true
             ) {
-                transitionError = !preparePendingRevocation(
+                prepared = preparePendingRevocation(
                     previous,
                     deleteProviderToken = false
-                ).saved
+                )
+                transitionError = !prepared.saved
             }
             val bindingBelongsToCurrentGeneration = binding != null &&
                 cloudSession != null &&
                 binding.userId == cloudSession.userId &&
                 binding.sessionGeneration == cloudSession.sessionGeneration
             val invalidation = invalidateDelivery(
-                clearBinding = !bindingBelongsToCurrentGeneration
+                clearBinding = !bindingBelongsToCurrentGeneration &&
+                    canClearPushBindingAfterRevocationPreparation(
+                        prepared.marker,
+                        prepared.saved
+                    )
             )
             transitionError = transitionError || !invalidation.bindingCleared
             workScheduler.enqueue(replace = true)
@@ -391,6 +443,32 @@ internal class AndroidPushManager(
                 refreshUiState(hasError = true)
                 return@withLock false
             }
+            var pendingBeforeRegistration = store.pendingRevocation()
+            val currentBinding = store.binding()
+            var priorOwnerCleanupPersisted = true
+            val hasForeignOwnerState = currentBinding?.userId?.let { it != session.userId } == true ||
+                pendingBeforeRegistration?.userId?.let { it != session.userId } == true
+            if (hasForeignOwnerState) {
+                val prepared = preparePendingRevocation(
+                    session,
+                    deleteProviderToken = pendingBeforeRegistration?.deleteProviderToken == true
+                )
+                pendingBeforeRegistration = prepared.marker
+                priorOwnerCleanupPersisted = prepared.saved
+            }
+            if (!canBeginPushRegistration(
+                    session = session,
+                    binding = currentBinding,
+                    pendingRevocation = pendingBeforeRegistration,
+                    pendingMarkerSaved = priorOwnerCleanupPersisted
+                )
+            ) {
+                // The foreign binding is the only restart-safe source for the
+                // previous owner. Never clear it or contact registration for a
+                // replacement account until its cleanup is durable.
+                refreshUiState(hasError = true)
+                return@withLock false
+            }
             @Suppress("DEPRECATION")
             val fetchedToken = latestProviderToken ?: runCatching {
                 // The current server contract addresses FCM registration tokens. FCM 25.1's
@@ -411,8 +489,6 @@ internal class AndroidPushManager(
                 return@withLock false
             }
             val tokenDigest = providerTokenDigest(providerToken)
-            val pendingBeforeRegistration = store.pendingRevocation()
-            val currentBinding = store.binding()
             val bindingStillFresh = pendingBeforeRegistration == null &&
                 currentBinding != null &&
                 currentBinding.matches(session, installationId, currentBinding.bindingId) &&
@@ -502,9 +578,12 @@ internal class AndroidPushManager(
     private suspend fun executeRevocation(
         session: AccountSession.Cloud?,
         pending: PushPendingRevocation?,
+        pendingMarkerSaved: Boolean,
         deleteProviderToken: Boolean
     ): Boolean = operationMutex.withLock {
-            val invalidation = invalidateDelivery(clearBinding = true)
+            val clearBindingBeforeRevocation =
+                canClearPushBindingAfterRevocationPreparation(pending, pendingMarkerSaved)
+            val invalidation = invalidateDelivery(clearBinding = clearBindingBeforeRevocation)
             val revocationConfirmed = if (session != null && pending != null) {
                 val response = runCatching {
                     authManager.revokePushInstallation(session, pending.installationId)
@@ -527,7 +606,14 @@ internal class AndroidPushManager(
                     runCatching { firebaseMessaging.deleteToken().awaitResult() }
                 }
             }
-            val success = invalidation.bindingCleared && revocationConfirmed && markerCleared
+            val bindingCleared = if (clearBindingBeforeRevocation) {
+                invalidation.bindingCleared
+            } else if (revocationConfirmed && markerCleared) {
+                invalidateDelivery(clearBinding = true).bindingCleared
+            } else {
+                false
+            }
+            val success = bindingCleared && revocationConfirmed && markerCleared
             refreshUiState(hasError = !success)
             success
     }
@@ -535,7 +621,12 @@ internal class AndroidPushManager(
     private fun prepareForCloudLogout(session: AccountSession.Cloud): String? {
         val installationId = store.existingInstallationIdOrNull()
         val pending = preparePendingRevocation(session, deleteProviderToken = false)
-        val invalidation = invalidateDelivery(clearBinding = true)
+        val invalidation = invalidateDelivery(
+            clearBinding = canClearPushBindingAfterRevocationPreparation(
+                pending.marker,
+                pending.saved
+            )
+        )
         refreshUiState(hasError = !pending.saved || !invalidation.bindingCleared)
         // Revocation is idempotent. Returning an existing ID even after a just-completed
         // disable lets logout order its final server revoke after every in-flight RPC.
@@ -558,7 +649,9 @@ internal class AndroidPushManager(
             deleteProviderToken = deleteProviderToken
         )
             ?: return PreparedPushRevocation(marker = null, saved = true)
-        if (marker == existing) return PreparedPushRevocation(marker, saved = true)
+        // Always re-commit an existing value. SharedPreferences updates its
+        // in-memory map before disk I/O, so a prior commit(false) can otherwise
+        // look indistinguishable from a durable marker inside this process.
         return PreparedPushRevocation(marker, store.savePendingRevocation(marker))
     }
 
@@ -905,6 +998,26 @@ internal fun resolvePushPendingRevocation(
         sessionGeneration = ownerGeneration,
         deleteProviderToken = deleteProviderToken
     )
+}
+
+internal fun canClearPushBindingAfterRevocationPreparation(
+    marker: PushPendingRevocation?,
+    markerSaved: Boolean
+): Boolean = marker == null || markerSaved
+
+internal fun canBeginPushRegistration(
+    session: AccountSession.Cloud,
+    binding: PushInstallationBinding?,
+    pendingRevocation: PushPendingRevocation?,
+    pendingMarkerSaved: Boolean
+): Boolean {
+    val foreignBinding = binding?.takeIf { it.userId != session.userId }
+    val foreignPending = pendingRevocation?.takeIf { it.userId != session.userId }
+    if (foreignBinding == null && foreignPending == null) return true
+    if (!pendingMarkerSaved || pendingRevocation == null) return false
+    return foreignBinding == null ||
+        (pendingRevocation.userId == foreignBinding.userId &&
+            pendingRevocation.installationId == foreignBinding.installationId)
 }
 
 internal fun parseNotificationTapIntent(intent: Intent): PushPayload? {

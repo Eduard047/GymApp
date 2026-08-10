@@ -257,6 +257,7 @@ data class SetDeletionSnapshot(
     val deletionStoreToken: String
 )
 
+@ConsistentCopyVisibility
 data class CloudWorkoutProjectionState internal constructor(
     val digest: String,
     val catalogSeedVersion: Int,

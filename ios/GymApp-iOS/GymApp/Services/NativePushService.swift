@@ -41,6 +41,7 @@ enum NativePushStatus: Equatable, Sendable {
     case active
     case denied
     case unavailable
+    case revocationPending
     case failed
 }
 
@@ -94,6 +95,10 @@ struct NativePushRemoteEvent: Equatable, Sendable {
     let eventType: EventType
     let objectID: String
     let objectRevision: Int
+
+    var deliveryKey: String {
+        "\(eventType.destination.rawValue):\(objectID)"
+    }
 }
 
 enum NativePushPayloadParser {
@@ -231,7 +236,72 @@ enum NativePushPayloadParser {
     }
 }
 
+enum NativePushAuthSessionIdentity {
+    private static let maximumTokenBytes = 16 * 1_024
+
+    static func sessionID(from cloud: CloudAccountSession?) -> String? {
+        guard let cloud else { return nil }
+        return sessionID(fromAccessToken: cloud.accessToken)
+    }
+
+    static func sessionID(fromAccessToken token: String) -> String? {
+        guard !token.isEmpty,
+              token.utf8.prefix(maximumTokenBytes + 1).count <= maximumTokenBytes else {
+            return nil
+        }
+        let segments = token.split(separator: ".", omittingEmptySubsequences: false)
+        guard segments.count == 3,
+              let payload = base64URLData(String(segments[1])),
+              payload.count <= 8 * 1_024,
+              let object = try? JSONSerialization.jsonObject(with: payload) as? [String: Any],
+              let rawSessionID = object["session_id"] as? String,
+              rawSessionID.utf8.count == 36,
+              let sessionID = UUID(uuidString: rawSessionID) else {
+            return nil
+        }
+        return sessionID.uuidString.lowercased()
+    }
+
+    private static func base64URLData(_ value: String) -> Data? {
+        guard !value.isEmpty,
+              value.utf8.count <= 12 * 1_024,
+              value.unicodeScalars.allSatisfy({
+                  (0x30 ... 0x39).contains($0.value)
+                      || (0x41 ... 0x5a).contains($0.value)
+                      || (0x61 ... 0x7a).contains($0.value)
+                      || $0.value == 0x2d || $0.value == 0x5f
+              }) else {
+            return nil
+        }
+        var normalized = value
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        let remainder = normalized.count % 4
+        if remainder != 0 {
+            normalized.append(String(repeating: "=", count: 4 - remainder))
+        }
+        return Data(base64Encoded: normalized, options: [])
+    }
+}
+
 struct NativePushBinding: Codable, Equatable, Sendable {
+    static let currentVersion = 2
+
+    let version: Int
+    let installationID: UUID
+    let userID: String
+    let authSessionID: String
+    let bindingID: UUID
+    let environment: NativePushEnvironment
+    let tokenDigest: String
+    let registrationRevision: Int
+    let supersededRevocationBindingID: UUID?
+}
+
+/// Version 1 bindings predate auth-session binding. They are decoded only so an
+/// authenticated matching owner can revoke the server row, or a new registration can
+/// durably prove supersession. A legacy binding is never eligible for local delivery.
+struct NativePushLegacyBinding: Codable, Equatable, Sendable {
     static let currentVersion = 1
 
     let version: Int
@@ -243,19 +313,61 @@ struct NativePushBinding: Codable, Equatable, Sendable {
     let registrationRevision: Int
 }
 
+struct NativePushPendingRevocation: Codable, Equatable, Sendable {
+    static let currentVersion = 1
+
+    let version: Int
+    let installationID: UUID
+    let userID: String
+    let authSessionID: String
+    let bindingID: UUID
+    let registrationRevision: Int
+}
+
+private struct NativePushDeliveryRecord: Codable, Equatable, Sendable {
+    let key: String
+    let revision: Int
+}
+
+private struct NativePushDeliveryState: Codable, Equatable, Sendable {
+    static let currentVersion = 1
+
+    let version: Int
+    let installationID: UUID
+    let userID: String
+    let authSessionID: String
+    let bindingID: UUID
+    var records: [NativePushDeliveryRecord]
+}
+
 protocol NativePushBindingStoring {
     func installationID() throws -> UUID
     func loadBinding() throws -> NativePushBinding?
+    func loadLegacyBinding() throws -> NativePushLegacyBinding?
     func saveBinding(_ binding: NativePushBinding) throws
     func clearBinding() throws
+    func clearLegacyBinding(_ expected: NativePushLegacyBinding) throws -> Bool
+    func clearDeliveryState() throws
+    func loadPendingRevocation() throws -> NativePushPendingRevocation?
+    func savePendingRevocation(_ pending: NativePushPendingRevocation) throws
+    func clearPendingRevocation(_ expected: NativePushPendingRevocation) throws -> Bool
+    func canDisplay(_ event: NativePushRemoteEvent, binding: NativePushBinding) throws -> Bool
+    func commitDisplayed(_ event: NativePushRemoteEvent, binding: NativePushBinding) throws -> Bool
 }
 
 struct NativePushBindingStore: NativePushBindingStoring {
     private let keychain: KeychainStoring
     private let installationAccount = "native-push-installation-v1"
     private let bindingAccount = "native-push-binding-v1"
+    private let pendingRevocationAccount = "native-push-pending-revocation-v1"
+    private let deliveryStateAccount = "native-push-delivery-state-v1"
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
+
+    private static let maximumBindingBytes = 2 * 1_024
+    private static let maximumPendingRevocationBytes = 2 * 1_024
+    private static let maximumDeliveryStateBytes = 32 * 1_024
+    private static let maximumDeliveryRecords = 128
 
     init(
         keychain: KeychainStoring = NativePushKeychainStore(
@@ -282,40 +394,260 @@ struct NativePushBindingStore: NativePushBindingStoring {
 
     func loadBinding() throws -> NativePushBinding? {
         guard let data = try keychain.read(account: bindingAccount) else { return nil }
-        guard data.count <= 2_048,
-              let binding = try? decoder.decode(NativePushBinding.self, from: data),
-              binding.version == NativePushBinding.currentVersion,
-              binding.userID.utf8.count == 36,
-              UUID(uuidString: binding.userID) != nil,
-              binding.tokenDigest.range(
-                of: "^[0-9a-f]{64}$",
-                options: .regularExpression
-              ) != nil,
-              (1 ... 2_147_483_647).contains(binding.registrationRevision) else {
-            try keychain.delete(account: bindingAccount)
+        guard data.count <= Self.maximumBindingBytes else {
+            try clearBinding()
             return nil
         }
-        return binding
+        if let binding = try? decoder.decode(NativePushBinding.self, from: data),
+           Self.isValid(binding) {
+            return binding
+        }
+        if let legacy = try? decoder.decode(NativePushLegacyBinding.self, from: data),
+           Self.isValid(legacy) {
+            return nil
+        }
+        try clearBinding()
+        return nil
+    }
+
+    func loadLegacyBinding() throws -> NativePushLegacyBinding? {
+        guard let data = try keychain.read(account: bindingAccount),
+              data.count <= Self.maximumBindingBytes,
+              let legacy = try? decoder.decode(NativePushLegacyBinding.self, from: data),
+              Self.isValid(legacy) else {
+            return nil
+        }
+        return legacy
     }
 
     func saveBinding(_ binding: NativePushBinding) throws {
-        guard binding.version == NativePushBinding.currentVersion,
-              binding.userID.utf8.count == 36,
-              UUID(uuidString: binding.userID) != nil,
-              binding.tokenDigest.range(
-                of: "^[0-9a-f]{64}$",
-                options: .regularExpression
-              ) != nil,
-              (1 ... 2_147_483_647).contains(binding.registrationRevision) else {
+        guard Self.isValid(binding) else {
             throw NativePushError.invalidState
         }
         let data = try encoder.encode(binding)
-        guard data.count <= 2_048 else { throw NativePushError.invalidState }
+        guard data.count <= Self.maximumBindingBytes else { throw NativePushError.invalidState }
         try keychain.save(data, account: bindingAccount)
     }
 
     func clearBinding() throws {
-        try keychain.delete(account: bindingAccount)
+        var firstError: Error?
+        do {
+            try keychain.delete(account: bindingAccount)
+        } catch {
+            firstError = error
+        }
+        do {
+            try keychain.delete(account: deliveryStateAccount)
+        } catch {
+            if firstError == nil { firstError = error }
+        }
+        if let firstError { throw firstError }
+    }
+
+    func clearLegacyBinding(_ expected: NativePushLegacyBinding) throws -> Bool {
+        guard let data = try keychain.read(account: bindingAccount) else { return true }
+        guard data.count <= Self.maximumBindingBytes,
+              let current = try? decoder.decode(NativePushLegacyBinding.self, from: data),
+              Self.isValid(current),
+              current == expected else {
+            return false
+        }
+        try clearBinding()
+        return true
+    }
+
+    func clearDeliveryState() throws {
+        try keychain.delete(account: deliveryStateAccount)
+    }
+
+    func loadPendingRevocation() throws -> NativePushPendingRevocation? {
+        guard let data = try keychain.read(account: pendingRevocationAccount) else { return nil }
+        guard data.count <= Self.maximumPendingRevocationBytes,
+              let pending = try? decoder.decode(NativePushPendingRevocation.self, from: data),
+              Self.isValid(pending) else {
+            try keychain.delete(account: pendingRevocationAccount)
+            return nil
+        }
+        return pending
+    }
+
+    func savePendingRevocation(_ pending: NativePushPendingRevocation) throws {
+        guard Self.isValid(pending) else { throw NativePushError.invalidState }
+        let data = try encoder.encode(pending)
+        guard data.count <= Self.maximumPendingRevocationBytes else {
+            throw NativePushError.invalidState
+        }
+        try keychain.save(data, account: pendingRevocationAccount)
+    }
+
+    func clearPendingRevocation(_ expected: NativePushPendingRevocation) throws -> Bool {
+        guard let current = try loadPendingRevocation() else { return true }
+        guard current == expected else { return false }
+        try keychain.delete(account: pendingRevocationAccount)
+        return true
+    }
+
+    func canDisplay(
+        _ event: NativePushRemoteEvent,
+        binding: NativePushBinding
+    ) throws -> Bool {
+        guard Self.isValid(binding), event.bindingID == binding.bindingID else { return false }
+        let state = try deliveryState(for: binding)
+        guard let currentRevision = state.records.first(where: {
+            $0.key == event.deliveryKey
+        })?.revision else {
+            return true
+        }
+        return event.objectRevision > currentRevision
+    }
+
+    func commitDisplayed(
+        _ event: NativePushRemoteEvent,
+        binding: NativePushBinding
+    ) throws -> Bool {
+        guard Self.isValid(binding), event.bindingID == binding.bindingID else { return false }
+        var state = try deliveryState(for: binding)
+        if let current = state.records.first(where: { $0.key == event.deliveryKey }),
+           event.objectRevision <= current.revision {
+            return false
+        }
+        state.records.removeAll { $0.key == event.deliveryKey }
+        state.records.append(
+            NativePushDeliveryRecord(key: event.deliveryKey, revision: event.objectRevision)
+        )
+        if state.records.count > Self.maximumDeliveryRecords {
+            state.records.removeFirst(state.records.count - Self.maximumDeliveryRecords)
+        }
+        try saveDeliveryState(state)
+        return true
+    }
+
+    private func deliveryState(for binding: NativePushBinding) throws -> NativePushDeliveryState {
+        let empty = NativePushDeliveryState(
+            version: NativePushDeliveryState.currentVersion,
+            installationID: binding.installationID,
+            userID: binding.userID,
+            authSessionID: binding.authSessionID,
+            bindingID: binding.bindingID,
+            records: []
+        )
+        guard let data = try keychain.read(account: deliveryStateAccount) else { return empty }
+        guard data.count <= Self.maximumDeliveryStateBytes,
+              let state = try? decoder.decode(NativePushDeliveryState.self, from: data),
+              Self.isValid(state) else {
+            try keychain.delete(account: deliveryStateAccount)
+            throw NativePushError.invalidState
+        }
+        guard state.installationID == binding.installationID,
+              state.userID == binding.userID,
+              state.authSessionID == binding.authSessionID,
+              state.bindingID == binding.bindingID else {
+            try keychain.delete(account: deliveryStateAccount)
+            return empty
+        }
+        return state
+    }
+
+    private func saveDeliveryState(_ state: NativePushDeliveryState) throws {
+        guard Self.isValid(state) else { throw NativePushError.invalidState }
+        let data = try encoder.encode(state)
+        guard data.count <= Self.maximumDeliveryStateBytes else {
+            throw NativePushError.invalidState
+        }
+        try keychain.save(data, account: deliveryStateAccount)
+    }
+
+    private static func isValid(_ binding: NativePushBinding) -> Bool {
+        binding.version == NativePushBinding.currentVersion
+            && isVersionFourUUID(binding.installationID)
+            && canonicalUUID(binding.userID) != nil
+            && canonicalUUID(binding.authSessionID) != nil
+            && isVersionFourUUID(binding.bindingID)
+            && binding.tokenDigest.range(
+                of: "^[0-9a-f]{64}$",
+                options: .regularExpression
+            ) != nil
+            && (1 ... 2_147_483_647).contains(binding.registrationRevision)
+            && (binding.supersededRevocationBindingID.map {
+                isVersionFourUUID($0) && $0 != binding.bindingID
+            } ?? true)
+    }
+
+    private static func isValid(_ binding: NativePushLegacyBinding) -> Bool {
+        binding.version == NativePushLegacyBinding.currentVersion
+            && binding.userID.utf8.count == 36
+            && UUID(uuidString: binding.userID) != nil
+            && binding.tokenDigest.range(
+                of: "^[0-9a-f]{64}$",
+                options: .regularExpression
+            ) != nil
+            && (1 ... 2_147_483_647).contains(binding.registrationRevision)
+    }
+
+    private static func isValid(_ pending: NativePushPendingRevocation) -> Bool {
+        pending.version == NativePushPendingRevocation.currentVersion
+            && isVersionFourUUID(pending.installationID)
+            && canonicalUUID(pending.userID) != nil
+            && canonicalUUID(pending.authSessionID) != nil
+            && isVersionFourUUID(pending.bindingID)
+            && (1 ... 2_147_483_647).contains(pending.registrationRevision)
+    }
+
+    private static func isValid(_ state: NativePushDeliveryState) -> Bool {
+        guard state.version == NativePushDeliveryState.currentVersion,
+              isVersionFourUUID(state.installationID),
+              canonicalUUID(state.userID) != nil,
+              canonicalUUID(state.authSessionID) != nil,
+              isVersionFourUUID(state.bindingID),
+              state.records.count <= maximumDeliveryRecords else {
+            return false
+        }
+        var keys = Set<String>()
+        return state.records.allSatisfy { record in
+            keys.insert(record.key).inserted
+                && isValidDeliveryKey(record.key)
+                && (0 ... 2_147_483_647).contains(record.revision)
+        }
+    }
+
+    private static func canonicalUUID(_ value: String) -> UUID? {
+        guard value.utf8.count == 36,
+              value == value.lowercased(),
+              let uuid = UUID(uuidString: value),
+              uuid.uuidString.lowercased() == value else {
+            return nil
+        }
+        return uuid
+    }
+
+    private static func isVersionFourUUID(_ uuid: UUID) -> Bool {
+        uuid.uuidString.lowercased().range(
+            of: "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            options: .regularExpression
+        ) != nil
+    }
+
+    private static func isValidDeliveryKey(_ key: String) -> Bool {
+        guard key.utf8.count <= 42,
+              let separator = key.firstIndex(of: ":"),
+              let destination = NativePushDestination(
+                rawValue: String(key[..<separator])
+              ) else {
+            return false
+        }
+        let objectID = String(key[key.index(after: separator)...])
+        switch destination {
+        case .live:
+            return objectID.range(
+                of: "^lr_[0-9a-f]{32}$",
+                options: .regularExpression
+            ) != nil
+        case .social:
+            return objectID.range(
+                of: "^(f|wi)_[0-9a-f]{32}$",
+                options: .regularExpression
+            ) != nil
+        }
     }
 }
 
@@ -732,16 +1064,25 @@ final class NativePushManager: ObservableObject {
     private var installationID: UUID?
 
     private var binding: NativePushBinding?
+    private var pendingRevocation: NativePushPendingRevocation?
+    private var legacyRevocationSource: NativePushLegacyBinding?
     private var deviceToken: Data?
     private var currentUserID: String?
+    private var currentAuthSessionID: String?
     private var lifecycleGeneration: UInt64 = 0
     private var isFenced = true
     private var sessionEndUserID: String?
     private var authSubscription: AnyCancellable?
     private var backendTail: Task<Void, Never>?
+    private var lifecycleTail: Task<Void, Never>?
+    private var lifecycleCleanupPending = false
+    private var deliveryTail: Task<NativePushFetchOutcome, Never>?
+    private var deliverySequence: UInt64 = 0
     private var pendingRegistrationKey: String?
 
     private static let enabledDefaultsKey = "gymapp.native-push.enabled.v1"
+    private static let revocationFenceBindingDefaultsKey =
+        "gymapp.native-push.revocation-fence-binding.v1"
 
     var isEnabled: Bool { defaults.bool(forKey: Self.enabledDefaultsKey) }
 
@@ -759,46 +1100,265 @@ final class NativePushManager: ObservableObject {
         self.backend = backend ?? SupabaseNativePushBackendClient(auth: auth)
         self.system = system ?? NativePushSystemController()
         self.environment = environment
-        self.currentUserID = auth.session?.cloud?.userID
+        let initialCloud = auth.session?.cloud
+        self.currentUserID = initialCloud?.userID
+        self.currentAuthSessionID = NativePushAuthSessionIdentity.sessionID(from: initialCloud)
 
         do {
             let installationID = try store.installationID()
             self.installationID = installationID
-            if let stored = try store.loadBinding(),
-               stored.installationID == installationID,
-               stored.userID == currentUserID,
-               stored.environment == environment {
-                binding = stored
-                isFenced = currentUserID == nil
-                status = isEnabled && !isFenced ? .active : .disabled
-            } else {
+            var pending = try store.loadPendingRevocation()
+            let stored = try store.loadBinding()
+            let legacy = stored == nil ? try store.loadLegacyBinding() : nil
+            var fenceBindingID = try revocationFenceBindingID()
+            var storageUnavailable = false
+            if let pending, pending.installationID != installationID {
+                throw NativePushError.invalidState
+            }
+            if let stored, stored.installationID != installationID {
+                throw NativePushError.invalidState
+            }
+            if let legacy, legacy.installationID != installationID {
+                throw NativePushError.invalidState
+            }
+            // A valid pending v2 marker is the authoritative cleanup source when a
+            // replacement registration was accepted but deleting the superseded v1
+            // record failed. The legacy record must never be reactivated in this mixed
+            // restart state; the pending branch below keeps delivery disarmed until the
+            // replacement is revoked or safely superseded.
+
+            if let pendingValue = pending,
+               let stored,
+               Self.provesSupersession(stored, of: pendingValue) {
+                guard try store.clearPendingRevocation(pendingValue) else {
+                    throw NativePushError.invalidState
+                }
+                pending = nil
+                guard clearRevocationFence() else { throw NativePushError.invalidState }
+                fenceBindingID = nil
+            } else if pending == nil,
+                      let stored,
+                      let fencedBindingID = fenceBindingID,
+                      stored.supersededRevocationBindingID == fencedBindingID {
+                guard clearRevocationFence() else { throw NativePushError.invalidState }
+                fenceBindingID = nil
+            }
+
+            if let pending {
+                pendingRevocation = pending
                 binding = nil
-                try? store.clearBinding()
-                isFenced = currentUserID == nil
+                if fenceBindingID != pending.bindingID {
+                    if persistRevocationFence(bindingID: pending.bindingID) {
+                        fenceBindingID = pending.bindingID
+                    } else {
+                        storageUnavailable = true
+                    }
+                }
+                do {
+                    try store.clearDeliveryState()
+                } catch {
+                    storageUnavailable = true
+                }
+            } else if let stored {
+                let matchesCurrentOwner = stored.userID == currentUserID
+                    && stored.authSessionID == currentAuthSessionID
+                    && stored.environment == environment
+                if !isEnabled || fenceBindingID != nil || !matchesCurrentOwner {
+                    let recovered = Self.pendingRevocation(for: stored)
+                    pendingRevocation = recovered
+                    binding = nil
+                    if !persistRevocationFence(bindingID: stored.bindingID) {
+                        storageUnavailable = true
+                    }
+                    do {
+                        try store.savePendingRevocation(recovered)
+                    } catch {
+                        // The fenced binding itself remains the durable revoke source.
+                        storageUnavailable = true
+                    }
+                    do {
+                        try store.clearDeliveryState()
+                    } catch {
+                        storageUnavailable = true
+                    }
+                } else {
+                    binding = stored
+                }
+            } else if let legacy {
+                guard fenceBindingID == nil || fenceBindingID == legacy.bindingID else {
+                    throw NativePushError.invalidState
+                }
+                legacyRevocationSource = legacy
+                binding = nil
+                if !persistRevocationFence(bindingID: legacy.bindingID) {
+                    storageUnavailable = true
+                }
+                do {
+                    try store.clearDeliveryState()
+                } catch {
+                    storageUnavailable = true
+                }
+            } else if fenceBindingID != nil {
+                // UserDefaults can be restored while this-device-only Keychain records
+                // cannot. With no durable source, the opaque fence cannot authorize a
+                // revoke and must not permanently brick future registration.
+                guard clearRevocationFence() else { throw NativePushError.invalidState }
+                fenceBindingID = nil
+                do {
+                    try store.clearDeliveryState()
+                } catch {
+                    storageUnavailable = true
+                }
+            }
+            isFenced = currentUserID == nil || currentAuthSessionID == nil
+            if storageUnavailable || (isFenced && currentUserID != nil) {
+                status = .unavailable
+            } else if pendingRevocation?.userID == currentUserID
+                        || legacyRevocationSource.map({
+                            Self.sameUserID($0.userID, currentUserID)
+                        }) == true {
+                status = .revocationPending
+            } else {
+                status = isEnabled && binding != nil && !isFenced ? .active : .disabled
             }
         } catch {
             installationID = nil
             binding = nil
+            pendingRevocation = nil
+            legacyRevocationSource = nil
             isFenced = true
             status = .unavailable
         }
 
         self.system.configure()
         authSubscription = auth.$session.sink { [weak self] session in
-            self?.authSessionWillChange(to: session?.cloud?.userID)
+            self?.authSessionWillChange(to: session?.cloud)
         }
+    }
+
+    private static func pendingRevocation(
+        for binding: NativePushBinding
+    ) -> NativePushPendingRevocation {
+        NativePushPendingRevocation(
+            version: NativePushPendingRevocation.currentVersion,
+            installationID: binding.installationID,
+            userID: binding.userID,
+            authSessionID: binding.authSessionID,
+            bindingID: binding.bindingID,
+            registrationRevision: binding.registrationRevision
+        )
+    }
+
+    private static func provesSupersession(
+        _ binding: NativePushBinding,
+        of pending: NativePushPendingRevocation
+    ) -> Bool {
+        guard binding.installationID == pending.installationID,
+              binding.supersededRevocationBindingID == pending.bindingID else {
+            return false
+        }
+        return binding.userID != pending.userID
+            || binding.registrationRevision > pending.registrationRevision
+    }
+
+    private static func provesSupersession(
+        _ binding: NativePushBinding,
+        of legacy: NativePushLegacyBinding
+    ) -> Bool {
+        guard binding.installationID == legacy.installationID,
+              binding.supersededRevocationBindingID == legacy.bindingID else {
+            return false
+        }
+        return !sameUserID(binding.userID, legacy.userID)
+            || binding.registrationRevision > legacy.registrationRevision
+    }
+
+    private static func sameUserID(_ lhs: String, _ rhs: String?) -> Bool {
+        guard let rhs,
+              lhs.utf8.count == 36,
+              rhs.utf8.count == 36,
+              let left = UUID(uuidString: lhs),
+              let right = UUID(uuidString: rhs) else {
+            return false
+        }
+        return left == right
+    }
+
+    private func revocationFenceBindingID() throws -> UUID? {
+        guard let raw = defaults.string(
+            forKey: Self.revocationFenceBindingDefaultsKey
+        ) else {
+            return nil
+        }
+        guard raw.utf8.count == 36,
+              raw == raw.lowercased(),
+              raw.range(
+                of: "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                options: .regularExpression
+              ) != nil,
+              let bindingID = UUID(uuidString: raw) else {
+            throw NativePushError.invalidState
+        }
+        return bindingID
+    }
+
+    @discardableResult
+    private func persistRevocationFence(bindingID: UUID) -> Bool {
+        let raw = bindingID.uuidString.lowercased()
+        defaults.set(raw, forKey: Self.revocationFenceBindingDefaultsKey)
+        return defaults.string(forKey: Self.revocationFenceBindingDefaultsKey) == raw
+    }
+
+    @discardableResult
+    private func clearRevocationFence() -> Bool {
+        defaults.removeObject(forKey: Self.revocationFenceBindingDefaultsKey)
+        return defaults.object(forKey: Self.revocationFenceBindingDefaultsKey) == nil
     }
 
     deinit {
         backendTail?.cancel()
+        lifecycleTail?.cancel()
+        deliveryTail?.cancel()
     }
 
     func activateIfNeeded() async {
-        guard installationID != nil, let userID = auth.session?.cloud?.userID else {
+        guard !lifecycleCleanupPending,
+              installationID != nil,
+              let cloud = auth.session?.cloud,
+              let authSessionID = NativePushAuthSessionIdentity.sessionID(from: cloud) else {
             if installationID == nil { status = .unavailable }
             return
         }
-        guard currentUserID == userID, sessionEndUserID != userID else { return }
+        let userID = cloud.userID
+        guard currentUserID == userID,
+              currentAuthSessionID == authSessionID,
+              sessionEndUserID != userID else {
+            return
+        }
+        guard await retryPendingRevocationIfPossible(
+            expectedUserID: userID,
+            expectedAuthSessionID: authSessionID
+        ) else {
+            status = .revocationPending
+            return
+        }
+        guard await retryLegacyRevocationIfPossible(
+            expectedUserID: userID,
+            expectedAuthSessionID: authSessionID
+        ) else {
+            status = .revocationPending
+            return
+        }
+        guard ensureForeignRevocationSourceIsDurable(expectedUserID: userID) else {
+            isFenced = true
+            status = .unavailable
+            return
+        }
+        guard currentUserID == userID,
+              currentAuthSessionID == authSessionID,
+              authIdentityMatches(userID: userID, authSessionID: authSessionID) else {
+            return
+        }
         if isFenced {
             isFenced = false
         }
@@ -814,12 +1374,17 @@ final class NativePushManager: ObservableObject {
         status = binding == nil ? .waitingForDeviceToken : .active
         system.registerForRemoteNotifications()
         if let deviceToken {
-            enqueueRegistration(token: deviceToken, expectedUserID: userID)
+            enqueueRegistration(
+                token: deviceToken,
+                expectedUserID: userID,
+                expectedAuthSessionID: authSessionID
+            )
         }
     }
 
     func enable() async {
-        guard installationID != nil, auth.session?.cloud != nil else {
+        guard installationID != nil,
+              NativePushAuthSessionIdentity.sessionID(from: auth.session?.cloud) != nil else {
             status = .unavailable
             return
         }
@@ -844,12 +1409,14 @@ final class NativePushManager: ObservableObject {
         defaults.set(false, forKey: Self.enabledDefaultsKey)
         let userID = auth.session?.cloud?.userID
         await fenceAndRevoke(expectedUserID: userID)
-        status = permissionState == .denied ? .denied : .disabled
+        status = pendingRevocation == nil && legacyRevocationSource == nil
+            ? (permissionState == .denied ? .denied : .disabled)
+            : .revocationPending
     }
 
     /// Called before logout/account deletion while the caller still owns a valid token.
-    /// The local fence is immediate; a best-effort server revoke is serialized behind any
-    /// in-flight registration so a late register can never become the final operation.
+    /// The local fence is immediate. A durable marker survives a transport failure so the
+    /// idempotent server revoke can be retried without retaining any provider token.
     func prepareForSessionEnd(expectedUserID: String) async {
         guard auth.session?.cloud?.userID == expectedUserID else { return }
         sessionEndUserID = expectedUserID
@@ -857,8 +1424,11 @@ final class NativePushManager: ObservableObject {
     }
 
     func resumeAfterFailedSessionEnd(expectedUserID: String) async {
-        guard auth.session?.cloud?.userID == expectedUserID,
-              currentUserID == expectedUserID else {
+        guard let cloud = auth.session?.cloud,
+              cloud.userID == expectedUserID,
+              let authSessionID = NativePushAuthSessionIdentity.sessionID(from: cloud),
+              currentUserID == expectedUserID,
+              currentAuthSessionID == authSessionID else {
             return
         }
         sessionEndUserID = nil
@@ -874,11 +1444,17 @@ final class NativePushManager: ObservableObject {
         deviceToken = token
         guard isEnabled,
               !isFenced,
-              let userID = auth.session?.cloud?.userID,
-              userID == currentUserID else {
+              let cloud = auth.session?.cloud,
+              let authSessionID = NativePushAuthSessionIdentity.sessionID(from: cloud),
+              cloud.userID == currentUserID,
+              authSessionID == currentAuthSessionID else {
             return
         }
-        enqueueRegistration(token: token, expectedUserID: userID)
+        enqueueRegistration(
+            token: token,
+            expectedUserID: cloud.userID,
+            expectedAuthSessionID: authSessionID
+        )
     }
 
     func didFailToRegisterForRemoteNotifications() {
@@ -889,6 +1465,25 @@ final class NativePushManager: ObservableObject {
     func handleRemoteNotification(
         _ userInfo: [AnyHashable: Any]
     ) async -> NativePushFetchOutcome {
+        let previous = deliveryTail
+        deliverySequence &+= 1
+        let sequence = deliverySequence
+        let task = Task { @MainActor [weak self] in
+            _ = await previous?.value
+            guard !Task.isCancelled, let self else { return NativePushFetchOutcome.noData }
+            return await self.handleRemoteNotificationSerial(userInfo)
+        }
+        deliveryTail = task
+        let outcome = await task.value
+        if deliverySequence == sequence {
+            deliveryTail = nil
+        }
+        return outcome
+    }
+
+    private func handleRemoteNotificationSerial(
+        _ userInfo: [AnyHashable: Any]
+    ) async -> NativePushFetchOutcome {
         guard isEnabled,
               !isFenced,
               let event = NativePushPayloadParser.remoteEvent(from: userInfo),
@@ -897,11 +1492,20 @@ final class NativePushManager: ObservableObject {
               binding.environment == environment,
               binding.installationID == installationID,
               binding.userID == currentUserID,
-              auth.session?.cloud?.userID == binding.userID else {
+              binding.authSessionID == currentAuthSessionID,
+              authIdentityMatches(
+                userID: binding.userID,
+                authSessionID: binding.authSessionID
+              ) else {
             return .noData
         }
+        do {
+            guard try store.canDisplay(event, binding: binding) else { return .noData }
+        } catch {
+            return .failed
+        }
         let generation = lifecycleGeneration
-        let local = localNotification(for: event)
+        let local = localNotification(for: event, binding: binding)
         do {
             try await system.schedule(local)
         } catch {
@@ -910,9 +1514,22 @@ final class NativePushManager: ObservableObject {
         guard lifecycleGeneration == generation,
               !isFenced,
               self.binding == binding,
-              auth.session?.cloud?.userID == binding.userID else {
+              currentAuthSessionID == binding.authSessionID,
+              authIdentityMatches(
+                userID: binding.userID,
+                authSessionID: binding.authSessionID
+              ) else {
             await system.removeNotification(identifier: local.identifier)
             return .noData
+        }
+        do {
+            guard try store.commitDisplayed(event, binding: binding) else {
+                await system.removeNotification(identifier: local.identifier)
+                return .noData
+            }
+        } catch {
+            await system.removeNotification(identifier: local.identifier)
+            return .failed
         }
         return .newData
     }
@@ -925,7 +1542,11 @@ final class NativePushManager: ObservableObject {
               !isFenced,
               let binding,
               binding.userID == currentUserID,
-              auth.session?.cloud?.userID == binding.userID,
+              binding.authSessionID == currentAuthSessionID,
+              authIdentityMatches(
+                userID: binding.userID,
+                authSessionID: binding.authSessionID
+              ),
               let destination = NativePushPayloadParser.localDestination(
                 from: userInfo,
                 expectedBindingID: binding.bindingID
@@ -940,17 +1561,30 @@ final class NativePushManager: ObservableObject {
         return pendingRoute
     }
 
-    private func authSessionWillChange(to userID: String?) {
-        guard userID != currentUserID else { return }
+    private func authSessionWillChange(to cloud: CloudAccountSession?) {
+        let userID = cloud?.userID
+        let authSessionID = NativePushAuthSessionIdentity.sessionID(from: cloud)
+        guard userID != currentUserID || authSessionID != currentAuthSessionID else { return }
         let previousUserID = currentUserID
+        if let binding {
+            _ = persistPendingRevocation(for: binding)
+        }
         lifecycleGeneration &+= 1
+        let generation = lifecycleGeneration
+        lifecycleCleanupPending = true
+        deliveryTail?.cancel()
         isFenced = true
         currentUserID = userID
+        currentAuthSessionID = authSessionID
         sessionEndUserID = nil
         binding = nil
         pendingRoute = nil
         pendingRegistrationKey = nil
-        try? store.clearBinding()
+        do {
+            try store.clearDeliveryState()
+        } catch {
+            status = .unavailable
+        }
         if userID == nil {
             deviceToken = nil
             system.unregisterForRemoteNotifications()
@@ -959,52 +1593,355 @@ final class NativePushManager: ObservableObject {
             // token that was invalidated by an earlier unregister operation.
             deviceToken = nil
         }
-        Task { [weak self] in
-            guard let self else { return }
-            await self.system.removeAllAccountBoundNotifications()
-            await Task.yield()
-            guard self.auth.session?.cloud?.userID == userID,
-                  self.currentUserID == userID else {
-                return
-            }
-            self.isFenced = userID == nil
-            if userID != nil { await self.activateIfNeeded() }
-        }
+        enqueueLifecycleCleanup(
+            generation: generation,
+            expectedUserID: userID,
+            expectedAuthSessionID: authSessionID,
+            reactivate: true
+        )
     }
 
     private func fenceAndRevoke(expectedUserID: String?) async {
+        if let binding,
+           expectedUserID == nil || binding.userID == expectedUserID {
+            _ = persistPendingRevocation(for: binding)
+        }
         lifecycleGeneration &+= 1
+        let generation = lifecycleGeneration
+        let expectedAuthSessionID = currentAuthSessionID
+        lifecycleCleanupPending = true
+        deliveryTail?.cancel()
         isFenced = true
         binding = nil
         pendingRoute = nil
         pendingRegistrationKey = nil
-        try? store.clearBinding()
+        do {
+            try store.clearDeliveryState()
+        } catch {
+            status = .unavailable
+        }
         deviceToken = nil
         system.unregisterForRemoteNotifications()
-        await system.removeAllAccountBoundNotifications()
-        guard let installationID, let expectedUserID else { return }
-        let task = enqueueBackendOperation { [weak self] in
-            guard let self,
-                  self.auth.session?.cloud?.userID == expectedUserID else {
-                return
-            }
-            try? await self.backend.revoke(
-                installationID: installationID,
-                expectedUserID: expectedUserID
-            )
+        let cleanup = enqueueLifecycleCleanup(
+            generation: generation,
+            expectedUserID: currentUserID,
+            expectedAuthSessionID: expectedAuthSessionID,
+            reactivate: false
+        )
+        await cleanup.value
+        guard lifecycleGeneration == generation else { return }
+        guard let expectedUserID,
+              let authSessionID = expectedAuthSessionID,
+              currentAuthSessionID == authSessionID,
+              authIdentityMatches(
+                userID: expectedUserID,
+                authSessionID: authSessionID
+              ) else {
+            return
         }
-        await task.value
+        guard await retryPendingRevocationIfPossible(
+            expectedUserID: expectedUserID,
+            expectedAuthSessionID: authSessionID
+        ) else {
+            return
+        }
+        _ = await retryLegacyRevocationIfPossible(
+            expectedUserID: expectedUserID,
+            expectedAuthSessionID: authSessionID
+        )
     }
 
-    private func enqueueRegistration(token: Data, expectedUserID: String) {
+    @discardableResult
+    private func enqueueLifecycleCleanup(
+        generation: UInt64,
+        expectedUserID: String?,
+        expectedAuthSessionID: String?,
+        reactivate: Bool
+    ) -> Task<Void, Never> {
+        let previous = lifecycleTail
+        let task = Task { @MainActor [weak self] in
+            _ = await previous?.value
+            guard !Task.isCancelled,
+                  let self,
+                  self.lifecycleGeneration == generation,
+                  self.currentUserID == expectedUserID,
+                  self.currentAuthSessionID == expectedAuthSessionID else {
+                return
+            }
+            await self.system.removeAllAccountBoundNotifications()
+            guard self.lifecycleGeneration == generation,
+                  self.currentUserID == expectedUserID,
+                  self.currentAuthSessionID == expectedAuthSessionID else {
+                return
+            }
+            self.lifecycleCleanupPending = false
+            guard reactivate else { return }
+            self.isFenced = expectedUserID == nil || expectedAuthSessionID == nil
+            if expectedUserID != nil, expectedAuthSessionID != nil {
+                await self.activateIfNeeded()
+            } else if expectedUserID != nil {
+                self.status = .unavailable
+            }
+        }
+        lifecycleTail = task
+        return task
+    }
+
+    private func persistPendingRevocation(for binding: NativePushBinding) -> Bool {
+        let pending = Self.pendingRevocation(for: binding)
+        guard pendingRevocation == nil || pendingRevocation == pending else {
+            status = .unavailable
+            return false
+        }
+        pendingRevocation = pending
+        guard persistRevocationFence(bindingID: binding.bindingID) else {
+            status = .unavailable
+            return false
+        }
+        do {
+            try store.savePendingRevocation(pending)
+            guard try store.loadPendingRevocation() == pending else {
+                status = .unavailable
+                return false
+            }
+            return true
+        } catch {
+            status = .unavailable
+            return false
+        }
+    }
+
+    /// A different account can replace a server binding only after the previous
+    /// owner's cleanup source is known to survive a process restart. Rewriting and
+    /// reading the marker back avoids treating an in-memory value from a failed
+    /// Keychain write as durable proof.
+    private func ensureForeignRevocationSourceIsDurable(expectedUserID: String) -> Bool {
+        if let pending = pendingRevocation, pending.userID != expectedUserID {
+            do {
+                try store.savePendingRevocation(pending)
+                guard try store.loadPendingRevocation() == pending,
+                      persistRevocationFence(bindingID: pending.bindingID) else {
+                    status = .unavailable
+                    return false
+                }
+            } catch {
+                status = .unavailable
+                return false
+            }
+        }
+        if let legacy = legacyRevocationSource,
+           !Self.sameUserID(legacy.userID, expectedUserID) {
+            do {
+                guard try store.loadLegacyBinding() == legacy,
+                      persistRevocationFence(bindingID: legacy.bindingID) else {
+                    status = .unavailable
+                    return false
+                }
+            } catch {
+                status = .unavailable
+                return false
+            }
+        }
+        return true
+    }
+
+    /// The registration RPC atomically supersedes the previous owner. If the
+    /// replacement binding cannot be stored, retain the returned binding as the
+    /// current owner's durable revoke source before attempting best-effort cleanup.
+    private func persistReplacementRevocation(
+        for replacement: NativePushBinding,
+        previousPending: NativePushPendingRevocation?,
+        previousLegacy: NativePushLegacyBinding?
+    ) -> Bool {
+        let expectedSupersededBindingID = previousPending?.bindingID
+            ?? previousLegacy?.bindingID
+        guard replacement.supersededRevocationBindingID == expectedSupersededBindingID else {
+            status = .unavailable
+            return false
+        }
+        let pending = Self.pendingRevocation(for: replacement)
+        do {
+            try store.savePendingRevocation(pending)
+            guard try store.loadPendingRevocation() == pending else {
+                status = .unavailable
+                return false
+            }
+            pendingRevocation = pending
+            if let previousLegacy {
+                guard try store.clearLegacyBinding(previousLegacy) else {
+                    status = .unavailable
+                    return false
+                }
+                legacyRevocationSource = nil
+            }
+            guard persistRevocationFence(bindingID: replacement.bindingID) else {
+                status = .unavailable
+                return false
+            }
+            return true
+        } catch {
+            status = .unavailable
+            return false
+        }
+    }
+
+    private func retryPendingRevocationIfPossible(
+        expectedUserID: String,
+        expectedAuthSessionID: String
+    ) async -> Bool {
+        guard let pending = pendingRevocation else { return true }
+        guard pending.userID == expectedUserID else {
+            // A new owner can safely supersede this marker only after its registration is
+            // durably stored. Never authorize the new owner's token to revoke the old row.
+            return true
+        }
+        guard pending.installationID == installationID else {
+            status = .unavailable
+            return false
+        }
+        let generation = lifecycleGeneration
+        let task = enqueueBackendOperation { [weak self] in
+            guard let self,
+                  self.lifecycleGeneration == generation,
+                  self.pendingRevocation == pending,
+                  self.currentUserID == expectedUserID,
+                  self.currentAuthSessionID == expectedAuthSessionID,
+                  self.authIdentityMatches(
+                    userID: expectedUserID,
+                    authSessionID: expectedAuthSessionID
+                  ) else {
+                return
+            }
+            do {
+                try await self.backend.revoke(
+                    installationID: pending.installationID,
+                    expectedUserID: expectedUserID
+                )
+            } catch {
+                guard self.lifecycleGeneration == generation,
+                      self.pendingRevocation == pending,
+                      self.currentUserID == expectedUserID,
+                      self.currentAuthSessionID == expectedAuthSessionID else {
+                    return
+                }
+                self.status = .revocationPending
+                return
+            }
+            guard self.lifecycleGeneration == generation,
+                  self.pendingRevocation == pending,
+                  self.currentUserID == expectedUserID,
+                  self.currentAuthSessionID == expectedAuthSessionID,
+                  self.authIdentityMatches(
+                    userID: expectedUserID,
+                    authSessionID: expectedAuthSessionID
+                  ) else {
+                return
+            }
+            do {
+                try self.store.clearBinding()
+                guard self.clearRevocationFence(),
+                      try self.store.clearPendingRevocation(pending) else {
+                    self.status = .unavailable
+                    return
+                }
+                self.pendingRevocation = nil
+            } catch {
+                self.status = .unavailable
+            }
+        }
+        await task.value
+        return pendingRevocation != pending
+    }
+
+    private func retryLegacyRevocationIfPossible(
+        expectedUserID: String,
+        expectedAuthSessionID: String
+    ) async -> Bool {
+        guard let legacy = legacyRevocationSource else { return true }
+        guard Self.sameUserID(legacy.userID, expectedUserID) else {
+            // Only the legacy owner may revoke. A different owner must replace it via a
+            // durably stored v2 registration carrying the exact superseded binding ID.
+            return true
+        }
+        guard legacy.installationID == installationID else {
+            status = .unavailable
+            return false
+        }
+        let generation = lifecycleGeneration
+        let task = enqueueBackendOperation { [weak self] in
+            guard let self,
+                  self.lifecycleGeneration == generation,
+                  self.legacyRevocationSource == legacy,
+                  self.currentUserID == expectedUserID,
+                  self.currentAuthSessionID == expectedAuthSessionID,
+                  self.authIdentityMatches(
+                    userID: expectedUserID,
+                    authSessionID: expectedAuthSessionID
+                  ) else {
+                return
+            }
+            do {
+                try await self.backend.revoke(
+                    installationID: legacy.installationID,
+                    expectedUserID: expectedUserID
+                )
+            } catch {
+                guard self.lifecycleGeneration == generation,
+                      self.legacyRevocationSource == legacy,
+                      self.currentUserID == expectedUserID,
+                      self.currentAuthSessionID == expectedAuthSessionID else {
+                    return
+                }
+                self.status = .revocationPending
+                return
+            }
+            guard self.lifecycleGeneration == generation,
+                  self.legacyRevocationSource == legacy,
+                  self.currentUserID == expectedUserID,
+                  self.currentAuthSessionID == expectedAuthSessionID,
+                  self.authIdentityMatches(
+                    userID: expectedUserID,
+                    authSessionID: expectedAuthSessionID
+                  ) else {
+                return
+            }
+            do {
+                guard try self.store.clearLegacyBinding(legacy),
+                      self.clearRevocationFence() else {
+                    self.status = .unavailable
+                    return
+                }
+                self.legacyRevocationSource = nil
+            } catch {
+                self.status = .unavailable
+            }
+        }
+        await task.value
+        return legacyRevocationSource != legacy
+    }
+
+    private func authIdentityMatches(userID: String, authSessionID: String) -> Bool {
+        guard let cloud = auth.session?.cloud else { return false }
+        return cloud.userID == userID
+            && NativePushAuthSessionIdentity.sessionID(from: cloud) == authSessionID
+    }
+
+    private func enqueueRegistration(
+        token: Data,
+        expectedUserID: String,
+        expectedAuthSessionID: String
+    ) {
         guard let installationID else { return }
         let tokenHex = token.map { String(format: "%02x", $0) }.joined()
         let digest = Self.tokenDigest(token)
         let generation = lifecycleGeneration
-        let key = "\(generation):\(expectedUserID):\(environment.rawValue):\(digest)"
+        let pendingBeforeRegistration = pendingRevocation
+        let legacyBeforeRegistration = legacyRevocationSource
+        let key = "\(generation):\(expectedUserID):\(expectedAuthSessionID):\(environment.rawValue):\(digest)"
         if pendingRegistrationKey == key { return }
         if let binding,
            binding.userID == expectedUserID,
+           binding.authSessionID == expectedAuthSessionID,
            binding.environment == environment,
            binding.tokenDigest == digest {
             status = .active
@@ -1013,18 +1950,24 @@ final class NativePushManager: ObservableObject {
         pendingRegistrationKey = key
         status = .registering
         _ = enqueueBackendOperation { [weak self] in
-            guard let self,
-                  self.lifecycleGeneration == generation,
+            guard let self else { return }
+            defer {
+                if self.pendingRegistrationKey == key {
+                    self.pendingRegistrationKey = nil
+                }
+            }
+            guard self.lifecycleGeneration == generation,
                   !self.isFenced,
                   self.isEnabled,
                   self.currentUserID == expectedUserID,
-                  self.auth.session?.cloud?.userID == expectedUserID,
-                  self.deviceToken == token else {
-                if self?.pendingRegistrationKey == key {
-                    self?.pendingRegistrationKey = nil
-                }
-                return
-            }
+                  self.currentAuthSessionID == expectedAuthSessionID,
+                  self.pendingRevocation == pendingBeforeRegistration,
+                  self.legacyRevocationSource == legacyBeforeRegistration,
+                  self.authIdentityMatches(
+                    userID: expectedUserID,
+                    authSessionID: expectedAuthSessionID
+                  ),
+                  self.deviceToken == token else { return }
             do {
                 let response = try await self.backend.register(
                     installationID: installationID,
@@ -1038,7 +1981,13 @@ final class NativePushManager: ObservableObject {
                       !self.isFenced,
                       self.isEnabled,
                       self.currentUserID == expectedUserID,
-                      self.auth.session?.cloud?.userID == expectedUserID,
+                      self.currentAuthSessionID == expectedAuthSessionID,
+                      self.pendingRevocation == pendingBeforeRegistration,
+                      self.legacyRevocationSource == legacyBeforeRegistration,
+                      self.authIdentityMatches(
+                        userID: expectedUserID,
+                        authSessionID: expectedAuthSessionID
+                      ),
                       self.deviceToken == token else {
                     return
                 }
@@ -1046,33 +1995,86 @@ final class NativePushManager: ObservableObject {
                     version: NativePushBinding.currentVersion,
                     installationID: installationID,
                     userID: expectedUserID,
+                    authSessionID: expectedAuthSessionID,
                     bindingID: response.bindingID,
                     environment: response.environment,
                     tokenDigest: digest,
-                    registrationRevision: response.registrationRevision
+                    registrationRevision: response.registrationRevision,
+                    supersededRevocationBindingID: pendingBeforeRegistration?.bindingID
+                        ?? legacyBeforeRegistration?.bindingID
                 )
                 do {
                     try self.store.saveBinding(stored)
+                    guard try self.store.loadBinding() == stored else {
+                        throw NativePushError.invalidState
+                    }
+                    if let pending = pendingBeforeRegistration {
+                        guard Self.provesSupersession(stored, of: pending),
+                              self.clearRevocationFence(),
+                              try self.store.clearPendingRevocation(pending) else {
+                            throw NativePushError.invalidState
+                        }
+                        self.pendingRevocation = nil
+                    } else if let legacy = legacyBeforeRegistration {
+                        guard Self.provesSupersession(stored, of: legacy),
+                              self.clearRevocationFence() else {
+                            throw NativePushError.invalidState
+                        }
+                        self.legacyRevocationSource = nil
+                    }
                 } catch {
                     self.isFenced = true
-                    try? await self.backend.revoke(
-                        installationID: installationID,
-                        expectedUserID: expectedUserID
+                    self.binding = nil
+                    try? self.store.clearDeliveryState()
+                    _ = self.persistReplacementRevocation(
+                        for: stored,
+                        previousPending: pendingBeforeRegistration,
+                        previousLegacy: legacyBeforeRegistration
                     )
-                    self.status = .unavailable
+                    do {
+                        try await self.backend.revoke(
+                            installationID: installationID,
+                            expectedUserID: expectedUserID
+                        )
+                        if self.lifecycleGeneration == generation,
+                           self.currentUserID == expectedUserID,
+                           self.currentAuthSessionID == expectedAuthSessionID {
+                            try self.store.clearBinding()
+                            guard self.clearRevocationFence() else {
+                                throw NativePushError.invalidState
+                            }
+                            if let pending = self.pendingRevocation {
+                                guard try self.store.clearPendingRevocation(pending) else {
+                                    throw NativePushError.invalidState
+                                }
+                                self.pendingRevocation = nil
+                            }
+                            self.legacyRevocationSource = nil
+                        }
+                    } catch {
+                        // The durable marker remains for an authenticated retry.
+                    }
+                    if self.lifecycleGeneration == generation,
+                       self.currentUserID == expectedUserID,
+                       self.currentAuthSessionID == expectedAuthSessionID {
+                        self.status = .unavailable
+                    }
                     return
                 }
                 self.binding = stored
                 self.status = .active
             } catch {
                 guard self.lifecycleGeneration == generation,
-                      self.currentUserID == expectedUserID else {
+                      self.currentUserID == expectedUserID,
+                      self.currentAuthSessionID == expectedAuthSessionID else {
                     return
                 }
-                self.status = .failed
-            }
-            if self.pendingRegistrationKey == key {
-                self.pendingRegistrationKey = nil
+                self.status = self.pendingRevocation?.userID == expectedUserID
+                    || self.legacyRevocationSource.map({
+                        Self.sameUserID($0.userID, expectedUserID)
+                    }) == true
+                    ? .revocationPending
+                    : .failed
             }
         }
     }
@@ -1091,14 +2093,15 @@ final class NativePushManager: ObservableObject {
     }
 
     private func localNotification(
-        for event: NativePushRemoteEvent
+        for event: NativePushRemoteEvent,
+        binding: NativePushBinding
     ) -> NativePushLocalNotification {
         let copy = Self.copy(
             for: event.eventType,
             languageCode: defaults.string(forKey: "app-language")
                 ?? AppLanguage.english.rawValue
         )
-        let identity = "\(event.eventType.rawValue):\(event.objectID):\(event.objectRevision)"
+        let identity = "\(binding.bindingID.uuidString.lowercased()):\(event.deliveryKey)"
         let digest = SHA256.hash(data: Data(identity.utf8))
             .prefix(16)
             .map { String(format: "%02x", $0) }

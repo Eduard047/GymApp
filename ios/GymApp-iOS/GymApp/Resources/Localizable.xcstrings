@@ -279,6 +279,23 @@
         }
       }
     },
+    "A Garmin watch may already have been created by an older server, but its one-time token response was lost. Refresh the list, select that watch, and rotate its token instead of creating another one." : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Часы Garmin, возможно, уже были созданы на старом сервере, но ответ с их одноразовым токеном был потерян. Обнови список, выбери эти часы и смени их токен вместо создания новых."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Годинник Garmin, можливо, уже було створено на старішому сервері, але відповідь із його одноразовим токеном було втрачено. Онови список, вибери цей годинник і зміни його токен замість створення нового."
+          }
+        }
+      }
+    },
     "A JSON backup contains your exercise names, workout dates, sets, notes, and account ownership metadata. Share it only with people you trust." : {
       "localizations" : {
         "ru" : {
@@ -7348,6 +7365,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Нотатки входять до локальної та хмарної резервної копії."
+          }
+        }
+      }
+    },
+    "Off — server cleanup will retry" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Выключено — очистка на сервере будет повторена"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Вимкнено — очищення на сервері буде повторено"
           }
         }
       }

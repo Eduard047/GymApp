@@ -54,14 +54,21 @@ When `LOG SET?` appears, tap/select saves the current exercise, weight, and reps
 Device development build:
 
 ```powershell
-.\scripts\build-garmin.ps1 -DeveloperKey "C:\path\to\developer_key.der" -Device fenix8solar47mm
+pwsh -File .\scripts\build-garmin.ps1 -DeveloperKey "C:\path\to\developer_key.der" -Device fenix8solar47mm
 ```
+
+The PowerShell build script requires PowerShell 7 or newer; Windows PowerShell
+5.1 is not supported.
 
 macOS development build:
 
 ```bash
 ./scripts/build-garmin.sh --developer-key /secure/developer_key.der --device fenix8solar47mm
 ```
+
+Development compilation remains the default for compatibility. `-CompileOnly`
+or `--compile-only` can be supplied when an explicit non-release mode is useful
+in automation.
 
 Development PRGs for Descent G1, Instinct 2/2S/2X, and Instinct Crossover are
 compiled with debug metadata stripped because those CIQ 3.4 products have a
@@ -71,7 +78,7 @@ target when source-level simulator debugging is required.
 Store export:
 
 ```powershell
-.\scripts\build-garmin.ps1 -Release
+pwsh -File .\scripts\build-garmin.ps1 -Release
 ```
 
 ```bash
@@ -80,7 +87,38 @@ Store export:
 
 The store export is written as `garmin/build/gymapp-garmin-connect-iq.iq`. It contains a device-specific binary for every compatible product declared in `manifest.xml`; it is not tied to the default development device name. A `.prg` development build remains device-specific and keeps that device in its filename.
 
-Keep the RSA developer key outside the repository and back it up securely. Garmin requires the same key for every future update to an existing Connect IQ Store app.
+Store export fails closed unless the DER private key is RSA-4096 and its
+SubjectPublicKeyInfo SHA-256 fingerprint is the pinned GymApp Store identity
+`926b106c47125ddc97aef9801ffd4812f54562140122bb30f792493ed92adb47`.
+`GARMIN_RELEASE_PUBLIC_KEY_SHA256`, `-ExpectedPublicKeySha256`,
+`--expected-public-key-sha256`, or the ignored local file
+`garmin-keys/release_public_key.sha256` may confirm that expected identity, but
+cannot override it. The scripts build in isolated raw/sanitized staging
+directories while keeping the compiler output basename canonical, so every
+device entry remains `.../gymapp-garmin-connect-iq.prg` instead of inheriting a
+temporary PID or dot-prefixed name. They replace the prior artifact only after
+SDK export and readback succeed.
+
+Readback fully opens the SDK-produced 7z package and requires its manifest,
+512-byte RSA-4096 `manifest.sig2`, developer public key, and compiled PRG files.
+Before the prior output is replaced, the release scripts rewrite only local
+path prefixes inside `debug.xml` entries to equal-byte-length neutral relative
+prefixes. They then reopen the rewritten package, reject Unix user roots and
+Windows absolute/user-root paths anywhere in the archive, and compare SHA-256
+for every non-debug entry with the SDK output. Readback also rejects any
+compiled program whose internal basename is not
+`gymapp-garmin-connect-iq.prg`. A failed rewrite, hash check, or readback leaves
+the previous validated IQ untouched and does not print the
+rejected local path. Release compiler and gate subprocess output is suppressed
+and the success message uses the repository-relative artifact path, so local
+usernames and workspace roots do not enter release logs.
+Connect IQ SDK 9.2 does not expose a standalone cryptographic signature
+verification command, so signer continuity is enforced before `monkeyc`; Store
+acceptance remains the final external signature check.
+
+Keep the RSA-4096 developer key outside the repository and back it up securely.
+Garmin requires the same key for every future update to an existing Connect IQ
+Store app.
 
 Android communication uses Garmin's official `ciq-companion-app-sdk` and requires Garmin Connect to be installed, running, and paired with the watch.
 

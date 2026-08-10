@@ -12,6 +12,14 @@ regexes = [
 ]
 
 [[allowlists]]
+description = "The Garmin pending-revocation value is a public browser storage namespace"
+targetRules = ["generic-api-key"]
+regexTarget = "secret"
+regexes = [
+  '''^gym-pwa-garmin-pending-revocations-v1$''',
+]
+
+[[allowlists]]
 description = "Synthetic UUID-shaped authorization codes in the CloudAuthManager unit tests"
 targetRules = ["generic-api-key"]
 condition = "AND"

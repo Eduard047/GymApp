@@ -486,6 +486,7 @@ func gymSafeEnglishErrorMessage(_ error: Error) -> String {
              .pendingRevocation,
              .bindingPersistenceFailed,
              .deviceRefreshRequired,
+             .deviceCreationRecoveryRequired,
              .rotationConflict,
              .enqueueConflict:
             return garminError.errorDescription ?? gymGenericErrorMessage

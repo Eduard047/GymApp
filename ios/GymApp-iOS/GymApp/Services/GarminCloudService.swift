@@ -32,8 +32,9 @@ struct GarminDeviceSummary: Equatable, Identifiable, Sendable {
     let tokenRevision: Int
 }
 
-/// Ephemeral one-time credential. Deliberately not Codable: only the nonsecret
-/// selected-device UUID is persisted, never the raw Garmin bearer token.
+/// One-time credential returned to the UI. Deliberately not Codable: the raw
+/// token is persisted only inside a bounded, expiring Keychain retry record and
+/// is removed before successful pairing returns to the caller.
 struct GarminPairingCredential: Equatable, Identifiable, Sendable {
     let id: String
     let deviceToken: String
@@ -48,16 +49,66 @@ struct GarminDeviceBinding: Codable, Equatable, Sendable {
     let deviceID: String
 }
 
+enum GarminPendingCleanupKind: String, Codable, Sendable {
+    case revoke
+    case legacyRecovery = "legacy-recovery"
+}
+
 struct GarminPendingRevocation: Codable, Equatable, Sendable {
     let version: Int
     let userID: String
     let deviceID: String
+    let cleanupKind: GarminPendingCleanupKind
+
+    init(
+        version: Int,
+        userID: String,
+        deviceID: String,
+        cleanupKind: GarminPendingCleanupKind = .revoke
+    ) {
+        self.version = version
+        self.userID = userID
+        self.deviceID = deviceID
+        self.cleanupKind = cleanupKind
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case version, userID, deviceID, cleanupKind
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        version = try container.decode(Int.self, forKey: .version)
+        userID = try container.decode(String.self, forKey: .userID)
+        deviceID = try container.decode(String.self, forKey: .deviceID)
+        // Records written by versions before outcome-idempotent creation were
+        // always ordinary revocations and remain backward compatible.
+        cleanupKind = try container.decodeIfPresent(
+            GarminPendingCleanupKind.self,
+            forKey: .cleanupKind
+        ) ?? .revoke
+    }
+}
+
+struct GarminPendingDeviceCreation: Codable, Equatable, Sendable {
+    static let currentVersion = 1
+
+    let version: Int
+    let userID: String
+    let requestID: String
+    let deviceID: String
+    let deviceToken: String
+    let displayName: String
+    let createdAt: Date
+    let legacyFallbackAttempted: Bool
 }
 
 struct GarminDeviceBindingStore {
     private static let bindingAccountPrefix = "selected-device-v2."
     private static let pendingRevocationAccountPrefix = "pending-revocation-v2."
+    private static let pendingCreationAccountPrefix = "pending-creation-v1."
     private static let maximumRecordBytes = 1_024
+    private static let maximumPendingCreationAge: TimeInterval = 24 * 60 * 60
 
     private let keychain: any KeychainStoring
     private let encoder = JSONEncoder()
@@ -120,7 +171,11 @@ struct GarminDeviceBindingStore {
         return value
     }
 
-    func savePendingRevocation(userID: String, deviceID: String) throws {
+    func savePendingRevocation(
+        userID: String,
+        deviceID: String,
+        cleanupKind: GarminPendingCleanupKind = .revoke
+    ) throws {
         let userID = try canonicalUserID(userID)
         guard canonicalUUID(deviceID) == deviceID else {
             throw GarminCloudError.invalidBinding
@@ -129,7 +184,8 @@ struct GarminDeviceBindingStore {
             GarminPendingRevocation(
                 version: GarminDeviceBinding.currentVersion,
                 userID: userID,
-                deviceID: deviceID
+                deviceID: deviceID,
+                cleanupKind: cleanupKind
             )
         )
         guard data.count <= Self.maximumRecordBytes else {
@@ -143,6 +199,113 @@ struct GarminDeviceBindingStore {
         try keychain.delete(account: pendingAccount(for: userID))
     }
 
+    func pendingCreation(
+        for userID: String,
+        now: Date = Date()
+    ) throws -> GarminPendingDeviceCreation? {
+        let userID = try canonicalUserID(userID)
+        let account = pendingCreationAccount(for: userID)
+        guard let data = try keychain.read(account: account) else { return nil }
+        guard data.count <= Self.maximumRecordBytes,
+              let value = try? decoder.decode(GarminPendingDeviceCreation.self, from: data),
+              validPendingCreation(value, userID: userID),
+              value.createdAt <= now.addingTimeInterval(5 * 60) else {
+            try keychain.delete(account: account)
+            throw GarminCloudError.invalidBinding
+        }
+        if now.timeIntervalSince(value.createdAt) > Self.maximumPendingCreationAge {
+            _ = try promotePendingCreationToCleanup(for: userID, now: now)
+            throw GarminCloudError.pendingRevocation
+        }
+        return value
+    }
+
+    @discardableResult
+    func promotePendingCreationToCleanup(
+        for userID: String,
+        now: Date = Date()
+    ) throws -> GarminPendingRevocation? {
+        let userID = try canonicalUserID(userID)
+        let account = pendingCreationAccount(for: userID)
+        guard let data = try keychain.read(account: account) else {
+            return try pendingRevocation(for: userID)
+        }
+        guard data.count <= Self.maximumRecordBytes,
+              let creation = try? decoder.decode(GarminPendingDeviceCreation.self, from: data),
+              validPendingCreation(creation, userID: userID),
+              creation.createdAt <= now.addingTimeInterval(5 * 60) else {
+            // Never issue a server operation for an untrusted local ID. The
+            // malformed bearer is still removed before reporting the failure.
+            try keychain.delete(account: account)
+            throw GarminCloudError.invalidBinding
+        }
+        let cleanupKind: GarminPendingCleanupKind = creation.legacyFallbackAttempted
+            ? .legacyRecovery
+            : .revoke
+        if let existing = try pendingRevocation(for: userID) {
+            guard existing.deviceID == creation.deviceID,
+                  existing.cleanupKind == cleanupKind else {
+                // A single Keychain slot must never overwrite an older live
+                // cleanup obligation. Keep the raw retry record until the
+                // first cleanup is resolved.
+                throw GarminCloudError.pendingRevocation
+            }
+        } else {
+            try savePendingRevocation(
+                userID: userID,
+                deviceID: creation.deviceID,
+                cleanupKind: cleanupKind
+            )
+        }
+        try keychain.delete(account: account)
+        return try pendingRevocation(for: userID)
+    }
+
+    func save(pendingCreation value: GarminPendingDeviceCreation) throws {
+        let userID = try canonicalUserID(value.userID)
+        guard validPendingCreation(value, userID: userID) else {
+            throw GarminCloudError.invalidBinding
+        }
+        let data = try encoder.encode(value)
+        guard data.count <= Self.maximumRecordBytes else {
+            throw GarminCloudError.invalidBinding
+        }
+        try keychain.save(data, account: pendingCreationAccount(for: userID))
+    }
+
+    func clearPendingCreation(for userID: String) throws {
+        let userID = try canonicalUserID(userID)
+        try keychain.delete(account: pendingCreationAccount(for: userID))
+    }
+
+    func clearPendingCreation(
+        matching cleanup: GarminPendingRevocation,
+        now: Date = Date()
+    ) throws {
+        let userID = try canonicalUserID(cleanup.userID)
+        guard cleanup.version == GarminDeviceBinding.currentVersion,
+              canonicalUUID(cleanup.deviceID) == cleanup.deviceID else {
+            throw GarminCloudError.invalidBinding
+        }
+        let account = pendingCreationAccount(for: userID)
+        guard let data = try keychain.read(account: account) else { return }
+        guard data.count <= Self.maximumRecordBytes,
+              let creation = try? decoder.decode(GarminPendingDeviceCreation.self, from: data),
+              validPendingCreation(creation, userID: userID),
+              creation.createdAt <= now.addingTimeInterval(5 * 60) else {
+            try keychain.delete(account: account)
+            throw GarminCloudError.invalidBinding
+        }
+        let creationKind: GarminPendingCleanupKind = creation.legacyFallbackAttempted
+            ? .legacyRecovery
+            : .revoke
+        guard creation.deviceID == cleanup.deviceID,
+              creationKind == cleanup.cleanupKind else {
+            throw GarminCloudError.pendingRevocation
+        }
+        try keychain.delete(account: account)
+    }
+
     func deleteAll(for userID: String) throws {
         let userID = try canonicalUserID(userID)
         var firstError: Error?
@@ -153,6 +316,11 @@ struct GarminDeviceBindingStore {
         }
         do {
             try keychain.delete(account: pendingAccount(for: userID))
+        } catch {
+            firstError = firstError ?? error
+        }
+        do {
+            try keychain.delete(account: pendingCreationAccount(for: userID))
         } catch {
             firstError = firstError ?? error
         }
@@ -173,11 +341,48 @@ struct GarminDeviceBindingStore {
     private func pendingAccount(for userID: String) -> String {
         Self.pendingRevocationAccountPrefix + userID
     }
+
+    private func pendingCreationAccount(for userID: String) -> String {
+        Self.pendingCreationAccountPrefix + userID
+    }
+
+    private func validPendingCreation(
+        _ value: GarminPendingDeviceCreation,
+        userID: String
+    ) -> Bool {
+        value.version == GarminPendingDeviceCreation.currentVersion &&
+            value.userID == userID &&
+            canonicalVersion4UUIDString(value.requestID) == value.requestID &&
+            canonicalVersion4UUIDString(value.deviceID) == value.deviceID &&
+            isLowercaseHexToken(value.deviceToken) &&
+            (1 ... 80).contains(value.displayName.count) &&
+            value.displayName.utf8.count <= 320 &&
+            value.displayName == value.displayName.trimmingCharacters(in: .whitespacesAndNewlines) &&
+            !value.displayName.unicodeScalars.contains {
+                CharacterSet.controlCharacters.contains($0)
+            }
+    }
 }
 
 private func canonicalUUID(_ value: String) -> String? {
     guard value.utf8.count == 36, let uuid = UUID(uuidString: value) else { return nil }
     return uuid.uuidString.lowercased()
+}
+
+private func canonicalVersion4UUIDString(_ value: String) -> String? {
+    guard let canonical = canonicalUUID(value) else { return nil }
+    let versionIndex = canonical.index(canonical.startIndex, offsetBy: 14)
+    let variantIndex = canonical.index(canonical.startIndex, offsetBy: 19)
+    guard canonical[versionIndex] == "4",
+          "89ab".contains(canonical[variantIndex]) else { return nil }
+    return canonical
+}
+
+private func isLowercaseHexToken(_ value: String) -> Bool {
+    value.utf8.count == 64 && value.unicodeScalars.allSatisfy { scalar in
+        let code = Int(scalar.value)
+        return (48 ... 57).contains(code) || (97 ... 102).contains(code)
+    }
 }
 
 enum GarminPlanValidator {
@@ -277,6 +482,7 @@ enum GarminCloudError: LocalizedError {
     case pendingRevocation
     case bindingPersistenceFailed
     case deviceRefreshRequired
+    case deviceCreationRecoveryRequired
     case rotationConflict
     case enqueueConflict
     case requestFailed(statusCode: Int, message: String)
@@ -292,6 +498,7 @@ enum GarminCloudError: LocalizedError {
         case .pendingRevocation: return "A previous Garmin pairing is still awaiting secure revocation. Keep the app open and retry."
         case .bindingPersistenceFailed: return "The Garmin watch selection could not be stored securely, so its one-time token was not shown."
         case .deviceRefreshRequired: return "Refresh the Garmin watch list before rotating its token."
+        case .deviceCreationRecoveryRequired: return "A Garmin watch may already have been created by an older server, but its one-time token response was lost. Refresh the list, select that watch, and rotate its token instead of creating another one."
         case .rotationConflict: return "This watch changed elsewhere. Its details were refreshed; review the selection and retry token rotation."
         case .enqueueConflict: return "This workout queue request conflicts with an earlier submission and was not duplicated."
         case .requestFailed(_, let value): return value
@@ -317,6 +524,7 @@ final class GarminCloudService: ObservableObject {
     private let bindingStore: GarminDeviceBindingStore
     private var sessionSubscription: AnyCancellable?
     private var availableDevicesUserID: String?
+    private var observedSessionUserID: String?
 
     init(
         auth: AuthService,
@@ -326,15 +534,34 @@ final class GarminCloudService: ObservableObject {
         self.auth = auth
         self.urlSession = urlSession
         self.bindingStore = bindingStore
+        observedSessionUserID = canonicalUUID(auth.session?.cloud?.userID ?? "")
         reloadPublishedBinding(for: auth.session)
         sessionSubscription = auth.$session
             .removeDuplicates(by: { $0?.storageKey == $1?.storageKey })
             .sink { [weak self] session in
                 MainActor.assumeIsolated {
-                    self?.availableDevices = []
-                    self?.availableDevicesUserID = nil
-                    self?.lastMessage = nil
-                    self?.reloadPublishedBinding(for: session)
+                    guard let self else { return }
+                    let nextUserID = canonicalUUID(session?.cloud?.userID ?? "")
+                    var transitionError: String?
+                    if let previousUserID = self.observedSessionUserID,
+                       previousUserID != nextUserID {
+                        do {
+                            _ = try self.bindingStore.promotePendingCreationToCleanup(
+                                for: previousUserID
+                            )
+                        } catch {
+                            // The normal AppState transition performs this
+                            // synchronously before clearing auth. This fallback
+                            // still strips valid pending bearer material when a
+                            // lower-level AuthService account switch occurs.
+                            transitionError = error.localizedDescription
+                        }
+                    }
+                    self.observedSessionUserID = nextUserID
+                    self.availableDevices = []
+                    self.availableDevicesUserID = nil
+                    self.lastMessage = transitionError
+                    self.reloadPublishedBinding(for: session)
                 }
             }
     }
@@ -376,9 +603,56 @@ final class GarminCloudService: ObservableObject {
             userID: identity.canonicalUserID,
             deviceID: device.id
         )
+        let pendingCleanup = try bindingStore.pendingRevocation(
+            for: identity.canonicalUserID
+        )
+        if let pendingCleanup, pendingCleanup.cleanupKind != .legacyRecovery {
+            throw GarminCloudError.pendingRevocation
+        }
+        // An explicit owner choice supersedes any outcome-unknown legacy
+        // creation. Persist the selected binding before removing its recovery
+        // material so a Keychain write failure cannot lose both.
         try bindingStore.save(binding: binding)
+        try bindingStore.clearPendingCreation(for: identity.canonicalUserID)
+        if pendingCleanup?.cleanupKind == .legacyRecovery {
+            try bindingStore.clearPendingRevocation(for: identity.canonicalUserID)
+        }
         selectedDevice = binding
         lastMessage = "Selected Garmin watch: \(device.displayName)."
+    }
+
+    /// Removes any outcome-unknown raw creation credential before the owning
+    /// cloud session can be cleared. A failed remote revoke remains as a
+    /// nonsecret Keychain cleanup marker for the next same-owner session.
+    func prepareForSessionEnd(expectedUserID: String) async throws {
+        guard !isWorking else { throw GarminCloudError.busy }
+        let identity = try activeIdentity()
+        guard canonicalUUID(expectedUserID) == identity.canonicalUserID else {
+            throw AuthServiceError.sessionChanged
+        }
+        let pending = try bindingStore.promotePendingCreationToCleanup(
+            for: identity.canonicalUserID
+        )
+        guard let pending else { return }
+        if pending.cleanupKind == .legacyRecovery {
+            // The legacy endpoint generated its own device ID. The client
+            // nonce was never a bearer for that result and is now gone; list
+            // and explicit selection will recover it after the next sign-in.
+            lastMessage = GarminCloudError.deviceCreationRecoveryRequired.errorDescription
+            return
+        }
+        let session = try await auth.validCloudSession(expectedUserID: identity.rawUserID)
+        try ensureIdentityIsCurrent(identity)
+        if await bestEffortRevoke(
+            deviceID: pending.deviceID,
+            identity: identity,
+            token: session.accessToken
+        ) {
+            try bindingStore.clearPendingCreation(matching: pending)
+            try bindingStore.clearPendingRevocation(for: identity.canonicalUserID)
+        } else {
+            lastMessage = GarminCloudError.pendingRevocation.errorDescription
+        }
     }
 
     func createDevice(displayName: String = "Garmin watch") async throws -> GarminPairingCredential {
@@ -393,26 +667,79 @@ final class GarminCloudService: ObservableObject {
         let session = try await auth.validCloudSession(expectedUserID: identity.rawUserID)
         try ensureIdentityIsCurrent(identity)
         try await recoverPendingRevocation(identity: identity, token: session.accessToken)
-        let object = try await withAuthenticationRetry(
-            identity: identity,
-            fallbackToken: session.accessToken
-        ) { token in
-            try await self.requestObject(
-                path: "/functions/v1/garmin-sync",
-                method: "POST",
-                token: token,
-                body: [
-                    "action": "createDevice",
-                    "displayName": cleanDisplayName,
-                    "capabilityVersion": 2
-                ]
-            )
+        var persistedCreation = try bindingStore.pendingCreation(
+            for: identity.canonicalUserID
+        )
+        if let persistedCreation,
+           persistedCreation.displayName != cleanDisplayName {
+            throw GarminCloudError.deviceRefreshRequired
         }
-        let result = try parsePairingCredential(object)
+        if let durableCreation = persistedCreation {
+            let clearedAfterAuthoritativeEmpty = try await reconcilePersistedCreation(
+                durableCreation,
+                identity: identity,
+                token: session.accessToken
+            )
+            if clearedAfterAuthoritativeEmpty {
+                // Never reuse the one-shot legacy transition. A new request
+                // starts with fresh CSPRNG material after the owner list proves
+                // the earlier call created no active device.
+                try ensureIdentityIsCurrent(identity)
+                persistedCreation = nil
+            }
+        }
+        let creation: GarminPendingDeviceCreation
+        if let persistedCreation {
+            creation = persistedCreation
+        } else {
+            creation = GarminPendingDeviceCreation(
+                version: GarminPendingDeviceCreation.currentVersion,
+                userID: identity.canonicalUserID,
+                requestID: try canonicalVersion4UUID(UUID()),
+                deviceID: try canonicalVersion4UUID(UUID()),
+                deviceToken: try generateDeviceToken(),
+                displayName: cleanDisplayName,
+                createdAt: Date(),
+                legacyFallbackAttempted: false
+            )
+            try bindingStore.save(pendingCreation: creation)
+        }
+        let resultObject: DeviceCreationResponse
+        do {
+            resultObject = try await withAuthenticationRetry(
+                identity: identity,
+                fallbackToken: session.accessToken
+            ) { token in
+                try await self.requestDeviceCreation(
+                    creation,
+                    identity: identity,
+                    token: token
+                )
+            }
+        } catch GarminCloudError.requestFailed(let statusCode, _)
+            where statusCode == 409 {
+            // A request-ID/device-ID collision is definitive and owns no row
+            // for this payload. Do not persist or retry the rejected secret.
+            try? bindingStore.clearPendingCreation(for: identity.canonicalUserID)
+            throw GarminCloudError.deviceRefreshRequired
+        }
+        let result = try parsePairingCredential(resultObject.object)
+        if resultObject.idempotent {
+            guard let status = resultObject.object["status"] as? String,
+                  status == "created" || status == "already_created",
+                  resultObject.object["requestId"] as? String == creation.requestID,
+                  result.summary.id == creation.deviceID,
+                  result.summary.tokenRevision == 1,
+                  result.credential.deviceToken == creation.deviceToken,
+                  result.credential.displayName == creation.displayName else {
+                throw GarminCloudError.invalidResponse
+            }
+        }
         try await persistCreatedDevice(
             result,
             identity: identity,
-            token: session.accessToken
+            token: session.accessToken,
+            clearPendingCreation: true
         )
         lastMessage = "Device token created. Paste it into Garmin Connect IQ settings."
         return result.credential
@@ -577,6 +904,15 @@ final class GarminCloudService: ObservableObject {
         let credential: GarminPairingCredential
     }
 
+    private struct DeviceCreationResponse {
+        let object: [String: Any]
+        let idempotent: Bool
+    }
+
+    private enum DeviceCreationCompatibilityError: Error {
+        case unavailable
+    }
+
     private func beginOperation() throws {
         guard !isWorking else { throw GarminCloudError.busy }
         isWorking = true
@@ -629,6 +965,30 @@ final class GarminCloudService: ObservableObject {
             for: identity.canonicalUserID
         ) else { return }
         try ensureIdentityIsCurrent(identity)
+        if pending.cleanupKind == .legacyRecovery {
+            let object = try await withAuthenticationRetry(
+                identity: identity,
+                fallbackToken: token
+            ) { accessToken in
+                try await self.requestObject(
+                    path: "/functions/v1/garmin-sync",
+                    method: "POST",
+                    token: accessToken,
+                    body: ["action": "listDevices"]
+                )
+            }
+            let devices = try parseDeviceList(object)
+            try publishDevices(devices, for: identity)
+            guard devices.isEmpty else {
+                throw GarminCloudError.deviceCreationRecoveryRequired
+            }
+            // An authoritative empty owner list proves that no active legacy
+            // create remains. Scrub any partially-retained raw record before
+            // removing the durable recovery obligation.
+            try bindingStore.clearPendingCreation(matching: pending)
+            try bindingStore.clearPendingRevocation(for: identity.canonicalUserID)
+            return
+        }
         guard await bestEffortRevoke(
             deviceID: pending.deviceID,
             identity: identity,
@@ -636,14 +996,167 @@ final class GarminCloudService: ObservableObject {
         ) else {
             throw GarminCloudError.pendingRevocation
         }
+        // A prior marker write may have succeeded while raw-record deletion
+        // failed. Never clear the marker until that exact bearer is gone.
+        try bindingStore.clearPendingCreation(matching: pending)
         try bindingStore.clearPendingRevocation(for: identity.canonicalUserID)
         try ensureIdentityIsCurrent(identity)
+    }
+
+    private func reconcilePersistedCreation(
+        _ creation: GarminPendingDeviceCreation,
+        identity: ActiveIdentity,
+        token: String
+    ) async throws -> Bool {
+        guard creation.legacyFallbackAttempted else { return false }
+
+        // The released legacy endpoint generated its own ID/token, so an
+        // outcome-unknown call cannot be replayed safely. An authoritative
+        // owner list lets the user select/rotate a possible result without
+        // issuing a second create. Keep the retry record until that explicit
+        // selection (or account cleanup/expiry) supersedes it.
+        let object = try await withAuthenticationRetry(
+            identity: identity,
+            fallbackToken: token
+        ) { accessToken in
+            try await self.requestObject(
+                path: "/functions/v1/garmin-sync",
+                method: "POST",
+                token: accessToken,
+                body: ["action": "listDevices"]
+            )
+        }
+        let devices = try parseDeviceList(object)
+        try publishDevices(devices, for: identity)
+        if devices.isEmpty {
+            let cleanup = GarminPendingRevocation(
+                version: GarminDeviceBinding.currentVersion,
+                userID: identity.canonicalUserID,
+                deviceID: creation.deviceID,
+                cleanupKind: .legacyRecovery
+            )
+            try bindingStore.clearPendingCreation(matching: cleanup)
+            return true
+        }
+        throw GarminCloudError.deviceCreationRecoveryRequired
+    }
+
+    private func requestDeviceCreation(
+        _ creation: GarminPendingDeviceCreation,
+        identity: ActiveIdentity,
+        token: String
+    ) async throws -> DeviceCreationResponse {
+        let body: [String: Any] = [
+            "action": "createDeviceIdempotent",
+            "requestId": creation.requestID,
+            "deviceId": creation.deviceID,
+            "deviceNonce": creation.deviceToken,
+            "displayName": creation.displayName,
+            "capabilityVersion": 2
+        ]
+
+        do {
+            let object = try await requestObject(
+                path: "/functions/v1/garmin-sync",
+                method: "POST",
+                token: token,
+                body: body,
+                recognizeUnavailableIdempotentCreation: true
+            )
+            return DeviceCreationResponse(object: object, idempotent: true)
+        } catch DeviceCreationCompatibilityError.unavailable {
+            try ensureIdentityIsCurrent(identity)
+            let durableCreation = try bindingStore.pendingCreation(
+                for: identity.canonicalUserID
+            )
+            guard durableCreation?.requestID == creation.requestID,
+                  durableCreation?.deviceID == creation.deviceID,
+                  durableCreation?.deviceToken == creation.deviceToken,
+                  durableCreation?.displayName == creation.displayName,
+                  durableCreation?.legacyFallbackAttempted == false else {
+                throw GarminCloudError.deviceCreationRecoveryRequired
+            }
+            let legacyCreation = GarminPendingDeviceCreation(
+                version: creation.version,
+                userID: creation.userID,
+                requestID: creation.requestID,
+                deviceID: creation.deviceID,
+                deviceToken: creation.deviceToken,
+                displayName: creation.displayName,
+                createdAt: creation.createdAt,
+                legacyFallbackAttempted: true
+            )
+            // Persist the irreversible compatibility transition before the
+            // old endpoint. That endpoint is deliberately never retried after
+            // an outcome-unknown result.
+            try bindingStore.save(pendingCreation: legacyCreation)
+            let object: [String: Any]
+            do {
+                object = try await requestObject(
+                    path: "/functions/v1/garmin-sync",
+                    method: "POST",
+                    token: token,
+                    body: [
+                        "action": "createDevice",
+                        "displayName": creation.displayName,
+                        "capabilityVersion": 2
+                    ]
+                )
+            } catch let error as GarminCloudError {
+                if case .requestFailed(let statusCode, _) = error,
+                   statusCode == 401 || statusCode == 403 {
+                    // Authentication is rejected by the old Edge handler before
+                    // its database creator runs, so the refreshed-auth retry may
+                    // safely attempt the same compatibility transition again.
+                    try? bindingStore.save(pendingCreation: creation)
+                }
+                throw error
+            }
+            return DeviceCreationResponse(object: object, idempotent: false)
+        } catch let error as URLError where error.code != .cancelled {
+            try ensureIdentityIsCurrent(identity)
+            return try await retryExactDeviceCreation(
+                body: body,
+                identity: identity,
+                token: token
+            )
+        } catch GarminCloudError.requestFailed(let statusCode, _)
+            where (500 ... 599).contains(statusCode) {
+            try ensureIdentityIsCurrent(identity)
+            return try await retryExactDeviceCreation(
+                body: body,
+                identity: identity,
+                token: token
+            )
+        }
+    }
+
+    private func retryExactDeviceCreation(
+        body: [String: Any],
+        identity: ActiveIdentity,
+        token: String
+    ) async throws -> DeviceCreationResponse {
+        do {
+            let object = try await requestObject(
+                path: "/functions/v1/garmin-sync",
+                method: "POST",
+                token: token,
+                body: body,
+                recognizeUnavailableIdempotentCreation: true
+            )
+            return DeviceCreationResponse(object: object, idempotent: true)
+        } catch DeviceCreationCompatibilityError.unavailable {
+            // The first request had an unknown outcome; falling back to the
+            // non-idempotent endpoint now could create a second watch.
+            throw GarminCloudError.deviceCreationRecoveryRequired
+        }
     }
 
     private func persistCreatedDevice(
         _ result: ParsedPairingResult,
         identity: ActiveIdentity,
-        token: String
+        token: String,
+        clearPendingCreation: Bool
     ) async throws {
         do {
             try bindingStore.savePendingRevocation(
@@ -651,11 +1164,17 @@ final class GarminCloudService: ObservableObject {
                 deviceID: result.summary.id
             )
         } catch {
-            _ = await bestEffortRevoke(
+            if await bestEffortRevoke(
                 deviceID: result.summary.id,
                 identity: identity,
                 token: token
-            )
+            ) {
+                try? clearConfirmedCreationCleanup(
+                    userID: identity.canonicalUserID,
+                    deviceID: result.summary.id,
+                    clearPendingCreation: clearPendingCreation
+                )
+            }
             throw GarminCloudError.bindingPersistenceFailed
         }
 
@@ -667,7 +1186,11 @@ final class GarminCloudService: ObservableObject {
                 identity: identity,
                 token: token
             ) {
-                try? bindingStore.clearPendingRevocation(for: identity.canonicalUserID)
+                try? clearConfirmedCreationCleanup(
+                    userID: identity.canonicalUserID,
+                    deviceID: result.summary.id,
+                    clearPendingCreation: clearPendingCreation
+                )
             }
             throw error
         }
@@ -679,7 +1202,11 @@ final class GarminCloudService: ObservableObject {
         )
         do {
             try bindingStore.save(binding: binding)
-            try bindingStore.clearPendingRevocation(for: identity.canonicalUserID)
+            try clearConfirmedCreationCleanup(
+                userID: identity.canonicalUserID,
+                deviceID: result.summary.id,
+                clearPendingCreation: clearPendingCreation
+            )
         } catch {
             try? bindingStore.deleteBinding(for: identity.canonicalUserID)
             if await bestEffortRevoke(
@@ -687,7 +1214,11 @@ final class GarminCloudService: ObservableObject {
                 identity: identity,
                 token: token
             ) {
-                try? bindingStore.clearPendingRevocation(for: identity.canonicalUserID)
+                try? clearConfirmedCreationCleanup(
+                    userID: identity.canonicalUserID,
+                    deviceID: result.summary.id,
+                    clearPendingCreation: clearPendingCreation
+                )
             }
             throw GarminCloudError.bindingPersistenceFailed
         }
@@ -704,12 +1235,37 @@ final class GarminCloudService: ObservableObject {
                 token: token
             ) {
                 try? bindingStore.deleteBinding(for: identity.canonicalUserID)
-                try? bindingStore.clearPendingRevocation(for: identity.canonicalUserID)
+                try? clearConfirmedCreationCleanup(
+                    userID: identity.canonicalUserID,
+                    deviceID: result.summary.id,
+                    clearPendingCreation: clearPendingCreation
+                )
             }
             throw error
         }
         selectedDevice = binding
         replaceAvailableDevice(result.summary)
+    }
+
+    private func clearConfirmedCreationCleanup(
+        userID: String,
+        deviceID: String,
+        clearPendingCreation: Bool
+    ) throws {
+        let expected = GarminPendingRevocation(
+            version: GarminDeviceBinding.currentVersion,
+            userID: userID,
+            deviceID: deviceID
+        )
+        if clearPendingCreation {
+            // Exact owner/device/kind scrubbing must precede marker removal.
+            // If Keychain deletion fails, the marker remains to block replay.
+            try bindingStore.clearPendingCreation(matching: expected)
+        }
+        if let pending = try bindingStore.pendingRevocation(for: userID) {
+            guard pending == expected else { throw GarminCloudError.pendingRevocation }
+            try bindingStore.clearPendingRevocation(for: userID)
+        }
     }
 
     private func bestEffortRevoke(
@@ -988,7 +1544,8 @@ final class GarminCloudService: ObservableObject {
         method: String,
         token: String,
         prefer: String? = nil,
-        body: Any
+        body: Any,
+        recognizeUnavailableIdempotentCreation: Bool = false
     ) async throws -> [String: Any] {
         guard let url = URL(string: path, relativeTo: GymAppConfiguration.supabaseURL) else {
             throw GarminCloudError.invalidResponse
@@ -1044,6 +1601,14 @@ final class GarminCloudService: ObservableObject {
             ? nil
             : (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
         guard (200..<300).contains(http.statusCode) else {
+            if recognizeUnavailableIdempotentCreation,
+               let decodedObject,
+               decodedObject.count == 1,
+               let error = decodedObject["error"] as? String,
+               (http.statusCode == 400 && error == "Unknown action" ||
+                http.statusCode == 501 && error == "Idempotent device creation unavailable") {
+                throw DeviceCreationCompatibilityError.unavailable
+            }
             throw GarminCloudError.requestFailed(
                 statusCode: http.statusCode,
                 message: decodedObject.flatMap(safeServerError) ??

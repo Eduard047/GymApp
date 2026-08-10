@@ -432,6 +432,154 @@ class PushContractTest {
     }
 
     @Test
+    fun `revocation binding clear policy requires a durable marker`() {
+        val marker = PushPendingRevocation(
+            installationId = installationId,
+            userId = userId,
+            sessionGeneration = generation,
+            deleteProviderToken = true
+        )
+
+        assertFalse(
+            canClearPushBindingAfterRevocationPreparation(
+                marker = marker,
+                markerSaved = false
+            )
+        )
+        assertTrue(
+            canClearPushBindingAfterRevocationPreparation(
+                marker = marker,
+                markerSaved = true
+            )
+        )
+        assertTrue(
+            canClearPushBindingAfterRevocationPreparation(
+                marker = null,
+                markerSaved = false
+            )
+        )
+    }
+
+    @Test
+    fun `revocation marker save failure keeps binding as the next launch retry source`() {
+        val binding = PushInstallationBinding(
+            installationId = installationId,
+            userId = userId,
+            sessionGeneration = generation,
+            bindingId = bindingId,
+            registrationRevision = 3,
+            providerTokenDigest = providerTokenDigest(providerToken),
+            registeredAtMillis = 1
+        )
+        val marker = PushPendingRevocation(
+            installationId = installationId,
+            userId = userId,
+            sessionGeneration = generation,
+            deleteProviderToken = true
+        )
+
+        assertFalse(
+            canClearPushBindingAfterRevocationPreparation(
+                marker = marker,
+                markerSaved = false
+            )
+        )
+        assertEquals(
+            marker,
+            resolvePushPendingRevocation(
+                installationId = installationId,
+                existing = null,
+                persistedBinding = binding,
+                session = null,
+                deleteProviderToken = true
+            )
+        )
+    }
+
+    @Test
+    fun `cross-account registration requires durable cleanup for the previous owner`() {
+        val previousBinding = PushInstallationBinding(
+            installationId = installationId,
+            userId = userId,
+            sessionGeneration = generation,
+            bindingId = bindingId,
+            registrationRevision = 3,
+            providerTokenDigest = providerTokenDigest(providerToken),
+            registeredAtMillis = 1
+        )
+        val replacementSession = cloudSession(
+            "523e4567-e89b-42d3-a456-426614174000",
+            "623e4567-e89b-42d3-a456-426614174000"
+        )
+        val previousOwnerCleanup = PushPendingRevocation(
+            installationId = installationId,
+            userId = userId,
+            sessionGeneration = generation,
+            deleteProviderToken = false
+        )
+
+        assertFalse(
+            canBeginPushRegistration(
+                session = replacementSession,
+                binding = previousBinding,
+                pendingRevocation = null,
+                pendingMarkerSaved = false
+            )
+        )
+        assertFalse(
+            canBeginPushRegistration(
+                session = replacementSession,
+                binding = previousBinding,
+                pendingRevocation = previousOwnerCleanup,
+                pendingMarkerSaved = false
+            )
+        )
+        assertTrue(
+            canBeginPushRegistration(
+                session = replacementSession,
+                binding = previousBinding,
+                pendingRevocation = previousOwnerCleanup,
+                pendingMarkerSaved = true
+            )
+        )
+
+        val mismatchedCleanup = previousOwnerCleanup.copy(
+            userId = "723e4567-e89b-42d3-a456-426614174000"
+        )
+        assertFalse(
+            canBeginPushRegistration(
+                session = replacementSession,
+                binding = previousBinding,
+                pendingRevocation = mismatchedCleanup,
+                pendingMarkerSaved = true
+            )
+        )
+    }
+
+    @Test
+    fun `same-owner registration is not blocked by cleanup admission gate`() {
+        val currentSession = cloudSession(userId, generation)
+        val currentBinding = PushInstallationBinding(
+            installationId = installationId,
+            userId = userId,
+            sessionGeneration = generation,
+            bindingId = bindingId,
+            registrationRevision = 3,
+            providerTokenDigest = providerTokenDigest(providerToken),
+            registeredAtMillis = 1
+        )
+
+        assertTrue(
+            canBeginPushRegistration(
+                session = currentSession,
+                binding = currentBinding,
+                pendingRevocation = null,
+                pendingMarkerSaved = false
+            )
+        )
+    }
+
+    @Test
     fun `newer object revisions replace the same visible notification`() {
         val first = PushPayload.Live(
             bindingId = bindingId,

@@ -47,7 +47,7 @@ async function importHmacKey(secretHex: unknown): Promise<CryptoKey | null> {
   if (!SECRET_PATTERN.test(secretHex)) return null;
   const secret = hexToBytes(secretHex);
   if (!secret) return null;
-  return crypto.subtle.importKey(
+  return await crypto.subtle.importKey(
     "raw",
     secret,
     { name: "HMAC", hash: "SHA-256" },

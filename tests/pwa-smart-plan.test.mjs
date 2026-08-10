@@ -715,6 +715,157 @@ test("PWA profile inputs materially change a bounded session budget", () => {
   assert.equal(ppl.focus, "Push");
 });
 
+test("PWA Smart Coach keeps its generated set cap and manual sets through apply and replacement", async () => {
+  const context = loadPwaContext();
+  const result = JSON.parse(JSON.stringify(await vm.runInContext(`(async () => {
+    state = defaultAppState();
+    render = () => {};
+    showToast = () => {};
+    workoutDraft = {
+      startedAt: Date.now(),
+      note: "",
+      blocks: [{ exerciseName: "", sets: [{ weight: "", reps: "" }] }]
+    };
+    smartWorkoutEffort = "Standard";
+    generateSmartWorkout();
+    const budget = smartGeneratedPlan.setBudget;
+    const totalBefore = workoutDraft.blocks.reduce((sum, block) => sum + block.sets.length, 0);
+    const cappedIndex = workoutDraft.blocks.findIndex(block => {
+      const full = smartRecommendation(block, {
+        appliedEffort: block.smartEffort,
+        hardSlot: block.smartHardSlot === true,
+        recoverySteps: block.smartRecoverySteps
+      });
+      return full.sets.length > block.smartSetCap;
+    });
+    if (cappedIndex < 0) throw new Error("fixture did not produce a budget-capped exercise");
+    const block = workoutDraft.blocks[cappedIndex];
+    const cap = block.smartSetCap;
+    const panelSetCount = smartRecommendationForBlock(block).sets.length;
+
+    applySmart(cappedIndex);
+    const totalAfterApply = workoutDraft.blocks.reduce((sum, item) => sum + item.sets.length, 0);
+
+    await handleAction("remove-set", {
+      dataset: { block: String(cappedIndex), set: "0" }
+    });
+    await handleAction("add-set", { dataset: { block: String(cappedIndex) } });
+    block.sets.at(-1).weight = 321;
+    block.sets.at(-1).reps = 9;
+    await handleAction("copy-set", { dataset: { block: String(cappedIndex) } });
+    applySmart(cappedIndex);
+    const manualSets = block.sets.filter(set => set.smartManualSet === true);
+    const explicitExtraPreserved = manualSets.length === 2 && manualSets.every(set =>
+      set.weight === 321 && set.reps === 9
+    );
+    await handleAction("remove-set", {
+      dataset: { block: String(cappedIndex), set: "0" }
+    });
+    while (block.sets.length < window.GymStateContract.LIMITS.setsPerExercise) {
+      await handleAction("copy-set", { dataset: { block: String(cappedIndex) } });
+    }
+    const manualCountAtLimit = block.sets.filter(set => set.smartManualSet === true).length;
+    applySmart(cappedIndex);
+    const manualSetsAtLimit = block.sets.filter(set => set.smartManualSet === true);
+    const respectsSetLimit = block.sets.length === window.GymStateContract.LIMITS.setsPerExercise &&
+      manualSetsAtLimit.length === manualCountAtLimit && manualSetsAtLimit.every(set =>
+        set.weight === 321 && set.reps === 9
+      );
+
+    const current = state.exercises.find(exercise => exercise.catalogKey === "incline_bench_press");
+    workoutDraft = {
+      startedAt: Date.now(),
+      note: "",
+      blocks: [{
+        exerciseName: current.name,
+        catalogKey: current.catalogKey,
+        sets: Array.from({ length: 3 }, () => ({ weight: "", reps: 7 })),
+        smartGenerated: true,
+        smartEffort: "Standard",
+        smartHardSlot: false,
+        smartRecoverySteps: 1,
+        smartSetCap: 3
+      }]
+    };
+    const alternatives = smartExerciseAlternatives(current, [], 6);
+    const replacementCandidate = alternatives.find(candidate => smartRecommendation(candidate.exercise, {
+      appliedEffort: "Standard",
+      hardSlot: false,
+      recoverySteps: 1
+    }).sets.length > 3);
+    if (!replacementCandidate) throw new Error("fixture did not produce an over-cap alternative: " + JSON.stringify(
+      alternatives.map(candidate => ({
+        name: candidate.exercise.name,
+        sets: smartRecommendation(candidate.exercise, {
+          appliedEffort: "Standard",
+          hardSlot: false,
+          recoverySteps: 1
+        }).sets.length
+      }))
+    ));
+    modal = {
+      type: "smart-alternatives",
+      blockIndex: 0,
+      currentExerciseId: current.id,
+      currentIdentity: exerciseMatchKey(current),
+      draftStartedAt: workoutDraft.startedAt,
+      allowedExerciseIds: alternatives.map(candidate => candidate.exercise.id)
+    };
+    applySmartAlternative(0, replacementCandidate.exercise.id);
+    const totalAfterAlternative = workoutDraft.blocks.reduce((sum, item) => sum + item.sets.length, 0);
+    return {
+      budget,
+      totalBefore,
+      totalAfterApply,
+      totalAfterAlternative,
+      panelSetCount,
+      cap,
+      replacementSetCount: workoutDraft.blocks[0].sets.length,
+      replacementName: workoutDraft.blocks[0].exerciseName,
+      previousName: current.name,
+      explicitExtraPreserved,
+      respectsSetLimit
+    };
+  })()`, context)));
+
+  assert.ok(result.totalBefore <= result.budget);
+  assert.equal(result.panelSetCount, result.cap);
+  assert.equal(result.totalAfterApply, result.totalBefore);
+  assert.equal(result.explicitExtraPreserved, true);
+  assert.equal(result.respectsSetLimit, true);
+  assert.equal(result.totalAfterAlternative, 3);
+  assert.equal(result.replacementSetCount, 3);
+  assert.notEqual(result.replacementName, result.previousName);
+});
+
+test("PWA daily streak follows local calendar days across daylight-saving changes", () => {
+  const previousTimezone = process.env.TZ;
+  process.env.TZ = "Europe/Kyiv";
+  try {
+    const context = loadPwaContext();
+    const march29 = new Date(2026, 2, 29, 12, 0, 0, 0).getTime();
+    const march30 = new Date(2026, 2, 30, 12, 0, 0, 0).getTime();
+    const march31 = new Date(2026, 2, 31, 12, 0, 0, 0).getTime();
+    const result = vm.runInContext(`(() => {
+      state = defaultAppState();
+      state.sessions = [
+        { id: 1, startedAt: ${march29}, note: "", sets: [] },
+        { id: 2, startedAt: ${march30}, note: "", sets: [] }
+      ];
+      return {
+        throughToday: streakDays(${march30}),
+        throughYesterday: streakDays(${march31})
+      };
+    })()`, context);
+
+    assert.equal(result.throughToday, 2);
+    assert.equal(result.throughYesterday, 2);
+  } finally {
+    if (previousTimezone === undefined) delete process.env.TZ;
+    else process.env.TZ = previousTimezone;
+  }
+});
+
 test("PWA Auto selects recovery from recent target-muscle work and never promotes Hard", () => {
   const context = loadPwaContext();
   const profile = { split: "Full Body", days: 3, goal: "Balanced", calories: "Maintenance" };

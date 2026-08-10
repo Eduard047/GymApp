@@ -1,0 +1,105 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import test from "node:test";
+
+const expected = Object.freeze({
+  marketingVersion: "3.0.6",
+  androidVersionCode: "2000305332",
+  iosBuildNumber: "24",
+  pwaBundle: "app.v83.js",
+  pwaRussianBundle: "russian-text.v76.js",
+  pwaCache: "gym-pwa-v119",
+});
+
+const [
+  gradleProperties,
+  xcodeProject,
+  archiveScript,
+  garminManifest,
+  pwaApp,
+  pwaBundle,
+  pwaRussianText,
+  pwaRussianBundle,
+  pwaIndex,
+  pwaServiceWorker,
+] = await Promise.all([
+  readFile("gradle.properties", "utf8"),
+  readFile("ios/GymApp-iOS/GymApp.xcodeproj/project.pbxproj", "utf8"),
+  readFile("ios/GymApp-iOS/Scripts/archive-app-store.sh", "utf8"),
+  readFile("garmin/manifest.xml", "utf8"),
+  readFile("pwa/app.js", "utf8"),
+  readFile(`pwa/${expected.pwaBundle}`, "utf8"),
+  readFile("pwa/russian-text.js", "utf8"),
+  readFile(`pwa/${expected.pwaRussianBundle}`, "utf8"),
+  readFile("pwa/index.html", "utf8"),
+  readFile("pwa/sw.js", "utf8"),
+]);
+
+function matches(source, pattern) {
+  return [...source.matchAll(pattern)].map((match) => match[1]);
+}
+
+test("Android release metadata declares GymApp 3.0.6 with the next versionCode", () => {
+  assert.match(
+    gradleProperties,
+    new RegExp(`^appVersionName=${expected.marketingVersion.replaceAll(".", "\\.")}$`, "m")
+  );
+  assert.match(
+    gradleProperties,
+    new RegExp(`^appVersionCode=${expected.androidVersionCode}$`, "m")
+  );
+});
+
+test("iOS app target and archive defaults agree on release version and build", () => {
+  assert.deepEqual(
+    matches(xcodeProject, /^\s*MARKETING_VERSION = ([^;]+);$/gm),
+    [expected.marketingVersion, expected.marketingVersion, "1.0", "1.0"]
+  );
+  assert.deepEqual(
+    matches(xcodeProject, /^\s*CURRENT_PROJECT_VERSION = ([^;]+);$/gm),
+    [expected.iosBuildNumber, expected.iosBuildNumber, "1", "1"]
+  );
+  assert.match(
+    archiveScript,
+    new RegExp(`MARKETING_VERSION="\\$\\{MARKETING_VERSION:-${expected.marketingVersion.replaceAll(".", "\\.")}\\}"`)
+  );
+  assert.match(
+    archiveScript,
+    new RegExp(`BUILD_NUMBER="\\$\\{BUILD_NUMBER:-${expected.iosBuildNumber}\\}"`)
+  );
+});
+
+test("Garmin and the immutable PWA entrypoints agree with release 3.0.6", () => {
+  assert.match(
+    garminManifest,
+    new RegExp(`\\bversion="${expected.marketingVersion.replaceAll(".", "\\.")}"`)
+  );
+  assert.match(
+    pwaIndex,
+    new RegExp(`src="\\./${expected.pwaBundle.replaceAll(".", "\\.")}"`)
+  );
+  assert.match(
+    pwaIndex,
+    new RegExp(`src="\\./${expected.pwaRussianBundle.replaceAll(".", "\\.")}"`)
+  );
+  const cacheSuffix = expected.pwaCache.replace(/^gym-pwa-/, "");
+  assert.match(pwaServiceWorker, /CACHE_PREFIX\s*=\s*"gym-pwa-"/);
+  assert.match(
+    pwaServiceWorker,
+    new RegExp(`CACHE_VERSION\\s*=\\s*"${cacheSuffix}"`)
+  );
+  assert.match(
+    pwaServiceWorker,
+    /CACHE_NAME\s*=\s*`\$\{CACHE_PREFIX\}\$\{CACHE_VERSION\}`/
+  );
+  assert.match(
+    pwaServiceWorker,
+    new RegExp(`"\\./${expected.pwaRussianBundle.replaceAll(".", "\\.")}"`)
+  );
+  assert.equal(pwaBundle, pwaApp, "the immutable PWA bundle must equal canonical app.js");
+  assert.equal(
+    pwaRussianBundle,
+    pwaRussianText,
+    "the immutable Russian bundle must equal canonical russian-text.js"
+  );
+});

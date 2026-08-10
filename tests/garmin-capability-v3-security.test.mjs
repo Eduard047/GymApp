@@ -88,7 +88,7 @@ test("the Edge gateway fast-authenticates v3 and bounds the legacy transition", 
   assert.match(edge, /if \(value === undefined \|\| value === 2\) return 2/);
   assert.match(edge, /legacyEnabled && typeof value === "string"/);
   assert.match(edge, /verifyGarminCapability\(value, hmacSecret\)/);
-  assert.match(edge, /candidate\?\.error !== "Invalid device"[\s\S]*recordCapabilityUse/);
+  assert.match(edge, /candidate\?\.error !== "Invalid device"[\s\S]*scheduleCapabilityUse/);
   assert.match(fetch, /!legacyCapabilitiesEnabled && DEVICE_NONCE_PATTERN\.test\(deviceToken\)[\s\S]*426/);
   assert.doesNotMatch(fetch, /p_device_token: deviceToken/);
   assert.doesNotMatch(ack, /p_device_token: deviceToken/);
@@ -142,7 +142,7 @@ test("unowned released v2 tokens are cleared on every account transition", async
 test("PWA preserves released watches while the future binary binds v3 to account and device", async () => {
   const [app, versionedApp, comm, store, properties, worker] = await Promise.all([
     readFile("pwa/app.js", "utf8"),
-    readFile("pwa/app.v82.js", "utf8"),
+    readFile("pwa/app.v83.js", "utf8"),
     readFile("garmin/source/GymComm.mc", "utf8"),
     readFile("garmin/source/GymStore.mc", "utf8"),
     readFile("garmin/resources/settings/properties.xml", "utf8"),
@@ -157,7 +157,7 @@ test("PWA preserves released watches while the future binary binds v3 to account
   assert.match(app, /replacementNonce/);
   assert.match(app, /capabilityVersion: GARMIN_CAPABILITY_VERSION/);
   assert.match(app, /GARMIN_CAPABILITY_PATTERN\.exec\(token\)/);
-  assert.match(worker, /CACHE_VERSION = "v118"/);
+  assert.match(worker, /CACHE_VERSION = "v119"/);
 
   assert.match(comm, /cloudCapabilityLength = 234/);
   assert.match(comm, /legacyCapabilityLength = 64/);

@@ -37,11 +37,11 @@ import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
 import com.example.gymapp.data.repository.BadgeRarity
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.Replay
-import androidx.compose.material.icons.filled.TrendingUp
 import com.example.gymapp.ui.viewmodel.AchievementPreviewUiModel
 import com.example.gymapp.ui.viewmodel.ActivityHeatmapDayUiModel
 import com.example.gymapp.ui.viewmodel.ActivityHeatmapUiModel
@@ -515,7 +515,7 @@ fun AchievementPreviewCard(
 
 private fun achievementBadgeIcon(id: String): ImageVector = when {
     id.startsWith("streak_") -> Icons.Default.LocalFireDepartment
-    id.startsWith("volume_") -> Icons.Default.TrendingUp
+    id.startsWith("volume_") -> Icons.AutoMirrored.Filled.TrendingUp
     id == "comeback" -> Icons.Default.Replay
     id == "first_workout" -> Icons.Default.FitnessCenter
     else -> Icons.Default.EmojiEvents

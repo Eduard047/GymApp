@@ -425,6 +425,17 @@ final class AppState: ObservableObject {
             }
         }
         if let cloudUserID = auth.session?.cloud?.userID {
+            do {
+                try await garminCloud.prepareForSessionEnd(
+                    expectedUserID: cloudUserID
+                )
+            } catch {
+                // Do not complete logout while an outcome-unknown Garmin
+                // bearer remains in Keychain. The user can retry after the
+                // current Garmin operation or local storage failure resolves.
+                show(error: error)
+                return false
+            }
             await nativePushManager?.prepareForSessionEnd(expectedUserID: cloudUserID)
         }
         clearRestTimersForAccountTransition(to: nil)
