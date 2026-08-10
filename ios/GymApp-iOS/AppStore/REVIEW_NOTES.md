@@ -85,7 +85,7 @@ The JSON/PDF tools under **Profile → Backup & diagnostics** intentionally invo
 - [x] Live/push migrations through `20260810092029`, `social-live-gateway` version 3, and `push-dispatch` version 4 are deployed and read back from the exact production project. APNs/FCM/Web Push credentials and dispatcher/monitor schedules are configured; focused contract/security checks and empty-queue production smokes passed without sending customer notifications.
 - [ ] Verify two-account Realtime reconnect/wrong-user denial and notification opt-in/denial/revocation/account-switch fencing plus invite/join/start/finish/close delivery on clean physical devices. Real APNs production receipt and tap behavior must be tested on a signed physical iPhone; a simulator, signed archive, empty-queue smoke, or provider mock is insufficient.
 - [x] The Garmin limiter/capability migrations are deployed and a disposable valid device completed fetch/ack/replay plus the v2 gateway cutover on 2026-07-22.
-- [ ] Publish the refreshed combined privacy policy/support source and shared assets to the separate `gh-pages` branch, then verify both live without login. The pre-redesign pages were last verified live on 2026-07-20; this source-only update intentionally did not deploy them.
+- [x] Published the refreshed privacy policy, support page, and PWA assets to the separate `gh-pages` branch on 2026-08-10. Verified both pages live without login and byte-checked the production `app.v82.js`, `supabase-config.v58.js`, `russian-text.v75.js`, and `sw.js` (cache `gymapp-pwa-v118`) against the reviewed source.
 - [x] Non-obvious functionality and the optional Garmin limitation are described above.
 - [ ] No test, debug, staging, or hidden feature remains in the submitted build.
 
