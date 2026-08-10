@@ -1,7 +1,7 @@
 "use strict";
 
 const CACHE_PREFIX = "gym-pwa-";
-const CACHE_VERSION = "v116";
+const CACHE_VERSION = "v118";
 const CACHE_NAME = `${CACHE_PREFIX}${CACHE_VERSION}`;
 const LEGACY_GITHUB_ORIGIN = "https://eduard047.github.io";
 const LEGACY_GITHUB_SCOPE = `${LEGACY_GITHUB_ORIGIN}/GymApp/`;
@@ -10,6 +10,13 @@ const IS_LEGACY_GITHUB_ORIGIN = self.location.origin === LEGACY_GITHUB_ORIGIN &&
   self.registration.scope === LEGACY_GITHUB_SCOPE;
 const LEGACY_CLEANUP_URL = new URL("./legacy-origin-cleanup-v62.html", self.registration.scope);
 const LEGACY_CONFIRMATION_URL = new URL("./confirmed.html", self.registration.scope);
+const PUSH_BINDING_DB_NAME = "gymapp-push-binding-v1";
+const PUSH_BINDING_DB_VERSION = 1;
+const PUSH_BINDING_STORE_NAME = "current-bindings";
+const PUSH_BINDING_RECORD_KEY = "current";
+const PUSH_BINDING_TRANSITION_KEY = "transition";
+const PUSH_BINDING_UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const EXERCISE_MEDIA_KEYS = [
   "bench_press", "dumbbell_bench_press", "incline_dumbbell_press", "incline_bench_press",
   "chest_fly_machine", "push_up", "dips", "pull_up", "assisted_pull_up", "assisted_dip", "band_assisted_pull_up",
@@ -32,15 +39,18 @@ const ASSETS = [
   "./theme.v56.js",
   "./styles.v68.css",
   "./muscle-regions.v56.js",
-  "./supabase-config.v56.js",
+  "./supabase-config.v58.js",
   "./state-contract.v69.js",
   "./garmin-cloud-sync.v57.js",
   "./progression-rules.v56.js",
   "./shared-workout.v65.js",
   "./shared-workout-flow.v71.js",
-  "./russian-text.v74.js",
+  "./supabase-realtime.v1.js",
+  "./live-workout.v1.js",
+  "./live-workout-state.v1.js",
+  "./russian-text.v75.js",
   "./exercise-search-vocabulary.v1.js",
-  "./app.v81.js",
+  "./app.v82.js",
   "./workout/",
   "./workout/index.html",
   "./workout/landing.v1.css",
@@ -85,7 +95,7 @@ const INDEX_CSP = [
   "script-src 'self'",
   "style-src 'self'",
   "img-src 'self' data:",
-  "connect-src 'self' https://owrcbsrectdgaotndtxy.supabase.co",
+  "connect-src 'self' https://owrcbsrectdgaotndtxy.supabase.co wss://owrcbsrectdgaotndtxy.supabase.co",
   "worker-src 'self'",
   "manifest-src 'self'",
   "object-src 'none'",
@@ -213,6 +223,197 @@ async function deleteLegacyGithubScopeCacheEntries() {
   }));
 }
 
+const PUSH_LIVE_KINDS = new Set([
+  "invite", "joined", "started", "participant_finished", "room_closed"
+]);
+const PUSH_SOCIAL_TYPES = new Set([
+  "friend_request_received", "friend_request_accepted",
+  "workout_invite_received", "workout_invite_accepted"
+]);
+const PUSH_ROOM_PATTERN = /^lr_[0-9a-f]{32}$/;
+const PUSH_FRIENDSHIP_PATTERN = /^f_[0-9a-f]{32}$/;
+const PUSH_WORKOUT_INVITE_PATTERN = /^wi_[0-9a-f]{32}$/;
+
+function pushBindingRecord(value) {
+  const row = pushExactObject(value, ["version", "bindingId", "ownerId"]);
+  if (row.version !== 1 || !PUSH_BINDING_UUID_PATTERN.test(row.bindingId || "") ||
+      !PUSH_BINDING_UUID_PATTERN.test(row.ownerId || "")) {
+    throw new TypeError("Push binding is invalid.");
+  }
+  return row;
+}
+
+function openPushBindingDatabase() {
+  return new Promise((resolve, reject) => {
+    if (!self.indexedDB) {
+      reject(new Error("Push binding storage is unavailable."));
+      return;
+    }
+    const request = self.indexedDB.open(PUSH_BINDING_DB_NAME, PUSH_BINDING_DB_VERSION);
+    request.onupgradeneeded = () => {
+      const database = request.result;
+      if (!database.objectStoreNames.contains(PUSH_BINDING_STORE_NAME)) {
+        database.createObjectStore(PUSH_BINDING_STORE_NAME);
+      }
+    };
+    request.onerror = () => reject(request.error || new Error("Push binding storage failed."));
+    request.onblocked = () => reject(new Error("Push binding storage is blocked."));
+    request.onsuccess = () => resolve(request.result);
+  });
+}
+
+async function storedPushBinding() {
+  const database = await openPushBindingDatabase();
+  try {
+    return await new Promise((resolve, reject) => {
+      const transaction = database.transaction(PUSH_BINDING_STORE_NAME, "readonly");
+      const store = transaction.objectStore(PUSH_BINDING_STORE_NAME);
+      const request = store.get(PUSH_BINDING_RECORD_KEY);
+      const transitionRequest = store.get(PUSH_BINDING_TRANSITION_KEY);
+      let value = null;
+      let transitionBlocked = false;
+      request.onsuccess = () => {
+        try {
+          value = request.result === undefined ? null : pushBindingRecord(request.result);
+        } catch {
+          value = null;
+        }
+      };
+      transitionRequest.onsuccess = () => {
+        transitionBlocked = transitionRequest.result !== undefined;
+      };
+      request.onerror = () => reject(request.error || new Error("Push binding read failed."));
+      transitionRequest.onerror = () => reject(
+        transitionRequest.error || new Error("Push transition read failed.")
+      );
+      transaction.onabort = () => reject(transaction.error || new Error("Push binding read aborted."));
+      transaction.onerror = () => {};
+      transaction.oncomplete = () => resolve(transitionBlocked ? null : value);
+    });
+  } finally {
+    database.close();
+  }
+}
+
+async function pushBindingMatches(bindingId) {
+  if (!PUSH_BINDING_UUID_PATTERN.test(bindingId || "")) return false;
+  try {
+    const stored = await storedPushBinding();
+    return stored?.bindingId === bindingId;
+  } catch {
+    return false;
+  }
+}
+
+function pushExactObject(value, keys) {
+  if (!value || typeof value !== "object" || Array.isArray(value) ||
+      Object.keys(value).sort().join(",") !== [...keys].sort().join(",")) {
+    throw new TypeError("Push payload fields are invalid.");
+  }
+  return value;
+}
+
+function pushBoundedInteger(value, min = 0) {
+  if (!Number.isSafeInteger(value) || value < min || value > 2147483647) {
+    throw new TypeError("Push revision is invalid.");
+  }
+  return value;
+}
+
+function pushData(value) {
+  if (Object.hasOwn(value || {}, "kind")) {
+    const row = pushExactObject(value, [
+      "version", "bindingId", "kind", "roomId", "roomRevision"
+    ]);
+    if (row.version !== 1 || !PUSH_LIVE_KINDS.has(row.kind) ||
+        !PUSH_BINDING_UUID_PATTERN.test(row.bindingId || "") ||
+        !PUSH_ROOM_PATTERN.test(row.roomId || "")) {
+      throw new TypeError("Push live data is invalid.");
+    }
+    return {
+      version: 1,
+      bindingId: row.bindingId,
+      kind: row.kind,
+      roomId: row.roomId,
+      roomRevision: pushBoundedInteger(row.roomRevision, 1)
+    };
+  }
+  const row = pushExactObject(value, [
+    "version", "bindingId", "type", "objectId", "objectRevision"
+  ]);
+  const pattern = String(row.type || "").startsWith("workout_invite_")
+    ? PUSH_WORKOUT_INVITE_PATTERN
+    : PUSH_FRIENDSHIP_PATTERN;
+  if (row.version !== 1 || !PUSH_BINDING_UUID_PATTERN.test(row.bindingId || "") ||
+      !PUSH_SOCIAL_TYPES.has(row.type) ||
+      !pattern.test(row.objectId || "")) {
+    throw new TypeError("Push social data is invalid.");
+  }
+  return {
+    version: 1,
+    bindingId: row.bindingId,
+    type: row.type,
+    objectId: row.objectId,
+    objectRevision: pushBoundedInteger(row.objectRevision)
+  };
+}
+
+function pushText(value, maxLength) {
+  if (typeof value !== "string" || value.length < 1 || value.length > maxLength ||
+      /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/u.test(value)) {
+    throw new TypeError("Push notification copy is invalid.");
+  }
+  return value;
+}
+
+function pushEnvelope(value) {
+  const root = pushExactObject(value, ["version", "notification", "data"]);
+  const notification = pushExactObject(root.notification, ["title", "body", "tag"]);
+  if (root.version !== 1 || typeof notification.tag !== "string" ||
+      !/^[A-Za-z0-9_-]{1,32}$/.test(notification.tag)) {
+    throw new TypeError("Push notification is invalid.");
+  }
+  return {
+    version: 1,
+    notification: {
+      title: pushText(notification.title, 120),
+      body: pushText(notification.body, 240),
+      tag: notification.tag
+    },
+    data: pushData(root.data)
+  };
+}
+
+function pushNavigationUrl(data) {
+  const target = new URL("./", self.registration.scope);
+  target.searchParams.set("notification", data.roomId ? "live" : "social");
+  return target;
+}
+
+async function openPushTarget(data) {
+  const target = pushNavigationUrl(pushData(data));
+  const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+  const scope = new URL(self.registration.scope);
+  const existing = windows.find(client => {
+    try {
+      const url = new URL(client.url);
+      return url.origin === scope.origin && url.pathname.startsWith(scope.pathname);
+    } catch {
+      return false;
+    }
+  });
+  if (existing) {
+    existing.postMessage({
+      version: 1,
+      type: "gymapp_notification_click",
+      target: data.roomId ? "live" : "social"
+    });
+    await existing.focus();
+    return;
+  }
+  await self.clients.openWindow(target.href);
+}
+
 if (IS_LEGACY_GITHUB_ORIGIN) {
   self.addEventListener("install", event => {
     event.waitUntil(Promise.resolve(self.skipWaiting()));
@@ -241,6 +442,42 @@ if (IS_LEGACY_GITHUB_ORIGIN) {
     event.respondWith(Promise.resolve(Response.redirect(LEGACY_CLEANUP_URL.href, 302)));
   });
 } else {
+  self.addEventListener("push", event => {
+    let envelope;
+    try {
+      envelope = pushEnvelope(event.data?.json());
+    } catch {
+      return;
+    }
+    event.waitUntil((async () => {
+      if (!await pushBindingMatches(envelope.data.bindingId)) return;
+      await self.registration.showNotification(envelope.notification.title, {
+        body: envelope.notification.body,
+        tag: envelope.notification.tag,
+        icon: new URL("./icon-192.png", self.registration.scope).href,
+        badge: new URL("./icon-192.png", self.registration.scope).href,
+        data: envelope.data,
+        renotify: false,
+        requireInteraction: false
+      });
+    })());
+  });
+
+  self.addEventListener("notificationclick", event => {
+    let data;
+    try {
+      data = pushData(event.notification?.data);
+    } catch {
+      event.notification?.close?.();
+      return;
+    }
+    event.notification.close();
+    event.waitUntil((async () => {
+      if (!await pushBindingMatches(data.bindingId)) return;
+      await openPushTarget(data);
+    })());
+  });
+
   self.addEventListener("install", event => {
     const requests = ASSETS.map(asset => new Request(
       new URL(asset, self.registration.scope).href,
