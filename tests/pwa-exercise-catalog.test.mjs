@@ -240,6 +240,86 @@ function sharedWorkoutFixture() {
   };
 }
 
+function activeLiveInboxFixture(roomId = `lr_${"a".repeat(32)}`) {
+  return {
+    version: 1,
+    invitations: [],
+    rooms: [{
+      roomId,
+      status: "active",
+      roomRevision: 3,
+      role: "participant",
+      memberState: "joined",
+      membershipRevision: 2,
+      createdAt: "2026-08-10T08:00:00Z",
+      startedAt: "2026-08-10T08:05:00Z",
+      activeExpiresAt: "2026-08-11T08:05:00Z",
+      summary: { exerciseCount: 1, setCount: 1, exerciseNames: ["Bench Press"] },
+      peer: { profileId: "p_22222222222222222222222222222222", displayName: "Friend" }
+    }]
+  };
+}
+
+function activeLiveSnapshotFixture(roomId = `lr_${"a".repeat(32)}`) {
+  return {
+    version: 1,
+    room: {
+      roomId,
+      status: "active",
+      roomRevision: 3,
+      closeReason: null,
+      createdAt: "2026-08-10T08:00:00Z",
+      inviteExpiresAt: "2026-08-17T08:00:00Z",
+      startedAt: "2026-08-10T08:05:00Z",
+      activeExpiresAt: "2026-08-11T08:05:00Z",
+      endedAt: null,
+      summary: { exerciseCount: 1, setCount: 1, exerciseNames: ["Bench Press"] }
+    },
+    plan: {
+      version: 1,
+      exercises: [{
+        exerciseId: "e_01",
+        catalogKey: "bench_press",
+        name: "Bench Press",
+        sets: [{ setId: "s_01_01", weight: 80, reps: 8 }]
+      }]
+    },
+    participants: [{
+      isSelf: false,
+      profile: { profileId: "p_22222222222222222222222222222222", displayName: "Friend" },
+      role: "owner",
+      state: "joined",
+      membershipRevision: 2,
+      joinedAt: "2026-08-10T08:01:00Z",
+      finishedAt: null,
+      departedAt: null,
+      progress: {
+        version: 1,
+        revision: 1,
+        completedSets: [],
+        undoableSetId: null,
+        finishedAt: null
+      }
+    }, {
+      isSelf: true,
+      profile: { profileId: "p_11111111111111111111111111111111", displayName: "Me" },
+      role: "participant",
+      state: "joined",
+      membershipRevision: 2,
+      joinedAt: "2026-08-10T08:01:00Z",
+      finishedAt: null,
+      departedAt: null,
+      progress: {
+        version: 1,
+        revision: 1,
+        completedSets: [],
+        undoableSetId: null,
+        finishedAt: null
+      }
+    }]
+  };
+}
+
 function testAccessToken(userId, sessionId) {
   const encode = value => Buffer.from(JSON.stringify(value)).toString("base64url");
   return `${encode({ alg: "none", typ: "JWT" })}.${encode({
@@ -1100,20 +1180,24 @@ test("older manual backups preserve existing favorites while explicit false can 
   assert.equal(cloudProtected.favorite, true);
 });
 
-test("Profile owns account tools and keeps protected friends below them", () => {
+test("Profile defaults to protected friends and keeps account tools in their own segment", () => {
   const context = loadPwaContext();
   vm.runInContext(`
     activeAccount = { id: "local-v2-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", name: "Profile Owner", localIdVersion: 2 };
     state = defaultAppState();
   `, context);
-  const profile = vm.runInContext("friendsProfileScreen()", context);
+  const trainingProfile = vm.runInContext("friendsProfileScreen()", context);
+  const settingsProfile = vm.runInContext('profileHubSection = "settings"; friendsProfileScreen()', context);
   const exercises = vm.runInContext("exercisesScreen()", context);
 
-  assert.match(profile, /Profile Owner/);
-  assert.match(profile, /support\.html/);
-  assert.match(profile, /privacy-policy\.html/);
-  assert.ok(profile.indexOf("Profile Owner") < profile.indexOf("Cloud sign-in required"));
-  assert.match(profile, /Friends/);
+  assert.match(trainingProfile, /Profile Owner/);
+  assert.match(trainingProfile, /Friends &amp; live|Friends & live/);
+  assert.match(trainingProfile, /Cloud sign-in required/);
+  assert.match(trainingProfile, /id="profile-settings-panel"[^>]*hidden/);
+  assert.match(settingsProfile, /Profile Owner/);
+  assert.match(settingsProfile, /support\.html/);
+  assert.match(settingsProfile, /privacy-policy\.html/);
+  assert.match(settingsProfile, /id="profile-training-panel"[^>]*hidden/);
   assert.doesNotMatch(exercises, /Profile Owner|support\.html|privacy-policy\.html|export-json/);
   assert.equal(vm.runInContext('titleForRoute({ name: "leaderboard" })', context), "Profile");
 });
@@ -1167,6 +1251,7 @@ test("friend caches and in-flight work are invalidated by account generation", (
     source: null,
     dashboard: null,
     inbox: null,
+    friendCode: null,
     error: ""
   });
   assert.deepEqual(jsonFrom(context, "socialDetailState"), {
@@ -1311,6 +1396,152 @@ test("friend dashboard parser is exact, bounded, and renders server text as text
     () => vm.runInContext(`parseSocialDashboard(${JSON.stringify(normalizedInvalidTimestamp)})`, context),
     /timestamp is invalid/
   );
+});
+
+test("short friend codes stay separate from profile identity and normalize human input", () => {
+  const context = loadPwaContext();
+  assert.equal(
+    vm.runInContext('parseSocialMyFriendCode({ version: 1, friendCode: "g_a1b2c3d4e5f6" })', context),
+    "g_a1b2c3d4e5f6"
+  );
+  assert.equal(
+    vm.runInContext('formatSocialFriendCode("g_a1b2c3d4e5f6")', context),
+    "GYM-A1B2-C3D4-E5F6"
+  );
+  assert.equal(
+    vm.runInContext('normalizeSocialFriendCodeInput("  GYM-A1B2-C3D4-E5F6  ")', context),
+    "g_a1b2c3d4e5f6"
+  );
+  assert.equal(
+    vm.runInContext('normalizeSocialFriendCodeInput("g_a1b2c3d4e5f6")', context),
+    "g_a1b2c3d4e5f6"
+  );
+  assert.equal(
+    vm.runInContext('normalizeSocialFriendCodeInput("p_11111111111111111111111111111111")', context),
+    "p_11111111111111111111111111111111"
+  );
+  assert.equal(
+    vm.runInContext('normalizeSocialFriendCodeInput(" ".repeat(65) + "GYM-A1B2-C3D4-E5F6")', context),
+    null
+  );
+  assert.equal(
+    vm.runInContext('normalizeSocialFriendCodeInput("€".repeat(43))', context),
+    null
+  );
+  assert.equal(vm.runInContext('normalizeSocialFriendCodeInput("GYM-AAAA-BBBB")', context), null);
+  assert.throws(
+    () => vm.runInContext('parseSocialMyFriendCode({ version: 1, friendCode: "p_11111111111111111111111111111111" })', context),
+    /friend code is invalid/
+  );
+  assert.throws(
+    () => vm.runInContext('parseSocialMyFriendCode({ version: 1, friendCode: "g_a1b2c3d4e5f6", profileId: "p_11111111111111111111111111111111" })', context),
+    /shape/
+  );
+  assert.throws(
+    () => vm.runInContext('parseSocialMyFriendCode({ version: 1, friendCode: "g_A1B2C3D4E5F6" })', context),
+    /friend code is invalid/
+  );
+  const normalizer = appSource.slice(
+    appSource.indexOf("function normalizeSocialFriendCodeInput"),
+    appSource.indexOf("function formatSocialFriendCode")
+  );
+  assert.ok(normalizer.indexOf("MAX_SOCIAL_FRIEND_CODE_INPUT_CHARACTERS") < normalizer.indexOf("value.trim()"));
+  assert.ok(normalizer.indexOf("MAX_SOCIAL_FRIEND_CODE_INPUT_BYTES") < normalizer.indexOf("value.trim()"));
+});
+
+test("bounded PostgREST errors expose only a validated structured code", async () => {
+  const requestError = async body => {
+    const context = loadPwaContext({
+      fetchImpl: async () => new Response(body, {
+        status: 404,
+        headers: { "Content-Type": "application/json" }
+      })
+    });
+    vm.runInContext(`window.GYM_SUPABASE = {
+      url: "https://project.supabase.co",
+      anonKey: "sb_publishable_test_key"
+    }`, context);
+    try {
+      await vm.runInContext(
+        'supabaseRequest("/rest/v1/rpc/social_my_friend_code", { method: "POST", anonymous: true, body: "{}" })',
+        context
+      );
+      assert.fail("request must reject");
+    } catch (error) {
+      return error;
+    }
+  };
+
+  for (const code of ["PGRST202", "42883"]) {
+    const error = await requestError(JSON.stringify({
+      code,
+      details: null,
+      hint: null,
+      message: "Function unavailable"
+    }));
+    assert.equal(error.status, 404);
+    assert.equal(error.postgrestCode, code);
+  }
+  for (const body of [
+    JSON.stringify({ message: "missing code" }),
+    JSON.stringify({ code: "PGRST202", message: "extra field", extra: true }),
+    JSON.stringify({ code: "not-a-code", message: "invalid code" }),
+    "{malformed"
+  ]) {
+    const error = await requestError(body);
+    assert.equal(error.status, 404);
+    assert.equal(error.postgrestCode, undefined);
+  }
+  assert.equal(
+    vm.runInContext(`parseBoundedPostgrestError(JSON.stringify({
+      code: "PGRST202",
+      message: "x".repeat(MAX_REMOTE_ERROR_RESPONSE_BYTES)
+    }))`, loadPwaContext()),
+    null
+  );
+});
+
+test("human friend codes submit the compact locator and copy only the formatted public code", async () => {
+  const context = loadPwaContext();
+  const dashboard = socialDashboardFixture();
+  vm.runInContext(`
+    activeAccount = {
+      id: "remote-11111111-1111-4111-8111-111111111111",
+      userId: "11111111-1111-4111-8111-111111111111",
+      remote: "supabase",
+      name: "Owner"
+    };
+    accountEpoch = 18;
+    loadRemoteSession = () => ({ user: { id: activeAccount.userId } });
+    socialState = {
+      status: "loaded",
+      source: socialSourceKey(),
+      dashboard: parseSocialDashboard(${JSON.stringify(dashboard)}),
+      inbox: null,
+      friendCode: "g_a1b2c3d4e5f6",
+      error: ""
+    };
+    app.querySelector = selector => selector === "#social-friend-code"
+      ? { value: "GYM-0A0B-1C1D-2E2F" }
+      : null;
+    let submittedFriendCode = null;
+    socialRpc = async (name, body) => {
+      submittedFriendCode = { name, body };
+      return { version: 1, result: "submitted_or_unavailable" };
+    };
+    refreshSocialData = async () => {};
+    render = () => {};
+    showToast = () => {};
+    let copiedFriendCode = null;
+    navigator.clipboard = { writeText: async value => { copiedFriendCode = value; } };
+  `, context);
+  await vm.runInContext("sendFriendRequest()", context);
+  assert.deepEqual(jsonFrom(context, "submittedFriendCode"), {
+    name: "social_send_friend_request",
+    body: { p_friend_code: "g_0a0b1c1d2e2f" }
+  });
+  assert.equal(await vm.runInContext("copyCurrentFriendCode()", context), true);
+  assert.equal(vm.runInContext("copiedFriendCode", context), "GYM-A1B2-C3D4-E5F6");
 });
 
 test("friend details expose only bounded summaries and independent entered bests", () => {
@@ -1483,6 +1714,7 @@ test("dashboard refresh invalidates and refetches an open friend detail after pr
     flushPendingRemoteSave = async () => {};
     socialRpc = async name => {
       if (name === "social_dashboard") return ${JSON.stringify(dashboard)};
+      if (name === "social_my_friend_code") return { version: 1, friendCode: "g_a1b2c3d4e5f6" };
       if (name === "social_workout_inbox") return { version: 1, pendingIncomingCount: 0, incoming: [], outgoing: [] };
       if (name === "social_friend_details") return ${JSON.stringify(refreshedDetail)};
       throw new Error("unexpected RPC");
@@ -1491,10 +1723,136 @@ test("dashboard refresh invalidates and refetches an open friend detail after pr
   `, context);
   await vm.runInContext("refreshSocialData(true)", context);
   const value = jsonFrom(context, "socialDetailState.value");
+  assert.equal(vm.runInContext("socialState.friendCode", context), "g_a1b2c3d4e5f6");
   assert.equal(value.sharing.recentWorkouts, false);
   assert.equal(value.sharing.records, false);
   assert.deepEqual(value.recentWorkouts, []);
   assert.doesNotMatch(JSON.stringify(value), /stale private row/);
+});
+
+test("friend-code refresh falls back only for validated missing-function errors and drops late account results", async () => {
+  const dashboard = socialDashboardFixture();
+  dashboard.pendingWorkoutInviteCount = 0;
+  const inbox = { version: 1, pendingIncomingCount: 0, incoming: [], outgoing: [] };
+
+  for (const missingCode of ["PGRST202", "42883"]) {
+    const fallbackContext = loadPwaContext();
+    vm.runInContext(`
+      activeAccount = {
+        id: "remote-11111111-1111-4111-8111-111111111111",
+        userId: "11111111-1111-4111-8111-111111111111",
+        remote: "supabase",
+        name: "Owner"
+      };
+      accountEpoch = 20;
+      remoteAuthEnabled = () => true;
+      loadRemoteSession = () => ({ user: { id: activeAccount.userId } });
+      render = () => {};
+      socialRpc = async name => {
+        if (name === "social_dashboard") return ${JSON.stringify(dashboard)};
+        if (name === "social_workout_inbox") return ${JSON.stringify(inbox)};
+        if (name === "social_my_friend_code") {
+          const error = new Error("missing function");
+          error.status = 404;
+          error.postgrestCode = ${JSON.stringify(missingCode)};
+          throw error;
+        }
+        throw new Error("unexpected RPC");
+      };
+    `, fallbackContext);
+    await vm.runInContext("refreshSocialData(true)", fallbackContext);
+    assert.equal(vm.runInContext("socialState.status", fallbackContext), "loaded");
+    assert.equal(
+      vm.runInContext("socialState.friendCode", fallbackContext),
+      dashboard.self.friendCode
+    );
+  }
+
+  const rejectedFallbacks = [
+    { label: "code-less 404", status: 404 },
+    { label: "other 404", status: 404, code: "PGRST205" },
+    { label: "invalid JWT", status: 401, code: "PGRST301" },
+    { label: "service unavailable", status: 503, code: "PGRST000" },
+    { label: "network failure" },
+    { label: "malformed 2xx", value: { version: 1, friendCode: "g_A1B2C3D4E5F6" } }
+  ];
+  for (const scenario of rejectedFallbacks) {
+    const failedContext = loadPwaContext();
+    vm.runInContext(`
+      const friendCodeFailureScenario = ${JSON.stringify(scenario)};
+      activeAccount = {
+        id: "remote-11111111-1111-4111-8111-111111111111",
+        userId: "11111111-1111-4111-8111-111111111111",
+        remote: "supabase",
+        name: "Owner"
+      };
+      accountEpoch = 20;
+      remoteAuthEnabled = () => true;
+      loadRemoteSession = () => ({ user: { id: activeAccount.userId } });
+      render = () => {};
+      socialRpc = async name => {
+        if (name === "social_dashboard") return ${JSON.stringify(dashboard)};
+        if (name === "social_workout_inbox") return ${JSON.stringify(inbox)};
+        if (name === "social_my_friend_code") {
+          if (Object.hasOwn(friendCodeFailureScenario, "value")) {
+            return friendCodeFailureScenario.value;
+          }
+          const error = new Error(friendCodeFailureScenario.label);
+          if (Object.hasOwn(friendCodeFailureScenario, "status")) error.status = friendCodeFailureScenario.status;
+          if (friendCodeFailureScenario.code) error.postgrestCode = friendCodeFailureScenario.code;
+          throw error;
+        }
+        throw new Error("unexpected RPC");
+      };
+    `, failedContext);
+    await vm.runInContext("refreshSocialData(true)", failedContext);
+    assert.equal(
+      vm.runInContext("socialState.status", failedContext),
+      "error",
+      scenario.label
+    );
+    assert.equal(vm.runInContext("socialState.dashboard", failedContext), null, scenario.label);
+    assert.equal(vm.runInContext("socialState.friendCode", failedContext), null, scenario.label);
+  }
+
+  const staleContext = loadPwaContext();
+  vm.runInContext(`
+    let socialCodeResolve;
+    let sessionUserId = "11111111-1111-4111-8111-111111111111";
+    const delayedSocialCode = new Promise(resolve => { socialCodeResolve = resolve; });
+    activeAccount = {
+      id: "remote-11111111-1111-4111-8111-111111111111",
+      userId: sessionUserId,
+      remote: "supabase",
+      name: "Owner A"
+    };
+    accountEpoch = 21;
+    remoteAuthEnabled = () => true;
+    loadRemoteSession = () => ({ user: { id: sessionUserId } });
+    render = () => {};
+    socialRpc = async name => {
+      if (name === "social_dashboard") return ${JSON.stringify(dashboard)};
+      if (name === "social_workout_inbox") return ${JSON.stringify(inbox)};
+      if (name === "social_my_friend_code") return delayedSocialCode;
+      throw new Error("unexpected RPC");
+    };
+  `, staleContext);
+  const staleRefresh = vm.runInContext("refreshSocialData(true)", staleContext);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  vm.runInContext(`
+    accountEpoch += 1;
+    sessionUserId = "22222222-2222-4222-8222-222222222222";
+    activeAccount = {
+      id: "remote-22222222-2222-4222-8222-222222222222",
+      userId: sessionUserId,
+      remote: "supabase",
+      name: "Owner B"
+    };
+    socialCodeResolve({ version: 1, friendCode: "g_a1b2c3d4e5f6" });
+  `, staleContext);
+  await staleRefresh;
+  assert.equal(vm.runInContext("socialState.friendCode", staleContext), null);
+  assert.equal(vm.runInContext("socialState.dashboard", staleContext), null);
 });
 
 test("workout invitation parser rejects private fields and enforces the canonical plan", () => {
@@ -1996,6 +2354,243 @@ test("live invitation UI escapes friend data and exposes join or decline only", 
   assert.match(markup, /data-action="respond-live-invite" data-decision="accept"/);
   assert.match(markup, /data-decision="decline"/);
   assert.doesNotMatch(markup, /<Friend>|userId|sessionId|completedSets/);
+});
+
+test("live room renders escaped per-exercise self and peer set lanes", () => {
+  const context = loadPwaContext();
+  const snapshot = activeLiveSnapshotFixture();
+  snapshot.room.summary.setCount = 2;
+  snapshot.room.summary.exerciseNames = ["<Bench & Row>"];
+  snapshot.plan.exercises[0].name = "<Bench & Row>";
+  snapshot.plan.exercises[0].sets.push({ setId: "s_01_02", weight: 70, reps: 10 });
+  snapshot.participants[0].profile.displayName = "<Friend>";
+  snapshot.participants[0].progress.completedSets = [{
+    setId: "s_01_01",
+    weight: 80,
+    reps: 8,
+    completedAt: "2026-08-10T08:10:00Z"
+  }];
+  snapshot.participants[0].progress.undoableSetId = "s_01_01";
+  snapshot.participants[1].progress.completedSets = [{
+    setId: "s_01_02",
+    weight: 70,
+    reps: 10,
+    completedAt: "2026-08-10T08:11:00Z"
+  }];
+  snapshot.participants[1].progress.undoableSetId = "s_01_02";
+  vm.runInContext(`
+    state.language = "uk";
+    matrixSnapshot = window.GymLiveWorkout.snapshot(${JSON.stringify(snapshot)});
+  `, context);
+
+  const markup = vm.runInContext("liveWorkoutExerciseMatrixMarkup(matrixSnapshot)", context);
+  assert.match(markup, /&lt;Bench &amp; Row&gt;/);
+  assert.match(markup, /data-live-lane="self"[^]*?<strong role="rowheader">Ти<\/strong>/);
+  assert.match(markup, /data-live-lane="peer"[^]*?<strong role="rowheader">&lt;Friend&gt;<\/strong>/);
+  assert.match(markup, /data-live-lane="self"[^]*?data-live-set-state="pending"[^]*?data-live-set-state="completed"/);
+  assert.match(markup, /data-live-lane="peer"[^]*?data-live-set-state="completed"[^]*?data-live-set-state="pending"/);
+  assert.match(markup, /aria-label="Підхід 2: Записано"/);
+  assert.doesNotMatch(markup, /<Bench & Row>|<Friend>|userId|sessionId/);
+
+  vm.runInContext(`state.language = "ru"`, context);
+  const russianMarkup = vm.runInContext(
+    "liveWorkoutExerciseMatrixMarkup(matrixSnapshot)",
+    context
+  );
+  assert.match(russianMarkup, /Прогресс друзей/);
+  assert.match(russianMarkup, /<strong role="rowheader">Вы<\/strong>/);
+  assert.match(russianMarkup, /aria-label="Подход 2: Записано"/);
+  assert.doesNotMatch(russianMarkup, /Friends progress|Recorded|Planned|Set progress/);
+
+  snapshot.plan.exercises[0].name = "Straight Arm Pulldown";
+  snapshot.plan.exercises[0].catalogKey = "straight_arm_pulldown";
+  snapshot.room.summary.exerciseNames = ["Straight Arm Pulldown"];
+  vm.runInContext(`
+    state.language = "ru";
+    matrixSnapshot = window.GymLiveWorkout.snapshot(${JSON.stringify(snapshot)});
+  `, context);
+  const craneMarkup = vm.runInContext(
+    "liveWorkoutExerciseMatrixMarkup(matrixSnapshot)",
+    context
+  );
+  assert.match(craneMarkup, /Журавель — тяга прямыми руками/);
+  assert.doesNotMatch(craneMarkup, /Straight Arm Pulldown/);
+});
+
+test("PWA push targets preserve an exact live room and clean consumed URL state", () => {
+  const context = loadPwaContext();
+  const roomId = `lr_${"b".repeat(32)}`;
+  assert.deepEqual(jsonFrom(context,
+    `parseAppPushData({ version: 1, target: "live", roomId: "${roomId}" })`
+  ), { version: 1, target: "live", roomId });
+  assert.deepEqual(jsonFrom(context,
+    `parseAppPushData({ version: 1, target: "live" })`
+  ), { version: 1, target: "live" });
+  assert.deepEqual(jsonFrom(context,
+    `parseAppPushData({ version: 1, target: "social" })`
+  ), { version: 1, target: "social" });
+  assert.throws(() => vm.runInContext(
+    `parseAppPushData({ version: 1, target: "social", roomId: "${roomId}" })`,
+    context
+  ), /cannot select a live room/);
+  assert.throws(() => vm.runInContext(
+    `parseAppPushData({ version: 1, target: "live", roomId: "lr_not-valid" })`,
+    context
+  ), /room is invalid/);
+  assert.throws(() => vm.runInContext(
+    `parseAppPushData({ version: 1, target: "live", roomId: "${roomId}", url: "https:\/\/evil.example" })`,
+    context
+  ), /shape is invalid/);
+
+  vm.runInContext(`
+    window.location.href = "https://gymapptracker.com/GymApp/?notification=live&room=${roomId}&keep=1#section";
+    capturedPushCleanUrl = null;
+    history.replaceState = (_state, _title, url) => { capturedPushCleanUrl = url; };
+  `, context);
+  assert.deepEqual(jsonFrom(context, "captureAppPushTargetFromLocation()"), {
+    version: 1,
+    target: "live",
+    roomId
+  });
+  assert.equal(vm.runInContext("capturedPushCleanUrl", context), "/GymApp/?keep=1#section");
+
+  vm.runInContext(`
+    window.location.href = "https://gymapptracker.com/GymApp/?notification=live&room=lr_not-valid&keep=1";
+    capturedPushCleanUrl = null;
+  `, context);
+  assert.equal(vm.runInContext("captureAppPushTargetFromLocation()", context), null);
+  assert.equal(vm.runInContext("capturedPushCleanUrl", context), "/GymApp/?keep=1");
+});
+
+test("a precise live push opens only a server-visible room and fences a late account result", async () => {
+  const context = loadPwaContext();
+  const userId = "11111111-1111-4111-8111-111111111111";
+  const sessionId = "22222222-2222-4222-8222-222222222222";
+  const roomId = `lr_${"b".repeat(32)}`;
+  vm.runInContext(`
+    activeAccount = {
+      id: "remote-${userId}", userId: "${userId}", remote: "supabase", name: "Owner"
+    };
+    saveRemoteSession({
+      access_token: ${JSON.stringify(testAccessToken(userId, sessionId))},
+      refresh_token: "refresh-test", user: { id: "${userId}" }
+    });
+    render = () => {};
+    replaceNavigationHistory = () => {};
+    precisePushRoomId = null;
+    refreshLiveWorkoutData = async (_force, requestedRoomId) => {
+      precisePushRoomId = requestedRoomId;
+      liveWorkoutState = {
+        status: "loaded", source: "test", error: "", snapshot: null,
+        inbox: window.GymLiveWorkout.inbox(${JSON.stringify(activeLiveInboxFixture(roomId))})
+      };
+      return true;
+    };
+  `, context);
+  assert.equal(vm.runInContext(
+    `openAppPushTarget({ version: 1, target: "live", roomId: "${roomId}" })`,
+    context
+  ), true);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(vm.runInContext("precisePushRoomId", context), roomId);
+  assert.deepEqual(jsonFrom(context, "modal"), { type: "live-workout-room", roomId });
+
+  vm.runInContext(`
+    modal = null;
+    refreshLiveWorkoutData = async () => {
+      liveWorkoutState = {
+        status: "loaded", source: "test", error: "", snapshot: null,
+        inbox: window.GymLiveWorkout.inbox(
+          ${JSON.stringify(activeLiveInboxFixture(`lr_${"d".repeat(32)}`))}
+        )
+      };
+      return true;
+    };
+  `, context);
+  assert.equal(await vm.runInContext(`openLiveWorkoutPushRoom("${roomId}")`, context), false);
+  assert.equal(vm.runInContext("modal", context), null);
+
+  vm.runInContext(`
+    refreshLiveWorkoutData = async () => {
+      accountEpoch += 1;
+      return true;
+    };
+  `, context);
+  assert.equal(await vm.runInContext(`openLiveWorkoutPushRoom("${roomId}")`, context), false);
+  assert.equal(vm.runInContext("modal", context), null);
+});
+
+test("an accepted room discovered as active auto-attaches and opens its frozen workout", async () => {
+  const context = loadPwaContext();
+  const userId = "11111111-1111-4111-8111-111111111111";
+  const sessionId = "22222222-2222-4222-8222-222222222222";
+  const roomId = `lr_${"c".repeat(32)}`;
+  vm.runInContext(`
+    activeAccount = {
+      id: "remote-${userId}", userId: "${userId}", remote: "supabase", name: "Owner"
+    };
+    localStorage.setItem(AUTH_KEY, JSON.stringify(activeAccount));
+    saveRemoteSession({
+      access_token: ${JSON.stringify(testAccessToken(userId, sessionId))},
+      refresh_token: "refresh-test", user: { id: "${userId}" }
+    });
+    state = defaultAppState();
+    let autoAttachUid = 8_000_000_000_000_000;
+    uid = () => ++autoAttachUid;
+    activeWorkout = null;
+    activeWorkoutStorageRaw = null;
+    workoutDraft = null;
+    liveWorkoutBinding = null;
+    liveWorkoutState = { status: "idle", source: null, inbox: null, snapshot: null, error: "" };
+    liveWorkoutAutoAttachAttempts.clear();
+    autoAttachGatewayCalls = [];
+    const autoAttachInbox = window.GymLiveWorkout.inbox(
+      ${JSON.stringify(activeLiveInboxFixture(roomId))}
+    );
+    const autoAttachSnapshot = window.GymLiveWorkout.snapshot(
+      ${JSON.stringify(activeLiveSnapshotFixture(roomId))}
+    );
+    liveGateway = async (action, payload) => {
+      autoAttachGatewayCalls.push({ action, payload });
+      if (action === "live_inbox") return autoAttachInbox;
+      if (action === "live_snapshot" && payload.roomId === "${roomId}") return autoAttachSnapshot;
+      throw new Error("unexpected live gateway call");
+    };
+    withActiveWorkoutMutationLock = async (_descriptor, operation) => ({
+      acquired: true, value: await operation()
+    });
+    ensureLiveWorkoutRealtime = async () => false;
+    syncWebPushIfEnabled = () => {};
+    scheduleLiveWorkoutPoll = () => {};
+    recoverFinishedLiveWorkoutIntent = () => false;
+    drainLiveWorkoutOperations = async () => true;
+    render = () => {};
+    showToast = message => { autoAttachToast = message; };
+  `, context);
+
+  assert.equal(await vm.runInContext("refreshLiveWorkoutData(true, null)", context), true);
+  const calls = jsonFrom(context, "autoAttachGatewayCalls");
+  assert.deepEqual(calls.map(call => call.action), ["live_inbox", "live_snapshot"]);
+  assert.deepEqual(calls[1].payload, { roomId });
+  assert.deepEqual(jsonFrom(context, `({
+    bindingRoomId: liveWorkoutBinding?.roomId || null,
+    activeWorkoutStarted: activeWorkout !== null,
+    toast: typeof autoAttachToast === "string" ? autoAttachToast : ""
+  })`), {
+    bindingRoomId: roomId,
+    activeWorkoutStarted: true,
+    toast: ""
+  });
+  assert.equal(vm.runInContext("activeWorkout.blocks[0].exerciseName", context), "Bench Press");
+  assert.equal(vm.runInContext("activeWorkout.id <= MAX_LIVE_LOCAL_WORKOUT_ID", context), true);
+  assert.deepEqual(jsonFrom(context, "nav.map(item => item.name)"), ["workouts", "active"]);
+  assert.equal(vm.runInContext("modal", context), null);
+  assert.equal(vm.runInContext("liveWorkoutAutoAttachAttempts.size", context), 1);
+
+  const localWorkoutId = vm.runInContext("activeWorkout.id", context);
+  assert.equal(await vm.runInContext("refreshLiveWorkoutData(true)", context), true);
+  assert.equal(vm.runInContext("activeWorkout.id", context), localWorkoutId);
+  assert.equal(vm.runInContext("liveWorkoutAutoAttachAttempts.size", context), 1);
 });
 
 test("opening a live push keeps invitation actions visible when a waiting snapshot is available", () => {

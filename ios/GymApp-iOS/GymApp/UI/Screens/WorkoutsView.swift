@@ -20,6 +20,7 @@ public struct WorkoutsView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @ObservedObject private var store: WorkoutStore
+    @AppStorage("app-language") private var languageCode = AppLanguage.english.rawValue
 
     @State private var referenceDate = Date()
     @State private var monthOffset = 0
@@ -48,7 +49,7 @@ public struct WorkoutsView: View {
         GymBackground {
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(spacing: 12) {
+                    LazyVStack(spacing: GymTheme.contentSpacing) {
                         screenHeader
 
                         focusLens
@@ -69,9 +70,9 @@ public struct WorkoutsView: View {
                             workoutListContent
                                 .id(Section.workouts)
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .padding(.bottom, 16)
+                    .padding(.horizontal, GymTheme.screenHorizontalInset)
+                    .padding(.top, GymTheme.screenVerticalInset)
+                    .padding(.bottom, GymTheme.screenBottomInset)
                 }
                 .scrollIndicators(.hidden)
                 .onChange(of: section) { newSection in
@@ -98,23 +99,11 @@ public struct WorkoutsView: View {
     }
 
     private var screenHeader: some View {
-        HStack(alignment: .top, spacing: 12) {
-            headerCopy
-            Spacer(minLength: 8)
+        GymScreenHeader(
+            title: "Workouts",
+            supporting: "Your training history and next best move."
+        ) {
             AppLanguageMenu()
-        }
-        .padding(.top, 8)
-    }
-
-    private var headerCopy: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text("Workouts")
-                .font(.largeTitle.bold())
-                .foregroundStyle(GymTheme.textPrimary)
-                .accessibilityAddTraits(.isHeader)
-            Text("Your training history and next best move.")
-                .font(.subheadline)
-                .foregroundStyle(GymTheme.textSecondary)
         }
     }
 
@@ -124,7 +113,8 @@ public struct WorkoutsView: View {
                 Text(gymText(
                     "YOUR NEXT MOVE",
                     "ТВІЙ НАСТУПНИЙ КРОК",
-                    languageCode: gymCurrentLanguageCode()
+                    "ТВОЙ СЛЕДУЮЩИЙ ШАГ",
+                    languageCode: languageCode
                 ))
                 .font(.caption2.bold())
                 .tracking(0.9)
@@ -133,7 +123,8 @@ public struct WorkoutsView: View {
                 Text(gymText(
                     "Build today’s session",
                     "Склади тренування на сьогодні",
-                    languageCode: gymCurrentLanguageCode()
+                    "Составь тренировку на сегодня",
+                    languageCode: languageCode
                 ))
                 .font(.system(.largeTitle, design: .rounded, weight: .bold))
                 .tracking(-0.8)
@@ -144,7 +135,8 @@ public struct WorkoutsView: View {
                 Text(gymText(
                     "Ready when you are. Start simple and shape the workout as you go.",
                     "Починай, коли готовий. Складай тренування поступово, у своєму темпі.",
-                    languageCode: gymCurrentLanguageCode()
+                    "Начинай, когда будешь готов. Собирай тренировку постепенно, в своём темпе.",
+                    languageCode: languageCode
                 ))
                 .font(.subheadline)
                 .foregroundStyle(Color.white.opacity(0.84))
@@ -154,34 +146,29 @@ public struct WorkoutsView: View {
             HStack(alignment: .top, spacing: 14) {
                 focusMetric(
                     value: "\(dashboardStats.workoutCount)",
-                    label: gymText("Workouts", "Тренувань", languageCode: gymCurrentLanguageCode())
+                    label: gymText("Workouts", "Тренувань", "Тренировок", languageCode: languageCode)
                 )
                 focusMetric(
                     value: "\(dashboardStats.weeklyStreakWeeks)",
-                    label: gymText("Week streak", "Тижні серії", languageCode: gymCurrentLanguageCode())
+                    label: gymText("Week streak", "Тижні серії", "Серия недель", languageCode: languageCode)
                 )
                 focusMetric(
                     value: formattedMetric(dashboardStats.totalVolume),
-                    label: gymText("Volume", "Обсяг", languageCode: gymCurrentLanguageCode())
+                    label: gymText("Volume", "Обсяг", "Объём", languageCode: languageCode)
                 )
             }
 
-            HStack(alignment: .center, spacing: 12) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(
-                        selectedMonth.formatted(
-                            .dateTime
-                                .month(.wide)
-                                .year()
-                                .locale(AppLanguage(rawValue: gymCurrentLanguageCode())?.locale ?? AppLanguage.english.locale)
-                        )
-                    )
-                        .font(.caption)
-                        .foregroundStyle(Color.white.opacity(0.72))
-                    weeklyRhythm
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .center, spacing: GymTheme.Spacing.medium) {
+                    focusRhythmSummary
+                    Spacer(minLength: GymTheme.Spacing.small)
+                    focusActionButton
                 }
-                Spacer(minLength: 8)
-                focusActionButton
+
+                VStack(alignment: .leading, spacing: GymTheme.Spacing.large) {
+                    focusRhythmSummary
+                    focusActionButton
+                }
             }
         }
         .padding(24)
@@ -206,6 +193,22 @@ public struct WorkoutsView: View {
             )
         )
         .shadow(color: GymTheme.primary.opacity(0.24), radius: 24, x: 0, y: 14)
+    }
+
+    private var focusRhythmSummary: some View {
+        VStack(alignment: .leading, spacing: GymTheme.Spacing.small) {
+            Text(
+                selectedMonth.formatted(
+                    .dateTime
+                        .month(.wide)
+                        .year()
+                        .locale(AppLanguage(rawValue: languageCode)?.locale ?? AppLanguage.english.locale)
+                )
+            )
+            .font(.caption)
+            .foregroundStyle(Color.white.opacity(0.72))
+            weeklyRhythm
+        }
     }
 
     private func focusMetric(value: String, label: String) -> some View {
@@ -240,7 +243,21 @@ public struct WorkoutsView: View {
                         }
                     }
                     .accessibilityLabel(gymFormattedDate(day, date: .long, time: .omitted))
-                    .accessibilityValue(activeDays.contains(day) ? gymLocalized("Workout completed") : gymLocalized("No workout"))
+                    .accessibilityValue(
+                        activeDays.contains(day)
+                            ? gymText(
+                                "Workout completed",
+                                "Тренування завершено",
+                                "Тренировка завершена",
+                                languageCode: languageCode
+                            )
+                            : gymText(
+                                "No workout",
+                                "Немає тренування",
+                                "Нет тренировки",
+                                languageCode: languageCode
+                            )
+                    )
             }
         }
     }
@@ -249,7 +266,7 @@ public struct WorkoutsView: View {
     private var focusActionButton: some View {
         let button = Button(action: onAddWorkout) {
             Label(
-                gymText("Start workout", "Почати тренування", languageCode: gymCurrentLanguageCode()),
+                gymText("Start workout", "Почати тренування", "Начать тренировку", languageCode: languageCode),
                 systemImage: "plus"
             )
             .font(.subheadline.bold())
@@ -367,7 +384,7 @@ public struct WorkoutsView: View {
                     Text("Use Add workout when you are ready to log your first session.")
                 } actions: {
                     Button("Add workout", action: onAddWorkout)
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(GymPrimaryButtonStyle())
                 }
                 .frame(maxWidth: .infinity)
             }
@@ -442,7 +459,8 @@ public struct WorkoutsView: View {
                     gymText(
                         "Workout on \(gymFormattedDate(workout.date, date: .long, time: .omitted))",
                         "Тренування за \(gymFormattedDate(workout.date, date: .long, time: .omitted))",
-                        languageCode: gymCurrentLanguageCode()
+                        "Тренировка за \(gymFormattedDate(workout.date, date: .long, time: .omitted))",
+                        languageCode: languageCode
                     )
                 )
                 .accessibilityValue(
@@ -548,7 +566,7 @@ public struct WorkoutsView: View {
     private func formattedMetric(_ value: Double) -> String {
         value.formatted(
             .number
-                .locale(AppLanguage(rawValue: gymCurrentLanguageCode())?.locale ?? AppLanguage.english.locale)
+                .locale(AppLanguage(rawValue: languageCode)?.locale ?? AppLanguage.english.locale)
                 .notation(.compactName)
                 .precision(.fractionLength(0 ... 1))
         )
@@ -574,7 +592,8 @@ public struct WorkoutsView: View {
         return gymText(
             "\(exercises), \(sets), \(formattedMetric(workout.totalVolume)) volume",
             "\(exercises), \(sets), обсяг \(formattedMetric(workout.totalVolume))",
-            languageCode: gymCurrentLanguageCode()
+            "\(exercises), \(sets), объём \(formattedMetric(workout.totalVolume))",
+            languageCode: languageCode
         )
     }
 }

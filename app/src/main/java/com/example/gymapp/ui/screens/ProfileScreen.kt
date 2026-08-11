@@ -12,6 +12,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -52,7 +56,12 @@ import com.example.gymapp.garmin.openGymWorkoutTrackerInGarminStore
 import com.example.gymapp.garmin.GarminDeviceUiState
 import com.example.gymapp.push.PushUiState
 import com.example.gymapp.ui.components.AppPanel
+import com.example.gymapp.ui.components.GymSegmentItem
+import com.example.gymapp.ui.components.GymSegmentedControl
+import com.example.gymapp.ui.components.InfoPill
+import com.example.gymapp.ui.components.ScreenHeader
 import com.example.gymapp.ui.components.SectionTitle
+import com.example.gymapp.ui.theme.GymSpacing
 import com.example.gymapp.ui.viewmodel.ExerciseListUiState
 import com.example.gymapp.ui.viewmodel.FriendsUiState
 import com.example.gymapp.ui.viewmodel.LiveWorkoutUiState
@@ -60,6 +69,11 @@ import com.example.gymapp.sync.CloudSyncPhase
 import com.example.gymapp.sync.CloudSyncUiStatus
 import java.text.DateFormat
 import java.util.Date
+
+private enum class ProfileSection {
+    Training,
+    Settings
+}
 
 @Composable
 internal fun ProfileScreen(
@@ -122,6 +136,7 @@ internal fun ProfileScreen(
     var showGarminResetConfirmation by rememberSaveable { mutableStateOf(false) }
     var showPasswordChange by rememberSaveable { mutableStateOf(false) }
     var showAccountDeletion by rememberSaveable { mutableStateOf(false) }
+    var selectedSection by rememberSaveable { mutableStateOf(ProfileSection.Training) }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
@@ -138,116 +153,94 @@ internal fun ProfileScreen(
         onRefreshGarminDevices()
     }
 
-    FriendsScreen(
-        uiState = friendsState,
-        liveUiState = liveWorkoutState,
-        onRefresh = onRefreshFriends,
-        onSendFriendRequest = onSendFriendRequest,
-        onAcceptFriendRequest = onAcceptFriendRequest,
-        onDeclineFriendRequest = onDeclineFriendRequest,
-        onCancelFriendRequest = onCancelFriendRequest,
-        onOpenFriend = onOpenFriend,
-        onBlockProfile = onBlockProfile,
-        onUnblockProfile = onUnblockProfile,
-        onUpdatePrivacy = onUpdatePrivacy,
-        onAcceptWorkoutInvite = onAcceptWorkoutInvite,
-        onDeclineWorkoutInvite = onDeclineWorkoutInvite,
-        onReuseWorkoutInvite = onReuseWorkoutInvite,
-        onCancelWorkoutInvite = onCancelWorkoutInvite,
-        onClearMessages = onClearFriendsMessages,
-        onAcceptLiveInvitation = onAcceptLiveInvitation,
-        onDeclineLiveInvitation = onDeclineLiveInvitation,
-        onStartLiveRoom = onStartLiveRoom,
-        onCloseLiveRoom = onCloseLiveRoom,
-        onOpenLiveRoom = onOpenLiveRoom,
-        onClearLiveMessages = onClearLiveMessages,
-        headerContent = {
-            item {
-                Text(
-                    text = stringResource(R.string.profile_screen_subtitle),
-                    modifier = Modifier.fillMaxWidth(),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            item {
-                AccountStatusCard(
-                    label = accountState.accountLabel.ifBlank {
-                        context.getString(R.string.account_mode_local)
-                    },
-                    supporting = accountState.accountSupporting.ifBlank {
-                        context.getString(R.string.account_offline_supporting)
-                    },
-                    isCloudAccount = accountState.isCloudAccount,
-                    canLogout = accountState.canLogout,
-                    logoutEnabled = !isAccountActionLoading,
+    Column(modifier = modifier.fillMaxSize()) {
+        ProfileSectionSwitcher(
+            selected = selectedSection,
+            accountLabel = accountState.accountLabel.ifBlank {
+                context.getString(R.string.account_mode_local)
+            },
+            pendingCount = friendsState.dashboard?.pendingWorkoutInviteCount.orZero() +
+                liveWorkoutState.inbox?.invitations.orEmpty().size,
+            onSelected = { selectedSection = it }
+        )
+        if (selectedSection == ProfileSection.Training) {
+            FriendsScreen(
+                uiState = friendsState,
+                liveUiState = liveWorkoutState,
+                onRefresh = onRefreshFriends,
+                onSendFriendRequest = onSendFriendRequest,
+                onAcceptFriendRequest = onAcceptFriendRequest,
+                onDeclineFriendRequest = onDeclineFriendRequest,
+                onCancelFriendRequest = onCancelFriendRequest,
+                onOpenFriend = onOpenFriend,
+                onBlockProfile = onBlockProfile,
+                onUnblockProfile = onUnblockProfile,
+                onUpdatePrivacy = onUpdatePrivacy,
+                onAcceptWorkoutInvite = onAcceptWorkoutInvite,
+                onDeclineWorkoutInvite = onDeclineWorkoutInvite,
+                onReuseWorkoutInvite = onReuseWorkoutInvite,
+                onCancelWorkoutInvite = onCancelWorkoutInvite,
+                onClearMessages = onClearFriendsMessages,
+                onAcceptLiveInvitation = onAcceptLiveInvitation,
+                onDeclineLiveInvitation = onDeclineLiveInvitation,
+                onStartLiveRoom = onStartLiveRoom,
+                onCloseLiveRoom = onCloseLiveRoom,
+                onOpenLiveRoom = onOpenLiveRoom,
+                onClearLiveMessages = onClearLiveMessages,
+                onOpenAccountSettings = { selectedSection = ProfileSection.Settings },
+                modifier = Modifier.weight(1f)
+            )
+        } else {
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(
+                    start = GymSpacing.ScreenHorizontal,
+                    top = GymSpacing.ScreenTop,
+                    end = GymSpacing.ScreenHorizontal,
+                    bottom = GymSpacing.ScreenBottom
+                ),
+                verticalArrangement = Arrangement.spacedBy(GymSpacing.Medium)
+            ) {
+                profileSettingsContent(
+                    accountState = accountState,
+                    context = context,
+                    isAccountActionLoading = isAccountActionLoading,
                     onLogout = onLogout,
                     onOpenGarminApp = { openGymWorkoutTrackerInGarminStore(context) },
-                    onResetGarminPairing = { showGarminResetConfirmation = true }
-                )
-            }
-            item {
-                GarminDeviceCard(garminDeviceState)
-            }
-            if (accountState.isCloudAccount && cloudSyncChoiceRequired) {
-                item {
-                    CloudSyncChoiceCard(
-                        choiceReady = cloudSyncChoiceReady,
-                        onReview = onReviewCloudSync
-                    )
-                }
-            }
-            if (accountState.isCloudAccount && cloudSyncStatus != null) {
-                item {
-                    CloudSyncStatusCard(
-                        status = cloudSyncStatus,
-                        onSyncNow = onSyncNow
-                    )
-                }
-            }
-            if (accountState.isCloudAccount) {
-                item {
-                    PushNotificationCard(
-                        state = pushUiState,
-                        onEnable = {
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-                                ContextCompat.checkSelfPermission(
-                                    context,
-                                    Manifest.permission.POST_NOTIFICATIONS
-                                ) != PackageManager.PERMISSION_GRANTED
-                            ) {
-                                notificationPermissionLauncher.launch(
-                                    Manifest.permission.POST_NOTIFICATIONS
-                                )
-                            } else {
-                                onEnablePush()
-                            }
-                        },
-                        onDisable = onDisablePush,
-                        onOpenSettings = onOpenPushSettings
-                    )
-                }
-            }
-            if (accountState.isCloudAccount) {
-                item {
-                    CloudAccountActionsCard(
-                        enabled = !isAccountActionLoading,
-                        onChangePassword = { showPasswordChange = true },
-                        onDeleteAccount = { showAccountDeletion = true }
-                    )
-                }
-            }
-            item {
-                BackupToolsCard(
-                    message = accountState.backupMessage,
+                    onResetGarminPairing = { showGarminResetConfirmation = true },
+                    garminDeviceState = garminDeviceState,
+                    cloudSyncChoiceRequired = cloudSyncChoiceRequired,
+                    cloudSyncChoiceReady = cloudSyncChoiceReady,
+                    onReviewCloudSync = onReviewCloudSync,
+                    cloudSyncStatus = cloudSyncStatus,
+                    onSyncNow = onSyncNow,
+                    pushUiState = pushUiState,
+                    onEnablePush = {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                            ContextCompat.checkSelfPermission(
+                                context,
+                                Manifest.permission.POST_NOTIFICATIONS
+                            ) != PackageManager.PERMISSION_GRANTED
+                        ) {
+                            notificationPermissionLauncher.launch(
+                                Manifest.permission.POST_NOTIFICATIONS
+                            )
+                        } else {
+                            onEnablePush()
+                        }
+                    },
+                    onDisablePush = onDisablePush,
+                    onOpenPushSettings = onOpenPushSettings,
+                    onChangePassword = { showPasswordChange = true },
+                    onDeleteAccount = { showAccountDeletion = true },
+                    backupMessage = accountState.backupMessage,
                     onExportBackup = onExportBackup,
                     onExportDiagnostics = onExportDiagnostics,
                     onOpenImport = onOpenImport
                 )
             }
-        },
-        modifier = modifier.fillMaxSize()
-    )
+        }
+    }
 
     AccountBackupSheets(
         uiState = accountState,
@@ -301,6 +294,148 @@ internal fun ProfileScreen(
                 showAccountDeletion = false
                 onDeleteCloudAccount()
             }
+        )
+    }
+}
+
+private fun Int?.orZero(): Int = this ?: 0
+
+@Composable
+private fun ProfileSectionSwitcher(
+    selected: ProfileSection,
+    accountLabel: String,
+    pendingCount: Int,
+    onSelected: (ProfileSection) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(
+                start = GymSpacing.ScreenHorizontal,
+                top = GymSpacing.Small,
+                end = GymSpacing.ScreenHorizontal,
+                bottom = GymSpacing.XSmall
+            ),
+        verticalArrangement = Arrangement.spacedBy(GymSpacing.Small)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(GymSpacing.Small)
+        ) {
+            ScreenHeader(
+                title = stringResource(R.string.profile_hub_title),
+                supporting = accountLabel,
+                modifier = Modifier.weight(1f)
+            )
+            if (pendingCount > 0) {
+                InfoPill(
+                    text = stringResource(
+                        R.string.profile_pending_training_count,
+                        pendingCount.coerceAtMost(99)
+                    )
+                )
+            }
+        }
+        GymSegmentedControl(
+            items = listOf(
+                GymSegmentItem(
+                    ProfileSection.Training,
+                    stringResource(R.string.profile_section_training)
+                ),
+                GymSegmentItem(
+                    ProfileSection.Settings,
+                    stringResource(R.string.profile_section_settings)
+                )
+            ),
+            selected = selected,
+            onSelected = onSelected
+        )
+    }
+}
+
+private fun LazyListScope.profileSettingsContent(
+    accountState: ExerciseListUiState,
+    context: android.content.Context,
+    isAccountActionLoading: Boolean,
+    onLogout: () -> Unit,
+    onOpenGarminApp: () -> Unit,
+    onResetGarminPairing: () -> Unit,
+    garminDeviceState: GarminDeviceUiState,
+    cloudSyncChoiceRequired: Boolean,
+    cloudSyncChoiceReady: Boolean,
+    onReviewCloudSync: () -> Unit,
+    cloudSyncStatus: CloudSyncUiStatus?,
+    onSyncNow: () -> Unit,
+    pushUiState: PushUiState,
+    onEnablePush: () -> Unit,
+    onDisablePush: () -> Unit,
+    onOpenPushSettings: () -> Unit,
+    onChangePassword: () -> Unit,
+    onDeleteAccount: () -> Unit,
+    backupMessage: com.example.gymapp.util.LocalizedText?,
+    onExportBackup: () -> Unit,
+    onExportDiagnostics: () -> Unit,
+    onOpenImport: () -> Unit
+) {
+    item {
+        Text(
+            text = stringResource(R.string.profile_screen_subtitle),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+    item {
+        AccountStatusCard(
+            label = accountState.accountLabel.ifBlank {
+                context.getString(R.string.account_mode_local)
+            },
+            supporting = accountState.accountSupporting.ifBlank {
+                context.getString(R.string.account_offline_supporting)
+            },
+            isCloudAccount = accountState.isCloudAccount,
+            canLogout = accountState.canLogout,
+            logoutEnabled = !isAccountActionLoading,
+            onLogout = onLogout,
+            onOpenGarminApp = onOpenGarminApp,
+            onResetGarminPairing = onResetGarminPairing
+        )
+    }
+    item { GarminDeviceCard(garminDeviceState) }
+    if (accountState.isCloudAccount && cloudSyncChoiceRequired) {
+        item {
+            CloudSyncChoiceCard(
+                choiceReady = cloudSyncChoiceReady,
+                onReview = onReviewCloudSync
+            )
+        }
+    }
+    if (accountState.isCloudAccount && cloudSyncStatus != null) {
+        item { CloudSyncStatusCard(status = cloudSyncStatus, onSyncNow = onSyncNow) }
+    }
+    if (accountState.isCloudAccount) {
+        item {
+            PushNotificationCard(
+                state = pushUiState,
+                onEnable = onEnablePush,
+                onDisable = onDisablePush,
+                onOpenSettings = onOpenPushSettings
+            )
+        }
+        item {
+            CloudAccountActionsCard(
+                enabled = !isAccountActionLoading,
+                onChangePassword = onChangePassword,
+                onDeleteAccount = onDeleteAccount
+            )
+        }
+    }
+    item {
+        BackupToolsCard(
+            message = backupMessage,
+            onExportBackup = onExportBackup,
+            onExportDiagnostics = onExportDiagnostics,
+            onOpenImport = onOpenImport
         )
     }
 }

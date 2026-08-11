@@ -111,6 +111,31 @@ test("PWA Russian dictionary covers every static runtime label", () => {
   assert.equal(vm.runInContext('n(12, "saved session", "saved sessions", "збережене тренування", "збережені тренування", "збережених тренувань")', context), "12 сохранённых тренировок");
 });
 
+test("Crane is the visible back-exercise label without changing its stable identity", () => {
+  const context = loadPwaContext();
+
+  assert.equal(
+    vm.runInContext('exerciseDisplayName({ name: "Straight Arm Pulldown", catalogKey: "straight_arm_pulldown" }, "ru")', context),
+    "Журавель — тяга прямыми руками"
+  );
+  assert.equal(
+    vm.runInContext('exerciseDisplayName({ name: "Straight Arm Pulldown", catalogKey: "straight_arm_pulldown" }, "uk")', context),
+    "Журавель — тяга прямими руками"
+  );
+  assert.deepEqual(
+    JSON.parse(vm.runInContext('JSON.stringify(builtInExerciseCatalog.find(item => item.key === "straight_arm_pulldown").muscleIds)', context)),
+    ["lats", "upperBack"]
+  );
+  assert.deepEqual(
+    JSON.parse(vm.runInContext('JSON.stringify(builtInExerciseCatalog.find(item => item.key === "straight_arm_pulldown").names)', context)),
+    { en: "Straight Arm Pulldown", uk: "Тяга прямих рук на верхньому блоці" }
+  );
+  assert.equal(
+    vm.runInContext('builtInExerciseCatalog.some(item => item.key === "single_leg_romanian_deadlift")', context),
+    false
+  );
+});
+
 test("active workout lifecycle keeps explicit Russian start, record, finish, and discard copy", () => {
   const context = loadPwaContext();
   const cases = new Map([
@@ -119,6 +144,18 @@ test("active workout lifecycle keeps explicit Russian start, record, finish, and
     ["Set recorded, but the rest timer could not be saved.", "Подход записан, но таймер отдыха сохранить не удалось."],
     ["Finish workout", "Завершить тренировку"],
     ["Discard active workout?", "Отменить активную тренировку?"]
+  ]);
+  for (const [english, russian] of cases) {
+    assert.equal(context.window.GymRussianText.translate(english), russian, english);
+  }
+});
+
+test("new social and exercise recovery actions have concise Russian labels", () => {
+  const context = loadPwaContext();
+  const cases = new Map([
+    ["Sign in to connect", "Войти и добавить друзей"],
+    ["Clear filters", "Очистить фильтры"],
+    ["Clear filters to return to the full exercise library.", "Очистите фильтры, чтобы вернуться к полному каталогу упражнений."]
   ]);
   for (const [english, russian] of cases) {
     assert.equal(context.window.GymRussianText.translate(english), russian, english);

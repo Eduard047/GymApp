@@ -106,6 +106,7 @@ final class AppState: ObservableObject {
     @Published private(set) var cloudSyncStatus: CloudSyncPresentationStatus = .idle
     @Published private(set) var pendingSharedWorkout: PendingSharedWorkout?
     @Published private(set) var socialDashboard: SocialDashboard?
+    @Published private(set) var socialFriendCode: String?
     @Published private(set) var socialWorkoutInbox: SocialWorkoutInbox?
     @Published private(set) var socialDashboardRefreshRevision: UInt64 = 0
 
@@ -462,6 +463,7 @@ final class AppState: ObservableObject {
         abandonPendingCloudSave()
         cloudSync.resetForAccountTransition()
         socialDashboard = nil
+        socialFriendCode = nil
         socialWorkoutInbox = nil
         socialCacheGeneration &+= 1
         socialDashboardRefreshRevision &+= 1
@@ -1133,6 +1135,18 @@ final class AppState: ObservableObject {
             let dashboard = try await self.cloudSync.socialDashboard(
                 expectedUserID: cloud.userID
             )
+            let friendCode: String
+            do {
+                friendCode = try await self.cloudSync.socialMyFriendCode(
+                    expectedUserID: cloud.userID
+                )
+            } catch CloudSyncError.postgRESTFailure(let statusCode, let code, _)
+                        where statusCode == 404 && (code == "PGRST202" || code == "42883") {
+                // The short-code RPC is deployed independently. Older backends keep
+                // working with the dashboard's opaque legacy p_ code.
+                friendCode = dashboard.currentUser.friendCode
+            }
+            try Task.checkCancellation()
             guard self.isAccountReady,
                   self.accountActivationGeneration == generation,
                   self.workoutStore === store,
@@ -1142,6 +1156,7 @@ final class AppState: ObservableObject {
                 throw AuthServiceError.sessionChanged
             }
             self.socialDashboard = dashboard
+            self.socialFriendCode = friendCode
             return dashboard
         }
     }
@@ -1162,8 +1177,11 @@ final class AppState: ObservableObject {
 
     func sendFriendRequest(friendCode: String) async throws {
         let context = try socialContext()
+        guard let normalizedFriendCode = SocialFriendCode.normalize(friendCode) else {
+            throw CloudSyncError.invalidSocialProfile
+        }
         try await cloudSync.socialSendFriendRequest(
-            friendCode: friendCode,
+            friendCode: normalizedFriendCode,
             expectedUserID: context.userID
         )
         try validateSocialContext(context)

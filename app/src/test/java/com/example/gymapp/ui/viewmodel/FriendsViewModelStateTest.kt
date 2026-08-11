@@ -1,9 +1,11 @@
 package com.example.gymapp.ui.viewmodel
 
+import com.example.gymapp.auth.AccountSession
 import com.example.gymapp.auth.SocialExerciseRecord
 import com.example.gymapp.auth.SocialDashboard
 import com.example.gymapp.auth.SocialFriendDetailProfile
 import com.example.gymapp.auth.SocialFriendDetails
+import com.example.gymapp.auth.SocialMyFriendCode
 import com.example.gymapp.auth.SocialPrivacy
 import com.example.gymapp.auth.SocialSelfProfile
 import com.example.gymapp.auth.SocialSharing
@@ -13,11 +15,72 @@ import com.example.gymapp.data.repository.SharedWorkoutPlan
 import com.example.gymapp.data.repository.SharedWorkoutSet
 import java.io.IOException
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class FriendsViewModelStateTest {
+    @Test
+    fun shortFriendCodeUsesTheSeparateRpcWithLegacyDashboardFallback() {
+        val dashboard = checkNotNull(loadedSocialState().dashboard)
+
+        assertEquals(
+            "g_a1b2c3d4e5f6",
+            resolvedSocialFriendCode(
+                dashboard,
+                SocialMyFriendCode(version = 1, friendCode = "g_a1b2c3d4e5f6")
+            )
+        )
+        assertEquals(dashboard.self.friendCode, resolvedSocialFriendCode(dashboard, null))
+    }
+
+    @Test
+    fun dashboardRefreshRejectsAccountSwitchesAndLateResults() {
+        val expected = cloudSession(userId = "user-a", generation = "generation-a")
+
+        assertTrue(
+            shouldApplySocialDashboardRefresh(
+                expected,
+                cloudSession(userId = "user-a", generation = "generation-a"),
+                requestVersion = 4,
+                latestRequestVersion = 4
+            )
+        )
+        assertFalse(
+            shouldApplySocialDashboardRefresh(
+                expected,
+                cloudSession(userId = "user-a", generation = "generation-b"),
+                requestVersion = 4,
+                latestRequestVersion = 4
+            )
+        )
+        assertFalse(
+            shouldApplySocialDashboardRefresh(
+                expected,
+                cloudSession(userId = "user-b", generation = "generation-a"),
+                requestVersion = 4,
+                latestRequestVersion = 4
+            )
+        )
+        assertFalse(
+            shouldApplySocialDashboardRefresh(
+                expected,
+                cloudSession(userId = "user-a", generation = "generation-a"),
+                requestVersion = 3,
+                latestRequestVersion = 4
+            )
+        )
+        assertFalse(
+            shouldApplySocialDashboardRefresh(
+                expected,
+                AccountSession.Local("Local"),
+                requestVersion = 4,
+                latestRequestVersion = 4
+            )
+        )
+    }
+
     @Test
     fun foregroundRefreshDropsPreviouslySharedDetailsBeforePrivacyCanTurnFalse() {
         val profileId = "p_${"a".repeat(32)}"
@@ -88,6 +151,7 @@ class FriendsViewModelStateTest {
         assertTrue(response.isFailure)
         assertEquals(listOf("invalidated", "server-committed"), events)
         assertNull(state.dashboard)
+        assertNull(state.myFriendCode)
         assertNull(state.workoutInbox)
         assertNull(state.selectedProfileId)
         assertNull(state.selectedFriendDetails)
@@ -119,6 +183,7 @@ class FriendsViewModelStateTest {
                 blocked = emptyList(),
                 pendingWorkoutInviteCount = 0
             ),
+            myFriendCode = "g_a1b2c3d4e5f6",
             workoutInbox = SocialWorkoutInbox(0, emptyList(), emptyList()),
             selectedProfileId = profileId,
             selectedFriendDetails = details,
@@ -162,5 +227,14 @@ class FriendsViewModelStateTest {
             )
         ),
         integrity = "self_reported"
+    )
+
+    private fun cloudSession(userId: String, generation: String) = AccountSession.Cloud(
+        userId = userId,
+        email = "$userId@example.test",
+        displayName = "Synthetic",
+        accessToken = "synthetic-access-token",
+        refreshToken = null,
+        sessionGeneration = generation
     )
 }

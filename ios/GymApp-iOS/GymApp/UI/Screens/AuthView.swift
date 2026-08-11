@@ -3,6 +3,7 @@ import SwiftUI
 @MainActor
 public struct AuthView: View {
     @ObservedObject private var authService: AuthService
+    @AppStorage("app-language") private var languageCode = AppLanguage.english.rawValue
 
     @State private var mode: AuthMode = .signIn
     @State private var email = ""
@@ -99,7 +100,7 @@ public struct AuthView: View {
                 } else {
                 Picker("Account action", selection: $mode) {
                     ForEach(AuthMode.allCases) { item in
-                        Text(item.title).tag(item)
+                        Text(item.title(languageCode: languageCode)).tag(item)
                     }
                 }
                 .pickerStyle(.segmented)
@@ -154,7 +155,11 @@ public struct AuthView: View {
                                 .tint(.white)
                                 .accessibilityHidden(true)
                         }
-                        Text(authService.isLoading ? gymLocalized("Please wait…") : mode.submitTitle)
+                        Text(
+                            authService.isLoading
+                                ? gymLocalized("Please wait…", languageCode: languageCode)
+                                : mode.submitTitle(languageCode: languageCode)
+                        )
                     }
                 }
                 .buttonStyle(GymPrimaryButtonStyle())
@@ -163,7 +168,8 @@ public struct AuthView: View {
                     gymLocalized(
                         mode == .signIn
                             ? "Signs in to your cloud account"
-                            : "Creates a cloud account"
+                            : "Creates a cloud account",
+                        languageCode: languageCode
                     )
                 )
 
@@ -254,9 +260,9 @@ public struct AuthView: View {
             HStack(spacing: 8) {
                 Group {
                     if isVisible.wrappedValue {
-                        TextField(gymLocalized(title), text: text)
+                        TextField(gymLocalized(title, languageCode: languageCode), text: text)
                     } else {
-                        SecureField(gymLocalized(title), text: text)
+                        SecureField(gymLocalized(title, languageCode: languageCode), text: text)
                     }
                 }
                 .textContentType(contentType)
@@ -284,9 +290,9 @@ public struct AuthView: View {
                     gymText(
                         isVisible.wrappedValue ? "Hide \(title.lowercased())" : "Show \(title.lowercased())",
                         isVisible.wrappedValue
-                            ? "Сховати поле «\(gymLocalized(title).lowercased())»"
-                            : "Показати поле «\(gymLocalized(title).lowercased())»",
-                        languageCode: gymCurrentLanguageCode()
+                            ? "Сховати поле «\(gymLocalized(title, languageCode: languageCode).lowercased())»"
+                            : "Показати поле «\(gymLocalized(title, languageCode: languageCode).lowercased())»",
+                        languageCode: languageCode
                     )
                 )
             }
@@ -473,7 +479,7 @@ public struct AuthView: View {
     }
 
     private func fieldLabel(_ title: String) -> some View {
-        Text(gymLocalized(title))
+        Text(gymLocalized(title, languageCode: languageCode))
             .font(.subheadline.weight(.semibold))
             .foregroundStyle(GymTheme.textPrimary)
     }
@@ -557,8 +563,13 @@ private enum AuthMode: String, CaseIterable, Identifiable {
     case signUp
 
     var id: Self { self }
-    var title: String { gymLocalized(self == .signIn ? "Sign in" : "Sign up") }
-    var submitTitle: String { gymLocalized(self == .signIn ? "Sign in" : "Create account") }
+    func title(languageCode: String) -> String {
+        gymLocalized(self == .signIn ? "Sign in" : "Sign up", languageCode: languageCode)
+    }
+
+    func submitTitle(languageCode: String) -> String {
+        gymLocalized(self == .signIn ? "Sign in" : "Create account", languageCode: languageCode)
+    }
 }
 
 private enum AuthField: Hashable {

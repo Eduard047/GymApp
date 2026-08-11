@@ -27,6 +27,7 @@ import com.example.gymapp.ui.components.AppPanel
 @Composable
 internal fun WorkoutShareSheet(
     friends: List<SocialFriend>,
+    preferredFriendProfileId: String? = null,
     isCloudAccount: Boolean,
     actionsInFlight: Set<String>,
     liveActionsInFlight: Set<String>,
@@ -108,7 +109,10 @@ internal fun WorkoutShareSheet(
                     )
                 }
             } else {
-                items(rankedSocialFriends(friends), key = { "share-${it.profileId}" }) { friend ->
+                items(
+                    workoutShareFriends(friends, preferredFriendProfileId),
+                    key = { "share-${it.profileId}" }
+                ) { friend ->
                     OutlinedButton(
                         onClick = { onSendToFriend(friend) },
                         enabled = !isWorkoutInviteSending,
@@ -153,7 +157,10 @@ internal fun WorkoutShareSheet(
                     )
                 }
             } else {
-                items(rankedSocialFriends(friends), key = { "live-${it.profileId}" }) { friend ->
+                items(
+                    workoutShareFriends(friends, preferredFriendProfileId),
+                    key = { "live-${it.profileId}" }
+                ) { friend ->
                     OutlinedButton(
                         onClick = { onStartLiveWithFriend(friend) },
                         enabled = !isLiveInviteSending,
@@ -169,4 +176,13 @@ internal fun WorkoutShareSheet(
             }
         }
     }
+}
+
+internal fun workoutShareFriends(
+    friends: List<SocialFriend>,
+    preferredFriendProfileId: String?
+): List<SocialFriend> {
+    val ranked = rankedSocialFriends(friends)
+    if (preferredFriendProfileId == null) return ranked
+    return ranked.sortedBy { if (it.profileId == preferredFriendProfileId) 0 else 1 }
 }

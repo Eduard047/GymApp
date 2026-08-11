@@ -63,6 +63,44 @@ struct SocialDashboard: Equatable, Sendable {
     let pendingWorkoutInviteCount: Int
 }
 
+enum SocialFriendCode {
+    private static let maximumInputBytes = 64
+
+    static func normalize(_ rawValue: String) -> String? {
+        guard rawValue.utf8.prefix(maximumInputBytes + 1).count <= maximumInputBytes else {
+            return nil
+        }
+        let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let canonicalValue = value.lowercased()
+        if SocialPayloadParser.isValidProfileID(canonicalValue) || isValidShortCode(canonicalValue) {
+            return canonicalValue
+        }
+
+        let uppercased = value.uppercased()
+        guard uppercased.range(
+            of: #"^GYM-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}$"#,
+            options: .regularExpression
+        ) != nil else {
+            return nil
+        }
+        return "g_" + uppercased.dropFirst(4).replacingOccurrences(of: "-", with: "").lowercased()
+    }
+
+    static func display(_ canonicalValue: String) -> String {
+        guard isValidShortCode(canonicalValue) else { return canonicalValue }
+        let hex = canonicalValue.dropFirst(2).uppercased()
+        return "GYM-\(hex.prefix(4))-\(hex.dropFirst(4).prefix(4))-\(hex.suffix(4))"
+    }
+
+    static func isValidCanonical(_ value: String) -> Bool {
+        SocialPayloadParser.isValidProfileID(value) || isValidShortCode(value)
+    }
+
+    static func isValidShortCode(_ value: String) -> Bool {
+        value.range(of: #"^g_[0-9a-f]{12}$"#, options: .regularExpression) != nil
+    }
+}
+
 struct SocialFriendProfile: Equatable, Sendable {
     let profileID: String
     let displayName: String
@@ -180,6 +218,7 @@ enum SocialPayloadError: Error, Equatable, Sendable {
 enum SocialPayloadParser {
     static let maximumResponseBytes = 256 * 1_024
     static let maximumMutationResponseBytes = 32 * 1_024
+    static let maximumFriendCodeResponseBytes = 1_024
 
     private static let maximumFriends = 200
     private static let maximumIncoming = 100
@@ -244,6 +283,26 @@ enum SocialPayloadParser {
                 range: 0 ... 25
             )
         )
+    }
+
+    static func friendCode(from data: Data) throws -> String {
+        guard !data.isEmpty, data.count <= maximumFriendCodeResponseBytes else {
+            throw SocialPayloadError.invalidResponse
+        }
+        let root = try object(
+            try json(from: data),
+            keys: ["version", "friendCode"]
+        )
+        try version(root["version"])
+        let friendCode = try string(
+            root["friendCode"],
+            maximumCharacters: 14,
+            maximumBytes: 14
+        )
+        guard SocialFriendCode.isValidShortCode(friendCode) else {
+            throw SocialPayloadError.invalidResponse
+        }
+        return friendCode
     }
 
     static func friendDetails(from data: Data) throws -> SocialFriendDetails {

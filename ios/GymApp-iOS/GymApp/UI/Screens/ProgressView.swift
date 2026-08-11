@@ -19,7 +19,23 @@ struct ExerciseProgressView: View {
     var body: some View {
         GymBackground {
             ScrollView {
-                LazyVStack(spacing: 12) {
+                LazyVStack(spacing: GymTheme.contentSpacing) {
+                    GymScreenHeader(
+                        eyebrow: gymText(
+                            "Training ledger",
+                            "Журнал тренувань",
+                            "Журнал тренировок",
+                            languageCode: languageCode
+                        ),
+                        title: t("Progress", "Прогрес"),
+                        supporting: gymText(
+                            "Compare strength, volume, and consistency one exercise at a time.",
+                            "Порівнюй силу, обсяг і регулярність для кожної вправи окремо.",
+                            "Сравнивай силу, объём и регулярность отдельно для каждого упражнения.",
+                            languageCode: languageCode
+                        )
+                    )
+
                     WorkoutMonthSwitcher(
                         month: selectedMonth,
                         isCurrentMonth: monthOffset == 0,
@@ -44,13 +60,12 @@ struct ExerciseProgressView: View {
                         noExerciseState
                     }
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-                .padding(.bottom, 20)
+                .padding(.horizontal, GymTheme.screenHorizontalInset)
+                .padding(.top, GymTheme.screenVerticalInset)
+                .padding(.bottom, GymTheme.screenBottomInset)
             }
             .scrollIndicators(.hidden)
         }
-        .navigationTitle(t("Progress", "Прогрес"))
         .environment(\.locale, appLocale)
         .onAppear(perform: selectDefaultExerciseIfNeeded)
         .onChange(of: store.exercises) { _ in selectDefaultExerciseIfNeeded() }

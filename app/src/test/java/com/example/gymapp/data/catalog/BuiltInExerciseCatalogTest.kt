@@ -56,6 +56,15 @@ class BuiltInExerciseCatalogTest {
         assertEquals("dips", BuiltInExerciseCatalog.inferKey("брусья"))
         assertEquals("bench_press", BuiltInExerciseCatalog.inferKey("  BENCH\u00a0PRESS "))
         assertEquals("bench_press", BuiltInExerciseCatalog.inferKey("ЖИМ ЛЕЖАЧИ"))
+        assertEquals("straight_arm_pulldown", BuiltInExerciseCatalog.inferKey("Журавель"))
+        assertEquals(
+            "Журавель — тяга прямими руками",
+            BuiltInExerciseCatalog.displayName("Straight Arm Pulldown", "uk")
+        )
+        assertEquals(
+            "Журавель — тяга прямыми руками",
+            BuiltInExerciseCatalog.displayName("Straight Arm Pulldown", "ru")
+        )
     }
 
     @Test
@@ -114,6 +123,7 @@ class BuiltInExerciseCatalogTest {
                 .map { concept -> concept.id }
                 .toSet()
         )
+
     }
 
     @Test

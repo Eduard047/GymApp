@@ -7,6 +7,7 @@ enum CloudSyncError: LocalizedError {
     case invalidWorkoutInvite
     case invalidResponse
     case staleRemoteState
+    case postgRESTFailure(statusCode: Int, code: String, message: String)
     case requestFailed(String)
 
     var errorDescription: String? {
@@ -18,6 +19,7 @@ enum CloudSyncError: LocalizedError {
         case .invalidResponse: return "The cloud returned an invalid response."
         case .staleRemoteState:
             return "Cloud data changed on another device. Reload it before syncing again."
+        case .postgRESTFailure(_, _, let message): return message
         case .requestFailed(let message): return message
         }
     }
@@ -26,7 +28,7 @@ enum CloudSyncError: LocalizedError {
 @MainActor
 final class CloudSyncService: ObservableObject {
     private enum RequestFailure: Error {
-        case http(statusCode: Int, message: String)
+        case http(statusCode: Int, code: String?, message: String)
     }
 
     private enum StateRevision {
@@ -197,6 +199,20 @@ final class CloudSyncService: ObservableObject {
         }
     }
 
+    func socialMyFriendCode(expectedUserID: String? = nil) async throws -> String {
+        let (data, _) = try await socialRequest(
+            path: "/rest/v1/rpc/social_my_friend_code",
+            expectedUserID: expectedUserID,
+            body: [:],
+            maximumResponseBytes: SocialPayloadParser.maximumFriendCodeResponseBytes
+        )
+        do {
+            return try SocialPayloadParser.friendCode(from: data)
+        } catch {
+            throw CloudSyncError.invalidResponse
+        }
+    }
+
     func socialFriendDetails(
         profileID: String,
         expectedUserID: String? = nil
@@ -225,7 +241,7 @@ final class CloudSyncService: ObservableObject {
         friendCode: String,
         expectedUserID: String? = nil
     ) async throws {
-        guard SocialPayloadParser.isValidProfileID(friendCode) else {
+        guard SocialFriendCode.isValidCanonical(friendCode) else {
             throw CloudSyncError.invalidSocialProfile
         }
         let (data, _) = try await socialRequest(
@@ -577,7 +593,7 @@ final class CloudSyncService: ObservableObject {
                 maximumResponseBytes: maximumResponseBytes,
                 body: body
             )
-        } catch RequestFailure.http(let statusCode, _)
+        } catch RequestFailure.http(let statusCode, _, _)
                     where statusCode == 401 || statusCode == 403 {
             guard auth.session?.cloud == initialSession else {
                 throw AuthServiceError.sessionChanged
@@ -596,11 +612,19 @@ final class CloudSyncService: ObservableObject {
                     maximumResponseBytes: maximumResponseBytes,
                     body: body
                 )
-            } catch RequestFailure.http(_, let message) {
-                throw CloudSyncError.requestFailed(message)
+            } catch RequestFailure.http(let statusCode, let code, let message) {
+                throw Self.cloudError(
+                    statusCode: statusCode,
+                    code: code,
+                    message: message
+                )
             }
-        } catch RequestFailure.http(_, let message) {
-            throw CloudSyncError.requestFailed(message)
+        } catch RequestFailure.http(let statusCode, let code, let message) {
+            throw Self.cloudError(
+                statusCode: statusCode,
+                code: code,
+                message: message
+            )
         }
     }
 
@@ -651,6 +675,7 @@ final class CloudSyncService: ObservableObject {
                     where statusCode == 401 || statusCode == 403 {
             throw RequestFailure.http(
                 statusCode: statusCode,
+                code: nil,
                 message: "Cloud sync failed (HTTP \(statusCode))."
             )
         } catch is BoundedURLSessionError {
@@ -661,12 +686,38 @@ final class CloudSyncService: ObservableObject {
                 throw CloudSyncError.staleRemoteState
             }
             let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+            let code = Self.postgRESTErrorCode(object?["code"])
             let message = object?["message"] as? String
                 ?? object?["error"] as? String
                 ?? "Cloud sync failed (HTTP \(http.statusCode))."
-            throw RequestFailure.http(statusCode: http.statusCode, message: message)
+            throw RequestFailure.http(
+                statusCode: http.statusCode,
+                code: code,
+                message: message
+            )
         }
         return data
+    }
+
+    private static func cloudError(
+        statusCode: Int,
+        code: String?,
+        message: String
+    ) -> CloudSyncError {
+        guard let code else { return .requestFailed(message) }
+        return .postgRESTFailure(statusCode: statusCode, code: code, message: message)
+    }
+
+    private static func postgRESTErrorCode(_ value: Any?) -> String? {
+        guard let value = value as? String,
+              value.utf8.prefix(33).count <= 32,
+              value.range(
+                  of: #"^(?:PGRST[0-9]{3}|[0-9A-Z]{5})$"#,
+                  options: .regularExpression
+              ) != nil else {
+            return nil
+        }
+        return value
     }
 
     private static func queryValue(_ value: String) -> String {

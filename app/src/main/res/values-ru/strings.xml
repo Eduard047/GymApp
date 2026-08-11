@@ -19,6 +19,10 @@
     <string name="title_progress">Прогресс</string>
     <string name="title_profile">Профиль</string>
     <string name="profile_screen_subtitle">Аккаунт, Garmin, приватные резервные копии, диагностика и защищённый прогресс.</string>
+    <string name="profile_hub_title">Тренировочный круг</string>
+    <string name="profile_section_training">Друзья и live</string>
+    <string name="profile_section_settings">Аккаунт и устройства</string>
+    <string name="profile_pending_training_count">Ожидает: %1$d</string>
     <string name="leaderboard_hero_title">Рейтинг пока недоступен</string>
     <string name="leaderboard_hero_supporting">Сейчас тренировки оцениваются на устройстве, поэтому публичный рейтинг отключён, а не поставлен в очередь на проверку. Он появится только после будущего обновления приложения и сервера с проверяемым подсчётом; даты выпуска пока нет. Твой приватный прогресс остаётся доступным.</string>
     <string name="leaderboard_your_xp">Твои XP</string>
@@ -31,9 +35,9 @@
     <string name="leaderboard_row_detail">Уровень %1$d - %2$d тренировок</string>
 
     <string name="friend_details_title">Данные друга</string>
-    <string name="friends_hero_title">Друзья вместо общего рейтинга</string>
-    <string name="friends_hero_supporting">Сравнивай прогресс только с принятыми друзьями и сам выбирай, что они видят.</string>
-    <string name="friends_integrity_notice">XP и рекорды синхронизируются из данных тренировок, которые вводят пользователи. Это заявленные самими пользователями, а не проверенные соревновательные результаты.</string>
+    <string name="friends_hero_title">Твой тренировочный круг</string>
+    <string name="friends_hero_supporting">Приглашения, приватный обмен тренировками и live-сессии с принятыми друзьями.</string>
+    <string name="friends_integrity_notice">Общий прогресс записывают сами пользователи.</string>
     <string name="friends_cloud_required_title">Нужен вход в облачный аккаунт</string>
     <string name="friends_cloud_required_supporting">Локальные тренировки остаются доступны. Войди в облачный аккаунт, чтобы добавлять друзей и обмениваться планами.</string>
     <string name="friends_synced_title">Друзья и приглашения</string>
@@ -45,6 +49,9 @@
     <string name="friend_code_label">Код друга</string>
     <string name="friend_code_copy">Копировать код</string>
     <string name="friend_code_copied">Скопировано</string>
+    <string name="friend_code_share">Поделиться</string>
+    <string name="friend_code_share_subject">Код друга GymApp</string>
+    <string name="friend_code_share_message">Добавь меня в GymApp по этому коду друга: %1$s</string>
     <string name="friend_code_invalid">Введи полный код друга GymApp.</string>
     <string name="friend_request_send">Отправить заявку</string>
     <string name="friend_request_sending">Отправка…</string>
@@ -61,6 +68,17 @@
     <string name="friends_empty_title">Друзей пока нет</string>
     <string name="friends_empty_supporting">Поделись своим кодом или отправь заявку по коду друга.</string>
     <string name="friend_stats_summary">%1$d XP · уровень %2$d · %3$d тренировок</string>
+    <string name="friend_metric_level">Уровень %1$d</string>
+    <string name="friend_metric_xp">%1$d XP</string>
+    <string name="friend_metric_workouts">%1$d тренировок</string>
+    <string name="friend_train_eyebrow">ТРЕНИРОВАТЬСЯ ВМЕСТЕ</string>
+    <string name="friend_train_title">Начни с этого друга</string>
+    <string name="friend_train_supporting">Выбери сохранённую тренировку для отправки или создай новую синхронизированную live-сессию.</string>
+    <string name="friend_choose_workout_action">Выбрать сохранённую тренировку</string>
+    <string name="friend_workout_picker_title">Выбрать тренировку для %1$s</string>
+    <string name="friend_workout_picker_supporting">Пока ничего не отправляется. Выбери сохранённую тренировку, затем проверь варианты ссылки, копии и LIVE.</string>
+    <string name="friend_workout_picker_empty_supporting">Сначала сохрани тренировку, затем вернись к этому другу.</string>
+    <string name="friend_build_live_action">Создать LIVE-тренировку</string>
     <string name="friend_stats_private">Прогресс приватный или сейчас недоступен</string>
     <string name="friend_open_details">Последние тренировки и рекорды</string>
     <string name="friends_privacy_eyebrow">ПРИВАТНОСТЬ</string>
@@ -1059,6 +1077,11 @@
     <string name="live_workout_peer_title">Тренировка вместе с %1$s</string>
     <string name="live_workout_peer_progress">Прогресс друга: %1$d из %2$d подходов</string>
     <string name="live_workout_peer_finished">Друг уже завершил тренировку.</string>
+    <string name="live_workout_two_lanes_title">ПОДХОД ЗА ПОДХОДОМ · ОБА ТЕЛЕФОНА</string>
+    <string name="live_workout_lane_you">Ты</string>
+    <string name="live_workout_set_completed_accessibility">Подход %1$d выполнен</string>
+    <string name="live_workout_set_pending_accessibility">Подход %1$d ожидает выполнения</string>
+    <string name="live_workout_set_progress_accessibility">Выполнено подходов: %1$d из %2$d</string>
     <string name="live_workout_active_realtime">Связь в реальном времени · в очереди: %1$d</string>
     <string name="live_workout_active_polling">Резервный опрос · в очереди: %1$d</string>
     <string name="live_workout_active_offline">Нет сети · безопасно в очереди: %1$d</string>

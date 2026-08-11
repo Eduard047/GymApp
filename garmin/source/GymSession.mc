@@ -50,6 +50,10 @@ class GymSession {
     // state needed to make a post-save cleanup retry idempotent; diagnostic UI
     // uses GymStore.status.
     static var fitSaved = false;
+    // A failed discard during an account transition must keep the native Session
+    // reachable for a later retry. Dropping or overwriting it can leave an old FIT
+    // recording alive and make the next account unable to start a clean session.
+    static var fitCleanupPending = false;
     static var gymKcalField = null;
     static var gymZoneField = null;
     static var effortState = "WARMUP";
@@ -114,6 +118,9 @@ class GymSession {
     static var recoveryLowestHr = null;
 
     static function start() {
+        if (!retryAccountTransitionFitCleanup()) {
+            return false;
+        }
         resetProfileDefaults();
         loadProfile();
         startedAt = Time.now().value();
@@ -300,6 +307,7 @@ class GymSession {
             recording = false;
             paused = false;
             fitSaved = false;
+            fitCleanupPending = false;
             return true;
         }
         var discarded = false;
@@ -320,13 +328,17 @@ class GymSession {
         recording = false;
         paused = false;
         fitSaved = false;
+        fitCleanupPending = false;
         return true;
     }
 
     static function resetForAccountTransition() {
         // An account transition is a privacy boundary: stop sensors and discard the
         // active FIT recording. A new workout must be started explicitly by the user.
-        discard();
+        var fitDiscarded = discard();
+        // Session.stop()/discard() can fail transiently on real devices. Preserve the
+        // handle and retry instead of overwriting a still-active native FIT session.
+        fitCleanupPending = !fitDiscarded && session != null;
         startedAt = 0;
         pausedAt = 0;
         pausedAccumSeconds = 0;
@@ -373,6 +385,21 @@ class GymSession {
         clearSetCandidate();
         recoveryPeakHr = null;
         recoveryLowestHr = null;
+        if (fitCleanupPending) {
+            GymStore.status = "FIT RETRY";
+        }
+    }
+
+    static function retryAccountTransitionFitCleanup() {
+        if (!fitCleanupPending) {
+            return true;
+        }
+        if (!discard()) {
+            GymStore.status = "FIT RETRY";
+            return false;
+        }
+        fitCleanupPending = false;
+        return true;
     }
 
     static function createFitFields() {
@@ -406,6 +433,10 @@ class GymSession {
     }
 
     static function tick() {
+        if (fitCleanupPending) {
+            retryAccountTransitionFitCleanup();
+            return;
+        }
         if (startedAt > 0) {
             var now = Time.now().value();
             var currentPaused = paused && pausedAt > 0 ? now - pausedAt : 0;

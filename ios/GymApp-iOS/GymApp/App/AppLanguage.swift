@@ -470,7 +470,8 @@ func gymSafeEnglishErrorMessage(_ error: Error) -> String {
              .invalidResponse,
              .staleRemoteState:
             return cloudError.errorDescription ?? gymGenericErrorMessage
-        case .requestFailed:
+        case .postgRESTFailure,
+             .requestFailed:
             return gymGenericErrorMessage
         }
     }

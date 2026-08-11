@@ -84,6 +84,7 @@ data class ActiveWorkoutUiState(
     val livePeerCompletedSetCount: Int = 0,
     val livePeerTotalSetCount: Int = 0,
     val livePeerFinished: Boolean = false,
+    val liveExerciseLanes: List<LiveExerciseLaneSummary> = emptyList(),
     val liveConnectionMode: LiveConnectionMode? = null,
     val livePendingOperationCount: Int = 0
 )
@@ -412,6 +413,7 @@ class ActiveWorkoutViewModel(
             livePeerCompletedSetCount = live.peerProgress?.completedSetCount ?: 0,
             livePeerTotalSetCount = live.peerProgress?.totalSetCount ?: 0,
             livePeerFinished = live.peerProgress?.isFinished == true,
+            liveExerciseLanes = live.exerciseLanes,
             liveConnectionMode = live.connectionMode.takeIf { live.activeRoomId != null },
             livePendingOperationCount = live.pendingOperationCount
         )

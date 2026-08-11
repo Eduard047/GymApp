@@ -14,6 +14,7 @@ final class NativePushTests: XCTestCase {
     private let bindingB = UUID(uuidString: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")!
     private let bindingC = UUID(uuidString: "cccccccc-cccc-4ccc-8ccc-cccccccccccc")!
     private let installationID = UUID(uuidString: "12345678-1234-4abc-8def-1234567890ab")!
+    private let liveRoomID = "lr_0123456789abcdef0123456789abcdef"
 
     func testParserAcceptsOnlyExactDataOnlySocialAndLivePayloads() throws {
         let social = socialPayload(bindingID: bindingA)
@@ -36,6 +37,7 @@ final class NativePushTests: XCTestCase {
         let parsedLive = try XCTUnwrap(NativePushPayloadParser.remoteEvent(from: live))
         XCTAssertEqual(parsedLive.eventType, .liveRoomStarted)
         XCTAssertEqual(parsedLive.eventType.destination, .live)
+        XCTAssertEqual(parsedLive.routeTarget, .live(roomID: liveRoomID))
 
         var alert = social
         alert["aps"] = ["content-available": 1, "alert": ["title": "unsafe"]]
@@ -164,12 +166,107 @@ final class NativePushTests: XCTestCase {
             identifier: scheduled.identifier,
             userInfo: localTapPayload(bindingID: bindingA, destination: .social)
         )
-        XCTAssertEqual(harness.manager.consumePendingRoute()?.destination, .social)
+        let route = try XCTUnwrap(harness.manager.consumePendingRoute())
+        XCTAssertEqual(route.target, .social)
+        XCTAssertTrue(harness.manager.isRouteBoundToCurrentSession(route))
+        XCTAssertEqual(makeNativePushProfileRequest(for: route).focus, .friends)
 
         harness.manager.handleLocalNotificationTap(
             identifier: scheduled.identifier,
-            userInfo: localTapPayload(bindingID: bindingB, destination: .live)
+            userInfo: localTapPayload(
+                bindingID: bindingB,
+                destination: .live,
+                roomID: liveRoomID
+            )
         )
+        XCTAssertNil(harness.manager.consumePendingRoute())
+    }
+
+    func testLiveTapPreservesExactRoomAndRejectsMalformedLocalTargets() async throws {
+        let harness = try makeHarness(userID: userA)
+        defer { harness.cleanup() }
+
+        await harness.manager.activateIfNeeded()
+        harness.manager.didReceiveDeviceToken(Data(repeating: 0x4A, count: 32))
+        let becameActive = await waitUntil { harness.manager.status == .active }
+        XCTAssertTrue(becameActive)
+
+        let outcome = await harness.manager.handleRemoteNotification(
+            livePayload(bindingID: bindingA, kind: "started", revision: 11)
+        )
+        XCTAssertEqual(outcome, .newData)
+        let scheduled = try XCTUnwrap(harness.system.scheduled.last)
+        XCTAssertEqual(scheduled.target, .live(roomID: liveRoomID))
+        let encodedUserInfo = NativePushSystemController.localUserInfo(for: scheduled)
+        XCTAssertEqual(
+            NativePushPayloadParser.localTarget(
+                from: encodedUserInfo,
+                expectedBindingID: bindingA
+            ),
+            scheduled.target
+        )
+
+        harness.manager.handleLocalNotificationTap(
+            identifier: scheduled.identifier,
+            userInfo: encodedUserInfo
+        )
+        let route = try XCTUnwrap(harness.manager.consumePendingRoute())
+        XCTAssertEqual(route.target, .live(roomID: liveRoomID))
+        XCTAssertEqual(route.roomID, liveRoomID)
+        XCTAssertEqual(
+            makeNativePushProfileRequest(for: route).focus,
+            .liveRoom(liveRoomID)
+        )
+
+        XCTAssertNil(NativePushPayloadParser.localTarget(
+            from: localTapPayload(
+                bindingID: bindingA,
+                destination: .live,
+                roomID: "lr_not-a-room"
+            ),
+            expectedBindingID: bindingA
+        ))
+        XCTAssertNil(NativePushPayloadParser.localTarget(
+            from: localTapPayload(bindingID: bindingA, destination: .live),
+            expectedBindingID: bindingA
+        ))
+
+        let legacyTarget = try XCTUnwrap(NativePushPayloadParser.localTarget(
+            from: localTapPayload(
+                bindingID: bindingA,
+                destination: .live,
+                version: 1
+            ),
+            expectedBindingID: bindingA
+        ))
+        XCTAssertEqual(legacyTarget, .live(roomID: nil))
+        let legacyRoute = NativePushRoute(
+            target: legacyTarget,
+            bindingID: bindingA,
+            lifecycleGeneration: 0
+        )
+        XCTAssertEqual(makeNativePushProfileRequest(for: legacyRoute).focus, .liveWorkouts)
+    }
+
+    func testPendingRouteIsFencedWhenAuthenticationLifecycleChanges() async throws {
+        let harness = try makeHarness(userID: userA)
+        defer { harness.cleanup() }
+
+        await harness.manager.activateIfNeeded()
+        harness.manager.didReceiveDeviceToken(Data(repeating: 0x4B, count: 32))
+        let becameActive = await waitUntil { harness.manager.status == .active }
+        XCTAssertTrue(becameActive)
+
+        harness.manager.handleLocalNotificationTap(
+            identifier: NativePushSystemController.notificationIdentifierPrefix + "route",
+            userInfo: localTapPayload(bindingID: bindingA, destination: .social)
+        )
+        let staleRoute = try XCTUnwrap(harness.manager.pendingRoute)
+        XCTAssertTrue(harness.manager.isRouteBoundToCurrentSession(staleRoute))
+
+        try harness.auth.installSessionForTesting(cloudSession(userID: userB))
+
+        XCTAssertFalse(harness.manager.isRouteBoundToCurrentSession(staleRoute))
         XCTAssertNil(harness.manager.consumePendingRoute())
     }
 
@@ -1515,15 +1612,17 @@ final class NativePushTests: XCTestCase {
 
     private func localTapPayload(
         bindingID: UUID,
-        destination: NativePushDestination
+        destination: NativePushDestination,
+        roomID: String? = nil,
+        version: Int = 2
     ) -> [AnyHashable: Any] {
-        [
-            "gymappLocal": [
-                "version": 1,
-                "bindingId": bindingID.uuidString.lowercased(),
-                "destination": destination.rawValue
-            ]
+        var payload: [String: Any] = [
+            "version": version,
+            "bindingId": bindingID.uuidString.lowercased(),
+            "destination": destination.rawValue
         ]
+        if let roomID { payload["roomId"] = roomID }
+        return ["gymappLocal": payload]
     }
 
     private func waitUntil(

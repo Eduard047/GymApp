@@ -270,6 +270,12 @@ class SharedWorkoutLinkTest {
             )
         )
 
+        val plan = SharedWorkoutLink.planFromSession(details)
+        assertEquals(2, plan.exerciseCount)
+        assertEquals(3, plan.setCount)
+        assertEquals("bench_press", plan.exercises.first().catalogKey)
+        assertEquals(80.0, plan.exercises.first().sets.first().weight, 0.0)
+
         val url = SharedWorkoutLink.fromSession(details)
         val decoded = Base64.getUrlDecoder()
             .decode(url.substringAfter("#workout="))

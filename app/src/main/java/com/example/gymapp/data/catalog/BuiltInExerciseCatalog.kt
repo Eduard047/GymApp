@@ -279,6 +279,15 @@ object BuiltInExerciseCatalog {
 
     fun displayName(rawName: String, languageTag: String?): String {
         val definition = definitionForName(rawName) ?: return rawName
+        if (definition.key == "straight_arm_pulldown") {
+            return when {
+                languageTag.equals("uk", ignoreCase = true) ->
+                    "Журавель — тяга прямими руками"
+                languageTag.equals("ru", ignoreCase = true) ->
+                    RussianText.translate(definition.nameEn)
+                else -> definition.nameEn
+            }
+        }
         return when {
             languageTag.equals("uk", ignoreCase = true) -> definition.nameUk
             languageTag.equals("ru", ignoreCase = true) -> RussianText.translate(definition.nameEn)

@@ -76,7 +76,9 @@ import com.example.gymapp.ui.components.EmptyStatePanel
 import com.example.gymapp.ui.components.ExerciseMuscleBreakdownCard
 import com.example.gymapp.ui.components.ExerciseMediaPreview
 import com.example.gymapp.ui.components.InfoPill
+import com.example.gymapp.ui.components.ScreenHeader
 import com.example.gymapp.ui.components.SectionTitle
+import com.example.gymapp.ui.theme.GymSpacing
 import com.example.gymapp.ui.util.currentAppLanguageTag
 import com.example.gymapp.ui.util.localizedExerciseName
 import com.example.gymapp.ui.util.localizedMuscleName
@@ -983,26 +985,18 @@ fun ExerciseListScreen(
         modifier = modifier
             .fillMaxSize(),
         contentPadding = PaddingValues(
-            start = 14.dp,
-            top = 10.dp,
-            end = 14.dp,
-            bottom = 28.dp
+            start = GymSpacing.ScreenHorizontal,
+            top = GymSpacing.ScreenTop,
+            end = GymSpacing.ScreenHorizontal,
+            bottom = GymSpacing.ScreenBottom
         ),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+        verticalArrangement = Arrangement.spacedBy(GymSpacing.Large)
     ) {
         item {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    text = stringResource(R.string.title_exercises),
-                    style = MaterialTheme.typography.headlineLarge,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = stringResource(R.string.exercises_screen_subtitle),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+            ScreenHeader(
+                title = stringResource(R.string.title_exercises),
+                supporting = stringResource(R.string.exercises_screen_subtitle)
+            )
         }
 
         item {
@@ -1087,7 +1081,13 @@ fun ExerciseListScreen(
                         stringResource(R.string.exercise_library_empty_supporting)
                     } else {
                         stringResource(R.string.exercise_search_no_results_supporting)
-                    }
+                    },
+                    actionLabel = if (uiState.exercises.isEmpty()) {
+                        stringResource(R.string.action_add_exercise)
+                    } else {
+                        null
+                    },
+                    onAction = { isAddExerciseOpen = true }
                 )
             }
         } else {

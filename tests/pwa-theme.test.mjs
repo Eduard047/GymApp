@@ -52,7 +52,7 @@ function loadTheme({ stored = null, dark = false, storageThrows = false } = {}) 
 }
 
 test("theme preference validates storage and applies before the stylesheet", () => {
-  assert.ok(indexHtml.indexOf("theme.v56.js") < indexHtml.indexOf("styles.v68.css"));
+  assert.ok(indexHtml.indexOf("theme.v56.js") < indexHtml.indexOf("styles.v69.css"));
   assert.match(indexHtml, /id="app-theme-color" name="theme-color"/);
   assert.match(styles, /:root\[data-theme="dark"\]/);
   assert.doesNotMatch(styles, /@media \(prefers-color-scheme: dark\)/);

@@ -6,6 +6,27 @@ import UIKit
 /// Airy blue-white surfaces keep content quiet while aquatic color is reserved
 /// for focus, selection, and progress. Material stays on the functional layer.
 public enum GymTheme {
+    /// Fluid Focus spacing follows a compact four-point rhythm. Screen code can
+    /// use these names instead of drifting between nearly identical insets.
+    public enum Spacing {
+        public static let xSmall: CGFloat = 4
+        public static let small: CGFloat = 8
+        public static let medium: CGFloat = 12
+        public static let large: CGFloat = 16
+        public static let xLarge: CGFloat = 24
+        public static let xxLarge: CGFloat = 32
+    }
+
+    /// Rounded display type gives Fluid Focus its friendly, athletic voice;
+    /// body copy stays neutral and data remains quickly scannable.
+    public enum TypeScale {
+        public static let screenTitle = Font.system(.largeTitle, design: .rounded, weight: .bold)
+        public static let sectionTitle = Font.system(.title3, design: .rounded, weight: .bold)
+        public static let heroTitle = Font.system(.title2, design: .rounded, weight: .bold)
+        public static let metric = Font.system(.title3, design: .rounded, weight: .bold)
+        public static let utility = Font.system(.caption, design: .monospaced, weight: .semibold)
+    }
+
     public static let primary = adaptive(light: 0x216BD7, dark: 0x8BB9FF)
     public static let primaryAction = adaptive(light: 0x175BBE, dark: 0x2E72D2)
     public static let onPrimary = Color.white
@@ -30,6 +51,11 @@ public enum GymTheme {
     public static let panelCornerRadius: CGFloat = 26
     public static let compactCornerRadius: CGFloat = 20
     public static let controlCornerRadius: CGFloat = 18
+    public static let screenHorizontalInset: CGFloat = 14
+    public static let screenVerticalInset: CGFloat = 10
+    public static let screenBottomInset: CGFloat = 28
+    public static let contentSpacing: CGFloat = 14
+    public static let hairlineWidth: CGFloat = 0.75
 
     public static var backgroundGradient: LinearGradient {
         LinearGradient(
@@ -133,16 +159,21 @@ public struct GymContentUnavailableView: View {
     }
 
     public var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: GymTheme.Spacing.medium) {
             label
-                .font(.title3.weight(.semibold))
+                .font(GymTheme.TypeScale.sectionTitle)
+                .foregroundStyle(GymTheme.textPrimary)
             description
                 .font(.subheadline)
                 .foregroundStyle(GymTheme.textSecondary)
                 .multilineTextAlignment(.center)
+                .lineSpacing(2)
             actions
+                .padding(.top, GymTheme.Spacing.xSmall)
         }
-        .padding(24)
+        .padding(.horizontal, GymTheme.Spacing.large)
+        .padding(.vertical, GymTheme.Spacing.xLarge)
+        .frame(maxWidth: 440)
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .contain)
     }

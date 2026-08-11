@@ -395,8 +395,15 @@ struct WorkoutProgressHero: View {
                     .tint(.white)
                     .accessibilityLabel("Level progress")
                     .accessibilityValue(
-                        "\(progression.xpIntoLevel) of " +
-                            "\(progression.xpIntoLevel + progression.xpToNextLevel) XP"
+                        gymText(
+                            "\(progression.xpIntoLevel) of " +
+                                "\(progression.xpIntoLevel + progression.xpToNextLevel) XP",
+                            "\(progression.xpIntoLevel) із " +
+                                "\(progression.xpIntoLevel + progression.xpToNextLevel) XP",
+                            "\(progression.xpIntoLevel) из " +
+                                "\(progression.xpIntoLevel + progression.xpToNextLevel) XP",
+                            languageCode: gymCurrentLanguageCode()
+                        )
                     )
 
                 LazyVGrid(

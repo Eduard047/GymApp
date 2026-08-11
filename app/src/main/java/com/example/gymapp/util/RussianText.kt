@@ -179,7 +179,7 @@ object RussianText {
         "Squat" to "Приседания со штангой",
         "Starter" to "Начинающий",
         "Steady" to "Стабильный",
-        "Straight Arm Pulldown" to "Тяга прямых рук на верхнем блоке",
+        "Straight Arm Pulldown" to "Журавель — тяга прямыми руками",
         "Streak keeper" to "Хранитель серии",
         "Striker" to "Ударник",
         "Ten sessions" to "Десять сессий",

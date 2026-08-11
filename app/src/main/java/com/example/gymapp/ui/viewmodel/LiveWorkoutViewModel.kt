@@ -82,6 +82,7 @@ internal data class LiveWorkoutUiState(
 data class ActiveLiveWorkoutUiState(
     val activeRoomId: String? = null,
     val peerProgress: LivePeerProgressSummary? = null,
+    val exerciseLanes: List<LiveExerciseLaneSummary> = emptyList(),
     val connectionMode: LiveConnectionMode = LiveConnectionMode.Offline,
     val pendingOperationCount: Int = 0
 )
@@ -92,6 +93,36 @@ data class LivePeerProgressSummary(
     val totalSetCount: Int,
     val isFinished: Boolean
 )
+
+data class LiveExerciseLaneSummary(
+    val exerciseName: String,
+    val selfCompletedSets: List<Boolean>,
+    val peerCompletedSets: List<Boolean>
+) {
+    val selfCompletedSetCount: Int get() = selfCompletedSets.count { it }
+    val peerCompletedSetCount: Int get() = peerCompletedSets.count { it }
+    val totalSetCount: Int get() = selfCompletedSets.size
+}
+
+internal fun liveExerciseLaneSummaries(
+    snapshot: LiveWorkoutSnapshot?
+): List<LiveExerciseLaneSummary> {
+    if (snapshot == null || snapshot.room.status != "active") return emptyList()
+    val selfCompleted = snapshot.self.progress?.completedSets
+        .orEmpty()
+        .mapTo(hashSetOf()) { it.setId }
+    val peerCompleted = snapshot.peer.progress?.completedSets
+        .orEmpty()
+        .mapTo(hashSetOf()) { it.setId }
+    return snapshot.plan.exercises.map { exercise ->
+        val setIds = exercise.sets.map { it.setId }
+        LiveExerciseLaneSummary(
+            exerciseName = exercise.name,
+            selfCompletedSets = setIds.map(selfCompleted::contains),
+            peerCompletedSets = setIds.map(peerCompleted::contains)
+        )
+    }
+}
 
 sealed interface LiveLocalMutationPreparation {
     data object Standalone : LiveLocalMutationPreparation
@@ -409,6 +440,7 @@ internal class LiveWorkoutViewModel(
                             isFinished = peer.isFinished
                         )
                     },
+                    exerciseLanes = liveExerciseLaneSummaries(state.snapshot),
                     connectionMode = state.connectionMode,
                     pendingOperationCount = state.pendingOperationCount
                 )

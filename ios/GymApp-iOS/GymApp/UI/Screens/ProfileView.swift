@@ -3,6 +3,13 @@ import UniformTypeIdentifiers
 
 @MainActor
 struct ProfileView: View {
+    private enum ProfileSection: String, CaseIterable, Identifiable {
+        case training
+        case settings
+
+        var id: String { rawValue }
+    }
+
     private enum ActiveAlert: Identifiable {
         case importBackup
         case error(String)
@@ -32,7 +39,10 @@ struct ProfileView: View {
     @State private var exportContentType: UTType = .json
     @State private var exportFilename = "GymApp-backup"
     @State private var resultMessage: String?
+    @State private var fulfilledNativePushRequestID: UUID?
+    @State private var selectedSection: ProfileSection = .training
     private let canAcceptWorkoutInvites: Bool
+    private let nativePushRequest: NativePushProfileRequest?
     private let onOpenLiveWorkout: () -> Void
 
     init(
@@ -41,6 +51,7 @@ struct ProfileView: View {
         store: WorkoutStore,
         canAcceptWorkoutInvites: Bool = true,
         liveWorkoutCoordinator: LiveWorkoutCoordinator,
+        nativePushRequest: NativePushProfileRequest? = nil,
         onOpenLiveWorkout: @escaping () -> Void
     ) {
         self.appState = appState
@@ -50,38 +61,61 @@ struct ProfileView: View {
         self.garminPhoneSync = appState.garminPhoneSync
         self.canAcceptWorkoutInvites = canAcceptWorkoutInvites
         self.liveWorkoutCoordinator = liveWorkoutCoordinator
+        self.nativePushRequest = nativePushRequest
         self.onOpenLiveWorkout = onOpenLiveWorkout
     }
 
     var body: some View {
-        GymBackground {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 14) {
-                    header
-                    accountCard
-                    garminCard
+        ScrollViewReader { proxy in
+            GymBackground {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: GymTheme.contentSpacing) {
+                        header
+                        sectionPicker
 
-                    if let resultMessage {
-                        GymStatusBanner(message: resultMessage, isError: false)
-                            .transition(.opacity.combined(with: .move(edge: .top)))
+                        if let resultMessage {
+                            GymStatusBanner(message: resultMessage, isError: false)
+                                .transition(.opacity.combined(with: .move(edge: .top)))
+                        }
+                        if selectedSection == .training {
+                            FriendsView(
+                                appState: appState,
+                                auth: auth,
+                                canAcceptWorkoutInvites: canAcceptWorkoutInvites,
+                                liveWorkoutCoordinator: liveWorkoutCoordinator,
+                                onOpenAccountSettings: {
+                                    showsAccountSettings = true
+                                },
+                                onOpenLiveWorkout: onOpenLiveWorkout
+                            )
+                            .id(NativePushProfileFocus.friends)
+                        } else {
+                            accountCard
+                            garminCard
+                            backupCard
+                        }
                     }
-
-                    backupCard
-                    FriendsView(
-                        appState: appState,
-                        auth: auth,
-                        canAcceptWorkoutInvites: canAcceptWorkoutInvites,
-                        liveWorkoutCoordinator: liveWorkoutCoordinator,
-                        onOpenLiveWorkout: onOpenLiveWorkout
-                    )
+                    .padding(.horizontal, GymTheme.screenHorizontalInset)
+                    .padding(.top, GymTheme.screenVerticalInset)
+                    .padding(.bottom, GymTheme.screenBottomInset)
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 10)
-                .padding(.bottom, 30)
+                .scrollDismissesKeyboard(.interactively)
             }
-            .scrollDismissesKeyboard(.interactively)
+            .task(id: nativePushRequest?.id) {
+                guard let nativePushRequest else { return }
+                await scrollToNativePushRequest(
+                    nativePushRequest,
+                    using: proxy,
+                    allowFallback: true
+                )
+            }
+            .onChange(of: appState.socialDashboard != nil) { _ in
+                retryPendingNativePushScroll(using: proxy, allowFallback: true)
+            }
+            .onChange(of: liveWorkoutCoordinator.inbox) { _ in
+                retryPendingNativePushScroll(using: proxy, allowFallback: false)
+            }
         }
-        .navigationTitle("Profile")
         .sheet(isPresented: $showsAccountSettings) {
             NavigationStack {
                 AccountSettingsView(showsCloseButton: true)
@@ -109,12 +143,93 @@ struct ProfileView: View {
         }
     }
 
+    private func retryPendingNativePushScroll(
+        using proxy: ScrollViewProxy,
+        allowFallback: Bool
+    ) {
+        guard let request = nativePushRequest,
+              fulfilledNativePushRequestID != request.id else {
+            return
+        }
+        Task { @MainActor in
+            await scrollToNativePushRequest(
+                request,
+                using: proxy,
+                allowFallback: allowFallback
+            )
+        }
+    }
+
+    private func scrollToNativePushRequest(
+        _ request: NativePushProfileRequest,
+        using proxy: ScrollViewProxy,
+        allowFallback: Bool
+    ) async {
+        guard nativePushRequest?.id == request.id,
+              fulfilledNativePushRequestID != request.id else {
+            return
+        }
+        selectedSection = .training
+        await Task.yield()
+
+        let exactAnchor: NativePushProfileFocus?
+        switch request.focus {
+        case .friends:
+            exactAnchor = .friends
+        case .liveWorkouts:
+            exactAnchor = appState.socialDashboard == nil ? nil : .liveWorkouts
+        case let .liveRoom(roomID):
+            let invitations = liveWorkoutCoordinator.inbox?.invitations ?? []
+            let rooms = liveWorkoutCoordinator.inbox?.rooms ?? []
+            let roomIsVisible = invitations.contains { $0.roomID == roomID }
+                || rooms.contains { $0.roomID == roomID }
+            exactAnchor = roomIsVisible ? .liveRoom(roomID) : nil
+        }
+
+        if let exactAnchor {
+            withAnimation { proxy.scrollTo(exactAnchor, anchor: .top) }
+            fulfilledNativePushRequestID = request.id
+        } else if allowFallback {
+            let fallback: NativePushProfileFocus = appState.socialDashboard == nil
+                ? .friends
+                : .liveWorkouts
+            withAnimation { proxy.scrollTo(fallback, anchor: .top) }
+        }
+    }
+
     private var header: some View {
-        GymSectionTitle(
-            eyebrow: "Profile",
+        GymScreenHeader(
+            eyebrow: gymText("Training circle", "Тренувальне коло", "Тренировочный круг", languageCode: languageCode),
             title: auth.session?.displayName ?? "GymApp athlete",
-            supporting: "Account controls, private data tools, and protected progress."
+            supporting: gymText(
+                "Friends and live training stay together. Account and devices stay one tap away.",
+                "Друзі й live-тренування — разом. Акаунт і пристрої — за одне натискання.",
+                "Друзья и live-тренировки — вместе. Аккаунт и устройства — в одном нажатии.",
+                languageCode: languageCode
+            )
         )
+    }
+
+    private var sectionPicker: some View {
+        GymPanel(
+            contentPadding: EdgeInsets(
+                top: 7,
+                leading: 7,
+                bottom: 7,
+                trailing: 7
+            )
+        ) {
+            Picker(
+                gymText("Profile section", "Розділ профілю", "Раздел профиля", languageCode: languageCode),
+                selection: $selectedSection
+            ) {
+                Text(gymText("Friends", "Друзі", "Друзья", languageCode: languageCode))
+                    .tag(ProfileSection.training)
+                Text(gymText("Settings", "Налаштування", "Настройки", languageCode: languageCode))
+                    .tag(ProfileSection.settings)
+            }
+            .pickerStyle(.segmented)
+        }
     }
 
     private var accountCard: some View {
@@ -131,7 +246,7 @@ struct ProfileView: View {
                         Text(gymLocalized(isCloudAccount ? "Cloud account" : "Local profile"))
                             .font(.headline)
                             .foregroundStyle(GymTheme.textPrimary)
-                        Text(gymLocalized(accountSubtitle))
+                        Text(accountSubtitle)
                             .font(.subheadline)
                             .foregroundStyle(GymTheme.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -163,39 +278,43 @@ struct ProfileView: View {
             VStack(alignment: .leading, spacing: 12) {
                 GymSectionTitle(
                     eyebrow: "Garmin",
-                    title: gymText("Your watch", "Твій годинник", languageCode: languageCode),
+                    title: gymText("Your watch", "Твій годинник", "Твои часы", languageCode: languageCode),
                     supporting: gymText(
                         "Live Bluetooth status is available for watches shared with this iPhone. Cloud watches show their latest synchronization state.",
                         "Поточний статус Bluetooth доступний для годинників, підключених до цього iPhone. Для хмарних годинників показано стан останньої синхронізації.",
+                        "Текущий статус Bluetooth доступен для часов, подключённых к этому iPhone. Для облачных часов показано состояние последней синхронизации.",
                         languageCode: languageCode
                     )
                 )
 
                 if garminPhoneSync.devices.isEmpty && selectedCloudDevice == nil {
-                    Label(
-                        gymText("No Garmin watch connected yet", "Годинник Garmin ще не підключено", languageCode: languageCode),
+                    GymInlineState(
+                        gymText(
+                            "No Garmin watch connected yet. Connect one from Account & devices.",
+                            "Годинник Garmin ще не підключено. Підключи його в розділі «Акаунт і пристрої».",
+                            "Часы Garmin ещё не подключены. Подключи их в разделе «Аккаунт и устройства».",
+                            languageCode: languageCode
+                        ),
                         systemImage: "applewatch"
                     )
-                        .font(.subheadline)
-                        .foregroundStyle(GymTheme.textSecondary)
                 } else {
                     ForEach(garminPhoneSync.devices) { device in
                         garminDeviceRow(
                             name: device.name,
                             detail: device.model,
                             status: device.connected
-                                ? gymText("Connected now", "Зараз підключено", languageCode: languageCode)
-                                : gymText("Not connected now", "Зараз не підключено", languageCode: languageCode),
+                                ? gymText("Connected now", "Зараз підключено", "Подключены сейчас", languageCode: languageCode)
+                                : gymText("Not connected now", "Зараз не підключено", "Сейчас не подключены", languageCode: languageCode),
                             connected: device.connected
                         )
                     }
                     if garminPhoneSync.devices.isEmpty, let device = selectedCloudDevice {
                         garminDeviceRow(
                             name: device.displayName,
-                            detail: gymText("Garmin cloud watch", "Хмарний годинник Garmin", languageCode: languageCode),
+                            detail: gymText("Garmin cloud watch", "Хмарний годинник Garmin", "Облачные часы Garmin", languageCode: languageCode),
                             status: device.lastSeenAt == nil
-                                ? gymText("Waiting for first watch sync", "Очікуємо першу синхронізацію годинника", languageCode: languageCode)
-                                : gymText("Recently synchronized with GymApp cloud", "Нещодавно синхронізовано з хмарою GymApp", languageCode: languageCode),
+                                ? gymText("Waiting for first watch sync", "Очікуємо першу синхронізацію годинника", "Ожидаем первую синхронизацию часов", languageCode: languageCode)
+                                : gymText("Recently synchronized with GymApp cloud", "Нещодавно синхронізовано з хмарою GymApp", "Недавно синхронизировано с облаком GymApp", languageCode: languageCode),
                             connected: device.lastSeenAt != nil
                         )
                     }
@@ -243,10 +362,20 @@ struct ProfileView: View {
     }
 
     private var accountSubtitle: String {
-        if let email = auth.session?.cloud?.email {
-            return email
+        if auth.session?.cloud != nil {
+            return gymText(
+                "Protected workout synchronization is active. Open settings to manage identity and privacy.",
+                "Захищена синхронізація тренувань активна. Відкрий налаштування, щоб керувати профілем і приватністю.",
+                "Защищённая синхронизация тренировок активна. Открой настройки, чтобы управлять профилем и конфиденциальностью.",
+                languageCode: languageCode
+            )
         }
-        return "Workout data is stored on this device. Export a backup before changing devices."
+        return gymText(
+            "Workout data is stored on this device. Export a backup before changing devices.",
+            "Дані тренувань зберігаються на цьому пристрої. Експортуй резервну копію перед зміною пристрою.",
+            "Данные тренировок хранятся на этом устройстве. Экспортируй резервную копию перед сменой устройства.",
+            languageCode: languageCode
+        )
     }
 
     private var backupCard: some View {

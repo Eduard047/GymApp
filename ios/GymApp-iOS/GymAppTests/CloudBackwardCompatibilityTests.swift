@@ -138,7 +138,7 @@ final class CloudBackwardCompatibilityTests: XCTestCase {
         var versionOneBackup = try store.makeBackup(owner: owner)
         versionOneBackup.catalogSeedVersion = 1
         versionOneBackup.exercises.removeAll {
-            $0.catalogKey == "bench_press" ||
+                $0.catalogKey == "bench_press" ||
                 $0.catalogKey == "hip_abduction" ||
                 $0.catalogKey == "assisted_dip"
         }

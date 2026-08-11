@@ -1689,6 +1689,10 @@ final class CoreParityTests: XCTestCase {
             XCTAssertEqual(BuiltInExerciseCatalog.canonicalKey(forName: alias), "assisted_dip")
         }
         XCTAssertEqual(BuiltInExerciseCatalog.canonicalKey(forName: "брусья"), "dips")
+        XCTAssertEqual(BuiltInExerciseCatalog.canonicalKey(forName: "Журавель"), "straight_arm_pulldown")
+        let crane = Exercise(name: "Straight Arm Pulldown")
+        XCTAssertEqual(gymExerciseName(crane, languageCode: "uk"), "Журавель — тяга прямими руками")
+        XCTAssertEqual(gymExerciseName(crane, languageCode: "ru"), "Журавель — тяга прямыми руками")
         let legacyAssistedDip = Exercise(name: "підтягування с брусьями")
         XCTAssertEqual(legacyAssistedDip.catalogKey, "assisted_dip")
         XCTAssertEqual(gymExerciseName(legacyAssistedDip, languageCode: "en"), "Assisted Dip")
@@ -1716,6 +1720,7 @@ final class CoreParityTests: XCTestCase {
         let custom = Exercise(name: "Eduard Special Press")
         XCTAssertNil(custom.catalogKey)
         XCTAssertEqual(gymExerciseName(custom, languageCode: "uk"), custom.name)
+
     }
 
     func testMachineLoadProfileUsesBoundedCrossClientJSONAndLegacyExerciseStillDecodes() throws {
@@ -9979,6 +9984,12 @@ final class CoreParityTests: XCTestCase {
                     }
                     """
                 )
+            case ("/rest/v1/rpc/social_my_friend_code", "POST"):
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    statusCode: 404,
+                    json: #"{"code":"PGRST202","message":"function unavailable"}"#
+                )
             default:
                 XCTFail("Unexpected PWA shared-state request: \(request.url?.absoluteString ?? "nil")")
                 return try AuthURLProtocolStub.response(for: request, statusCode: 404, json: "{}")
@@ -13244,6 +13255,110 @@ final class CoreParityTests: XCTestCase {
         let encoded = try JSONEncoder().encode(missions)
         let contract = try XCTUnwrap(String(data: encoded, encoding: .utf8))
         XCTAssertFalse(contract.contains("rewardXP"))
+    }
+
+    func testLiveWorkoutExerciseLanesKeepStablePlanOrderForBothParticipants() {
+        let snapshot = LiveWorkoutSnapshot(
+            room: LiveWorkoutRoom(
+                roomID: "lw_11111111111111111111111111111111",
+                status: .active,
+                roomRevision: 4,
+                closeReason: nil,
+                createdAt: "2026-08-11T10:00:00Z",
+                inviteExpiresAt: "2026-08-11T10:15:00Z",
+                startedAt: "2026-08-11T10:02:00Z",
+                activeExpiresAt: "2026-08-11T14:02:00Z",
+                endedAt: nil,
+                summary: LiveWorkoutSummary(
+                    exerciseCount: 2,
+                    setCount: 3,
+                    exerciseNames: ["Bench Press", "Straight Arm Pulldown"]
+                )
+            ),
+            plan: LiveWorkoutPlan(exercises: [
+                LiveWorkoutPlanExercise(
+                    exerciseID: "exercise-1",
+                    catalogKey: "bench_press",
+                    name: "Bench Press",
+                    sets: [
+                        LiveWorkoutPlanSet(setID: "set-1", weight: 80, reps: 8),
+                        LiveWorkoutPlanSet(setID: "set-2", weight: 80, reps: 8)
+                    ]
+                ),
+                LiveWorkoutPlanExercise(
+                    exerciseID: "exercise-2",
+                    catalogKey: "straight_arm_pulldown",
+                    name: "Straight Arm Pulldown",
+                    sets: [LiveWorkoutPlanSet(setID: "set-3", weight: 25, reps: 12)]
+                )
+            ]),
+            participants: [
+                LiveWorkoutParticipant(
+                    isSelf: true,
+                    profile: LiveWorkoutProfile(
+                        profileID: "p_11111111111111111111111111111111",
+                        displayName: "Owner"
+                    ),
+                    role: .owner,
+                    state: .joined,
+                    membershipRevision: 2,
+                    joinedAt: "2026-08-11T10:00:00Z",
+                    finishedAt: nil,
+                    departedAt: nil,
+                    progress: LiveWorkoutProgress(
+                        revision: 2,
+                        completedSets: [
+                            LiveWorkoutCompletedSet(
+                                setID: "set-1",
+                                weight: 80,
+                                reps: 8,
+                                completedAt: "2026-08-11T10:05:00Z"
+                            ),
+                            LiveWorkoutCompletedSet(
+                                setID: "set-3",
+                                weight: 25,
+                                reps: 12,
+                                completedAt: "2026-08-11T10:07:00Z"
+                            )
+                        ],
+                        undoableSetID: "set-3",
+                        finishedAt: nil
+                    )
+                ),
+                LiveWorkoutParticipant(
+                    isSelf: false,
+                    profile: LiveWorkoutProfile(
+                        profileID: "p_22222222222222222222222222222222",
+                        displayName: "Friend"
+                    ),
+                    role: .participant,
+                    state: .joined,
+                    membershipRevision: 2,
+                    joinedAt: "2026-08-11T10:01:00Z",
+                    finishedAt: nil,
+                    departedAt: nil,
+                    progress: LiveWorkoutProgress(
+                        revision: 1,
+                        completedSets: [
+                            LiveWorkoutCompletedSet(
+                                setID: "set-2",
+                                weight: 80,
+                                reps: 8,
+                                completedAt: "2026-08-11T10:06:00Z"
+                            )
+                        ],
+                        undoableSetID: "set-2",
+                        finishedAt: nil
+                    )
+                )
+            ]
+        )
+
+        XCTAssertEqual(snapshot.exerciseLaneSummaries.map(\.exerciseID), ["exercise-1", "exercise-2"])
+        XCTAssertEqual(snapshot.exerciseLaneSummaries[0].selfCompleted, [true, false])
+        XCTAssertEqual(snapshot.exerciseLaneSummaries[0].peerCompleted, [false, true])
+        XCTAssertEqual(snapshot.exerciseLaneSummaries[1].selfCompleted, [true])
+        XCTAssertEqual(snapshot.exerciseLaneSummaries[1].peerCompleted, [false])
     }
 
     private func missionSummary(

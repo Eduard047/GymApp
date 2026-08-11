@@ -8,7 +8,6 @@ FIRST VIEWPORT: A large asymmetric lens leads; core facts live inside it and the
 FORM: User-selected Focus Lens from Fluid Focus; seed af1a1dee. Android structure remains Material 3 with native back, insets, semantics, and motion.
 */
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -63,9 +62,13 @@ import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.EmptyStatePanel
 import com.example.gymapp.ui.components.HeroPanel
 import com.example.gymapp.ui.components.InfoPill
+import com.example.gymapp.ui.components.GymSegmentItem
+import com.example.gymapp.ui.components.GymSegmentedControl
 import com.example.gymapp.ui.components.MetricTile
 import com.example.gymapp.ui.components.MuscleHeatmapCard
+import com.example.gymapp.ui.components.ScreenHeader
 import com.example.gymapp.ui.components.SoloProgressHero
+import com.example.gymapp.ui.theme.GymSpacing
 import com.example.gymapp.ui.viewmodel.MuscleMapPeriod
 import com.example.gymapp.ui.viewmodel.TrainingRecommendationUiModel
 import com.example.gymapp.ui.viewmodel.WorkoutListUiState
@@ -102,37 +105,27 @@ fun WorkoutListScreen(
         modifier = modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        AnimatedVisibility(visible = showTopControls) {
-            Column(
+        if (showTopControls) {
+            ScreenHeader(
+                title = stringResource(R.string.title_workouts),
+                supporting = stringResource(R.string.workouts_screen_subtitle),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-                    .padding(top = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(3.dp)
-            ) {
-                Text(
-                    text = stringResource(R.string.title_workouts),
-                    style = MaterialTheme.typography.headlineLarge,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = stringResource(R.string.workouts_screen_subtitle),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+                    .padding(horizontal = GymSpacing.ScreenHorizontal)
+                    .padding(top = GymSpacing.Small)
+            )
         }
 
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(
-                start = 12.dp,
-                top = 8.dp,
-                end = 12.dp,
-                bottom = 16.dp
+                start = GymSpacing.ScreenHorizontal,
+                top = GymSpacing.Small,
+                end = GymSpacing.ScreenHorizontal,
+                bottom = GymSpacing.ScreenBottom
             ),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(GymSpacing.Medium)
         ) {
             item {
                 FocusLens(
@@ -206,7 +199,9 @@ fun WorkoutListScreen(
                 item {
                     EmptyStatePanel(
                         title = stringResource(R.string.empty_workouts),
-                        supporting = stringResource(R.string.dashboard_subtitle)
+                        supporting = stringResource(R.string.dashboard_subtitle),
+                        actionLabel = stringResource(R.string.action_add_workout),
+                        onAction = onAddWorkout
                     )
                 }
             } else {
@@ -368,73 +363,23 @@ private fun WorkoutSectionSwitcher(
     onWorkoutListClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    AppPanel(modifier = modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.padding(6.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            WorkoutSectionChip(
-                title = stringResource(R.string.workout_switch_overview_title),
-                selected = !workoutsSelected,
-                onClick = onOverviewClick,
-                modifier = Modifier.weight(1f)
+    GymSegmentedControl(
+        items = listOf(
+            GymSegmentItem(
+                value = false,
+                label = stringResource(R.string.workout_switch_overview_title)
+            ),
+            GymSegmentItem(
+                value = true,
+                label = stringResource(R.string.workout_switch_list_title, sessionCount)
             )
-            WorkoutSectionChip(
-                title = stringResource(R.string.workout_switch_list_title, sessionCount),
-                selected = workoutsSelected,
-                onClick = onWorkoutListClick,
-                modifier = Modifier.weight(1f)
-            )
-        }
-    }
-}
-
-@Composable
-private fun WorkoutSectionChip(
-    title: String,
-    selected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val darkTheme = isSystemInDarkTheme()
-    Surface(
-        modifier = modifier.clickable(onClick = onClick),
-        color = if (selected) {
-            if (darkTheme) Color.White.copy(alpha = 0.32f) else MaterialTheme.colorScheme.surface
-        } else {
-            Color.Transparent
+        ),
+        selected = workoutsSelected,
+        onSelected = { selected ->
+            if (selected) onWorkoutListClick() else onOverviewClick()
         },
-        shape = MaterialTheme.shapes.large,
-        border = BorderStroke(
-            width = 1.dp,
-            color = if (selected) {
-                if (darkTheme) Color.White.copy(alpha = 0.16f) else {
-                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f)
-                }
-            } else {
-                Color.Transparent
-            }
-        )
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleSmall,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                color = if (selected) {
-                    if (darkTheme) Color.White else MaterialTheme.colorScheme.onSurface
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                }
-            )
-        }
-    }
+        modifier = modifier
+    )
 }
 
 @Composable

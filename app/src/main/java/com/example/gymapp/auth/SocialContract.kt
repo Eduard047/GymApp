@@ -20,8 +20,13 @@ internal const val SOCIAL_MAX_WORKOUT_EXERCISES = 20
 internal const val SOCIAL_MAX_EXERCISE_RECORDS = 100
 internal const val SOCIAL_MAX_WORKOUT_INVITES = 25
 internal const val SOCIAL_MAX_INVITE_JSON_BYTES = 32 * 1_024
+internal const val SOCIAL_MY_FRIEND_CODE_MAX_BYTES = 256
 
 private val socialProfileIdPattern = Regex("^p_[0-9a-f]{32}$")
+private val socialShortFriendCodePattern = Regex("^g_[0-9a-f]{12}$")
+private val socialHumanFriendCodePattern = Regex(
+    "^GYM-([0-9A-F]{4})-([0-9A-F]{4})-([0-9A-F]{4})$"
+)
 private val socialFriendshipIdPattern = Regex("^f_[0-9a-f]{32}$")
 private val socialCatalogKeyPattern = Regex("^[a-z0-9_]{1,64}$")
 private val socialWorkoutDayPattern = Regex("^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
@@ -48,6 +53,11 @@ internal data class SocialSelfProfile(
     val progressUpdatedAt: String?,
     val privacy: SocialPrivacy,
     val settingsRevision: Int
+)
+
+internal data class SocialMyFriendCode(
+    val version: Int,
+    val friendCode: String
 )
 
 internal data class SocialFriend(
@@ -202,6 +212,9 @@ internal data class SocialWorkoutInviteCancellation(
 internal fun isValidSocialProfileId(value: String): Boolean =
     socialProfileIdPattern.matches(value)
 
+internal fun isValidSocialShortFriendCode(value: String): Boolean =
+    socialShortFriendCodePattern.matches(value)
+
 internal fun isValidSocialFriendshipId(value: String): Boolean =
     socialFriendshipIdPattern.matches(value)
 
@@ -211,10 +224,25 @@ internal fun isValidSocialWorkoutInviteId(value: String): Boolean =
 internal fun isValidSocialClientRequestId(value: String): Boolean =
     socialClientRequestIdPattern.matches(value)
 
-internal fun normalizeSocialFriendCode(value: String): String? = value
-    .trim()
-    .lowercase()
-    .takeIf(::isValidSocialProfileId)
+internal fun normalizeSocialFriendCode(value: String): String? {
+    if (value.length > 128 || value.toByteArray(Charsets.UTF_8).size > 128) return null
+    val trimmed = value.trim()
+    val canonical = trimmed.lowercase()
+    if (isValidSocialProfileId(canonical) || isValidSocialShortFriendCode(canonical)) {
+        return canonical
+    }
+    val human = socialHumanFriendCodePattern.matchEntire(trimmed.uppercase()) ?: return null
+    return "g_${human.groupValues.drop(1).joinToString(separator = "").lowercase()}"
+}
+
+internal fun formatSocialFriendCode(value: String): String {
+    val canonical = normalizeSocialFriendCode(value) ?: return value
+    if (!isValidSocialShortFriendCode(canonical)) return canonical
+    return canonical.removePrefix("g_")
+        .uppercase()
+        .chunked(4)
+        .joinToString(separator = "-", prefix = "GYM-")
+}
 
 internal fun rankedSocialFriends(friends: List<SocialFriend>): List<SocialFriend> =
     friends.sortedWith(
@@ -271,6 +299,21 @@ internal fun parseSocialDashboard(raw: String): SocialDashboard {
             SOCIAL_MAX_WORKOUT_INVITES
         )
     ).also(::requireUniqueSocialDashboardIds)
+}
+
+internal fun parseSocialMyFriendCode(raw: String): SocialMyFriendCode {
+    require(raw.toByteArray(Charsets.UTF_8).size <= SOCIAL_MY_FRIEND_CODE_MAX_BYTES) {
+        "Social response is invalid."
+    }
+    val root = socialRoot(raw, setOf("version", "friendCode"))
+    return SocialMyFriendCode(
+        version = root.requiredInt(
+            "version",
+            SOCIAL_CONTRACT_VERSION,
+            SOCIAL_CONTRACT_VERSION
+        ),
+        friendCode = root.requiredShortFriendCode("friendCode")
+    )
 }
 
 internal fun parseSocialFriendDetails(raw: String): SocialFriendDetails {
@@ -824,6 +867,9 @@ private fun JSONObject.requiredExerciseName(key: String): String {
 
 private fun JSONObject.requiredProfileId(key: String): String = requiredString(key, 34)
     .also { require(isValidSocialProfileId(it)) { "Social response is invalid." } }
+
+private fun JSONObject.requiredShortFriendCode(key: String): String = requiredString(key, 14)
+    .also { require(isValidSocialShortFriendCode(it)) { "Social response is invalid." } }
 
 private fun JSONObject.requiredFriendshipId(key: String): String = requiredString(key, 34)
     .also { require(isValidSocialFriendshipId(it)) { "Social response is invalid." } }

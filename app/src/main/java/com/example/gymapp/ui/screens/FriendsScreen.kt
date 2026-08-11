@@ -3,6 +3,7 @@ package com.example.gymapp.ui.screens
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -47,11 +48,14 @@ import com.example.gymapp.auth.SocialOutgoingWorkoutInvite
 import com.example.gymapp.auth.SocialPrivacy
 import com.example.gymapp.auth.LiveInvitation
 import com.example.gymapp.auth.LiveInboxRoom
+import com.example.gymapp.auth.formatSocialFriendCode
 import com.example.gymapp.auth.rankedSocialFriends
 import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.EmptyStatePanel
-import com.example.gymapp.ui.components.HeroPanel
+import com.example.gymapp.ui.components.LoadingStatePanel
+import com.example.gymapp.ui.components.ScreenHeader
 import com.example.gymapp.ui.components.SectionTitle
+import com.example.gymapp.ui.theme.GymSpacing
 import com.example.gymapp.ui.util.localizedExerciseName
 import com.example.gymapp.ui.viewmodel.FriendsUiState
 import com.example.gymapp.ui.viewmodel.LiveConnectionMode
@@ -82,6 +86,7 @@ internal fun FriendsScreen(
     onCloseLiveRoom: (LiveInboxRoom) -> Unit,
     onOpenLiveRoom: (LiveInboxRoom) -> Unit,
     onClearLiveMessages: () -> Unit,
+    onOpenAccountSettings: () -> Unit,
     modifier: Modifier = Modifier,
     headerContent: LazyListScope.() -> Unit = {}
 ) {
@@ -91,32 +96,21 @@ internal fun FriendsScreen(
     var inviteToAccept by remember { mutableStateOf<SocialIncomingWorkoutInvite?>(null) }
     var requestToBlock by remember { mutableStateOf<SocialFriendRequest?>(null) }
     val dashboard = uiState.dashboard
+    val displayedFriendCode = dashboard?.let {
+        formatSocialFriendCode(uiState.myFriendCode ?: it.self.friendCode)
+    }.orEmpty()
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 16.dp, top = 10.dp, end = 16.dp, bottom = 28.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        contentPadding = PaddingValues(
+            start = GymSpacing.ScreenHorizontal,
+            top = GymSpacing.ScreenTop,
+            end = GymSpacing.ScreenHorizontal,
+            bottom = GymSpacing.ScreenBottom
+        ),
+        verticalArrangement = Arrangement.spacedBy(GymSpacing.Medium)
     ) {
         headerContent()
-
-        item {
-            HeroPanel(modifier = Modifier.fillMaxWidth()) {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        text = stringResource(R.string.friends_hero_title),
-                        style = MaterialTheme.typography.headlineMedium
-                    )
-                    Text(
-                        text = stringResource(R.string.friends_hero_supporting),
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    Text(
-                        text = stringResource(R.string.friends_integrity_notice),
-                        style = MaterialTheme.typography.labelMedium
-                    )
-                }
-            }
-        }
 
         uiState.error?.let { error ->
             item {
@@ -152,18 +146,12 @@ internal fun FriendsScreen(
                 EmptyStatePanel(
                     title = stringResource(R.string.friends_cloud_required_title),
                     supporting = stringResource(R.string.friends_cloud_required_supporting),
+                    actionLabel = stringResource(R.string.profile_section_settings),
+                    onAction = onOpenAccountSettings,
                     modifier = Modifier.fillMaxWidth()
                 )
             }
             return@LazyColumn
-        }
-
-        item {
-            RefreshSocialCard(
-                isLoading = uiState.isDashboardLoading || uiState.isInboxLoading,
-                pendingInvites = dashboard?.pendingWorkoutInviteCount ?: 0,
-                onRefresh = onRefresh
-            )
         }
 
         liveWorkoutLobby(
@@ -174,40 +162,6 @@ internal fun FriendsScreen(
             onClose = onCloseLiveRoom,
             onOpen = onOpenLiveRoom
         )
-
-        if (dashboard == null) {
-            if (uiState.isDashboardLoading) {
-                item { CenteredLoader() }
-            }
-            return@LazyColumn
-        }
-
-        item {
-            FriendCodeCard(
-                displayName = dashboard.self.displayName,
-                friendCode = dashboard.self.friendCode,
-                xp = dashboard.self.xp,
-                level = dashboard.self.level,
-                workouts = dashboard.self.workouts,
-                statsAvailable = dashboard.self.statsAvailable,
-                copied = copiedCode,
-                onCopy = {
-                    copiedCode = copyFriendCode(context, dashboard.self.friendCode)
-                }
-            )
-        }
-
-        item {
-            AddFriendCard(
-                friendCode = friendCode,
-                onFriendCodeChange = {
-                    friendCode = it.take(64)
-                    copiedCode = false
-                },
-                isLoading = "send-friend" in uiState.actionsInFlight,
-                onSend = { onSendFriendRequest(friendCode) }
-            )
-        }
 
         val incomingInvites = uiState.workoutInbox?.incoming.orEmpty()
         if (incomingInvites.isNotEmpty()) {
@@ -229,14 +183,15 @@ internal fun FriendsScreen(
             }
         }
 
-        if (dashboard.incoming.isNotEmpty()) {
+        val incomingFriendRequests = dashboard?.incoming.orEmpty()
+        if (incomingFriendRequests.isNotEmpty()) {
             item {
                 SectionTitle(
                     eyebrow = stringResource(R.string.friends_requests_eyebrow),
                     title = stringResource(R.string.friends_incoming_title)
                 )
             }
-            items(dashboard.incoming, key = { "incoming-${it.friendshipId}" }) { request ->
+            items(incomingFriendRequests, key = { "incoming-${it.friendshipId}" }) { request ->
                 IncomingFriendRequestCard(
                     request = request,
                     isLoading = "friend-${request.friendshipId}" in uiState.actionsInFlight ||
@@ -246,6 +201,35 @@ internal fun FriendsScreen(
                     onBlock = { requestToBlock = request }
                 )
             }
+        }
+
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(GymSpacing.XSmall)) {
+                ScreenHeader(
+                    title = stringResource(R.string.friends_hero_title),
+                    supporting = stringResource(R.string.friends_hero_supporting)
+                )
+                Text(
+                    text = stringResource(R.string.friends_integrity_notice),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        item {
+            RefreshSocialCard(
+                isLoading = uiState.isDashboardLoading || uiState.isInboxLoading,
+                pendingInvites = dashboard?.pendingWorkoutInviteCount ?: 0,
+                onRefresh = onRefresh
+            )
+        }
+
+        if (dashboard == null) {
+            if (uiState.isDashboardLoading) {
+                item { LoadingStatePanel() }
+            }
+            return@LazyColumn
         }
 
         item {
@@ -272,6 +256,34 @@ internal fun FriendsScreen(
                     onOpen = { onOpenFriend(friend) }
                 )
             }
+        }
+
+        item {
+            AddFriendCard(
+                friendCode = friendCode,
+                onFriendCodeChange = {
+                    friendCode = it.take(64)
+                    copiedCode = false
+                },
+                isLoading = "send-friend" in uiState.actionsInFlight,
+                onSend = { onSendFriendRequest(friendCode) }
+            )
+        }
+
+        item {
+            FriendCodeCard(
+                displayName = dashboard.self.displayName,
+                friendCode = displayedFriendCode,
+                xp = dashboard.self.xp,
+                level = dashboard.self.level,
+                workouts = dashboard.self.workouts,
+                statsAvailable = dashboard.self.statsAvailable,
+                copied = copiedCode,
+                onCopy = {
+                    copiedCode = copyFriendCode(context, displayedFriendCode)
+                },
+                onShare = { shareFriendCode(context, displayedFriendCode) }
+            )
         }
 
         item {
@@ -560,7 +572,8 @@ private fun FriendCodeCard(
     workouts: Int?,
     statsAvailable: Boolean,
     copied: Boolean,
-    onCopy: () -> Unit
+    onCopy: () -> Unit,
+    onShare: () -> Unit
 ) {
     AppPanel(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -592,11 +605,16 @@ private fun FriendCodeCard(
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.SemiBold
             )
-            OutlinedButton(onClick = onCopy) {
-                Text(
-                    if (copied) stringResource(R.string.friend_code_copied)
-                    else stringResource(R.string.friend_code_copy)
-                )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = onCopy, modifier = Modifier.weight(1f)) {
+                    Text(
+                        if (copied) stringResource(R.string.friend_code_copied)
+                        else stringResource(R.string.friend_code_copy)
+                    )
+                }
+                Button(onClick = onShare, modifier = Modifier.weight(1f)) {
+                    Text(stringResource(R.string.friend_code_share))
+                }
             }
         }
     }
@@ -926,16 +944,6 @@ private fun MessagePanel(message: String, isError: Boolean, onDismiss: () -> Uni
 }
 
 @Composable
-private fun CenteredLoader() {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.Center
-    ) {
-        CircularProgressIndicator()
-    }
-}
-
-@Composable
 private fun socialInviteStatusLabel(status: String): String = stringResource(
     when (status) {
         "pending" -> R.string.workout_invite_status_pending
@@ -951,4 +959,15 @@ private fun copyFriendCode(context: Context, value: String): Boolean {
     return runCatching {
         clipboard.setPrimaryClip(ClipData.newPlainText("GymApp friend code", value))
     }.isSuccess
+}
+
+private fun shareFriendCode(context: Context, value: String) {
+    val sendIntent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_SUBJECT, context.getString(R.string.friend_code_share_subject))
+        putExtra(Intent.EXTRA_TEXT, context.getString(R.string.friend_code_share_message, value))
+    }
+    context.startActivity(
+        Intent.createChooser(sendIntent, context.getString(R.string.friend_code_share))
+    )
 }

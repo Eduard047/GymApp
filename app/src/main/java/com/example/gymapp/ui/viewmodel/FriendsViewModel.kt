@@ -14,6 +14,7 @@ import com.example.gymapp.auth.SocialFriend
 import com.example.gymapp.auth.SocialFriendDetails
 import com.example.gymapp.auth.SocialFriendRequest
 import com.example.gymapp.auth.SocialIncomingWorkoutInvite
+import com.example.gymapp.auth.SocialMyFriendCode
 import com.example.gymapp.auth.SocialPrivacy
 import com.example.gymapp.auth.SocialWorkoutInbox
 import com.example.gymapp.auth.authErrorText
@@ -47,6 +48,7 @@ internal fun acceptedSocialWorkoutForReuse(
 internal data class FriendsUiState(
     val isCloudAccount: Boolean = false,
     val dashboard: SocialDashboard? = null,
+    val myFriendCode: String? = null,
     val workoutInbox: SocialWorkoutInbox? = null,
     val selectedProfileId: String? = null,
     val selectedFriendDetails: SocialFriendDetails? = null,
@@ -66,6 +68,21 @@ internal fun invalidateSelectedFriendDetailsForRefresh(state: FriendsUiState): F
         state.copy(selectedFriendDetails = null, isDetailsLoading = true)
     }
 
+internal fun resolvedSocialFriendCode(
+    dashboard: SocialDashboard,
+    discovered: SocialMyFriendCode?
+): String = discovered?.friendCode ?: dashboard.self.friendCode
+
+internal fun shouldApplySocialDashboardRefresh(
+    expectedSession: AccountSession.Cloud,
+    activeSession: AccountSession?,
+    requestVersion: Long,
+    latestRequestVersion: Long
+): Boolean = requestVersion == latestRequestVersion &&
+    activeSession is AccountSession.Cloud &&
+    activeSession.userId == expectedSession.userId &&
+    activeSession.sessionGeneration == expectedSession.sessionGeneration
+
 internal enum class SocialRevocationKind {
     RemoveFriend,
     BlockProfile
@@ -78,6 +95,7 @@ internal fun invalidateSocialAccessAfterRevocation(
     SocialRevocationKind.RemoveFriend,
     SocialRevocationKind.BlockProfile -> state.copy(
         dashboard = null,
+        myFriendCode = null,
         workoutInbox = null,
         selectedProfileId = null,
         selectedFriendDetails = null,
@@ -123,6 +141,15 @@ internal class FriendsViewModel(
             null
         }
         viewModelScope.launch {
+            if (!shouldApplySocialDashboardRefresh(
+                    expectedSession = cloudSession,
+                    activeSession = authManager.authState.value.session,
+                    requestVersion = requestVersion,
+                    latestRequestVersion = dashboardRequestVersion
+                )
+            ) {
+                return@launch
+            }
             _uiState.update {
                 invalidateSelectedFriendDetailsForRefresh(it).copy(
                     isDashboardLoading = true,
@@ -131,7 +158,14 @@ internal class FriendsViewModel(
             }
             try {
                 val dashboard = authManager.loadSocialDashboard(cloudSession)
-                if (requestVersion == dashboardRequestVersion) {
+                val discoveredFriendCode = authManager.loadSocialMyFriendCode(cloudSession)
+                if (shouldApplySocialDashboardRefresh(
+                        expectedSession = cloudSession,
+                        activeSession = authManager.authState.value.session,
+                        requestVersion = requestVersion,
+                        latestRequestVersion = dashboardRequestVersion
+                    )
+                ) {
                     var selectedProfileToReload: String? = null
                     _uiState.update { state ->
                         selectedProfileToReload = state.selectedProfileId?.takeIf { profileId ->
@@ -139,6 +173,10 @@ internal class FriendsViewModel(
                         }
                         state.copy(
                             dashboard = dashboard,
+                            myFriendCode = resolvedSocialFriendCode(
+                                dashboard,
+                                discoveredFriendCode
+                            ),
                             isDashboardLoading = false,
                             selectedProfileId = selectedProfileToReload,
                             selectedFriendDetails = null,
@@ -150,7 +188,13 @@ internal class FriendsViewModel(
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Throwable) {
-                if (requestVersion == dashboardRequestVersion) {
+                if (shouldApplySocialDashboardRefresh(
+                        expectedSession = cloudSession,
+                        activeSession = authManager.authState.value.session,
+                        requestVersion = requestVersion,
+                        latestRequestVersion = dashboardRequestVersion
+                    )
+                ) {
                     _uiState.update { state ->
                         state.copy(
                             isDashboardLoading = false,

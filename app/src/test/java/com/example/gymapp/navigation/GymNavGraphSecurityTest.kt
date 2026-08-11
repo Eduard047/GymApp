@@ -5,6 +5,7 @@ import com.example.gymapp.auth.CloudAccountDeletionSessionDisposition
 import com.example.gymapp.auth.cloudAccountDeletionSessionDisposition
 import com.example.gymapp.auth.databaseName
 import com.example.gymapp.R
+import com.example.gymapp.data.catalog.BuiltInExerciseCatalog
 import com.example.gymapp.util.LocalizedText
 import com.example.gymapp.data.repository.canonicalWorkoutPayloadMatches
 import com.example.gymapp.data.repository.canonicalWorkoutPayloadDigest
@@ -114,11 +115,11 @@ class GymNavGraphSecurityTest {
         assertTrue(isCanonicalAndroidCloudEnvelope(canonical, userId))
         canonical.put("catalogSeedVersion", 2)
         assertTrue(isCanonicalAndroidCloudEnvelope(canonical, userId))
-        canonical.put("catalogSeedVersion", 3)
+        canonical.put("catalogSeedVersion", BuiltInExerciseCatalog.SEED_VERSION)
         assertTrue(isCanonicalAndroidCloudEnvelope(canonical, userId))
-        canonical.put("catalogSeedVersion", 4)
+        canonical.put("catalogSeedVersion", BuiltInExerciseCatalog.SEED_VERSION + 1)
         assertFalse(isCanonicalAndroidCloudEnvelope(canonical, userId))
-        canonical.put("catalogSeedVersion", 3)
+        canonical.put("catalogSeedVersion", BuiltInExerciseCatalog.SEED_VERSION)
         assertTrue(canonicalWorkoutPayloadMatches(canonical, JSONObject(canonical.toString())))
         val legacyEightKeyEnvelope = JSONObject(canonical.toString()).apply {
             remove("catalogSeedVersion")

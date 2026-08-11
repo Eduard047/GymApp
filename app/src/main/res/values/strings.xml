@@ -19,6 +19,10 @@
     <string name="title_progress">Progress</string>
     <string name="title_profile">Profile</string>
     <string name="profile_screen_subtitle">Account, Garmin, private backups, diagnostics, and protected progress.</string>
+    <string name="profile_hub_title">Training circle</string>
+    <string name="profile_section_training">Friends &amp; live</string>
+    <string name="profile_section_settings">Account &amp; devices</string>
+    <string name="profile_pending_training_count">%1$d waiting</string>
     <string name="leaderboard_hero_title">Rating not available yet</string>
     <string name="leaderboard_hero_supporting">Workouts are currently scored on your device, so public ranking is disabled, not queued for review. It will appear only after a future app and server update adds verified scoring; no release date is set. Your private progress remains available.</string>
     <string name="leaderboard_your_xp">Your XP</string>
@@ -31,9 +35,9 @@
     <string name="leaderboard_row_detail">Level %1$d - %2$d workouts</string>
 
     <string name="friend_details_title">Friend details</string>
-    <string name="friends_hero_title">Friends, not a global rating</string>
-    <string name="friends_hero_supporting">Compare progress only with people you accept, and choose what each friend may see.</string>
-    <string name="friends_integrity_notice">XP and records are synced from workout data entered by users. They are self-reported, not verified competition results.</string>
+    <string name="friends_hero_title">Your training circle</string>
+    <string name="friends_hero_supporting">Invites, private workout sharing and live sessions with accepted friends.</string>
+    <string name="friends_integrity_notice">Shared progress is self-recorded.</string>
     <string name="friends_cloud_required_title">Cloud sign-in required</string>
     <string name="friends_cloud_required_supporting">Your local workouts remain available. Sign in with a cloud account to add friends and exchange workout plans.</string>
     <string name="friends_synced_title">Friends and invites</string>
@@ -45,6 +49,9 @@
     <string name="friend_code_label">Friend code</string>
     <string name="friend_code_copy">Copy code</string>
     <string name="friend_code_copied">Copied</string>
+    <string name="friend_code_share">Share</string>
+    <string name="friend_code_share_subject">GymApp friend code</string>
+    <string name="friend_code_share_message">Add me in GymApp with this friend code: %1$s</string>
     <string name="friend_code_invalid">Enter a complete GymApp friend code.</string>
     <string name="friend_request_send">Send request</string>
     <string name="friend_request_sending">Sending…</string>
@@ -61,6 +68,17 @@
     <string name="friends_empty_title">No friends yet</string>
     <string name="friends_empty_supporting">Share your code or send a request with a friend code.</string>
     <string name="friend_stats_summary">%1$d XP · level %2$d · %3$d workouts</string>
+    <string name="friend_metric_level">Level %1$d</string>
+    <string name="friend_metric_xp">%1$d XP</string>
+    <string name="friend_metric_workouts">%1$d workouts</string>
+    <string name="friend_train_eyebrow">TRAIN TOGETHER</string>
+    <string name="friend_train_title">Start from this friend</string>
+    <string name="friend_train_supporting">Choose a saved workout to send or build a new synchronized live session.</string>
+    <string name="friend_choose_workout_action">Choose saved workout</string>
+    <string name="friend_workout_picker_title">Choose a workout for %1$s</string>
+    <string name="friend_workout_picker_supporting">Nothing is sent yet. Select a saved workout, then review link, copy, and LIVE options.</string>
+    <string name="friend_workout_picker_empty_supporting">Save a workout first, then return to this friend.</string>
+    <string name="friend_build_live_action">Build LIVE workout</string>
     <string name="friend_stats_private">Progress is private or not currently available</string>
     <string name="friend_open_details">Recent workouts and records</string>
     <string name="friends_privacy_eyebrow">PRIVACY</string>
@@ -1053,6 +1071,11 @@
     <string name="live_workout_peer_title">Training with %1$s</string>
     <string name="live_workout_peer_progress">Friend progress: %1$d of %2$d sets</string>
     <string name="live_workout_peer_finished">Your friend has finished.</string>
+    <string name="live_workout_two_lanes_title">SET-BY-SET · BOTH PHONES</string>
+    <string name="live_workout_lane_you">You</string>
+    <string name="live_workout_set_completed_accessibility">Set %1$d completed</string>
+    <string name="live_workout_set_pending_accessibility">Set %1$d pending</string>
+    <string name="live_workout_set_progress_accessibility">%1$d of %2$d sets completed</string>
     <string name="live_workout_active_realtime">Live connection · queued: %1$d</string>
     <string name="live_workout_active_polling">Polling fallback · queued: %1$d</string>
     <string name="live_workout_active_offline">Offline · queued safely: %1$d</string>

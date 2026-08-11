@@ -3,12 +3,12 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const expected = Object.freeze({
-  marketingVersion: "3.0.6",
-  androidVersionCode: "2000305332",
-  iosBuildNumber: "24",
-  pwaBundle: "app.v84.js",
-  pwaRussianBundle: "russian-text.v76.js",
-  pwaCache: "gym-pwa-v120",
+  marketingVersion: "3.0.7",
+  androidVersionCode: "2000320887",
+  iosBuildNumber: "25",
+  pwaBundle: "app.v85.js",
+  pwaRussianBundle: "russian-text.v77.js",
+  pwaCache: "gym-pwa-v121",
 });
 
 const [
@@ -39,7 +39,7 @@ function matches(source, pattern) {
   return [...source.matchAll(pattern)].map((match) => match[1]);
 }
 
-test("Android release metadata declares GymApp 3.0.6 with the next versionCode", () => {
+test("Android release metadata declares GymApp 3.0.7 with the next versionCode", () => {
   assert.match(
     gradleProperties,
     new RegExp(`^appVersionName=${expected.marketingVersion.replaceAll(".", "\\.")}$`, "m")
@@ -69,7 +69,7 @@ test("iOS app target and archive defaults agree on release version and build", (
   );
 });
 
-test("Garmin and the immutable PWA entrypoints agree with release 3.0.6", () => {
+test("Garmin and the immutable PWA entrypoints agree with release 3.0.7", () => {
   assert.match(
     garminManifest,
     new RegExp(`\\bversion="${expected.marketingVersion.replaceAll(".", "\\.")}"`)

@@ -53,6 +53,13 @@ enum SharedWorkoutLinkEncoder {
         workout: WorkoutSession,
         exercises: [UUID: Exercise]
     ) throws -> URL {
+        try makeURL(plan: makePlan(workout: workout, exercises: exercises))
+    }
+
+    static func makePlan(
+        workout: WorkoutSession,
+        exercises: [UUID: Exercise]
+    ) throws -> SharedWorkoutPlan {
         let blocks = workout.exercises.filter { !$0.sets.isEmpty }
         guard !blocks.isEmpty, blocks.count <= maximumExercises else {
             throw SharedWorkoutLinkError.invalidExerciseCount
@@ -70,7 +77,9 @@ enum SharedWorkoutLinkEncoder {
                 }
             )
         }
-        return try makeURL(plan: SharedWorkoutPlan(exercises: sharedExercises))
+        return try SharedWorkoutLinkValidator.validate(
+            SharedWorkoutPlan(exercises: sharedExercises)
+        )
     }
 
     static func makeURL(plan: SharedWorkoutPlan) throws -> URL {

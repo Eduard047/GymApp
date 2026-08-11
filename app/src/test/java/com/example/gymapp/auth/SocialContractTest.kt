@@ -14,6 +14,45 @@ import org.junit.Test
 
 class SocialContractTest {
     @Test
+    fun shortFriendCodeParsesExactlyAndNormalizesRawHumanAndLegacyForms() {
+        val parsed = parseSocialMyFriendCode(
+            """{"version":1,"friendCode":"g_a1b2c3d4e5f6"}"""
+        )
+
+        assertEquals(1, parsed.version)
+        assertEquals("g_a1b2c3d4e5f6", parsed.friendCode)
+        assertEquals("g_a1b2c3d4e5f6", normalizeSocialFriendCode(" G_A1B2C3D4E5F6 "))
+        assertEquals(
+            "g_a1b2c3d4e5f6",
+            normalizeSocialFriendCode("gym-a1b2-c3d4-e5f6")
+        )
+        val legacy = profileId('a')
+        assertEquals(legacy, normalizeSocialFriendCode(legacy.uppercase()))
+        assertEquals("GYM-A1B2-C3D4-E5F6", formatSocialFriendCode(parsed.friendCode))
+        assertEquals(legacy, formatSocialFriendCode(legacy))
+    }
+
+    @Test
+    fun shortFriendCodeRejectsMalformedOrExpandedRpcResponses() {
+        listOf(
+            """{"version":2,"friendCode":"g_a1b2c3d4e5f6"}""",
+            """{"version":1,"friendCode":"g_A1B2C3D4E5F6"}""",
+            """{"version":1,"friendCode":"g_a1b2"}""",
+            """{"version":1,"friendCode":"g_a1b2c3d4e5f6","extra":true}""",
+            """[{"version":1,"friendCode":"g_a1b2c3d4e5f6"}]""",
+            """{"version":1,"friendCode":"${"a".repeat(300)}"}"""
+        ).forEach { raw ->
+            assertThrows(IllegalArgumentException::class.java) {
+                parseSocialMyFriendCode(raw)
+            }
+        }
+        assertNull(normalizeSocialFriendCode("GYM-A1B2-C3D4"))
+        assertNull(normalizeSocialFriendCode("GYM-A1B2-C3D4-E5G6"))
+        assertNull(normalizeSocialFriendCode("g_a1b2c3d4e5f6_extra"))
+        assertNull(normalizeSocialFriendCode("x".repeat(1_000)))
+    }
+
+    @Test
     fun dashboardParsesBoundedV1AndRanksOnlyAvailableFriendProgress() {
         val dashboardJson = validDashboard()
         dashboardJson.getJSONArray("friends").put(

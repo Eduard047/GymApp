@@ -3,7 +3,6 @@ package com.example.gymapp.ui.screens
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -12,7 +11,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -34,8 +32,13 @@ import com.example.gymapp.auth.SocialFriendDetails
 import com.example.gymapp.auth.SocialRecentWorkout
 import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.EmptyStatePanel
-import com.example.gymapp.ui.components.HeroPanel
+import com.example.gymapp.ui.components.GymMetric
+import com.example.gymapp.ui.components.LoadingStatePanel
+import com.example.gymapp.ui.components.MetricStrip
+import com.example.gymapp.ui.components.ScreenHeader
 import com.example.gymapp.ui.components.SectionTitle
+import com.example.gymapp.ui.components.SocialActionCard
+import com.example.gymapp.ui.theme.GymSpacing
 import com.example.gymapp.ui.util.localizedExerciseName
 import com.example.gymapp.util.LocalizedText
 import com.example.gymapp.util.asString
@@ -49,6 +52,8 @@ internal fun FriendDetailScreen(
     error: LocalizedText?,
     actionInFlight: Boolean,
     onRetry: () -> Unit,
+    onChooseWorkout: (SocialFriend) -> Unit,
+    onBuildLiveWorkout: (SocialFriend) -> Unit,
     onRemove: (SocialFriend) -> Unit,
     onBlock: (SocialFriend) -> Unit,
     modifier: Modifier = Modifier
@@ -57,8 +62,11 @@ internal fun FriendDetailScreen(
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        contentPadding = PaddingValues(
+            horizontal = GymSpacing.ScreenHorizontal,
+            vertical = GymSpacing.ScreenTop
+        ),
+        verticalArrangement = Arrangement.spacedBy(GymSpacing.Medium)
     ) {
         if (friend == null) {
             item {
@@ -72,31 +80,50 @@ internal fun FriendDetailScreen(
         }
 
         item {
-            HeroPanel(modifier = Modifier.fillMaxWidth()) {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(friend.displayName, style = MaterialTheme.typography.headlineMedium)
-                    if (friend.statsAvailable) {
-                        Text(
-                            stringResource(
-                                R.string.friend_stats_summary,
-                                friend.xp ?: 0,
-                                friend.level ?: 1,
-                                friend.workouts ?: 0
+            Column(verticalArrangement = Arrangement.spacedBy(GymSpacing.Medium)) {
+                ScreenHeader(
+                    title = friend.displayName,
+                    supporting = stringResource(R.string.friends_integrity_notice)
+                )
+                if (friend.statsAvailable) {
+                    MetricStrip(
+                        metrics = listOf(
+                            GymMetric(
+                                stringResource(R.string.ranks_current_level_label),
+                                (friend.level ?: 1).toString()
                             ),
-                            style = MaterialTheme.typography.titleMedium
+                            GymMetric(
+                                stringResource(R.string.solo_total_xp),
+                                (friend.xp ?: 0).toString(),
+                                emphasized = true
+                            ),
+                            GymMetric(
+                                stringResource(R.string.kpi_workouts),
+                                (friend.workouts ?: 0).toString()
+                            )
                         )
-                    } else {
-                        Text(
-                            stringResource(R.string.friend_stats_private),
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                    }
+                    )
+                } else {
                     Text(
-                        stringResource(R.string.friends_integrity_notice),
-                        style = MaterialTheme.typography.labelMedium
+                        stringResource(R.string.friend_stats_private),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
+        }
+
+        item {
+            SocialActionCard(
+                eyebrow = stringResource(R.string.friend_train_eyebrow),
+                title = stringResource(R.string.friend_train_title),
+                supporting = stringResource(R.string.friend_train_supporting),
+                primaryLabel = stringResource(R.string.friend_choose_workout_action),
+                onPrimary = { onChooseWorkout(friend) },
+                secondaryLabel = stringResource(R.string.friend_build_live_action),
+                onSecondary = { onBuildLiveWorkout(friend) },
+                enabled = !actionInFlight
+            )
         }
 
         error?.let { message ->
@@ -117,12 +144,7 @@ internal fun FriendDetailScreen(
 
         if (isLoading && details == null) {
             item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    CircularProgressIndicator()
-                }
+                LoadingStatePanel()
             }
             return@LazyColumn
         }

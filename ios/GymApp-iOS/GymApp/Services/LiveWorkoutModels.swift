@@ -118,6 +118,33 @@ struct LiveWorkoutSnapshot: Equatable, Sendable {
     var peerParticipant: LiveWorkoutParticipant? {
         participants.first(where: { !$0.isSelf })
     }
+
+    var exerciseLaneSummaries: [LiveWorkoutExerciseLaneSummary] {
+        let selfCompleted = Set(
+            currentParticipant?.progress?.completedSets.map(\.setID) ?? []
+        )
+        let peerCompleted = Set(
+            peerParticipant?.progress?.completedSets.map(\.setID) ?? []
+        )
+        return plan.exercises.map { exercise in
+            LiveWorkoutExerciseLaneSummary(
+                exerciseID: exercise.exerciseID,
+                catalogKey: exercise.catalogKey,
+                name: exercise.name,
+                selfCompleted: exercise.sets.map { selfCompleted.contains($0.setID) },
+                peerCompleted: exercise.sets.map { peerCompleted.contains($0.setID) }
+            )
+        }
+    }
+}
+
+struct LiveWorkoutExerciseLaneSummary: Identifiable, Equatable, Sendable {
+    var id: String { exerciseID }
+    let exerciseID: String
+    let catalogKey: String?
+    let name: String
+    let selfCompleted: [Bool]
+    let peerCompleted: [Bool]
 }
 
 struct LiveWorkoutInvitation: Identifiable, Equatable, Sendable {

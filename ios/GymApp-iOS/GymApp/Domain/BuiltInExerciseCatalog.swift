@@ -225,6 +225,14 @@ public enum BuiltInExerciseCatalog {
         ) else {
             return rawName
         }
+        if definition.key == "straight_arm_pulldown" {
+            return gymText(
+                definition.englishName,
+                "Журавель — тяга прямими руками",
+                "Журавель — тяга прямыми руками",
+                languageCode: languageCode
+            )
+        }
         return gymText(definition.englishName, definition.ukrainianName, languageCode: languageCode)
     }
 

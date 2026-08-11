@@ -68,6 +68,7 @@ struct FriendsView: View {
     @ObservedObject private var liveWorkoutCoordinator: LiveWorkoutCoordinator
 
     private let canAcceptWorkoutInvites: Bool
+    private let onOpenAccountSettings: () -> Void
     private let onOpenLiveWorkout: () -> Void
 
     @State private var friendCode = ""
@@ -84,17 +85,19 @@ struct FriendsView: View {
         auth: AuthService,
         canAcceptWorkoutInvites: Bool,
         liveWorkoutCoordinator: LiveWorkoutCoordinator,
+        onOpenAccountSettings: @escaping () -> Void,
         onOpenLiveWorkout: @escaping () -> Void
     ) {
         self.appState = appState
         self.auth = auth
         self.canAcceptWorkoutInvites = canAcceptWorkoutInvites
         self.liveWorkoutCoordinator = liveWorkoutCoordinator
+        self.onOpenAccountSettings = onOpenAccountSettings
         self.onOpenLiveWorkout = onOpenLiveWorkout
     }
 
     var body: some View {
-        LazyVStack(spacing: 12) {
+        LazyVStack(spacing: GymTheme.contentSpacing) {
             if !isCloudAccount {
                 localAccountState
             } else {
@@ -108,12 +111,12 @@ struct FriendsView: View {
                 }
 
                 if let dashboard = appState.socialDashboard {
-                    friendCodeCard(dashboard)
-                    addFriendCard
-                    requestsCard(dashboard)
                     liveWorkoutCard
                     workoutInvitesCard
+                    requestsCard(dashboard)
                     friendsRankingCard(dashboard)
+                    addFriendCard
+                    friendCodeCard(dashboard)
                     privacyCard(dashboard)
                     blockedCard(dashboard)
                 } else if isLoading {
@@ -155,13 +158,25 @@ struct FriendsView: View {
                 .font(.headline)
                 Text(
                     t(
-                        "Sign in from the Account card above to add friends. Offline workouts stay on this iPhone.",
-                        "Увійди через картку акаунта вище, щоб додавати друзів. Офлайн-тренування залишаться на цьому iPhone.",
-                        "Войди через карточку аккаунта выше, чтобы добавлять друзей. Офлайн-тренировки останутся на этом iPhone."
+                        "Open account settings to switch to a cloud account. Offline workouts stay on this iPhone.",
+                        "Відкрий налаштування акаунта, щоб перейти до хмарного акаунта. Офлайн-тренування залишаться на цьому iPhone.",
+                        "Открой настройки аккаунта, чтобы перейти в облачный аккаунт. Офлайн-тренировки останутся на этом iPhone."
                     )
                 )
                 .font(.subheadline)
                 .foregroundStyle(GymTheme.textSecondary)
+                Button(action: onOpenAccountSettings) {
+                    Label(
+                        t(
+                            "Open account settings",
+                            "Відкрити налаштування акаунта",
+                            "Открыть настройки аккаунта"
+                        ),
+                        systemImage: "person.crop.circle.badge.plus"
+                    )
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(GymPrimaryButtonStyle())
             }
         }
     }
@@ -175,9 +190,9 @@ struct FriendsView: View {
                             .font(.title2.bold())
                         Text(
                             t(
-                                "Compare synced progress only with people you accept.",
-                                "Порівнюй синхронізований прогрес лише з тими, кого прийняв у друзі.",
-                                "Сравнивай синхронизированный прогресс только с теми, кого принял в друзья."
+                                "Invites, private workout sharing and live sessions with accepted friends.",
+                                "Запрошення, приватний обмін тренуваннями й live-сесії з прийнятими друзями.",
+                                "Приглашения, приватный обмен тренировками и live-сессии с принятыми друзьями."
                             )
                         )
                         .font(.subheadline)
@@ -198,9 +213,9 @@ struct FriendsView: View {
                 }
                 Text(
                     t(
-                        "XP comes from self-reported synced workouts. This is a friends comparison, not a verified sports ranking.",
-                        "XP походять із самостійно записаних синхронізованих тренувань. Це порівняння між друзями, а не перевірений спортивний рейтинг.",
-                        "XP берутся из самостоятельно записанных синхронизированных тренировок. Это сравнение между друзьями, а не проверенный спортивный рейтинг."
+                        "Shared progress is self-recorded.",
+                        "Спільний прогрес записують самі користувачі.",
+                        "Общий прогресс записывают сами пользователи."
                     )
                 )
                 .font(.caption)
@@ -223,6 +238,8 @@ struct FriendsView: View {
     }
 
     private func friendCodeCard(_ dashboard: SocialDashboard) -> some View {
+        let canonicalCode = appState.socialFriendCode ?? dashboard.currentUser.friendCode
+        let displayCode = SocialFriendCode.display(canonicalCode)
         return GymPanel {
             VStack(alignment: .leading, spacing: 10) {
                 GymSectionTitle(
@@ -234,7 +251,7 @@ struct FriendsView: View {
                         "Поделись этим случайным кодом. Это не твоя почта и не ID аккаунта."
                     )
                 )
-                Text(dashboard.currentUser.friendCode)
+                Text(displayCode)
                     .font(.caption.monospaced())
                     .textSelection(.enabled)
                     .padding(10)
@@ -242,14 +259,14 @@ struct FriendsView: View {
                     .background(GymTheme.surfaceVariant, in: RoundedRectangle(cornerRadius: 12))
                 HStack(spacing: 8) {
                     Button {
-                        UIPasteboard.general.string = dashboard.currentUser.friendCode
+                        UIPasteboard.general.string = displayCode
                         statusMessage = t("Friend code copied.", "Код друга скопійовано.", "Код друга скопирован.")
                     } label: {
                         Label(t("Copy", "Копіювати", "Копировать"), systemImage: "doc.on.doc")
                     }
                     .buttonStyle(.bordered)
                     ShareLink(
-                        item: dashboard.currentUser.friendCode,
+                        item: displayCode,
                         subject: Text(t("GymApp friend code", "Код друга GymApp", "Код друга GymApp")),
                         message: Text(
                             t(
@@ -274,9 +291,9 @@ struct FriendsView: View {
                     eyebrow: t("Add", "Додати", "Добавить"),
                     title: t("Add a friend", "Додати друга", "Добавить друга"),
                     supporting: t(
-                        "Paste a p_… friend code. GymApp never searches by email or exposes account IDs.",
-                        "Встав код друга p_…. GymApp не шукає за поштою й не розкриває ID акаунтів.",
-                        "Вставь код друга p_…. GymApp не ищет по почте и не раскрывает ID аккаунтов."
+                        "Paste a GYM-… code or a legacy p_… code. GymApp never searches by email or exposes account IDs.",
+                        "Встав код GYM-… або старий код p_…. GymApp не шукає за поштою й не розкриває ID акаунтів.",
+                        "Вставь код GYM-… или старый код p_…. GymApp не ищет по почте и не раскрывает ID аккаунтов."
                     )
                 )
                 TextField(t("Friend code", "Код друга", "Код друга"), text: $friendCode)
@@ -335,30 +352,57 @@ struct FriendsView: View {
                 Spacer()
                 if activeActionID == request.friendshipID { ProgressView() }
             }
-            HStack(spacing: 8) {
-                if incoming {
-                    Button(t("Accept", "Прийняти", "Принять")) {
-                        Task { await respond(request, accept: true) }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    Button(t("Decline", "Відхилити", "Отклонить"), role: .destructive) {
-                        Task { await respond(request, accept: false) }
-                    }
-                    .buttonStyle(.bordered)
-                    Button(t("Block", "Заблокувати", "Заблокировать"), role: .destructive) {
-                        confirmation = .blockRequest(request)
-                    }
-                    .buttonStyle(.bordered)
-                } else {
-                    Button(t("Cancel request", "Скасувати запит", "Отменить запрос"), role: .destructive) {
-                        Task { await cancel(request) }
-                    }
-                    .buttonStyle(.bordered)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) {
+                    requestActionButtons(request, incoming: incoming)
+                }
+                VStack(spacing: 8) {
+                    requestActionButtons(request, incoming: incoming)
                 }
             }
             .disabled(activeActionID != nil)
         }
         .padding(.vertical, 4)
+    }
+
+    @ViewBuilder
+    private func requestActionButtons(
+        _ request: SocialFriendRequest,
+        incoming: Bool
+    ) -> some View {
+        if incoming {
+            Button {
+                Task { await respond(request, accept: true) }
+            } label: {
+                Text(t("Accept", "Прийняти", "Принять"))
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+
+            Button(role: .destructive) {
+                Task { await respond(request, accept: false) }
+            } label: {
+                Text(t("Decline", "Відхилити", "Отклонить"))
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+
+            Button(role: .destructive) {
+                confirmation = .blockRequest(request)
+            } label: {
+                Text(t("Block", "Заблокувати", "Заблокировать"))
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+        } else {
+            Button(role: .destructive) {
+                Task { await cancel(request) }
+            } label: {
+                Text(t("Cancel request", "Скасувати запит", "Отменить запрос"))
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+        }
     }
 
     private var workoutInvitesCard: some View {
@@ -452,6 +496,7 @@ struct FriendsView: View {
                         }
                     }
                     .padding(.vertical, 4)
+                    .id(NativePushProfileFocus.liveRoom(invitation.roomID))
                 }
 
                 ForEach(rooms) { room in
@@ -489,6 +534,7 @@ struct FriendsView: View {
                         .disabled(activeActionID != nil)
                     }
                     .padding(.vertical, 4)
+                    .id(NativePushProfileFocus.liveRoom(room.roomID))
                 }
 
                 HStack(spacing: 8) {
@@ -512,6 +558,7 @@ struct FriendsView: View {
                 }
             }
         }
+        .id(NativePushProfileFocus.liveWorkouts)
     }
 
     private func liveWorkoutSummary(
@@ -633,7 +680,11 @@ struct FriendsView: View {
                 }
                 ForEach(unranked) { friend in
                     NavigationLink {
-                        FriendDetailView(friend: friend, appState: appState)
+                        FriendDetailView(
+                            friend: friend,
+                            appState: appState,
+                            liveWorkoutCoordinator: liveWorkoutCoordinator
+                        )
                     } label: {
                         HStack(spacing: 10) {
                             Image(systemName: "lock.shield")
@@ -660,7 +711,11 @@ struct FriendsView: View {
         Group {
             if let friend = item.friend {
                 NavigationLink {
-                    FriendDetailView(friend: friend, appState: appState)
+                    FriendDetailView(
+                        friend: friend,
+                        appState: appState,
+                        liveWorkoutCoordinator: liveWorkoutCoordinator
+                    )
                 } label: {
                     rankingRowContent(item, place: place)
                 }
@@ -809,7 +864,7 @@ struct FriendsView: View {
     }
 
     private var validEnteredFriendCode: Bool {
-        SocialPayloadParser.isValidProfileID(friendCode.trimmingCharacters(in: .whitespacesAndNewlines))
+        SocialFriendCode.normalize(friendCode) != nil
     }
 
     private func rankedProfiles(_ dashboard: SocialDashboard) -> [RankedSocialProfile] {
@@ -951,8 +1006,7 @@ struct FriendsView: View {
     }
 
     private func sendFriendRequest() async {
-        let code = friendCode.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard SocialPayloadParser.isValidProfileID(code) else { return }
+        guard let code = SocialFriendCode.normalize(friendCode) else { return }
         await perform(id: "send-friend") {
             try await appState.sendFriendRequest(friendCode: code)
             friendCode = ""
@@ -1174,11 +1228,7 @@ struct FriendsView: View {
     }
 
     private func empty(_ text: String) -> some View {
-        Text(text)
-            .font(.subheadline)
-            .foregroundStyle(GymTheme.textSecondary)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 4)
+        GymInlineState(text, systemImage: "circle.dashed")
     }
 
     private func t(_ english: String, _ ukrainian: String, _ russian: String) -> String {
@@ -1223,6 +1273,13 @@ private struct RankedSocialProfile: Identifiable {
 
 @MainActor
 private struct FriendDetailView: View {
+    fileprivate enum WorkoutShareMode: String, Identifiable {
+        case copy
+        case live
+
+        var id: String { rawValue }
+    }
+
     private enum Confirmation: String, Identifiable {
         case remove
         case block
@@ -1233,6 +1290,7 @@ private struct FriendDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage("app-language") private var languageCode = AppLanguage.english.rawValue
     @ObservedObject private var appState: AppState
+    @ObservedObject private var liveWorkoutCoordinator: LiveWorkoutCoordinator
 
     let friend: SocialFriendSummary
 
@@ -1242,17 +1300,29 @@ private struct FriendDetailView: View {
     @State private var errorMessage: String?
     @State private var confirmation: Confirmation?
     @State private var loadRequestRevision: UInt64 = 0
+    @State private var workoutShareMode: WorkoutShareMode?
+    @State private var sharingWorkoutID: UUID?
+    @State private var actionMessage: String?
 
-    init(friend: SocialFriendSummary, appState: AppState) {
+    init(
+        friend: SocialFriendSummary,
+        appState: AppState,
+        liveWorkoutCoordinator: LiveWorkoutCoordinator
+    ) {
         self.friend = friend
         self.appState = appState
+        self.liveWorkoutCoordinator = liveWorkoutCoordinator
     }
 
     var body: some View {
         GymBackground {
             ScrollView {
-                LazyVStack(spacing: 12) {
+                LazyVStack(spacing: GymTheme.contentSpacing) {
                     header
+                    trainingTogetherCard
+                    if let actionMessage {
+                        GymStatusBanner(message: actionMessage, isError: false)
+                    }
                     if let errorMessage {
                         GymStatusBanner(message: errorMessage, isError: true)
                     }
@@ -1277,15 +1347,27 @@ private struct FriendDetailView: View {
                         }
                     }
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .padding(.bottom, 24)
+                .padding(.horizontal, GymTheme.screenHorizontalInset)
+                .padding(.top, GymTheme.screenVerticalInset)
+                .padding(.bottom, GymTheme.screenBottomInset)
             }
             .refreshable { await load() }
         }
         .navigationTitle(friend.displayName)
         .navigationBarTitleDisplayMode(.inline)
         .task(id: appState.socialDashboardRefreshRevision) { await load() }
+        .sheet(item: $workoutShareMode) { mode in
+            FriendWorkoutPickerSheet(
+                friendName: friend.displayName,
+                workouts: appState.workoutStore.workouts,
+                mode: mode,
+                sharingWorkoutID: sharingWorkoutID,
+                onSelect: { workout in
+                    Task { await share(workout, mode: mode) }
+                }
+            )
+            .presentationDetents([.medium, .large])
+        }
         .alert(item: $confirmation) { confirmation in
             switch confirmation {
             case .remove:
@@ -1323,6 +1405,58 @@ private struct FriendDetailView: View {
                     .foregroundStyle(Color.white.opacity(0.72))
             }
         }
+    }
+
+    private var trainingTogetherCard: some View {
+        GymPanel(highlighted: true) {
+            VStack(alignment: .leading, spacing: 10) {
+                GymSectionTitle(
+                    eyebrow: t("Together", "Разом", "Вместе"),
+                    title: t("Train with this friend", "Тренуйся з цим другом", "Тренируйся с этим другом"),
+                    supporting: t(
+                        "Choose one saved workout, then send an editable copy or open a synchronized live room.",
+                        "Вибери одне збережене тренування, а потім надішли редаговану копію або відкрий синхронізовану live-кімнату.",
+                        "Выбери одну сохранённую тренировку, затем отправь редактируемую копию или открой синхронизированную live-комнату."
+                    )
+                )
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) { friendTrainingButtons }
+                    VStack(spacing: 8) { friendTrainingButtons }
+                }
+                if appState.workoutStore.workouts.isEmpty {
+                    Text(
+                        t(
+                            "Save a workout first; it will then appear here.",
+                            "Спочатку збережи тренування — після цього воно з’явиться тут.",
+                            "Сначала сохрани тренировку — после этого она появится здесь."
+                        )
+                    )
+                    .font(.caption)
+                    .foregroundStyle(GymTheme.textSecondary)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var friendTrainingButtons: some View {
+        Button {
+            workoutShareMode = .copy
+        } label: {
+            Label(t("Send workout", "Надіслати тренування", "Отправить тренировку"), systemImage: "paperplane.fill")
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(GymSecondaryButtonStyle())
+        .disabled(isMutating || appState.workoutStore.workouts.isEmpty)
+
+        Button {
+            workoutShareMode = .live
+        } label: {
+            Label(t("Train live", "Тренуватися live", "Тренироваться live"), systemImage: "figure.strengthtraining.traditional")
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(GymPrimaryButtonStyle())
+        .disabled(isMutating || appState.workoutStore.workouts.isEmpty)
     }
 
     private func progressCard(_ details: SocialFriendDetails) -> some View {
@@ -1525,6 +1659,68 @@ private struct FriendDetailView: View {
         }
     }
 
+    private func share(_ workout: WorkoutSession, mode: WorkoutShareMode) async {
+        guard sharingWorkoutID == nil else { return }
+        guard let expectedAccountKey = appState.activeAccountStorageKey,
+              appState.auth.session?.cloud != nil,
+              appState.socialDashboard?.friends.contains(where: {
+                  $0.profileID == friend.profileID
+              }) == true else {
+            workoutShareMode = nil
+            errorMessage = t(
+                "This friend is no longer available. Refresh Friends and try again.",
+                "Цей друг більше недоступний. Онови список друзів і спробуй ще раз.",
+                "Этот друг больше недоступен. Обнови список друзей и попробуй ещё раз."
+            )
+            return
+        }
+        sharingWorkoutID = workout.id
+        errorMessage = nil
+        defer { sharingWorkoutID = nil }
+        do {
+            var exercisesByID: [UUID: Exercise] = [:]
+            for exercise in appState.workoutStore.exercises {
+                exercisesByID[exercise.id] = exercise
+            }
+            let plan = try SharedWorkoutLinkEncoder.makePlan(
+                workout: workout,
+                exercises: exercisesByID
+            )
+            guard appState.activeAccountStorageKey == expectedAccountKey,
+                  appState.socialDashboard?.friends.contains(where: {
+                      $0.profileID == friend.profileID
+                  }) == true else {
+                return
+            }
+            switch mode {
+            case .copy:
+                try await appState.sendWorkoutInvite(to: friend.profileID, plan: plan)
+            case .live:
+                try await liveWorkoutCoordinator.sendInvite(to: friend.profileID, plan: plan)
+            }
+            guard appState.activeAccountStorageKey == expectedAccountKey else { return }
+            workoutShareMode = nil
+            actionMessage = mode == .live
+                ? t(
+                    "Live invitation sent. The workout starts for both of you after your friend joins and you press Start.",
+                    "Live-запрошення надіслано. Тренування почнеться для вас обох після приєднання друга й натискання «Старт».",
+                    "Live-приглашение отправлено. Тренировка начнётся для вас обоих после присоединения друга и нажатия «Старт»."
+                )
+                : t(
+                    "Workout copy sent to this friend.",
+                    "Копію тренування надіслано цьому другу.",
+                    "Копия тренировки отправлена этому другу."
+                )
+        } catch {
+            guard appState.activeAccountStorageKey == expectedAccountKey else { return }
+            errorMessage = t(
+                "The workout could not be shared safely. Refresh and try again.",
+                "Не вдалося безпечно поділитися тренуванням. Онови дані й спробуй ще раз.",
+                "Не удалось безопасно поделиться тренировкой. Обнови данные и попробуй ещё раз."
+            )
+        }
+    }
+
     private func formatDay(_ raw: String) -> String {
         let parser = DateFormatter()
         parser.calendar = Calendar(identifier: .gregorian)
@@ -1540,5 +1736,93 @@ private struct FriendDetailView: View {
 
     private func t(_ english: String, _ ukrainian: String, _ russian: String) -> String {
         gymText(english, ukrainian, russian, languageCode: languageCode)
+    }
+}
+
+private struct FriendWorkoutPickerSheet: View {
+    let friendName: String
+    let workouts: [WorkoutSession]
+    let mode: FriendDetailView.WorkoutShareMode
+    let sharingWorkoutID: UUID?
+    let onSelect: (WorkoutSession) -> Void
+
+    var body: some View {
+        NavigationStack {
+            GymBackground {
+                ScrollView {
+                    LazyVStack(spacing: 10) {
+                        GymSectionTitle(
+                            eyebrow: mode == .live ? "LIVE" : t("Private copy", "Приватна копія", "Приватная копия"),
+                            title: friendName,
+                            supporting: mode == .live
+                                ? t(
+                                    "Choose the frozen plan you will complete independently in two synchronized lanes.",
+                                    "Вибери зафіксований план, який ви виконуватимете незалежно у двох синхронізованих доріжках.",
+                                    "Выбери зафиксированный план, который вы будете выполнять независимо в двух синхронизированных дорожках."
+                                )
+                                : t(
+                                    "Choose a saved workout to send as an editable copy.",
+                                    "Вибери збережене тренування для надсилання як редагованої копії.",
+                                    "Выбери сохранённую тренировку для отправки как редактируемой копии."
+                                )
+                        )
+                        if workouts.isEmpty {
+                            GymContentUnavailableView {
+                                Label(
+                                    t("No saved workouts", "Немає збережених тренувань", "Нет сохранённых тренировок"),
+                                    systemImage: "tray"
+                                )
+                            } description: {
+                                Text(
+                                    t(
+                                        "Save a workout first, then return to this friend.",
+                                        "Спочатку збережи тренування, а потім повернися до цього друга.",
+                                        "Сначала сохрани тренировку, затем вернись к этому другу."
+                                    )
+                                )
+                            }
+                        } else {
+                            ForEach(workouts.sorted { $0.date > $1.date }) { workout in
+                                Button {
+                                    onSelect(workout)
+                                } label: {
+                                    HStack(spacing: 12) {
+                                        Image(systemName: mode == .live ? "wave.3.right.circle.fill" : "doc.on.doc.fill")
+                                            .foregroundStyle(GymTheme.primary)
+                                        VStack(alignment: .leading, spacing: 3) {
+                                            Text(gymFormattedDate(workout.date, date: .abbreviated, time: .shortened))
+                                                .font(.headline)
+                                                .foregroundStyle(GymTheme.textPrimary)
+                                            Text("\(workout.exercises.count) \(t("exercises", "вправ", "упражнений"))")
+                                                .font(.caption)
+                                                .foregroundStyle(GymTheme.textSecondary)
+                                        }
+                                        Spacer()
+                                        if sharingWorkoutID == workout.id {
+                                            ProgressView()
+                                        } else {
+                                            Image(systemName: "chevron.right")
+                                                .foregroundStyle(GymTheme.textSecondary)
+                                        }
+                                    }
+                                    .padding(12)
+                                    .background(GymTheme.surface, in: RoundedRectangle(cornerRadius: 16))
+                                }
+                                .buttonStyle(.plain)
+                                .disabled(sharingWorkoutID != nil)
+                            }
+                        }
+                    }
+                    .padding(14)
+                    .padding(.bottom, 20)
+                }
+            }
+            .navigationTitle(t("Choose workout", "Вибрати тренування", "Выбрать тренировку"))
+            .navigationBarTitleDisplayMode(.inline)
+        }
+    }
+
+    private func t(_ english: String, _ ukrainian: String, _ russian: String) -> String {
+        gymText(english, ukrainian, russian, languageCode: gymCurrentLanguageCode())
     }
 }

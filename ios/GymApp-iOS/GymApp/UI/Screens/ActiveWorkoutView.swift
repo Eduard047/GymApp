@@ -92,7 +92,7 @@ struct ActiveWorkoutView: View {
         GymBackground {
             if let draft = currentDraft {
                 ScrollView {
-                    LazyVStack(spacing: 14) {
+                    LazyVStack(spacing: GymTheme.contentSpacing) {
                         progressPanel(draft)
 
                         if liveWorkoutCoordinator.isAttachedToCurrentDraft {
@@ -118,9 +118,9 @@ struct ActiveWorkoutView: View {
 
                         finishPanel(draft)
                     }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 12)
-                    .padding(.bottom, 28)
+                    .padding(.horizontal, GymTheme.screenHorizontalInset)
+                    .padding(.top, GymTheme.screenVerticalInset)
+                    .padding(.bottom, GymTheme.screenBottomInset)
                 }
                 .scrollDismissesKeyboard(.interactively)
             } else {
@@ -336,34 +336,84 @@ struct ActiveWorkoutView: View {
     private func livePeerPanel(_ draft: ActiveWorkoutDraft) -> some View {
         let peer = liveWorkoutCoordinator.peerProgress
         let completed = peer?.completedSets.count ?? 0
-        return GymPanel(highlighted: true) {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 10) {
-                    Label(
-                        gymText(
-                            "Live with \(liveWorkoutCoordinator.peerDisplayName ?? "friend")",
-                            "Наживо з \(liveWorkoutCoordinator.peerDisplayName ?? "другом")",
-                            "Вживую с \(liveWorkoutCoordinator.peerDisplayName ?? "другом")",
-                            languageCode: gymCurrentLanguageCode()
-                        ),
-                        systemImage: "wave.3.right.circle.fill"
-                    )
-                    .font(.headline)
-                    Spacer()
-                    Text("\(completed) / \(draft.plannedSetCount)")
-                        .font(.headline.monospacedDigit())
+        let peerName = liveWorkoutCoordinator.peerDisplayName ?? gymText(
+            "Friend",
+            "Друг",
+            "Друг",
+            languageCode: gymCurrentLanguageCode()
+        )
+        let lanes = liveWorkoutCoordinator.exerciseLaneSummaries
+        let lensShape = UnevenRoundedRectangle(
+            topLeadingRadius: 26,
+            bottomLeadingRadius: 26,
+            bottomTrailingRadius: 42,
+            topTrailingRadius: 54,
+            style: .continuous
+        )
+        return VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: GymTheme.Spacing.medium) {
+                HStack(alignment: .top, spacing: GymTheme.Spacing.medium) {
+                    VStack(alignment: .leading, spacing: GymTheme.Spacing.xSmall) {
+                        Text(
+                            gymText(
+                                "SPOTTER LENS",
+                                "СПОТТЕР-ЛІНЗА",
+                                "СПОТТЕР-ЛИНЗА",
+                                languageCode: gymCurrentLanguageCode()
+                            )
+                        )
+                        .font(GymTheme.TypeScale.utility)
+                        .tracking(0.55)
+                        .foregroundStyle(GymTheme.primary)
+
+                        Text(
+                            gymText(
+                                "Live with \(peerName)",
+                                "Наживо з \(peerName)",
+                                "Вживую с \(peerName)",
+                                languageCode: gymCurrentLanguageCode()
+                            )
+                        )
+                        .font(GymTheme.TypeScale.heroTitle)
+                        .foregroundStyle(GymTheme.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityAddTraits(.isHeader)
+                    }
+
+                    Spacer(minLength: GymTheme.Spacing.xSmall)
+
+                    Image(systemName: peer?.finishedAt == nil
+                        ? "wave.3.right.circle.fill"
+                        : "checkmark.circle.fill")
+                        .font(.title2)
+                        .foregroundStyle(peer?.finishedAt == nil ? GymTheme.primary : GymTheme.secondary)
+                        .accessibilityHidden(true)
                 }
-                ProgressView(
-                    value: Double(completed),
-                    total: Double(max(1, draft.plannedSetCount))
+
+                spotterProgressLine(
+                    label: gymText(
+                        "You",
+                        "Ти",
+                        "Ты",
+                        languageCode: gymCurrentLanguageCode()
+                    ),
+                    completed: draft.completedSetCount,
+                    total: draft.plannedSetCount,
+                    accent: GymTheme.primary
                 )
-                .tint(GymTheme.primary)
+                spotterProgressLine(
+                    label: peerName,
+                    completed: completed,
+                    total: draft.plannedSetCount,
+                    accent: GymTheme.secondary
+                )
+
                 Text(
                     peer?.finishedAt == nil
                         ? gymText(
-                            "Your friend's completed sets refresh live. The frozen plan cannot gain extra sets.",
-                            "Виконані підходи друга оновлюються наживо. До зафіксованого плану не можна додавати підходи.",
-                            "Выполненные подходы друга обновляются вживую. В зафиксированный план нельзя добавлять подходы.",
+                            "Each recorded set appears in its own lane. The shared plan stays frozen for both athletes.",
+                            "Кожен записаний підхід з’являється у своїй доріжці. Спільний план зафіксований для обох спортсменів.",
+                            "Каждый записанный подход появляется в своей дорожке. Общий план зафиксирован для обоих спортсменов.",
                             languageCode: gymCurrentLanguageCode()
                         )
                         : gymText(
@@ -375,6 +425,178 @@ struct ActiveWorkoutView: View {
                 )
                 .font(.caption)
                 .foregroundStyle(GymTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(GymTheme.Spacing.large)
+
+            if !lanes.isEmpty {
+                Divider()
+                    .overlay(GymTheme.outlineSoft)
+
+                ForEach(Array(lanes.enumerated()), id: \.element.id) { index, lane in
+                    liveExerciseLane(lane, peerName: peerName)
+                    if index < lanes.count - 1 {
+                        Divider()
+                            .padding(.leading, GymTheme.Spacing.large)
+                            .overlay(GymTheme.outlineSoft)
+                    }
+                }
+            }
+        }
+        .background {
+            lensShape.fill(GymTheme.surface)
+            lensShape.fill(GymTheme.primary.opacity(0.025))
+        }
+        .overlay {
+            lensShape.strokeBorder(
+                GymTheme.primary.opacity(0.24),
+                lineWidth: GymTheme.hairlineWidth
+            )
+        }
+        .overlay(alignment: .leading) {
+            Capsule()
+                .fill(
+                    LinearGradient(
+                        colors: [GymTheme.primary, GymTheme.secondary],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+                .frame(width: 4)
+                .padding(.leading, 5)
+                .padding(.vertical, GymTheme.Spacing.large)
+                .accessibilityHidden(true)
+        }
+        .clipShape(lensShape)
+        .shadow(color: GymTheme.primary.opacity(0.1), radius: 12, x: 0, y: 6)
+        .accessibilityElement(children: .contain)
+    }
+
+    private func spotterProgressLine(
+        label: String,
+        completed: Int,
+        total: Int,
+        accent: Color
+    ) -> some View {
+        HStack(spacing: GymTheme.Spacing.small) {
+            Text(label)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(GymTheme.textSecondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .frame(width: 72, alignment: .leading)
+
+            ProgressView(value: Double(completed), total: Double(max(1, total)))
+                .tint(accent)
+
+            Text("\(completed)/\(total)")
+                .font(GymTheme.TypeScale.utility)
+                .foregroundStyle(GymTheme.textPrimary)
+                .frame(minWidth: 42, alignment: .trailing)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(label)
+        .accessibilityValue("\(completed) / \(total)")
+    }
+
+    private func liveExerciseLane(
+        _ lane: LiveWorkoutExerciseLaneSummary,
+        peerName: String
+    ) -> some View {
+        let displayName = BuiltInExerciseCatalog.displayName(
+            catalogKey: lane.catalogKey,
+            rawName: lane.name,
+            languageCode: gymCurrentLanguageCode()
+        )
+        let selfCompleted = lane.selfCompleted.lazy.filter { $0 }.count
+        return VStack(alignment: .leading, spacing: GymTheme.Spacing.small) {
+            HStack(alignment: .firstTextBaseline, spacing: GymTheme.Spacing.small) {
+                Text(displayName)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(GymTheme.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: GymTheme.Spacing.xSmall)
+                Text("\(selfCompleted)/\(lane.selfCompleted.count)")
+                    .font(GymTheme.TypeScale.utility)
+                    .foregroundStyle(GymTheme.textSecondary)
+            }
+            liveSetLane(
+                label: gymText(
+                    "You",
+                    "Ти",
+                    "Ты",
+                    languageCode: gymCurrentLanguageCode()
+                ),
+                completed: lane.selfCompleted,
+                accent: GymTheme.primary
+            )
+            liveSetLane(
+                label: peerName,
+                completed: lane.peerCompleted,
+                accent: GymTheme.secondary
+            )
+        }
+        .padding(.horizontal, GymTheme.Spacing.large)
+        .padding(.vertical, GymTheme.Spacing.medium)
+        .accessibilityElement(children: .contain)
+    }
+
+    private func liveSetLane(label: String, completed: [Bool], accent: Color) -> some View {
+        HStack(spacing: 8) {
+            Text(label)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(GymTheme.textSecondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .frame(width: 72, alignment: .leading)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(completed.indices, id: \.self) { index in
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                .fill(completed[index] ? accent.opacity(0.14) : GymTheme.surfaceVariant.opacity(0.62))
+                            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                .strokeBorder(
+                                    completed[index] ? accent.opacity(0.72) : GymTheme.outlineSoft,
+                                    lineWidth: completed[index] ? 1.25 : GymTheme.hairlineWidth
+                                )
+                            if completed[index] {
+                                Image(systemName: "checkmark")
+                                    .font(.caption2.bold())
+                                    .foregroundStyle(accent)
+                            } else {
+                                Text("\(index + 1)")
+                                    .font(.caption2.monospacedDigit().weight(.semibold))
+                                    .foregroundStyle(GymTheme.textSecondary)
+                            }
+                        }
+                        .frame(width: 28, height: 25)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(
+                            gymText(
+                                "Set \(index + 1)",
+                                "Підхід \(index + 1)",
+                                "Подход \(index + 1)",
+                                languageCode: gymCurrentLanguageCode()
+                            )
+                        )
+                        .accessibilityValue(
+                            completed[index]
+                                ? gymText(
+                                    "Recorded",
+                                    "Записано",
+                                    "Записано",
+                                    languageCode: gymCurrentLanguageCode()
+                                )
+                                : gymText(
+                                    "Planned",
+                                    "Заплановано",
+                                    "Запланировано",
+                                    languageCode: gymCurrentLanguageCode()
+                                )
+                        )
+                    }
+                }
             }
         }
     }

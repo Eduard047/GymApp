@@ -64,6 +64,10 @@ final class LiveWorkoutCoordinator: ObservableObject {
 
     var peerProgress: LiveWorkoutProgress? { snapshot?.peerParticipant?.progress }
 
+    var exerciseLaneSummaries: [LiveWorkoutExerciseLaneSummary] {
+        snapshot?.exerciseLaneSummaries ?? []
+    }
+
     var peerDisplayName: String? {
         snapshot?.peerParticipant?.profile.displayName ?? sidecar.attachment?.peerDisplayName
     }

@@ -54,11 +54,13 @@ import com.example.gymapp.ui.components.ExerciseMediaPreview
 import com.example.gymapp.ui.components.HeroPanel
 import com.example.gymapp.ui.components.InfoPill
 import com.example.gymapp.ui.components.SectionTitle
+import com.example.gymapp.ui.components.SpotterLaneCard
 import com.example.gymapp.ui.viewmodel.ActiveWorkoutExerciseUiState
 import com.example.gymapp.ui.viewmodel.ActiveWorkoutSetUiState
 import com.example.gymapp.ui.viewmodel.ActiveWorkoutUiState
 import com.example.gymapp.ui.viewmodel.LiveConnectionMode
 import com.example.gymapp.ui.theme.GymControlShape
+import com.example.gymapp.ui.theme.GymSpacing
 import com.example.gymapp.ui.util.localizedExerciseName
 import com.example.gymapp.util.DateTimeUtils
 import com.example.gymapp.util.asString
@@ -110,8 +112,13 @@ fun ActiveWorkoutScreen(
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 14.dp, top = 12.dp, end = 14.dp, bottom = 30.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+        contentPadding = PaddingValues(
+            start = GymSpacing.ScreenHorizontal,
+            top = GymSpacing.ScreenTop,
+            end = GymSpacing.ScreenHorizontal,
+            bottom = GymSpacing.ScreenBottom
+        ),
+        verticalArrangement = Arrangement.spacedBy(GymSpacing.Large)
     ) {
         item {
             HeroPanel(modifier = Modifier.fillMaxWidth()) {
@@ -205,6 +212,23 @@ fun ActiveWorkoutScreen(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                        if (uiState.liveExerciseLanes.isNotEmpty()) {
+                            Text(
+                                text = stringResource(R.string.live_workout_two_lanes_title),
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            uiState.liveExerciseLanes.forEach { exercise ->
+                                SpotterLaneCard(
+                                    exerciseName = localizedExerciseName(exercise.exerciseName),
+                                    selfLabel = stringResource(R.string.live_workout_lane_you),
+                                    selfCompleted = exercise.selfCompletedSets,
+                                    peerLabel = peerName,
+                                    peerCompleted = exercise.peerCompletedSets,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                        }
                     }
                 }
             }

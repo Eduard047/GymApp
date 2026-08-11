@@ -30,7 +30,9 @@ import com.example.gymapp.ui.components.ExerciseSpotlightCard
 import com.example.gymapp.ui.components.ExerciseTrendChartsCard
 import com.example.gymapp.ui.components.InfoPill
 import com.example.gymapp.ui.components.MetricTile
+import com.example.gymapp.ui.components.ScreenHeader
 import com.example.gymapp.ui.components.SectionTitle
+import com.example.gymapp.ui.theme.GymSpacing
 import com.example.gymapp.ui.util.currentAppLanguageTag
 import com.example.gymapp.ui.util.localizedExerciseName
 import com.example.gymapp.ui.util.localizedMuscleName
@@ -98,13 +100,17 @@ fun ExerciseProgressScreen(
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(
-            start = 12.dp,
-            top = 10.dp,
-            end = 12.dp,
-            bottom = 24.dp
+            start = GymSpacing.ScreenHorizontal,
+            top = GymSpacing.ScreenTop,
+            end = GymSpacing.ScreenHorizontal,
+            bottom = GymSpacing.ScreenBottom
         ),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        verticalArrangement = Arrangement.spacedBy(GymSpacing.Medium)
     ) {
+            item {
+                ScreenHeader(title = stringResource(R.string.title_progress))
+            }
+
             item {
                 MonthSwitcher(
                     monthLabel = uiState.monthLabel,

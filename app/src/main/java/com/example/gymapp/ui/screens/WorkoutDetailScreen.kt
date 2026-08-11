@@ -73,6 +73,7 @@ import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.entity.SetEntryEntity
 import com.example.gymapp.data.repository.defaultContributionsForExercise
 import com.example.gymapp.data.repository.SharedWorkoutLink
+import com.example.gymapp.data.repository.SharedWorkoutPlan
 import com.example.gymapp.garmin.GarminSetIntervalMetrics
 import com.example.gymapp.garmin.GarminSetEvidenceMetrics
 import com.example.gymapp.garmin.GarminSetHeartRateChartPoint
@@ -88,11 +89,14 @@ import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.ExerciseMuscleMap
 import com.example.gymapp.ui.components.ExerciseMediaPreview
 import com.example.gymapp.ui.components.HeroPanel
+import com.example.gymapp.ui.components.GymMetric
 import com.example.gymapp.ui.components.InfoPill
+import com.example.gymapp.ui.components.MetricStrip
 import com.example.gymapp.ui.components.MetricTile
 import com.example.gymapp.ui.components.WorkoutComparisonCard
 import com.example.gymapp.ui.theme.GymCompactShape
 import com.example.gymapp.ui.theme.GymControlShape
+import com.example.gymapp.ui.theme.GymSpacing
 import com.example.gymapp.ui.util.localizedExerciseName
 import com.example.gymapp.ui.viewmodel.WorkoutDetailEvent
 import com.example.gymapp.ui.viewmodel.WorkoutDetailUiState
@@ -165,7 +169,7 @@ internal fun shareWorkoutUrl(
 }
 
 @Composable
-fun WorkoutDetailScreen(
+internal fun WorkoutDetailScreen(
     uiState: WorkoutDetailUiState,
     exerciseMediaOwnerKey: String,
     events: Flow<WorkoutDetailEvent>,
@@ -177,6 +181,7 @@ fun WorkoutDetailScreen(
     onDeleteSession: () -> Unit,
     onSessionDeleted: () -> Unit,
     onUpdateSet: (SetEntryEntity, String, String) -> Unit,
+    onShareWorkout: ((SharedWorkoutPlan) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
@@ -275,12 +280,16 @@ fun WorkoutDetailScreen(
             }
             val shareWorkout: () -> Unit = {
                 runCatching {
-                    val url = SharedWorkoutLink.fromSession(details)
-                    shareWorkoutUrl(
-                        context = context,
-                        url = url,
-                        chooserTitle = context.getString(R.string.action_share_workout)
-                    )
+                    val plan = SharedWorkoutLink.planFromSession(details)
+                    if (onShareWorkout != null) {
+                        onShareWorkout(plan)
+                    } else {
+                        shareWorkoutUrl(
+                            context = context,
+                            url = SharedWorkoutLink.buildUrl(plan.exercises),
+                            chooserTitle = context.getString(R.string.action_share_workout)
+                        )
+                    }
                 }.onFailure {
                     coroutineScope.launch {
                         snackbarHostState.showSnackbar(
@@ -302,12 +311,12 @@ fun WorkoutDetailScreen(
                 state = listState,
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                    start = 14.dp,
-                    top = 12.dp,
-                    end = 14.dp,
-                    bottom = 32.dp
+                    start = GymSpacing.ScreenHorizontal,
+                    top = GymSpacing.ScreenTop,
+                    end = GymSpacing.ScreenHorizontal,
+                    bottom = GymSpacing.ScreenBottom
                 ),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+                verticalArrangement = Arrangement.spacedBy(GymSpacing.Large)
             ) {
                 item {
                     if (garminMetrics != null) {
@@ -818,29 +827,24 @@ private fun WorkoutHeaderCard(
                 style = MaterialTheme.typography.bodyMedium,
                 color = Color.White.copy(alpha = 0.84f)
             )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                MetricTile(
-                    label = stringResource(R.string.post_workout_metric_exercises),
-                    value = exerciseCount.toString(),
-                    modifier = Modifier.weight(1f),
-                    onHero = true
-                )
-                MetricTile(
-                    label = stringResource(R.string.post_workout_metric_sets),
-                    value = setCount.toString(),
-                    modifier = Modifier.weight(1f),
-                    onHero = true
-                )
-                MetricTile(
-                    label = stringResource(R.string.post_workout_metric_volume),
-                    value = formatCompactWeight(volume),
-                    modifier = Modifier.weight(1f),
-                    onHero = true
-                )
-            }
+            MetricStrip(
+                metrics = listOf(
+                    GymMetric(
+                        stringResource(R.string.post_workout_metric_exercises),
+                        exerciseCount.toString()
+                    ),
+                    GymMetric(
+                        stringResource(R.string.post_workout_metric_sets),
+                        setCount.toString()
+                    ),
+                    GymMetric(
+                        stringResource(R.string.post_workout_metric_volume),
+                        formatCompactWeight(volume),
+                        emphasized = true
+                    )
+                ),
+                onHero = true
+            )
             WorkoutEditModeButton(
                 isEditing = isEditing,
                 onToggleEdit = onToggleEdit

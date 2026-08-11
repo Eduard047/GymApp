@@ -52,7 +52,7 @@ internal object SharedWorkoutLink {
     private val catalogKeyPattern = Regex("^[a-z0-9_]{1,64}$")
     private val encodedPayloadPattern = Regex("^[A-Za-z0-9_-]{1,$MAX_ENCODED_LENGTH}$")
 
-    fun fromSession(details: WorkoutSessionDetails): String {
+    fun planFromSession(details: WorkoutSessionDetails): SharedWorkoutPlan {
         val exercises = details.workoutExercises
             .sortedBy { it.workoutExercise.orderIndex }
             .filter { it.sets.isNotEmpty() }
@@ -65,8 +65,11 @@ internal object SharedWorkoutLink {
                         .map { set -> SharedWorkoutSet(set.weight, set.reps) }
                 )
             }
-        return buildUrl(exercises)
+        return normalize(exercises)
     }
+
+    fun fromSession(details: WorkoutSessionDetails): String =
+        buildUrl(planFromSession(details).exercises)
 
     fun buildUrl(exercises: List<SharedWorkoutExercise>): String =
         "$BASE_URL#workout=${encode(exercises)}"

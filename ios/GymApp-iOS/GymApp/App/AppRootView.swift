@@ -393,6 +393,28 @@ private struct AccountPreparationView: View {
     }
 }
 
+enum NativePushProfileFocus: Hashable, Sendable {
+    case friends
+    case liveWorkouts
+    case liveRoom(String)
+}
+
+struct NativePushProfileRequest: Identifiable, Equatable, Sendable {
+    let id: UUID
+    let focus: NativePushProfileFocus
+}
+
+func makeNativePushProfileRequest(for route: NativePushRoute) -> NativePushProfileRequest {
+    let focus: NativePushProfileFocus
+    switch route.target {
+    case .social:
+        focus = .friends
+    case let .live(roomID):
+        focus = roomID.map(NativePushProfileFocus.liveRoom) ?? .liveWorkouts
+    }
+    return NativePushProfileRequest(id: route.id, focus: focus)
+}
+
 @MainActor
 private struct MainTabShell: View {
     private enum Tab: String, CaseIterable, Identifiable {
@@ -448,6 +470,7 @@ private struct MainTabShell: View {
     @State private var sharedWorkoutDraftSeed: [WorkoutExerciseDraft] = []
     @State private var sharedWorkoutDraftTransitionID: UUID?
     @State private var showingActiveDraftDiscardConfirmation = false
+    @State private var nativePushProfileRequest: NativePushProfileRequest?
 
     init(appState: AppState, nativePush: NativePushManager) {
         self.appState = appState
@@ -863,14 +886,25 @@ private struct MainTabShell: View {
 
     private func openPendingPushRouteIfNeeded() {
         guard let route = nativePush.consumePendingRoute() else { return }
+        nativePushProfileRequest = makeNativePushProfileRequest(for: route)
         selectedTab = .profile
-        Task {
-            switch route.destination {
-            case .live:
-                await liveWorkoutCoordinator.refreshAll(showErrors: false)
+        Task { @MainActor in
+            guard nativePush.isRouteBoundToCurrentSession(route) else { return }
+            switch route.target {
             case .social:
                 _ = try? await appState.refreshSocialDashboard()
+                guard nativePush.isRouteBoundToCurrentSession(route) else { return }
                 _ = try? await appState.refreshSocialWorkoutInbox()
+            case let .live(roomID):
+                if let roomID {
+                    // Open the room named by the authenticated, bounded payload.
+                    // The coordinator rechecks the account/session around its network
+                    // boundary and materializes an active room only for that owner.
+                    try? await liveWorkoutCoordinator.openRoom(roomID)
+                } else {
+                    // Compatibility for already-delivered route-v1 notifications.
+                    await liveWorkoutCoordinator.refreshAll(showErrors: false)
+                }
             }
         }
     }
@@ -1048,6 +1082,7 @@ private struct MainTabShell: View {
                     WorkoutDetailView(
                         appState: appState,
                         workoutID: id,
+                        liveWorkoutCoordinator: liveWorkoutCoordinator,
                         onDeleted: {
                             if !workoutPath.isEmpty { workoutPath.removeLast() }
                         }
@@ -1103,6 +1138,7 @@ private struct MainTabShell: View {
                 store: store,
                 canAcceptWorkoutInvites: activeWorkoutStore.draft == nil,
                 liveWorkoutCoordinator: liveWorkoutCoordinator,
+                nativePushRequest: nativePushProfileRequest,
                 onOpenLiveWorkout: {
                     showsAddWorkout = false
                     showsActiveWorkout = true

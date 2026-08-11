@@ -134,6 +134,11 @@ internal fun isDeterministicAuthInitiationHttpFailure(responseCode: Int?): Boole
         responseCode !in setOf(408, 425)
 }
 
+internal fun isUnavailableSocialMyFriendCodeRpc(
+    responseCode: Int,
+    errorCode: String?
+): Boolean = responseCode == 404 && errorCode in setOf("PGRST202", "42883")
+
 internal fun authCallbackKind(purpose: String?): AuthCallbackKind {
     return if (purpose.equals("recovery", ignoreCase = true)) {
         AuthCallbackKind.PasswordRecovery
@@ -1215,6 +1220,24 @@ class CloudAuthManager(context: Context) {
             parseSocialDashboard(response)
         }
 
+    internal suspend fun loadSocialMyFriendCode(
+        session: AccountSession.Cloud
+    ): SocialMyFriendCode? = try {
+        socialRpc(
+            session = session,
+            function = "social_my_friend_code",
+            body = JSONObject(),
+            maxResponseBytes = SOCIAL_MY_FRIEND_CODE_MAX_BYTES,
+            parser = ::parseSocialMyFriendCode
+        )
+    } catch (error: SupabaseHttpException) {
+        if (isUnavailableSocialMyFriendCodeRpc(error.responseCode, error.errorCode)) {
+            null
+        } else {
+            throw error
+        }
+    }
+
     internal suspend fun loadSocialFriendDetails(
         session: AccountSession.Cloud,
         profileId: String
@@ -1735,6 +1758,7 @@ class CloudAuthManager(context: Context) {
         session: AccountSession.Cloud,
         function: String,
         body: JSONObject,
+        maxResponseBytes: Int = MAX_CLOUD_RESPONSE_BYTES,
         parser: (String) -> T
     ): T = withContext(Dispatchers.IO) {
         require(function.matches(Regex("^social_[a-z_]{1,64}$"))) { "Social RPC is invalid." }
@@ -1743,7 +1767,8 @@ class CloudAuthManager(context: Context) {
             session = freshSession,
             path = "/rest/v1/rpc/$function",
             method = "POST",
-            body = body.toString()
+            body = body.toString(),
+            maxResponseBytes = maxResponseBytes
         )
         requireActiveCloudSession(freshSession)
         parser(response)

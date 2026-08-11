@@ -584,6 +584,7 @@ struct ExerciseMediaThumbnail: View {
     let exerciseID: UUID
     let ownerKey: String
     let action: () -> Void
+    @AppStorage("app-language") private var languageCode = AppLanguage.english.rawValue
 
     private var image: UIImage? {
         ExerciseMediaStore.customImage(ownerKey: ownerKey, exerciseID: exerciseID)
@@ -603,7 +604,7 @@ struct ExerciseMediaThumbnail: View {
                     } else {
                         VStack(spacing: 3) {
                             Image(systemName: "photo.badge.plus")
-                            Text(gymText("Add image", "Додати фото", languageCode: gymCurrentLanguageCode()))
+                            Text(gymText("Add image", "Додати фото", "Добавить фото", languageCode: languageCode))
                                 .font(.caption2)
                         }
                         .foregroundStyle(GymTheme.textSecondary)
@@ -629,7 +630,8 @@ struct ExerciseMediaThumbnail: View {
             gymText(
                 "Open exercise preview",
                 "Відкрити демонстрацію вправи",
-                languageCode: gymCurrentLanguageCode()
+                "Открыть демонстрацию упражнения",
+                languageCode: languageCode
             )
         )
     }

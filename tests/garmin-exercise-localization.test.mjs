@@ -64,9 +64,18 @@ test("Garmin localizes every canonical built-in exercise with Android parity", (
   for (const entry of catalogEntries) {
     const garmin = garminByEnglish.get(entry.en);
     assert.ok(garmin, `Garmin is missing canonical exercise: ${entry.en}`);
-    assert.equal(garmin.uk, entry.uk, `Ukrainian label differs for ${entry.en}`);
+    const expectedUkrainian = entry.key === "straight_arm_pulldown"
+      ? "Журавель — тяга прямими руками"
+      : entry.uk;
+    assert.equal(garmin.uk, expectedUkrainian, `Ukrainian label differs for ${entry.en}`);
     assert.equal(garmin.ru, russianByEnglish.get(entry.en), `Russian label differs for ${entry.en}`);
   }
+});
+
+test("Garmin exposes Crane as the localized back exercise without changing sync identity", () => {
+  assert.equal(renderedExerciseName("Straight Arm Pulldown", "uk"), "Журавель — тяга прямими руками");
+  assert.equal(renderedExerciseName("Straight Arm Pulldown", "ru"), "Журавель — тяга прямыми руками");
+  assert.equal(renderedExerciseName("Straight Arm Pulldown", "en"), "Straight Arm Pulldown");
 });
 
 test("Garmin render localization never replaces synchronized exercise identity", () => {

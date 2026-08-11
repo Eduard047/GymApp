@@ -14,6 +14,16 @@ import org.json.JSONObject
 
 class CloudAuthManagerTest {
     @Test
+    fun shortFriendCodeFallsBackOnlyWhenTheRpcFunctionIsUnavailable() {
+        assertTrue(isUnavailableSocialMyFriendCodeRpc(404, "PGRST202"))
+        assertTrue(isUnavailableSocialMyFriendCodeRpc(404, "42883"))
+        assertFalse(isUnavailableSocialMyFriendCodeRpc(404, null))
+        assertFalse(isUnavailableSocialMyFriendCodeRpc(404, "PGRST301"))
+        assertFalse(isUnavailableSocialMyFriendCodeRpc(401, "PGRST202"))
+        assertFalse(isUnavailableSocialMyFriendCodeRpc(500, "PGRST202"))
+    }
+
+    @Test
     fun localDatabaseIdentityIsCanonicalBoundedAndCollisionResistant() {
         val slash = AccountSession.Local("a/b").databaseName()
         val underscore = AccountSession.Local("a_b").databaseName()

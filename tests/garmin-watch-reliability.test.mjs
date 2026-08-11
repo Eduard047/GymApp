@@ -97,3 +97,63 @@ test("Garmin FIT pause, resume, discard, and startup fail without false UI succe
   assert.match(onShow, /!GymSession\.recording && !GymSession\.fitSaved/);
   assert.match(onShow, /else if \(GymSession\.recording && !GymSession\.paused\)[\s\S]*GymSession\.startSensors\(\)/);
 });
+
+test("Garmin account transition retains and retries a FIT session that could not be discarded", async () => {
+  const session = await readFile("garmin/source/GymSession.mc", "utf8");
+  const start = section(session, "static function start()", "static function pause()");
+  const reset = section(
+    session,
+    "static function resetForAccountTransition()",
+    "static function retryAccountTransitionFitCleanup()"
+  );
+  const retry = section(
+    session,
+    "static function retryAccountTransitionFitCleanup()",
+    "static function createFitFields()"
+  );
+  const tick = section(session, "static function tick()", "static function startSensors()");
+
+  assert.match(session, /static var fitCleanupPending = false/);
+  assert.match(start, /if \(!retryAccountTransitionFitCleanup\(\)\)[\s\S]*return false/);
+  assert.match(reset, /var fitDiscarded = discard\(\)/);
+  assert.match(reset, /fitCleanupPending = !fitDiscarded && session != null/);
+  assert.doesNotMatch(reset, /session = null/);
+  assert.match(retry, /if \(!discard\(\)\)[\s\S]*"FIT RETRY"[\s\S]*return false/);
+  assert.match(retry, /fitCleanupPending = false;[\s\S]*return true/);
+  assert.match(
+    tick,
+    /if \(fitCleanupPending\)[\s\S]*retryAccountTransitionFitCleanup\(\);[\s\S]*return;/
+  );
+
+  const state = {
+    session: true,
+    cleanupPending: false,
+    recording: true
+  };
+  const resetWithDiscardResult = (discarded) => {
+    state.cleanupPending = !discarded && state.session;
+    state.recording = false;
+  };
+  const retryWithDiscardResult = (discarded) => {
+    if (!state.cleanupPending) return true;
+    if (!discarded) return false;
+    state.session = false;
+    state.cleanupPending = false;
+    return true;
+  };
+
+  resetWithDiscardResult(false);
+  assert.deepEqual(state, {
+    session: true,
+    cleanupPending: true,
+    recording: false
+  });
+  assert.equal(retryWithDiscardResult(false), false);
+  assert.equal(state.session, true, "a transient failure must keep the native session handle");
+  assert.equal(retryWithDiscardResult(true), true);
+  assert.deepEqual(state, {
+    session: false,
+    cleanupPending: false,
+    recording: false
+  });
+});

@@ -50,14 +50,43 @@ enum NativePushDestination: String, Equatable, Sendable {
     case live
 }
 
+enum NativePushRouteTarget: Equatable, Sendable {
+    case social
+    case live(roomID: String?)
+
+    var destination: NativePushDestination {
+        switch self {
+        case .social: .social
+        case .live: .live
+        }
+    }
+
+    var roomID: String? {
+        guard case let .live(roomID) = self else { return nil }
+        return roomID
+    }
+}
+
 struct NativePushRoute: Identifiable, Equatable, Sendable {
     let id: UUID
-    let destination: NativePushDestination
+    let target: NativePushRouteTarget
+    let bindingID: UUID
+    let lifecycleGeneration: UInt64
 
-    init(id: UUID = UUID(), destination: NativePushDestination) {
+    init(
+        id: UUID = UUID(),
+        target: NativePushRouteTarget,
+        bindingID: UUID,
+        lifecycleGeneration: UInt64
+    ) {
         self.id = id
-        self.destination = destination
+        self.target = target
+        self.bindingID = bindingID
+        self.lifecycleGeneration = lifecycleGeneration
     }
+
+    var destination: NativePushDestination { target.destination }
+    var roomID: String? { target.roomID }
 }
 
 enum NativePushFetchOutcome: Equatable, Sendable {
@@ -98,6 +127,13 @@ struct NativePushRemoteEvent: Equatable, Sendable {
 
     var deliveryKey: String {
         "\(eventType.destination.rawValue):\(objectID)"
+    }
+
+    var routeTarget: NativePushRouteTarget {
+        switch eventType.destination {
+        case .social: .social
+        case .live: .live(roomID: objectID)
+        }
     }
 }
 
@@ -161,24 +197,49 @@ enum NativePushPayloadParser {
         )
     }
 
-    static func localDestination(
+    static func localTarget(
         from userInfo: [AnyHashable: Any],
         expectedBindingID: UUID
-    ) -> NativePushDestination? {
+    ) -> NativePushRouteTarget? {
         guard Set(userInfo.keys.compactMap { $0 as? String }) == ["gymappLocal"],
               userInfo.keys.count == 1,
               let payload = stringDictionary(userInfo["gymappLocal"]),
-              Set(payload.keys) == ["version", "bindingId", "destination"],
-              exactInteger(payload["version"]) == 1,
+              let version = exactInteger(payload["version"]),
+              version == 1 || version == 2,
               let bindingString = boundedString(payload["bindingId"], maximumBytes: 36),
               versionFourUUID(bindingString) == expectedBindingID,
               let destinationString = boundedString(
                 payload["destination"],
                 maximumBytes: 16
-              ) else {
+              ),
+              let destination = NativePushDestination(rawValue: destinationString) else {
             return nil
         }
-        return NativePushDestination(rawValue: destinationString)
+
+        let baseKeys = Set(["version", "bindingId", "destination"])
+        if version == 1 {
+            guard Set(payload.keys) == baseKeys else { return nil }
+            // Notifications delivered before route v2 did not retain a live room ID.
+            // Keep their safe generic fallback while all newly scheduled live routes
+            // carry the exact opaque room identifier.
+            return destination == .social ? .social : .live(roomID: nil)
+        }
+
+        switch destination {
+        case .social:
+            guard Set(payload.keys) == baseKeys else { return nil }
+            return .social
+        case .live:
+            guard Set(payload.keys) == baseKeys.union(["roomId"]),
+                  let roomID = boundedString(payload["roomId"], maximumBytes: 35),
+                  roomID.range(
+                    of: "^lr_[0-9a-f]{32}$",
+                    options: .regularExpression
+                  ) != nil else {
+                return nil
+            }
+            return .live(roomID: roomID)
+        }
     }
 
     private static func stringDictionary(_ value: Any?) -> [String: Any]? {
@@ -1042,7 +1103,10 @@ struct NativePushLocalNotification: Equatable, Sendable {
     let title: String
     let body: String
     let bindingID: UUID
-    let destination: NativePushDestination
+    let target: NativePushRouteTarget
+
+    var destination: NativePushDestination { target.destination }
+    var roomID: String? { target.roomID }
 }
 
 @MainActor
@@ -1103,13 +1167,7 @@ final class NativePushSystemController: NativePushSystemControlling {
         content.body = notification.body
         content.sound = .default
         content.categoryIdentifier = Self.categoryIdentifier
-        content.userInfo = [
-            "gymappLocal": [
-                "version": 1,
-                "bindingId": notification.bindingID.uuidString.lowercased(),
-                "destination": notification.destination.rawValue
-            ]
-        ]
+        content.userInfo = Self.localUserInfo(for: notification)
         // The short delay leaves an account transition enough time to remove a newly
         // scheduled notification if the authenticated owner changes during `add`.
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
@@ -1120,6 +1178,20 @@ final class NativePushSystemController: NativePushSystemControlling {
                 trigger: trigger
             )
         )
+    }
+
+    static func localUserInfo(
+        for notification: NativePushLocalNotification
+    ) -> [AnyHashable: Any] {
+        var routePayload: [String: Any] = [
+            "version": 2,
+            "bindingId": notification.bindingID.uuidString.lowercased(),
+            "destination": notification.destination.rawValue
+        ]
+        if let roomID = notification.roomID {
+            routePayload["roomId"] = roomID
+        }
+        return ["gymappLocal": routePayload]
     }
 
     func removeNotification(identifier: String) async {
@@ -1733,18 +1805,42 @@ final class NativePushManager: ObservableObject {
                 userID: binding.userID,
                 authSessionID: binding.authSessionID
               ),
-              let destination = NativePushPayloadParser.localDestination(
+              let target = NativePushPayloadParser.localTarget(
                 from: userInfo,
                 expectedBindingID: binding.bindingID
               ) else {
             return
         }
-        pendingRoute = NativePushRoute(destination: destination)
+        pendingRoute = NativePushRoute(
+            target: target,
+            bindingID: binding.bindingID,
+            lifecycleGeneration: lifecycleGeneration
+        )
     }
 
     func consumePendingRoute() -> NativePushRoute? {
-        defer { pendingRoute = nil }
-        return pendingRoute
+        guard let route = pendingRoute,
+              isRouteBoundToCurrentSession(route) else {
+            pendingRoute = nil
+            return nil
+        }
+        pendingRoute = nil
+        return route
+    }
+
+    func isRouteBoundToCurrentSession(_ route: NativePushRoute) -> Bool {
+        guard !isFenced,
+              route.lifecycleGeneration == lifecycleGeneration,
+              let binding,
+              route.bindingID == binding.bindingID,
+              binding.userID == currentUserID,
+              binding.authSessionID == currentAuthSessionID else {
+            return false
+        }
+        return authIdentityMatches(
+            userID: binding.userID,
+            authSessionID: binding.authSessionID
+        )
     }
 
     private func authSessionWillChange(to cloud: CloudAccountSession?) {
@@ -2590,7 +2686,7 @@ final class NativePushManager: ObservableObject {
             title: copy.title,
             body: copy.body,
             bindingID: event.bindingID,
-            destination: event.eventType.destination
+            target: event.routeTarget
         )
     }
 

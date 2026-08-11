@@ -4,6 +4,68 @@ import XCTest
 
 @MainActor
 final class SocialContractTests: XCTestCase {
+    func testShortFriendCodeParserIsExactAndBounded() throws {
+        let code = try SocialPayloadParser.friendCode(from: jsonData([
+            "version": 1,
+            "friendCode": "g_a1b2c3d4e5f6"
+        ]))
+        XCTAssertEqual(code, "g_a1b2c3d4e5f6")
+
+        XCTAssertThrowsError(try SocialPayloadParser.friendCode(from: jsonData([
+            "version": 1,
+            "friendCode": "g_a1b2c3d4e5f6",
+            "profileId": profileID(1)
+        ])))
+        XCTAssertThrowsError(try SocialPayloadParser.friendCode(from: jsonData([
+            "version": true,
+            "friendCode": "g_a1b2c3d4e5f6"
+        ])))
+        XCTAssertThrowsError(try SocialPayloadParser.friendCode(from: jsonData([
+            "version": 1,
+            "friendCode": "g_A1B2C3D4E5F6"
+        ])))
+        XCTAssertThrowsError(try SocialPayloadParser.friendCode(from: jsonData([
+            "version": 1,
+            "friendCode": profileID(1)
+        ])))
+        XCTAssertThrowsError(try SocialPayloadParser.friendCode(from: Data(
+            repeating: UInt8(ascii: " "),
+            count: SocialPayloadParser.maximumFriendCodeResponseBytes + 1
+        )))
+    }
+
+    func testFriendCodeNormalizerAcceptsShortDisplayAndLegacyFormats() {
+        XCTAssertEqual(
+            SocialFriendCode.normalize("g_a1b2c3d4e5f6"),
+            "g_a1b2c3d4e5f6"
+        )
+        XCTAssertEqual(
+            SocialFriendCode.normalize(" G_A1B2C3D4E5F6 "),
+            "g_a1b2c3d4e5f6"
+        )
+        XCTAssertEqual(
+            SocialFriendCode.normalize("  GYM-A1B2-C3D4-E5F6\n"),
+            "g_a1b2c3d4e5f6"
+        )
+        XCTAssertEqual(
+            SocialFriendCode.normalize("gym-a1b2-c3d4-e5f6"),
+            "g_a1b2c3d4e5f6"
+        )
+        let legacyCode = "p_abcdefabcdefabcdefabcdefabcdefab"
+        XCTAssertEqual(SocialFriendCode.normalize(profileID(2)), profileID(2))
+        XCTAssertEqual(SocialFriendCode.normalize(legacyCode.uppercased()), legacyCode)
+        XCTAssertEqual(
+            SocialFriendCode.display("g_a1b2c3d4e5f6"),
+            "GYM-A1B2-C3D4-E5F6"
+        )
+        XCTAssertEqual(SocialFriendCode.display(profileID(2)), profileID(2))
+
+        XCTAssertNil(SocialFriendCode.normalize("g_a1b2c3d4e5f"))
+        XCTAssertNil(SocialFriendCode.normalize("GYM-A1B2-C3D4-E5FG"))
+        XCTAssertNil(SocialFriendCode.normalize("GYM-A1B2-C3D4-E5F6-extra"))
+        XCTAssertNil(SocialFriendCode.normalize(String(repeating: "a", count: 65)))
+    }
+
     func testDashboardParserAcceptsV1AndRejectsUnknownPrivateAndOversizedData() throws {
         let dashboard = try SocialPayloadParser.dashboard(from: jsonData(dashboardObject()))
 
@@ -484,6 +546,10 @@ final class SocialContractTests: XCTestCase {
             friendCode: profileID(2),
             expectedUserID: cloudUserID
         )
+        try await service.socialSendFriendRequest(
+            friendCode: "g_a1b2c3d4e5f6",
+            expectedUserID: cloudUserID
+        )
         try await service.socialSendWorkoutInvite(
             profileID: profileID(2),
             clientRequestID: requestID,
@@ -498,6 +564,7 @@ final class SocialContractTests: XCTestCase {
         let requests = recorder.requests
         XCTAssertEqual(requests.map { $0.url?.path }, [
             "/rest/v1/rpc/social_send_friend_request",
+            "/rest/v1/rpc/social_send_friend_request",
             "/rest/v1/rpc/social_send_workout_invite",
             "/rest/v1/rpc/social_block_profile"
         ])
@@ -506,7 +573,11 @@ final class SocialContractTests: XCTestCase {
         XCTAssertEqual(Set(friendBody.keys), Set(["p_friend_code"]))
         XCTAssertEqual(friendBody["p_friend_code"] as? String, profileID(2))
 
-        let inviteBody = try requestJSON(requests[1])
+        let shortCodeBody = try requestJSON(requests[1])
+        XCTAssertEqual(Set(shortCodeBody.keys), Set(["p_friend_code"]))
+        XCTAssertEqual(shortCodeBody["p_friend_code"] as? String, "g_a1b2c3d4e5f6")
+
+        let inviteBody = try requestJSON(requests[2])
         XCTAssertEqual(
             Set(inviteBody.keys),
             Set(["p_profile_id", "p_client_request_id", "p_workout"])
@@ -518,16 +589,244 @@ final class SocialContractTests: XCTestCase {
         )
         let workout = try XCTUnwrap(inviteBody["p_workout"] as? [String: Any])
         XCTAssertEqual(Set(workout.keys), Set(["version", "exercises"]))
-        let wire = String(decoding: try XCTUnwrap(requests[1].httpBody), as: UTF8.self)
+        let wire = String(decoding: try XCTUnwrap(requests[2].httpBody), as: UTF8.self)
         XCTAssertFalse(wire.contains("note"))
         XCTAssertFalse(wire.contains("date"))
         XCTAssertFalse(wire.contains("account"))
         XCTAssertFalse(wire.localizedCaseInsensitiveContains("health"))
         XCTAssertFalse(wire.localizedCaseInsensitiveContains("coach"))
 
-        let blockBody = try requestJSON(requests[2])
+        let blockBody = try requestJSON(requests[3])
         XCTAssertEqual(Set(blockBody.keys), Set(["p_profile_id"]))
         XCTAssertEqual(blockBody["p_profile_id"] as? String, profileID(3))
+    }
+
+    func testDashboardRefreshUsesShortCodeAndFallsBackToLegacyCode() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("GymAppFriendCodeFallback", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let recorder = SocialRequestRecorder()
+        let server = SocialTestServerState()
+        let (auth, urlSession, defaults, suiteName) = try authenticatedServiceDependencies()
+        let dashboardData = try jsonData(dashboardObject())
+        defer {
+            SocialURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+        SocialURLProtocolStub.handler = { request in
+            recorder.append(request)
+            if request.url?.path == "/rest/v1/rpc/social_my_friend_code" {
+                if server.flag("available") {
+                    return try SocialURLProtocolStub.response(
+                        for: request,
+                        json: #"{"version":1,"friendCode":"g_a1b2c3d4e5f6"}"#
+                    )
+                }
+                if server.flag("postgres-code") {
+                    return try SocialURLProtocolStub.response(
+                        for: request,
+                        statusCode: 404,
+                        json: #"{"code":"42883","message":"function unavailable"}"#
+                    )
+                }
+                return try SocialURLProtocolStub.response(
+                    for: request,
+                    statusCode: 404,
+                    json: #"{"code":"PGRST202","message":"function unavailable"}"#
+                )
+            }
+            if let response = try self.baseCloudStateResponse(for: request) { return response }
+            switch (request.url?.path, request.httpMethod) {
+            case ("/rest/v1/rpc/social_dashboard", "POST"):
+                return try SocialURLProtocolStub.response(for: request, jsonData: dashboardData)
+            default:
+                return try SocialURLProtocolStub.response(
+                    for: request,
+                    statusCode: 404,
+                    json: "{}"
+                )
+            }
+        }
+        let appState = try AppState(
+            auth: auth,
+            defaults: defaults,
+            workoutDirectoryURL: directory,
+            cloudURLSession: urlSession,
+            garminBindingStore: GarminDeviceBindingStore(keychain: SocialTestKeychain())
+        )
+        let accountReady = await waitUntil { appState.isAccountReady }
+        XCTAssertTrue(accountReady)
+
+        let legacyDashboard = try await appState.refreshSocialDashboard()
+        XCTAssertEqual(appState.socialFriendCode, legacyDashboard.currentUser.friendCode)
+
+        server.set("postgres-code")
+        _ = try await appState.refreshSocialDashboard()
+        XCTAssertEqual(appState.socialFriendCode, legacyDashboard.currentUser.friendCode)
+
+        server.set("available")
+        _ = try await appState.refreshSocialDashboard()
+        XCTAssertEqual(appState.socialFriendCode, "g_a1b2c3d4e5f6")
+
+        let codeRequests = recorder.requests.filter {
+            $0.url?.path == "/rest/v1/rpc/social_my_friend_code"
+        }
+        XCTAssertEqual(codeRequests.count, 3)
+        XCTAssertTrue(codeRequests.allSatisfy { $0.httpMethod == "POST" })
+        for request in codeRequests {
+            XCTAssertTrue(try requestJSON(request).isEmpty)
+        }
+    }
+
+    func testShortCode503AndMalformedResponsesDoNotPublishDashboardOrFallback() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("GymAppFriendCodeFailure", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let server = SocialTestServerState()
+        let (auth, urlSession, defaults, suiteName) = try authenticatedServiceDependencies()
+        let dashboardData = try jsonData(dashboardObject())
+        defer {
+            SocialURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+        SocialURLProtocolStub.handler = { request in
+            if request.url?.path == "/rest/v1/rpc/social_my_friend_code" {
+                if server.flag("malformed") {
+                    return try SocialURLProtocolStub.response(
+                        for: request,
+                        json: #"{"version":1,"friendCode":"not-a-friend-code"}"#
+                    )
+                }
+                return try SocialURLProtocolStub.response(
+                    for: request,
+                    statusCode: 503,
+                    json: #"{"code":"PGRST202","message":"temporarily unavailable"}"#
+                )
+            }
+            if let response = try self.baseCloudStateResponse(for: request) { return response }
+            switch (request.url?.path, request.httpMethod) {
+            case ("/rest/v1/rpc/social_dashboard", "POST"):
+                return try SocialURLProtocolStub.response(for: request, jsonData: dashboardData)
+            default:
+                return try SocialURLProtocolStub.response(
+                    for: request,
+                    statusCode: 404,
+                    json: "{}"
+                )
+            }
+        }
+        let appState = try AppState(
+            auth: auth,
+            defaults: defaults,
+            workoutDirectoryURL: directory,
+            cloudURLSession: urlSession,
+            garminBindingStore: GarminDeviceBindingStore(keychain: SocialTestKeychain())
+        )
+        let accountReady = await waitUntil { appState.isAccountReady }
+        XCTAssertTrue(accountReady)
+
+        do {
+            _ = try await appState.refreshSocialDashboard()
+            XCTFail("A 503 short-code response must not use the legacy fallback")
+        } catch CloudSyncError.postgRESTFailure(let statusCode, let code, _) {
+            XCTAssertEqual(statusCode, 503)
+            XCTAssertEqual(code, "PGRST202")
+        } catch {
+            XCTFail("Unexpected 503 error: \(error)")
+        }
+        XCTAssertNil(appState.socialDashboard)
+        XCTAssertNil(appState.socialFriendCode)
+
+        server.set("malformed")
+        do {
+            _ = try await appState.refreshSocialDashboard()
+            XCTFail("A malformed short-code response must not use the legacy fallback")
+        } catch CloudSyncError.invalidResponse {
+            // Expected: exact response parsing fails closed.
+        } catch {
+            XCTFail("Unexpected malformed-response error: \(error)")
+        }
+        XCTAssertNil(appState.socialDashboard)
+        XCTAssertNil(appState.socialFriendCode)
+    }
+
+    func testLateShortCodeResponseCannotCrossAccountSwitch() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("GymAppFriendCodeAccountSwitch", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let shortCodeStarted = expectation(description: "short friend-code request started")
+        let deferredResponses = SocialDeferredResponseStore()
+        let (auth, urlSession, defaults, suiteName) = try authenticatedServiceDependencies()
+        let dashboardData = try jsonData(dashboardObject())
+        defer {
+            deferredResponses.failAll(with: URLError(.cancelled))
+            SocialURLProtocolStub.deferredHandler = nil
+            SocialURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+        SocialURLProtocolStub.deferredHandler = { request, response in
+            guard request.url?.path == "/rest/v1/rpc/social_my_friend_code",
+                  request.httpMethod == "POST" else {
+                return false
+            }
+            deferredResponses.store(response, for: "friend-code")
+            shortCodeStarted.fulfill()
+            return true
+        }
+        SocialURLProtocolStub.handler = { request in
+            if let response = try self.baseCloudStateResponse(for: request) { return response }
+            switch (request.url?.path, request.httpMethod) {
+            case ("/rest/v1/rpc/social_dashboard", "POST"):
+                return try SocialURLProtocolStub.response(for: request, jsonData: dashboardData)
+            default:
+                return try SocialURLProtocolStub.response(
+                    for: request,
+                    statusCode: 404,
+                    json: "{}"
+                )
+            }
+        }
+        let appState = try AppState(
+            auth: auth,
+            defaults: defaults,
+            workoutDirectoryURL: directory,
+            cloudURLSession: urlSession,
+            garminBindingStore: GarminDeviceBindingStore(keychain: SocialTestKeychain())
+        )
+        let accountReady = await waitUntil { appState.isAccountReady }
+        XCTAssertTrue(accountReady)
+
+        let refresh = Task { try await appState.refreshSocialDashboard() }
+        await fulfillment(of: [shortCodeStarted], timeout: 2)
+        try auth.installSessionForTesting(.local(id: "replacement", displayName: "Replacement"))
+        let switchedAccountReady = await waitUntil {
+            appState.isAccountReady && auth.session?.cloud == nil
+        }
+        XCTAssertTrue(switchedAccountReady)
+
+        try XCTUnwrap(deferredResponses.take("friend-code")).succeed(
+            jsonData: try jsonData([
+                "version": 1,
+                "friendCode": "g_a1b2c3d4e5f6"
+            ])
+        )
+        do {
+            _ = try await refresh.value
+            XCTFail("A previous account's short code must not publish after switching accounts")
+        } catch {
+            // Expected: the account/session generation fence rejects the late response.
+        }
+        XCTAssertNil(appState.socialDashboard)
+        XCTAssertNil(appState.socialFriendCode)
     }
 
     func testWorkoutInviteRetryIDsAreAccountBoundAndNeverEvictUnknownOutcomes() async throws {
@@ -1501,6 +1800,12 @@ final class SocialContractTests: XCTestCase {
                 return try SocialURLProtocolStub.response(for: request, json: "{}")
             case ("/rest/v1/rpc/social_dashboard", "POST"):
                 return try SocialURLProtocolStub.response(for: request, jsonData: dashboardData)
+            case ("/rest/v1/rpc/social_my_friend_code", "POST"):
+                return try SocialURLProtocolStub.response(
+                    for: request,
+                    statusCode: 404,
+                    json: #"{"code":"PGRST202","message":"function unavailable"}"#
+                )
             case ("/rest/v1/rpc/social_workout_inbox", "POST"):
                 return try SocialURLProtocolStub.response(for: request, jsonData: inboxData)
             default:
@@ -1806,6 +2111,12 @@ final class SocialContractTests: XCTestCase {
             return try SocialURLProtocolStub.response(for: request, jsonData: response)
         case ("/rest/v1/profiles", "POST"):
             return try SocialURLProtocolStub.response(for: request, json: "{}")
+        case ("/rest/v1/rpc/social_my_friend_code", "POST"):
+            return try SocialURLProtocolStub.response(
+                for: request,
+                statusCode: 404,
+                json: #"{"code":"PGRST202","message":"function unavailable"}"#
+            )
         default:
             return nil
         }

@@ -81,8 +81,9 @@ import com.example.gymapp.ui.components.EmptyStatePanel
 import com.example.gymapp.ui.components.ExerciseMuscleBreakdownCard
 import com.example.gymapp.ui.components.ExerciseMuscleMap
 import com.example.gymapp.ui.components.ExerciseMediaPreview
+import com.example.gymapp.ui.components.GymMetric
 import com.example.gymapp.ui.components.HeroPanel
-import com.example.gymapp.ui.components.InfoPill
+import com.example.gymapp.ui.components.MetricStrip
 import com.example.gymapp.ui.components.SectionTitle
 import com.example.gymapp.ui.util.currentAppLanguageTag
 import com.example.gymapp.ui.util.localizedExerciseName
@@ -91,6 +92,7 @@ import com.example.gymapp.ui.viewmodel.ExerciseInputState
 import com.example.gymapp.ui.viewmodel.SmartWorkoutPlanSummaryUiModel
 import com.example.gymapp.ui.viewmodel.WorkoutTemplatePreviewUiModel
 import com.example.gymapp.ui.theme.GymControlShape
+import com.example.gymapp.ui.theme.GymSpacing
 import com.example.gymapp.util.CalorieMode
 import com.example.gymapp.util.DateTimeUtils
 import com.example.gymapp.util.TrainingGoal
@@ -155,8 +157,13 @@ fun AddWorkoutScreen(
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 14.dp, top = 12.dp, end = 14.dp, bottom = 30.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+        contentPadding = PaddingValues(
+            start = GymSpacing.ScreenHorizontal,
+            top = GymSpacing.ScreenTop,
+            end = GymSpacing.ScreenHorizontal,
+            bottom = GymSpacing.ScreenBottom
+        ),
+        verticalArrangement = Arrangement.spacedBy(GymSpacing.Large)
     ) {
         item {
             HeroPanel(modifier = Modifier.fillMaxWidth()) {
@@ -177,21 +184,20 @@ fun AddWorkoutScreen(
                         style = MaterialTheme.typography.bodyMedium,
                         color = Color.White.copy(alpha = 0.9f)
                     )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        InfoPill(
-                            text = stringResource(R.string.add_workout_active_exercises, selectedExerciseCount),
-                            accent = Color.White,
-                            modifier = Modifier.weight(1f)
-                        )
-                        InfoPill(
-                            text = stringResource(R.string.add_workout_total_sets, totalSetCount),
-                            accent = Color.White,
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
+                    MetricStrip(
+                        metrics = listOf(
+                            GymMetric(
+                                stringResource(R.string.post_workout_metric_exercises),
+                                selectedExerciseCount.toString()
+                            ),
+                            GymMetric(
+                                stringResource(R.string.post_workout_metric_sets),
+                                totalSetCount.toString(),
+                                emphasized = true
+                            )
+                        ),
+                        onHero = true
+                    )
                 }
             }
         }

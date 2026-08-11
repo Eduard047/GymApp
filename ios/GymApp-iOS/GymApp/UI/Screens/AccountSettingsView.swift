@@ -46,7 +46,7 @@ struct AccountSettingsView: View {
     var body: some View {
         GymBackground {
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 14) {
+                LazyVStack(alignment: .leading, spacing: GymTheme.contentSpacing) {
                     header
 
                     if let message = appState.statusMessage {
@@ -68,9 +68,9 @@ struct AccountSettingsView: View {
                     sessionCard
                     dangerZone
                 }
-                .padding(.horizontal, 14)
-                .padding(.top, 10)
-                .padding(.bottom, 30)
+                .padding(.horizontal, GymTheme.screenHorizontalInset)
+                .padding(.top, GymTheme.screenVerticalInset)
+                .padding(.bottom, GymTheme.screenBottomInset)
             }
         }
         .navigationTitle("Account settings")
@@ -101,16 +101,11 @@ struct AccountSettingsView: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Account & privacy")
-                .font(.largeTitle.bold())
-                .foregroundStyle(GymTheme.textPrimary)
-                .accessibilityAddTraits(.isHeader)
-            Text("Manage sync, support, your session, and permanent data deletion.")
-                .font(.subheadline)
-                .foregroundStyle(GymTheme.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
+        GymScreenHeader(
+            eyebrow: "Settings",
+            title: "Account & privacy",
+            supporting: "Manage sync, support, your session, and permanent data deletion."
+        )
     }
 
     private var accountDetailsCard: some View {
@@ -205,10 +200,10 @@ struct AccountSettingsView: View {
                         "Reloads the cloud revision, reconciles changes, and uploads only when safe"
                     )
                 } else {
-                    Label("Use Export backup on the Exercises screen before replacing or resetting this device.", systemImage: "externaldrive")
-                        .font(.subheadline)
-                        .foregroundStyle(GymTheme.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    GymInlineState(
+                        "Use Export backup on the Profile screen before replacing or resetting this device.",
+                        systemImage: "externaldrive"
+                    )
                 }
             }
         }

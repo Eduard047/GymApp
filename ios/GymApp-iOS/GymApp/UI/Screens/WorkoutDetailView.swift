@@ -1271,16 +1271,28 @@ struct WorkoutDetailView: View {
     @State private var statusMessage: String?
     @State private var pendingDeletion: WorkoutDetailDeletionTarget?
     @State private var deletionTask: Task<Void, Never>?
+    @State private var showingShareChooser = false
+    @State private var sharingPlan: SharedWorkoutPlan?
+    @State private var shareFriends: [SocialFriendSummary] = []
+    @State private var shareFriendsAreLoading = false
+    @State private var sharingFriendID: String?
+    @State private var shareChooserMessage: String?
+    @State private var shareChooserMessageIsError = false
 
     private let workoutID: UUID
     private let onDeleted: () -> Void
     private let cancelLegacyRestTimer: (String) -> Void
     private let reportStatus: (String, Bool) -> Void
     private let isStoreContextCurrent: () -> Bool
+    private let isCloudAccount: Bool
+    private let loadSocialDashboard: (() async throws -> SocialDashboard)?
+    private let sendSocialWorkoutInvite: ((String, SharedWorkoutPlan) async throws -> Void)?
+    private let sendLiveWorkoutInvite: ((String, SharedWorkoutPlan) async throws -> Void)?
 
     init(
         appState: AppState,
         workoutID: UUID,
+        liveWorkoutCoordinator: LiveWorkoutCoordinator? = nil,
         onDeleted: @escaping () -> Void = {}
     ) {
         self.init(
@@ -1298,6 +1310,16 @@ struct WorkoutDetailView: View {
                 return appState.isAccountReady
                     && appState.workoutStore === store
                     && appState.activeAccountStorageKey == store.accountStorageKey
+            },
+            isCloudAccount: appState.auth.session?.cloud != nil,
+            loadSocialDashboard: { try await appState.refreshSocialDashboard() },
+            sendSocialWorkoutInvite: { profileID, plan in
+                try await appState.sendWorkoutInvite(to: profileID, plan: plan)
+            },
+            sendLiveWorkoutInvite: liveWorkoutCoordinator.map { coordinator in
+                { profileID, plan in
+                    try await coordinator.sendInvite(to: profileID, plan: plan)
+                }
             }
         )
     }
@@ -1308,7 +1330,11 @@ struct WorkoutDetailView: View {
         onDeleted: @escaping () -> Void = {},
         cancelLegacyRestTimer: @escaping (String) -> Void = { _ in },
         onStatus: @escaping (String, Bool) -> Void = { _, _ in },
-        isStoreContextCurrent: @escaping () -> Bool = { true }
+        isStoreContextCurrent: @escaping () -> Bool = { true },
+        isCloudAccount: Bool = false,
+        loadSocialDashboard: (() async throws -> SocialDashboard)? = nil,
+        sendSocialWorkoutInvite: ((String, SharedWorkoutPlan) async throws -> Void)? = nil,
+        sendLiveWorkoutInvite: ((String, SharedWorkoutPlan) async throws -> Void)? = nil
     ) {
         _store = ObservedObject(wrappedValue: store)
         self.workoutID = workoutID
@@ -1316,6 +1342,10 @@ struct WorkoutDetailView: View {
         self.cancelLegacyRestTimer = cancelLegacyRestTimer
         self.reportStatus = onStatus
         self.isStoreContextCurrent = isStoreContextCurrent
+        self.isCloudAccount = isCloudAccount
+        self.loadSocialDashboard = loadSocialDashboard
+        self.sendSocialWorkoutInvite = sendSocialWorkoutInvite
+        self.sendLiveWorkoutInvite = sendLiveWorkoutInvite
         let workout = store.workout(id: workoutID)
         _date = State(initialValue: workout?.date ?? Date())
         _note = State(initialValue: workout?.note ?? "")
@@ -1400,6 +1430,28 @@ struct WorkoutDetailView: View {
             )
             .presentationDetents([.medium, .large])
         }
+        .sheet(isPresented: $showingShareChooser) {
+            if let sharingPlan {
+                SavedWorkoutShareChooser(
+                    plan: sharingPlan,
+                    friends: shareFriends,
+                    isCloudAccount: isCloudAccount,
+                    canStartLive: sendLiveWorkoutInvite != nil,
+                    isLoadingFriends: shareFriendsAreLoading,
+                    sharingFriendID: sharingFriendID,
+                    message: shareChooserMessage,
+                    messageIsError: shareChooserMessageIsError,
+                    onRefresh: { Task { await loadShareFriends(force: true) } },
+                    onSendCopy: { friend in
+                        Task { await sendWorkoutInvite(to: friend, live: false) }
+                    },
+                    onStartLive: { friend in
+                        Task { await sendWorkoutInvite(to: friend, live: true) }
+                    }
+                )
+                .presentationDetents([.medium, .large])
+            }
+        }
         .alert(item: $activeAlert, content: makeAlert)
         .safeAreaInset(edge: .bottom) {
             if let pendingDeletion {
@@ -1447,14 +1499,10 @@ struct WorkoutDetailView: View {
                     )
                 }
 
-                if let shareURL = sharedWorkoutURL(workout) {
-                    ShareLink(
-                        item: shareURL,
-                        subject: Text("GymApp workout"),
-                        message: Text(
-                            GarminWorkoutDetailCopy.shareMessage(languageCode: languageCode)
-                        )
-                    ) {
+                if sharedWorkoutURL(workout) != nil {
+                    Button {
+                        openWorkoutShareChooser(workout)
+                    } label: {
                         Label(
                             GarminWorkoutDetailCopy.shareWorkout(languageCode: languageCode),
                             systemImage: "square.and.arrow.up"
@@ -1485,6 +1533,107 @@ struct WorkoutDetailView: View {
             workout: workout,
             exercises: exercisesByID
         )
+    }
+
+    private func sharedWorkoutPlan(_ workout: WorkoutSession) throws -> SharedWorkoutPlan {
+        var exercisesByID: [UUID: Exercise] = [:]
+        for exercise in store.exercises {
+            exercisesByID[exercise.id] = exercise
+        }
+        return try SharedWorkoutLinkEncoder.makePlan(
+            workout: workout,
+            exercises: exercisesByID
+        )
+    }
+
+    private func openWorkoutShareChooser(_ workout: WorkoutSession) {
+        guard isStoreContextCurrent() else { return }
+        do {
+            sharingPlan = try sharedWorkoutPlan(workout)
+            shareChooserMessage = nil
+            shareChooserMessageIsError = false
+            showingShareChooser = true
+            Task { await loadShareFriends(force: false) }
+        } catch {
+            reportStatus(
+                gymText(
+                    "This saved workout cannot be shared safely.",
+                    "Цим збереженим тренуванням неможливо безпечно поділитися.",
+                    "Этой сохранённой тренировкой нельзя безопасно поделиться.",
+                    languageCode: gymCurrentLanguageCode()
+                ),
+                true
+            )
+        }
+    }
+
+    private func loadShareFriends(force: Bool) async {
+        guard isStoreContextCurrent() else { return }
+        guard isCloudAccount, let loadSocialDashboard else {
+            shareFriends = []
+            return
+        }
+        guard !shareFriendsAreLoading, force || shareFriends.isEmpty else { return }
+        shareFriendsAreLoading = true
+        if force {
+            shareChooserMessage = nil
+            shareChooserMessageIsError = false
+        }
+        defer { shareFriendsAreLoading = false }
+        do {
+            let dashboard = try await loadSocialDashboard()
+            guard !Task.isCancelled, isStoreContextCurrent() else { return }
+            shareFriends = dashboard.friends.sorted {
+                $0.displayName.localizedStandardCompare($1.displayName) == .orderedAscending
+            }
+        } catch {
+            guard !Task.isCancelled, isStoreContextCurrent() else { return }
+            shareFriends = []
+            shareChooserMessage = gymText(
+                "Friends could not be loaded safely. You can still share a link.",
+                "Не вдалося безпечно завантажити друзів. Посиланням усе ще можна поділитися.",
+                "Не удалось безопасно загрузить друзей. Ссылкой всё ещё можно поделиться.",
+                languageCode: gymCurrentLanguageCode()
+            )
+            shareChooserMessageIsError = true
+        }
+    }
+
+    private func sendWorkoutInvite(to friend: SocialFriendSummary, live: Bool) async {
+        guard isStoreContextCurrent(),
+              sharingFriendID == nil,
+              let plan = sharingPlan,
+              let sender = live ? sendLiveWorkoutInvite : sendSocialWorkoutInvite else { return }
+        sharingFriendID = friend.profileID
+        shareChooserMessage = nil
+        shareChooserMessageIsError = false
+        defer { sharingFriendID = nil }
+        do {
+            try await sender(friend.profileID, plan)
+            guard !Task.isCancelled, isStoreContextCurrent() else { return }
+            shareChooserMessage = live
+                ? gymText(
+                    "Live invitation sent. Your friend joins before the workout starts for both of you.",
+                    "Live-запрошення надіслано. Друг приєднається до старту тренування для вас обох.",
+                    "Live-приглашение отправлено. Друг присоединится до старта тренировки для вас обоих.",
+                    languageCode: gymCurrentLanguageCode()
+                )
+                : gymText(
+                    "Workout copy sent inside GymApp.",
+                    "Копію тренування надіслано в GymApp.",
+                    "Копия тренировки отправлена в GymApp.",
+                    languageCode: gymCurrentLanguageCode()
+                )
+        } catch {
+            guard !Task.isCancelled, isStoreContextCurrent() else { return }
+            shareChooserMessage = gymText(
+                "The invitation could not be submitted safely. Refresh friends and try again.",
+                "Не вдалося безпечно надіслати запрошення. Онови друзів і спробуй ще раз.",
+                "Не удалось безопасно отправить приглашение. Обнови друзей и попробуй ещё раз.",
+                languageCode: gymCurrentLanguageCode()
+            )
+            shareChooserMessageIsError = true
+        }
     }
 
     private var exerciseSessionCounts: [UUID: Int] {
@@ -2246,6 +2395,178 @@ struct WorkoutDetailView: View {
         statusMessage = gymLocalized(
             "The workout changed before deletion. Review it and try again."
         )
+    }
+}
+
+private struct SavedWorkoutShareChooser: View {
+    let plan: SharedWorkoutPlan
+    let friends: [SocialFriendSummary]
+    let isCloudAccount: Bool
+    let canStartLive: Bool
+    let isLoadingFriends: Bool
+    let sharingFriendID: String?
+    let message: String?
+    let messageIsError: Bool
+    let onRefresh: () -> Void
+    let onSendCopy: (SocialFriendSummary) -> Void
+    let onStartLive: (SocialFriendSummary) -> Void
+
+    private var shareURL: URL? {
+        try? SharedWorkoutLinkEncoder.makeURL(plan: plan)
+    }
+
+    var body: some View {
+        NavigationStack {
+            GymBackground {
+                ScrollView {
+                    LazyVStack(spacing: 12) {
+                        GymHeroPanel {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Label(
+                                    t("Share saved workout", "Поділитися збереженим тренуванням", "Поделиться сохранённой тренировкой"),
+                                    systemImage: "person.2.wave.2.fill"
+                                )
+                                .font(.title2.bold())
+                                Text(
+                                    t(
+                                        "Send a copy, start one synchronized room, or use any other app.",
+                                        "Надішли копію, запусти одну синхронізовану кімнату або скористайся іншим застосунком.",
+                                        "Отправь копию, запусти одну синхронизированную комнату или используй другое приложение."
+                                    )
+                                )
+                                .font(.subheadline)
+                                .foregroundStyle(Color.white.opacity(0.84))
+                            }
+                        }
+
+                        if let message {
+                            GymStatusBanner(message: message, isError: messageIsError)
+                        }
+
+                        if let shareURL {
+                            GymPanel(highlighted: true) {
+                                VStack(alignment: .leading, spacing: 10) {
+                                    GymSectionTitle(
+                                        eyebrow: t("Link", "Посилання", "Ссылка"),
+                                        title: t("Share through another app", "Надіслати через інший застосунок", "Отправить через другое приложение")
+                                    )
+                                    ShareLink(
+                                        item: shareURL,
+                                        subject: Text("GymApp workout"),
+                                        message: Text(
+                                            GarminWorkoutDetailCopy.shareMessage(
+                                                languageCode: gymCurrentLanguageCode()
+                                            )
+                                        )
+                                    ) {
+                                        Label(
+                                            t("Share link", "Поділитися посиланням", "Поделиться ссылкой"),
+                                            systemImage: "link"
+                                        )
+                                        .frame(maxWidth: .infinity)
+                                    }
+                                    .buttonStyle(GymSecondaryButtonStyle())
+                                }
+                            }
+                        }
+
+                        GymPanel {
+                            VStack(alignment: .leading, spacing: 10) {
+                                HStack(alignment: .firstTextBaseline) {
+                                    GymSectionTitle(
+                                        eyebrow: t("Friends", "Друзі", "Друзья"),
+                                        title: t("Train together", "Тренуватися разом", "Тренироваться вместе")
+                                    )
+                                    Spacer()
+                                    Button(action: onRefresh) {
+                                        Image(systemName: "arrow.clockwise")
+                                    }
+                                    .buttonStyle(.plain)
+                                    .disabled(isLoadingFriends)
+                                    .accessibilityLabel(t("Refresh friends", "Оновити друзів", "Обновить друзей"))
+                                }
+
+                                if !isCloudAccount {
+                                    Text(t(
+                                        "Sign in to send a private workout invitation.",
+                                        "Увійди, щоб надіслати приватне запрошення на тренування.",
+                                        "Войди, чтобы отправить личное приглашение на тренировку."
+                                    ))
+                                    .foregroundStyle(GymTheme.textSecondary)
+                                } else if isLoadingFriends && friends.isEmpty {
+                                    ProgressView()
+                                        .frame(maxWidth: .infinity)
+                                } else if friends.isEmpty {
+                                    Text(t(
+                                        "Add and confirm a friend first.",
+                                        "Спочатку додай і підтвердь друга.",
+                                        "Сначала добавь и подтверди друга."
+                                    ))
+                                    .foregroundStyle(GymTheme.textSecondary)
+                                } else {
+                                    ForEach(friends, id: \.profileID) { friend in
+                                        VStack(alignment: .leading, spacing: 8) {
+                                            Text(friend.displayName)
+                                                .font(.headline)
+                                                .lineLimit(1)
+                                            ViewThatFits(in: .horizontal) {
+                                                HStack(spacing: 8) {
+                                                    friendShareButtons(friend)
+                                                }
+                                                VStack(spacing: 8) {
+                                                    friendShareButtons(friend)
+                                                }
+                                            }
+                                            .disabled(sharingFriendID != nil)
+                                        }
+                                        .padding(.vertical, 4)
+                                    }
+                                }
+                            }
+                        }
+
+                        Text(t(
+                            "Only exercises and planned sets are shared. Notes, dates, account data, and health metrics stay private.",
+                            "Передаються лише вправи й заплановані підходи. Нотатки, дати, дані акаунта й показники здоров’я залишаються приватними.",
+                            "Передаются только упражнения и запланированные подходы. Заметки, даты, данные аккаунта и показатели здоровья остаются приватными."
+                        ))
+                        .font(.caption)
+                        .foregroundStyle(GymTheme.textSecondary)
+                    }
+                    .padding(14)
+                    .padding(.bottom, 20)
+                }
+            }
+            .navigationTitle(t("Share workout", "Поділитися", "Поделиться"))
+            .navigationBarTitleDisplayMode(.inline)
+        }
+    }
+
+    @ViewBuilder
+    private func friendShareButtons(_ friend: SocialFriendSummary) -> some View {
+        Button {
+            onSendCopy(friend)
+        } label: {
+            Label(
+                t("Send copy", "Надіслати копію", "Отправить копию"),
+                systemImage: "doc.on.doc"
+            )
+            .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(GymSecondaryButtonStyle())
+
+        Button {
+            onStartLive(friend)
+        } label: {
+            Label("LIVE", systemImage: "figure.strengthtraining.traditional")
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(GymPrimaryButtonStyle())
+        .disabled(!canStartLive)
+    }
+
+    private func t(_ english: String, _ ukrainian: String, _ russian: String) -> String {
+        gymText(english, ukrainian, russian, languageCode: gymCurrentLanguageCode())
     }
 }
 

@@ -198,7 +198,7 @@ struct ExercisesView: View {
     var body: some View {
         GymBackground {
             ScrollView {
-                LazyVStack(spacing: 14) {
+                LazyVStack(spacing: GymTheme.contentSpacing) {
                     header
 
                     if let resultMessage {
@@ -208,9 +208,9 @@ struct ExercisesView: View {
 
                     exerciseLibrary
                 }
-                .padding(.horizontal, 14)
-                .padding(.top, 10)
-                .padding(.bottom, 28)
+                .padding(.horizontal, GymTheme.screenHorizontalInset)
+                .padding(.top, GymTheme.screenVerticalInset)
+                .padding(.bottom, GymTheme.screenBottomInset)
             }
             .scrollDismissesKeyboard(.interactively)
         }
@@ -219,31 +219,12 @@ struct ExercisesView: View {
     }
 
     private var header: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(alignment: .center, spacing: 12) {
-                headerCopy
-                Spacer(minLength: 10)
-                addExerciseButton
-                    .fixedSize(horizontal: true, vertical: false)
-            }
-
-            VStack(alignment: .leading, spacing: 12) {
-                headerCopy
-                addExerciseButton
-            }
-        }
-    }
-
-    private var headerCopy: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Exercises")
-                .font(.largeTitle.bold())
-                .foregroundStyle(GymTheme.textPrimary)
-                .accessibilityAddTraits(.isHeader)
-            Text("Manage your library, history, muscle groups, and favorites.")
-                .font(.subheadline)
-                .foregroundStyle(GymTheme.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
+        GymScreenHeader(
+            title: "Exercises",
+            supporting: "Manage your library, history, muscle groups, and favorites."
+        ) {
+            addExerciseButton
+                .fixedSize(horizontal: true, vertical: false)
         }
     }
 
@@ -302,10 +283,10 @@ struct ExercisesView: View {
                     } actions: {
                         if store.exercises.isEmpty {
                             Button("Add exercise") { presentedSheet = .addExercise }
-                                .buttonStyle(.borderedProminent)
+                                .buttonStyle(GymPrimaryButtonStyle())
                         } else {
                             Button("Clear filters", action: clearFilters)
-                                .buttonStyle(.bordered)
+                                .buttonStyle(GymSecondaryButtonStyle())
                         }
                     }
                     .frame(maxWidth: .infinity)

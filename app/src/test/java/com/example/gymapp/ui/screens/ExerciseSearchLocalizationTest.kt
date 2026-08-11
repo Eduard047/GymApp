@@ -3,6 +3,7 @@ package com.example.gymapp.ui.screens
 import com.example.gymapp.data.entity.ExerciseEntity
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -26,11 +27,23 @@ class ExerciseSearchLocalizationTest {
 
     @Test
     fun reviewedLegacyAliasesSupportBoundedPartialSearchWithoutRestoringExcludedAliases() {
-        val legacyPartialMatch = exerciseSearchMatch("Straight Arm Pulldown", "журав")
+        val visibleCanonicalMatch = exerciseSearchMatch("Straight Arm Pulldown", "журав")
+        val invisibleLegacyAliasMatch = exerciseSearchMatch(
+            "Straight Arm Pulldown",
+            "верхніх блоків у тренаж"
+        )
 
-        assertTrue(legacyPartialMatch != null)
-        assertEquals(ExerciseSearchMatchReasonKind.Alias, legacyPartialMatch!!.reason!!.kind)
-        assertEquals("Журавель", legacyPartialMatch.reason!!.value)
+        assertTrue(visibleCanonicalMatch != null)
+        assertNull(visibleCanonicalMatch!!.reason)
+        assertTrue(invisibleLegacyAliasMatch != null)
+        assertEquals(
+            ExerciseSearchMatchReasonKind.Alias,
+            invisibleLegacyAliasMatch!!.reason!!.kind
+        )
+        assertEquals(
+            "Тяга верхніх блоків у тренажері",
+            invisibleLegacyAliasMatch.reason!!.value
+        )
         assertFalse(exerciseNameMatchesLocalizedQuery("Straight Arm Pulldown", "жу"))
         assertFalse(exerciseNameMatchesLocalizedQuery("Upright Row", "вертикал"))
         assertFalse(exerciseNameMatchesLocalizedQuery("Upright Row", "вертикальна тяга"))

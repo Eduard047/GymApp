@@ -28,14 +28,19 @@ public struct GymPanel<Content: View>: View {
             }
             .overlay {
                 RoundedRectangle(cornerRadius: GymTheme.panelCornerRadius, style: .continuous)
-                    .strokeBorder(borderColor, lineWidth: colorSchemeContrast == .increased ? 1.5 : 0.75)
+                    .strokeBorder(
+                        borderColor,
+                        lineWidth: colorSchemeContrast == .increased ? 1.5 : GymTheme.hairlineWidth
+                    )
             }
             .clipShape(RoundedRectangle(cornerRadius: GymTheme.panelCornerRadius, style: .continuous))
             .shadow(
-                color: Color.black.opacity(reduceTransparency ? 0.025 : 0.045),
-                radius: highlighted ? 8 : 4,
+                color: highlighted
+                    ? Color.black.opacity(reduceTransparency ? 0.025 : 0.055)
+                    : .clear,
+                radius: highlighted ? 8 : 0,
                 x: 0,
-                y: highlighted ? 4 : 2
+                y: highlighted ? 4 : 0
             )
     }
 
@@ -73,22 +78,30 @@ public struct GymHeroPanel<Content: View>: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .foregroundStyle(GymTheme.onHero)
             .background {
-                let shape = RoundedRectangle(cornerRadius: GymTheme.panelCornerRadius, style: .continuous)
                 if reduceTransparency {
-                    shape.fill(GymTheme.heroLeading)
+                    lensShape.fill(GymTheme.heroLeading)
                 } else {
-                    shape.fill(GymTheme.heroGradient)
+                    lensShape.fill(GymTheme.heroGradient)
                 }
             }
             .overlay {
-                RoundedRectangle(cornerRadius: GymTheme.panelCornerRadius, style: .continuous)
-                    .strokeBorder(
-                        Color.white.opacity(colorSchemeContrast == .increased ? 0.42 : 0.16),
-                        lineWidth: colorSchemeContrast == .increased ? 1.5 : 1
-                    )
+                lensShape.strokeBorder(
+                    Color.white.opacity(colorSchemeContrast == .increased ? 0.42 : 0.16),
+                    lineWidth: colorSchemeContrast == .increased ? 1.5 : 1
+                )
             }
-            .clipShape(RoundedRectangle(cornerRadius: GymTheme.panelCornerRadius, style: .continuous))
+            .clipShape(lensShape)
             .shadow(color: Color.black.opacity(0.12), radius: 8, x: 0, y: 4)
+    }
+
+    private var lensShape: UnevenRoundedRectangle {
+        UnevenRoundedRectangle(
+            topLeadingRadius: 26,
+            bottomLeadingRadius: 26,
+            bottomTrailingRadius: 38,
+            topTrailingRadius: 48,
+            style: .continuous
+        )
     }
 }
 
@@ -105,6 +118,120 @@ public struct GymBrandMark: View {
             .scaledToFit()
             .frame(width: size, height: size)
             .accessibilityHidden(true)
+    }
+}
+
+/// A consistent top-of-screen rhythm for the training log. It collapses the
+/// trailing control below the title when Dynamic Type or a narrow phone needs
+/// the width, instead of squeezing either element.
+public struct GymScreenHeader<Trailing: View>: View {
+    @Environment(\.locale) private var locale
+
+    private let eyebrow: String?
+    private let title: String
+    private let supporting: String?
+    private let trailing: Trailing
+
+    public init(
+        eyebrow: String? = nil,
+        title: String,
+        supporting: String? = nil,
+        @ViewBuilder trailing: () -> Trailing
+    ) {
+        self.eyebrow = eyebrow
+        self.title = title
+        self.supporting = supporting
+        self.trailing = trailing()
+    }
+
+    public var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .top, spacing: GymTheme.Spacing.medium) {
+                copy
+                Spacer(minLength: GymTheme.Spacing.small)
+                trailing
+            }
+
+            VStack(alignment: .leading, spacing: GymTheme.Spacing.medium) {
+                copy
+                trailing
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var copy: some View {
+        VStack(alignment: .leading, spacing: GymTheme.Spacing.xSmall) {
+            if let eyebrow {
+                Text(gymLocalized(eyebrow, locale: locale))
+                    .font(GymTheme.TypeScale.utility)
+                    .foregroundStyle(GymTheme.primary)
+                    .textCase(.uppercase)
+                    .tracking(0.55)
+            }
+            Text(gymLocalized(title, locale: locale))
+                .font(GymTheme.TypeScale.screenTitle)
+                .tracking(-0.45)
+                .foregroundStyle(GymTheme.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityAddTraits(.isHeader)
+            if let supporting {
+                Text(gymLocalized(supporting, locale: locale))
+                    .font(.subheadline)
+                    .foregroundStyle(GymTheme.textSecondary)
+                    .lineSpacing(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+}
+
+public extension GymScreenHeader where Trailing == EmptyView {
+    init(eyebrow: String? = nil, title: String, supporting: String? = nil) {
+        self.init(eyebrow: eyebrow, title: title, supporting: supporting) {
+            EmptyView()
+        }
+    }
+}
+
+/// Directional empty/help copy that sits inside a section without introducing
+/// another card. The slim rail is the quiet counterpart to the live Spotter Lens.
+public struct GymInlineState: View {
+    @Environment(\.locale) private var locale
+
+    private let text: String
+    private let systemImage: String
+    private let accent: Color
+
+    public init(
+        _ text: String,
+        systemImage: String = "circle.dashed",
+        accent: Color = GymTheme.primary
+    ) {
+        self.text = text
+        self.systemImage = systemImage
+        self.accent = accent
+    }
+
+    public var body: some View {
+        HStack(alignment: .top, spacing: GymTheme.Spacing.small) {
+            Image(systemName: systemImage)
+                .foregroundStyle(accent)
+                .accessibilityHidden(true)
+            Text(gymLocalized(text, locale: locale))
+                .font(.subheadline)
+                .foregroundStyle(GymTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.leading, GymTheme.Spacing.medium)
+        .padding(.vertical, GymTheme.Spacing.xSmall)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(alignment: .leading) {
+            Capsule()
+                .fill(accent.opacity(0.72))
+                .frame(width: 3)
+        }
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -132,22 +259,22 @@ public struct GymMetricTile: View {
                 .tracking(0.35)
 
             Text(gymLocalized(value, locale: locale))
-                .font(emphasized ? .title2.bold() : .headline)
+                .font(emphasized ? .title2.bold() : GymTheme.TypeScale.metric)
                 .foregroundStyle(onHero ? Color.white : GymTheme.textPrimary)
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(12)
-        .frame(maxWidth: .infinity, minHeight: 78, alignment: .leading)
+        .padding(GymTheme.Spacing.medium)
+        .frame(maxWidth: .infinity, minHeight: 74, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: GymTheme.compactCornerRadius, style: .continuous)
-                .fill(onHero ? Color.white.opacity(0.085) : GymTheme.surfaceVariant)
+            RoundedRectangle(cornerRadius: GymTheme.controlCornerRadius, style: .continuous)
+                .fill(onHero ? Color.white.opacity(0.085) : GymTheme.surfaceVariant.opacity(0.58))
         )
         .overlay {
-            RoundedRectangle(cornerRadius: GymTheme.compactCornerRadius, style: .continuous)
+            RoundedRectangle(cornerRadius: GymTheme.controlCornerRadius, style: .continuous)
                 .strokeBorder(
-                    onHero ? Color.white.opacity(0.14) : GymTheme.outlineSoft.opacity(0.86),
-                    lineWidth: 1
+                    onHero ? Color.white.opacity(0.14) : GymTheme.outlineSoft.opacity(0.62),
+                    lineWidth: GymTheme.hairlineWidth
                 )
         }
         .accessibilityElement(children: .ignore)
@@ -205,19 +332,20 @@ public struct GymSectionTitle: View {
         VStack(alignment: .leading, spacing: 5) {
             if let eyebrow {
                 Text(gymLocalized(eyebrow, locale: locale))
-                    .font(.caption.weight(.bold))
+                    .font(GymTheme.TypeScale.utility)
                     .foregroundStyle(GymTheme.primary)
                     .textCase(.uppercase)
-                    .tracking(0.75)
+                    .tracking(0.55)
             }
             Text(gymLocalized(title, locale: locale))
-                .font(.title2.bold())
+                .font(GymTheme.TypeScale.sectionTitle)
                 .foregroundStyle(GymTheme.textPrimary)
                 .accessibilityAddTraits(.isHeader)
             if let supporting {
                 Text(gymLocalized(supporting, locale: locale))
                     .font(.subheadline)
                     .foregroundStyle(GymTheme.textSecondary)
+                    .lineSpacing(2)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -307,7 +435,7 @@ public struct GymPrimaryButtonStyle: ButtonStyle {
             .foregroundStyle(GymTheme.onPrimary)
             .padding(.horizontal, 18)
             .padding(.vertical, 13)
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, minHeight: 48)
             .background(
                 RoundedRectangle(cornerRadius: GymTheme.controlCornerRadius, style: .continuous)
                     .fill(GymTheme.primaryAction)
@@ -331,7 +459,7 @@ public struct GymSecondaryButtonStyle: ButtonStyle {
             .foregroundStyle(GymTheme.primary)
             .padding(.horizontal, 18)
             .padding(.vertical, 12)
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, minHeight: 48)
             .background(
                 RoundedRectangle(cornerRadius: GymTheme.controlCornerRadius, style: .continuous)
                     .fill(configuration.isPressed ? GymTheme.surfaceVariant : GymTheme.surface)
