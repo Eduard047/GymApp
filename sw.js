@@ -1,7 +1,7 @@
 "use strict";
 
 const CACHE_PREFIX = "gym-pwa-";
-const CACHE_VERSION = "v120";
+const CACHE_VERSION = "v121";
 const CACHE_NAME = `${CACHE_PREFIX}${CACHE_VERSION}`;
 const LEGACY_GITHUB_ORIGIN = "https://eduard047.github.io";
 const LEGACY_GITHUB_SCOPE = `${LEGACY_GITHUB_ORIGIN}/GymApp/`;
@@ -37,7 +37,7 @@ const ASSETS = [
   "./confirmed.v56.js",
   "./frame-guard.v56.js",
   "./theme.v56.js",
-  "./styles.v68.css",
+  "./styles.v69.css",
   "./muscle-regions.v56.js",
   "./supabase-config.v58.js",
   "./state-contract.v69.js",
@@ -48,9 +48,9 @@ const ASSETS = [
   "./supabase-realtime.v1.js",
   "./live-workout.v1.js",
   "./live-workout-state.v1.js",
-  "./russian-text.v76.js",
+  "./russian-text.v77.js",
   "./exercise-search-vocabulary.v1.js",
-  "./app.v84.js",
+  "./app.v85.js",
   "./workout/",
   "./workout/index.html",
   "./workout/landing.v1.css",
@@ -387,11 +387,13 @@ function pushEnvelope(value) {
 function pushNavigationUrl(data) {
   const target = new URL("./", self.registration.scope);
   target.searchParams.set("notification", data.roomId ? "live" : "social");
+  if (data.roomId) target.searchParams.set("room", data.roomId);
   return target;
 }
 
 async function openPushTarget(data) {
-  const target = pushNavigationUrl(pushData(data));
+  const parsed = pushData(data);
+  const target = pushNavigationUrl(parsed);
   const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
   const scope = new URL(self.registration.scope);
   const existing = windows.find(client => {
@@ -406,7 +408,8 @@ async function openPushTarget(data) {
     existing.postMessage({
       version: 1,
       type: "gymapp_notification_click",
-      target: data.roomId ? "live" : "social"
+      target: parsed.roomId ? "live" : "social",
+      ...(parsed.roomId ? { roomId: parsed.roomId } : {})
     });
     await existing.focus();
     return;
