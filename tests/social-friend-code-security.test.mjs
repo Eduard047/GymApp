@@ -159,7 +159,7 @@ test("friend-code migration verifies grants, forced RLS, no policies, and empty 
     "public.social_my_friend_code()",
     "public.social_send_friend_request(text)",
   ]) {
-    assert.match(sql, new RegExp(signature.replace(/[().]/g, "\\$&")));
+    assert.match(sql, new RegExp(signature.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
   assert.match(sql, /notify pgrst, 'reload schema'/);
   assert.doesNotMatch(sql, /\b(?:drop|truncate)\s+(?:table\s+)?/i);
