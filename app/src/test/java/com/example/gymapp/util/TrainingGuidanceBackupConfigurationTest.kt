@@ -46,7 +46,10 @@ class TrainingGuidanceBackupConfigurationTest {
             val canonicalName = duplicate.fileName.toString().removeSuffix(" 2.jpg") + ".jpg"
             val canonical = assets.resolve(canonicalName)
             assertTrue("Missing canonical media for $canonicalName", Files.isRegularFile(canonical))
-            assertEquals("Finder duplicate differs from $canonicalName", -1L, Files.mismatch(canonical, duplicate))
+            assertTrue(
+                "Finder duplicate differs from $canonicalName",
+                Files.readAllBytes(canonical).contentEquals(Files.readAllBytes(duplicate))
+            )
         }
         assertEquals(
             1,
