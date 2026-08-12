@@ -101,10 +101,12 @@ SDK export and readback succeed.
 
 Readback fully opens the SDK-produced 7z package and requires its manifest,
 512-byte RSA-4096 `manifest.sig2`, developer public key, and compiled PRG files.
-Before the prior output is replaced, the release scripts rewrite only local
-path prefixes inside `debug.xml` entries to equal-byte-length neutral relative
-prefixes. They then reopen the rewritten package, reject Unix user roots and
-Windows absolute/user-root paths anywhere in the archive, and compare SHA-256
+Before the prior output is replaced, the release scripts rewrite only the
+exact current source-root prefix and local user-root prefixes inside
+`debug.xml` entries to equal-byte-length neutral relative prefixes. Other
+private temporary roots, source-root lookalikes, and traversal segments remain
+rejected. They then reopen the rewritten package, reject Unix user/private-temp
+roots and Windows absolute/user-root paths anywhere in the archive, and compare SHA-256
 for every non-debug entry with the SDK output. Readback also rejects any
 compiled program whose internal basename is not
 `gymapp-garmin-connect-iq.prg`. A failed rewrite, hash check, or readback leaves

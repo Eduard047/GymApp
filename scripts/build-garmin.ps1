@@ -279,7 +279,7 @@ try {
             throw [System.InvalidOperationException]::new('Release gate failed.')
         }
         $releaseGateFailure = 'Garmin IQ debug-path sanitization failed.'
-        & $javaPath '-cp' $monkeybrainsPath $verifierPath '--sanitize-debug-paths' $temporaryOutput $sanitizedReleaseOutput *> $null
+        & $javaPath '-cp' $monkeybrainsPath $verifierPath '--sanitize-debug-paths' $temporaryOutput $sanitizedReleaseOutput $projectRoot *> $null
         if ($LASTEXITCODE -ne 0) {
             throw [System.InvalidOperationException]::new('Release gate failed.')
         }

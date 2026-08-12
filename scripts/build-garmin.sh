@@ -260,6 +260,7 @@ if [[ "$mode" == "release" ]]; then
     if ! "$java_command" -cp "$monkeybrains" \
             "$project_root/scripts/VerifyGarminIq.java" \
             --sanitize-debug-paths "$temporary_output" "$sanitized_release_output" \
+            "$project_root" \
             >/dev/null 2>&1; then
         echo "Garmin IQ debug-path sanitization failed." >&2
         exit 1

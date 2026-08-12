@@ -102,6 +102,7 @@ test("Garmin release scripts pin RSA-4096 and preserve outputs until readback", 
     /sanitized_release_output="\$sanitized_release_root\/gymapp-garmin-connect-iq\.iq"/,
   );
   assert.match(shell, /--sanitize-debug-paths[\s\S]*>\/dev\/null 2>&1/);
+  assert.match(shell, /--sanitize-debug-paths[\s\S]*"\$project_root"/);
   assert.match(shell, /"\$monkeyc" "\$\{compiler_args\[@\]\}" >\/dev\/null 2>&1/);
   assert.match(shell, /mv -f -- "\$sanitized_release_output" "\$output"/);
   assert.doesNotMatch(shell, /rm -f -- "\$output"/);
@@ -112,6 +113,7 @@ test("Garmin release scripts pin RSA-4096 and preserve outputs until readback", 
     /\$sanitizedReleaseOutput = Join-Path \$sanitizedReleaseRoot \$outputName/,
   );
   assert.match(powershell, /--sanitize-debug-paths[^\n]*\*> \$null/);
+  assert.match(powershell, /--sanitize-debug-paths[^\n]*\$projectRoot/);
   assert.match(powershell, /& \$monkeycPath @compilerArgs \*> \$null/);
   assert.match(
     powershell,
@@ -294,7 +296,8 @@ test("IQ readback rejects directory lookalikes and unsafe path segments", async 
       assert.match(invalid.stdout + invalid.stderr, /unsafe or duplicate entry/);
     }
 
-    const leakyDebug = String.raw`<debug><file path="/Users/sensitive-user/work/GymApp.mc"/><file path="/home/sensitive-user/work/GymComm.mc"/><file path="C:\Users\sensitive-user\work\GymSession.mc"/><file path="\Users/sensitive-user/work/RootedView.mc"/><file path="D:/work/WorkoutView.mc"/></debug>`;
+    const trustedBuildRoot = "/private/tmp/gymapp-v308-release.fixture";
+    const leakyDebug = String.raw`<debug><file path="${trustedBuildRoot}/garmin/source/GymStore.mc"/><file path="/Users/sensitive-user/work/GymApp.mc"/><file path="/home/sensitive-user/work/GymComm.mc"/><file path="C:\Users\sensitive-user\work\GymSession.mc"/><file path="\Users/sensitive-user/work/RootedView.mc"/><file path="D:/work/WorkoutView.mc"/></debug>`;
     const leakyIq = createFixture("leaky.iq", "debug", leakyDebug);
     const rawVerification = verify(leakyIq);
     assert.notEqual(rawVerification.status, 0);
@@ -309,6 +312,7 @@ test("IQ readback rejects directory lookalikes and unsafe path segments", async 
       "--sanitize-debug-paths",
       leakyIq,
       sanitizedIq,
+      trustedBuildRoot,
     ]);
     assert.equal(sanitized.status, 0, sanitized.stdout + sanitized.stderr);
     const sanitizedVerification = verify(sanitizedIq);
@@ -328,13 +332,38 @@ test("IQ readback rejects directory lookalikes and unsafe path segments", async 
     assert.notEqual(sanitizedDebug, leakyDebug);
     assert.doesNotMatch(
       sanitizedDebug,
-      /\/Users\/|\/home\/|\\Users\\|(?:^|[^A-Za-z0-9_])[A-Za-z]:[\\/]/,
+      /\/private\/tmp\/|\/Users\/|\/home\/|\\Users\\|(?:^|[^A-Za-z0-9_])[A-Za-z]:[\\/]/,
     );
+    assert.match(sanitizedDebug, /GymStore\.mc/);
     assert.match(sanitizedDebug, /GymApp\.mc/);
     assert.match(sanitizedDebug, /GymComm\.mc/);
     assert.match(sanitizedDebug, /GymSession\.mc/);
     assert.match(sanitizedDebug, /RootedView\.mc/);
     assert.match(sanitizedDebug, /WorkoutView\.mc/);
+
+    for (const [name, rejectedPath] of [
+      ["source-root-lookalike", `${trustedBuildRoot}-other/garmin/source/GymStore.mc`],
+      ["source-root-traversal", `${trustedBuildRoot}/../private/GymStore.mc`],
+      ["unrelated-private-temp", "/private/tmp/unrelated/GymStore.mc"],
+    ]) {
+      const rejectedDebug = createFixture(
+        `${name}.iq`,
+        "debug",
+        `<debug><file path="${rejectedPath}"/></debug>`,
+      );
+      const rejectedDestination = join(root, `${name}-sanitized.iq`);
+      const rejected = run(java, [
+        "-cp",
+        monkeybrains,
+        "scripts/VerifyGarminIq.java",
+        "--sanitize-debug-paths",
+        rejectedDebug,
+        rejectedDestination,
+        trustedBuildRoot,
+      ]);
+      assert.notEqual(rejected.status, 0, `accepted ${name}`);
+      assert.equal(existsSync(rejectedDestination), false);
+    }
 
     for (const [index, unsafeRoot] of [
       "/Users/sensitive-user/private/settings.json",
@@ -357,6 +386,7 @@ test("IQ readback rejects directory lookalikes and unsafe path segments", async 
         "--sanitize-debug-paths",
         unsafeNonDebug,
         rejectedDestination,
+        trustedBuildRoot,
       ]);
       assert.notEqual(rejected.status, 0);
       assert.match(rejected.stdout + rejected.stderr, /outside debug metadata/);

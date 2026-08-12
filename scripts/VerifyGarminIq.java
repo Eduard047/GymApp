@@ -60,12 +60,15 @@ public final class VerifyGarminIq {
         boolean sanitizing = args.length > 0 && args[0].equals("--sanitize-debug-paths");
         try {
             if (sanitizing) {
-                if (args.length != 3) {
-                    throw safeFailure("Expected source and destination IQ package paths.");
+                if (args.length != 4) {
+                    throw safeFailure(
+                        "Expected source IQ, destination IQ, and exact source-root paths."
+                    );
                 }
                 sanitizeDebugPaths(
                     Path.of(args[1]).toAbsolutePath().normalize(),
-                    Path.of(args[2]).toAbsolutePath().normalize()
+                    Path.of(args[2]).toAbsolutePath().normalize(),
+                    Path.of(args[3])
                 );
                 System.out.println("Garmin IQ debug paths sanitized and verified.");
             } else {
@@ -86,7 +89,8 @@ public final class VerifyGarminIq {
         }
     }
 
-    static void sanitizeDebugPaths(Path source, Path destination) throws IOException {
+    static void sanitizeDebugPaths(Path source, Path destination, Path sourceRoot)
+            throws IOException {
         if (source.equals(destination)) {
             throw safeFailure("Garmin IQ sanitization requires a separate destination.");
         }
@@ -96,7 +100,12 @@ public final class VerifyGarminIq {
         }
 
         try {
-            Map<String, String> sourceNonDebugHashes = rewriteDebugEntries(source, destination);
+            String sourceRootPrefix = exactSourceRootPrefix(sourceRoot);
+            Map<String, String> sourceNonDebugHashes = rewriteDebugEntries(
+                source,
+                destination,
+                sourceRootPrefix
+            );
             VerificationResult result = verify(destination);
             if (!sourceNonDebugHashes.equals(result.nonDebugHashes)) {
                 throw safeFailure("Garmin IQ non-debug entries changed during sanitization.");
@@ -183,8 +192,11 @@ public final class VerifyGarminIq {
         return new VerificationResult(nonDebugHashes);
     }
 
-    private static Map<String, String> rewriteDebugEntries(Path source, Path destination)
-            throws IOException {
+    private static Map<String, String> rewriteDebugEntries(
+        Path source,
+        Path destination,
+        String sourceRootPrefix
+    ) throws IOException {
         Map<String, String> sourceNonDebugHashes = new LinkedHashMap<>();
         Set<String> names = new HashSet<>();
         int entryCount = 0;
@@ -209,7 +221,7 @@ public final class VerifyGarminIq {
                 totalUncompressedBytes = validateEntrySize(entry, totalUncompressedBytes);
                 if (isDebugXml(entry.getName())) {
                     byte[] original = readDebugXml(archive, entry);
-                    byte[] sanitized = sanitizeDebugXml(original);
+                    byte[] sanitized = sanitizeDebugXml(original, sourceRootPrefix);
                     output.write(sanitized);
                 } else {
                     MessageDigest digest = sha256();
@@ -263,7 +275,8 @@ public final class VerifyGarminIq {
         return bytes.toByteArray();
     }
 
-    private static byte[] sanitizeDebugXml(byte[] original) throws IOException {
+    private static byte[] sanitizeDebugXml(byte[] original, String sourceRootPrefix)
+            throws IOException {
         String text;
         try {
             text = StandardCharsets.UTF_8.newDecoder()
@@ -275,7 +288,8 @@ public final class VerifyGarminIq {
             throw safeFailure("Garmin IQ debug metadata is not valid UTF-8.");
         }
 
-        String sanitized = replacePrefixes(text, WINDOWS_USER_PREFIX);
+        String sanitized = replaceExactSourceRoot(text, sourceRootPrefix);
+        sanitized = replacePrefixes(sanitized, WINDOWS_USER_PREFIX);
         sanitized = replacePrefixes(sanitized, WINDOWS_ROOTED_USER_PREFIX);
         sanitized = replacePrefixes(sanitized, UNIX_USER_PREFIX);
         sanitized = replacePrefixes(sanitized, WINDOWS_DRIVE_PREFIX);
@@ -289,6 +303,58 @@ public final class VerifyGarminIq {
             throw safeFailure("Garmin IQ debug metadata still contains an unsafe local source path.");
         }
         return result;
+    }
+
+    private static String exactSourceRootPrefix(Path sourceRoot) throws IOException {
+        if (!sourceRoot.isAbsolute() || !sourceRoot.equals(sourceRoot.normalize()) ||
+                sourceRoot.getNameCount() < 2) {
+            throw safeFailure("Garmin IQ source root must be an exact normalized absolute path.");
+        }
+        String prefix = sourceRoot.toString();
+        if (prefix.endsWith("/") || prefix.endsWith("\\")) {
+            throw safeFailure("Garmin IQ source root must not include a trailing separator.");
+        }
+        return prefix + File.separator;
+    }
+
+    private static String replaceExactSourceRoot(String source, String prefix)
+            throws IOException {
+        Pattern exactPrefix = Pattern.compile(
+            "(?<![A-Za-z0-9_])" + Pattern.quote(prefix)
+        );
+        Matcher matcher = exactPrefix.matcher(source);
+        StringBuffer result = new StringBuffer(source.length());
+        while (matcher.find()) {
+            int pathEnd = matcher.end();
+            while (pathEnd < source.length() && !isPathTerminator(source.charAt(pathEnd))) {
+                pathEnd++;
+            }
+            String remainder = source.substring(matcher.end(), pathEnd)
+                .replace('\\', '/');
+            for (String segment : remainder.split("/", -1)) {
+                if (segment.equals(".") || segment.equals("..")) {
+                    throw safeFailure(
+                        "Garmin IQ debug source path contains a traversal segment."
+                    );
+                }
+            }
+            matcher.appendReplacement(
+                result,
+                Matcher.quoteReplacement(
+                    neutralRelativePrefix(
+                        prefix.getBytes(StandardCharsets.UTF_8).length,
+                        prefix.charAt(prefix.length() - 1)
+                    )
+                )
+            );
+        }
+        matcher.appendTail(result);
+        return result.toString();
+    }
+
+    private static boolean isPathTerminator(char value) {
+        return value == '"' || value == '\'' || value == '<' || value == '>' ||
+            value == '\r' || value == '\n' || value == '\t' || value == ' ';
     }
 
     private static String replacePrefixes(String source, Pattern pattern) throws IOException {
@@ -450,7 +516,7 @@ public final class VerifyGarminIq {
     }
 
     private static final class UnsafePathScanner {
-        private static final int WINDOW_SIZE = 10;
+        private static final int WINDOW_SIZE = 16;
         private final byte[] recent = new byte[WINDOW_SIZE];
         private int recentLength = 0;
         private long bytesSeen = 0;
@@ -470,7 +536,8 @@ public final class VerifyGarminIq {
                 recent[recent.length - 1] = value;
             }
             bytesSeen++;
-            if (endsWithWindowsUserRoot() || endsWithAscii("/home/", false)) {
+            if (endsWithWindowsUserRoot() || endsWithAscii("/home/", false) ||
+                    endsWithAscii("/private/tmp/", false)) {
                 unsafePath = true;
                 return;
             }
