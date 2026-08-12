@@ -92,10 +92,10 @@ test("root is a non-installable first-party download and legal landing", () => {
   const scripts = [...rootHtml.matchAll(/<script[^>]+src="([^"]+)"/g)].map(match => match[1]);
   assert.deepEqual(scripts, ["./frame-guard.v56.js", "./retirement.v1.js"]);
   assert.match(rootHtml, /\.\/retirement\.v1\.css/);
-  assert.match(rootHtml, new RegExp(GOOGLE_PLAY.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
-  assert.match(rootHtml, new RegExp(GARMIN_STORE.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
-  assert.match(rootHtml, /https:\/\/gymapptracker\.com\/privacy-policy\.html/);
-  assert.match(rootHtml, /https:\/\/gymapptracker\.com\/support\.html/);
+  assert.ok(rootHtml.includes(GOOGLE_PLAY));
+  assert.ok(rootHtml.includes(GARMIN_STORE));
+  assert.ok(rootHtml.includes("https://gymapptracker.com/privacy-policy.html"));
+  assert.ok(rootHtml.includes("https://gymapptracker.com/support.html"));
   assert.doesNotMatch(rootHtml, /rel="manifest"|apple-mobile-web-app-capable/i);
   assert.doesNotMatch(rootHtml, /apps\.apple\.com|App Store|Coming soon/i);
   assert.doesNotMatch(rootHtml, /app\.v\d+\.js|supabase|cloud-sync|live-workout|social|auth/i);
