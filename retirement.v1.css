@@ -1,0 +1,369 @@
+:root {
+  color-scheme: dark;
+  font-family: "Avenir Next", Avenir, "Segoe UI", sans-serif;
+  font-synthesis: none;
+  --ink: #f5f9ff;
+  --muted: #a7b4c7;
+  --surface: rgba(14, 32, 52, 0.86);
+  --surface-strong: #102943;
+  --line: rgba(157, 196, 228, 0.18);
+  --blue: #58c8ff;
+  --green: #5ee2a0;
+  --violet: #a891ff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-width: 320px;
+  min-height: 100%;
+  background: #071526;
+}
+
+html.frame-pending body {
+  visibility: hidden;
+}
+
+body {
+  min-height: 100vh;
+  min-height: 100svh;
+  margin: 0;
+  overflow-x: hidden;
+  color: var(--ink);
+  background:
+    radial-gradient(circle at 14% 10%, rgba(50, 142, 207, 0.2), transparent 32rem),
+    radial-gradient(circle at 86% 78%, rgba(102, 78, 187, 0.18), transparent 30rem),
+    #071526;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+a {
+  color: inherit;
+}
+
+.site-header,
+main,
+footer {
+  width: min(100% - 40px, 980px);
+  margin-inline: auto;
+}
+
+.site-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 84px;
+  padding-top: env(safe-area-inset-top);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--ink);
+  font-size: 1.08rem;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  text-decoration: none;
+}
+
+.brand img {
+  width: 42px;
+  height: 42px;
+  border-radius: 13px;
+  box-shadow: 0 10px 28px rgba(30, 120, 179, 0.3);
+}
+
+.language-switcher {
+  display: inline-flex;
+  gap: 3px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(7, 21, 38, 0.7);
+}
+
+.language-switcher button {
+  min-width: 36px;
+  min-height: 34px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 999px;
+  color: var(--muted);
+  background: transparent;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 760;
+  cursor: pointer;
+}
+
+.language-switcher button[aria-pressed="true"] {
+  color: #071526;
+  background: var(--ink);
+}
+
+main {
+  padding-block: clamp(42px, 8vw, 92px) 34px;
+}
+
+.hero {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.8fr) minmax(340px, 1.2fr);
+  align-items: center;
+  gap: clamp(42px, 8vw, 96px);
+}
+
+.device-mark {
+  position: relative;
+  display: grid;
+  width: min(100%, 320px);
+  aspect-ratio: 1;
+  place-items: center;
+  margin-inline: auto;
+}
+
+.device-mark img {
+  position: relative;
+  z-index: 2;
+  width: 42%;
+  height: auto;
+  border-radius: 27%;
+  box-shadow: 0 22px 56px rgba(25, 128, 190, 0.35);
+}
+
+.hero-copy h1 {
+  max-width: 620px;
+  margin: 0;
+  font-size: clamp(3.2rem, 8vw, 6.3rem);
+  line-height: 0.92;
+  letter-spacing: -0.075em;
+}
+
+.lead {
+  max-width: 590px;
+  margin: 26px 0 0;
+  color: var(--muted);
+  font-size: clamp(1rem, 2vw, 1.18rem);
+  line-height: 1.6;
+}
+
+.downloads {
+  margin-top: clamp(54px, 10vw, 104px);
+}
+
+.downloads h2,
+.legacy-export h2 {
+  margin: 0 0 18px;
+  font-size: 0.92rem;
+  font-weight: 730;
+  letter-spacing: 0.02em;
+}
+
+.download-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.store-link {
+  display: block;
+  align-items: center;
+  gap: 15px;
+  min-height: 82px;
+  padding: 14px 18px;
+  border: 1px solid var(--line);
+  border-radius: 23px;
+  color: var(--ink);
+  background: var(--surface);
+  box-shadow: 0 18px 44px rgba(0, 7, 17, 0.2);
+  text-decoration: none;
+  transition: border-color 160ms ease, transform 160ms ease, background 160ms ease;
+}
+
+.store-link:hover {
+  border-color: rgba(120, 211, 255, 0.48);
+  background: var(--surface-strong);
+  transform: translateY(-2px);
+}
+
+.store-link small,
+.store-link strong {
+  display: block;
+}
+
+.store-link small {
+  margin-bottom: 2px;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.store-link strong {
+  font-size: 1.02rem;
+  letter-spacing: -0.015em;
+}
+
+.legacy-export {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 20px 28px;
+  margin-top: 28px;
+  padding: 22px;
+  border: 1px solid rgba(94, 226, 160, 0.28);
+  border-radius: 23px;
+  background: rgba(16, 41, 67, 0.62);
+}
+
+.legacy-export[hidden] {
+  display: none;
+}
+
+.legacy-export h2 {
+  margin-bottom: 5px;
+}
+
+.legacy-export p {
+  max-width: 650px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.legacy-export button {
+  min-height: 46px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 15px;
+  color: #071526;
+  background: var(--green);
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 780;
+  cursor: pointer;
+}
+
+.legacy-export button:disabled {
+  opacity: 0.58;
+  cursor: default;
+}
+
+.legacy-export .export-status {
+  grid-column: 1 / -1;
+  min-height: 0;
+  color: var(--ink);
+}
+
+.legal-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  margin-top: 32px;
+}
+
+.legal-links a {
+  color: var(--muted);
+  font-size: 0.84rem;
+  text-underline-offset: 4px;
+}
+
+footer {
+  display: flex;
+  gap: 8px;
+  padding-block: 26px calc(26px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--line);
+  color: rgba(167, 180, 199, 0.72);
+  font-size: 0.76rem;
+}
+
+:focus-visible {
+  outline: 3px solid var(--blue);
+  outline-offset: 4px;
+}
+
+@media (max-width: 720px) {
+  .site-header,
+  main,
+  footer {
+    width: min(100% - 32px, 560px);
+  }
+
+  .site-header {
+    min-height: 76px;
+  }
+
+  main {
+    padding-top: 22px;
+  }
+
+  .hero {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+
+  .device-mark {
+    width: min(62vw, 230px);
+  }
+
+  .hero-copy {
+    text-align: center;
+  }
+
+  .hero-copy h1 {
+    max-width: 100%;
+    margin-inline: auto;
+    overflow-wrap: anywhere;
+    font-size: clamp(2.6rem, 12vw, 3.4rem);
+  }
+
+  .lead {
+    margin-top: 18px;
+    font-size: 0.97rem;
+  }
+
+  .downloads {
+    margin-top: 48px;
+  }
+
+  .download-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .store-link {
+    min-height: 74px;
+    border-radius: 20px;
+  }
+
+  .legacy-export {
+    grid-template-columns: 1fr;
+    padding: 18px;
+  }
+
+  .legacy-export button {
+    width: 100%;
+  }
+
+  .legal-links {
+    justify-content: center;
+    text-align: center;
+  }
+
+  footer {
+    justify-content: center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition: none !important;
+  }
+}

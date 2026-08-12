@@ -27,29 +27,27 @@
   const CANONICAL_WORKOUT_PATH = "/workout/";
   const ANDROID_SCHEME = "com.setforge.gymapp";
   const IOS_SCHEME = "com.setforge.gymapp.ios";
+  const GOOGLE_PLAY_URL = "https://play.google.com/store/apps/details?id=com.setforge.gymapp";
   const CREDENTIAL_KEYS = new Set(["access_token", "refresh_token", "token", "code", "apikey", "api_key"]);
 
   const COPY = Object.freeze({
     en: Object.freeze({
       title: "Shared GymApp workout",
       brand: "Workout plan",
-      eyebrow: "SHARED WORKOUT",
       heading: "Choose where to open this plan",
-      subtitle: "Review the exercises first, then open an editable copy in GymApp or continue in your browser.",
+      subtitle: "Review the exercises, then open an editable copy in GymApp.",
       invalidTitle: "This workout link is invalid",
       invalidCopy: "Ask the sender to create and send the link again.",
       home: "Open GymApp website",
-      previewEyebrow: "PLAN PREVIEW",
-      previewTitle: "Editable workout",
-      validated: "Checked locally",
+      previewTitle: "Workout preview",
       exercises: "Exercises",
       sets: "Sets",
       volume: "Volume",
-      actionEyebrow: "OPEN WITH",
-      actionTitle: "Continue your way",
+      actionTitle: "Open in GymApp",
       android: "Open Android app",
       ios: "Open iPhone app",
-      web: "Continue on website",
+      googlePlay: "Get GymApp on Google Play",
+      downloads: "GymApp downloads",
       privacy: "Only exercises, weights, and reps are included. Nothing is added to your history until you confirm it.",
       set: "Set",
       kg: "kg"
@@ -57,23 +55,20 @@
     uk: Object.freeze({
       title: "Спільне тренування GymApp",
       brand: "План тренування",
-      eyebrow: "СПІЛЬНЕ ТРЕНУВАННЯ",
       heading: "Обери, де відкрити цей план",
-      subtitle: "Спочатку переглянь вправи, а потім відкрий редаговану копію у GymApp або продовж у браузері.",
+      subtitle: "Переглянь вправи, а потім відкрий редаговану копію у GymApp.",
       invalidTitle: "Це посилання на тренування некоректне",
       invalidCopy: "Попроси відправника створити й надіслати посилання ще раз.",
       home: "Відкрити сайт GymApp",
-      previewEyebrow: "ПЕРЕГЛЯД ПЛАНУ",
-      previewTitle: "Редаговане тренування",
-      validated: "Перевірено локально",
+      previewTitle: "Перегляд тренування",
       exercises: "Вправи",
       sets: "Підходи",
       volume: "Обсяг",
-      actionEyebrow: "ВІДКРИТИ У",
-      actionTitle: "Обери зручний спосіб",
+      actionTitle: "Відкрити у GymApp",
       android: "Відкрити Android-застосунок",
       ios: "Відкрити iPhone-застосунок",
-      web: "Продовжити на сайті",
+      googlePlay: "Завантажити GymApp у Google Play",
+      downloads: "Завантаження GymApp",
       privacy: "Посилання містить лише вправи, вагу й повтори. Нічого не потрапить в історію без твого підтвердження.",
       set: "Підхід",
       kg: "кг"
@@ -81,23 +76,20 @@
     ru: Object.freeze({
       title: "Общая тренировка GymApp",
       brand: "План тренировки",
-      eyebrow: "ОБЩАЯ ТРЕНИРОВКА",
       heading: "Выберите, где открыть этот план",
-      subtitle: "Сначала проверьте упражнения, затем откройте редактируемую копию в GymApp или продолжите в браузере.",
+      subtitle: "Проверьте упражнения, затем откройте редактируемую копию в GymApp.",
       invalidTitle: "Эта ссылка на тренировку некорректна",
       invalidCopy: "Попросите отправителя создать и отправить ссылку ещё раз.",
       home: "Открыть сайт GymApp",
-      previewEyebrow: "ПРОСМОТР ПЛАНА",
-      previewTitle: "Редактируемая тренировка",
-      validated: "Проверено локально",
+      previewTitle: "Просмотр тренировки",
       exercises: "Упражнения",
       sets: "Подходы",
       volume: "Объём",
-      actionEyebrow: "ОТКРЫТЬ В",
-      actionTitle: "Выберите удобный способ",
+      actionTitle: "Открыть в GymApp",
       android: "Открыть Android-приложение",
       ios: "Открыть приложение на iPhone",
-      web: "Продолжить на сайте",
+      googlePlay: "Скачать GymApp в Google Play",
+      downloads: "Загрузки GymApp",
       privacy: "Ссылка содержит только упражнения, веса и повторы. Ничего не попадёт в историю без вашего подтверждения.",
       set: "Подход",
       kg: "кг"
@@ -124,7 +116,8 @@
     return Object.freeze({
       android: `${ANDROID_SCHEME}://workout/#${hash}`,
       ios: `${IOS_SCHEME}://workout/#${hash}`,
-      web: `${CANONICAL_SITE}#${hash}`
+      googlePlay: GOOGLE_PLAY_URL,
+      downloads: CANONICAL_SITE
     });
   }
 
@@ -173,7 +166,7 @@
     setText(document, "exercise-count", "0");
     setText(document, "set-count", "0");
     setText(document, "volume-count", "0");
-    for (const id of ["open-android", "open-ios", "continue-web"]) {
+    for (const id of ["open-android", "open-ios"]) {
       const link = document.getElementById(id);
       if (!link) continue;
       link.removeAttribute("href");
@@ -220,22 +213,21 @@
     document.documentElement.lang = language;
     document.title = copy.title;
     const text = {
-      "brand-caption": copy.brand, eyebrow: copy.eyebrow, "share-title": copy.heading,
+      "brand-caption": copy.brand, "share-title": copy.heading,
       "share-subtitle": copy.subtitle, "invalid-title": copy.invalidTitle,
       "invalid-copy": copy.invalidCopy, "invalid-home": copy.home,
-      "preview-eyebrow": copy.previewEyebrow, "preview-title": copy.previewTitle,
-      "validated-label": copy.validated, "exercise-label": copy.exercises,
+      "preview-title": copy.previewTitle, "exercise-label": copy.exercises,
       "set-label": copy.sets, "volume-label": copy.volume,
-      "action-eyebrow": copy.actionEyebrow, "action-title": copy.actionTitle,
+      "action-title": copy.actionTitle,
       "privacy-copy": copy.privacy
     };
     Object.entries(text).forEach(([id, value]) => setText(document, id, value));
     const androidLabel = document.querySelector("#open-android strong");
     const iosLabel = document.querySelector("#open-ios strong");
-    const webLabel = document.querySelector("#continue-web strong");
     if (androidLabel) androidLabel.textContent = copy.android;
     if (iosLabel) iosLabel.textContent = copy.ios;
-    if (webLabel) webLabel.textContent = copy.web;
+    setText(document, "get-android", copy.googlePlay);
+    setText(document, "downloads-home", copy.downloads);
 
     try {
       const result = parse(rawUrl);
@@ -245,10 +237,8 @@
       setText(document, "volume-count", formatter.format(result.summary.volume));
       const android = document.getElementById("open-android");
       const ios = document.getElementById("open-ios");
-      const web = document.getElementById("continue-web");
       if (android) android.href = result.links.android;
       if (ios) ios.href = result.links.ios;
-      if (web) web.href = result.links.web;
       renderPreview(document, result, copy, locale);
       document.getElementById("preview-panel")?.removeAttribute("hidden");
       document.getElementById("action-panel")?.removeAttribute("hidden");
@@ -267,6 +257,7 @@
     CANONICAL_WORKOUT_PATH,
     ANDROID_SCHEME,
     IOS_SCHEME,
+    GOOGLE_PLAY_URL,
     COPY,
     languageFor,
     destinations,

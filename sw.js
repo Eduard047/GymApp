@@ -1,187 +1,75 @@
 "use strict";
 
 const CACHE_PREFIX = "gym-pwa-";
-const CACHE_VERSION = "v121";
-const CACHE_NAME = `${CACHE_PREFIX}${CACHE_VERSION}`;
-const LEGACY_GITHUB_ORIGIN = "https://eduard047.github.io";
-const LEGACY_GITHUB_SCOPE = `${LEGACY_GITHUB_ORIGIN}/GymApp/`;
-const LEGACY_GITHUB_SCOPE_URL = new URL(LEGACY_GITHUB_SCOPE);
-const IS_LEGACY_GITHUB_ORIGIN = self.location.origin === LEGACY_GITHUB_ORIGIN &&
-  self.registration.scope === LEGACY_GITHUB_SCOPE;
-const LEGACY_CLEANUP_URL = new URL("./legacy-origin-cleanup-v62.html", self.registration.scope);
-const LEGACY_CONFIRMATION_URL = new URL("./confirmed.html", self.registration.scope);
-const PUSH_BINDING_DB_NAME = "gymapp-push-binding-v1";
-const PUSH_BINDING_DB_VERSION = 1;
-const PUSH_BINDING_STORE_NAME = "current-bindings";
-const PUSH_BINDING_RECORD_KEY = "current";
-const PUSH_BINDING_TRANSITION_KEY = "transition";
-const PUSH_BINDING_UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-const EXERCISE_MEDIA_KEYS = [
-  "bench_press", "dumbbell_bench_press", "incline_dumbbell_press", "incline_bench_press",
-  "chest_fly_machine", "push_up", "dips", "pull_up", "assisted_pull_up", "assisted_dip", "band_assisted_pull_up",
-  "lat_pulldown", "straight_arm_pulldown", "barbell_row", "seated_cable_row", "plate_loaded_row", "face_pull",
-  "squat", "leg_press", "romanian_deadlift", "deadlift", "hip_thrust", "bulgarian_split_squat", "lunge", "leg_extension",
-  "lying_leg_curl", "seated_leg_curl", "hip_adduction", "hip_abduction", "calf_raise",
-  "shoulder_press", "lateral_raise", "machine_lateral_raise", "rear_delt_fly", "upright_row", "biceps_curl",
-  "barbell_curl", "seated_dumbbell_curl", "hammer_curl", "cable_curl", "preacher_curl",
-  "triceps_pushdown", "v_bar_pushdown", "overhead_dumbbell_triceps_extension",
-  "french_press", "hyperextension", "side_hyperextension", "plank", "weighted_crunch",
-  "hanging_leg_raise", "plate_twist", "weighted_side_bend", "warm_up"
-];
-const ASSETS = [
-  "./",
-  "./index.html",
-  "./confirmed.html",
-  "./confirmed.v56.css",
-  "./confirmed.v56.js",
-  "./frame-guard.v56.js",
-  "./theme.v56.js",
-  "./styles.v69.css",
-  "./muscle-regions.v56.js",
-  "./supabase-config.v58.js",
-  "./state-contract.v69.js",
-  "./garmin-cloud-sync.v57.js",
-  "./progression-rules.v56.js",
-  "./shared-workout.v65.js",
-  "./shared-workout-flow.v71.js",
-  "./supabase-realtime.v1.js",
-  "./live-workout.v1.js",
-  "./live-workout-state.v1.js",
-  "./russian-text.v77.js",
-  "./exercise-search-vocabulary.v1.js",
-  "./app.v85.js",
-  "./workout/",
-  "./workout/index.html",
-  "./workout/landing.v1.css",
-  "./workout/landing.v2.js",
-  ...EXERCISE_MEDIA_KEYS.flatMap(key => [
-    `./exercise-media/${key}_0.jpg`,
-    `./exercise-media/${key}_1.jpg`
-  ]),
-  "./manifest.webmanifest",
-  "./icon-192.png",
-  "./icon-512.png",
-  "./icon-maskable-192.png",
-  "./icon-maskable-512.png",
-  "./apple-touch-icon.png",
-  "./favicon-32.png"
-];
-const STATIC_URLS = new Set(
-  ASSETS.map(asset => new URL(asset, self.registration.scope).href)
-);
-const ROOT_PATH = new URL("./", self.registration.scope).pathname;
-const INDEX_PATH = new URL("./index.html", self.registration.scope).pathname;
-const CONFIRMATION_PATH = new URL("./confirmed.html", self.registration.scope).pathname;
-const WORKOUT_PATH = new URL("./workout/", self.registration.scope).pathname;
-const WORKOUT_INDEX_PATH = new URL("./workout/index.html", self.registration.scope).pathname;
-const DOCUMENT_PATHS = new Set([
-  ROOT_PATH,
-  INDEX_PATH,
-  CONFIRMATION_PATH,
-  WORKOUT_PATH,
-  WORKOUT_INDEX_PATH
+const ROOT_URL = new URL("./", self.registration.scope);
+const INDEX_URL = new URL("./index.html", self.registration.scope);
+const CONFIRMATION_URL = new URL("./confirmed.html", self.registration.scope);
+const WORKOUT_URL = new URL("./workout/", self.registration.scope);
+const WORKOUT_INDEX_URL = new URL("./workout/index.html", self.registration.scope);
+const ROOT_PATHS = new Set([ROOT_URL.pathname, INDEX_URL.pathname]);
+const PRESERVED_PATHS = new Set([
+  CONFIRMATION_URL.pathname,
+  WORKOUT_URL.pathname,
+  WORKOUT_INDEX_URL.pathname
 ]);
-const SENSITIVE_QUERY_KEYS = new Set([
-  "access_token",
-  "refresh_token",
-  "token",
-  "code",
-  "apikey",
-  "api_key"
-]);
-const INDEX_CSP = [
-  "default-src 'self'",
-  "script-src 'self'",
-  "style-src 'self'",
-  "img-src 'self' data:",
-  "connect-src 'self' https://owrcbsrectdgaotndtxy.supabase.co wss://owrcbsrectdgaotndtxy.supabase.co",
-  "worker-src 'self'",
-  "manifest-src 'self'",
-  "object-src 'none'",
-  "frame-src 'none'",
-  "frame-ancestors 'none'",
-  "media-src 'none'",
-  "base-uri 'none'",
-  "form-action 'none'",
-  "upgrade-insecure-requests"
-].join("; ");
-const CONFIRMATION_CSP = [
-  "default-src 'none'",
-  "style-src 'self'",
-  "script-src 'self'",
-  "img-src 'self' data:",
-  "frame-ancestors 'none'",
-  "base-uri 'none'",
-  "form-action 'none'"
-].join("; ");
-const WORKOUT_CSP = [
-  "default-src 'none'",
-  "script-src 'self'",
-  "style-src 'self'",
-  "img-src 'self'",
-  "connect-src 'none'",
-  "worker-src 'none'",
-  "manifest-src 'self'",
-  "object-src 'none'",
-  "frame-src 'none'",
-  "frame-ancestors 'none'",
-  "media-src 'none'",
-  "base-uri 'none'",
-  "form-action 'none'",
-  "upgrade-insecure-requests"
-].join("; ");
+const LANDING_SECURITY_HEADERS = Object.freeze({
+  "Cache-Control": "no-store",
+  "Content-Security-Policy": "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'; worker-src 'none'; manifest-src 'none'; object-src 'none'; frame-src 'none'; frame-ancestors 'none'; media-src 'none'; font-src 'none'; base-uri 'none'; form-action 'none'",
+  "Cross-Origin-Opener-Policy": "same-origin",
+  "Origin-Agent-Cluster": "?1",
+  "Permissions-Policy": "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()",
+  "Referrer-Policy": "no-referrer",
+  "X-Content-Type-Options": "nosniff",
+  "X-Frame-Options": "DENY"
+});
 
-function isSafeBaseRequest(request, url) {
-  return request.method === "GET" &&
-    url.origin === self.location.origin &&
-    !url.username && !url.password &&
-    !request.headers.has("authorization") &&
-    !request.headers.has("apikey") &&
-    !request.headers.has("range") &&
-    !request.headers.has("if-range");
+function sameScopeUrl(rawUrl) {
+  try {
+    const url = new URL(rawUrl);
+    return url.origin === ROOT_URL.origin && url.pathname.startsWith(ROOT_URL.pathname) &&
+      !url.username && !url.password;
+  } catch {
+    return false;
+  }
 }
 
-function documentPolicy(url) {
-  if (url.pathname === CONFIRMATION_PATH) return CONFIRMATION_CSP;
-  if (url.pathname === WORKOUT_PATH || url.pathname === WORKOUT_INDEX_PATH) return WORKOUT_CSP;
-  if (url.pathname === ROOT_PATH || url.pathname === INDEX_PATH) return INDEX_CSP;
-  return null;
+function isRootUrl(rawUrl) {
+  try {
+    const url = new URL(rawUrl);
+    return sameScopeUrl(url.href) && ROOT_PATHS.has(url.pathname);
+  } catch {
+    return false;
+  }
 }
 
-function hasSensitiveQuery(url) {
-  return [...url.searchParams.keys()].some(key => {
-    const normalized = key.toLowerCase();
-    return SENSITIVE_QUERY_KEYS.has(normalized) || normalized.includes("token");
-  });
+function isPreservedUrl(rawUrl) {
+  try {
+    const url = new URL(rawUrl);
+    return sameScopeUrl(url.href) && PRESERVED_PATHS.has(url.pathname);
+  } catch {
+    return false;
+  }
 }
 
-function isCacheableStaticRequest(request) {
-  const url = new URL(request.url);
-  if (!isSafeBaseRequest(request, url)) return false;
-  if (url.search && DOCUMENT_PATHS.has(url.pathname)) return false;
-  if (hasSensitiveQuery(url)) return false;
-  return STATIC_URLS.has(url.href);
+async function deleteKnownStaticCaches() {
+  const names = await caches.keys();
+  const known = names.filter(name => typeof name === "string" && name.startsWith(CACHE_PREFIX));
+  return Promise.allSettled(known.map(name => caches.delete(name)));
 }
 
-function isHandledRequest(request) {
-  const url = new URL(request.url);
-  if (!isSafeBaseRequest(request, url)) return false;
-  return documentPolicy(url) !== null || isCacheableStaticRequest(request);
+async function navigateRootClients() {
+  const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+  await Promise.allSettled(windows.map(client => {
+    if (!isRootUrl(client.url) || isPreservedUrl(client.url) || typeof client.navigate !== "function") {
+      return Promise.resolve();
+    }
+    return client.navigate(ROOT_URL.href);
+  }));
 }
 
-function withDocumentSecurityHeaders(response, url, { noStore = false } = {}) {
-  const policy = documentPolicy(url);
-  if (!policy) return response;
+function securedLandingResponse(response) {
   const headers = new Headers(response.headers);
-  if (noStore) headers.set("Cache-Control", "no-store");
-  headers.set("Content-Security-Policy", policy);
-  headers.set("Cross-Origin-Opener-Policy", "same-origin");
-  headers.set("Origin-Agent-Cluster", "?1");
-  headers.set("Permissions-Policy", "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()");
-  headers.set("Referrer-Policy", "no-referrer");
-  headers.set("X-Content-Type-Options", "nosniff");
-  headers.set("X-Frame-Options", "DENY");
+  for (const [name, value] of Object.entries(LANDING_SECURITY_HEADERS)) headers.set(name, value);
   return new Response(response.body, {
     status: response.status,
     statusText: response.statusText,
@@ -189,342 +77,56 @@ function withDocumentSecurityHeaders(response, url, { noStore = false } = {}) {
   });
 }
 
-async function cachedCanonicalDocument(url) {
-  const canonical = new URL(url.href);
-  canonical.search = "";
-  canonical.hash = "";
-  const cache = await caches.open(CACHE_NAME);
-  return cache.match(canonical.href);
-}
-
-function isWithinLegacyGithubScope(rawUrl) {
-  try {
-    const url = new URL(rawUrl);
-    return url.origin === LEGACY_GITHUB_SCOPE_URL.origin &&
-      url.pathname.startsWith(LEGACY_GITHUB_SCOPE_URL.pathname);
-  } catch {
-    return false;
-  }
-}
-
-async function deleteLegacyGithubScopeCacheEntries() {
-  const names = (await caches.keys()).filter(name => name.startsWith(CACHE_PREFIX));
-  await Promise.all(names.map(async name => {
-    const cache = await caches.open(name);
-    const requests = await cache.keys();
-    const results = await Promise.all(
-      requests
-        .filter(request => isWithinLegacyGithubScope(request.url))
-        .map(request => cache.delete(request))
-    );
-    if (!results.every(result => result === true)) {
-      throw new Error("Legacy GymApp cache cleanup was incomplete.");
-    }
-  }));
-}
-
-const PUSH_LIVE_KINDS = new Set([
-  "invite", "joined", "started", "participant_finished", "room_closed"
-]);
-const PUSH_SOCIAL_TYPES = new Set([
-  "friend_request_received", "friend_request_accepted",
-  "workout_invite_received", "workout_invite_accepted"
-]);
-const PUSH_ROOM_PATTERN = /^lr_[0-9a-f]{32}$/;
-const PUSH_FRIENDSHIP_PATTERN = /^f_[0-9a-f]{32}$/;
-const PUSH_WORKOUT_INVITE_PATTERN = /^wi_[0-9a-f]{32}$/;
-
-function pushBindingRecord(value) {
-  const row = pushExactObject(value, ["version", "bindingId", "ownerId"]);
-  if (row.version !== 1 || !PUSH_BINDING_UUID_PATTERN.test(row.bindingId || "") ||
-      !PUSH_BINDING_UUID_PATTERN.test(row.ownerId || "")) {
-    throw new TypeError("Push binding is invalid.");
-  }
-  return row;
-}
-
-function openPushBindingDatabase() {
-  return new Promise((resolve, reject) => {
-    if (!self.indexedDB) {
-      reject(new Error("Push binding storage is unavailable."));
-      return;
-    }
-    const request = self.indexedDB.open(PUSH_BINDING_DB_NAME, PUSH_BINDING_DB_VERSION);
-    request.onupgradeneeded = () => {
-      const database = request.result;
-      if (!database.objectStoreNames.contains(PUSH_BINDING_STORE_NAME)) {
-        database.createObjectStore(PUSH_BINDING_STORE_NAME);
-      }
-    };
-    request.onerror = () => reject(request.error || new Error("Push binding storage failed."));
-    request.onblocked = () => reject(new Error("Push binding storage is blocked."));
-    request.onsuccess = () => resolve(request.result);
+function offlineLandingResponse() {
+  const headers = new Headers({
+    "Content-Type": "text/html; charset=utf-8",
+    ...LANDING_SECURITY_HEADERS
   });
+  return new Response(
+    "<!doctype html><html lang=\"en\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>GymApp</title><main><h1>GymApp</h1><p>GymApp workouts are available in the mobile apps.</p></main></html>",
+    { status: 503, statusText: "Offline", headers }
+  );
 }
 
-async function storedPushBinding() {
-  const database = await openPushBindingDatabase();
+async function fetchLanding() {
   try {
-    return await new Promise((resolve, reject) => {
-      const transaction = database.transaction(PUSH_BINDING_STORE_NAME, "readonly");
-      const store = transaction.objectStore(PUSH_BINDING_STORE_NAME);
-      const request = store.get(PUSH_BINDING_RECORD_KEY);
-      const transitionRequest = store.get(PUSH_BINDING_TRANSITION_KEY);
-      let value = null;
-      let transitionBlocked = false;
-      request.onsuccess = () => {
-        try {
-          value = request.result === undefined ? null : pushBindingRecord(request.result);
-        } catch {
-          value = null;
-        }
-      };
-      transitionRequest.onsuccess = () => {
-        transitionBlocked = transitionRequest.result !== undefined;
-      };
-      request.onerror = () => reject(request.error || new Error("Push binding read failed."));
-      transitionRequest.onerror = () => reject(
-        transitionRequest.error || new Error("Push transition read failed.")
-      );
-      transaction.onabort = () => reject(transaction.error || new Error("Push binding read aborted."));
-      transaction.onerror = () => {};
-      transaction.oncomplete = () => resolve(transitionBlocked ? null : value);
-    });
-  } finally {
-    database.close();
-  }
-}
-
-async function pushBindingMatches(bindingId) {
-  if (!PUSH_BINDING_UUID_PATTERN.test(bindingId || "")) return false;
-  try {
-    const stored = await storedPushBinding();
-    return stored?.bindingId === bindingId;
+    const response = await fetch(new Request(ROOT_URL.href, {
+      method: "GET",
+      credentials: "same-origin",
+      redirect: "follow",
+      cache: "reload",
+      headers: { Accept: "text/html" }
+    }));
+    const contentType = response.headers.get("Content-Type") || "";
+    if (!response.ok || response.type === "opaque" ||
+        (response.url && !isRootUrl(response.url)) ||
+        !/^text\/html(?:;|$)/i.test(contentType)) {
+      throw new Error("Landing is unavailable.");
+    }
+    return securedLandingResponse(response);
   } catch {
-    return false;
+    return offlineLandingResponse();
   }
 }
 
-function pushExactObject(value, keys) {
-  if (!value || typeof value !== "object" || Array.isArray(value) ||
-      Object.keys(value).sort().join(",") !== [...keys].sort().join(",")) {
-    throw new TypeError("Push payload fields are invalid.");
-  }
-  return value;
-}
+self.addEventListener("install", event => {
+  event.waitUntil(self.skipWaiting());
+});
 
-function pushBoundedInteger(value, min = 0) {
-  if (!Number.isSafeInteger(value) || value < min || value > 2147483647) {
-    throw new TypeError("Push revision is invalid.");
-  }
-  return value;
-}
+self.addEventListener("activate", event => {
+  event.waitUntil((async () => {
+    await deleteKnownStaticCaches().catch(() => []);
+    await self.clients.claim();
+    await navigateRootClients();
+  })());
+});
 
-function pushData(value) {
-  if (Object.hasOwn(value || {}, "kind")) {
-    const row = pushExactObject(value, [
-      "version", "bindingId", "kind", "roomId", "roomRevision"
-    ]);
-    if (row.version !== 1 || !PUSH_LIVE_KINDS.has(row.kind) ||
-        !PUSH_BINDING_UUID_PATTERN.test(row.bindingId || "") ||
-        !PUSH_ROOM_PATTERN.test(row.roomId || "")) {
-      throw new TypeError("Push live data is invalid.");
-    }
-    return {
-      version: 1,
-      bindingId: row.bindingId,
-      kind: row.kind,
-      roomId: row.roomId,
-      roomRevision: pushBoundedInteger(row.roomRevision, 1)
-    };
-  }
-  const row = pushExactObject(value, [
-    "version", "bindingId", "type", "objectId", "objectRevision"
-  ]);
-  const pattern = String(row.type || "").startsWith("workout_invite_")
-    ? PUSH_WORKOUT_INVITE_PATTERN
-    : PUSH_FRIENDSHIP_PATTERN;
-  if (row.version !== 1 || !PUSH_BINDING_UUID_PATTERN.test(row.bindingId || "") ||
-      !PUSH_SOCIAL_TYPES.has(row.type) ||
-      !pattern.test(row.objectId || "")) {
-    throw new TypeError("Push social data is invalid.");
-  }
-  return {
-    version: 1,
-    bindingId: row.bindingId,
-    type: row.type,
-    objectId: row.objectId,
-    objectRevision: pushBoundedInteger(row.objectRevision)
-  };
-}
-
-function pushText(value, maxLength) {
-  if (typeof value !== "string" || value.length < 1 || value.length > maxLength ||
-      /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/u.test(value)) {
-    throw new TypeError("Push notification copy is invalid.");
-  }
-  return value;
-}
-
-function pushEnvelope(value) {
-  const root = pushExactObject(value, ["version", "notification", "data"]);
-  const notification = pushExactObject(root.notification, ["title", "body", "tag"]);
-  if (root.version !== 1 || typeof notification.tag !== "string" ||
-      !/^[A-Za-z0-9_-]{1,32}$/.test(notification.tag)) {
-    throw new TypeError("Push notification is invalid.");
-  }
-  return {
-    version: 1,
-    notification: {
-      title: pushText(notification.title, 120),
-      body: pushText(notification.body, 240),
-      tag: notification.tag
-    },
-    data: pushData(root.data)
-  };
-}
-
-function pushNavigationUrl(data) {
-  const target = new URL("./", self.registration.scope);
-  target.searchParams.set("notification", data.roomId ? "live" : "social");
-  if (data.roomId) target.searchParams.set("room", data.roomId);
-  return target;
-}
-
-async function openPushTarget(data) {
-  const parsed = pushData(data);
-  const target = pushNavigationUrl(parsed);
-  const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-  const scope = new URL(self.registration.scope);
-  const existing = windows.find(client => {
-    try {
-      const url = new URL(client.url);
-      return url.origin === scope.origin && url.pathname.startsWith(scope.pathname);
-    } catch {
-      return false;
-    }
-  });
-  if (existing) {
-    existing.postMessage({
-      version: 1,
-      type: "gymapp_notification_click",
-      target: parsed.roomId ? "live" : "social",
-      ...(parsed.roomId ? { roomId: parsed.roomId } : {})
-    });
-    await existing.focus();
+self.addEventListener("fetch", event => {
+  const request = event.request;
+  if (request.method !== "GET" || request.mode !== "navigate" ||
+      request.headers.has("authorization") || request.headers.has("apikey") ||
+      !isRootUrl(request.url)) {
     return;
   }
-  await self.clients.openWindow(target.href);
-}
-
-if (IS_LEGACY_GITHUB_ORIGIN) {
-  self.addEventListener("install", event => {
-    event.waitUntil(Promise.resolve(self.skipWaiting()));
-  });
-
-  self.addEventListener("activate", event => {
-    event.waitUntil(
-      deleteLegacyGithubScopeCacheEntries()
-        .then(() => Promise.resolve(self.clients.claim()))
-        .then(() => self.clients.matchAll({ type: "window", includeUncontrolled: true }))
-        .then(clients => Promise.all(clients.map(client => {
-          const clientUrl = new URL(client.url);
-          if (!isWithinLegacyGithubScope(clientUrl.href) ||
-              clientUrl.pathname === LEGACY_CONFIRMATION_URL.pathname ||
-              clientUrl.pathname === LEGACY_CLEANUP_URL.pathname) return null;
-          return client.navigate(LEGACY_CLEANUP_URL.href).catch(() => null);
-        })))
-    );
-  });
-
-  self.addEventListener("fetch", event => {
-    const url = new URL(event.request.url);
-    if (event.request.method !== "GET" || event.request.mode !== "navigate" ||
-        url.origin !== self.location.origin || url.pathname === LEGACY_CLEANUP_URL.pathname ||
-        url.pathname === LEGACY_CONFIRMATION_URL.pathname) return;
-    event.respondWith(Promise.resolve(Response.redirect(LEGACY_CLEANUP_URL.href, 302)));
-  });
-} else {
-  self.addEventListener("push", event => {
-    let envelope;
-    try {
-      envelope = pushEnvelope(event.data?.json());
-    } catch {
-      return;
-    }
-    event.waitUntil((async () => {
-      if (!await pushBindingMatches(envelope.data.bindingId)) return;
-      await self.registration.showNotification(envelope.notification.title, {
-        body: envelope.notification.body,
-        tag: envelope.notification.tag,
-        icon: new URL("./icon-192.png", self.registration.scope).href,
-        badge: new URL("./icon-192.png", self.registration.scope).href,
-        data: envelope.data,
-        renotify: false,
-        requireInteraction: false
-      });
-    })());
-  });
-
-  self.addEventListener("notificationclick", event => {
-    let data;
-    try {
-      data = pushData(event.notification?.data);
-    } catch {
-      event.notification?.close?.();
-      return;
-    }
-    event.notification.close();
-    event.waitUntil((async () => {
-      if (!await pushBindingMatches(data.bindingId)) return;
-      await openPushTarget(data);
-    })());
-  });
-
-  self.addEventListener("install", event => {
-    const requests = ASSETS.map(asset => new Request(
-      new URL(asset, self.registration.scope).href,
-      { cache: "reload" }
-    ));
-    event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(requests)));
-  });
-
-  self.addEventListener("activate", event => {
-    event.waitUntil(
-      caches.keys().then(keys =>
-        Promise.all(
-          keys
-            .filter(key => key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME)
-            .map(key => caches.delete(key))
-        )
-      )
-    );
-  });
-
-  self.addEventListener("fetch", event => {
-    if (!isHandledRequest(event.request)) return;
-    const url = new URL(event.request.url);
-
-    if (!isCacheableStaticRequest(event.request)) {
-      let response = fetch(event.request, { cache: "no-store" })
-        .then(networkResponse => withDocumentSecurityHeaders(networkResponse, url, { noStore: true }));
-      if (!hasSensitiveQuery(url)) {
-        response = response.catch(async error => {
-          const cached = await cachedCanonicalDocument(url);
-          if (!cached) throw error;
-          return withDocumentSecurityHeaders(cached, url, { noStore: true });
-        });
-      }
-      event.respondWith(response);
-      return;
-    }
-
-    event.respondWith(
-      caches.open(CACHE_NAME).then(cache =>
-        cache.match(event.request)
-          .then(cached => cached || fetch(event.request))
-          .then(response => withDocumentSecurityHeaders(response, url))
-      )
-    );
-  });
-}
+  event.respondWith(fetchLanding());
+});
