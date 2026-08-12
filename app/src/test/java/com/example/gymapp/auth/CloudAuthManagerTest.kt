@@ -48,6 +48,20 @@ class CloudAuthManagerTest {
     }
 
     @Test
+    fun newLocalProfileNamesMatchTheMobileVisibleContractWithoutWeakeningLegacyRestore() {
+        assertEquals("Local", validatedNewLocalDisplayNameOrNull(" Local "))
+        assertEquals("Іван_2", validatedNewLocalDisplayNameOrNull("Іван_2"))
+        assertNull(validatedNewLocalDisplayNameOrNull("A"))
+        assertNull(validatedNewLocalDisplayNameOrNull("A".repeat(33)))
+        assertNull(validatedNewLocalDisplayNameOrNull("Local/Profile"))
+        assertNull(validatedNewLocalDisplayNameOrNull("Coach🔥"))
+
+        val grandfathered = "Legacy/" + "x".repeat(64)
+        assertEquals(grandfathered, normalizedLocalDisplayNameOrNull(grandfathered))
+        assertNull(validatedNewLocalDisplayNameOrNull(grandfathered))
+    }
+
+    @Test
     fun legacyLocalFilenameAlgorithmRemainsAvailableOnlyForAliasRecovery() {
         assertEquals("local_a_b", legacyLocalDatabaseName(" A/B "))
         assertEquals("local_a_b", legacyLocalDatabaseName("a_b"))

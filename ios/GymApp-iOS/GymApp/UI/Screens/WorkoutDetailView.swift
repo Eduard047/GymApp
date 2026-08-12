@@ -1717,7 +1717,6 @@ struct WorkoutDetailView: View {
         return GymPanel(highlighted: true) {
             VStack(alignment: .leading, spacing: 12) {
                 GymSectionTitle(
-                    eyebrow: "Garmin",
                     title: GarminWorkoutDetailCopy.metricsTitle(languageCode: languageCode),
                     supporting: GarminWorkoutDetailCopy.metricsSupporting(languageCode: languageCode)
                 )
@@ -1784,7 +1783,6 @@ struct WorkoutDetailView: View {
         return GymPanel(highlighted: true) {
             VStack(alignment: .leading, spacing: 12) {
                 GymSectionTitle(
-                    eyebrow: "Garmin",
                     title: GarminWorkoutDetailCopy.intervalsTitle(languageCode: languageCode),
                     supporting: GarminWorkoutDetailCopy.intervalsSupporting(
                         languageCode: languageCode
@@ -1842,16 +1840,10 @@ struct WorkoutDetailView: View {
         GymPanel {
             VStack(alignment: .leading, spacing: 13) {
                 GymSectionTitle(
-                    eyebrow: "Session",
                     title: isGarminWorkout ? "Date" : "Date and note",
                     supporting: isGarminWorkout
                         ? "Garmin receipt data is kept unchanged so charts remain accurate."
-                        : gymText(
-                            "Update the saved workout details.",
-                            "Онови дані збереженого тренування.",
-                            "Обновите данные сохранённой тренировки.",
-                            languageCode: gymCurrentLanguageCode()
-                        )
+                        : nil
                 )
                 DatePicker("Workout date", selection: $date, displayedComponents: [.date, .hourAndMinute])
                 if !isGarminWorkout {
@@ -1871,28 +1863,7 @@ struct WorkoutDetailView: View {
     private func exerciseSection(_ workout: WorkoutSession) -> some View {
         HStack {
             GymSectionTitle(
-                eyebrow: isEditing
-                    ? gymText(
-                        "Edit",
-                        "Редагування",
-                        "Редактирование",
-                        languageCode: gymCurrentLanguageCode()
-                    )
-                    : gymLocalized("Saved workout"),
-                title: "Exercises and sets",
-                supporting: isEditing
-                    ? gymText(
-                        "Open an exercise to update its saved sets.",
-                        "Відкрий вправу, щоб змінити збережені підходи.",
-                        "Откройте упражнение, чтобы изменить сохранённые подходы.",
-                        languageCode: gymCurrentLanguageCode()
-                    )
-                    : gymText(
-                        "Exercises are collapsed by default. Open one to review its sets.",
-                        "Вправи спочатку згорнуті. Відкрий вправу, щоб переглянути підходи.",
-                        "Упражнения изначально свёрнуты. Откройте упражнение, чтобы посмотреть подходы.",
-                        languageCode: gymCurrentLanguageCode()
-                    )
+                title: "Exercises and sets"
             )
             Spacer(minLength: 8)
             if isEditing {
@@ -1934,7 +1905,8 @@ struct WorkoutDetailView: View {
                 HStack(alignment: .center, spacing: 10) {
                     if let exercise {
                         ExerciseMediaButton(
-                            exerciseName: exercise.name,
+                            rawExerciseName: exercise.name,
+                            catalogKey: exercise.catalogKey,
                             exerciseID: exercise.id,
                             ownerKey: store.accountStorageKey
                         )
@@ -2447,7 +2419,6 @@ private struct SavedWorkoutShareChooser: View {
                             GymPanel(highlighted: true) {
                                 VStack(alignment: .leading, spacing: 10) {
                                     GymSectionTitle(
-                                        eyebrow: t("Link", "Посилання", "Ссылка"),
                                         title: t("Share through another app", "Надіслати через інший застосунок", "Отправить через другое приложение")
                                     )
                                     ShareLink(
@@ -2474,7 +2445,6 @@ private struct SavedWorkoutShareChooser: View {
                             VStack(alignment: .leading, spacing: 10) {
                                 HStack(alignment: .firstTextBaseline) {
                                     GymSectionTitle(
-                                        eyebrow: t("Friends", "Друзі", "Друзья"),
                                         title: t("Train together", "Тренуватися разом", "Тренироваться вместе")
                                     )
                                     Spacer()

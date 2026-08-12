@@ -1,19 +1,21 @@
 # Deployment and release boundaries
 
 GymApp spans public clients, native applications, wearable packages, and a
-Supabase backend. A source push, GitHub release, PWA deployment, database
+Supabase backend. A source push, GitHub release, browser-site deployment, database
 migration, and Edge Function deployment are separate operations.
 
 ## Public surfaces
 
-- Web app: <https://gymapptracker.com/>
+- Distribution and legal site: <https://gymapptracker.com/>
 - Support: <https://gymapptracker.com/support.html>
 - Privacy policy: <https://gymapptracker.com/privacy-policy.html>
 - Releases: <https://github.com/Eduard047/GymApp/releases>
 
-GitHub Pages publishes the reviewed contents of `pwa/` through the dedicated
-`gh-pages` branch. That branch is deployment infrastructure and must not be
-deleted as stale source work.
+GitHub Pages publishes the reviewed browser-retirement landing, native callback,
+and shared-workout handoff files from `pwa/` through the dedicated `gh-pages`
+branch. The public root must not load the retained workout/PWA runtime. The
+branch is deployment infrastructure and must not be deleted as stale source
+work.
 
 ## Authentication redirects
 
@@ -68,14 +70,13 @@ quarantined states, and zero profile/projection mismatches. `garmin-sync` versio
 6 and `delete-account` version 3 are active; a real disposable v2 device completed
 fetch, acknowledge, replay, rotation, and post-cutover continuity checks.
 
-Production Auth currently enforces an eight-character server minimum, matching
-the already-hosted PWA. The repository clients enforce the new twelve-character
-mixed-character policy. Raise the server requirement and enable current-password
-enforcement only in the same reviewed release window as publication of those
-updated clients; changing them earlier would make the still-hosted client promise
-different behavior from the backend. Email confirmation is enabled, anonymous
-sign-in is disabled, and the 2026-07-22 registration/login/refresh/password-change/
-logout/deletion E2E passed with disposable accounts.
+Production Auth currently enforces the historical eight-character server
+minimum. The current native clients enforce the twelve-character mixed-character
+policy, while the browser workout/authentication client is retired. Any server
+policy change still requires a separately reviewed native-client and backend
+release window. Email confirmation is enabled, anonymous sign-in is disabled,
+and the 2026-07-22 registration/login/refresh/password-change/logout/deletion E2E
+passed with disposable accounts.
 
 Public Supabase client identifiers are not privileged credentials. Secret keys,
 service-role keys, connection strings, raw device tokens, and real account data

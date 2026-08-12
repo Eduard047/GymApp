@@ -525,6 +525,13 @@ abstract class GymDatabase : RoomDatabase() {
             }
         }
 
+        internal fun closeInstance(databaseName: String) {
+            val safeName = databaseName
+                .replace(Regex("[^A-Za-z0-9_.-]"), "_")
+                .ifBlank { "gym_database" }
+            INSTANCES.remove(safeName)?.close()
+        }
+
         private fun String.toExerciseMappingKey(): String {
             return lowercase()
                 .replace('ʼ', '\'')

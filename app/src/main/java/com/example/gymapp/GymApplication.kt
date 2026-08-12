@@ -6,7 +6,9 @@ import com.example.gymapp.auth.AccountSession
 import com.example.gymapp.auth.CloudAccountDeletionJournal
 import com.example.gymapp.auth.CloudAuthManager
 import com.example.gymapp.auth.LocalDatabaseBindingStore
+import com.example.gymapp.auth.PendingLocalProfileDeletion
 import com.example.gymapp.auth.databaseName
+import com.example.gymapp.auth.recoverPendingLocalProfileDeletion
 import com.example.gymapp.auth.recoverPendingCloudAccountDeletion
 import com.example.gymapp.data.database.GymDatabase
 import com.example.gymapp.data.repository.GymRepository
@@ -20,6 +22,7 @@ import com.example.gymapp.ui.media.ExerciseMediaStore
 import com.example.gymapp.ui.screens.clearPrivateBackupShareArtifacts
 import com.example.gymapp.util.LanguageManager
 import com.example.gymapp.util.RestTimerController
+import com.example.gymapp.util.TrainingGuidanceManager
 import com.example.gymapp.util.TrainingProfileManager
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
@@ -36,9 +39,16 @@ class GymApplication : Application() {
     private val cloudAccountDeletionJournal by lazy { CloudAccountDeletionJournal(this) }
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     val legacyRepository: GymRepository by lazy { repositoryFor(null) }
-    val cloudAuthManager: CloudAuthManager by lazy { CloudAuthManager(this) }
+    val cloudAuthManager: CloudAuthManager by lazy {
+        CloudAuthManager(
+            context = this,
+            localDatabaseMaterializerOverride = ::materializeLocalDatabaseForAuthentication,
+            localDatabaseRollbackOverride = ::rollbackNewLocalDatabaseForAuthentication
+        )
+    }
     val languageManager: LanguageManager by lazy { LanguageManager(this) }
     val trainingProfileManager: TrainingProfileManager by lazy { TrainingProfileManager(this) }
+    val trainingGuidanceManager: TrainingGuidanceManager by lazy { TrainingGuidanceManager(this) }
     val restTimerController: RestTimerController by lazy { RestTimerController(this) }
     val garminSyncManager: GarminSyncManager by lazy { GarminSyncManager(this) }
     internal val sharedWorkoutInbox = SharedWorkoutInbox()
@@ -52,13 +62,16 @@ class GymApplication : Application() {
         deleteSharedPreferences(RETIRED_PHONE_WEAR_PREFERENCES)
         val authManager = cloudAuthManager
         val profileManager = trainingProfileManager
+        val guidanceManager = trainingGuidanceManager
         val timerController = restTimerController
         val garminManager = garminSyncManager
         val nativePushManager = pushManager
         val pendingAccountDeletions = cloudAccountDeletionJournal.pending()
+        val pendingLocalProfileDeletion = authManager.pendingLocalProfileDeletion()
         applicationScope.launch(start = CoroutineStart.UNDISPATCHED) {
             authManager.authState.collect { state ->
                 profileManager.switchAccount(state.session)
+                guidanceManager.switchAccount(state.session)
                 timerController.switchAccount(state.session)
             }
         }
@@ -77,7 +90,13 @@ class GymApplication : Application() {
                         },
                         clearBaseline = { baselineStore.clear(record.userId) },
                         clearTrainingProfile = {
-                            profileManager.clearAccountByDatabaseName(record.databaseName)
+                            val profileCleared = profileManager.clearAccountByDatabaseName(
+                                record.databaseName
+                            )
+                            val guidanceCleared = guidanceManager.clearAccountByDatabaseName(
+                                record.databaseName
+                            )
+                            profileCleared && guidanceCleared
                         },
                         clearSyncStatus = { syncStatusStore.clear(record.userId) },
                         clearCustomMedia = {
@@ -109,6 +128,11 @@ class GymApplication : Application() {
                 }
             }
         }
+        pendingLocalProfileDeletion?.let { record ->
+            applicationScope.launch(Dispatchers.IO) {
+                clearPendingLocalProfileDeletion(record)
+            }
+        }
         garminManager.initialize()
         nativePushManager.initialize()
     }
@@ -119,7 +143,60 @@ class GymApplication : Application() {
             is AccountSession.Local -> localDatabaseBindingStore.physicalDatabaseName(session)
             else -> logicalDatabaseName
         }
-        return repositoryForDatabaseNames(logicalDatabaseName, physicalDatabaseName)
+        val repository = repositoryForDatabaseNames(logicalDatabaseName, physicalDatabaseName)
+        if (session is AccountSession.Local) {
+            // Force Room to create/open the exact journal-bound file before clearing the
+            // durable one-shot creation marker. A process death before this point resumes
+            // only through the matching auth + saved-profile identity on the next launch.
+            repository.openDatabaseForAccountActivation()
+            check(localDatabaseBindingStore.finalizeMaterializedSession(session)) {
+                "The local database activation journal could not be finalized."
+            }
+        }
+        return repository
+    }
+
+    suspend fun deleteCurrentLocalProfile(expectedSession: AccountSession.Local): Boolean =
+        kotlinx.coroutines.withContext(Dispatchers.IO) {
+            val record = cloudAuthManager.prepareLocalProfileDeletion(expectedSession)
+            clearPendingLocalProfileDeletion(record)
+        }
+
+    private fun clearPendingLocalProfileDeletion(
+        record: PendingLocalProfileDeletion
+    ): Boolean = recoverPendingLocalProfileDeletion(
+        record = record,
+        // Sidecar cleanup is intentionally part of this durable retry pipeline.
+        // prepareLocalProfileDeletion never destroys it before auth is signed out.
+        clearLiveSidecar = {
+            cloudAuthManager.clearPendingLocalProfileDeletionSidecar(record)
+        },
+        clearDatabase = { captured ->
+            repositories.remove(captured.logicalDatabaseName)
+            GymDatabase.closeInstance(captured.physicalDatabaseName)
+            deleteDatabase(captured.physicalDatabaseName) ||
+                !getDatabasePath(captured.physicalDatabaseName).exists()
+        },
+        clearTrainingProfile = trainingProfileManager::clearAccountByDatabaseName,
+        clearTrainingGuidance = trainingGuidanceManager::clearAccountByDatabaseName,
+        clearCustomMedia = { owner -> ExerciseMediaStore.clearOwner(this, owner) },
+        clearBackupShares = { owner ->
+            clearPrivateBackupShareArtifacts(File(cacheDir, "backup-share"), owner)
+        },
+        clearRestTimers = restTimerController::clearLocalAccount,
+        finalizeIdentity = cloudAuthManager::finalizeLocalProfileDeletion
+    )
+
+    private fun materializeLocalDatabaseForAuthentication(databaseName: String): Boolean =
+        runCatching {
+            repositoryForDatabaseNames(databaseName, databaseName).openDatabaseForAccountActivation()
+            getDatabasePath(databaseName).isFile
+        }.getOrDefault(false)
+
+    private fun rollbackNewLocalDatabaseForAuthentication(databaseName: String): Boolean {
+        repositories.remove(databaseName)
+        GymDatabase.closeInstance(databaseName)
+        return deleteDatabase(databaseName) || !getDatabasePath(databaseName).exists()
     }
 
     private fun repositoryForDatabaseNames(

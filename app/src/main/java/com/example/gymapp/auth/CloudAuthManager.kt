@@ -2,11 +2,13 @@ package com.example.gymapp.auth
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.database.sqlite.SQLiteDatabase
 import android.net.Uri
 import com.example.gymapp.BuildConfig
 import com.example.gymapp.R
 import com.example.gymapp.data.repository.SharedWorkoutLink
 import com.example.gymapp.data.repository.SharedWorkoutPlan
+import com.example.gymapp.data.repository.LiveWorkoutBinding
 import com.example.gymapp.data.repository.LiveWorkoutSidecarStore
 import com.example.gymapp.data.repository.WorkoutDataLimits
 import com.example.gymapp.push.PushRegistration
@@ -412,6 +414,34 @@ private fun isStructurallyValidSupabaseAccessToken(value: String, expectedUserId
 internal fun clearAuthPreferencesSynchronously(preferences: SharedPreferences): Boolean =
     preferences.edit().clear().commit()
 
+private fun sharedPreferencesSnapshot(preferences: SharedPreferences): Map<String, Any?> =
+    preferences.all.mapValues { (_, value) ->
+        @Suppress("UNCHECKED_CAST")
+        if (value is Set<*>) (value as Set<String>).toSet() else value
+    }
+
+private fun restoreSharedPreferencesSnapshot(
+    preferences: SharedPreferences,
+    snapshot: Map<String, Any?>
+): Boolean = runCatching {
+    val editor = preferences.edit().clear()
+    snapshot.forEach { (key, value) ->
+        when (value) {
+            is String -> editor.putString(key, value)
+            is Boolean -> editor.putBoolean(key, value)
+            is Int -> editor.putInt(key, value)
+            is Long -> editor.putLong(key, value)
+            is Float -> editor.putFloat(key, value)
+            is Set<*> -> {
+                @Suppress("UNCHECKED_CAST")
+                editor.putStringSet(key, (value as Set<String>).toSet())
+            }
+            else -> error("Unsupported authentication preference type.")
+        }
+    }
+    editor.commit()
+}.getOrDefault(false)
+
 internal fun signedOutAuthStateAfterLocalLogout(preferencesCleared: Boolean): AuthUiState =
     AuthUiState(
         message = if (preferencesCleared) {
@@ -492,7 +522,37 @@ private fun encodePostgrestQueryValue(value: String): String {
 
 private fun newCloudSessionGeneration(): String = UUID.randomUUID().toString()
 
-class CloudAuthManager(context: Context) {
+private fun materializeLocalDatabase(context: Context, databaseName: String): Boolean =
+    runCatching {
+        SQLiteDatabase.openOrCreateDatabase(context.getDatabasePath(databaseName), null).use { database ->
+            database.rawQuery("PRAGMA quick_check(1)", null).use { cursor ->
+                check(cursor.moveToFirst() && cursor.getString(0) == "ok")
+            }
+        }
+        context.getDatabasePath(databaseName).isFile
+    }.getOrDefault(false)
+
+private fun deleteOnlyNewEmptyLocalDatabaseFiles(context: Context, databaseName: String): Boolean {
+    val database = context.getDatabasePath(databaseName)
+    // A rejected first-open transaction must never delete a file with user rows. SQLite creates
+    // a small schema-only DB here; anything larger is retained for recovery and the auth/index
+    // rollback still prevents it from being accepted as another identity.
+    if (database.isFile && database.length() > MAX_EMPTY_LOCAL_DATABASE_BYTES) return false
+    return context.deleteDatabase(databaseName) || !database.exists()
+}
+
+private const val MAX_EMPTY_LOCAL_DATABASE_BYTES = 4L * 1_024L * 1_024L
+
+class CloudAuthManager internal constructor(
+    context: Context,
+    localProfileRegistryOverride: LocalProfileRegistry? = null,
+    localAuthCommitterOverride: ((SharedPreferences.Editor) -> Boolean)? = null,
+    localAuthClearerOverride: (() -> Boolean)? = null,
+    localSidecarClearerOverride: (() -> Boolean)? = null,
+    localDatabaseMaterializerOverride: ((String) -> Boolean)? = null,
+    localDatabaseRollbackOverride: ((String) -> Boolean)? = null,
+    localProfileDeletionJournalOverride: LocalProfileDeletionJournal? = null
+) {
     private class SupabaseHttpException(
         val responseCode: Int,
         val errorCode: String?,
@@ -527,8 +587,26 @@ class CloudAuthManager(context: Context) {
 
     private val prefs = context.applicationContext.getSharedPreferences("gym_cloud_auth", Context.MODE_PRIVATE)
     private val localDatabaseBindingStore = LocalDatabaseBindingStore(context.applicationContext)
+    private val localProfileRegistry = localProfileRegistryOverride
+        ?: LocalProfileRegistry(context.applicationContext)
+    private val localAuthCommitter = localAuthCommitterOverride ?: { editor: SharedPreferences.Editor ->
+        editor.commit()
+    }
+    private val localAuthClearer = localAuthClearerOverride ?: {
+        clearAuthPreferencesSynchronously(prefs)
+    }
     private val liveWorkoutSidecarStore = LiveWorkoutSidecarStore(context.applicationContext)
+    private val localSidecarClearer = localSidecarClearerOverride
+        ?: liveWorkoutSidecarStore::clearAll
+    private val localDatabaseMaterializer = localDatabaseMaterializerOverride ?: { databaseName ->
+        materializeLocalDatabase(context.applicationContext, databaseName)
+    }
+    private val localDatabaseRollback = localDatabaseRollbackOverride ?: { databaseName ->
+        deleteOnlyNewEmptyLocalDatabaseFiles(context.applicationContext, databaseName)
+    }
     private val accountDeletionJournal = CloudAccountDeletionJournal(context.applicationContext)
+    private val localProfileDeletionJournal = localProfileDeletionJournalOverride
+        ?: LocalProfileDeletionJournal(context.applicationContext)
     private val authStateLock = Any()
     private val refreshMutex = Mutex()
     private val remoteStateMutex = Mutex()
@@ -662,31 +740,230 @@ class CloudAuthManager(context: Context) {
         }
     }
 
-    fun setLocal(displayName: String) {
-        val candidate = displayName.trim().ifBlank { "Local" }
-        val validatedName = normalizedLocalDisplayNameOrNull(candidate)
-            ?: throw IllegalArgumentException("Local account name is invalid or too long.")
-        val session = AccountSession.Local(validatedName)
+    fun savedLocalProfiles(): List<SavedLocalProfile> {
+        val deletion = localProfileDeletionJournal.snapshot()
+        if (deletion.unreadable || deletion.record != null) return emptyList()
+        return localProfileRegistry.list()
+    }
+
+    internal fun pendingLocalProfileDeletion(): PendingLocalProfileDeletion? =
+        localProfileDeletionJournal.pending()
+
+    private fun requireNoPendingLocalProfileDeletion() {
+        val deletion = localProfileDeletionJournal.snapshot()
+        check(!deletion.unreadable && deletion.record == null) {
+            "Local profile cleanup is pending. Restart GymApp and try again."
+        }
+    }
+
+    internal fun prepareLocalProfileDeletion(
+        expectedSession: AccountSession.Local
+    ): PendingLocalProfileDeletion = synchronized(authStateLock) {
+        val active = _authState.value.session as? AccountSession.Local
+            ?: error("The local profile is no longer active.")
+        check(active.displayName == expectedSession.displayName) {
+            "The local profile changed before deletion."
+        }
+        val storedProfileId = prefs.all["local_profile_id"] as? String
+            ?: error("The local profile identity is unavailable.")
+        val storedProfile = localProfileRegistry.findById(storedProfileId)
+            ?: error("The saved local profile is unavailable.")
+        check(storedProfile.displayName == active.displayName) {
+            "The saved local profile owner does not match the active session."
+        }
+        val physicalDatabaseName = localDatabaseBindingStore.physicalDatabaseName(active)
+        val record = PendingLocalProfileDeletion.create(storedProfile, physicalDatabaseName)
+            ?: error("The local profile deletion target is invalid.")
+        check(localProfileDeletionJournal.mark(record)) {
+            "The local profile deletion could not be prepared safely."
+        }
+        if (!localAuthClearer()) {
+            // The durable journal remains authoritative if auth cleanup had an unknown
+            // result. Never clear an account sidecar before this point: a rejected or
+            // interrupted prepare must not destroy still-active workout state.
+            authMutationVersion += 1
+            _authState.value = AuthUiState(
+                message = LocalizedText(R.string.local_profile_delete_cleanup_pending)
+            )
+            error("The local profile deletion will continue after restart.")
+        }
+        authMutationVersion += 1
+        remoteStateRevisions.clear()
+        _authState.value = AuthUiState()
+        record
+    }
+
+    internal fun clearPendingLocalProfileDeletionSidecar(
+        record: PendingLocalProfileDeletion
+    ): Boolean = synchronized(authStateLock) {
+        val pending = localProfileDeletionJournal.snapshot()
+        pending.record == record && !pending.unreadable &&
+            _authState.value.session == null && localSidecarClearer()
+    }
+
+    internal fun finalizeLocalProfileDeletion(record: PendingLocalProfileDeletion): Boolean {
+        val pending = localProfileDeletionJournal.snapshot()
+        if (pending.unreadable || pending.record != record) return false
+        val session = AccountSession.Local(record.displayName)
+        if (!localDatabaseBindingStore.removeDeletedSession(
+                session,
+                record.physicalDatabaseName
+            )
+        ) {
+            return false
+        }
+        if (!localProfileRegistry.remove(record.profileId)) return false
+        return localProfileDeletionJournal.clear(record)
+    }
+
+    fun setLocal(displayNameOrProfileId: String, resumeExisting: Boolean = false) {
         synchronized(authStateLock) {
-            liveWorkoutSidecarStore.clearAll()
-            check(localDatabaseBindingStore.registerNewSession(session)) {
+            check(_authState.value.session == null) { "The account changed before the local profile opened." }
+            requireNoPendingLocalProfileDeletion()
+            val existingProfile = if (resumeExisting) {
+                localProfileRegistry.findById(displayNameOrProfileId)
+                    ?: error("This saved profile is no longer available.")
+            } else {
+                null
+            }
+            val candidate = existingProfile?.displayName
+                ?: displayNameOrProfileId.trim().ifBlank { "Local" }
+            val validatedName = if (resumeExisting) {
+                normalizedLocalDisplayNameOrNull(candidate)
+            } else {
+                validatedNewLocalDisplayNameOrNull(candidate)
+            } ?: throw IllegalArgumentException(
+                "Display name must be 2–32 characters and use letters, numbers, spaces, dot, dash or underscore."
+            )
+            val session = AccountSession.Local(validatedName)
+            val bindingBefore = localDatabaseBindingStore.snapshot(session)
+                ?: error("The local workout database binding is corrupt.")
+            val alreadySaved = localProfileRegistry.contains(validatedName)
+            check(resumeExisting || !alreadySaved) {
+                if (alreadySaved) {
+                    "A saved local profile already uses this name. Select it from Saved profiles."
+                } else {
+                    "The selected local profile is no longer available."
+                }
+            }
+            if (!alreadySaved) {
+                check(localProfileRegistry.canAdd(validatedName)) {
+                    "The saved local profile limit was reached."
+                }
+            }
+            val registered = if (resumeExisting) {
+                localDatabaseBindingStore.restoreStoredSession(
+                    session,
+                    allowPendingLogicalCreation = existingProfile != null
+                )
+            } else {
+                localDatabaseBindingStore.registerNewSession(session)
+            }
+            check(registered) {
                 "The local workout database could not be safely registered."
             }
-            check(
-                prefs.edit()
+            val registryBefore = localProfileRegistry.snapshot()
+            val profileId = existingProfile?.id ?: UUID.randomUUID().toString()
+            if (!alreadySaved) {
+                if (!localProfileRegistry.ensurePresent(validatedName, profileId)) {
+                    val registryRestored = localProfileRegistry.restore(registryBefore)
+                    val bindingRolledBack = localDatabaseBindingStore.restore(bindingBefore)
+                    check(registryRestored && bindingRolledBack) {
+                        "The rejected local profile could not be rolled back safely."
+                    }
+                    error("The local profile could not be added safely.")
+                }
+            }
+            val authPreferencesBefore = sharedPreferencesSnapshot(prefs)
+            val persisted = runCatching {
+                localAuthCommitter(
+                    prefs.edit()
                     .putString("mode", "local")
                     .putString("local_name", session.displayName)
+                    .putString("local_profile_id", profileId)
                     .remove("cloud")
                     .remove(NEEDS_PASSWORD_UPDATE_KEY)
                     .remove(PENDING_SIGNUP_KEY)
                     .remove(PENDING_RECOVERY_KEY)
-                    .commit()
-            ) { "The local account could not be persisted." }
+                )
+            }.getOrDefault(false)
+            if (!persisted) {
+                val authRestored = restoreSharedPreferencesSnapshot(prefs, authPreferencesBefore)
+                val registryRestored = localProfileRegistry.restore(registryBefore)
+                val bindingRolledBack = localDatabaseBindingStore.restore(bindingBefore)
+                check(authRestored && registryRestored && bindingRolledBack) {
+                    "The rejected local profile could not be rolled back safely."
+                }
+                error("The local account could not be persisted.")
+            }
+            val physicalDatabaseName = runCatching {
+                localDatabaseBindingStore.physicalDatabaseName(session)
+            }.getOrElse { error ->
+                rollbackRejectedLocalProfile(
+                    session = session,
+                    authPreferencesBefore = authPreferencesBefore,
+                    registryBefore = registryBefore,
+                    bindingBefore = bindingBefore,
+                    cause = error
+                )
+            }
+            val materialized = runCatching {
+                localDatabaseMaterializer(physicalDatabaseName)
+            }.getOrDefault(false)
+            if (!materialized || !localDatabaseBindingStore.finalizeMaterializedSession(session)) {
+                val databaseRolledBack = resumeExisting || localDatabaseRollback(physicalDatabaseName)
+                rollbackRejectedLocalProfile(
+                    session = session,
+                    authPreferencesBefore = authPreferencesBefore,
+                    registryBefore = registryBefore,
+                    bindingBefore = bindingBefore,
+                    additionalRollbackSucceeded = databaseRolledBack
+                )
+            }
+            if (!localSidecarClearer()) {
+                val databaseRolledBack = resumeExisting || localDatabaseRollback(physicalDatabaseName)
+                rollbackRejectedLocalProfile(
+                    session = session,
+                    authPreferencesBefore = authPreferencesBefore,
+                    registryBefore = registryBefore,
+                    bindingBefore = bindingBefore,
+                    additionalRollbackSucceeded = databaseRolledBack
+                )
+            }
             authMutationVersion += 1
             remoteStateRevisions.clear()
             _authState.value = AuthUiState(session = session)
         }
     }
+
+    private fun rollbackRejectedLocalProfile(
+        session: AccountSession.Local,
+        authPreferencesBefore: Map<String, *>,
+        registryBefore: LocalProfileRegistrySnapshot,
+        bindingBefore: LocalDatabaseBindingSnapshot,
+        additionalRollbackSucceeded: Boolean = true,
+        cause: Throwable? = null
+    ): Nothing {
+        val authRestored = restoreSharedPreferencesSnapshot(prefs, authPreferencesBefore)
+        val registryRestored = localProfileRegistry.restore(registryBefore)
+        val bindingRolledBack = localDatabaseBindingStore.restore(bindingBefore)
+        check(
+            authRestored && registryRestored && bindingRolledBack &&
+                additionalRollbackSucceeded
+        ) {
+            "The rejected local profile could not be rolled back safely."
+        }
+        throw IllegalStateException("The local workout database could not be activated.", cause)
+    }
+
+    internal fun testSeedLiveWorkoutSidecar(
+        session: AccountSession.Cloud,
+        binding: LiveWorkoutBinding
+    ): Boolean = liveWorkoutSidecarStore.save(session, binding)
+
+    internal fun testLoadLiveWorkoutSidecar(
+        session: AccountSession.Cloud
+    ): LiveWorkoutBinding? = liveWorkoutSidecarStore.load(session)
 
     fun setLoading(isLoading: Boolean) {
         synchronized(authStateLock) {
@@ -863,6 +1140,7 @@ class CloudAuthManager(context: Context) {
             check(authMutationVersion == expectedAuthMutationVersion) {
                 INACTIVE_CLOUD_SESSION_MESSAGE
             }
+            requireNoPendingLocalProfileDeletion()
             authMutationVersion += 1
             remoteStateRevisions.clear()
             persist(session)
@@ -1775,6 +2053,7 @@ class CloudAuthManager(context: Context) {
     }
 
     private fun beginAuthAttempt(): Long = synchronized(authStateLock) {
+        requireNoPendingLocalProfileDeletion()
         authMutationVersion += 1
         authMutationVersion
     }
@@ -1784,6 +2063,7 @@ class CloudAuthManager(context: Context) {
             check(authMutationVersion == expectedAuthMutationVersion) {
                 INACTIVE_CLOUD_SESSION_MESSAGE
             }
+            requireNoPendingLocalProfileDeletion()
             authMutationVersion += 1
             authMutationVersion
         }
@@ -1947,6 +2227,7 @@ class CloudAuthManager(context: Context) {
             check(authMutationVersion == expectedAuthMutationVersion) {
                 INACTIVE_CLOUD_SESSION_MESSAGE
             }
+            requireNoPendingLocalProfileDeletion()
             authMutationVersion += 1
             remoteStateRevisions.clear()
             persist(session)
@@ -2104,6 +2385,13 @@ class CloudAuthManager(context: Context) {
     }
 
     private fun readSession(): StoredSessionRead {
+        val pendingDeletion = localProfileDeletionJournal.snapshot()
+        if (pendingDeletion.unreadable || pendingDeletion.record != null) {
+            clearAuthPreferencesSynchronously(prefs)
+            return StoredSessionRead(
+                recoveryMessage = LocalizedText(R.string.local_profile_delete_cleanup_pending)
+            )
+        }
         return when (prefs.all["mode"] as? String) {
             "local" -> {
                 val storedName = prefs.all["local_name"] as? String
@@ -2114,9 +2402,64 @@ class CloudAuthManager(context: Context) {
                     )
                 } else {
                     val session = AccountSession.Local(validatedName)
-                    if (localDatabaseBindingStore.restoreStoredSession(session)) {
+                    val storedProfileId = prefs.all["local_profile_id"] as? String
+                    val storedProfile = storedProfileId?.let(localProfileRegistry::findById)
+                    val profileBindingIsValid = storedProfileId == null ||
+                        storedProfile?.displayName?.let(::normalizedLocalDisplayNameOrNull) ==
+                        normalizedLocalDisplayNameOrNull(validatedName)
+                    val mayResumePendingCreation = storedProfileId != null && storedProfile != null
+                    val bindingRestored =
+                        profileBindingIsValid && localDatabaseBindingStore.restoreStoredSession(
+                            session,
+                            allowPendingLogicalCreation = mayResumePendingCreation
+                        )
+                    val pendingCreation = bindingRestored &&
+                        localDatabaseBindingStore.requiresActivationFinalization(session)
+                    val pendingPhysicalDatabaseName = if (pendingCreation) {
+                        runCatching {
+                            localDatabaseBindingStore.physicalDatabaseName(session)
+                        }.getOrNull()
+                    } else {
+                        null
+                    }
+                    val pendingActivated = !pendingCreation ||
+                        pendingPhysicalDatabaseName != null && runCatching {
+                            localDatabaseMaterializer(pendingPhysicalDatabaseName)
+                        }.getOrDefault(false) &&
+                        localDatabaseBindingStore.finalizeMaterializedSession(session)
+                    if (bindingRestored && pendingActivated) {
+                        if (storedProfileId == null) {
+                            localProfileRegistry.ensurePresent(validatedName)
+                        }
                         StoredSessionRead(session = session)
                     } else {
+                        if (pendingCreation && storedProfileId != null) {
+                            val databaseRolledBack = pendingPhysicalDatabaseName != null &&
+                                localDatabaseRollback(pendingPhysicalDatabaseName)
+                            if (databaseRolledBack && clearAuthPreferencesSynchronously(prefs)) {
+                                // Only remove the durable identity after its auth pointer and
+                                // any partially created DB files are gone. A failed cleanup is
+                                // left journaled for a future retry, but never published.
+                                val registryRolledBack = localProfileRegistry.remove(storedProfileId)
+                                val bindingRolledBack = registryRolledBack &&
+                                    localDatabaseBindingStore.rollbackPendingNewSession(session)
+                                if (!bindingRolledBack) {
+                                    if (registryRolledBack) {
+                                        localProfileRegistry.ensurePresent(
+                                            validatedName,
+                                            storedProfileId
+                                        )
+                                    }
+                                    // Fail closed without crashing the launch loop. The remaining
+                                    // durable marker prevents reassignment or silent overwrite.
+                                    return StoredSessionRead(
+                                        recoveryMessage = LocalizedText(
+                                            R.string.auth_error_local_database_unavailable
+                                        )
+                                    )
+                                }
+                            }
+                        }
                         StoredSessionRead(
                             recoveryMessage = LocalizedText(
                                 R.string.auth_error_local_database_unavailable

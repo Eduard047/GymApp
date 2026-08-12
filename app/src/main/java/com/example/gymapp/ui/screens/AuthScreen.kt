@@ -3,6 +3,7 @@ package com.example.gymapp.ui.screens
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -25,17 +26,28 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.outlined.BackHand
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -50,6 +62,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -67,43 +80,79 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.gymapp.R
 import com.example.gymapp.auth.AuthUiState
+import com.example.gymapp.auth.SavedLocalProfile
+import com.example.gymapp.auth.boundedNewLocalDisplayNameDraft
 import com.example.gymapp.auth.newPasswordCharacterGroupsAreValid
 import com.example.gymapp.auth.newPasswordLengthIsValid
-import com.example.gymapp.auth.validatedLocalDisplayNameOrNull
+import com.example.gymapp.auth.validatedNewLocalDisplayNameOrNull
 import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.AppBrandMark
 import com.example.gymapp.ui.components.HeroPanel
 import com.example.gymapp.ui.components.SectionTitle
+import com.example.gymapp.util.AppLanguage
 import com.example.gymapp.util.asString
 
+class AuthDraftViewModel : ViewModel() {
+    val email = mutableStateOf("")
+    val password = mutableStateOf("")
+    val signUpEmail = mutableStateOf("")
+    val signUpEmailConfirm = mutableStateOf("")
+    val signUpPassword = mutableStateOf("")
+    val signUpPasswordConfirm = mutableStateOf("")
+    val displayName = mutableStateOf("")
+    val localDisplayName = mutableStateOf("")
+    val isSignUp = mutableStateOf(false)
+    val showOfflineSheet = mutableStateOf(false)
+
+    fun clearSensitiveFields() {
+        password.value = ""
+        signUpPassword.value = ""
+        signUpPasswordConfirm.value = ""
+    }
+
+    override fun onCleared() {
+        clearSensitiveFields()
+        super.onCleared()
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AuthScreen(
     uiState: AuthUiState,
+    selectedLanguage: AppLanguage,
+    onLanguageSelected: (AppLanguage) -> Unit,
     onLogin: (email: String, password: String) -> Unit,
     onSignUp: (email: String, password: String, displayName: String) -> Unit,
     onResendConfirmation: (email: String) -> Unit,
     onDismissEmailConfirmation: (clearPendingRequest: Boolean) -> Unit,
     onPasswordReset: (email: String) -> Unit,
-    onContinueLocal: (displayName: String) -> Unit,
+    savedLocalProfiles: List<SavedLocalProfile>,
+    onContinueLocal: (displayName: String, resumeExisting: Boolean) -> Unit,
+    draft: AuthDraftViewModel = viewModel(),
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    var email by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
-    var signUpEmail by remember { mutableStateOf("") }
-    var signUpEmailConfirm by remember { mutableStateOf("") }
-    var signUpPassword by remember { mutableStateOf("") }
-    var signUpPasswordConfirm by remember { mutableStateOf("") }
-    var displayName by remember { mutableStateOf("") }
-    var localDisplayName by remember { mutableStateOf("") }
-    var isSignUp by remember { mutableStateOf(false) }
+    var email by draft.email
+    var password by draft.password
+    var signUpEmail by draft.signUpEmail
+    var signUpEmailConfirm by draft.signUpEmailConfirm
+    var signUpPassword by draft.signUpPassword
+    var signUpPasswordConfirm by draft.signUpPasswordConfirm
+    var displayName by draft.displayName
+    var localDisplayName by draft.localDisplayName
+    var isSignUp by draft.isSignUp
+    var showOfflineSheet by draft.showOfflineSheet
     var loginPasswordVisible by remember { mutableStateOf(false) }
     var signUpPasswordVisible by remember { mutableStateOf(false) }
     var signUpPasswordConfirmVisible by remember { mutableStateOf(false) }
+    var signUpPasswordFocused by remember { mutableStateOf(false) }
     var localMessage by remember { mutableStateOf<String?>(null) }
-    var localProfileMessage by remember { mutableStateOf<String?>(null) }
+    var localProfileMessage by remember(selectedLanguage) { mutableStateOf<String?>(null) }
     val pendingConfirmationEmail = uiState.pendingConfirmationEmail
 
     BoxWithConstraints(
@@ -121,26 +170,48 @@ fun AuthScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             HeroPanel(modifier = Modifier.fillMaxWidth()) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    AppBrandMark(modifier = Modifier.size(72.dp))
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(5.dp)
-                    ) {
-                        Text(
-                            text = "GymApp",
-                            modifier = Modifier.semantics { heading() },
-                            style = MaterialTheme.typography.headlineLarge
-                        )
-                        Text(
-                            text = stringResource(R.string.splash_tagline),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = Color.White.copy(alpha = 0.84f)
-                        )
+                BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                    val onSelectLanguage: (AppLanguage) -> Unit = { language ->
+                        localMessage = null
+                        localProfileMessage = null
+                        onLanguageSelected(language)
+                    }
+                    if (maxWidth >= 320.dp) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            AppBrandMark(modifier = Modifier.size(72.dp))
+                            Text(
+                                text = "GymApp",
+                                modifier = Modifier.weight(1f).semantics { heading() },
+                                style = MaterialTheme.typography.headlineLarge
+                            )
+                            AuthLanguageSelector(
+                                selectedLanguage = selectedLanguage,
+                                onLanguageSelected = onSelectLanguage
+                            )
+                        }
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                AppBrandMark(modifier = Modifier.size(56.dp))
+                                androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
+                                AuthLanguageSelector(
+                                    selectedLanguage = selectedLanguage,
+                                    onLanguageSelected = onSelectLanguage
+                                )
+                            }
+                            Text(
+                                text = "GymApp",
+                                modifier = Modifier.semantics { heading() },
+                                style = MaterialTheme.typography.headlineLarge
+                            )
+                        }
                     }
                 }
             }
@@ -153,23 +224,25 @@ fun AuthScreen(
                     modifier = Modifier.padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    SectionTitle(
-                        eyebrow = stringResource(R.string.auth_secure_account),
-                        title = stringResource(
+                    Text(
+                        text = stringResource(
                             when {
                                 pendingConfirmationEmail != null -> R.string.auth_confirmation_title
                                 isSignUp -> R.string.auth_create_account
                                 else -> R.string.auth_welcome_back
                             }
                         ),
-                        supporting = stringResource(
-                            when {
-                                pendingConfirmationEmail != null -> R.string.auth_confirmation_body
-                                isSignUp -> R.string.auth_create_account_supporting
-                                else -> R.string.auth_sign_in_supporting
-                            }
-                        )
+                        modifier = Modifier.semantics { heading() },
+                        style = MaterialTheme.typography.headlineMedium
                     )
+
+                    pendingConfirmationEmail?.let {
+                        Text(
+                            text = stringResource(R.string.auth_confirmation_body),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
 
                     if (pendingConfirmationEmail != null) {
                         EmailConfirmationCard(
@@ -287,7 +360,10 @@ fun AuthScreen(
                                 }
                             },
                             modifier = Modifier.fillMaxWidth(),
-                            label = stringResource(R.string.auth_password)
+                            label = stringResource(R.string.auth_password),
+                            onFocusChanged = { focused ->
+                                if (isSignUp) signUpPasswordFocused = focused
+                            }
                         )
 
                         if (isSignUp) {
@@ -305,7 +381,7 @@ fun AuthScreen(
                         }
                     }
 
-                    if (isSignUp) {
+                    if (isSignUp && signUpPasswordFocused) {
                         Text(
                             text = stringResource(R.string.auth_signup_requirements),
                             style = MaterialTheme.typography.bodySmall,
@@ -379,15 +455,7 @@ fun AuthScreen(
                         }
                     }
 
-                    if (isSignUp) {
-                        Text(
-                            text = stringResource(R.string.auth_confirmation_after_signup_hint),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    } else {
+                    if (!isSignUp) {
                         TextButton(
                             onClick = {
                                 val validation = validateRecoveryEmailInput(email)
@@ -407,58 +475,140 @@ fun AuthScreen(
                             Text(stringResource(R.string.auth_forgot_password))
                         }
                     }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    OutlinedButton(
+                        onClick = {
+                            localProfileMessage = null
+                            showOfflineSheet = true
+                        },
+                        enabled = !uiState.isLoading,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Icon(Icons.Default.PhoneAndroid, contentDescription = null)
+                        Text(
+                            text = stringResource(R.string.auth_continue_offline),
+                            modifier = Modifier.padding(start = 8.dp)
+                        )
+                    }
                     }
                 }
             }
 
-            if (pendingConfirmationEmail == null) {
-                AppPanel(modifier = Modifier.fillMaxWidth()) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(13.dp)
+            AppPanel(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = stringResource(R.string.auth_legal_consequence),
+                        modifier = Modifier.fillMaxWidth(),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        SectionTitle(
-                            eyebrow = stringResource(R.string.auth_offline_profile),
-                            title = stringResource(R.string.auth_continue_offline),
-                            supporting = stringResource(R.string.auth_continue_offline_supporting)
+                        AuthExternalLink(
+                            label = stringResource(R.string.auth_privacy_policy),
+                            url = AUTH_PRIVACY_URL,
+                            icon = Icons.Outlined.BackHand,
+                            modifier = Modifier.weight(1f)
                         )
-                        OutlinedTextField(
-                            value = localDisplayName,
-                            onValueChange = {
-                                localProfileMessage = null
-                                localDisplayName = it.take(256)
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            label = { Text(stringResource(R.string.auth_local_profile_name)) },
-                            supportingText = {
-                                Text(stringResource(R.string.auth_local_profile_name_hint))
-                            },
-                            singleLine = true,
-                            shape = RoundedCornerShape(16.dp)
+                        AuthExternalLink(
+                            label = stringResource(R.string.auth_support),
+                            url = AUTH_SUPPORT_URL,
+                            icon = Icons.AutoMirrored.Outlined.HelpOutline,
+                            modifier = Modifier.weight(1f)
                         )
-                        localProfileMessage?.let { message ->
-                            AuthStatusBanner(message = message, isError = true)
+                    }
+                }
+            }
+        }
+
+    }
+
+    if (showOfflineSheet) {
+        ModalBottomSheet(onDismissRequest = { showOfflineSheet = false }) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 18.dp, end = 18.dp, bottom = 28.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.auth_offline_profile),
+                    modifier = Modifier.semantics { heading() },
+                    style = MaterialTheme.typography.headlineSmall
+                )
+                Text(
+                    text = stringResource(R.string.auth_offline_consequence),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                uiState.message?.takeIf { uiState.messageIsError }?.let { message ->
+                    AuthStatusBanner(message = message.asString(), isError = true)
+                }
+                OutlinedTextField(
+                    value = localDisplayName,
+                    onValueChange = {
+                        localProfileMessage = null
+                        localDisplayName = boundedNewLocalDisplayNameDraft(it)
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text(stringResource(R.string.auth_local_profile_name)) },
+                    placeholder = { Text("Local") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(16.dp)
+                )
+                localProfileMessage?.let { message ->
+                    AuthStatusBanner(message = message, isError = true)
+                }
+                Button(
+                    onClick = {
+                        val validation = validateLocalAccountInput(localDisplayName)
+                        if (validation == null) {
+                            localProfileMessage = null
+                            onContinueLocal(localDisplayName.trim().ifBlank { "Local" }, false)
+                        } else {
+                            localProfileMessage = localizedAuthValidationMessage(context, validation)
                         }
+                    },
+                    enabled = !uiState.isLoading,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Text(stringResource(R.string.auth_continue_offline))
+                }
+                OutlinedButton(
+                    onClick = { showOfflineSheet = false },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+                if (savedLocalProfiles.isNotEmpty()) {
+                    Text(
+                        text = stringResource(R.string.auth_saved_profiles),
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    savedLocalProfiles.forEach { savedProfile ->
                         OutlinedButton(
-                            onClick = {
-                                val validation = validateLocalAccountInput(localDisplayName)
-                                if (validation == null) {
-                                    localProfileMessage = null
-                                    onContinueLocal(localDisplayName)
-                                } else {
-                                    localProfileMessage = localizedAuthValidationMessage(
-                                        context,
-                                        validation
-                                    )
-                                }
-                            },
+                            onClick = { onContinueLocal(savedProfile.id, true) },
                             enabled = !uiState.isLoading,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(min = 50.dp),
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                             shape = RoundedCornerShape(16.dp)
                         ) {
-                            Text(stringResource(R.string.auth_continue_offline))
+                            Text(
+                                savedProfile.displayName,
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                            )
                         }
                     }
                 }
@@ -466,6 +616,104 @@ fun AuthScreen(
         }
     }
 }
+
+@Composable
+private fun AuthLanguageSelector(
+    selectedLanguage: AppLanguage,
+    onLanguageSelected: (AppLanguage) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val languageContentColor = LocalContentColor.current
+    Box(modifier = modifier) {
+        OutlinedButton(
+            onClick = { expanded = true },
+            shape = RoundedCornerShape(14.dp),
+            border = BorderStroke(1.dp, languageContentColor.copy(alpha = 0.28f)),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = languageContentColor),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp)
+        ) {
+            Icon(
+                Icons.Default.Language,
+                contentDescription = stringResource(R.string.cd_language),
+                modifier = Modifier.size(18.dp)
+            )
+            Text(
+                text = selectedLanguage.visibleCode(),
+                modifier = Modifier.padding(start = 6.dp),
+                style = MaterialTheme.typography.labelLarge
+            )
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            listOf(
+                AppLanguage.EN to stringResource(R.string.language_name_english),
+                AppLanguage.UK to stringResource(R.string.language_name_ukrainian),
+                AppLanguage.RU to stringResource(R.string.language_name_russian)
+            ).forEach { (language, label) ->
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            text = label,
+                            color = if (language == selectedLanguage) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurface
+                            }
+                        )
+                    },
+                    onClick = {
+                        expanded = false
+                        onLanguageSelected(language)
+                    }
+                )
+            }
+        }
+    }
+}
+
+internal fun AppLanguage.visibleCode(): String = when (this) {
+    AppLanguage.EN -> "EN"
+    AppLanguage.UK -> "UK"
+    AppLanguage.RU -> "RU"
+}
+
+@Composable
+private fun AuthExternalLink(
+    label: String,
+    url: String,
+    icon: ImageVector,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    TextButton(
+        onClick = { openStaticWebPage(context, url) },
+        modifier = modifier.heightIn(min = 48.dp),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 2.dp)
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier.size(15.dp)
+        )
+        Text(
+            text = label,
+            modifier = Modifier.padding(start = 2.dp),
+            maxLines = 2,
+            softWrap = true,
+            textAlign = TextAlign.Center,
+            style = MaterialTheme.typography.labelMedium
+        )
+    }
+}
+
+private fun openStaticWebPage(context: Context, url: String) {
+    runCatching {
+        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+    }
+}
+
+private const val AUTH_PRIVACY_URL = "https://gymapptracker.com/privacy-policy.html"
+private const val AUTH_SUPPORT_URL = "https://gymapptracker.com/support.html"
 
 private fun openEmailInbox(context: Context): Boolean {
     return try {
@@ -592,6 +840,7 @@ fun PasswordUpdateScreen(
     var passwordConfirm by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
     var passwordConfirmVisible by remember { mutableStateOf(false) }
+    var passwordFocused by remember { mutableStateOf(false) }
     var localMessage by remember { mutableStateOf<String?>(null) }
 
     BoxWithConstraints(
@@ -651,7 +900,8 @@ fun PasswordUpdateScreen(
                             passwordVisible = passwordVisible,
                             onPasswordVisibilityChange = { passwordVisible = it },
                             modifier = Modifier.fillMaxWidth(),
-                            label = stringResource(R.string.auth_new_password)
+                            label = stringResource(R.string.auth_new_password),
+                            onFocusChanged = { passwordFocused = it }
                         )
                         PasswordTextField(
                             value = passwordConfirm,
@@ -665,11 +915,13 @@ fun PasswordUpdateScreen(
                             label = stringResource(R.string.auth_repeat_password)
                         )
                     }
-                    Text(
-                        text = stringResource(R.string.auth_new_password_requirements),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    if (passwordFocused) {
+                        Text(
+                            text = stringResource(R.string.auth_new_password_requirements),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                     localMessage?.let { message ->
                         AuthStatusBanner(message = message, isError = true)
                     }
@@ -914,12 +1166,13 @@ private fun PasswordTextField(
     passwordVisible: Boolean,
     onPasswordVisibilityChange: (Boolean) -> Unit,
     label: String,
+    onFocusChanged: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
-        modifier = modifier,
+        modifier = modifier.onFocusChanged { state -> onFocusChanged(state.isFocused) },
         label = { Text(label) },
         singleLine = true,
         shape = RoundedCornerShape(16.dp),
@@ -956,8 +1209,9 @@ private fun localizedAuthValidationMessage(context: Context, message: String): S
             R.string.auth_error_password_complexity
         "Passwords do not match." -> R.string.auth_error_password_mismatch
         "Enter a new password." -> R.string.auth_error_new_password_required
-        "Local profile name is invalid or too long." ->
-            R.string.auth_error_local_profile_name
+        "Local profile name is invalid or too long." -> R.string.auth_error_local_profile_name
+        "Display name must be 2–32 characters and use letters, numbers, spaces, dot, dash or underscore." ->
+            R.string.auth_error_local_profile_contract
         else -> return message
     }
     return context.getString(resource)
@@ -1015,8 +1269,8 @@ internal fun validateRecoveryEmailInput(email: String): String? {
 
 internal fun validateLocalAccountInput(displayName: String): String? {
     val candidate = displayName.trim().ifBlank { "Local" }
-    return if (validatedLocalDisplayNameOrNull(candidate) == null) {
-        "Local profile name is invalid or too long."
+    return if (validatedNewLocalDisplayNameOrNull(candidate) == null) {
+        "Display name must be 2–32 characters and use letters, numbers, spaces, dot, dash or underscore."
     } else {
         null
     }

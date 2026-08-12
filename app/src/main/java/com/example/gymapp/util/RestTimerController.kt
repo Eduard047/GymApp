@@ -133,6 +133,23 @@ class RestTimerController(
     internal fun clearAccount(session: com.example.gymapp.auth.AccountSession.Cloud): Boolean =
         clearAccount(session.databaseName(), session.sessionGeneration)
 
+    internal fun clearLocalAccount(databaseName: String): Boolean {
+        val expectedAccountKey = restTimerAccountKey(databaseName, null) ?: return false
+        val exerciseCleared = runCatching {
+            exerciseTimers.clearAccount(expectedAccountKey)
+        }.getOrDefault(false)
+        val activeWorkoutCleared = runCatching {
+            activeWorkoutTimer.clearAccount(expectedAccountKey)
+        }.getOrDefault(false)
+        val foregroundCleared = if (accountSwitchTracker.isBoundTo(expectedAccountKey)) {
+            RestTimerState.update(0)
+            runCatching { RestTimerService.stop(appContext) }.isSuccess
+        } else {
+            true
+        }
+        return exerciseCleared && activeWorkoutCleared && foregroundCleared
+    }
+
     internal fun startExercise(
         accountKey: String,
         sessionId: Long,

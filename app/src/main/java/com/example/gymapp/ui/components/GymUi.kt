@@ -130,14 +130,16 @@ fun SectionTitle(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        Text(
-            text = eyebrow.uppercase(),
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.secondary
-        )
+        if (sectionTitleShowsEyebrow(eyebrow)) {
+            Text(
+                text = eyebrow.uppercase(),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.secondary
+            )
+        }
         Text(
             text = title,
-            style = MaterialTheme.typography.headlineMedium,
+            style = MaterialTheme.typography.titleLarge,
             color = MaterialTheme.colorScheme.onSurface
         )
         if (!supporting.isNullOrBlank()) {
@@ -149,6 +151,8 @@ fun SectionTitle(
         }
     }
 }
+
+internal fun sectionTitleShowsEyebrow(eyebrow: String): Boolean = eyebrow.isNotBlank()
 
 @Composable
 fun MetricTile(
@@ -242,7 +246,7 @@ fun InfoPill(
 @Composable
 fun EmptyStatePanel(
     title: String,
-    supporting: String,
+    supporting: String? = null,
     modifier: Modifier = Modifier,
     actionLabel: String? = null,
     onAction: (() -> Unit)? = null
@@ -258,11 +262,13 @@ fun EmptyStatePanel(
                 text = title,
                 style = MaterialTheme.typography.titleMedium
             )
-            Text(
-                text = supporting,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            if (!supporting.isNullOrBlank()) {
+                Text(
+                    text = supporting,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             if (!actionLabel.isNullOrBlank() && onAction != null) {
                 Button(
                     onClick = onAction,

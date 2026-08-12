@@ -1,0 +1,116 @@
+{
+  "schemaVersion": 1,
+  "productVersion": "3.0.8",
+  "status": "browser-workout-retired",
+  "root": {
+    "purpose": [
+      "verified-native-downloads",
+      "privacy",
+      "support",
+      "account-and-data-deletion",
+      "conditional-legacy-export"
+    ],
+    "allowedScripts": [
+      "frame-guard.v56.js",
+      "retirement.v1.js"
+    ],
+    "allowedStyles": [
+      "retirement.v1.css"
+    ],
+    "forbiddenCapabilities": [
+      "workout-client",
+      "authentication-ui",
+      "cloud-sync",
+      "social",
+      "notifications",
+      "background-sync",
+      "pwa-install"
+    ],
+    "manifestLinked": false,
+    "appStoreLinkVisible": false
+  },
+  "readyApps": [
+    {
+      "id": "google-play",
+      "label": "Google Play",
+      "url": "https://play.google.com/store/apps/details?id=com.setforge.gymapp"
+    },
+    {
+      "id": "garmin-connect-iq",
+      "label": "Garmin Connect IQ",
+      "url": "https://apps.garmin.com/apps/fe82a300-4d9f-4588-8b10-365d75280b8f"
+    }
+  ],
+  "legal": {
+    "privacy": "https://gymapptracker.com/privacy-policy.html",
+    "support": "https://gymapptracker.com/support.html",
+    "accountAndDataDeletion": "https://gymapptracker.com/support.html"
+  },
+  "preservedRoutes": {
+    "/workout/": "validated-shared-plan-preview-and-native-handoff-only",
+    "/confirmed.html": "native-auth-email-callback-only"
+  },
+  "legacyExport": {
+    "gestureRequired": true,
+    "networkCalls": "none",
+    "clipboardWrites": "none",
+    "sourceStorageMutation": "none",
+    "maxStorageKeysInspected": 256,
+    "maxCandidateBytes": 33554432,
+    "maxRecordBytes": 8388608,
+    "maxProfiles": 24,
+    "maxExercisesPerProfile": 2000,
+    "maxSessionsPerProfile": 5000,
+    "maxActiveWorkouts": 24,
+    "maxJsonDepth": 8,
+    "maxJsonNodes": 250000,
+    "maxStringBytes": 65536,
+    "included": [
+      "language",
+      "catalogSeedVersion",
+      "exercises",
+      "sessions",
+      "mappings",
+      "profile",
+      "progressExerciseId",
+      "activeWorkout"
+    ],
+    "excluded": [
+      "credentials",
+      "access-or-refresh-tokens",
+      "auth-transactions",
+      "email-addresses",
+      "cloud-account-identifiers",
+      "push-endpoints-and-keys",
+      "device-bindings",
+      "sync-journals",
+      "diagnostics",
+      "custom-exercise-images"
+    ]
+  },
+  "retirementWorker": {
+    "skipWaiting": true,
+    "claimClients": true,
+    "deletedCachePrefix": "gym-pwa-",
+    "otherCachesPreserved": true,
+    "localStoragePreserved": true,
+    "workoutIndexedDbPreserved": true,
+    "rootClientsNavigated": true,
+    "workoutAndConfirmedClientsPreserved": true,
+    "registrationRemovedByLanding": true,
+    "exactScopePushSubscriptionRevocation": "bounded-best-effort-before-unregister",
+    "knownPushBindingIndexedDbDeleted": "gymapp-push-binding-v1",
+    "otherIndexedDbPreserved": true,
+    "pushCleanupMaximumWaitMilliseconds": 1500,
+    "applicationBackendMutation": "none",
+    "maximumLandingReloadsPerTab": 1
+  },
+  "locales": {
+    "order": ["en", "uk", "ru"],
+    "labels": {
+      "en": "EN",
+      "uk": "UK",
+      "ru": "RU"
+    }
+  }
+}

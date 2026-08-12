@@ -34,6 +34,14 @@ internal fun authErrorText(
             R.string.auth_error_password_policy
         message == "Display name can use letters, numbers, spaces, dot, dash and underscore." ->
             R.string.auth_error_display_name_characters
+        message == "Display name must be 2–32 characters and use letters, numbers, spaces, dot, dash or underscore." ->
+            R.string.auth_error_local_profile_contract
+        message == "A saved local profile already uses this name. Select it from Saved profiles." ->
+            R.string.auth_error_local_profile_duplicate
+        message == "This saved profile is no longer available." ->
+            R.string.auth_error_local_profile_missing
+        message == "The saved local profile limit was reached." ->
+            R.string.auth_error_local_profile_limit
         message == "Enter a valid email address." -> R.string.auth_error_email_invalid
         message == "Authentication rejected an unsafe or malformed callback. Request a new email." ->
             R.string.auth_error_callback_invalid

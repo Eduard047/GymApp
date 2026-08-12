@@ -95,23 +95,31 @@ final class SharedWorkoutLinkTests: XCTestCase {
         XCTAssertNil(payload.range(of: Data("isFavorite".utf8)))
     }
 
-    func testEditorDraftEncoderRejectsUnresolvedRecommendedWeight() throws {
+    func testEditorDraftEncoderAcceptsZeroAndRejectsInvalidWeight() throws {
         let exerciseID = UUID()
-        let draft = WorkoutEditorExerciseDraft(
+        let zeroDraft = WorkoutEditorExerciseDraft(
             exerciseID: exerciseID,
             sets: [
                 WorkoutEditorSetDraft(
                     weight: 0,
-                    reps: 10,
-                    requiresWeightSelection: true
+                    reps: 10
                 )
             ]
         )
+        let exercise = Exercise(id: exerciseID, name: "Bench Press")
+        let zeroPlan = try makeSharedWorkoutDraftPlan(
+            drafts: [zeroDraft],
+            exercises: [exerciseID: exercise]
+        )
+        XCTAssertEqual(zeroPlan.exercises[0].sets[0].weight, 0)
+
+        var invalidDraft = zeroDraft
+        invalidDraft.sets[0].weight = -1
 
         XCTAssertThrowsError(
             try makeSharedWorkoutDraftURL(
-                drafts: [draft],
-                exercises: [exerciseID: Exercise(id: exerciseID, name: "Bench Press")]
+                drafts: [invalidDraft],
+                exercises: [exerciseID: exercise]
             )
         ) { error in
             XCTAssertEqual(error as? SharedWorkoutLinkError, .invalidWeight)

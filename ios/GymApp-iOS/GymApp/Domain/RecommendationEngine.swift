@@ -43,6 +43,8 @@ public enum SmartWorkoutEffort: String, Codable, CaseIterable, Hashable, Identif
 
 public enum SmartWorkoutEffortAdjustment: String, Codable, Hashable, Sendable {
     case autoRecovery
+    case autoFeedbackRecovery
+    case feedbackEasyExtraSet
     case hardInsufficientHistory
     case hardLongBreak
     case hardTargetNotRecovered
@@ -300,6 +302,7 @@ public enum RecommendationEngine {
     private static let maximumSupportedSetCount = 100
     private static let maximumHistorySetCount = 100_000
     private static let maximumExerciseCount = 2_000
+    private static let maximumSmartPlanSetCount = 24
     private static let minimumSupportedTimestamp = Date(
         timeIntervalSince1970: -62_135_769_600
     )
@@ -791,6 +794,7 @@ public enum RecommendationEngine {
         muscleMappings: [ExerciseMuscleMapping] = [],
         trainingProfile: TrainingProfile = TrainingProfile(),
         effort requestedEffort: SmartWorkoutEffort = .auto,
+        latestFeedback: WorkoutFeedbackContext? = nil,
         now: Date = Date(),
         calendar: Calendar = .current
     ) -> SmartWorkoutPlan {
@@ -815,7 +819,9 @@ public enum RecommendationEngine {
         }
         let usableHistory = history
             .prefix(maximumHistorySetCount)
-            .filter { isUsableHistoryEntry($0, now: now) }
+            .filter {
+                isUsableHistoryEntry($0, now: now) && $0.sessionDate <= now
+            }
         let focus = chooseWorkoutFocus(
             history: usableHistory,
             profile: trainingProfile,
@@ -832,6 +838,7 @@ public enum RecommendationEngine {
             requested: requestedEffort,
             targetMuscles: targetMuscles,
             history: usableHistory,
+            latestFeedback: latestFeedback,
             now: now,
             calendar: calendar
         )
@@ -940,7 +947,7 @@ public enum RecommendationEngine {
             calendar: calendar
         )
         var hardCompoundBoosts = 0
-        let plannedExercises = selected.map { candidate -> SmartWorkoutExercise in
+        var plannedExercises = selected.map { candidate -> SmartWorkoutExercise in
             let mayBoostHardCompound = appliedEffort == .hard &&
                 isCompound(candidate.analysis) &&
                 Set(candidate.history.map(\.workoutID)).count >= 2 &&
@@ -962,13 +969,37 @@ public enum RecommendationEngine {
                 )
             )
         }
+        let mayApplyEasyFeedback = requestedEffort == .auto &&
+            appliedEffort == .standard &&
+            effortResolution.adjustment == nil &&
+            !plannedExercises.contains {
+                $0.recommendation.kind == .deload || $0.recommendation.kind == .comeback
+            } &&
+            recentLatestFeedback(
+                latestFeedback,
+                history: usableHistory,
+                now: now,
+                calendar: calendar
+            ) == .easy
+        let setCountBeforeEasyFeedback = plannedExercises.reduce(0) {
+            $0 + $1.recommendation.sets.count
+        }
+        if mayApplyEasyFeedback {
+            plannedExercises = addingOneSafeSetIfPossible(to: plannedExercises)
+        }
+        let easyFeedbackApplied = plannedExercises.reduce(0) {
+            $0 + $1.recommendation.sets.count
+        } == setCountBeforeEasyFeedback + 1
+        plannedExercises = enforcingSmartPlanCaps(on: plannedExercises)
         return SmartWorkoutPlan(
             focus: focus,
             exercises: plannedExercises,
             variant: variant,
             requestedEffort: requestedEffort,
             appliedEffort: appliedEffort,
-            effortAdjustment: effortResolution.adjustment
+            effortAdjustment: easyFeedbackApplied
+                ? .feedbackEasyExtraSet
+                : effortResolution.adjustment
         )
     }
 
@@ -1009,7 +1040,9 @@ public enum RecommendationEngine {
         )
         let usableHistory = history
             .prefix(maximumHistorySetCount)
-            .filter { isUsableHistoryEntry($0, now: now) }
+            .filter {
+                isUsableHistoryEntry($0, now: now) && $0.sessionDate <= now
+            }
         let historyByIdentity = Dictionary(grouping: usableHistory, by: entryIdentityKey)
         let currentIsTrunk = currentAnalysis.role == .core ||
             currentIdentity == "catalog:hyperextension" ||
@@ -1351,7 +1384,7 @@ public enum RecommendationEngine {
         // round a partial three-set slot up into another exercise; that can make
         // a higher-frequency plan contain more exercises when primary movements
         // switch from four sets to three. This also matches the PWA budget rule.
-        return min(9, max(4, budget / 3))
+        return min(8, max(4, budget / 3))
     }
 
     /// A bounded per-session budget keeps low-frequency sessions useful without producing
@@ -1383,7 +1416,7 @@ public enum RecommendationEngine {
         case .hard: 2
         case .auto, .standard: 0
         }
-        return min(27, max(12, frequencyBase + goalAdjustment + calorieAdjustment + effortAdjustment))
+        return min(24, max(12, frequencyBase + goalAdjustment + calorieAdjustment + effortAdjustment))
     }
 
     private static func programmingPreferenceScore(
@@ -1667,6 +1700,7 @@ public enum RecommendationEngine {
         requested: SmartWorkoutEffort,
         targetMuscles: Set<String>,
         history: [ExerciseHistoryEntry],
+        latestFeedback: WorkoutFeedbackContext?,
         now: Date,
         calendar: Calendar
     ) -> (effort: SmartWorkoutEffort, adjustment: SmartWorkoutEffortAdjustment?) {
@@ -1683,6 +1717,14 @@ public enum RecommendationEngine {
 
         switch requested {
         case .auto:
+            if recentLatestFeedback(
+                latestFeedback,
+                history: history,
+                now: now,
+                calendar: calendar
+            ) == .hard {
+                return (.recovery, .autoFeedbackRecovery)
+            }
             return recentRatio >= 0.5
                 ? (.recovery, .autoRecovery)
                 : (.standard, nil)
@@ -1698,6 +1740,188 @@ public enum RecommendationEngine {
             guard recentRatio < 0.5 else { return (.standard, .hardTargetNotRecovered) }
             return (.hard, nil)
         }
+    }
+
+    public static func weeklyTrainingGuidance(
+        history: [ExerciseHistoryEntry],
+        trainingProfile: TrainingProfile = TrainingProfile(),
+        latestFeedback: WorkoutFeedbackContext? = nil,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> WeeklyTrainingGuidance {
+        let usableHistory = history
+            .prefix(maximumHistorySetCount)
+            .filter {
+                isUsableHistoryEntry($0, now: now) && $0.sessionDate <= now
+            }
+        let targetDays = min(6, max(2, trainingProfile.workoutsPerWeek))
+        let weekStart = calendar.gymMondayStart(of: now)
+        let weekEnd = calendar.date(byAdding: .day, value: 7, to: weekStart) ?? now
+        let completedDays = Set(usableHistory.lazy
+            .filter { $0.sessionDate >= weekStart && $0.sessionDate < weekEnd }
+            .map { calendar.gymEpochDay(for: $0.sessionDate) })
+            .count
+
+        if completedDays >= targetDays {
+            return WeeklyTrainingGuidance(
+                decision: .rest,
+                completedTrainingDays: completedDays,
+                targetTrainingDays: targetDays
+            )
+        }
+
+        let feedbackRequiresRecovery = recentLatestFeedback(
+            latestFeedback,
+            history: usableHistory,
+            now: now,
+            calendar: calendar
+        ) == .hard
+        let focus = chooseWorkoutFocus(
+            history: usableHistory,
+            profile: trainingProfile,
+            now: now,
+            calendar: calendar
+        )
+        let focusMuscles = targetMuscles(for: focus)
+        let lastTrained = lastTrainedByMuscle(usableHistory)
+        let recentlyTrainedCount = focusMuscles.filter { muscle in
+            guard let date = lastTrained[muscle] else { return false }
+            return calendar.gymDaysBetween(date, now) <= 1
+        }.count
+        let recentRatio = focusMuscles.isEmpty
+            ? 0
+            : Double(recentlyTrainedCount) / Double(focusMuscles.count)
+        return WeeklyTrainingGuidance(
+            decision: feedbackRequiresRecovery || recentRatio >= 0.5 ? .recovery : .train,
+            completedTrainingDays: completedDays,
+            targetTrainingDays: targetDays
+        )
+    }
+
+    private static func recentLatestFeedback(
+        _ context: WorkoutFeedbackContext?,
+        history: [ExerciseHistoryEntry],
+        now: Date,
+        calendar: Calendar
+    ) -> WorkoutFeedback? {
+        guard let context,
+              let latestSession = sessionGroups(history).first,
+              latestSession.id == context.workoutID,
+              latestSession.date == context.sessionDate,
+              latestSession.date <= now else {
+            return nil
+        }
+        let ageDays = calendar.gymDaysBetween(latestSession.date, now)
+        guard (0 ... 7).contains(ageDays) else { return nil }
+        return context.feedback
+    }
+
+    private static func addingOneSafeSetIfPossible(
+        to exercises: [SmartWorkoutExercise]
+    ) -> [SmartWorkoutExercise] {
+        guard exercises.reduce(0, { $0 + $1.recommendation.sets.count }) <
+                maximumSmartPlanSetCount,
+              let index = exercises.firstIndex(where: {
+                  let recommendation = $0.recommendation
+                  return recommendation.sets.count < 4 &&
+                      !recommendation.sets.isEmpty &&
+                      recommendation.kind != .deload &&
+                      recommendation.kind != .comeback &&
+                      !recommendation.reasons.contains(.recoverySession)
+              }) else {
+            return exercises
+        }
+        var result = exercises
+        let item = result[index]
+        let recommendation = item.recommendation
+        guard let finalSet = recommendation.sets.last else { return exercises }
+        let extraSet = RecommendedWorkoutSet(
+            id: recommendedSetID(
+                exerciseID: item.exercise.id,
+                workoutID: nil,
+                kind: recommendation.kind,
+                index: recommendation.sets.count,
+                weight: finalSet.weight,
+                reps: finalSet.reps
+            ),
+            weight: finalSet.weight,
+            reps: finalSet.reps
+        )
+        let boosted = WorkoutRecommendation(
+            exerciseID: recommendation.exerciseID,
+            sets: recommendation.sets + [extraSet],
+            kind: recommendation.kind,
+            confidence: recommendation.confidence,
+            estimatedVolume: recommendation.estimatedVolume +
+                ((extraSet.weight ?? 0) * Double(extraSet.reps)),
+            daysSinceLastSession: recommendation.daysSinceLastSession,
+            reasons: recommendation.reasons
+        )
+        result[index] = SmartWorkoutExercise(
+            exercise: item.exercise,
+            recommendation: boosted
+        )
+        return result
+    }
+
+    private static func enforcingSmartPlanCaps(
+        on exercises: [SmartWorkoutExercise]
+    ) -> [SmartWorkoutExercise] {
+        let exerciseCap = 8
+        let preservedTrunk = exercises.last.map { item -> Bool in
+            let analysis = analyzeExercise(
+                item.exercise.name,
+                catalogKey: item.exercise.catalogKey
+            )
+            return analysis.role == .core || isHyperextensionHistoryName(
+                item.exercise.name,
+                catalogKey: item.exercise.catalogKey
+            )
+        } == true
+        let source: [SmartWorkoutExercise]
+        if preservedTrunk, exercises.count > exerciseCap, let trunk = exercises.last {
+            source = Array(exercises.prefix(exerciseCap - 1)) + [trunk]
+        } else {
+            source = Array(exercises.prefix(exerciseCap))
+        }
+        var remainingSets = maximumSmartPlanSetCount
+        var bounded: [SmartWorkoutExercise] = []
+        bounded.reserveCapacity(source.count)
+        for (index, item) in source.enumerated() {
+            let remainingExerciseMinimum = (source.count - index - 1) * 3
+            let availableForCurrent = remainingSets - remainingExerciseMinimum
+            guard availableForCurrent >= 3 else { break }
+            let retainedSets = Array(item.recommendation.sets.prefix(
+                min(4, availableForCurrent)
+            ))
+            guard retainedSets.count >= 3 else { continue }
+            let recommendation = item.recommendation
+            let retainedVolume = retainedSets.reduce(0) {
+                $0 + (($1.weight ?? 0) * Double($1.reps))
+            }
+            bounded.append(SmartWorkoutExercise(
+                exercise: item.exercise,
+                recommendation: WorkoutRecommendation(
+                    exerciseID: recommendation.exerciseID,
+                    sets: retainedSets,
+                    kind: recommendation.kind,
+                    confidence: recommendation.confidence,
+                    estimatedVolume: retainedVolume,
+                    daysSinceLastSession: recommendation.daysSinceLastSession,
+                    reasons: recommendation.reasons
+                )
+            ))
+            remainingSets -= retainedSets.count
+        }
+        return bounded
+    }
+
+    private static func isHyperextensionHistoryName(
+        _ name: String,
+        catalogKey: String?
+    ) -> Bool {
+        let key = canonicalCatalogKey(catalogKey: catalogKey, name: name)
+        return key == "hyperextension" || key == "side_hyperextension"
     }
 
     private static func chooseWorkoutFocus(

@@ -1870,7 +1870,7 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
         guard syncInFlight[deviceID] == nil else { return }
         let attemptID = UUID()
         syncInFlight[deviceID] = attemptID
-        let currentLanguage = normalizedLanguage(defaults.string(forKey: "app-language"))
+        let currentLanguage = normalizedLanguage(gymCurrentLanguageCode(defaults: defaults))
         let currentExercises = GarminPhoneSyncProtocol.boundedExerciseCatalog(
             store.exercises.map(\.name)
         )
@@ -2105,7 +2105,7 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
             binding: binding,
             syncID: UUID().uuidString.lowercased(),
             revision: revision,
-            language: normalizedLanguage(defaults.string(forKey: "app-language")),
+            language: normalizedLanguage(gymCurrentLanguageCode(defaults: defaults)),
             exercises: exercises,
             handshake: handshake
         )
@@ -2448,7 +2448,7 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
     private func workoutNote(_ command: GarminPhoneWorkoutCommand) -> String {
         Self.formattedWorkoutNote(
             command,
-            language: normalizedLanguage(defaults.string(forKey: "app-language"))
+            language: normalizedLanguage(gymCurrentLanguageCode(defaults: defaults))
         )
     }
 

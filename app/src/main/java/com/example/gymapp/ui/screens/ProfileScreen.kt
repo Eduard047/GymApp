@@ -59,7 +59,6 @@ import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.GymSegmentItem
 import com.example.gymapp.ui.components.GymSegmentedControl
 import com.example.gymapp.ui.components.InfoPill
-import com.example.gymapp.ui.components.ScreenHeader
 import com.example.gymapp.ui.components.SectionTitle
 import com.example.gymapp.ui.theme.GymSpacing
 import com.example.gymapp.ui.viewmodel.ExerciseListUiState
@@ -127,6 +126,8 @@ internal fun ProfileScreen(
         nonce: String?
     ) -> Unit,
     onDeleteCloudAccount: () -> Unit,
+    localProfileName: String?,
+    onDeleteLocalProfile: () -> Unit,
     garminDeviceState: GarminDeviceUiState,
     onRefreshGarminDevices: () -> Unit,
     onResetGarminPairing: () -> Unit,
@@ -136,6 +137,7 @@ internal fun ProfileScreen(
     var showGarminResetConfirmation by rememberSaveable { mutableStateOf(false) }
     var showPasswordChange by rememberSaveable { mutableStateOf(false) }
     var showAccountDeletion by rememberSaveable { mutableStateOf(false) }
+    var showLocalProfileDeletion by rememberSaveable { mutableStateOf(false) }
     var selectedSection by rememberSaveable { mutableStateOf(ProfileSection.Training) }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -156,9 +158,6 @@ internal fun ProfileScreen(
     Column(modifier = modifier.fillMaxSize()) {
         ProfileSectionSwitcher(
             selected = selectedSection,
-            accountLabel = accountState.accountLabel.ifBlank {
-                context.getString(R.string.account_mode_local)
-            },
             pendingCount = friendsState.dashboard?.pendingWorkoutInviteCount.orZero() +
                 liveWorkoutState.inbox?.invitations.orEmpty().size,
             onSelected = { selectedSection = it }
@@ -233,6 +232,7 @@ internal fun ProfileScreen(
                     onOpenPushSettings = onOpenPushSettings,
                     onChangePassword = { showPasswordChange = true },
                     onDeleteAccount = { showAccountDeletion = true },
+                    onDeleteLocalProfile = { showLocalProfileDeletion = true },
                     backupMessage = accountState.backupMessage,
                     onExportBackup = onExportBackup,
                     onExportDiagnostics = onExportDiagnostics,
@@ -296,6 +296,40 @@ internal fun ProfileScreen(
             }
         )
     }
+    if (showLocalProfileDeletion && localProfileName != null) {
+        AlertDialog(
+            onDismissRequest = {
+                if (!isAccountActionLoading) showLocalProfileDeletion = false
+            },
+            title = {
+                Text(stringResource(R.string.local_profile_delete_confirm_title, localProfileName))
+            },
+            text = { Text(stringResource(R.string.local_profile_delete_warning)) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showLocalProfileDeletion = false
+                        onDeleteLocalProfile()
+                    },
+                    enabled = !isAccountActionLoading,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError
+                    )
+                ) {
+                    Text(stringResource(R.string.local_profile_delete_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showLocalProfileDeletion = false },
+                    enabled = !isAccountActionLoading
+                ) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            }
+        )
+    }
 }
 
 private fun Int?.orZero(): Int = this ?: 0
@@ -303,7 +337,6 @@ private fun Int?.orZero(): Int = this ?: 0
 @Composable
 private fun ProfileSectionSwitcher(
     selected: ProfileSection,
-    accountLabel: String,
     pendingCount: Int,
     onSelected: (ProfileSection) -> Unit
 ) {
@@ -323,10 +356,11 @@ private fun ProfileSectionSwitcher(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(GymSpacing.Small)
         ) {
-            ScreenHeader(
-                title = stringResource(R.string.profile_hub_title),
-                supporting = accountLabel,
-                modifier = Modifier.weight(1f)
+            Text(
+                text = stringResource(R.string.profile_screen_subtitle),
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             if (pendingCount > 0) {
                 InfoPill(
@@ -373,18 +407,12 @@ private fun LazyListScope.profileSettingsContent(
     onOpenPushSettings: () -> Unit,
     onChangePassword: () -> Unit,
     onDeleteAccount: () -> Unit,
+    onDeleteLocalProfile: () -> Unit,
     backupMessage: com.example.gymapp.util.LocalizedText?,
     onExportBackup: () -> Unit,
     onExportDiagnostics: () -> Unit,
     onOpenImport: () -> Unit
 ) {
-    item {
-        Text(
-            text = stringResource(R.string.profile_screen_subtitle),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
     item {
         AccountStatusCard(
             label = accountState.accountLabel.ifBlank {
@@ -429,6 +457,13 @@ private fun LazyListScope.profileSettingsContent(
                 onDeleteAccount = onDeleteAccount
             )
         }
+    } else {
+        item {
+            LocalProfileActionsCard(
+                enabled = !isAccountActionLoading,
+                onDeleteProfile = onDeleteLocalProfile
+            )
+        }
     }
     item {
         BackupToolsCard(
@@ -437,6 +472,35 @@ private fun LazyListScope.profileSettingsContent(
             onExportDiagnostics = onExportDiagnostics,
             onOpenImport = onOpenImport
         )
+    }
+}
+
+@Composable
+private fun LocalProfileActionsCard(
+    enabled: Boolean,
+    onDeleteProfile: () -> Unit
+) {
+    AppPanel(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.local_profile_delete_title),
+                style = MaterialTheme.typography.titleLarge
+            )
+            Button(
+                onClick = onDeleteProfile,
+                enabled = enabled,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error,
+                    contentColor = MaterialTheme.colorScheme.onError
+                )
+            ) {
+                Text(stringResource(R.string.local_profile_delete_action))
+            }
+        }
     }
 }
 

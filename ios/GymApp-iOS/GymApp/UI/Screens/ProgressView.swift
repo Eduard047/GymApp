@@ -3,7 +3,7 @@ import SwiftUI
 
 @MainActor
 struct ExerciseProgressView: View {
-    @AppStorage("app-language") private var languageCode = AppLanguage.english.rawValue
+    @AppStorage("app-language") private var languageCode = AppLanguage.firstRunDefault.rawValue
     @Environment(\.calendar) private var calendar
     @ObservedObject private var store: WorkoutStore
 
@@ -21,19 +21,7 @@ struct ExerciseProgressView: View {
             ScrollView {
                 LazyVStack(spacing: GymTheme.contentSpacing) {
                     GymScreenHeader(
-                        eyebrow: gymText(
-                            "Training ledger",
-                            "Журнал тренувань",
-                            "Журнал тренировок",
-                            languageCode: languageCode
-                        ),
-                        title: t("Progress", "Прогрес"),
-                        supporting: gymText(
-                            "Compare strength, volume, and consistency one exercise at a time.",
-                            "Порівнюй силу, обсяг і регулярність для кожної вправи окремо.",
-                            "Сравнивай силу, объём и регулярность отдельно для каждого упражнения.",
-                            languageCode: languageCode
-                        )
+                        title: t("Progress", "Прогрес")
                     )
 
                     WorkoutMonthSwitcher(
@@ -82,22 +70,10 @@ struct ExerciseProgressView: View {
         GymPanel {
             VStack(alignment: .leading, spacing: 12) {
                 GymSectionTitle(
-                    eyebrow: gymText(
-                        "Analyze",
-                        "Аналіз",
-                        "Анализ",
-                        languageCode: languageCode
-                    ),
                     title: gymText(
                         "Choose an exercise",
                         "Обери вправу",
                         "Выберите упражнение",
-                        languageCode: languageCode
-                    ),
-                    supporting: gymText(
-                        "Search the same exercise library used throughout GymApp.",
-                        "Шукай у тій самій бібліотеці вправ, що й в усьому GymApp.",
-                        "Ищите в той же библиотеке упражнений, что и во всём GymApp.",
                         languageCode: languageCode
                     )
                 )
@@ -109,7 +85,8 @@ struct ExerciseProgressView: View {
                 } else if let selectedExercise {
                     HStack(spacing: 12) {
                         ExerciseMediaButton(
-                            exerciseName: selectedExercise.name,
+                            rawExerciseName: selectedExercise.name,
+                            catalogKey: selectedExercise.catalogKey,
                             exerciseID: selectedExercise.id,
                             ownerKey: store.accountStorageKey
                         )
@@ -179,7 +156,8 @@ struct ExerciseProgressView: View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .top, spacing: 10) {
                     ExerciseMediaButton(
-                        exerciseName: exercise.name,
+                        rawExerciseName: exercise.name,
+                        catalogKey: exercise.catalogKey,
                         exerciseID: exercise.id,
                         ownerKey: store.accountStorageKey
                     )
@@ -353,9 +331,12 @@ struct ExerciseProgressView: View {
             }
         } else {
             GymSectionTitle(
-                eyebrow: t("Recent sessions", "Останні сесії"),
-                title: t("Workout History", "Історія тренувань"),
-                supporting: t("This list changes with the selected month and exercise.", "Список оновлюється для вибраного місяця і вправи.")
+                title: gymText(
+                    "Workout History",
+                    "Історія тренувань",
+                    "Журнал тренировок",
+                    languageCode: languageCode
+                )
             )
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 4)
@@ -703,7 +684,8 @@ private struct ProgressExerciseSelectorSheet: View {
     private func exerciseRow(_ exercise: Exercise) -> some View {
         HStack(spacing: 12) {
             ExerciseMediaButton(
-                exerciseName: exercise.name,
+                rawExerciseName: exercise.name,
+                catalogKey: exercise.catalogKey,
                 exerciseID: exercise.id,
                 ownerKey: store.accountStorageKey
             )

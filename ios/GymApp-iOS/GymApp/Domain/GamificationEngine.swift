@@ -198,6 +198,7 @@ public enum GamificationEngine {
 
     public static func buildSnapshot(
         sessions: [WorkoutSessionSummary],
+        targetTrainingDays: Int = 4,
         now: Date = Date(),
         calendar: Calendar = .current
     ) -> GamificationSnapshot {
@@ -217,7 +218,8 @@ public enum GamificationEngine {
             sessions: sessions,
             workoutDays: workoutDays,
             summary: summary,
-            streak: streak,
+            targetTrainingDays: targetTrainingDays,
+            now: now,
             calendar: calendar
         )
         let baseXP = dayAggregates.values.reduce(0) { $0 + $1.xp }
@@ -732,19 +734,26 @@ public enum GamificationEngine {
         sessions: [WorkoutSessionSummary],
         workoutDays: [Int64],
         summary: GamificationSummary,
-        streak: StreakSnapshot,
+        targetTrainingDays: Int,
+        now: Date,
         calendar: Calendar
     ) -> [AchievementSnapshot] {
-        [
+        let completedSessions = sessions.filter { $0.date <= now }
+        let weeklyStreak = WeeklyStreakCalculator.longest(
+            sessions: completedSessions,
+            targetTrainingDays: targetTrainingDays,
+            calendar: calendar
+        )
+        return [
             achievement("first_workout", "First Workout", "Complete your first workout.", 1, Double(summary.workoutCount), 100, "First Rep", .common, unlockDayByCount(sessions, 1, calendar)),
             achievement("workout_5", "Starter Habit", "Complete five workouts.", 5, Double(summary.workoutCount), 150, "Starter Habit", .common, unlockDayByCount(sessions, 5, calendar)),
             achievement("workout_10", "Consistency Builder", "Complete ten workouts.", 10, Double(summary.workoutCount), 200, "Consistency", .uncommon, unlockDayByCount(sessions, 10, calendar)),
             achievement("workout_25", "Workhorse", "Complete twenty-five workouts.", 25, Double(summary.workoutCount), 350, "Workhorse", .rare, unlockDayByCount(sessions, 25, calendar)),
             achievement("workout_50", "Veteran", "Complete fifty workouts.", 50, Double(summary.workoutCount), 500, "Veteran", .epic, unlockDayByCount(sessions, 50, calendar)),
             achievement("workout_100", "Centurion", "Complete one hundred workouts.", 100, Double(summary.workoutCount), 900, "Centurion", .legendary, unlockDayByCount(sessions, 100, calendar)),
-            achievement("streak_7", "Seven-Day Streak", "Keep a seven day streak alive.", 7, Double(streak.longestDays), 150, "Momentum", .common, unlockDayByStreak(workoutDays, 7)),
-            achievement("streak_14", "Fourteen-Day Streak", "Keep a fourteen day streak alive.", 14, Double(streak.longestDays), 250, "Flow State", .uncommon, unlockDayByStreak(workoutDays, 14)),
-            achievement("streak_30", "Thirty-Day Streak", "Keep a thirty day streak alive.", 30, Double(streak.longestDays), 500, "Unbroken", .epic, unlockDayByStreak(workoutDays, 30)),
+            achievement("streak_7", "Two-Week Rhythm", "Meet your weekly target for two weeks in a row.", 2, Double(weeklyStreak), 150, "Momentum", .common, WeeklyStreakCalculator.unlockEpochDay(sessions: completedSessions, consecutiveWeeks: 2, targetTrainingDays: targetTrainingDays, calendar: calendar)),
+            achievement("streak_14", "Four-Week Rhythm", "Meet your weekly target for four weeks in a row.", 4, Double(weeklyStreak), 250, "Flow State", .uncommon, WeeklyStreakCalculator.unlockEpochDay(sessions: completedSessions, consecutiveWeeks: 4, targetTrainingDays: targetTrainingDays, calendar: calendar)),
+            achievement("streak_30", "Eight-Week Rhythm", "Meet your weekly target for eight weeks in a row.", 8, Double(weeklyStreak), 500, "Unbroken", .epic, WeeklyStreakCalculator.unlockEpochDay(sessions: completedSessions, consecutiveWeeks: 8, targetTrainingDays: targetTrainingDays, calendar: calendar)),
             achievement("volume_10k", "Ten Thousand Volume", "Accumulate ten thousand total volume.", 10_000, summary.totalVolume, 200, "Volume Maker", .uncommon, unlockDayByVolume(sessions, 10_000, calendar)),
             achievement("volume_50k", "Fifty Thousand Volume", "Accumulate fifty thousand total volume.", 50_000, summary.totalVolume, 500, "Mountain Mover", .rare, unlockDayByVolume(sessions, 50_000, calendar)),
             achievement("comeback", "Comeback", "Return after a seven day break.", 7, Double(maxGapDays(workoutDays)), 200, "Comeback", .rare, unlockDayByComeback(workoutDays, 7))

@@ -102,9 +102,7 @@ struct AccountSettingsView: View {
 
     private var header: some View {
         GymScreenHeader(
-            eyebrow: "Settings",
-            title: "Account & privacy",
-            supporting: "Manage sync, support, your session, and permanent data deletion."
+            title: "Account & privacy"
         )
     }
 
@@ -153,7 +151,6 @@ struct AccountSettingsView: View {
         GymPanel {
             VStack(alignment: .leading, spacing: 14) {
                 GymSectionTitle(
-                    eyebrow: "Data",
                     title: isCloudAccount ? "Cloud sync" : "Local storage",
                     supporting: isCloudAccount
                         ? "Workout changes sync automatically while you are signed in."
@@ -225,7 +222,6 @@ struct AccountSettingsView: View {
         GymPanel {
             VStack(alignment: .leading, spacing: 14) {
                 GymSectionTitle(
-                    eyebrow: "Updates",
                     title: "Friend notifications",
                     supporting: "Receive account-bound friend, workout, and live-workout updates on this device. GymApp validates the current account before showing each notification."
                 )
@@ -314,9 +310,7 @@ struct AccountSettingsView: View {
         GymPanel {
             VStack(alignment: .leading, spacing: 14) {
                 GymSectionTitle(
-                    eyebrow: "Help & legal",
-                    title: "Privacy and support",
-                    supporting: "Review what GymApp stores or open troubleshooting and contact information."
+                    title: "Privacy and support"
                 )
 
                 Link(destination: GymAppConfiguration.privacyPolicyURL) {
@@ -345,7 +339,6 @@ struct AccountSettingsView: View {
         GymPanel {
             VStack(alignment: .leading, spacing: 12) {
                 GymSectionTitle(
-                    eyebrow: "Session",
                     title: isCloudAccount ? "Sign out" : "Leave local profile",
                     supporting: signOutSupportingText
                 )
@@ -378,9 +371,7 @@ struct AccountSettingsView: View {
         GymPanel {
             VStack(alignment: .leading, spacing: 13) {
                 GymSectionTitle(
-                    eyebrow: "Danger zone",
-                    title: isCloudAccount ? "Delete account" : "Delete local profile",
-                    supporting: deletionSupportingText
+                    title: isCloudAccount ? "Delete account" : "Delete local profile"
                 )
 
                 Button(role: .destructive) {
@@ -406,10 +397,6 @@ struct AccountSettingsView: View {
                 .buttonStyle(.plain)
                 .accessibilityHint("Starts a two-step permanent deletion confirmation")
 
-                Text("You will first confirm the warning, then type DELETE before anything is removed.")
-                    .font(.caption)
-                    .foregroundStyle(GymTheme.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -422,14 +409,7 @@ struct AccountSettingsView: View {
         if isCloudAccount {
             return "Ends this session without deleting your account or cloud data. Your selected Garmin watch remains paired until you explicitly revoke it."
         }
-        return "Local profiles cannot be selected again after leaving. Export a backup first if you want to keep this data."
-    }
-
-    private var deletionSupportingText: String {
-        if isCloudAccount {
-            return "Permanently removes this Supabase account, cloud workout state, protected-progress profile, Garmin connection data, and this profile’s local workout store."
-        }
-        return "Permanently removes this profile’s exercises, workouts, notes, mappings, and local timers from this device."
+        return "Leaves this profile signed out. Its workouts remain on this device and the saved profile can be opened again."
     }
 
     private func detailRow(label: String, value: String, monospaced: Bool = false) -> some View {
@@ -531,7 +511,6 @@ private struct GarminSettingsCard: View {
         GymPanel {
             VStack(alignment: .leading, spacing: 14) {
                 GymSectionTitle(
-                    eyebrow: "Garmin",
                     title: "Paired watches",
                     supporting: "Choose exactly which active watch receives iOS workout plans. The selected device is stored securely for this Supabase account."
                 )

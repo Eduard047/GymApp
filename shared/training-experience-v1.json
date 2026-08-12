@@ -1,0 +1,76 @@
+{
+  "version": 1,
+  "clients": ["android", "ios"],
+  "profileDefaults": {
+    "split": "upperLower",
+    "workoutsPerWeek": 4,
+    "goal": "aestheticFatLoss",
+    "calorieMode": "deficit"
+  },
+  "activation": {
+    "emptyHistoryOnly": true,
+    "workoutsPerWeek": {
+      "minimum": 2,
+      "maximum": 6,
+      "default": 4
+    },
+    "efforts": [
+      "recovery",
+      "standard",
+      "hard"
+    ],
+    "defaultEffort": "standard",
+    "splitByWorkoutsPerWeek": {
+      "2": "fullBody",
+      "3": "fullBody",
+      "4": "upperLower",
+      "5": "pushPullLegs",
+      "6": "pushPullLegs"
+    },
+    "calorieModeByGoal": {
+      "aestheticFatLoss": "deficit",
+      "muscleGain": "surplus",
+      "strength": "maintenance",
+      "balanced": "maintenance"
+    },
+    "skipPersistsPerAccount": true
+  },
+  "weeklyRhythm": {
+    "weekStartsOn": "monday",
+    "countingUnit": "distinctLocalTrainingDay",
+    "decisions": [
+      "train",
+      "recovery",
+      "rest"
+    ],
+    "restIsAdvisory": true,
+    "targetMinimum": 2,
+    "targetMaximum": 6,
+    "primaryHabitMetric": "profileTargetWeeklyStreak",
+    "streakAchievementWeeks": [2, 4, 8]
+  },
+  "smartPlan": {
+    "maximumExercises": 8,
+    "maximumWorkingSets": 24,
+    "maximumSetsPerExercise": 4
+  },
+  "launchSeed": {
+    "accountBound": true,
+    "profileCatalogAndHistoryBound": true,
+    "maximumAgeMilliseconds": 300000,
+    "futureSkewMilliseconds": 60000,
+    "oneTimeUse": true
+  },
+  "feedback": {
+    "values": [
+      "easy",
+      "normal",
+      "hard"
+    ],
+    "storage": "accountLocalSidecar",
+    "maximumEntries": 128,
+    "coachMaximumAgeDays": 7,
+    "easyMaximumExtraSets": 1,
+    "cloudAndBackupSessionShapeUnchanged": true
+  }
+}

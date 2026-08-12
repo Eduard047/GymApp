@@ -340,7 +340,7 @@ test("PWA set interval notes are bounded, fail closed, and allow sixty partial r
   assert.equal(parseGarminWorkoutMetrics(`${note} · S+1`), null);
 });
 
-test("PWA, Supabase, and Garmin code are wired to the same cloud sync contract", async () => {
+test("retained browser source, Supabase, and Garmin code keep the same cloud sync contract", async () => {
   const [appJs, indexHtml, swJs, edgeFunction, edgeConfig, schema, hardeningMigration, rateLimitMigration, denoConfig, denoLock, gymComm, workoutView, settingsXml, manifest, buildScript] = await Promise.all([
     readFile("pwa/app.js", "utf8"),
     readFile("pwa/index.html", "utf8"),
@@ -359,8 +359,9 @@ test("PWA, Supabase, and Garmin code are wired to the same cloud sync contract",
     readFile("scripts/build-garmin.ps1", "utf8")
   ]);
 
-  assert.match(indexHtml, /garmin-cloud-sync\.v57\.js/);
-  assert.match(swJs, /garmin-cloud-sync\.v57\.js/);
+  assert.match(indexHtml, /retirement\.v1\.js/);
+  assert.doesNotMatch(indexHtml, /garmin-cloud-sync|app\.v86\.js|supabase/);
+  assert.doesNotMatch(swJs, /garmin-cloud-sync|app\.v86\.js|supabase/);
   assert.match(appJs, /\/functions\/v1\/garmin-sync/);
   assert.match(appJs, /\/rest\/v1\/rpc\/garmin_enqueue_plan/);
   assert.doesNotMatch(appJs, /supabaseRequest\("\/rest\/v1\/garmin_plans"/);
@@ -419,7 +420,8 @@ test("PWA, Supabase, and Garmin code are wired to the same cloud sync contract",
   assert.match(gymComm, /\/functions\/v1\/garmin-sync/);
   assert.match(workoutView, /requestCloudSyncNow/);
   assert.match(workoutView, /GymStore\.applyCloudSync\(message\)/);
-  assert.match(workoutView, /if \(ok && message == null\) \{[\s\S]*cloudAutoSyncActive = false/);
+  assert.match(workoutView, /function syncFromReady\(\)[\s\S]*GymComm\.hasCloudDeviceToken\(\)[\s\S]*requestCloudSyncNow\(\)/);
+  assert.doesNotMatch(workoutView, /scheduleCloudSyncOnOpen|requestCloudSyncOnOpen|cloudAuto/);
   assert.match(workoutView, /function sx\(w, baseX\)/);
   assert.match(workoutView, /function sy\(h, baseY\)/);
   assert.match(workoutView, /function sr\(w, h, value\)/);

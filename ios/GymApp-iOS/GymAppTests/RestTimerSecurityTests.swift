@@ -38,7 +38,10 @@ final class RestTimerSecurityTests: XCTestCase {
             keychain: RestTimerTestKeychainStore(),
             defaults: authDefaults
         )
-        let accountB = AppAccountSession.local(id: "account-b", displayName: "Account B")
+        let accountB = AppAccountSession.local(
+            id: "00000000-0000-4000-8000-000000000501",
+            displayName: "Account B"
+        )
         try auth.installSessionForTesting(accountB)
 
         let timerDefaults = temporaryDefaults()
@@ -81,8 +84,14 @@ final class RestTimerSecurityTests: XCTestCase {
             keychain: RestTimerTestKeychainStore(),
             defaults: authDefaults
         )
-        let accountA = AppAccountSession.local(id: "account-a", displayName: "Account A")
-        let accountB = AppAccountSession.local(id: "account-b", displayName: "Account B")
+        let accountA = AppAccountSession.local(
+            id: "00000000-0000-4000-8000-000000000502",
+            displayName: "Account A"
+        )
+        let accountB = AppAccountSession.local(
+            id: "00000000-0000-4000-8000-000000000503",
+            displayName: "Account B"
+        )
         try auth.installSessionForTesting(accountB)
 
         let timerDefaults = temporaryDefaults()
@@ -122,8 +131,14 @@ final class RestTimerSecurityTests: XCTestCase {
             keychain: RestTimerTestKeychainStore(),
             defaults: authDefaults
         )
-        let accountA = AppAccountSession.local(id: "account-a", displayName: "Account A")
-        let accountB = AppAccountSession.local(id: "account-b", displayName: "Account B")
+        let accountA = AppAccountSession.local(
+            id: "00000000-0000-4000-8000-000000000504",
+            displayName: "Account A"
+        )
+        let accountB = AppAccountSession.local(
+            id: "00000000-0000-4000-8000-000000000505",
+            displayName: "Account B"
+        )
         try auth.installSessionForTesting(accountA)
 
         let timerDefaults = temporaryDefaults()
@@ -183,7 +198,10 @@ final class RestTimerSecurityTests: XCTestCase {
             keychain: RestTimerTestKeychainStore(),
             defaults: authDefaults
         )
-        let account = AppAccountSession.local(id: "account-a", displayName: "Account A")
+        let account = AppAccountSession.local(
+            id: "00000000-0000-4000-8000-000000000506",
+            displayName: "Account A"
+        )
         try auth.installSessionForTesting(account)
 
         let timerDefaults = temporaryDefaults()

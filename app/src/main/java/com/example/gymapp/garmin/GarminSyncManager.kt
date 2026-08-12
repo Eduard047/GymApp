@@ -125,6 +125,7 @@ internal fun garminCloudAccountLocalCleanupPlan(
     }
     deviceBindings.forEach { deviceBinding ->
         keys += garminStorageKey(PLAN_KEY_PREFIX, accountBinding, deviceBinding)
+        keys += garminStorageKey(GARMIN_PLAN_SUBMISSION_STORAGE_PREFIX, accountBinding, deviceBinding)
         keys += garminStorageKey(PAIRING_GENERATION_KEY_PREFIX, authTarget.key, deviceBinding)
         keys += garminStorageKey(
             PENDING_PAIRING_GENERATION_KEY_PREFIX,
@@ -292,6 +293,7 @@ class GarminSyncManager(
     private val scope = CoroutineScope(
         SupervisorJob() + Dispatchers.IO + coroutineExceptionHandler
     )
+    private val planSubmissionCoalescer = GarminPlanSubmissionCoalescer(scope)
     private val connectIQ = ConnectIQ.getInstance(application, ConnectIQ.IQConnectType.WIRELESS)
     private val garminApp = IQApp(GARMIN_APP_ID)
     private val registeredDeviceEvents = GarminDeviceRegistrationTracker()
@@ -564,6 +566,7 @@ class GarminSyncManager(
 
     suspend fun cacheAndPushPlan(
         sets: List<NamedWorkoutSetDraft>,
+        @Suppress("UNUSED_PARAMETER")
         exerciseCatalog: List<String>
     ): Boolean {
         val account = rawActiveAccountContext() ?: run {
@@ -583,29 +586,41 @@ class GarminSyncManager(
             lastPlanSyncStatus = "Workout plan is empty"
             return false
         }
-        val syncId = newGarminMessageId()
-        // An ordinary plan update must not terminate an unrelated active watch
-        // workout. Only the auth-transition cleanup path sets resetWorkout=true.
-        val payload = syncPayload(exerciseCatalog, plan, syncId, resetWorkout = false)
-        if (!cachePlan(plan, account)) {
-            lastPlanSyncStatus = "Cannot persist Garmin plan"
+        val language = application.languageManager.currentLanguage()
+        val requestFingerprint = garminPlanRequestFingerprint(
+            accountBinding = account.binding,
+            authTransitionKey = account.authTransitionKey,
+            trustedDeviceBinding = trustedDeviceBinding(account),
+            languageTag = language.tag,
+            orderedPlan = plan
+        ) ?: run {
+            lastPlanSyncStatus = "Workout plan identity is invalid"
             return false
         }
-        lastPlanSyncStatus = "Waiting for Garmin SDK"
-        if (!ensureSdkReady()) {
-            lastPlanSyncStatus = "Garmin SDK not ready"
-            return false
+        return planSubmissionCoalescer.submit(requestFingerprint) {
+            if (!isStillActive(account)) {
+                lastPlanSyncStatus = "Account changed before Garmin sync"
+                return@submit false
+            }
+            if (!cachePlan(plan, account)) {
+                lastPlanSyncStatus = "Cannot persist Garmin plan"
+                return@submit false
+            }
+            lastPlanSyncStatus = "Waiting for Garmin SDK"
+            if (!ensureSdkReady()) {
+                lastPlanSyncStatus = "Garmin SDK not ready"
+                return@submit false
+            }
+            if (!isStillActive(account)) {
+                lastPlanSyncStatus = "Account changed before Garmin sync"
+                return@submit false
+            }
+            sendToConnectedDevices(
+                account = account,
+                planToCache = plan,
+                language = language
+            )
         }
-        if (!isStillActive(account)) {
-            lastPlanSyncStatus = "Account changed before Garmin sync"
-            return false
-        }
-        return sendToConnectedDevices(
-            basePayload = payload,
-            syncId = syncId,
-            account = account,
-            planToCache = plan
-        )
     }
 
     /**
@@ -1268,7 +1283,8 @@ class GarminSyncManager(
         plan: List<NamedWorkoutSetDraft>,
         syncId: String? = null,
         resetWorkout: Boolean = false,
-        repairPairing: Boolean = false
+        repairPairing: Boolean = false,
+        language: AppLanguage = application.languageManager.currentLanguage()
     ): Map<String, Any> {
         val compactPlan = checkNotNull(validatedGarminPlanOrNull(plan)) {
             "Garmin plan is outside supported limits."
@@ -1289,7 +1305,7 @@ class GarminSyncManager(
         val payload = mutableMapOf<String, Any>(
             "type" to "sync",
             "resetWorkout" to resetWorkout,
-            "language" to application.languageManager.currentLanguage().tag,
+            "language" to language.tag,
             "planNames" to compactPlan.map { it.exerciseName },
             "planWeights" to compactPlan.map { it.weight },
             "planReps" to compactPlan.map { it.reps }
@@ -1308,19 +1324,21 @@ class GarminSyncManager(
     }
 
     private suspend fun sendToConnectedDevices(
-        basePayload: Map<String, Any>,
-        syncId: String,
         account: GarminAccountContext,
-        planToCache: List<NamedWorkoutSetDraft>
+        planToCache: List<NamedWorkoutSetDraft>,
+        language: AppLanguage
     ): Boolean = outboundSyncMutex.withLock {
-        sendToConnectedDevicesLocked(basePayload, syncId, account, planToCache)
+        sendToConnectedDevicesLocked(
+            account = account,
+            planToCache = planToCache,
+            language = language
+        )
     }
 
     private suspend fun sendToConnectedDevicesLocked(
-        basePayload: Map<String, Any>,
-        syncId: String,
         account: GarminAccountContext,
-        planToCache: List<NamedWorkoutSetDraft>
+        planToCache: List<NamedWorkoutSetDraft>,
+        language: AppLanguage
     ): Boolean {
         if (!sdkReady) return false
         val initial = resolveGarminDevices()
@@ -1393,7 +1411,6 @@ class GarminSyncManager(
             Log.i(TAG, lastPlanSyncStatus)
             return false
         }
-        Log.i(TAG, "Sending sync to ${targets.size} Garmin device(s) payload=${payloadSummary(basePayload)}")
         targets.forEach { device ->
             if (!isStillActive(account)) {
                 lastPlanSyncStatus = "Account changed before Garmin sync"
@@ -1430,16 +1447,32 @@ class GarminSyncManager(
                 lastPlanSyncStatus = "Account changed before Garmin sync"
                 return false
             }
-            val revision = allocateSyncRevision(binding) ?: run {
-                lastPlanSyncStatus = "Cannot persist Garmin sync revision"
+            val submissionKey = GarminPlanSubmissionKey(
+                accountBinding = binding.account,
+                authTransitionKey = account.authTransitionKey,
+                deviceBinding = binding.device,
+                pairingGeneration = binding.pairingGeneration,
+                includePairingGeneration = supportsGeneration,
+                languageTag = language.tag,
+                orderedPlan = planToCache
+            )
+            val prepared = prepareExactPlanSubmission(submissionKey) ?: run {
+                lastPlanSyncStatus = "Cannot persist Garmin plan submission"
                 return false
             }
-            val payload = boundGarminSyncPayload(
-                basePayload,
-                binding,
-                revision,
-                includePairingGeneration = supportsGeneration
+            val syncId = prepared.envelope.requestId
+            val revision = prepared.envelope.revision
+            // An ordinary plan update must not terminate an unrelated active watch workout. The
+            // entire payload is rebuilt from fingerprinted inputs and the durable envelope, so an
+            // unchanged retry reuses the exact request ID, revision, ordered sets and wire fields.
+            val payload = materializeGarminPlanSubmissionPayload(
+                key = submissionKey,
+                envelope = prepared.envelope
             ) ?: return false
+            Log.i(
+                TAG,
+                "Sending sync to one Garmin device payload=${payloadSummary(payload)}"
+            )
             if (
                 sendAndConfirmSync(
                     device = device,
@@ -2403,6 +2436,46 @@ class GarminSyncManager(
             return null
         }
         return GarminAuthTransitionTarget(key = key, accountBinding = binding)
+    }
+
+    private fun prepareExactPlanSubmission(
+        key: GarminPlanSubmissionKey
+    ): GarminPreparedPlanSubmission? {
+        if (
+            !isValidGarminAccountBinding(key.accountBinding) ||
+            !isValidGarminTransportDeviceBinding(key.deviceBinding)
+        ) {
+            return null
+        }
+        val revisionKey = globalGarminSyncRevisionStorageKey(key.deviceBinding) ?: return null
+        val envelopeKey = garminStorageKey(
+            GARMIN_PLAN_SUBMISSION_STORAGE_PREFIX,
+            key.accountBinding,
+            key.deviceBinding
+        )
+        synchronized(GARMIN_REVISION_PERSISTENCE_LOCK) {
+            val preferences = preferences()
+            val lastRevision = if (preferences.contains(revisionKey)) {
+                runCatching { preferences.getLong(revisionKey, 0L) }.getOrNull() ?: return null
+            } else {
+                null
+            }
+            val encodedExisting = preferences.all[envelopeKey] as? String
+            val prepared = prepareGarminPlanSubmission(
+                key = key,
+                encodedExisting = encodedExisting,
+                lastGlobalRevision = lastRevision,
+                nowMillis = System.currentTimeMillis(),
+                newRequestId = ::newGarminMessageId
+            ) ?: return null
+            if (prepared.reused) return prepared
+            return prepared.takeIf {
+                preferences.edit()
+                    .putLong(revisionKey, prepared.envelope.revision)
+                    .putString(envelopeKey, prepared.encodedEnvelope)
+                    .commit()
+            }
+        }
     }
 
     private fun allocateSyncRevision(binding: GarminBinding): Long? {

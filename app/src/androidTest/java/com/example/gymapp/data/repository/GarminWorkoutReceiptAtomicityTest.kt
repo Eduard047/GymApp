@@ -270,6 +270,13 @@ class GarminWorkoutReceiptAtomicityTest {
             val exportedSession = cloud.getJSONArray("sessions").getJSONObject(0)
             assertFalse(exportedSession.has("garminProvenance"))
             cloud.getJSONArray("sessions").put(JSONObject(exportedSession.toString()))
+            assertFalse(isCanonicalAndroidCloudEnvelope(cloud, userId))
+            assertEquals(2, database.workoutDao().getSessions().first().size)
+            cloud.getJSONObject("summary").apply {
+                put("sessionCount", getInt("sessionCount") + 1)
+                put("setCount", getInt("setCount") + 1)
+                put("totalVolume", getDouble("totalVolume") + 640.0)
+            }
             assertTrue(isCanonicalAndroidCloudEnvelope(cloud, userId))
 
             assertEquals(

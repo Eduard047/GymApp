@@ -318,6 +318,10 @@ class GymRepository(
     private val deletionStoreToken = UUID.randomUUID().toString()
     private val activeWorkoutMutationMutex = Mutex()
 
+    internal fun openDatabaseForAccountActivation() {
+        database.openHelper.writableDatabase
+    }
+
     fun observeExercises(): Flow<List<ExerciseEntity>> = exerciseDao.getExercises()
         .catch { emit(emptyList()) }
 
@@ -642,7 +646,11 @@ class GymRepository(
         return observeSessions(start, end)
     }
 
-    fun observeDashboardStatsForMonth(monthOffset: Int): Flow<DashboardStats> {
+    fun observeDashboardStatsForMonth(
+        monthOffset: Int,
+        targetWorkoutsPerWeek: Int
+    ): Flow<DashboardStats> {
+        require(targetWorkoutsPerWeek in 2..6)
         val (start, end) = DateTimeUtils.monthBounds(monthOffset)
         return combine(
             observeSessions(start, end),
@@ -655,12 +663,14 @@ class GymRepository(
             val weeklyStreakWeeks = if (monthOffset == 0) {
                 WeeklyStreakCalculator.current(
                     sessionTimestamps = sessionTimestamps,
+                    targetWorkoutsPerWeek = targetWorkoutsPerWeek,
                     nowMillis = System.currentTimeMillis(),
                     zoneId = ZoneId.systemDefault()
                 )
             } else {
                 WeeklyStreakCalculator.bestDuringPeriod(
                     sessionTimestamps = sessionTimestamps,
+                    targetWorkoutsPerWeek = targetWorkoutsPerWeek,
                     periodStartMillis = start,
                     periodEndMillis = end,
                     zoneId = ZoneId.systemDefault()

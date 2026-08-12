@@ -49,7 +49,7 @@ enum ActiveWorkoutRestReconciler {
 
 @MainActor
 struct ActiveWorkoutView: View {
-    @AppStorage("app-language") private var languageCode = AppLanguage.english.rawValue
+    @AppStorage("app-language") private var languageCode = AppLanguage.firstRunDefault.rawValue
     @ObservedObject private var workoutStore: WorkoutStore
     @ObservedObject private var activeWorkoutStore: ActiveWorkoutStore
     @ObservedObject private var liveWorkoutCoordinator: LiveWorkoutCoordinator
@@ -258,23 +258,18 @@ struct ActiveWorkoutView: View {
                 )
                 .font(.title2.bold())
 
-                Text(
-                    draft.commitIntent == nil
-                        ? gymText(
-                            "Record a set only after you complete it. Progress is saved on this device immediately.",
-                            "Записуй підхід лише після виконання. Прогрес одразу зберігається на цьому пристрої.",
-                            "Записывай подход только после выполнения. Прогресс сразу сохраняется на этом устройстве.",
-                            languageCode: gymCurrentLanguageCode()
-                        )
-                        : gymText(
+                if draft.commitIntent != nil {
+                    Text(
+                        gymText(
                             "Completion is safely locked. Retry Finish to confirm history and clear this screen.",
                             "Завершення безпечно зафіксовано. Повтори завершення, щоб підтвердити історію й закрити цей екран.",
                             "Завершение безопасно зафиксировано. Повтори завершение, чтобы подтвердить историю и закрыть этот экран.",
                             languageCode: gymCurrentLanguageCode()
                         )
-                )
-                .font(.subheadline)
-                .foregroundStyle(Color.white.opacity(0.84))
+                    )
+                    .font(.subheadline)
+                    .foregroundStyle(Color.white.opacity(0.84))
+                }
 
                 LazyVGrid(
                     columns: [GridItem(.adaptive(minimum: 108), spacing: 8)],
@@ -620,9 +615,11 @@ struct ActiveWorkoutView: View {
                 HStack(spacing: 10) {
                     if let storedExercise {
                         ExerciseMediaButton(
-                            exerciseName: storedExercise.name,
+                            rawExerciseName: storedExercise.name,
+                            catalogKey: storedExercise.catalogKey,
                             exerciseID: storedExercise.id,
-                            ownerKey: workoutStore.accountStorageKey
+                            ownerKey: workoutStore.accountStorageKey,
+                            editable: ExerciseMediaPresentation.isEditable(on: .activeWorkout)
                         )
                     }
                     Button {
@@ -855,22 +852,10 @@ struct ActiveWorkoutView: View {
         GymPanel(highlighted: true) {
             VStack(alignment: .leading, spacing: 12) {
                 GymSectionTitle(
-                    eyebrow: gymText(
-                        "Finish",
-                        "Завершення",
-                        "Завершение",
-                        languageCode: gymCurrentLanguageCode()
-                    ),
                     title: gymText(
                         "Complete this workout",
                         "Завершити тренування",
                         "Завершить тренировку",
-                        languageCode: gymCurrentLanguageCode()
-                    ),
-                    supporting: gymText(
-                        "Save all validates every unfinished set and records them in one write without starting rest. Finish adds recorded sets to history.",
-                        "«Зберегти всі» перевіряє кожен незавершений підхід і записує їх одним збереженням без запуску відпочинку. Завершення додає записані підходи до історії.",
-                        "«Сохранить все» проверяет каждый незавершённый подход и записывает их одним сохранением без запуска отдыха. Завершение добавляет записанные подходы в историю.",
                         languageCode: gymCurrentLanguageCode()
                     )
                 )

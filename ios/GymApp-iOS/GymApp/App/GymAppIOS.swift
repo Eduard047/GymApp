@@ -74,7 +74,7 @@ struct GymAppIOS: App {
 
 @MainActor
 private struct StartupFailureView: View {
-    @AppStorage("app-language") private var languageCode = AppLanguage.english.rawValue
+    @AppStorage("app-language") private var languageCode = AppLanguage.firstRunDefault.rawValue
 
     let message: String?
     let retry: () -> Void

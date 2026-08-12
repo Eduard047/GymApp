@@ -2,13 +2,13 @@ import Combine
 import Foundation
 import Security
 
-struct GarminPlanSet: Codable, Equatable, Sendable {
+struct GarminPlanSet: Codable, Hashable, Sendable {
     let weight: Double
     let reps: Int
     let orderIndex: Int
 }
 
-struct GarminPlanExercise: Codable, Equatable, Sendable {
+struct GarminPlanExercise: Codable, Hashable, Sendable {
     let name: String
     let sets: [GarminPlanSet]
 }
@@ -902,6 +902,9 @@ final class GarminCloudService: ObservableObject {
             )
         }
         try ensureIdentityIsCurrent(identity)
+        guard try bindingStore.binding(for: identity.canonicalUserID) == binding else {
+            throw GarminCloudError.invalidBinding
+        }
         guard let status = object["status"] as? String else {
             throw GarminCloudError.invalidResponse
         }

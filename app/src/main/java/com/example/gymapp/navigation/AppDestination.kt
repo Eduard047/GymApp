@@ -53,7 +53,7 @@ sealed class AppDestination(
 
     data object AddWorkout : AppDestination(
         route = "add_workout",
-        labelRes = R.string.title_add_workout,
+        labelRes = R.string.title_workout_plan,
         icon = Icons.Default.FitnessCenter
     )
 
@@ -82,10 +82,18 @@ sealed class AppDestination(
     )
 
     companion object {
+        const val ADD_WORKOUT_LAUNCH_ARGUMENT = "launch"
+        const val ADD_WORKOUT_ROUTE_PATTERN = "add_workout?launch={launch}"
         val bottomTabs = listOf(Workouts, Missions, Exercises, Progress, Profile)
 
         fun workoutDetailRoute(sessionId: Long): String {
             return "workout_detail/$sessionId"
+        }
+
+        fun addWorkoutRoute(launchToken: String): String {
+            require(launchToken.length in 1..12_000 &&
+                launchToken.matches(Regex("^[A-Za-z0-9_-]+$")))
+            return "add_workout?launch=$launchToken"
         }
 
         fun postWorkoutSummaryRoute(sessionId: Long): String {

@@ -24,12 +24,6 @@ function pwaAppMediaKeys() {
   return quotedValues(block[1]);
 }
 
-function serviceWorkerMediaKeys() {
-  const block = serviceWorkerSource.match(/const EXERCISE_MEDIA_KEYS = \[([\s\S]*?)\];/);
-  assert.ok(block, "service-worker media allowlist was not found");
-  return quotedValues(block[1]);
-}
-
 function jpegDimensions(buffer) {
   assert.equal(buffer.readUInt16BE(0), 0xffd8, "asset must be a JPEG");
   const startOfFrameMarkers = new Set([
@@ -88,22 +82,21 @@ test("every built-in exercise has two identical 480x320 assets on Android, iOS, 
   }
 });
 
-test("media source registry and both PWA allowlists cover the exact catalog", () => {
+test("media source registry and retained legacy browser source cover the exact catalog", () => {
   const expected = catalogKeys().toSorted();
   const publicSources = Object.keys(sourceRegistry.exercises);
   const generatedSources = Object.keys(sourceRegistry.generatedExercises);
   assert.deepEqual(publicSources.filter(key => generatedSources.includes(key)), []);
   assert.deepEqual([...publicSources, ...generatedSources].toSorted(), expected);
   assert.deepEqual(pwaAppMediaKeys().toSorted(), expected);
-  assert.deepEqual(serviceWorkerMediaKeys().toSorted(), expected);
+  assert.doesNotMatch(serviceWorkerSource, /EXERCISE_MEDIA_KEYS|exercise-media/);
   assert.equal(sourceRegistry.exercises.hip_adduction, "Thigh_Adductor");
 });
 
-test("the active PWA bundle contains the reviewed coach and media code", async () => {
-  const version = indexSource.match(/<script src="\.\/(app\.v\d+\.js)" defer><\/script>/)?.[1];
-  assert.ok(version, "versioned PWA app bundle was not found in index.html");
-  const activeBundle = await readFile(`pwa/${version}`);
+test("retained browser workout source stays auditable but is not a public entrypoint", async () => {
   const sourceBundle = await readFile("pwa/app.js");
-  assert.equal(sha256(activeBundle), sha256(sourceBundle));
-  assert.match(serviceWorkerSource, new RegExp(`"\\./${version.replace(".", "\\.")}"`));
+  assert.ok(sha256(sourceBundle));
+  assert.doesNotMatch(indexSource, /app\.v\d+\.js/);
+  assert.doesNotMatch(serviceWorkerSource, /app\.v\d+\.js/);
+  assert.match(indexSource, /retirement\.v1\.js/);
 });

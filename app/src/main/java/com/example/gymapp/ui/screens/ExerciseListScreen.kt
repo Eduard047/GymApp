@@ -31,10 +31,13 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.FormatListNumbered
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -994,8 +997,7 @@ fun ExerciseListScreen(
     ) {
         item {
             ScreenHeader(
-                title = stringResource(R.string.title_exercises),
-                supporting = stringResource(R.string.exercises_screen_subtitle)
+                title = stringResource(R.string.title_exercises)
             )
         }
 
@@ -1016,21 +1018,6 @@ fun ExerciseListScreen(
                     modifier = Modifier.padding(start = 8.dp),
                     maxLines = 1
                 )
-            }
-        }
-
-        item {
-            AppPanel(modifier = Modifier.fillMaxWidth()) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    SectionTitle(
-                        eyebrow = stringResource(R.string.exercise_library_eyebrow),
-                        title = stringResource(R.string.exercise_library_title),
-                        supporting = stringResource(R.string.exercise_library_supporting)
-                    )
-                }
             }
         }
 
@@ -1095,9 +1082,7 @@ fun ExerciseListScreen(
                 items = filteredExercises,
                 key = { it.id }
             ) { exercise ->
-                val mappingCount = musclesByExercise[exercise.name].orEmpty().size
-                val workoutCount = uiState.exerciseWorkoutCounts[exercise.id] ?: 0
-                val loadProfile = uiState.loadProfiles[exercise.id]
+                var menuExpanded by remember(exercise.id) { mutableStateOf(false) }
                 val isBuiltIn = BuiltInExerciseCatalog.definitionForName(exercise.name) != null
                 val displayExerciseName = localizedExerciseName(exercise.name)
                 val searchMatchReason = exerciseSearchMatch(exercise.name, searchQuery)?.reason
@@ -1119,8 +1104,8 @@ fun ExerciseListScreen(
                                 exerciseId = exercise.id,
                                 exerciseName = exercise.name,
                                 ownerKey = exerciseMediaOwnerKey,
-                                width = 72.dp,
-                                height = 60.dp
+                            width = 76.dp,
+                            height = 64.dp
                             )
                             Column(
                                 modifier = Modifier.weight(1f),
@@ -1140,16 +1125,6 @@ fun ExerciseListScreen(
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         maxLines = 2,
                                         overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                            }
-                            if (isBuiltIn) {
-                                InfoPill(text = stringResource(R.string.exercise_card_built_in))
-                            } else {
-                                IconButton(onClick = { onStartRenameExercise(exercise) }) {
-                                    Icon(
-                                        imageVector = Icons.Default.Edit,
-                                        contentDescription = stringResource(R.string.cd_edit)
                                     )
                                 }
                             }
@@ -1174,92 +1149,70 @@ fun ExerciseListScreen(
                                     }
                                 )
                             }
-                            IconButton(onClick = { onDeleteExercise(exercise) }) {
+                            androidx.compose.foundation.layout.Box {
+                            IconButton(onClick = { menuExpanded = true }) {
                                 Icon(
-                                    imageVector = Icons.Default.Delete,
-                                    contentDescription = stringResource(
-                                        R.string.cd_delete_exercise_named,
-                                        displayExerciseName
-                                    ),
-                                    tint = MaterialTheme.colorScheme.error
+                                    imageVector = Icons.Default.MoreVert,
+                                    contentDescription = stringResource(R.string.cd_more_actions)
                                 )
                             }
-                        }
-
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            ExerciseMetricPill(
-                                icon = Icons.Default.FormatListNumbered,
-                                text = stringResource(R.string.exercise_workout_count_compact, workoutCount)
-                            )
-                            if (loadProfile != null) {
-                                ExerciseMetricPill(
-                                    icon = Icons.Default.FitnessCenter,
-                                    text = stringResource(
-                                        R.string.exercise_load_option_count,
-                                        loadProfile.allowedWeightsKg.size
+                            DropdownMenu(
+                                expanded = menuExpanded,
+                                onDismissRequest = { menuExpanded = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.exercise_card_history)) },
+                                    onClick = {
+                                        menuExpanded = false
+                                        onExerciseClick(exercise.id)
+                                    },
+                                    leadingIcon = { Icon(Icons.Default.History, contentDescription = null) }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.exercise_card_muscle_groups)) },
+                                    onClick = {
+                                        menuExpanded = false
+                                        onEditExerciseMapping(exercise.name)
+                                    },
+                                    leadingIcon = { Icon(Icons.Default.FitnessCenter, contentDescription = null) }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.exercise_load_profile_action)) },
+                                    onClick = {
+                                        menuExpanded = false
+                                        onEditExerciseLoadProfile(exercise)
+                                    },
+                                    leadingIcon = { Icon(Icons.Default.FormatListNumbered, contentDescription = null) }
+                                )
+                                if (!isBuiltIn) {
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.cd_edit)) },
+                                        onClick = {
+                                            menuExpanded = false
+                                            onStartRenameExercise(exercise)
+                                        },
+                                        leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) }
                                     )
-                                )
-                            }
-                            ExerciseMetricPill(
-                                icon = Icons.Default.FitnessCenter,
-                                text = if (mappingCount == 0) {
-                                    stringResource(R.string.exercise_card_auto_mapping)
-                                } else {
-                                    stringResource(R.string.exercise_card_mapped_count, mappingCount)
                                 }
-                            )
-                        }
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            OutlinedButton(
-                                onClick = { onExerciseClick(exercise.id) },
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .heightIn(min = 58.dp)
-                            ) {
-                                Icon(imageVector = Icons.Default.History, contentDescription = null)
-                                Text(
-                                    text = stringResource(R.string.exercise_card_history),
-                                    modifier = Modifier.padding(start = 8.dp),
-                                    maxLines = 2
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.action_delete)) },
+                                    onClick = {
+                                        menuExpanded = false
+                                        onDeleteExercise(exercise)
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            Icons.Default.Delete,
+                                            contentDescription = stringResource(
+                                                R.string.cd_delete_exercise_named,
+                                                displayExerciseName
+                                            ),
+                                            tint = MaterialTheme.colorScheme.error
+                                        )
+                                    }
                                 )
                             }
-                            OutlinedButton(
-                                onClick = { onEditExerciseMapping(exercise.name) },
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .heightIn(min = 58.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.FitnessCenter,
-                                    contentDescription = null
-                                )
-                                Text(
-                                    text = stringResource(R.string.exercise_card_muscle_groups),
-                                    modifier = Modifier.padding(start = 8.dp),
-                                    maxLines = 2
-                                )
                             }
-                        }
-                        OutlinedButton(
-                            onClick = { onEditExerciseLoadProfile(exercise) },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(min = 52.dp)
-                        ) {
-                            Icon(imageVector = Icons.Default.FitnessCenter, contentDescription = null)
-                            Text(
-                                text = stringResource(R.string.exercise_load_profile_action),
-                                modifier = Modifier.padding(start = 8.dp)
-                            )
                         }
                     }
                 }
@@ -1662,11 +1615,6 @@ internal fun ExerciseSearchAndFilters(
                 }
             }
 
-            Text(
-                text = stringResource(R.string.exercise_search_result_count, resultCount),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
         }
     }
 }

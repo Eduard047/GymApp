@@ -406,6 +406,7 @@ internal class LiveWorkoutSidecarStore(context: Context) {
     @Synchronized
     fun clear(session: AccountSession.Cloud): Boolean {
         val key = bindingKey(session)
+        if (!preferences.contains(key)) return false
         val cleared = preferences.edit().remove(key).commit()
         // Detach/logout is fail-closed even if durable cleanup needs another attempt after restart.
         durableCache[key] = null
@@ -414,10 +415,16 @@ internal class LiveWorkoutSidecarStore(context: Context) {
 
     @Synchronized
     fun clearAll(): Boolean {
+        val snapshot = preferences.all.mapValues { (_, value) -> value as? String ?: return false }
         val cleared = preferences.edit().clear().commit()
-        if (!cleared) preferences.edit().clear().apply()
+        if (!cleared) {
+            val restore = preferences.edit().clear()
+            snapshot.forEach(restore::putString)
+            restore.commit()
+            return false
+        }
         durableCache.clear()
-        return cleared
+        return true
     }
 
     private fun bindingKey(session: AccountSession.Cloud): String =

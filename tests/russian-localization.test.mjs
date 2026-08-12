@@ -107,20 +107,21 @@ test("iOS String Catalog has Russian values for every key and preserves format p
     "Сохранить как выполненную тренировку"
   );
   assert.match(addWorkout, /Label\("Save as completed workout"/);
-  assert.match(addWorkout, /Planned rows are targets\. They do not start rest timers/);
-  assert.match(addWorkout, /Garmin plan mode: after saving, every planned row is sent/);
-  assert.match(addWorkout, /Completed mode remains available for workouts you already finished/);
+  assert.doesNotMatch(addWorkout, /Planned rows are targets\. They do not start rest timers/);
+  assert.match(addWorkout, /The current edited plan is sent to the selected watch\. No workout is saved or started\./);
+  assert.doesNotMatch(addWorkout, /Garmin plan mode: after saving, every planned row is sent/);
   assert.match(addWorkout, /Adds every planned row to history and summaries as completed/);
   assert.match(workoutDashboard, /"\\\(progression\.xpIntoLevel\) из "/);
 });
 
-test("PWA accepts Russian state and renders Russian runtime text before app startup", async () => {
-  const [contractSource, russianSource, appSource, indexSource, workerSource] = await Promise.all([
+test("retained browser source accepts Russian while the public landing owns its compact Russian copy", async () => {
+  const [contractSource, russianSource, appSource, indexSource, workerSource, retirementSource] = await Promise.all([
     readFile("pwa/state-contract.js", "utf8"),
     readFile("pwa/russian-text.js", "utf8"),
     readFile("pwa/app.js", "utf8"),
     readFile("pwa/index.html", "utf8"),
-    readFile("pwa/sw.js", "utf8")
+    readFile("pwa/sw.js", "utf8"),
+    readFile("pwa/retirement.js", "utf8")
   ]);
   const window = {};
   vm.runInNewContext(russianSource, { Map, Object, RegExp, String, window });
@@ -245,9 +246,11 @@ test("PWA accepts Russian state and renders Russian runtime text before app star
   assert.match(appSource, /tx\("metrics parsed from the saved note", "показники прочитано зі збереженої нотатки"\)/);
   assert.match(appSource, /txAttr\("Name in English, Ukrainian, or Russian", "Назва англійською, українською або російською"\)/);
   assert.doesNotMatch(appSource, /Name in English, Ukrainian or Russian/);
-  assert.ok(indexSource.indexOf("russian-text.v77.js") < indexSource.indexOf("exercise-search-vocabulary.v1.js"));
-  assert.ok(indexSource.indexOf("exercise-search-vocabulary.v1.js") < indexSource.indexOf("app.v85.js"));
-  assert.match(workerSource, /"\.\/russian-text\.v77\.js"/);
+  assert.match(indexSource, /retirement\.v1\.js/);
+  assert.doesNotMatch(indexSource, /russian-text\.v78\.js|exercise-search-vocabulary|app\.v86\.js/);
+  assert.doesNotMatch(workerSource, /russian-text|exercise-search-vocabulary|app\.v86\.js/);
+  assert.match(retirementSource, /title: "Тренируйтесь в GymApp"/);
+  assert.match(retirementSource, /deletion: "Удаление аккаунта и данных"/);
 });
 
 test("runtime language switches invalidate cached labels on every client", async () => {
@@ -269,12 +272,16 @@ test("runtime language switches invalidate cached labels on every client", async
   assert.match(iosAuth, /item\.title\(languageCode: languageCode\)/);
   assert.match(iosAuth, /gymLocalized\(title, languageCode: languageCode\)/);
   assert.match(iosWorkouts, /@AppStorage\("app-language"\) private var languageCode/);
-  assert.match(iosWorkouts, /"ТВОЙ СЛЕДУЮЩИЙ ШАГ"/);
-  assert.match(iosWorkouts, /"Начать тренировку"/);
-  assert.match(iosWorkouts, /"Нет тренировки"/);
+  assert.match(iosWorkouts, /"Сегодня"/);
+  assert.match(iosWorkouts, /"Начать план"/);
+  assert.match(iosWorkouts, /"Редактировать план"/);
+  assert.doesNotMatch(iosWorkouts, /"Начать рекомендованное"/);
+  assert.match(iosWorkouts, /"Сегодня отдых"/);
   assert.match(iosProfile, /"Защищённая синхронизация тренировок активна\./);
   assert.match(iosProgress, /"Журнал тренировок"/);
-  assert.match(iosProgress, /"Сравнивай силу, объём и регулярность отдельно для каждого упражнения\."/);
+  assert.doesNotMatch(iosProgress, /Compare strength, volume, and consistency for each exercise\./);
+  assert.doesNotMatch(iosProgress, /Порівнюй силу, обсяг і регулярність окремо для кожної вправи\./);
+  assert.doesNotMatch(iosProgress, /Сравнивай силу, объём и регулярность отдельно для каждого упражнения\./);
   assert.match(iosMedia, /"Открыть демонстрацию упражнения"/);
   assert.match(
     pwaApp,

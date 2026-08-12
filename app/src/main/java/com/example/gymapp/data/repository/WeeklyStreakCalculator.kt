@@ -7,23 +7,27 @@ import java.time.ZoneId
 import java.time.temporal.TemporalAdjusters
 
 internal object WeeklyStreakCalculator {
-    private const val MIN_WORKOUTS_PER_WEEK = 3
-
     fun current(
         sessionTimestamps: List<Long>,
+        targetWorkoutsPerWeek: Int,
         nowMillis: Long,
         zoneId: ZoneId
     ): Int {
-        val counts = weeklyCounts(sessionTimestamps, zoneId)
+        require(targetWorkoutsPerWeek in 2..6)
+        val counts = weeklyCounts(
+            sessionTimestamps = sessionTimestamps,
+            zoneId = zoneId,
+            maximumTimestampMillis = nowMillis
+        )
         if (counts.isEmpty()) return 0
 
         var cursor = localDate(nowMillis, zoneId).mondayStart()
-        if ((counts[cursor] ?: 0) < MIN_WORKOUTS_PER_WEEK) {
+        if ((counts[cursor] ?: 0) < targetWorkoutsPerWeek) {
             cursor = cursor.minusWeeks(1)
         }
 
         var streak = 0
-        while ((counts[cursor] ?: 0) >= MIN_WORKOUTS_PER_WEEK) {
+        while ((counts[cursor] ?: 0) >= targetWorkoutsPerWeek) {
             streak += 1
             cursor = cursor.minusWeeks(1)
         }
@@ -32,15 +36,19 @@ internal object WeeklyStreakCalculator {
 
     fun bestDuringPeriod(
         sessionTimestamps: List<Long>,
+        targetWorkoutsPerWeek: Int,
         periodStartMillis: Long,
         periodEndMillis: Long,
         zoneId: ZoneId
     ): Int {
+        require(targetWorkoutsPerWeek in 2..6)
         if (periodEndMillis < periodStartMillis) return 0
 
-        val validSessions = sessionTimestamps.mapNotNull { timestamp ->
-            runCatching { localDate(timestamp, zoneId) }.getOrNull()
-        }
+        val validSessions = sessionTimestamps
+            .asSequence()
+            .filter { timestamp -> timestamp <= periodEndMillis }
+            .mapNotNull { timestamp -> runCatching { localDate(timestamp, zoneId) }.getOrNull() }
+            .toList()
         val periodStart = localDate(periodStartMillis, zoneId)
         val periodEnd = localDate(periodEndMillis, zoneId)
         val periodWorkoutWeeks = validSessions
@@ -49,9 +57,12 @@ internal object WeeklyStreakCalculator {
             .toSet()
         if (periodWorkoutWeeks.isEmpty()) return 0
 
-        val counts = validSessions.groupingBy { it.mondayStart() }.eachCount()
+        val counts = validSessions
+            .distinct()
+            .groupingBy { it.mondayStart() }
+            .eachCount()
         val successfulWeeks = counts
-            .filterValues { it >= MIN_WORKOUTS_PER_WEEK }
+            .filterValues { it >= targetWorkoutsPerWeek }
             .keys
             .sorted()
 
@@ -70,9 +81,13 @@ internal object WeeklyStreakCalculator {
 
     private fun weeklyCounts(
         sessionTimestamps: List<Long>,
-        zoneId: ZoneId
+        zoneId: ZoneId,
+        maximumTimestampMillis: Long
     ): Map<LocalDate, Int> = sessionTimestamps
+        .asSequence()
+        .filter { timestamp -> timestamp <= maximumTimestampMillis }
         .mapNotNull { timestamp -> runCatching { localDate(timestamp, zoneId) }.getOrNull() }
+        .distinct()
         .groupingBy { it.mondayStart() }
         .eachCount()
 

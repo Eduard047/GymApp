@@ -94,6 +94,8 @@ import com.example.gymapp.data.repository.GymRepository
 import com.example.gymapp.data.repository.SharedWorkoutInbox
 import com.example.gymapp.data.repository.SharedWorkoutLink
 import com.example.gymapp.data.repository.SharedWorkoutPlan
+import com.example.gymapp.data.repository.handOffFirstWorkoutNavigation
+import com.example.gymapp.data.repository.handOffSkippedFirstWorkoutNavigation
 import com.example.gymapp.push.AndroidPushManager
 import com.example.gymapp.push.PushNavigationInbox
 import com.example.gymapp.push.PushNavigationTarget
@@ -184,6 +186,7 @@ internal suspend fun runConfirmedAccountDeletionLocalCleanup(
     clearRoom: suspend () -> Unit,
     clearBaseline: () -> Boolean,
     clearTrainingProfile: () -> Boolean,
+    clearTrainingGuidance: () -> Boolean = { true },
     clearSyncStatus: () -> Boolean = { true },
     clearCustomMedia: () -> Boolean = { true },
     clearBackupShares: () -> Boolean = { true },
@@ -194,6 +197,7 @@ internal suspend fun runConfirmedAccountDeletionLocalCleanup(
     if (runCatching { clearRoom() }.isFailure) failures += 1
     if (runCatching { check(clearBaseline()) }.isFailure) failures += 1
     if (runCatching { check(clearTrainingProfile()) }.isFailure) failures += 1
+    if (runCatching { check(clearTrainingGuidance()) }.isFailure) failures += 1
     if (runCatching { check(clearSyncStatus()) }.isFailure) failures += 1
     if (runCatching { check(clearCustomMedia()) }.isFailure) failures += 1
     if (runCatching { check(clearBackupShares()) }.isFailure) failures += 1
@@ -340,6 +344,10 @@ internal fun GymAppRoot(
     val navController = key(uiIsolationKey, selectedLanguage) { rememberNavController() }
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
+    var addWorkoutDraftDirty by rememberSaveable(uiIsolationKey) { mutableStateOf(false) }
+    var addWorkoutCloseRequestVersion by rememberSaveable(uiIsolationKey) {
+        mutableStateOf(0L)
+    }
     val repository = remember(uiIsolationKey) { repositoryProvider(authState.session) }
     val activeWorkout by repository.observeActiveWorkout().collectAsState(initial = null)
     val pendingSharedWorkout by sharedWorkoutInbox.pending.collectAsState()
@@ -980,7 +988,7 @@ internal fun GymAppRoot(
         currentRoute == AppDestination.Profile.route -> R.string.title_profile
         currentRoute?.startsWith("friend/") == true -> R.string.friend_details_title
         currentRoute == AppDestination.Ranks.route -> R.string.title_ranks
-        currentRoute == AppDestination.AddWorkout.route -> R.string.title_add_workout
+        currentRoute?.startsWith(AppDestination.AddWorkout.route) == true -> R.string.title_workout_plan
         currentRoute == AppDestination.ActiveWorkout.route -> R.string.active_workout_title
         currentRoute?.startsWith("workout_detail/") == true -> R.string.title_workout_detail
         currentRoute?.startsWith("post_workout_summary/") == true -> R.string.title_post_workout_summary
@@ -1018,6 +1026,8 @@ internal fun GymAppRoot(
             if (authState.session == null) {
                 AuthScreen(
                     uiState = authState,
+                    selectedLanguage = selectedLanguage,
+                    onLanguageSelected = languageManager::setLanguage,
                     onLogin = { email, password ->
                         coroutineScope.launch {
                             authManager.setLoading(true)
@@ -1091,10 +1101,11 @@ internal fun GymAppRoot(
                             }
                         }
                     },
-                    onContinueLocal = { displayName ->
+                    savedLocalProfiles = authManager.savedLocalProfiles(),
+                    onContinueLocal = { displayName, resumeExisting ->
                         authManager.setLoading(true)
                         runCatching {
-                            authManager.setLocal(displayName)
+                            authManager.setLocal(displayName, resumeExisting)
                         }.onFailure { throwable ->
                             authManager.setMessage(
                                 authErrorText(
@@ -1196,7 +1207,15 @@ internal fun GymAppRoot(
                         isRootDestination = isBottomTabRoute,
                         showRootTitle = !hasInContentRootHeader,
                         selectedLanguage = selectedLanguage,
-                        onBack = { navController.navigateUp() },
+                        onBack = {
+                            if (currentRoute?.startsWith(AppDestination.AddWorkout.route) == true &&
+                                addWorkoutDraftDirty
+                            ) {
+                                addWorkoutCloseRequestVersion += 1L
+                            } else {
+                                navController.navigateUp()
+                            }
+                        },
                         onLanguageSelected = { languageManager.setLanguage(it) },
                         scrollBehavior = topAppBarScrollBehavior
                     )
@@ -1370,8 +1389,13 @@ internal fun GymAppRoot(
                         modifier = Modifier.fillMaxSize()
                     ) {
                         composable(route = AppDestination.Workouts.route) {
+                            val application = applicationContext.gymApplication
                             val viewModel: WorkoutListViewModel = viewModel(
-                                factory = WorkoutListViewModel.factory(repository)
+                                factory = WorkoutListViewModel.factory(
+                                    repository = repository,
+                                    trainingProfileManager = application.trainingProfileManager,
+                                    trainingGuidanceManager = application.trainingGuidanceManager
+                                )
                             )
                             val uiState by viewModel.uiState.collectAsState()
                             val activeWorkoutSets = activeWorkout?.exercises
@@ -1404,6 +1428,65 @@ internal fun GymAppRoot(
                                         }
                                     )
                                 },
+                                onStartPlan = { launchToken ->
+                                    coroutineScope.launch {
+                                        if (viewModel.startRecommendedPlan(launchToken)) {
+                                            navController.navigate(AppDestination.ActiveWorkout.route) {
+                                                launchSingleTop = true
+                                            }
+                                        } else {
+                                            viewModel.refreshTodayPlan()
+                                        }
+                                    }
+                                },
+                                onOpenPlan = { launchToken ->
+                                    coroutineScope.launch {
+                                        val plan = viewModel.resolveLaunchPlan(launchToken)
+                                        if (plan != null) {
+                                            navController.navigate(
+                                                AppDestination.addWorkoutRoute(launchToken)
+                                            )
+                                        } else {
+                                            viewModel.refreshTodayPlan()
+                                        }
+                                    }
+                                },
+                                onStartFirstWorkout = { goal, days, effort ->
+                                    val token = viewModel.buildFirstWorkoutLaunch(goal, days, effort)
+                                    if (token != null) {
+                                        coroutineScope.launch {
+                                            if (viewModel.startFirstWorkoutPlan(token)) {
+                                                navController.navigate(
+                                                    AppDestination.ActiveWorkout.route
+                                                ) {
+                                                    launchSingleTop = true
+                                                }
+                                            } else {
+                                                viewModel.cancelFirstWorkoutLaunch(token)
+                                                viewModel.refreshTodayPlan()
+                                            }
+                                        }
+                                    }
+                                },
+                                onSkipFirstWorkout = {
+                                    val previousDismissed =
+                                        viewModel.isFirstWorkoutActivationDismissed()
+                                    handOffSkippedFirstWorkoutNavigation(
+                                        previousDismissed = previousDismissed,
+                                        persistDismissed = { dismissed ->
+                                            if (dismissed) {
+                                                viewModel.dismissFirstWorkoutActivation()
+                                            } else {
+                                                viewModel.restoreFirstWorkoutActivationDismissal(
+                                                    dismissed
+                                                )
+                                            }
+                                        },
+                                        open = {
+                                            navController.navigate(AppDestination.AddWorkout.route)
+                                        }
+                                    )
+                                },
                                 activeWorkoutProgress = activeWorkoutProgress,
                                 onDiscardActiveWorkout = {
                                     activeWorkout?.activeWorkout?.revision?.let { activeRevision ->
@@ -1424,8 +1507,13 @@ internal fun GymAppRoot(
                         }
 
                         composable(route = AppDestination.Missions.route) {
+                            val application = applicationContext.gymApplication
                             val viewModel: WorkoutListViewModel = viewModel(
-                                factory = WorkoutListViewModel.factory(repository)
+                                factory = WorkoutListViewModel.factory(
+                                    repository,
+                                    application.trainingProfileManager,
+                                    application.trainingGuidanceManager
+                                )
                             )
                             val uiState by viewModel.uiState.collectAsState()
 
@@ -1441,8 +1529,13 @@ internal fun GymAppRoot(
                         }
 
                         composable(route = AppDestination.Ranks.route) {
+                            val application = applicationContext.gymApplication
                             val viewModel: WorkoutListViewModel = viewModel(
-                                factory = WorkoutListViewModel.factory(repository)
+                                factory = WorkoutListViewModel.factory(
+                                    repository,
+                                    application.trainingProfileManager,
+                                    application.trainingGuidanceManager
+                                )
                             )
                             val uiState by viewModel.uiState.collectAsState()
 
@@ -1452,14 +1545,59 @@ internal fun GymAppRoot(
                             )
                         }
 
-                        composable(route = AppDestination.AddWorkout.route) {
+                        composable(
+                            route = AppDestination.ADD_WORKOUT_ROUTE_PATTERN,
+                            arguments = listOf(
+                                navArgument(AppDestination.ADD_WORKOUT_LAUNCH_ARGUMENT) {
+                                    type = NavType.StringType
+                                    defaultValue = ""
+                                }
+                            )
+                        ) { backStackEntry ->
                             val context = LocalContext.current
                             val syncClient = remember(context) { PhoneSyncClient(context) }
+                            val application = context.gymApplication
+                            val launchToken = remember(backStackEntry, uiIsolationKey) {
+                                val encoded = backStackEntry.arguments
+                                    ?.getString(AppDestination.ADD_WORKOUT_LAUNCH_ARGUMENT)
+                                    .orEmpty()
+                                backStackEntry.arguments?.remove(
+                                    AppDestination.ADD_WORKOUT_LAUNCH_ARGUMENT
+                                )
+                                encoded.takeIf(String::isNotEmpty)
+                            }
+                            val launchPlanHandoff: suspend (
+                                String,
+                                (com.example.gymapp.data.repository.SmartWorkoutLaunchPlan) -> Boolean,
+                                (com.example.gymapp.data.repository.SmartWorkoutLaunchPlan) -> Boolean
+                            ) -> Boolean =
+                                remember(backStackEntry, uiIsolationKey) {
+                                    val workoutsEntry = runCatching {
+                                        navController.getBackStackEntry(AppDestination.Workouts.route)
+                                    }.getOrNull()
+                                    if (workoutsEntry == null) {
+                                        { _, _, _ -> false }
+                                    } else {
+                                        val sourceViewModel: WorkoutListViewModel =
+                                            androidx.lifecycle.ViewModelProvider(
+                                                workoutsEntry,
+                                                WorkoutListViewModel.factory(
+                                                    repository,
+                                                    application.trainingProfileManager,
+                                                    application.trainingGuidanceManager
+                                                )
+                                            )[WorkoutListViewModel::class.java]
+                                        sourceViewModel::handOffLaunchPlan
+                                    }
+                            }
                             val viewModel: AddWorkoutViewModel = viewModel(
+                                key = "add_workout_${backStackEntry.id}",
                                 factory = AddWorkoutViewModel.factory(
                                     repository = repository,
                                     syncClient = syncClient,
-                                    trainingProfileManager = context.gymApplication.trainingProfileManager
+                                    trainingProfileManager = application.trainingProfileManager,
+                                    launchToken = launchToken,
+                                    launchPlanHandoff = launchPlanHandoff
                                 )
                             )
                             val uiState by viewModel.uiState.collectAsState()
@@ -1587,7 +1725,7 @@ internal fun GymAppRoot(
                             LaunchedEffect(uiState.activeWorkoutStarted) {
                                 if (uiState.activeWorkoutStarted) {
                                     navController.navigate(AppDestination.ActiveWorkout.route) {
-                                        popUpTo(AppDestination.AddWorkout.route) {
+                                        popUpTo(backStackEntry.destination.id) {
                                             inclusive = true
                                         }
                                     }
@@ -1612,6 +1750,7 @@ internal fun GymAppRoot(
                                 onCloseSmartAlternatives = viewModel::closeSmartWorkoutAlternatives,
                                 onApplySmartAlternative = viewModel::applySmartWorkoutAlternative,
                                 onAddExerciseDraft = viewModel::addExerciseDraft,
+                                onClearPlan = { viewModel.clearWorkoutPlan() },
                                 onRemoveExerciseDraft = viewModel::removeExerciseDraft,
                                 onExerciseSelected = viewModel::updateExerciseSelection,
                                 onAddSet = viewModel::addSet,
@@ -1637,6 +1776,14 @@ internal fun GymAppRoot(
                                     }
                                 },
                                 onStartWorkout = viewModel::startWorkout,
+                                onDiscardPlan = { navController.navigateUp() },
+                                externalCloseRequestVersion = addWorkoutCloseRequestVersion,
+                                onExternalCloseRequestHandled = {
+                                    addWorkoutCloseRequestVersion = 0L
+                                },
+                                onDirtyStateChanged = { dirty ->
+                                    addWorkoutDraftDirty = dirty
+                                },
                                 modifier = Modifier.fillMaxSize()
                             )
 
@@ -1766,7 +1913,11 @@ internal fun GymAppRoot(
                                 key = "post_workout_summary_$sessionId",
                                 factory = PostWorkoutSummaryViewModel.factory(
                                     repository = repository,
-                                    sessionId = sessionId
+                                    sessionId = sessionId,
+                                    trainingGuidanceManager = applicationContext.gymApplication
+                                        .trainingGuidanceManager,
+                                    trainingProfileManager = applicationContext.gymApplication
+                                        .trainingProfileManager
                                 )
                             )
                             val uiState by viewModel.uiState.collectAsState()
@@ -1796,6 +1947,7 @@ internal fun GymAppRoot(
                                         }
                                     }
                                 },
+                                onFeedbackSelected = viewModel::selectFeedback,
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
@@ -2290,6 +2442,11 @@ internal fun GymAppRoot(
                                                                 .trainingProfileManager
                                                                 .clearAccount(deletedSession)
                                                         },
+                                                        clearTrainingGuidance = {
+                                                            applicationContext.gymApplication
+                                                                .trainingGuidanceManager
+                                                                .clearAccount(deletedSession)
+                                                        },
                                                         clearSyncStatus = {
                                                             cloudSyncStatusStore.clear(
                                                                 deletedSession.userId
@@ -2369,6 +2526,49 @@ internal fun GymAppRoot(
                                                     authErrorText(
                                                         throwable,
                                                         R.string.account_delete_failed
+                                                    )
+                                                )
+                                            }
+                                        }
+                                        accountDeletionInProgress = false
+                                    }
+                                },
+                                localProfileName = (authState.session as? AccountSession.Local)
+                                    ?.displayName,
+                                onDeleteLocalProfile = deleteLocalProfile@ {
+                                    if (!accountActionsEnabled(
+                                            authLoading = authState.isLoading,
+                                            deletionInProgress = accountDeletionInProgress
+                                        )
+                                    ) {
+                                        return@deleteLocalProfile
+                                    }
+                                    val capturedSession = authManager.authState.value.session
+                                        as? AccountSession.Local ?: return@deleteLocalProfile
+                                    accountDeletionInProgress = true
+                                    accountDeletionScope.launch {
+                                        runCatching {
+                                            withContext(NonCancellable) {
+                                                applicationContext.gymApplication
+                                                    .deleteCurrentLocalProfile(capturedSession)
+                                            }
+                                        }.onSuccess { completed ->
+                                            if (!completed &&
+                                                authManager.authState.value.session == null
+                                            ) {
+                                                authManager.setMessage(
+                                                    LocalizedText(
+                                                        R.string.local_profile_delete_cleanup_pending
+                                                    )
+                                                )
+                                            }
+                                        }.onFailure { throwable ->
+                                            val current = authManager.authState.value.session
+                                            if (current == capturedSession || current == null) {
+                                                authManager.setMessage(
+                                                    authErrorText(
+                                                        throwable,
+                                                        R.string.local_profile_delete_failed
                                                     )
                                                 )
                                             }
@@ -2993,10 +3193,14 @@ private fun LanguageSelector(
                 MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.9f)
             )
         ) {
-            IconButton(onClick = { expanded = true }) {
+            TextButton(onClick = { expanded = true }) {
                 Icon(
                     imageVector = Icons.Default.Language,
                     contentDescription = stringResource(R.string.cd_language)
+                )
+                Text(
+                    text = selectedLanguage.name,
+                    modifier = Modifier.padding(start = 6.dp)
                 )
             }
         }

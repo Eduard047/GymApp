@@ -28,7 +28,7 @@ struct ProfileView: View {
     @ObservedObject private var garminCloud: GarminCloudService
     @ObservedObject private var garminPhoneSync: GarminPhoneSyncService
     @ObservedObject private var liveWorkoutCoordinator: LiveWorkoutCoordinator
-    @AppStorage("app-language") private var languageCode = AppLanguage.english.rawValue
+    @AppStorage("app-language") private var languageCode = AppLanguage.firstRunDefault.rawValue
 
     @State private var activeAlert: ActiveAlert?
     @State private var showsAccountSettings = false
@@ -199,14 +199,7 @@ struct ProfileView: View {
 
     private var header: some View {
         GymScreenHeader(
-            eyebrow: gymText("Training circle", "Тренувальне коло", "Тренировочный круг", languageCode: languageCode),
-            title: auth.session?.displayName ?? "GymApp athlete",
-            supporting: gymText(
-                "Friends and live training stay together. Account and devices stay one tap away.",
-                "Друзі й live-тренування — разом. Акаунт і пристрої — за одне натискання.",
-                "Друзья и live-тренировки — вместе. Аккаунт и устройства — в одном нажатии.",
-                languageCode: languageCode
-            )
+            title: auth.session?.displayName ?? "GymApp athlete"
         )
     }
 
@@ -277,7 +270,6 @@ struct ProfileView: View {
         GymPanel {
             VStack(alignment: .leading, spacing: 12) {
                 GymSectionTitle(
-                    eyebrow: "Garmin",
                     title: gymText("Your watch", "Твій годинник", "Твои часы", languageCode: languageCode),
                     supporting: gymText(
                         "Live Bluetooth status is available for watches shared with this iPhone. Cloud watches show their latest synchronization state.",
@@ -382,7 +374,6 @@ struct ProfileView: View {
         GymPanel {
             VStack(alignment: .leading, spacing: 14) {
                 GymSectionTitle(
-                    eyebrow: "Your data",
                     title: "Backup & diagnostics",
                     supporting: "Backups merge into the current profile and skip duplicate sessions."
                 )

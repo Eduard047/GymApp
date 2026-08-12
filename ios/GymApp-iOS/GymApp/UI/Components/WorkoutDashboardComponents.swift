@@ -368,6 +368,8 @@ struct WorkoutMonthSwitcher: View {
 struct WorkoutProgressHero: View {
     let snapshot: GamificationSnapshot
     let monthXP: Int
+    let weeklyStreakWeeks: Int
+    let weeklyTarget: Int
     let onOpenRanks: () -> Void
 
     private var progression: ProgressionSnapshot { snapshot.progression }
@@ -417,14 +419,12 @@ struct WorkoutProgressHero: View {
                         onHero: true
                     )
                     GymMetricTile(
-                        label: "Day streak",
-                        value: gymCount(
-                            snapshot.streak.currentDays,
-                            englishOne: "day",
-                            englishMany: "days",
-                            ukrainianOne: "день",
-                            ukrainianFew: "дні",
-                            ukrainianMany: "днів"
+                        label: "Week streak",
+                        value: gymText(
+                            "\(weeklyStreakWeeks) wk",
+                            "\(weeklyStreakWeeks) тиж",
+                            "\(weeklyStreakWeeks) нед",
+                            languageCode: gymCurrentLanguageCode()
                         ),
                         onHero: true
                     )
@@ -491,14 +491,20 @@ struct WorkoutProgressHero: View {
         if snapshot.summary.workoutCount == 0 {
             return "Log a workout to start your momentum."
         }
-        if snapshot.streak.currentDays > 0 {
+        if weeklyStreakWeeks > 0 {
             return gymText(
-                "A \(snapshot.streak.currentDays)-day streak is building real momentum.",
-                "Серія у \(snapshot.streak.currentDays) дн. створює справжній темп.",
+                "\(weeklyStreakWeeks) successful week\(weeklyStreakWeeks == 1 ? "" : "s") in a row.",
+                "\(weeklyStreakWeeks) тиж. поспіль із ціллю \(weeklyTarget) тренувань.",
+                "\(weeklyStreakWeeks) нед. подряд с целью \(weeklyTarget) тренировок.",
                 languageCode: gymCurrentLanguageCode()
             )
         }
-        return "One more session starts your next streak."
+        return gymText(
+            "Reach \(weeklyTarget) training days to start your weekly rhythm.",
+            "Досягни \(weeklyTarget) тренувальних днів, щоб почати тижневий ритм.",
+            "Достигни \(weeklyTarget) тренировочных дней, чтобы начать недельный ритм.",
+            languageCode: gymCurrentLanguageCode()
+        )
     }
 
 }
@@ -528,13 +534,11 @@ struct WorkoutKPICard: View {
                     )
                     GymMetricTile(
                         label: "Week streak",
-                        value: gymCount(
-                            stats.weeklyStreakWeeks,
-                            englishOne: "week",
-                            englishMany: "weeks",
-                            ukrainianOne: "тиждень",
-                            ukrainianFew: "тижні",
-                            ukrainianMany: "тижнів"
+                        value: gymText(
+                            "\(stats.weeklyStreakWeeks) wk",
+                            "\(stats.weeklyStreakWeeks) тиж",
+                            "\(stats.weeklyStreakWeeks) нед",
+                            languageCode: gymCurrentLanguageCode()
                         ),
                         onHero: true
                     )
@@ -1099,11 +1103,7 @@ struct WorkoutRecommendationsCard: View {
                 Text("Recommendations")
                     .font(.headline)
                     .accessibilityAddTraits(.isHeader)
-                Text("Based on muscle load and recent training gaps.")
-                    .font(.caption)
-                    .foregroundStyle(GymTheme.textSecondary)
-
-                ForEach(recommendations) { recommendation in
+                ForEach(Array(recommendations.prefix(1))) { recommendation in
                     HStack(alignment: .top, spacing: 10) {
                         Image(systemName: recommendation.id.hasPrefix("next-") ? "arrow.forward.circle.fill" : "scope")
                             .foregroundStyle(GymTheme.primary)
@@ -1158,7 +1158,7 @@ enum AchievementIconCatalog {
 
 struct AchievementGallery: View {
     let achievements: [AchievementSnapshot]
-    @AppStorage("app-language") private var languageCode = AppLanguage.english.rawValue
+    @AppStorage("app-language") private var languageCode = AppLanguage.firstRunDefault.rawValue
 
     private var columns: [GridItem] {
         [GridItem(.adaptive(minimum: 250), spacing: 12, alignment: .top)]
@@ -1214,7 +1214,7 @@ struct AchievementGallery: View {
                     .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(gymLocalized(achievement.title, languageCode: languageCode))
+                    Text(localizedTitle(achievement))
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(GymTheme.textPrimary)
                     Text(gymLocalized(achievement.badge.name, languageCode: languageCode))
@@ -1230,7 +1230,7 @@ struct AchievementGallery: View {
                 )
             }
 
-            Text(gymLocalized(achievement.description, languageCode: languageCode))
+            Text(localizedDescription(achievement))
                 .font(.caption)
                 .foregroundStyle(GymTheme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -1285,6 +1285,62 @@ struct AchievementGallery: View {
     private func progressFraction(_ achievement: AchievementSnapshot) -> Double {
         guard achievement.target > 0 else { return achievement.unlocked ? 1 : 0 }
         return min(1, max(0, achievement.progress / achievement.target))
+    }
+
+    private func localizedTitle(_ achievement: AchievementSnapshot) -> String {
+        switch achievement.id {
+        case "streak_7":
+            gymText(
+                "Two-Week Rhythm",
+                "Ритм двох тижнів",
+                "Ритм двух недель",
+                languageCode: languageCode
+            )
+        case "streak_14":
+            gymText(
+                "Four-Week Rhythm",
+                "Ритм чотирьох тижнів",
+                "Ритм четырёх недель",
+                languageCode: languageCode
+            )
+        case "streak_30":
+            gymText(
+                "Eight-Week Rhythm",
+                "Ритм восьми тижнів",
+                "Ритм восьми недель",
+                languageCode: languageCode
+            )
+        default:
+            gymLocalized(achievement.title, languageCode: languageCode)
+        }
+    }
+
+    private func localizedDescription(_ achievement: AchievementSnapshot) -> String {
+        switch achievement.id {
+        case "streak_7":
+            gymText(
+                "Meet your weekly target for two weeks in a row.",
+                "Виконуй тижневу ціль два тижні поспіль.",
+                "Выполняй недельную цель две недели подряд.",
+                languageCode: languageCode
+            )
+        case "streak_14":
+            gymText(
+                "Meet your weekly target for four weeks in a row.",
+                "Виконуй тижневу ціль чотири тижні поспіль.",
+                "Выполняй недельную цель четыре недели подряд.",
+                languageCode: languageCode
+            )
+        case "streak_30":
+            gymText(
+                "Meet your weekly target for eight weeks in a row.",
+                "Виконуй тижневу ціль вісім тижнів поспіль.",
+                "Выполняй недельную цель восемь недель подряд.",
+                languageCode: languageCode
+            )
+        default:
+            gymLocalized(achievement.description, languageCode: languageCode)
+        }
     }
 
     private func achievementProgressLabel(_ achievement: AchievementSnapshot) -> String {

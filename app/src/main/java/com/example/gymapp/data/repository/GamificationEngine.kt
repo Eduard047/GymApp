@@ -1,10 +1,12 @@
 package com.example.gymapp.data.repository
 
 import com.example.gymapp.data.entity.WorkoutSessionSummary
+import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
+import java.time.temporal.TemporalAdjusters
 import kotlin.math.max
 import kotlin.math.roundToInt
 
@@ -16,8 +18,12 @@ object GamificationEngine {
     fun buildSnapshot(
         sessions: List<WorkoutSessionSummary>,
         nowMillis: Long,
-        zoneId: ZoneId = ZoneId.systemDefault()
+        zoneId: ZoneId = ZoneId.systemDefault(),
+        targetWorkoutsPerWeek: Int = 4
     ): GamificationSnapshot {
+        require(targetWorkoutsPerWeek in 2..6) {
+            "Weekly training target is outside the supported bounds."
+        }
         val sortedSessions = sessions.sortedBy { it.session.date }
         val today = Instant.ofEpochMilli(nowMillis).atZone(zoneId).toLocalDate()
         val todayEpochDay = today.toEpochDay()
@@ -25,12 +31,22 @@ object GamificationEngine {
         val workoutDays = dayAggregates.keys.sorted()
         val summary = buildSummary(sortedSessions, workoutDays)
         val streak = buildStreakSnapshot(workoutDays, todayEpochDay)
+        val weeklyAdherence = buildWeeklyAdherence(
+            workoutDays = sortedSessions
+                .asSequence()
+                .filter { it.session.date <= nowMillis }
+                .map { epochDay(it.session.date, zoneId) }
+                .distinct()
+                .sorted()
+                .toList(),
+            targetWorkoutsPerWeek = targetWorkoutsPerWeek
+        )
         val comeback = buildComebackSnapshot(workoutDays)
         val achievements = buildAchievements(
             sessions = sortedSessions,
             workoutDays = workoutDays,
             summary = summary,
-            streak = streak,
+            weeklyAdherence = weeklyAdherence,
             comeback = comeback,
             zoneId = zoneId
         )
@@ -64,6 +80,23 @@ object GamificationEngine {
         val volume: Double = 0.0,
         val xp: Int = 0
     )
+
+    private data class WeeklyAdherenceSnapshot(
+        val longestCompletedWeeks: Int,
+        val completionDayByWeekStart: Map<Long, Long>
+    ) {
+        fun unlockDayFor(consecutiveWeeks: Int): Long? {
+            require(consecutiveWeeks > 0)
+            var previousWeekStart: Long? = null
+            var run = 0
+            completionDayByWeekStart.toSortedMap().forEach { (weekStart, completionDay) ->
+                run = if (previousWeekStart?.plus(7L) == weekStart) run + 1 else 1
+                if (run >= consecutiveWeeks) return completionDay
+                previousWeekStart = weekStart
+            }
+            return null
+        }
+    }
 
     private fun buildDayAggregates(
         sessions: List<WorkoutSessionSummary>,
@@ -186,11 +219,40 @@ object GamificationEngine {
         )
     }
 
+    private fun buildWeeklyAdherence(
+        workoutDays: List<Long>,
+        targetWorkoutsPerWeek: Int
+    ): WeeklyAdherenceSnapshot {
+        val completionDayByWeekStart = workoutDays
+            .distinct()
+            .groupBy(::mondayEpochDay)
+            .mapNotNull { (weekStart, days) ->
+                val sortedDays = days.sorted()
+                sortedDays.getOrNull(targetWorkoutsPerWeek - 1)?.let { completionDay ->
+                    weekStart to completionDay
+                }
+            }
+            .toMap()
+
+        var longest = 0
+        var run = 0
+        var previousWeekStart: Long? = null
+        completionDayByWeekStart.keys.sorted().forEach { weekStart ->
+            run = if (previousWeekStart?.plus(7L) == weekStart) run + 1 else 1
+            longest = max(longest, run)
+            previousWeekStart = weekStart
+        }
+        return WeeklyAdherenceSnapshot(
+            longestCompletedWeeks = longest,
+            completionDayByWeekStart = completionDayByWeekStart
+        )
+    }
+
     private fun buildAchievements(
         sessions: List<WorkoutSessionSummary>,
         workoutDays: List<Long>,
         summary: GamificationSummary,
-        streak: StreakSnapshot,
+        weeklyAdherence: WeeklyAdherenceSnapshot,
         comeback: ComebackSnapshot,
         zoneId: ZoneId
     ): List<AchievementSnapshot> {
@@ -265,36 +327,36 @@ object GamificationEngine {
             ),
             streakAchievement(
                 id = "streak_7",
-                title = "Seven-Day Streak",
-                description = "Keep a seven day streak alive.",
-                target = 7.0,
-                current = streak.longestDays.toDouble(),
+                title = "Two-Week Rhythm",
+                description = "Meet your weekly target for two weeks in a row.",
+                target = 2.0,
+                current = weeklyAdherence.longestCompletedWeeks.toDouble(),
                 rewardXp = 150,
                 badgeName = "Momentum",
                 rarity = BadgeRarity.COMMON,
-                unlockDay = unlockDayByStreak(workoutDays, 7)
+                unlockDay = weeklyAdherence.unlockDayFor(2)
             ),
             streakAchievement(
                 id = "streak_14",
-                title = "Fourteen-Day Streak",
-                description = "Keep a fourteen day streak alive.",
-                target = 14.0,
-                current = streak.longestDays.toDouble(),
+                title = "Four-Week Rhythm",
+                description = "Meet your weekly target for four weeks in a row.",
+                target = 4.0,
+                current = weeklyAdherence.longestCompletedWeeks.toDouble(),
                 rewardXp = 250,
                 badgeName = "Flow State",
                 rarity = BadgeRarity.UNCOMMON,
-                unlockDay = unlockDayByStreak(workoutDays, 14)
+                unlockDay = weeklyAdherence.unlockDayFor(4)
             ),
             streakAchievement(
                 id = "streak_30",
-                title = "Thirty-Day Streak",
-                description = "Keep a thirty day streak alive.",
-                target = 30.0,
-                current = streak.longestDays.toDouble(),
+                title = "Eight-Week Rhythm",
+                description = "Meet your weekly target for eight weeks in a row.",
+                target = 8.0,
+                current = weeklyAdherence.longestCompletedWeeks.toDouble(),
                 rewardXp = 500,
                 badgeName = "Unbroken",
                 rarity = BadgeRarity.EPIC,
-                unlockDay = unlockDayByStreak(workoutDays, 30)
+                unlockDay = weeklyAdherence.unlockDayFor(8)
             ),
             volumeAchievement(
                 id = "volume_10k",
@@ -441,6 +503,10 @@ object GamificationEngine {
             )
         )
     }
+
+    private fun mondayEpochDay(epochDay: Long): Long = LocalDate.ofEpochDay(epochDay)
+        .with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+        .toEpochDay()
 
     private fun buildHeatmap(
         dayAggregates: Map<Long, DayAggregate>,
@@ -621,24 +687,6 @@ object GamificationEngine {
                 return epochDay(session.session.date, zoneId)
             }
         }
-        return null
-    }
-
-    private fun unlockDayByStreak(
-        workoutDays: List<Long>,
-        target: Int
-    ): Long? {
-        var run = 0
-        var previousDay: Long? = null
-
-        workoutDays.forEach { day ->
-            run = if (previousDay == null || day != previousDay!! + 1) 1 else run + 1
-            if (run >= target) {
-                return day
-            }
-            previousDay = day
-        }
-
         return null
     }
 

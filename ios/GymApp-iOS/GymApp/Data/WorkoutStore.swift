@@ -94,21 +94,24 @@ struct WorkoutDiagnosticsSnapshot: Equatable, Sendable {
 }
 
 enum WeeklyStreakCalculator {
-    private static let minimumWorkoutsPerWeek = 3
-
     static func current(
         sessions: [WorkoutSessionSummary],
+        targetTrainingDays: Int = 3,
         now: Date,
         calendar: Calendar
     ) -> Int {
-        let counts = weeklyCounts(sessions: sessions, calendar: calendar)
+        let counts = weeklyCounts(
+            sessions: sessions.filter { $0.date <= now },
+            calendar: calendar
+        )
         guard !counts.isEmpty else { return 0 }
+        let target = min(6, max(2, targetTrainingDays))
 
         var cursor = calendar.gymEpochDay(for: calendar.gymMondayStart(of: now))
-        if counts[cursor, default: 0] < minimumWorkoutsPerWeek { cursor -= 7 }
+        if counts[cursor, default: 0] < target { cursor -= 7 }
 
         var streak = 0
-        while counts[cursor, default: 0] >= minimumWorkoutsPerWeek {
+        while counts[cursor, default: 0] >= target {
             streak += 1
             cursor -= 7
         }
@@ -119,9 +122,11 @@ enum WeeklyStreakCalculator {
         sessions: [WorkoutSessionSummary],
         from startDate: Date,
         through endDate: Date,
+        targetTrainingDays: Int = 3,
         calendar: Calendar
     ) -> Int {
         guard endDate >= startDate else { return 0 }
+        let target = min(6, max(2, targetTrainingDays))
         let periodWeeks = Set(
             sessions
                 .filter { $0.date >= startDate && $0.date <= endDate }
@@ -130,7 +135,7 @@ enum WeeklyStreakCalculator {
         guard !periodWeeks.isEmpty else { return 0 }
 
         let successfulWeeks = weeklyCounts(sessions: sessions, calendar: calendar)
-            .filter { $0.value >= minimumWorkoutsPerWeek }
+            .filter { $0.value >= target }
             .keys
             .sorted()
 
@@ -147,13 +152,68 @@ enum WeeklyStreakCalculator {
         return best
     }
 
+    static func longest(
+        sessions: [WorkoutSessionSummary],
+        targetTrainingDays: Int,
+        calendar: Calendar
+    ) -> Int {
+        let target = min(6, max(2, targetTrainingDays))
+        let successfulWeeks = weeklyCounts(sessions: sessions, calendar: calendar)
+            .filter { $0.value >= target }
+            .keys
+            .sorted()
+        var previousWeek: Int64?
+        var running = 0
+        var best = 0
+        for week in successfulWeeks {
+            running = previousWeek.map { $0 + 7 == week } == true ? running + 1 : 1
+            best = max(best, running)
+            previousWeek = week
+        }
+        return best
+    }
+
+    static func unlockEpochDay(
+        sessions: [WorkoutSessionSummary],
+        consecutiveWeeks: Int,
+        targetTrainingDays: Int,
+        calendar: Calendar
+    ) -> Int64? {
+        guard consecutiveWeeks > 0 else { return nil }
+        let target = min(6, max(2, targetTrainingDays))
+        let daysByWeek = weeklyTrainingDays(sessions: sessions, calendar: calendar)
+        let successfulWeeks = daysByWeek
+            .filter { $0.value.count >= target }
+            .keys
+            .sorted()
+        var previousWeek: Int64?
+        var running = 0
+        for week in successfulWeeks {
+            running = previousWeek.map { $0 + 7 == week } == true ? running + 1 : 1
+            if running >= consecutiveWeeks {
+                return daysByWeek[week]?.sorted()[target - 1]
+            }
+            previousWeek = week
+        }
+        return nil
+    }
+
     private static func weeklyCounts(
         sessions: [WorkoutSessionSummary],
         calendar: Calendar
     ) -> [Int64: Int] {
+        weeklyTrainingDays(sessions: sessions, calendar: calendar).mapValues(\.count)
+    }
+
+    private static func weeklyTrainingDays(
+        sessions: [WorkoutSessionSummary],
+        calendar: Calendar
+    ) -> [Int64: Set<Int64>] {
         Dictionary(grouping: sessions) {
             calendar.gymEpochDay(for: calendar.gymMondayStart(of: $0.date))
-        }.mapValues(\.count)
+        }.mapValues { weekSessions in
+            Set(weekSessions.map { calendar.gymEpochDay(for: $0.date) })
+        }
     }
 }
 
@@ -167,6 +227,8 @@ public final class WorkoutStore: ObservableObject {
     @Published public private(set) var exercises: [Exercise]
     @Published public private(set) var workouts: [WorkoutSession]
     @Published public private(set) var muscleMappings: [ExerciseMuscleMapping]
+    @Published public private(set) var workoutFeedbackByID: [UUID: WorkoutFeedback]
+    private var workoutFeedbackSessionDateByID: [UUID: Date]
     public private(set) var catalogSeedVersion: Int
     /// Account-scoped, validated client extension namespaces from the shared cloud row.
     /// Stored separately from workout/domain state so unknown clients can round-trip data
@@ -215,6 +277,13 @@ public final class WorkoutStore: ObservableObject {
     private static let maximumOwnerFieldBytes = 512
     private static let maximumCatalogKeyBytes = 256
     private static let maximumAppNameBytes = 128
+    static let maximumWorkoutFeedbackEntries = 128
+
+    private struct PersistedWorkoutFeedback: Codable {
+        let workoutID: UUID
+        let sessionDate: Date?
+        let value: String
+    }
 
     private struct PersistedEnvelope: Codable {
         var schemaVersion: Int
@@ -223,11 +292,67 @@ public final class WorkoutStore: ObservableObject {
         var snapshot: WorkoutDataSnapshot
         var favoriteExerciseIDs: [UUID]?
         var cloudExtensionsData: Data?
+        var workoutFeedback: [PersistedWorkoutFeedback]?
+
+        private enum CodingKeys: String, CodingKey {
+            case schemaVersion
+            case accountStorageKey
+            case savedAt
+            case snapshot
+            case favoriteExerciseIDs
+            case cloudExtensionsData
+            case workoutFeedback
+        }
+
+        init(
+            schemaVersion: Int,
+            accountStorageKey: String,
+            savedAt: Date,
+            snapshot: WorkoutDataSnapshot,
+            favoriteExerciseIDs: [UUID]?,
+            cloudExtensionsData: Data?,
+            workoutFeedback: [PersistedWorkoutFeedback]?
+        ) {
+            self.schemaVersion = schemaVersion
+            self.accountStorageKey = accountStorageKey
+            self.savedAt = savedAt
+            self.snapshot = snapshot
+            self.favoriteExerciseIDs = favoriteExerciseIDs
+            self.cloudExtensionsData = cloudExtensionsData
+            self.workoutFeedback = workoutFeedback
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
+            accountStorageKey = try container.decode(String.self, forKey: .accountStorageKey)
+            savedAt = try container.decode(Date.self, forKey: .savedAt)
+            snapshot = try container.decode(WorkoutDataSnapshot.self, forKey: .snapshot)
+            favoriteExerciseIDs = try container.decodeIfPresent(
+                [UUID].self,
+                forKey: .favoriteExerciseIDs
+            )
+            cloudExtensionsData = try container.decodeIfPresent(
+                Data.self,
+                forKey: .cloudExtensionsData
+            )
+            workoutFeedback = try? container.decodeIfPresent(
+                [PersistedWorkoutFeedback].self,
+                forKey: .workoutFeedback
+            )
+        }
     }
 
     private struct LoadedStore {
         let snapshot: WorkoutDataSnapshot
         let cloudExtensionsData: Data?
+        let workoutFeedbackByID: [UUID: WorkoutFeedback]
+        let workoutFeedbackSessionDateByID: [UUID: Date]
+    }
+
+    private struct NormalizedWorkoutFeedback {
+        let values: [UUID: WorkoutFeedback]
+        let sessionDates: [UUID: Date]
     }
 
     private struct AuthoritativeBackupSetRow: Equatable {
@@ -262,6 +387,8 @@ public final class WorkoutStore: ObservableObject {
         self.exercises = loaded.snapshot.exercises
         self.workouts = loaded.snapshot.workouts
         self.muscleMappings = loaded.snapshot.muscleMappings
+        self.workoutFeedbackByID = loaded.workoutFeedbackByID
+        self.workoutFeedbackSessionDateByID = loaded.workoutFeedbackSessionDateByID
         self.catalogSeedVersion = loaded.snapshot.catalogSeedVersion
         self.cloudExtensionsData = loaded.cloudExtensionsData
     }
@@ -364,6 +491,8 @@ public final class WorkoutStore: ObservableObject {
         self.accountStorageKey = key
         self.storageURL = fileURL
         self.cloudExtensionsData = loaded.cloudExtensionsData
+        self.workoutFeedbackByID = loaded.workoutFeedbackByID
+        self.workoutFeedbackSessionDateByID = loaded.workoutFeedbackSessionDateByID
         publish(Self.normalized(loaded.snapshot))
     }
 
@@ -396,8 +525,14 @@ public final class WorkoutStore: ObservableObject {
         // envelope before unlinking also makes a failed remove safe and retryable.
         publish(empty)
         cloudExtensionsData = nil
+        workoutFeedbackByID = [:]
+        workoutFeedbackSessionDateByID = [:]
         do {
-            try persist(empty)
+            try persist(
+                empty,
+                workoutFeedbackByID: [:],
+                workoutFeedbackSessionDateByID: [:]
+            )
             try Self.destroyAccountFiles(
                 accountStorageKey: accountStorageKey,
                 directoryURL: directoryURL,
@@ -925,6 +1060,52 @@ public final class WorkoutStore: ObservableObject {
         workouts.first { $0.id == id }
     }
 
+    public func feedback(for workoutID: UUID) -> WorkoutFeedback? {
+        workoutFeedbackByID[workoutID]
+    }
+
+    public func setWorkoutFeedback(
+        _ feedback: WorkoutFeedback,
+        for workoutID: UUID
+    ) throws {
+        guard let workout = workouts.first(where: { $0.id == workoutID && $0.setCount > 0 }) else {
+            throw WorkoutStoreError.workoutNotFound
+        }
+        guard workoutFeedbackByID[workoutID] != feedback ||
+            workoutFeedbackSessionDateByID[workoutID] != workout.date else { return }
+        var updated = workoutFeedbackByID
+        var updatedDates = workoutFeedbackSessionDateByID
+        updated[workoutID] = feedback
+        updatedDates[workoutID] = workout.date
+        let normalized = Self.normalizedWorkoutFeedback(
+            updated,
+            sessionDates: updatedDates,
+            workouts: workouts
+        )
+        try persist(
+            snapshot,
+            workoutFeedbackByID: normalized.values,
+            workoutFeedbackSessionDateByID: normalized.sessionDates
+        )
+        workoutFeedbackByID = normalized.values
+        workoutFeedbackSessionDateByID = normalized.sessionDates
+    }
+
+    public func latestWorkoutFeedbackContext(now: Date = Date()) -> WorkoutFeedbackContext? {
+        guard let latest = workouts
+            .filter({ $0.setCount > 0 && $0.date <= now })
+            .sorted(by: Self.workoutNewestFirst)
+            .first,
+              let feedback = workoutFeedbackByID[latest.id] else {
+            return nil
+        }
+        return WorkoutFeedbackContext(
+            workoutID: latest.id,
+            sessionDate: latest.date,
+            feedback: feedback
+        )
+    }
+
     public func makeWorkoutDraft(
         copying workoutID: UUID,
         date: Date = Date(),
@@ -1260,6 +1441,7 @@ public final class WorkoutStore: ObservableObject {
     public func dashboardStats(
         from startDate: Date? = nil,
         through endDate: Date? = nil,
+        weeklyTargetTrainingDays: Int = 3,
         now: Date = Date(),
         calendar: Calendar = .current
     ) -> DashboardStats {
@@ -1285,11 +1467,13 @@ public final class WorkoutStore: ObservableObject {
                         sessions: workoutSummaries,
                         from: startDate,
                         through: endDate,
+                        targetTrainingDays: weeklyTargetTrainingDays,
                         calendar: calendar
                     )
                 }
                 return WeeklyStreakCalculator.current(
                     sessions: workoutSummaries,
+                    targetTrainingDays: weeklyTargetTrainingDays,
                     now: now,
                     calendar: calendar
                 )
@@ -1318,8 +1502,12 @@ public final class WorkoutStore: ObservableObject {
         now: Date = Date(),
         calendar: Calendar = .current
     ) -> GamificationSnapshot {
-        GamificationEngine.buildSnapshot(
+        let targetTrainingDays = TrainingProfileStore().load(
+            accountStorageKey: accountStorageKey
+        ).workoutsPerWeek
+        return GamificationEngine.buildSnapshot(
             sessions: workoutSummaries,
+            targetTrainingDays: targetTrainingDays,
             now: now,
             calendar: calendar
         )
@@ -2717,7 +2905,18 @@ public final class WorkoutStore: ObservableObject {
     private func commit(_ state: WorkoutDataSnapshot) throws {
         try Self.validate(state)
         let normalized = Self.normalized(state)
-        try persist(normalized)
+        let normalizedFeedback = Self.normalizedWorkoutFeedback(
+            workoutFeedbackByID,
+            sessionDates: workoutFeedbackSessionDateByID,
+            workouts: normalized.workouts
+        )
+        try persist(
+            normalized,
+            workoutFeedbackByID: normalizedFeedback.values,
+            workoutFeedbackSessionDateByID: normalizedFeedback.sessionDates
+        )
+        workoutFeedbackByID = normalizedFeedback.values
+        workoutFeedbackSessionDateByID = normalizedFeedback.sessionDates
         publish(normalized)
     }
 
@@ -2729,6 +2928,35 @@ public final class WorkoutStore: ObservableObject {
     }
 
     private func persist(_ state: WorkoutDataSnapshot) throws {
+        try persist(
+            state,
+            workoutFeedbackByID: workoutFeedbackByID,
+            workoutFeedbackSessionDateByID: workoutFeedbackSessionDateByID
+        )
+    }
+
+    private func persist(
+        _ state: WorkoutDataSnapshot,
+        workoutFeedbackByID: [UUID: WorkoutFeedback],
+        workoutFeedbackSessionDateByID: [UUID: Date]
+    ) throws {
+        let workoutDates = Dictionary(uniqueKeysWithValues: state.workouts.map { ($0.id, $0.date) })
+        let persistedFeedback = workoutFeedbackByID
+            .compactMap { workoutID, feedback in
+                workoutFeedbackSessionDateByID[workoutID].map {
+                    PersistedWorkoutFeedback(
+                        workoutID: workoutID,
+                        sessionDate: $0,
+                        value: feedback.rawValue
+                    )
+                }
+            }
+            .sorted { left, right in
+                let leftDate = workoutDates[left.workoutID] ?? .distantPast
+                let rightDate = workoutDates[right.workoutID] ?? .distantPast
+                if leftDate != rightDate { return leftDate > rightDate }
+                return left.workoutID.uuidString < right.workoutID.uuidString
+            }
         let envelope = PersistedEnvelope(
             schemaVersion: Self.persistedSchemaVersion,
             accountStorageKey: accountStorageKey,
@@ -2738,7 +2966,8 @@ public final class WorkoutStore: ObservableObject {
                 .filter(\.isFavorite)
                 .map(\.id)
                 .sorted { $0.uuidString < $1.uuidString },
-            cloudExtensionsData: cloudExtensionsData
+            cloudExtensionsData: cloudExtensionsData,
+            workoutFeedback: persistedFeedback.isEmpty ? nil : persistedFeedback
         )
         do {
             let data = try Self.localEncoder().encode(envelope)
@@ -2760,7 +2989,12 @@ public final class WorkoutStore: ObservableObject {
         fileManager: FileManager
     ) throws -> LoadedStore {
         guard fileManager.fileExists(atPath: url.path) else {
-            return LoadedStore(snapshot: WorkoutDataSnapshot(), cloudExtensionsData: nil)
+            return LoadedStore(
+                snapshot: WorkoutDataSnapshot(),
+                cloudExtensionsData: nil,
+                workoutFeedbackByID: [:],
+                workoutFeedbackSessionDateByID: [:]
+            )
         }
         do {
             let data = try Data(contentsOf: url, options: .mappedIfSafe)
@@ -2791,9 +3025,39 @@ public final class WorkoutStore: ObservableObject {
             if let extensionsData = envelope.cloudExtensionsData {
                 _ = try validatedCloudExtensions(extensionsData, limits: .standard)
             }
+            let feedbackRecords: [PersistedWorkoutFeedback]
+            if let persistedFeedback = envelope.workoutFeedback,
+               persistedFeedback.count <= maximumWorkoutFeedbackEntries {
+                feedbackRecords = persistedFeedback
+            } else {
+                // A malformed or oversized local sidecar must not prevent the
+                // account's released workout/session envelope from opening.
+                feedbackRecords = []
+            }
+            var decodedFeedback: [UUID: WorkoutFeedback] = [:]
+            var decodedFeedbackDates: [UUID: Date] = [:]
+            decodedFeedback.reserveCapacity(feedbackRecords.count)
+            decodedFeedbackDates.reserveCapacity(feedbackRecords.count)
+            for record in feedbackRecords {
+                guard decodedFeedback[record.workoutID] == nil,
+                      let sessionDate = record.sessionDate,
+                      sessionDate.timeIntervalSinceReferenceDate.isFinite,
+                      let feedback = WorkoutFeedback(rawValue: record.value) else {
+                    continue
+                }
+                decodedFeedback[record.workoutID] = feedback
+                decodedFeedbackDates[record.workoutID] = sessionDate
+            }
+            let normalizedFeedback = normalizedWorkoutFeedback(
+                decodedFeedback,
+                sessionDates: decodedFeedbackDates,
+                workouts: migratedSnapshot.workouts
+            )
             return LoadedStore(
                 snapshot: normalized(migratedSnapshot),
-                cloudExtensionsData: envelope.cloudExtensionsData
+                cloudExtensionsData: envelope.cloudExtensionsData,
+                workoutFeedbackByID: normalizedFeedback.values,
+                workoutFeedbackSessionDateByID: normalizedFeedback.sessionDates
             )
         } catch let error as WorkoutStoreError {
             throw error
@@ -2883,6 +3147,41 @@ public final class WorkoutStore: ObservableObject {
             },
             catalogSeedVersion: state.catalogSeedVersion
         )
+    }
+
+    private static func normalizedWorkoutFeedback(
+        _ feedbackByID: [UUID: WorkoutFeedback],
+        sessionDates: [UUID: Date],
+        workouts: [WorkoutSession]
+    ) -> NormalizedWorkoutFeedback {
+        let ownedWorkoutDates = Dictionary(uniqueKeysWithValues: workouts
+            .filter { $0.setCount > 0 }
+            .map { ($0.id, $0.date) })
+        let retainedIDs = feedbackByID.keys
+            .filter { workoutID in
+                guard let ownedDate = ownedWorkoutDates[workoutID],
+                      let boundDate = sessionDates[workoutID] else { return false }
+                return ownedDate == boundDate
+            }
+            .sorted { left, right in
+                let leftDate = ownedWorkoutDates[left] ?? .distantPast
+                let rightDate = ownedWorkoutDates[right] ?? .distantPast
+                if leftDate != rightDate { return leftDate > rightDate }
+                return left.uuidString < right.uuidString
+            }
+            .prefix(maximumWorkoutFeedbackEntries)
+        let values = Dictionary(uniqueKeysWithValues: retainedIDs.compactMap { workoutID in
+            feedbackByID[workoutID].map { (workoutID, $0) }
+        })
+        let dates = Dictionary(uniqueKeysWithValues: retainedIDs.compactMap { workoutID in
+            sessionDates[workoutID].map { (workoutID, $0) }
+        })
+        return NormalizedWorkoutFeedback(values: values, sessionDates: dates)
+    }
+
+    private static func workoutNewestFirst(_ left: WorkoutSession, _ right: WorkoutSession) -> Bool {
+        if left.date != right.date { return left.date > right.date }
+        return left.id.uuidString < right.id.uuidString
     }
 
     private static func validate(_ state: WorkoutDataSnapshot) throws {

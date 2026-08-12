@@ -167,12 +167,151 @@ enum AppAccountSession: Codable, Equatable, Sendable {
     }
 }
 
+struct SavedLocalProfile: Codable, Equatable, Identifiable, Sendable {
+    let id: String
+    let displayName: String
+}
+
+/// A single durable deletion record is intentionally used instead of a replaceable
+/// "last deletion" value. A second owner may never displace cleanup that has not
+/// finished, and malformed state fails closed instead of guessing which account is safe.
+enum PendingAccountDeletionStore {
+    static let storageKey = "gymapp.pending-account-deletion-storage-key"
+    private static let maximumStorageKeyBytes = 128
+
+    enum State: Equatable {
+        case none
+        case pending(String)
+        case unreadable
+    }
+
+    static func state(defaults: UserDefaults) -> State {
+        guard let value = defaults.object(forKey: storageKey) else { return .none }
+        guard let value = value as? String,
+              let normalized = normalizedStorageKey(value) else {
+            return .unreadable
+        }
+        return .pending(normalized)
+    }
+
+    static func begin(_ accountStorageKey: String, defaults: UserDefaults) throws {
+        guard let normalized = normalizedStorageKey(accountStorageKey),
+              normalized == accountStorageKey else {
+            throw AuthServiceError.malformedResponse
+        }
+        switch state(defaults: defaults) {
+        case .none:
+            defaults.set(normalized, forKey: storageKey)
+            _ = defaults.synchronize()
+            guard state(defaults: defaults) == .pending(normalized) else {
+                throw AuthServiceError.accountDeletionCleanupPending
+            }
+        case .pending(let existing) where existing == normalized:
+            return
+        case .pending, .unreadable:
+            throw AuthServiceError.accountDeletionCleanupPending
+        }
+    }
+
+    static func requireNoPendingDeletion(defaults: UserDefaults) throws {
+        guard state(defaults: defaults) == .none else {
+            throw AuthServiceError.accountDeletionCleanupPending
+        }
+    }
+
+    @discardableResult
+    static func clearExact(_ accountStorageKey: String, defaults: UserDefaults) -> Bool {
+        guard state(defaults: defaults) == .pending(accountStorageKey) else { return false }
+        defaults.removeObject(forKey: storageKey)
+        _ = defaults.synchronize()
+        return state(defaults: defaults) == .none
+    }
+
+    static func blocksLocalProfile(id: String, defaults: UserDefaults) -> Bool {
+        state(defaults: defaults) == .pending("local_\(id)")
+    }
+
+    static func visibleLocalProfiles(
+        _ profiles: [SavedLocalProfile],
+        defaults: UserDefaults
+    ) -> [SavedLocalProfile] {
+        switch state(defaults: defaults) {
+        case .none:
+            return profiles
+        case .pending(let key) where !key.hasPrefix("local_"):
+            return profiles
+        case .pending(let key):
+            return profiles.filter { "local_\($0.id)" != key }
+        case .unreadable:
+            return []
+        }
+    }
+
+    static func requireReadable(defaults: UserDefaults) throws {
+        if state(defaults: defaults) == .unreadable {
+            throw AuthServiceError.accountDeletionCleanupPending
+        }
+    }
+
+    private static func normalizedStorageKey(_ value: String) -> String? {
+        guard !value.isEmpty,
+              value.utf8.count <= maximumStorageKeyBytes,
+              value.hasPrefix("local_") || value.hasPrefix("cloud_") else {
+            return nil
+        }
+        let suffix = value.dropFirst(6)
+        guard !suffix.isEmpty,
+              suffix.unicodeScalars.allSatisfy({ scalar in
+                  CharacterSet.alphanumerics
+                      .union(CharacterSet(charactersIn: "_.-"))
+                      .contains(scalar)
+              }) else {
+            return nil
+        }
+        return value
+    }
+}
+
+private struct PersistedLocalProfileIndex: Codable, Equatable, Sendable {
+    static let currentVersion = 1
+
+    let version: Int
+    let profiles: [SavedLocalProfile]
+    let activeProfileID: String?
+
+    init(profiles: [SavedLocalProfile], activeProfileID: String?) {
+        self.version = Self.currentVersion
+        self.profiles = profiles
+        self.activeProfileID = activeProfileID
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case version
+        case profiles
+        case activeProfileID
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        version = try container.decode(Int.self, forKey: .version)
+        profiles = try container.decode([SavedLocalProfile].self, forKey: .profiles)
+        // The first local-profile index build did not persist an active owner.
+        // Missing ownership therefore means a saved, signed-out profile.
+        activeProfileID = try container.decodeIfPresent(String.self, forKey: .activeProfileID)
+    }
+}
+
 enum AuthServiceError: LocalizedError {
     case invalidEmail
     case invalidPassword
     case invalidPasswordReauthenticationNonce
     case passwordReauthenticationRequired
     case invalidDisplayName
+    case duplicateLocalProfile
+    case localProfileNotFound
+    case localProfileLimitReached
+    case secureSessionCleanupPending
+    case accountDeletionCleanupPending
     case malformedResponse
     case callbackMissingSession
     case callbackNotExpected
@@ -191,6 +330,13 @@ enum AuthServiceError: LocalizedError {
         case .passwordReauthenticationRequired:
             return "A verification code is required to change this password."
         case .invalidDisplayName: return "Display name must be 2–32 characters and use letters, numbers, spaces, dot, dash or underscore."
+        case .duplicateLocalProfile: return "A saved profile already uses this name."
+        case .localProfileNotFound: return "This saved profile is no longer available."
+        case .localProfileLimitReached: return "Remove an unused local profile before creating another one."
+        case .secureSessionCleanupPending:
+            return "Secure sign-out cleanup is incomplete. Retry sign-in or restart after unlocking this device."
+        case .accountDeletionCleanupPending:
+            return "Account deletion cleanup is incomplete. Restart GymApp before deleting another profile."
         case .malformedResponse: return "The cloud returned an invalid response. Try again."
         case .callbackMissingSession: return "The confirmation link did not contain a valid session."
         case .callbackNotExpected: return "This sign-in link was not requested on this device or has expired. Start the flow again."
@@ -243,6 +389,13 @@ enum PasswordReauthenticationNoncePolicy {
 @MainActor
 final class AuthService: ObservableObject {
     @Published private(set) var session: AppAccountSession?
+    @Published private var storedLocalProfiles: [SavedLocalProfile] = []
+    var savedLocalProfiles: [SavedLocalProfile] {
+        PendingAccountDeletionStore.visibleLocalProfiles(
+            storedLocalProfiles,
+            defaults: defaults
+        )
+    }
     @Published private(set) var isLoading = false
     @Published var message: String?
     @Published private(set) var messageIsError = true
@@ -258,6 +411,7 @@ final class AuthService: ObservableObject {
     private let encoder = JSONEncoder()
     private let sessionAccount = "current-session"
     private let authTransactionAccount = "pending-auth-transaction"
+    private let localProfileIndexAccount = "local-profile-index-v1"
     private var sessionRevision: UInt64 = 0
     private var cloudRefreshTask: Task<CloudAccountSession, Error>?
     private var cloudRefreshIdentity: CloudRefreshIdentity?
@@ -276,6 +430,8 @@ final class AuthService: ObservableObject {
     private static let maximumAuthCallbackURLBytes = 8 * 1_024
     private static let maximumTokenBytes = 16 * 1_024
     private static let maximumAuthorizationCodeBytes = 4 * 1_024
+    private static let maximumLocalProfileIndexBytes = 16 * 1_024
+    private static let maximumLocalProfiles = 32
 
     init(
         keychain: any KeychainStoring = KeychainStore(),
@@ -286,8 +442,25 @@ final class AuthService: ObservableObject {
         self.urlSession = urlSession
         self.defaults = defaults
 
+        var indexedActiveProfileID: String?
+        if let data = try? keychain.read(account: localProfileIndexAccount),
+           data.count <= Self.maximumLocalProfileIndexBytes,
+           let persisted = try? decoder.decode(PersistedLocalProfileIndex.self, from: data),
+           persisted.version == PersistedLocalProfileIndex.currentVersion {
+            self.storedLocalProfiles = Self.normalizedLocalProfiles(persisted.profiles)
+            indexedActiveProfileID = persisted.activeProfileID.flatMap { activeID in
+                self.savedLocalProfiles.first(where: { $0.id == activeID })?.id
+            }
+        }
+
         if defaults.bool(forKey: Self.pendingSecureDeletionKey) {
             var cleanupFailed = false
+            do {
+                try writeLocalProfiles(storedLocalProfiles, activeProfileID: nil)
+                indexedActiveProfileID = nil
+            } catch {
+                cleanupFailed = true
+            }
             do {
                 try keychain.delete(account: sessionAccount)
             } catch {
@@ -300,7 +473,11 @@ final class AuthService: ObservableObject {
             }
             if cleanupFailed {
                 self.session = nil
-                self.message = "Secure sign-out cleanup is incomplete. Retry sign-in or restart after unlocking this device."
+                self.message = gymLocalized(
+                    gymSafeEnglishErrorMessage(
+                        AuthServiceError.secureSessionCleanupPending
+                    )
+                )
             } else {
                 defaults.removeObject(forKey: Self.pendingSecureDeletionKey)
                 self.session = nil
@@ -317,6 +494,44 @@ final class AuthService: ObservableObject {
                 self.session = legacySession
                 self.needsPasswordUpdate = false
             }
+        }
+
+        switch PendingAccountDeletionStore.state(defaults: defaults) {
+        case .pending(let storageKey) where session?.storageKey == storageKey:
+            session = nil
+            needsPasswordUpdate = false
+        case .unreadable:
+            session = nil
+            needsPasswordUpdate = false
+        default:
+            break
+        }
+
+        if case .local(let id, let displayName) = session,
+           let current = Self.normalizedLocalProfile(id: id, displayName: displayName) {
+            let merged = Self.mergingCurrentLocalProfile(
+                current,
+                into: storedLocalProfiles
+            )
+            if (try? writeLocalProfiles(merged, activeProfileID: current.id)) != nil {
+                storedLocalProfiles = merged
+                // Released builds stored local sessions in current-session. The
+                // account envelope is now the single atomic source for local state.
+                try? keychain.delete(account: sessionAccount)
+            }
+        } else if session?.cloud != nil, indexedActiveProfileID != nil {
+            if (try? writeLocalProfiles(storedLocalProfiles, activeProfileID: nil)) != nil {
+                indexedActiveProfileID = nil
+            }
+        } else if session == nil,
+                  !defaults.bool(forKey: Self.pendingSecureDeletionKey),
+                  let activeProfile = savedLocalProfiles.first(where: {
+                    $0.id == indexedActiveProfileID
+                  }) {
+            self.session = .local(
+                id: activeProfile.id,
+                displayName: activeProfile.displayName
+            )
         }
 
         if session == nil, !defaults.bool(forKey: Self.pendingSecureDeletionKey) {
@@ -551,11 +766,67 @@ final class AuthService: ObservableObject {
     }
 
     func continueOffline(displayName: String) throws {
+        guard session == nil else { throw AuthServiceError.sessionChanged }
+        try PendingAccountDeletionStore.requireReadable(defaults: defaults)
         let trimmed = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let cleanName = try validatedDisplayName(trimmed.isEmpty ? "Local Athlete" : trimmed, fallbackEmail: "local@gym.app")
-        let local = AppAccountSession.local(id: UUID().uuidString.lowercased(), displayName: cleanName)
-        try persist(local, requiresPasswordUpdate: false)
+        let cleanName = try validatedDisplayName(trimmed.isEmpty ? "Local" : trimmed, fallbackEmail: "local@gym.app")
+        guard !storedLocalProfiles.contains(where: {
+            Self.localProfileNameKey($0.displayName) == Self.localProfileNameKey(cleanName)
+        }) else {
+            throw AuthServiceError.duplicateLocalProfile
+        }
+        guard storedLocalProfiles.count < Self.maximumLocalProfiles else {
+            throw AuthServiceError.localProfileLimitReached
+        }
+
+        let profile = SavedLocalProfile(
+            id: UUID().uuidString.lowercased(),
+            displayName: cleanName
+        )
+        try persist(
+            .local(id: profile.id, displayName: profile.displayName),
+            requiresPasswordUpdate: false
+        )
         message = nil
+    }
+
+    func continueOffline(profileID: String) throws {
+        guard session == nil else { throw AuthServiceError.sessionChanged }
+        try PendingAccountDeletionStore.requireReadable(defaults: defaults)
+        guard !PendingAccountDeletionStore.blocksLocalProfile(
+            id: profileID,
+            defaults: defaults
+        ) else {
+            throw AuthServiceError.localProfileNotFound
+        }
+        guard let profile = savedLocalProfiles.first(where: { $0.id == profileID }) else {
+            throw AuthServiceError.localProfileNotFound
+        }
+        try persist(
+            .local(id: profile.id, displayName: profile.displayName),
+            requiresPasswordUpdate: false
+        )
+        message = nil
+    }
+
+    func removeSavedLocalProfile(storageKey: String) throws {
+        let prefix = "local_"
+        guard storageKey.hasPrefix(prefix) else { return }
+        let id = String(storageKey.dropFirst(prefix.count))
+        let nextProfiles = storedLocalProfiles.filter { $0.id != id }
+        guard nextProfiles != storedLocalProfiles else { return }
+        let activeProfileID: String?
+        if case .local(let currentID, _) = session, currentID != id {
+            activeProfileID = currentID
+        } else {
+            activeProfileID = nil
+        }
+        try writeLocalProfiles(nextProfiles, activeProfileID: activeProfileID)
+        storedLocalProfiles = nextProfiles
+    }
+
+    func pendingAccountDeletionStateDidChange() {
+        objectWillChange.send()
     }
 
     func handleOpenURL(_ url: URL) async {
@@ -737,6 +1008,7 @@ final class AuthService: ObservableObject {
     /// The caller must erase the matching local store after this returns.
     func deleteCloudAccountOnServer(
         expectedUserID: String,
+        beforeRequest: (() throws -> Void)? = nil,
         onRequestDispositionChange: ((AccountDeletionRequestDisposition) -> Void)? = nil
     ) async throws {
         isLoading = true
@@ -748,6 +1020,7 @@ final class AuthService: ObservableObject {
             initialSession: cloud,
             headers: ["X-GymApp-Delete": "confirmed"],
             body: ["confirmation": "DELETE"],
+            beforeRequest: beforeRequest,
             onRequestDispositionChange: onRequestDispositionChange
         )
         guard object.count == 1, object["deleted"] as? Bool == true else {
@@ -756,8 +1029,7 @@ final class AuthService: ObservableObject {
     }
 
     func clearSession() throws {
-        defaults.set(true, forKey: Self.pendingSecureDeletionKey)
-        _ = defaults.synchronize()
+        markSecureSessionDeletionPending()
         sessionRevision &+= 1
         session = nil
         message = nil
@@ -767,6 +1039,11 @@ final class AuthService: ObservableObject {
         passwordChangeRequiresNonce = false
 
         var deletionError: Error?
+        do {
+            try writeLocalProfiles(storedLocalProfiles, activeProfileID: nil)
+        } catch {
+            deletionError = deletionError ?? error
+        }
         do {
             try keychain.delete(account: sessionAccount)
         } catch {
@@ -809,11 +1086,41 @@ final class AuthService: ObservableObject {
         preservePasswordChangeNonce: Bool = false
     ) throws {
         let protectedState = requiresPasswordUpdate && value.cloud != nil
-        let persisted = PersistedAuthState(
-            session: value,
-            requiresPasswordUpdate: protectedState
-        )
-        try keychain.save(encoder.encode(persisted), account: sessionAccount)
+        switch value {
+        case .local(let id, let displayName):
+            try PendingAccountDeletionStore.requireReadable(defaults: defaults)
+            guard !PendingAccountDeletionStore.blocksLocalProfile(
+                id: id,
+                defaults: defaults
+            ) else {
+                throw AuthServiceError.localProfileNotFound
+            }
+            try requireSecureSessionDeletionCompletedForOffline()
+            guard let profile = Self.normalizedLocalProfile(
+                id: id,
+                displayName: displayName
+            ) else {
+                throw AuthServiceError.invalidDisplayName
+            }
+            let nextProfiles = Self.mergingCurrentLocalProfile(
+                profile,
+                into: storedLocalProfiles
+            )
+            // The profile list and selected local account live in one Keychain
+            // value. A failed write cannot leave a selectable orphan profile or
+            // acknowledge a local session that was not durably committed.
+            try writeLocalProfiles(nextProfiles, activeProfileID: profile.id)
+            storedLocalProfiles = nextProfiles
+        case .cloud:
+            // Clear any durable local selection before committing cloud state.
+            // If either write fails, restoration cannot acknowledge two owners.
+            try writeLocalProfiles(storedLocalProfiles, activeProfileID: nil)
+            let persisted = PersistedAuthState(
+                session: value,
+                requiresPasswordUpdate: protectedState
+            )
+            try keychain.save(encoder.encode(persisted), account: sessionAccount)
+        }
         sessionRevision &+= 1
         session = value
         pendingConfirmationEmail = nil
@@ -823,6 +1130,126 @@ final class AuthService: ObservableObject {
             passwordChangeRequiresNonce = false
         }
         defaults.removeObject(forKey: Self.pendingSecureDeletionKey)
+    }
+
+    /// A local account must never become active while the legacy cloud-session
+    /// Keychain slot may still restore another owner on the next launch.
+    private func requireSecureSessionDeletionCompletedForOffline() throws {
+        guard !defaults.bool(forKey: Self.pendingSecureDeletionKey) else {
+            throw AuthServiceError.secureSessionCleanupPending
+        }
+
+        do {
+            guard try keychain.read(account: sessionAccount) == nil else {
+                markSecureSessionDeletionPending()
+                throw AuthServiceError.secureSessionCleanupPending
+            }
+        } catch let error as AuthServiceError {
+            throw error
+        } catch {
+            // An unreadable slot is an unknown owner state. Keep the durable
+            // cleanup marker so relaunch retries deletion instead of accepting
+            // a mixed local/cloud selection.
+            markSecureSessionDeletionPending()
+            throw AuthServiceError.secureSessionCleanupPending
+        }
+    }
+
+    private func markSecureSessionDeletionPending() {
+        defaults.set(true, forKey: Self.pendingSecureDeletionKey)
+        _ = defaults.synchronize()
+    }
+
+    private func writeLocalProfiles(
+        _ profiles: [SavedLocalProfile],
+        activeProfileID: String?
+    ) throws {
+        if profiles.isEmpty {
+            try keychain.delete(account: localProfileIndexAccount)
+            return
+        }
+        let normalized = Self.normalizedLocalProfiles(profiles)
+        guard normalized.count == profiles.count else {
+            throw AuthServiceError.malformedResponse
+        }
+        let normalizedActiveProfileID = activeProfileID.flatMap { requestedID in
+            normalized.first(where: { $0.id == requestedID })?.id
+        }
+        guard activeProfileID == nil || normalizedActiveProfileID != nil else {
+            throw AuthServiceError.localProfileNotFound
+        }
+        let data = try encoder.encode(
+            PersistedLocalProfileIndex(
+                profiles: normalized,
+                activeProfileID: normalizedActiveProfileID
+            )
+        )
+        guard data.count <= Self.maximumLocalProfileIndexBytes else {
+            throw AuthServiceError.malformedResponse
+        }
+        try keychain.save(data, account: localProfileIndexAccount)
+    }
+
+    private static func normalizedLocalProfiles(
+        _ profiles: [SavedLocalProfile]
+    ) -> [SavedLocalProfile] {
+        var result: [SavedLocalProfile] = []
+        var ids = Set<String>()
+        var names = Set<String>()
+        for profile in profiles.prefix(maximumLocalProfiles + 1) {
+            guard result.count < maximumLocalProfiles,
+                  let clean = normalizedLocalProfile(
+                    id: profile.id,
+                    displayName: profile.displayName
+                  ),
+                  ids.insert(clean.id).inserted,
+                  names.insert(localProfileNameKey(clean.displayName)).inserted else {
+                continue
+            }
+            result.append(clean)
+        }
+        return result
+    }
+
+    private static func normalizedLocalProfile(
+        id: String,
+        displayName: String
+    ) -> SavedLocalProfile? {
+        guard let uuid = UUID(uuidString: id) else { return nil }
+        let cleanName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: " .-_"))
+        guard (2 ... 32).contains(cleanName.count),
+              cleanName.unicodeScalars.allSatisfy({ allowed.contains($0) }) else {
+            return nil
+        }
+        return SavedLocalProfile(
+            id: uuid.uuidString.lowercased(),
+            displayName: cleanName
+        )
+    }
+
+    private static func mergingCurrentLocalProfile(
+        _ current: SavedLocalProfile,
+        into profiles: [SavedLocalProfile]
+    ) -> [SavedLocalProfile] {
+        let currentNameKey = localProfileNameKey(current.displayName)
+        var merged = profiles.filter {
+            $0.id != current.id && localProfileNameKey($0.displayName) != currentNameKey
+        }
+        if merged.count >= maximumLocalProfiles {
+            merged.removeFirst(merged.count - maximumLocalProfiles + 1)
+        }
+        merged.append(current)
+        return merged
+    }
+
+    private static func localProfileNameKey(_ displayName: String) -> String {
+        displayName
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .folding(
+                options: [.caseInsensitive, .diacriticInsensitive],
+                locale: Locale(identifier: "en_US_POSIX")
+            )
     }
 
     private func beginAuthTransaction(
@@ -867,6 +1294,11 @@ final class AuthService: ObservableObject {
              AuthServiceError.invalidPasswordReauthenticationNonce,
              AuthServiceError.passwordReauthenticationRequired,
              AuthServiceError.invalidDisplayName,
+             AuthServiceError.duplicateLocalProfile,
+             AuthServiceError.localProfileNotFound,
+             AuthServiceError.localProfileLimitReached,
+             AuthServiceError.secureSessionCleanupPending,
+             AuthServiceError.accountDeletionCleanupPending,
              AuthServiceError.callbackMissingSession,
              AuthServiceError.callbackNotExpected,
              AuthServiceError.notCloudAccount,
@@ -949,6 +1381,7 @@ final class AuthService: ObservableObject {
         token: String? = nil,
         headers: [String: String] = [:],
         body: [String: Any]? = nil,
+        beforeRequest: (() throws -> Void)? = nil,
         onRequestDispositionChange: ((AccountDeletionRequestDisposition) -> Void)? = nil
     ) async throws -> [String: Any] {
         guard let url = URL(string: path, relativeTo: GymAppConfiguration.supabaseURL) else {
@@ -973,6 +1406,7 @@ final class AuthService: ObservableObject {
             request.httpBody = encoded
         }
 
+        try beforeRequest?()
         onRequestDispositionChange?(.outcomeUnknown)
 
         let data: Data
@@ -1021,6 +1455,7 @@ final class AuthService: ObservableObject {
         initialSession: CloudAccountSession,
         headers: [String: String] = [:],
         body: [String: Any]? = nil,
+        beforeRequest: (() throws -> Void)? = nil,
         onRequestDispositionChange: ((AccountDeletionRequestDisposition) -> Void)? = nil
     ) async throws -> [String: Any] {
         let expectedUserID = initialSession.userID
@@ -1036,6 +1471,7 @@ final class AuthService: ObservableObject {
                 token: initialSession.accessToken,
                 headers: headers,
                 body: body,
+                beforeRequest: beforeRequest,
                 onRequestDispositionChange: onRequestDispositionChange
             )
             guard sessionRevision == firstRevision,
@@ -1065,6 +1501,7 @@ final class AuthService: ObservableObject {
                     token: refreshed.accessToken,
                     headers: headers,
                     body: body,
+                    beforeRequest: beforeRequest,
                     onRequestDispositionChange: onRequestDispositionChange
                 )
             } catch {

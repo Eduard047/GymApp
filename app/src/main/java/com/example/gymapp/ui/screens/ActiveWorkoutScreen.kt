@@ -128,11 +128,6 @@ fun ActiveWorkoutScreen(
                         style = MaterialTheme.typography.headlineSmall,
                         color = Color.White
                     )
-                    Text(
-                        text = stringResource(R.string.active_workout_supporting),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = Color.White.copy(alpha = 0.9f)
-                    )
                     val progressDescription = stringResource(
                         R.string.active_workout_progress,
                         uiState.completedSetCount,
@@ -312,8 +307,7 @@ fun ActiveWorkoutScreen(
                 ) {
                     SectionTitle(
                         eyebrow = stringResource(R.string.active_workout_finish_eyebrow),
-                        title = stringResource(R.string.action_finish_workout),
-                        supporting = stringResource(R.string.active_workout_finish_supporting)
+                        title = stringResource(R.string.action_finish_workout)
                     )
                     if (uiState.completedSetCount < uiState.totalSetCount) {
                         OutlinedButton(
@@ -337,6 +331,11 @@ fun ActiveWorkoutScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+                    Text(
+                        text = stringResource(R.string.active_workout_finish_supporting),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                     Button(
                         onClick = onFinishWorkout,
                         enabled = uiState.completedSetCount > 0 && !operationInProgress,

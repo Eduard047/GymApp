@@ -1098,7 +1098,7 @@ class WorkoutRecommendationEngineTest {
         assertEquals(8, names.size)
         assertTrue(names.any { it == "Bench Press" || it == "Shoulder Press" })
         assertTrue(names.any { it == "Cable Row" || it == "Pull Up" || it == "Crane Pulldown" })
-        assertTrue(plan.exercises.sumOf { it.recommendation.sets.size } <= 32)
+        assertTrue(plan.exercises.sumOf { it.recommendation.sets.size } <= 24)
         assertTrue(names.contains("Weighted Crunch"))
     }
 
@@ -1119,7 +1119,7 @@ class WorkoutRecommendationEngineTest {
 
         assertEquals(SmartWorkoutFocus.Upper, plan.focus)
         assertEquals(8, plan.exercises.size)
-        assertTrue(plan.exercises.sumOf { it.recommendation.sets.size } in 24..32)
+        assertEquals(24, plan.exercises.sumOf { it.recommendation.sets.size })
         assertTrue(plan.exerciseNames().any { it == "Bench Press" || it == "Shoulder Press" })
         assertTrue(plan.exerciseNames().any { it == "Cable Row" || it == "Pull Up" })
     }
@@ -1222,7 +1222,7 @@ class WorkoutRecommendationEngineTest {
             zoneId = zoneId
         )
 
-        assertEquals(10, plan.exercises.size)
+        assertEquals(8, plan.exercises.size)
         assertTrue(plan.exercises.all { it.exercise.id <= WorkoutDataLimits.MAX_EXERCISES })
     }
 
@@ -1316,7 +1316,7 @@ class WorkoutRecommendationEngineTest {
                             nowMillis = nowMillis,
                             zoneId = zoneId
                         )
-                        assertTrue(context, plan.exercises.size in 4..10)
+                        assertTrue(context, plan.exercises.size in 4..8)
                         assertEquals(
                             "$context trunk",
                             1,
@@ -1324,6 +1324,7 @@ class WorkoutRecommendationEngineTest {
                         )
                         assertEquals(plan.exercises.size, plan.exercises.map { it.exercise.id }.distinct().size)
                         assertTrue(plan.exercises.all { it.recommendation.sets.size in 3..4 })
+                        assertTrue(plan.exercises.sumOf { it.recommendation.sets.size } <= 24)
                         assertTrue(plan.exercises.all { exercise ->
                             exercise.recommendation.sets.all { it.reps in 3..10 }
                         })
@@ -1938,16 +1939,23 @@ class WorkoutRecommendationEngineTest {
             goal = TrainingGoal.Balanced,
             calorieMode = CalorieMode.Maintenance
         )
-        val strengthSets = workingSets(base.copy(goal = TrainingGoal.Strength))
-        val balancedSets = workingSets(base)
-        val muscleGainSets = workingSets(base.copy(goal = TrainingGoal.MuscleGain))
+        val strengthPlan = plan(base.copy(goal = TrainingGoal.Strength))
+        val balancedPlan = plan(base)
+        val muscleGainPlan = plan(base.copy(goal = TrainingGoal.MuscleGain))
+        val strengthSets = strengthPlan.exercises.sumOf { it.recommendation.sets.size }
+        val balancedSets = balancedPlan.exercises.sumOf { it.recommendation.sets.size }
+        val muscleGainSets = muscleGainPlan.exercises.sumOf { it.recommendation.sets.size }
         assertTrue(strengthSets < balancedSets)
-        assertTrue(balancedSets < muscleGainSets)
+        assertTrue(balancedSets <= muscleGainSets)
+        assertTrue(balancedPlan.exercises != muscleGainPlan.exercises)
 
-        val deficitSets = workingSets(base.copy(calorieMode = CalorieMode.Deficit))
-        val surplusSets = workingSets(base.copy(calorieMode = CalorieMode.Surplus))
+        val deficitPlan = plan(base.copy(calorieMode = CalorieMode.Deficit))
+        val surplusPlan = plan(base.copy(calorieMode = CalorieMode.Surplus))
+        val deficitSets = deficitPlan.exercises.sumOf { it.recommendation.sets.size }
+        val surplusSets = surplusPlan.exercises.sumOf { it.recommendation.sets.size }
         assertTrue(deficitSets < balancedSets)
-        assertTrue(balancedSets < surplusSets)
+        assertTrue(balancedSets <= surplusSets)
+        assertTrue(balancedPlan.exercises != surplusPlan.exercises)
 
         assertTrue(
             workingSets(base.copy(workoutsPerWeek = 2)) >

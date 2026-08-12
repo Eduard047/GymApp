@@ -154,8 +154,9 @@ fun SoloProgressHero(
                 SoloHeroStat(
                     label = stringResource(R.string.solo_streak_label),
                     value = stringResource(
-                        R.string.solo_streak_weekly_value,
-                        progress.weeklyStreakWeeks
+                        R.string.solo_weekly_rhythm_value,
+                        progress.weeklyStreakWeeks,
+                        progress.weeklyTarget
                     ),
                     modifier = Modifier.weight(1f)
                 )

@@ -266,6 +266,11 @@ android {
         buildConfig = true
         compose = true
     }
+    androidResources {
+        // aapt ignore syntax is colon-delimited and matched against each asset
+        // basename. Preserve Finder duplicates on disk, but never package them.
+        ignoreAssetsPattern = "!.svn:!.git:!.ds_store:!*.scc:.*:<dir>_*:*~:* 2.jpg"
+    }
     sourceSets {
         getByName("androidTest").assets.srcDir(file("schemas"))
     }

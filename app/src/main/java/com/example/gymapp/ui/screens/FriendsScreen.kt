@@ -206,13 +206,7 @@ internal fun FriendsScreen(
         item {
             Column(verticalArrangement = Arrangement.spacedBy(GymSpacing.XSmall)) {
                 ScreenHeader(
-                    title = stringResource(R.string.friends_hero_title),
-                    supporting = stringResource(R.string.friends_hero_supporting)
-                )
-                Text(
-                    text = stringResource(R.string.friends_integrity_notice),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    title = stringResource(R.string.friends_hero_title)
                 )
             }
         }
@@ -235,8 +229,7 @@ internal fun FriendsScreen(
         item {
             SectionTitle(
                 eyebrow = stringResource(R.string.friends_ranking_eyebrow),
-                title = stringResource(R.string.friends_ranking_title),
-                supporting = stringResource(R.string.friends_ranking_supporting)
+                title = stringResource(R.string.friends_ranking_title)
             )
         }
         val rankedFriends = rankedSocialFriends(dashboard.friends)

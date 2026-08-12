@@ -5,6 +5,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.example.gymapp.auth.AccountSession
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -47,9 +48,17 @@ class LiveWorkoutSidecarStoreTest {
         val other = session("72345678-1234-4123-8123-123456789abc")
         val binding = binding(first)
         assertTrue(store.save(first, binding))
+        val preferences = context.getSharedPreferences(
+            LIVE_SIDECAR_PREFERENCES,
+            android.content.Context.MODE_PRIVATE
+        )
+        val before = preferences.all.toMap()
 
-        assertTrue(!store.clear(other))
+        assertFalse(store.clear(other))
+        assertEquals(before, preferences.all)
         assertEquals(binding, store.load(first))
+        assertEquals(binding, LiveWorkoutSidecarStore(context).load(first))
+        assertNull(LiveWorkoutSidecarStore(context).load(other))
     }
 
     private fun session(userId: String) = AccountSession.Cloud(

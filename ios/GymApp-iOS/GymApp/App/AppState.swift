@@ -130,12 +130,13 @@ final class AppState: ObservableObject {
     private weak var nativePushManager: NativePushManager?
     private let defaults: UserDefaults
     private let workoutDirectoryURL: URL?
+    private let exerciseMediaDirectoryURL: URL?
+    private let exerciseMediaFileManager: FileManager
     private let remoteStateLoader: (@MainActor (String) async throws -> Data?)?
 
-    private static let pendingDeletionStorageKey = "gymapp.pending-account-deletion-storage-key"
+    private static let pendingDeletionStorageKey = PendingAccountDeletionStore.storageKey
     private static let legacyPendingDeletionGarminUserIDKey =
         "gymapp.pending-account-deletion-garmin-user-id"
-    private static let trainingProfileKeyPrefix = "gymapp.training-profile.v1."
     private static let hiddenLeaderboardProfilesKey = "leaderboard-hidden-profile-ids"
     private static let cloudCheckpointKeyPrefix = "gymapp.cloud-sync-checkpoint.v1."
     static let maximumPendingWorkoutInviteRequests = 25
@@ -165,6 +166,8 @@ final class AppState: ObservableObject {
         auth: AuthService,
         defaults: UserDefaults = .standard,
         workoutDirectoryURL: URL? = nil,
+        exerciseMediaDirectoryURL: URL? = nil,
+        exerciseMediaFileManager: FileManager = .default,
         cloudURLSession: URLSession = .shared,
         remoteStateLoader: (@MainActor (String) async throws -> Data?)? = nil,
         garminBindingStore: GarminDeviceBindingStore = GarminDeviceBindingStore(),
@@ -173,13 +176,17 @@ final class AppState: ObservableObject {
         self.auth = auth
         self.defaults = defaults
         self.workoutDirectoryURL = workoutDirectoryURL
+        self.exerciseMediaDirectoryURL = exerciseMediaDirectoryURL
+        self.exerciseMediaFileManager = exerciseMediaFileManager
         self.remoteStateLoader = remoteStateLoader
 
-        let hadPendingDeletion = defaults.string(forKey: Self.pendingDeletionStorageKey) != nil
+        let hadPendingDeletion = PendingAccountDeletionStore.state(defaults: defaults) != .none
         Self.finishPendingDeletionCleanupIfNeeded(
             auth: auth,
             defaults: defaults,
             workoutDirectoryURL: workoutDirectoryURL,
+            exerciseMediaDirectoryURL: exerciseMediaDirectoryURL,
+            exerciseMediaFileManager: exerciseMediaFileManager,
             garminBindingStore: garminBindingStore
         )
 
@@ -214,7 +221,7 @@ final class AppState: ObservableObject {
             statusMessage = gymText(
                 "A damaged local data file was preserved for recovery. Cloud data will restore after sign-in; offline profiles should contact support before deleting the app.",
                 "Пошкоджений локальний файл збережено для відновлення. Хмарні дані відновляться після входу; для офлайн-профілю звернися до підтримки перед видаленням застосунку.",
-                languageCode: defaults.string(forKey: "app-language") ?? AppLanguage.english.rawValue
+                languageCode: gymCurrentLanguageCode(defaults: defaults)
             )
             statusIsError = true
         }
@@ -268,7 +275,7 @@ final class AppState: ObservableObject {
                         "Finish or close the current shared workout preview before opening another link.",
                         "Заверши або закрий поточний перегляд спільного тренування, перш ніж відкривати інше посилання.",
                         "Заверши или закрой текущий просмотр общей тренировки, прежде чем открывать другую ссылку.",
-                        languageCode: defaults.string(forKey: "app-language") ?? AppLanguage.english.rawValue
+                        languageCode: gymCurrentLanguageCode(defaults: defaults)
                     ),
                     isError: true
                 )
@@ -279,7 +286,7 @@ final class AppState: ObservableObject {
                     "This shared workout link is invalid or no longer supported.",
                     "Це посилання на спільне тренування недійсне або більше не підтримується.",
                     "Эта ссылка на общую тренировку недействительна или больше не поддерживается.",
-                    languageCode: defaults.string(forKey: "app-language") ?? AppLanguage.english.rawValue
+                    languageCode: gymCurrentLanguageCode(defaults: defaults)
                 ),
                 isError: true
             )
@@ -704,7 +711,7 @@ final class AppState: ObservableObject {
                     message: gymText(
                         "This cloud row contains unsupported future workout fields. Automatic uploads are paused so another platform's data is not lost.",
                         "Цей хмарний запис містить непідтримувані майбутні поля тренувань. Автоматичне надсилання призупинено, щоб не втратити дані з іншої платформи.",
-                        languageCode: defaults.string(forKey: "app-language") ?? AppLanguage.english.rawValue
+                        languageCode: gymCurrentLanguageCode(defaults: defaults)
                     ),
                     isError: false
                 )
@@ -814,14 +821,12 @@ final class AppState: ObservableObject {
                     ? gymText(
                         "Cloud workout history was loaded on this iPhone.",
                         "Хмарну історію тренувань завантажено на цей iPhone.",
-                        languageCode: defaults.string(forKey: "app-language") ??
-                            AppLanguage.english.rawValue
+                        languageCode: gymCurrentLanguageCode(defaults: defaults)
                     )
                     : gymText(
                         "This iPhone's workout history was saved to the cloud.",
                         "Історію тренувань із цього iPhone збережено в хмарі.",
-                        languageCode: defaults.string(forKey: "app-language") ??
-                            AppLanguage.english.rawValue
+                        languageCode: gymCurrentLanguageCode(defaults: defaults)
                     ),
                 isError: false
             )
@@ -833,7 +838,7 @@ final class AppState: ObservableObject {
             accountPreparationError = gymText(
                 "The workout histories changed before your choice was applied. Review both versions again.",
                 "Історії тренувань змінилися до застосування вибору. Перевір обидві версії ще раз.",
-                languageCode: defaults.string(forKey: "app-language") ?? AppLanguage.english.rawValue
+                languageCode: gymCurrentLanguageCode(defaults: defaults)
             )
             cloudSyncStatus = .failed(gymSafeEnglishErrorMessage(error))
             show(error: error)
@@ -1539,6 +1544,7 @@ final class AppState: ObservableObject {
             return
         }
 
+        try PendingAccountDeletionStore.requireNoPendingDeletion(defaults: defaults)
         try ensureDeletionTargetIsCurrent(target)
         accountDeletionGeneration &+= 1
         let generation = accountDeletionGeneration
@@ -1571,10 +1577,9 @@ final class AppState: ObservableObject {
         let storageKey = target.storageKey
         defaults.removeObject(forKey: Self.legacyPendingDeletionGarminUserIDKey)
         if target.cloudUserID == nil {
-            // Local profiles have no server boundary. Persist before local cleanup so a
-            // termination can safely resume deletion on the next launch.
-            defaults.set(storageKey, forKey: Self.pendingDeletionStorageKey)
-            _ = defaults.synchronize()
+            // Local profiles have no request boundary, so persist before cleanup.
+            try PendingAccountDeletionStore.begin(storageKey, defaults: defaults)
+            auth.pendingAccountDeletionStateDidChange()
         }
 
         var requestDisposition = AccountDeletionRequestDisposition.notDispatched
@@ -1584,21 +1589,33 @@ final class AppState: ObservableObject {
                 await nativePushManager?.prepareForSessionEnd(expectedUserID: cloudUserID)
                 try await auth.deleteCloudAccountOnServer(
                     expectedUserID: cloudUserID,
+                    beforeRequest: {
+                        // This throwing hook runs immediately before each actual
+                        // DELETE URLSession load (including a retry). An initial
+                        // token refresh therefore remains marker-free, while a
+                        // failed durable write prevents the DELETE from dispatching.
+                        try PendingAccountDeletionStore.begin(
+                            storageKey,
+                            defaults: self.defaults
+                        )
+                        self.auth.pendingAccountDeletionStateDidChange()
+                    },
                     onRequestDispositionChange: { disposition in
                         requestDisposition = disposition
                         switch disposition {
                         case .outcomeUnknown:
-                            // Persist before each delete attempt can cross the network
-                            // boundary. A relaunch must finish cleanup if that attempt's
-                            // response is lost or malformed.
-                            self.defaults.set(storageKey, forKey: Self.pendingDeletionStorageKey)
+                            break
                         case .notDispatched, .definitivelyRejected:
-                            // A bounded 4xx proves that this attempt did not delete the
-                            // account. Remove the marker before a refresh/retry await so an
-                            // intervening termination cannot erase valid local data.
-                            self.defaults.removeObject(forKey: Self.pendingDeletionStorageKey)
+                            // A bounded 4xx proves that this request attempt did not
+                            // delete the account. Clear before a possible token refresh;
+                            // the retry's throwing hook must persist it again.
+                            if PendingAccountDeletionStore.clearExact(
+                                storageKey,
+                                defaults: self.defaults
+                            ) {
+                                self.auth.pendingAccountDeletionStateDidChange()
+                            }
                         }
-                        _ = self.defaults.synchronize()
                     }
                 )
             }
@@ -1611,8 +1628,12 @@ final class AppState: ObservableObject {
                 }
                 // No delete request crossed the network boundary, or the server returned an
                 // authoritative 4xx rejection. The local account remains authoritative.
-                defaults.removeObject(forKey: Self.pendingDeletionStorageKey)
-                _ = defaults.synchronize()
+                if PendingAccountDeletionStore.clearExact(
+                    storageKey,
+                    defaults: defaults
+                ) {
+                    auth.pendingAccountDeletionStateDidChange()
+                }
             }
             // For a lost/malformed response, 5xx, cancellation, or a stale result after a
             // successful response, the outcome remains unknown. Keep the marker so startup
@@ -1646,16 +1667,31 @@ final class AppState: ObservableObject {
             }
         }
         garminPhoneSync.clearLocalData(storageKey: storageKey)
-        defaults.removeObject(forKey: Self.trainingProfileKeyPrefix + storageKey)
+        TrainingProfileStore(defaults: defaults).clear(accountStorageKey: storageKey)
         defaults.removeObject(forKey: Self.hiddenLeaderboardProfilesKey)
         defaults.removeObject(
             forKey: leaderboardHiddenProfilesDefaultsKey(for: storageKey)
         )
 
         do {
+            try ExerciseMediaStore.clearAccount(
+                ownerKey: storageKey,
+                mediaDirectoryURL: exerciseMediaDirectoryURL,
+                fileManager: exerciseMediaFileManager
+            )
+        } catch {
+            cleanupError = cleanupError ?? error
+        }
+
+        do {
             try deletingStore.destroyAccountData()
         } catch {
             cleanupError = error
+        }
+        do {
+            try auth.removeSavedLocalProfile(storageKey: storageKey)
+        } catch {
+            cleanupError = cleanupError ?? error
         }
         if deletingSessionIsStillCurrent {
             do {
@@ -1682,7 +1718,13 @@ final class AppState: ObservableObject {
             throw cleanupError!
         }
 
-        defaults.removeObject(forKey: Self.pendingDeletionStorageKey)
+        guard PendingAccountDeletionStore.clearExact(
+            storageKey,
+            defaults: defaults
+        ) else {
+            throw AuthServiceError.accountDeletionCleanupPending
+        }
+        auth.pendingAccountDeletionStateDidChange()
         defaults.removeObject(forKey: Self.legacyPendingDeletionGarminUserIDKey)
         if deletingSessionIsStillCurrent { statusMessage = nil }
     }
@@ -1895,10 +1937,13 @@ final class AppState: ObservableObject {
         auth: AuthService,
         defaults: UserDefaults,
         workoutDirectoryURL: URL?,
+        exerciseMediaDirectoryURL: URL?,
+        exerciseMediaFileManager: FileManager,
         garminBindingStore: GarminDeviceBindingStore
     ) {
-        guard let storageKey = defaults.string(forKey: pendingDeletionStorageKey),
-              !storageKey.isEmpty else {
+        guard case .pending(let storageKey) = PendingAccountDeletionStore.state(
+            defaults: defaults
+        ) else {
             defaults.removeObject(forKey: legacyPendingDeletionGarminUserIDKey)
             return
         }
@@ -1913,7 +1958,7 @@ final class AppState: ObservableObject {
             cleanupFailed = true
         }
 
-        defaults.removeObject(forKey: trainingProfileKeyPrefix + storageKey)
+        TrainingProfileStore(defaults: defaults).clear(accountStorageKey: storageKey)
         defaults.removeObject(forKey: hiddenLeaderboardProfilesKey)
         defaults.removeObject(
             forKey: leaderboardHiddenProfilesDefaultsKey(for: storageKey)
@@ -1922,6 +1967,20 @@ final class AppState: ObservableObject {
             defaults: defaults,
             storageKey: storageKey
         )
+        do {
+            try ExerciseMediaStore.clearAccount(
+                ownerKey: storageKey,
+                mediaDirectoryURL: exerciseMediaDirectoryURL,
+                fileManager: exerciseMediaFileManager
+            )
+        } catch {
+            cleanupFailed = true
+        }
+        do {
+            try auth.removeSavedLocalProfile(storageKey: storageKey)
+        } catch {
+            cleanupFailed = true
+        }
         if let cloudUserID = cloudUserID(fromDeletionStorageKey: storageKey) {
             do {
                 try garminBindingStore.deleteAll(for: cloudUserID)
@@ -1939,7 +1998,8 @@ final class AppState: ObservableObject {
         }
 
         if !cleanupFailed {
-            defaults.removeObject(forKey: pendingDeletionStorageKey)
+            _ = PendingAccountDeletionStore.clearExact(storageKey, defaults: defaults)
+            auth.pendingAccountDeletionStateDidChange()
         }
         defaults.removeObject(forKey: legacyPendingDeletionGarminUserIDKey)
     }

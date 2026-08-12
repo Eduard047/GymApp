@@ -66,6 +66,8 @@ enum class SmartWorkoutEffort {
 
 enum class SmartWorkoutEffortAdjustment {
     AutoRecovery,
+    FeedbackHardRecovery,
+    FeedbackEasyExtraSet,
     HardInsufficientHistory,
     HardRecentBreak,
     HardMusclesRecovering
@@ -114,6 +116,11 @@ data class SmartWorkoutPlan(
     val appliedEffort: SmartWorkoutEffort = SmartWorkoutEffort.Standard,
     val effortAdjustment: SmartWorkoutEffortAdjustment? = null
 )
+
+internal const val SMART_WORKOUT_MAX_EXERCISES = 8
+internal const val SMART_WORKOUT_MAX_TOTAL_SETS = 24
+internal const val SMART_WORKOUT_MAX_SETS_PER_EXERCISE = 4
+internal const val SMART_WORKOUT_MIN_SETS_PER_EXERCISE = 3
 
 object WorkoutRecommendationEngine {
     private const val MaxHistorySessions = 24
@@ -465,7 +472,8 @@ object WorkoutRecommendationEngine {
         zoneId: ZoneId = ZoneId.systemDefault(),
         loadProfiles: Map<Long, ExerciseLoadProfile> = emptyMap(),
         manualMuscleMappings: Map<String, List<MuscleContribution>> = emptyMap(),
-        effort: SmartWorkoutEffort = SmartWorkoutEffort.Auto
+        effort: SmartWorkoutEffort = SmartWorkoutEffort.Auto,
+        latestFeedback: SmartCoachFeedback? = null
     ): SmartWorkoutPlan {
         val safeExercises = exercises
             .asSequence()
@@ -493,16 +501,23 @@ object WorkoutRecommendationEngine {
         val safeHistory = history
             .asSequence()
             .take(WorkoutDataLimits.MAX_TOTAL_SETS)
-            .filter { it.isUsableForRecommendation(nowMillis) }
+            .filter { it.isUsableForRecommendation(nowMillis) && it.sessionDate <= nowMillis }
             .toList()
         val focus = chooseWorkoutFocus(safeHistory, trainingProfile, nowMillis, zoneId)
         val variant = chooseWorkoutVariant(focus, safeHistory)
+        val applicableFeedback = applicableCoachFeedback(
+            feedback = latestFeedback,
+            history = safeHistory,
+            nowMillis = nowMillis,
+            zoneId = zoneId
+        )
         val effortResolution = resolveEffort(
             requested = effort,
             focus = focus,
             history = safeHistory,
             nowMillis = nowMillis,
-            zoneId = zoneId
+            zoneId = zoneId,
+            feedback = applicableFeedback
         )
         val targetExerciseCount = targetExerciseCount(trainingProfile, effortResolution.applied)
         val targetWorkingSetBudget = targetWorkingSetBudget(
@@ -598,9 +613,7 @@ object WorkoutRecommendationEngine {
             completedWeeklySets = completedWeeklySets
         )
         var hardCompoundCount = 0
-        return SmartWorkoutPlan(
-            focus = focus,
-            exercises = selected.map { candidate ->
+        val plannedExercises = enforceSmartPlanBounds(selected.map { candidate ->
                 val candidateHistory = historyByIdentity[candidate.analysis.identityKey].orEmpty()
                 val hasHardTrainingHistory = candidateHistory.asSequence()
                     .map { it.sessionId }
@@ -625,12 +638,81 @@ object WorkoutRecommendationEngine {
                         hardSetEligible = hardSetEligible
                     )
                 )
-            },
+            })
+        val easyAdjustedExercises = if (
+            effort == SmartWorkoutEffort.Auto &&
+            applicableFeedback == WorkoutFeedback.Easy &&
+            effortResolution.applied == SmartWorkoutEffort.Standard &&
+            effortResolution.adjustment == null &&
+            plannedExercises.none { planned ->
+                planned.recommendation.kind == WorkoutRecommendationKind.Deload ||
+                    planned.recommendation.kind == WorkoutRecommendationKind.Comeback
+            }
+        ) {
+            addOneSafeFeedbackSet(plannedExercises)
+        } else {
+            plannedExercises
+        }
+        val easyFeedbackApplied = easyAdjustedExercises !== plannedExercises
+        return SmartWorkoutPlan(
+            focus = focus,
+            exercises = easyAdjustedExercises,
             variant = variant,
             requestedEffort = effort,
             appliedEffort = effortResolution.applied,
-            effortAdjustment = effortResolution.adjustment
+            effortAdjustment = if (easyFeedbackApplied) {
+                SmartWorkoutEffortAdjustment.FeedbackEasyExtraSet
+            } else {
+                effortResolution.adjustment
+            }
         )
+    }
+
+    private fun addOneSafeFeedbackSet(
+        exercises: List<SmartWorkoutExercise>
+    ): List<SmartWorkoutExercise> {
+        val totalSets = exercises.sumOf { it.recommendation.sets.size }
+        if (totalSets >= SMART_WORKOUT_MAX_TOTAL_SETS) return exercises
+        val index = exercises.indexOfFirst { planned ->
+            planned.recommendation.sets.size in
+                SMART_WORKOUT_MIN_SETS_PER_EXERCISE until SMART_WORKOUT_MAX_SETS_PER_EXERCISE
+        }
+        if (index < 0) return exercises
+        val target = exercises[index]
+        val extraSet = target.recommendation.sets.lastOrNull() ?: return exercises
+        return exercises.mapIndexed { exerciseIndex, planned ->
+            if (exerciseIndex != index) planned else planned.copy(
+                recommendation = planned.recommendation.copy(
+                    sets = planned.recommendation.sets + extraSet
+                )
+            )
+        }
+    }
+
+    private fun enforceSmartPlanBounds(
+        exercises: List<SmartWorkoutExercise>
+    ): List<SmartWorkoutExercise> {
+        val bounded = exercises.take(SMART_WORKOUT_MAX_EXERCISES)
+        var excess = (bounded.sumOf { it.recommendation.sets.size } -
+            SMART_WORKOUT_MAX_TOTAL_SETS).coerceAtLeast(0)
+        if (excess == 0) return bounded
+        val setCounts = bounded.map { it.recommendation.sets.size }.toMutableList()
+        for (index in setCounts.indices.reversed()) {
+            val removable = (setCounts[index] - SMART_WORKOUT_MIN_SETS_PER_EXERCISE)
+                .coerceAtLeast(0)
+            val removed = min(excess, removable)
+            setCounts[index] -= removed
+            excess -= removed
+            if (excess == 0) break
+        }
+        check(excess == 0) { "Smart workout cannot fit the canonical set cap." }
+        return bounded.mapIndexed { index, planned ->
+            planned.copy(
+                recommendation = planned.recommendation.copy(
+                    sets = planned.recommendation.sets.take(setCounts[index])
+                )
+            )
+        }
     }
 
     fun findAlternatives(
@@ -664,7 +746,7 @@ object WorkoutRecommendationEngine {
             .toSet()
         val safeHistory = history.asSequence()
             .take(WorkoutDataLimits.MAX_TOTAL_SETS)
-            .filter { it.isUsableForRecommendation(nowMillis) }
+            .filter { it.isUsableForRecommendation(nowMillis) && it.sessionDate <= nowMillis }
             .toList()
         val currentMuscles = weightedMuscles(
             exerciseName = current.name,
@@ -1170,7 +1252,8 @@ object WorkoutRecommendationEngine {
             CalorieMode.Surplus -> 1
         }
         val effortAdjustment = if (effort == SmartWorkoutEffort.Recovery) -2 else 0
-        return (base + goalAdjustment + calorieAdjustment + effortAdjustment).coerceIn(5, 10)
+        return (base + goalAdjustment + calorieAdjustment + effortAdjustment)
+            .coerceIn(5, SMART_WORKOUT_MAX_EXERCISES)
     }
 
     private fun targetWorkingSetBudget(
@@ -1195,8 +1278,13 @@ object WorkoutRecommendationEngine {
             SmartWorkoutEffort.Auto,
             SmartWorkoutEffort.Standard -> 0
         }
+        val minimum = exerciseLimit * SMART_WORKOUT_MIN_SETS_PER_EXERCISE
+        val maximum = min(
+            SMART_WORKOUT_MAX_TOTAL_SETS,
+            exerciseLimit * SMART_WORKOUT_MAX_SETS_PER_EXERCISE
+        )
         return (exerciseLimit * 3 + goalAdjustment + calorieAdjustment + effortAdjustment)
-            .coerceIn(MIN_SESSION_WORKING_SETS, exerciseLimit * 4)
+            .coerceIn(minimum, maximum)
     }
 
     private fun programmingPreferenceScore(
@@ -1338,7 +1426,8 @@ object WorkoutRecommendationEngine {
         focus: SmartWorkoutFocus,
         history: List<ExerciseHistoryEntry>,
         nowMillis: Long,
-        zoneId: ZoneId
+        zoneId: ZoneId,
+        feedback: WorkoutFeedback?
     ): EffortResolution {
         val targetMuscles = targetMusclesForFocus(focus)
         val lastTrained = lastTrainedByMuscle(history)
@@ -1355,13 +1444,16 @@ object WorkoutRecommendationEngine {
             ?.let { daysBetween(it, nowMillis, zoneId) }
 
         return when (requested) {
-            SmartWorkoutEffort.Auto -> if (recentlyTrainedFraction >= RecoveryMuscleFraction) {
-                EffortResolution(
+            SmartWorkoutEffort.Auto -> when {
+                feedback == WorkoutFeedback.Hard -> EffortResolution(
+                    applied = SmartWorkoutEffort.Recovery,
+                    adjustment = SmartWorkoutEffortAdjustment.FeedbackHardRecovery
+                )
+                recentlyTrainedFraction >= RecoveryMuscleFraction -> EffortResolution(
                     applied = SmartWorkoutEffort.Recovery,
                     adjustment = SmartWorkoutEffortAdjustment.AutoRecovery
                 )
-            } else {
-                EffortResolution(applied = SmartWorkoutEffort.Standard)
+                else -> EffortResolution(applied = SmartWorkoutEffort.Standard)
             }
             SmartWorkoutEffort.Recovery -> EffortResolution(applied = SmartWorkoutEffort.Recovery)
             SmartWorkoutEffort.Standard -> EffortResolution(applied = SmartWorkoutEffort.Standard)
@@ -1380,6 +1472,28 @@ object WorkoutRecommendationEngine {
                 )
                 else -> EffortResolution(applied = SmartWorkoutEffort.Hard)
             }
+        }
+    }
+
+    private fun applicableCoachFeedback(
+        feedback: SmartCoachFeedback?,
+        history: List<ExerciseHistoryEntry>,
+        nowMillis: Long,
+        zoneId: ZoneId
+    ): WorkoutFeedback? {
+        val candidate = feedback ?: return null
+        if (candidate.sessionId <= 0L ||
+            !WorkoutDataLimits.isValidTimestamp(candidate.sessionDateMillis) ||
+            candidate.sessionDateMillis > nowMillis
+        ) {
+            return null
+        }
+        val latestSession = history.sessionGroupsByDate().firstOrNull() ?: return null
+        if (candidate.sessionId != latestSession.id || candidate.sessionDateMillis != latestSession.date) {
+            return null
+        }
+        return candidate.feedback.takeIf {
+            daysBetween(candidate.sessionDateMillis, nowMillis, zoneId) <= FeedbackMaxAgeDays
         }
     }
 
@@ -2295,7 +2409,7 @@ object WorkoutRecommendationEngine {
     private const val MaxHardCompoundExercises = 2
     private const val MaxWeeklyHyperextensions = 2
     private const val RecoveryMuscleFraction = 0.5
-    private const val MIN_SESSION_WORKING_SETS = 12
+    private const val FeedbackMaxAgeDays = 7
     private const val WEEKLY_VOLUME_WINDOW_MILLIS = 7L * 24L * 60L * 60L * 1_000L
 }
 
@@ -2329,22 +2443,15 @@ private val SmartWorkoutVariant.index: Int
     }
 
 private fun ExerciseHistoryEntry.isUsableForRecommendation(nowMillis: Long): Boolean {
-    val latestAllowedTimestamp = if (nowMillis > Long.MAX_VALUE - RecommendationFutureClockSkewMillis) {
-        Long.MAX_VALUE
-    } else {
-        nowMillis + RecommendationFutureClockSkewMillis
-    }
     return sessionId > 0L &&
         exerciseId > 0L &&
         setOrderIndex in 0 until WorkoutDataLimits.MAX_SETS_PER_EXERCISE &&
         WorkoutDataLimits.isValidTimestamp(sessionDate) &&
-        sessionDate <= latestAllowedTimestamp &&
+        sessionDate <= nowMillis &&
         WorkoutDataLimits.isValidWeight(weight) &&
         WorkoutDataLimits.isValidReps(reps) &&
         WorkoutDataLimits.isValidExerciseName(exerciseName)
 }
-
-private const val RecommendationFutureClockSkewMillis = 24L * 60L * 60L * 1_000L
 
 private fun SmartWorkoutFocus.isUpperDay(): Boolean {
     return this == SmartWorkoutFocus.Upper || this == SmartWorkoutFocus.Push || this == SmartWorkoutFocus.Pull

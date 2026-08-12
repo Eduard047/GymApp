@@ -5,7 +5,7 @@ import vm from "node:vm";
 
 const stateContractSource = await readFile(new URL("../pwa/state-contract.js", import.meta.url), "utf8");
 const appSources = await Promise.all(
-  ["app.js", "app.v85.js"].map(async filename => ({
+  ["app.js"].map(async filename => ({
     filename,
     source: await readFile(new URL(`../pwa/${filename}`, import.meta.url), "utf8")
   }))
@@ -59,8 +59,10 @@ function jsonFrom(context, expression) {
   return JSON.parse(vm.runInContext(`JSON.stringify(${expression})`, context));
 }
 
-test("current PWA bundles remain byte-identical", () => {
-  assert.equal(appSources[1].source, appSources[0].source);
+test("retained browser workout source remains available for map checks", () => {
+  assert.equal(appSources.length, 1);
+  assert.equal(appSources[0].filename, "app.js");
+  assert.ok(appSources[0].source.length > 0);
 });
 
 for (const { filename, source } of appSources) {

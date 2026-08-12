@@ -148,7 +148,12 @@ test("Garmin messages are bounded, account-bound, replay-aware, and acked by id"
   );
   assert.match(store, /"startedAtSeconds" => messageStartedAt/);
   assert.doesNotMatch(store, /"startedAtSeconds" => Time\.now\(\)\.value\(\)/);
-  assert.match(androidManager, /cacheAndPushPlan[\s\S]*syncPayload\(exerciseCatalog, plan, syncId, resetWorkout = false\)/);
+  assert.match(androidManager, /cacheAndPushPlan[\s\S]*garminPlanRequestFingerprint\([\s\S]*planSubmissionCoalescer\.submit/);
+  assert.match(androidManager, /sendToConnectedDevicesLocked[\s\S]*GarminPlanSubmissionKey\([\s\S]*prepareExactPlanSubmission\(submissionKey\)[\s\S]*materializeGarminPlanSubmissionPayload/);
+  assert.doesNotMatch(
+    androidManager.match(/suspend fun cacheAndPushPlan\([\s\S]*?\n    \/\*\*/)?.[0] || "",
+    /newGarminMessageId|allocateSyncRevision/
+  );
   assert.match(androidManager, /pushSyncForContext[\s\S]*repairPairing = repairPairing/);
   assert.match(androidManager, /advertisesGeneration &&[\s\S]*garminSyncRequestCanRepairPairing[\s\S]*repairPairing = true/);
   assert.match(androidManager, /sendPendingAuthResetIfPossible[\s\S]*exercises = emptyList\(\)[\s\S]*plan = emptyList\(\)[\s\S]*resetWorkout = true/);

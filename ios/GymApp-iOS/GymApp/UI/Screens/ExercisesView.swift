@@ -220,8 +220,7 @@ struct ExercisesView: View {
 
     private var header: some View {
         GymScreenHeader(
-            title: "Exercises",
-            supporting: "Manage your library, history, muscle groups, and favorites."
+            title: "Exercises"
         ) {
             addExerciseButton
                 .fixedSize(horizontal: true, vertical: false)
@@ -240,12 +239,6 @@ struct ExercisesView: View {
 
     private var exerciseLibrary: some View {
         VStack(alignment: .leading, spacing: 12) {
-            GymSectionTitle(
-                eyebrow: "Library",
-                title: "Your exercises",
-                supporting: "Open history or assign any of the 15 supported muscle groups."
-            )
-
             HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(GymTheme.textSecondary)
@@ -276,9 +269,19 @@ struct ExercisesView: View {
                         )
                     } description: {
                         Text(
-                            gymLocalized(store.exercises.isEmpty
-                                ? "Add an exercise now or import a backup from Profile."
-                                : "Try another name or clear the filters.")
+                            store.exercises.isEmpty
+                                ? gymText(
+                                    "Add a custom exercise to start building your library.",
+                                    "Додай власну вправу, щоб почати формувати бібліотеку.",
+                                    "Добавь свое упражнение, чтобы начать формировать библиотеку.",
+                                    languageCode: gymCurrentLanguageCode()
+                                )
+                                : gymText(
+                                    "Try another name, body area, or muscle group.",
+                                    "Спробуйте іншу назву, частину тіла або групу м’язів.",
+                                    "Попробуй другое название, часть тела или группу мышц.",
+                                    languageCode: gymCurrentLanguageCode()
+                                )
                         )
                     } actions: {
                         if store.exercises.isEmpty {
@@ -354,13 +357,6 @@ struct ExercisesView: View {
             }
             .scrollIndicators(.hidden)
 
-            Text(gymText(
-                "\(filteredExercises.count) exercises",
-                "Вправ: \(filteredExercises.count)",
-                languageCode: gymCurrentLanguageCode()
-            ))
-            .font(.caption)
-            .foregroundStyle(GymTheme.textSecondary)
         }
     }
 
@@ -372,147 +368,78 @@ struct ExercisesView: View {
     }
 
     private func exerciseCard(_ exercise: Exercise) -> some View {
-        let stats = store.progressStats(exerciseID: exercise.id)
-        let mappingCount = manualMuscleIDs(for: exercise).count
         let displayName = gymExerciseName(exercise)
-        let matchReason = ExerciseFilterEngine.localizedMatchReason(
-            for: exercise,
-            query: searchText,
-            muscleMappings: store.muscleMappings,
-            languageCode: gymCurrentLanguageCode()
-        )
 
         return GymPanel {
-            VStack(alignment: .leading, spacing: 13) {
-                HStack(alignment: .center, spacing: 10) {
-                    ExerciseMediaButton(
-                        exerciseName: exercise.name,
-                        exerciseID: exercise.id,
-                        ownerKey: store.accountStorageKey
-                    )
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(displayName)
-                            .font(.headline)
-                            .foregroundStyle(GymTheme.textPrimary)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .accessibilityAddTraits(.isHeader)
-                        if let matchReason {
-                            Text(matchReason)
-                                .font(.caption)
-                                .foregroundStyle(GymTheme.textSecondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
+            HStack(alignment: .center, spacing: 10) {
+                ExerciseMediaButton(
+                    rawExerciseName: exercise.name,
+                    catalogKey: exercise.catalogKey,
+                    exerciseID: exercise.id,
+                    ownerKey: store.accountStorageKey
+                )
+                Text(displayName)
+                    .font(.headline)
+                    .foregroundStyle(GymTheme.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityAddTraits(.isHeader)
+
+                Spacer(minLength: 4)
+
+                favoriteButton(exercise, displayName: displayName)
+
+                Menu {
+                    Button {
+                        presentedSheet = .history(exercise)
+                    } label: {
+                        Label("History", systemImage: "clock.arrow.circlepath")
                     }
-                    .accessibilityElement(children: .combine)
 
-                    Spacer(minLength: 4)
+                    Button {
+                        presentedSheet = .muscles(exercise)
+                    } label: {
+                        Label("Muscle groups", systemImage: "figure.strengthtraining.traditional")
+                    }
 
-                    favoriteButton(exercise, displayName: displayName)
+                    Button {
+                        presentedSheet = .editExercise(exercise)
+                    } label: {
+                        Label("Machine weights", systemImage: "scalemass")
+                    }
 
-                    if catalogDefinition(for: exercise) != nil {
-                        HStack(spacing: 6) {
-                            GymInfoPill(
-                                gymText("Built-in", "Вбудована", languageCode: gymCurrentLanguageCode()),
-                                systemImage: "checkmark.seal"
-                            )
-                            Button(role: .destructive) {
-                                activeAlert = .delete(
-                                    ExerciseLibraryDeletionTarget(
-                                        store: store,
-                                        exercise: exercise,
-                                        displayName: displayName
-                                    )
-                                )
-                            } label: {
-                                Image(systemName: "trash")
-                                    .frame(minWidth: 44, minHeight: 44)
-                            }
-                            .accessibilityLabel(
-                                gymText(
-                                    "Delete \(displayName)",
-                                    "Видалити «\(displayName)»",
-                                    languageCode: gymCurrentLanguageCode()
-                                )
-                            )
-                        }
-                    } else {
-                        Menu {
-                            Button {
-                                presentedSheet = .editExercise(exercise)
-                            } label: {
-                                Label("Rename", systemImage: "pencil")
-                            }
-
-                            Button(role: .destructive) {
-                                activeAlert = .delete(
-                                    ExerciseLibraryDeletionTarget(
-                                        store: store,
-                                        exercise: exercise,
-                                        displayName: displayName
-                                    )
-                                )
-                            } label: {
-                                Label("Delete", systemImage: "trash")
-                            }
+                    if catalogDefinition(for: exercise) == nil {
+                        Button {
+                            presentedSheet = .editExercise(exercise)
                         } label: {
-                            Image(systemName: "ellipsis.circle")
-                                .font(.title3)
-                                .frame(minWidth: 44, minHeight: 44)
+                            Label("Rename", systemImage: "pencil")
                         }
-                        .accessibilityLabel(
-                            gymText(
-                                "More actions for \(displayName)",
-                                "Більше дій для «\(displayName)»",
-                                languageCode: gymCurrentLanguageCode()
+                    }
+
+                    Divider()
+
+                    Button(role: .destructive) {
+                        activeAlert = .delete(
+                            ExerciseLibraryDeletionTarget(
+                                store: store,
+                                exercise: exercise,
+                                displayName: displayName
                             )
                         )
+                    } label: {
+                        Label("Delete", systemImage: "trash")
                     }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .font(.title3)
+                        .frame(minWidth: 44, minHeight: 44)
                 }
-
-                HStack(spacing: 8) {
-                    GymInfoPill(
-                        gymCount(
-                            stats.sessionCount,
-                            englishOne: "workout",
-                            englishMany: "workouts",
-                            ukrainianOne: "тренування",
-                            ukrainianFew: "тренування",
-                            ukrainianMany: "тренувань"
-                        ),
-                        systemImage: "calendar"
+                .accessibilityLabel(
+                    gymText(
+                        "More actions for \(displayName)",
+                        "Більше дій для «\(displayName)»",
+                        languageCode: gymCurrentLanguageCode()
                     )
-                    GymInfoPill(
-                        mappingCount == 0
-                            ? gymLocalized("Auto mapping")
-                            : gymText(
-                                "\(mappingCount) mapped",
-                                "зіставлено: \(mappingCount)",
-                                languageCode: gymCurrentLanguageCode()
-                            ),
-                        systemImage: "figure.strengthtraining.traditional",
-                        accent: mappingCount == 0 ? GymTheme.secondary : GymTheme.primary
-                    )
-                    if let machineLoadProfile = exercise.machineLoadProfile {
-                        GymInfoPill(
-                            machineWeightCountText(machineLoadProfile.allowedWeightsKg.count),
-                            systemImage: "scalemass",
-                            accent: GymTheme.primary
-                        )
-                    }
-                }
-
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 10) {
-                        historyButton(exercise)
-                        mappingButton(exercise)
-                        machineWeightsButton(exercise)
-                    }
-                    VStack(spacing: 10) {
-                        historyButton(exercise)
-                        mappingButton(exercise)
-                        machineWeightsButton(exercise)
-                    }
-                }
+                )
             }
         }
     }
@@ -557,67 +484,6 @@ struct ExercisesView: View {
         case AppLanguage.ukrainian.rawValue: exercise.isFavorite ? "Улюблена" : "Не улюблена"
         case AppLanguage.russian.rawValue: exercise.isFavorite ? "В избранном" : "Не в избранном"
         default: exercise.isFavorite ? "Favorite" : "Not favorite"
-        }
-    }
-
-    private func historyButton(_ exercise: Exercise) -> some View {
-        let displayName = gymExerciseName(exercise)
-        return Button {
-            presentedSheet = .history(exercise)
-        } label: {
-            Label("History", systemImage: "clock.arrow.circlepath")
-                .frame(maxWidth: .infinity)
-        }
-        .buttonStyle(GymSecondaryButtonStyle())
-        .accessibilityHint(
-            gymText(
-                "Shows every saved set for \(displayName)",
-                "Показує всі збережені підходи для «\(displayName)»",
-                languageCode: gymCurrentLanguageCode()
-            )
-        )
-    }
-
-    private func mappingButton(_ exercise: Exercise) -> some View {
-        let displayName = gymExerciseName(exercise)
-        return Button {
-            presentedSheet = .muscles(exercise)
-        } label: {
-            Label("Muscle groups", systemImage: "figure.strengthtraining.traditional")
-                .frame(maxWidth: .infinity)
-        }
-        .buttonStyle(GymSecondaryButtonStyle())
-        .accessibilityHint(
-            gymText(
-                "Manually maps \(displayName) to muscle groups",
-                "Дає змогу вручну зіставити «\(displayName)» із групами м’язів",
-                languageCode: gymCurrentLanguageCode()
-            )
-        )
-    }
-
-    private func machineWeightsButton(_ exercise: Exercise) -> some View {
-        Button {
-            presentedSheet = .editExercise(exercise)
-        } label: {
-            Label("Machine weights", systemImage: "scalemass")
-                .frame(maxWidth: .infinity)
-        }
-        .buttonStyle(GymSecondaryButtonStyle())
-        .accessibilityHint(
-            gymText(
-                "Sets exact selectable loads and the progression direction for this exercise",
-                "Задає точні доступні навантаження та напрям прогресії для цієї вправи",
-                languageCode: gymCurrentLanguageCode()
-            )
-        )
-    }
-
-    private func machineWeightCountText(_ count: Int) -> String {
-        switch gymCurrentLanguageCode() {
-        case AppLanguage.ukrainian.rawValue: return "Ваг: \(count)"
-        case AppLanguage.russian.rawValue: return "Весов: \(count)"
-        default: return "\(count) weights"
         }
     }
 
@@ -853,13 +719,7 @@ private struct ExerciseEditorSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     GymSectionTitle(
-                        eyebrow: "Exercise library",
-                        title: title,
-                        supporting: initialName.isEmpty
-                            ? "Use a clear name you will recognize while logging workouts."
-                            : allowsRenaming
-                                ? "Update the name or enter every selectable load shown on this machine."
-                                : "Enter only the weights this machine can actually select. Saved history stays unchanged."
+                        title: title
                     )
 
                     TextField("Exercise name", text: $name)
@@ -1009,15 +869,12 @@ private struct ExerciseHistorySheet: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 14) {
                     GymSectionTitle(
-                        eyebrow: "Exercise history",
-                        title: gymExerciseName(exercise),
-                        supporting: history.isEmpty
-                            ? "No completed sets yet."
-                            : "Every completed set, newest first."
+                        title: gymExerciseName(exercise)
                     )
 
                     ExerciseMediaButton(
-                        exerciseName: exercise.name,
+                        rawExerciseName: exercise.name,
+                        catalogKey: exercise.catalogKey,
                         exerciseID: exercise.id,
                         ownerKey: store.accountStorageKey
                     )
@@ -1144,7 +1001,6 @@ private struct ExerciseMuscleMappingSheet: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 12) {
                     GymSectionTitle(
-                        eyebrow: "Manual mapping",
                         title: gymExerciseName(exercise),
                         supporting: "Select every muscle group this movement trains. An empty selection uses GymApp’s automatic name-based mapping."
                     )

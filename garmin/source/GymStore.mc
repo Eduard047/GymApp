@@ -1681,6 +1681,24 @@ class GymStore {
         }
     }
 
+    static function hasUnfinishedWorkout() {
+        if (sets.size() > 0 || activeWorkoutStartedAtSeconds != null ||
+            runtimeWorkoutStartedAtSeconds != null) {
+            return true;
+        }
+        if (!activeWorkoutSnapshotValid ||
+            !(timelineBase instanceof Lang.Array) ||
+            !isValidTimelineCheckpoint(timelineBase)) {
+            return false;
+        }
+        // The durable empty snapshot is a tombstone, not a workout. A zero-set
+        // runtime becomes resumable only after it contains real elapsed/metric
+        // state (or has the explicit runtime origin checked above).
+        return timelineBase[0] > 0 || timelineBase[1] > 0.0 ||
+            timelineBase[2] != null || timelineBase[4] > 0 ||
+            timelineBase[5] > 0 || timelineBase[6] != null;
+    }
+
     static function clearActiveWorkout() {
         var atomicallyCleared = false;
         if (hasAccountBinding()) {

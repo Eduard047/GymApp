@@ -154,10 +154,11 @@ fun MissionsScreen(
                             onHero = true
                         )
                         MetricTile(
-                            label = stringResource(R.string.kpi_streak),
+                            label = stringResource(R.string.solo_streak_label),
                             value = stringResource(
-                                R.string.kpi_streak_value,
-                                uiState.soloProgress.streakDays
+                                R.string.solo_weekly_rhythm_value,
+                                uiState.soloProgress.weeklyStreakWeeks,
+                                uiState.soloProgress.weeklyTarget
                             ),
                             modifier = Modifier.weight(1f),
                             onHero = true
@@ -177,8 +178,7 @@ fun MissionsScreen(
         if (selectedMissions.isEmpty()) {
             item {
                 EmptyStatePanel(
-                    title = stringResource(R.string.missions_empty_title),
-                    supporting = stringResource(R.string.missions_empty_supporting)
+                    title = stringResource(R.string.missions_empty_title)
                 )
             }
         } else {

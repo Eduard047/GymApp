@@ -5,11 +5,24 @@ struct MissionsView: View {
     let onOpenRanks: () -> Void
 
     @Environment(\.calendar) private var calendar
-    @AppStorage("app-language") private var languageCode = AppLanguage.english.rawValue
+    @AppStorage("app-language") private var languageCode = AppLanguage.firstRunDefault.rawValue
     @State private var period: MissionCadence = .daily
 
     private var snapshot: GamificationSnapshot {
         store.gamificationSnapshot(calendar: calendar)
+    }
+
+    private var trainingProfile: TrainingProfile {
+        TrainingProfileStore().load(accountStorageKey: store.accountStorageKey)
+    }
+
+    private var weeklyStreakWeeks: Int {
+        WeeklyStreakCalculator.current(
+            sessions: store.workoutSummaries,
+            targetTrainingDays: trainingProfile.workoutsPerWeek,
+            now: snapshot.generatedAt,
+            calendar: calendar
+        )
     }
 
     private var missions: [MissionSnapshot] {
@@ -89,7 +102,12 @@ struct MissionsView: View {
                         onHero: true
                     )
                     GymMetricTile(
-                        label: gymText("Streak", "Серія", "Серия", languageCode: languageCode),
+                        label: gymText(
+                            "Week streak",
+                            "Серія тижнів",
+                            "Серия недель",
+                            languageCode: languageCode
+                        ),
                         value: streakValue,
                         onHero: true
                     )
@@ -99,11 +117,10 @@ struct MissionsView: View {
     }
 
     private var streakValue: String {
-        let days = snapshot.streak.currentDays
         return gymText(
-            "\(days) \(days == 1 ? "day" : "days")",
-            "\(days) дн.",
-            "\(days) дн.",
+            "\(weeklyStreakWeeks) wk",
+            "\(weeklyStreakWeeks) тиж",
+            "\(weeklyStreakWeeks) нед",
             languageCode: languageCode
         )
     }

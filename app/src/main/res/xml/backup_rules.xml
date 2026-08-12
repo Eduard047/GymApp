@@ -11,6 +11,10 @@
     <exclude domain="sharedpref" path="gym_cloud_account_deletion_journal.xml.bak" />
     <exclude domain="sharedpref" path="gym_local_database_bindings.xml" />
     <exclude domain="sharedpref" path="gym_local_database_bindings.xml.bak" />
+    <exclude domain="sharedpref" path="gym_local_profile_registry_v1.xml" />
+    <exclude domain="sharedpref" path="gym_local_profile_registry_v1.xml.bak" />
+    <exclude domain="sharedpref" path="gym_local_profile_deletion_journal_v1.xml" />
+    <exclude domain="sharedpref" path="gym_local_profile_deletion_journal_v1.xml.bak" />
     <exclude domain="sharedpref" path="garmin_sync.xml" />
     <exclude domain="sharedpref" path="garmin_sync.xml.bak" />
     <exclude domain="sharedpref" path="phone_wear_sync.xml" />
@@ -19,6 +23,8 @@
     <exclude domain="sharedpref" path="gym_training_profile.xml.bak" />
     <exclude domain="sharedpref" path="gym_training_profiles.xml" />
     <exclude domain="sharedpref" path="gym_training_profiles.xml.bak" />
+    <exclude domain="sharedpref" path="gym_training_guidance_v1.xml" />
+    <exclude domain="sharedpref" path="gym_training_guidance_v1.xml.bak" />
     <exclude domain="sharedpref" path="gym_cloud_sync_baselines.xml" />
     <exclude domain="sharedpref" path="gym_cloud_sync_baselines.xml.bak" />
     <exclude domain="sharedpref" path="gym_exercise_rest_timers.xml" />

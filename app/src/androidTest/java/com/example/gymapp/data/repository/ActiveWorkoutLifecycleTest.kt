@@ -17,6 +17,34 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class ActiveWorkoutLifecycleTest {
     @Test
+    fun zeroWeightPlanStartsActiveWithoutCreatingHistory() = runBlocking {
+        withDatabase("active-workout-zero-weight") { database, repository ->
+            val exerciseId = repository.addExercise("Synthetic bodyweight row")
+            assertEquals(
+                StartActiveWorkoutResult.Started,
+                repository.startActiveWorkout(
+                    date = NOW,
+                    note = null,
+                    workoutExercises = listOf(
+                        WorkoutExerciseDraft(
+                            exerciseId = exerciseId,
+                            sets = listOf(WorkoutSetDraft(weight = 0.0, reps = 12))
+                        )
+                    )
+                )
+            )
+            assertEquals(
+                0.0,
+                checkNotNull(repository.getActiveWorkoutSnapshot())
+                    .exercises.single().sets.single().weight,
+                0.0
+            )
+            assertEquals(0, database.workoutDao().getSessionCount())
+            assertEquals(0, database.setDao().getTotalSetCount())
+        }
+    }
+
+    @Test
     fun plannedSetsStayOutOfHistoryAndFinishCommitsOnlyCompletedSets() = runBlocking {
         withDatabase("active-workout-finish") { database, repository ->
             val exerciseId = repository.addExercise("Synthetic bench press")

@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.PlayArrow
@@ -55,6 +57,12 @@ private data class ExerciseMediaFrames(
     val bundled: List<Bitmap>
 )
 
+private data class ExerciseMediaPreviewState(
+    val bitmap: Bitmap?,
+    val hasMedia: Boolean,
+    val hasMotion: Boolean
+)
+
 @Composable
 fun ExerciseMediaPreview(
     exerciseId: Long,
@@ -69,8 +77,12 @@ fun ExerciseMediaPreview(
     var showSheet by remember(exerciseId, ownerKey) { mutableStateOf(false) }
     var revision by remember(exerciseId, ownerKey) { mutableIntStateOf(0) }
     val context = LocalContext.current
-    val image by produceState<Bitmap?>(
-        initialValue = null,
+    val preview by produceState(
+        initialValue = ExerciseMediaPreviewState(
+            bitmap = null,
+            hasMedia = ExerciseMediaStore.hasPotentialMedia(context, ownerKey, exerciseId, exerciseName),
+            hasMotion = ExerciseMediaStore.bundledFramePaths(exerciseName).size > 1
+        ),
         exerciseId,
         exerciseName,
         ownerKey,
@@ -79,27 +91,37 @@ fun ExerciseMediaPreview(
         height
     ) {
         value = withContext(Dispatchers.IO) {
-            runCatching {
+            val custom = runCatching {
                 ExerciseMediaStore.loadCustom(context, ownerKey, exerciseId, 256, 192)
-            }.getOrNull() ?: ExerciseMediaStore.bundledFramePaths(exerciseName)
-                .firstOrNull()
-                ?.let { path ->
+            }.getOrNull()
+            if (custom != null) {
+                ExerciseMediaPreviewState(bitmap = custom, hasMedia = true, hasMotion = false)
+            } else {
+                val bundled = ExerciseMediaStore.bundledFramePaths(exerciseName).mapNotNull { path ->
                     runCatching {
                         ExerciseMediaStore.loadBundledFrame(context, path, 256, 192)
                     }.getOrNull()
                 }
+                ExerciseMediaPreviewState(
+                    bitmap = bundled.firstOrNull(),
+                    hasMedia = bundled.isNotEmpty(),
+                    hasMotion = bundled.size > 1
+                )
+            }
         }
     }
 
     Surface(
         modifier = modifier
             .size(width = width, height = height)
-            .clickable { showSheet = true },
-        shape = GymControlShape,
+            .clickable(
+                onClickLabel = stringResource(R.string.exercise_media_open_preview)
+            ) { showSheet = true },
+        shape = RoundedCornerShape(13.dp),
         color = MaterialTheme.colorScheme.surfaceVariant
     ) {
         Box(contentAlignment = Alignment.Center) {
-            val bitmap = image
+            val bitmap = preview.bitmap
             if (bitmap != null) {
                 Image(
                     bitmap = bitmap.asImageBitmap(),
@@ -107,26 +129,36 @@ fun ExerciseMediaPreview(
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop
                 )
-                Surface(
-                    modifier = Modifier.align(Alignment.BottomEnd).padding(5.dp),
-                    shape = GymControlShape,
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.9f)
-                ) {
-                    Icon(
-                        Icons.Default.PlayArrow,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onPrimary,
-                        modifier = Modifier.padding(3.dp).size(16.dp)
-                    )
+                if (preview.hasMotion) {
+                    Surface(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(5.dp)
+                            .size(28.dp),
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.primary
+                    ) {
+                        Icon(
+                            Icons.Default.PlayArrow,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.padding(6.dp)
+                        )
+                    }
                 }
-            } else {
+            } else if (!preview.hasMedia) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(Icons.Default.Image, contentDescription = null)
                     Text(
-                        stringResource(R.string.exercise_media_add),
+                        stringResource(
+                            if (editable) R.string.exercise_media_add
+                            else R.string.exercise_media_no_preview
+                        ),
                         style = MaterialTheme.typography.labelSmall
                     )
                 }
+            } else {
+                Icon(Icons.Default.Image, contentDescription = null)
             }
         }
     }
@@ -231,12 +263,6 @@ private fun ExerciseMediaSheet(
                     }
                 }
             }
-            Text(
-                stringResource(R.string.exercise_media_hint),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 12.dp)
-            )
             if (error) {
                 Text(
                     stringResource(R.string.exercise_media_error),
@@ -256,12 +282,14 @@ private fun ExerciseMediaSheet(
                     OutlinedButton(
                         onClick = {
                             scope.launch {
-                                withContext(Dispatchers.IO) {
+                                val deleted = withContext(Dispatchers.IO) {
                                     ExerciseMediaStore.deleteCustom(context, ownerKey, exerciseId)
                                 }
-                                error = false
-                                revision += 1
-                                onMediaChanged()
+                                error = !deleted
+                                if (deleted) {
+                                    revision += 1
+                                    onMediaChanged()
+                                }
                             }
                         },
                         modifier = Modifier.fillMaxWidth().padding(top = 8.dp)

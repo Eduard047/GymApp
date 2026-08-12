@@ -12,7 +12,7 @@ const garminCloudSource = await readFile(
   "utf8"
 );
 const appSources = await Promise.all(
-  ["app.js", "app.v85.js"].map(async filename => ({
+  ["app.js"].map(async filename => ({
     filename,
     source: await readFile(new URL(`../pwa/${filename}`, import.meta.url), "utf8")
   }))
@@ -118,8 +118,10 @@ function comparisonFixture() {
   ];
 }
 
-test("current PWA parity bundle remains byte-identical", () => {
-  assert.equal(appSources[1].source, appSources[0].source);
+test("retained browser workout source remains available for parity checks", () => {
+  assert.equal(appSources.length, 1);
+  assert.equal(appSources[0].filename, "app.js");
+  assert.ok(appSources[0].source.length > 0);
 });
 
 test("PWA distinguishes planned rows from durable active and history sets", () => {

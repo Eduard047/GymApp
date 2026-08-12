@@ -1,5 +1,18 @@
 import SwiftUI
 
+func makeWorkoutEditorDrafts(from plan: SmartWorkoutPlan) -> [WorkoutEditorExerciseDraft] {
+    plan.exercises.map { item in
+        WorkoutEditorExerciseDraft(
+            id: item.exercise.id,
+            exerciseID: item.exercise.id,
+            sets: item.recommendation.sets.map {
+                WorkoutEditorSetDraft(id: $0.id, recommendedSet: $0)
+            },
+            coachRecommendation: item.recommendation
+        )
+    }
+}
+
 func makeSharedWorkoutDraftURL(
     drafts: [WorkoutEditorExerciseDraft],
     exercises: [UUID: Exercise]
@@ -30,9 +43,9 @@ func makeSharedWorkoutDraftPlan(
         guard totalSetCount <= SharedWorkoutLinkEncoder.maximumTotalSets else {
             throw SharedWorkoutLinkError.tooManySets
         }
-        guard !draft.sets.contains(where: \.requiresWeightSelection) else {
-            throw SharedWorkoutLinkError.invalidWeight
-        }
+        guard draft.sets.allSatisfy({
+            $0.isReadyForSave && (1 ... 10_000).contains($0.reps)
+        }) else { throw SharedWorkoutLinkError.invalidWeight }
         return SharedWorkoutPlanExercise(
             catalogKey: exercise.catalogKey,
             name: exercise.name,
@@ -43,6 +56,89 @@ func makeSharedWorkoutDraftPlan(
     }
     return try SharedWorkoutLinkValidator.validate(
         SharedWorkoutPlan(exercises: sharedExercises)
+    )
+}
+
+struct GarminDraftSyncKey: Hashable, Sendable {
+    let accountStorageKey: String
+    let deviceID: String
+    let title: String
+    let startedAt: String
+    let note: String
+    let exercises: [GarminPlanExercise]
+}
+
+struct GarminDraftSubmission: Equatable, Sendable {
+    let key: GarminDraftSyncKey
+    let plan: GarminWorkoutPlan
+    let clientRequestID: UUID
+}
+
+func makeGarminDraftSyncKey(
+    accountStorageKey: String,
+    deviceID: String,
+    title: String,
+    workoutDate: Date,
+    note: String,
+    drafts: [WorkoutEditorExerciseDraft],
+    exercises: [UUID: Exercise]
+) throws -> GarminDraftSyncKey {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    let planExercises = try drafts.map { draft -> GarminPlanExercise in
+        guard let exercise = exercises[draft.exerciseID] else {
+            throw GarminCloudError.invalidPlan
+        }
+        guard !draft.sets.isEmpty,
+              draft.sets.allSatisfy({
+                  $0.isReadyForSave &&
+                      (1 ... GarminPlanValidator.maximumReps).contains($0.reps)
+              }) else {
+            throw GarminCloudError.invalidPlan
+        }
+        return GarminPlanExercise(
+            name: exercise.name,
+            sets: draft.sets.enumerated().map { index, set in
+                GarminPlanSet(weight: set.weight, reps: set.reps, orderIndex: index)
+            }
+        )
+    }
+    return GarminDraftSyncKey(
+        accountStorageKey: accountStorageKey,
+        deviceID: deviceID,
+        title: title,
+        startedAt: formatter.string(from: workoutDate),
+        note: note,
+        exercises: planExercises
+    )
+}
+
+func prepareGarminDraftSubmission(
+    existing: GarminDraftSubmission?,
+    key: GarminDraftSyncKey,
+    now: Date = Date(),
+    makeRequestID: () -> UUID = UUID.init
+) throws -> GarminDraftSubmission {
+    if let existing, existing.key == key {
+        _ = try GarminPlanValidator.validate(existing.plan)
+        return existing
+    }
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    let plan = GarminWorkoutPlan(
+        source: "gymapp-ios",
+        version: 1,
+        title: key.title,
+        createdAt: formatter.string(from: now),
+        startedAt: key.startedAt,
+        note: key.note,
+        exercises: key.exercises
+    )
+    _ = try GarminPlanValidator.validate(plan)
+    return GarminDraftSubmission(
+        key: key,
+        plan: plan,
+        clientRequestID: makeRequestID()
     )
 }
 
@@ -60,7 +156,7 @@ struct AddWorkoutView: View {
     @State private var smartGeneratedDraftIDs = Set<UUID>()
     @State private var smartPlanIsStale = false
     @State private var drafts: [WorkoutEditorExerciseDraft] = []
-    @State private var queueForGarmin = false
+    @State private var garminDraftSubmission: GarminDraftSubmission?
     @State private var showingExercisePicker = false
     @State private var showingPreviousPicker = false
     @State private var replacementRequest: SmartReplacementRequest?
@@ -74,6 +170,11 @@ struct AddWorkoutView: View {
     @State private var sharingFriendID: String?
     @State private var shareChooserMessage: String?
     @State private var shareChooserMessageIsError = false
+    @State private var secondaryOptionsExpanded = false
+    @State private var showingDiscardConfirmation = false
+    @State private var showingClearPlanConfirmation = false
+
+    private let baselinePlanSnapshot: PlanEditorSnapshot
 
     private let isCloudAccount: Bool
     private let onStarted: (UUID) -> Void
@@ -84,12 +185,16 @@ struct AddWorkoutView: View {
     private let sendSocialWorkoutInvite: ((String, SharedWorkoutPlan) async throws -> Void)?
     private let sendLiveWorkoutInvite: ((String, SharedWorkoutPlan) async throws -> Void)?
     private let refreshSocialWorkoutInbox: (() async throws -> Void)?
+    private let rejectsLaunchSeed: Bool
 
     init(
         appState: AppState,
         activeWorkoutStore: ActiveWorkoutStore,
         liveWorkoutCoordinator: LiveWorkoutCoordinator? = nil,
         initialDrafts: [WorkoutExerciseDraft] = [],
+        launchSeed: WorkoutLaunchSeed? = nil,
+        launchSeedConsumerID: UUID? = nil,
+        launchSeedDrafts: [WorkoutEditorExerciseDraft]? = nil,
         onStarted: @escaping (UUID) -> Void,
         onSaved: @escaping (UUID) -> Void,
         onCancel: @escaping () -> Void = {}
@@ -100,6 +205,9 @@ struct AddWorkoutView: View {
             garminCloud: appState.garminCloud,
             isCloudAccount: appState.auth.session?.cloud != nil,
             initialDrafts: initialDrafts,
+            launchSeed: launchSeed,
+            launchSeedConsumerID: launchSeedConsumerID,
+            launchSeedDrafts: launchSeedDrafts,
             onStarted: onStarted,
             onSaved: onSaved,
             onCancel: onCancel,
@@ -127,6 +235,9 @@ struct AddWorkoutView: View {
         garminCloud: GarminCloudService,
         isCloudAccount: Bool,
         initialDrafts: [WorkoutExerciseDraft] = [],
+        launchSeed: WorkoutLaunchSeed? = nil,
+        launchSeedConsumerID: UUID? = nil,
+        launchSeedDrafts: [WorkoutEditorExerciseDraft]? = nil,
         onStarted: @escaping (UUID) -> Void,
         onSaved: @escaping (UUID) -> Void,
         onCancel: @escaping () -> Void = {},
@@ -139,16 +250,41 @@ struct AddWorkoutView: View {
         _store = ObservedObject(wrappedValue: store)
         _activeWorkoutStore = ObservedObject(wrappedValue: activeWorkoutStore)
         _garminCloud = ObservedObject(wrappedValue: garminCloud)
-        _profile = State(initialValue: Self.loadProfile(storageKey: store.accountStorageKey))
-        _drafts = State(
-            initialValue: initialDrafts.map { exercise in
-                WorkoutEditorExerciseDraft(
-                    exerciseID: exercise.exerciseID,
-                    sets: exercise.sets.map {
-                        WorkoutEditorSetDraft(weight: $0.weight, reps: $0.reps)
-                    }
-                )
+        let storedProfile = TrainingProfileStore().load(
+            accountStorageKey: store.accountStorageKey
+        )
+        let requestedLaunchSeed = launchSeed
+        let launchSeed: WorkoutLaunchSeed? = requestedLaunchSeed.flatMap { seed -> WorkoutLaunchSeed? in
+            guard WorkoutLaunchSeedUseGate.accepts(
+                seed,
+                consumerID: launchSeedConsumerID
+            ), let launchSeedDrafts,
+               !launchSeedDrafts.isEmpty,
+               launchSeedDrafts == makeWorkoutEditorDrafts(from: seed.plan) else {
+                return nil
             }
+            return seed
+        }
+        let profile = launchSeed?.profile ?? storedProfile
+        let seededDrafts = launchSeed.map { _ in launchSeedDrafts ?? [] }
+        let initialDate = Date()
+        let initialEffort = launchSeed?.requestedEffort ?? .auto
+        let initialEditorDrafts = seededDrafts ?? initialDrafts.map { exercise in
+            WorkoutEditorExerciseDraft(
+                exerciseID: exercise.exerciseID,
+                sets: exercise.sets.map {
+                    WorkoutEditorSetDraft(weight: $0.weight, reps: $0.reps)
+                }
+            )
+        }
+        _date = State(initialValue: initialDate)
+        _profile = State(initialValue: profile)
+        _selectedEffort = State(initialValue: initialEffort)
+        _latestSmartPlan = State(initialValue: launchSeed?.plan)
+        _drafts = State(initialValue: initialEditorDrafts)
+        _garminDraftSubmission = State(initialValue: nil)
+        _smartGeneratedDraftIDs = State(
+            initialValue: Set((seededDrafts ?? []).map(\.id))
         )
         self.isCloudAccount = isCloudAccount
         self.onStarted = onStarted
@@ -159,42 +295,145 @@ struct AddWorkoutView: View {
         self.sendSocialWorkoutInvite = sendSocialWorkoutInvite
         self.sendLiveWorkoutInvite = sendLiveWorkoutInvite
         self.refreshSocialWorkoutInbox = refreshSocialWorkoutInbox
+        rejectsLaunchSeed = requestedLaunchSeed != nil && launchSeed == nil
+        baselinePlanSnapshot = PlanEditorSnapshot(
+            date: initialDate,
+            note: "",
+            effort: initialEffort,
+            drafts: initialEditorDrafts
+        )
     }
 
     var body: some View {
         GymBackground {
-            ScrollView {
-                LazyVStack(spacing: 14) {
-                    hero
+            ScrollViewReader { scrollProxy in
+                ScrollView {
+                    LazyVStack(spacing: 14) {
+                        Color.clear
+                            .frame(height: 0)
+                            .id("workout-plan-editor-top")
 
-                    if let statusMessage {
-                        GymStatusBanner(message: statusMessage, isError: statusIsError)
+                        if let statusMessage {
+                            GymStatusBanner(message: statusMessage, isError: statusIsError)
+                        }
+
+                        profilePanel
+                        smartCoachPanel
+                        editorSection
+                        startWorkoutButton
+                        secondaryOptions
                     }
-
-                    sessionDetails
-                    templatePanel
-                    profilePanel
-                    smartCoachPanel
-                    editorSection
-
-                    if isCloudAccount {
-                        garminPanel
-                    }
-
-                    saveButton
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 12)
+                    .padding(.bottom, 28)
                 }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 12)
-                .padding(.bottom, 28)
+                .scrollDismissesKeyboard(.interactively)
+                .onChange(of: drafts.isEmpty) { isEmpty in
+                    guard isEmpty else { return }
+                    DispatchQueue.main.async {
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            scrollProxy.scrollTo("workout-plan-editor-top", anchor: .top)
+                        }
+                    }
+                }
             }
-            .scrollDismissesKeyboard(.interactively)
         }
-        .navigationTitle("Add workout")
+        .navigationTitle(
+            gymText(
+                "Workout plan",
+                "План тренування",
+                "План тренировки",
+                languageCode: gymCurrentLanguageCode()
+            )
+        )
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
-                Button("Cancel", action: onCancel)
+                Button(
+                    gymText(
+                        "Cancel",
+                        "Скасувати",
+                        "Отмена",
+                        languageCode: gymCurrentLanguageCode()
+                    ),
+                    action: requestCancel
+                )
             }
+        }
+        .interactiveDismissDisabled(hasUnsavedPlanChanges)
+        .confirmationDialog(
+            gymText(
+                "Discard plan changes?",
+                "Відкинути зміни плану?",
+                "Отменить изменения плана?",
+                languageCode: gymCurrentLanguageCode()
+            ),
+            isPresented: $showingDiscardConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button(
+                gymText(
+                    "Discard changes",
+                    "Відкинути зміни",
+                    "Отменить изменения",
+                    languageCode: gymCurrentLanguageCode()
+                ),
+                role: .destructive,
+                action: onCancel
+            )
+            Button(
+                gymText(
+                    "Keep editing",
+                    "Продовжити редагування",
+                    "Продолжить редактирование",
+                    languageCode: gymCurrentLanguageCode()
+                ),
+                role: .cancel
+            ) {}
+        } message: {
+            Text(gymText(
+                "Your edits will be lost.",
+                "Зміни буде втрачено.",
+                "Изменения будут потеряны.",
+                languageCode: gymCurrentLanguageCode()
+            ))
+        }
+        .confirmationDialog(
+            gymText(
+                "Clear workout plan?",
+                "Очистити план тренування?",
+                "Очистить план тренировки?",
+                languageCode: gymCurrentLanguageCode()
+            ),
+            isPresented: $showingClearPlanConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button(
+                gymText(
+                    "Clear plan",
+                    "Очистити план",
+                    "Очистить план",
+                    languageCode: gymCurrentLanguageCode()
+                ),
+                role: .destructive,
+                action: clearPlan
+            )
+            Button(
+                gymText(
+                    "Keep plan",
+                    "Залишити план",
+                    "Оставить план",
+                    languageCode: gymCurrentLanguageCode()
+                ),
+                role: .cancel
+            ) {}
+        } message: {
+            Text(gymText(
+                "All exercises and sets will be removed.",
+                "Усі вправи й підходи буде видалено.",
+                "Все упражнения и подходы будут удалены.",
+                languageCode: gymCurrentLanguageCode()
+            ))
         }
         .sheet(isPresented: $showingExercisePicker) {
             ExercisePickerSheet(
@@ -230,54 +469,17 @@ struct AddWorkoutView: View {
         }
         .onChange(of: profile) { newProfile in
             smartPlanIsStale = smartPlanIsStale || !smartGeneratedDraftIDs.isEmpty
-            Self.saveProfile(newProfile, storageKey: store.accountStorageKey)
+            TrainingProfileStore().save(newProfile, accountStorageKey: store.accountStorageKey)
         }
         .onChange(of: selectedEffort) { _ in
             smartPlanIsStale = smartPlanIsStale || !smartGeneratedDraftIDs.isEmpty
         }
         .task {
-            try? await refreshSocialWorkoutInbox?()
-        }
-    }
-
-    private var hero: some View {
-        GymHeroPanel {
-            VStack(alignment: .leading, spacing: 12) {
-                Label("Build today's session", systemImage: "dumbbell.fill")
-                    .font(.title2.bold())
-                    .accessibilityAddTraits(.isHeader)
-                Text("Start from a split, ask Smart Coach, or build every set yourself.")
-                    .font(.subheadline)
-                    .foregroundStyle(Color.white.opacity(0.84))
-                    .fixedSize(horizontal: false, vertical: true)
-
-                HStack(spacing: 8) {
-                    GymInfoPill(
-                        gymCount(
-                            drafts.count,
-                            englishOne: "exercise",
-                            englishMany: "exercises",
-                            ukrainianOne: "вправа",
-                            ukrainianFew: "вправи",
-                            ukrainianMany: "вправ"
-                        ),
-                        systemImage: "figure.strengthtraining.traditional",
-                        accent: .white
-                    )
-                    GymInfoPill(
-                        gymCount(
-                            drafts.reduce(0) { $0 + $1.sets.count },
-                            englishOne: "set",
-                            englishMany: "sets",
-                            ukrainianOne: "підхід",
-                            ukrainianFew: "підходи",
-                            ukrainianMany: "підходів"
-                        ),
-                        systemImage: "list.number",
-                        accent: .white
-                    )
-                }
+            guard !rejectsLaunchSeed else {
+                onCancel()
+                return
             }
+            try? await refreshSocialWorkoutInbox?()
         }
     }
 
@@ -285,9 +487,7 @@ struct AddWorkoutView: View {
         GymPanel {
             VStack(alignment: .leading, spacing: 14) {
                 GymSectionTitle(
-                    eyebrow: "Session",
-                    title: "Date and notes",
-                    supporting: "Notes are included in your local and cloud backup."
+                    title: "Date and notes"
                 )
 
                 DatePicker(
@@ -310,9 +510,7 @@ struct AddWorkoutView: View {
         GymPanel(highlighted: true) {
             VStack(alignment: .leading, spacing: 13) {
                 GymSectionTitle(
-                    eyebrow: "Templates",
-                    title: "Choose a training day",
-                    supporting: "Templates use your exercise catalog and recent weights."
+                    title: "Choose a training day"
                 )
 
                 ScrollView(.horizontal) {
@@ -331,6 +529,7 @@ struct AddWorkoutView: View {
                                 gymText(
                                     "Replaces the current editor with a \(preset.title) template",
                                     "Замінює вміст редактора шаблоном «\(preset.title)»",
+                                    "Заменяет содержимое редактора шаблоном «\(preset.title)»",
                                     languageCode: gymCurrentLanguageCode()
                                 )
                             )
@@ -374,18 +573,48 @@ struct AddWorkoutView: View {
         GymPanel {
             VStack(alignment: .leading, spacing: 14) {
                 GymSectionTitle(
-                    eyebrow: "Profile",
-                    title: "Coach settings",
-                    supporting: "The recommendation engine adapts load, repetitions, and workout balance."
+                    title: "Coach settings"
                 )
 
-                profilePicker("Split", selection: $profile.split) { $0.displayName }
-                profilePicker("Goal", selection: $profile.goal) { $0.displayName }
-                profilePicker("Calories", selection: $profile.calorieMode) { $0.displayName }
+                profilePicker(
+                    gymText(
+                        "Program",
+                        "Програма",
+                        "Программа",
+                        languageCode: gymCurrentLanguageCode()
+                    ),
+                    selection: $profile.split,
+                    label: trainingSplitLabel
+                )
+                profilePicker(
+                    gymText(
+                        "Goal",
+                        "Ціль",
+                        "Цель",
+                        languageCode: gymCurrentLanguageCode()
+                    ),
+                    selection: $profile.goal,
+                    label: trainingGoalLabel
+                )
+                profilePicker(
+                    gymText(
+                        "Calories",
+                        "Калорії",
+                        "Калории",
+                        languageCode: gymCurrentLanguageCode()
+                    ),
+                    selection: $profile.calorieMode,
+                    label: calorieModeLabel
+                )
 
                 Stepper(value: $profile.workoutsPerWeek, in: 2 ... 6) {
                     HStack {
-                        Text("Workouts per week")
+                        Text(gymText(
+                            "Training days",
+                            "Тренувальні дні",
+                            "Тренировочные дни",
+                            languageCode: gymCurrentLanguageCode()
+                        ))
                         Spacer()
                         Text(profile.workoutsPerWeek.formatted())
                             .font(.body.monospacedDigit().weight(.bold))
@@ -412,14 +641,51 @@ struct AddWorkoutView: View {
         label: @escaping (Value) -> String
     ) -> some View where Value.AllCases: RandomAccessCollection {
         HStack {
-            Text(gymLocalized(title))
+            Text(title)
             Spacer()
-            Picker(gymLocalized(title), selection: selection) {
+            Picker(title, selection: selection) {
                 ForEach(Array(Value.allCases), id: \.self) { value in
-                    Text(gymLocalized(label(value))).tag(value)
+                    Text(label(value)).tag(value)
                 }
             }
             .pickerStyle(.menu)
+        }
+    }
+
+    private func trainingSplitLabel(_ split: TrainingSplit) -> String {
+        switch split {
+        case .upperLower:
+            gymText("Upper / Lower", "Верх / низ", "Верх/низ", languageCode: gymCurrentLanguageCode())
+        case .fullBody:
+            gymText("Full Body", "Все тіло", "Все тело", languageCode: gymCurrentLanguageCode())
+        case .pushPullLegs:
+            gymText("Push Pull Legs", "Жим / тяга / ноги", "Жим/тяга/ноги", languageCode: gymCurrentLanguageCode())
+        case .custom:
+            gymText("Custom", "Своя", "Своя", languageCode: gymCurrentLanguageCode())
+        }
+    }
+
+    private func trainingGoalLabel(_ goal: TrainingGoal) -> String {
+        switch goal {
+        case .aestheticFatLoss:
+            gymText("Aesthetic Cut", "Естетика / сушка", "Эстетика/сушка", languageCode: gymCurrentLanguageCode())
+        case .muscleGain:
+            gymText("Muscle Gain", "Набір мʼязів", "Набор мышц", languageCode: gymCurrentLanguageCode())
+        case .strength:
+            gymText("Strength", "Сила", "Сила", languageCode: gymCurrentLanguageCode())
+        case .balanced:
+            gymText("Balanced", "Баланс", "Баланс", languageCode: gymCurrentLanguageCode())
+        }
+    }
+
+    private func calorieModeLabel(_ mode: CalorieMode) -> String {
+        switch mode {
+        case .deficit:
+            gymText("Deficit", "Дефіцит", "Дефицит", languageCode: gymCurrentLanguageCode())
+        case .maintenance:
+            gymText("Maintenance", "Підтримка", "Поддержание", languageCode: gymCurrentLanguageCode())
+        case .surplus:
+            gymText("Surplus", "Профіцит", "Профицит", languageCode: gymCurrentLanguageCode())
         }
     }
 
@@ -427,37 +693,42 @@ struct AddWorkoutView: View {
         GymPanel(highlighted: true) {
             VStack(alignment: .leading, spacing: 12) {
                 GymSectionTitle(
-                    eyebrow: "Smart Coach",
-                    title: "Generate the next workout",
-                    supporting: "Uses your split, recent fatigue, neglected muscles, and progressive overload history."
+                    title: "Smart Coach",
+                    supporting: nil
                 )
 
-                ScrollView(.horizontal) {
-                    HStack(spacing: 8) {
-                        ForEach(SmartWorkoutEffort.allCases) { effort in
-                            Button {
-                                selectedEffort = effort
-                            } label: {
-                                Text(effort.displayName)
-                                    .font(.subheadline.weight(.semibold))
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 9)
-                                    .foregroundStyle(
-                                        selectedEffort == effort ? Color.white : GymTheme.primary
-                                    )
-                                    .background(
-                                        selectedEffort == effort
-                                            ? GymTheme.primary
-                                            : GymTheme.primary.opacity(0.1),
-                                        in: Capsule()
-                                    )
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityAddTraits(selectedEffort == effort ? .isSelected : [])
+                LazyVGrid(
+                    columns: [
+                        GridItem(.flexible(), spacing: 8),
+                        GridItem(.flexible(), spacing: 8)
+                    ],
+                    spacing: 8
+                ) {
+                    ForEach(SmartWorkoutEffort.allCases) { effort in
+                        Button {
+                            selectedEffort = effort
+                        } label: {
+                            Text(effort.displayName)
+                                .font(.subheadline.weight(.semibold))
+                                .multilineTextAlignment(.center)
+                                .lineLimit(2)
+                                .minimumScaleFactor(0.82)
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                                .padding(.horizontal, 8)
+                                .foregroundStyle(
+                                    selectedEffort == effort ? Color.white : GymTheme.primary
+                                )
+                                .background(
+                                    selectedEffort == effort
+                                        ? GymTheme.primary
+                                        : GymTheme.primary.opacity(0.1),
+                                    in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                )
                         }
+                        .buttonStyle(.plain)
+                        .accessibilityAddTraits(selectedEffort == effort ? .isSelected : [])
                     }
                 }
-                .scrollIndicators(.hidden)
 
                 if let latestSmartPlan {
                     VStack(alignment: .leading, spacing: 5) {
@@ -483,16 +754,18 @@ struct AddWorkoutView: View {
                             )
                         )
                         .font(.subheadline.weight(.semibold))
-                        Text(
-                            gymText(
-                                "Requested: \(latestSmartPlan.requestedEffort.displayName). Applied: \(latestSmartPlan.appliedEffort.displayName).",
-                                "Запитано: \(latestSmartPlan.requestedEffort.displayName). Застосовано: \(latestSmartPlan.appliedEffort.displayName).",
-                                "Запрошено: \(latestSmartPlan.requestedEffort.displayName). Применено: \(latestSmartPlan.appliedEffort.displayName).",
-                                languageCode: gymCurrentLanguageCode()
+                        if latestSmartPlan.requestedEffort != latestSmartPlan.appliedEffort {
+                            Text(
+                                gymText(
+                                    "Requested: \(latestSmartPlan.requestedEffort.displayName). Applied: \(latestSmartPlan.appliedEffort.displayName).",
+                                    "Запитано: \(latestSmartPlan.requestedEffort.displayName). Застосовано: \(latestSmartPlan.appliedEffort.displayName).",
+                                    "Запрошено: \(latestSmartPlan.requestedEffort.displayName). Применено: \(latestSmartPlan.appliedEffort.displayName).",
+                                    languageCode: gymCurrentLanguageCode()
+                                )
                             )
-                        )
-                        .font(.caption)
-                        .foregroundStyle(GymTheme.textSecondary)
+                            .font(.caption)
+                            .foregroundStyle(GymTheme.textSecondary)
+                        }
                         if let adjustment = latestSmartPlan.effortAdjustment {
                             Text(adjustment.displayText)
                                 .font(.caption)
@@ -504,7 +777,19 @@ struct AddWorkoutView: View {
                 }
                 Button(action: applySmartCoach) {
                     Label(
-                        smartPlanIsStale ? "Regenerate smart targets" : "Build smart workout",
+                        smartPlanIsStale
+                            ? gymText(
+                                "Regenerate smart plan",
+                                "Оновити розумний план",
+                                "Обновить умный план",
+                                languageCode: gymCurrentLanguageCode()
+                            )
+                            : gymText(
+                                "Build smart workout",
+                                "Створити розумне тренування",
+                                "Создать умную тренировку",
+                                languageCode: gymCurrentLanguageCode()
+                            ),
                         systemImage: smartPlanIsStale ? "arrow.triangle.2.circlepath" : "sparkles"
                     )
                 }
@@ -512,8 +797,18 @@ struct AddWorkoutView: View {
                 .disabled(store.exercises.isEmpty)
                 .accessibilityHint(
                     smartPlanIsStale
-                        ? "Updates generated rows while preserving rows you edited manually"
-                        : "Builds recommended exercises and sets"
+                        ? gymText(
+                            "Updates generated rows while preserving rows you edited manually",
+                            "Оновлює згенеровані рядки, зберігаючи внесені вручну зміни",
+                            "Обновляет созданные строки, сохраняя внесённые вручную изменения",
+                            languageCode: gymCurrentLanguageCode()
+                        )
+                        : gymText(
+                            "Builds recommended exercises and sets",
+                            "Створює рекомендовані вправи й підходи",
+                            "Создаёт рекомендованные упражнения и подходы",
+                            languageCode: gymCurrentLanguageCode()
+                        )
                 )
             }
         }
@@ -523,34 +818,58 @@ struct AddWorkoutView: View {
     private var editorSection: some View {
         HStack {
             GymSectionTitle(
-                eyebrow: "Plan builder",
-                title: "Planned exercises and sets",
-                supporting: drafts.isEmpty
-                    ? "Add an exercise to begin."
-                    : "Planned rows are targets. They do not start rest timers or count as completed until you save them."
+                title: "Exercises"
             )
             Spacer(minLength: 8)
-            Button {
-                showingExercisePicker = true
-            } label: {
-                Label("Add", systemImage: "plus")
+            if !drafts.isEmpty {
+                Button(role: .destructive) {
+                    showingClearPlanConfirmation = true
+                } label: {
+                    Label(
+                        gymText(
+                            "Clear plan",
+                            "Очистити план",
+                            "Очистить план",
+                            languageCode: gymCurrentLanguageCode()
+                        ),
+                        systemImage: "trash"
+                    )
+                }
+                .buttonStyle(.bordered)
+                .accessibilityHint(gymText(
+                    "Removes exercises and sets from this editor only",
+                    "Видаляє вправи й підходи лише з цього редактора",
+                    "Удаляет упражнения и подходы только из этого редактора",
+                    languageCode: gymCurrentLanguageCode()
+                ))
             }
-            .buttonStyle(.borderedProminent)
-            .accessibilityLabel("Add exercise")
+            if !drafts.isEmpty {
+                Button {
+                    showingExercisePicker = true
+                } label: {
+                    Label("Add", systemImage: "plus")
+                }
+                .buttonStyle(.borderedProminent)
+                .accessibilityLabel("Add exercise")
+            }
         }
         .padding(.horizontal, 4)
 
         if drafts.isEmpty {
-            GymPanel {
-                GymContentUnavailableView {
-                    Label("No exercises", systemImage: "dumbbell")
-                } description: {
-                    Text("Choose a template, ask Smart Coach, or add an exercise manually.")
-                } actions: {
-                    Button("Add exercise") { showingExercisePicker = true }
-                        .buttonStyle(.borderedProminent)
-                }
+            Button {
+                showingExercisePicker = true
+            } label: {
+                Label(
+                    gymText(
+                        "Add exercise",
+                        "Додати вправу",
+                        "Добавить упражнение",
+                        languageCode: gymCurrentLanguageCode()
+                    ),
+                    systemImage: "plus"
+                )
             }
+            .buttonStyle(GymPrimaryButtonStyle())
         } else {
             ForEach(drafts) { item in
                 if let exercise = store.exercise(id: item.exerciseID) {
@@ -558,7 +877,8 @@ struct AddWorkoutView: View {
                         draft: binding(for: item.id),
                         exerciseID: exercise.id,
                         exerciseMediaOwnerKey: store.accountStorageKey,
-                        exerciseName: gymExerciseName(exercise),
+                        rawExerciseName: exercise.name,
+                        exerciseCatalogKey: exercise.catalogKey,
                         lastWeight: store.lastWeight(exerciseID: exercise.id),
                         onShowSimilar: { showAlternatives(for: item.id) },
                         onDeleteExercise: {
@@ -575,96 +895,115 @@ struct AddWorkoutView: View {
     private var garminPanel: some View {
         GymPanel {
             VStack(alignment: .leading, spacing: 10) {
-                Toggle(isOn: $queueForGarmin) {
-                    Label("Queue for Garmin", systemImage: "applewatch.radiowaves.left.and.right")
-                        .font(.headline)
+                Button(action: syncPlanToGarmin) {
+                    Label(
+                        gymText(
+                            "Sync plan to Garmin",
+                            "Синхронізувати план із Garmin",
+                            "Синхронизировать план с Garmin",
+                            languageCode: gymCurrentLanguageCode()
+                        ),
+                        systemImage: "applewatch.radiowaves.left.and.right"
+                    )
                 }
-                .disabled(garminCloud.selectedDevice == nil)
+                .buttonStyle(GymSecondaryButtonStyle())
+                .disabled(
+                    drafts.isEmpty || garminCloud.isWorking || garminCloud.selectedDevice == nil
+                )
                 Text(
                     garminCloud.selectedDevice == nil
-                        ? gymLocalized("Select or pair a Garmin watch in Account settings before queueing a plan.")
-                        : gymLocalized("Garmin plan mode: after saving, every planned row is sent to the selected watch as a target. The watch logs what you actually complete.")
+                        ? gymText(
+                            "Select or pair a Garmin watch in Account settings before syncing a plan.",
+                            "Вибери або під’єднай годинник Garmin у налаштуваннях облікового запису перед синхронізацією плану.",
+                            "Выбери или подключи часы Garmin в настройках аккаунта перед синхронизацией плана.",
+                            languageCode: gymCurrentLanguageCode()
+                        )
+                        : gymText(
+                            "The current edited plan is sent to the selected watch. No workout is saved or started.",
+                            "Поточний відредагований план буде надіслано на вибраний годинник. Тренування не буде збережено чи розпочато.",
+                            "Текущий отредактированный план будет отправлен на выбранные часы. Тренировка не будет сохранена или начата.",
+                            languageCode: gymCurrentLanguageCode()
+                        )
                 )
                     .font(.caption)
                     .foregroundStyle(GymTheme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                 if garminCloud.isWorking {
-                    ProgressView("Queueing plan…")
+                    ProgressView(gymText(
+                        "Syncing plan…",
+                        "Синхронізація плану…",
+                        "Синхронизация плана…",
+                        languageCode: gymCurrentLanguageCode()
+                    ))
                 }
             }
         }
     }
 
-    private var saveButton: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(
+    private var startWorkoutButton: some View {
+        Button(action: startWorkout) {
+            Label(
                 gymText(
-                    "Start mode keeps planned sets local. A set reaches history only after you record it and finish the workout.",
-                    "Режим тренування зберігає план локально. Підхід потрапить в історію лише після запису й завершення тренування.",
-                    "Режим тренировки хранит план локально. Подход попадёт в историю только после записи и завершения тренировки.",
+                    "Start workout",
+                    "Почати тренування",
+                    "Начать тренировку",
                     languageCode: gymCurrentLanguageCode()
-                )
+                ),
+                systemImage: "play.circle.fill"
             )
-                .font(.caption)
-                .foregroundStyle(GymTheme.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
+        }
+        .buttonStyle(GymPrimaryButtonStyle())
+        .disabled(isSaving || drafts.isEmpty || activeWorkoutStore.draft != nil)
+        .accessibilityHint(
+            gymText(
+                "Saves this plan locally so sets can be recorded one by one",
+                "Зберігає цей план локально, щоб записувати підходи по одному",
+                "Сохраняет этот план локально, чтобы записывать подходы по одному",
+                languageCode: gymCurrentLanguageCode()
+            )
+        )
+    }
 
-            shareDraftButton
+    private var secondaryOptions: some View {
+        GymPanel {
+            DisclosureGroup(isExpanded: $secondaryOptionsExpanded) {
+                LazyVStack(spacing: 12) {
+                    sessionDetails
+                    templatePanel
 
-            Button(action: startWorkout) {
+                    if isCloudAccount {
+                        garminPanel
+                    }
+
+                    shareDraftButton
+
+                    Button(action: saveCompletedWorkout) {
+                        if isSaving {
+                            HStack(spacing: 10) {
+                                ProgressView().tint(.white)
+                                Text("Saving…")
+                            }
+                        } else {
+                            Label("Save as completed workout", systemImage: "checkmark.circle.fill")
+                        }
+                    }
+                    .buttonStyle(GymSecondaryButtonStyle())
+                    .disabled(isSaving || drafts.isEmpty)
+                    .accessibilityHint("Adds every planned row to history and summaries as completed")
+                }
+                .padding(.top, 12)
+            } label: {
                 Label(
                     gymText(
-                        "Start workout",
-                        "Почати тренування",
-                        "Начать тренировку",
+                        "More options",
+                        "Додаткові параметри",
+                        "Дополнительные параметры",
                         languageCode: gymCurrentLanguageCode()
                     ),
-                    systemImage: "play.circle.fill"
+                    systemImage: "slider.horizontal.3"
                 )
+                .font(.headline)
             }
-            .buttonStyle(GymPrimaryButtonStyle())
-            .disabled(isSaving || drafts.isEmpty || activeWorkoutStore.draft != nil)
-            .accessibilityHint(
-                gymText(
-                    "Saves this plan locally so sets can be recorded one by one",
-                    "Зберігає цей план локально, щоб записувати підходи по одному",
-                    "Сохраняет этот план локально, чтобы записывать подходы по одному",
-                    languageCode: gymCurrentLanguageCode()
-                )
-            )
-
-            Divider()
-
-            Text(
-                gymText(
-                    "Completed mode remains available for workouts you already finished.",
-                    "Режим готового тренування залишається для вже виконаних занять.",
-                    "Режим готовой тренировки остаётся для уже выполненных занятий.",
-                    languageCode: gymCurrentLanguageCode()
-                )
-            )
-            .font(.caption)
-            .foregroundStyle(GymTheme.textSecondary)
-
-            Button(action: saveCompletedWorkout) {
-                if isSaving {
-                    HStack(spacing: 10) {
-                        ProgressView().tint(.white)
-                        Text("Saving…")
-                    }
-                } else {
-                    Label("Save as completed workout", systemImage: "checkmark.circle.fill")
-                }
-            }
-            .buttonStyle(GymSecondaryButtonStyle())
-            .disabled(isSaving || drafts.isEmpty)
-            .accessibilityHint(
-                gymLocalized(
-                    queueForGarmin && isCloudAccount
-                        ? "Adds every planned row to history as completed and also queues the rows as Garmin targets"
-                        : "Adds every planned row to history and summaries as completed"
-                )
-            )
         }
     }
 
@@ -728,7 +1067,6 @@ struct AddWorkoutView: View {
                         GymPanel(highlighted: true) {
                             VStack(alignment: .leading, spacing: 10) {
                                 GymSectionTitle(
-                                    eyebrow: t("Link", "Посилання", "Ссылка"),
                                     title: t("Use another app", "Надіслати через інший застосунок", "Отправить через другое приложение"),
                                     supporting: t(
                                         "The existing GymApp link works without adding the recipient as a friend.",
@@ -760,7 +1098,6 @@ struct AddWorkoutView: View {
                         GymPanel {
                             VStack(alignment: .leading, spacing: 10) {
                                 GymSectionTitle(
-                                    eyebrow: t("Friends", "Друзі", "Друзья"),
                                     title: t("Copy or live", "Копія або наживо", "Копия или вживую"),
                                     supporting: t(
                                         "A copy stays independent. Live freezes the plan for two people and shows each person's set progress.",
@@ -1135,6 +1472,7 @@ struct AddWorkoutView: View {
             gymText(
                 "\(preset.title) template loaded from your exercise catalog.",
                 "Шаблон «\(preset.title)» завантажено з каталогу вправ.",
+                "Шаблон «\(preset.title)» загружен из каталога упражнений.",
                 languageCode: gymCurrentLanguageCode()
             ),
             error: false
@@ -1147,21 +1485,14 @@ struct AddWorkoutView: View {
             history: store.allExerciseHistory(),
             muscleMappings: store.muscleMappings,
             trainingProfile: profile,
-            effort: selectedEffort
+            effort: selectedEffort,
+            latestFeedback: store.latestWorkoutFeedbackContext()
         )
         guard !plan.exercises.isEmpty else {
             show(gymLocalized("Smart Coach needs exercises in your catalog."), error: true)
             return
         }
-        let generatedDrafts = plan.exercises.map { item in
-            WorkoutEditorExerciseDraft(
-                exerciseID: item.exercise.id,
-                sets: item.recommendation.sets.map {
-                    WorkoutEditorSetDraft(recommendedSet: $0)
-                },
-                coachRecommendation: item.recommendation
-            )
-        }
+        let generatedDrafts = makeWorkoutEditorDrafts(from: plan)
         if smartPlanIsStale {
             let manualDrafts = drafts.filter { !smartGeneratedDraftIDs.contains($0.id) }
             let manualExerciseIDs = Set(manualDrafts.map(\.exerciseID))
@@ -1180,6 +1511,7 @@ struct AddWorkoutView: View {
             gymText(
                 "Smart Coach built a \(plan.focus.displayName.lowercased()) workout.",
                 "Розумний тренер створив тренування «\(plan.focus.displayName.lowercased())».",
+                "Умный тренер создал тренировку «\(plan.focus.displayName.lowercased())».",
                 languageCode: gymCurrentLanguageCode()
             ),
             error: false
@@ -1296,7 +1628,7 @@ struct AddWorkoutView: View {
         return "custom:\(MuscleMappingEngine.normalizeExerciseName(exercise.name))"
     }
 
-    private func validationMessage(includingGarminQueue: Bool) -> String? {
+    private func validationMessage() -> String? {
         guard !drafts.isEmpty else { return gymLocalized("Add at least one exercise.") }
         guard date <= Date() else {
             return gymText(
@@ -1306,9 +1638,6 @@ struct AddWorkoutView: View {
                 languageCode: gymCurrentLanguageCode()
             )
         }
-        if includingGarminQueue && queueForGarmin && isCloudAccount && garminCloud.selectedDevice == nil {
-            return gymLocalized("Select or pair a Garmin watch in Account settings before queueing a plan.")
-        }
         for draft in drafts {
             guard store.exercise(id: draft.exerciseID) != nil else {
                 return gymLocalized("One selected exercise no longer exists.")
@@ -1317,11 +1646,13 @@ struct AddWorkoutView: View {
                 return gymLocalized("Every exercise needs at least one set.")
             }
             for set in draft.sets {
-                guard !set.requiresWeightSelection else {
-                    return gymLocalized("Choose a working weight before saving.")
-                }
                 guard set.isReadyForSave else {
-                    return gymLocalized("Weight must be a non-negative number.")
+                    return gymText(
+                        "Weight must be a finite number from 0 to 1,000,000.",
+                        "Вага має бути скінченним числом від 0 до 1 000 000.",
+                        "Вес должен быть конечным числом от 0 до 1 000 000.",
+                        languageCode: gymCurrentLanguageCode()
+                    )
                 }
                 guard (1 ... 10_000).contains(set.reps) else {
                     return gymLocalized("Repetitions must be at least one.")
@@ -1332,7 +1663,7 @@ struct AddWorkoutView: View {
     }
 
     private func startWorkout() {
-        if let message = validationMessage(includingGarminQueue: false) {
+        if let message = validationMessage() {
             show(message, error: true)
             return
         }
@@ -1371,7 +1702,7 @@ struct AddWorkoutView: View {
     }
 
     private func saveCompletedWorkout() {
-        if let message = validationMessage(includingGarminQueue: true) {
+        if let message = validationMessage() {
             show(message, error: true)
             return
         }
@@ -1384,32 +1715,8 @@ struct AddWorkoutView: View {
                 note: note,
                 exercises: drafts.map(\.storeDraft)
             )
-            let shouldQueue = queueForGarmin && isCloudAccount
             Task { @MainActor in
-                if shouldQueue {
-                    do {
-                        try await garminCloud.submit(
-                            plan: garminPlan(for: workout),
-                            clientRequestID: workout.id
-                        )
-                        let message = gymLocalized(
-                            garminCloud.lastMessage ?? "Workout saved and queued for Garmin."
-                        )
-                        reportStatus(message, false)
-                    } catch {
-                        let message = gymErrorMessage(error)
-                        reportStatus(
-                            gymText(
-                                "Workout saved, but Garmin queue failed: \(message)",
-                                "Тренування збережено, але додати до черги Garmin не вдалося: \(message)",
-                                languageCode: gymCurrentLanguageCode()
-                            ),
-                            true
-                        )
-                    }
-                } else {
-                    reportStatus(gymLocalized("Workout saved."), false)
-                }
+                reportStatus(gymLocalized("Workout saved."), false)
                 isSaving = false
                 onSaved(workout.id)
             }
@@ -1419,30 +1726,103 @@ struct AddWorkoutView: View {
         }
     }
 
-    private func garminPlan(for workout: WorkoutSession) -> GarminWorkoutPlan {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return GarminWorkoutPlan(
-            source: "gymapp-ios",
-            version: 1,
+    private var hasUnsavedPlanChanges: Bool {
+        PlanEditorSnapshot(
+            date: date,
+            note: note,
+            effort: selectedEffort,
+            drafts: drafts
+        ) != baselinePlanSnapshot
+    }
+
+    private func clearPlan() {
+        guard !drafts.isEmpty else { return }
+        drafts.removeAll()
+        latestSmartPlan = nil
+        smartGeneratedDraftIDs.removeAll()
+        smartPlanIsStale = false
+        replacementRequest = nil
+        garminDraftSubmission = nil
+        sharingPlan = nil
+        showingShareChooser = false
+        shareChooserMessage = nil
+        shareChooserMessageIsError = false
+        statusMessage = nil
+        statusIsError = false
+    }
+
+    private func requestCancel() {
+        if hasUnsavedPlanChanges {
+            showingDiscardConfirmation = true
+        } else {
+            onCancel()
+        }
+    }
+
+    private var exercisesByID: [UUID: Exercise] {
+        Dictionary(uniqueKeysWithValues: store.exercises.map { ($0.id, $0) })
+    }
+
+    private func currentGarminSyncKey(binding: GarminDeviceBinding) throws -> GarminDraftSyncKey {
+        try makeGarminDraftSyncKey(
+            accountStorageKey: store.accountStorageKey,
+            deviceID: binding.deviceID,
             title: gymText(
-                "Workout · \(gymFormattedDate(workout.date, date: .abbreviated, time: .omitted))",
-                "Тренування · \(gymFormattedDate(workout.date, date: .abbreviated, time: .omitted))",
+                "Workout plan",
+                "План тренування",
+                "План тренировки",
                 languageCode: gymCurrentLanguageCode()
             ),
-            createdAt: formatter.string(from: Date()),
-            startedAt: formatter.string(from: workout.date),
-            note: workout.note ?? "",
-            exercises: workout.exercises.compactMap { block in
-                guard let exercise = store.exercise(id: block.exerciseID) else { return nil }
-                return GarminPlanExercise(
-                    name: exercise.name,
-                    sets: block.sets.enumerated().map { index, set in
-                        GarminPlanSet(weight: set.weight, reps: set.reps, orderIndex: index)
-                    }
-                )
-            }
+            workoutDate: date,
+            note: note,
+            drafts: drafts,
+            exercises: exercisesByID
         )
+    }
+
+    private func syncPlanToGarmin() {
+        if let message = validationMessage() {
+            show(message, error: true)
+            return
+        }
+        guard isCloudAccount, let binding = garminCloud.selectedDevice else {
+            show(gymLocalized("Select or pair a Garmin watch in Account settings before syncing a plan."), error: true)
+            return
+        }
+        do {
+            let key = try currentGarminSyncKey(binding: binding)
+            let submission = try prepareGarminDraftSubmission(
+                existing: garminDraftSubmission,
+                key: key
+            )
+            garminDraftSubmission = submission
+            Task { @MainActor in
+                do {
+                    try await garminCloud.submit(
+                        plan: submission.plan,
+                        clientRequestID: submission.clientRequestID
+                    )
+                    guard garminDraftSubmission == submission,
+                          store.accountStorageKey == submission.key.accountStorageKey,
+                          garminCloud.selectedDevice?.deviceID == submission.key.deviceID,
+                          try currentGarminSyncKey(binding: binding) == submission.key else {
+                        throw AuthServiceError.sessionChanged
+                    }
+                    show(
+                        gymLocalized(
+                            garminCloud.lastMessage
+                                ?? "Plan queued. Open GymApp on the Garmin watch and choose CLOUD / SYNC."
+                        ),
+                        error: false
+                    )
+                } catch {
+                    guard garminDraftSubmission == submission else { return }
+                    show(gymErrorMessage(error), error: true)
+                }
+            }
+        } catch {
+            show(gymErrorMessage(error), error: true)
+        }
     }
 
     private func show(_ message: String, error: Bool) {
@@ -1450,28 +1830,13 @@ struct AddWorkoutView: View {
         statusIsError = error
     }
 
-    private static func profileDefaultsKey(storageKey: String) -> String {
-        "gymapp.training-profile.v1.\(storageKey)"
-    }
+}
 
-    private static func loadProfile(storageKey: String) -> TrainingProfile {
-        guard let data = UserDefaults.standard.data(
-            forKey: profileDefaultsKey(storageKey: storageKey)
-        ), let profile = try? JSONDecoder().decode(TrainingProfile.self, from: data) else {
-            return TrainingProfile()
-        }
-        return TrainingProfile(
-            split: profile.split,
-            workoutsPerWeek: profile.workoutsPerWeek,
-            goal: profile.goal,
-            calorieMode: profile.calorieMode
-        )
-    }
-
-    private static func saveProfile(_ profile: TrainingProfile, storageKey: String) {
-        guard let data = try? JSONEncoder().encode(profile) else { return }
-        UserDefaults.standard.set(data, forKey: profileDefaultsKey(storageKey: storageKey))
-    }
+private struct PlanEditorSnapshot: Equatable {
+    let date: Date
+    let note: String
+    let effort: SmartWorkoutEffort
+    let drafts: [WorkoutEditorExerciseDraft]
 }
 
 private struct SmartReplacementRequest: Identifiable {
@@ -1541,27 +1906,9 @@ private struct PreviousWorkoutPicker: View {
     }
 }
 
-private extension SmartWorkoutFocus {
-    var displayName: String {
-        switch self {
-        case .upper: gymLocalized("Upper")
-        case .lower: gymLocalized("Lower")
-        case .push: gymLocalized("Push")
-        case .pull: gymLocalized("Pull")
-        case .legs: gymLocalized("Legs")
-        case .fullBody: gymLocalized("Full body")
-        }
-    }
-}
-
 private extension SmartWorkoutEffort {
     var displayName: String {
-        switch self {
-        case .auto: gymLocalized("Auto")
-        case .recovery: gymLocalized("Recovery")
-        case .standard: gymLocalized("Standard")
-        case .hard: gymLocalized("Hard")
-        }
+        gymDisplayName
     }
 
     var rirText: String {
@@ -1591,6 +1938,20 @@ private extension SmartWorkoutEffortAdjustment {
                 "Auto selected Recovery because at least half of the target muscles were trained in the last two days.",
                 "Авто вибрав відновлення, бо щонайменше половина цільових м’язів тренувалася протягом останніх двох днів.",
                 "Авто выбрал восстановление, потому что как минимум половина целевых мышц тренировалась в последние два дня.",
+                languageCode: gymCurrentLanguageCode()
+            )
+        case .autoFeedbackRecovery:
+            gymText(
+                "Auto selected Recovery after your latest workout felt hard.",
+                "Авто вибрав відновлення, бо останнє тренування було важким.",
+                "Авто выбрал восстановление, потому что последняя тренировка была тяжёлой.",
+                languageCode: gymCurrentLanguageCode()
+            )
+        case .feedbackEasyExtraSet:
+            gymText(
+                "One safe set was added after your latest feedback.",
+                "Після останнього відгуку додано один безпечний підхід.",
+                "После последнего отзыва добавлен один безопасный подход.",
                 languageCode: gymCurrentLanguageCode()
             )
         case .hardInsufficientHistory:

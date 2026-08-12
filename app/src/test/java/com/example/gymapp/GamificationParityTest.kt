@@ -6,8 +6,11 @@ import com.example.gymapp.data.repository.GamificationEngine
 import com.example.gymapp.data.repository.RANK_DEFINITIONS
 import com.example.gymapp.data.repository.nextRankDefinitionAfter
 import com.example.gymapp.data.repository.rankDefinitionForLevel
+import java.time.LocalDate
 import java.time.ZoneId
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -102,6 +105,125 @@ class GamificationParityTest {
         assertEquals(GamificationEngine.MAX_SESSION_XP, GamificationEngine.xpForSession(extreme))
         assertEquals(5_000, GamificationEngine.MAX_SESSION_XP)
     }
+
+    @Test
+    fun visibleStreakAchievementsUseProfileTargetAndStableLegacyIdsAtTwoFourEightWeeks() {
+        val zone = ZoneId.of("Europe/Kyiv")
+        val firstMonday = LocalDate.of(2026, 1, 5)
+        val sessions = (0L until 8L).flatMap { week ->
+            listOf(
+                session((week * 10 + 1).toLong(), firstMonday.plusWeeks(week)),
+                session((week * 10 + 2).toLong(), firstMonday.plusWeeks(week).plusDays(2))
+            )
+        }
+        val now = firstMonday.plusWeeks(9).atStartOfDay(zone).toInstant().toEpochMilli()
+
+        val twoDayTarget = GamificationEngine.buildSnapshot(
+            sessions = sessions,
+            nowMillis = now,
+            zoneId = zone,
+            targetWorkoutsPerWeek = 2
+        ).achievements.filter { it.id.startsWith("streak_") }
+
+        assertEquals(listOf("streak_7", "streak_14", "streak_30"), twoDayTarget.map { it.id })
+        assertEquals(listOf(2.0, 4.0, 8.0), twoDayTarget.map { it.target })
+        assertEquals(listOf("Two-Week Rhythm", "Four-Week Rhythm", "Eight-Week Rhythm"), twoDayTarget.map { it.title })
+        assertTrue(twoDayTarget.all { it.progress == 8.0 && it.unlocked })
+
+        val threeDayTarget = GamificationEngine.buildSnapshot(
+            sessions = sessions + sessions.take(8),
+            nowMillis = now,
+            zoneId = zone,
+            targetWorkoutsPerWeek = 3
+        ).achievements.filter { it.id.startsWith("streak_") }
+        assertTrue(threeDayTarget.all { it.progress == 0.0 })
+        assertTrue(threeDayTarget.none { it.unlocked })
+    }
+
+    @Test
+    fun weeklyAchievementProgressSurvivesRestDaysButConsecutiveWeeksStillMatter() {
+        val zone = ZoneId.of("UTC")
+        val firstMonday = LocalDate.of(2026, 3, 2)
+        val sessions = (0L until 5L)
+            .filter { it != 2L }
+            .flatMap { week ->
+                listOf(
+                    session((week * 10 + 1).toLong(), firstMonday.plusWeeks(week)),
+                    session((week * 10 + 2).toLong(), firstMonday.plusWeeks(week).plusDays(4))
+                )
+            }
+        val now = firstMonday.plusWeeks(6).atStartOfDay(zone).toInstant().toEpochMilli()
+        val streaks = GamificationEngine.buildSnapshot(
+            sessions = sessions,
+            nowMillis = now,
+            zoneId = zone,
+            targetWorkoutsPerWeek = 2
+        ).achievements.filter { it.id.startsWith("streak_") }
+
+        assertEquals(2.0, streaks.first().progress, 0.0)
+        assertTrue(streaks.first().unlocked)
+        assertFalse(streaks[1].unlocked)
+        assertThrows(IllegalArgumentException::class.java) {
+            GamificationEngine.buildSnapshot(emptyList(), now, zone, targetWorkoutsPerWeek = 1)
+        }
+    }
+
+    @Test
+    fun futureWeeksCannotProgressWeeklyStreakAchievements() {
+        val zone = ZoneId.of("UTC")
+        val today = LocalDate.of(2026, 3, 2)
+        val futureSessions = (1L..8L).flatMap { week ->
+            listOf(
+                session(week * 10 + 1, today.plusWeeks(week)),
+                session(week * 10 + 2, today.plusWeeks(week).plusDays(2))
+            )
+        }
+
+        val streaks = GamificationEngine.buildSnapshot(
+            sessions = futureSessions,
+            nowMillis = today.atStartOfDay(zone).toInstant().toEpochMilli(),
+            zoneId = zone,
+            targetWorkoutsPerWeek = 2
+        ).achievements.filter { it.id.startsWith("streak_") }
+
+        assertTrue(streaks.all { it.progress == 0.0 && !it.unlocked })
+    }
+
+    @Test
+    fun laterTodaySessionCannotCompleteWeeklyStreakAchievementEarly() {
+        val zone = ZoneId.of("UTC")
+        val monday = LocalDate.of(2026, 3, 2)
+        val now = monday.plusDays(1).atTime(12, 0).atZone(zone).toInstant().toEpochMilli()
+        val laterToday = WorkoutSessionSummary(
+            session = WorkoutSessionEntity(
+                id = 2L,
+                date = monday.plusDays(1).atTime(18, 0).atZone(zone).toInstant().toEpochMilli(),
+                note = null
+            ),
+            exerciseCount = 1,
+            setCount = 3,
+            totalVolume = 100.0
+        )
+        val streaks = GamificationEngine.buildSnapshot(
+            sessions = listOf(session(1L, monday), laterToday),
+            nowMillis = now,
+            zoneId = zone,
+            targetWorkoutsPerWeek = 2
+        ).achievements.filter { it.id.startsWith("streak_") }
+
+        assertTrue(streaks.all { it.progress == 0.0 && !it.unlocked })
+    }
+
+    private fun session(id: Long, date: LocalDate): WorkoutSessionSummary = WorkoutSessionSummary(
+        session = WorkoutSessionEntity(
+            id = id,
+            date = date.atTime(12, 0).atZone(ZoneId.of("UTC")).toInstant().toEpochMilli(),
+            note = null
+        ),
+        exerciseCount = 1,
+        setCount = 3,
+        totalVolume = 100.0
+    )
 
     private fun parseRow(line: String): GoldenRow {
         val columns = line.split('\t')

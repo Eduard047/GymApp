@@ -40,16 +40,17 @@ test("Garmin short timers survive the signed System.getTimer rollover", async ()
   assert.match(store, /timerElapsedMs\(lastSetUndoStartedAt\) > undoWindowMs/);
 });
 
-test("Garmin retries cloud sync after the throttle and accepts only the queue head ACK", async () => {
+test("Garmin cloud sync is explicit on Ready and accepts only the queue head ACK", async () => {
   const [store, view] = await Promise.all([
     readFile("garmin/source/GymStore.mc", "utf8"),
     readFile("garmin/source/WorkoutView.mc", "utf8")
   ]);
 
-  const cloudRequest = section(view, "function requestCloudSyncOnOpen()", "function onCloudPlanFetched(");
-  assert.match(cloudRequest, /sinceLastCloudRequest < 8000l/);
-  assert.match(cloudRequest, /scheduleCloudSyncOnOpen\(\(8001l - sinceLastCloudRequest\)\.toNumber\(\)\)/);
-  assert.match(view, /scheduleCloudSyncOnOpen\(8000\)/);
+  const readySync = section(view, "function syncFromReady()", "function finishWorkout()");
+  assert.match(readySync, /requestSyncNow\(\)/);
+  assert.match(readySync, /flushPending\(\)/);
+  assert.match(readySync, /GymComm\.hasCloudDeviceToken\(\)[\s\S]*requestCloudSyncNow\(\)/);
+  assert.doesNotMatch(view, /scheduleCloudSyncOnOpen|requestCloudSyncOnOpen|cloudAuto/);
 
   const removePending = section(
     store,
@@ -87,15 +88,25 @@ test("Garmin FIT pause, resume, discard, and startup fail without false UI succe
   const resume = section(session, "static function resume()", "static function stopAndSave()");
   const discard = section(session, "static function discard()", "static function resetForAccountTransition()");
   const onShow = section(view, "function onShow()", "function onHide()");
+  const explicitStart = section(view, "function startOrResumeWorkout()", "function syncFromReady()");
 
-  assert.match(start, /if \(session\.start\(\)\)[\s\S]*else \{[\s\S]*session\.discard\(\)[\s\S]*return recording/);
+  assert.match(start, /if \(session\.start\(\)\)[\s\S]*else \{[\s\S]*failStartAndCleanup\(\)/);
+  assert.match(start, /catch \(ex\) \{[\s\S]*failStartAndCleanup\(\)/);
+  assert.match(start, /static function failStartAndCleanup\(\)[\s\S]*cleaned = discard\(\)/);
+  assert.match(start, /fitCleanupPending = !cleaned && session != null/);
   assert.match(pause, /!session\.stop\(\)[\s\S]*return false/);
   assert.ok(pause.indexOf("session.stop()") < pause.indexOf("paused = true"));
   assert.match(resume, /!session\.start\(\)[\s\S]*return false/);
   assert.ok(resume.indexOf("session.start()") < resume.indexOf("paused = false"));
   assert.match(discard, /discarded = session\.discard\(\)[\s\S]*if \(!discarded\)[\s\S]*return false/);
-  assert.match(onShow, /!GymSession\.recording && !GymSession\.fitSaved/);
-  assert.match(onShow, /else if \(GymSession\.recording && !GymSession\.paused\)[\s\S]*GymSession\.startSensors\(\)/);
+  assert.match(onShow, /page = 7/);
+  assert.doesNotMatch(onShow, /GymSession\.(?:start|resume|startSensors)\(/);
+  assert.match(explicitStart, /GymSession\.recording[\s\S]*GymSession\.paused[\s\S]*GymSession\.resume\(\)/);
+  assert.match(explicitStart, /else \{[\s\S]*started = GymSession\.start\(\)/);
+  assert.ok(
+    explicitStart.indexOf("if (!started)") < explicitStart.indexOf("page = 0"),
+    "failed FIT start must leave the Ready screen inactive"
+  );
 });
 
 test("Garmin account transition retains and retries a FIT session that could not be discarded", async () => {

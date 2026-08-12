@@ -3,8 +3,39 @@ package com.example.gymapp.ui.screens
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import com.example.gymapp.auth.boundedNewLocalDisplayNameDraft
+import com.example.gymapp.util.AppLanguage
 
 class AuthScreenTest {
+    @Test
+    fun languageMenuUsesCanonicalVisibleCodes() {
+        assertEquals("EN", AppLanguage.EN.visibleCode())
+        assertEquals("UK", AppLanguage.UK.visibleCode())
+        assertEquals("RU", AppLanguage.RU.visibleCode())
+    }
+
+    @Test
+    fun authDraftKeepsNonSecretFieldsButNeverPersistsPasswords() {
+        val draft = AuthDraftViewModel().apply {
+            email.value = "athlete@example.com"
+            displayName.value = "Athlete"
+            localDisplayName.value = "Local athlete"
+            password.value = "cloud-password"
+            signUpPassword.value = "signup-password"
+            signUpPasswordConfirm.value = "signup-password"
+            showOfflineSheet.value = true
+        }
+
+        draft.clearSensitiveFields()
+
+        assertEquals("athlete@example.com", draft.email.value)
+        assertEquals("Athlete", draft.displayName.value)
+        assertEquals("Local athlete", draft.localDisplayName.value)
+        assertEquals(true, draft.showOfflineSheet.value)
+        assertEquals("", draft.password.value)
+        assertEquals("", draft.signUpPassword.value)
+        assertEquals("", draft.signUpPasswordConfirm.value)
+    }
     @Test
     fun loginValidationRejectsMissingInput() {
         assertEquals(
@@ -141,10 +172,24 @@ class AuthScreenTest {
     fun localProfileValidationAllowsTheDefaultAndRejectsUnsafeNames() {
         assertNull(validateLocalAccountInput(""))
         assertNull(validateLocalAccountInput("Local Athlete"))
+        assertNull(validateLocalAccountInput("Іван_2"))
         assertEquals(
-            "Local profile name is invalid or too long.",
+            "Display name must be 2–32 characters and use letters, numbers, spaces, dot, dash or underscore.",
             validateLocalAccountInput("bad\u0000name")
         )
+        assertEquals(
+            "Display name must be 2–32 characters and use letters, numbers, spaces, dot, dash or underscore.",
+            validateLocalAccountInput("A")
+        )
+        assertEquals(
+            "Display name must be 2–32 characters and use letters, numbers, spaces, dot, dash or underscore.",
+            validateLocalAccountInput("A".repeat(33))
+        )
+        assertEquals(
+            "Display name must be 2–32 characters and use letters, numbers, spaces, dot, dash or underscore.",
+            validateLocalAccountInput("Local/Profile")
+        )
+        assertEquals(32, boundedNewLocalDisplayNameDraft("Я".repeat(40)).length)
     }
 
     @Test

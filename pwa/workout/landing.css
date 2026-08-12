@@ -79,17 +79,15 @@ a { color: inherit; text-decoration: none; }
     rgba(9, 29, 50, 0.86);
 }
 
-.hero-card h1 { margin: 8px 0 10px; font-size: clamp(30px, 7vw, 46px); line-height: 1.02; letter-spacing: -0.045em; }
+.hero-card h1 { margin: 0 0 10px; font-size: clamp(30px, 7vw, 46px); line-height: 1.02; letter-spacing: -0.045em; }
 .hero-card p { max-width: 58ch; margin: 0; color: #c9d7e8; font-size: 16px; line-height: 1.55; }
-.eyebrow { color: #7fd8ff; font-size: 12px; font-weight: 800; letter-spacing: 0.14em; }
 
 .preview-card,
 .action-card,
 .status-card { padding: 22px; }
 
 .section-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-.section-heading h2, .status-card h2 { margin: 5px 0 0; font-size: 23px; letter-spacing: -0.025em; }
-.verified-pill { flex: none; padding: 7px 10px; border-radius: 999px; background: rgba(34, 211, 175, 0.12); color: #79efd4; font-size: 12px; font-weight: 700; }
+.section-heading h2, .status-card h2 { margin: 0; font-size: 23px; letter-spacing: -0.025em; }
 
 .metric-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; margin: 18px 0; }
 .metric-grid div { min-width: 0; padding: 13px; border-radius: 18px; background: rgba(157, 200, 255, 0.08); }
@@ -110,10 +108,10 @@ a { color: inherit; text-decoration: none; }
 .button:hover { border-color: rgba(143, 201, 255, 0.52); background: rgba(157, 200, 255, 0.16); }
 .button:active { transform: scale(0.985); }
 .button:focus-visible { outline: 3px solid #69c9ff; outline-offset: 3px; }
-.button span { display: grid; place-items: center; min-width: 29px; height: 29px; padding: 0 6px; border-radius: 9px; background: rgba(255, 255, 255, 0.12); font-size: 11px; font-weight: 900; }
 .button.recommended { border-color: rgba(72, 209, 255, 0.72); box-shadow: inset 0 0 0 1px rgba(72, 209, 255, 0.3); }
-.button.web { width: 100%; background: linear-gradient(135deg, #2a83ee, #1767cc); border-color: transparent; }
 .button.secondary { width: fit-content; margin-top: 14px; }
+.fallback-links { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 4px; }
+.fallback-links a { color: #9eb2c9; font-size: 13px; text-decoration: underline; text-underline-offset: 4px; }
 .privacy-copy { margin: 14px 2px 0; color: #9eb2c9; font-size: 13px; line-height: 1.5; }
 .status-card.error { border-color: rgba(255, 126, 126, 0.34); }
 .status-card p { color: #c9d7e8; line-height: 1.5; }
@@ -123,7 +121,6 @@ a { color: inherit; text-decoration: none; }
   .hero-card, .preview-card, .action-card, .status-card { border-radius: 23px; padding: 19px; }
   .native-actions { grid-template-columns: 1fr; }
   .metric-grid strong { font-size: 18px; }
-  .verified-pill { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {

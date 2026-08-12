@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>Plan intelligently. Train consistently. Understand your progress.</strong><br>
-  A cross-platform workout tracker for Android, iOS, Web, and Garmin.
+  A cross-platform workout tracker for Android, iOS, and Garmin.
 </p>
 
 <p align="center">
@@ -22,7 +22,7 @@
 </p>
 
 <p align="center">
-  <a href="https://gymapptracker.com/"><strong>Open Web App</strong></a>
+  <a href="https://gymapptracker.com/"><strong>Website &amp; Downloads</strong></a>
   &nbsp;·&nbsp;
   <a href="https://github.com/Eduard047/GymApp/releases/latest"><strong>Download</strong></a>
   &nbsp;·&nbsp;
@@ -40,7 +40,7 @@ optional.
 | Train | Understand | Stay consistent |
 | --- | --- | --- |
 | Log exercises, sets, weight, reps, notes, and rest time | Review PRs, volume, intensity, muscle load, and workout comparisons | Use templates, favorites, achievements, and daily, weekly, or monthly missions |
-| Generate history-aware workouts with Smart Coach | Explore progress charts, activity heatmaps, and muscle maps | Continue across phone, browser, and compatible Garmin devices |
+| Generate history-aware workouts with Smart Coach | Explore progress charts, activity heatmaps, and muscle maps | Continue across Android, iPhone, and compatible Garmin devices |
 
 ## Platform coverage
 
@@ -48,12 +48,12 @@ optional.
 | --- | --- | --- |
 | Android | Kotlin, Jetpack Compose, Room | Production APK and Google Play AAB |
 | iOS | SwiftUI, iOS 17+ | Source and universal Simulator build; App Store IPA is not published yet |
-| Web | Installable PWA | Live at [gymapptracker.com](https://gymapptracker.com/) |
+| Browser | Download, privacy, support, account/data-rights, and bounded legacy-export site | Live at [gymapptracker.com](https://gymapptracker.com/) |
 | Garmin | Connect IQ 3.2+ | Signed Connect IQ Store upload package |
 | Cloud | Supabase | Optional account sync and Garmin plan queue |
 
-The interface is available in English, Ukrainian, and Russian, with light and
-dark appearance across supported clients.
+The mobile interface and public website are available in English, Ukrainian,
+and Russian. Android and iOS support light and dark appearance.
 
 ## Highlights
 
@@ -71,7 +71,7 @@ dark appearance across supported clients.
 | [`app/`](app/) | Android phone application |
 | [`ios/GymApp-iOS/`](ios/GymApp-iOS/) | Native iOS application |
 | [`garmin/`](garmin/) | Garmin Connect IQ application |
-| [`pwa/`](pwa/) | Public website and installable PWA |
+| [`pwa/`](pwa/) | Public distribution/legal site, native callback and workout-handoff routes, plus retained legacy browser source |
 | [`supabase/`](supabase/) | Ordered migrations, templates, and Edge Functions |
 | [`tests/`](tests/) | Cross-platform contract and security tests |
 
@@ -85,13 +85,14 @@ Developer setup and operational details live outside the landing page:
 
 ## Quick start
 
-Run the web app locally:
+Run the public browser site locally:
 
 ```sh
 python3 -m http.server 4173 --directory pwa
 ```
 
-Then open <http://127.0.0.1:4173>.
+Then open <http://127.0.0.1:4173>. The public root intentionally does not load
+the retired workout application; workouts run in the native apps.
 
 Run the cross-platform contract suite:
 

@@ -23,7 +23,7 @@ const plan = {
   ]
 };
 
-test("landing parses the canonical fragment and builds all three explicit destinations", () => {
+test("landing parses the canonical fragment and builds native handoff plus neutral fallbacks", () => {
   const encoded = codec.encode(plan);
   const result = landing.parse(`https://gymapptracker.com/workout/#workout=${encoded}`);
 
@@ -36,7 +36,8 @@ test("landing parses the canonical fragment and builds all three explicit destin
   assert.deepEqual(result.links, {
     android: `com.setforge.gymapp://workout/#workout=${encoded}`,
     ios: `com.setforge.gymapp.ios://workout/#workout=${encoded}`,
-    web: `https://gymapptracker.com/#workout=${encoded}`
+    googlePlay: "https://play.google.com/store/apps/details?id=com.setforge.gymapp",
+    downloads: "https://gymapptracker.com/"
   });
 });
 

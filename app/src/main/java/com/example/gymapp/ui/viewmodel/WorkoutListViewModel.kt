@@ -3,11 +3,14 @@
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.SavedStateHandle
+import androidx.lifecycle.createSavedStateHandle
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.lifecycle.viewModelScope
 import com.example.gymapp.data.entity.ExerciseHistoryEntry
 import com.example.gymapp.data.entity.ExerciseMuscleMappingEntity
+import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.entity.WorkoutSessionSummary
 import com.example.gymapp.data.repository.DashboardStats
 import com.example.gymapp.data.repository.GamificationEngine
@@ -16,19 +19,48 @@ import com.example.gymapp.data.repository.GymRepository
 import com.example.gymapp.data.repository.MUSCLE_DEFINITIONS
 import com.example.gymapp.data.repository.RANK_DEFINITIONS
 import com.example.gymapp.data.repository.MuscleContribution
+import com.example.gymapp.data.repository.ExerciseLoadProfile
+import com.example.gymapp.data.repository.FirstWorkoutEffort
+import com.example.gymapp.data.repository.FirstWorkoutActivationCommitter
+import com.example.gymapp.data.repository.FirstWorkoutActivationDirectStarter
+import com.example.gymapp.data.repository.PendingFirstWorkoutActivation
+import com.example.gymapp.data.repository.PendingFirstWorkoutActivationCodec
+import com.example.gymapp.data.repository.SmartCoachFeedback
+import com.example.gymapp.data.repository.SmartWorkoutEffort
+import com.example.gymapp.data.repository.SmartWorkoutEffortAdjustment
+import com.example.gymapp.data.repository.SmartWorkoutFocus
+import com.example.gymapp.data.repository.SmartWorkoutLaunchOrigin
+import com.example.gymapp.data.repository.SmartWorkoutLaunchPlan
+import com.example.gymapp.data.repository.SmartWorkoutLaunchPlanCodec
+import com.example.gymapp.data.repository.SmartWorkoutLaunchStateFingerprint
+import com.example.gymapp.data.repository.SmartWorkoutLaunchUseRegistry
+import com.example.gymapp.data.repository.RecommendedWorkoutStartCommitter
+import com.example.gymapp.data.repository.WeeklyTrainingDecision
+import com.example.gymapp.data.repository.WeeklyTrainingRhythm
+import com.example.gymapp.data.repository.WeeklyTrainingRhythmCalculator
+import com.example.gymapp.data.repository.WorkoutFeedbackRecord
+import com.example.gymapp.data.repository.WorkoutRecommendationEngine
 import com.example.gymapp.data.repository.estimatedLoad
 import com.example.gymapp.data.repository.muscleContributionsForExercise
 import com.example.gymapp.data.repository.normalizedExerciseName
 import com.example.gymapp.data.repository.toManualContributionMap
 import com.example.gymapp.util.DateTimeUtils
+import com.example.gymapp.util.TrainingGoal
+import com.example.gymapp.util.TrainingGuidanceManager
+import com.example.gymapp.util.TrainingProfile
+import com.example.gymapp.util.TrainingProfileManager
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalDate
@@ -39,6 +71,8 @@ import java.time.format.FormatStyle
 import java.time.temporal.TemporalAdjusters
 import java.util.Locale
 import com.example.gymapp.util.RussianText
+import com.example.gymapp.data.repository.toSmartWorkoutEffort
+import com.example.gymapp.data.repository.trainingProfileForActivation
 import kotlin.math.abs
 import kotlin.math.pow
 import kotlin.math.roundToInt
@@ -53,6 +87,7 @@ data class SoloProgressUiModel(
     val progressFraction: Float = 0f,
     val streakDays: Int = 0,
     val weeklyStreakWeeks: Int = 0,
+    val weeklyTarget: Int = 4,
     val summary: String = "",
     val nextTitle: String = "--"
 )
@@ -189,10 +224,21 @@ data class AchievementPreviewUiModel(
     val isUnlocked: Boolean = false
 )
 
+data class TodayPlanUiModel(
+    val focus: SmartWorkoutFocus,
+    val rhythm: WeeklyTrainingRhythm,
+    val effortAdjustment: SmartWorkoutEffortAdjustment? = null,
+    val recommendedLaunchToken: String? = null,
+    val trainAnywayLaunchToken: String? = null
+)
+
 data class WorkoutListUiState(
     val monthOffset: Int = 0,
     val monthLabel: String = DateTimeUtils.monthLabel(0),
     val sessions: List<WorkoutSessionSummary> = emptyList(),
+    val hasAnyWorkout: Boolean = false,
+    val showFirstWorkoutActivation: Boolean = false,
+    val todayPlan: TodayPlanUiModel? = null,
     val dashboardStats: DashboardStats = DashboardStats(
         workoutCount = 0,
         totalVolume = 0.0,
@@ -213,25 +259,57 @@ data class WorkoutListUiState(
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class WorkoutListViewModel(
-    private val repository: GymRepository
+    private val repository: GymRepository,
+    private val trainingProfileManager: TrainingProfileManager,
+    private val trainingGuidanceManager: TrainingGuidanceManager,
+    private val savedStateHandle: SavedStateHandle
 ) : ViewModel() {
+    private val accountBinding = trainingGuidanceManager.activeBinding
+    private val profileAccountBinding = trainingProfileManager.activeBinding
     private val zoneId = ZoneId.systemDefault()
     private val monthOffset = MutableStateFlow(0)
     private val muscleMapPeriod = MutableStateFlow(MuscleMapPeriod.AllTime)
     private val selectedMuscleId = MutableStateFlow<String?>(null)
     private val manualMappingExerciseName = MutableStateFlow<String?>(null)
+    private val recommendationRefresh = MutableStateFlow(0L)
+    private val activationLaunchLock = Any()
+    private val recommendedLaunchMutationMutex = Mutex()
+    private val activationLaunchMutationMutex = Mutex()
 
     private val sessionsFlow = monthOffset.flatMapLatest { offset ->
         repository.observeSessionsForMonth(offset)
     }
 
-    private val dashboardFlow = monthOffset.flatMapLatest { offset ->
-        repository.observeDashboardStatsForMonth(offset)
+    private val dashboardFlow = combine(
+        monthOffset,
+        trainingProfileManager.profile
+    ) { offset, profile ->
+        offset to profile.workoutsPerWeek.coerceIn(2, 6)
+    }.flatMapLatest { (offset, target) ->
+        repository.observeDashboardStatsForMonth(offset, target)
     }
 
     private val allSessionsFlow = repository.observeSessions()
     private val exerciseHistoryFlow = repository.observeAllExerciseHistory()
     private val muscleMappingsFlow = repository.observeExerciseMuscleMappings()
+
+    private val recommendationContext = combine(
+        repository.observeExercises(),
+        exerciseHistoryFlow,
+        repository.observeExerciseLoadProfiles(),
+        muscleMappingsFlow
+    ) { exercises, history, loadProfiles, muscleMappings ->
+        WorkoutRecommendationContext(
+            exercises = exercises,
+            history = history,
+            loadProfiles = loadProfiles,
+            muscleMappings = muscleMappings
+        )
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = WorkoutRecommendationContext()
+    )
 
     private val sourceState = combine(
         monthOffset,
@@ -249,18 +327,39 @@ class WorkoutListViewModel(
         )
     }
 
-    val uiState: StateFlow<WorkoutListUiState> = combine(
-        sourceState,
+    private val muscleSelection = combine(
         muscleMapPeriod,
         selectedMuscleId,
         manualMappingExerciseName,
         muscleMappingsFlow
-    ) { source, selectedPeriod, selectedMuscle, editorExerciseName, muscleMappings ->
+    ) { period, muscleId, editorName, mappings ->
+        WorkoutMuscleSelection(period, muscleId, editorName, mappings)
+    }
+
+    private val experienceInputs = combine(
+        trainingProfileManager.profile,
+        trainingGuidanceManager.activationDismissed,
+        trainingGuidanceManager.feedback,
+        recommendationContext
+    ) { profile, activationDismissed, feedback, context ->
+        WorkoutExperienceState(profile, activationDismissed, feedback, context)
+    }
+    private val experienceState = combine(
+        experienceInputs,
+        recommendationRefresh
+    ) { state, _ -> state }
+
+    val uiState: StateFlow<WorkoutListUiState> = combine(
+        sourceState,
+        muscleSelection,
+        experienceState
+    ) { source, selection, experience ->
         val offset = source.offset
         val sessions = source.sessions
         val dashboardStats = source.dashboardStats
         val allSessions = source.allSessions
         val exerciseHistory = source.exerciseHistory
+        val muscleMappings = selection.mappings
         val missionBoard = AdaptiveMissionBoardSource.build(
             sessions = allSessions,
             anchorDate = LocalDate.now(zoneId),
@@ -273,20 +372,30 @@ class WorkoutListViewModel(
             allSessions = allSessions,
             monthSessions = sessions,
             streakDays = dashboardStats.streakDays,
-            weeklyStreakWeeks = dashboardStats.weeklyStreakWeeks
+            weeklyStreakWeeks = dashboardStats.weeklyStreakWeeks,
+            weeklyTarget = experience.profile.workoutsPerWeek
+        )
+        val todayPlan = buildTodayPlan(
+            allSessions = allSessions,
+            profile = experience.profile,
+            feedback = experience.feedback,
+            context = experience.context
         )
         WorkoutListUiState(
             monthOffset = offset,
             monthLabel = DateTimeUtils.monthLabel(offset, currentLocale(), zoneId),
             sessions = sessions,
+            hasAnyWorkout = allSessions.isNotEmpty(),
+            showFirstWorkoutActivation = allSessions.isEmpty() && !experience.activationDismissed,
+            todayPlan = todayPlan,
             dashboardStats = dashboardStats,
             soloProgress = soloProgress,
             activityHeatmap = buildHeatmap(offset, sessions),
             muscleHeatmap = buildMuscleHeatmap(
                 exerciseHistory = exerciseHistory,
-                period = selectedPeriod,
-                selectedMuscleId = selectedMuscle,
-                manualEditorExerciseName = editorExerciseName,
+                period = selection.period,
+                selectedMuscleId = selection.muscleId,
+                manualEditorExerciseName = selection.editorName,
                 muscleMappings = muscleMappings
             ),
             trainingRecommendations = buildTrainingRecommendations(
@@ -297,7 +406,10 @@ class WorkoutListViewModel(
             weeklyMissions = weeklyMissions,
             monthlyMissions = monthlyMissions,
             rankLadder = buildRankLadder(soloProgress.totalXp),
-            achievements = buildAchievements(allSessions)
+            achievements = buildAchievements(
+                allSessions = allSessions,
+                targetWorkoutsPerWeek = experience.profile.workoutsPerWeek
+            )
         )
     }.stateIn(
         scope = viewModelScope,
@@ -309,7 +421,428 @@ class WorkoutListViewModel(
         viewModelScope.launch {
             repository.seedDefaultExerciseMuscleMappings()
         }
+        viewModelScope.launch {
+            allSessionsFlow.collect { sessions ->
+                accountBinding?.let { expectedBinding ->
+                    trainingGuidanceManager.pruneFeedback(
+                        ownedSessions = sessions.associate {
+                            it.session.id to it.session.date
+                        },
+                        expectedAccountBinding = expectedBinding
+                    )
+                }
+            }
+        }
     }
+
+    fun buildFirstWorkoutLaunch(
+        goal: TrainingGoal,
+        workoutsPerWeek: Int,
+        effort: FirstWorkoutEffort
+    ): String? {
+        val profile = runCatching {
+            trainingProfileForActivation(goal, workoutsPerWeek)
+        }.getOrNull() ?: return null
+        val expectedAccountBinding = accountBinding ?: return null
+        if (trainingGuidanceManager.activeBinding != expectedAccountBinding) return null
+        val expectedProfileAccountBinding = profileAccountBinding ?: return null
+        if (trainingProfileManager.activeBinding != expectedProfileAccountBinding) return null
+        val context = recommendationContext.value
+        val token = buildLaunchToken(
+            profile = profile,
+            effort = effort.toSmartWorkoutEffort(),
+            context = context,
+            origin = SmartWorkoutLaunchOrigin.Activation,
+            feedback = null,
+            accountBinding = expectedAccountBinding
+        ) ?: return null
+        val previousProfile = trainingProfileManager.profile.value
+        val previousDismissed = trainingGuidanceManager.activationDismissed.value
+        val fingerprint = runCatching {
+            context.fingerprint(profile)
+        }.getOrNull() ?: return null
+        val exactPlan = runCatching {
+            SmartWorkoutLaunchPlanCodec.decode(
+                encoded = token,
+                expectedAccountBinding = expectedAccountBinding,
+                expectedTrainingProfile = profile,
+                expectedStateFingerprint = fingerprint
+            )
+        }.getOrNull()?.takeIf { decoded ->
+            decoded.origin == SmartWorkoutLaunchOrigin.Activation &&
+                decoded.trainingProfile == profile &&
+                decoded.exercises.isNotEmpty()
+        } ?: return null
+        if (exactPlan.exercises.isEmpty()) return null
+
+        return synchronized(activationLaunchLock) {
+            if (trainingGuidanceManager.activeBinding != expectedAccountBinding ||
+                trainingProfileManager.activeBinding != expectedProfileAccountBinding ||
+                trainingProfileManager.profile.value != previousProfile ||
+                trainingGuidanceManager.activationDismissed.value != previousDismissed
+            ) {
+                return@synchronized null
+            }
+            savedStateHandle[PENDING_ACTIVATION_KEY] = PendingFirstWorkoutActivationCodec.encode(
+                PendingFirstWorkoutActivation(
+                    token = token,
+                    targetProfile = profile,
+                    previousProfile = previousProfile,
+                    previousDismissed = previousDismissed
+                )
+            )
+            token
+        }
+    }
+
+    fun cancelFirstWorkoutLaunch(token: String) {
+        synchronized(activationLaunchLock) {
+            val pending = pendingFirstWorkoutActivation()
+            if (pending?.token == token) {
+                savedStateHandle.remove<String>(PENDING_ACTIVATION_KEY)
+            }
+        }
+    }
+
+    fun refreshTodayPlan() {
+        recommendationRefresh.value += 1L
+    }
+
+    internal suspend fun resolveLaunchPlan(encoded: String): SmartWorkoutLaunchPlan? {
+        if (!SmartWorkoutLaunchPlanCodec.isTokenShapeValid(encoded)) return null
+        val expectedAccountBinding = accountBinding ?: return null
+        if (trainingGuidanceManager.activeBinding != expectedAccountBinding) return null
+        val expectedProfileAccountBinding = profileAccountBinding ?: return null
+        if (trainingProfileManager.activeBinding != expectedProfileAccountBinding) return null
+        val pendingBeforeLoad = synchronized(activationLaunchLock) {
+            pendingFirstWorkoutActivation()?.takeIf { it.token == encoded }
+        }
+        val expectedProfile = pendingBeforeLoad?.targetProfile
+            ?: trainingProfileManager.profile.value
+        val context = recommendationContext.value
+        if (context.exercises.isEmpty()) {
+            return rejectPendingActivation(encoded, pendingBeforeLoad)
+        }
+        val fingerprint = runCatching { context.fingerprint(expectedProfile) }.getOrNull()
+            ?: return rejectPendingActivation(encoded, pendingBeforeLoad)
+        val decoded = runCatching {
+            SmartWorkoutLaunchPlanCodec.decode(
+                encoded = encoded,
+                expectedAccountBinding = expectedAccountBinding,
+                expectedTrainingProfile = expectedProfile,
+                expectedStateFingerprint = fingerprint
+            )
+        }.getOrNull() ?: return rejectPendingActivation(encoded, pendingBeforeLoad)
+
+        return when (decoded.origin) {
+            SmartWorkoutLaunchOrigin.Recommended -> {
+                if (pendingBeforeLoad != null ||
+                    trainingGuidanceManager.activeBinding != expectedAccountBinding ||
+                    trainingProfileManager.activeBinding != expectedProfileAccountBinding ||
+                    trainingProfileManager.profile.value != expectedProfile ||
+                    SmartWorkoutLaunchUseRegistry.isConsumed(
+                        encoded = savedStateHandle[CONSUMED_LAUNCHES_KEY],
+                        launchId = decoded.launchId,
+                        nowMillis = System.currentTimeMillis()
+                    )
+                ) {
+                    null
+                } else {
+                    decoded
+                }
+            }
+            SmartWorkoutLaunchOrigin.Activation -> synchronized(activationLaunchLock) {
+                val pending = pendingFirstWorkoutActivation()
+                if (pending == null || pending != pendingBeforeLoad ||
+                    pending.token != encoded ||
+                    trainingGuidanceManager.activeBinding != expectedAccountBinding ||
+                    trainingProfileManager.activeBinding != expectedProfileAccountBinding ||
+                    trainingProfileManager.profile.value != pending.previousProfile ||
+                    trainingGuidanceManager.activationDismissed.value != pending.previousDismissed
+                ) {
+                    savedStateHandle.remove<String>(PENDING_ACTIVATION_KEY)
+                    return@synchronized null
+                }
+                decoded
+            }
+        }
+    }
+
+    internal suspend fun handOffLaunchPlan(
+        encoded: String,
+        validate: (SmartWorkoutLaunchPlan) -> Boolean,
+        accept: (SmartWorkoutLaunchPlan) -> Boolean
+    ): Boolean {
+        val expectedAccountBinding = accountBinding ?: return false
+        if (trainingGuidanceManager.activeBinding != expectedAccountBinding) return false
+        val expectedProfileAccountBinding = profileAccountBinding ?: return false
+        if (trainingProfileManager.activeBinding != expectedProfileAccountBinding) return false
+        val decoded = resolveLaunchPlan(encoded) ?: return false
+        if (!runCatching { validate(decoded) }.getOrDefault(false)) {
+            cancelFirstWorkoutLaunch(encoded)
+            return false
+        }
+        if (decoded.origin == SmartWorkoutLaunchOrigin.Recommended) {
+            return recommendedLaunchMutationMutex.withLock {
+                val current = resolveLaunchPlan(encoded) ?: return@withLock false
+                if (current != decoded ||
+                    !runCatching { validate(current) }.getOrDefault(false)
+                ) {
+                    return@withLock false
+                }
+                val nowMillis = System.currentTimeMillis()
+                val consumed = SmartWorkoutLaunchUseRegistry.consume(
+                    encoded = savedStateHandle[CONSUMED_LAUNCHES_KEY],
+                    launchId = decoded.launchId,
+                    createdAtMillis = decoded.createdAtMillis,
+                    nowMillis = nowMillis
+                ) ?: return@withLock false
+                if (!runCatching { accept(current) }.getOrDefault(false)) {
+                    return@withLock false
+                }
+                savedStateHandle[CONSUMED_LAUNCHES_KEY] = consumed
+                true
+            }
+        }
+
+        return synchronized(activationLaunchLock) {
+            val pending = pendingFirstWorkoutActivation()
+            if (pending == null || pending.token != encoded ||
+                trainingGuidanceManager.activeBinding != decoded.accountBinding ||
+                trainingProfileManager.activeBinding != expectedProfileAccountBinding ||
+                trainingProfileManager.profile.value != pending.previousProfile ||
+                trainingGuidanceManager.activationDismissed.value != pending.previousDismissed
+            ) {
+                savedStateHandle.remove<String>(PENDING_ACTIVATION_KEY)
+                return@synchronized false
+            }
+                val accepted = FirstWorkoutActivationCommitter.commit(
+                    candidateToken = encoded,
+                    targetProfile = pending.targetProfile,
+                    previousProfile = pending.previousProfile,
+                    previousDismissed = pending.previousDismissed,
+                    isExactPlan = { candidate -> candidate == encoded },
+                    persistProfile = { profile ->
+                        trainingProfileManager.updateProfile(
+                            profile,
+                            expectedProfileAccountBinding
+                        )
+                    },
+                    persistDismissed = { dismissed ->
+                        trainingGuidanceManager.setActivationDismissed(
+                            dismissed,
+                            expectedAccountBinding
+                        )
+                    },
+                    acknowledgeHandoff = { candidate ->
+                        if (pendingFirstWorkoutActivation()?.token != candidate ||
+                            trainingGuidanceManager.activeBinding != expectedAccountBinding ||
+                            trainingProfileManager.activeBinding != expectedProfileAccountBinding
+                        ) {
+                            false
+                        } else if (!runCatching { accept(decoded) }.getOrDefault(false)) {
+                            savedStateHandle.remove<String>(PENDING_ACTIVATION_KEY)
+                            false
+                        } else {
+                            savedStateHandle.remove<String>(PENDING_ACTIVATION_KEY)
+                            trainingGuidanceManager.activeBinding == expectedAccountBinding &&
+                                trainingProfileManager.activeBinding == expectedProfileAccountBinding
+                        }
+                    },
+                    restoreProfile = { profile ->
+                        trainingProfileManager.restoreProfileForBinding(
+                            profile,
+                            expectedProfileAccountBinding
+                        )
+                    },
+                    restoreDismissed = { dismissed ->
+                        trainingGuidanceManager.restoreActivationDismissedForBinding(
+                            dismissed,
+                            expectedAccountBinding
+                        )
+                    }
+                )
+            accepted == encoded
+        }
+    }
+
+    /** Starts the exact Today snapshot without routing through the editor or touching history/Garmin. */
+    internal suspend fun startRecommendedPlan(encoded: String): Boolean =
+        recommendedLaunchMutationMutex.withLock {
+            val expectedAccountBinding = accountBinding ?: return@withLock false
+            val expectedProfileAccountBinding = profileAccountBinding ?: return@withLock false
+            val decoded = resolveLaunchPlan(encoded)?.takeIf {
+                it.origin == SmartWorkoutLaunchOrigin.Recommended
+            } ?: return@withLock false
+            if (trainingGuidanceManager.activeBinding != expectedAccountBinding ||
+                trainingProfileManager.activeBinding != expectedProfileAccountBinding ||
+                trainingProfileManager.profile.value != decoded.trainingProfile
+            ) {
+                return@withLock false
+            }
+            val started = try {
+                RecommendedWorkoutStartCommitter.start(
+                    plan = decoded,
+                    claimAndPersist = {
+                        if (trainingGuidanceManager.activeBinding != expectedAccountBinding ||
+                            trainingProfileManager.activeBinding != expectedProfileAccountBinding ||
+                            trainingProfileManager.profile.value != decoded.trainingProfile
+                        ) {
+                            false
+                        } else {
+                            val consumed = SmartWorkoutLaunchUseRegistry.consume(
+                                encoded = savedStateHandle[CONSUMED_LAUNCHES_KEY],
+                                launchId = decoded.launchId,
+                                createdAtMillis = decoded.createdAtMillis,
+                                nowMillis = System.currentTimeMillis()
+                            )
+                            if (consumed == null) {
+                                false
+                            } else {
+                                savedStateHandle[CONSUMED_LAUNCHES_KEY] = consumed
+                                savedStateHandle.get<String>(CONSUMED_LAUNCHES_KEY) == consumed
+                            }
+                        }
+                    },
+                    startActiveWorkout = { drafts ->
+                        repository.startActiveWorkout(
+                            date = System.currentTimeMillis(),
+                            note = null,
+                            workoutExercises = drafts
+                        )
+                    }
+                )
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                false
+            }
+            started &&
+                trainingGuidanceManager.activeBinding == expectedAccountBinding &&
+                trainingProfileManager.activeBinding == expectedProfileAccountBinding
+        }
+
+    /** Applies the first-workout profile and starts the exact plan as one acknowledged action. */
+    internal suspend fun startFirstWorkoutPlan(encoded: String): Boolean =
+        activationLaunchMutationMutex.withLock {
+            val expectedAccountBinding = accountBinding ?: return@withLock false
+            val expectedProfileAccountBinding = profileAccountBinding ?: return@withLock false
+            val decoded = resolveLaunchPlan(encoded)?.takeIf {
+                it.origin == SmartWorkoutLaunchOrigin.Activation
+            } ?: return@withLock false
+            val pending = synchronized(activationLaunchLock) {
+                pendingFirstWorkoutActivation()?.takeIf { it.token == encoded }
+            } ?: return@withLock false
+
+            try {
+                val started = FirstWorkoutActivationDirectStarter.start(
+                    plan = decoded,
+                    token = encoded,
+                    previousProfile = pending.previousProfile,
+                    previousDismissed = pending.previousDismissed,
+                    claimAndPersist = {
+                        val stillPending = synchronized(activationLaunchLock) {
+                            pendingFirstWorkoutActivation() == pending
+                        }
+                        if (!stillPending ||
+                            trainingGuidanceManager.activeBinding != expectedAccountBinding ||
+                            trainingProfileManager.activeBinding != expectedProfileAccountBinding ||
+                            trainingProfileManager.profile.value != pending.previousProfile ||
+                            trainingGuidanceManager.activationDismissed.value != pending.previousDismissed
+                        ) {
+                            false
+                        } else {
+                            val consumed = SmartWorkoutLaunchUseRegistry.consume(
+                                encoded = savedStateHandle[CONSUMED_LAUNCHES_KEY],
+                                launchId = decoded.launchId,
+                                createdAtMillis = decoded.createdAtMillis,
+                                nowMillis = System.currentTimeMillis()
+                            )
+                            if (consumed == null) {
+                                false
+                            } else {
+                                savedStateHandle[CONSUMED_LAUNCHES_KEY] = consumed
+                                savedStateHandle.get<String>(CONSUMED_LAUNCHES_KEY) == consumed
+                            }
+                        }
+                    },
+                    persistProfile = { profile ->
+                        trainingProfileManager.updateProfile(
+                            profile,
+                            expectedProfileAccountBinding
+                        )
+                    },
+                    persistDismissed = { dismissed ->
+                        trainingGuidanceManager.setActivationDismissed(
+                            dismissed,
+                            expectedAccountBinding
+                        )
+                    },
+                    restoreProfile = { profile ->
+                        trainingProfileManager.restoreProfileForBinding(
+                            profile,
+                            expectedProfileAccountBinding
+                        )
+                    },
+                    restoreDismissed = { dismissed ->
+                        trainingGuidanceManager.restoreActivationDismissedForBinding(
+                            dismissed,
+                            expectedAccountBinding
+                        )
+                    },
+                    startActiveWorkout = { drafts ->
+                        val result = repository.startActiveWorkout(
+                            date = System.currentTimeMillis(),
+                            note = null,
+                            workoutExercises = drafts
+                        )
+                        if (trainingGuidanceManager.activeBinding == expectedAccountBinding &&
+                            trainingProfileManager.activeBinding == expectedProfileAccountBinding
+                        ) {
+                            result
+                        } else {
+                            com.example.gymapp.data.repository.StartActiveWorkoutResult.AlreadyActive
+                        }
+                    }
+                )
+                started &&
+                    trainingGuidanceManager.activeBinding == expectedAccountBinding &&
+                    trainingProfileManager.activeBinding == expectedProfileAccountBinding
+            } finally {
+                synchronized(activationLaunchLock) {
+                    if (pendingFirstWorkoutActivation()?.token == encoded) {
+                        savedStateHandle.remove<String>(PENDING_ACTIVATION_KEY)
+                    }
+                }
+            }
+        }
+
+    private fun rejectPendingActivation(
+        encoded: String,
+        pending: PendingFirstWorkoutActivation?
+    ): SmartWorkoutLaunchPlan? {
+        if (pending?.token == encoded) cancelFirstWorkoutLaunch(encoded)
+        return null
+    }
+
+    private fun pendingFirstWorkoutActivation(): PendingFirstWorkoutActivation? =
+        PendingFirstWorkoutActivationCodec.decode(savedStateHandle[PENDING_ACTIVATION_KEY])
+
+    fun dismissFirstWorkoutActivation(): Boolean {
+        val expectedAccountBinding = accountBinding ?: return false
+        return trainingGuidanceManager.dismissActivation(expectedAccountBinding)
+    }
+
+    fun restoreFirstWorkoutActivationDismissal(dismissed: Boolean): Boolean {
+        val expectedAccountBinding = accountBinding ?: return false
+        return trainingGuidanceManager.restoreActivationDismissedForBinding(
+            dismissed,
+            expectedAccountBinding
+        )
+    }
+
+    fun isFirstWorkoutActivationDismissed(): Boolean =
+        trainingGuidanceManager.activationDismissed.value
 
     fun previousMonth() {
         monthOffset.value -= 1
@@ -355,11 +888,150 @@ class WorkoutListViewModel(
         }
     }
 
+    private fun buildTodayPlan(
+        allSessions: List<WorkoutSessionSummary>,
+        profile: TrainingProfile,
+        feedback: Map<Long, WorkoutFeedbackRecord>,
+        context: WorkoutRecommendationContext
+    ): TodayPlanUiModel? {
+        if (context.exercises.isEmpty()) return null
+        val nowMillis = System.currentTimeMillis()
+        val latestSession = allSessions
+            .asSequence()
+            .filter { it.session.date <= nowMillis }
+            .maxWithOrNull(
+            compareBy<WorkoutSessionSummary> { it.session.date }.thenBy { it.session.id }
+        )
+        val feedbackSignal = latestSession?.let { session ->
+            feedback[session.session.id]
+                ?.takeIf { it.sessionStartedAtMillis == session.session.date }
+                ?.let { record ->
+                SmartCoachFeedback(
+                    sessionId = session.session.id,
+                    sessionDateMillis = session.session.date,
+                    feedback = record.feedback
+                )
+            }
+        }
+        val plan = WorkoutRecommendationEngine.buildWorkoutPlan(
+            exercises = context.exercises,
+            history = context.history,
+            trainingProfile = profile,
+            loadProfiles = context.loadProfiles,
+            manualMuscleMappings = context.muscleMappings.toManualContributionMap(),
+            effort = SmartWorkoutEffort.Auto,
+            latestFeedback = feedbackSignal,
+            nowMillis = nowMillis
+        )
+        if (plan.exercises.isEmpty()) return null
+        val rhythm = WeeklyTrainingRhythmCalculator.calculate(
+            sessionTimestamps = allSessions.map { it.session.date },
+            targetTrainingDays = profile.workoutsPerWeek.coerceIn(2, 6),
+            recoveryRecommended = plan.appliedEffort == SmartWorkoutEffort.Recovery,
+            nowMillis = nowMillis,
+            zoneId = zoneId
+        )
+        val recommendedToken = encodeLaunchPlan(
+            plan = plan,
+            profile = profile,
+            origin = SmartWorkoutLaunchOrigin.Recommended,
+            context = context,
+            createdAtMillis = nowMillis
+        ).takeIf { rhythm.decision == WeeklyTrainingDecision.Train }
+            ?: if (rhythm.decision == WeeklyTrainingDecision.Recovery) {
+                buildLaunchToken(
+                    profile = profile,
+                    effort = SmartWorkoutEffort.Recovery,
+                    context = context,
+                    origin = SmartWorkoutLaunchOrigin.Recommended,
+                    feedback = feedbackSignal,
+                    nowMillis = nowMillis
+                )
+            } else {
+                null
+            }
+        val trainAnywayToken = if (rhythm.decision == WeeklyTrainingDecision.Rest) {
+            buildLaunchToken(
+                profile = profile,
+                effort = SmartWorkoutEffort.Recovery,
+                context = context,
+                origin = SmartWorkoutLaunchOrigin.Recommended,
+                feedback = feedbackSignal,
+                nowMillis = nowMillis
+            )
+        } else {
+            null
+        }
+        return TodayPlanUiModel(
+            focus = plan.focus,
+            rhythm = rhythm,
+            effortAdjustment = plan.effortAdjustment,
+            recommendedLaunchToken = recommendedToken,
+            trainAnywayLaunchToken = trainAnywayToken
+        )
+    }
+
+    private fun buildLaunchToken(
+        profile: TrainingProfile,
+        effort: SmartWorkoutEffort,
+        context: WorkoutRecommendationContext,
+        origin: SmartWorkoutLaunchOrigin,
+        feedback: SmartCoachFeedback?,
+        accountBinding: String? = this.accountBinding,
+        nowMillis: Long = System.currentTimeMillis()
+    ): String? {
+        if (context.exercises.isEmpty()) return null
+        val plan = WorkoutRecommendationEngine.buildWorkoutPlan(
+            exercises = context.exercises,
+            history = context.history,
+            trainingProfile = profile,
+            loadProfiles = context.loadProfiles,
+            manualMuscleMappings = context.muscleMappings.toManualContributionMap(),
+            effort = effort,
+            latestFeedback = feedback,
+            nowMillis = nowMillis
+        )
+        if (plan.exercises.isEmpty()) return null
+        return encodeLaunchPlan(
+            plan,
+            profile,
+            origin,
+            context,
+            accountBinding,
+            createdAtMillis = nowMillis
+        )
+    }
+
+    private fun encodeLaunchPlan(
+        plan: com.example.gymapp.data.repository.SmartWorkoutPlan,
+        profile: TrainingProfile,
+        origin: SmartWorkoutLaunchOrigin,
+        context: WorkoutRecommendationContext,
+        accountBinding: String? = this.accountBinding,
+        createdAtMillis: Long = System.currentTimeMillis()
+    ): String? {
+        val safeAccountBinding = accountBinding ?: return null
+        if (trainingGuidanceManager.activeBinding != safeAccountBinding) return null
+        return runCatching {
+            SmartWorkoutLaunchPlanCodec.encode(
+                SmartWorkoutLaunchPlanCodec.fromPlan(
+                    plan = plan,
+                    profile = profile,
+                    origin = origin,
+                    accountBinding = safeAccountBinding,
+                    stateFingerprint = context.fingerprint(profile),
+                    createdAtMillis = createdAtMillis
+                )
+            )
+        }.getOrNull()
+    }
+
     private fun buildSoloProgress(
         allSessions: List<WorkoutSessionSummary>,
         monthSessions: List<WorkoutSessionSummary>,
         streakDays: Int,
-        weeklyStreakWeeks: Int
+        weeklyStreakWeeks: Int,
+        weeklyTarget: Int
     ): SoloProgressUiModel {
         val workoutXp = allSessions.sumOf(::sessionXp)
         val monthWorkoutXp = monthSessions.sumOf(::sessionXp)
@@ -374,18 +1046,17 @@ class WorkoutListViewModel(
                 uk = "Запиши тренування, щоб запустити свій темп."
             )
             weeklyStreakWeeks > 0 -> when {
-                isUkrainian() -> "$weeklyStreakWeeks тиж. поспіль із 3+ тренуваннями."
-                isRussian() -> "$weeklyStreakWeeks нед. подряд с 3+ тренировками."
+                isUkrainian() -> "$weeklyStreakWeeks тиж. поспіль із $weeklyTarget тренуваннями."
+                isRussian() -> "$weeklyStreakWeeks нед. подряд с $weeklyTarget тренировками."
                 else -> "$weeklyStreakWeeks successful week${if (weeklyStreakWeeks == 1) "" else "s"} in a row."
             }
             monthXp > 0 -> t(
                 en = "$monthXp XP earned this month.",
                 uk = "За цей місяць зароблено $monthXp XP."
             )
-            else -> t(
-                en = "One more session keeps the streak alive.",
-                uk = "Ще одна сесія допоможе зберегти серію."
-            )
+            isUkrainian() -> "Тижнева ціль: $weeklyTarget"
+            isRussian() -> "Недельная цель: $weeklyTarget"
+            else -> "Weekly target: $weeklyTarget"
         }
 
         return SoloProgressUiModel(
@@ -398,6 +1069,7 @@ class WorkoutListViewModel(
             progressFraction = levelInfo.progressFraction,
             streakDays = streakDays,
             weeklyStreakWeeks = weeklyStreakWeeks,
+            weeklyTarget = weeklyTarget,
             summary = summary,
             nextTitle = nextTitle
         )
@@ -838,12 +1510,14 @@ class WorkoutListViewModel(
     }
 
     private fun buildAchievements(
-        allSessions: List<WorkoutSessionSummary>
+        allSessions: List<WorkoutSessionSummary>,
+        targetWorkoutsPerWeek: Int
     ): List<AchievementPreviewUiModel> {
         val snapshot = GamificationEngine.buildSnapshot(
             sessions = allSessions,
             nowMillis = System.currentTimeMillis(),
-            zoneId = zoneId
+            zoneId = zoneId,
+            targetWorkoutsPerWeek = targetWorkoutsPerWeek.coerceIn(2, 6)
         )
         return snapshot.achievements.map { achievement ->
             val translation = POST_WORKOUT_ACHIEVEMENT_UK[achievement.id]
@@ -856,8 +1530,8 @@ class WorkoutListViewModel(
                 .coerceAtMost(Int.MAX_VALUE.toDouble())
                 .roundToInt()
             val unit = when {
-                achievement.id.startsWith("streak_") || achievement.id == "comeback" ->
-                    t(en = "days", uk = "днів")
+                achievement.id.startsWith("streak_") -> t(en = "weeks", uk = "тижнів")
+                achievement.id == "comeback" -> t(en = "days", uk = "днів")
                 achievement.id.startsWith("volume_") ->
                     t(en = "volume", uk = "обсягу")
                 else -> t(en = "workouts", uk = "тренувань")
@@ -987,9 +1661,21 @@ class WorkoutListViewModel(
     }
 
     companion object {
-        fun factory(repository: GymRepository): ViewModelProvider.Factory = viewModelFactory {
+        private const val PENDING_ACTIVATION_KEY = "pending_first_workout_activation_v1"
+        private const val CONSUMED_LAUNCHES_KEY = "consumed_smart_launches_v1"
+
+        fun factory(
+            repository: GymRepository,
+            trainingProfileManager: TrainingProfileManager,
+            trainingGuidanceManager: TrainingGuidanceManager
+        ): ViewModelProvider.Factory = viewModelFactory {
             initializer {
-                WorkoutListViewModel(repository)
+                WorkoutListViewModel(
+                    repository = repository,
+                    trainingProfileManager = trainingProfileManager,
+                    trainingGuidanceManager = trainingGuidanceManager,
+                    savedStateHandle = createSavedStateHandle()
+                )
             }
         }
     }
@@ -1008,6 +1694,37 @@ private data class WorkoutListSourceState(
     val dashboardStats: DashboardStats,
     val allSessions: List<WorkoutSessionSummary>,
     val exerciseHistory: List<ExerciseHistoryEntry>
+)
+
+private data class WorkoutRecommendationContext(
+    val exercises: List<ExerciseEntity> = emptyList(),
+    val history: List<ExerciseHistoryEntry> = emptyList(),
+    val loadProfiles: Map<Long, ExerciseLoadProfile> = emptyMap(),
+    val muscleMappings: List<ExerciseMuscleMappingEntity> = emptyList()
+)
+
+private fun WorkoutRecommendationContext.fingerprint(
+    profile: TrainingProfile
+): String = SmartWorkoutLaunchStateFingerprint.compute(
+    profile = profile,
+    exercises = exercises,
+    history = history,
+    loadProfiles = loadProfiles,
+    muscleMappings = muscleMappings
+)
+
+private data class WorkoutMuscleSelection(
+    val period: MuscleMapPeriod,
+    val muscleId: String?,
+    val editorName: String?,
+    val mappings: List<ExerciseMuscleMappingEntity>
+)
+
+private data class WorkoutExperienceState(
+    val profile: TrainingProfile,
+    val activationDismissed: Boolean,
+    val feedback: Map<Long, WorkoutFeedbackRecord>,
+    val context: WorkoutRecommendationContext
 )
 
 private data class TrainingGroup(

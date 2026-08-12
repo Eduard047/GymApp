@@ -42,11 +42,20 @@ struct PostWorkoutSummaryView: View {
                     LazyVStack(spacing: 14) {
                         rewardHero(workout)
                         metricsPanel(workout)
+                        feedbackPanel
                         progressionPanel
-                        musclesPanel
-                        personalRecordsPanel
-                        missionsPanel
-                        badgesPanel
+                        if !trainedMuscles.isEmpty {
+                            musclesPanel
+                        }
+                        if !personalRecords.isEmpty {
+                            personalRecordsPanel
+                        }
+                        if !completedMissions.isEmpty {
+                            missionsPanel
+                        }
+                        if !highlightedBadges.isEmpty {
+                            badgesPanel
+                        }
                         actions
                     }
                     .padding(.horizontal, 14)
@@ -75,6 +84,18 @@ struct PostWorkoutSummaryView: View {
 
     private var sessionSummary: WorkoutSessionSummary? {
         store.workoutSummaries.first { $0.workoutID == workoutID }
+    }
+
+    private var weeklyStreakWeeks: Int {
+        let target = TrainingProfileStore().load(
+            accountStorageKey: store.accountStorageKey
+        ).workoutsPerWeek
+        return WeeklyStreakCalculator.current(
+            sessions: store.workoutSummaries,
+            targetTrainingDays: target,
+            now: gamification.generatedAt,
+            calendar: calendar
+        )
     }
 
     private var sessionHistory: [ExerciseHistoryEntry] {
@@ -175,14 +196,17 @@ struct PostWorkoutSummaryView: View {
                     GymMetricTile(label: "Level", value: gamification.progression.level.formatted(), onHero: true)
                     GymMetricTile(label: "Title", value: gamification.progression.title.name, onHero: true)
                     GymMetricTile(
-                        label: "Streak",
-                        value: gymCount(
-                            gamification.streak.currentDays,
-                            englishOne: "day",
-                            englishMany: "days",
-                            ukrainianOne: "день",
-                            ukrainianFew: "дні",
-                            ukrainianMany: "днів"
+                        label: gymText(
+                            "Week streak",
+                            "Серія тижнів",
+                            "Серия недель",
+                            languageCode: languageCode
+                        ),
+                        value: gymText(
+                            "\(weeklyStreakWeeks) wk",
+                            "\(weeklyStreakWeeks) тиж",
+                            "\(weeklyStreakWeeks) нед",
+                            languageCode: languageCode
                         ),
                         onHero: true
                     )
@@ -195,7 +219,6 @@ struct PostWorkoutSummaryView: View {
         GymPanel {
             VStack(alignment: .leading, spacing: 13) {
                 GymSectionTitle(
-                    eyebrow: "Session",
                     title: "Training metrics",
                     supporting: workout.note
                 )
@@ -219,7 +242,6 @@ struct PostWorkoutSummaryView: View {
         GymPanel(highlighted: true) {
             VStack(alignment: .leading, spacing: 12) {
                 GymSectionTitle(
-                    eyebrow: "Progress",
                     title: gymText(
                         "Level \(gamification.progression.level) · \(gamification.progression.title.name)",
                         "Рівень \(gamification.progression.level) · \(gymLocalized(gamification.progression.title.name))",
@@ -260,34 +282,74 @@ struct PostWorkoutSummaryView: View {
         }
     }
 
+    private var feedbackPanel: some View {
+        GymPanel(highlighted: store.feedback(for: workoutID) != nil) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(gymText(
+                    "How did it feel?",
+                    "Як було?",
+                    "Как было?",
+                    languageCode: languageCode
+                ))
+                .font(.headline)
+                .accessibilityAddTraits(.isHeader)
+
+                HStack(spacing: 8) {
+                    feedbackButton(.easy)
+                    feedbackButton(.normal)
+                    feedbackButton(.hard)
+                }
+            }
+        }
+    }
+
+    private func feedbackButton(_ feedback: WorkoutFeedback) -> some View {
+        let selected = store.feedback(for: workoutID) == feedback
+        return Button {
+            try? store.setWorkoutFeedback(feedback, for: workoutID)
+        } label: {
+            Text(feedbackTitle(feedback))
+                .font(.subheadline.weight(.semibold))
+                .lineLimit(2)
+                .minimumScaleFactor(0.75)
+                .frame(maxWidth: .infinity, minHeight: 42)
+        }
+        .buttonStyle(WorkoutFeedbackButtonStyle(selected: selected))
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    private func feedbackTitle(_ feedback: WorkoutFeedback) -> String {
+        switch feedback {
+        case .easy:
+            gymText("Too easy", "Надто легко", "Слишком легко", languageCode: languageCode)
+        case .normal:
+            gymText("Just right", "Саме так", "В самый раз", languageCode: languageCode)
+        case .hard:
+            gymText("Too hard", "Надто важко", "Слишком тяжело", languageCode: languageCode)
+        }
+    }
+
     @ViewBuilder
     private var musclesPanel: some View {
         GymPanel {
             VStack(alignment: .leading, spacing: 12) {
                 GymSectionTitle(
-                    eyebrow: "Muscles",
-                    title: "Loaded today",
-                    supporting: "Estimated from weight, repetitions, bodyweight movements, and your manual mappings."
+                    title: "Loaded today"
                 )
-                if trainedMuscles.isEmpty {
-                    Text("No mapped muscle load for this workout.")
-                        .foregroundStyle(GymTheme.textSecondary)
-                } else {
-                    ForEach(Array(trainedMuscles.prefix(8))) { item in
-                        VStack(alignment: .leading, spacing: 5) {
-                            HStack {
-                                Text(muscleTitle(item))
-                                    .font(.subheadline.weight(.semibold))
-                                Spacer()
-                                Text(item.load.formatted(.number.precision(.fractionLength(0))))
-                                    .font(.caption.monospacedDigit())
-                                    .foregroundStyle(GymTheme.textSecondary)
-                            }
-                            ProgressView(value: item.load, total: max(1, trainedMuscles.first?.load ?? 1))
-                                .tint(GymTheme.tertiary)
+                ForEach(Array(trainedMuscles.prefix(8))) { item in
+                    VStack(alignment: .leading, spacing: 5) {
+                        HStack {
+                            Text(muscleTitle(item))
+                                .font(.subheadline.weight(.semibold))
+                            Spacer()
+                            Text(item.load.formatted(.number.precision(.fractionLength(0))))
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(GymTheme.textSecondary)
                         }
-                        .accessibilityElement(children: .combine)
+                        ProgressView(value: item.load, total: max(1, trainedMuscles.first?.load ?? 1))
+                            .tint(GymTheme.tertiary)
                     }
+                    .accessibilityElement(children: .combine)
                 }
             }
         }
@@ -298,17 +360,14 @@ struct PostWorkoutSummaryView: View {
         GymPanel(highlighted: !personalRecords.isEmpty) {
             VStack(alignment: .leading, spacing: 12) {
                 GymSectionTitle(
-                    eyebrow: "Personal records",
-                    title: personalRecords.isEmpty ? "Keep building" : "New bests",
-                    supporting: personalRecords.isEmpty
-                        ? "No new weight or estimated 1RM records in this session."
-                        : "This workout moved your exercise history forward."
+                    title: "New bests"
                 )
                 ForEach(personalRecords) { record in
                     HStack(alignment: .top, spacing: 11) {
                         if let exercise = store.exercise(id: record.exerciseID) {
                             ExerciseMediaButton(
-                                exerciseName: exercise.name,
+                                rawExerciseName: exercise.name,
+                                catalogKey: exercise.catalogKey,
                                 exerciseID: exercise.id,
                                 ownerKey: store.accountStorageKey
                             )
@@ -335,29 +394,10 @@ struct PostWorkoutSummaryView: View {
         GymPanel {
             VStack(alignment: .leading, spacing: 12) {
                 GymSectionTitle(
-                    eyebrow: gymText("Missions", "Місії", "Миссии", languageCode: languageCode),
-                    title: completedMissions.isEmpty
-                        ? gymText("Next targets", "Наступні цілі", "Следующие цели", languageCode: languageCode)
-                        : gymText("Completed", "Виконано", "Выполнено", languageCode: languageCode),
-                    supporting: completedMissions.isEmpty
-                        ? gymText(
-                            "Keep logging workouts and sets toward your daily, weekly, and monthly goals.",
-                            "Продовжуй записувати тренування й підходи для щоденних, щотижневих і щомісячних цілей.",
-                            "Продолжай записывать тренировки и подходы для ежедневных, еженедельных и ежемесячных целей.",
-                            languageCode: languageCode
-                        )
-                        : gymText(
-                            "Calendar goals track consistency; session XP stays separate.",
-                            "Календарні цілі відстежують сталість; XP за тренування нараховується окремо.",
-                            "Календарные цели отслеживают регулярность; XP за тренировку начисляется отдельно.",
-                            languageCode: languageCode
-                        )
+                    title: gymText("Completed missions", "Виконані місії", "Выполненные миссии", languageCode: languageCode)
                 )
 
-                let missions = completedMissions.isEmpty
-                    ? Array(gamification.missions.all.filter { !$0.completed }.prefix(4))
-                    : completedMissions
-                ForEach(missions) { mission in
+                ForEach(completedMissions) { mission in
                     VStack(alignment: .leading, spacing: 6) {
                         HStack {
                             Label(
@@ -384,31 +424,25 @@ struct PostWorkoutSummaryView: View {
         GymPanel {
             VStack(alignment: .leading, spacing: 12) {
                 GymSectionTitle(
-                    eyebrow: "Badges",
-                    title: highlightedBadges.isEmpty ? "No badges yet" : "Unlocked collection",
-                    supporting: highlightedBadges.isEmpty
-                        ? "Complete workouts, streaks, and volume milestones to earn badges."
-                        : "Badges unlocked on this day, or your latest unlocked badges."
+                    title: "Unlocked badges"
                 )
-                if !highlightedBadges.isEmpty {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 130), spacing: 9)], spacing: 9) {
-                        ForEach(highlightedBadges) { badge in
-                            VStack(spacing: 7) {
-                                Image(systemName: "medal.fill")
-                                    .font(.title2)
-                                    .foregroundStyle(badgeColor(badge.rarity))
-                                Text(gymLocalized(badge.name))
-                                    .font(.subheadline.weight(.bold))
-                                    .multilineTextAlignment(.center)
-                                Text(badge.rarity.displayName)
-                                    .font(.caption)
-                                    .foregroundStyle(GymTheme.textSecondary)
-                            }
-                            .padding(12)
-                            .frame(maxWidth: .infinity)
-                            .background(GymTheme.surfaceVariant.opacity(0.48), in: RoundedRectangle(cornerRadius: 16))
-                            .accessibilityElement(children: .combine)
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 130), spacing: 9)], spacing: 9) {
+                    ForEach(highlightedBadges) { badge in
+                        VStack(spacing: 7) {
+                            Image(systemName: "medal.fill")
+                                .font(.title2)
+                                .foregroundStyle(badgeColor(badge.rarity))
+                            Text(gymLocalized(badge.name))
+                                .font(.subheadline.weight(.bold))
+                                .multilineTextAlignment(.center)
+                            Text(badge.rarity.displayName)
+                                .font(.caption)
+                                .foregroundStyle(GymTheme.textSecondary)
                         }
+                        .padding(12)
+                        .frame(maxWidth: .infinity)
+                        .background(GymTheme.surfaceVariant.opacity(0.48), in: RoundedRectangle(cornerRadius: 16))
+                        .accessibilityElement(children: .combine)
                     }
                 }
             }
@@ -465,6 +499,30 @@ private struct SummaryPersonalRecord: Identifiable {
     let title: String
     let detail: String
     let systemImage: String
+}
+
+private struct WorkoutFeedbackButtonStyle: ButtonStyle {
+    let selected: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(selected ? Color.white : GymTheme.textPrimary)
+            .background(
+                (selected ? GymTheme.primary : GymTheme.surfaceVariant)
+                    .opacity(configuration.isPressed ? 0.72 : 1),
+                in: RoundedRectangle(
+                    cornerRadius: GymTheme.controlCornerRadius,
+                    style: .continuous
+                )
+            )
+            .overlay {
+                RoundedRectangle(
+                    cornerRadius: GymTheme.controlCornerRadius,
+                    style: .continuous
+                )
+                .strokeBorder(selected ? GymTheme.primary : GymTheme.outlineSoft, lineWidth: 1)
+            }
+    }
 }
 
 private extension BadgeRarity {

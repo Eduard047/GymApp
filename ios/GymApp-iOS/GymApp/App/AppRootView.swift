@@ -4,7 +4,7 @@ import UniformTypeIdentifiers
 @MainActor
 struct AppRootView: View {
     @Environment(\.scenePhase) private var scenePhase
-    @AppStorage("app-language") private var languageCode = AppLanguage.english.rawValue
+    @AppStorage("app-language") private var languageCode = AppLanguage.firstRunDefault.rawValue
     @ObservedObject private var appState: AppState
     @ObservedObject private var auth: AuthService
     @ObservedObject private var nativePush: NativePushManager
@@ -121,7 +121,7 @@ struct AppRootView: View {
 }
 
 private struct CloudSyncConflictView: View {
-    @AppStorage("app-language") private var languageCode = AppLanguage.english.rawValue
+    @AppStorage("app-language") private var languageCode = AppLanguage.firstRunDefault.rawValue
 
     let summary: AppState.CloudSyncConflictSummary
     let isWorking: Bool
@@ -353,7 +353,7 @@ private struct CloudSyncConflictExportDocument: FileDocument {
 }
 
 private struct AccountPreparationView: View {
-    @AppStorage("app-language") private var languageCode = AppLanguage.english.rawValue
+    @AppStorage("app-language") private var languageCode = AppLanguage.firstRunDefault.rawValue
 
     let isWorking: Bool
     let message: String?
@@ -458,7 +458,7 @@ private struct MainTabShell: View {
     @ObservedObject private var nativePush: NativePushManager
     @StateObject private var activeWorkoutStore: ActiveWorkoutStore
     @StateObject private var liveWorkoutCoordinator: LiveWorkoutCoordinator
-    @AppStorage("app-language") private var languageCode = AppLanguage.english.rawValue
+    @AppStorage("app-language") private var languageCode = AppLanguage.firstRunDefault.rawValue
     @Environment(\.openURL) private var openURL
 
     @State private var selectedTab: Tab
@@ -468,6 +468,9 @@ private struct MainTabShell: View {
     @State private var showsActiveWorkout = false
     @State private var showsSharedWorkoutPreview = false
     @State private var sharedWorkoutDraftSeed: [WorkoutExerciseDraft] = []
+    @State private var workoutLaunchSeed: WorkoutLaunchSeed?
+    @State private var workoutLaunchConsumerID: UUID?
+    @State private var workoutLaunchDrafts: [WorkoutEditorExerciseDraft]?
     @State private var sharedWorkoutDraftTransitionID: UUID?
     @State private var showingActiveDraftDiscardConfirmation = false
     @State private var nativePushProfileRequest: NativePushProfileRequest?
@@ -545,8 +548,14 @@ private struct MainTabShell: View {
                     activeWorkoutStore: activeWorkoutStore,
                     liveWorkoutCoordinator: liveWorkoutCoordinator,
                     initialDrafts: sharedWorkoutDraftSeed,
+                    launchSeed: workoutLaunchSeed,
+                    launchSeedConsumerID: workoutLaunchConsumerID,
+                    launchSeedDrafts: workoutLaunchDrafts,
                     onStarted: { _ in
                         sharedWorkoutDraftSeed = []
+                        workoutLaunchSeed = nil
+                        workoutLaunchConsumerID = nil
+                        workoutLaunchDrafts = nil
                         showsAddWorkout = false
                         Task { @MainActor in
                             try? await Task.sleep(for: .milliseconds(180))
@@ -555,6 +564,9 @@ private struct MainTabShell: View {
                     },
                     onSaved: { workoutID in
                         sharedWorkoutDraftSeed = []
+                        workoutLaunchSeed = nil
+                        workoutLaunchConsumerID = nil
+                        workoutLaunchDrafts = nil
                         showsAddWorkout = false
                         Task { @MainActor in
                             try? await Task.sleep(for: .milliseconds(180))
@@ -563,6 +575,9 @@ private struct MainTabShell: View {
                     },
                     onCancel: {
                         sharedWorkoutDraftSeed = []
+                        workoutLaunchSeed = nil
+                        workoutLaunchConsumerID = nil
+                        workoutLaunchDrafts = nil
                         showsAddWorkout = false
                     }
                 )
@@ -860,12 +875,19 @@ private struct MainTabShell: View {
         }
         .onDisappear {
             liveWorkoutCoordinator.stopMonitoring()
+            workoutLaunchSeed = nil
+            workoutLaunchConsumerID = nil
+            workoutLaunchDrafts = nil
         }
         .onChange(of: appState.pendingSharedWorkout?.id) { _ in
             presentSharedWorkoutPreviewIfPossible()
         }
         .onChange(of: showsAddWorkout) { isPresented in
             if !isPresented {
+                sharedWorkoutDraftSeed = []
+                workoutLaunchSeed = nil
+                workoutLaunchConsumerID = nil
+                workoutLaunchDrafts = nil
                 presentSharedWorkoutPreviewIfPossible()
             }
         }
@@ -997,6 +1019,9 @@ private struct MainTabShell: View {
         do {
             let seed = try store.materializeSharedWorkoutDraft(pending.plan)
             sharedWorkoutDraftSeed = seed
+            workoutLaunchSeed = nil
+            workoutLaunchConsumerID = nil
+            workoutLaunchDrafts = nil
             appState.dismissPendingSharedWorkout(id: pending.id)
             showsAddWorkout = true
         } catch {
@@ -1065,13 +1090,74 @@ private struct MainTabShell: View {
         NavigationStack(path: $workoutPath) {
             WorkoutsView(
                 store: store,
-                onAddWorkout: {
+                hasActiveWorkout: activeWorkoutStore.draft != nil,
+                onStartPlan: { launchSeed in
+                    guard activeWorkoutStore.draft == nil,
+                          !showsAddWorkout,
+                          !showsActiveWorkout else {
+                        return false
+                    }
+                    let currentProfile = TrainingProfileStore().load(
+                        accountStorageKey: store.accountStorageKey
+                    )
+                    guard DirectWorkoutPlanStarter.start(
+                        seed: launchSeed,
+                        currentProfile: currentProfile,
+                        workoutStore: store,
+                        activeWorkoutStore: activeWorkoutStore
+                    ) != nil else {
+                        return false
+                    }
+                    sharedWorkoutDraftSeed = []
+                    workoutLaunchSeed = nil
+                    workoutLaunchConsumerID = nil
+                    workoutLaunchDrafts = nil
+                    showsAddWorkout = false
+                    showsActiveWorkout = true
+                    return true
+                },
+                onAddWorkout: { launchSeed in
                     if activeWorkoutStore.draft != nil {
                         showsActiveWorkout = true
+                        return false
                     } else {
+                        let currentProfile = TrainingProfileStore().load(
+                            accountStorageKey: store.accountStorageKey
+                        )
+                        if let launchSeed {
+                            let consumerID = UUID()
+                            let launchDrafts = makeWorkoutEditorDrafts(from: launchSeed.plan)
+                            guard launchSeed.isValid(
+                                accountStorageKey: store.accountStorageKey,
+                                currentProfile: currentProfile,
+                                catalog: store.exercises,
+                                history: store.allExerciseHistory(),
+                                muscleMappings: store.muscleMappings
+                            ), !launchDrafts.isEmpty,
+                               WorkoutLaunchSeedUseGate.claim(
+                                launchSeed,
+                                consumerID: consumerID
+                            ) else {
+                                workoutLaunchSeed = nil
+                                workoutLaunchConsumerID = nil
+                                workoutLaunchDrafts = nil
+                                return false
+                            }
+                            workoutLaunchConsumerID = consumerID
+                            workoutLaunchDrafts = launchDrafts
+                        } else {
+                            workoutLaunchConsumerID = nil
+                            workoutLaunchDrafts = nil
+                        }
                         sharedWorkoutDraftSeed = []
+                        workoutLaunchSeed = launchSeed
                         showsAddWorkout = true
+                        return true
                     }
+                },
+                onContinueWorkout: {
+                    showsAddWorkout = false
+                    showsActiveWorkout = true
                 },
                 onOpenWorkout: { workoutPath.append(.detail($0)) },
                 onOpenRanks: { workoutPath.append(.ranks) }

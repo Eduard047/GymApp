@@ -10,7 +10,7 @@ never be stored in this repository.
 | --- | --- |
 | Android | Android Studio, JDK 21, Android SDK, Gradle wrapper |
 | iOS | Xcode 26 with an iOS Simulator runtime |
-| PWA and contracts | Node.js 24; Python 3 or another static file server |
+| Browser site and contracts | Node.js 24; Python 3 or another static file server |
 | Garmin | Connect IQ SDK Manager and a developer key outside the repository |
 | Supabase | Supabase CLI and Deno for Edge Function checks |
 
@@ -34,17 +34,20 @@ iOS commands and release prerequisites are documented in
 Garmin device builds and the multi-device Store export are documented in
 [`garmin/README.md`](../garmin/README.md).
 
-## Local PWA
+## Local browser site
 
-Serve the static application from the repository root:
+Serve the static distribution/legal site and native handoff routes:
 
 ```sh
 python3 -m http.server 4173 --directory pwa
 ```
 
-Open <http://127.0.0.1:4173>. Browser storage, imported backups, profile fields,
-exercise names, query parameters, and cloud responses must always be treated as
-untrusted input.
+Open <http://127.0.0.1:4173>. The root intentionally has no workout or
+authentication runtime. It exposes verified app links, legal/support links, and
+a bounded local export only when legacy workout data is detected. `/workout/`
+remains a validated native-app handoff and `confirmed.html` remains the native
+authentication callback. Browser storage, legacy backups, exercise names, and
+query parameters must always be treated as untrusted input.
 
 ## Android release artifacts
 

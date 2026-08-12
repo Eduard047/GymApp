@@ -807,7 +807,13 @@ final class SocialContractTests: XCTestCase {
 
         let refresh = Task { try await appState.refreshSocialDashboard() }
         await fulfillment(of: [shortCodeStarted], timeout: 2)
-        try auth.installSessionForTesting(.local(id: "replacement", displayName: "Replacement"))
+        try auth.clearSession()
+        try auth.installSessionForTesting(
+            .local(
+                id: "00000000-0000-4000-8000-000000000601",
+                displayName: "Replacement"
+            )
+        )
         let switchedAccountReady = await waitUntil {
             appState.isAccountReady && auth.session?.cloud == nil
         }
@@ -1835,9 +1841,17 @@ final class SocialContractTests: XCTestCase {
         XCTAssertNotNil(appState.socialWorkoutInbox)
         XCTAssertNotNil(appState.pendingSharedWorkout)
 
-        try auth.installSessionForTesting(.local(id: "replacement", displayName: "Replacement"))
-        let switchedToLocal = await waitUntil { auth.session?.cloud == nil }
-        XCTAssertTrue(switchedToLocal)
+        try auth.clearSession()
+        try auth.installSessionForTesting(
+            .local(
+                id: "00000000-0000-4000-8000-000000000602",
+                displayName: "Replacement"
+            )
+        )
+        let switchedAccountReady = await waitUntil {
+            appState.isAccountReady && auth.session?.cloud == nil
+        }
+        XCTAssertTrue(switchedAccountReady)
         let privateMemoryCleared = await waitUntil {
             appState.socialDashboard == nil &&
                 appState.socialWorkoutInbox == nil &&

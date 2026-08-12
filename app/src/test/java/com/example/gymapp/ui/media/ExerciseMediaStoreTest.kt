@@ -1,5 +1,6 @@
 package com.example.gymapp.ui.media
 
+import com.example.gymapp.data.catalog.BuiltInExerciseCatalog
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -21,6 +22,19 @@ class ExerciseMediaStoreTest {
     }
 
     @Test
+    fun bundledMediaUsesStableCatalogIdentityAcrossSupportedLanguages() {
+        assertEquals("bench_press", ExerciseMediaStore.bundledCatalogKey("Bench Press"))
+        assertEquals("bench_press", ExerciseMediaStore.bundledCatalogKey("Жим штанги лежачи"))
+        assertEquals(
+            "bench_press",
+            ExerciseMediaStore.bundledCatalogKey(
+                BuiltInExerciseCatalog.displayName("Bench Press", "ru")
+            )
+        )
+        assertEquals(null, ExerciseMediaStore.bundledCatalogKey("Custom press"))
+    }
+
+    @Test
     fun accountCleanupDeletesOnlyTheCapturedOwnersMediaDirectory() {
         val root = createTempDirectory("gymapp-media-cleanup-").toFile()
         try {
@@ -34,6 +48,26 @@ class ExerciseMediaStoreTest {
             assertFalse(captured.exists())
             assertTrue(other.resolve("1.jpg").isFile)
             assertTrue(ExerciseMediaStore.clearOwnerDirectory(captured))
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun customRestoreReportsDurableDeletionAndFailsClosedForNonFile() {
+        val root = createTempDirectory("gymapp-media-delete-").toFile()
+        try {
+            val image = root.resolve("1.jpg").apply { writeText("custom") }
+            assertTrue(ExerciseMediaStore.deleteCustomFile(image))
+            assertFalse(image.exists())
+            assertTrue(ExerciseMediaStore.deleteCustomFile(image))
+
+            val undeletableTarget = root.resolve("2.jpg").apply {
+                mkdirs()
+                resolve("owned").writeText("keep")
+            }
+            assertFalse(ExerciseMediaStore.deleteCustomFile(undeletableTarget))
+            assertTrue(undeletableTarget.resolve("owned").isFile)
         } finally {
             root.deleteRecursively()
         }

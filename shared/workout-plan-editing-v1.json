@@ -1,0 +1,330 @@
+{
+  "schemaVersion": 1,
+  "productVersion": "3.0.8",
+  "scope": {
+    "fullEditors": ["android", "ios"],
+    "browser": "shared-plan-preview-and-native-handoff-only"
+  },
+  "locales": {
+    "order": ["en", "uk", "ru"],
+    "copy": {
+      "todayEditPlan": {
+        "en": "Edit plan",
+        "uk": "Редагувати план",
+        "ru": "Редактировать план"
+      },
+      "todayStartPlan": {
+        "en": "Start plan",
+        "uk": "Почати план",
+        "ru": "Начать план"
+      },
+      "editorTitle": {
+        "en": "Workout plan",
+        "uk": "План тренування",
+        "ru": "План тренировки"
+      },
+      "startWorkout": {
+        "en": "Start workout",
+        "uk": "Почати тренування",
+        "ru": "Начать тренировку"
+      },
+      "continueWorkout": {
+        "en": "Continue workout",
+        "uk": "Продовжити тренування",
+        "ru": "Продолжить тренировку"
+      },
+      "syncPlanToGarmin": {
+        "en": "Sync plan to Garmin",
+        "uk": "Синхронізувати план із Garmin",
+        "ru": "Синхронизировать план с Garmin"
+      },
+      "dirtyCancelTitle": {
+        "en": "Discard plan changes?",
+        "uk": "Відкинути зміни плану?",
+        "ru": "Отменить изменения плана?"
+      },
+      "dirtyCancelMessage": {
+        "en": "Your edits will be lost.",
+        "uk": "Зміни буде втрачено.",
+        "ru": "Изменения будут потеряны."
+      },
+      "keepEditing": {
+        "en": "Keep editing",
+        "uk": "Продовжити редагування",
+        "ru": "Продолжить редактирование"
+      },
+      "discardChanges": {
+        "en": "Discard changes",
+        "uk": "Відкинути зміни",
+        "ru": "Отменить изменения"
+      },
+      "clearPlan": {
+        "en": "Clear plan",
+        "uk": "Очистити план",
+        "ru": "Очистить план"
+      },
+      "clearPlanTitle": {
+        "en": "Clear workout plan?",
+        "uk": "Очистити план тренування?",
+        "ru": "Очистить план тренировки?"
+      },
+      "clearPlanMessage": {
+        "en": "All exercises and sets will be removed.",
+        "uk": "Усі вправи й підходи буде видалено.",
+        "ru": "Все упражнения и подходы будут удалены."
+      },
+      "keepPlan": {
+        "en": "Keep plan",
+        "uk": "Залишити план",
+        "ru": "Оставить план"
+      },
+      "smartCoachTitle": {
+        "en": "Smart Coach",
+        "uk": "Розумний тренер",
+        "ru": "Умный тренер"
+      },
+      "addExercise": {
+        "en": "Add exercise",
+        "uk": "Додати вправу",
+        "ru": "Добавить упражнение"
+      },
+      "buildSmartWorkout": {
+        "en": "Build smart workout",
+        "uk": "Створити розумне тренування",
+        "ru": "Создать умную тренировку"
+      }
+    }
+  },
+  "todayRecommended": {
+    "actionsInOrder": ["startPlan", "editPlan"],
+    "startPlanProminence": "primary",
+    "editPlanProminence": "secondary",
+    "bothUseSameValidatedLaunchSnapshot": true,
+    "startPlanOpensEditor": false,
+    "oneTimeClaimCommitsBeforeActiveWorkoutWrite": true,
+    "claimedSnapshotMayRetryAfterActiveWriteFailure": false,
+    "freshSnapshotMayRetryAfterActiveWriteFailure": true,
+    "startPlanCreatesActiveWorkoutAtomically": true,
+    "alreadyActiveResultIsSuccess": false,
+    "startPlanCreatesCompletedHistory": false,
+    "startPlanSyncsGarmin": false,
+    "startPlanSharesPlan": false,
+    "failureLeavesTodayActionable": true
+  },
+  "screenOrder": [
+    "coachSettings",
+    "smartCoach",
+    "editableExercisesAndSets",
+    "startWorkout",
+    "secondaryOptions"
+  ],
+  "coachSettings": {
+    "storage": "accountProfile",
+    "persistence": "immediate",
+    "countsAsPlanDraftMutation": false,
+    "discardPlanChangesEffect": "preserved"
+  },
+  "editableOperations": [
+    "addExercise",
+    "removeExercise",
+    "replaceExercise",
+    "addSet",
+    "removeSet",
+    "editWeight",
+    "editReps",
+    "regenerateSmartTargets",
+    "copyPreviousWorkoutIntoDraft"
+  ],
+  "draftRules": {
+    "storageBeforeStart": "editor-memory-only",
+    "savePlanActionVisible": false,
+    "initialHydrationIsDirty": false,
+    "dirtyCancelRequiresConfirmation": true,
+    "dirtyGestureDismissAllowed": false,
+    "templateAndPreviousWorkoutAreCopies": true,
+    "sourceHistoryMutation": "none",
+    "automaticGarminSync": false,
+    "automaticShare": false
+  },
+  "clearPlan": {
+    "scope": "planEditorOnly",
+    "placement": "editableExercisesAndSets",
+    "visibleWhen": "draftIsNonempty",
+    "requiresConfirmation": true,
+    "emptyRepresentation": "zeroExerciseDrafts",
+    "clearInOneLocalEditorMutation": [
+      "exerciseDraftsAndSets",
+      "generatedSmartPlan",
+      "smartGeneratedDraftIds",
+      "smartPlanStaleFlag",
+      "replacementOrAlternativePicker",
+      "garminDraftSubmission",
+      "garminSyncResultAndError",
+      "validationErrorsBoundToRemovedDraft"
+    ],
+    "preserve": [
+      "trainingProfile",
+      "selectedSmartEffort",
+      "workoutDate",
+      "note",
+      "workoutHistory",
+      "activeWorkout",
+      "accountSession",
+      "garminDeviceBinding"
+    ],
+    "networkCalls": [],
+    "historyMutation": "none",
+    "activeWorkoutMutation": "none",
+    "accountMutation": "none",
+    "garminRemoteMutation": "none",
+    "lateGarminResultMayRestoreClearedState": false,
+    "resultIsDirty": true,
+    "emptyStateActionsInOrder": ["addExercise"],
+    "startShareAndGarminActionsEnabledWhenEmpty": false
+  },
+  "setValueSemantics": {
+    "weightUnit": "kg",
+    "unknownRecommendedWeightMaterializesAs": 0,
+    "zeroWeightIsValid": true,
+    "textualWeightBlankIsInvalidAtActionBoundary": true,
+    "weightMustBeFinite": true,
+    "minimumWeightInclusive": 0,
+    "maximumWeightInclusive": 1000000,
+    "minimumRepsInclusive": 1,
+    "maximumRepsInclusive": 10000,
+    "sameMeaningRequiredAcross": [
+      "editor",
+      "todayDirectStart",
+      "activeWorkoutDraft",
+      "sharedWorkoutPayload",
+      "garminPlanPayload"
+    ]
+  },
+  "garmin": {
+    "action": "syncCurrentEditedDraft",
+    "explicitUserGestureRequired": true,
+    "requiresCurrentAccountAndDeviceBinding": true,
+    "idempotency": "stableRequestIdPerExactDraftRevision",
+    "requestIdRotatesAfterDraftMutation": true,
+    "createsActiveWorkout": false,
+    "createsCompletedHistory": false,
+    "editsSourceHistory": false,
+    "failureKeepsDraftEditable": true
+  },
+  "activeWorkoutException": {
+    "todayAction": "continueWorkout",
+    "editPlanEntryVisible": false,
+    "secondActiveWorkoutAllowed": false,
+    "sharedLivePlanRemainsFrozen": true
+  },
+  "launchSecurity": {
+    "accountBound": true,
+    "profileCatalogAndHistoryBound": true,
+    "maximumAgeMilliseconds": 300000,
+    "futureSkewMilliseconds": 60000,
+    "oneTimeUse": true,
+    "claimLifetime": {
+      "android": "processRestorableSavedState",
+      "ios": "rootLocalNonRestorableSeedIdentity"
+    },
+    "rawJsonPlanInNavigationArgument": false,
+    "navigationHandoff": {
+      "android": "boundedValidatedOpaqueLaunchToken",
+      "androidMaximumTokenCharacters": 12000,
+      "ios": "rootLocalValidatedSeedObject"
+    }
+  },
+  "transitions": [
+    {
+      "from": "todayRecommended",
+      "action": "startPlan",
+      "to": "activeWorkout",
+      "mutations": ["createOneLocalActiveWorkoutAtomically"]
+    },
+    {
+      "from": "todayRecommended",
+      "action": "editPlan",
+      "to": "planEditorClean",
+      "mutations": []
+    },
+    {
+      "from": "planEditorClean",
+      "action": "cancel",
+      "to": "todayRecommended",
+      "mutations": []
+    },
+    {
+      "from": "planEditorClean",
+      "action": "editDraft",
+      "to": "planEditorDirty",
+      "mutations": ["editorMemory"]
+    },
+    {
+      "from": "planEditorDirty",
+      "action": "cancel",
+      "to": "dirtyCancelConfirmation",
+      "mutations": []
+    },
+    {
+      "from": "dirtyCancelConfirmation",
+      "action": "keepEditing",
+      "to": "planEditorDirty",
+      "mutations": []
+    },
+    {
+      "from": "dirtyCancelConfirmation",
+      "action": "discardChanges",
+      "to": "todayRecommended",
+      "mutations": ["discardEditorMemory"]
+    },
+    {
+      "from": "planEditorCleanOrDirty",
+      "action": "startWorkout",
+      "to": "activeWorkout",
+      "mutations": ["createOneLocalActiveWorkoutAtomically"]
+    },
+    {
+      "from": "planEditorCleanOrDirty",
+      "action": "syncPlanToGarmin",
+      "to": "samePlanEditorState",
+      "mutations": ["replaceBoundGarminPlanOnly"]
+    },
+    {
+      "from": "planEditorNonempty",
+      "action": "clearPlan",
+      "to": "clearPlanConfirmation",
+      "mutations": []
+    },
+    {
+      "from": "clearPlanConfirmation",
+      "action": "keepPlan",
+      "to": "samePlanEditorState",
+      "mutations": []
+    },
+    {
+      "from": "clearPlanConfirmation",
+      "action": "clearPlan",
+      "to": "planEditorEmptyDirty",
+      "mutations": ["clearLocalEditorPlanStateOnly"]
+    },
+    {
+      "from": "todayWithActiveWorkout",
+      "action": "continueWorkout",
+      "to": "activeWorkout",
+      "mutations": []
+    }
+  ],
+  "browserException": {
+    "rootWorkoutEditor": false,
+    "sharedWorkoutRoute": "/workout/",
+    "sharedWorkoutRouteCapabilities": [
+      "validate",
+      "preview",
+      "androidNativeHandoff",
+      "iosNativeHandoff",
+      "googlePlayFallback"
+    ],
+    "browserDraftPersistence": false,
+    "continueOnWebsiteAction": false
+  }
+}

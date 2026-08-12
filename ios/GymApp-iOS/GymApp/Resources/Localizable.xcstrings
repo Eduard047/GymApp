@@ -1756,18 +1756,18 @@
         }
       }
     },
-    "By using GymApp, you agree that workout data is handled as described in the privacy policy." : {
+    "Workout data is handled under the Privacy Policy." : {
       "localizations" : {
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Пользуясь GymApp, ты соглашаешься с обработкой данных тренировок в соответствии с политикой конфиденциальности."
+            "value" : "Данные тренировок обрабатываются согласно Политике конфиденциальности."
           }
         },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Користуючись GymApp, ти погоджуєшся з обробкою даних тренувань відповідно до політики приватності."
+            "value" : "Дані тренувань обробляються відповідно до Політики конфіденційності."
           }
         }
       }
@@ -2634,7 +2634,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Продолжить оффлайн"
+            "value" : "Продолжить офлайн"
           }
         },
         "uk" : {
@@ -2686,6 +2686,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Копирует последние значения в запланированный подход"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Копіює останні значення в запланований підхід"
           }
         }
       }
@@ -8405,7 +8411,7 @@
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Політика приватності"
+            "value" : "Політика конфіденційності"
           }
         }
       }
@@ -8421,7 +8427,7 @@
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Політика приватності"
+            "value" : "Політика конфіденційності"
           }
         }
       }
@@ -8921,7 +8927,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Повтори email"
+            "value" : "Повторите email"
           }
         },
         "uk" : {
@@ -8953,7 +8959,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Повтори пароль"
+            "value" : "Повторите пароль"
           }
         },
         "uk" : {
@@ -9599,6 +9605,38 @@
         }
       }
     },
+    "Secure sign-out cleanup is incomplete. Retry sign-in or restart after unlocking this device." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Безопасное завершение выхода не закончено. Повтори вход или разблокируй устройство и перезапусти приложение."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Безпечне завершення виходу не завершено. Повтори вхід або розблокуй пристрій і перезапусти застосунок."
+          }
+        }
+      }
+    },
+    "Account deletion cleanup is incomplete. Restart GymApp before deleting another profile." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Очистка удаляемого аккаунта не завершена. Перезапусти GymApp перед удалением другого профиля."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Очищення видаленого акаунта не завершено. Перезапусти GymApp перед видаленням іншого профілю."
+          }
+        }
+      }
+    },
     "See XP, personal records, trained muscles, missions, and badges." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -10068,7 +10106,7 @@
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Реєстрація"
+            "value" : "Зареєструватися"
           }
         }
       }

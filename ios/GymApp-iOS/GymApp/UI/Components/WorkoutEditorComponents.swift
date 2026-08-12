@@ -5,29 +5,25 @@ struct WorkoutEditorSetDraft: Identifiable, Hashable {
     let id: UUID
     var weight: Double
     var reps: Int
-    var requiresWeightSelection: Bool
 
     init(
         id: UUID = UUID(),
         weight: Double = 0,
-        reps: Int = 10,
-        requiresWeightSelection: Bool = false
+        reps: Int = 10
     ) {
         self.id = id
         self.weight = weight
         self.reps = reps
-        self.requiresWeightSelection = requiresWeightSelection
     }
 
     init(id: UUID = UUID(), recommendedSet: RecommendedWorkoutSet) {
         self.id = id
         weight = recommendedSet.weight ?? 0
         reps = recommendedSet.reps
-        requiresWeightSelection = recommendedSet.weight == nil
     }
 
     var isReadyForSave: Bool {
-        !requiresWeightSelection && weight.isFinite && weight >= 0
+        weight.isFinite && (0 ... 1_000_000).contains(weight)
     }
 
     var storeDraft: WorkoutSetDraft {
@@ -175,11 +171,6 @@ struct WorkoutSetDraftRow: View {
                     languageCode: gymCurrentLanguageCode()
                 )
             )
-            if set.requiresWeightSelection {
-                Text("Choose a working weight before saving.")
-                    .font(.caption)
-                    .foregroundStyle(GymTheme.error)
-            }
         }
         .frame(maxWidth: .infinity)
 
@@ -212,7 +203,6 @@ struct WorkoutSetDraftRow: View {
         Button {
             if let lastWeight {
                 set.weight = lastWeight
-                set.requiresWeightSelection = false
             }
         } label: {
             Label("Last", systemImage: "clock.arrow.circlepath")
@@ -235,7 +225,6 @@ struct WorkoutSetDraftRow: View {
 
         Button {
             set.weight += 2.5
-            set.requiresWeightSelection = false
         } label: {
             Label("+2.5", systemImage: "plus")
         }
@@ -250,7 +239,6 @@ struct WorkoutSetDraftRow: View {
             get: { set.weight },
             set: { value in
                 set.weight = value
-                set.requiresWeightSelection = false
             }
         )
     }
@@ -262,7 +250,8 @@ struct WorkoutDraftExerciseCard: View {
 
     let exerciseID: UUID
     let exerciseMediaOwnerKey: String
-    let exerciseName: String
+    let rawExerciseName: String
+    let exerciseCatalogKey: String?
     let lastWeight: Double?
     let onShowSimilar: (() -> Void)?
     let onDeleteExercise: () -> Void
@@ -273,14 +262,15 @@ struct WorkoutDraftExerciseCard: View {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(alignment: .center, spacing: 10) {
                     ExerciseMediaThumbnail(
-                        exerciseName: exerciseName,
+                        rawExerciseName: rawExerciseName,
+                        catalogKey: exerciseCatalogKey,
                         exerciseID: exerciseID,
                         ownerKey: exerciseMediaOwnerKey
                     ) {
                         showingMedia = true
                     }
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(exerciseName)
+                        Text(displayName)
                             .font(.headline)
                             .accessibilityAddTraits(.isHeader)
                         if let lastWeight {
@@ -293,10 +283,6 @@ struct WorkoutDraftExerciseCard: View {
                             )
                                 .font(.caption)
                                 .foregroundStyle(GymTheme.textSecondary)
-                        } else {
-                            Text("No history yet")
-                                .font(.caption)
-                                .foregroundStyle(GymTheme.textSecondary)
                         }
                     }
                     Spacer(minLength: 8)
@@ -306,51 +292,24 @@ struct WorkoutDraftExerciseCard: View {
                     }
                     .accessibilityLabel(
                         gymText(
-                            "Remove \(exerciseName)",
-                            "Видалити «\(exerciseName)»",
+                            "Remove \(displayName)",
+                            "Видалити «\(displayName)»",
                             languageCode: gymCurrentLanguageCode()
                         )
                     )
                 }
 
                 if let recommendation = draft.coachRecommendation {
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack(spacing: 8) {
-                            Label(
-                                recommendation.kind.coachDisplayName,
-                                systemImage: "sparkles"
-                            )
-                            .font(.subheadline.weight(.semibold))
-                            Spacer(minLength: 8)
-                            Text("\(Int((recommendation.confidence * 100).rounded()))%")
-                                .font(.caption.monospacedDigit().weight(.semibold))
-                        }
-                        Text(
-                            gymText(
-                                "Target RIR \(recommendation.targetRIR.lowerBound)–\(recommendation.targetRIR.upperBound)",
-                                "Цільовий RIR \(recommendation.targetRIR.lowerBound)–\(recommendation.targetRIR.upperBound)",
-                                "Целевой RIR \(recommendation.targetRIR.lowerBound)–\(recommendation.targetRIR.upperBound)",
-                                languageCode: gymCurrentLanguageCode()
-                            )
-                        )
-                        .font(.caption)
-                        .foregroundStyle(GymTheme.textSecondary)
-                        if !recommendation.reasons.isEmpty {
-                            Text(recommendation.reasons.map(\.coachDisplayName).joined(separator: " · "))
-                                .font(.caption)
-                                .foregroundStyle(GymTheme.textSecondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-                    .padding(10)
-                    .background(
-                        GymTheme.primary.opacity(0.07),
-                        in: RoundedRectangle(cornerRadius: 13)
+                    Text(
+                        "\(recommendation.kind.coachCompactDisplayName) · " +
+                            "RIR \(recommendation.targetRIR.lowerBound)–\(recommendation.targetRIR.upperBound)"
                     )
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(GymTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
                     .accessibilityElement(children: .combine)
                     .accessibilityLabel(
-                        "Smart Coach: \(recommendation.kind.coachDisplayName), " +
-                            "\(Int((recommendation.confidence * 100).rounded())) percent confidence, " +
+                        "Smart Coach: \(recommendation.kind.coachCompactDisplayName), " +
                             "RIR \(recommendation.targetRIR.lowerBound) to \(recommendation.targetRIR.upperBound)"
                     )
                 }
@@ -382,8 +341,7 @@ struct WorkoutDraftExerciseCard: View {
                     draft.sets.append(
                         WorkoutEditorSetDraft(
                             weight: source?.weight ?? lastWeight ?? 0,
-                            reps: source?.reps ?? 10,
-                            requiresWeightSelection: source?.requiresWeightSelection ?? false
+                            reps: source?.reps ?? 10
                         )
                     )
                 } label: {
@@ -395,13 +353,19 @@ struct WorkoutDraftExerciseCard: View {
         }
         .sheet(isPresented: $showingMedia) {
             ExerciseMediaSheet(
-                exerciseName: exerciseName,
+                rawExerciseName: rawExerciseName,
+                catalogKey: exerciseCatalogKey,
                 exerciseID: exerciseID,
-                ownerKey: exerciseMediaOwnerKey
+                ownerKey: exerciseMediaOwnerKey,
+                editable: ExerciseMediaPresentation.isEditable(on: .editor)
             )
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
         }
+    }
+
+    private var displayName: String {
+        gymExerciseName(rawExerciseName, catalogKey: exerciseCatalogKey)
     }
 
     private func binding(for id: UUID) -> Binding<WorkoutEditorSetDraft> {
@@ -418,7 +382,6 @@ struct WorkoutDraftExerciseCard: View {
         guard let index = draft.sets.firstIndex(where: { $0.id == id }), index > 0 else { return }
         draft.sets[index].weight = draft.sets[index - 1].weight
         draft.sets[index].reps = draft.sets[index - 1].reps
-        draft.sets[index].requiresWeightSelection = draft.sets[index - 1].requiresWeightSelection
     }
 
     private func duplicate(_ id: UUID) {
@@ -427,8 +390,7 @@ struct WorkoutDraftExerciseCard: View {
         draft.sets.insert(
             WorkoutEditorSetDraft(
                 weight: source.weight,
-                reps: source.reps,
-                requiresWeightSelection: source.requiresWeightSelection
+                reps: source.reps
             ),
             at: index + 1
         )
@@ -439,16 +401,57 @@ struct WorkoutDraftExerciseCard: View {
     }
 }
 
-private extension WorkoutRecommendationKind {
-    var coachDisplayName: String {
+extension WorkoutRecommendationKind {
+    var coachCompactDisplayName: String {
+        coachCompactDisplayName(languageCode: gymCurrentLanguageCode())
+    }
+
+    func coachCompactDisplayName(languageCode: String) -> String {
         switch self {
-        case .newExercise: "New exercise"
-        case .progressiveOverload: "Progressive overload"
-        case .holdAndBuild: "Hold and build"
-        case .deload: "Deload"
-        case .comeback: "Comeback"
-        case .plateauBreak: "Plateau break"
+        case .newExercise:
+            gymText("New", "Нова", "Новое", languageCode: languageCode)
+        case .progressiveOverload:
+            gymText("Progress", "Прогрес", "Прогресс", languageCode: languageCode)
+        case .holdAndBuild:
+            gymText("Hold", "Утримати", "Удержать", languageCode: languageCode)
+        case .deload:
+            gymText("Deload", "Делоад", "Делоад", languageCode: languageCode)
+        case .comeback:
+            gymText("Comeback", "Повернення", "Возврат", languageCode: languageCode)
+        case .plateauBreak:
+            gymText("Plateau", "Плато", "Плато", languageCode: languageCode)
         }
+    }
+}
+
+enum ExerciseMediaPresentation {
+    enum Surface: Equatable {
+        case library
+        case editor
+        case picker
+        case activeWorkout
+    }
+
+    static let thumbnailWidth: CGFloat = 76
+    static let thumbnailHeight: CGFloat = 64
+    static let thumbnailCornerRadius: CGFloat = 13
+    static let playOverlayDiameter: CGFloat = 28
+
+    static func showsPlayOverlay(
+        hasCustomImage: Bool,
+        bundledFrameCount: Int
+    ) -> Bool {
+        !hasCustomImage && bundledFrameCount > 1
+    }
+
+    static func isEditable(on surface: Surface) -> Bool {
+        surface == .library || surface == .editor
+    }
+
+    static func emptyPreviewLabel(editable: Bool, languageCode: String) -> String {
+        editable
+            ? gymText("Add image", "Додати фото", "Добавить фото", languageCode: languageCode)
+            : gymText("No preview", "Немає демонстрації", "Нет демонстрации", languageCode: languageCode)
     }
 }
 
@@ -519,9 +522,11 @@ struct SmartExerciseAlternativesSheet: View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 12) {
                     ExerciseMediaButton(
-                        exerciseName: gymExerciseName(alternative.exercise),
+                        rawExerciseName: alternative.exercise.name,
+                        catalogKey: alternative.exercise.catalogKey,
                         exerciseID: alternative.exercise.id,
-                        ownerKey: exerciseMediaOwnerKey
+                        ownerKey: exerciseMediaOwnerKey,
+                        editable: ExerciseMediaPresentation.isEditable(on: .picker)
                     )
                     VStack(alignment: .leading, spacing: 4) {
                         Text(gymExerciseName(alternative.exercise))
@@ -555,23 +560,29 @@ struct SmartExerciseAlternativesSheet: View {
 }
 
 struct ExerciseMediaButton: View {
-    let exerciseName: String
+    let rawExerciseName: String
+    let catalogKey: String?
     let exerciseID: UUID
     let ownerKey: String
+    var editable = true
     @State private var showingMedia = false
 
     var body: some View {
         ExerciseMediaThumbnail(
-            exerciseName: exerciseName,
+            rawExerciseName: rawExerciseName,
+            catalogKey: catalogKey,
             exerciseID: exerciseID,
             ownerKey: ownerKey,
+            editable: editable,
             action: { showingMedia = true }
         )
         .sheet(isPresented: $showingMedia) {
             ExerciseMediaSheet(
-                exerciseName: exerciseName,
+                rawExerciseName: rawExerciseName,
+                catalogKey: catalogKey,
                 exerciseID: exerciseID,
-                ownerKey: ownerKey
+                ownerKey: ownerKey,
+                editable: editable
             )
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
@@ -580,18 +591,29 @@ struct ExerciseMediaButton: View {
 }
 
 struct ExerciseMediaThumbnail: View {
-    let exerciseName: String
+    let rawExerciseName: String
+    let catalogKey: String?
     let exerciseID: UUID
     let ownerKey: String
+    var editable = true
     let action: () -> Void
-    @AppStorage("app-language") private var languageCode = AppLanguage.english.rawValue
-
-    private var image: UIImage? {
-        ExerciseMediaStore.customImage(ownerKey: ownerKey, exerciseID: exerciseID)
-            ?? ExerciseMediaStore.bundledImages(exerciseName: exerciseName).first
-    }
+    @AppStorage("app-language") private var languageCode = AppLanguage.firstRunDefault.rawValue
 
     var body: some View {
+        let customImage = ExerciseMediaStore.customImage(
+            ownerKey: ownerKey,
+            exerciseID: exerciseID
+        )
+        let bundledImages = ExerciseMediaStore.bundledImages(
+            catalogKey: catalogKey,
+            rawExerciseName: rawExerciseName
+        )
+        let image = customImage ?? bundledImages.first
+        let showsPlayOverlay = ExerciseMediaPresentation.showsPlayOverlay(
+            hasCustomImage: customImage != nil,
+            bundledFrameCount: bundledImages.count
+        )
+
         Button {
             action()
         } label: {
@@ -603,27 +625,43 @@ struct ExerciseMediaThumbnail: View {
                             .scaledToFill()
                     } else {
                         VStack(spacing: 3) {
-                            Image(systemName: "photo.badge.plus")
-                            Text(gymText("Add image", "Додати фото", "Добавить фото", languageCode: languageCode))
+                            Image(systemName: editable ? "photo.badge.plus" : "photo")
+                            Text(
+                                ExerciseMediaPresentation.emptyPreviewLabel(
+                                    editable: editable,
+                                    languageCode: languageCode
+                                )
+                            )
                                 .font(.caption2)
                         }
                         .foregroundStyle(GymTheme.textSecondary)
                     }
                 }
-                .frame(width: 76, height: 64)
+                .frame(
+                    width: ExerciseMediaPresentation.thumbnailWidth,
+                    height: ExerciseMediaPresentation.thumbnailHeight
+                )
                 .clipped()
 
-                if image != nil {
+                if showsPlayOverlay {
                     Image(systemName: "play.fill")
                         .font(.caption2.weight(.bold))
                         .foregroundStyle(.white)
-                        .padding(6)
+                        .frame(
+                            width: ExerciseMediaPresentation.playOverlayDiameter,
+                            height: ExerciseMediaPresentation.playOverlayDiameter
+                        )
                         .background(GymTheme.primary, in: Circle())
                         .padding(5)
                 }
             }
             .background(GymTheme.surfaceVariant)
-            .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+            .clipShape(
+                RoundedRectangle(
+                    cornerRadius: ExerciseMediaPresentation.thumbnailCornerRadius,
+                    style: .continuous
+                )
+            )
         }
         .buttonStyle(.plain)
         .accessibilityLabel(
@@ -641,9 +679,11 @@ struct ExerciseMediaSheet: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dismiss) private var dismiss
 
-    let exerciseName: String
+    let rawExerciseName: String
+    let catalogKey: String?
     let exerciseID: UUID
     let ownerKey: String
+    let editable: Bool
 
     @State private var selectedItem: PhotosPickerItem?
     @State private var customImage: UIImage?
@@ -651,13 +691,16 @@ struct ExerciseMediaSheet: View {
     @State private var errorMessage: String?
 
     private var bundledImages: [UIImage] {
-        ExerciseMediaStore.bundledImages(exerciseName: exerciseName)
+        ExerciseMediaStore.bundledImages(
+            catalogKey: catalogKey,
+            rawExerciseName: rawExerciseName
+        )
     }
 
     var body: some View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 16) {
-                Text(exerciseName)
+                Text(gymExerciseName(rawExerciseName, catalogKey: catalogKey))
                     .font(.title2.bold())
 
                 ZStack {
@@ -679,16 +722,22 @@ struct ExerciseMediaSheet: View {
                 .frame(maxWidth: .infinity)
                 .frame(height: 240)
                 .animation(reduceMotion ? nil : .easeInOut(duration: 0.35), value: frameIndex)
-
-                Text(
+                .accessibilityLabel(
                     gymText(
-                        "The preview alternates between the start and finish positions.",
-                        "Демонстрація почергово показує початкове та кінцеве положення.",
+                        "Exercise preview",
+                        "Демонстрація вправи",
+                        "Демонстрация упражнения",
                         languageCode: gymCurrentLanguageCode()
                     )
                 )
-                .font(.footnote)
-                .foregroundStyle(GymTheme.textSecondary)
+                .accessibilityHint(
+                    gymText(
+                        "Shows the start and finish positions.",
+                        "Показує початкове та кінцеве положення.",
+                        "Показывает начальное и конечное положение.",
+                        languageCode: gymCurrentLanguageCode()
+                    )
+                )
 
                 if let errorMessage {
                     Text(errorMessage)
@@ -696,35 +745,50 @@ struct ExerciseMediaSheet: View {
                         .foregroundStyle(.red)
                 }
 
-                PhotosPicker(selection: $selectedItem, matching: .images) {
-                    Label(
-                        gymText(
-                            "Choose your image",
-                            "Обрати своє фото",
-                            languageCode: gymCurrentLanguageCode()
-                        ),
-                        systemImage: "photo.on.rectangle.angled"
-                    )
-                    .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(GymPrimaryButtonStyle())
-
-                if customImage != nil, !bundledImages.isEmpty {
-                    Button {
-                        ExerciseMediaStore.deleteCustomImage(ownerKey: ownerKey, exerciseID: exerciseID)
-                        customImage = nil
-                    } label: {
+                if editable {
+                    PhotosPicker(selection: $selectedItem, matching: .images) {
                         Label(
                             gymText(
-                                "Restore built-in preview",
-                                "Повернути вбудовану демонстрацію",
+                                "Choose your image",
+                                "Обрати своє фото",
                                 languageCode: gymCurrentLanguageCode()
                             ),
-                            systemImage: "arrow.uturn.backward"
+                            systemImage: "photo.on.rectangle.angled"
                         )
                         .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(GymSecondaryButtonStyle())
+                    .buttonStyle(GymPrimaryButtonStyle())
+
+                    if customImage != nil, !bundledImages.isEmpty {
+                        Button {
+                            do {
+                                try ExerciseMediaStore.deleteCustomImage(
+                                    ownerKey: ownerKey,
+                                    exerciseID: exerciseID
+                                )
+                                customImage = nil
+                                errorMessage = nil
+                            } catch {
+                                errorMessage = gymText(
+                                    "Couldn’t remove this image. Try again.",
+                                    "Не вдалося видалити фото. Спробуйте ще раз.",
+                                    "Не удалось удалить фото. Попробуйте ещё раз.",
+                                    languageCode: gymCurrentLanguageCode()
+                                )
+                            }
+                        } label: {
+                            Label(
+                                gymText(
+                                    "Restore built-in preview",
+                                    "Повернути вбудовану демонстрацію",
+                                    languageCode: gymCurrentLanguageCode()
+                                ),
+                                systemImage: "arrow.uturn.backward"
+                            )
+                            .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(GymSecondaryButtonStyle())
+                    }
                 }
                 Spacer(minLength: 0)
             }
@@ -751,7 +815,7 @@ struct ExerciseMediaSheet: View {
             }
         }
         .onChange(of: selectedItem) { item in
-            guard let item else { return }
+            guard editable, let item else { return }
             Task {
                 do {
                     guard let data = try await item.loadTransferable(type: Data.self) else {
@@ -1812,9 +1876,11 @@ struct ExercisePickerSheet: View {
                         ForEach(filteredExercises) { exercise in
                             HStack(spacing: 12) {
                                 ExerciseMediaButton(
-                                    exerciseName: exercise.name,
+                                    rawExerciseName: exercise.name,
+                                    catalogKey: exercise.catalogKey,
                                     exerciseID: exercise.id,
-                                    ownerKey: exerciseMediaOwnerKey
+                                    ownerKey: exerciseMediaOwnerKey,
+                                    editable: ExerciseMediaPresentation.isEditable(on: .picker)
                                 )
                                 Button {
                                     onSelect(exercise)

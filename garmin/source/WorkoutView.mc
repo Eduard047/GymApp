@@ -6,7 +6,10 @@ using Toybox.WatchUi as Ui;
 
 class WorkoutView extends Ui.View {
     var selected = 0;
-    var page = 0;
+    // Page 7 is the compact, non-recording launch surface. Opening GymApp must
+    // never be interpreted as consent to start a FIT activity or contact a
+    // phone/cloud endpoint.
+    var page = 7;
     var pauseSelected = 0;
     var discardSelected = 0;
     var settingsSelected = 0;
@@ -17,52 +20,38 @@ class WorkoutView extends Ui.View {
     var savedSetFlashStartedAt = null;
     var savedSetNumber = 0;
     var lastSyncRequestAt = null;
-    var lastCloudSyncRequestAt = null;
-    var cloudAutoTimer;
-    var cloudAutoAttempts = 0;
-    var cloudAutoSyncActive = false;
     var screenWidth = 260;
     var screenHeight = 260;
 
     function initialize() {
         View.initialize();
         ticker = new Timer.Timer();
-        cloudAutoTimer = new Timer.Timer();
     }
 
     function onShow() {
         ticker.start(method(:tick), 1000, true);
-        if (!GymSession.recording && !GymSession.fitSaved) {
-            if (GymStore.sets.size() > 0) {
-                GymStore.markWorkoutResumed();
-            }
-            var started = GymSession.start();
-            if (started && GymStore.sets.size() > 0) {
-                // Sets are intentionally durable. A process restart starts a fresh FIT
-                // segment but never silently discards the unfinished workout.
-                GymStore.status = "RESUMED";
-            }
-        } else if (GymSession.recording && !GymSession.paused) {
-            GymSession.startSensors();
-        }
-        autoPromptWasActive = GymSession.autoLogPrompt;
+        page = 7;
+        selected = 0;
+        // Mailbox polling is intentionally retained while idle so a bound phone
+        // can deliver a plan. The launch path itself sends nothing and starts no
+        // recording, sensor, queue flush, or cloud operation.
         getApp().pollMailbox();
-        requestSyncNow();
-        flushPending();
-        cloudAutoAttempts = 0;
-        cloudAutoSyncActive = false;
-        scheduleCloudSyncOnOpen(2500);
     }
 
     function onHide() {
         ticker.stop();
-        cloudAutoTimer.stop();
-        GymSession.stopSensors();
+        if (GymSession.recording) {
+            GymSession.stopSensors();
+        }
         GymStore.save();
     }
 
     function tick() {
         getApp().pollMailbox();
+        if (page == 7 || !GymSession.recording) {
+            Ui.requestUpdate();
+            return;
+        }
         GymSession.tick();
         var rest = GymStore.restSeconds();
         if (GymStore.restStartedAt != null &&
@@ -143,50 +132,14 @@ class WorkoutView extends Ui.View {
     }
 
     function requestCloudSyncNow() {
-        lastCloudSyncRequestAt = System.getTimer();
-        cloudAutoSyncActive = false;
         GymStore.status = "CLOUD...";
         GymComm.requestCloudPlan(method(:onCloudPlanFetched));
         Ui.requestUpdate();
     }
 
-    function scheduleCloudSyncOnOpen(delayMs) {
-        if (!GymComm.hasCloudDeviceToken()) {
-            return;
-        }
-        cloudAutoTimer.stop();
-        cloudAutoTimer.start(method(:requestCloudSyncOnOpen), delayMs, false);
-    }
-
-    function requestCloudSyncOnOpen() {
-        if (!GymComm.hasCloudDeviceToken()) {
-            return;
-        }
-        var now = System.getTimer();
-        if (lastCloudSyncRequestAt != null) {
-            var sinceLastCloudRequest = GymStore.timerElapsedMs(lastCloudSyncRequestAt);
-            if (sinceLastCloudRequest < 8000l) {
-                scheduleCloudSyncOnOpen((8001l - sinceLastCloudRequest).toNumber());
-                return;
-            }
-        }
-        if (cloudAutoAttempts >= 4) {
-            return;
-        }
-        cloudAutoAttempts += 1;
-        cloudAutoSyncActive = true;
-        lastCloudSyncRequestAt = now;
-        if (cloudAutoAttempts == 1) {
-            GymStore.status = "CLOUD...";
-            Ui.requestUpdate();
-        }
-        GymComm.requestCloudPlan(method(:onCloudPlanFetched));
-    }
-
     function onCloudPlanFetched(ok, status, message) {
         if (ok && message == null) {
             GymStore.status = status;
-            cloudAutoSyncActive = false;
         } else if (ok && message != null) {
             try {
                 var applied = GymStore.applyCloudSync(message);
@@ -198,18 +151,11 @@ class WorkoutView extends Ui.View {
                 if (applied) {
                     GymComm.acknowledgeCloudPlan(message, method(:onCloudPlanAcknowledged));
                 }
-                cloudAutoSyncActive = false;
             } catch (e) {
                 GymStore.status = "CLOUD FAIL";
-                cloudAutoSyncActive = false;
             }
         } else {
-            if (cloudAutoSyncActive && cloudAutoAttempts < 4 && !status.equals("NO TOKEN")) {
-                scheduleCloudSyncOnOpen(8000);
-            } else {
-                GymStore.status = status;
-                cloudAutoSyncActive = false;
-            }
+            GymStore.status = status;
         }
         Ui.requestUpdate();
     }
@@ -217,9 +163,6 @@ class WorkoutView extends Ui.View {
     function onCloudPlanAcknowledged(ok) {
         if (!ok) {
             GymStore.status = "CLOUD RETRY";
-            if (cloudAutoAttempts < 4) {
-                scheduleCloudSyncOnOpen(8000);
-            }
         }
         Ui.requestUpdate();
     }
@@ -244,6 +187,58 @@ class WorkoutView extends Ui.View {
         // Transport completion is not a database acknowledgement. Keep the
         // item queued until the Android app replies with an explicit ack.
         GymStore.status = ok ? "WAITING ACK" : "OFFLINE";
+        Ui.requestUpdate();
+    }
+
+    function hasWorkoutToResume() {
+        return GymSession.recording || GymStore.hasUnfinishedWorkout();
+    }
+
+    function startOrResumeWorkout() {
+        if (page != 7 || GymSession.fitSaved) {
+            GymStore.status = "START FAIL";
+            Ui.requestUpdate();
+            return false;
+        }
+
+        var resuming = hasWorkoutToResume();
+        var started = false;
+        if (GymSession.recording) {
+            if (GymSession.paused) {
+                started = GymSession.resume();
+            } else {
+                // A still-running native session may survive a brief app hide. Do
+                // not create a second FIT session; re-enable sensors only after the
+                // athlete explicitly chooses Resume.
+                GymSession.startSensors();
+                started = true;
+            }
+        } else {
+            started = GymSession.start();
+        }
+        if (!started) {
+            Ui.requestUpdate();
+            return false;
+        }
+
+        if (resuming) {
+            GymStore.markWorkoutResumed();
+            GymStore.status = "RESUMED";
+        } else {
+            GymStore.status = "READY";
+        }
+        page = 0;
+        autoPromptWasActive = GymSession.autoLogPrompt;
+        Ui.requestUpdate();
+        return true;
+    }
+
+    function syncFromReady() {
+        requestSyncNow();
+        flushPending();
+        if (GymComm.hasCloudDeviceToken()) {
+            requestCloudSyncNow();
+        }
         Ui.requestUpdate();
     }
 
@@ -308,7 +303,9 @@ class WorkoutView extends Ui.View {
         dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_BLACK);
         dc.clear();
 
-        if (page == 0) {
+        if (page == 7) {
+            drawReady(dc, w, h);
+        } else if (page == 0) {
             drawDashboard(dc, w, h);
         } else if (page == 1) {
             drawEntry(dc, w, h);
@@ -330,6 +327,90 @@ class WorkoutView extends Ui.View {
         if (isUndoOverlayActive()) {
             drawSetSavedOverlay(dc, w, h);
         }
+    }
+
+    (:fullLegacyState)
+    function readyPlanText() {
+        if (GymStore.plan.size() == 0) {
+            return GymStore.tr("NO PLAN", "НЕМА ПЛАНУ", "НЕТ ПЛАНА");
+        }
+        return GymStore.tr("PLAN ", "ПЛАН ", "ПЛАН ") +
+            GymStore.plan.size().toString();
+    }
+
+    (:fullLegacyState)
+    function readyBindingText() {
+        return GymStore.hasAccountBinding() ?
+            GymStore.tr("PAIRED", "ПРИВ'ЯЗАНО", "СОПРЯЖЕНО") :
+            GymStore.tr("NOT PAIRED", "НЕ ПРИВ'ЯЗАНО", "НЕ СОПРЯЖЕНО");
+    }
+
+    function readyPrimaryText() {
+        return hasWorkoutToResume() ?
+            GymStore.tr("RESUME WORKOUT", "ПРОДОВЖИТИ", "ПРОДОЛЖИТЬ") :
+            GymStore.tr("START WORKOUT", "ПОЧАТИ ТРЕН.", "НАЧАТЬ ТРЕН.");
+    }
+
+    (:fullLegacyState)
+    function drawReady(dc, w, h) {
+        dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(w / 2, sy(h, 24), Gfx.FONT_TINY,
+            "GYMAPP", Gfx.TEXT_JUSTIFY_CENTER);
+
+        dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(w / 2, sy(h, 57), Gfx.FONT_XTINY,
+            fitTextWidth(dc, readyPlanText(), Gfx.FONT_XTINY, sr(w, h, 174)),
+            Gfx.TEXT_JUSTIFY_CENTER);
+        dc.setColor(GymStore.hasAccountBinding() ? Gfx.COLOR_GREEN :
+            Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(w / 2, sy(h, 79), Gfx.FONT_XTINY,
+            fitTextWidth(dc, readyBindingText(), Gfx.FONT_XTINY, sr(w, h, 174)),
+            Gfx.TEXT_JUSTIFY_CENTER);
+
+        drawReadyRow(dc, w, h, 0, 106, readyPrimaryText());
+        drawReadyRow(dc, w, h, 1, 151,
+            GymStore.tr("SYNC PLAN", "СИНХ. ПЛАН", "СИНХ. ПЛАН"));
+        drawReadyRow(dc, w, h, 2, 196,
+            GymStore.tr("SETTINGS", "НАЛАШТ.", "НАСТРОЙКИ"));
+    }
+
+    (:compactLegacyState)
+    function drawReady(dc, w, h) {
+        dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_BLACK);
+        dc.clear();
+        var action = readyPrimaryText();
+        if (selected == 1) {
+            action = GymStore.tr("SYNC", "СИНХ", "СИНХ");
+        } else if (selected == 2) {
+            action = GymStore.tr("SETTINGS", "НАЛАШТ.", "НАСТРОЙКИ");
+        }
+        dc.drawText(w / 2, h / 3, Gfx.FONT_XTINY,
+            GymStore.tr("GYMAPP READY", "GYMAPP ГОТОВ", "GYMAPP ГОТОВО"),
+            Gfx.TEXT_JUSTIFY_CENTER);
+        dc.drawText(w / 2, h / 2, Gfx.FONT_XTINY,
+            action, Gfx.TEXT_JUSTIFY_CENTER);
+    }
+
+    (:fullLegacyState)
+    function drawReadyRow(dc, w, h, index, baseY, label) {
+        var selectedRow = index == selected;
+        var actionColor = index == 0 ? Gfx.COLOR_GREEN : Gfx.COLOR_WHITE;
+        var left = sx(w, 47);
+        var top = sy(h, baseY);
+        var width = sr(w, h, 166);
+        var height = sr(w, h, 34);
+        var radius = sr(w, h, 9);
+        if (selectedRow) {
+            dc.setColor(actionColor, Gfx.COLOR_BLACK);
+            dc.fillRoundedRectangle(left, top, width, height, radius);
+            dc.setColor(Gfx.COLOR_BLACK, Gfx.COLOR_TRANSPARENT);
+        } else {
+            dc.setColor(actionColor, Gfx.COLOR_TRANSPARENT);
+            dc.drawRoundedRectangle(left, top, width, height, radius);
+        }
+        dc.drawText(w / 2, sy(h, baseY + 7), Gfx.FONT_XTINY,
+            fitTextWidth(dc, label, Gfx.FONT_XTINY, sr(w, h, 146)),
+            Gfx.TEXT_JUSTIFY_CENTER);
     }
 
     function drawDashboard(dc, w, h) {
@@ -611,7 +692,7 @@ class WorkoutView extends Ui.View {
     }
 
     function isUndoOverlayActive() {
-        return savedSetFlashStartedAt != null &&
+        return page != 7 && savedSetFlashStartedAt != null &&
             GymStore.timerElapsedMs(savedSetFlashStartedAt) <= GymStore.undoWindowMs &&
             GymStore.canUndoLastSet();
     }
@@ -922,15 +1003,8 @@ class WorkoutView extends Ui.View {
 
     (:compactLegacyState)
     function drawDebug(dc, w, h) {
-        dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
-        drawHeader(dc, w, h, GymStore.tr("STATUS", "СТАН", "СТАТУС"));
         dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, sy(h, 82), Gfx.FONT_XTINY,
-            GymSession.hr == null ? "-- BPM" : GymSession.hr.toString() + " BPM",
-            Gfx.TEXT_JUSTIFY_CENTER);
-        dc.drawText(w / 2, sy(h, 122), Gfx.FONT_XTINY,
-            fitText(effortLabel(GymSession.effortState), 10), Gfx.TEXT_JUSTIFY_CENTER);
-        dc.drawText(w / 2, sy(h, 162), Gfx.FONT_XTINY,
+        dc.drawText(w / 2, h / 2, Gfx.FONT_XTINY,
             fitText(GymStore.status, 10), Gfx.TEXT_JUSTIFY_CENTER);
     }
 
@@ -1116,6 +1190,7 @@ class WorkoutView extends Ui.View {
         dc.drawText(w / 2, sy(h, 34), Gfx.FONT_XTINY, label, Gfx.TEXT_JUSTIFY_CENTER);
     }
 
+    (:fullLegacyState)
     function drawPageDots(dc, w, h) {
         if (page == 2 || page == 3) {
             return;
@@ -1147,6 +1222,13 @@ class WorkoutView extends Ui.View {
                 dc.drawCircle(x, y, sr(w, h, 3));
             }
         }
+    }
+
+    (:compactLegacyState)
+    function drawPageDots(dc, w, h) {
+        // Compact products keep the same hardware-key navigation without the
+        // decorative page indicator. Omitting it preserves the product memory
+        // budget for the explicit Ready/Start state and workout safeguards.
     }
 
     function scale(w, h) {
@@ -1210,11 +1292,17 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
     }
 
     function hasPendingSetPrompt() {
-        return GymSession.autoLogPrompt;
+        return view.page != 7 && GymSession.autoLogPrompt;
+    }
+
+    function exitReady() {
+        System.exit();
     }
 
     function onSelect() {
-        if (view.isUndoOverlayActive()) {
+        if (view.page == 7) {
+            handleReadySelection();
+        } else if (view.isUndoOverlayActive()) {
             view.dismissSetSavedFlash();
         } else if (hasPendingSetPrompt()) {
             recordSet();
@@ -1238,6 +1326,11 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
     }
 
     function onNextPage() {
+        if (view.page == 7) {
+            view.selected = (view.selected + 1) % 3;
+            Ui.requestUpdate();
+            return true;
+        }
         if (view.isUndoOverlayActive()) {
             return true;
         }
@@ -1264,6 +1357,11 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
     }
 
     function onPreviousPage() {
+        if (view.page == 7) {
+            view.selected = (view.selected + 2) % 3;
+            Ui.requestUpdate();
+            return true;
+        }
         if (view.isUndoOverlayActive()) {
             return true;
         }
@@ -1289,7 +1387,11 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         return true;
     }
 
+    (:fullLegacyState)
     function onNextMode() {
+        if (view.page == 7) {
+            return onNextPage();
+        }
         if (view.isUndoOverlayActive()) {
             return true;
         }
@@ -1305,7 +1407,11 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         return true;
     }
 
+    (:fullLegacyState)
     function onPreviousMode() {
+        if (view.page == 7) {
+            return onPreviousPage();
+        }
         if (view.isUndoOverlayActive()) {
             return true;
         }
@@ -1322,6 +1428,11 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
     }
 
     function onMenu() {
+        if (view.page == 7) {
+            openReadySettings();
+            Ui.requestUpdate();
+            return true;
+        }
         if (view.isUndoOverlayActive()) {
             return true;
         }
@@ -1340,6 +1451,10 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
     function onBack() {
         // Back is an undo action only while the five-second confirmation is
         // visibly active. After it disappears, Back returns to navigation.
+        if (view.page == 7) {
+            exitReady();
+            return true;
+        }
         if (view.isUndoOverlayActive()) {
             undoLastSet();
             Ui.requestUpdate();
@@ -1367,6 +1482,11 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
             Ui.requestUpdate();
             return true;
         }
+        if (view.page == 5 && !GymSession.recording) {
+            view.page = 7;
+            Ui.requestUpdate();
+            return true;
+        }
         if (view.page == 1 || view.page == 4 || view.page == 5) {
             view.page = 0;
             Ui.requestUpdate();
@@ -1382,7 +1502,13 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         var coordinates = evt.getCoordinates();
         var x = coordinates[0];
         var y = coordinates[1];
-        if (view.isUndoOverlayActive()) {
+        if (view.page == 7) {
+            var readyRow = rowAt(y, 106, 45, 3);
+            if (readyRow >= 0) {
+                view.selected = readyRow;
+                handleReadySelection();
+            }
+        } else if (view.isUndoOverlayActive()) {
             if (y >= ((view.screenHeight * 62) / 100)) {
                 undoLastSet();
             } else {
@@ -1453,6 +1579,16 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
     (:fullLegacyState)
     function onSwipe(evt) {
         var direction = evt.getDirection();
+        if (view.page == 7) {
+            if (direction == Ui.SWIPE_UP) {
+                return onNextPage();
+            } else if (direction == Ui.SWIPE_DOWN) {
+                return onPreviousPage();
+            } else if (direction == Ui.SWIPE_RIGHT) {
+                return onBack();
+            }
+            return true;
+        }
         if (view.isUndoOverlayActive()) {
             // The platform Back gesture keeps its documented undo behavior. Other
             // swipes cannot mutate the obscured page or selected row.
@@ -1475,6 +1611,20 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
 
     function onKey(evt) {
         var key = evt.getKey();
+        if (view.page == 7) {
+            if (key == Ui.KEY_UP || key == Ui.KEY_LEFT) {
+                return onPreviousPage();
+            } else if (key == Ui.KEY_DOWN || key == Ui.KEY_RIGHT) {
+                return onNextPage();
+            } else if (key == Ui.KEY_ENTER || key == Ui.KEY_START) {
+                return onSelect();
+            } else if (key == Ui.KEY_ESC || key == Ui.KEY_LAP) {
+                return onBack();
+            } else if (key == Ui.KEY_MENU) {
+                return onMenu();
+            }
+            return true;
+        }
         if (view.isUndoOverlayActive()) {
             if (key == Ui.KEY_ESC || key == Ui.KEY_LAP) {
                 return onBack();
@@ -1541,6 +1691,21 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         } else {
             activate(1);
         }
+    }
+
+    function handleReadySelection() {
+        if (view.selected == 0) {
+            view.startOrResumeWorkout();
+        } else if (view.selected == 1) {
+            view.syncFromReady();
+        } else {
+            openReadySettings();
+        }
+    }
+
+    function openReadySettings() {
+        view.settingsSelected = 0;
+        view.page = 5;
     }
 
     function openPauseMenu() {

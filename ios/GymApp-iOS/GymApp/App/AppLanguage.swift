@@ -14,12 +14,43 @@ enum AppLanguage: String, CaseIterable, Identifiable {
         }
     }
     var locale: Locale { Locale(identifier: rawValue) }
+
+    static var firstRunDefault: AppLanguage {
+        firstRunDefault(preferredLanguages: Locale.preferredLanguages)
+    }
+
+    static func firstRunDefault(preferredLanguages: [String]) -> AppLanguage {
+        for identifier in preferredLanguages {
+            let code = Locale(identifier: identifier).language.languageCode?.identifier
+                .lowercased(with: Locale(identifier: "en_US_POSIX"))
+            if let code, let supported = AppLanguage(rawValue: code) {
+                return supported
+            }
+        }
+        return .english
+    }
+
+    static func resolved(
+        savedCode: String?,
+        preferredLanguages: [String]
+    ) -> AppLanguage {
+        if let savedCode, let saved = AppLanguage(rawValue: savedCode) {
+            return saved
+        }
+        return firstRunDefault(preferredLanguages: preferredLanguages)
+    }
 }
 
 private let gymAppLanguageDefaultsKey = "app-language"
 
-func gymCurrentLanguageCode() -> String {
-    UserDefaults.standard.string(forKey: gymAppLanguageDefaultsKey) ?? AppLanguage.english.rawValue
+func gymCurrentLanguageCode(
+    defaults: UserDefaults = .standard,
+    preferredLanguages: [String] = Locale.preferredLanguages
+) -> String {
+    AppLanguage.resolved(
+        savedCode: defaults.string(forKey: gymAppLanguageDefaultsKey),
+        preferredLanguages: preferredLanguages
+    ).rawValue
 }
 
 func gymText(_ english: String, _ ukrainian: String, languageCode: String) -> String {
@@ -448,6 +479,11 @@ func gymSafeEnglishErrorMessage(_ error: Error) -> String {
              .invalidPasswordReauthenticationNonce,
              .passwordReauthenticationRequired,
              .invalidDisplayName,
+             .duplicateLocalProfile,
+             .localProfileNotFound,
+             .localProfileLimitReached,
+             .secureSessionCleanupPending,
+             .accountDeletionCleanupPending,
              .malformedResponse,
              .callbackMissingSession,
              .callbackNotExpected,

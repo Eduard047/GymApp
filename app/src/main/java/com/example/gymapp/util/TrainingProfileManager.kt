@@ -59,6 +59,9 @@ class TrainingProfileManager(
     private val _profile = MutableStateFlow(TrainingProfile())
     val profile: StateFlow<TrainingProfile> = _profile.asStateFlow()
 
+    internal val activeBinding: String?
+        get() = synchronized(lock) { activeAccountKey }
+
     init {
         // The legacy file had no owner binding. Assigning it to whichever account logs in next
         // would expose another person's fitness settings, so it is deliberately discarded.
@@ -98,6 +101,40 @@ class TrainingProfileManager(
         }
     }
 
+    fun updateProfile(profile: TrainingProfile): Boolean {
+        return updateProfile(profile, expectedAccountBinding = null)
+    }
+
+    internal fun updateProfile(
+        profile: TrainingProfile,
+        expectedAccountBinding: String?
+    ): Boolean {
+        if (profile.workoutsPerWeek !in 2..6) return false
+        return synchronized(lock) {
+            if (expectedAccountBinding != null && activeAccountKey != expectedAccountBinding) {
+                return@synchronized false
+            }
+            updateProfileLocked(profile)
+        }
+    }
+
+    internal fun restoreProfileForBinding(
+        profile: TrainingProfile,
+        accountBinding: String
+    ): Boolean = synchronized(lock) {
+        if (profile.workoutsPerWeek !in 2..6 || !accountBinding.matches(ACCOUNT_KEY_PATTERN)) {
+            return@synchronized false
+        }
+        val saved = preferences.edit()
+            .putString(scopedKey(accountBinding, KEY_SPLIT), profile.split.name)
+            .putInt(scopedKey(accountBinding, KEY_WORKOUTS_PER_WEEK), profile.workoutsPerWeek)
+            .putString(scopedKey(accountBinding, KEY_GOAL), profile.goal.name)
+            .putString(scopedKey(accountBinding, KEY_CALORIE_MODE), profile.calorieMode.name)
+            .commit()
+        if (saved && activeAccountKey == accountBinding) _profile.value = profile
+        saved
+    }
+
     fun clearAccount(session: AccountSession): Boolean {
         return clearAccountByDatabaseName(session.databaseName())
     }
@@ -118,15 +155,35 @@ class TrainingProfileManager(
         }
     }
 
-    private fun updateProfileLocked(profile: TrainingProfile) {
-        val accountKey = activeAccountKey ?: return
-        preferences.edit()
+    private fun updateProfileLocked(profile: TrainingProfile): Boolean {
+        val accountKey = activeAccountKey ?: return false
+        val previousProfile = _profile.value
+        val saved = preferences.edit()
             .putString(scopedKey(accountKey, KEY_SPLIT), profile.split.name)
             .putInt(scopedKey(accountKey, KEY_WORKOUTS_PER_WEEK), profile.workoutsPerWeek)
             .putString(scopedKey(accountKey, KEY_GOAL), profile.goal.name)
             .putString(scopedKey(accountKey, KEY_CALORIE_MODE), profile.calorieMode.name)
-            .apply()
-        _profile.value = profile
+            .commit()
+        if (saved) {
+            _profile.value = profile
+        } else {
+            // commit() can expose its in-memory edits even when the disk write
+            // fails. Restore the last accepted snapshot before returning false.
+            preferences.edit()
+                .putString(scopedKey(accountKey, KEY_SPLIT), previousProfile.split.name)
+                .putInt(
+                    scopedKey(accountKey, KEY_WORKOUTS_PER_WEEK),
+                    previousProfile.workoutsPerWeek
+                )
+                .putString(scopedKey(accountKey, KEY_GOAL), previousProfile.goal.name)
+                .putString(
+                    scopedKey(accountKey, KEY_CALORIE_MODE),
+                    previousProfile.calorieMode.name
+                )
+                .commit()
+            _profile.value = previousProfile
+        }
+        return saved
     }
 
     private fun readProfile(accountKey: String): TrainingProfile {
@@ -136,10 +193,9 @@ class TrainingProfileManager(
                 scopedKey(accountKey, KEY_SPLIT),
                 TrainingSplit.UpperLower
             ),
-            workoutsPerWeek = preferences.getInt(
-                scopedKey(accountKey, KEY_WORKOUTS_PER_WEEK),
-                4
-            ).coerceIn(2, 6),
+            workoutsPerWeek = (preferences.all[
+                scopedKey(accountKey, KEY_WORKOUTS_PER_WEEK)
+            ] as? Int)?.takeIf { it in 2..6 } ?: 4,
             goal = preferences.enumValue(
                 scopedKey(accountKey, KEY_GOAL),
                 TrainingGoal.AestheticFatLoss
@@ -157,7 +213,10 @@ class TrainingProfileManager(
         key: String,
         fallback: T
     ): T {
-        val rawValue = getString(key, null) ?: return fallback
+        // SharedPreferences throws ClassCastException when a damaged entry has the
+        // wrong primitive type. Read through the untyped snapshot so corrupt local
+        // data stays fail-neutral and falls back to the canonical profile.
+        val rawValue = all[key] as? String ?: return fallback
         return enumValues<T>().firstOrNull { it.name == rawValue } ?: fallback
     }
 

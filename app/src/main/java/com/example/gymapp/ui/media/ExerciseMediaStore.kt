@@ -19,12 +19,30 @@ object ExerciseMediaStore {
     private val allowedTypes = setOf("image/jpeg", "image/png", "image/webp")
 
     fun bundledFramePaths(exerciseName: String): List<String> {
-        val key = BuiltInExerciseCatalog.inferKey(exerciseName) ?: return emptyList()
+        val key = bundledCatalogKey(exerciseName) ?: return emptyList()
         return listOf("exercise-media/${key}_0.jpg", "exercise-media/${key}_1.jpg")
+    }
+
+    internal fun bundledCatalogKey(exerciseName: String): String? {
+        BuiltInExerciseCatalog.inferKey(exerciseName)?.let { return it }
+        val normalized = exerciseName.trim().lowercase()
+        if (normalized.isEmpty() || normalized.length > 256) return null
+        return BuiltInExerciseCatalog.definitions.firstOrNull { definition ->
+            BuiltInExerciseCatalog.displayName(definition.nameEn, "ru")
+                .trim()
+                .lowercase() == normalized
+        }?.key
     }
 
     fun customFile(context: Context, ownerKey: String, exerciseId: Long): File =
         File(File(context.filesDir, "exercise-media/${ownerFingerprint(ownerKey)}"), "$exerciseId.jpg")
+
+    internal fun hasPotentialMedia(
+        context: Context,
+        ownerKey: String,
+        exerciseId: Long,
+        exerciseName: String
+    ): Boolean = customFile(context, ownerKey, exerciseId).isFile || bundledCatalogKey(exerciseName) != null
 
     fun loadCustom(
         context: Context,
@@ -110,8 +128,13 @@ object ExerciseMediaStore {
         check(temporary.renameTo(target)) { "save_failed" }
     }
 
-    fun deleteCustom(context: Context, ownerKey: String, exerciseId: Long) {
-        customFile(context, ownerKey, exerciseId).delete()
+    fun deleteCustom(context: Context, ownerKey: String, exerciseId: Long): Boolean =
+        deleteCustomFile(customFile(context, ownerKey, exerciseId))
+
+    internal fun deleteCustomFile(file: File): Boolean {
+        if (!file.exists()) return true
+        if (!file.isFile) return false
+        return file.delete() && !file.exists()
     }
 
     fun clearOwner(context: Context, ownerKey: String): Boolean =

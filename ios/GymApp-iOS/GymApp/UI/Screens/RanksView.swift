@@ -2,7 +2,7 @@ import SwiftUI
 
 struct RanksView: View {
     @ObservedObject var store: WorkoutStore
-    @AppStorage("app-language") private var languageCode = AppLanguage.english.rawValue
+    @AppStorage("app-language") private var languageCode = AppLanguage.firstRunDefault.rawValue
 
     private var totalXP: Int { store.syncProfileStats().xp }
     private var level: Int { RankCatalog.level(for: totalXP) }

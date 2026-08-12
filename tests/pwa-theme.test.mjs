@@ -51,9 +51,10 @@ function loadTheme({ stored = null, dark = false, storageThrows = false } = {}) 
   return { attributes, media, mediaListeners, storage, window, windowListeners };
 }
 
-test("theme preference validates storage and applies before the stylesheet", () => {
-  assert.ok(indexHtml.indexOf("theme.v56.js") < indexHtml.indexOf("styles.v69.css"));
-  assert.match(indexHtml, /id="app-theme-color" name="theme-color"/);
+test("legacy theme preference remains valid but the public landing uses its fixed stylesheet", () => {
+  assert.match(indexHtml, /retirement\.v1\.css/);
+  assert.match(indexHtml, /name="theme-color" content="#071526"/);
+  assert.doesNotMatch(indexHtml, /theme\.v56\.js|styles\.v70\.css/);
   assert.match(styles, /:root\[data-theme="dark"\]/);
   assert.doesNotMatch(styles, /@media \(prefers-color-scheme: dark\)/);
 

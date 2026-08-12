@@ -54,3 +54,34 @@ test("Android persisted-delete controls name the exact visible target", async ()
   assert.doesNotMatch(exerciseProgress, /R\.string\.cd_delete_history_set_named/);
   assert.doesNotMatch(workoutList, /R\.string\.cd_delete_workout_on/);
 });
+
+test("Android account actions stay on their exact account type", async () => {
+  const source = await readFile(
+    "app/src/main/java/com/example/gymapp/ui/screens/ProfileScreen.kt",
+    "utf8"
+  );
+  const start = source.indexOf("private fun LazyListScope.profileSettingsContent(");
+  const end = source.indexOf("private fun LocalProfileActionsCard(", start);
+  assert.ok(start >= 0 && end > start, "profile settings source section is missing");
+
+  const settings = source.slice(start, end);
+  const cloudBranch = settings.lastIndexOf("if (accountState.isCloudAccount) {");
+  const localBranch = settings.indexOf("    } else {", cloudBranch);
+  const cloudActions = settings.indexOf("CloudAccountActionsCard(", cloudBranch);
+  const localActions = settings.indexOf("LocalProfileActionsCard(", localBranch);
+
+  assert.ok(cloudBranch >= 0 && localBranch > cloudBranch, "account type split is missing");
+  assert.ok(
+    cloudActions > cloudBranch && cloudActions < localBranch,
+    "password and cloud-account deletion must be cloud-only"
+  );
+  assert.ok(
+    localActions > localBranch,
+    "local-profile deletion must be local-only"
+  );
+  assert.equal(
+    settings.indexOf("CloudAccountActionsCard(", localBranch),
+    -1,
+    "local profiles must never render cloud-account actions"
+  );
+});

@@ -199,25 +199,44 @@ class GymSession {
                 if (session.start()) {
                     recording = true;
                 } else {
-                    session.discard();
-                    session = null;
-                    gymKcalField = null;
-                    gymZoneField = null;
-                    recording = false;
-                    GymStore.status = "REC FAIL";
+                    failStartAndCleanup();
                 }
             } catch (ex) {
-                session = null;
-                gymKcalField = null;
-                gymZoneField = null;
-                recording = false;
-                GymStore.status = "REC FAIL";
+                failStartAndCleanup();
             }
+        } else {
+            failStartAndCleanup();
         }
-        // High-frequency sensor listeners are most portable after the activity
-        // recording session has been created (or definitively failed).
-        startSensors();
+        // A failed FIT start must remain fail-closed on the Ready screen. Do not
+        // leave motion or heart-rate listeners running when no authoritative
+        // activity recording exists.
+        if (recording) {
+            startSensors();
+        } else {
+            stopSensors();
+        }
         return recording;
+    }
+
+    static function failStartAndCleanup() {
+        var cleaned = session == null;
+        if (!cleaned) {
+            cleaned = discard();
+        }
+        fitCleanupPending = !cleaned && session != null;
+        if (!fitCleanupPending) {
+            session = null;
+            gymKcalField = null;
+            gymZoneField = null;
+        }
+        recording = false;
+        paused = false;
+        startedAt = 0;
+        pausedAt = 0;
+        elapsedSeconds = 0;
+        stopSensors();
+        GymStore.status = fitCleanupPending ? "FIT RETRY" : "REC FAIL";
+        return false;
     }
 
     static function pause() {

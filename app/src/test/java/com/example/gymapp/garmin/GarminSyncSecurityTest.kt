@@ -1228,14 +1228,23 @@ class GarminSyncSecurityTest {
     @Test
     fun outboundPlanRejectsValuesTheWatchCannotSafelyPersist() {
         val valid = NamedWorkoutSetDraft("Squat", 100.0, 5)
+        val bodyweight = NamedWorkoutSetDraft("Pull Up", 0.0, 8)
 
         assertEquals(listOf(valid), validatedGarminPlanOrNull(listOf(valid)))
+        assertEquals(listOf(bodyweight), validatedGarminPlanOrNull(listOf(bodyweight)))
         assertNull(
             validatedGarminPlanOrNull(
                 List(MAX_GARMIN_WORKOUT_SETS + 1) { valid }
             )
         )
         assertNull(validatedGarminPlanOrNull(listOf(valid.copy(weight = Double.NaN))))
+        assertNull(validatedGarminPlanOrNull(listOf(valid.copy(weight = Double.POSITIVE_INFINITY))))
+        assertNull(validatedGarminPlanOrNull(listOf(valid.copy(weight = -0.01))))
+        assertNull(
+            validatedGarminPlanOrNull(
+                listOf(valid.copy(weight = WorkoutDataLimits.MAX_WEIGHT + 0.01))
+            )
+        )
         assertNull(validatedGarminPlanOrNull(listOf(valid.copy(reps = 0))))
         assertNull(
             validatedGarminPlanOrNull(
@@ -1518,6 +1527,11 @@ class GarminSyncSecurityTest {
             "account_default"
         )
         val deletedDevicePlan = garminStorageKey("cached_plan", deletedBinding, device)
+        val deletedSubmission = garminStorageKey(
+            GARMIN_PLAN_SUBMISSION_STORAGE_PREFIX,
+            deletedBinding,
+            device
+        )
         val deletedPairing = garminStorageKey(
             "pairing_generation_v1",
             deletedTarget.key,
@@ -1535,6 +1549,11 @@ class GarminSyncSecurityTest {
         )
         val otherTrusted = garminStorageKey("trusted_device", otherBinding)
         val otherPlan = garminStorageKey("cached_plan", otherBinding, "account_default")
+        val otherSubmission = garminStorageKey(
+            GARMIN_PLAN_SUBMISSION_STORAGE_PREFIX,
+            otherBinding,
+            device
+        )
         val otherPairing = garminStorageKey(
             "pairing_generation_v1",
             otherTarget.key,
@@ -1545,11 +1564,13 @@ class GarminSyncSecurityTest {
             deletedTrusted to device,
             deletedDefaultPlan to "deleted default plan",
             deletedDevicePlan to "deleted device plan",
+            deletedSubmission to "deleted submission",
             deletedPairing to "deleted generation",
             deletedPendingPairing to "deleted pending generation",
             deletedCapability to true,
             otherTrusted to device,
             otherPlan to "other plan",
+            otherSubmission to "other submission",
             otherPairing to "other generation",
             "trusted_physical_device_v2" to device,
             globalRevision to 99L,
@@ -1568,6 +1589,7 @@ class GarminSyncSecurityTest {
                     deletedTrusted,
                     deletedDefaultPlan,
                     deletedDevicePlan,
+                    deletedSubmission,
                     deletedPairing,
                     deletedPendingPairing,
                     deletedCapability,
@@ -1579,6 +1601,7 @@ class GarminSyncSecurityTest {
         )
         assertFalse(otherTrusted in plan.preferenceKeys)
         assertFalse(otherPlan in plan.preferenceKeys)
+        assertFalse(otherSubmission in plan.preferenceKeys)
         assertFalse(otherPairing in plan.preferenceKeys)
         assertFalse("trusted_physical_device_v2" in plan.preferenceKeys)
         assertFalse(globalRevision in plan.preferenceKeys)

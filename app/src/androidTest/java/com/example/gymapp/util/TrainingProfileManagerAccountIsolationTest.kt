@@ -136,6 +136,45 @@ class TrainingProfileManagerAccountIsolationTest {
         }
     }
 
+    @Test
+    fun corruptScopedValuesFailBackToCanonicalDefaultsWithoutChangingValidAccounts() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        clearPreferences(context)
+        val corruptAccount = AccountSession.Local("Corrupt")
+        val validAccount = AccountSession.Local("Valid")
+        val corruptKey = requireNotNull(trainingProfileAccountKey(corruptAccount))
+        context.getSharedPreferences(SCOPED_PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putInt("$corruptKey:split", 7)
+            .putInt("$corruptKey:workouts_per_week", 999)
+            .putString("$corruptKey:goal", "Unknown")
+            .putBoolean("$corruptKey:calorie_mode", true)
+            .commit()
+        val manager = TrainingProfileManager(context)
+
+        try {
+            manager.switchAccount(corruptAccount)
+            assertEquals(TrainingProfile(), manager.profile.value)
+            manager.switchAccount(validAccount)
+            assertTrue(
+                manager.updateProfile(
+                    TrainingProfile(
+                        split = TrainingSplit.FullBody,
+                        workoutsPerWeek = 3,
+                        goal = TrainingGoal.Balanced,
+                        calorieMode = CalorieMode.Maintenance
+                    )
+                )
+            )
+            manager.switchAccount(corruptAccount)
+            assertEquals(TrainingProfile(), manager.profile.value)
+            manager.switchAccount(validAccount)
+            assertEquals(TrainingSplit.FullBody, manager.profile.value.split)
+        } finally {
+            clearPreferences(context)
+        }
+    }
+
     private fun cloudSession(
         userId: String,
         accessToken: String,

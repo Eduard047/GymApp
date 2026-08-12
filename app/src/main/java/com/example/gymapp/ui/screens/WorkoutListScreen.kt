@@ -14,6 +14,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.Alignment
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -24,13 +25,18 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -52,11 +58,15 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.shape.RoundedCornerShape
 import com.example.gymapp.R
 import com.example.gymapp.data.repository.DashboardStats
+import com.example.gymapp.data.repository.FirstWorkoutEffort
+import com.example.gymapp.data.repository.SmartWorkoutFocus
+import com.example.gymapp.data.repository.WeeklyTrainingDecision
 import com.example.gymapp.ui.components.ActivityHeatmapCard
 import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.EmptyStatePanel
@@ -71,8 +81,10 @@ import com.example.gymapp.ui.components.SoloProgressHero
 import com.example.gymapp.ui.theme.GymSpacing
 import com.example.gymapp.ui.viewmodel.MuscleMapPeriod
 import com.example.gymapp.ui.viewmodel.TrainingRecommendationUiModel
+import com.example.gymapp.ui.viewmodel.TodayPlanUiModel
 import com.example.gymapp.ui.viewmodel.WorkoutListUiState
 import com.example.gymapp.util.DateTimeUtils
+import com.example.gymapp.util.TrainingGoal
 import kotlinx.coroutines.launch
 
 @Composable
@@ -85,6 +97,10 @@ fun WorkoutListScreen(
     onMuscleMapPeriodSelected: (MuscleMapPeriod) -> Unit,
     onMuscleSelected: (String) -> Unit,
     onAddWorkout: () -> Unit,
+    onStartPlan: (String) -> Unit,
+    onOpenPlan: (String) -> Unit,
+    onStartFirstWorkout: (TrainingGoal, Int, FirstWorkoutEffort) -> Unit,
+    onSkipFirstWorkout: () -> Unit,
     activeWorkoutProgress: Pair<Int, Int>? = null,
     onDiscardActiveWorkout: () -> Unit = {},
     modifier: Modifier = Modifier
@@ -107,8 +123,7 @@ fun WorkoutListScreen(
     ) {
         if (showTopControls) {
             ScreenHeader(
-                title = stringResource(R.string.title_workouts),
-                supporting = stringResource(R.string.workouts_screen_subtitle),
+                title = stringResource(R.string.today_title),
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = GymSpacing.ScreenHorizontal)
@@ -127,26 +142,38 @@ fun WorkoutListScreen(
             ),
             verticalArrangement = Arrangement.spacedBy(GymSpacing.Medium)
         ) {
-            item {
-                FocusLens(
-                    stats = uiState.dashboardStats,
-                    hasActiveWorkout = activeWorkoutProgress != null,
-                    onStartWorkout = onAddWorkout
-                )
-            }
-
-            activeWorkoutProgress?.let { progress ->
+            if (uiState.showFirstWorkoutActivation && activeWorkoutProgress == null) {
                 item {
-                    ActiveWorkoutDraftCard(
-                        completedSetCount = progress.first,
-                        totalSetCount = progress.second,
-                        onContinue = onAddWorkout,
-                        onDiscard = { showActiveWorkoutDiscardConfirmation = true }
+                    FirstWorkoutActivationCard(
+                        onStart = onStartFirstWorkout,
+                        onSkip = onSkipFirstWorkout
                     )
+                }
+            } else {
+                item {
+                    FocusLens(
+                        todayPlan = uiState.todayPlan,
+                        hasActiveWorkout = activeWorkoutProgress != null,
+                        onStartWorkout = onAddWorkout,
+                        onStartPlan = onStartPlan,
+                        onOpenPlan = onOpenPlan
+                    )
+                }
+
+                activeWorkoutProgress?.let { progress ->
+                    item {
+                        ActiveWorkoutDraftCard(
+                            completedSetCount = progress.first,
+                            totalSetCount = progress.second,
+                            onContinue = onAddWorkout,
+                            onDiscard = { showActiveWorkoutDiscardConfirmation = true }
+                        )
+                    }
                 }
             }
 
-            item {
+            if (uiState.hasAnyWorkout) {
+                item {
                 MonthSwitcher(
                     monthLabel = uiState.monthLabel,
                     isCurrentMonth = uiState.monthOffset == 0,
@@ -154,7 +181,7 @@ fun WorkoutListScreen(
                     onCurrentMonth = onCurrentMonth,
                     onNextMonth = onNextMonth
                 )
-            }
+                }
 
             item {
                 WorkoutSectionSwitcher(
@@ -195,16 +222,15 @@ fun WorkoutListScreen(
                 WorkoutSectionHeader(sessionCount = uiState.sessions.size)
             }
 
-            if (uiState.sessions.isEmpty()) {
+                if (uiState.sessions.isEmpty()) {
                 item {
                     EmptyStatePanel(
                         title = stringResource(R.string.empty_workouts),
-                        supporting = stringResource(R.string.dashboard_subtitle),
                         actionLabel = stringResource(R.string.action_add_workout),
                         onAction = onAddWorkout
                     )
                 }
-            } else {
+                } else {
                 items(
                     items = uiState.sessions,
                     key = { it.session.id }
@@ -285,6 +311,7 @@ fun WorkoutListScreen(
                             }
                         }
                     }
+                }
                 }
             }
         }
@@ -490,9 +517,11 @@ private fun WorkoutSectionHeader(
 
 @Composable
 private fun FocusLens(
-    stats: DashboardStats,
+    todayPlan: TodayPlanUiModel?,
     hasActiveWorkout: Boolean,
     onStartWorkout: () -> Unit,
+    onStartPlan: (String) -> Unit,
+    onOpenPlan: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val darkTheme = isSystemInDarkTheme()
@@ -515,7 +544,7 @@ private fun FocusLens(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(min = if (hasActiveWorkout) 250.dp else 330.dp)
+            .heightIn(min = if (hasActiveWorkout) 220.dp else 280.dp)
             .clip(lensShape)
             .background(lensBrush)
             .padding(24.dp),
@@ -523,56 +552,72 @@ private fun FocusLens(
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
-                text = stringResource(R.string.focus_lens_eyebrow),
-                style = MaterialTheme.typography.labelMedium,
-                color = Color.White.copy(alpha = 0.74f),
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                text = stringResource(R.string.focus_lens_title),
+                text = when {
+                    hasActiveWorkout -> stringResource(R.string.action_continue_workout)
+                    todayPlan?.rhythm?.decision == WeeklyTrainingDecision.Rest ->
+                        stringResource(R.string.today_rest)
+                    todayPlan != null -> stringResource(todayPlan.focus.labelResource())
+                    else -> stringResource(R.string.action_start_workout)
+                },
                 style = MaterialTheme.typography.headlineLarge,
                 color = Color.White,
                 fontWeight = FontWeight.Bold
             )
-            Text(
-                text = stringResource(
-                    if (hasActiveWorkout) {
-                        R.string.focus_lens_active_workout_supporting
-                    } else {
-                        R.string.focus_lens_supporting
-                    }
-                ),
-                style = MaterialTheme.typography.bodyMedium,
-                color = Color.White.copy(alpha = 0.84f)
-            )
+            if (hasActiveWorkout) {
+                Text(
+                    text = stringResource(R.string.focus_lens_active_workout_supporting),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.White.copy(alpha = 0.84f)
+                )
+            }
         }
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
+        if (todayPlan != null) {
             FocusLensMetric(
-                label = stringResource(R.string.focus_lens_month_workouts),
-                value = stats.workoutCount.toString(),
-                modifier = Modifier.weight(1f)
-            )
-            FocusLensMetric(
-                label = stringResource(R.string.focus_lens_week_streak),
-                value = stats.weeklyStreakWeeks.toString(),
-                modifier = Modifier.weight(1f)
-            )
-            FocusLensMetric(
-                label = stringResource(R.string.focus_lens_volume),
-                value = stringResource(R.string.kpi_volume_value, stats.totalVolume),
-                modifier = Modifier.weight(1f)
+                label = stringResource(R.string.today_weekly_rhythm),
+                value = stringResource(
+                    R.string.today_weekly_value,
+                    todayPlan.rhythm.completedTrainingDays,
+                    todayPlan.rhythm.targetTrainingDays
+                )
             )
         }
 
         Spacer(modifier = Modifier.weight(1f))
 
-        if (!hasActiveWorkout) {
+        if (!hasActiveWorkout && todayPlan?.rhythm?.decision == WeeklyTrainingDecision.Rest) {
+            todayPlan.trainAnywayLaunchToken?.let { token ->
+                Button(
+                    onClick = { onStartPlan(token) },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp),
+                    shape = RoundedCornerShape(50),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.White.copy(alpha = 0.2f),
+                        contentColor = Color.White
+                    ),
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.34f))
+                ) {
+                    Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(stringResource(R.string.today_train_anyway))
+                }
+                OutlinedButton(
+                    onClick = { onOpenPlan(token) },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.46f))
+                ) {
+                    Icon(imageVector = Icons.Default.Edit, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(stringResource(R.string.today_edit_plan))
+                }
+            }
+        } else if (!hasActiveWorkout) {
+            val launchToken = todayPlan?.recommendedLaunchToken
             Button(
-                onClick = onStartWorkout,
+                onClick = {
+                    if (launchToken != null) onStartPlan(launchToken) else onStartWorkout()
+                },
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = 54.dp),
@@ -583,17 +628,201 @@ private fun FocusLens(
                 ),
                 border = BorderStroke(1.dp, Color.White.copy(alpha = 0.34f))
             ) {
-                Icon(imageVector = Icons.Default.Add, contentDescription = null)
+                Icon(
+                    imageVector = if (launchToken == null) Icons.Default.Add else Icons.Default.PlayArrow,
+                    contentDescription = null
+                )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = stringResource(R.string.action_start_workout),
+                    text = stringResource(
+                        if (launchToken == null) {
+                            R.string.action_start_workout
+                        } else {
+                            R.string.today_start_plan
+                        }
+                    ),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     fontWeight = FontWeight.Bold
                 )
             }
+            launchToken?.let { token ->
+                OutlinedButton(
+                    onClick = { onOpenPlan(token) },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.46f))
+                ) {
+                    Icon(imageVector = Icons.Default.Edit, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(stringResource(R.string.today_edit_plan))
+                }
+            }
         }
     }
+}
+
+@Composable
+private fun FirstWorkoutActivationCard(
+    onStart: (TrainingGoal, Int, FirstWorkoutEffort) -> Unit,
+    onSkip: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var goal by rememberSaveable { mutableStateOf(TrainingGoal.AestheticFatLoss) }
+    var days by rememberSaveable { mutableStateOf(4) }
+    var effort by rememberSaveable { mutableStateOf(FirstWorkoutEffort.Standard) }
+    val darkTheme = isSystemInDarkTheme()
+    val brush = if (darkTheme) {
+        Brush.linearGradient(listOf(Color(0xFF124A96), Color(0xFF176FC5), Color(0xFF164F9B)))
+    } else {
+        Brush.linearGradient(listOf(Color(0xFF1B71D8), Color(0xFF3295F1), Color(0xFF2467CD)))
+    }
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(44.dp, 76.dp, 60.dp, 32.dp))
+            .background(brush)
+            .padding(24.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        ActivationChoiceRow(
+            label = stringResource(R.string.activation_goal),
+            options = TrainingGoal.entries.map { value -> value to stringResource(value.labelResource()) },
+            selected = goal,
+            onSelected = { goal = it },
+            columns = 2
+        )
+        ActivationChoiceRow(
+            label = stringResource(R.string.activation_days),
+            options = (2..6).map { value -> value to value.toString() },
+            selected = days,
+            onSelected = { days = it }
+        )
+        ActivationChoiceRow(
+            label = stringResource(R.string.activation_effort),
+            options = listOf(
+                FirstWorkoutEffort.Recovery to stringResource(R.string.smart_effort_recovery),
+                FirstWorkoutEffort.Standard to stringResource(R.string.smart_effort_standard),
+                FirstWorkoutEffort.Hard to stringResource(R.string.smart_effort_hard)
+            ),
+            selected = effort,
+            onSelected = { effort = it }
+        )
+        Button(
+            onClick = { onStart(goal, days, effort) },
+            modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Color.White.copy(alpha = 0.2f),
+                contentColor = Color.White
+            ),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.34f))
+        ) {
+            Text(stringResource(R.string.activation_start_plan), fontWeight = FontWeight.Bold)
+        }
+        TextButton(onClick = onSkip, modifier = Modifier.fillMaxWidth()) {
+            Text(stringResource(R.string.activation_skip), color = Color.White)
+        }
+    }
+}
+
+@Composable
+private fun <T> ActivationChoiceRow(
+    label: String,
+    options: List<Pair<T, String>>,
+    selected: T,
+    onSelected: (T) -> Unit,
+    columns: Int = options.size
+) {
+    require(columns > 0)
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            color = Color.White.copy(alpha = 0.84f)
+        )
+        if (columns == 2) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                options.chunked(columns).forEach { optionRow ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        optionRow.forEach { (value, optionLabel) ->
+                            val isSelected = value == selected
+                            Surface(
+                                onClick = { onSelected(value) },
+                                modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                                color = if (isSelected) Color(0xFFE2FAF4) else Color.Transparent,
+                                contentColor = if (isSelected) Color(0xFF102849) else Color.White,
+                                shape = RoundedCornerShape(50),
+                                border = BorderStroke(
+                                    1.dp,
+                                    if (isSelected) Color.Transparent else {
+                                        Color.White.copy(alpha = 0.46f)
+                                    }
+                                )
+                            ) {
+                                Box(
+                                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = optionLabel,
+                                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                                        maxLines = 2,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        textAlign = TextAlign.Center
+                                    )
+                                }
+                            }
+                        }
+                        repeat(columns - optionRow.size) {
+                            Spacer(modifier = Modifier.weight(1f))
+                        }
+                    }
+                }
+            }
+        } else {
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(options.size) { index ->
+                    val (value, optionLabel) = options[index]
+                    FilterChip(
+                        selected = value == selected,
+                        onClick = { onSelected(value) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            containerColor = Color.Transparent,
+                            labelColor = Color.White,
+                            selectedContainerColor = Color(0xFFE2FAF4),
+                            selectedLabelColor = Color(0xFF102849)
+                        ),
+                        label = {
+                            Text(
+                                text = optionLabel,
+                                maxLines = 1,
+                                style = MaterialTheme.typography.labelMedium
+                            )
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun SmartWorkoutFocus.labelResource(): Int = when (this) {
+    SmartWorkoutFocus.Upper -> R.string.smart_focus_upper
+    SmartWorkoutFocus.Lower -> R.string.smart_focus_lower
+    SmartWorkoutFocus.Push -> R.string.smart_focus_push
+    SmartWorkoutFocus.Pull -> R.string.smart_focus_pull
+    SmartWorkoutFocus.Legs -> R.string.smart_focus_legs
+    SmartWorkoutFocus.FullBody -> R.string.smart_focus_full_body
+}
+
+private fun TrainingGoal.labelResource(): Int = when (this) {
+    TrainingGoal.AestheticFatLoss -> R.string.training_goal_aesthetic_fat_loss
+    TrainingGoal.MuscleGain -> R.string.training_goal_muscle_gain
+    TrainingGoal.Strength -> R.string.training_goal_strength
+    TrainingGoal.Balanced -> R.string.training_goal_balanced
 }
 
 @Composable

@@ -214,7 +214,6 @@ fun ExerciseProgressScreen(
                         SectionTitle(
                             eyebrow = stringResource(R.string.progress_recent_sessions_title),
                             title = stringResource(R.string.progress_history_title),
-                            supporting = stringResource(R.string.progress_recent_sessions_subtitle),
                             modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
                         )
                     }

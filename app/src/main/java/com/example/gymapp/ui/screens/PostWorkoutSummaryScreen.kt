@@ -30,10 +30,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
 import com.example.gymapp.data.repository.BadgeRarity
+import com.example.gymapp.data.repository.WorkoutFeedback
 import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.EmptyStatePanel
 import com.example.gymapp.ui.components.ExerciseMediaPreview
 import com.example.gymapp.ui.components.HeroPanel
+import com.example.gymapp.ui.components.GymSegmentItem
+import com.example.gymapp.ui.components.GymSegmentedControl
 import com.example.gymapp.ui.components.InfoPill
 import com.example.gymapp.ui.components.MetricTile
 import com.example.gymapp.ui.components.SectionTitle
@@ -53,6 +56,7 @@ fun PostWorkoutSummaryScreen(
     exerciseMediaOwnerKey: String,
     onViewWorkout: () -> Unit,
     onDone: () -> Unit,
+    onFeedbackSelected: (WorkoutFeedback) -> Unit,
     modifier: Modifier = Modifier
 ) {
     when {
@@ -94,6 +98,13 @@ fun PostWorkoutSummaryScreen(
                     SummaryMetrics(uiState = uiState)
                 }
 
+                item {
+                    WorkoutFeedbackCard(
+                        selected = uiState.feedback,
+                        onSelected = onFeedbackSelected
+                    )
+                }
+
                 uiState.workoutComparison?.let { comparison ->
                     item {
                         WorkoutComparisonCard(comparison = comparison)
@@ -124,16 +135,14 @@ fun PostWorkoutSummaryScreen(
                 item {
                     SectionTitle(
                         eyebrow = stringResource(R.string.post_workout_rewards_eyebrow),
-                        title = stringResource(R.string.post_workout_rewards_title),
-                        supporting = stringResource(R.string.post_workout_rewards_supporting)
+                        title = stringResource(R.string.post_workout_rewards_title)
                     )
                 }
 
                 if (uiState.completedMissions.isEmpty() && uiState.newBadges.isEmpty()) {
                     item {
                         EmptyStatePanel(
-                            title = stringResource(R.string.post_workout_no_unlocks_title),
-                            supporting = stringResource(R.string.post_workout_no_unlocks_supporting)
+                            title = stringResource(R.string.post_workout_no_unlocks_title)
                         )
                     }
                 }
@@ -175,6 +184,42 @@ fun PostWorkoutSummaryScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun WorkoutFeedbackCard(
+    selected: WorkoutFeedback?,
+    onSelected: (WorkoutFeedback) -> Unit
+) {
+    AppPanel(modifier = Modifier.fillMaxWidth(), highlighted = selected != null) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.workout_feedback_title),
+                style = MaterialTheme.typography.titleMedium
+            )
+            GymSegmentedControl(
+                items = listOf(
+                    GymSegmentItem<WorkoutFeedback?>(
+                        WorkoutFeedback.Easy,
+                        stringResource(R.string.workout_feedback_easy)
+                    ),
+                    GymSegmentItem<WorkoutFeedback?>(
+                        WorkoutFeedback.Normal,
+                        stringResource(R.string.workout_feedback_normal)
+                    ),
+                    GymSegmentItem<WorkoutFeedback?>(
+                        WorkoutFeedback.Hard,
+                        stringResource(R.string.workout_feedback_hard)
+                    )
+                ),
+                selected = selected,
+                onSelected = { value -> value?.let(onSelected) }
+            )
         }
     }
 }
@@ -237,8 +282,11 @@ private fun HeroCard(uiState: PostWorkoutSummaryUiState) {
                     onHero = true
                 )
                 MetricTile(
-                    label = stringResource(R.string.post_workout_metric_streak),
-                    value = stringResource(R.string.post_workout_metric_streak_value, uiState.streakDays),
+                    label = stringResource(R.string.solo_streak_label),
+                    value = stringResource(
+                        R.string.solo_streak_weekly_value,
+                        uiState.weeklyStreakWeeks
+                    ),
                     modifier = Modifier.weight(1f),
                     onHero = true
                 )

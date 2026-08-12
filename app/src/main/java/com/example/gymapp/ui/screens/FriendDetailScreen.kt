@@ -82,8 +82,7 @@ internal fun FriendDetailScreen(
         item {
             Column(verticalArrangement = Arrangement.spacedBy(GymSpacing.Medium)) {
                 ScreenHeader(
-                    title = friend.displayName,
-                    supporting = stringResource(R.string.friends_integrity_notice)
+                    title = friend.displayName
                 )
                 if (friend.statsAvailable) {
                     MetricStrip(

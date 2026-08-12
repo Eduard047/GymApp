@@ -8,6 +8,7 @@ import com.example.gymapp.data.repository.SharedWorkoutExercise
 import com.example.gymapp.data.repository.SharedWorkoutLink
 import com.example.gymapp.data.repository.SharedWorkoutPlan
 import com.example.gymapp.data.repository.SharedWorkoutSet
+import com.example.gymapp.data.repository.WorkoutDataLimits
 import com.example.gymapp.navigation.shouldConsumeAcceptedSocialWorkout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -17,6 +18,13 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AddWorkoutDraftShareTest {
+    @Test
+    fun lateGarminResultCannotAcknowledgeAnEditedOrClearedDraft() {
+        assertTrue(watchPlanSyncResultIsCurrent(capturedGeneration = 7L, currentGeneration = 7L))
+        assertFalse(watchPlanSyncResultIsCurrent(capturedGeneration = 7L, currentGeneration = 8L))
+        assertFalse(watchPlanSyncResultIsCurrent(capturedGeneration = 8L, currentGeneration = 7L))
+    }
+
     @Test
     fun directInviteDraftUsesExactlyTheExistingPortableWorkoutPlan() {
         val drafts = listOf(
@@ -108,7 +116,7 @@ class AddWorkoutDraftShareTest {
                 ExerciseInputState(
                     draftId = 3L,
                     exerciseId = 3L,
-                    sets = listOf(SetInputState(weight = "", reps = "12"))
+                    sets = listOf(SetInputState(weight = "0", reps = "12"))
                 )
             ),
             exercises = listOf(
@@ -141,6 +149,18 @@ class AddWorkoutDraftShareTest {
                     ExerciseInputState(
                         draftId = 1L,
                         exerciseId = 2L,
+                        sets = listOf(SetInputState(weight = "", reps = "8"))
+                    )
+                ),
+                exercises = exercises
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            buildSharedWorkoutDraftUrl(
+                drafts = listOf(
+                    ExerciseInputState(
+                        draftId = 1L,
+                        exerciseId = 2L,
                         sets = listOf(SetInputState(weight = "80", reps = ""))
                     )
                 ),
@@ -159,6 +179,33 @@ class AddWorkoutDraftShareTest {
                 exercises = exercises
             )
         }
+    }
+
+    @Test
+    fun smartCoachNullableLoadIsShownAndSharedAsExplicitZero() {
+        assertEquals("0", smartWorkoutWeightInput(null))
+        assertEquals("0", smartWorkoutWeightInput(0.0))
+        assertThrows(IllegalArgumentException::class.java) {
+            smartWorkoutWeightInput(Double.NaN)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            smartWorkoutWeightInput(-0.01)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            smartWorkoutWeightInput(WorkoutDataLimits.MAX_WEIGHT + 0.01)
+        }
+
+        val plan = buildSharedWorkoutDraftPlan(
+            drafts = listOf(
+                ExerciseInputState(
+                    draftId = 1L,
+                    exerciseId = 2L,
+                    sets = listOf(SetInputState(weight = smartWorkoutWeightInput(null), reps = "12"))
+                )
+            ),
+            exercises = listOf(ExerciseEntity(id = 2L, name = "Pull Up"))
+        )
+        assertEquals(0.0, plan.exercises.single().sets.single().weight, 0.0)
     }
 
     @Test

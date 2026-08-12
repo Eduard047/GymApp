@@ -62,6 +62,30 @@ class StringResourceParityTest {
             "Название на английском, украинском или русском",
             russian["exercise_search_placeholder"]
         )
+        assertEquals(
+            "Display name must be 2–32 characters and use letters, numbers, spaces, dot, dash or underscore.",
+            english["auth_error_local_profile_contract"]
+        )
+        assertEquals(
+            "Ім’я має містити 2–32 символи: літери, цифри, пробіли, крапку, дефіс або підкреслення.",
+            ukrainian["auth_error_local_profile_contract"]
+        )
+        assertEquals(
+            "Имя должно содержать 2–32 символа: буквы, цифры, пробелы, точку, дефис или подчеркивание.",
+            russian["auth_error_local_profile_contract"]
+        )
+        assertEquals(
+            "Workout data is handled under the Privacy Policy.",
+            english["auth_legal_consequence"]
+        )
+        assertEquals(
+            "Дані тренувань обробляються відповідно до Політики конфіденційності.",
+            ukrainian["auth_legal_consequence"]
+        )
+        assertEquals(
+            "Данные тренировок обрабатываются согласно Политике конфиденциальности.",
+            russian["auth_legal_consequence"]
+        )
 
         val expectedRussian = mapOf(
             "auth_new_password_requirements" to
@@ -69,7 +93,7 @@ class StringResourceParityTest {
             "activity_heatmap_legend" to
                 "Цвет показывает дневной объём тренировок за этот месяц: вес × повторения. Чем темнее, тем меньше объём; чем ярче оранжевый, тем больше.",
             "smart_kind_hold_and_build" to
-                "План прогрессии: сохрани вес и добавляй повторения перед следующим увеличением.",
+                "Удержать",
             "smart_reason_calorie_deficit" to
                 "При дефиците калорий прогрессия осторожнее, чтобы сохранить восстановление.",
             "smart_reason_upper_lower" to

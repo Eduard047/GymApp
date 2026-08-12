@@ -3,7 +3,7 @@ import SwiftUI
 @MainActor
 public struct AuthView: View {
     @ObservedObject private var authService: AuthService
-    @AppStorage("app-language") private var languageCode = AppLanguage.english.rawValue
+    @AppStorage("app-language") private var languageCode = AppLanguage.firstRunDefault.rawValue
 
     @State private var mode: AuthMode = .signIn
     @State private var email = ""
@@ -45,12 +45,6 @@ public struct AuthView: View {
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
-        .overlay(alignment: .topTrailing) {
-            AppLanguageMenu()
-                .padding(.top, 8)
-                .padding(.trailing, 16)
-                .accessibilitySortPriority(2)
-        }
         .onChange(of: mode) { _ in
             localMessage = nil
             authService.message = nil
@@ -60,36 +54,48 @@ public struct AuthView: View {
 
     private var brandHeader: some View {
         GymHeroPanel {
-            HStack(alignment: .center, spacing: 16) {
-                GymBrandMark(size: 72)
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .center, spacing: 16) {
+                    GymBrandMark(size: 72)
+                    brandTitle
+                    Spacer(minLength: 4)
+                    heroLanguageMenu
+                }
 
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("GymApp")
-                        .font(.largeTitle.bold())
-                        .accessibilityAddTraits(.isHeader)
-                    Text("Build strength with focus and consistency.")
-                        .font(.subheadline)
-                        .foregroundStyle(Color.white.opacity(0.84))
-                        .fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(alignment: .center) {
+                        GymBrandMark(size: 56)
+                        Spacer(minLength: 12)
+                        heroLanguageMenu
+                    }
+                    brandTitle
                 }
             }
         }
+    }
+
+    private var brandTitle: some View {
+        Text("GymApp")
+            .font(.largeTitle.bold())
+            .accessibilityAddTraits(.isHeader)
+    }
+
+    private var heroLanguageMenu: some View {
+        AppLanguageMenu(onHero: true)
+            .accessibilitySortPriority(2)
     }
 
     private var authPanel: some View {
         GymPanel(highlighted: true) {
             VStack(alignment: .leading, spacing: 16) {
                 GymSectionTitle(
-                    eyebrow: "Secure account",
                     title: authService.pendingConfirmationEmail == nil
                         ? (mode == .signIn ? "Welcome back" : "Create account")
                         : (authService.pendingConfirmationEmailWasSent
                             ? "Check your email"
                             : "Confirm your email first, then sign in."),
                     supporting: authService.pendingConfirmationEmail == nil
-                        ? (mode == .signIn
-                            ? "Sign in to keep workouts synchronized across your devices."
-                            : "Create a cloud account, then confirm your email to start syncing.")
+                        ? nil
                         : (authService.pendingConfirmationEmailWasSent
                             ? "We sent a confirmation link to the address below. Open the newest email from GymApp and tap “Confirm email”. Then return to GymApp and sign in."
                             : "Confirm your email first, then sign in.")
@@ -134,7 +140,8 @@ public struct AuthView: View {
                         )
                     }
 
-                    if mode == .signUp {
+                    if mode == .signUp,
+                       focusedField == .password || focusedField == .repeatedPassword {
                         Text("Use at least 12 characters (up to 72 UTF-8 bytes) with lowercase and uppercase Latin letters, a number, and a supported symbol such as !, @, #, or $.")
                             .font(.caption)
                             .foregroundStyle(GymTheme.textSecondary)
@@ -188,11 +195,6 @@ public struct AuthView: View {
                 }
                 .buttonStyle(GymSecondaryButtonStyle())
                 .disabled(authService.isLoading)
-
-                Text("Offline workouts stay on this device until you export them. You can switch to a cloud account later.")
-                    .font(.caption)
-                    .foregroundStyle(GymTheme.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -241,9 +243,6 @@ public struct AuthView: View {
                 .onSubmit { focusedField = .password }
                 .gymTextFieldChrome()
                 .accessibilityLabel("Display name")
-            Text("2–32 characters: letters, numbers, spaces, dot, dash or underscore.")
-                .font(.caption)
-                .foregroundStyle(GymTheme.textSecondary)
         }
     }
 
@@ -309,12 +308,6 @@ public struct AuthView: View {
             .font(.subheadline.weight(.semibold))
             .disabled(authService.isLoading)
             .frame(maxWidth: .infinity, alignment: .center)
-        } else {
-            Text("After creating the account, we will show where the confirmation email was sent.")
-                .font(.caption)
-                .foregroundStyle(GymTheme.textSecondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: .infinity)
         }
     }
 
@@ -394,26 +387,21 @@ public struct AuthView: View {
     }
 
     private var legalLinks: some View {
-        GymPanel(contentPadding: EdgeInsets(top: 13, leading: 16, bottom: 13, trailing: 16)) {
-            VStack(spacing: 9) {
-                Text("By using GymApp, you agree that workout data is handled as described in the privacy policy.")
-                    .font(.caption)
+        GymPanel {
+            VStack(spacing: 14) {
+                Text("Workout data is handled under the Privacy Policy.")
+                    .font(.footnote)
                     .foregroundStyle(GymTheme.textSecondary)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity)
 
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 22) {
-                        privacyLink
-                        supportLink
-                    }
-                    VStack(spacing: 10) {
-                        privacyLink
-                        supportLink
-                    }
+                HStack(spacing: 28) {
+                    privacyLink
+                    supportLink
                 }
-                .font(.subheadline.weight(.semibold))
             }
+            .font(.subheadline.weight(.semibold))
             .frame(maxWidth: .infinity)
         }
     }
@@ -435,41 +423,74 @@ public struct AuthView: View {
     private var offlineSheet: some View {
         GymBackground {
             ScrollView {
-                VStack(spacing: 16) {
-                    GymHeroPanel {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Label("Offline mode", systemImage: "iphone")
-                                .font(.title2.bold())
-                                .accessibilityAddTraits(.isHeader)
-                            Text("Create a local profile without signing in. Protected cloud progress and multi-device sync will remain unavailable.")
-                                .font(.subheadline)
-                                .foregroundStyle(Color.white.opacity(0.84))
-                                .fixedSize(horizontal: false, vertical: true)
+                GymPanel(highlighted: true) {
+                    VStack(alignment: .leading, spacing: 14) {
+                        Text(AuthCompactCopy.offlineTitle(languageCode: languageCode))
+                            .font(.title2.bold())
+                            .accessibilityAddTraits(.isHeader)
+
+                        Text(AuthCompactCopy.offlineConsequence(languageCode: languageCode))
+                            .font(.subheadline)
+                            .foregroundStyle(GymTheme.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        Text(AuthCompactCopy.profileName(languageCode: languageCode))
+                            .font(.subheadline.weight(.semibold))
+                        TextField(
+                            AuthCompactCopy.localPlaceholder,
+                            text: $offlineDisplayName
+                        )
+                        .textContentType(.nickname)
+                        .submitLabel(.done)
+                        .gymTextFieldChrome()
+                        .onSubmit(continueOffline)
+
+                        if let offlineMessage {
+                            GymStatusBanner(message: offlineMessage, isError: true)
                         }
-                    }
 
-                    GymPanel(highlighted: true) {
-                        VStack(alignment: .leading, spacing: 14) {
-                            fieldLabel("Display name")
-                            TextField("Local Athlete", text: $offlineDisplayName)
-                                .textContentType(.nickname)
-                                .submitLabel(.done)
-                                .gymTextFieldChrome()
-                                .onSubmit(continueOffline)
+                        Button(action: continueOffline) {
+                            Text(AuthCompactCopy.continueOffline(languageCode: languageCode))
+                        }
+                        .buttonStyle(GymPrimaryButtonStyle())
 
-                            if let offlineMessage {
-                                GymStatusBanner(message: offlineMessage, isError: true)
+                        Button(AuthCompactCopy.cancel(languageCode: languageCode)) {
+                            showOfflineSheet = false
+                        }
+                        .buttonStyle(GymSecondaryButtonStyle())
+
+                        if !authService.savedLocalProfiles.isEmpty {
+                            Divider()
+                                .overlay(GymTheme.outline.opacity(0.5))
+
+                            Text(AuthCompactCopy.savedProfiles(languageCode: languageCode))
+                                .font(.subheadline.weight(.semibold))
+
+                            ForEach(authService.savedLocalProfiles) { profile in
+                                Button {
+                                    resumeOfflineProfile(profile.id)
+                                } label: {
+                                    HStack(spacing: 10) {
+                                        Image(systemName: "person.crop.circle")
+                                            .accessibilityHidden(true)
+                                        Text(profile.displayName)
+                                            .lineLimit(1)
+                                        Spacer(minLength: 8)
+                                        Image(systemName: "chevron.right")
+                                            .font(.caption.weight(.semibold))
+                                            .accessibilityHidden(true)
+                                    }
+                                }
+                                .buttonStyle(GymSecondaryButtonStyle())
+                                .accessibilityHint(
+                                    gymText(
+                                        "Opens this saved offline profile",
+                                        "Відкриває цей збережений офлайн-профіль",
+                                        "Открывает этот сохранённый офлайн-профиль",
+                                        languageCode: languageCode
+                                    )
+                                )
                             }
-
-                            Button(action: continueOffline) {
-                                Text("Start offline")
-                            }
-                            .buttonStyle(GymPrimaryButtonStyle())
-
-                            Button("Cancel") {
-                                showOfflineSheet = false
-                            }
-                            .buttonStyle(GymSecondaryButtonStyle())
                         }
                     }
                 }
@@ -520,6 +541,18 @@ public struct AuthView: View {
             try authService.continueOffline(displayName: offlineDisplayName)
             offlineMessage = nil
             showOfflineSheet = false
+        } catch AuthServiceError.duplicateLocalProfile {
+            offlineMessage = AuthCompactCopy.duplicateProfile(languageCode: languageCode)
+        } catch {
+            offlineMessage = gymErrorMessage(error)
+        }
+    }
+
+    private func resumeOfflineProfile(_ profileID: String) {
+        do {
+            try authService.continueOffline(profileID: profileID)
+            offlineMessage = nil
+            showOfflineSheet = false
         } catch {
             offlineMessage = gymErrorMessage(error)
         }
@@ -555,6 +588,48 @@ public struct AuthView: View {
 
     private func validPassword(_ value: String) -> Bool {
         GymPasswordPolicy.accepts(value)
+    }
+}
+
+enum AuthCompactCopy {
+    static let localPlaceholder = "Local"
+
+    static func offlineTitle(languageCode: String) -> String {
+        gymText("Offline profile", "Офлайн-профіль", "Офлайн-профиль", languageCode: languageCode)
+    }
+
+    static func offlineConsequence(languageCode: String) -> String {
+        gymText(
+            "Workouts stay only on this device until you export them; cloud sync and recovery are unavailable.",
+            "Тренування зберігаються лише на цьому пристрої, доки ти їх не експортуєш; хмарна синхронізація й відновлення недоступні.",
+            "Тренировки хранятся только на этом устройстве, пока ты их не экспортируешь; облачная синхронизация и восстановление недоступны.",
+            languageCode: languageCode
+        )
+    }
+
+    static func profileName(languageCode: String) -> String {
+        gymText("Profile name", "Ім’я профілю", "Имя профиля", languageCode: languageCode)
+    }
+
+    static func continueOffline(languageCode: String) -> String {
+        gymText("Continue offline", "Продовжити офлайн", "Продолжить офлайн", languageCode: languageCode)
+    }
+
+    static func cancel(languageCode: String) -> String {
+        gymText("Cancel", "Скасувати", "Отмена", languageCode: languageCode)
+    }
+
+    static func savedProfiles(languageCode: String) -> String {
+        gymText("Saved profiles", "Збережені профілі", "Сохранённые профили", languageCode: languageCode)
+    }
+
+    static func duplicateProfile(languageCode: String) -> String {
+        gymText(
+            "A saved profile already uses this name.",
+            "Збережений профіль уже має таке ім’я.",
+            "Сохранённый профиль уже использует это имя.",
+            languageCode: languageCode
+        )
     }
 }
 

@@ -777,8 +777,7 @@ test("Garmin preserves active evidence, suspended rest, and prompts across UI tr
   assert.match(saveAndExit, /GymSession\.autoLogPrompt \|\| GymSession\.activeSetSeen/);
   const delegate = section(view, "class WorkoutDelegate", "function handleSelect()");
   const pending = section(delegate, "function hasPendingSetPrompt()", "function onSelect()");
-  assert.match(pending, /return GymSession\.autoLogPrompt/);
-  assert.doesNotMatch(pending, /view\.page/);
+  assert.match(pending, /return view\.page != 7 && GymSession\.autoLogPrompt/);
   const select = section(delegate, "function onSelect()", "function onNextPage()");
   assert.ok(
     select.indexOf("hasPendingSetPrompt()") < select.indexOf("view.page == 3"),
@@ -1302,7 +1301,12 @@ test("Garmin atomically resumes bounded interval timelines without mixing segmen
   assert.match(load, /activeWorkoutSnapshotMatchesBindings\(savedActiveWorkout\)/);
   assert.match(load, /restoreActiveWorkoutSnapshot\(savedActiveWorkout\)/);
   const onShow = section(view, "function onShow()", "function onHide()");
-  assert.match(onShow, /!GymSession\.recording[\s\S]*GymStore\.sets\.size\(\) > 0[\s\S]*GymStore\.markWorkoutResumed\(\)[\s\S]*GymSession\.start\(\)/);
+  const explicitStart = section(view, "function startOrResumeWorkout()", "function syncFromReady()");
+  assert.match(onShow, /page = 7/);
+  assert.doesNotMatch(onShow, /GymSession\.(?:start|resume|startSensors)\(/);
+  assert.match(explicitStart, /hasWorkoutToResume\(\)/);
+  assert.match(explicitStart, /started = GymSession\.start\(\)/);
+  assert.match(explicitStart, /if \(resuming\)[\s\S]*GymStore\.markWorkoutResumed\(\)[\s\S]*"RESUMED"/);
   const markResumed = section(store, "static function markWorkoutResumed()", "static function clearActiveWorkout()");
   assert.match(markResumed, /sets\.size\(\) > 0 && !activeWorkoutTimelineValid/);
 

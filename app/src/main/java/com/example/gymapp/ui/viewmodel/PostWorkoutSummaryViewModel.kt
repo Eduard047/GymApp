@@ -18,15 +18,20 @@ import com.example.gymapp.data.repository.RANK_DEFINITIONS
 import com.example.gymapp.data.repository.estimatedLoad
 import com.example.gymapp.data.repository.muscleContributionsForExercise
 import com.example.gymapp.data.repository.toManualContributionMap
+import com.example.gymapp.data.repository.WorkoutFeedback
+import com.example.gymapp.data.repository.WeeklyStreakCalculator
 import com.example.gymapp.garmin.WorkoutComparison
 import com.example.gymapp.garmin.buildWorkoutComparisonForSession
 import com.example.gymapp.garmin.isWorkoutEarlier
 import com.example.gymapp.garmin.toExerciseHistoryEntries
 import com.example.gymapp.util.RussianText
+import com.example.gymapp.util.TrainingGuidanceManager
+import com.example.gymapp.util.TrainingProfileManager
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneId
 import java.util.Locale
@@ -83,6 +88,7 @@ data class PostWorkoutSummaryUiState(
     val levelProgress: Float = 0f,
     val leveledUp: Boolean = false,
     val streakDays: Int = 0,
+    val weeklyStreakWeeks: Int = 0,
     val longestStreakDays: Int = 0,
     val streakExtended: Boolean = false,
     val activeToday: Boolean = false,
@@ -94,6 +100,7 @@ data class PostWorkoutSummaryUiState(
     val muscles: List<PostWorkoutMuscleUiState> = emptyList(),
     val personalRecords: List<PostWorkoutPrUiState> = emptyList(),
     val workoutComparison: WorkoutComparison? = null,
+    val feedback: WorkoutFeedback? = null,
     val completedMissions: List<CompletedMissionUiState> = emptyList(),
     val newBadges: List<NewBadgeUiState> = emptyList()
 )
@@ -101,6 +108,11 @@ data class PostWorkoutSummaryUiState(
 private data class MutableSessionMuscleStats(
     var load: Double = 0.0,
     val setIds: MutableSet<Long> = linkedSetOf()
+)
+
+private data class PostWorkoutExperienceState(
+    val feedbackBySession: Map<Long, com.example.gymapp.data.repository.WorkoutFeedbackRecord>,
+    val targetWorkoutsPerWeek: Int
 )
 
 internal data class PostWorkoutAchievementTranslation(
@@ -129,13 +141,13 @@ internal val POST_WORKOUT_ACHIEVEMENT_UK = mapOf(
         "Центуріон", "Заверши сто тренувань.", "Центуріон"
     ),
     "streak_7" to PostWorkoutAchievementTranslation(
-        "Серія на сім днів", "Підтримуй серію протягом семи днів.", "Імпульс"
+        "Ритм двох тижнів", "Виконуй тижневу ціль два тижні поспіль.", "Імпульс"
     ),
     "streak_14" to PostWorkoutAchievementTranslation(
-        "Серія на чотирнадцять днів", "Підтримуй серію протягом чотирнадцяти днів.", "Стан потоку"
+        "Ритм чотирьох тижнів", "Виконуй тижневу ціль чотири тижні поспіль.", "Стан потоку"
     ),
     "streak_30" to PostWorkoutAchievementTranslation(
-        "Серія на тридцять днів", "Підтримуй серію протягом тридцяти днів.", "Незламний"
+        "Ритм восьми тижнів", "Виконуй тижневу ціль вісім тижнів поспіль.", "Незламний"
     ),
     "volume_10k" to PostWorkoutAchievementTranslation(
         "Десять тисяч обсягу", "Накопич загальний обсяг 10 000.", "Творець обсягу"
@@ -149,17 +161,35 @@ internal val POST_WORKOUT_ACHIEVEMENT_UK = mapOf(
 )
 
 class PostWorkoutSummaryViewModel(
-    repository: GymRepository,
-    private val sessionId: Long
+    private val repository: GymRepository,
+    private val sessionId: Long,
+    private val trainingGuidanceManager: TrainingGuidanceManager,
+    trainingProfileManager: TrainingProfileManager
 ) : ViewModel() {
+    private val accountBinding = trainingGuidanceManager.activeBinding
     private val zoneId = ZoneId.systemDefault()
+    private val sessions = repository.observeSessions().stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = emptyList()
+    )
+    private val experience = combine(
+        trainingGuidanceManager.feedback,
+        trainingProfileManager.profile
+    ) { feedbackBySession, profile ->
+        PostWorkoutExperienceState(
+            feedbackBySession = feedbackBySession,
+            targetWorkoutsPerWeek = profile.workoutsPerWeek.coerceIn(2, 6)
+        )
+    }
 
     val uiState: StateFlow<PostWorkoutSummaryUiState> = combine(
         repository.observeSessionDetails(sessionId),
-        repository.observeSessions(),
+        sessions,
         repository.observeAllExerciseHistory(),
-        repository.observeExerciseMuscleMappings()
-    ) { sessionDetails, sessions, exerciseHistory, muscleMappings ->
+        repository.observeExerciseMuscleMappings(),
+        experience
+    ) { sessionDetails, sessions, exerciseHistory, muscleMappings, experience ->
         if (sessionDetails == null) {
             PostWorkoutSummaryUiState(
                 isLoading = false,
@@ -189,10 +219,18 @@ class PostWorkoutSummaryViewModel(
             val afterSnapshot = GamificationEngine.buildSnapshot(
                 sessions = sessionsThroughCurrent,
                 nowMillis = anchorTime,
-                zoneId = zoneId
+                zoneId = zoneId,
+                targetWorkoutsPerWeek = experience.targetWorkoutsPerWeek
             )
             val beforeSnapshot = GamificationEngine.buildSnapshot(
                 sessions = previousSessions,
+                nowMillis = anchorTime,
+                zoneId = zoneId,
+                targetWorkoutsPerWeek = experience.targetWorkoutsPerWeek
+            )
+            val weeklyStreakWeeks = WeeklyStreakCalculator.current(
+                sessionTimestamps = sessionsThroughCurrent.map { it.session.date },
+                targetWorkoutsPerWeek = experience.targetWorkoutsPerWeek,
                 nowMillis = anchorTime,
                 zoneId = zoneId
             )
@@ -263,6 +301,7 @@ class PostWorkoutSummaryViewModel(
                 levelProgress = afterSnapshot.progression.levelProgress.toFloat(),
                 leveledUp = afterSnapshot.progression.level > beforeSnapshot.progression.level,
                 streakDays = afterSnapshot.streak.currentDays,
+                weeklyStreakWeeks = weeklyStreakWeeks,
                 longestStreakDays = afterSnapshot.streak.longestDays,
                 streakExtended = afterSnapshot.streak.currentDays > beforeSnapshot.streak.currentDays,
                 activeToday = afterSnapshot.streak.activeToday,
@@ -274,6 +313,9 @@ class PostWorkoutSummaryViewModel(
                 muscles = muscles,
                 personalRecords = personalRecords,
                 workoutComparison = workoutComparison,
+                feedback = experience.feedbackBySession[sessionId]
+                    ?.takeIf { it.sessionStartedAtMillis == sessionDetails.session.date }
+                    ?.feedback,
                 completedMissions = completedMissions,
                 newBadges = newBadges
             )
@@ -283,6 +325,23 @@ class PostWorkoutSummaryViewModel(
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = PostWorkoutSummaryUiState(sessionId = sessionId)
     )
+
+    fun selectFeedback(feedback: WorkoutFeedback) {
+        viewModelScope.launch {
+            val details = repository.getWorkoutTemplate(sessionId) ?: return@launch
+            val ownedSessions = sessions.value.associate { summary ->
+                summary.session.id to summary.session.date
+            }
+            if (ownedSessions[sessionId] != details.session.date) return@launch
+            trainingGuidanceManager.saveFeedback(
+                sessionId = sessionId,
+                sessionStartedAtMillis = details.session.date,
+                feedback = feedback,
+                ownedSessions = ownedSessions,
+                expectedAccountBinding = accountBinding ?: return@launch
+            )
+        }
+    }
 
     private fun completedMissionDiff(
         before: AdaptiveMissionBoard,
@@ -433,11 +492,18 @@ class PostWorkoutSummaryViewModel(
     }
 
     companion object {
-        fun factory(repository: GymRepository, sessionId: Long): ViewModelProvider.Factory = viewModelFactory {
+        fun factory(
+            repository: GymRepository,
+            sessionId: Long,
+            trainingGuidanceManager: TrainingGuidanceManager,
+            trainingProfileManager: TrainingProfileManager
+        ): ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 PostWorkoutSummaryViewModel(
                     repository = repository,
-                    sessionId = sessionId
+                    sessionId = sessionId,
+                    trainingGuidanceManager = trainingGuidanceManager,
+                    trainingProfileManager = trainingProfileManager
                 )
             }
         }

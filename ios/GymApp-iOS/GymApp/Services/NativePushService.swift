@@ -2673,8 +2673,7 @@ final class NativePushManager: ObservableObject {
     ) -> NativePushLocalNotification {
         let copy = Self.copy(
             for: event.eventType,
-            languageCode: defaults.string(forKey: "app-language")
-                ?? AppLanguage.english.rawValue
+            languageCode: gymCurrentLanguageCode(defaults: defaults)
         )
         let identity = "\(binding.bindingID.uuidString.lowercased()):\(event.deliveryKey)"
         let digest = SHA256.hash(data: Data(identity.utf8))

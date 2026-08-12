@@ -1067,6 +1067,295 @@ final class CoreParityTests: XCTestCase {
         )
     }
 
+    func testCompactAuthContractHasExactLanguageAndOfflineCopy() {
+        XCTAssertEqual(AppLanguage.allCases.map(\.rawValue), ["en", "uk", "ru"])
+        XCTAssertEqual(AppLanguage.allCases.map(\.title), ["EN", "UK", "RU"])
+
+        XCTAssertEqual(AuthCompactCopy.offlineTitle(languageCode: "en"), "Offline profile")
+        XCTAssertEqual(AuthCompactCopy.offlineTitle(languageCode: "uk"), "Офлайн-профіль")
+        XCTAssertEqual(AuthCompactCopy.offlineTitle(languageCode: "ru"), "Офлайн-профиль")
+        XCTAssertEqual(
+            AuthCompactCopy.offlineConsequence(languageCode: "en"),
+            "Workouts stay only on this device until you export them; cloud sync and recovery are unavailable."
+        )
+        XCTAssertEqual(
+            AuthCompactCopy.offlineConsequence(languageCode: "uk"),
+            "Тренування зберігаються лише на цьому пристрої, доки ти їх не експортуєш; хмарна синхронізація й відновлення недоступні."
+        )
+        XCTAssertEqual(
+            AuthCompactCopy.offlineConsequence(languageCode: "ru"),
+            "Тренировки хранятся только на этом устройстве, пока ты их не экспортируешь; облачная синхронизация и восстановление недоступны."
+        )
+        XCTAssertEqual(AuthCompactCopy.profileName(languageCode: "en"), "Profile name")
+        XCTAssertEqual(AuthCompactCopy.continueOffline(languageCode: "uk"), "Продовжити офлайн")
+        XCTAssertEqual(AuthCompactCopy.continueOffline(languageCode: "ru"), "Продолжить офлайн")
+        XCTAssertEqual(AuthCompactCopy.cancel(languageCode: "ru"), "Отмена")
+        XCTAssertEqual(AuthCompactCopy.savedProfiles(languageCode: "ru"), "Сохранённые профили")
+        XCTAssertEqual(AuthCompactCopy.localPlaceholder, "Local")
+
+        XCTAssertEqual(gymLocalized("Sign up", languageCode: "uk"), "Зареєструватися")
+        XCTAssertEqual(gymLocalized("Repeat email", languageCode: "ru"), "Повторите email")
+        XCTAssertEqual(gymLocalized("Repeat password", languageCode: "ru"), "Повторите пароль")
+        XCTAssertEqual(gymLocalized("Continue offline", languageCode: "ru"), "Продолжить офлайн")
+        XCTAssertEqual(gymLocalized("Privacy Policy", languageCode: "uk"), "Політика конфіденційності")
+        XCTAssertEqual(
+            gymLocalized(
+                "Workout data is handled under the Privacy Policy.",
+                languageCode: "ru"
+            ),
+            "Данные тренировок обрабатываются согласно Политике конфиденциальности."
+        )
+        XCTAssertEqual(
+            gymLocalized(
+                "Workout data is handled under the Privacy Policy.",
+                languageCode: "uk"
+            ),
+            "Дані тренувань обробляються відповідно до Політики конфіденційності."
+        )
+    }
+
+    func testFirstRunLanguageUsesSupportedSystemLocaleWithoutOverridingSavedChoice() {
+        XCTAssertEqual(
+            AppLanguage.firstRunDefault(preferredLanguages: ["uk-UA", "en-US"]),
+            .ukrainian
+        )
+        XCTAssertEqual(
+            AppLanguage.firstRunDefault(preferredLanguages: ["ru-UA"]),
+            .russian
+        )
+        XCTAssertEqual(
+            AppLanguage.firstRunDefault(preferredLanguages: ["de-DE", "en-GB"]),
+            .english
+        )
+        XCTAssertEqual(
+            AppLanguage.firstRunDefault(preferredLanguages: ["de-DE"]),
+            .english
+        )
+
+        let defaults = temporaryDefaults(named: "first-run-language")
+        XCTAssertEqual(
+            gymCurrentLanguageCode(
+                defaults: defaults,
+                preferredLanguages: ["ru-UA"]
+            ),
+            "ru"
+        )
+        defaults.set("uk", forKey: "app-language")
+        XCTAssertEqual(
+            gymCurrentLanguageCode(
+                defaults: defaults,
+                preferredLanguages: ["ru-UA"]
+            ),
+            "uk"
+        )
+    }
+
+    func testOfflineProfilesUseFreshIDsResumeByExactIDAndRejectDuplicateWithoutMutation() throws {
+        let keychain = InMemoryKeychainStore()
+        let defaults = temporaryDefaults(named: "offline-profile-index")
+        let auth = AuthService(keychain: keychain, defaults: defaults)
+
+        try auth.continueOffline(displayName: " Local ")
+        guard case .local(let firstID, let firstName) = auth.session else {
+            return XCTFail("Expected a local session")
+        }
+        XCTAssertNotNil(UUID(uuidString: firstID))
+        XCTAssertEqual(firstName, "Local")
+        XCTAssertEqual(auth.savedLocalProfiles, [
+            SavedLocalProfile(id: firstID, displayName: "Local")
+        ])
+
+        try auth.clearSession()
+        let profilesBeforeDuplicate = auth.savedLocalProfiles
+        XCTAssertThrowsError(try auth.continueOffline(displayName: " local ")) { error in
+            guard case AuthServiceError.duplicateLocalProfile = error else {
+                return XCTFail("Expected duplicateLocalProfile, got \(error)")
+            }
+        }
+        XCTAssertNil(auth.session)
+        XCTAssertEqual(auth.savedLocalProfiles, profilesBeforeDuplicate)
+
+        try auth.continueOffline(profileID: firstID)
+        guard case .local(let resumedID, let resumedName) = auth.session else {
+            return XCTFail("Expected the saved local session")
+        }
+        XCTAssertEqual(resumedID, firstID)
+        XCTAssertEqual(resumedName, "Local")
+
+        try auth.clearSession()
+        let relaunched = AuthService(keychain: keychain, defaults: defaults)
+        XCTAssertEqual(relaunched.savedLocalProfiles, profilesBeforeDuplicate)
+        try relaunched.continueOffline(profileID: firstID)
+        guard case .local(let relaunchedID, _) = relaunched.session else {
+            return XCTFail("Expected the relaunched local session")
+        }
+        XCTAssertEqual(relaunchedID, firstID)
+    }
+
+    func testOfflineProfileLimitMatchesMobileContractWithoutPartialMutation() throws {
+        let keychain = InMemoryKeychainStore()
+        let defaults = temporaryDefaults(named: "offline-profile-limit")
+        let auth = AuthService(keychain: keychain, defaults: defaults)
+
+        for index in 1 ... 32 {
+            try auth.continueOffline(displayName: "Local \(index)")
+            try auth.clearSession()
+        }
+        XCTAssertEqual(auth.savedLocalProfiles.count, 32)
+
+        let profilesBeforeOverflow = auth.savedLocalProfiles
+        XCTAssertThrowsError(try auth.continueOffline(displayName: "Local 33")) { error in
+            guard case AuthServiceError.localProfileLimitReached = error else {
+                return XCTFail("Expected localProfileLimitReached, got \(error)")
+            }
+        }
+        XCTAssertNil(auth.session)
+        XCTAssertEqual(auth.savedLocalProfiles, profilesBeforeOverflow)
+
+        let relaunched = AuthService(keychain: keychain, defaults: defaults)
+        XCTAssertNil(relaunched.session)
+        XCTAssertEqual(relaunched.savedLocalProfiles, profilesBeforeOverflow)
+    }
+
+    func testMissingOfflineProfileIDFailsWithoutCreatingSession() throws {
+        let auth = AuthService(
+            keychain: InMemoryKeychainStore(),
+            defaults: temporaryDefaults(named: "missing-offline-profile")
+        )
+
+        XCTAssertThrowsError(try auth.continueOffline(profileID: UUID().uuidString.lowercased())) { error in
+            guard case AuthServiceError.localProfileNotFound = error else {
+                return XCTFail("Expected localProfileNotFound, got \(error)")
+            }
+        }
+        XCTAssertNil(auth.session)
+        XCTAssertTrue(auth.savedLocalProfiles.isEmpty)
+    }
+
+    func testOfflineProfileEnvelopeSaveFailureLeavesNoSelectableOrActiveProfile() throws {
+        let keychain = InMemoryKeychainStore()
+        let defaults = temporaryDefaults(named: "offline-envelope-save-failure")
+        keychain.accountsThatFailSave = ["local-profile-index-v1"]
+        let auth = AuthService(keychain: keychain, defaults: defaults)
+
+        XCTAssertThrowsError(try auth.continueOffline(displayName: "Local"))
+        XCTAssertNil(auth.session)
+        XCTAssertTrue(auth.savedLocalProfiles.isEmpty)
+        XCTAssertNil(try keychain.read(account: "current-session"))
+        XCTAssertNil(try keychain.read(account: "local-profile-index-v1"))
+
+        let relaunched = AuthService(keychain: keychain, defaults: defaults)
+        XCTAssertNil(relaunched.session)
+        XCTAssertTrue(relaunched.savedLocalProfiles.isEmpty)
+    }
+
+    func testOfflineProfileUsesOneEnvelopeAndIgnoresLegacySessionSaveFailure() throws {
+        let keychain = InMemoryKeychainStore()
+        let defaults = temporaryDefaults(named: "offline-single-envelope")
+        keychain.accountsThatFailSave = ["current-session"]
+        let auth = AuthService(keychain: keychain, defaults: defaults)
+
+        try auth.continueOffline(displayName: "Local")
+        guard case .local(let id, _) = auth.session else {
+            return XCTFail("Expected atomic local session")
+        }
+        XCTAssertNil(try keychain.read(account: "current-session"))
+        XCTAssertNotNil(try keychain.read(account: "local-profile-index-v1"))
+
+        let relaunched = AuthService(keychain: keychain, defaults: defaults)
+        XCTAssertEqual(relaunched.session, .local(id: id, displayName: "Local"))
+        XCTAssertEqual(relaunched.savedLocalProfiles, [
+            SavedLocalProfile(id: id, displayName: "Local")
+        ])
+    }
+
+    func testOfflineProfileBothLegacyAndEnvelopeSaveFailuresCannotCreatePhantom() throws {
+        let keychain = InMemoryKeychainStore()
+        let defaults = temporaryDefaults(named: "offline-both-save-failure")
+        keychain.accountsThatFailSave = ["current-session", "local-profile-index-v1"]
+        let auth = AuthService(keychain: keychain, defaults: defaults)
+
+        XCTAssertThrowsError(try auth.continueOffline(displayName: "Local"))
+        XCTAssertNil(auth.session)
+        XCTAssertTrue(auth.savedLocalProfiles.isEmpty)
+        XCTAssertNil(AuthService(keychain: keychain, defaults: defaults).session)
+    }
+
+    func testOfflineSignOutEnvelopeFailureCannotRestoreActiveProfile() throws {
+        let keychain = InMemoryKeychainStore()
+        let defaults = temporaryDefaults(named: "offline-envelope-clear-failure")
+        let auth = AuthService(keychain: keychain, defaults: defaults)
+        try auth.continueOffline(displayName: "Local")
+
+        keychain.accountsThatFailSave = ["local-profile-index-v1"]
+        XCTAssertThrowsError(try auth.clearSession())
+        XCTAssertNil(auth.session)
+
+        let relaunched = AuthService(keychain: keychain, defaults: defaults)
+        XCTAssertNil(relaunched.session)
+        XCTAssertEqual(relaunched.savedLocalProfiles.count, 1)
+
+        keychain.accountsThatFailSave = []
+        try relaunched.clearSession()
+        XCTAssertNil(AuthService(keychain: keychain, defaults: defaults).session)
+    }
+
+    func testCurrentLegacyLocalSessionMigratesIntoBoundedSavedProfileIndex() throws {
+        let keychain = InMemoryKeychainStore()
+        let defaults = temporaryDefaults(named: "legacy-local-profile-index")
+        let id = UUID().uuidString.lowercased()
+        try keychain.save(
+            JSONEncoder().encode(
+                AppAccountSession.local(id: id, displayName: "Legacy Local")
+            ),
+            account: "current-session"
+        )
+
+        let relaunched = AuthService(keychain: keychain, defaults: defaults)
+
+        XCTAssertEqual(relaunched.session, .local(id: id, displayName: "Legacy Local"))
+        XCTAssertEqual(relaunched.savedLocalProfiles, [
+            SavedLocalProfile(id: id, displayName: "Legacy Local")
+        ])
+        XCTAssertNil(try keychain.read(account: "current-session"))
+        XCTAssertNotNil(try keychain.read(account: "local-profile-index-v1"))
+    }
+
+    func testOversizedOfflineProfileIndexFailsNeutral() throws {
+        let keychain = InMemoryKeychainStore()
+        try keychain.save(
+            Data(repeating: 0x41, count: 16 * 1_024 + 1),
+            account: "local-profile-index-v1"
+        )
+
+        let auth = AuthService(
+            keychain: keychain,
+            defaults: temporaryDefaults(named: "oversized-offline-profile-index")
+        )
+
+        XCTAssertNil(auth.session)
+        XCTAssertTrue(auth.savedLocalProfiles.isEmpty)
+    }
+
+    func testDeletingOfflineProfileRemovesOnlyItsSavedAccountID() throws {
+        let keychain = InMemoryKeychainStore()
+        let defaults = temporaryDefaults(named: "remove-offline-profile")
+        let auth = AuthService(keychain: keychain, defaults: defaults)
+        try auth.continueOffline(displayName: "First")
+        let first = try XCTUnwrap(auth.savedLocalProfiles.first)
+        try auth.clearSession()
+        try auth.continueOffline(displayName: "Second")
+        let second = try XCTUnwrap(auth.savedLocalProfiles.last)
+        try auth.clearSession()
+
+        try auth.removeSavedLocalProfile(storageKey: "local_\(first.id)")
+
+        XCTAssertEqual(auth.savedLocalProfiles, [second])
+        XCTAssertThrowsError(try auth.continueOffline(profileID: first.id))
+        try auth.continueOffline(profileID: second.id)
+        XCTAssertEqual(auth.session, .local(id: second.id, displayName: second.displayName))
+    }
+
     func testUnsolicitedAuthCallbackIsRejectedWithoutNetworkAccess() async {
         let keychain = InMemoryKeychainStore()
         let auth = AuthService(keychain: keychain)
@@ -3983,7 +4272,15 @@ final class CoreParityTests: XCTestCase {
             accountStorageKey: "delete-me",
             directoryURL: try temporaryDirectory(named: "destroy-account")
         )
-        _ = try store.addExercise(name: "Private Exercise")
+        let exercise = try store.addExercise(name: "Private Exercise")
+        let workout = try store.createWorkout(
+            date: Date(),
+            exercises: [WorkoutExerciseDraft(
+                exerciseID: exercise.id,
+                sets: [WorkoutSetDraft(weight: 50, reps: 8)]
+            )]
+        )
+        try store.setWorkoutFeedback(.hard, for: workout.id)
         let storageURL = store.storageURL
         XCTAssertTrue(FileManager.default.fileExists(atPath: storageURL.path))
 
@@ -3992,6 +4289,7 @@ final class CoreParityTests: XCTestCase {
         XCTAssertTrue(store.exercises.isEmpty)
         XCTAssertTrue(store.workouts.isEmpty)
         XCTAssertTrue(store.muscleMappings.isEmpty)
+        XCTAssertTrue(store.workoutFeedbackByID.isEmpty)
         XCTAssertFalse(FileManager.default.fileExists(atPath: storageURL.path))
     }
 
@@ -4753,11 +5051,11 @@ final class CoreParityTests: XCTestCase {
         )
 
         XCTAssertTrue(
-            (4 ... 9).contains(twoDays.exercises.count),
+            (4 ... 8).contains(twoDays.exercises.count),
             "two-day count: \(twoDays.exercises.count)"
         )
         XCTAssertTrue(
-            (4 ... 9).contains(sixDays.exercises.count),
+            (4 ... 8).contains(sixDays.exercises.count),
             "six-day count: \(sixDays.exercises.count)"
         )
         XCTAssertGreaterThan(twoDays.exercises.count, sixDays.exercises.count)
@@ -4950,11 +5248,112 @@ final class CoreParityTests: XCTestCase {
     func testEveryBuiltInExerciseHasTwoBundledPreviewFrames() {
         for definition in BuiltInExerciseCatalog.definitions {
             XCTAssertEqual(
-                ExerciseMediaStore.bundledImages(exerciseName: definition.englishName).count,
+                ExerciseMediaStore.bundledImages(
+                    catalogKey: definition.key,
+                    rawExerciseName: definition.englishName
+                ).count,
                 2,
                 "Missing preview frames for \(definition.key)"
             )
         }
+    }
+
+    func testPackagedExerciseMediaContainsOnlyCanonicalFrames() throws {
+        let expected = Set(
+            BuiltInExerciseCatalog.definitions.flatMap { definition in
+                (0 ... 1).map { "\(definition.key)_\($0).jpg" }
+            }
+        )
+        let packaged = Set(
+            try XCTUnwrap(Bundle.main.urls(forResourcesWithExtension: "jpg", subdirectory: nil))
+                .map(\.lastPathComponent)
+        )
+
+        XCTAssertEqual(packaged, expected)
+        XCTAssertEqual(packaged.count, BuiltInExerciseCatalog.definitions.count * 2)
+        XCTAssertFalse(packaged.contains(where: { $0.contains(" 2.jpg") }))
+    }
+
+    func testExerciseMediaUsesStableRawIdentityAcrossRussianAndUkrainianDisplay() throws {
+        let definition = try XCTUnwrap(BuiltInExerciseCatalog.definition(forKey: "bench_press"))
+        let exercise = Exercise(name: definition.englishName, catalogKey: definition.key)
+
+        XCTAssertEqual(gymExerciseName(exercise, languageCode: "uk"), definition.ukrainianName)
+        XCTAssertNotEqual(gymExerciseName(exercise, languageCode: "ru"), exercise.name)
+        XCTAssertEqual(
+            ExerciseMediaStore.bundledImages(
+                catalogKey: exercise.catalogKey,
+                rawExerciseName: exercise.name
+            ).count,
+            2
+        )
+        XCTAssertEqual(
+            ExerciseMediaStore.bundledImages(
+                catalogKey: definition.key,
+                rawExerciseName: definition.ukrainianName
+            ).count,
+            2
+        )
+    }
+
+    func testUnknownOrMismatchedImportedExerciseCannotSpoofBundledMedia() {
+        XCTAssertTrue(
+            ExerciseMediaStore.bundledImages(
+                catalogKey: nil,
+                rawExerciseName: "My custom press"
+            ).isEmpty
+        )
+        XCTAssertTrue(
+            ExerciseMediaStore.bundledImages(
+                catalogKey: "bench_press",
+                rawExerciseName: "My custom press"
+            ).isEmpty
+        )
+    }
+
+    func testExerciseMediaPresentationMatchesCompactMobileContract() {
+        XCTAssertEqual(ExerciseMediaPresentation.thumbnailWidth, 76)
+        XCTAssertEqual(ExerciseMediaPresentation.thumbnailHeight, 64)
+        XCTAssertEqual(ExerciseMediaPresentation.thumbnailCornerRadius, 13)
+        XCTAssertEqual(ExerciseMediaPresentation.playOverlayDiameter, 28)
+        XCTAssertTrue(
+            ExerciseMediaPresentation.showsPlayOverlay(
+                hasCustomImage: false,
+                bundledFrameCount: 2
+            )
+        )
+        XCTAssertFalse(
+            ExerciseMediaPresentation.showsPlayOverlay(
+                hasCustomImage: true,
+                bundledFrameCount: 2
+            )
+        )
+        XCTAssertFalse(
+            ExerciseMediaPresentation.showsPlayOverlay(
+                hasCustomImage: false,
+                bundledFrameCount: 1
+            )
+        )
+        XCTAssertTrue(ExerciseMediaPresentation.isEditable(on: .library))
+        XCTAssertTrue(ExerciseMediaPresentation.isEditable(on: .editor))
+        XCTAssertFalse(ExerciseMediaPresentation.isEditable(on: .picker))
+        XCTAssertFalse(ExerciseMediaPresentation.isEditable(on: .activeWorkout))
+        XCTAssertEqual(
+            ExerciseMediaPresentation.emptyPreviewLabel(editable: true, languageCode: "ru"),
+            "Добавить фото"
+        )
+        XCTAssertEqual(
+            ExerciseMediaPresentation.emptyPreviewLabel(editable: false, languageCode: "uk"),
+            "Немає демонстрації"
+        )
+
+        XCTAssertEqual(WorkoutRecommendationKind.newExercise.coachCompactDisplayName(languageCode: "en"), "New")
+        XCTAssertEqual(WorkoutRecommendationKind.newExercise.coachCompactDisplayName(languageCode: "uk"), "Нова")
+        XCTAssertEqual(WorkoutRecommendationKind.newExercise.coachCompactDisplayName(languageCode: "ru"), "Новое")
+        XCTAssertEqual(WorkoutRecommendationKind.holdAndBuild.coachCompactDisplayName(languageCode: "uk"), "Утримати")
+        XCTAssertEqual(WorkoutRecommendationKind.holdAndBuild.coachCompactDisplayName(languageCode: "ru"), "Удержать")
+        XCTAssertEqual(WorkoutRecommendationKind.deload.coachCompactDisplayName(languageCode: "uk"), "Делоад")
+        XCTAssertEqual(WorkoutRecommendationKind.comeback.coachCompactDisplayName(languageCode: "ru"), "Возврат")
     }
 
     func testCustomExerciseMediaRemainsAccountScoped() throws {
@@ -4966,12 +5365,178 @@ final class CoreParityTests: XCTestCase {
             context.cgContext.fill(CGRect(x: 0, y: 0, width: 40, height: 40))
         }
         let data = try XCTUnwrap(image.jpegData(compressionQuality: 0.9))
-        defer { ExerciseMediaStore.deleteCustomImage(ownerKey: ownerA, exerciseID: exerciseID) }
+        defer { try? ExerciseMediaStore.deleteCustomImage(ownerKey: ownerA, exerciseID: exerciseID) }
 
         try ExerciseMediaStore.saveCustomImage(data, ownerKey: ownerA, exerciseID: exerciseID)
 
         XCTAssertNotNil(ExerciseMediaStore.customImage(ownerKey: ownerA, exerciseID: exerciseID))
         XCTAssertNil(ExerciseMediaStore.customImage(ownerKey: ownerB, exerciseID: exerciseID))
+    }
+
+    func testExerciseMediaAccountClearRemovesOnlyTargetOwnerAndRejectsMalformedOwner() throws {
+        let mediaDirectory = try temporaryDirectory(named: "exercise-media-owner-clear")
+        let ownerA = "local_\(UUID().uuidString.lowercased())"
+        let ownerB = "local_\(UUID().uuidString.lowercased())"
+        let exerciseID = UUID()
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 40, height: 40)).image { context in
+            UIColor.systemBlue.setFill()
+            context.cgContext.fill(CGRect(x: 0, y: 0, width: 40, height: 40))
+        }
+        let data = try XCTUnwrap(image.jpegData(compressionQuality: 0.9))
+
+        try ExerciseMediaStore.saveCustomImage(
+            data,
+            ownerKey: ownerA,
+            exerciseID: exerciseID,
+            mediaDirectoryURL: mediaDirectory
+        )
+        try ExerciseMediaStore.saveCustomImage(
+            data,
+            ownerKey: ownerB,
+            exerciseID: exerciseID,
+            mediaDirectoryURL: mediaDirectory
+        )
+        try ExerciseMediaStore.clearAccount(
+            ownerKey: ownerA,
+            mediaDirectoryURL: mediaDirectory
+        )
+
+        XCTAssertNil(
+            ExerciseMediaStore.customImage(
+                ownerKey: ownerA,
+                exerciseID: exerciseID,
+                mediaDirectoryURL: mediaDirectory
+            )
+        )
+        XCTAssertNotNil(
+            ExerciseMediaStore.customImage(
+                ownerKey: ownerB,
+                exerciseID: exerciseID,
+                mediaDirectoryURL: mediaDirectory
+            )
+        )
+        XCTAssertThrowsError(
+            try ExerciseMediaStore.clearAccount(
+                ownerKey: " ../foreign-owner ",
+                mediaDirectoryURL: mediaDirectory
+            )
+        ) { error in
+            XCTAssertEqual(error as? ExerciseMediaStore.MediaError, .invalidOwner)
+        }
+        XCTAssertNotNil(
+            ExerciseMediaStore.customImage(
+                ownerKey: ownerB,
+                exerciseID: exerciseID,
+                mediaDirectoryURL: mediaDirectory
+            )
+        )
+    }
+
+    func testExerciseMediaDeletionFailureDoesNotReportDurableSuccess() throws {
+        let mediaDirectory = try temporaryDirectory(named: "exercise-media-delete-failure")
+        let owner = "local_\(UUID().uuidString.lowercased())"
+        let exerciseID = UUID()
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 40, height: 40)).image { context in
+            UIColor.systemRed.setFill()
+            context.cgContext.fill(CGRect(x: 0, y: 0, width: 40, height: 40))
+        }
+        let data = try XCTUnwrap(image.jpegData(compressionQuality: 0.9))
+        try ExerciseMediaStore.saveCustomImage(
+            data,
+            ownerKey: owner,
+            exerciseID: exerciseID,
+            mediaDirectoryURL: mediaDirectory
+        )
+        let failingFileManager = RemovalFailingFileManager()
+
+        XCTAssertThrowsError(
+            try ExerciseMediaStore.deleteCustomImage(
+                ownerKey: owner,
+                exerciseID: exerciseID,
+                mediaDirectoryURL: mediaDirectory,
+                fileManager: failingFileManager
+            )
+        )
+        XCTAssertNotNil(
+            ExerciseMediaStore.customImage(
+                ownerKey: owner,
+                exerciseID: exerciseID,
+                mediaDirectoryURL: mediaDirectory
+            )
+        )
+
+        failingFileManager.failRemoval = false
+        try ExerciseMediaStore.deleteCustomImage(
+            ownerKey: owner,
+            exerciseID: exerciseID,
+            mediaDirectoryURL: mediaDirectory,
+            fileManager: failingFileManager
+        )
+        XCTAssertNil(
+            ExerciseMediaStore.customImage(
+                ownerKey: owner,
+                exerciseID: exerciseID,
+                mediaDirectoryURL: mediaDirectory
+            )
+        )
+    }
+
+    func testPendingAccountDeletionRetriesExerciseMediaBeforeClearingMarker() throws {
+        let mediaDirectory = try temporaryDirectory(named: "pending-delete-media")
+        let workoutDirectory = try temporaryDirectory(named: "pending-delete-workouts")
+        let storageKey = "local_\(UUID().uuidString.lowercased())"
+        let exerciseID = UUID()
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 40, height: 40)).image { context in
+            UIColor.systemGreen.setFill()
+            context.cgContext.fill(CGRect(x: 0, y: 0, width: 40, height: 40))
+        }
+        let data = try XCTUnwrap(image.jpegData(compressionQuality: 0.9))
+        try ExerciseMediaStore.saveCustomImage(
+            data,
+            ownerKey: storageKey,
+            exerciseID: exerciseID,
+            mediaDirectoryURL: mediaDirectory
+        )
+        let defaults = temporaryDefaults(named: "pending-delete-media-marker")
+        defaults.set(storageKey, forKey: "gymapp.pending-account-deletion-storage-key")
+        let auth = AuthService(keychain: InMemoryKeychainStore(), defaults: defaults)
+        let failingFileManager = RemovalFailingFileManager()
+
+        _ = try AppState(
+            auth: auth,
+            defaults: defaults,
+            workoutDirectoryURL: workoutDirectory,
+            exerciseMediaDirectoryURL: mediaDirectory,
+            exerciseMediaFileManager: failingFileManager
+        )
+        XCTAssertEqual(
+            defaults.string(forKey: "gymapp.pending-account-deletion-storage-key"),
+            storageKey
+        )
+        XCTAssertNotNil(
+            ExerciseMediaStore.customImage(
+                ownerKey: storageKey,
+                exerciseID: exerciseID,
+                mediaDirectoryURL: mediaDirectory
+            )
+        )
+
+        failingFileManager.failRemoval = false
+        _ = try AppState(
+            auth: auth,
+            defaults: defaults,
+            workoutDirectoryURL: workoutDirectory,
+            exerciseMediaDirectoryURL: mediaDirectory,
+            exerciseMediaFileManager: failingFileManager
+        )
+        XCTAssertNil(defaults.string(forKey: "gymapp.pending-account-deletion-storage-key"))
+        XCTAssertNil(
+            ExerciseMediaStore.customImage(
+                ownerKey: storageKey,
+                exerciseID: exerciseID,
+                mediaDirectoryURL: mediaDirectory
+            )
+        )
     }
 
     func testSmartPlanRotatesOneTrunkSlotInEveryWorkout() {
@@ -5047,7 +5612,7 @@ final class CoreParityTests: XCTestCase {
             now: now,
             calendar: utcCalendar()
         )
-        XCTAssertTrue((4 ... 9).contains(upperWithoutRecentTrunk.exercises.count))
+        XCTAssertTrue((4 ... 8).contains(upperWithoutRecentTrunk.exercises.count))
         XCTAssertEqual(selectedTrunkKeys(upperWithoutRecentTrunk).count, 1)
 
         let plank = try! XCTUnwrap(exercises.first { $0.catalogKey == "plank" })
@@ -5071,7 +5636,7 @@ final class CoreParityTests: XCTestCase {
             now: now,
             calendar: utcCalendar()
         )
-        XCTAssertTrue((4 ... 9).contains(upperWithRecentTrunk.exercises.count))
+        XCTAssertTrue((4 ... 8).contains(upperWithRecentTrunk.exercises.count))
         XCTAssertEqual(selectedTrunkKeys(upperWithRecentTrunk), ["hyperextension"])
 
         let hyperextension = try! XCTUnwrap(exercises.first { $0.catalogKey == "hyperextension" })
@@ -5095,7 +5660,7 @@ final class CoreParityTests: XCTestCase {
             now: now,
             calendar: utcCalendar()
         )
-        XCTAssertTrue((4 ... 9).contains(upperWithRecentHyper.exercises.count))
+        XCTAssertTrue((4 ... 8).contains(upperWithRecentHyper.exercises.count))
         XCTAssertEqual(selectedTrunkKeys(upperWithRecentHyper), ["plank"])
     }
 
@@ -5657,7 +6222,8 @@ final class CoreParityTests: XCTestCase {
                                 $0 + $1.recommendation.sets.count
                             }
 
-                            XCTAssertTrue((4 ... 9).contains(plan.exercises.count), context)
+                            XCTAssertTrue((4 ... 8).contains(plan.exercises.count), context)
+                            XCTAssertLessThanOrEqual(plannedSets, 24, context)
                             XCTAssertLessThanOrEqual(plannedSets, budget + 4, context)
                             XCTAssertEqual(plan.requestedEffort, effort, context)
                             XCTAssertEqual(
@@ -7776,6 +8342,187 @@ final class CoreParityTests: XCTestCase {
         XCTAssertNil(try keychain.read(account: "current-session"))
     }
 
+    func testPendingCloudSessionDeletionBlocksOfflineCommitAndResumeAcrossRelaunch() throws {
+        let keychain = InMemoryKeychainStore()
+        let defaults = temporaryDefaults(named: "pending-cloud-delete-blocks-offline")
+        let auth = AuthService(keychain: keychain, defaults: defaults)
+
+        try auth.continueOffline(displayName: "Saved Local")
+        let savedProfile = try XCTUnwrap(auth.savedLocalProfiles.first)
+        try auth.clearSession()
+        try auth.installSessionForTesting(.cloud(cloudSession(userID: "stale-cloud-user")))
+
+        keychain.accountsThatFailDeletion = ["current-session"]
+        XCTAssertThrowsError(try auth.clearSession())
+        XCTAssertNil(auth.session)
+        XCTAssertNotNil(try keychain.read(account: "current-session"))
+        XCTAssertTrue(defaults.bool(forKey: "gymapp.auth.pending-secure-session-deletion"))
+
+        let profilesBeforeBlockedAttempts = auth.savedLocalProfiles
+        XCTAssertThrowsError(try auth.continueOffline(displayName: "Fresh Local")) { error in
+            guard case AuthServiceError.secureSessionCleanupPending = error else {
+                return XCTFail("Expected secureSessionCleanupPending, got \(error)")
+            }
+        }
+        XCTAssertThrowsError(try auth.continueOffline(profileID: savedProfile.id)) { error in
+            guard case AuthServiceError.secureSessionCleanupPending = error else {
+                return XCTFail("Expected secureSessionCleanupPending, got \(error)")
+            }
+        }
+        XCTAssertNil(auth.session)
+        XCTAssertEqual(auth.savedLocalProfiles, profilesBeforeBlockedAttempts)
+        XCTAssertNotNil(try keychain.read(account: "current-session"))
+        XCTAssertTrue(defaults.bool(forKey: "gymapp.auth.pending-secure-session-deletion"))
+
+        let blockedRelaunch = AuthService(keychain: keychain, defaults: defaults)
+        XCTAssertNil(blockedRelaunch.session)
+        XCTAssertEqual(blockedRelaunch.savedLocalProfiles, profilesBeforeBlockedAttempts)
+        XCTAssertNotNil(try keychain.read(account: "current-session"))
+        XCTAssertTrue(defaults.bool(forKey: "gymapp.auth.pending-secure-session-deletion"))
+        XCTAssertThrowsError(try blockedRelaunch.continueOffline(profileID: savedProfile.id)) { error in
+            guard case AuthServiceError.secureSessionCleanupPending = error else {
+                return XCTFail("Expected secureSessionCleanupPending, got \(error)")
+            }
+        }
+
+        keychain.accountsThatFailDeletion = []
+        let recoveredRelaunch = AuthService(keychain: keychain, defaults: defaults)
+        XCTAssertNil(recoveredRelaunch.session)
+        XCTAssertNil(try keychain.read(account: "current-session"))
+        XCTAssertFalse(defaults.bool(forKey: "gymapp.auth.pending-secure-session-deletion"))
+        try recoveredRelaunch.continueOffline(profileID: savedProfile.id)
+        XCTAssertEqual(
+            recoveredRelaunch.session,
+            .local(id: savedProfile.id, displayName: savedProfile.displayName)
+        )
+        XCTAssertNil(try keychain.read(account: "current-session"))
+        XCTAssertEqual(
+            AuthService(keychain: keychain, defaults: defaults).session,
+            .local(id: savedProfile.id, displayName: savedProfile.displayName)
+        )
+    }
+
+    func testUnknownLegacySessionSlotBlocksOfflineCommitAndSchedulesCleanup() throws {
+        let keychain = InMemoryKeychainStore()
+        let defaults = temporaryDefaults(named: "unknown-legacy-session-blocks-offline")
+        try keychain.save(Data("not-a-session".utf8), account: "current-session")
+        let auth = AuthService(keychain: keychain, defaults: defaults)
+
+        XCTAssertNil(auth.session)
+        XCTAssertThrowsError(try auth.continueOffline(displayName: "Local")) { error in
+            guard case AuthServiceError.secureSessionCleanupPending = error else {
+                return XCTFail("Expected secureSessionCleanupPending, got \(error)")
+            }
+        }
+        XCTAssertNil(auth.session)
+        XCTAssertTrue(auth.savedLocalProfiles.isEmpty)
+        XCTAssertNil(try keychain.read(account: "local-profile-index-v1"))
+        XCTAssertNotNil(try keychain.read(account: "current-session"))
+        XCTAssertTrue(defaults.bool(forKey: "gymapp.auth.pending-secure-session-deletion"))
+    }
+
+    func testPendingLocalDeletionHidesAndRejectsExactProfileAcrossRelaunch() throws {
+        let keychain = InMemoryKeychainStore()
+        let defaults = temporaryDefaults(named: "pending-local-profile-resume")
+        let auth = AuthService(keychain: keychain, defaults: defaults)
+        try auth.continueOffline(displayName: "Pending")
+        let pending = try XCTUnwrap(auth.savedLocalProfiles.first)
+        try auth.clearSession()
+        try auth.continueOffline(displayName: "Available")
+        let available = try XCTUnwrap(auth.savedLocalProfiles.last)
+        try auth.clearSession()
+
+        try PendingAccountDeletionStore.begin(
+            "local_\(pending.id)",
+            defaults: defaults
+        )
+        auth.pendingAccountDeletionStateDidChange()
+        XCTAssertEqual(auth.savedLocalProfiles, [available])
+        let indexBeforeRejectedResume = try keychain.read(account: "local-profile-index-v1")
+        XCTAssertThrowsError(try auth.continueOffline(profileID: pending.id)) { error in
+            guard case AuthServiceError.localProfileNotFound = error else {
+                return XCTFail("Expected localProfileNotFound, got \(error)")
+            }
+        }
+        XCTAssertNil(auth.session)
+        XCTAssertEqual(
+            try keychain.read(account: "local-profile-index-v1"),
+            indexBeforeRejectedResume
+        )
+
+        let relaunched = AuthService(keychain: keychain, defaults: defaults)
+        XCTAssertNil(relaunched.session)
+        XCTAssertEqual(relaunched.savedLocalProfiles, [available])
+        XCTAssertThrowsError(try relaunched.continueOffline(profileID: pending.id))
+        try relaunched.continueOffline(profileID: available.id)
+        XCTAssertEqual(
+            relaunched.session,
+            .local(id: available.id, displayName: available.displayName)
+        )
+    }
+
+    func testPendingDeletionRecordIsIdempotentForExactOwnerAndCannotBeReplaced() throws {
+        let defaults = temporaryDefaults(named: "pending-delete-owner-binding")
+        let ownerA = "local_\(UUID().uuidString.lowercased())"
+        let ownerB = "local_\(UUID().uuidString.lowercased())"
+        try PendingAccountDeletionStore.begin(ownerA, defaults: defaults)
+        try PendingAccountDeletionStore.begin(ownerA, defaults: defaults)
+
+        XCTAssertThrowsError(try PendingAccountDeletionStore.begin(ownerB, defaults: defaults)) {
+            error in
+            guard case AuthServiceError.accountDeletionCleanupPending = error else {
+                return XCTFail("Expected accountDeletionCleanupPending, got \(error)")
+            }
+        }
+        XCTAssertEqual(
+            defaults.string(forKey: "gymapp.pending-account-deletion-storage-key"),
+            ownerA
+        )
+        XCTAssertFalse(PendingAccountDeletionStore.clearExact(ownerB, defaults: defaults))
+        XCTAssertEqual(
+            defaults.string(forKey: "gymapp.pending-account-deletion-storage-key"),
+            ownerA
+        )
+        XCTAssertTrue(PendingAccountDeletionStore.clearExact(ownerA, defaults: defaults))
+        try PendingAccountDeletionStore.begin(ownerB, defaults: defaults)
+        XCTAssertEqual(
+            defaults.string(forKey: "gymapp.pending-account-deletion-storage-key"),
+            ownerB
+        )
+    }
+
+    func testUnreadablePendingDeletionFailsClosedBeforeOfflineMutation() throws {
+        let keychain = InMemoryKeychainStore()
+        let defaults = temporaryDefaults(named: "unreadable-pending-delete")
+        defaults.set(["unexpected": "shape"], forKey: "gymapp.pending-account-deletion-storage-key")
+        let auth = AuthService(keychain: keychain, defaults: defaults)
+
+        XCTAssertTrue(auth.savedLocalProfiles.isEmpty)
+        XCTAssertThrowsError(try auth.continueOffline(displayName: "Local")) { error in
+            guard case AuthServiceError.accountDeletionCleanupPending = error else {
+                return XCTFail("Expected accountDeletionCleanupPending, got \(error)")
+            }
+        }
+        XCTAssertNil(auth.session)
+        XCTAssertNil(try keychain.read(account: "local-profile-index-v1"))
+    }
+
+    func testUnreadablePendingDeletionSuppressesCloudRestore() throws {
+        let keychain = InMemoryKeychainStore()
+        let defaults = temporaryDefaults(named: "unreadable-pending-delete-cloud")
+        let auth = AuthService(keychain: keychain, defaults: defaults)
+        try auth.installSessionForTesting(.cloud(cloudSession(userID: "pending-corrupt-cloud")))
+        defaults.set(
+            ["unexpected": "shape"],
+            forKey: "gymapp.pending-account-deletion-storage-key"
+        )
+
+        let relaunched = AuthService(keychain: keychain, defaults: defaults)
+        XCTAssertNil(relaunched.session)
+        XCTAssertThrowsError(try relaunched.continueOffline(displayName: "Local"))
+        XCTAssertNotNil(try keychain.read(account: "current-session"))
+    }
+
     func testLateTokenRefreshCannotResurrectSignedOutSession() async throws {
         let keychain = InMemoryKeychainStore()
         let defaults = temporaryDefaults(named: "late-refresh")
@@ -8944,6 +9691,169 @@ final class CoreParityTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: storageURL.path))
     }
 
+    func testDeleteRetryRecommitsExactMarkerImmediatelyBeforeEachDispatch() async throws {
+        let directory = try temporaryDirectory(named: "delete-retry-marker-continuity")
+        let defaults = temporaryDefaults(named: "delete-retry-marker-continuity")
+        let recorder = AuthRequestRecorder()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        let auth = AuthService(
+            keychain: InMemoryKeychainStore(),
+            urlSession: urlSession,
+            defaults: defaults
+        )
+        let cloud = cloudSession(userID: "delete-retry-marker-continuity-user")
+        let accountSession = AppAccountSession.cloud(cloud)
+        let owner = BackupOwner(
+            accountID: accountSession.storageKey,
+            userID: cloud.userID,
+            email: cloud.email,
+            remote: true
+        )
+        let remote = try remoteBackupData(exerciseName: "Retry Marker Data", owner: owner)
+        try auth.installSessionForTesting(accountSession)
+        AuthURLProtocolStub.handler = { request in
+            recorder.append(request)
+            switch request.url?.path {
+            case "/functions/v1/delete-account"
+                    where request.value(forHTTPHeaderField: "Authorization")
+                        == "Bearer \(cloud.accessToken)":
+                XCTAssertEqual(
+                    defaults.string(forKey: "gymapp.pending-account-deletion-storage-key"),
+                    accountSession.storageKey
+                )
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    statusCode: 401,
+                    json: #"{"message":"JWT expired"}"#
+                )
+            case "/auth/v1/token":
+                XCTAssertNil(
+                    defaults.string(forKey: "gymapp.pending-account-deletion-storage-key")
+                )
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    json: #"{"access_token":"retry-marker-access","refresh_token":"retry-marker-refresh","expires_in":3600,"user":{"id":"delete-retry-marker-continuity-user","email":"delete-retry-marker@example.com","user_metadata":{"display_name":"Delete"}}}"#
+                )
+            case "/functions/v1/delete-account":
+                XCTAssertEqual(
+                    defaults.string(forKey: "gymapp.pending-account-deletion-storage-key"),
+                    accountSession.storageKey
+                )
+                throw URLError(.networkConnectionLost)
+            default:
+                XCTFail("Unexpected retry-marker request: \(request.url?.absoluteString ?? "nil")")
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    statusCode: 404,
+                    json: "{}"
+                )
+            }
+        }
+        defer {
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+        }
+
+        let appState = try AppState(
+            auth: auth,
+            defaults: defaults,
+            workoutDirectoryURL: directory,
+            remoteStateLoader: { requestedUserID in
+                XCTAssertEqual(requestedUserID, cloud.userID)
+                return remote
+            }
+        )
+        let accountReady = await waitUntil { appState.isAccountReady }
+        XCTAssertTrue(accountReady)
+
+        do {
+            try await appState.deleteCurrentAccountAndData(
+                expectedStorageKey: accountSession.storageKey,
+                expectedCloudUserID: cloud.userID
+            )
+            XCTFail("A lost retry response must preserve pending cleanup.")
+        } catch {
+            XCTAssertEqual((error as? URLError)?.code, .networkConnectionLost)
+        }
+
+        XCTAssertEqual(
+            recorder.requests.map(\.url?.path),
+            [
+                "/functions/v1/delete-account",
+                "/auth/v1/token",
+                "/functions/v1/delete-account"
+            ]
+        )
+        XCTAssertEqual(
+            defaults.string(forKey: "gymapp.pending-account-deletion-storage-key"),
+            accountSession.storageKey
+        )
+    }
+
+    func testPendingDifferentDeletionPreventsCloudDeleteRequestAndCannotBeReplaced() async throws {
+        let directory = try temporaryDirectory(named: "delete-existing-marker-no-request")
+        let defaults = temporaryDefaults(named: "delete-existing-marker-no-request")
+        let recorder = AuthRequestRecorder()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        let auth = AuthService(
+            keychain: InMemoryKeychainStore(),
+            urlSession: urlSession,
+            defaults: defaults
+        )
+        let cloud = cloudSession(userID: "delete-existing-marker-user")
+        let accountSession = AppAccountSession.cloud(cloud)
+        let owner = BackupOwner(
+            accountID: accountSession.storageKey,
+            userID: cloud.userID,
+            email: cloud.email,
+            remote: true
+        )
+        let remote = try remoteBackupData(exerciseName: "Existing Marker Data", owner: owner)
+        try auth.installSessionForTesting(accountSession)
+        AuthURLProtocolStub.handler = { request in
+            recorder.append(request)
+            return try AuthURLProtocolStub.response(for: request, json: #"{"deleted":true}"#)
+        }
+        defer {
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+        }
+
+        let appState = try AppState(
+            auth: auth,
+            defaults: defaults,
+            workoutDirectoryURL: directory,
+            remoteStateLoader: { _ in remote }
+        )
+        let accountReady = await waitUntil { appState.isAccountReady }
+        XCTAssertTrue(accountReady)
+        let firstPending = "local_\(UUID().uuidString.lowercased())"
+        try PendingAccountDeletionStore.begin(firstPending, defaults: defaults)
+
+        do {
+            try await appState.deleteCurrentAccountAndData(
+                expectedStorageKey: accountSession.storageKey,
+                expectedCloudUserID: cloud.userID
+            )
+            XCTFail("Another pending deletion must block a cloud delete request.")
+        } catch AuthServiceError.accountDeletionCleanupPending {
+            // Expected.
+        } catch {
+            XCTFail("Unexpected pending-deletion error: \(error)")
+        }
+
+        XCTAssertTrue(recorder.requests.isEmpty)
+        XCTAssertEqual(auth.session, accountSession)
+        XCTAssertEqual(
+            defaults.string(forKey: "gymapp.pending-account-deletion-storage-key"),
+            firstPending
+        )
+    }
+
     func testDeleteDispositionReturnsToUnknownWhenRefreshedRequestIsDispatched() async throws {
         let recorder = AuthRequestRecorder()
         let configuration = URLSessionConfiguration.ephemeral
@@ -9105,7 +10015,10 @@ final class CoreParityTests: XCTestCase {
         let deletedGarminUserID = "00000000-0000-4000-8000-0000000000a1"
         let deletedGarminDeviceID = "00000000-0000-4000-8000-0000000000d1"
         let deletedSession = AppAccountSession.cloud(cloudSession(userID: deletedGarminUserID))
-        let replacementSession = AppAccountSession.local(id: "replacement", displayName: "Replacement")
+        let replacementSession = AppAccountSession.local(
+            id: "00000000-0000-4000-8000-000000000001",
+            displayName: "Replacement"
+        )
         let garminBindingStore = GarminDeviceBindingStore(keychain: InMemoryKeychainStore())
         try garminBindingStore.save(
             binding: GarminDeviceBinding(
@@ -10136,7 +11049,12 @@ final class CoreParityTests: XCTestCase {
             remoteStateLoader: { userID in try await gate.load(userID: userID) }
         )
 
-        try auth.installSessionForTesting(.local(id: "prior", displayName: "Prior"))
+        try auth.installSessionForTesting(
+            .local(
+                id: "00000000-0000-4000-8000-000000000002",
+                displayName: "Prior"
+            )
+        )
         let priorReady = await waitUntil { appState.isAccountReady }
         XCTAssertTrue(priorReady)
         _ = try appState.workoutStore.addExercise(name: "Prior Account Secret")
@@ -10180,20 +11098,1802 @@ final class CoreParityTests: XCTestCase {
         XCTAssertNil(unknownPlan.effortAdjustment)
     }
 
-    func testUnknownCoachWeightRequiresExplicitSelectionWhileBodyweightZeroIsValid() {
-        let unresolved = WorkoutEditorSetDraft(
+    func testTrainingGuidanceDefaultsActivationMappingAndAccountPersistence() throws {
+        XCTAssertEqual(
+            TrainingActivationChoices.goals.map(\.rawValue),
+            ["aestheticFatLoss", "muscleGain", "strength", "balanced"]
+        )
+        XCTAssertEqual(TrainingActivationChoices.days, [2, 3, 4, 5, 6])
+        XCTAssertEqual(
+            TrainingActivationChoices.efforts.map(\.rawValue),
+            ["recovery", "standard", "hard"]
+        )
+        XCTAssertEqual(
+            TrainingProfile(),
+            TrainingProfile(
+                split: .upperLower,
+                workoutsPerWeek: 4,
+                goal: .aestheticFatLoss,
+                calorieMode: .deficit
+            )
+        )
+
+        let expected: [(TrainingGoal, Int, TrainingSplit, CalorieMode)] = [
+            (.aestheticFatLoss, 2, .fullBody, .deficit),
+            (.muscleGain, 3, .fullBody, .surplus),
+            (.strength, 4, .upperLower, .maintenance),
+            (.balanced, 5, .pushPullLegs, .maintenance),
+            (.balanced, 6, .pushPullLegs, .maintenance)
+        ]
+        for (goal, days, split, calories) in expected {
+            let profile = TrainingProfile.activationProfile(
+                goal: goal,
+                workoutsPerWeek: days
+            )
+            XCTAssertEqual(profile.workoutsPerWeek, days)
+            XCTAssertEqual(profile.split, split)
+            XCTAssertEqual(profile.goal, goal)
+            XCTAssertEqual(profile.calorieMode, calories)
+        }
+
+        let suiteName = "TrainingProfileStoreTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let profileStore = TrainingProfileStore(defaults: defaults)
+        let saved = TrainingProfile(
+            split: .custom,
+            workoutsPerWeek: 6,
+            goal: .strength,
+            calorieMode: .surplus
+        )
+        defaults.set(
+            try JSONEncoder().encode(saved),
+            forKey: "gymapp.training-profile.v1.account-a"
+        )
+
+        XCTAssertEqual(profileStore.load(accountStorageKey: "account-a"), saved)
+        XCTAssertEqual(profileStore.load(accountStorageKey: "account-b"), TrainingProfile())
+        profileStore.setActivationDismissed(true, accountStorageKey: "account-a")
+        XCTAssertTrue(profileStore.activationDismissed(accountStorageKey: "account-a"))
+        XCTAssertFalse(profileStore.activationDismissed(accountStorageKey: "account-b"))
+        XCTAssertEqual(
+            profileStore.load(accountStorageKey: "account-a"),
+            saved,
+            "Skip/dismissal must not apply activation selections or overwrite the saved profile."
+        )
+
+        profileStore.clear(accountStorageKey: "account-a")
+        XCTAssertEqual(profileStore.load(accountStorageKey: "account-a"), TrainingProfile())
+        XCTAssertFalse(profileStore.activationDismissed(accountStorageKey: "account-a"))
+    }
+
+    func testFirstWorkoutActivationIsTransactionalAndRejectsEmptyPlan() throws {
+        let suiteName = "FirstWorkoutActivationTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let profileStore = TrainingProfileStore(defaults: defaults)
+        let account = "activation-account"
+        let previousProfile = TrainingProfile(
+            split: .custom,
+            workoutsPerWeek: 2,
+            goal: .balanced,
+            calorieMode: .maintenance
+        )
+        XCTAssertTrue(profileStore.save(previousProfile, accountStorageKey: account))
+
+        let selectedProfile = TrainingProfile.activationProfile(
+            goal: .muscleGain,
+            workoutsPerWeek: 5
+        )
+        let emptyPlan = SmartWorkoutPlan(
+            focus: .fullBody,
+            exercises: [],
+            requestedEffort: .standard,
+            appliedEffort: .standard
+        )
+        let emptySeed = WorkoutLaunchSeed(
+            accountStorageKey: account,
+            profile: selectedProfile,
+            requestedEffort: .standard,
+            plan: emptyPlan,
+            catalog: []
+        )
+        var launched = false
+        XCTAssertFalse(FirstWorkoutActivation.commit(
+            seed: emptySeed,
+            accountStorageKey: account,
+            catalog: [],
+            profileStore: profileStore
+        ) { _ in
+            launched = true
+            return true
+        })
+        XCTAssertFalse(launched)
+        XCTAssertEqual(profileStore.load(accountStorageKey: account), previousProfile)
+        XCTAssertFalse(profileStore.activationDismissed(accountStorageKey: account))
+
+        let exercise = Exercise(name: "Bench Press")
+        let recommendation = WorkoutRecommendation(
+            exerciseID: exercise.id,
+            sets: [
+                RecommendedWorkoutSet(weight: 60, reps: 8),
+                RecommendedWorkoutSet(weight: 60, reps: 8),
+                RecommendedWorkoutSet(weight: 60, reps: 8)
+            ],
+            kind: .holdAndBuild,
+            confidence: 0.8,
+            estimatedVolume: 1_440,
+            daysSinceLastSession: 3,
+            reasons: []
+        )
+        let plan = SmartWorkoutPlan(
+            focus: .upper,
+            exercises: [SmartWorkoutExercise(
+                exercise: exercise,
+                recommendation: recommendation
+            )],
+            requestedEffort: .standard,
+            appliedEffort: .standard
+        )
+        let seed = WorkoutLaunchSeed(
+            accountStorageKey: account,
+            profile: selectedProfile,
+            requestedEffort: .standard,
+            plan: plan,
+            catalog: [exercise]
+        )
+
+        XCTAssertFalse(FirstWorkoutActivation.commit(
+            seed: seed,
+            accountStorageKey: account,
+            catalog: [exercise],
+            profileStore: profileStore,
+            launch: { _ in false }
+        ))
+        XCTAssertEqual(profileStore.load(accountStorageKey: account), previousProfile)
+        XCTAssertFalse(profileStore.activationDismissed(accountStorageKey: account))
+
+        XCTAssertTrue(FirstWorkoutActivation.commit(
+            seed: seed,
+            accountStorageKey: account,
+            catalog: [exercise],
+            profileStore: profileStore,
+            launch: { $0.plan == plan }
+        ))
+        XCTAssertEqual(profileStore.load(accountStorageKey: account), selectedProfile)
+        XCTAssertTrue(profileStore.activationDismissed(accountStorageKey: account))
+    }
+
+    func testFirstWorkoutActivationUsesParityChipRowsAndOneTodayHeader() throws {
+        let source = try iosSource("GymApp/UI/Screens/WorkoutsView.swift")
+        XCTAssertTrue(source.contains("screenHeader\n                            if hasActiveWorkout"))
+        XCTAssertTrue(source.contains("else if activationDismissed"))
+        XCTAssertTrue(source.contains("activationGoalChoiceGrid("))
+        XCTAssertTrue(source.contains("options: TrainingActivationChoices.goals"))
+        XCTAssertTrue(source.contains("options: TrainingActivationChoices.days"))
+        XCTAssertTrue(source.contains("options: TrainingActivationChoices.efforts"))
+        XCTAssertTrue(source.contains("columns: [GridItem(.flexible()), GridItem(.flexible())]"))
+        XCTAssertTrue(source.contains("\"Days / week\""))
+        XCTAssertTrue(source.contains("\"Today’s effort\""))
+        XCTAssertTrue(source.contains("\"Aesthetic Cut\""))
+        XCTAssertTrue(source.contains("activationLensShape.fill(GymTheme.heroGradient)"))
+        XCTAssertTrue(source.contains("topLeadingRadius: 44"))
+        XCTAssertTrue(source.contains("topTrailingRadius: 76"))
+        XCTAssertTrue(source.contains("ActivationChipButtonStyle"))
+        XCTAssertTrue(source.contains(".accessibilityAddTraits(isSelected ? .isSelected : [])"))
+        XCTAssertFalse(source.contains("Stepper(value: $activationDays"))
+        XCTAssertFalse(source.contains("Picker(gymLocalized(\"Goal\")"))
+        XCTAssertFalse(source.contains("todayReason(for:"))
+        XCTAssertTrue(source.contains(
+            "guidance.decision == .train ? .auto : .recovery"
+        ))
+        for exactCopy in [
+            "Start plan", "Почати план", "Начать план",
+            "Edit plan", "Редагувати план", "Редактировать план",
+            "Train anyway", "Усе одно тренуватися", "Всё равно тренироваться"
+        ] {
+            XCTAssertTrue(source.contains("\"\(exactCopy)\""))
+        }
+        XCTAssertFalse(source.contains("\"Start recommended\""))
+        XCTAssertFalse(source.contains("\"Начать рекомендованное\""))
+        XCTAssertTrue(source.contains("\"Weekly rhythm\""))
+        XCTAssertTrue(source.contains("\"Ритм тижня\""))
+        XCTAssertTrue(source.contains("\"Ритм недели\""))
+        XCTAssertTrue(source.contains("_ = onStartPlan(launchSeed)"))
+        XCTAssertTrue(source.contains("_ = onAddWorkout(launchSeed)"))
+        XCTAssertTrue(source.contains("_ = onAddWorkout(nil)"))
+        XCTAssertTrue(source.contains("launch: onStartPlan"))
+        let guidanceSource = try iosSource("GymApp/Domain/TrainingGuidance.swift")
+        for exactEffort in [
+            "Відновлювальне", "Звичайне", "Важке",
+            "Восстановительная", "Обычная", "Тяжёлая"
+        ] {
+            XCTAssertTrue(guidanceSource.contains(exactEffort))
+        }
+
+        let editorSource = try iosSource("GymApp/UI/Screens/AddWorkoutView.swift")
+        for title in ["Workout plan", "План тренування", "План тренировки"] {
+            XCTAssertTrue(editorSource.contains("\"\(title)\""))
+        }
+        XCTAssertFalse(editorSource.contains("private var hero: some View"))
+        let editorStack = try XCTUnwrap(
+            editorSource.split(separator: "LazyVStack(spacing: 14) {", maxSplits: 1).last?
+                .split(separator: ".padding(.horizontal, 14)", maxSplits: 1).first
+        )
+        XCTAssertFalse(editorStack.contains("hero"))
+        XCTAssertTrue(editorSource.contains("ScrollViewReader { scrollProxy in"))
+        XCTAssertTrue(editorSource.contains(".id(\"workout-plan-editor-top\")"))
+        XCTAssertTrue(editorSource.contains(".onChange(of: drafts.isEmpty) { isEmpty in"))
+        XCTAssertTrue(editorSource.contains("guard isEmpty else { return }"))
+        XCTAssertTrue(editorSource.contains(
+            "scrollProxy.scrollTo(\"workout-plan-editor-top\", anchor: .top)"
+        ))
+        XCTAssertTrue(editorSource.contains("title: \"Smart Coach\""))
+        XCTAssertTrue(editorSource.contains("title: \"Exercises\""))
+        XCTAssertTrue(editorSource.contains(
+            "latestSmartPlan.requestedEffort != latestSmartPlan.appliedEffort"
+        ))
+        for removedCopy in [
+            "SMART COACH",
+            "PLAN BUILDER",
+            "Generate the next workout",
+            "Planned exercises and sets",
+            "Planned rows are targets",
+            "Build today's session"
+        ] {
+            XCTAssertFalse(editorSource.contains(removedCopy))
+        }
+        let profilePosition = try XCTUnwrap(
+            editorSource.range(of: "                    profilePanel\n")?.lowerBound
+        )
+        let coachPosition = try XCTUnwrap(
+            editorSource.range(of: "                    smartCoachPanel\n")?.lowerBound
+        )
+        let exercisesPosition = try XCTUnwrap(
+            editorSource.range(of: "                    editorSection\n")?.lowerBound
+        )
+        let startPosition = try XCTUnwrap(
+            editorSource.range(of: "                    startWorkoutButton\n")?.lowerBound
+        )
+        let morePosition = try XCTUnwrap(
+            editorSource.range(of: "                    secondaryOptions\n")?.lowerBound
+        )
+        XCTAssertLessThan(profilePosition, coachPosition)
+        XCTAssertLessThan(coachPosition, exercisesPosition)
+        XCTAssertLessThan(exercisesPosition, startPosition)
+        XCTAssertLessThan(startPosition, morePosition)
+        let secondaryOptionsSource = try XCTUnwrap(
+            editorSource.split(separator: "private var secondaryOptions: some View", maxSplits: 1)
+                .last
+        )
+        XCTAssertFalse(secondaryOptionsSource.contains("profilePanel"))
+
+        let languageMenuSource = try iosSource("GymApp/UI/Components/AppLanguageMenu.swift")
+        XCTAssertTrue(source.contains("AppLanguageMenu()"))
+        XCTAssertTrue(languageMenuSource.contains("systemImage: \"globe\""))
+        XCTAssertTrue(languageMenuSource.contains(
+            "AppLanguage(rawValue: languageCode)?.title ?? AppLanguage.english.title"
+        ))
+        for copy in [
+            "Sync plan to Garmin",
+            "Синхронізувати план із Garmin",
+            "Синхронизировать план с Garmin",
+            "Discard plan changes?",
+            "Відкинути зміни плану?",
+            "Отменить изменения плана?",
+            "Your edits will be lost.",
+            "Зміни буде втрачено.",
+            "Изменения будут потеряны.",
+            "Keep editing",
+            "Продовжити редагування",
+            "Продолжить редактирование",
+            "Discard changes",
+            "Відкинути зміни",
+            "Отменить изменения"
+        ] {
+            XCTAssertTrue(editorSource.contains("\"\(copy)\""))
+        }
+        XCTAssertTrue(editorSource.contains("hasUnsavedPlanChanges"))
+        XCTAssertTrue(editorSource.contains("interactiveDismissDisabled(hasUnsavedPlanChanges)"))
+        XCTAssertTrue(editorSource.contains("action: syncPlanToGarmin"))
+        XCTAssertTrue(editorSource.contains("prepareGarminDraftSubmission("))
+        XCTAssertFalse(editorSource.contains("queueForGarmin"))
+        for exactCopy in [
+            "Clear plan", "Очистити план", "Очистить план",
+            "Clear workout plan?", "Очистити план тренування?", "Очистить план тренировки?",
+            "All exercises and sets will be removed.",
+            "Усі вправи й підходи буде видалено.",
+            "Все упражнения и подходы будут удалены.",
+            "Keep plan", "Залишити план", "Оставить план",
+            "Regenerate smart plan", "Оновити розумний план", "Обновить умный план",
+            "Build smart workout", "Створити розумне тренування", "Создать умную тренировку"
+        ] {
+            XCTAssertTrue(editorSource.contains("\"\(exactCopy)\""))
+        }
+        XCTAssertTrue(editorSource.contains("showingClearPlanConfirmation"))
+        let profilePanelSource = try XCTUnwrap(
+            editorSource.split(separator: "private var profilePanel: some View", maxSplits: 1)
+                .last?
+                .split(separator: "private func profilePicker", maxSplits: 1).first
+        )
+        for exactCopy in [
+            "Program", "Програма", "Программа",
+            "Goal", "Ціль", "Цель",
+            "Calories", "Калорії", "Калории",
+            "Training days", "Тренувальні дні", "Тренировочные дни"
+        ] {
+            XCTAssertTrue(profilePanelSource.contains("\"\(exactCopy)\""))
+        }
+        for exactValue in [
+            "Upper / Lower", "Верх / низ", "Верх/низ",
+            "Aesthetic Cut", "Естетика / сушка", "Эстетика/сушка",
+            "Deficit", "Дефіцит", "Дефицит"
+        ] {
+            XCTAssertTrue(editorSource.contains("\"\(exactValue)\""))
+        }
+        let smartCoachSource = try XCTUnwrap(
+            editorSource.split(separator: "private var smartCoachPanel: some View", maxSplits: 1)
+                .last?
+                .split(separator: "private var editorSection: some View", maxSplits: 1).first
+        )
+        XCTAssertTrue(smartCoachSource.contains("LazyVGrid("))
+        XCTAssertEqual(
+            smartCoachSource.components(separatedBy: "GridItem(.flexible(), spacing: 8)").count - 1,
+            2
+        )
+        XCTAssertTrue(smartCoachSource.contains("ForEach(SmartWorkoutEffort.allCases)"))
+        XCTAssertTrue(smartCoachSource.contains(".frame(maxWidth: .infinity, minHeight: 44)"))
+        XCTAssertFalse(smartCoachSource.contains("ScrollView(.horizontal)"))
+        XCTAssertEqual(
+            smartCoachSource.components(separatedBy: "Button(action: applySmartCoach)").count - 1,
+            1
+        )
+        XCTAssertEqual(
+            smartCoachSource.components(separatedBy: "\"Build smart workout\"").count - 1,
+            1
+        )
+
+        let editorSectionSource = try XCTUnwrap(
+            editorSource.split(separator: "private var editorSection: some View", maxSplits: 1)
+                .last?
+                .split(separator: "private var garminPanel: some View", maxSplits: 1).first
+        )
+        let editorHeaderSource = try XCTUnwrap(
+            editorSectionSource.split(separator: "HStack {", maxSplits: 1).last?
+                .split(separator: ".padding(.horizontal, 4)", maxSplits: 1).first
+        )
+        XCTAssertEqual(
+            editorHeaderSource.components(separatedBy: "if !drafts.isEmpty {").count - 1,
+            2
+        )
+        XCTAssertTrue(editorHeaderSource.contains("showingClearPlanConfirmation = true"))
+        XCTAssertTrue(editorHeaderSource.contains("showingExercisePicker = true"))
+        XCTAssertTrue(editorHeaderSource.contains("Label(\"Add\", systemImage: \"plus\")"))
+        XCTAssertTrue(editorHeaderSource.contains("Clear plan"))
+
+        let emptyEditorSource = try XCTUnwrap(
+            editorSectionSource.split(separator: "if drafts.isEmpty {", maxSplits: 1).last?
+                .split(separator: "} else {", maxSplits: 1).first
+        )
+        XCTAssertEqual(
+            emptyEditorSource.components(separatedBy: "\"Add exercise\"").count - 1,
+            1
+        )
+        XCTAssertTrue(emptyEditorSource.contains("showingExercisePicker = true"))
+        XCTAssertTrue(emptyEditorSource.contains("systemImage: \"plus\""))
+        XCTAssertTrue(emptyEditorSource.contains(".buttonStyle(GymPrimaryButtonStyle())"))
+        XCTAssertFalse(emptyEditorSource.contains("GymPanel"))
+        XCTAssertFalse(emptyEditorSource.contains("GymContentUnavailableView"))
+        XCTAssertFalse(emptyEditorSource.contains("No exercises"))
+        XCTAssertFalse(emptyEditorSource.contains("Build smart workout"))
+        XCTAssertFalse(emptyEditorSource.contains("Button(action: applySmartCoach)"))
+        XCTAssertFalse(editorHeaderSource.contains("if drafts.isEmpty"))
+        let clearSource = try XCTUnwrap(
+            editorSource.split(separator: "private func clearPlan()", maxSplits: 1).last?
+                .split(separator: "private func requestCancel()", maxSplits: 1).first
+        )
+        for clearedState in [
+            "drafts.removeAll()", "latestSmartPlan = nil",
+            "smartGeneratedDraftIDs.removeAll()", "replacementRequest = nil",
+            "garminDraftSubmission = nil", "statusMessage = nil"
+        ] {
+            XCTAssertTrue(clearSource.contains(clearedState))
+        }
+        for preservedState in ["profile =", "selectedEffort =", "createWorkout(", "activeWorkoutStore", "garminCloud.submit"] {
+            XCTAssertFalse(clearSource.contains(preservedState))
+        }
+        let directSyncSource = try XCTUnwrap(
+            editorSource.split(separator: "private func syncPlanToGarmin()", maxSplits: 1).last?
+                .split(separator: "private func show(", maxSplits: 1).first
+        )
+        XCTAssertFalse(directSyncSource.contains("createWorkout("))
+        XCTAssertFalse(directSyncSource.contains("activeWorkoutStore.start("))
+    }
+
+    func testAddWorkoutVisibleAndVoiceOverCatalogHasUkrainianAndRussianCopy() throws {
+        let source = try iosSource("GymApp/UI/Screens/AddWorkoutView.swift")
+        for exactCopy in [
+            "Синхронізація плану…",
+            "Синхронизация плана…",
+            "Вибери або під’єднай годинник Garmin",
+            "Выбери или подключи часы Garmin",
+            "Поточний відредагований план",
+            "Текущий отредактированный план",
+            "Оновлює згенеровані рядки",
+            "Обновляет созданные строки"
+        ] {
+            XCTAssertTrue(source.contains(exactCopy))
+        }
+
+        let catalogData = Data(try iosSource("GymApp/Resources/Localizable.xcstrings").utf8)
+        let root = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: catalogData) as? [String: Any]
+        )
+        let strings = try XCTUnwrap(root["strings"] as? [String: Any])
+        let localizedCatalogKeys = [
+            "Smart Coach", "Date and notes", "Workout date", "Notes (optional)",
+            "Add context such as energy, technique, or the training plan",
+            "Choose a training day", "No previous workout is available yet.",
+            "Repeat latest", "Copy previous", "Coach settings", "Workouts per week",
+            "Exercises", "Add", "Add exercise", "No exercises", "Saving…",
+            "Save as completed workout",
+            "Adds every planned row to history and summaries as completed",
+            "Copies this workout into the editor",
+            "Copies the latest values into a planned set", "Cancel"
+        ]
+        for key in localizedCatalogKeys {
+            let entry = try XCTUnwrap(strings[key] as? [String: Any], "Missing \(key)")
+            let localizations = try XCTUnwrap(
+                entry["localizations"] as? [String: Any],
+                "Missing localizations for \(key)"
+            )
+            for locale in ["uk", "ru"] {
+                let localized = try XCTUnwrap(
+                    localizations[locale] as? [String: Any],
+                    "Missing \(locale) for \(key)"
+                )
+                let unit = try XCTUnwrap(localized["stringUnit"] as? [String: Any])
+                let value = try XCTUnwrap(unit["value"] as? String)
+                XCTAssertFalse(value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                XCTAssertNotEqual(value, key, "\(locale) falls back to English for \(key)")
+            }
+        }
+    }
+
+    func testGarminDraftSyncReusesExactRequestAndRotatesForEveryBindingOrPlanChange() throws {
+        let exercise = Exercise(name: "Bench Press")
+        let workoutDate = Date(timeIntervalSince1970: 1_786_500_000)
+        let draft = WorkoutEditorExerciseDraft(
+            exerciseID: exercise.id,
+            sets: [WorkoutEditorSetDraft(weight: 80, reps: 8)]
+        )
+        let firstID = try XCTUnwrap(
+            UUID(uuidString: "10000000-0000-4000-8000-000000000001")
+        )
+        let secondID = try XCTUnwrap(
+            UUID(uuidString: "20000000-0000-4000-8000-000000000002")
+        )
+        let key = try makeGarminDraftSyncKey(
+            accountStorageKey: "cloud_a",
+            deviceID: "30000000-0000-4000-8000-000000000003",
+            title: "Workout plan",
+            workoutDate: workoutDate,
+            note: "",
+            drafts: [draft],
+            exercises: [exercise.id: exercise]
+        )
+        let first = try prepareGarminDraftSubmission(
+            existing: nil,
+            key: key,
+            now: workoutDate,
+            makeRequestID: { firstID }
+        )
+        let unchangedRetry = try prepareGarminDraftSubmission(
+            existing: first,
+            key: key,
+            now: workoutDate.addingTimeInterval(60),
+            makeRequestID: { secondID }
+        )
+        XCTAssertEqual(unchangedRetry, first)
+
+        var editedDraft = draft
+        editedDraft.sets[0].reps = 9
+        let editedKey = try makeGarminDraftSyncKey(
+            accountStorageKey: key.accountStorageKey,
+            deviceID: key.deviceID,
+            title: key.title,
+            workoutDate: workoutDate,
+            note: "",
+            drafts: [editedDraft],
+            exercises: [exercise.id: exercise]
+        )
+        let edited = try prepareGarminDraftSubmission(
+            existing: first,
+            key: editedKey,
+            now: workoutDate,
+            makeRequestID: { secondID }
+        )
+        XCTAssertEqual(edited.clientRequestID, secondID)
+        XCTAssertNotEqual(edited.plan, first.plan)
+
+        let otherOwnerKey = GarminDraftSyncKey(
+            accountStorageKey: "cloud_b",
+            deviceID: key.deviceID,
+            title: key.title,
+            startedAt: key.startedAt,
+            note: key.note,
+            exercises: key.exercises
+        )
+        XCTAssertNotEqual(otherOwnerKey, key)
+        let otherDeviceKey = GarminDraftSyncKey(
+            accountStorageKey: key.accountStorageKey,
+            deviceID: "40000000-0000-4000-8000-000000000004",
+            title: key.title,
+            startedAt: key.startedAt,
+            note: key.note,
+            exercises: key.exercises
+        )
+        XCTAssertNotEqual(otherDeviceKey, key)
+
+        var unresolvedDraft = draft
+        unresolvedDraft.sets[0].weight = -1
+        XCTAssertThrowsError(try makeGarminDraftSyncKey(
+            accountStorageKey: key.accountStorageKey,
+            deviceID: key.deviceID,
+            title: key.title,
+            workoutDate: workoutDate,
+            note: "",
+            drafts: [unresolvedDraft],
+            exercises: [exercise.id: exercise]
+        ))
+        unresolvedDraft.sets[0].weight = .nan
+        XCTAssertThrowsError(try makeGarminDraftSyncKey(
+            accountStorageKey: key.accountStorageKey,
+            deviceID: key.deviceID,
+            title: key.title,
+            workoutDate: workoutDate,
+            note: "",
+            drafts: [unresolvedDraft],
+            exercises: [exercise.id: exercise]
+        ))
+        unresolvedDraft.sets[0].weight = 1_000_001
+        XCTAssertThrowsError(try makeGarminDraftSyncKey(
+            accountStorageKey: key.accountStorageKey,
+            deviceID: key.deviceID,
+            title: key.title,
+            workoutDate: workoutDate,
+            note: "",
+            drafts: [unresolvedDraft],
+            exercises: [exercise.id: exercise]
+        ))
+    }
+
+    func testWeeklyGuidanceUsesLocalMondayDistinctDaysAndProfileTarget() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.locale = Locale(identifier: "en_US_POSIX")
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Europe/Kyiv"))
+        func localDate(_ day: Int, hour: Int, minute: Int = 0) throws -> Date {
+            try XCTUnwrap(calendar.date(from: DateComponents(
+                year: 2026,
+                month: 8,
+                day: day,
+                hour: hour,
+                minute: minute
+            )))
+        }
+
+        let exercise = Exercise(name: "Bench Press")
+        let monday = try localDate(10, hour: 8)
+        let mondayDuplicate = try localDate(10, hour: 20)
+        let sunday = try localDate(16, hour: 9)
+        let priorSunday = try localDate(9, hour: 23, minute: 55)
+        let history = coachSession(
+            exerciseID: exercise.id,
+            exerciseName: exercise.name,
+            exerciseCatalogKey: exercise.catalogKey,
+            workoutID: UUID(),
+            date: monday,
+            weights: [60],
+            reps: [8]
+        ) + coachSession(
+            exerciseID: exercise.id,
+            exerciseName: exercise.name,
+            exerciseCatalogKey: exercise.catalogKey,
+            workoutID: UUID(),
+            date: mondayDuplicate,
+            weights: [60],
+            reps: [8]
+        ) + coachSession(
+            exerciseID: exercise.id,
+            exerciseName: exercise.name,
+            exerciseCatalogKey: exercise.catalogKey,
+            workoutID: UUID(),
+            date: sunday,
+            weights: [60],
+            reps: [8]
+        ) + coachSession(
+            exerciseID: exercise.id,
+            exerciseName: exercise.name,
+            exerciseCatalogKey: exercise.catalogKey,
+            workoutID: UUID(),
+            date: priorSunday,
+            weights: [60],
+            reps: [8]
+        )
+        let reached = RecommendationEngine.weeklyTrainingGuidance(
+            history: history,
+            trainingProfile: TrainingProfile(workoutsPerWeek: 2),
+            now: try localDate(16, hour: 12),
+            calendar: calendar
+        )
+        XCTAssertEqual(reached.decision.rawValue, "rest")
+        XCTAssertEqual(reached.completedTrainingDays, 2)
+        XCTAssertEqual(reached.targetTrainingDays, 2)
+
+        let boundaryNow = try localDate(17, hour: 0, minute: 30)
+        let boundaryHistory = coachSession(
+            exerciseID: exercise.id,
+            exerciseName: exercise.name,
+            exerciseCatalogKey: exercise.catalogKey,
+            workoutID: UUID(),
+            date: try localDate(16, hour: 23, minute: 55),
+            weights: [60],
+            reps: [8]
+        ) + coachSession(
+            exerciseID: exercise.id,
+            exerciseName: exercise.name,
+            exerciseCatalogKey: exercise.catalogKey,
+            workoutID: UUID(),
+            date: try localDate(17, hour: 0, minute: 5),
+            weights: [60],
+            reps: [8]
+        )
+        let boundary = RecommendationEngine.weeklyTrainingGuidance(
+            history: boundaryHistory,
+            trainingProfile: TrainingProfile(workoutsPerWeek: 2),
+            now: boundaryNow,
+            calendar: calendar
+        )
+        XCTAssertEqual(boundary.completedTrainingDays, 1)
+        XCTAssertNotEqual(boundary.decision, .rest)
+
+        let exactNow = try localDate(12, hour: 12)
+        let futureToday = try localDate(12, hour: 14)
+        let futureTomorrow = try localDate(13, hour: 9)
+        let futureHistory = coachSession(
+            exerciseID: exercise.id,
+            exerciseName: exercise.name,
+            exerciseCatalogKey: exercise.catalogKey,
+            workoutID: UUID(),
+            date: exactNow,
+            weights: [60],
+            reps: [8]
+        ) + coachSession(
+            exerciseID: exercise.id,
+            exerciseName: exercise.name,
+            exerciseCatalogKey: exercise.catalogKey,
+            workoutID: UUID(),
+            date: futureToday,
+            weights: [60],
+            reps: [8]
+        ) + coachSession(
+            exerciseID: exercise.id,
+            exerciseName: exercise.name,
+            exerciseCatalogKey: exercise.catalogKey,
+            workoutID: UUID(),
+            date: futureTomorrow,
+            weights: [60],
+            reps: [8]
+        )
+        let excludesFuture = RecommendationEngine.weeklyTrainingGuidance(
+            history: futureHistory,
+            trainingProfile: TrainingProfile(workoutsPerWeek: 2),
+            now: exactNow,
+            calendar: calendar
+        )
+        XCTAssertEqual(excludesFuture.completedTrainingDays, 1)
+        XCTAssertNotEqual(excludesFuture.decision, .rest)
+
+        let summaries = [monday, sunday].map { date in
+            WorkoutSessionSummary(
+                workoutID: UUID(),
+                date: date,
+                note: nil,
+                exerciseCount: 1,
+                setCount: 3,
+                totalVolume: 1_440
+            )
+        }
+        XCTAssertEqual(
+            WeeklyStreakCalculator.current(
+                sessions: summaries,
+                targetTrainingDays: 2,
+                now: try localDate(16, hour: 12),
+                calendar: calendar
+            ),
+            1,
+            "Rest days between the two target sessions must not break weekly adherence."
+        )
+        XCTAssertEqual(
+            WeeklyStreakCalculator.current(
+                sessions: summaries,
+                targetTrainingDays: 3,
+                now: try localDate(16, hour: 12),
+                calendar: calendar
+            ),
+            0
+        )
+
+        let currentWeekNow = try localDate(12, hour: 12)
+        let currentWeekWithFuture = [
+            WorkoutSessionSummary(
+                workoutID: UUID(),
+                date: try localDate(10, hour: 8),
+                note: nil,
+                exerciseCount: 1,
+                setCount: 3,
+                totalVolume: 1_440
+            ),
+            WorkoutSessionSummary(
+                workoutID: UUID(),
+                date: try localDate(13, hour: 8),
+                note: nil,
+                exerciseCount: 1,
+                setCount: 3,
+                totalVolume: 1_440
+            )
+        ]
+        XCTAssertEqual(WeeklyStreakCalculator.current(
+            sessions: currentWeekWithFuture,
+            targetTrainingDays: 2,
+            now: currentWeekNow,
+            calendar: calendar
+        ), 0)
+    }
+
+    func testWeeklyRhythmAchievementsKeepStableIDsWithProfileTargets() throws {
+        let calendar = utcCalendar()
+        let firstMonday = try utcDate(
+            year: 2026,
+            month: 7,
+            day: 20,
+            calendar: calendar
+        ).addingTimeInterval(12 * 60 * 60)
+        var sessions: [WorkoutSessionSummary] = []
+        for week in 0 ..< 4 {
+            let monday = firstMonday.addingTimeInterval(Double(week * 7) * 86_400)
+            sessions.append(missionSummary(date: monday, exerciseCount: 1, setCount: 3))
+            sessions.append(missionSummary(
+                date: monday.addingTimeInterval(2 * 86_400),
+                exerciseCount: 1,
+                setCount: 3
+            ))
+            sessions.append(missionSummary(
+                date: monday.addingTimeInterval(60 * 60),
+                exerciseCount: 1,
+                setCount: 3
+            ))
+        }
+        let now = firstMonday.addingTimeInterval((3 * 7 + 6) * 86_400)
+
+        XCTAssertEqual(WeeklyStreakCalculator.current(
+            sessions: sessions,
+            targetTrainingDays: 2,
+            now: now,
+            calendar: calendar
+        ), 4)
+        XCTAssertEqual(WeeklyStreakCalculator.longest(
+            sessions: sessions,
+            targetTrainingDays: 2,
+            calendar: calendar
+        ), 4)
+        XCTAssertEqual(WeeklyStreakCalculator.longest(
+            sessions: sessions,
+            targetTrainingDays: 3,
+            calendar: calendar
+        ), 0)
+
+        let futureSessions = (4 ..< 6).flatMap { week -> [WorkoutSessionSummary] in
+            let monday = firstMonday.addingTimeInterval(Double(week * 7) * 86_400)
+            return [
+                missionSummary(date: monday, exerciseCount: 1, setCount: 3),
+                missionSummary(
+                    date: monday.addingTimeInterval(2 * 86_400),
+                    exerciseCount: 1,
+                    setCount: 3
+                )
+            ]
+        }
+
+        let snapshot = GamificationEngine.buildSnapshot(
+            sessions: sessions + futureSessions,
+            targetTrainingDays: 2,
+            now: now,
+            calendar: calendar
+        )
+        let achievements = Dictionary(
+            uniqueKeysWithValues: snapshot.achievements.map { ($0.id, $0) }
+        )
+        let twoWeeks = try XCTUnwrap(achievements["streak_7"])
+        let fourWeeks = try XCTUnwrap(achievements["streak_14"])
+        let eightWeeks = try XCTUnwrap(achievements["streak_30"])
+        XCTAssertEqual(twoWeeks.title, "Two-Week Rhythm")
+        XCTAssertEqual(fourWeeks.title, "Four-Week Rhythm")
+        XCTAssertEqual(eightWeeks.title, "Eight-Week Rhythm")
+        XCTAssertEqual(twoWeeks.description, "Meet your weekly target for two weeks in a row.")
+        XCTAssertEqual(fourWeeks.description, "Meet your weekly target for four weeks in a row.")
+        XCTAssertEqual(eightWeeks.description, "Meet your weekly target for eight weeks in a row.")
+        XCTAssertEqual([twoWeeks.target, fourWeeks.target, eightWeeks.target], [2, 4, 8])
+        XCTAssertEqual([twoWeeks.progress, fourWeeks.progress, eightWeeks.progress], [4, 4, 4])
+        XCTAssertTrue(twoWeeks.unlocked)
+        XCTAssertTrue(fourWeeks.unlocked)
+        XCTAssertFalse(eightWeeks.unlocked)
+        XCTAssertNotNil(twoWeeks.unlockedAtEpochDay)
+        XCTAssertNotNil(fourWeeks.unlockedAtEpochDay)
+
+        let dashboardSource = try iosSource("GymApp/UI/Components/WorkoutDashboardComponents.swift")
+        for exactCopy in [
+            "Ритм двох тижнів",
+            "Ритм чотирьох тижнів",
+            "Ритм восьми тижнів",
+            "Виконуй тижневу ціль два тижні поспіль.",
+            "Виконуй тижневу ціль чотири тижні поспіль.",
+            "Виконуй тижневу ціль вісім тижнів поспіль.",
+            "Ритм двух недель",
+            "Ритм четырёх недель",
+            "Ритм восьми недель",
+            "Выполняй недельную цель две недели подряд.",
+            "Выполняй недельную цель четыре недели подряд.",
+            "Выполняй недельную цель восемь недель подряд."
+        ] {
+            XCTAssertTrue(dashboardSource.contains(exactCopy), "Missing parity copy: \(exactCopy)")
+        }
+    }
+
+    func testExactSmartPlanMaterializesIntoEditableDraftWithoutRecomputation() throws {
+        let exerciseID = UUID()
+        let firstSetID = UUID()
+        let secondSetID = UUID()
+        let thirdSetID = UUID()
+        let exercise = Exercise(id: exerciseID, name: "Bench Press")
+        let recommendation = WorkoutRecommendation(
+            exerciseID: exerciseID,
+            sets: [
+                RecommendedWorkoutSet(id: firstSetID, weight: nil, reps: 8),
+                RecommendedWorkoutSet(id: secondSetID, weight: 62.5, reps: 7),
+                RecommendedWorkoutSet(id: thirdSetID, weight: 62.5, reps: 7)
+            ],
+            kind: .holdAndBuild,
+            confidence: 0.8,
+            estimatedVolume: 437.5,
+            daysSinceLastSession: 3,
+            reasons: [.conservativeIncrease]
+        )
+        let plan = SmartWorkoutPlan(
+            focus: .upper,
+            exercises: [SmartWorkoutExercise(
+                exercise: exercise,
+                recommendation: recommendation
+            )],
+            variant: .b,
+            requestedEffort: .standard,
+            appliedEffort: .standard
+        )
+        let seed = WorkoutLaunchSeed(
+            accountStorageKey: "launch-account-a",
+            profile: TrainingProfile(),
+            requestedEffort: .standard,
+            plan: plan,
+            catalog: [exercise]
+        )
+        let drafts = makeWorkoutEditorDrafts(from: seed.plan)
+
+        XCTAssertEqual(seed.plan, plan)
+        XCTAssertTrue(seed.belongs(to: "launch-account-a"))
+        XCTAssertFalse(
+            seed.belongs(to: "launch-account-b"),
+            "A store/account replacement must consume the in-memory launch seed."
+        )
+        XCTAssertTrue(seed.isValid(
+            accountStorageKey: "launch-account-a",
+            currentProfile: TrainingProfile(),
+            catalog: [exercise]
+        ))
+        XCTAssertEqual(drafts.count, 1)
+        XCTAssertEqual(drafts[0].id, exerciseID)
+        XCTAssertEqual(drafts[0].exerciseID, exerciseID)
+        XCTAssertEqual(drafts[0].coachRecommendation, recommendation)
+        XCTAssertEqual(drafts[0].sets.map(\.id), [firstSetID, secondSetID, thirdSetID])
+        XCTAssertEqual(drafts[0].sets.map(\.reps), [8, 7, 7])
+        XCTAssertEqual(drafts[0].sets.map(\.weight), [0, 62.5, 62.5])
+    }
+
+    func testDirectSmartPlanStartsExactActiveDraftOnceAndRejectsInvalidState() async throws {
+        let now = Date(timeIntervalSince1970: 1_786_700_000)
+        let directory = try temporaryDirectory(named: "direct-smart-plan")
+        let store = try WorkoutStore(
+            accountStorageKey: "direct-plan-owner",
+            directoryURL: directory
+        )
+        let exercise = try store.addExercise(name: "Direct Start Press")
+        let setIDs = [UUID(), UUID(), UUID()]
+        let recommendation = WorkoutRecommendation(
+            exerciseID: exercise.id,
+            sets: [
+                RecommendedWorkoutSet(id: setIDs[0], weight: nil, reps: 8),
+                RecommendedWorkoutSet(id: setIDs[1], weight: 52.5, reps: 7),
+                RecommendedWorkoutSet(id: setIDs[2], weight: 0, reps: 10)
+            ],
+            kind: .newExercise,
+            confidence: 0.5,
+            estimatedVolume: 367.5,
+            daysSinceLastSession: nil,
+            reasons: [.noHistory]
+        )
+        let plan = SmartWorkoutPlan(
+            focus: .upper,
+            exercises: [SmartWorkoutExercise(
+                exercise: exercise,
+                recommendation: recommendation
+            )],
+            requestedEffort: .standard,
+            appliedEffort: .standard
+        )
+        func seed(id: UUID = UUID(), createdAt: Date = now) -> WorkoutLaunchSeed {
+            WorkoutLaunchSeed(
+                id: id,
+                accountStorageKey: store.accountStorageKey,
+                profile: TrainingProfile(),
+                requestedEffort: .standard,
+                plan: plan,
+                catalog: store.exercises,
+                history: store.allExerciseHistory(),
+                muscleMappings: store.muscleMappings,
+                createdAt: createdAt
+            )
+        }
+
+        struct InjectedActiveWriteFailure: Error {}
+        let failingActiveStore = ActiveWorkoutStore(
+            accountStorageKey: store.accountStorageKey,
+            workoutStorageURL: store.storageURL,
+            envelopeWriter: { _, _ in throw InjectedActiveWriteFailure() }
+        )
+        let failedSeed = seed()
+        XCTAssertNil(DirectWorkoutPlanStarter.start(
+            seed: failedSeed,
+            currentProfile: TrainingProfile(),
+            workoutStore: store,
+            activeWorkoutStore: failingActiveStore,
+            now: now
+        ))
+        XCTAssertNil(DirectWorkoutPlanStarter.start(
+            seed: failedSeed,
+            currentProfile: TrainingProfile(),
+            workoutStore: store,
+            activeWorkoutStore: failingActiveStore,
+            now: now
+        ), "A claimed exact seed remains consumed after its durable write fails.")
+        XCTAssertNil(failingActiveStore.draft)
+        XCTAssertTrue(store.workouts.isEmpty)
+
+        let recoveredActiveStore = ActiveWorkoutStore(
+            accountStorageKey: store.accountStorageKey,
+            workoutStorageURL: store.storageURL
+        )
+        let recovered = try XCTUnwrap(DirectWorkoutPlanStarter.start(
+            seed: seed(),
+            currentProfile: TrainingProfile(),
+            workoutStore: store,
+            activeWorkoutStore: recoveredActiveStore,
+            now: now
+        ), "A fresh seed may retry after the failed exact seed without touching history.")
+        try recoveredActiveStore.discard(
+            draftID: recovered.id,
+            expectedRevision: recovered.revision
+        )
+
+        let activeStore = ActiveWorkoutStore(
+            accountStorageKey: store.accountStorageKey,
+            workoutStorageURL: store.storageURL
+        )
+        let exactSeed = seed()
+        let started = try XCTUnwrap(DirectWorkoutPlanStarter.start(
+            seed: exactSeed,
+            currentProfile: TrainingProfile(),
+            workoutStore: store,
+            activeWorkoutStore: activeStore,
+            now: now
+        ))
+        XCTAssertEqual(started.exercises.map(\.exerciseID), [exercise.id])
+        XCTAssertEqual(started.exercises[0].sets.map(\.id), setIDs)
+        XCTAssertEqual(started.exercises[0].sets.map(\.weight), [0, 52.5, 0])
+        XCTAssertEqual(started.exercises[0].sets.map(\.reps), [8, 7, 10])
+        XCTAssertTrue(store.workouts.isEmpty, "Direct start must not write completed history.")
+
+        try activeStore.discard(draftID: started.id, expectedRevision: started.revision)
+        XCTAssertNil(DirectWorkoutPlanStarter.start(
+            seed: exactSeed,
+            currentProfile: TrainingProfile(),
+            workoutStore: store,
+            activeWorkoutStore: activeStore,
+            now: now
+        ), "A consumed seed must not replay after the active workout is removed.")
+
+        let foreignStore = try WorkoutStore(
+            accountStorageKey: "direct-plan-foreign",
+            directoryURL: try temporaryDirectory(named: "direct-smart-plan-foreign")
+        )
+        let foreignActive = ActiveWorkoutStore(
+            accountStorageKey: foreignStore.accountStorageKey,
+            workoutStorageURL: foreignStore.storageURL
+        )
+        XCTAssertNil(DirectWorkoutPlanStarter.start(
+            seed: seed(),
+            currentProfile: TrainingProfile(),
+            workoutStore: foreignStore,
+            activeWorkoutStore: foreignActive,
+            now: now
+        ))
+        XCTAssertNil(foreignActive.draft)
+
+        XCTAssertNil(DirectWorkoutPlanStarter.start(
+            seed: seed(createdAt: now.addingTimeInterval(-301)),
+            currentProfile: TrainingProfile(),
+            workoutStore: store,
+            activeWorkoutStore: activeStore,
+            now: now
+        ))
+        XCTAssertNil(activeStore.draft)
+
+        let activeSeed = seed()
+        let activeBeforeRace = try XCTUnwrap(DirectWorkoutPlanStarter.start(
+            seed: activeSeed,
+            currentProfile: TrainingProfile(),
+            workoutStore: store,
+            activeWorkoutStore: activeStore,
+            now: now
+        ))
+        XCTAssertNil(DirectWorkoutPlanStarter.start(
+            seed: seed(),
+            currentProfile: TrainingProfile(),
+            workoutStore: store,
+            activeWorkoutStore: activeStore,
+            now: now
+        ))
+        XCTAssertEqual(activeStore.draft, activeBeforeRace)
+
+        try activeStore.discard(
+            draftID: activeBeforeRace.id,
+            expectedRevision: activeBeforeRace.revision
+        )
+        let concurrentSeed = seed()
+        let concurrentResults = await withTaskGroup(of: Bool.self) { group in
+            for _ in 0 ..< 2 {
+                group.addTask { @MainActor in
+                    DirectWorkoutPlanStarter.start(
+                        seed: concurrentSeed,
+                        currentProfile: TrainingProfile(),
+                        workoutStore: store,
+                        activeWorkoutStore: activeStore,
+                        now: now
+                    ) != nil
+                }
+            }
+            var results: [Bool] = []
+            for await result in group { results.append(result) }
+            return results
+        }
+        XCTAssertEqual(concurrentResults.filter { $0 }.count, 1)
+        XCTAssertNotNil(activeStore.draft)
+        XCTAssertTrue(store.workouts.isEmpty)
+    }
+
+    func testTodayDirectStartAndEditUseSeparateNoMutationPresentationPaths() throws {
+        let workoutsSource = try iosSource("GymApp/UI/Screens/WorkoutsView.swift")
+        XCTAssertTrue(workoutsSource.contains("_ = onStartPlan(launchSeed)"))
+        XCTAssertTrue(workoutsSource.contains("_ = onAddWorkout(launchSeed)"))
+        XCTAssertTrue(workoutsSource.contains("_ = onAddWorkout(nil)"))
+        let rootSource = try iosSource("GymApp/App/AppRootView.swift")
+        let directBlock = try XCTUnwrap(
+            rootSource.split(separator: "onStartPlan: { launchSeed in", maxSplits: 1).last?
+                .split(separator: "onAddWorkout: { launchSeed in", maxSplits: 1).first
+        )
+        XCTAssertTrue(directBlock.contains("DirectWorkoutPlanStarter.start("))
+        XCTAssertTrue(directBlock.contains("showsActiveWorkout = true"))
+        XCTAssertFalse(directBlock.contains("showsAddWorkout = true"))
+        XCTAssertFalse(directBlock.contains("createWorkout("))
+        XCTAssertFalse(directBlock.lowercased().contains("garmin"))
+
+        let editBlock = try XCTUnwrap(
+            rootSource.split(separator: "onAddWorkout: { launchSeed in", maxSplits: 1).last?
+                .split(separator: "onContinueWorkout:", maxSplits: 1).first
+        )
+        XCTAssertTrue(editBlock.contains("showsAddWorkout = true"))
+        XCTAssertFalse(editBlock.contains("activeWorkoutStore.start("))
+        XCTAssertFalse(editBlock.contains("createWorkout("))
+    }
+
+    func testWorkoutLaunchSeedRejectsStaleFutureAndChangedBindings() {
+        let now = Date(timeIntervalSince1970: 1_780_000_000)
+        let profile = TrainingProfile()
+        let exercise = Exercise(name: "Bench Press")
+        func plan(setCount: Int = 3) -> SmartWorkoutPlan {
+            let recommendation = WorkoutRecommendation(
+                exerciseID: exercise.id,
+                sets: (0 ..< setCount).map { _ in
+                    RecommendedWorkoutSet(weight: 60, reps: 8)
+                },
+                kind: .holdAndBuild,
+                confidence: 0.8,
+                estimatedVolume: Double(setCount * 480),
+                daysSinceLastSession: 2,
+                reasons: []
+            )
+            return SmartWorkoutPlan(
+                focus: .upper,
+                exercises: [SmartWorkoutExercise(
+                    exercise: exercise,
+                    recommendation: recommendation
+                )],
+                requestedEffort: .auto,
+                appliedEffort: .standard
+            )
+        }
+        func seed(createdAt: Date, workoutPlan: SmartWorkoutPlan? = nil) -> WorkoutLaunchSeed {
+            WorkoutLaunchSeed(
+                accountStorageKey: "launch-a",
+                profile: profile,
+                requestedEffort: .auto,
+                plan: workoutPlan ?? plan(),
+                catalog: [exercise],
+                createdAt: createdAt
+            )
+        }
+
+        XCTAssertTrue(seed(createdAt: now).isValid(
+            accountStorageKey: "launch-a",
+            currentProfile: profile,
+            catalog: [exercise],
+            now: now
+        ))
+        XCTAssertTrue(seed(createdAt: now.addingTimeInterval(60)).isValid(
+            accountStorageKey: "launch-a",
+            currentProfile: profile,
+            catalog: [exercise],
+            now: now
+        ))
+        XCTAssertFalse(seed(createdAt: now).isValid(
+            accountStorageKey: "launch-b",
+            currentProfile: profile,
+            catalog: [exercise],
+            now: now
+        ))
+        XCTAssertFalse(seed(createdAt: now).isValid(
+            accountStorageKey: "launch-a",
+            currentProfile: TrainingProfile(workoutsPerWeek: 5),
+            catalog: [exercise],
+            now: now
+        ))
+        XCTAssertFalse(seed(createdAt: now).isValid(
+            accountStorageKey: "launch-a",
+            currentProfile: profile,
+            catalog: [Exercise(id: exercise.id, name: "Changed name")],
+            now: now
+        ))
+        XCTAssertFalse(seed(createdAt: now).isValid(
+            accountStorageKey: "launch-a",
+            currentProfile: profile,
+            catalog: [exercise],
+            now: now.addingTimeInterval(301)
+        ))
+        XCTAssertFalse(seed(createdAt: now.addingTimeInterval(61)).isValid(
+            accountStorageKey: "launch-a",
+            currentProfile: profile,
+            catalog: [exercise],
+            now: now
+        ))
+        XCTAssertFalse(seed(createdAt: now, workoutPlan: plan(setCount: 2)).isValid(
+            accountStorageKey: "launch-a",
+            currentProfile: profile,
+            catalog: [exercise],
+            now: now
+        ))
+
+        let relevantHistory = ExerciseHistoryEntry(
+            setID: UUID(),
+            workoutID: UUID(),
+            sessionDate: now.addingTimeInterval(-86_400),
+            exerciseID: exercise.id,
+            exerciseName: exercise.name,
+            exerciseCatalogKey: exercise.catalogKey,
+            weight: 60,
+            reps: 8,
+            setOrderIndex: 0
+        )
+        let historySeed = WorkoutLaunchSeed(
+            accountStorageKey: "launch-a",
+            profile: profile,
+            requestedEffort: .auto,
+            plan: plan(),
+            catalog: [exercise],
+            history: [relevantHistory],
+            createdAt: now
+        )
+        XCTAssertTrue(historySeed.isValid(
+            accountStorageKey: "launch-a",
+            currentProfile: profile,
+            catalog: [exercise],
+            history: [relevantHistory],
+            now: now
+        ))
+        let changedRelevantHistory = ExerciseHistoryEntry(
+            setID: relevantHistory.setID,
+            workoutID: relevantHistory.workoutID,
+            sessionDate: relevantHistory.sessionDate,
+            exerciseID: relevantHistory.exerciseID,
+            exerciseName: relevantHistory.exerciseName,
+            exerciseCatalogKey: relevantHistory.exerciseCatalogKey,
+            weight: 62.5,
+            reps: relevantHistory.reps,
+            setOrderIndex: relevantHistory.setOrderIndex
+        )
+        XCTAssertFalse(historySeed.isValid(
+            accountStorageKey: "launch-a",
+            currentProfile: profile,
+            catalog: [exercise],
+            history: [changedRelevantHistory],
+            now: now
+        ))
+        let unrelatedExercise = Exercise(name: "Unrelated Curl")
+        let unrelatedHistory = ExerciseHistoryEntry(
+            setID: UUID(),
+            workoutID: UUID(),
+            sessionDate: now.addingTimeInterval(-86_400),
+            exerciseID: unrelatedExercise.id,
+            exerciseName: unrelatedExercise.name,
+            weight: 12,
+            reps: 10,
+            setOrderIndex: 0
+        )
+        XCTAssertFalse(historySeed.isValid(
+            accountStorageKey: "launch-a",
+            currentProfile: profile,
+            catalog: [exercise],
+            history: [relevantHistory, unrelatedHistory],
+            now: now
+        ))
+        let tomorrowWithinTwentyFourHours = ExerciseHistoryEntry(
+            setID: UUID(),
+            workoutID: UUID(),
+            sessionDate: now.addingTimeInterval(23 * 60 * 60),
+            exerciseID: exercise.id,
+            exerciseName: exercise.name,
+            exerciseCatalogKey: exercise.catalogKey,
+            weight: 65,
+            reps: 8,
+            setOrderIndex: 0
+        )
+        XCTAssertTrue(historySeed.isValid(
+            accountStorageKey: "launch-a",
+            currentProfile: profile,
+            catalog: [exercise],
+            history: [relevantHistory, tomorrowWithinTwentyFourHours],
+            now: now
+        ))
+        let completedAfterSeedCreation = ExerciseHistoryEntry(
+            setID: UUID(),
+            workoutID: UUID(),
+            sessionDate: now.addingTimeInterval(30),
+            exerciseID: exercise.id,
+            exerciseName: exercise.name,
+            exerciseCatalogKey: exercise.catalogKey,
+            weight: 65,
+            reps: 8,
+            setOrderIndex: 0
+        )
+        XCTAssertFalse(historySeed.isValid(
+            accountStorageKey: "launch-a",
+            currentProfile: profile,
+            catalog: [exercise],
+            history: [relevantHistory, completedAfterSeedCreation],
+            now: now.addingTimeInterval(60)
+        ))
+
+        let mapping = ExerciseMuscleMapping(
+            exerciseNameKey: "bench press",
+            exerciseName: exercise.name,
+            muscleID: "chest",
+            weight: 0.8,
+            updatedAt: now
+        )
+        let mappingSeed = WorkoutLaunchSeed(
+            accountStorageKey: "launch-a",
+            profile: profile,
+            requestedEffort: .auto,
+            plan: plan(),
+            catalog: [exercise],
+            muscleMappings: [mapping],
+            createdAt: now
+        )
+        XCTAssertTrue(mappingSeed.isValid(
+            accountStorageKey: "launch-a",
+            currentProfile: profile,
+            catalog: [exercise],
+            muscleMappings: [mapping],
+            now: now
+        ))
+        let changedMapping = ExerciseMuscleMapping(
+            exerciseNameKey: mapping.exerciseNameKey,
+            exerciseName: mapping.exerciseName,
+            muscleID: mapping.muscleID,
+            weight: 0.7,
+            updatedAt: mapping.updatedAt
+        )
+        XCTAssertFalse(mappingSeed.isValid(
+            accountStorageKey: "launch-a",
+            currentProfile: profile,
+            catalog: [exercise],
+            muscleMappings: [changedMapping],
+            now: now
+        ))
+
+        let firstConsumer = UUID()
+        let replayConsumer = UUID()
+        XCTAssertTrue(WorkoutLaunchSeedUseGate.claim(
+            historySeed,
+            consumerID: firstConsumer,
+            now: now
+        ))
+        XCTAssertTrue(WorkoutLaunchSeedUseGate.accepts(
+            historySeed,
+            consumerID: firstConsumer,
+            now: now
+        ))
+        XCTAssertFalse(WorkoutLaunchSeedUseGate.claim(
+            historySeed,
+            consumerID: replayConsumer,
+            now: now
+        ))
+        XCTAssertFalse(WorkoutLaunchSeedUseGate.accepts(
+            historySeed,
+            consumerID: replayConsumer,
+            now: now
+        ))
+    }
+
+    func testLatestFeedbackAffectsAutoOnlyWithinSevenLocalDaysAndSafeCaps() {
+        let now = Date(timeIntervalSince1970: 1_780_000_000)
+        let calendar = utcCalendar()
+        let exercises = BuiltInExerciseCatalog.definitions.map {
+            Exercise(name: $0.englishName, catalogKey: $0.key)
+        }
+        let bench = exercises.first { $0.catalogKey == "bench_press" }!
+        let workoutID = UUID()
+        let sessionDate = now.addingTimeInterval(-3 * 86_400)
+        let history = coachSession(
+            exerciseID: bench.id,
+            exerciseName: bench.name,
+            exerciseCatalogKey: bench.catalogKey,
+            workoutID: workoutID,
+            date: sessionDate,
+            weights: [60, 60, 60],
+            reps: [8, 8, 8]
+        )
+        let profile = TrainingProfile()
+        let baseline = RecommendationEngine.buildWorkoutPlan(
+            exercises: exercises,
+            history: history,
+            trainingProfile: profile,
+            effort: .auto,
+            now: now,
+            calendar: calendar
+        )
+        let easy = RecommendationEngine.buildWorkoutPlan(
+            exercises: exercises,
+            history: history,
+            trainingProfile: profile,
+            effort: .auto,
+            latestFeedback: WorkoutFeedbackContext(
+                workoutID: workoutID,
+                sessionDate: sessionDate,
+                feedback: .easy
+            ),
+            now: now,
+            calendar: calendar
+        )
+        let baselineSets = baseline.exercises.reduce(0) { $0 + $1.recommendation.sets.count }
+        let easySets = easy.exercises.reduce(0) { $0 + $1.recommendation.sets.count }
+        XCTAssertEqual(easySets, baselineSets + 1)
+        XCTAssertLessThanOrEqual(easy.exercises.count, 8)
+        XCTAssertLessThanOrEqual(easySets, 24)
+        XCTAssertTrue(easy.exercises.allSatisfy { $0.recommendation.sets.count <= 4 })
+        XCTAssertEqual(easy.appliedEffort, .standard)
+        XCTAssertEqual(easy.effortAdjustment, .feedbackEasyExtraSet)
+        for baselineExercise in baseline.exercises {
+            let adjusted = easy.exercises.first { $0.exercise.id == baselineExercise.exercise.id }!
+            XCTAssertEqual(
+                Array(adjusted.recommendation.sets.prefix(baselineExercise.recommendation.sets.count)),
+                baselineExercise.recommendation.sets
+            )
+            XCTAssertEqual(adjusted.recommendation.targetRIR, baselineExercise.recommendation.targetRIR)
+        }
+
+        let hardContext = WorkoutFeedbackContext(
+            workoutID: workoutID,
+            sessionDate: sessionDate,
+            feedback: .hard
+        )
+        let hardAuto = RecommendationEngine.buildWorkoutPlan(
+            exercises: exercises,
+            history: history,
+            trainingProfile: profile,
+            effort: .auto,
+            latestFeedback: hardContext,
+            now: now,
+            calendar: calendar
+        )
+        XCTAssertEqual(hardAuto.appliedEffort, .recovery)
+        XCTAssertEqual(hardAuto.effortAdjustment, .autoFeedbackRecovery)
+
+        let explicitStandard = RecommendationEngine.buildWorkoutPlan(
+            exercises: exercises,
+            history: history,
+            trainingProfile: profile,
+            effort: .standard,
+            latestFeedback: hardContext,
+            now: now,
+            calendar: calendar
+        )
+        XCTAssertEqual(explicitStandard.appliedEffort, .standard)
+        XCTAssertNil(explicitStandard.effortAdjustment)
+
+        let staleNow = sessionDate.addingTimeInterval(8 * 86_400)
+        let stale = RecommendationEngine.buildWorkoutPlan(
+            exercises: exercises,
+            history: history,
+            trainingProfile: profile,
+            effort: .auto,
+            latestFeedback: hardContext,
+            now: staleNow,
+            calendar: calendar
+        )
+        XCTAssertNotEqual(stale.effortAdjustment, .autoFeedbackRecovery)
+
+        let newerWorkoutID = UUID()
+        let newerDate = sessionDate.addingTimeInterval(86_400)
+        let newerHistory = history + coachSession(
+            exerciseID: bench.id,
+            exerciseName: bench.name,
+            exerciseCatalogKey: bench.catalogKey,
+            workoutID: newerWorkoutID,
+            date: newerDate,
+            weights: [60],
+            reps: [8]
+        )
+        let olderFeedback = RecommendationEngine.buildWorkoutPlan(
+            exercises: exercises,
+            history: newerHistory,
+            trainingProfile: profile,
+            effort: .auto,
+            latestFeedback: hardContext,
+            now: now,
+            calendar: calendar
+        )
+        XCTAssertNotEqual(olderFeedback.effortAdjustment, .autoFeedbackRecovery)
+
+        let weeklyRecovery = RecommendationEngine.weeklyTrainingGuidance(
+            history: history,
+            trainingProfile: TrainingProfile(workoutsPerWeek: 4),
+            latestFeedback: hardContext,
+            now: now,
+            calendar: calendar
+        )
+        XCTAssertEqual(weeklyRecovery.decision.rawValue, "recovery")
+    }
+
+    func testEasyFeedbackNeverAdjustsAnyPlanContainingDeloadOrComeback() {
+        let now = Date(timeIntervalSince1970: 1_780_000_000)
+        let calendar = utcCalendar()
+        let exercises = [
+            Exercise(name: "Bench Press"),
+            Exercise(name: "Barbell Row"),
+            Exercise(name: "Squat"),
+            Exercise(name: "Lateral Raise"),
+            Exercise(name: "Plank")
+        ]
+        let bench = exercises[0]
+        let latestWorkoutID = UUID()
+        let latestDate = now.addingTimeInterval(-86_400)
+        let history = coachSession(
+            exerciseID: bench.id,
+            exerciseName: bench.name,
+            exerciseCatalogKey: bench.catalogKey,
+            workoutID: latestWorkoutID,
+            date: latestDate,
+            weights: [100, 100, 100],
+            reps: [6, 6, 6]
+        ) + coachSession(
+            exerciseID: bench.id,
+            exerciseName: bench.name,
+            exerciseCatalogKey: bench.catalogKey,
+            date: now.addingTimeInterval(-3 * 86_400),
+            weights: [100, 100, 100],
+            reps: [8, 8, 8]
+        ) + coachSession(
+            exerciseID: bench.id,
+            exerciseName: bench.name,
+            exerciseCatalogKey: bench.catalogKey,
+            date: now.addingTimeInterval(-5 * 86_400),
+            weights: [100, 100, 100],
+            reps: [10, 10, 10]
+        )
+        let profile = TrainingProfile(
+            split: .fullBody,
+            workoutsPerWeek: 6,
+            goal: .balanced,
+            calorieMode: .maintenance
+        )
+        let baseline = RecommendationEngine.buildWorkoutPlan(
+            exercises: exercises,
+            history: history,
+            trainingProfile: profile,
+            effort: .auto,
+            now: now,
+            calendar: calendar
+        )
+        let adjusted = RecommendationEngine.buildWorkoutPlan(
+            exercises: exercises,
+            history: history,
+            trainingProfile: profile,
+            effort: .auto,
+            latestFeedback: WorkoutFeedbackContext(
+                workoutID: latestWorkoutID,
+                sessionDate: latestDate,
+                feedback: .easy
+            ),
+            now: now,
+            calendar: calendar
+        )
+
+        XCTAssertTrue(baseline.exercises.contains { $0.recommendation.kind == .deload })
+        XCTAssertEqual(adjusted, baseline)
+        XCTAssertNil(adjusted.effortAdjustment)
+    }
+
+    func testWorkoutFeedbackSidecarIsLegacySafeMalformedNeutralAndNotInBackup() throws {
+        let storageKey = "feedback-envelope"
+        let directory = try temporaryDirectory(named: storageKey)
+        let store = try WorkoutStore(accountStorageKey: storageKey, directoryURL: directory)
+        let exercise = try store.addExercise(name: "Feedback custom")
+        let workout = try store.createWorkout(
+            date: Date(timeIntervalSince1970: 1_750_000_000),
+            exercises: [WorkoutExerciseDraft(
+                exerciseID: exercise.id,
+                sets: [WorkoutSetDraft(weight: 40, reps: 8)]
+            )]
+        )
+        XCTAssertThrowsError(try store.setWorkoutFeedback(.easy, for: UUID()))
+        try store.setWorkoutFeedback(.hard, for: workout.id)
+        XCTAssertEqual(store.latestWorkoutFeedbackContext()?.feedback, .hard)
+
+        let persistedData = try Data(contentsOf: store.storageURL)
+        let persistedObject = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: persistedData) as? [String: Any]
+        )
+        let persistedSidecar = try XCTUnwrap(
+            persistedObject["workoutFeedback"] as? [[String: Any]]
+        )
+        XCTAssertEqual(persistedSidecar.count, 1)
+        XCTAssertEqual(persistedSidecar[0]["value"] as? String, "hard")
+        XCTAssertNotNil(persistedSidecar[0]["sessionDate"])
+        let backupData = try JSONEncoder().encode(store.makeBackup(
+            owner: BackupOwner(accountID: storageKey, remote: false)
+        ))
+        XCTAssertFalse(String(decoding: backupData, as: UTF8.self).contains("workoutFeedback"))
+
+        func writeSidecar(_ records: [[String: Any]]?) throws {
+            var object = try XCTUnwrap(
+                JSONSerialization.jsonObject(with: persistedData) as? [String: Any]
+            )
+            if let records {
+                object["workoutFeedback"] = records
+            } else {
+                object.removeValue(forKey: "workoutFeedback")
+            }
+            try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+                .write(to: store.storageURL, options: .atomic)
+        }
+
+        try writeSidecar(nil)
+        let legacy = try WorkoutStore(accountStorageKey: storageKey, directoryURL: directory)
+        XCTAssertTrue(legacy.workoutFeedbackByID.isEmpty)
+        XCTAssertNotNil(legacy.workout(id: workout.id))
+
+        try writeSidecar([["workoutID": workout.id.uuidString, "value": "normal"]])
+        let unboundLegacy = try WorkoutStore(
+            accountStorageKey: storageKey,
+            directoryURL: directory
+        )
+        XCTAssertTrue(unboundLegacy.workoutFeedbackByID.isEmpty)
+        XCTAssertNotNil(unboundLegacy.workout(id: workout.id))
+
+        try writeSidecar([["workoutID": workout.id.uuidString, "value": "future"]])
+        let unknown = try WorkoutStore(accountStorageKey: storageKey, directoryURL: directory)
+        XCTAssertTrue(unknown.workoutFeedbackByID.isEmpty)
+        XCTAssertNotNil(unknown.workout(id: workout.id))
+
+        try writeSidecar([["workoutID": workout.id.uuidString]])
+        let malformed = try WorkoutStore(accountStorageKey: storageKey, directoryURL: directory)
+        XCTAssertTrue(malformed.workoutFeedbackByID.isEmpty)
+        XCTAssertNotNil(malformed.workout(id: workout.id))
+
+        let validRecord: [String: Any] = [
+            "workoutID": workout.id.uuidString,
+            "value": "normal"
+        ]
+        try writeSidecar(Array(repeating: validRecord, count: 129))
+        let oversized = try WorkoutStore(accountStorageKey: storageKey, directoryURL: directory)
+        XCTAssertTrue(oversized.workoutFeedbackByID.isEmpty)
+        XCTAssertNotNil(oversized.workout(id: workout.id))
+    }
+
+    func testWorkoutFeedbackDateBindingRejectsEditedSessionReplay() throws {
+        let storageKey = "feedback-date-binding"
+        let directory = try temporaryDirectory(named: storageKey)
+        let store = try WorkoutStore(accountStorageKey: storageKey, directoryURL: directory)
+        let exercise = try store.addExercise(name: "Feedback date custom")
+        let originalDate = Date(timeIntervalSince1970: 1_750_000_000)
+        let workout = try store.createWorkout(
+            date: originalDate,
+            exercises: [WorkoutExerciseDraft(
+                exerciseID: exercise.id,
+                sets: [WorkoutSetDraft(weight: 40, reps: 8)]
+            )]
+        )
+        try store.setWorkoutFeedback(.hard, for: workout.id)
+        XCTAssertEqual(store.latestWorkoutFeedbackContext()?.sessionDate, originalDate)
+
+        let editedDate = originalDate.addingTimeInterval(86_400)
+        try store.updateWorkout(id: workout.id, date: editedDate, note: nil)
+        XCTAssertNil(store.feedback(for: workout.id))
+        XCTAssertNil(store.latestWorkoutFeedbackContext())
+
+        let reopened = try WorkoutStore(
+            accountStorageKey: storageKey,
+            directoryURL: directory
+        )
+        XCTAssertNotNil(reopened.workout(id: workout.id))
+        XCTAssertNil(reopened.feedback(for: workout.id))
+        XCTAssertNil(reopened.latestWorkoutFeedbackContext())
+    }
+
+    func testLatestWorkoutFeedbackIgnoresFutureSessions() throws {
+        let storageKey = "feedback-future-session"
+        let directory = try temporaryDirectory(named: storageKey)
+        let store = try WorkoutStore(accountStorageKey: storageKey, directoryURL: directory)
+        let exercise = try store.addExercise(name: "Feedback future custom")
+        let now = Date(timeIntervalSince1970: 1_750_000_000)
+        let older = try store.createWorkout(
+            date: now.addingTimeInterval(-86_400),
+            exercises: [WorkoutExerciseDraft(
+                exerciseID: exercise.id,
+                sets: [WorkoutSetDraft(weight: 40, reps: 8)]
+            )]
+        )
+        let future = try store.createWorkout(
+            date: now.addingTimeInterval(3_600),
+            exercises: [WorkoutExerciseDraft(
+                exerciseID: exercise.id,
+                sets: [WorkoutSetDraft(weight: 42.5, reps: 8)]
+            )]
+        )
+        try store.setWorkoutFeedback(.hard, for: older.id)
+        try store.setWorkoutFeedback(.easy, for: future.id)
+
+        XCTAssertEqual(store.latestWorkoutFeedbackContext(now: now)?.workoutID, older.id)
+        XCTAssertEqual(store.latestWorkoutFeedbackContext(now: now)?.feedback, .hard)
+        XCTAssertEqual(
+            store.latestWorkoutFeedbackContext(now: now.addingTimeInterval(7_200))?.workoutID,
+            future.id
+        )
+    }
+
+    func testWorkoutFeedbackIsIdempotentAccountBoundAndPrunesOldestOverflow() throws {
+        let storageKey = "feedback-prune-a"
+        let directory = try temporaryDirectory(named: storageKey)
+        let store = try WorkoutStore(accountStorageKey: storageKey, directoryURL: directory)
+        let owner = BackupOwner(accountID: storageKey, remote: false)
+        let startMilliseconds: Int64 = 1_700_000_000_000
+        let backup = GymBackup(
+            exportedAt: startMilliseconds,
+            diagnostics: false,
+            owner: owner,
+            exercises: [BackupExercise(name: "Feedback prune custom")],
+            sessions: (0 ..< 129).map { index in
+                BackupSession(
+                    date: startMilliseconds + Int64(index) * 86_400_000,
+                    exercises: [BackupWorkoutExercise(
+                        name: "Feedback prune custom",
+                        sets: [BackupSet(weight: 30, reps: 10)]
+                    )]
+                )
+            },
+            summary: nil
+        )
+        _ = try store.restoreBackup(
+            data: JSONEncoder().encode(backup),
+            activeOwner: owner
+        )
+        let oldestFirst = store.workouts.sorted { $0.date < $1.date }
+        XCTAssertEqual(oldestFirst.count, 129)
+        for workout in oldestFirst {
+            try store.setWorkoutFeedback(.normal, for: workout.id)
+        }
+        XCTAssertEqual(
+            store.workoutFeedbackByID.count,
+            WorkoutStore.maximumWorkoutFeedbackEntries
+        )
+        XCTAssertNil(store.feedback(for: oldestFirst[0].id))
+        XCTAssertEqual(store.feedback(for: oldestFirst[1].id), .normal)
+        XCTAssertEqual(store.feedback(for: oldestFirst[128].id), .normal)
+
+        let beforeIdempotentWrite = try Data(contentsOf: store.storageURL)
+        try store.setWorkoutFeedback(.normal, for: oldestFirst[128].id)
+        XCTAssertEqual(try Data(contentsOf: store.storageURL), beforeIdempotentWrite)
+
+        try store.switchAccount(to: "feedback-prune-b")
+        XCTAssertTrue(store.workoutFeedbackByID.isEmpty)
+        try store.switchAccount(to: storageKey)
+        XCTAssertEqual(store.workoutFeedbackByID.count, 128)
+
+        try store.deleteWorkout(id: oldestFirst[128].id)
+        XCTAssertNil(store.feedback(for: oldestFirst[128].id))
+        XCTAssertEqual(store.workoutFeedbackByID.count, 127)
+        try store.clearAllData()
+        XCTAssertTrue(store.workoutFeedbackByID.isEmpty)
+    }
+
+    func testUnknownCoachWeightMaterializesAsReadyZeroAndInvalidWeightsFail() throws {
+        let materialized = WorkoutEditorSetDraft(
             recommendedSet: RecommendedWorkoutSet(weight: nil, reps: 8)
         )
-        XCTAssertEqual(unresolved.weight, 0)
-        XCTAssertTrue(unresolved.requiresWeightSelection)
-        XCTAssertFalse(unresolved.isReadyForSave)
+        XCTAssertEqual(materialized.weight, 0)
+        XCTAssertTrue(materialized.isReadyForSave)
 
         let bodyweight = WorkoutEditorSetDraft(
             recommendedSet: RecommendedWorkoutSet(weight: 0, reps: 8)
         )
         XCTAssertEqual(bodyweight.weight, 0)
-        XCTAssertFalse(bodyweight.requiresWeightSelection)
         XCTAssertTrue(bodyweight.isReadyForSave)
+
+        XCTAssertFalse(WorkoutEditorSetDraft(weight: -0.01, reps: 8).isReadyForSave)
+        XCTAssertFalse(WorkoutEditorSetDraft(weight: .nan, reps: 8).isReadyForSave)
+        XCTAssertFalse(WorkoutEditorSetDraft(weight: .infinity, reps: 8).isReadyForSave)
+        XCTAssertFalse(WorkoutEditorSetDraft(weight: 1_000_001, reps: 8).isReadyForSave)
+
+        let exercise = Exercise(name: "Bodyweight movement")
+        let zeroDraft = WorkoutEditorExerciseDraft(
+            exerciseID: exercise.id,
+            sets: [bodyweight]
+        )
+        let shared = try makeSharedWorkoutDraftPlan(
+            drafts: [zeroDraft],
+            exercises: [exercise.id: exercise]
+        )
+        XCTAssertEqual(shared.exercises[0].sets[0].weight, 0)
+        let garmin = try makeGarminDraftSyncKey(
+            accountStorageKey: "zero-owner",
+            deviceID: "zero-device",
+            title: "Workout plan",
+            workoutDate: Date(timeIntervalSince1970: 1_780_000_000),
+            note: "",
+            drafts: [zeroDraft],
+            exercises: [exercise.id: exercise]
+        )
+        XCTAssertEqual(garmin.exercises[0].sets[0].weight, 0)
     }
 
     func testAutoChoosesRecoveryAndRecoveryReducesCountSetsAndBodyweightReps() throws {
@@ -10231,7 +12931,7 @@ final class CoreParityTests: XCTestCase {
         XCTAssertEqual(plan.requestedEffort, .auto)
         XCTAssertEqual(plan.appliedEffort, .recovery)
         XCTAssertEqual(plan.effortAdjustment, .autoRecovery)
-        XCTAssertTrue((4 ... 9).contains(plan.exercises.count))
+        XCTAssertTrue((4 ... 8).contains(plan.exercises.count))
         XCTAssertTrue(plan.exercises.allSatisfy { $0.recommendation.sets.count == 3 })
         XCTAssertTrue(plan.exercises.allSatisfy { $0.recommendation.targetRIR == 3 ... 4 })
         XCTAssertTrue(plan.exercises.last.map { item in
@@ -12539,7 +15239,10 @@ final class CoreParityTests: XCTestCase {
     func testGarminPhoneTargetClaimCannotConsumePendingResetWithoutExactAcknowledgement() async throws {
         let defaults = temporaryDefaults(named: "garmin-phone-target-claim-reset")
         let auth = AuthService(keychain: InMemoryKeychainStore(), defaults: defaults)
-        let account = AppAccountSession.local(id: "garmin-reset-target", displayName: "Target")
+        let account = AppAccountSession.local(
+            id: "00000000-0000-4000-8000-000000000101",
+            displayName: "Target"
+        )
         try auth.installSessionForTesting(account)
         let store = try WorkoutStore(
             accountStorageKey: account.storageKey,
@@ -12611,7 +15314,10 @@ final class CoreParityTests: XCTestCase {
     func testGarminPhoneSelectionConnectionAndAccountChangeSynchronizeProactively() async throws {
         let defaults = temporaryDefaults(named: "garmin-phone-proactive-sync")
         let auth = AuthService(keychain: InMemoryKeychainStore(), defaults: defaults)
-        let accountA = AppAccountSession.local(id: "garmin-account-a", displayName: "A")
+        let accountA = AppAccountSession.local(
+            id: "00000000-0000-4000-8000-000000000201",
+            displayName: "Account A"
+        )
         try auth.installSessionForTesting(accountA)
         let storeA = try WorkoutStore(
             accountStorageKey: accountA.storageKey,
@@ -12713,7 +15419,10 @@ final class CoreParityTests: XCTestCase {
         XCTAssertTrue(reconnectSyncSent)
         XCTAssertEqual(transport.sent.last?.message["resetWorkout"] as? Bool, false)
 
-        let accountB = AppAccountSession.local(id: "garmin-account-b", displayName: "B")
+        let accountB = AppAccountSession.local(
+            id: "00000000-0000-4000-8000-000000000202",
+            displayName: "Account B"
+        )
         try auth.installSessionForTesting(accountB)
         let accountActivated = await waitUntil { service.devices.isEmpty }
         XCTAssertTrue(accountActivated)
@@ -12787,8 +15496,14 @@ final class CoreParityTests: XCTestCase {
     func testGarminPhoneLegacyCountersAndLostAccountAckUsePreservingProof() async throws {
         let defaults = temporaryDefaults(named: "garmin-phone-legacy-proof")
         let auth = AuthService(keychain: InMemoryKeychainStore(), defaults: defaults)
-        let accountA = AppAccountSession.local(id: "garmin-legacy-a", displayName: "A")
-        let accountB = AppAccountSession.local(id: "garmin-legacy-b", displayName: "B")
+        let accountA = AppAccountSession.local(
+            id: "00000000-0000-4000-8000-000000000301",
+            displayName: "Account A"
+        )
+        let accountB = AppAccountSession.local(
+            id: "00000000-0000-4000-8000-000000000302",
+            displayName: "Account B"
+        )
         let deviceID = UUID(uuidString: "12121212-3434-5656-7878-909090909090")!
         let deviceBinding = deviceID.uuidString.lowercased()
         let bindingA = String(repeating: "a", count: 64)
@@ -12966,7 +15681,10 @@ final class CoreParityTests: XCTestCase {
     func testGarminPhoneMissingCompletionTimesOutAndAccountReactivationUnblocksDevice() async throws {
         let defaults = temporaryDefaults(named: "garmin-phone-timeout")
         let auth = AuthService(keychain: InMemoryKeychainStore(), defaults: defaults)
-        let accountA = AppAccountSession.local(id: "garmin-timeout-a", displayName: "A")
+        let accountA = AppAccountSession.local(
+            id: "00000000-0000-4000-8000-000000000401",
+            displayName: "Account A"
+        )
         try auth.installSessionForTesting(accountA)
         let storeA = try WorkoutStore(
             accountStorageKey: accountA.storageKey,
@@ -13006,7 +15724,10 @@ final class CoreParityTests: XCTestCase {
 
         // Reactivation must also cancel an in-flight attempt whose SDK callback
         // never arrives, so the same physical device is not wedged for the next account.
-        let accountB = AppAccountSession.local(id: "garmin-timeout-b", displayName: "B")
+        let accountB = AppAccountSession.local(
+            id: "00000000-0000-4000-8000-000000000402",
+            displayName: "Account B"
+        )
         try auth.installSessionForTesting(accountB)
         let accountActivated = await waitUntil { service.devices.isEmpty }
         XCTAssertTrue(accountActivated)
@@ -13244,6 +15965,8 @@ final class CoreParityTests: XCTestCase {
         XCTAssertFalse(summarySource.contains("Completed mission rewards"))
         XCTAssertFalse(stringsSource.contains("Completed mission rewards"))
         XCTAssertTrue(summarySource.contains("GamificationEngine.xpForSession"))
+        XCTAssertTrue(summarySource.contains("\"How did it feel?\",\n                    \"Як було?\",\n                    \"Как было?\""))
+        XCTAssertTrue(summarySource.contains("gymText(\"Just right\", \"Саме так\", \"В самый раз\""))
 
         let calendar = utcCalendar()
         let now = try utcDate(year: 2026, month: 8, day: 15, calendar: calendar)

@@ -62,7 +62,7 @@ func socialRecordMetricLabels(
 
 @MainActor
 struct FriendsView: View {
-    @AppStorage("app-language") private var languageCode = AppLanguage.english.rawValue
+    @AppStorage("app-language") private var languageCode = AppLanguage.firstRunDefault.rawValue
     @ObservedObject private var appState: AppState
     @ObservedObject private var auth: AuthService
     @ObservedObject private var liveWorkoutCoordinator: LiveWorkoutCoordinator
@@ -185,19 +185,8 @@ struct FriendsView: View {
         GymHeroPanel {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .top, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 5) {
-                        Label(t("Friends", "Друзі", "Друзья"), systemImage: "person.2.fill")
-                            .font(.title2.bold())
-                        Text(
-                            t(
-                                "Invites, private workout sharing and live sessions with accepted friends.",
-                                "Запрошення, приватний обмін тренуваннями й live-сесії з прийнятими друзями.",
-                                "Приглашения, приватный обмен тренировками и live-сессии с принятыми друзьями."
-                            )
-                        )
-                        .font(.subheadline)
-                        .foregroundStyle(Color.white.opacity(0.84))
-                    }
+                    Label(t("Friends", "Друзі", "Друзья"), systemImage: "person.2.fill")
+                        .font(.title2.bold())
                     Spacer(minLength: 8)
                     if let dashboard = appState.socialDashboard,
                        dashboard.currentUser.statsAvailable,
@@ -211,15 +200,6 @@ struct FriendsView: View {
                         }
                     }
                 }
-                Text(
-                    t(
-                        "Shared progress is self-recorded.",
-                        "Спільний прогрес записують самі користувачі.",
-                        "Общий прогресс записывают сами пользователи."
-                    )
-                )
-                .font(.caption)
-                .foregroundStyle(Color.white.opacity(0.76))
                 Button {
                     Task { await refreshAll(force: true) }
                 } label: {
@@ -243,13 +223,7 @@ struct FriendsView: View {
         return GymPanel {
             VStack(alignment: .leading, spacing: 10) {
                 GymSectionTitle(
-                    eyebrow: t("Invite", "Запрошення", "Приглашение"),
-                    title: t("Your friend code", "Твій код друга", "Твой код друга"),
-                    supporting: t(
-                        "Share this random code. It is not your email or account ID.",
-                        "Поділися цим випадковим кодом. Це не твоя пошта й не ID акаунта.",
-                        "Поделись этим случайным кодом. Это не твоя почта и не ID аккаунта."
-                    )
+                    title: t("Your friend code", "Твій код друга", "Твой код друга")
                 )
                 Text(displayCode)
                     .font(.caption.monospaced())
@@ -288,13 +262,7 @@ struct FriendsView: View {
         GymPanel(highlighted: true) {
             VStack(alignment: .leading, spacing: 10) {
                 GymSectionTitle(
-                    eyebrow: t("Add", "Додати", "Добавить"),
-                    title: t("Add a friend", "Додати друга", "Добавить друга"),
-                    supporting: t(
-                        "Paste a GYM-… code or a legacy p_… code. GymApp never searches by email or exposes account IDs.",
-                        "Встав код GYM-… або старий код p_…. GymApp не шукає за поштою й не розкриває ID акаунтів.",
-                        "Вставь код GYM-… или старый код p_…. GymApp не ищет по почте и не раскрывает ID аккаунтов."
-                    )
+                    title: t("Add a friend", "Додати друга", "Добавить друга")
                 )
                 TextField(t("Friend code", "Код друга", "Код друга"), text: $friendCode)
                     .textInputAutocapitalization(.never)
@@ -317,7 +285,6 @@ struct FriendsView: View {
         return GymPanel {
             VStack(alignment: .leading, spacing: 12) {
                 GymSectionTitle(
-                    eyebrow: t("Requests", "Запити", "Запросы"),
                     title: t("Friend requests", "Запити в друзі", "Запросы в друзья"),
                     supporting: t(
                         "Accepting shares only the categories enabled in Privacy below.",
@@ -409,7 +376,6 @@ struct FriendsView: View {
         GymPanel {
             VStack(alignment: .leading, spacing: 12) {
                 GymSectionTitle(
-                    eyebrow: t("Workout inbox", "Вхідні тренування", "Входящие тренировки"),
                     title: t("Workout invitations", "Запрошення на тренування", "Приглашения на тренировку"),
                     supporting: t(
                         "Accepting creates an independent local copy. Later edits are never synchronized between friends.",
@@ -442,7 +408,6 @@ struct FriendsView: View {
         GymPanel(highlighted: liveWorkoutCoordinator.pendingInvitationCount > 0) {
             VStack(alignment: .leading, spacing: 12) {
                 GymSectionTitle(
-                    eyebrow: t("Live together", "Разом наживо", "Вместе вживую"),
                     title: t("Live workouts", "Живі тренування", "Живые тренировки"),
                     supporting: t(
                         "The plan is frozen for two people. The owner starts only after the friend accepts; completed sets then update live.",
@@ -664,13 +629,7 @@ struct FriendsView: View {
         return GymPanel(highlighted: true) {
             VStack(alignment: .leading, spacing: 12) {
                 GymSectionTitle(
-                    eyebrow: t("Friends only", "Лише друзі", "Только друзья"),
-                    title: t("Friends ranking", "Рейтинг друзів", "Рейтинг друзей"),
-                    supporting: t(
-                        "Only you and accepted friends are included.",
-                        "У списку лише ти та прийняті друзі.",
-                        "В списке только ты и принятые друзья."
-                    )
+                    title: t("Friends ranking", "Рейтинг друзів", "Рейтинг друзей")
                 )
                 if dashboard.friends.isEmpty {
                     empty(t("Add a friend to start comparing progress.", "Додай друга, щоб порівнювати прогрес.", "Добавь друга, чтобы сравнивать прогресс."))
@@ -760,7 +719,6 @@ struct FriendsView: View {
         return GymPanel {
             VStack(alignment: .leading, spacing: 10) {
                 GymSectionTitle(
-                    eyebrow: t("Privacy", "Приватність", "Приватность"),
                     title: t("What friends can see", "Що бачать друзі", "Что видят друзья"),
                     supporting: t(
                         "Changes apply server-side to every accepted friend.",
@@ -822,7 +780,6 @@ struct FriendsView: View {
                 GymPanel {
                     VStack(alignment: .leading, spacing: 10) {
                         GymSectionTitle(
-                            eyebrow: t("Safety", "Безпека", "Безопасность"),
                             title: t("Blocked people", "Заблоковані користувачі", "Заблокированные пользователи"),
                             supporting: t(
                                 "Blocked people cannot send friend or workout requests.",
@@ -1288,7 +1245,7 @@ private struct FriendDetailView: View {
     }
 
     @Environment(\.dismiss) private var dismiss
-    @AppStorage("app-language") private var languageCode = AppLanguage.english.rawValue
+    @AppStorage("app-language") private var languageCode = AppLanguage.firstRunDefault.rawValue
     @ObservedObject private var appState: AppState
     @ObservedObject private var liveWorkoutCoordinator: LiveWorkoutCoordinator
 
@@ -1400,9 +1357,6 @@ private struct FriendDetailView: View {
                 Text(t("Accepted friend", "Прийнятий друг", "Принятый друг"))
                     .font(.subheadline)
                     .foregroundStyle(Color.white.opacity(0.82))
-                Text(t("Synced workout data is self-reported and may be edited by its owner.", "Синхронізовані тренування записує сам власник і може їх редагувати.", "Синхронизированные тренировки записывает сам владелец и может их редактировать."))
-                    .font(.caption)
-                    .foregroundStyle(Color.white.opacity(0.72))
             }
         }
     }
@@ -1411,7 +1365,6 @@ private struct FriendDetailView: View {
         GymPanel(highlighted: true) {
             VStack(alignment: .leading, spacing: 10) {
                 GymSectionTitle(
-                    eyebrow: t("Together", "Разом", "Вместе"),
                     title: t("Train with this friend", "Тренуйся з цим другом", "Тренируйся с этим другом"),
                     supporting: t(
                         "Choose one saved workout, then send an editable copy or open a synchronized live room.",
