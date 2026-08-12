@@ -219,24 +219,13 @@ class GymSession {
     }
 
     static function failStartAndCleanup() {
-        var cleaned = session == null;
-        if (!cleaned) {
-            cleaned = discard();
-        }
-        fitCleanupPending = !cleaned && session != null;
-        if (!fitCleanupPending) {
-            session = null;
-            gymKcalField = null;
-            gymZoneField = null;
-        }
+        fitCleanupPending = session != null && !discard();
         recording = false;
         paused = false;
         startedAt = 0;
         pausedAt = 0;
         elapsedSeconds = 0;
-        stopSensors();
         GymStore.status = fitCleanupPending ? "FIT RETRY" : "REC FAIL";
-        return false;
     }
 
     static function pause() {

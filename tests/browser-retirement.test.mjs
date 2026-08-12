@@ -20,8 +20,12 @@ const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8");
 const developmentGuide = readFileSync(new URL("../docs/DEVELOPMENT.md", import.meta.url), "utf8");
 const operationsGuide = readFileSync(new URL("../docs/OPERATIONS.md", import.meta.url), "utf8");
 
-const GOOGLE_PLAY = "https://play.google.com/store/apps/details?id=com.setforge.gymapp";
-const GARMIN_STORE = "https://apps.garmin.com/apps/fe82a300-4d9f-4588-8b10-365d75280b8f";
+const GOOGLE_PLAY = new URL("https://play.google.com/store/apps/details?id=com.setforge.gymapp");
+const GARMIN_STORE = new URL("https://apps.garmin.com/apps/fe82a300-4d9f-4588-8b10-365d75280b8f");
+
+function absoluteAnchorUrls(html) {
+  return [...html.matchAll(/<a\b[^>]*\bhref="(https:[^"]+)"/g)].map(match => new URL(match[1]));
+}
 
 function fakeStorage(entries) {
   const values = new Map(entries);
@@ -90,12 +94,23 @@ function legacyFixture() {
 
 test("root is a non-installable first-party download and legal landing", () => {
   const scripts = [...rootHtml.matchAll(/<script[^>]+src="([^"]+)"/g)].map(match => match[1]);
+  const links = absoluteAnchorUrls(rootHtml);
   assert.deepEqual(scripts, ["./frame-guard.v56.js", "./retirement.v1.js"]);
   assert.match(rootHtml, /\.\/retirement\.v1\.css/);
-  assert.ok(rootHtml.includes(GOOGLE_PLAY));
-  assert.ok(rootHtml.includes(GARMIN_STORE));
-  assert.ok(rootHtml.includes("https://gymapptracker.com/privacy-policy.html"));
-  assert.ok(rootHtml.includes("https://gymapptracker.com/support.html"));
+  assert.equal(links.some(link => (
+    link.protocol === "https:"
+      && link.hostname === "play.google.com"
+      && link.pathname === "/store/apps/details"
+      && link.searchParams.get("id") === "com.setforge.gymapp"
+  )), true);
+  assert.equal(links.some(link => (
+    link.protocol === "https:"
+      && link.hostname === "apps.garmin.com"
+      && link.pathname === "/apps/fe82a300-4d9f-4588-8b10-365d75280b8f"
+      && link.search === ""
+  )), true);
+  assert.equal(links.some(link => link.origin === "https://gymapptracker.com" && link.pathname === "/privacy-policy.html"), true);
+  assert.equal(links.some(link => link.origin === "https://gymapptracker.com" && link.pathname === "/support.html"), true);
   assert.doesNotMatch(rootHtml, /rel="manifest"|apple-mobile-web-app-capable/i);
   assert.doesNotMatch(rootHtml, /apps\.apple\.com|App Store|Coming soon/i);
   assert.doesNotMatch(rootHtml, /app\.v\d+\.js|supabase|cloud-sync|live-workout|social|auth/i);
@@ -345,10 +360,11 @@ test("retirement worker upgrades old shells without touching user storage or pre
 });
 
 test("shared workout route previews safely and hands off only to native apps", () => {
+  const links = absoluteAnchorUrls(workoutHtml);
   assert.doesNotMatch(workoutHtml, /continue-web|Continue on website|continue in (?:your )?browser/i);
   assert.doesNotMatch(workoutSource, /\bweb\s*:|continue-web|\.links\.web|\$\{CANONICAL_SITE\}#|localStorage|sessionStorage/);
-  assert.match(workoutHtml, new RegExp(GOOGLE_PLAY.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
-  assert.match(workoutHtml, /href="https:\/\/gymapptracker\.com\/"/);
+  assert.equal(links.some(link => link.href === GOOGLE_PLAY.href), true);
+  assert.equal(links.some(link => link.origin === "https://gymapptracker.com" && link.pathname === "/"), true);
   assert.match(workoutSource, /const ANDROID_SCHEME = "com\.setforge\.gymapp"/);
   assert.match(workoutSource, /const IOS_SCHEME = "com\.setforge\.gymapp\.ios"/);
   assert.doesNotMatch(workoutHtml, /apps\.apple\.com|App Store/i);
@@ -365,8 +381,8 @@ test("shared retirement contract matches the implemented limits and destinations
   assert.deepEqual(contract.root.allowedScripts, ["frame-guard.v56.js", "retirement.v1.js"]);
   assert.equal(contract.root.manifestLinked, false);
   assert.equal(contract.root.appStoreLinkVisible, false);
-  assert.equal(contract.readyApps[0].url, GOOGLE_PLAY);
-  assert.equal(contract.readyApps[1].url, GARMIN_STORE);
+  assert.equal(contract.readyApps[0].url, GOOGLE_PLAY.href);
+  assert.equal(contract.readyApps[1].url, GARMIN_STORE.href);
   assert.equal(contract.legacyExport.maxStorageKeysInspected, retirement.LIMITS.storageKeys);
   assert.equal(contract.legacyExport.maxCandidateBytes, retirement.LIMITS.candidateBytes);
   assert.equal(contract.legacyExport.maxRecordBytes, retirement.LIMITS.recordBytes);

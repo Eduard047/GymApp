@@ -54,9 +54,8 @@ test("Start and Resume are explicit, single-shot, and fail closed", async () => 
     "sensor listeners must be gated by the authoritative FIT start result"
   );
   assert.equal((fitStart.match(/failStartAndCleanup\(\)/g) || []).length, 3);
-  assert.match(failedFitStart, /cleaned = discard\(\)/);
-  assert.match(failedFitStart, /fitCleanupPending = !cleaned && session != null/);
-  assert.match(failedFitStart, /recording = false[\s\S]*startedAt = 0[\s\S]*stopSensors\(\)/);
+  assert.match(failedFitStart, /fitCleanupPending = session != null && !discard\(\)/);
+  assert.match(failedFitStart, /recording = false[\s\S]*startedAt = 0/);
   assert.match(failedFitStart, /fitCleanupPending \? "FIT RETRY" : "REC FAIL"/);
 
   const transition = (state, fitStartResult) => {

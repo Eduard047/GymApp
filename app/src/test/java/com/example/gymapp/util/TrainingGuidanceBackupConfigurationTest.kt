@@ -4,6 +4,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TrainingGuidanceBackupConfigurationTest {
@@ -29,19 +30,24 @@ class TrainingGuidanceBackupConfigurationTest {
     }
 
     @Test
-    fun `Finder duplicate exercise images are excluded from Android packaging only`() {
+    fun `optional Finder duplicate exercise images are byte-identical and excluded from packaging`() {
         val buildScript = Files.readString(appFile("build.gradle.kts"))
         val assets = appPath("src/main/assets/exercise-media")
-        val sourceNames = Files.list(assets).use { files ->
+        val sourcePaths = Files.list(assets).use { files ->
             files.filter(Files::isRegularFile)
-                .map { it.fileName.toString() }
-                .filter { it.endsWith(".jpg") }
+                .filter { it.fileName.toString().endsWith(".jpg") }
                 .toList()
         }
+        val finderDuplicates = sourcePaths.filter { it.fileName.toString().endsWith(" 2.jpg") }
+        val canonicalPaths = sourcePaths - finderDuplicates.toSet()
 
-        assertEquals(122, sourceNames.size)
-        assertEquals(16, sourceNames.count { it.endsWith(" 2.jpg") })
-        assertEquals(106, sourceNames.count { !it.endsWith(" 2.jpg") })
+        assertEquals(106, canonicalPaths.size)
+        finderDuplicates.forEach { duplicate ->
+            val canonicalName = duplicate.fileName.toString().removeSuffix(" 2.jpg") + ".jpg"
+            val canonical = assets.resolve(canonicalName)
+            assertTrue("Missing canonical media for $canonicalName", Files.isRegularFile(canonical))
+            assertEquals("Finder duplicate differs from $canonicalName", -1L, Files.mismatch(canonical, duplicate))
+        }
         assertEquals(
             1,
             Regex("ignoreAssetsPattern\\s*=\\s*\"[^\"]*\\* 2\\.jpg[^\"]*\"")
