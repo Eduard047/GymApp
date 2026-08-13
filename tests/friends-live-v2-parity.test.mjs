@@ -20,6 +20,7 @@ const [
   iosReservation,
   iosLiveCoordinator,
   iosCloud,
+  iosSupport,
   pwaIndex,
   pwaApp
 ] = await Promise.all([
@@ -40,6 +41,7 @@ const [
   readFile("ios/GymApp-iOS/GymApp/Data/LiveWorkoutSlotReservationStore.swift", "utf8"),
   readFile("ios/GymApp-iOS/GymApp/Services/LiveWorkoutCoordinator.swift", "utf8"),
   readFile("ios/GymApp-iOS/GymApp/Services/CloudSyncService.swift", "utf8"),
+  readFile("ios/GymApp-iOS/AppStore/support.html", "utf8"),
   readFile("pwa/index.html", "utf8"),
   readFile("pwa/app.js", "utf8")
 ]);
@@ -205,4 +207,21 @@ test("browser root is the full versioned PWA, not the retirement landing", () =>
   assert.match(pwaIndex, /app\.v\d+\.js/);
   assert.match(pwaIndex, /styles\.v\d+\.css/);
   assert.doesNotMatch(pwaIndex, /retirement\.v\d+\.(?:js|css)/);
+});
+
+test("public support copy describes atomic live start and two participant tabs", () => {
+  for (const marker of [
+    "accepting the invitation atomically starts the frozen plan for both participants",
+    "the active screen shows two nickname tabs",
+    "прийняття запрошення атомарно запускає зафіксований план для обох учасників",
+    "на екрані активного тренування з’являються дві вкладки з іменами",
+    "принятие приглашения атомарно запускает зафиксированный план для обоих участников",
+    "на экране активной тренировки появляются две вкладки с именами",
+  ]) {
+    assert.ok(iosSupport.includes(marker), `Missing support copy: ${marker}`);
+  }
+
+  assert.doesNotMatch(iosSupport, /after acceptance the owner starts the frozen plan/i);
+  assert.doesNotMatch(iosSupport, /після прийняття власник починає зафіксований план/i);
+  assert.doesNotMatch(iosSupport, /после принятия владелец запускает зафиксированный план/i);
 });
