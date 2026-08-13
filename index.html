@@ -1,80 +1,52 @@
 <!doctype html>
+<!--
+THESIS: Focus Lens puts today's workout in one fluid focal form and refuses the stacked-dashboard default.
+OWN-WORLD: Airy canvas, aquatic contextual color, continuous curves, solid content rows, and one translucent control layer.
+STORY: See the next useful action, understand its size and weekly rhythm, start it, then review recent work without changing modes.
+FIRST VIEWPORT: A large asymmetric lens owns the upper canvas; the workout title and three facts sit inside it, with the start capsule attached near thumb reach and navigation floating independently.
+FORM: The user-selected Focus Lens composition from Fluid Focus; Impeccable direction seed af1a1dee. iOS uses Liquid Glass, Android uses Material 3 Expressive, and web glass is progressive enhancement.
+-->
 <html lang="en" class="frame-pending">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="referrer" content="no-referrer">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'; worker-src 'none'; manifest-src 'none'; object-src 'none'; frame-src 'none'; frame-ancestors 'none'; media-src 'none'; font-src 'none'; base-uri 'none'; form-action 'none'; upgrade-insecure-requests">
-    <meta name="theme-color" content="#071526">
-    <meta name="description" content="Download GymApp for Android or Garmin, get support, review privacy information, or export legacy browser workout data.">
-    <meta property="og:title" content="GymApp — train on your devices">
-    <meta property="og:description" content="Official GymApp downloads, support, privacy, and legacy browser data export.">
-    <meta property="og:type" content="website">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://owrcbsrectdgaotndtxy.supabase.co wss://owrcbsrectdgaotndtxy.supabase.co; worker-src 'self'; manifest-src 'self'; object-src 'none'; frame-src 'none'; media-src 'none'; base-uri 'none'; form-action 'none'; upgrade-insecure-requests">
+    <meta id="app-theme-color" name="theme-color" content="#f7faff">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Gym Tracker">
+    <meta name="description" content="GymApp workout tracking, progress, missions, and cloud sync.">
     <meta property="og:url" content="https://gymapptracker.com/">
-    <meta property="og:image" content="https://gymapptracker.com/icon-512.png">
-    <title>GymApp — train on your devices</title>
+    <title>Gym Workout Tracker</title>
     <script src="./frame-guard.v56.js"></script>
+    <script src="./theme.v56.js"></script>
     <link rel="canonical" href="https://gymapptracker.com/">
+    <link rel="manifest" href="./manifest.webmanifest">
     <link rel="icon" href="./favicon-32.png" type="image/png" sizes="32x32">
     <link rel="apple-touch-icon" href="./apple-touch-icon.png" sizes="180x180">
-    <link rel="stylesheet" href="./retirement.v1.css">
-    <script src="./retirement.v1.js" defer></script>
+    <link rel="stylesheet" href="./styles.v72.css">
   </head>
   <body>
-    <header class="site-header">
-      <a class="brand" href="./" aria-label="GymApp home">
-        <img src="./icon-192.png" width="48" height="48" alt="">
-        <span>GymApp</span>
-      </a>
-      <nav class="language-switcher" aria-label="Language">
-        <button type="button" data-language="en" aria-pressed="true">EN</button>
-        <button type="button" data-language="uk" aria-pressed="false">UK</button>
-        <button type="button" data-language="ru" aria-pressed="false">RU</button>
-      </nav>
-    </header>
-
-    <main>
-      <section class="hero" aria-labelledby="page-title">
-        <div class="device-mark" aria-hidden="true">
-          <img src="./icon-512.png" width="132" height="132" alt="">
-        </div>
-        <div class="hero-copy">
-          <h1 id="page-title" data-copy="title">Train in GymApp</h1>
-          <p class="lead" data-copy="lead">GymApp workouts are available in the mobile apps. Your existing browser data stays on this device.</p>
-        </div>
-      </section>
-
-      <section class="downloads" aria-labelledby="downloads-title">
-        <h2 id="downloads-title" data-copy="downloadsTitle">Get GymApp</h2>
-        <div class="download-grid">
-          <a class="store-link play" href="https://play.google.com/store/apps/details?id=com.setforge.gymapp" target="_blank" rel="noopener noreferrer">
-            <span><small data-copy="availableOn">Available on</small><strong>Google Play</strong></span>
-          </a>
-          <a class="store-link garmin" href="https://apps.garmin.com/apps/fe82a300-4d9f-4588-8b10-365d75280b8f" target="_blank" rel="noopener noreferrer">
-            <span><small data-copy="availableOn">Available on</small><strong>Garmin Connect IQ</strong></span>
-          </a>
-        </div>
-      </section>
-
-      <section id="legacy-export" class="legacy-export" aria-labelledby="legacy-title" hidden>
-        <div>
-          <h2 id="legacy-title" data-copy="legacyTitle">Legacy browser data</h2>
-          <p data-copy="legacyCopy">Download a private backup before removing this site's data. Sign-in credentials and custom images are not included.</p>
-        </div>
-        <button id="export-legacy" type="button" data-copy="exportAction">Download backup</button>
-        <p id="export-status" class="export-status" role="status" aria-live="polite"></p>
-      </section>
-
-      <nav class="legal-links" aria-label="Help and legal">
-        <a href="https://gymapptracker.com/privacy-policy.html" target="_blank" rel="noopener noreferrer" data-copy="privacy">Privacy</a>
-        <a href="https://gymapptracker.com/support.html" target="_blank" rel="noopener noreferrer" data-copy="support">Support</a>
-        <a href="https://gymapptracker.com/support.html" target="_blank" rel="noopener noreferrer" data-copy="deletion">Account &amp; data deletion</a>
-      </nav>
-    </main>
-
-    <footer>
-      <span>GymApp</span>
-      <span data-copy="footer">Official downloads and help</span>
-    </footer>
+    <div id="app" class="app-shell"></div>
+    <template id="icon-template">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="" />
+      </svg>
+    </template>
+    <script src="./muscle-regions.v56.js" defer></script>
+    <script src="./supabase-config.v58.js" defer></script>
+    <script src="./state-contract.v70.js" defer></script>
+    <script src="./garmin-cloud-sync.v57.js" defer></script>
+    <script src="./progression-rules.v57.js" defer></script>
+    <script src="./shared-workout.v65.js" defer></script>
+    <script src="./shared-workout-flow.v71.js" defer></script>
+    <script src="./supabase-realtime.v1.js" defer></script>
+    <script src="./live-workout.v1.js" defer></script>
+    <script src="./live-workout-state.v1.js" defer></script>
+    <script src="./russian-text.v80.js" defer></script>
+    <script src="./exercise-search-vocabulary.v1.js" defer></script>
+    <script src="./app.v88.js" defer></script>
   </body>
 </html>
