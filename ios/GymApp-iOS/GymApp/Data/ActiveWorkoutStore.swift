@@ -4,6 +4,7 @@ import Foundation
 enum ActiveWorkoutStoreError: Error, LocalizedError, Equatable, Sendable {
     case storageUnavailable
     case alreadyActive
+    case liveWorkoutReserved
     case noActiveWorkout
     case staleDraft
     case accountMismatch
@@ -24,6 +25,8 @@ enum ActiveWorkoutStoreError: Error, LocalizedError, Equatable, Sendable {
             "Active workout progress could not be saved."
         case .alreadyActive:
             "Finish or discard the active workout before starting another one."
+        case .liveWorkoutReserved:
+            "Resolve the pending live workout before starting another workout."
         case .noActiveWorkout:
             "There is no active workout to continue."
         case .staleDraft:
@@ -68,6 +71,7 @@ final class ActiveWorkoutStore: ObservableObject {
 
     let accountStorageKey: String
     let storageURL: URL
+    let liveSlotReservationStore: LiveWorkoutSlotReservationStore
 
     private let fileManager: FileManager
     private let envelopeWriter: (Data, URL) throws -> Void
@@ -108,6 +112,11 @@ final class ActiveWorkoutStore: ObservableObject {
     ) {
         self.accountStorageKey = accountStorageKey
         self.storageURL = Self.storageURL(forWorkoutStorageURL: workoutStorageURL)
+        self.liveSlotReservationStore = LiveWorkoutSlotReservationStore(
+            accountStorageKey: accountStorageKey,
+            workoutStorageURL: workoutStorageURL,
+            fileManager: fileManager
+        )
         self.fileManager = fileManager
         self.envelopeWriter = envelopeWriter ?? Self.writeEnvelopeAtomically
         self.draft = nil
@@ -145,6 +154,11 @@ final class ActiveWorkoutStore: ObservableObject {
     ) throws -> ActiveWorkoutDraft {
         guard !writesBlocked else { throw ActiveWorkoutStoreError.storageUnavailable }
         guard draft == nil else { throw ActiveWorkoutStoreError.alreadyActive }
+        do {
+            try liveSlotReservationStore.assertOrdinaryStartAllowed(now: now)
+        } catch LiveWorkoutSlotReservationError.slotReserved {
+            throw ActiveWorkoutStoreError.liveWorkoutReserved
+        }
         guard workoutStore.accountStorageKey == accountStorageKey else {
             throw ActiveWorkoutStoreError.accountMismatch
         }
@@ -194,11 +208,18 @@ final class ActiveWorkoutStore: ObservableObject {
         exercises: [ActiveWorkoutExercise],
         undoableSetID: UUID?,
         workoutStore: WorkoutStore,
+        reservationContext: LiveWorkoutSessionContext,
+        roomID: String,
         now: Date = Date(),
         persistBindingBeforeCommit: (ActiveWorkoutDraft) throws -> Void = { _ in }
     ) throws -> ActiveWorkoutDraft {
         guard !writesBlocked else { throw ActiveWorkoutStoreError.storageUnavailable }
         guard draft == nil else { throw ActiveWorkoutStoreError.alreadyActive }
+        try liveSlotReservationStore.assertLiveStartAllowed(
+            roomID: roomID,
+            context: reservationContext,
+            now: now
+        )
         guard workoutStore.accountStorageKey == accountStorageKey else {
             throw ActiveWorkoutStoreError.accountMismatch
         }

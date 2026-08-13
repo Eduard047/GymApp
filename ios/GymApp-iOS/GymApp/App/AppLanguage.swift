@@ -437,7 +437,43 @@ func gymFormattedDate(
     languageCode: String = gymCurrentLanguageCode()
 ) -> String {
     let locale = AppLanguage(rawValue: languageCode)?.locale ?? AppLanguage.english.locale
+    var style = Date.FormatStyle(date: date, time: time, locale: locale)
+    if date != .omitted {
+        style = style.weekday(date == .long ? .wide : .abbreviated)
+    }
+    return value.formatted(style)
+}
+
+func gymFormattedTimestamp(
+    _ value: Date,
+    date: Date.FormatStyle.DateStyle,
+    time: Date.FormatStyle.TimeStyle,
+    languageCode: String = gymCurrentLanguageCode()
+) -> String {
+    gymFormattedDateWithoutWeekday(
+        value,
+        date: date,
+        time: time,
+        languageCode: languageCode
+    )
+}
+
+func gymFormattedDateWithoutWeekday(
+    _ value: Date,
+    date: Date.FormatStyle.DateStyle,
+    time: Date.FormatStyle.TimeStyle,
+    languageCode: String = gymCurrentLanguageCode()
+) -> String {
+    let locale = AppLanguage(rawValue: languageCode)?.locale ?? AppLanguage.english.locale
     return value.formatted(Date.FormatStyle(date: date, time: time, locale: locale))
+}
+
+func gymFormattedWeekday(
+    _ value: Date,
+    languageCode: String = gymCurrentLanguageCode()
+) -> String {
+    let locale = AppLanguage(rawValue: languageCode)?.locale ?? AppLanguage.english.locale
+    return value.formatted(.dateTime.weekday(.wide).locale(locale))
 }
 
 func gymErrorMessage(

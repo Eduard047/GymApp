@@ -11,6 +11,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import kotlinx.coroutines.runBlocking
 
 @RunWith(AndroidJUnit4::class)
 class LiveWorkoutSidecarStoreTest {
@@ -59,6 +60,40 @@ class LiveWorkoutSidecarStoreTest {
         assertEquals(binding, store.load(first))
         assertEquals(binding, LiveWorkoutSidecarStore(context).load(first))
         assertNull(LiveWorkoutSidecarStore(context).load(other))
+    }
+
+    @Test
+    fun sameAccountNewSessionRebindsOnlyTheExactAuthoritativeReservation() = runBlocking {
+        val first = session("42345678-1234-4123-8123-123456789abc")
+        val next = first.copy(sessionGeneration = "62345678-1234-4123-8123-123456789abc")
+        val previous = LiveWorkoutReservation(
+            userId = first.userId,
+            sessionGeneration = first.sessionGeneration,
+            role = "participant",
+            operationId = "12345678-1234-4123-8123-123456789abc",
+            roomId = "lr_0123456789abcdef0123456789abcdef",
+            phase = LiveWorkoutReservationPhase.Waiting,
+            createdAt = 1_800_000_000_000L,
+            expiresAt = 1_800_086_400_000L
+        )
+        assertTrue(store.reserve(first, previous, nowMillis = previous.createdAt) { true })
+        assertEquals(previous, store.sessionMismatchedReservation(next))
+        assertFalse(store.reconcileSessionMismatchedReservation(
+            next,
+            first.sessionGeneration,
+            "22345678-1234-4123-8123-123456789abc",
+            null
+        ))
+        assertEquals(previous, store.sessionMismatchedReservation(next))
+
+        val rebound = previous.copy(sessionGeneration = next.sessionGeneration)
+        assertTrue(store.reconcileSessionMismatchedReservation(
+            next,
+            first.sessionGeneration,
+            previous.operationId,
+            rebound
+        ))
+        assertEquals(rebound, store.reservation(next, nowMillis = previous.createdAt))
     }
 
     private fun session(userId: String) = AccountSession.Cloud(

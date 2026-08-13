@@ -774,7 +774,7 @@ test("malformed, duplicate, orphaned, and profile-mismatched native rows fail cl
     }, defaultAppState(), false)`, context);
 
     assert.equal(vm.runInContext("cloudStateRecovery.rawState === globalThis.__invalidNative", context), true);
-    assert.equal(vm.runInContext("state.profile.goal", context), "Balanced");
+    assert.equal(vm.runInContext("state.profile.goal", context), "Aesthetic Cut");
     await assert.rejects(vm.runInContext("saveRemoteState()", context), /recovery must be resolved/);
     assert.equal(requests.filter(request => ["PATCH", "POST"].includes(request.options?.method)).length, 0);
   }
@@ -876,7 +876,7 @@ test("a clean missing-cloud baseline accepts a later completed-workout creation"
 
   assert.equal(requests.length, 1);
   assert.equal(vm.runInContext("state.sessions[0].sets[0].reps", context), 6);
-  assert.equal(vm.runInContext("state.profile.goal", context), "Balanced");
+  assert.equal(vm.runInContext("state.profile.goal", context), "Aesthetic Cut");
   assert.equal(vm.runInContext("cloudSyncConflict", context), null);
   assert.equal(vm.runInContext("loadSyncBaseline(activeAccount.userId).dirty", context), false);
 });
@@ -1532,9 +1532,8 @@ test("oversized account marker clears both the marker and legacy persistent sess
 
 test("account transitions clear timers while durable Garmin revocation stays explicit", () => {
   assert.match(appSource, /clearTimeout\(remoteSaveTimer\);[\s\S]*remoteStateSync = \{ userId: null, exists: false, revision: null \}/);
-  assert.equal(
-    (appSource.match(/activeAccount = account;\s*exerciseRestTimerLedger = null;/g) || []).length,
-    2
+  assert.ok(
+    (appSource.match(/activeAccount = account;\s*exerciseRestTimerLedger = null;/g) || []).length >= 3
   );
   assert.ok(
     (appSource.match(/activeAccount = null;\s*exerciseRestTimerLedger = null;\s*state = loadState\(\);/g) || []).length >= 3
@@ -1961,8 +1960,8 @@ test("Unicode and formerly truncated local names retain separate stable storage 
   `, context);
   const names = [
     "用户 Атлет",
-    `${"x".repeat(63)}a`,
-    `${"x".repeat(63)}b`
+    `${"x".repeat(31)}a`,
+    `${"x".repeat(31)}b`
   ];
   const ids = [];
   for (const name of names) {
@@ -1976,6 +1975,79 @@ test("Unicode and formerly truncated local names retain separate stable storage 
     JSON.parse(context.localStorage.getItem("gym-pwa-account-list-v1")).map(account => account.name),
     names
   );
+});
+
+test("new offline profiles enforce the shared name contract and resume only by stable id", async () => {
+  const context = loadContext(async () => {
+    throw new Error("network is not used");
+  }, { randomSeed: 173 });
+  vm.runInContext(`
+    activeAccount = null;
+    localStorage.removeItem(AUTH_KEY);
+    clearRemoteSession();
+    localStorage.removeItem(ACCOUNT_LIST_KEY);
+    state = defaultAppState();
+  `, context);
+
+  for (const invalidName of ["x", "No/slash", "x".repeat(33)]) {
+    await vm.runInContext(`loginAccount(${JSON.stringify(invalidName)}, { createOnly: true })`, context);
+    assert.equal(vm.runInContext("activeAccount", context), null);
+    assert.equal(context.localStorage.getItem("gym-pwa-account-list-v1"), null);
+  }
+
+  await vm.runInContext('loginAccount("Stable Owner", { createOnly: true })', context);
+  const stableId = vm.runInContext("activeAccount.id", context);
+  vm.runInContext(`
+    state.sessions = [{ id: 17, startedAt: 1760000000000, note: "owner only", exerciseNames: [], sets: [] }];
+    saveState({ queueRemote: false });
+  `, context);
+  await vm.runInContext("logoutAccount()", context);
+
+  await vm.runInContext('loginAccount("Stable   Owner", { createOnly: true })', context);
+  assert.equal(vm.runInContext("activeAccount", context), null, "duplicate create must fail closed");
+  assert.equal(JSON.parse(context.localStorage.getItem("gym-pwa-account-list-v1")).length, 1);
+
+  await vm.runInContext(`resumeOfflineAccount(${JSON.stringify(stableId)})`, context);
+  assert.equal(vm.runInContext("activeAccount.id", context), stableId);
+  assert.equal(vm.runInContext("state.sessions[0].note", context), "owner only");
+});
+
+test("local profile cap counts only 32 local owners and leaves a cloud entry intact", async () => {
+  const context = loadContext(async () => {
+    throw new Error("network is not used");
+  }, { randomSeed: 211 });
+  const localAccounts = Array.from({ length: 32 }, (_, index) => ({
+    id: `local-v2-${index.toString(16).padStart(32, "0")}`,
+    name: `Owner ${index + 1}`,
+    localIdVersion: 2
+  }));
+  const cloudAccount = {
+    id: `remote-${ACTIVE_USER_ID}`,
+    name: "Cloud owner",
+    email: "synthetic@example.test",
+    userId: ACTIVE_USER_ID,
+    remote: "supabase"
+  };
+  context.localStorage.setItem("gym-pwa-account-list-v1", JSON.stringify([...localAccounts, cloudAccount]));
+  for (const account of localAccounts) {
+    context.localStorage.setItem(`gym-pwa-account:${account.id}`, JSON.stringify(
+      vm.runInContext("defaultAppState()", context)
+    ));
+  }
+  vm.runInContext(`
+    activeAccount = null;
+    localStorage.removeItem(AUTH_KEY);
+    clearRemoteSession();
+    state = defaultAppState();
+  `, context);
+  const beforeList = context.localStorage.getItem("gym-pwa-account-list-v1");
+  const beforeKeys = [...context.storageValues.keys()].sort();
+
+  assert.equal(vm.runInContext("accountList().length", context), 33);
+  await vm.runInContext('loginAccount("Owner 33", { createOnly: true })', context);
+  assert.equal(vm.runInContext("activeAccount", context), null);
+  assert.equal(context.localStorage.getItem("gym-pwa-account-list-v1"), beforeList);
+  assert.deepEqual([...context.storageValues.keys()].sort(), beforeKeys);
 });
 
 test("legacy account keys remain stable while ambiguous collisions fail closed", async () => {

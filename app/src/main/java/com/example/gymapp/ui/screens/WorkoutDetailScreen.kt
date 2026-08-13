@@ -321,7 +321,7 @@ internal fun WorkoutDetailScreen(
                 item {
                     if (garminMetrics != null) {
                         GarminWorkoutHeaderCard(
-                            date = DateTimeUtils.formatDate(details.session.date),
+                            date = DateTimeUtils.formatLongDate(details.session.date),
                             metrics = garminMetrics,
                             hasVerifiedGarminOrigin =
                                 garminPresentation?.hasVerifiedGarminOrigin == true,
@@ -335,7 +335,7 @@ internal fun WorkoutDetailScreen(
                         )
                     } else {
                         WorkoutHeaderCard(
-                            date = DateTimeUtils.formatDate(details.session.date),
+                            date = DateTimeUtils.formatLongDate(details.session.date),
                             note = details.session.note,
                             exerciseCount = details.workoutExercises.size,
                             setCount = details.workoutExercises.sumOf { it.sets.size },
@@ -750,7 +750,7 @@ internal fun WorkoutDetailScreen(
                 Text(
                     text = stringResource(
                         R.string.dialog_delete_workout_message,
-                        details?.session?.date?.let(DateTimeUtils::formatDate).orEmpty()
+                        details?.session?.date?.let(DateTimeUtils::formatLongDate).orEmpty()
                     )
                 )
             },

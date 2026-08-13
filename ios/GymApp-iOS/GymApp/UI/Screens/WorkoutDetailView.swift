@@ -1846,6 +1846,13 @@ struct WorkoutDetailView: View {
                         : nil
                 )
                 DatePicker("Workout date", selection: $date, displayedComponents: [.date, .hourAndMinute])
+                    .accessibilityValue(
+                        gymFormattedDate(date, date: .long, time: .shortened)
+                    )
+                Text(gymFormattedWeekday(date))
+                    .font(.caption)
+                    .foregroundStyle(GymTheme.textSecondary)
+                    .accessibilityHidden(true)
                 if !isGarminWorkout {
                     TextField("Notes (optional)", text: $note, axis: .vertical)
                         .lineLimit(2 ... 5)

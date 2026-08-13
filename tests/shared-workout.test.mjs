@@ -149,11 +149,14 @@ test("shared workout identities reject normalized and built-in duplicates", () =
   ] }), /duplicate/);
 });
 
-test("shared route previews a validated plan while retired root never imports it", () => {
+test("PWA previews a validated share and imports it only after explicit confirmation", () => {
   assert.match(workoutIndexSource, /shared-workout\.v65\.js/);
-  assert.match(workoutIndexSource, /workout\/landing\.v2\.js|\.\/landing\.v2\.js/);
-  assert.doesNotMatch(indexSource, /shared-workout|shared-workout-flow/);
-  assert.doesNotMatch(workerSource, /shared-workout|shared-workout-flow/);
+  assert.match(workoutIndexSource, /workout\/landing\.v3\.js|\.\/landing\.v3\.js/);
+  assert.match(workoutIndexSource, /continue-web/);
+  assert.match(indexSource, /shared-workout\.v65\.js/);
+  assert.match(indexSource, /shared-workout-flow\.v71\.js/);
+  assert.match(workerSource, /shared-workout\.v65\.js/);
+  assert.match(workerSource, /shared-workout-flow\.v71\.js/);
   assert.match(appSource, /configureBuiltInIdentityResolver\?\.\(catalogKeyRecognizedFromName\)/);
   assert.match(appSource, /const SHARED_WORKOUT_URL = `\$\{PUBLIC_SITE_URL\}workout\/`/);
   assert.match(appSource, /function applyPendingSharedWorkout\(allowDraftReplacement = false\)/);

@@ -6,7 +6,7 @@
     <meta name="referrer" content="no-referrer">
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'; object-src 'none'; frame-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; manifest-src 'self'; upgrade-insecure-requests">
     <meta name="theme-color" content="#071526">
-    <meta name="description" content="Preview a shared workout plan and open an editable copy in the Android or iPhone app.">
+    <meta name="description" content="Open an editable GymApp workout plan in the Android app, iPhone app, or browser.">
     <meta property="og:title" content="Shared GymApp workout">
     <meta property="og:description" content="Preview an editable workout plan and choose where to open it.">
     <meta property="og:type" content="website">
@@ -17,9 +17,9 @@
     <link rel="canonical" href="https://gymapptracker.com/workout/">
     <link rel="icon" href="../favicon-32.png" type="image/png" sizes="32x32">
     <link rel="apple-touch-icon" href="../apple-touch-icon.png" sizes="180x180">
-    <link rel="stylesheet" href="./landing.v1.css">
+    <link rel="stylesheet" href="./landing.v2.css">
     <script src="../shared-workout.v65.js" defer></script>
-    <script src="./landing.v2.js" defer></script>
+    <script src="./landing.v3.js" defer></script>
   </head>
   <body>
     <main class="share-shell">
@@ -29,8 +29,9 @@
       </header>
 
       <section class="hero-card" aria-labelledby="share-title">
+        <span class="eyebrow" id="eyebrow">SHARED WORKOUT</span>
         <h1 id="share-title">Choose where to open this plan</h1>
-        <p id="share-subtitle">Review the exercises, then open an editable copy in GymApp.</p>
+        <p id="share-subtitle">Review the exercises first, then open an editable copy in GymApp or continue in your browser.</p>
       </section>
 
       <section id="invalid-panel" class="status-card error" role="alert" hidden>
@@ -41,7 +42,8 @@
 
       <section id="preview-panel" class="preview-card" aria-labelledby="preview-title" hidden>
         <div class="section-heading">
-          <h2 id="preview-title">Workout preview</h2>
+          <div><span class="eyebrow" id="preview-eyebrow">PLAN PREVIEW</span><h2 id="preview-title">Editable workout</h2></div>
+          <span class="verified-pill" id="validated-label">Checked locally</span>
         </div>
         <div class="metric-grid" aria-label="Workout totals">
           <div><span id="exercise-label">Exercises</span><strong id="exercise-count">0</strong></div>
@@ -52,15 +54,12 @@
       </section>
 
       <section id="action-panel" class="action-card" aria-labelledby="action-title" hidden>
-        <div class="section-heading"><h2 id="action-title">Open in GymApp</h2></div>
+        <div class="section-heading"><div><span class="eyebrow" id="action-eyebrow">OPEN WITH</span><h2 id="action-title">Continue your way</h2></div></div>
         <div id="native-actions" class="native-actions">
-          <a id="open-android" class="button android" href="#"><strong>Open Android app</strong></a>
-          <a id="open-ios" class="button ios" href="#"><strong>Open iPhone app</strong></a>
+          <a id="open-android" class="button android" href="#"><span aria-hidden="true">A</span><strong>Open Android app</strong></a>
+          <a id="open-ios" class="button ios" href="#"><span aria-hidden="true">iOS</span><strong>Open iPhone app</strong></a>
         </div>
-        <div class="fallback-links">
-          <a id="get-android" href="https://play.google.com/store/apps/details?id=com.setforge.gymapp" target="_blank" rel="noopener noreferrer">Get GymApp on Google Play</a>
-          <a id="downloads-home" href="https://gymapptracker.com/">GymApp downloads</a>
-        </div>
+        <a id="continue-web" class="button web" href="#"><span aria-hidden="true">↗</span><strong>Continue on website</strong></a>
         <p class="privacy-copy" id="privacy-copy">Only exercises, weights, and reps are included. Nothing is added to your history until you confirm it.</p>
       </section>
     </main>

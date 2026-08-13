@@ -174,7 +174,7 @@ struct AddWorkoutView: View {
     @State private var showingDiscardConfirmation = false
     @State private var showingClearPlanConfirmation = false
 
-    private let baselinePlanSnapshot: PlanEditorSnapshot
+    @State private var baselinePlanSnapshot: PlanEditorSnapshot
 
     private let isCloudAccount: Bool
     private let onStarted: (UUID) -> Void
@@ -296,11 +296,13 @@ struct AddWorkoutView: View {
         self.sendLiveWorkoutInvite = sendLiveWorkoutInvite
         self.refreshSocialWorkoutInbox = refreshSocialWorkoutInbox
         rejectsLaunchSeed = requestedLaunchSeed != nil && launchSeed == nil
-        baselinePlanSnapshot = PlanEditorSnapshot(
-            date: initialDate,
-            note: "",
-            effort: initialEffort,
-            drafts: initialEditorDrafts
+        _baselinePlanSnapshot = State(
+            initialValue: PlanEditorSnapshot(
+                date: initialDate,
+                note: "",
+                effort: initialEffort,
+                drafts: initialEditorDrafts
+            )
         )
     }
 
@@ -497,6 +499,14 @@ struct AddWorkoutView: View {
                     displayedComponents: [.date, .hourAndMinute]
                 )
                     .datePickerStyle(.compact)
+                    .accessibilityValue(
+                        gymFormattedDate(date, date: .long, time: .shortened)
+                    )
+
+                Text(gymFormattedWeekday(date))
+                    .font(.caption)
+                    .foregroundStyle(GymTheme.textSecondary)
+                    .accessibilityHidden(true)
 
                 TextField("Notes (optional)", text: $note, axis: .vertical)
                     .lineLimit(2 ... 6)
@@ -816,26 +826,31 @@ struct AddWorkoutView: View {
 
     @ViewBuilder
     private var editorSection: some View {
-        HStack {
+        HStack(spacing: 10) {
             GymSectionTitle(
                 title: "Exercises"
             )
-            Spacer(minLength: 8)
+            .layoutPriority(1)
+            Spacer(minLength: 4)
             if !drafts.isEmpty {
                 Button(role: .destructive) {
                     showingClearPlanConfirmation = true
                 } label: {
-                    Label(
+                    Text(
                         gymText(
                             "Clear plan",
                             "Очистити план",
                             "Очистить план",
                             languageCode: gymCurrentLanguageCode()
-                        ),
-                        systemImage: "trash"
+                        )
                     )
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(GymTheme.error)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                    .frame(minHeight: 44)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.plain)
                 .accessibilityHint(gymText(
                     "Removes exercises and sets from this editor only",
                     "Видаляє вправи й підходи лише з цього редактора",
@@ -847,7 +862,9 @@ struct AddWorkoutView: View {
                 Button {
                     showingExercisePicker = true
                 } label: {
-                    Label("Add", systemImage: "plus")
+                    Image(systemName: "plus")
+                        .font(.headline.weight(.bold))
+                        .frame(width: 44, height: 44)
                 }
                 .buttonStyle(.borderedProminent)
                 .accessibilityLabel("Add exercise")
@@ -1832,11 +1849,42 @@ struct AddWorkoutView: View {
 
 }
 
-private struct PlanEditorSnapshot: Equatable {
+struct PlanEditorSnapshot: Equatable {
+    private struct ExerciseSnapshot: Equatable {
+        let exerciseID: UUID
+        let sets: [SetSnapshot]
+        let coachRecommendation: WorkoutRecommendation?
+    }
+
+    private struct SetSnapshot: Equatable {
+        let weight: Double
+        let reps: Int
+    }
+
     let date: Date
     let note: String
     let effort: SmartWorkoutEffort
-    let drafts: [WorkoutEditorExerciseDraft]
+    private let exercises: [ExerciseSnapshot]
+
+    init(
+        date: Date,
+        note: String,
+        effort: SmartWorkoutEffort,
+        drafts: [WorkoutEditorExerciseDraft]
+    ) {
+        self.date = date
+        self.note = note
+        self.effort = effort
+        exercises = drafts.map { draft in
+            ExerciseSnapshot(
+                exerciseID: draft.exerciseID,
+                sets: draft.sets.map { set in
+                    SetSnapshot(weight: set.weight, reps: set.reps)
+                },
+                coachRecommendation: draft.coachRecommendation
+            )
+        }
+    }
 }
 
 private struct SmartReplacementRequest: Identifiable {

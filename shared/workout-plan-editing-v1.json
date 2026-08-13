@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "productVersion": "3.0.8",
+  "productVersion": "3.0.9",
   "scope": {
-    "fullEditors": ["android", "ios"],
-    "browser": "shared-plan-preview-and-native-handoff-only"
+    "fullEditors": ["android", "ios", "browser"],
+    "browser": "full-workout-client"
   },
   "locales": {
     "order": ["en", "uk", "ru"],
@@ -315,16 +315,16 @@
     }
   ],
   "browserException": {
-    "rootWorkoutEditor": false,
+    "rootWorkoutEditor": true,
     "sharedWorkoutRoute": "/workout/",
     "sharedWorkoutRouteCapabilities": [
       "validate",
       "preview",
       "androidNativeHandoff",
       "iosNativeHandoff",
-      "googlePlayFallback"
+      "browserHandoff"
     ],
-    "browserDraftPersistence": false,
-    "continueOnWebsiteAction": false
+    "browserDraftPersistence": true,
+    "continueOnWebsiteAction": true
   }
 }

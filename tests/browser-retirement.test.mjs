@@ -92,41 +92,24 @@ function legacyFixture() {
   return { accountId, state, activeWorkout };
 }
 
-test("root is a non-installable first-party download and legal landing", () => {
+test("root restores the installable first-party workout application", () => {
   const scripts = [...rootHtml.matchAll(/<script[^>]+src="([^"]+)"/g)].map(match => match[1]);
-  const links = absoluteAnchorUrls(rootHtml);
-  assert.deepEqual(scripts, ["./frame-guard.v56.js", "./retirement.v1.js"]);
-  assert.match(rootHtml, /\.\/retirement\.v1\.css/);
-  assert.equal(links.some(link => (
-    link.protocol === "https:"
-      && link.hostname === "play.google.com"
-      && link.pathname === "/store/apps/details"
-      && link.searchParams.get("id") === "com.setforge.gymapp"
-  )), true);
-  assert.equal(links.some(link => (
-    link.protocol === "https:"
-      && link.hostname === "apps.garmin.com"
-      && link.pathname === "/apps/fe82a300-4d9f-4588-8b10-365d75280b8f"
-      && link.search === ""
-  )), true);
-  assert.equal(links.some(link => link.origin === "https://gymapptracker.com" && link.pathname === "/privacy-policy.html"), true);
-  assert.equal(links.some(link => link.origin === "https://gymapptracker.com" && link.pathname === "/support.html"), true);
-  assert.doesNotMatch(rootHtml, /rel="manifest"|apple-mobile-web-app-capable/i);
-  assert.doesNotMatch(rootHtml, /apps\.apple\.com|App Store|Coming soon/i);
-  assert.doesNotMatch(rootHtml, /app\.v\d+\.js|supabase|cloud-sync|live-workout|social|auth/i);
-  assert.doesNotMatch(rootHtml, /[▶↗]|class="(?:orbit|ambient|store-symbol)/u);
-  assert.match(rootHtml, /worker-src 'none'/);
-  assert.match(rootHtml, /connect-src 'none'/);
+  assert.equal(scripts[0], "./frame-guard.v56.js");
+  assert.ok(scripts.includes("./app.v88.js"));
+  assert.ok(scripts.includes("./garmin-cloud-sync.v57.js"));
+  assert.ok(scripts.includes("./supabase-realtime.v1.js"));
+  assert.ok(scripts.includes("./live-workout.v1.js"));
+  assert.match(rootHtml, /rel="manifest" href="\.\/manifest\.webmanifest"/);
+  assert.match(rootHtml, /apple-mobile-web-app-capable/);
+  assert.match(rootHtml, /styles\.v72\.css/);
+  assert.match(rootHtml, /connect-src 'self' https:\/\/owrcbsrectdgaotndtxy\.supabase\.co/);
+  assert.doesNotMatch(rootHtml, /retirement\.v1\.(?:js|css)/);
 });
 
-test("public documentation describes the browser as distribution-only", () => {
-  for (const source of [readme, developmentGuide, operationsGuide]) {
-    assert.doesNotMatch(source, /Open Web App|Web \| Installable PWA|public website and installable PWA/i);
-  }
-  assert.match(readme, /Website &amp; Downloads/);
-  assert.match(readme, /public root intentionally does not load[\s\S]*retired workout application/);
-  assert.match(developmentGuide, /root intentionally has no workout or[\s\S]*authentication runtime/);
-  assert.match(operationsGuide, /public root must not load the retained workout\/PWA runtime/);
+test("the retirement contract is retained as history but is not the active root", () => {
+  assert.equal(contract.status, "browser-workout-retired");
+  assert.match(retirementSource, /collectLegacyData/);
+  assert.doesNotMatch(rootHtml, /retirement\.v1\.(?:js|css)/);
 });
 
 test("retirement bundles are text, byte-identical, syntax-valid, and contain no NUL", () => {
@@ -233,11 +216,11 @@ test("empty storage hides migration while malformed or oversized candidate data 
 test("retirement only deletes allowlisted static caches and reloads at most once per tab", async () => {
   const deleted = [];
   const cacheStorage = {
-    async keys() { return ["gym-pwa-v121", "gym-pwa-v122", "other-product-cache"]; },
+    async keys() { return ["gym-pwa-v121", "gym-pwa-v123", "other-product-cache"]; },
     async delete(name) { deleted.push(name); return true; }
   };
-  assert.deepEqual(await retirement.deleteKnownStaticCaches(cacheStorage), ["gym-pwa-v121", "gym-pwa-v122"]);
-  assert.deepEqual(deleted, ["gym-pwa-v121", "gym-pwa-v122"]);
+  assert.deepEqual(await retirement.deleteKnownStaticCaches(cacheStorage), ["gym-pwa-v121", "gym-pwa-v123"]);
+  assert.deepEqual(deleted, ["gym-pwa-v121", "gym-pwa-v123"]);
 
   const markers = new Map();
   const session = {
@@ -348,29 +331,26 @@ test("push unsubscribe failure cannot preserve the exact retired worker or touch
   assert.doesNotMatch(retirementSource, /indexedDB\.(?:open|databases)|deleteDatabase\([^P]/);
 });
 
-test("retirement worker upgrades old shells without touching user storage or preserved routes", () => {
+test("active worker replaces the retirement worker without touching workout storage", () => {
   assert.match(workerSource, /self\.skipWaiting\(\)/);
-  assert.match(workerSource, /self\.clients\.claim\(\)/);
-  assert.match(workerSource, /name\.startsWith\(CACHE_PREFIX\)/);
-  assert.match(workerSource, /client\.navigate\(ROOT_URL\.href\)/);
+  assert.match(workerSource, /caches\.open\(CACHE_NAME\)/);
+  assert.match(workerSource, /CACHE_VERSION = "v124"/);
+  assert.match(workerSource, /\.\/app\.v88\.js/);
+  assert.match(workerSource, /\.\/manifest\.webmanifest/);
   assert.match(workerSource, /\.\/confirmed\.html/);
   assert.match(workerSource, /\.\/workout\//);
-  assert.doesNotMatch(workerSource, /caches\.open|indexedDB|localStorage|deleteDatabase|pushManager|registration\.unregister/);
-  assert.doesNotMatch(workerSource, /app\.v\d+|supabase|manifest\.webmanifest|exercise-media/);
+  assert.doesNotMatch(workerSource, /localStorage|deleteDatabase|registration\.unregister/);
 });
 
-test("shared workout route previews safely and hands off only to native apps", () => {
-  const links = absoluteAnchorUrls(workoutHtml);
-  assert.doesNotMatch(workoutHtml, /continue-web|Continue on website|continue in (?:your )?browser/i);
-  assert.doesNotMatch(workoutSource, /\bweb\s*:|continue-web|\.links\.web|\$\{CANONICAL_SITE\}#|localStorage|sessionStorage/);
-  assert.equal(links.some(link => link.href === GOOGLE_PLAY.href), true);
-  assert.equal(links.some(link => link.origin === "https://gymapptracker.com" && link.pathname === "/"), true);
+test("shared workout route previews safely and offers explicit browser handoff", () => {
+  assert.match(workoutHtml, /id="continue-web"/);
+  assert.match(workoutSource, /web:\s*`\$\{CANONICAL_SITE\}#\$\{hash\}`/);
+  assert.doesNotMatch(workoutSource, /localStorage|sessionStorage/);
   assert.match(workoutSource, /const ANDROID_SCHEME = "com\.setforge\.gymapp"/);
   assert.match(workoutSource, /const IOS_SCHEME = "com\.setforge\.gymapp\.ios"/);
-  assert.doesNotMatch(workoutHtml, /apps\.apple\.com|App Store/i);
   assert.equal(
     readFileSync(new URL("../pwa/workout/landing.js", import.meta.url)).equals(
-      readFileSync(new URL("../pwa/workout/landing.v2.js", import.meta.url))
+      readFileSync(new URL("../pwa/workout/landing.v3.js", import.meta.url))
     ),
     true
   );

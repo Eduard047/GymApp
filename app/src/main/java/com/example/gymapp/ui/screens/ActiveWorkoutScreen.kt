@@ -34,6 +34,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -51,20 +52,23 @@ import com.example.gymapp.R
 import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.EmptyStatePanel
 import com.example.gymapp.ui.components.ExerciseMediaPreview
+import com.example.gymapp.ui.components.GymSegmentItem
+import com.example.gymapp.ui.components.GymSegmentedControl
 import com.example.gymapp.ui.components.HeroPanel
 import com.example.gymapp.ui.components.InfoPill
 import com.example.gymapp.ui.components.SectionTitle
-import com.example.gymapp.ui.components.SpotterLaneCard
 import com.example.gymapp.ui.viewmodel.ActiveWorkoutExerciseUiState
 import com.example.gymapp.ui.viewmodel.ActiveWorkoutSetUiState
 import com.example.gymapp.ui.viewmodel.ActiveWorkoutUiState
 import com.example.gymapp.ui.viewmodel.LiveConnectionMode
+import com.example.gymapp.ui.viewmodel.LivePeerExerciseSummary
 import com.example.gymapp.ui.theme.GymControlShape
 import com.example.gymapp.ui.theme.GymSpacing
 import com.example.gymapp.ui.util.localizedExerciseName
 import com.example.gymapp.util.DateTimeUtils
 import com.example.gymapp.util.asString
 import java.util.Locale
+import java.text.NumberFormat
 
 @Composable
 fun ActiveWorkoutScreen(
@@ -83,6 +87,9 @@ fun ActiveWorkoutScreen(
     modifier: Modifier = Modifier
 ) {
     var showDiscardConfirmation by rememberSaveable { mutableStateOf(false) }
+    var liveParticipantTab by rememberSaveable(uiState.livePeerName) {
+        mutableStateOf(LiveParticipantTab.Self)
+    }
 
     when {
         uiState.isLoading -> {
@@ -109,6 +116,8 @@ fun ActiveWorkoutScreen(
 
     val operationInProgress = uiState.isRecordingAll || uiState.isFinishing || uiState.isDiscarding ||
         uiState.setRecordingsInFlight.isNotEmpty() || uiState.undoingSetId != null
+    val peerName = uiState.livePeerName
+    val showSelfParticipant = peerName == null || liveParticipantTab == LiveParticipantTab.Self
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
@@ -120,115 +129,32 @@ fun ActiveWorkoutScreen(
         ),
         verticalArrangement = Arrangement.spacedBy(GymSpacing.Large)
     ) {
-        item {
-            HeroPanel(modifier = Modifier.fillMaxWidth()) {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(
-                        text = stringResource(R.string.active_workout_title),
-                        style = MaterialTheme.typography.headlineSmall,
-                        color = Color.White
-                    )
-                    val progressDescription = stringResource(
-                        R.string.active_workout_progress,
-                        uiState.completedSetCount,
-                        uiState.totalSetCount
-                    )
-                    Row(
-                        modifier = Modifier.semantics {
-                            stateDescription = progressDescription
-                            progressBarRangeInfo = ProgressBarRangeInfo(
-                                current = uiState.completedSetCount.toFloat(),
-                                range = 0f..uiState.totalSetCount.coerceAtLeast(1).toFloat(),
-                                steps = (uiState.totalSetCount - 1).coerceAtLeast(0)
-                            )
-                        },
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        InfoPill(
-                            text = progressDescription
-                        )
-                        InfoPill(text = DateTimeUtils.formatDate(uiState.date))
-                    }
-                    Text(
-                        text = stringResource(
-                            R.string.active_workout_total_time,
-                            formatActiveWorkoutTime(uiState.workoutElapsedSeconds)
-                        ),
-                        style = MaterialTheme.typography.titleMedium,
-                        color = Color.White
-                    )
-                    if (uiState.restSecondsRemaining > 0) {
-                        Text(
-                            text = stringResource(
-                                R.string.label_exercise_rest_remaining,
-                                formatRestTime(uiState.restSecondsRemaining)
-                            ),
-                            style = MaterialTheme.typography.titleMedium,
-                            color = Color.White
-                        )
-                    }
-                }
-            }
-        }
-
-        uiState.livePeerName?.let { peerName ->
+        if (peerName != null) {
             item {
-                AppPanel(modifier = Modifier.fillMaxWidth(), highlighted = true) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Text(
-                            text = stringResource(R.string.live_workout_peer_title, peerName),
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                        Text(
-                            text = if (uiState.livePeerFinished) {
-                                stringResource(R.string.live_workout_peer_finished)
-                            } else {
-                                stringResource(
-                                    R.string.live_workout_peer_progress,
-                                    uiState.livePeerCompletedSetCount,
-                                    uiState.livePeerTotalSetCount
-                                )
-                            },
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                        Text(
-                            text = stringResource(
-                                when (uiState.liveConnectionMode) {
-                                    LiveConnectionMode.Realtime -> R.string.live_workout_active_realtime
-                                    LiveConnectionMode.Polling -> R.string.live_workout_active_polling
-                                    LiveConnectionMode.Offline,
-                                    null -> R.string.live_workout_active_offline
-                                },
-                                uiState.livePendingOperationCount
-                            ),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        if (uiState.liveExerciseLanes.isNotEmpty()) {
-                            Text(
-                                text = stringResource(R.string.live_workout_two_lanes_title),
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            uiState.liveExerciseLanes.forEach { exercise ->
-                                SpotterLaneCard(
-                                    exerciseName = localizedExerciseName(exercise.exerciseName),
-                                    selfLabel = stringResource(R.string.live_workout_lane_you),
-                                    selfCompleted = exercise.selfCompletedSets,
-                                    peerLabel = peerName,
-                                    peerCompleted = exercise.peerCompletedSets,
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                            }
-                        }
-                    }
-                }
+                GymSegmentedControl(
+                    items = listOf(
+                        GymSegmentItem(
+                            LiveParticipantTab.Self,
+                            uiState.liveSelfName ?: stringResource(R.string.live_workout_lane_you)
+                        ),
+                        GymSegmentItem(LiveParticipantTab.Peer, peerName)
+                    ),
+                    selected = liveParticipantTab,
+                    onSelected = { liveParticipantTab = it },
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
         }
 
+        item {
+            if (showSelfParticipant) {
+                ActiveWorkoutHero(uiState)
+            } else {
+                LivePeerWorkoutHero(uiState = uiState, peerName = peerName.orEmpty())
+            }
+        }
+
+        if (showSelfParticipant) {
         uiState.note?.takeIf(String::isNotBlank)?.let { note ->
             item {
                 AppPanel(modifier = Modifier.fillMaxWidth()) {
@@ -376,6 +302,29 @@ fun ActiveWorkoutScreen(
                 }
             }
         }
+        } else {
+            item {
+                Text(
+                    text = stringResource(
+                        when (uiState.liveConnectionMode) {
+                            LiveConnectionMode.Realtime -> R.string.live_workout_active_realtime
+                            LiveConnectionMode.Polling -> R.string.live_workout_active_polling
+                            LiveConnectionMode.Offline,
+                            null -> R.string.live_workout_active_offline
+                        },
+                        uiState.livePendingOperationCount
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            items(
+                items = uiState.livePeerExercises,
+                key = LivePeerExerciseSummary::exerciseId
+            ) { exercise ->
+                LivePeerExerciseCard(exercise)
+            }
+        }
     }
 
     if (showDiscardConfirmation) {
@@ -403,6 +352,142 @@ fun ActiveWorkoutScreen(
                 }
             }
         )
+    }
+}
+
+private enum class LiveParticipantTab { Self, Peer }
+
+@Composable
+private fun ActiveWorkoutHero(uiState: ActiveWorkoutUiState) {
+    HeroPanel(modifier = Modifier.fillMaxWidth()) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(
+                text = stringResource(R.string.active_workout_title),
+                style = MaterialTheme.typography.headlineSmall,
+                color = Color.White
+            )
+            val progressDescription = stringResource(
+                R.string.active_workout_progress,
+                uiState.completedSetCount,
+                uiState.totalSetCount
+            )
+            Row(
+                modifier = Modifier.semantics {
+                    stateDescription = progressDescription
+                    progressBarRangeInfo = ProgressBarRangeInfo(
+                        current = uiState.completedSetCount.toFloat(),
+                        range = 0f..uiState.totalSetCount.coerceAtLeast(1).toFloat(),
+                        steps = (uiState.totalSetCount - 1).coerceAtLeast(0)
+                    )
+                },
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                InfoPill(text = progressDescription)
+                InfoPill(text = DateTimeUtils.formatDate(uiState.date))
+            }
+            Text(
+                text = stringResource(
+                    R.string.active_workout_total_time,
+                    formatActiveWorkoutTime(uiState.workoutElapsedSeconds)
+                ),
+                style = MaterialTheme.typography.titleMedium,
+                color = Color.White
+            )
+            if (uiState.restSecondsRemaining > 0) {
+                Text(
+                    text = stringResource(
+                        R.string.label_exercise_rest_remaining,
+                        formatRestTime(uiState.restSecondsRemaining)
+                    ),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = Color.White
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun LivePeerWorkoutHero(
+    uiState: ActiveWorkoutUiState,
+    peerName: String
+) {
+    HeroPanel(modifier = Modifier.fillMaxWidth()) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(
+                text = peerName,
+                style = MaterialTheme.typography.headlineSmall,
+                color = Color.White
+            )
+            val progressDescription = if (uiState.livePeerFinished) {
+                stringResource(R.string.live_workout_peer_finished)
+            } else {
+                stringResource(
+                    R.string.live_workout_peer_progress,
+                    uiState.livePeerCompletedSetCount,
+                    uiState.livePeerTotalSetCount
+                )
+            }
+            InfoPill(text = progressDescription)
+            Text(
+                text = stringResource(R.string.live_workout_peer_read_only),
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color.White.copy(alpha = 0.84f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun LivePeerExerciseCard(exercise: LivePeerExerciseSummary) {
+    val numberFormat = remember {
+        NumberFormat.getNumberInstance().apply { maximumFractionDigits = 2 }
+    }
+    AppPanel(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(
+                text = localizedExerciseName(exercise.exerciseName),
+                style = MaterialTheme.typography.titleMedium
+            )
+            exercise.sets.forEach { set ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = stringResource(R.string.label_set, set.orderIndex + 1),
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = if (set.isCompleted) {
+                            stringResource(
+                                R.string.live_workout_peer_set_completed,
+                                numberFormat.format(set.completedWeight ?: 0.0),
+                                set.completedReps ?: 0
+                            )
+                        } else {
+                            stringResource(
+                                R.string.live_workout_peer_set_pending,
+                                numberFormat.format(set.plannedWeight),
+                                set.plannedReps
+                            )
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (set.isCompleted) {
+                            MaterialTheme.colorScheme.onSurface
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
+                }
+            }
+        }
     }
 }
 

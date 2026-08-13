@@ -4,6 +4,29 @@ package com.example.gymapp.util
 object RussianText {
     private val exact = mapOf(
         "Abs" to "Пресс",
+        "Accumulate a realistic number of working sets this month." to
+            "Набери реалистичное количество рабочих подходов в этом месяце.",
+        "Active days" to "Активные дни",
+        "Balanced session" to "Сбалансированная сессия",
+        "Build a typical recent week's number of working sets." to
+            "Выполни типичное для недавней недели количество рабочих подходов.",
+        "Build on a sustainable recent month of workouts." to
+            "Опирайся на стабильный ритм тренировок недавнего месяца.",
+        "Complete a sustainable number of working sets today." to
+            "Выполни реалистичное количество рабочих подходов сегодня.",
+        "Complete one workout today." to "Заверши одну тренировку сегодня.",
+        "Match a sustainable recent workout rhythm this week." to
+            "Поддержи на этой неделе стабильный ритм недавних тренировок.",
+        "Monthly base" to "Основа месяца",
+        "Quality sets" to "Качественные подходы",
+        "Show up" to "Приди на тренировку",
+        "Steady sets" to "Стабильные подходы",
+        "Sustainable sets" to "Стабильный объём подходов",
+        "Train a realistic number of exercises today." to
+            "Выполни реалистичное количество упражнений сегодня.",
+        "Train on a realistic number of separate days this week." to
+            "Тренируйся реалистичное количество отдельных дней на этой неделе.",
+        "Weekly rhythm" to "Ритм недели",
         "Accumulate eight sets in a single day." to "Выполни восемь подходов за один день.",
         "Accumulate fifty thousand total volume." to "Набери общий объём 50 000.",
         "Accumulate ten thousand total volume." to "Набери общий объём 10 000.",

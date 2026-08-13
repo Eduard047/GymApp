@@ -235,6 +235,85 @@ final class SocialContractTests: XCTestCase {
         )
     }
 
+    func testFriendWorkoutPageIsExactBoundedReadOnlyAndAllowsBodyweightSets() throws {
+        let page = try SocialPayloadParser.friendWorkoutPage(
+            from: jsonData(friendWorkoutPageObject())
+        )
+
+        XCTAssertEqual(page.profileID, profileID(2))
+        XCTAssertEqual(page.activityRevision, "2026-08-09T18:00:00Z")
+        XCTAssertNil(page.nextCursor)
+        XCTAssertEqual(page.items.first?.exercises.first?.sets.first?.weightKg, 0)
+        XCTAssertEqual(page.items.first?.exercises.first?.sets.first?.reps, 12)
+
+        var expanded = friendWorkoutPageObject()
+        expanded["privateNote"] = "must stay private"
+        XCTAssertThrowsError(
+            try SocialPayloadParser.friendWorkoutPage(from: jsonData(expanded))
+        )
+
+        var cursor = friendWorkoutPageObject()
+        cursor["nextCursor"] = "123:1"
+        XCTAssertThrowsError(
+            try SocialPayloadParser.friendWorkoutPage(from: jsonData(cursor))
+        )
+
+        var oversized = friendWorkoutPageObject()
+        var items = try XCTUnwrap(oversized["items"] as? [[String: Any]])
+        var workout = try XCTUnwrap(items.first)
+        var exercises = try XCTUnwrap(workout["exercises"] as? [[String: Any]])
+        var exercise = try XCTUnwrap(exercises.first)
+        exercise["sets"] = (0 ... 20).map { _ in ["weightKg": 1, "reps": 1] }
+        exercises[0] = exercise
+        workout["exercises"] = exercises
+        workout["setCount"] = 21
+        items[0] = workout
+        oversized["items"] = items
+        XCTAssertThrowsError(
+            try SocialPayloadParser.friendWorkoutPage(from: jsonData(oversized))
+        )
+    }
+
+    func testDetailPrivacyCapabilityAndRealtimeInvalidationAreExact() throws {
+        let privacy = try SocialPayloadParser.workoutDetailPrivacy(from: jsonData([
+            "version": 1,
+            "shareWorkoutDetails": false,
+            "settingsRevision": 7
+        ]))
+        XCTAssertFalse(privacy.shareWorkoutDetails)
+        XCTAssertEqual(privacy.settingsRevision, 7)
+
+        let capability = try SocialPayloadParser.friendWorkoutDetailCapability(
+            from: jsonData(["version": 1, "available": false])
+        )
+        XCTAssertFalse(capability.available)
+        XCTAssertEqual(
+            try SocialPayloadParser.realtimeHint(from: [
+                "version": 1,
+                "kind": "privacy_changed"
+            ]).kind,
+            "privacy_changed"
+        )
+
+        XCTAssertThrowsError(try SocialPayloadParser.friendWorkoutDetailCapability(
+            from: jsonData([
+                "version": 1,
+                "available": false,
+                "profileId": profileID(2)
+            ])
+        ))
+        XCTAssertThrowsError(try SocialPayloadParser.realtimeHint(from: [
+            "version": 1,
+            "kind": "privacy_changed",
+            "settingsRevision": 7
+        ]))
+        XCTAssertThrowsError(try SocialPayloadParser.workoutDetailPrivacy(from: jsonData([
+            "version": 1,
+            "shareWorkoutDetails": false,
+            "settingsRevision": 0
+        ])))
+    }
+
     func testWorkoutInboxRequiresExactCanonicalPayloadAndSummary() throws {
         let inbox = try SocialPayloadParser.workoutInbox(from: jsonData(workoutInboxObject()))
 
@@ -1985,6 +2064,32 @@ final class SocialContractTests: XCTestCase {
                 "workoutCount": 4,
                 "lastWorkoutDay": "2026-08-09"
             ]],
+            "integrity": "self_reported"
+        ]
+    }
+
+    private func friendWorkoutPageObject() -> [String: Any] {
+        [
+            "version": 1,
+            "friend": [
+                "profileId": profileID(2),
+                "displayName": "Friend 2"
+            ],
+            "activityRevision": "2026-08-09T18:00:00Z",
+            "items": [[
+                "workoutId": "fw_11111111111111111111111111111111",
+                "startedAt": "2026-08-09T18:00:00Z",
+                "workoutDay": "2026-08-09",
+                "exerciseCount": 1,
+                "setCount": 1,
+                "truncated": false,
+                "exercises": [[
+                    "catalogKey": "push_up",
+                    "name": "Push Up",
+                    "sets": [["weightKg": 0, "reps": 12]]
+                ]]
+            ]],
+            "nextCursor": NSNull(),
             "integrity": "self_reported"
         ]
     }

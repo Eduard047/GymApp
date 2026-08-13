@@ -11470,7 +11470,9 @@ final class CoreParityTests: XCTestCase {
         )
         XCTAssertTrue(editorHeaderSource.contains("showingClearPlanConfirmation = true"))
         XCTAssertTrue(editorHeaderSource.contains("showingExercisePicker = true"))
-        XCTAssertTrue(editorHeaderSource.contains("Label(\"Add\", systemImage: \"plus\")"))
+        XCTAssertTrue(editorHeaderSource.contains("Image(systemName: \"plus\")"))
+        XCTAssertTrue(editorHeaderSource.contains(".accessibilityLabel(\"Add exercise\")"))
+        XCTAssertFalse(editorHeaderSource.contains("Label(\"Add\", systemImage: \"plus\")"))
         XCTAssertTrue(editorHeaderSource.contains("Clear plan"))
 
         let emptyEditorSource = try XCTUnwrap(

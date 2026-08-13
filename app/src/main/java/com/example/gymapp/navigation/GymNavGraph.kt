@@ -2225,8 +2225,11 @@ internal fun GymAppRoot(
                                 onUnblockProfile = { profile ->
                                     friendsViewModel?.unblockProfile(profile)
                                 },
-                                onUpdatePrivacy = { privacy ->
-                                    friendsViewModel?.updatePrivacy(privacy)
+                                onUpdatePrivacy = { privacy, shareWorkoutDetails ->
+                                    friendsViewModel?.updatePrivacy(
+                                        privacy,
+                                        shareWorkoutDetails
+                                    )
                                 },
                                 onAcceptWorkoutInvite = { invite ->
                                     if (!canAcceptSocialWorkoutInvite(activeWorkout != null)) {
@@ -2728,6 +2731,16 @@ internal fun GymAppRoot(
                                 details = socialState.selectedFriendDetails.takeIf {
                                     socialState.selectedProfileId == profileId
                                 },
+                                friendWorkouts = socialState.friendWorkouts.takeIf {
+                                    socialState.selectedProfileId == profileId
+                                }.orEmpty(),
+                                friendWorkoutActivityRevision =
+                                    socialState.friendWorkoutActivityRevision.takeIf {
+                                        socialState.selectedProfileId == profileId
+                                    },
+                                friendWorkoutDetailsAvailable =
+                                    socialState.selectedProfileId == profileId &&
+                                        socialState.friendWorkoutDetailsAvailable,
                                 isLoading = socialState.isDetailsLoading,
                                 error = socialState.error,
                                 actionInFlight = friend?.let {

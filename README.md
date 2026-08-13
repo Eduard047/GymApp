@@ -48,7 +48,7 @@ optional.
 | --- | --- | --- |
 | Android | Kotlin, Jetpack Compose, Room | Production APK and Google Play AAB |
 | iOS | SwiftUI, iOS 17+ | Source and universal Simulator build; App Store IPA is not published yet |
-| Browser | Download, privacy, support, account/data-rights, and bounded legacy-export site | Live at [gymapptracker.com](https://gymapptracker.com/) |
+| Browser | Full offline-capable workout application, shared-workout handoff, privacy, and support | Live at [gymapptracker.com](https://gymapptracker.com/) |
 | Garmin | Connect IQ 3.2+ | Signed Connect IQ Store upload package |
 | Cloud | Supabase | Optional account sync and Garmin plan queue |
 
@@ -71,7 +71,7 @@ and Russian. Android and iOS support light and dark appearance.
 | [`app/`](app/) | Android phone application |
 | [`ios/GymApp-iOS/`](ios/GymApp-iOS/) | Native iOS application |
 | [`garmin/`](garmin/) | Garmin Connect IQ application |
-| [`pwa/`](pwa/) | Public distribution/legal site, native callback and workout-handoff routes, plus retained legacy browser source |
+| [`pwa/`](pwa/) | Full browser application, service worker, native callback, legal pages, and workout-handoff routes |
 | [`supabase/`](supabase/) | Ordered migrations, templates, and Edge Functions |
 | [`tests/`](tests/) | Cross-platform contract and security tests |
 
@@ -91,8 +91,8 @@ Run the public browser site locally:
 python3 -m http.server 4173 --directory pwa
 ```
 
-Then open <http://127.0.0.1:4173>. The public root intentionally does not load
-the retired workout application; workouts run in the native apps.
+Then open <http://127.0.0.1:4173>. The public root runs the complete browser
+application; workout data can remain local, while account sync is optional.
 
 Run the cross-platform contract suite:
 

@@ -12,6 +12,9 @@ final class LiveWorkoutCoordinator: ObservableObject {
     @Published private(set) var realtimeConnected = false
 
     let sidecar: LiveWorkoutSidecarStore
+    private var slotReservation: LiveWorkoutSlotReservationStore {
+        activeWorkoutStore.liveSlotReservationStore
+    }
 
     private let auth: AuthService
     private let workoutStore: WorkoutStore
@@ -72,6 +75,10 @@ final class LiveWorkoutCoordinator: ObservableObject {
         snapshot?.peerParticipant?.profile.displayName ?? sidecar.attachment?.peerDisplayName
     }
 
+    var selfDisplayName: String? {
+        snapshot?.currentParticipant?.profile.displayName
+    }
+
     func startMonitoring() {
         guard pollTask == nil, !expectedUserID.isEmpty else { return }
         realtimeInvalidator.start()
@@ -111,8 +118,27 @@ final class LiveWorkoutCoordinator: ObservableObject {
             } catch LiveWorkoutSidecarError.accountMismatch {
                 snapshot = nil
             }
+            let sessionMismatchedReservation: LiveWorkoutSlotReservation?
+            do {
+                try slotReservation.bind(to: context)
+                sessionMismatchedReservation = nil
+            } catch LiveWorkoutSlotReservationError.sessionMismatch {
+                snapshot = nil
+                sessionMismatchedReservation = slotReservation.reservation
+            } catch LiveWorkoutSlotReservationError.accountMismatch {
+                snapshot = nil
+                sessionMismatchedReservation = nil
+            }
             let freshInbox = try await gateway.inbox(expectedUserID: expectedUserID)
             try ensureCurrent(context)
+            if let sessionMismatchedReservation {
+                try reconcileSessionMismatchedReservation(
+                    sessionMismatchedReservation,
+                    with: freshInbox,
+                    context: context
+                )
+            }
+            try reconcileSlotReservation(with: freshInbox, context: context)
             inbox = freshInbox
 
             if let attachedRoomID = sidecar.attachment?.roomID,
@@ -158,13 +184,53 @@ final class LiveWorkoutCoordinator: ObservableObject {
         let digest = canonical.base64EncodedString() + ":" + profileID
         let requestID = pendingInviteRequestIDs[digest] ?? UUID()
         pendingInviteRequestIDs[digest] = requestID
-        let result = try await gateway.sendInvite(
-            profileID: profileID,
-            clientRequestID: requestID,
-            plan: plan,
-            expectedUserID: expectedUserID
+        let createdAt = Date()
+        let reservation = LiveWorkoutSlotReservation(
+            version: 1,
+            userID: context.userID,
+            sessionID: context.sessionID,
+            role: .owner,
+            operationID: requestID,
+            roomID: nil,
+            phase: .preparing,
+            createdAt: createdAt,
+            expiresAt: createdAt.addingTimeInterval(Self.invitationReservationDuration)
         )
+        try slotReservation.reserve(reservation, context: context) {
+            activeWorkoutStore.draft == nil
+        }
+        let result: LiveWorkoutSendResult
+        do {
+            result = try await gateway.sendInvite(
+                profileID: profileID,
+                clientRequestID: requestID,
+                plan: plan,
+                expectedUserID: expectedUserID
+            )
+        } catch {
+            await reconcileReservationAfterFailedMutation(context: context)
+            throw error
+        }
         try ensureCurrent(context)
+        if let roomID = result.roomID {
+            try slotReservation.replace(
+                operationID: requestID,
+                with: LiveWorkoutSlotReservation(
+                    version: 1,
+                    userID: context.userID,
+                    sessionID: context.sessionID,
+                    role: .owner,
+                    operationID: requestID,
+                    roomID: roomID,
+                    phase: .waiting,
+                    createdAt: createdAt,
+                    expiresAt: reservation.expiresAt
+                ),
+                context: context
+            )
+        } else {
+            try slotReservation.clear(operationID: requestID, context: context)
+        }
         pendingInviteRequestIDs.removeValue(forKey: digest)
         lastStatus = result.submitted
             ? "Live workout invitation sent. The plan is frozen for this room."
@@ -197,21 +263,61 @@ final class LiveWorkoutCoordinator: ObservableObject {
                 throw ActiveWorkoutStoreError.alreadyActive
             }
         }
-        let result = try await gateway.respondInvite(
-            roomID: invitation.roomID,
-            decision: accept ? "accept" : "decline",
-            expectedRoomRevision: invitation.roomRevision,
-            clientOperationID: UUID(),
-            expectedUserID: expectedUserID
-        )
+        let operationID = UUID()
+        if accept {
+            let createdAt = try LiveWorkoutPayloadParser.validatedDate(from: invitation.createdAt)
+            let expiresAt = try LiveWorkoutPayloadParser.validatedDate(from: invitation.inviteExpiresAt)
+            try slotReservation.reserve(
+                LiveWorkoutSlotReservation(
+                    version: 1,
+                    userID: context.userID,
+                    sessionID: context.sessionID,
+                    role: .participant,
+                    operationID: operationID,
+                    roomID: invitation.roomID,
+                    phase: .waiting,
+                    createdAt: createdAt,
+                    expiresAt: expiresAt
+                ),
+                context: context
+            ) { activeWorkoutStore.draft == nil }
+        }
+        let result: LiveWorkoutRespondResult
+        do {
+            result = try await gateway.respondInvite(
+                roomID: invitation.roomID,
+                decision: accept ? "accept" : "decline",
+                expectedRoomRevision: invitation.roomRevision,
+                clientOperationID: operationID,
+                expectedUserID: expectedUserID
+            )
+        } catch {
+            if accept { await reconcileReservationAfterFailedMutation(context: context) }
+            throw error
+        }
         try ensureCurrent(context)
         guard accept ? result.result == "joined" : result.result == "declined" else {
             throw LiveWorkoutGatewayError.invalidResponse
         }
-        lastStatus = accept
-            ? "Joined the live workout lobby. The owner starts the workout when both are ready."
-            : "Live workout invitation declined."
-        await refreshAll(showErrors: true)
+        if accept {
+            try await refreshSnapshot(
+                roomID: invitation.roomID,
+                context: context,
+                materializeWhenActive: true
+            )
+            try ensureCurrent(context)
+            guard snapshot?.room.roomID == invitation.roomID,
+                  snapshot?.room.status == .active,
+                  isAttachedToCurrentDraft else {
+                throw LiveWorkoutGatewayError.invalidResponse
+            }
+            lastStatus = "Live workout started."
+            inbox = try? await gateway.inbox(expectedUserID: expectedUserID)
+            scheduleFlush()
+        } else {
+            lastStatus = "Live workout invitation declined."
+            await refreshAll(showErrors: true)
+        }
     }
 
     static func validateInvitationAcceptance(
@@ -286,6 +392,14 @@ final class LiveWorkoutCoordinator: ObservableObject {
             expectedUserID: expectedUserID
         )
         try ensureCurrent(context)
+        if let reservation = try slotReservation.current(context: context),
+           reservation.roomID == room.roomID {
+            try slotReservation.clear(
+                operationID: reservation.operationID,
+                roomID: room.roomID,
+                context: context
+            )
+        }
         try? sidecar.clear()
         await refreshAll(showErrors: true)
         lastStatus = "Live room cancelled. Any local workout progress remains on this iPhone."
@@ -307,6 +421,14 @@ final class LiveWorkoutCoordinator: ObservableObject {
             expectedUserID: expectedUserID
         )
         try ensureCurrent(context)
+        if let reservation = try slotReservation.current(context: context),
+           reservation.roomID == room.roomID {
+            try slotReservation.clear(
+                operationID: reservation.operationID,
+                roomID: room.roomID,
+                context: context
+            )
+        }
         try? sidecar.clear()
         await refreshAll(showErrors: true)
         lastStatus = "Left the live room. Any local workout progress remains on this iPhone."
@@ -393,6 +515,12 @@ final class LiveWorkoutCoordinator: ObservableObject {
         }
     }
 
+    func receiveSocialInvalidation() async {
+        guard auth.session?.cloud?.userID == expectedUserID else { return }
+        // The opaque Broadcast carries no state. Friends performs its own
+        // account-bound authenticated refetch; live remains untouched.
+    }
+
     func receiveExternalInvalidation(roomID: String? = nil) async {
         if let roomID,
            snapshot?.room.roomID != roomID,
@@ -428,6 +556,7 @@ final class LiveWorkoutCoordinator: ObservableObject {
         snapshot = fresh
         switch fresh.room.status {
         case .active:
+            try ensureSlotReservation(for: fresh, context: context)
             if let attachment = sidecar.attachment {
                 guard attachment.roomID == fresh.room.roomID else {
                     throw LiveWorkoutSidecarError.invalidState
@@ -438,6 +567,14 @@ final class LiveWorkoutCoordinator: ObservableObject {
                 try materializeActiveRoom(fresh, context: context)
             }
         case .completed, .cancelled, .expired:
+            if let reservation = try slotReservation.current(context: context),
+               reservation.roomID == fresh.room.roomID {
+                try slotReservation.clear(
+                    operationID: reservation.operationID,
+                    roomID: fresh.room.roomID,
+                    context: context
+                )
+            }
             if sidecar.attachment?.roomID == fresh.room.roomID,
                sidecar.attachment?.pendingOperations.isEmpty == true {
                 try sidecar.clear()
@@ -530,6 +667,8 @@ final class LiveWorkoutCoordinator: ObservableObject {
                 exercises: activeExercises,
                 undoableSetID: undoableLocalSetID,
                 workoutStore: workoutStore,
+                reservationContext: context,
+                roomID: snapshot.room.roomID,
                 persistBindingBeforeCommit: { candidate in
                     _ = try self.sidecar.attach(
                         snapshot: snapshot,
@@ -538,6 +677,14 @@ final class LiveWorkoutCoordinator: ObservableObject {
                     )
                 }
             )
+            if let reservation = try slotReservation.current(context: context),
+               reservation.roomID == snapshot.room.roomID {
+                try slotReservation.clear(
+                    operationID: reservation.operationID,
+                    roomID: snapshot.room.roomID,
+                    context: context
+                )
+            }
         } catch {
             if activeWorkoutStore.draft == nil,
                sidecar.attachment?.roomID == snapshot.room.roomID {
@@ -592,6 +739,253 @@ final class LiveWorkoutCoordinator: ObservableObject {
                 membershipRevision: participant.membershipRevision,
                 progressRevision: progress.revision
             )
+        }
+    }
+
+    private func reconcileReservationAfterFailedMutation(
+        context: LiveWorkoutSessionContext
+    ) async {
+        guard auth.session?.cloud?.userID == expectedUserID else { return }
+        do {
+            let freshInbox = try await gateway.inbox(expectedUserID: expectedUserID)
+            try ensureCurrent(context)
+            try reconcileSlotReservation(
+                with: freshInbox,
+                context: context,
+                ignoreInFlight: true
+            )
+        } catch {
+            // An unknown RPC outcome keeps the durable reservation fail-closed until
+            // a later authenticated inbox can prove whether it should be bound or released.
+        }
+    }
+
+    private func reconcileSlotReservation(
+        with freshInbox: LiveWorkoutInbox,
+        context: LiveWorkoutSessionContext,
+        ignoreInFlight: Bool = false
+    ) throws {
+        let current = try slotReservation.current(context: context)
+        let openRooms = freshInbox.rooms.filter {
+            [.waiting, .ready, .active].contains($0.status) &&
+                [.joined, .finished].contains($0.memberState)
+        }
+
+        guard let current else {
+            // A current authenticated inbox can recover a crash that happened after the
+            // server mutation but before the local reservation was rebound to its room.
+            guard openRooms.count == 1, let room = openRooms.first,
+                  activeWorkoutStore.draft == nil else { return }
+            let createdAt = try LiveWorkoutPayloadParser.validatedDate(from: room.createdAt)
+            let expiresAt = try room.activeExpiresAt.map {
+                try LiveWorkoutPayloadParser.validatedDate(from: $0)
+            } ?? createdAt.addingTimeInterval(Self.invitationReservationDuration)
+            try slotReservation.reserve(
+                LiveWorkoutSlotReservation(
+                    version: 1,
+                    userID: context.userID,
+                    sessionID: context.sessionID,
+                    role: room.role,
+                    operationID: UUID(),
+                    roomID: room.roomID,
+                    phase: room.status == .active ? .active : .waiting,
+                    createdAt: createdAt,
+                    expiresAt: expiresAt
+                ),
+                context: context
+            ) { activeWorkoutStore.draft == nil }
+            return
+        }
+
+        if current.phase == .preparing {
+            let ownerRooms = openRooms.filter { $0.role == .owner }
+            if ownerRooms.count == 1, let room = ownerRooms.first {
+                let expiresAt = try room.activeExpiresAt.map {
+                    try LiveWorkoutPayloadParser.validatedDate(from: $0)
+                } ?? current.expiresAt
+                try slotReservation.replace(
+                    operationID: current.operationID,
+                    with: LiveWorkoutSlotReservation(
+                        version: 1,
+                        userID: current.userID,
+                        sessionID: current.sessionID,
+                        role: current.role,
+                        operationID: current.operationID,
+                        roomID: room.roomID,
+                        phase: room.status == .active ? .active : .waiting,
+                        createdAt: current.createdAt,
+                        expiresAt: expiresAt
+                    ),
+                    context: context
+                )
+            } else if ignoreInFlight || !isMutating {
+                try slotReservation.clear(
+                    operationID: current.operationID,
+                    context: context
+                )
+            }
+            return
+        }
+
+        guard let currentRoomID = current.roomID else {
+            throw LiveWorkoutSlotReservationError.invalidState
+        }
+        guard let room = openRooms.first(where: { $0.roomID == currentRoomID }) else {
+            let invitationStillWaiting = freshInbox.invitations.contains {
+                $0.roomID == currentRoomID
+            }
+            let responseInFlight = !ignoreInFlight && isMutating &&
+                current.role == .participant
+            if !invitationStillWaiting && !responseInFlight ||
+                invitationStillWaiting && current.role == .participant &&
+                    (ignoreInFlight || !responseInFlight) {
+                try slotReservation.clear(
+                    operationID: current.operationID,
+                    roomID: currentRoomID,
+                    context: context
+                )
+            }
+            return
+        }
+
+        let nextPhase: LiveWorkoutSlotPhase = room.status == .active ? .active : .waiting
+        let nextExpiry = try room.activeExpiresAt.map {
+            try LiveWorkoutPayloadParser.validatedDate(from: $0)
+        } ?? current.expiresAt
+        if current.phase != nextPhase || current.expiresAt != nextExpiry {
+            try slotReservation.replace(
+                operationID: current.operationID,
+                with: LiveWorkoutSlotReservation(
+                    version: current.version,
+                    userID: current.userID,
+                    sessionID: current.sessionID,
+                    role: current.role,
+                    operationID: current.operationID,
+                    roomID: currentRoomID,
+                    phase: nextPhase,
+                    createdAt: current.createdAt,
+                    expiresAt: nextExpiry
+                ),
+                context: context
+            )
+        }
+    }
+
+    private func reconcileSessionMismatchedReservation(
+        _ previous: LiveWorkoutSlotReservation,
+        with freshInbox: LiveWorkoutInbox,
+        context: LiveWorkoutSessionContext
+    ) throws {
+        guard previous.userID == context.userID,
+              previous.sessionID != context.sessionID else {
+            throw LiveWorkoutSlotReservationError.invalidState
+        }
+        let openRooms = freshInbox.rooms.filter {
+            [.waiting, .ready, .active].contains($0.status) &&
+                [.joined, .finished].contains($0.memberState)
+        }
+        let room: LiveWorkoutOpenRoom?
+        if previous.phase == .preparing {
+            let ownerRooms = openRooms.filter { $0.role == .owner }
+            guard ownerRooms.count <= 1 else {
+                throw LiveWorkoutSlotReservationError.slotReserved
+            }
+            room = ownerRooms.first
+        } else {
+            room = openRooms.first { $0.roomID == previous.roomID }
+        }
+        if let room {
+            guard activeWorkoutStore.draft == nil else {
+                throw LiveWorkoutSlotReservationError.slotReserved
+            }
+            let expiry = try room.activeExpiresAt.map {
+                try LiveWorkoutPayloadParser.validatedDate(from: $0)
+            } ?? previous.expiresAt
+            try slotReservation.reconcileAfterSessionChange(
+                expectedOperationID: previous.operationID,
+                with: LiveWorkoutSlotReservation(
+                    version: previous.version,
+                    userID: previous.userID,
+                    sessionID: context.sessionID,
+                    role: room.role,
+                    operationID: previous.operationID,
+                    roomID: room.roomID,
+                    phase: room.status == .active ? .active : .waiting,
+                    createdAt: previous.createdAt,
+                    expiresAt: expiry
+                ),
+                context: context
+            )
+            return
+        }
+        try slotReservation.reconcileAfterSessionChange(
+            expectedOperationID: previous.operationID,
+            with: nil,
+            context: context
+        )
+    }
+
+    private func ensureSlotReservation(
+        for fresh: LiveWorkoutSnapshot,
+        context: LiveWorkoutSessionContext
+    ) throws {
+        guard fresh.room.status == .active,
+              let participant = fresh.currentParticipant,
+              participant.state == .joined,
+              let activeExpiresAtText = fresh.room.activeExpiresAt else {
+            throw LiveWorkoutSlotReservationError.invalidState
+        }
+        let roomID = fresh.room.roomID
+        let current = try slotReservation.current(context: context)
+        if sidecar.attachment?.roomID == roomID, activeWorkoutStore.draft != nil {
+            if let current, current.roomID == roomID {
+                try slotReservation.clear(
+                    operationID: current.operationID,
+                    roomID: roomID,
+                    context: context
+                )
+            }
+            return
+        }
+
+        let createdAt = try LiveWorkoutPayloadParser.validatedDate(from: fresh.room.createdAt)
+        let activeExpiresAt = try LiveWorkoutPayloadParser.validatedDate(from: activeExpiresAtText)
+        if let current {
+            guard current.roomID == roomID else {
+                throw LiveWorkoutSlotReservationError.slotReserved
+            }
+            if current.phase != .active || current.expiresAt != activeExpiresAt {
+                try slotReservation.replace(
+                    operationID: current.operationID,
+                    with: LiveWorkoutSlotReservation(
+                        version: current.version,
+                        userID: current.userID,
+                        sessionID: current.sessionID,
+                        role: current.role,
+                        operationID: current.operationID,
+                        roomID: roomID,
+                        phase: .active,
+                        createdAt: current.createdAt,
+                        expiresAt: activeExpiresAt
+                    ),
+                    context: context
+                )
+            }
+        } else {
+            try slotReservation.reserve(
+                LiveWorkoutSlotReservation(
+                    version: 1,
+                    userID: context.userID,
+                    sessionID: context.sessionID,
+                    role: participant.role,
+                    operationID: UUID(),
+                    roomID: roomID,
+                    phase: .active,
+                    createdAt: createdAt,
+                    expiresAt: activeExpiresAt
+                ),
+                context: context
+            ) { activeWorkoutStore.draft == nil }
         }
     }
 
@@ -763,4 +1157,6 @@ final class LiveWorkoutCoordinator: ObservableObject {
             throw AuthServiceError.sessionChanged
         }
     }
+
+    private static let invitationReservationDuration: TimeInterval = 7 * 24 * 60 * 60
 }

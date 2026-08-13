@@ -47,6 +47,11 @@ enum ActiveWorkoutRestReconciler {
     }
 }
 
+private enum LiveParticipantSelection: String {
+    case current
+    case peer
+}
+
 @MainActor
 struct ActiveWorkoutView: View {
     @AppStorage("app-language") private var languageCode = AppLanguage.firstRunDefault.rawValue
@@ -65,6 +70,7 @@ struct ActiveWorkoutView: View {
     @State private var statusIsError = false
     @State private var showingDiscardConfirmation = false
     @State private var collapsedExerciseIDs = Set<UUID>()
+    @State private var liveParticipantSelection: LiveParticipantSelection = .current
 
     init(
         workoutStore: WorkoutStore,
@@ -93,30 +99,41 @@ struct ActiveWorkoutView: View {
             if let draft = currentDraft {
                 ScrollView {
                     LazyVStack(spacing: GymTheme.contentSpacing) {
-                        progressPanel(draft)
-
                         if liveWorkoutCoordinator.isAttachedToCurrentDraft {
-                            livePeerPanel(draft)
+                            liveParticipantTabs
                         }
 
-                        WorkoutRestTimerControls(
-                            manager: restTimers,
-                            timerID: timerKey(draftID: draft.id),
-                            exerciseName: currentRestExerciseName(draft),
-                            onStart: startManualRest,
-                            onAdjust: adjustManualRest,
-                            onStop: stopManualRest
-                        )
+                        if !liveWorkoutCoordinator.isAttachedToCurrentDraft ||
+                            liveParticipantSelection == .current {
+                            progressPanel(draft)
 
-                        if let statusMessage {
-                            GymStatusBanner(message: statusMessage, isError: statusIsError)
+                            WorkoutRestTimerControls(
+                                manager: restTimers,
+                                timerID: timerKey(draftID: draft.id),
+                                exerciseName: currentRestExerciseName(draft),
+                                onStart: startManualRest,
+                                onAdjust: adjustManualRest,
+                                onStop: stopManualRest
+                            )
+
+                            if let statusMessage {
+                                GymStatusBanner(message: statusMessage, isError: statusIsError)
+                            }
+
+                            ForEach(draft.exercises) { exercise in
+                                exercisePanel(exercise, draft: draft)
+                            }
+
+                            finishPanel(draft)
+                        } else {
+                            livePeerProgressPanel(draft)
+                            if let snapshot = liveWorkoutCoordinator.snapshot,
+                               snapshot.room.status == .active {
+                                ForEach(snapshot.plan.exercises, id: \.exerciseID) { exercise in
+                                    livePeerExercisePanel(exercise, snapshot: snapshot)
+                                }
+                            }
                         }
-
-                        ForEach(draft.exercises) { exercise in
-                            exercisePanel(exercise, draft: draft)
-                        }
-
-                        finishPanel(draft)
                     }
                     .padding(.horizontal, GymTheme.screenHorizontalInset)
                     .padding(.top, GymTheme.screenVerticalInset)
@@ -234,8 +251,12 @@ struct ActiveWorkoutView: View {
             )
         }
         .onAppear {
+            liveParticipantSelection = .current
             collapseCompletedExercises()
             reconcileRestProjection()
+        }
+        .onChange(of: liveWorkoutCoordinator.attachedRoomID) { roomID in
+            if roomID == nil { liveParticipantSelection = .current }
         }
     }
 
@@ -465,6 +486,123 @@ struct ActiveWorkoutView: View {
         .clipShape(lensShape)
         .shadow(color: GymTheme.primary.opacity(0.1), radius: 12, x: 0, y: 6)
         .accessibilityElement(children: .contain)
+    }
+
+    private var liveParticipantTabs: some View {
+        let selfName = liveWorkoutCoordinator.selfDisplayName ?? gymText(
+            "You",
+            "Ти",
+            "Ты",
+            languageCode: gymCurrentLanguageCode()
+        )
+        let peerName = liveWorkoutCoordinator.peerDisplayName ?? gymText(
+            "Friend",
+            "Друг",
+            "Друг",
+            languageCode: gymCurrentLanguageCode()
+        )
+        return Picker(
+            gymText(
+                "Participant",
+                "Учасник",
+                "Участник",
+                languageCode: gymCurrentLanguageCode()
+            ),
+            selection: $liveParticipantSelection
+        ) {
+            Text(selfName).tag(LiveParticipantSelection.current)
+            Text(peerName).tag(LiveParticipantSelection.peer)
+        }
+        .pickerStyle(.segmented)
+        .accessibilityValue(
+            liveParticipantSelection == .current ? selfName : peerName
+        )
+    }
+
+    private func livePeerProgressPanel(_ draft: ActiveWorkoutDraft) -> some View {
+        let peer = liveWorkoutCoordinator.peerProgress
+        let peerName = liveWorkoutCoordinator.peerDisplayName ?? gymText(
+            "Friend",
+            "Друг",
+            "Друг",
+            languageCode: gymCurrentLanguageCode()
+        )
+        let completed = peer?.completedSets.count ?? 0
+        return GymHeroPanel {
+            VStack(alignment: .leading, spacing: GymTheme.Spacing.medium) {
+                Text(peerName)
+                    .font(GymTheme.TypeScale.heroTitle)
+                    .foregroundStyle(.white)
+                HStack(spacing: GymTheme.Spacing.small) {
+                    Image(systemName: peer?.finishedAt == nil
+                        ? "wave.3.right.circle.fill"
+                        : "checkmark.circle.fill")
+                    Text(peer?.finishedAt == nil
+                        ? "\(completed) / \(draft.plannedSetCount)"
+                        : gymText(
+                            "Finished",
+                            "Завершено",
+                            "Завершено",
+                            languageCode: gymCurrentLanguageCode()
+                        ))
+                }
+                .font(.headline.monospacedDigit())
+                .foregroundStyle(.white)
+                Text(gymText(
+                    "Live progress · Read only",
+                    "Live-прогрес · Лише перегляд",
+                    "Live-прогресс · Только просмотр",
+                    languageCode: gymCurrentLanguageCode()
+                ))
+                .font(.subheadline)
+                .foregroundStyle(Color.white.opacity(0.82))
+            }
+        }
+    }
+
+    private func livePeerExercisePanel(
+        _ exercise: LiveWorkoutPlanExercise,
+        snapshot: LiveWorkoutSnapshot
+    ) -> some View {
+        let completedByID = Dictionary(
+            uniqueKeysWithValues: snapshot.peerParticipant?.progress?.completedSets.map {
+                ($0.setID, $0)
+            } ?? []
+        )
+        return GymPanel {
+            VStack(alignment: .leading, spacing: GymTheme.Spacing.medium) {
+                Text(BuiltInExerciseCatalog.displayName(
+                    catalogKey: exercise.catalogKey,
+                    rawName: exercise.name,
+                    languageCode: gymCurrentLanguageCode()
+                ))
+                .font(.headline)
+                ForEach(Array(exercise.sets.enumerated()), id: \.element.setID) { index, planned in
+                    let completed = completedByID[planned.setID]
+                    HStack(spacing: GymTheme.Spacing.medium) {
+                        Text(gymText(
+                            "Set \(index + 1)",
+                            "Підхід \(index + 1)",
+                            "Подход \(index + 1)",
+                            languageCode: gymCurrentLanguageCode()
+                        ))
+                        .foregroundStyle(GymTheme.textSecondary)
+                        Spacer()
+                        Text(completed.map {
+                            "\($0.weight.formatted(.number.precision(.fractionLength(0 ... 2)))) kg × \($0.reps)"
+                        } ?? gymText(
+                            "Not logged · \(planned.weight.formatted(.number.precision(.fractionLength(0 ... 2)))) kg × \(planned.reps)",
+                            "Не записано · \(planned.weight.formatted(.number.precision(.fractionLength(0 ... 2)))) kg × \(planned.reps)",
+                            "Не записано · \(planned.weight.formatted(.number.precision(.fractionLength(0 ... 2)))) kg × \(planned.reps)",
+                            languageCode: gymCurrentLanguageCode()
+                        ))
+                        .monospacedDigit()
+                        .foregroundStyle(completed == nil ? GymTheme.textSecondary : GymTheme.textPrimary)
+                    }
+                    .font(.subheadline)
+                }
+            }
+        }
     }
 
     private func spotterProgressLine(

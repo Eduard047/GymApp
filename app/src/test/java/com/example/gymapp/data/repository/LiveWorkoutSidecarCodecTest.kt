@@ -7,6 +7,35 @@ import org.junit.Test
 
 class LiveWorkoutSidecarCodecTest {
     @Test
+    fun `reservation codec is account session room and expiry bound`() {
+        val reservation = LiveWorkoutReservation(
+            userId = "42345678-1234-4123-8123-123456789abc",
+            sessionGeneration = "52345678-1234-4123-8123-123456789abc",
+            role = "owner",
+            operationId = "12345678-1234-4123-8123-123456789abc",
+            roomId = "lr_0123456789abcdef0123456789abcdef",
+            phase = LiveWorkoutReservationPhase.Waiting,
+            createdAt = 1_786_330_800_000L,
+            expiresAt = 1_786_417_200_000L
+        )
+
+        assertEquals(
+            reservation,
+            LiveWorkoutReservationCodec.decode(LiveWorkoutReservationCodec.encode(reservation))
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            LiveWorkoutReservationCodec.encode(
+                reservation.copy(sessionGeneration = "wrong-session")
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            LiveWorkoutReservationCodec.encode(
+                reservation.copy(phase = LiveWorkoutReservationPhase.Preparing)
+            )
+        }
+    }
+
+    @Test
     fun `codec round trips account binding mapping and idempotent queue`() {
         val binding = binding(
             pendingOperations = listOf(

@@ -1252,6 +1252,8 @@ test("friend caches and in-flight work are invalidated by account generation", (
     dashboard: null,
     inbox: null,
     friendCode: null,
+    workoutDetailPrivacy: null,
+    workoutDetailPrivacySupported: false,
     error: ""
   });
   assert.deepEqual(jsonFrom(context, "socialDetailState"), {
@@ -1715,6 +1717,9 @@ test("dashboard refresh invalidates and refetches an open friend detail after pr
     socialRpc = async name => {
       if (name === "social_dashboard") return ${JSON.stringify(dashboard)};
       if (name === "social_my_friend_code") return { version: 1, friendCode: "g_a1b2c3d4e5f6" };
+      if (name === "social_workout_detail_privacy") return {
+        version: 1, shareWorkoutDetails: false, settingsRevision: 1
+      };
       if (name === "social_workout_inbox") return { version: 1, pendingIncomingCount: 0, incoming: [], outgoing: [] };
       if (name === "social_friend_details") return ${JSON.stringify(refreshedDetail)};
       throw new Error("unexpected RPC");
@@ -1751,6 +1756,9 @@ test("friend-code refresh falls back only for validated missing-function errors 
       socialRpc = async name => {
         if (name === "social_dashboard") return ${JSON.stringify(dashboard)};
         if (name === "social_workout_inbox") return ${JSON.stringify(inbox)};
+        if (name === "social_workout_detail_privacy") return {
+          version: 1, shareWorkoutDetails: false, settingsRevision: 1
+        };
         if (name === "social_my_friend_code") {
           const error = new Error("missing function");
           error.status = 404;
@@ -2254,7 +2262,7 @@ test("workout share chooser keeps link fallback and targets confirmed friends on
   assert.match(markup, /data-action="send-workout-invite"/);
   assert.match(markup, /data-action="send-live-workout-invite"/);
   assert.match(markup, /p_22222222222222222222222222222222/);
-  assert.match(markup, /Live keeps both set-progress lanes synchronized/);
+  assert.match(markup, /Live starts for both people as soon as the friend joins and keeps set progress synchronized/);
   assert.doesNotMatch(markup, /accountId|userId|private note|must-not-leak/);
 });
 
@@ -2544,12 +2552,28 @@ test("an accepted room discovered as active auto-attaches and opens its frozen w
     liveWorkoutState = { status: "idle", source: null, inbox: null, snapshot: null, error: "" };
     liveWorkoutAutoAttachAttempts.clear();
     autoAttachGatewayCalls = [];
-    const autoAttachInbox = window.GymLiveWorkout.inbox(
-      ${JSON.stringify(activeLiveInboxFixture(roomId))}
-    );
-    const autoAttachSnapshot = window.GymLiveWorkout.snapshot(
-      ${JSON.stringify(activeLiveSnapshotFixture(roomId))}
-    );
+    const autoAttachInboxRaw = ${JSON.stringify(activeLiveInboxFixture(roomId))};
+    const autoAttachSnapshotRaw = ${JSON.stringify(activeLiveSnapshotFixture(roomId))};
+    const autoAttachCreatedAt = Date.now() - 120_000;
+    const autoAttachStartedAt = autoAttachCreatedAt + 60_000;
+    const autoAttachExpiresAt = autoAttachStartedAt + 86_400_000;
+    autoAttachInboxRaw.rooms[0].createdAt = new Date(autoAttachCreatedAt).toISOString();
+    autoAttachInboxRaw.rooms[0].startedAt = new Date(autoAttachStartedAt).toISOString();
+    autoAttachInboxRaw.rooms[0].activeExpiresAt = new Date(autoAttachExpiresAt).toISOString();
+    autoAttachSnapshotRaw.room.createdAt = new Date(autoAttachCreatedAt).toISOString();
+    autoAttachSnapshotRaw.room.inviteExpiresAt = new Date(
+      autoAttachCreatedAt + 7 * 86_400_000
+    ).toISOString();
+    autoAttachSnapshotRaw.room.startedAt = new Date(autoAttachStartedAt).toISOString();
+    autoAttachSnapshotRaw.room.activeExpiresAt = new Date(autoAttachExpiresAt).toISOString();
+    const autoAttachInbox = window.GymLiveWorkout.inbox(autoAttachInboxRaw);
+    const autoAttachSnapshot = window.GymLiveWorkout.snapshot(autoAttachSnapshotRaw);
+    localStorage.setItem(liveWorkoutReservationKey("${userId}"), JSON.stringify({
+      version: 1, userId: "${userId}", sessionId: "${sessionId}", role: "participant",
+      operationId: "55555555-5555-4555-8555-555555555555",
+      roomId: "${roomId}", phase: "active", createdAt: autoAttachCreatedAt,
+      expiresAt: autoAttachExpiresAt
+    }));
     liveGateway = async (action, payload) => {
       autoAttachGatewayCalls.push({ action, payload });
       if (action === "live_inbox") return autoAttachInbox;
@@ -2845,6 +2869,145 @@ test("an unimportable live plan stays waiting and never reaches the accept mutat
   assert.equal(vm.runInContext("liveAcceptMutationCount", context), 0);
   assert.equal(vm.runInContext("liveWorkoutState.inbox.invitations.length", context), 1);
   assert.match(vm.runInContext("poisonedToast", context), /cannot be imported safely/);
+});
+
+test("live accept asks once, mutates only after consent, and never overwrites a changed draft", async () => {
+  const userId = "11111111-1111-4111-8111-111111111111";
+  const sessionId = "22222222-2222-4222-8222-222222222222";
+  const roomId = `lr_${"a".repeat(32)}`;
+
+  async function runScenario({ confirmResult, changeDraftDuringMutation }) {
+    const context = loadPwaContext();
+    const activeRaw = activeLiveSnapshotFixture(roomId);
+    const waitingRaw = structuredClone(activeRaw);
+    waitingRaw.room.status = "waiting";
+    waitingRaw.room.roomRevision = 1;
+    waitingRaw.room.startedAt = null;
+    waitingRaw.room.activeExpiresAt = null;
+    waitingRaw.participants[0].progress = null;
+    waitingRaw.participants[1].state = "invited";
+    waitingRaw.participants[1].membershipRevision = 1;
+    waitingRaw.participants[1].joinedAt = null;
+    waitingRaw.participants[1].progress = null;
+    const invitation = {
+      roomId,
+      status: "waiting",
+      roomRevision: 1,
+      createdAt: waitingRaw.room.createdAt,
+      inviteExpiresAt: waitingRaw.room.inviteExpiresAt,
+      summary: waitingRaw.room.summary,
+      owner: waitingRaw.participants[0].profile
+    };
+    vm.runInContext(`
+      activeAccount = {
+        id: "remote-${userId}", userId: "${userId}", remote: "supabase", name: "Owner"
+      };
+      localStorage.setItem(AUTH_KEY, JSON.stringify(activeAccount));
+      saveRemoteSession({
+        access_token: ${JSON.stringify(testAccessToken(userId, sessionId))},
+        refresh_token: "refresh-token-test",
+        user: { id: "${userId}", email: "owner@example.test" }
+      });
+      state = defaultAppState();
+      workoutDraft = {
+        date: "2026-08-13",
+        note: "before accept",
+        blocks: [{
+          exerciseId: 1,
+          exerciseName: "Bench Press",
+          catalogKey: "bench_press",
+          sets: [{ id: 1, weight: "60", reps: "10" }]
+        }]
+      };
+      const testWaitingSnapshot = window.GymLiveWorkout.snapshot(${JSON.stringify(waitingRaw)});
+      const testActiveSnapshot = window.GymLiveWorkout.snapshot(${JSON.stringify(activeRaw)});
+      liveWorkoutState = {
+        status: "loaded",
+        source: "test",
+        error: "",
+        snapshot: null,
+        inbox: window.GymLiveWorkout.inbox({
+          version: 1,
+          invitations: [${JSON.stringify(invitation)}],
+          rooms: []
+        })
+      };
+      confirmCount = 0;
+      serverMutationCount = 0;
+      localStartCount = 0;
+      window.confirm = () => { confirmCount += 1; return ${confirmResult}; };
+      liveGateway = async () => testWaitingSnapshot;
+      executeLiveWorkoutMutation = async () => {
+        serverMutationCount += 1;
+        ${changeDraftDuringMutation ? 'workoutDraft.note = "changed during await";' : ""}
+        return {
+          version: 1,
+          result: "joined",
+          roomId: "${roomId}",
+          status: "ready",
+          roomRevision: 3,
+          membershipRevision: 2,
+          endedAt: null
+        };
+      };
+      applyLiveSnapshotProgressToLocal = () => true;
+      startWorkout = async () => {
+        localStartCount += 1;
+        activeWorkout = { id: 700 };
+        liveWorkoutBinding = {
+          roomId: "${roomId}", localWorkoutId: 700, pendingOperations: []
+        };
+        return true;
+      };
+      refreshLiveWorkoutData = async () => {
+        liveWorkoutState = { ...liveWorkoutState, snapshot: testActiveSnapshot };
+        await ensureLiveWorkoutAttached(testActiveSnapshot, true);
+        return true;
+      };
+      replaceNavigationHistory = () => {};
+      render = () => {};
+      showToast = message => { lastLiveAcceptToast = message; };
+      withActiveWorkoutMutationLock = async (_descriptor, operation) => ({
+        acquired: true, value: await operation()
+      });
+    `, context);
+    const result = await vm.runInContext(`respondLiveWorkoutInvite({ dataset: {
+      roomId: "${roomId}", decision: "accept", revision: "1"
+    } })`, context);
+    return {
+      result,
+      confirmCount: vm.runInContext("confirmCount", context),
+      serverMutationCount: vm.runInContext("serverMutationCount", context),
+      localStartCount: vm.runInContext("localStartCount", context),
+      active: vm.runInContext("activeWorkout !== null", context),
+      draftNote: vm.runInContext("workoutDraft?.note", context)
+    };
+  }
+
+  assert.deepEqual(await runScenario({ confirmResult: false, changeDraftDuringMutation: false }), {
+    result: false,
+    confirmCount: 1,
+    serverMutationCount: 0,
+    localStartCount: 0,
+    active: false,
+    draftNote: "before accept"
+  });
+  assert.deepEqual(await runScenario({ confirmResult: true, changeDraftDuringMutation: false }), {
+    result: true,
+    confirmCount: 1,
+    serverMutationCount: 1,
+    localStartCount: 1,
+    active: true,
+    draftNote: ""
+  });
+  assert.deepEqual(await runScenario({ confirmResult: true, changeDraftDuringMutation: true }), {
+    result: true,
+    confirmCount: 1,
+    serverMutationCount: 1,
+    localStartCount: 0,
+    active: false,
+    draftNote: "changed during await"
+  });
 });
 
 test("a locally finished live workout restores its durable finish intent after reload", () => {
@@ -3162,6 +3325,278 @@ test("live attach rolls back its sidecar when the local active workout cannot co
     vm.runInContext(`localStorage.getItem(liveWorkoutBindingKey("${userId}"))`, context),
     null
   );
+});
+
+test("durable owner live-slot reservation survives reload and blocks ordinary start without mutation", async () => {
+  const context = loadPwaContext();
+  const userId = "11111111-1111-4111-8111-111111111111";
+  const sessionId = "22222222-2222-4222-8222-222222222222";
+  vm.runInContext(`
+    activeAccount = {
+      id: "remote-${userId}", userId: "${userId}", remote: "supabase", name: "Owner"
+    };
+    localStorage.setItem(AUTH_KEY, JSON.stringify(activeAccount));
+    saveRemoteSession({
+      access_token: ${JSON.stringify(testAccessToken(userId, sessionId))},
+      refresh_token: "refresh-a", user: { id: "${userId}" }
+    });
+    state = defaultAppState();
+    workoutDraft = { startedAt: Date.now(), note: "", blocks: [{
+      exerciseName: "Bench Press", catalogKey: "bench_press", sets: [{ weight: 0, reps: 8 }]
+    }] };
+    withActiveWorkoutMutationLock = async (_descriptor, operation) => ({
+      acquired: true, value: await operation()
+    });
+    render = () => {};
+    showToast = () => {};
+  `, context);
+  assert.equal(await vm.runInContext(`reserveLiveWorkoutSlot({
+    version: 1, userId: "${userId}", sessionId: "${sessionId}", role: "owner",
+    operationId: "55555555-5555-4555-8555-555555555555",
+    roomId: "lr_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", phase: "waiting",
+    createdAt: Date.now() - 1000, expiresAt: Date.now() + 86400000
+  })`, context), true);
+  const rawBefore = vm.runInContext(
+    `localStorage.getItem(liveWorkoutReservationKey("${userId}"))`,
+    context
+  );
+  assert.equal(await vm.runInContext("startWorkout()", context), false);
+  assert.equal(vm.runInContext("activeWorkout", context), null);
+  assert.equal(
+    vm.runInContext(`localStorage.getItem(liveWorkoutReservationKey("${userId}"))`, context),
+    rawBefore
+  );
+  assert.equal(vm.runInContext("readLiveWorkoutReservation().status", context), "valid");
+});
+
+test("invitee reservation wins accept versus ordinary-start race and exact release restores start", async () => {
+  const context = loadPwaContext();
+  const userId = "11111111-1111-4111-8111-111111111111";
+  const sessionId = "22222222-2222-4222-8222-222222222222";
+  vm.runInContext(`
+    activeAccount = {
+      id: "remote-${userId}", userId: "${userId}", remote: "supabase", name: "Invitee"
+    };
+    localStorage.setItem(AUTH_KEY, JSON.stringify(activeAccount));
+    saveRemoteSession({
+      access_token: ${JSON.stringify(testAccessToken(userId, sessionId))},
+      refresh_token: "refresh-a", user: { id: "${userId}" }
+    });
+    state = defaultAppState();
+    workoutDraft = { startedAt: Date.now(), note: "", blocks: [{
+      exerciseName: "Bench Press", catalogKey: "bench_press", sets: [{ weight: 0, reps: 8 }]
+    }] };
+    withActiveWorkoutMutationLock = async (_descriptor, operation) => ({
+      acquired: true, value: await operation()
+    });
+    render = () => {};
+    showToast = () => {};
+  `, context);
+  const reserved = await vm.runInContext(`reserveLiveWorkoutSlot({
+    version: 1, userId: "${userId}", sessionId: "${sessionId}", role: "participant",
+    operationId: "55555555-5555-4555-8555-555555555555",
+    roomId: "lr_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", phase: "waiting",
+    createdAt: Date.now() - 1000, expiresAt: Date.now() + 86400000
+  })`, context);
+  assert.equal(reserved, true);
+  assert.equal(await vm.runInContext("startWorkout()", context), false);
+  assert.equal(vm.runInContext("activeWorkout", context), null);
+  assert.equal(await vm.runInContext(`clearLiveWorkoutSlot(
+    "55555555-5555-4555-8555-555555555555",
+    "lr_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  )`, context), true);
+  assert.equal(await vm.runInContext("startWorkout()", context), true);
+  assert.notEqual(vm.runInContext("activeWorkout", context), null);
+});
+
+test("expired live slot clears safely while a wrong-session slot stays fail-closed and unchanged", async () => {
+  const context = loadPwaContext();
+  const userId = "11111111-1111-4111-8111-111111111111";
+  const oldSessionId = "22222222-2222-4222-8222-222222222222";
+  const newSessionId = "33333333-3333-4333-8333-333333333333";
+  vm.runInContext(`
+    activeAccount = {
+      id: "remote-${userId}", userId: "${userId}", remote: "supabase", name: "Owner"
+    };
+    localStorage.setItem(AUTH_KEY, JSON.stringify(activeAccount));
+    saveRemoteSession({
+      access_token: ${JSON.stringify(testAccessToken(userId, oldSessionId))},
+      refresh_token: "refresh-a", user: { id: "${userId}" }
+    });
+    state = defaultAppState();
+    workoutDraft = { startedAt: Date.now(), note: "", blocks: [{
+      exerciseName: "Bench Press", catalogKey: "bench_press", sets: [{ weight: 0, reps: 8 }]
+    }] };
+    withActiveWorkoutMutationLock = async (_descriptor, operation) => ({
+      acquired: true, value: await operation()
+    });
+    render = () => {};
+    showToast = () => {};
+    localStorage.setItem(liveWorkoutReservationKey("${userId}"), JSON.stringify({
+      version: 1, userId: "${userId}", sessionId: "${oldSessionId}", role: "owner",
+      operationId: "55555555-5555-4555-8555-555555555555",
+      roomId: "lr_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", phase: "waiting",
+      createdAt: Date.now() - 2000, expiresAt: Date.now() - 1000
+    }));
+  `, context);
+  assert.equal(await vm.runInContext("startWorkout()", context), true);
+  assert.equal(vm.runInContext("readLiveWorkoutReservation().status", context), "absent");
+
+  vm.runInContext(`
+    activeWorkout = null;
+    removeActiveWorkoutStorage(activeAccount);
+    localStorage.setItem(liveWorkoutReservationKey("${userId}"), JSON.stringify({
+      version: 1, userId: "${userId}", sessionId: "${oldSessionId}", role: "owner",
+      operationId: "66666666-6666-4666-8666-666666666666",
+      roomId: "lr_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", phase: "waiting",
+      createdAt: Date.now() - 1000, expiresAt: Date.now() + 86400000
+    }));
+    clearRemoteSession();
+    saveRemoteSession({
+      access_token: ${JSON.stringify(testAccessToken(userId, newSessionId))},
+      refresh_token: "refresh-b", user: { id: "${userId}" }
+    });
+    wrongSessionRaw = localStorage.getItem(liveWorkoutReservationKey("${userId}"));
+  `, context);
+  assert.equal(await vm.runInContext("startWorkout()", context), false);
+  assert.equal(vm.runInContext("activeWorkout", context), null);
+  assert.equal(
+    vm.runInContext(`localStorage.getItem(liveWorkoutReservationKey("${userId}"))`, context),
+    vm.runInContext("wrongSessionRaw", context)
+  );
+  assert.equal(vm.runInContext("readLiveWorkoutReservation().status", context), "session-mismatch");
+});
+
+test("authoritative still-invited inbox releases participant reservation after restart and session change", async () => {
+  const context = loadPwaContext();
+  const userId = "11111111-1111-4111-8111-111111111111";
+  const oldSessionId = "22222222-2222-4222-8222-222222222222";
+  const newSessionId = "33333333-3333-4333-8333-333333333333";
+  vm.runInContext(`
+    activeAccount = {
+      id: "remote-${userId}", userId: "${userId}", remote: "supabase", name: "Invitee"
+    };
+    localStorage.setItem(AUTH_KEY, JSON.stringify(activeAccount));
+    saveRemoteSession({
+      access_token: ${JSON.stringify(testAccessToken(userId, newSessionId))},
+      refresh_token: "refresh-new", user: { id: "${userId}" }
+    });
+    state = defaultAppState();
+    activeWorkout = null;
+    withActiveWorkoutMutationLock = async (_descriptor, operation) => ({
+      acquired: true, value: await operation()
+    });
+    const restartRoomId = "lr_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const restartCreatedAt = new Date(Date.now() - 60_000).toISOString();
+    const restartExpiresAt = new Date(Date.now() + 86_400_000).toISOString();
+    restartInbox = window.GymLiveWorkout.inbox({
+      version: 1,
+      rooms: [],
+      invitations: [{
+        roomId: restartRoomId,
+        status: "waiting",
+        roomRevision: 1,
+        createdAt: restartCreatedAt,
+        inviteExpiresAt: restartExpiresAt,
+        summary: { exerciseCount: 1, setCount: 1, exerciseNames: ["Bench Press"] },
+        owner: { profileId: "p_22222222222222222222222222222222", displayName: "Friend" }
+      }]
+    });
+    localStorage.setItem(liveWorkoutReservationKey("${userId}"), JSON.stringify({
+      version: 1, userId: "${userId}", sessionId: "${oldSessionId}", role: "participant",
+      operationId: "55555555-5555-4555-8555-555555555555",
+      roomId: restartRoomId, phase: "waiting",
+      createdAt: Date.parse(restartCreatedAt), expiresAt: Date.parse(restartExpiresAt)
+    }));
+  `, context);
+  assert.equal(vm.runInContext("readLiveWorkoutReservation().status", context), "session-mismatch");
+  assert.equal(await vm.runInContext("reconcileLiveWorkoutSlot(restartInbox)", context), true);
+  assert.equal(vm.runInContext("readLiveWorkoutReservation().status", context), "absent");
+});
+
+test("deferred authoritative refresh cannot release invitee slot between reserve and accept RPC", async () => {
+  const context = loadPwaContext();
+  const userId = "11111111-1111-4111-8111-111111111111";
+  const sessionId = "22222222-2222-4222-8222-222222222222";
+  const roomId = "lr_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+  const waitingRaw = activeLiveSnapshotFixture(roomId);
+  waitingRaw.room.status = "waiting";
+  waitingRaw.room.roomRevision = 1;
+  waitingRaw.room.startedAt = null;
+  waitingRaw.room.activeExpiresAt = null;
+  waitingRaw.participants[0].progress = null;
+  waitingRaw.participants[1].state = "invited";
+  waitingRaw.participants[1].membershipRevision = 1;
+  waitingRaw.participants[1].joinedAt = null;
+  waitingRaw.participants[1].progress = null;
+  const invitation = {
+    roomId,
+    status: "waiting",
+    roomRevision: 1,
+    createdAt: waitingRaw.room.createdAt,
+    inviteExpiresAt: waitingRaw.room.inviteExpiresAt,
+    summary: waitingRaw.room.summary,
+    owner: waitingRaw.participants[0].profile
+  };
+  vm.runInContext(`
+    activeAccount = {
+      id: "remote-${userId}", userId: "${userId}", remote: "supabase", name: "Invitee"
+    };
+    localStorage.setItem(AUTH_KEY, JSON.stringify(activeAccount));
+    saveRemoteSession({
+      access_token: ${JSON.stringify(testAccessToken(userId, sessionId))},
+      refresh_token: "refresh", user: { id: "${userId}" }
+    });
+    state = defaultAppState();
+    activeWorkout = null;
+    workoutDraft = null;
+    const raceInvitation = ${JSON.stringify(invitation)};
+    const raceInbox = window.GymLiveWorkout.inbox({
+      version: 1, rooms: [], invitations: [raceInvitation]
+    });
+    const raceSnapshot = window.GymLiveWorkout.snapshot(${JSON.stringify(waitingRaw)});
+    liveWorkoutState = {
+      status: "loaded", source: "test", error: "", snapshot: null, inbox: raceInbox
+    };
+    withActiveWorkoutMutationLock = async (_descriptor, operation) => ({
+      acquired: true, value: await operation()
+    });
+    preflightLiveWorkoutInvitation = async () => raceSnapshot;
+    prepareLiveRequest = () => ({
+      requestId: "55555555-5555-4555-8555-555555555555",
+      key: "race", fingerprint: "race", source: "race"
+    });
+    const realReserveLiveWorkoutSlot = reserveLiveWorkoutSlot;
+    let signalRaceReserved;
+    let continueRaceReserve;
+    raceReserved = new Promise(resolve => { signalRaceReserved = resolve; });
+    const raceReserveCanReturn = new Promise(resolve => { continueRaceReserve = resolve; });
+    releaseRaceReserve = () => continueRaceReserve();
+    reserveLiveWorkoutSlot = async candidate => {
+      const reserved = await realReserveLiveWorkoutSlot(candidate);
+      signalRaceReserved(reserved);
+      await raceReserveCanReturn;
+      return reserved;
+    };
+    executeLiveWorkoutMutation = async () => {
+      raceReservationDuringRpc = readLiveWorkoutReservation();
+      return null;
+    };
+    reconcileLiveWorkoutSlotAfterFailedMutation = async () => false;
+    render = () => {};
+    showToast = () => {};
+  `, context);
+  const pending = vm.runInContext(`respondLiveWorkoutInvite({ dataset: {
+    roomId: "${roomId}", decision: "accept", revision: "1"
+  } })`, context);
+  assert.equal(await vm.runInContext("raceReserved", context), true);
+  assert.notEqual(vm.runInContext("liveWorkoutAcceptReservationInProgress", context), null);
+  assert.equal(await vm.runInContext("reconcileLiveWorkoutSlot(raceInbox)", context), true);
+  assert.equal(vm.runInContext("readLiveWorkoutReservation().status", context), "valid");
+  vm.runInContext("releaseRaceReserve()", context);
+  assert.equal(await pending, false);
+  assert.equal(vm.runInContext("raceReservationDuringRpc.status", context), "valid");
+  assert.equal(vm.runInContext("liveWorkoutAcceptReservationInProgress", context), null);
 });
 
 test("a stale live drain cannot clear the next account binding", async () => {
@@ -3783,7 +4218,7 @@ test("PWA joins only its private Realtime topic and treats broadcasts as refresh
       anonKey: "sb_publishable_test_key"
     };
     let realtimeCalls = [];
-    let realtimeMessageCallback = null;
+    let realtimeMessageCallbacks = {};
     let realtimeRefreshCount = 0;
     class TestRealtimeClient {
       constructor(endpoint, options) {
@@ -3795,7 +4230,7 @@ test("PWA joins only its private Realtime topic and treats broadcasts as refresh
         return {
           on(type, filter, callback) {
             realtimeCalls.push({ kind: "on", type, filter });
-            realtimeMessageCallback = callback;
+            realtimeMessageCallbacks[filter.event] = callback;
             return this;
           },
           subscribe(callback) {
@@ -3819,8 +4254,11 @@ test("PWA joins only its private Realtime topic and treats broadcasts as refresh
   assert.deepEqual(channel.options, {
     config: { private: true, broadcast: { ack: false, self: false } }
   });
-  assert.equal(calls.find(call => call.kind === "on").filter.event, "gymapp_live_changed");
-  vm.runInContext(`realtimeMessageCallback({ payload: {
+  assert.deepEqual(
+    calls.filter(call => call.kind === "on").map(call => call.filter.event),
+    ["gymapp_live_changed", "gymapp_social_changed"]
+  );
+  vm.runInContext(`realtimeMessageCallbacks.gymapp_live_changed({ payload: {
     version: 1,
     kind: "invite",
     roomId: "lr_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -3828,7 +4266,7 @@ test("PWA joins only its private Realtime topic and treats broadcasts as refresh
   } })`, context);
   await new Promise(resolve => setTimeout(resolve, 120));
   assert.equal(vm.runInContext("realtimeRefreshCount", context), 1);
-  vm.runInContext(`realtimeMessageCallback({ payload: {
+  vm.runInContext(`realtimeMessageCallbacks.gymapp_live_changed({ payload: {
     version: 1,
     kind: "invite",
     roomId: "lr_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",

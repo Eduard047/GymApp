@@ -130,7 +130,7 @@ test("PWA distinguishes planned rows from durable active and history sets", () =
   assert.match(appSources[0].source, /data-action="add-saved-workout-set"/);
   assert.match(appSources[0].source, /data-action="start-workout"[^>]*>[\s\S]*?tx\("Start workout"/);
   assert.match(appSources[0].source, /data-action="record-active-set"/);
-  assert.match(appSources[0].source, /Finish adds recorded sets to history/);
+  assert.match(appSources[0].source, /data-action="finish-active-workout"/);
   assert.match(appSources[0].source, /data-action="save-workout"[^>]*>[\s\S]*?t\("saveCompletedWorkout"\)/);
   assert.match(appSources[0].source, /data-action="record-all-active-sets"[^>]*>[\s\S]*?tx\("Save all sets"/);
 });

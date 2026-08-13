@@ -467,12 +467,36 @@ final class LiveWorkoutContractTests: XCTestCase {
         )))
         let storageKey = try XCTUnwrap(auth.session?.storageKey)
         let workoutStore = try WorkoutStore(accountStorageKey: storageKey, directoryURL: root)
+        let reservationURL = LiveWorkoutSlotReservationStore.storageURL(
+            forWorkoutStorageURL: workoutStore.storageURL
+        )
+        XCTAssertEqual(
+            reservationURL.deletingLastPathComponent().standardizedFileURL,
+            root.standardizedFileURL
+        )
+        XCTAssertFalse(FileManager.default.fileExists(atPath: reservationURL.path))
         let activeWorkoutStore = ActiveWorkoutStore(
             accountStorageKey: storageKey,
             workoutStorageURL: workoutStore.storageURL
         )
+        XCTAssertNil(activeWorkoutStore.liveSlotReservationStore.reservation)
+
+        let dateFormatter = ISO8601DateFormatter()
+        dateFormatter.formatOptions = [.withInternetDateTime]
+        let referenceNow = Date()
+        let createdAt = dateFormatter.string(from: referenceNow.addingTimeInterval(-15 * 60))
+        let startedAt = dateFormatter.string(from: referenceNow.addingTimeInterval(-10 * 60))
+        let completedAt = dateFormatter.string(from: referenceNow.addingTimeInterval(-5 * 60))
+        let activeExpiresAt = dateFormatter.string(from: referenceNow.addingTimeInterval(6 * 60 * 60))
         var object = liveSnapshotObject()
+        var room = try XCTUnwrap(object["room"] as? [String: Any])
+        room["createdAt"] = createdAt
+        room["inviteExpiresAt"] = startedAt
+        room["startedAt"] = startedAt
+        room["activeExpiresAt"] = activeExpiresAt
+        object["room"] = room
         var participants = try XCTUnwrap(object["participants"] as? [[String: Any]])
+        participants[0]["joinedAt"] = createdAt
         participants[0]["progress"] = [
             "version": 1,
             "revision": 2,
@@ -480,7 +504,7 @@ final class LiveWorkoutContractTests: XCTestCase {
                 "setId": "s_01_01",
                 "weight": 82.5,
                 "reps": 7,
-                "completedAt": liveCompletedAt
+                "completedAt": completedAt
             ]],
             "undoableSetId": "s_01_01",
             "finishedAt": NSNull()
@@ -506,7 +530,7 @@ final class LiveWorkoutContractTests: XCTestCase {
         let draft = try XCTUnwrap(activeWorkoutStore.draft)
         XCTAssertEqual(
             draft.startedAt,
-            try LiveWorkoutPayloadParser.validatedDate(from: liveStartedAt)
+            try LiveWorkoutPayloadParser.validatedDate(from: startedAt)
         )
         XCTAssertEqual(draft.workoutDate, draft.startedAt)
         let sets = try XCTUnwrap(draft.exercises.first?.sets)
@@ -514,7 +538,7 @@ final class LiveWorkoutContractTests: XCTestCase {
         XCTAssertEqual(sets[0].reps, 7)
         XCTAssertEqual(
             sets[0].completedAt,
-            try LiveWorkoutPayloadParser.validatedDate(from: liveCompletedAt)
+            try LiveWorkoutPayloadParser.validatedDate(from: completedAt)
         )
         XCTAssertEqual(draft.undoableSetID, sets[0].id)
         XCTAssertNil(sets[1].completedAt)
@@ -553,6 +577,10 @@ final class LiveWorkoutContractTests: XCTestCase {
         XCTAssertNil(coordinator.sidecar.attachment)
         XCTAssertNil(activeWorkoutStore.draft)
         XCTAssertEqual(workoutStore.workout(id: draft.id), completedWorkout)
+
+        try FileManager.default.removeItem(at: root)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: reservationURL.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.path))
     }
 }
 

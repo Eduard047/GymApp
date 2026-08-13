@@ -5,6 +5,7 @@ import test from "node:test";
 
 const appSource = await readFile("pwa/app.js", "utf8");
 const stateContractSource = await readFile("pwa/state-contract.js", "utf8");
+const progressionRulesSource = await readFile("pwa/progression-rules.js", "utf8");
 
 function createStorage() {
   const values = new Map();
@@ -58,6 +59,8 @@ function loadPwaContext() {
   vm.createContext(context);
   vm.runInContext(stateContractSource, context);
   context.window.GymStateContract = context.GymStateContract;
+  vm.runInContext(progressionRulesSource, context);
+  context.window.GymProgressionRules = context.GymProgressionRules;
   vm.runInContext(appSource, context);
   return context;
 }
@@ -719,6 +722,7 @@ test("PWA Smart Coach keeps its generated set cap and manual sets through apply 
   const context = loadPwaContext();
   const result = JSON.parse(JSON.stringify(await vm.runInContext(`(async () => {
     state = defaultAppState();
+    state.profile = { split: "Push Pull Legs", days: 4, goal: "Balanced", calories: "Maintenance" };
     render = () => {};
     showToast = () => {};
     workoutDraft = {
@@ -838,28 +842,30 @@ test("PWA Smart Coach keeps its generated set cap and manual sets through apply 
   assert.notEqual(result.replacementName, result.previousName);
 });
 
-test("PWA daily streak follows local calendar days across daylight-saving changes", () => {
+test("PWA weekly rhythm counts distinct local days across daylight-saving changes", () => {
   const previousTimezone = process.env.TZ;
   process.env.TZ = "Europe/Kyiv";
   try {
     const context = loadPwaContext();
+    const march28 = new Date(2026, 2, 28, 12, 0, 0, 0).getTime();
     const march29 = new Date(2026, 2, 29, 12, 0, 0, 0).getTime();
     const march30 = new Date(2026, 2, 30, 12, 0, 0, 0).getTime();
-    const march31 = new Date(2026, 2, 31, 12, 0, 0, 0).getTime();
     const result = vm.runInContext(`(() => {
       state = defaultAppState();
       state.sessions = [
-        { id: 1, startedAt: ${march29}, note: "", sets: [] },
-        { id: 2, startedAt: ${march30}, note: "", sets: [] }
+        { id: 1, startedAt: ${march28}, note: "", sets: [] },
+        { id: 2, startedAt: ${march29}, note: "", sets: [] }
       ];
+      state.profile.days = 2;
       return {
-        throughToday: streakDays(${march30}),
-        throughYesterday: streakDays(${march31})
+        trainingDays: [...GymProgressionRules.weeklyTrainingDays(state.sessions).values()]
+          .reduce((sum, days) => sum + days.size, 0),
+        currentStreak: profileWeeklyStreak(state.sessions, ${march30}, 2)
       };
     })()`, context);
 
-    assert.equal(result.throughToday, 2);
-    assert.equal(result.throughYesterday, 2);
+    assert.equal(result.trainingDays, 2);
+    assert.equal(result.currentStreak, 1);
   } finally {
     if (previousTimezone === undefined) delete process.env.TZ;
     else process.env.TZ = previousTimezone;
@@ -1394,21 +1400,21 @@ test("PWA smart outputs remain finite and clamped at the state-contract load bou
   assert.ok(Number.isFinite(recommendation.estimatedVolume));
 });
 
-test("PWA smart coach ignores history beyond the allowed future clock skew", () => {
+test("PWA smart coach ignores every future-dated history row", () => {
   const context = loadPwaContext();
   const profile = { split: "Upper / Lower", days: 4, goal: "Balanced", calories: "Maintenance" };
   const recommendation = recommendationFor(context, {
     profile,
     sessions: [
       exerciseSession(1, 1, "Bench Press", [[50, 8], [50, 8], [50, 8]]),
-      exerciseSession(2, -30, "Bench Press", [[100, 12], [100, 12], [100, 12]])
+      exerciseSession(2, -1, "Bench Press", [[100, 12], [100, 12], [100, 12]])
     ]
   });
   const plan = planFor(context, {
     profile,
     sessions: [
       session(3, 1, ["Leg Press"]),
-      session(4, -30, ["Bench Press"])
+      session(4, -1, ["Bench Press"])
     ]
   });
 
@@ -1531,9 +1537,9 @@ test("PWA achievement gallery exposes the canonical twelve stable milestones", (
     { id: "workout_25", target: 25 },
     { id: "workout_50", target: 50 },
     { id: "workout_100", target: 100 },
-    { id: "streak_7", target: 7 },
-    { id: "streak_14", target: 14 },
-    { id: "streak_30", target: 30 },
+    { id: "streak_7", target: 2 },
+    { id: "streak_14", target: 4 },
+    { id: "streak_30", target: 8 },
     { id: "volume_10k", target: 10_000 },
     { id: "volume_50k", target: 50_000 },
     { id: "comeback", target: 7 }

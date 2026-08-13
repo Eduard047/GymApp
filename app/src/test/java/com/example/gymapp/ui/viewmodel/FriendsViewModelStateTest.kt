@@ -7,9 +7,11 @@ import com.example.gymapp.auth.SocialFriendDetailProfile
 import com.example.gymapp.auth.SocialFriendDetails
 import com.example.gymapp.auth.SocialMyFriendCode
 import com.example.gymapp.auth.SocialPrivacy
+import com.example.gymapp.auth.SocialRecentWorkout
 import com.example.gymapp.auth.SocialSelfProfile
 import com.example.gymapp.auth.SocialSharing
 import com.example.gymapp.auth.SocialWorkoutInbox
+import com.example.gymapp.auth.SocialWorkoutExerciseLabel
 import com.example.gymapp.data.repository.SharedWorkoutExercise
 import com.example.gymapp.data.repository.SharedWorkoutPlan
 import com.example.gymapp.data.repository.SharedWorkoutSet
@@ -121,6 +123,45 @@ class FriendsViewModelStateTest {
 
         assertNull(refreshed.selectedFriendDetails)
         assertTrue(refreshed.isDetailsLoading)
+    }
+
+    @Test
+    fun exactDetailFailureRetainsAuthorizedFiveWorkoutSummary() {
+        val profileId = "p_${"a".repeat(32)}"
+        val details = sharedDetails(profileId).copy(
+            recentWorkouts = listOf(
+                SocialRecentWorkout(
+                    workoutDay = "2026-08-09",
+                    exerciseCount = 1,
+                    setCount = 2,
+                    exercises = listOf(
+                        SocialWorkoutExerciseLabel("bench_press", "Bench Press")
+                    )
+                )
+            )
+        )
+
+        val loading = friendSummaryFallbackState(
+            FriendsUiState(isCloudAccount = true, selectedProfileId = profileId),
+            profileId,
+            details,
+            isExactDetailLoading = true
+        )
+        assertEquals(details, loading.selectedFriendDetails)
+        assertTrue(loading.isFriendWorkoutsLoading)
+
+        val fallback = friendSummaryFallbackState(
+            loading,
+            profileId,
+            details,
+            isExactDetailLoading = false
+        )
+        assertEquals(details, fallback.selectedFriendDetails)
+        assertEquals(1, fallback.selectedFriendDetails?.recentWorkouts?.size)
+        assertTrue(fallback.friendWorkouts.isEmpty())
+        assertFalse(fallback.friendWorkoutDetailsAvailable)
+        assertFalse(fallback.isFriendWorkoutsLoading)
+        assertNull(fallback.error)
     }
 
     @Test

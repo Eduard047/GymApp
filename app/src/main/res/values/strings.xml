@@ -88,6 +88,8 @@
     <string name="friends_privacy_allow_requests">Allow new friend requests</string>
     <string name="friends_privacy_share_progress">Share XP, level, and workout count</string>
     <string name="friends_privacy_share_workouts">Share five recent workout summaries</string>
+    <string name="friends_privacy_share_workout_details">Share exercises, weights, and reps</string>
+    <string name="friends_privacy_share_workout_details_supporting">Off by default. Friends can open exact sets only when this is enabled.</string>
     <string name="friends_privacy_share_records">Share exercise records</string>
     <string name="friends_privacy_saved">Privacy settings saved.</string>
     <string name="friends_privacy_save_failed">Privacy settings changed elsewhere or could not be saved. Refresh and try again.</string>
@@ -108,6 +110,16 @@
     <string name="friend_recent_private_supporting">This friend does not share recent workout summaries.</string>
     <string name="friend_recent_empty_title">No recent workouts</string>
     <string name="friend_recent_empty_supporting">No shared workout summary is available yet.</string>
+    <string name="friend_workout_open_action">View workout</string>
+    <string name="friend_workout_sets_private">Sets are private.</string>
+    <string name="friend_workout_exercises_label">Exercises</string>
+    <string name="friend_workout_sets_label">Sets</string>
+    <string name="friend_workout_read_only">%1$s’s shared workout · read only</string>
+    <string name="friend_workout_set_number">Set %1$d</string>
+    <string name="friend_workout_set_value">%1$s kg × %2$d</string>
+    <string name="friend_workout_truncated">Only the first 100 shared sets are shown.</string>
+    <string name="friend_workout_load_more">Show earlier workouts</string>
+    <string name="friend_workout_loading_more">Loading…</string>
     <string name="friend_activity_unavailable_title">Shared activity is not current</string>
     <string name="friend_activity_unavailable_supporting">This friend allows sharing, but the latest safe cloud projection is temporarily unavailable.</string>
     <string name="friend_records_eyebrow">RECORDS</string>
@@ -382,8 +394,11 @@
     <string name="focus_lens_supporting">Ready when you are. Start simple and shape the workout as you go.</string>
     <string name="focus_lens_active_workout_supporting">Your active workout is saved on this device. Continue with the next planned set.</string>
     <string name="focus_lens_month_workouts">Workouts</string>
+    <string name="focus_lens_total_workouts">Total workouts</string>
     <string name="focus_lens_week_streak">Week streak</string>
+    <string name="focus_lens_week_streak_value">%1$d wk</string>
     <string name="focus_lens_volume">Volume</string>
+    <string name="focus_lens_total_volume">Total volume</string>
     <string name="action_start_workout">Start workout</string>
     <string name="action_continue_workout">Continue workout</string>
     <string name="add_workout_active_exercises">Exercises: %1$d</string>
@@ -1100,6 +1115,7 @@
     <string name="live_workout_invite_sent">Live workout invitation sent.</string>
     <string name="live_workout_action_failed">Couldn’t update the live workout.</string>
     <string name="live_workout_ready_waiting_owner">Ready. The workout will begin when the owner starts it.</string>
+    <string name="live_workout_started_after_accept">Live workout started.</string>
     <string name="live_workout_invite_declined">Live workout invitation declined.</string>
     <string name="live_workout_start_failed">Couldn’t start the live workout.</string>
     <string name="live_workout_active_blocked">Finish or discard the current workout before joining this live workout.</string>
@@ -1130,6 +1146,9 @@
     <string name="live_workout_peer_title">Training with %1$s</string>
     <string name="live_workout_peer_progress">Friend progress: %1$d of %2$d sets</string>
     <string name="live_workout_peer_finished">Your friend has finished.</string>
+    <string name="live_workout_peer_read_only">Live progress · read only</string>
+    <string name="live_workout_peer_set_completed">%1$s kg × %2$d</string>
+    <string name="live_workout_peer_set_pending">Not logged · planned %1$s kg × %2$d</string>
     <string name="live_workout_two_lanes_title">SET-BY-SET · BOTH PHONES</string>
     <string name="live_workout_lane_you">You</string>
     <string name="live_workout_set_completed_accessibility">Set %1$d completed</string>

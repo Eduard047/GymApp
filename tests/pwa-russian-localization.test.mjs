@@ -199,8 +199,6 @@ test("audited Ukrainian runtime labels keep their intended workout, progress, au
     ["Plateau plan: change the rep target to break the flat trend.", "План виходу з плато: зміни ціль за повторами, щоб подолати застій."],
     ["One softer session is held steady; a deload needs two comparable regressions.", "Одне слабше тренування утримує навантаження; для розвантаження потрібні два порівнювані спади."],
     ["Recent volume dropped compared with the previous session.", "Обсяг останнього тренування нижчий за обсяг попереднього."],
-    ["Sign in to sync workouts across devices.", "Увійди, щоб синхронізувати тренування між пристроями."],
-    ["Smart Coach uses this to match your plan, goal and recovery.", "Розумний тренер використовує ці дані, щоб підібрати план з урахуванням цілі та відновлення."],
     ["Suggested from your recent exercise pattern and training profile.", "Підібрано з урахуванням недавніх вправ і профілю тренувань."],
     ["Switch", "Змінити акаунт"],
     ["The increase is intentionally conservative.", "Збільшення навмисно невелике."],
@@ -218,12 +216,15 @@ test("audited Ukrainian runtime labels keep their intended workout, progress, au
     ["Send email again", "Надіслати лист ще раз"],
     ["The unseen Garmin token could not be persisted or revoked. Keep this page open and retry Garmin sync or sign-out to revoke it.", "Непоказаний токен Garmin не вдалося ні зберегти, ні відкликати. Не закривай цю сторінку: повтори синхронізацію з Garmin або вийди з акаунта, щоб відкликати токен."],
     ["Workout summary unavailable.", "Підсумок тренування недоступний."],
-    ["Your training history and next best move.", "Твоя історія тренувань і рекомендація, що робити далі."]
+    ["12–72 UTF-8 bytes with upper and lowercase Latin letters, a number and a symbol.", "12–72 байти UTF-8, великі й малі латинські літери, цифра та спецсимвол."]
   ]);
   for (const [english, ukrainian] of adjacentLiteralCases) {
     const adjacentPair = new RegExp(`${escapeRegExp(JSON.stringify(english))}\\s*,\\s*${escapeRegExp(JSON.stringify(ukrainian))}`);
     assert.match(appSource, adjacentPair, english);
   }
+  assert.doesNotMatch(appSource, /Sign in to sync workouts across devices\./);
+  assert.doesNotMatch(appSource, /Smart Coach uses this to match your plan, goal and recovery\./);
+  assert.doesNotMatch(appSource, /Your training history and next best move\./);
 });
 
 test("PWA Russian dynamic Garmin, workout, exercise, and mission text never falls back to English", () => {

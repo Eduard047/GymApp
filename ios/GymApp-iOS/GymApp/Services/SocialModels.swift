@@ -8,6 +8,19 @@ struct SocialPrivacy: Equatable, Sendable {
     var shareRecords: Bool
 }
 
+struct SocialWorkoutDetailPrivacy: Equatable, Sendable {
+    let shareWorkoutDetails: Bool
+    let settingsRevision: Int
+}
+
+struct SocialRealtimeHint: Equatable, Sendable {
+    let kind: String
+}
+
+struct SocialFriendWorkoutDetailCapability: Equatable, Sendable {
+    let available: Bool
+}
+
 struct SocialSelfProfile: Equatable, Sendable {
     let profileID: String
     let friendCode: String
@@ -152,6 +165,39 @@ struct SocialFriendDetails: Equatable, Sendable {
     let exerciseRecords: [SocialExerciseRecord]
 }
 
+struct SocialFriendWorkoutSet: Equatable, Sendable {
+    let weightKg: Double
+    let reps: Int
+}
+
+struct SocialFriendWorkoutExercise: Identifiable, Equatable, Sendable {
+    var id: String { catalogKey.map { "catalog:\($0)" } ?? "custom:\(name)" }
+
+    let catalogKey: String?
+    let name: String
+    let sets: [SocialFriendWorkoutSet]
+}
+
+struct SocialFriendWorkout: Identifiable, Equatable, Sendable {
+    var id: String { workoutID }
+
+    let workoutID: String
+    let startedAt: String
+    let workoutDay: String
+    let exerciseCount: Int
+    let setCount: Int
+    let truncated: Bool
+    let exercises: [SocialFriendWorkoutExercise]
+}
+
+struct SocialFriendWorkoutPage: Equatable, Sendable {
+    let profileID: String
+    let displayName: String
+    let activityRevision: String?
+    let items: [SocialFriendWorkout]
+    let nextCursor: String?
+}
+
 struct SocialFriendshipMutation: Equatable, Sendable {
     enum Status: String, Sendable {
         case accepted
@@ -227,6 +273,8 @@ enum SocialPayloadParser {
     private static let maximumRecentWorkouts = 5
     private static let maximumWorkoutExerciseLabels = 20
     private static let maximumExerciseRecords = 100
+    private static let maximumFriendWorkoutExercises = 20
+    private static let maximumFriendWorkoutSets = 100
     private static let maximumRevision = 2_147_483_647
 
     static func dashboard(from data: Data) throws -> SocialDashboard {
@@ -346,6 +394,83 @@ enum SocialPayloadParser {
             recentWorkouts: recentWorkouts,
             exerciseRecords: exerciseRecords
         )
+    }
+
+    static func friendWorkoutPage(from data: Data) throws -> SocialFriendWorkoutPage {
+        let root = try object(
+            try json(from: data),
+            keys: [
+                "version", "friend", "activityRevision", "items", "nextCursor", "integrity"
+            ]
+        )
+        try version(root["version"])
+        guard try string(root["integrity"], maximumCharacters: 32, maximumBytes: 32) ==
+            "self_reported" else {
+            throw SocialPayloadError.invalidResponse
+        }
+        let friend = try object(root["friend"], keys: ["profileId", "displayName"])
+        let items = try array(root["items"], maximumCount: maximumRecentWorkouts)
+            .map(friendWorkout)
+        guard unique(items.map(\.workoutID)) else {
+            throw SocialPayloadError.invalidResponse
+        }
+        let activityRevision = try optionalTimestamp(root["activityRevision"])
+        let nextCursor: String?
+        if isNull(root["nextCursor"]) {
+            nextCursor = nil
+        } else {
+            let value = try string(root["nextCursor"], maximumCharacters: 32, maximumBytes: 32)
+            guard value.range(
+                of: #"^[0-9]{1,16}:[1-9][0-9]{0,3}$"#,
+                options: .regularExpression
+            ) != nil else {
+                throw SocialPayloadError.invalidResponse
+            }
+            nextCursor = value
+        }
+        guard activityRevision != nil || (items.isEmpty && nextCursor == nil),
+              nextCursor == nil else {
+            throw SocialPayloadError.invalidResponse
+        }
+        return SocialFriendWorkoutPage(
+            profileID: try profileID(friend["profileId"]),
+            displayName: try displayName(friend["displayName"]),
+            activityRevision: activityRevision,
+            items: items,
+            nextCursor: nextCursor
+        )
+    }
+
+    static func workoutDetailPrivacy(from data: Data) throws -> SocialWorkoutDetailPrivacy {
+        let root = try object(
+            try json(from: data),
+            keys: ["version", "shareWorkoutDetails", "settingsRevision"]
+        )
+        try version(root["version"])
+        return SocialWorkoutDetailPrivacy(
+            shareWorkoutDetails: try boolean(root["shareWorkoutDetails"]),
+            settingsRevision: try revision(root["settingsRevision"])
+        )
+    }
+
+    static func friendWorkoutDetailCapability(
+        from data: Data
+    ) throws -> SocialFriendWorkoutDetailCapability {
+        let root = try object(try json(from: data), keys: ["version", "available"])
+        try version(root["version"])
+        return SocialFriendWorkoutDetailCapability(
+            available: try boolean(root["available"])
+        )
+    }
+
+    static func realtimeHint(from value: Any) throws -> SocialRealtimeHint {
+        let root = try object(value, keys: ["version", "kind"])
+        try version(root["version"])
+        let kind = try string(root["kind"], maximumCharacters: 32, maximumBytes: 32)
+        guard kind == "privacy_changed" else {
+            throw SocialPayloadError.invalidResponse
+        }
+        return SocialRealtimeHint(kind: kind)
     }
 
     static func submittedFriendRequest(from data: Data) throws {
@@ -687,6 +812,66 @@ enum SocialPayloadParser {
             bestReps: try integer(object["bestReps"], range: 1 ... 10_000),
             workoutCount: try integer(object["workoutCount"], range: 1 ... 5_000),
             lastWorkoutDay: try day(object["lastWorkoutDay"])
+        )
+    }
+
+    private static func friendWorkout(_ value: Any) throws -> SocialFriendWorkout {
+        let workoutObject = try object(
+            value,
+            keys: [
+                "workoutId", "startedAt", "workoutDay", "exerciseCount", "setCount",
+                "truncated", "exercises"
+            ]
+        )
+        let workoutID = try string(workoutObject["workoutId"], maximumCharacters: 35, maximumBytes: 35)
+        guard workoutID.range(
+            of: #"^fw_[0-9a-f]{32}$"#,
+            options: .regularExpression
+        ) != nil else {
+            throw SocialPayloadError.invalidResponse
+        }
+        let exerciseCount = try integer(workoutObject["exerciseCount"], range: 1 ... 100)
+        let setCount = try integer(workoutObject["setCount"], range: 1 ... 10_000)
+        let truncated = try boolean(workoutObject["truncated"])
+        let exercises = try array(
+            workoutObject["exercises"],
+            maximumCount: maximumFriendWorkoutExercises
+        ).map { exerciseValue -> SocialFriendWorkoutExercise in
+            let exerciseObject = try object(
+                exerciseValue,
+                keys: ["catalogKey", "name", "sets"]
+            )
+            let sets = try array(exerciseObject["sets"], maximumCount: 20).map { setValue in
+                let setObject = try object(setValue, keys: ["weightKg", "reps"])
+                return SocialFriendWorkoutSet(
+                    weightKg: try finiteNumber(setObject["weightKg"], range: 0 ... 1_000_000),
+                    reps: try integer(setObject["reps"], range: 1 ... 10_000)
+                )
+            }
+            guard !sets.isEmpty else { throw SocialPayloadError.invalidResponse }
+            return SocialFriendWorkoutExercise(
+                catalogKey: try optionalCatalogKey(exerciseObject["catalogKey"]),
+                name: try exerciseName(exerciseObject["name"]),
+                sets: sets
+            )
+        }
+        let shownSetCount = exercises.reduce(0) { $0 + $1.sets.count }
+        guard !exercises.isEmpty,
+              shownSetCount <= maximumFriendWorkoutSets,
+              unique(exercises.map(\.id)),
+              truncated
+                ? (exercises.count <= exerciseCount && shownSetCount <= setCount)
+                : (exercises.count == exerciseCount && shownSetCount == setCount) else {
+            throw SocialPayloadError.invalidResponse
+        }
+        return SocialFriendWorkout(
+            workoutID: workoutID,
+            startedAt: try timestamp(workoutObject["startedAt"]),
+            workoutDay: try day(workoutObject["workoutDay"]),
+            exerciseCount: exerciseCount,
+            setCount: setCount,
+            truncated: truncated,
+            exercises: exercises
         )
     }
 

@@ -133,7 +133,7 @@ class ExerciseProgressViewModel(
     }
     private val isUkrainian = locale.language.equals("uk", ignoreCase = true)
     private val isRussian = locale.language.equals("ru", ignoreCase = true)
-    private val shortDateFormatter = DateTimeFormatter.ofPattern("d MMM", locale)
+    private val shortDateFormatter = DateTimeFormatter.ofPattern("EEEEE d", locale)
     private val monthOffset = MutableStateFlow(0)
     private val selectedExerciseId = MutableStateFlow<Long?>(null)
 
@@ -341,8 +341,8 @@ class ExerciseProgressViewModel(
             val localDate = Instant.ofEpochMilli(point.sessionDate).atZone(zoneId).toLocalDate()
             ExerciseTrendChartPointUiModel(
                 sessionId = point.sessionId,
-                label = localDate.format(shortDateFormatter),
-                shortLabel = localDate.dayOfMonth.toString(),
+                label = DateTimeUtils.formatDate(point.sessionDate, locale, zoneId),
+                shortLabel = localDate.format(shortDateFormatter),
                 maxWeight = point.maxWeight,
                 totalVolume = point.totalVolume,
                 totalReps = point.totalReps,

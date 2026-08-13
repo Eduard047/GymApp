@@ -16,6 +16,16 @@ function sourceBetween(startMarker, endMarker) {
   return appSource.slice(start, end);
 }
 
+test("compact auth header uses the deployed app icon and exposes the language control", () => {
+  const auth = sourceBetween("function loginScreen()", "function offlineAccountSheetMarkup()");
+
+  assert.match(auth, /class="auth-brand-mark" src="\.\/icon-192\.png"/);
+  assert.doesNotMatch(auth, /\.\/icons\//);
+  assert.match(auth, /\$\{languageSelectorMarkup\(\)\}/);
+  assert.match(appSource, /data-action="language-menu"/);
+  assert.match(auth, /data-action="open-offline-account"/);
+});
+
 test("profile hub defaults to social training and keeps account controls in a compact second segment", () => {
   const screen = sourceBetween("function friendsProfileScreen()", "function parseSocialGenericSubmission");
 
@@ -121,7 +131,7 @@ test("urgent live, workout, and friend requests render before the friend list an
   const circleStart = panel.indexOf("friends-circle-card");
   const listStart = panel.indexOf("friend-circle-list");
   const codeStart = panel.indexOf("social-code-card");
-  const privacyStart = panel.indexOf("social-privacy-card");
+  const privacyStart = panel.indexOf('data-action="save-social-privacy"', codeStart);
 
   assert.ok(urgentStart >= 0);
   assert.ok(panel.indexOf("liveWorkoutInboxMarkup()", urgentStart) < circleStart);

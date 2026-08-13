@@ -317,6 +317,18 @@ class GymRepository(
     private val activeWorkoutDao = database.activeWorkoutDao()
     private val deletionStoreToken = UUID.randomUUID().toString()
     private val activeWorkoutMutationMutex = Mutex()
+    @Volatile
+    private var liveWorkoutSidecarStore: LiveWorkoutSidecarStore? = null
+    @Volatile
+    private var liveReservationUserId: String? = null
+
+    internal fun bindLiveWorkoutReservationGuard(
+        sidecarStore: LiveWorkoutSidecarStore?,
+        userId: String?
+    ) {
+        liveWorkoutSidecarStore = sidecarStore
+        liveReservationUserId = userId
+    }
 
     internal fun openDatabaseForAccountActivation() {
         database.openHelper.writableDatabase
@@ -1406,6 +1418,25 @@ class GymRepository(
         activeWorkoutDao.getSnapshot(ACTIVE_WORKOUT_ID)?.sortedActiveWorkout()
 
     suspend fun startActiveWorkout(
+        date: Long,
+        note: String?,
+        workoutExercises: List<WorkoutExerciseDraft>
+    ): StartActiveWorkoutResult {
+        val sidecarStore = liveWorkoutSidecarStore
+        val reservationUserId = liveReservationUserId
+        return if (sidecarStore != null && reservationUserId != null) {
+            sidecarStore.withOrdinaryStartPermit(
+                userId = reservationUserId,
+                blockedValue = StartActiveWorkoutResult.AlreadyActive
+            ) {
+                startActiveWorkoutLocked(date, note, workoutExercises)
+            }
+        } else {
+            startActiveWorkoutLocked(date, note, workoutExercises)
+        }
+    }
+
+    private suspend fun startActiveWorkoutLocked(
         date: Long,
         note: String?,
         workoutExercises: List<WorkoutExerciseDraft>

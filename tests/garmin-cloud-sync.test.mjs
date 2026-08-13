@@ -340,7 +340,7 @@ test("PWA set interval notes are bounded, fail closed, and allow sixty partial r
   assert.equal(parseGarminWorkoutMetrics(`${note} · S+1`), null);
 });
 
-test("retained browser source, Supabase, and Garmin code keep the same cloud sync contract", async () => {
+test("PWA, Supabase, and Garmin code are wired to the same cloud sync contract", async () => {
   const [appJs, indexHtml, swJs, edgeFunction, edgeConfig, schema, hardeningMigration, rateLimitMigration, denoConfig, denoLock, gymComm, workoutView, settingsXml, manifest, buildScript] = await Promise.all([
     readFile("pwa/app.js", "utf8"),
     readFile("pwa/index.html", "utf8"),
@@ -359,9 +359,10 @@ test("retained browser source, Supabase, and Garmin code keep the same cloud syn
     readFile("scripts/build-garmin.ps1", "utf8")
   ]);
 
-  assert.match(indexHtml, /retirement\.v1\.js/);
-  assert.doesNotMatch(indexHtml, /garmin-cloud-sync|app\.v86\.js|supabase/);
-  assert.doesNotMatch(swJs, /garmin-cloud-sync|app\.v86\.js|supabase/);
+  assert.match(indexHtml, /garmin-cloud-sync\.v57\.js/);
+  assert.match(indexHtml, /app\.v88\.js/);
+  assert.match(swJs, /garmin-cloud-sync\.v57\.js/);
+  assert.match(swJs, /app\.v88\.js/);
   assert.match(appJs, /\/functions\/v1\/garmin-sync/);
   assert.match(appJs, /\/rest\/v1\/rpc\/garmin_enqueue_plan/);
   assert.doesNotMatch(appJs, /supabaseRequest\("\/rest\/v1\/garmin_plans"/);

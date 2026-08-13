@@ -78,6 +78,8 @@ struct FriendsView: View {
     @State private var activeActionID: String?
     @State private var privacyDraft: SocialPrivacy?
     @State private var privacyIsDirty = false
+    @State private var workoutDetailPrivacyDraft: Bool?
+    @State private var workoutDetailPrivacyIsDirty = false
     @State private var confirmation: FriendsConfirmation?
 
     init(
@@ -135,11 +137,17 @@ struct FriendsView: View {
         .task(id: auth.session?.storageKey) {
             privacyDraft = nil
             privacyIsDirty = false
+            workoutDetailPrivacyDraft = nil
+            workoutDetailPrivacyIsDirty = false
             await refreshAll()
         }
         .onChange(of: appState.socialDashboard?.currentUser.settingsRevision) { _ in
             guard !privacyIsDirty else { return }
             privacyDraft = appState.socialDashboard?.currentUser.privacy
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .gymAppSocialChanged)) { note in
+            guard note.object as? String == auth.session?.cloud?.userID else { return }
+            Task { await refreshAll(force: true) }
         }
         .alert(item: $confirmation, content: confirmationAlert)
     }
@@ -746,6 +754,31 @@ struct FriendsView: View {
                     value: draft.shareRecords,
                     keyPath: \.shareRecords
                 )
+                Toggle(
+                    t(
+                        "Share exercises, weights, and reps",
+                        "Показувати вправи, вагу й повтори",
+                        "Показывать упражнения, вес и повторения"
+                    ),
+                    isOn: Binding(
+                        get: {
+                            workoutDetailPrivacyDraft ??
+                                appState.socialWorkoutDetailPrivacy?.shareWorkoutDetails ?? false
+                        },
+                        set: { value in
+                            workoutDetailPrivacyDraft = value
+                            workoutDetailPrivacyIsDirty = true
+                        }
+                    )
+                )
+                .disabled(appState.socialWorkoutDetailPrivacy == nil)
+                Text(t(
+                    "Off by default. Friends can open exact sets only when this is enabled.",
+                    "Вимкнено за замовчуванням. Друзі зможуть відкрити точні підходи лише після ввімкнення.",
+                    "По умолчанию выключено. Друзья смогут открыть точные подходы только после включения."
+                ))
+                .font(.caption)
+                .foregroundStyle(GymTheme.textSecondary)
                 Button {
                     Task { await savePrivacy() }
                 } label: {
@@ -753,7 +786,7 @@ struct FriendsView: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(GymSecondaryButtonStyle())
-                .disabled(!privacyIsDirty || activeActionID != nil)
+                .disabled((!privacyIsDirty && !workoutDetailPrivacyIsDirty) || activeActionID != nil)
             }
         }
     }
@@ -887,6 +920,14 @@ struct FriendsView: View {
                 )
             }
         }
+        do {
+            let detailPrivacy = try await appState.refreshSocialWorkoutDetailPrivacy()
+            if !workoutDetailPrivacyIsDirty {
+                workoutDetailPrivacyDraft = detailPrivacy.shareWorkoutDetails
+            }
+        } catch {
+            workoutDetailPrivacyDraft = nil
+        }
         await liveWorkoutCoordinator.refreshAll(showErrors: false)
     }
 
@@ -909,8 +950,9 @@ struct FriendsView: View {
         do {
             try await liveWorkoutCoordinator.respond(to: invitation, accept: accept)
             statusMessage = accept
-                ? t("Joined the live lobby.", "Приєднано до живого лобі.", "Ты в живом лобби.")
+                ? t("Live workout started.", "Спільне тренування почалося.", "Совместная тренировка началась.")
                 : t("Live invitation declined.", "Живе запрошення відхилено.", "Живое приглашение отклонено.")
+            if accept { onOpenLiveWorkout() }
         } catch {
             errorMessage = gymSafeEnglishErrorMessage(error)
         }
@@ -1144,9 +1186,19 @@ struct FriendsView: View {
     private func savePrivacy() async {
         guard let privacyDraft else { return }
         await perform(id: "privacy") {
-            try await appState.updateSocialPrivacy(privacyDraft)
+            let desiredWorkoutDetails = workoutDetailPrivacyDraft
+            if privacyIsDirty {
+                try await appState.updateSocialPrivacy(privacyDraft)
+            }
+            if workoutDetailPrivacyIsDirty,
+               let desiredWorkoutDetails {
+                try await appState.updateSocialWorkoutDetailPrivacy(desiredWorkoutDetails)
+            }
             privacyIsDirty = false
+            workoutDetailPrivacyIsDirty = false
             self.privacyDraft = appState.socialDashboard?.currentUser.privacy
+            workoutDetailPrivacyDraft =
+                appState.socialWorkoutDetailPrivacy?.shareWorkoutDetails
             statusMessage = t("Privacy updated.", "Приватність оновлено.", "Приватность обновлена.")
         }
     }
@@ -1252,6 +1304,10 @@ private struct FriendDetailView: View {
     let friend: SocialFriendSummary
 
     @State private var details: SocialFriendDetails?
+    @State private var friendWorkouts: [SocialFriendWorkout] = []
+    @State private var friendWorkoutActivityRevision: String?
+    @State private var friendWorkoutDetailsAvailable = false
+    @State private var selectedFriendWorkout: SocialFriendWorkout?
     @State private var isLoading = false
     @State private var isMutating = false
     @State private var errorMessage: String?
@@ -1313,6 +1369,16 @@ private struct FriendDetailView: View {
         .navigationTitle(friend.displayName)
         .navigationBarTitleDisplayMode(.inline)
         .task(id: appState.socialDashboardRefreshRevision) { await load() }
+        .onReceive(NotificationCenter.default.publisher(for: .gymAppSocialChanged)) { note in
+            guard note.object as? String == appState.auth.session?.cloud?.userID else { return }
+            loadRequestRevision &+= 1
+            details = nil
+            friendWorkouts = []
+            friendWorkoutActivityRevision = nil
+            friendWorkoutDetailsAvailable = false
+            selectedFriendWorkout = nil
+            Task { await load() }
+        }
         .sheet(item: $workoutShareMode) { mode in
             FriendWorkoutPickerSheet(
                 friendName: friend.displayName,
@@ -1324,6 +1390,25 @@ private struct FriendDetailView: View {
                 }
             )
             .presentationDetents([.medium, .large])
+        }
+        .sheet(
+            isPresented: Binding(
+                get: { authorizedSelectedFriendWorkout != nil },
+                set: { presented in
+                    if !presented { selectedFriendWorkout = nil }
+                }
+            )
+        ) {
+            if let workout = authorizedSelectedFriendWorkout {
+                NavigationStack {
+                    FriendWorkoutReadOnlyDetailView(
+                        friendName: friend.displayName,
+                        workout: workout,
+                        languageCode: languageCode
+                    )
+                }
+                .presentationDetents([.large])
+            }
         }
         .alert(item: $confirmation) { confirmation in
             switch confirmation {
@@ -1454,9 +1539,33 @@ private struct FriendDetailView: View {
                 } else if state == .empty {
                     Text(t("No synced workouts yet.", "Ще немає синхронізованих тренувань.", "Синхронизированных тренировок пока нет."))
                         .font(.subheadline).foregroundStyle(GymTheme.textSecondary)
+                } else if friendWorkoutDetailsAvailable && !friendWorkouts.isEmpty {
+                    ForEach(friendWorkouts) { workout in
+                        Button {
+                            selectedFriendWorkout = workout
+                        } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack {
+                                    Text(formatDay(workout.workoutDay)).font(.headline)
+                                    Spacer()
+                                    Text("\(workout.exerciseCount) · \(workout.setCount)")
+                                        .font(.caption.monospacedDigit())
+                                        .foregroundStyle(GymTheme.textSecondary)
+                                }
+                                Text(workout.exercises.map {
+                                    gymExerciseName($0.name, catalogKey: $0.catalogKey, languageCode: languageCode)
+                                }.joined(separator: " · "))
+                                .font(.caption)
+                                .foregroundStyle(GymTheme.textSecondary)
+                                .lineLimit(3)
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.vertical, 4)
+                    }
                 } else {
-                    ForEach(socialRecentWorkoutRows(details.recentWorkouts)) { row in
-                        let workout = row.workout
+                    ForEach(Array(details.recentWorkouts.enumerated()), id: \.offset) { _, workout in
                         VStack(alignment: .leading, spacing: 4) {
                             HStack {
                                 Text(formatDay(workout.workoutDay)).font(.headline)
@@ -1474,6 +1583,9 @@ private struct FriendDetailView: View {
                         }
                         .padding(.vertical, 4)
                     }
+                    Text(t("Sets are private.", "Підходи приховано.", "Подходы скрыты."))
+                        .font(.caption)
+                        .foregroundStyle(GymTheme.textSecondary)
                 }
             }
         }
@@ -1513,7 +1625,11 @@ private struct FriendDetailView: View {
                                 Text(metrics.maximumWeight)
                                 Text(metrics.maximumRepetitions)
                             }
-                            .font(.subheadline.bold().monospacedDigit())
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(GymTheme.textPrimary)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 6)
+                            .background(GymTheme.surfaceVariant, in: Capsule())
                             .multilineTextAlignment(.trailing)
                         }
                         .padding(.vertical, 3)
@@ -1549,10 +1665,27 @@ private struct FriendDetailView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    private var authorizedSelectedFriendWorkout: SocialFriendWorkout? {
+        guard details?.sharing.recentWorkouts == true,
+              details?.activityUpdatedAt == friendWorkoutActivityRevision,
+              friendWorkoutDetailsAvailable,
+              appState.socialDashboard?.friends.contains(where: {
+                  $0.profileID == friend.profileID
+              }) == true,
+              let selectedFriendWorkout else { return nil }
+        return friendWorkouts.first(where: {
+            $0.workoutID == selectedFriendWorkout.workoutID
+        })
+    }
+
     private func load() async {
         loadRequestRevision &+= 1
         let requestRevision = loadRequestRevision
         details = nil
+        friendWorkouts = []
+        friendWorkoutActivityRevision = nil
+        friendWorkoutDetailsAvailable = false
+        selectedFriendWorkout = nil
         isLoading = true
         errorMessage = nil
         guard appState.socialDashboard?.friends.contains(where: {
@@ -1575,10 +1708,48 @@ private struct FriendDetailView: View {
                 return
             }
             details = loaded
+            isLoading = false
+            guard loaded.sharing.recentWorkouts,
+                  loaded.activityUpdatedAt != nil else { return }
+
+            do {
+                let capability = try await appState.socialFriendWorkoutDetailCapability(
+                    profileID: friend.profileID
+                )
+                let workoutPage: SocialFriendWorkoutPage? = if capability.available {
+                    try await appState.socialFriendWorkoutPage(
+                        profileID: friend.profileID,
+                        expectedActivityRevision: loaded.activityUpdatedAt
+                    )
+                } else {
+                    nil
+                }
+                guard requestRevision == loadRequestRevision,
+                      appState.socialDashboard?.friends.contains(where: {
+                          $0.profileID == friend.profileID
+                      }) == true else { return }
+                friendWorkouts = workoutPage?.items ?? []
+                friendWorkoutActivityRevision = workoutPage?.activityRevision
+                friendWorkoutDetailsAvailable = workoutPage != nil
+            } catch {
+                guard requestRevision == loadRequestRevision,
+                      appState.socialDashboard?.friends.contains(where: {
+                          $0.profileID == friend.profileID
+                      }) == true else { return }
+                // Exact-set availability is optional. Keep the already-authorized
+                // five summaries visible and fail closed to non-tappable rows.
+                friendWorkouts = []
+                friendWorkoutActivityRevision = nil
+                friendWorkoutDetailsAvailable = false
+                selectedFriendWorkout = nil
+            }
         } catch {
             guard requestRevision == loadRequestRevision else { return }
             // Friend data is never retained after a failed authorization/relation check.
             details = nil
+            friendWorkouts = []
+            friendWorkoutActivityRevision = nil
+            friendWorkoutDetailsAvailable = false
             errorMessage = t("This friend profile is unavailable. Refresh Friends before trying again.", "Профіль друга недоступний. Онови список друзів і спробуй ще раз.", "Профиль друга недоступен. Обнови список друзей и попробуй ещё раз.")
         }
         if requestRevision == loadRequestRevision { isLoading = false }
@@ -1591,9 +1762,17 @@ private struct FriendDetailView: View {
         do {
             try await appState.removeFriend(friend)
             details = nil
+            friendWorkouts = []
+            friendWorkoutActivityRevision = nil
+            friendWorkoutDetailsAvailable = false
+            selectedFriendWorkout = nil
             dismiss()
         } catch {
             details = nil
+            friendWorkouts = []
+            friendWorkoutActivityRevision = nil
+            friendWorkoutDetailsAvailable = false
+            selectedFriendWorkout = nil
             errorMessage = t("The friend could not be removed safely. Refresh and try again.", "Не вдалося безпечно видалити друга. Онови дані й спробуй ще раз.", "Не удалось безопасно удалить друга. Обнови данные и попробуй ещё раз.")
         }
     }
@@ -1605,9 +1784,17 @@ private struct FriendDetailView: View {
         do {
             try await appState.blockSocialProfile(profileID: friend.profileID)
             details = nil
+            friendWorkouts = []
+            friendWorkoutActivityRevision = nil
+            friendWorkoutDetailsAvailable = false
+            selectedFriendWorkout = nil
             dismiss()
         } catch {
             details = nil
+            friendWorkouts = []
+            friendWorkoutActivityRevision = nil
+            friendWorkoutDetailsAvailable = false
+            selectedFriendWorkout = nil
             errorMessage = t("The person could not be blocked safely. Refresh and try again.", "Не вдалося безпечно заблокувати користувача. Онови дані й спробуй ще раз.", "Не удалось безопасно заблокировать пользователя. Обнови данные и попробуй ещё раз.")
         }
     }
@@ -1655,9 +1842,9 @@ private struct FriendDetailView: View {
             workoutShareMode = nil
             actionMessage = mode == .live
                 ? t(
-                    "Live invitation sent. The workout starts for both of you after your friend joins and you press Start.",
-                    "Live-запрошення надіслано. Тренування почнеться для вас обох після приєднання друга й натискання «Старт».",
-                    "Live-приглашение отправлено. Тренировка начнётся для вас обоих после присоединения друга и нажатия «Старт»."
+                    "Live invitation sent. The workout starts for both of you when your friend joins.",
+                    "Live-запрошення надіслано. Тренування почнеться для вас обох, коли друг приєднається.",
+                    "Live-приглашение отправлено. Тренировка начнётся для вас обоих, когда друг присоединится."
                 )
                 : t(
                     "Workout copy sent to this friend.",
@@ -1681,10 +1868,131 @@ private struct FriendDetailView: View {
         parser.timeZone = TimeZone(secondsFromGMT: 0)
         parser.dateFormat = "yyyy-MM-dd"
         guard let date = parser.date(from: raw) else { return raw }
-        return date.formatted(
-            Date.FormatStyle(date: .abbreviated, time: .omitted)
-                .locale(AppLanguage(rawValue: languageCode)?.locale ?? Locale(identifier: "en"))
-        )
+        var style = Date.FormatStyle(date: .abbreviated, time: .omitted)
+            .weekday(.abbreviated)
+            .locale(AppLanguage(rawValue: languageCode)?.locale ?? Locale(identifier: "en"))
+        style.timeZone = TimeZone(secondsFromGMT: 0)!
+        return date.formatted(style)
+    }
+
+    private func t(_ english: String, _ ukrainian: String, _ russian: String) -> String {
+        gymText(english, ukrainian, russian, languageCode: languageCode)
+    }
+}
+
+private struct FriendWorkoutReadOnlyDetailView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    let friendName: String
+    let workout: SocialFriendWorkout
+    let languageCode: String
+
+    var body: some View {
+        GymBackground {
+            ScrollView {
+                LazyVStack(spacing: GymTheme.contentSpacing) {
+                    GymPanel {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text(formatDay(workout.workoutDay))
+                                .font(.title2.bold())
+                                .foregroundStyle(GymTheme.textPrimary)
+                            Text(friendName)
+                                .font(.headline)
+                                .foregroundStyle(GymTheme.textSecondary)
+                            Text(t("Shared workout · Read only", "Спільне тренування · Лише перегляд", "Общая тренировка · Только просмотр"))
+                                .font(.subheadline)
+                                .foregroundStyle(GymTheme.textSecondary)
+                            HStack(spacing: 16) {
+                                compactMetric(
+                                    t("Exercises", "Вправи", "Упражнения"),
+                                    workout.exerciseCount
+                                )
+                                compactMetric(
+                                    t("Sets", "Підходи", "Подходы"),
+                                    workout.setCount
+                                )
+                            }
+                        }
+                    }
+                    if workout.truncated {
+                        GymStatusBanner(
+                            message: t(
+                                "Only the first 100 shared sets are shown.",
+                                "Показано перші 100 спільних підходів.",
+                                "Показаны первые 100 общих подходов."
+                            ),
+                            isError: false
+                        )
+                    }
+                    ForEach(workout.exercises) { exercise in
+                        GymPanel {
+                            VStack(alignment: .leading, spacing: 10) {
+                                HStack(alignment: .center, spacing: 10) {
+                                    ExerciseMediaButton(
+                                        rawExerciseName: exercise.name,
+                                        catalogKey: exercise.catalogKey,
+                                        exerciseID: UUID(
+                                            uuidString: "00000000-0000-0000-0000-000000000000"
+                                        )!,
+                                        ownerKey: "social-friend-read-only",
+                                        editable: false
+                                    )
+                                    Text(gymExerciseName(
+                                        exercise.name,
+                                        catalogKey: exercise.catalogKey,
+                                        languageCode: languageCode
+                                    ))
+                                    .font(.headline)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                                ForEach(Array(exercise.sets.enumerated()), id: \.offset) { index, set in
+                                    HStack(spacing: 12) {
+                                        Text(t("Set", "Підхід", "Подход") + " \(index + 1)")
+                                            .foregroundStyle(GymTheme.textSecondary)
+                                        Spacer()
+                                        Text("\(set.weightKg.formatted(.number.precision(.fractionLength(0 ... 2)))) kg × \(set.reps)")
+                                            .monospacedDigit()
+                                    }
+                                    .font(.subheadline)
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, GymTheme.screenHorizontalInset)
+                .padding(.top, GymTheme.screenVerticalInset)
+                .padding(.bottom, GymTheme.screenBottomInset)
+            }
+        }
+        .navigationTitle(t("Workout", "Тренування", "Тренировка"))
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button(t("Done", "Готово", "Готово")) { dismiss() }
+            }
+        }
+    }
+
+    private func compactMetric(_ title: String, _ value: Int) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title).font(.caption).foregroundStyle(GymTheme.textSecondary)
+            Text(value.formatted()).font(.headline.monospacedDigit())
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func formatDay(_ raw: String) -> String {
+        let parser = DateFormatter()
+        parser.calendar = Calendar(identifier: .gregorian)
+        parser.locale = Locale(identifier: "en_US_POSIX")
+        parser.timeZone = TimeZone(secondsFromGMT: 0)
+        parser.dateFormat = "yyyy-MM-dd"
+        guard let date = parser.date(from: raw) else { return raw }
+        var style = Date.FormatStyle(date: .abbreviated, time: .omitted)
+            .weekday(.abbreviated)
+            .locale(AppLanguage(rawValue: languageCode)?.locale ?? Locale(identifier: "en"))
+        style.timeZone = TimeZone(secondsFromGMT: 0)!
+        return date.formatted(style)
     }
 
     private func t(_ english: String, _ ukrainian: String, _ russian: String) -> String {

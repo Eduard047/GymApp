@@ -1531,6 +1531,85 @@ class CloudAuthManager internal constructor(
         }
     }
 
+    internal suspend fun loadSocialFriendWorkoutPage(
+        session: AccountSession.Cloud,
+        profileId: String,
+        expectedActivityRevision: String? = null
+    ): SocialFriendWorkoutPage? {
+        require(isValidSocialProfileId(profileId)) { "Friend profile ID is invalid." }
+        val body = JSONObject()
+            .put("p_profile_id", profileId)
+            .put("p_cursor", JSONObject.NULL)
+            .put("p_limit", SOCIAL_MAX_FRIEND_WORKOUT_PAGE)
+        expectedActivityRevision?.let { body.put("p_expected_activity_revision", it) }
+        return try {
+            socialRpc(
+                session = session,
+                function = "social_friend_workout_page",
+                body = body,
+                parser = ::parseSocialFriendWorkoutPage
+            ).also { page ->
+                require(page.profileId == profileId) { "Social response is invalid." }
+                require(expectedActivityRevision == null ||
+                    page.activityRevision == expectedActivityRevision) {
+                    "Social response is invalid."
+                }
+            }
+        } catch (error: SupabaseHttpException) {
+            if (error.errorCode in setOf("P0002", "PGRST202", "42883")) null else throw error
+        }
+    }
+
+    internal suspend fun loadSocialFriendWorkoutDetailCapability(
+        session: AccountSession.Cloud,
+        profileId: String
+    ): SocialFriendWorkoutDetailCapability {
+        require(isValidSocialProfileId(profileId)) { "Friend profile ID is invalid." }
+        return try {
+            socialRpc(
+                session = session,
+                function = "social_friend_workout_detail_capability",
+                body = JSONObject().put("p_profile_id", profileId),
+                parser = ::parseSocialFriendWorkoutDetailCapability
+            )
+        } catch (error: SupabaseHttpException) {
+            if (isUnavailableSocialMyFriendCodeRpc(error.responseCode, error.errorCode)) {
+                SocialFriendWorkoutDetailCapability(available = false)
+            } else {
+                throw error
+            }
+        }
+    }
+
+    internal suspend fun loadSocialWorkoutDetailPrivacy(
+        session: AccountSession.Cloud
+    ): SocialWorkoutDetailPrivacy = socialRpc(
+        session = session,
+        function = "social_workout_detail_privacy",
+        body = JSONObject(),
+        parser = ::parseSocialWorkoutDetailPrivacy
+    )
+
+    internal suspend fun updateSocialWorkoutDetailPrivacy(
+        session: AccountSession.Cloud,
+        shareWorkoutDetails: Boolean,
+        expectedRevision: Int
+    ): SocialWorkoutDetailPrivacy {
+        require(expectedRevision > 0) { "Privacy revision is invalid." }
+        return socialRpc(
+            session = session,
+            function = "social_update_workout_detail_privacy",
+            body = JSONObject()
+                .put("p_share_workout_details", shareWorkoutDetails)
+                .put("p_expected_revision", expectedRevision),
+            parser = ::parseSocialWorkoutDetailPrivacy
+        ).also { result ->
+            require(result.shareWorkoutDetails == shareWorkoutDetails) {
+                "Social response is invalid."
+            }
+        }
+    }
+
     internal suspend fun sendSocialFriendRequest(
         session: AccountSession.Cloud,
         friendCode: String

@@ -20,6 +20,28 @@ import org.junit.Test
 
 class LiveWorkoutInvitationPreflightTest {
     @Test
+    fun `authoritative still invited inbox releases restart reservation but not in flight accept`() {
+        assertTrue(shouldReleaseParticipantLiveReservation(
+            role = "participant",
+            invitationStillWaiting = true,
+            responseInFlight = false,
+            ignoreInFlight = false
+        ))
+        assertTrue(!shouldReleaseParticipantLiveReservation(
+            role = "participant",
+            invitationStillWaiting = true,
+            responseInFlight = true,
+            ignoreInFlight = false
+        ))
+        assertTrue(!shouldReleaseParticipantLiveReservation(
+            role = "owner",
+            invitationStillWaiting = true,
+            responseInFlight = false,
+            ignoreInFlight = false
+        ))
+    }
+
+    @Test
     fun `valid frozen plan is accepted only after preflight`() = runBlocking {
         val plan = validPlan()
         val invitation = invitation(plan)
@@ -40,6 +62,10 @@ class LiveWorkoutInvitationPreflightTest {
                     existingExercises = emptyList()
                 )
             },
+            reserveBeforeRespond = {
+                calls += "reserve"
+                assertEquals("00000000-0000-4000-8000-000000000001", it)
+            },
             respond = { expectedRoomRevision, clientOperationId ->
                 calls += "respond"
                 assertEquals(4, expectedRoomRevision)
@@ -57,7 +83,43 @@ class LiveWorkoutInvitationPreflightTest {
         )
 
         assertEquals("joined", result.result)
-        assertEquals(listOf("active-check", "snapshot", "preflight", "respond"), calls)
+        assertEquals(listOf("active-check", "snapshot", "preflight", "reserve", "respond"), calls)
+    }
+
+    @Test
+    fun `accept reserves before rpc and reconciles exact operation after failure`() = runBlocking {
+        val plan = validPlan()
+        val calls = mutableListOf<String>()
+        val operationId = "00000000-0000-4000-8000-000000000001"
+
+        val failure = runCatching {
+            acceptLiveInvitationAfterPreflight(
+                invitation = invitation(plan),
+                ensureCanJoin = { calls += "active-check" },
+                loadSnapshot = { calls += "snapshot"; waitingSnapshot(plan) },
+                validatePlan = { calls += "preflight" },
+                reserveBeforeRespond = {
+                    calls += "reserve:$it"
+                },
+                releaseAfterFailedRespond = {
+                    calls += "release:$it"
+                },
+                respond = { _, clientOperationId ->
+                    calls += "respond:$clientOperationId"
+                    error("synthetic lost response")
+                },
+                newOperationId = { operationId }
+            )
+        }.exceptionOrNull()
+
+        assertNotNull(failure)
+        assertEquals(
+            listOf(
+                "active-check", "snapshot", "preflight", "reserve:$operationId",
+                "respond:$operationId", "release:$operationId"
+            ),
+            calls
+        )
     }
 
     @Test

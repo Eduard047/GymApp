@@ -51,10 +51,11 @@ function loadTheme({ stored = null, dark = false, storageThrows = false } = {}) 
   return { attributes, media, mediaListeners, storage, window, windowListeners };
 }
 
-test("legacy theme preference remains valid but the public landing uses its fixed stylesheet", () => {
-  assert.match(indexHtml, /retirement\.v1\.css/);
-  assert.match(indexHtml, /name="theme-color" content="#071526"/);
-  assert.doesNotMatch(indexHtml, /theme\.v56\.js|styles\.v70\.css/);
+test("the restored PWA loads the shared theme runtime and current immutable stylesheet", () => {
+  assert.match(indexHtml, /theme\.v56\.js/);
+  assert.match(indexHtml, /styles\.v72\.css/);
+  assert.match(indexHtml, /name="theme-color" content="#f7faff"/);
+  assert.doesNotMatch(indexHtml, /retirement\.v1\.css/);
   assert.match(styles, /:root\[data-theme="dark"\]/);
   assert.doesNotMatch(styles, /@media \(prefers-color-scheme: dark\)/);
 

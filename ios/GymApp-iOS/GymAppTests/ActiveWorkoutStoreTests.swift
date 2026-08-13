@@ -5,10 +5,198 @@ import XCTest
 
 @MainActor
 final class ActiveWorkoutStoreTests: XCTestCase {
+    func testOwnerReservationBlocksOrdinaryStartAcrossRelaunchWithoutMutation() throws {
+        let context = try makeContext(account: "active-live-slot-restart")
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let liveContext = LiveWorkoutSessionContext(
+            userID: "11111111-1111-4111-8111-111111111111",
+            sessionID: "22222222-2222-4222-8222-222222222222",
+            accessToken: "synthetic-live-token"
+        )
+        let reservation = LiveWorkoutSlotReservation(
+            version: 1,
+            userID: liveContext.userID,
+            sessionID: liveContext.sessionID,
+            role: .owner,
+            operationID: UUID(),
+            roomID: "lr_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            phase: .waiting,
+            createdAt: now,
+            expiresAt: now.addingTimeInterval(24 * 60 * 60)
+        )
+        try context.active.liveSlotReservationStore.reserve(
+            reservation,
+            context: liveContext,
+            now: now
+        ) { context.active.draft == nil }
+
+        let exercise = ActiveWorkoutExercise(
+            exerciseID: context.exercise.id,
+            sets: [ActiveWorkoutSet(weight: 20, reps: 10)]
+        )
+        XCTAssertThrowsError(try context.active.start(
+            workoutDate: now,
+            note: nil,
+            exercises: [exercise],
+            workoutStore: context.history,
+            now: now
+        )) { XCTAssertEqual($0 as? ActiveWorkoutStoreError, .liveWorkoutReserved) }
+        XCTAssertNil(context.active.draft)
+
+        let reopened = ActiveWorkoutStore(
+            accountStorageKey: context.history.accountStorageKey,
+            workoutStorageURL: context.history.storageURL
+        )
+        XCTAssertThrowsError(try reopened.start(
+            workoutDate: now,
+            note: nil,
+            exercises: [exercise],
+            workoutStore: context.history,
+            now: now
+        )) { XCTAssertEqual($0 as? ActiveWorkoutStoreError, .liveWorkoutReserved) }
+        XCTAssertNil(reopened.draft)
+        XCTAssertEqual(
+            try reopened.liveSlotReservationStore.current(context: liveContext, now: now),
+            reservation
+        )
+    }
+
+    func testExpiredReservationReleasesButWrongSessionDoesNotMutate() throws {
+        let context = try makeContext(account: "active-live-slot-expiry")
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let liveContext = LiveWorkoutSessionContext(
+            userID: "11111111-1111-4111-8111-111111111111",
+            sessionID: "22222222-2222-4222-8222-222222222222",
+            accessToken: "synthetic-live-token"
+        )
+        let reservation = LiveWorkoutSlotReservation(
+            version: 1,
+            userID: liveContext.userID,
+            sessionID: liveContext.sessionID,
+            role: .participant,
+            operationID: UUID(),
+            roomID: "lr_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            phase: .waiting,
+            createdAt: now,
+            expiresAt: now.addingTimeInterval(60)
+        )
+        try context.active.liveSlotReservationStore.reserve(
+            reservation,
+            context: liveContext,
+            now: now
+        ) { true }
+        let wrongSession = LiveWorkoutSessionContext(
+            userID: liveContext.userID,
+            sessionID: "33333333-3333-4333-8333-333333333333",
+            accessToken: "replacement-token"
+        )
+        XCTAssertThrowsError(
+            try context.active.liveSlotReservationStore.current(
+                context: wrongSession,
+                now: now
+            )
+        ) { XCTAssertEqual($0 as? LiveWorkoutSlotReservationError, .sessionMismatch) }
+        XCTAssertEqual(
+            try context.active.liveSlotReservationStore.current(context: liveContext, now: now),
+            reservation
+        )
+
+        let started = try context.active.start(
+            workoutDate: now,
+            note: nil,
+            exercises: [
+                ActiveWorkoutExercise(
+                    exerciseID: context.exercise.id,
+                    sets: [ActiveWorkoutSet(weight: 0, reps: 10)]
+                )
+            ],
+            workoutStore: context.history,
+            now: now.addingTimeInterval(61)
+        )
+        XCTAssertNotNil(started)
+        XCTAssertNil(try context.active.liveSlotReservationStore.current(
+            context: liveContext,
+            now: now.addingTimeInterval(61)
+        ))
+    }
+
+    func testAuthoritativeSessionRebindRequiresExactOperationAndPreservesAccount() throws {
+        let context = try makeContext(account: "active-live-slot-session-rebind")
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let oldContext = LiveWorkoutSessionContext(
+            userID: "11111111-1111-4111-8111-111111111111",
+            sessionID: "22222222-2222-4222-8222-222222222222",
+            accessToken: "old-synthetic-token"
+        )
+        let newContext = LiveWorkoutSessionContext(
+            userID: oldContext.userID,
+            sessionID: "33333333-3333-4333-8333-333333333333",
+            accessToken: "new-synthetic-token"
+        )
+        let previous = LiveWorkoutSlotReservation(
+            version: 1,
+            userID: oldContext.userID,
+            sessionID: oldContext.sessionID,
+            role: .participant,
+            operationID: UUID(),
+            roomID: "lr_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            phase: .waiting,
+            createdAt: now,
+            expiresAt: now.addingTimeInterval(24 * 60 * 60)
+        )
+        let store = context.active.liveSlotReservationStore
+        try store.reserve(previous, context: oldContext, now: now) { true }
+        XCTAssertThrowsError(try store.reconcileAfterSessionChange(
+            expectedOperationID: UUID(),
+            with: nil,
+            context: newContext
+        ))
+        XCTAssertEqual(try store.current(context: oldContext, now: now), previous)
+
+        let rebound = LiveWorkoutSlotReservation(
+            version: previous.version,
+            userID: previous.userID,
+            sessionID: newContext.sessionID,
+            role: previous.role,
+            operationID: previous.operationID,
+            roomID: previous.roomID,
+            phase: previous.phase,
+            createdAt: previous.createdAt,
+            expiresAt: previous.expiresAt
+        )
+        try store.reconcileAfterSessionChange(
+            expectedOperationID: previous.operationID,
+            with: rebound,
+            context: newContext
+        )
+        XCTAssertEqual(try store.current(context: newContext, now: now), rebound)
+    }
+
     func testRecoveredLiveStartDoesNotPublishDraftWhenBindingPersistenceFails() throws {
         let context = try makeContext(account: "active-live-binding-first")
         let startedAt = Date(timeIntervalSince1970: 1_800_000_000)
         let setID = UUID()
+        let liveContext = LiveWorkoutSessionContext(
+            userID: "11111111-1111-4111-8111-111111111111",
+            sessionID: "22222222-2222-4222-8222-222222222222",
+            accessToken: "synthetic-live-token"
+        )
+        let roomID = "lr_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        try context.active.liveSlotReservationStore.reserve(
+            LiveWorkoutSlotReservation(
+                version: 1,
+                userID: liveContext.userID,
+                sessionID: liveContext.sessionID,
+                role: .participant,
+                operationID: UUID(),
+                roomID: roomID,
+                phase: .active,
+                createdAt: startedAt,
+                expiresAt: startedAt.addingTimeInterval(24 * 60 * 60)
+            ),
+            context: liveContext,
+            now: startedAt
+        ) { true }
 
         XCTAssertThrowsError(
             try context.active.startRecoveredLiveWorkout(
@@ -21,12 +209,18 @@ final class ActiveWorkoutStoreTests: XCTestCase {
                 ],
                 undoableSetID: nil,
                 workoutStore: context.history,
+                reservationContext: liveContext,
+                roomID: roomID,
                 now: startedAt,
                 persistBindingBeforeCommit: { _ in throw SyntheticActiveStoreError() }
             )
         )
         XCTAssertNil(context.active.draft)
         XCTAssertTrue(context.history.workouts.isEmpty)
+        XCTAssertNotNil(try context.active.liveSlotReservationStore.current(
+            context: liveContext,
+            now: startedAt
+        ))
     }
 
     func testStartAndRecordPersistStableDraftAcrossRelaunch() throws {
@@ -1069,9 +1263,14 @@ final class ActiveWorkoutStoreTests: XCTestCase {
             .appendingPathExtension("recovery-\(UUID().uuidString.lowercased()).json")
         try Data("private live state".utf8).write(to: liveURL, options: .atomic)
         try Data("private recovery state".utf8).write(to: liveRecoveryURL, options: .atomic)
+        let liveSlotURL = LiveWorkoutSlotReservationStore.storageURL(
+            forWorkoutStorageURL: context.history.storageURL
+        )
+        try Data("private live slot".utf8).write(to: liveSlotURL, options: .atomic)
         XCTAssertTrue(FileManager.default.fileExists(atPath: context.active.storageURL.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: liveURL.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: liveRecoveryURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: liveSlotURL.path))
 
         try WorkoutStore.destroyAccountFiles(
             accountStorageKey: context.history.accountStorageKey,
@@ -1082,6 +1281,7 @@ final class ActiveWorkoutStoreTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: context.active.storageURL.path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: liveURL.path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: liveRecoveryURL.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: liveSlotURL.path))
     }
 
     private struct Context {

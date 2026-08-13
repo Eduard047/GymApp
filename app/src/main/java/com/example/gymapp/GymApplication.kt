@@ -12,6 +12,7 @@ import com.example.gymapp.auth.recoverPendingLocalProfileDeletion
 import com.example.gymapp.auth.recoverPendingCloudAccountDeletion
 import com.example.gymapp.data.database.GymDatabase
 import com.example.gymapp.data.repository.GymRepository
+import com.example.gymapp.data.repository.LiveWorkoutSidecarStore
 import com.example.gymapp.data.repository.SharedWorkoutInbox
 import com.example.gymapp.garmin.GarminSyncManager
 import com.example.gymapp.push.AndroidPushManager
@@ -37,6 +38,7 @@ class GymApplication : Application() {
     private val repositories = ConcurrentHashMap<String, GymRepository>()
     private val localDatabaseBindingStore by lazy { LocalDatabaseBindingStore(this) }
     private val cloudAccountDeletionJournal by lazy { CloudAccountDeletionJournal(this) }
+    private val liveWorkoutSidecarStore by lazy { LiveWorkoutSidecarStore(this) }
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     val legacyRepository: GymRepository by lazy { repositoryFor(null) }
     val cloudAuthManager: CloudAuthManager by lazy {
@@ -144,6 +146,10 @@ class GymApplication : Application() {
             else -> logicalDatabaseName
         }
         val repository = repositoryForDatabaseNames(logicalDatabaseName, physicalDatabaseName)
+        repository.bindLiveWorkoutReservationGuard(
+            sidecarStore = liveWorkoutSidecarStore.takeIf { session is AccountSession.Cloud },
+            userId = (session as? AccountSession.Cloud)?.userId
+        )
         if (session is AccountSession.Local) {
             // Force Room to create/open the exact journal-bound file before clearing the
             // durable one-shot creation marker. A process death before this point resumes

@@ -1,14 +1,16 @@
 package com.example.gymapp.ui.screens
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
@@ -16,13 +18,13 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
@@ -30,8 +32,10 @@ import com.example.gymapp.auth.SocialExerciseRecord
 import com.example.gymapp.auth.SocialFriend
 import com.example.gymapp.auth.SocialFriendDetails
 import com.example.gymapp.auth.SocialRecentWorkout
+import com.example.gymapp.auth.SocialFriendWorkout
 import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.EmptyStatePanel
+import com.example.gymapp.ui.components.ExerciseMediaPreview
 import com.example.gymapp.ui.components.GymMetric
 import com.example.gymapp.ui.components.LoadingStatePanel
 import com.example.gymapp.ui.components.MetricStrip
@@ -40,14 +44,21 @@ import com.example.gymapp.ui.components.SectionTitle
 import com.example.gymapp.ui.components.SocialActionCard
 import com.example.gymapp.ui.theme.GymSpacing
 import com.example.gymapp.ui.util.localizedExerciseName
+import com.example.gymapp.util.DateTimeUtils
 import com.example.gymapp.util.LocalizedText
 import com.example.gymapp.util.asString
 import java.text.NumberFormat
+import java.time.LocalDate
+import java.time.ZoneId
+import java.util.Locale
 
 @Composable
 internal fun FriendDetailScreen(
     friend: SocialFriend?,
     details: SocialFriendDetails?,
+    friendWorkouts: List<SocialFriendWorkout>,
+    friendWorkoutActivityRevision: String?,
+    friendWorkoutDetailsAvailable: Boolean,
     isLoading: Boolean,
     error: LocalizedText?,
     actionInFlight: Boolean,
@@ -59,6 +70,32 @@ internal fun FriendDetailScreen(
     modifier: Modifier = Modifier
 ) {
     var confirmAction by remember { mutableStateOf<FriendSafetyAction?>(null) }
+    var selectedWorkout by remember(friend?.profileId) {
+        mutableStateOf<SocialFriendWorkout?>(null)
+    }
+
+    val authorizedSelectedWorkout = selectedWorkout?.takeIf { workout ->
+        friend != null &&
+            details?.sharing?.recentWorkouts == true &&
+            details.activityUpdatedAt == friendWorkoutActivityRevision &&
+            friendWorkoutDetailsAvailable &&
+            friendWorkouts.any { it.workoutId == workout.workoutId }
+    }
+    LaunchedEffect(authorizedSelectedWorkout, selectedWorkout) {
+        if (selectedWorkout != null && authorizedSelectedWorkout == null) {
+            selectedWorkout = null
+        }
+    }
+    authorizedSelectedWorkout?.let { workout ->
+        BackHandler { selectedWorkout = null }
+        FriendWorkoutDetail(
+            friendName = friend?.displayName.orEmpty(),
+            workout = workout,
+            onBack = { selectedWorkout = null },
+            modifier = modifier
+        )
+        return
+    }
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
@@ -184,12 +221,26 @@ internal fun FriendDetailScreen(
                     modifier = Modifier.fillMaxWidth()
                 )
             }
+        } else if (friendWorkoutDetailsAvailable && friendWorkouts.isNotEmpty()) {
+            items(
+                friendWorkouts,
+                key = { workout -> workout.workoutId }
+            ) { workout ->
+                FriendWorkoutCard(
+                    workout = workout,
+                    onOpen = { selectedWorkout = workout }
+                )
+            }
         } else {
-            itemsIndexed(
-                details.recentWorkouts,
-                key = { index, workout -> "workout-$index-${workout.workoutDay}" }
-            ) { _, workout ->
-                RecentWorkoutCard(workout)
+            items(details.recentWorkouts) { workout ->
+                FriendWorkoutSummaryCard(workout)
+            }
+            item {
+                Text(
+                    stringResource(R.string.friend_workout_sets_private),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
 
@@ -334,7 +385,52 @@ private fun SharingCard(details: SocialFriendDetails) {
 }
 
 @Composable
-private fun RecentWorkoutCard(workout: SocialRecentWorkout) {
+private fun FriendWorkoutCard(
+    workout: SocialFriendWorkout,
+    onOpen: () -> Unit
+) {
+    val localizedNames = workout.exercises.map { exercise ->
+        localizedExerciseName(exercise.name)
+    }
+    AppPanel(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onOpen)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text(
+                localizedFriendActivityDay(workout.workoutDay),
+                style = MaterialTheme.typography.titleMedium
+            )
+            Text(
+                stringResource(
+                    R.string.workout_invite_summary,
+                    workout.exerciseCount,
+                    workout.setCount
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                localizedNames.joinToString(" • "),
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                stringResource(R.string.friend_workout_open_action),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+    }
+}
+
+@Composable
+private fun FriendWorkoutSummaryCard(workout: SocialRecentWorkout) {
     val localizedNames = workout.exercises.map { exercise ->
         localizedExerciseName(exercise.name)
     }
@@ -343,14 +439,18 @@ private fun RecentWorkoutCard(workout: SocialRecentWorkout) {
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            Text(workout.workoutDay, style = MaterialTheme.typography.titleMedium)
+            Text(
+                localizedFriendActivityDay(workout.workoutDay),
+                style = MaterialTheme.typography.titleMedium
+            )
             Text(
                 stringResource(
                     R.string.workout_invite_summary,
                     workout.exerciseCount,
                     workout.setCount
                 ),
-                style = MaterialTheme.typography.bodySmall
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Text(
                 localizedNames.joinToString(" • "),
@@ -358,6 +458,111 @@ private fun RecentWorkoutCard(workout: SocialRecentWorkout) {
                 maxLines = 3,
                 overflow = TextOverflow.Ellipsis
             )
+        }
+    }
+}
+
+@Composable
+private fun FriendWorkoutDetail(
+    friendName: String,
+    workout: SocialFriendWorkout,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val numberFormat = remember {
+        NumberFormat.getNumberInstance().apply { maximumFractionDigits = 2 }
+    }
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        contentPadding = PaddingValues(
+            horizontal = GymSpacing.ScreenHorizontal,
+            vertical = GymSpacing.ScreenTop
+        ),
+        verticalArrangement = Arrangement.spacedBy(GymSpacing.Medium)
+    ) {
+        item {
+            TextButton(onClick = onBack) {
+                Text(stringResource(R.string.cd_back))
+            }
+        }
+        item {
+            ScreenHeader(
+                title = localizedFriendActivityDay(workout.workoutDay),
+                supporting = stringResource(R.string.friend_workout_read_only, friendName)
+            )
+        }
+        item {
+            MetricStrip(
+                metrics = listOf(
+                    GymMetric(
+                        stringResource(R.string.friend_workout_exercises_label),
+                        workout.exerciseCount.toString()
+                    ),
+                    GymMetric(
+                        stringResource(R.string.friend_workout_sets_label),
+                        workout.setCount.toString()
+                    )
+                )
+            )
+        }
+        if (workout.truncated) {
+            item {
+                Text(
+                    stringResource(R.string.friend_workout_truncated),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        items(
+            workout.exercises,
+            key = { exercise -> "${exercise.catalogKey.orEmpty()}-${exercise.name}" }
+        ) { exercise ->
+            AppPanel(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        ExerciseMediaPreview(
+                            exerciseId = (
+                                "${workout.workoutId}:${exercise.catalogKey.orEmpty()}:${exercise.name}"
+                            ).hashCode().toLong(),
+                            exerciseName = exercise.name,
+                            ownerKey = "social-friend-read-only",
+                            editable = false
+                        )
+                        Text(
+                            localizedExerciseName(exercise.name),
+                            modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.titleMedium,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    exercise.sets.forEachIndexed { index, set ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Text(
+                                stringResource(R.string.friend_workout_set_number, index + 1),
+                                modifier = Modifier.weight(1f),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                stringResource(
+                                    R.string.friend_workout_set_value,
+                                    numberFormat.format(set.weightKg),
+                                    set.reps
+                                ),
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -398,16 +603,15 @@ private fun ExerciseRecordCard(record: SocialExerciseRecord) {
                             metric.repetitions
                         )
                     },
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
             }
             Text(
                 stringResource(
                     R.string.friend_record_meta,
                     record.workoutCount,
-                    record.lastWorkoutDay
+                    localizedFriendActivityDay(record.lastWorkoutDay)
                 ),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -415,6 +619,19 @@ private fun ExerciseRecordCard(record: SocialExerciseRecord) {
         }
     }
 }
+
+internal fun localizedFriendActivityDay(
+    rawDay: String,
+    locale: Locale = Locale.getDefault(),
+    zoneId: ZoneId = ZoneId.systemDefault()
+): String = runCatching {
+    LocalDate.parse(rawDay)
+        .atStartOfDay(zoneId)
+        .toInstant()
+        .toEpochMilli()
+}.map { timestamp ->
+    DateTimeUtils.formatDate(timestamp, locale, zoneId)
+}.getOrElse { rawDay }
 
 @Composable
 private fun sharingLabel(shared: Boolean): String = stringResource(

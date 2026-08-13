@@ -30,7 +30,6 @@ import com.example.gymapp.ui.components.ExerciseSpotlightCard
 import com.example.gymapp.ui.components.ExerciseTrendChartsCard
 import com.example.gymapp.ui.components.InfoPill
 import com.example.gymapp.ui.components.MetricTile
-import com.example.gymapp.ui.components.ScreenHeader
 import com.example.gymapp.ui.components.SectionTitle
 import com.example.gymapp.ui.theme.GymSpacing
 import com.example.gymapp.ui.util.currentAppLanguageTag
@@ -107,10 +106,6 @@ fun ExerciseProgressScreen(
         ),
         verticalArrangement = Arrangement.spacedBy(GymSpacing.Medium)
     ) {
-            item {
-                ScreenHeader(title = stringResource(R.string.title_progress))
-            }
-
             item {
                 MonthSwitcher(
                     monthLabel = uiState.monthLabel,
@@ -262,7 +257,7 @@ private fun ProgressMuscleBreakdownCard(
                     text = localizedExerciseName(exerciseName),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
             }
@@ -327,14 +322,14 @@ private fun ProgressSummaryCard(
             label = stringResource(R.string.progress_stat_best_weight),
             value = uiState.bestWeight?.let {
                 stringResource(R.string.progress_weight_value, it)
-            } ?: stringResource(R.string.chart_no_data),
+            } ?: "—",
             emphasized = true
         ),
         ProgressMetricUi(
             label = stringResource(R.string.progress_stat_avg_weight),
             value = uiState.averageWeight?.let {
                 stringResource(R.string.progress_weight_value, it)
-            } ?: stringResource(R.string.chart_no_data)
+            } ?: "—"
         ),
         ProgressMetricUi(
             label = stringResource(R.string.progress_stat_total_volume),
@@ -397,7 +392,7 @@ private fun ProgressSessionHistoryCard(
                     text = DateTimeUtils.formatDate(sessionGroup.sessionDate),
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.weight(1f),
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
                 InfoPill(text = stringResource(R.string.stats_sets, sessionGroup.sets.size))

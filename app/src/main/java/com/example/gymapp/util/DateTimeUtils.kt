@@ -4,7 +4,6 @@ import java.time.Instant
 import java.time.YearMonth
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import java.time.format.FormatStyle
 import java.util.Locale
 
 object DateTimeUtils {
@@ -41,8 +40,16 @@ object DateTimeUtils {
         locale: Locale = Locale.getDefault(),
         zoneId: ZoneId = ZoneId.systemDefault()
     ): String {
-        val formatter = DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM).withLocale(locale)
+        val formatter = DateTimeFormatter.ofPattern("EEE, d MMM yyyy", locale)
+        return Instant.ofEpochMilli(timestamp).atZone(zoneId).toLocalDate().format(formatter)
+    }
+
+    fun formatLongDate(
+        timestamp: Long,
+        locale: Locale = Locale.getDefault(),
+        zoneId: ZoneId = ZoneId.systemDefault()
+    ): String {
+        val formatter = DateTimeFormatter.ofPattern("EEEE, d MMMM yyyy", locale)
         return Instant.ofEpochMilli(timestamp).atZone(zoneId).toLocalDate().format(formatter)
     }
 }
-

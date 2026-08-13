@@ -88,6 +88,7 @@ import com.example.gymapp.ui.util.localizedMuscleName
 import com.example.gymapp.ui.util.SensitiveClipboard
 import com.example.gymapp.ui.viewmodel.ExerciseListUiState
 import com.example.gymapp.ui.viewmodel.ExerciseMuscleOptionUiModel
+import com.example.gymapp.util.DateTimeUtils
 import com.example.gymapp.util.LocalizedText
 import com.example.gymapp.util.asString
 import java.time.Instant
@@ -2452,12 +2453,10 @@ private fun backupReportLines(context: Context, json: String): List<String> {
         for (sessionIndex in 0 until sessionLimit) {
             if (lines.size >= MAX_PDF_REPORT_LINES) break
             val session = sessions.optJSONObject(sessionIndex) ?: continue
-            val date = DateFormat.getDateTimeInstance(
-                DateFormat.MEDIUM,
-                DateFormat.SHORT,
-                locale
-            )
-                .format(Date(session.optLong("date", 0L)))
+            val sessionTimestamp = session.optLong("date", 0L)
+            val date = DateTimeUtils.formatDate(sessionTimestamp, locale) + " · " +
+                DateFormat.getTimeInstance(DateFormat.SHORT, locale)
+                    .format(Date(sessionTimestamp))
             val note = boundedPdfText(session.optString("note")).takeIf { it.isNotBlank() }
             lines += "$date${note?.let { " - $it" }.orEmpty()}"
             val sessionExercises = session.optJSONArray("exercises")

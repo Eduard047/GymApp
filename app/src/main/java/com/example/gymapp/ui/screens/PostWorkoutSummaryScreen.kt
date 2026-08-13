@@ -247,7 +247,7 @@ private fun HeroCard(uiState: PostWorkoutSummaryUiState) {
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = DateTimeUtils.formatDate(uiState.sessionDate),
+                        text = DateTimeUtils.formatLongDate(uiState.sessionDate),
                         style = MaterialTheme.typography.bodyMedium,
                         color = Color.White.copy(alpha = 0.82f)
                     )

@@ -38,6 +38,7 @@ import com.example.gymapp.data.repository.RecommendedWorkoutStartCommitter
 import com.example.gymapp.data.repository.WeeklyTrainingDecision
 import com.example.gymapp.data.repository.WeeklyTrainingRhythm
 import com.example.gymapp.data.repository.WeeklyTrainingRhythmCalculator
+import com.example.gymapp.data.repository.WeeklyStreakCalculator
 import com.example.gymapp.data.repository.WorkoutFeedbackRecord
 import com.example.gymapp.data.repository.WorkoutRecommendationEngine
 import com.example.gymapp.data.repository.estimatedLoad
@@ -76,6 +77,8 @@ import com.example.gymapp.data.repository.trainingProfileForActivation
 import kotlin.math.abs
 import kotlin.math.pow
 import kotlin.math.roundToInt
+
+private const val MAX_TODAY_HERO_VOLUME = 1_000_000_000_000_000.0
 
 data class SoloProgressUiModel(
     val totalXp: Int = 0,
@@ -232,6 +235,12 @@ data class TodayPlanUiModel(
     val trainAnywayLaunchToken: String? = null
 )
 
+data class TodayHeroMetricsUiModel(
+    val totalWorkouts: Int = 0,
+    val weeklyStreakWeeks: Int = 0,
+    val totalVolume: Double = 0.0
+)
+
 data class WorkoutListUiState(
     val monthOffset: Int = 0,
     val monthLabel: String = DateTimeUtils.monthLabel(0),
@@ -239,6 +248,7 @@ data class WorkoutListUiState(
     val hasAnyWorkout: Boolean = false,
     val showFirstWorkoutActivation: Boolean = false,
     val todayPlan: TodayPlanUiModel? = null,
+    val todayHeroMetrics: TodayHeroMetricsUiModel = TodayHeroMetricsUiModel(),
     val dashboardStats: DashboardStats = DashboardStats(
         workoutCount = 0,
         totalVolume = 0.0,
@@ -381,6 +391,15 @@ class WorkoutListViewModel(
             feedback = experience.feedback,
             context = experience.context
         )
+        val todayHeroMetrics = buildTodayHeroMetrics(
+            sessions = allSessions,
+            weeklyStreakWeeks = WeeklyStreakCalculator.current(
+                sessionTimestamps = allSessions.map { it.session.date },
+                targetWorkoutsPerWeek = experience.profile.workoutsPerWeek,
+                nowMillis = System.currentTimeMillis(),
+                zoneId = zoneId
+            )
+        )
         WorkoutListUiState(
             monthOffset = offset,
             monthLabel = DateTimeUtils.monthLabel(offset, currentLocale(), zoneId),
@@ -388,6 +407,7 @@ class WorkoutListViewModel(
             hasAnyWorkout = allSessions.isNotEmpty(),
             showFirstWorkoutActivation = allSessions.isEmpty() && !experience.activationDismissed,
             todayPlan = todayPlan,
+            todayHeroMetrics = todayHeroMetrics,
             dashboardStats = dashboardStats,
             soloProgress = soloProgress,
             activityHeatmap = buildHeatmap(offset, sessions),
@@ -1679,6 +1699,21 @@ class WorkoutListViewModel(
             }
         }
     }
+}
+
+internal fun buildTodayHeroMetrics(
+    sessions: List<WorkoutSessionSummary>,
+    weeklyStreakWeeks: Int
+): TodayHeroMetricsUiModel {
+    val totalVolume = sessions.fold(0.0) { running, session ->
+        val value = session.totalVolume.takeIf { it.isFinite() && it >= 0.0 } ?: 0.0
+        (running + value).coerceAtMost(MAX_TODAY_HERO_VOLUME)
+    }
+    return TodayHeroMetricsUiModel(
+        totalWorkouts = sessions.size,
+        weeklyStreakWeeks = weeklyStreakWeeks.coerceAtLeast(0),
+        totalVolume = totalVolume
+    )
 }
 
 private data class LevelProgress(

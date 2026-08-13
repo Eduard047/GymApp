@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -56,7 +57,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontWeight
@@ -82,10 +86,13 @@ import com.example.gymapp.ui.theme.GymSpacing
 import com.example.gymapp.ui.viewmodel.MuscleMapPeriod
 import com.example.gymapp.ui.viewmodel.TrainingRecommendationUiModel
 import com.example.gymapp.ui.viewmodel.TodayPlanUiModel
+import com.example.gymapp.ui.viewmodel.TodayHeroMetricsUiModel
 import com.example.gymapp.ui.viewmodel.WorkoutListUiState
 import com.example.gymapp.util.DateTimeUtils
 import com.example.gymapp.util.TrainingGoal
 import kotlinx.coroutines.launch
+import java.text.NumberFormat
+import java.util.Locale
 
 @Composable
 fun WorkoutListScreen(
@@ -153,6 +160,7 @@ fun WorkoutListScreen(
                 item {
                     FocusLens(
                         todayPlan = uiState.todayPlan,
+                        metrics = uiState.todayHeroMetrics,
                         hasActiveWorkout = activeWorkoutProgress != null,
                         onStartWorkout = onAddWorkout,
                         onStartPlan = onStartPlan,
@@ -256,7 +264,7 @@ fun WorkoutListScreen(
                                         displayDate
                                     ),
                                     style = MaterialTheme.typography.titleMedium,
-                                    maxLines = 1,
+                                    maxLines = 2,
                                     overflow = TextOverflow.Ellipsis,
                                     modifier = Modifier.weight(1f)
                                 )
@@ -518,6 +526,7 @@ private fun WorkoutSectionHeader(
 @Composable
 private fun FocusLens(
     todayPlan: TodayPlanUiModel?,
+    metrics: TodayHeroMetricsUiModel,
     hasActiveWorkout: Boolean,
     onStartWorkout: () -> Unit,
     onStartPlan: (String) -> Unit,
@@ -563,13 +572,6 @@ private fun FocusLens(
                 color = Color.White,
                 fontWeight = FontWeight.Bold
             )
-            if (hasActiveWorkout) {
-                Text(
-                    text = stringResource(R.string.focus_lens_active_workout_supporting),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Color.White.copy(alpha = 0.84f)
-                )
-            }
         }
 
         if (todayPlan != null) {
@@ -582,6 +584,8 @@ private fun FocusLens(
                 )
             )
         }
+
+        TodayHeroMetricsRow(metrics = metrics)
 
         Spacer(modifier = Modifier.weight(1f))
 
@@ -659,6 +663,120 @@ private fun FocusLens(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun TodayHeroMetricsRow(
+    metrics: TodayHeroMetricsUiModel,
+    modifier: Modifier = Modifier
+) {
+    val locale = LocalConfiguration.current.locales[0] ?: Locale.getDefault()
+    val volume = remember(metrics.totalVolume, locale) {
+        formatTodayHeroVolume(metrics.totalVolume, locale)
+    }
+    val totalWorkouts = remember(metrics.totalWorkouts, locale) {
+        formatTodayHeroCount(metrics.totalWorkouts, locale)
+    }
+    val totalWorkoutsAccessibilityValue = remember(metrics.totalWorkouts, locale) {
+        NumberFormat.getIntegerInstance(locale).format(metrics.totalWorkouts.coerceAtLeast(0))
+    }
+    val volumeAccessibilityValue = remember(metrics.totalVolume, locale) {
+        NumberFormat.getNumberInstance(locale).apply {
+            maximumFractionDigits = 1
+            isGroupingUsed = true
+        }.format(metrics.totalVolume.takeIf { it.isFinite() && it >= 0.0 }
+            ?.coerceAtMost(1_000_000_000_000_000.0) ?: 0.0)
+    }
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        TodayHeroMetric(
+            value = totalWorkouts,
+            label = stringResource(R.string.focus_lens_total_workouts),
+            accessibilityValue = totalWorkoutsAccessibilityValue,
+            modifier = Modifier.weight(1f)
+        )
+        TodayHeroMetric(
+            value = stringResource(
+                R.string.focus_lens_week_streak_value,
+                metrics.weeklyStreakWeeks
+            ),
+            label = stringResource(R.string.focus_lens_week_streak),
+            accessibilityValue = stringResource(
+                R.string.focus_lens_week_streak_value,
+                metrics.weeklyStreakWeeks
+            ),
+            modifier = Modifier.weight(1f)
+        )
+        TodayHeroMetric(
+            value = volume,
+            label = stringResource(R.string.focus_lens_total_volume),
+            accessibilityValue = volumeAccessibilityValue,
+            modifier = Modifier.weight(1f)
+        )
+    }
+}
+
+@Composable
+private fun TodayHeroMetric(
+    value: String,
+    label: String,
+    accessibilityValue: String,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .widthIn(min = 0.dp)
+            .clearAndSetSemantics { contentDescription = "$label, $accessibilityValue" },
+        verticalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
+        Text(
+            text = value,
+            style = MaterialTheme.typography.titleMedium,
+            color = Color.White,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = Color.White.copy(alpha = 0.76f),
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+internal fun formatTodayHeroCount(value: Int, locale: Locale): String {
+    val safeValue = value.coerceAtLeast(0).toDouble()
+    return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+        android.icu.text.CompactDecimalFormat.getInstance(
+            locale,
+            android.icu.text.CompactDecimalFormat.CompactStyle.SHORT
+        ).apply { maximumFractionDigits = 1 }.format(safeValue)
+    } else {
+        NumberFormat.getIntegerInstance(locale).format(safeValue)
+    }
+}
+
+internal fun formatTodayHeroVolume(value: Double, locale: Locale): String {
+    val safeValue = value
+        .takeIf { it.isFinite() && it >= 0.0 }
+        ?.coerceAtMost(1_000_000_000_000_000.0)
+        ?: 0.0
+    return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+        android.icu.text.CompactDecimalFormat.getInstance(
+            locale,
+            android.icu.text.CompactDecimalFormat.CompactStyle.SHORT
+        ).apply { maximumFractionDigits = 1 }.format(safeValue)
+    } else {
+        NumberFormat.getNumberInstance(locale).apply {
+            maximumFractionDigits = 1
+            isGroupingUsed = true
+        }.format(safeValue)
     }
 }
 

@@ -7,6 +7,23 @@ FORM: User-selected Focus Lens from Fluid Focus; seed af1a1dee. iOS keeps native
 */
 import SwiftUI
 
+private let maximumTodayHeroVolume = 1_000_000_000_000_000.0
+
+struct TodayHeroMetrics: Equatable {
+    let totalWorkouts: Int
+    let weeklyStreakWeeks: Int
+    let totalVolume: Double
+
+    init(sessions: [WorkoutSessionSummary], weeklyStreakWeeks: Int) {
+        totalWorkouts = sessions.count
+        self.weeklyStreakWeeks = max(0, weeklyStreakWeeks)
+        totalVolume = sessions.reduce(0.0) { running, session in
+            guard session.totalVolume.isFinite, session.totalVolume >= 0 else { return running }
+            return min(maximumTodayHeroVolume, running + session.totalVolume)
+        }
+    }
+}
+
 @MainActor
 public struct WorkoutsView: View {
     private enum Section: String, CaseIterable, Identifiable {
@@ -452,7 +469,7 @@ public struct WorkoutsView: View {
     private var focusLens: some View {
         let guidance = weeklyGuidance(at: referenceDate)
         let launchSeed = makeTodayLaunchSeed(guidance: guidance, now: referenceDate)
-        return VStack(alignment: .leading, spacing: 22) {
+        return VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 8) {
                 Text(gymText(
                     todayTitle(guidance: guidance, plan: launchSeed?.plan),
@@ -470,10 +487,12 @@ public struct WorkoutsView: View {
 
             weeklyRhythmMetric(guidance)
 
+            todayHeroMetricsRow
+
             focusActionButtons(launchSeed: launchSeed, guidance: guidance)
         }
         .padding(24)
-        .frame(maxWidth: .infinity, minHeight: 270, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: 320, alignment: .leading)
         .background {
             UnevenRoundedRectangle(
                 topLeadingRadius: 44,
@@ -498,7 +517,7 @@ public struct WorkoutsView: View {
 
     private var activeFocusLens: some View {
         let guidance = weeklyGuidance(at: referenceDate)
-        return VStack(alignment: .leading, spacing: 22) {
+        return VStack(alignment: .leading, spacing: 14) {
             Text(gymText(
                 "Continue workout",
                 "Продовжити тренування",
@@ -512,6 +531,8 @@ public struct WorkoutsView: View {
             .accessibilityAddTraits(.isHeader)
 
             weeklyRhythmMetric(guidance)
+
+            todayHeroMetricsRow
 
             Button(action: onContinueWorkout) {
                 Label(
@@ -532,7 +553,7 @@ public struct WorkoutsView: View {
             .overlay { Capsule().strokeBorder(Color.white.opacity(0.36), lineWidth: 1) }
         }
         .padding(24)
-        .frame(maxWidth: .infinity, minHeight: 220, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: 270, alignment: .leading)
         .background { activationLensShape.fill(GymTheme.heroGradient) }
         .clipShape(activationLensShape)
         .shadow(color: GymTheme.primary.opacity(0.24), radius: 24, x: 0, y: 14)
@@ -557,6 +578,116 @@ public struct WorkoutsView: View {
         }
         .foregroundStyle(Color.white.opacity(0.88))
         .accessibilityElement(children: .combine)
+    }
+
+    private var todayHeroMetrics: TodayHeroMetrics {
+        TodayHeroMetrics(
+            sessions: store.workoutSummaries,
+            weeklyStreakWeeks: weeklyStreakWeeks
+        )
+    }
+
+    private var todayHeroMetricsRow: some View {
+        let metrics = todayHeroMetrics
+        return HStack(alignment: .top, spacing: 8) {
+            todayHeroMetric(
+                value: formattedTodayHeroCount(metrics.totalWorkouts),
+                label: gymText(
+                    "Total workouts",
+                    "Усього тренувань",
+                    "Всего тренировок",
+                    languageCode: languageCode
+                ),
+                accessibilityValue: metrics.totalWorkouts.formatted(
+                    .number.locale(AppLanguage(rawValue: languageCode)?.locale ?? AppLanguage.english.locale)
+                )
+            )
+            todayHeroMetric(
+                value: gymText(
+                    "\(metrics.weeklyStreakWeeks) wk",
+                    "\(metrics.weeklyStreakWeeks) тиж",
+                    "\(metrics.weeklyStreakWeeks) нед",
+                    languageCode: languageCode
+                ),
+                label: gymText(
+                    "Week streak",
+                    "Серія тижнів",
+                    "Серия недель",
+                    languageCode: languageCode
+                ),
+                accessibilityValue: gymText(
+                    "\(metrics.weeklyStreakWeeks) weeks",
+                    "\(metrics.weeklyStreakWeeks) тижнів",
+                    "\(metrics.weeklyStreakWeeks) недель",
+                    languageCode: languageCode
+                )
+            )
+            todayHeroMetric(
+                value: formattedTodayHeroVolume(metrics.totalVolume),
+                label: gymText(
+                    "Total volume",
+                    "Загальний обсяг",
+                    "Общий объём",
+                    languageCode: languageCode
+                ),
+                accessibilityValue: formattedTodayHeroVolumeAccessibility(metrics.totalVolume)
+            )
+        }
+    }
+
+    private func todayHeroMetric(
+        value: String,
+        label: String,
+        accessibilityValue: String
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(value)
+                .font(.headline.bold().monospacedDigit())
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+            Text(label)
+                .font(.caption2)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .foregroundStyle(Color.white.opacity(0.9))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(label)
+        .accessibilityValue(accessibilityValue)
+    }
+
+    private func formattedTodayHeroCount(_ value: Int) -> String {
+        Double(max(0, value)).formatted(
+            .number
+                .locale(AppLanguage(rawValue: languageCode)?.locale ?? AppLanguage.english.locale)
+                .notation(.compactName)
+                .precision(.fractionLength(0 ... 1))
+        )
+    }
+
+    private func formattedTodayHeroVolume(_ value: Double) -> String {
+        let safeValue = value.isFinite && value >= 0
+            ? min(value, maximumTodayHeroVolume)
+            : 0
+        return safeValue.formatted(
+            .number
+                .locale(AppLanguage(rawValue: languageCode)?.locale ?? AppLanguage.english.locale)
+                .notation(.compactName)
+                .precision(.fractionLength(0 ... 1))
+        )
+    }
+
+    private func formattedTodayHeroVolumeAccessibility(_ value: Double) -> String {
+        let safeValue = value.isFinite && value >= 0
+            ? min(value, maximumTodayHeroVolume)
+            : 0
+        return safeValue.formatted(
+            .number
+                .locale(AppLanguage(rawValue: languageCode)?.locale ?? AppLanguage.english.locale)
+                .grouping(.automatic)
+                .precision(.fractionLength(0 ... 1))
+        )
     }
 
     @ViewBuilder

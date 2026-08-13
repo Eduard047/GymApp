@@ -21,11 +21,11 @@ test("workout catalog picker and exercise library reuse the same filter controls
   assert.match(addWorkout, /data-action="open-workout-exercise-picker"/);
   assert.doesNotMatch(addWorkout, /id="exercise-search"/);
   assert.doesNotMatch(addWorkout, /class="exercise-select"/);
-  assert.match(picker, /exerciseFilterControls\(rows\.length\)/);
+  assert.match(picker, /exerciseFilterControls\(\)/);
   assert.match(picker, /exerciseMediaThumbnail/);
   assert.match(picker, /exerciseSearchReasonMarkup/);
   assert.match(picker, /data-action="select-workout-exercise"/);
-  assert.match(library, /exerciseFilterControls\(mappingRows\.length\)/);
+  assert.match(library, /exerciseFilterControls\(\)/);
   for (const contract of [
     /id="exercise-search"/,
     /data-action="exercise-favorites-filter"/,

@@ -162,7 +162,7 @@ struct AccountSettingsView: View {
                     detailRow(
                         label: "Last synced",
                         value: appState.cloudLastSuccessfulSyncAt.map {
-                            gymFormattedDate($0, date: .abbreviated, time: .shortened)
+                            gymFormattedTimestamp($0, date: .abbreviated, time: .shortened)
                         } ?? "Not yet"
                     )
 
@@ -194,11 +194,21 @@ struct AccountSettingsView: View {
                     .buttonStyle(GymPrimaryButtonStyle())
                     .disabled(isSyncing || appState.cloudSync.isSyncing)
                     .accessibilityHint(
-                        "Reloads the cloud revision, reconciles changes, and uploads only when safe"
+                        gymText(
+                            "Reloads the cloud revision, reconciles changes, and uploads only when safe",
+                            "Повторно завантажує хмарну версію, узгоджує зміни й надсилає їх лише тоді, коли це безпечно",
+                            "Повторно загружает облачную версию, согласует изменения и отправляет их только тогда, когда это безопасно",
+                            languageCode: gymCurrentLanguageCode()
+                        )
                     )
                 } else {
                     GymInlineState(
-                        "Use Export backup on the Profile screen before replacing or resetting this device.",
+                        gymText(
+                            "Use Export backup on the Profile screen before replacing or resetting this device.",
+                            "Перед заміною або скиданням пристрою скористайтеся експортом резервної копії на екрані профілю.",
+                            "Перед заменой или сбросом устройства воспользуйтесь экспортом резервной копии на экране профиля.",
+                            languageCode: gymCurrentLanguageCode()
+                        ),
                         systemImage: "externaldrive"
                     )
                 }
@@ -409,7 +419,12 @@ struct AccountSettingsView: View {
         if isCloudAccount {
             return "Ends this session without deleting your account or cloud data. Your selected Garmin watch remains paired until you explicitly revoke it."
         }
-        return "Leaves this profile signed out. Its workouts remain on this device and the saved profile can be opened again."
+        return gymText(
+            "Leaves this profile signed out. Its workouts remain on this device and the saved profile can be opened again.",
+            "Виходить із цього профілю. Його тренування залишаться на пристрої, а збережений профіль можна буде відкрити знову.",
+            "Выходит из этого профиля. Его тренировки останутся на устройстве, а сохранённый профиль можно будет открыть снова.",
+            languageCode: gymCurrentLanguageCode()
+        )
     }
 
     private func detailRow(label: String, value: String, monospaced: Bool = false) -> some View {

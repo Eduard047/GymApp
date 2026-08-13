@@ -19,6 +19,8 @@ internal const val SOCIAL_MAX_RECENT_WORKOUTS = 5
 internal const val SOCIAL_MAX_WORKOUT_EXERCISES = 20
 internal const val SOCIAL_MAX_EXERCISE_RECORDS = 100
 internal const val SOCIAL_MAX_WORKOUT_INVITES = 25
+internal const val SOCIAL_MAX_FRIEND_WORKOUT_PAGE = 5
+internal const val SOCIAL_MAX_FRIEND_WORKOUT_SETS = 100
 internal const val SOCIAL_MAX_INVITE_JSON_BYTES = 32 * 1_024
 internal const val SOCIAL_MY_FRIEND_CODE_MAX_BYTES = 256
 
@@ -31,6 +33,8 @@ private val socialFriendshipIdPattern = Regex("^f_[0-9a-f]{32}$")
 private val socialCatalogKeyPattern = Regex("^[a-z0-9_]{1,64}$")
 private val socialWorkoutDayPattern = Regex("^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
 private val socialWorkoutInviteIdPattern = Regex("^wi_[0-9a-f]{32}$")
+private val socialFriendWorkoutIdPattern = Regex("^fw_[0-9a-f]{32}$")
+private val socialFriendWorkoutCursorPattern = Regex("^[0-9]{1,16}:[1-9][0-9]{0,3}$")
 private val socialClientRequestIdPattern = Regex(
     "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
 )
@@ -143,6 +147,36 @@ internal data class SocialFriendDetails(
     val integrity: String
 )
 
+internal data class SocialFriendWorkoutSet(
+    val weightKg: Double,
+    val reps: Int
+)
+
+internal data class SocialFriendWorkoutExercise(
+    val catalogKey: String?,
+    val name: String,
+    val sets: List<SocialFriendWorkoutSet>
+)
+
+internal data class SocialFriendWorkout(
+    val workoutId: String,
+    val startedAt: String,
+    val workoutDay: String,
+    val exerciseCount: Int,
+    val setCount: Int,
+    val truncated: Boolean,
+    val exercises: List<SocialFriendWorkoutExercise>
+)
+
+internal data class SocialFriendWorkoutPage(
+    val profileId: String,
+    val displayName: String,
+    val activityRevision: String?,
+    val items: List<SocialFriendWorkout>,
+    val nextCursor: String?,
+    val integrity: String
+)
+
 internal data class SocialFriendshipMutation(
     val friendshipId: String,
     val status: String,
@@ -158,6 +192,17 @@ internal data class SocialPrivacyMutation(
     val privacy: SocialPrivacy,
     val settingsRevision: Int
 )
+
+internal data class SocialWorkoutDetailPrivacy(
+    val shareWorkoutDetails: Boolean,
+    val settingsRevision: Int
+)
+
+internal data class SocialRealtimeSignal(
+    val kind: String
+)
+
+internal data class SocialFriendWorkoutDetailCapability(val available: Boolean)
 
 internal data class SocialWorkoutInviteSummary(
     val exerciseCount: Int,
@@ -375,6 +420,60 @@ internal fun parseSocialFriendDetails(raw: String): SocialFriendDetails {
         exerciseRecords = records,
         integrity = integrity
     )
+}
+
+internal fun parseSocialFriendWorkoutPage(raw: String): SocialFriendWorkoutPage {
+    val root = socialRoot(
+        raw,
+        setOf("version", "friend", "activityRevision", "items", "nextCursor", "integrity")
+    )
+    val friend = root.requiredObject("friend")
+    friend.requireExactKeys(setOf("profileId", "displayName"))
+    val items = root.requiredArray("items", SOCIAL_MAX_FRIEND_WORKOUT_PAGE)
+        .mapObjects(::parseSocialFriendWorkout)
+    require(items.map { it.workoutId }.toSet().size == items.size) {
+        "Social response is invalid."
+    }
+    val activityRevision = root.nullableTimestamp("activityRevision")
+    val nextCursor = root.nullableString("nextCursor", 32)?.also {
+        require(socialFriendWorkoutCursorPattern.matches(it)) { "Social response is invalid." }
+    }
+    require(activityRevision != null || (items.isEmpty() && nextCursor == null)) {
+        "Social response is invalid."
+    }
+    require(nextCursor == null) { "Social response is invalid." }
+    val integrity = root.requiredString("integrity", 32)
+    require(integrity == "self_reported") { "Social response is invalid." }
+    return SocialFriendWorkoutPage(
+        profileId = friend.requiredProfileId("profileId"),
+        displayName = friend.requiredDisplayName("displayName"),
+        activityRevision = activityRevision,
+        items = items,
+        nextCursor = nextCursor,
+        integrity = integrity
+    )
+}
+
+internal fun parseSocialWorkoutDetailPrivacy(raw: String): SocialWorkoutDetailPrivacy {
+    val root = socialRoot(raw, setOf("version", "shareWorkoutDetails", "settingsRevision"))
+    return SocialWorkoutDetailPrivacy(
+        shareWorkoutDetails = root.requiredBoolean("shareWorkoutDetails"),
+        settingsRevision = root.requiredRevision("settingsRevision")
+    )
+}
+
+internal fun parseSocialFriendWorkoutDetailCapability(
+    raw: String
+): SocialFriendWorkoutDetailCapability {
+    val root = socialRoot(raw, setOf("version", "available"))
+    return SocialFriendWorkoutDetailCapability(root.requiredBoolean("available"))
+}
+
+internal fun parseSocialRealtimeSignal(raw: String): SocialRealtimeSignal {
+    val root = socialRoot(raw, setOf("version", "kind"))
+    val kind = root.requiredString("kind", 32)
+    require(kind == "privacy_changed") { "Social response is invalid." }
+    return SocialRealtimeSignal(kind = kind)
 }
 
 internal fun parseSocialSubmittedMutation(raw: String) {
@@ -713,6 +812,69 @@ private fun parseSocialRecentWorkout(raw: JSONObject): SocialRecentWorkout {
     )
 }
 
+private fun parseSocialFriendWorkout(raw: JSONObject): SocialFriendWorkout {
+    raw.requireExactKeys(
+        setOf(
+            "workoutId", "startedAt", "workoutDay", "exerciseCount", "setCount",
+            "truncated", "exercises"
+        )
+    )
+    val exerciseCount = raw.requiredInt(
+        "exerciseCount",
+        1,
+        WorkoutDataLimits.MAX_EXERCISES_PER_SESSION
+    )
+    val setCount = raw.requiredInt(
+        "setCount",
+        1,
+        WorkoutDataLimits.MAX_EXERCISES_PER_SESSION * WorkoutDataLimits.MAX_SETS_PER_EXERCISE
+    )
+    val truncated = raw.requiredBoolean("truncated")
+    val exercises = raw.requiredArray("exercises", SOCIAL_MAX_WORKOUT_EXERCISES)
+        .mapObjects { exercise ->
+            exercise.requireExactKeys(setOf("catalogKey", "name", "sets"))
+            val sets = exercise.requiredArray("sets", 20).mapObjects { set ->
+                set.requireExactKeys(setOf("weightKg", "reps"))
+                SocialFriendWorkoutSet(
+                    weightKg = set.requiredDouble(
+                        "weightKg",
+                        0.0,
+                        SharedWorkoutLink.MAX_WEIGHT
+                    ),
+                    reps = set.requiredInt("reps", 1, SharedWorkoutLink.MAX_REPS)
+                )
+            }
+            require(sets.isNotEmpty()) { "Social response is invalid." }
+            SocialFriendWorkoutExercise(
+                catalogKey = exercise.nullableCatalogKey("catalogKey"),
+                name = exercise.requiredExerciseName("name"),
+                sets = sets
+            )
+        }
+    val shownSetCount = exercises.sumOf { it.sets.size }
+    require(exercises.isNotEmpty() && shownSetCount in 1..SOCIAL_MAX_FRIEND_WORKOUT_SETS) {
+        "Social response is invalid."
+    }
+    require(
+        if (truncated) {
+            exercises.size <= exerciseCount && shownSetCount <= setCount
+        } else {
+            exercises.size == exerciseCount && shownSetCount == setCount
+        }
+    ) { "Social response is invalid." }
+    return SocialFriendWorkout(
+        workoutId = raw.requiredString("workoutId", 35).also {
+            require(socialFriendWorkoutIdPattern.matches(it)) { "Social response is invalid." }
+        },
+        startedAt = raw.requiredTimestamp("startedAt"),
+        workoutDay = raw.requiredWorkoutDay("workoutDay"),
+        exerciseCount = exerciseCount,
+        setCount = setCount,
+        truncated = truncated,
+        exercises = exercises
+    )
+}
+
 private fun parseSocialWorkoutExerciseLabel(raw: JSONObject): SocialWorkoutExerciseLabel {
     raw.requireExactKeys(setOf("catalogKey", "name"))
     return SocialWorkoutExerciseLabel(
@@ -932,6 +1094,14 @@ private fun JSONObject.nullableTimestamp(key: String): String? {
         return null
     }
     return requiredTimestamp(key)
+}
+
+private fun JSONObject.nullableString(key: String, maxCodePoints: Int): String? {
+    if (!has(key) || isNull(key)) {
+        require(has(key)) { "Social response is invalid." }
+        return null
+    }
+    return requiredString(key, maxCodePoints)
 }
 
 private fun JSONObject.requiredWorkoutDay(key: String): String = requiredString(key, 10).also {

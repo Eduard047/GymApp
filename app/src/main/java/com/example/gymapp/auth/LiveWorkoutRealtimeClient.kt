@@ -18,6 +18,44 @@ internal sealed interface LiveRealtimeEvent {
     data class Signal(val value: LiveWorkoutRealtimeSignal) : LiveRealtimeEvent
 }
 
+internal class SocialRealtimeClient(
+    private val authManager: CloudAuthManager,
+    private val session: AccountSession.Cloud
+) {
+    fun events(): Flow<SocialRealtimeSignal> = channelFlow {
+        require(authManager.isLiveSessionActive(session)) { "Cloud session is no longer active." }
+        val client = createSupabaseClient(SUPABASE_URL, SUPABASE_KEY) {
+            accessToken = {
+                if (authManager.isLiveSessionActive(session)) {
+                    authManager.freshLiveAccessToken(session)
+                } else {
+                    null
+                }
+            }
+            install(Realtime) {
+                disconnectOnSessionLoss = true
+                disconnectOnNoSubscriptions = true
+            }
+        }
+        val channel = client.channel("gymapp:user:${session.userId}") { isPrivate = true }
+        val broadcastJob = launch {
+            channel.broadcastFlow<JsonObject>("gymapp_social_changed").collectLatest { payload ->
+                runCatching { parseSocialRealtimeSignal(payload.toString()) }
+                    .getOrNull()
+                    ?.let { trySend(it) }
+            }
+        }
+        try {
+            withTimeout(10_000L) { channel.subscribe(blockUntilSubscribed = true) }
+            awaitCancellation()
+        } finally {
+            broadcastJob.cancel()
+            runCatching { client.realtime.removeChannel(channel) }
+            runCatching { client.close() }
+        }
+    }
+}
+
 /**
  * Private personal Realtime channel. Broadcast payloads are invalidation hints only; callers must
  * refetch the authenticated inbox/snapshot before changing durable state.

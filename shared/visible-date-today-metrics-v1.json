@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "productVersion": "3.0.9",
+  "clients": ["android", "ios", "pwa"],
+  "visibleCalendarDate": {
+    "includeLocalizedWeekday": true,
+    "compactStyle": "abbreviatedWeekdayAndMediumDate",
+    "expandedStyle": "wideWeekdayAndLongDate",
+    "chartStyle": "narrowWeekdayAndDayWithinSelectedMonth",
+    "datePickerWeekday": "visibleAdjacentToControl",
+    "supportedLanguages": ["en", "uk", "ru"],
+    "excludedSurfaces": [
+      "todayAndYesterdayLabels",
+      "monthOnlySelectors",
+      "timeOnlyLabels",
+      "durationsAndTimers",
+      "statusTimestamps",
+      "calendarCellsWithAnAlreadyVisibleWeekdayHeader"
+    ]
+  },
+  "todayHero": {
+    "metricOrder": ["totalWorkouts", "weekStreak", "totalVolume"],
+    "labels": {
+      "totalWorkouts": {
+        "en": "Total workouts",
+        "uk": "Усього тренувань",
+        "ru": "Всего тренировок"
+      },
+      "weekStreak": {
+        "en": "Week streak",
+        "uk": "Серія тижнів",
+        "ru": "Серия недель"
+      },
+      "totalVolume": {
+        "en": "Total volume",
+        "uk": "Загальний обсяг",
+        "ru": "Общий объём"
+      }
+    },
+    "source": {
+      "completedCanonicalHistoryOnly": true,
+      "activeDraftCounted": false,
+      "selectedMonthIndependent": true
+    },
+    "totalVolume": {
+      "acceptFiniteNonNegativeValuesOnly": true,
+      "maximumDisplayValue": 1000000000000000,
+      "largeNumberStyle": "localizedCompactOneFractionDigit"
+    },
+    "layout": {
+      "columns": 3,
+      "preserveWeeklyRhythm": true,
+      "preserveStartAndEditActions": true,
+      "maximumValueLines": 1,
+      "maximumLabelLines": 2
+    }
+  },
+  "pwaReleaseCoupling": {
+    "appBundle": "app.v88.js",
+    "styleBundle": "styles.v72.css",
+    "russianBundle": "russian-text.v80.js",
+    "serviceWorkerCache": "gym-pwa-v124"
+  }
+}

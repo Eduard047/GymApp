@@ -108,6 +108,7 @@ final class AppState: ObservableObject {
     @Published private(set) var socialDashboard: SocialDashboard?
     @Published private(set) var socialFriendCode: String?
     @Published private(set) var socialWorkoutInbox: SocialWorkoutInbox?
+    @Published private(set) var socialWorkoutDetailPrivacy: SocialWorkoutDetailPrivacy?
     @Published private(set) var socialDashboardRefreshRevision: UInt64 = 0
 
     private var sessionSubscription: AnyCancellable?
@@ -472,6 +473,7 @@ final class AppState: ObservableObject {
         socialDashboard = nil
         socialFriendCode = nil
         socialWorkoutInbox = nil
+        socialWorkoutDetailPrivacy = nil
         socialCacheGeneration &+= 1
         socialDashboardRefreshRevision &+= 1
         pendingWorkoutInviteRequestIDs.removeAll(keepingCapacity: false)
@@ -1180,6 +1182,54 @@ final class AppState: ObservableObject {
         return details
     }
 
+    func socialFriendWorkoutPage(
+        profileID: String,
+        expectedActivityRevision: String? = nil
+    ) async throws -> SocialFriendWorkoutPage? {
+        let context = try socialContext()
+        let cacheGeneration = socialCacheGeneration
+        let page = try await cloudSync.socialFriendWorkoutPage(
+            profileID: profileID,
+            expectedActivityRevision: expectedActivityRevision,
+            expectedUserID: context.userID
+        )
+        try validateSocialContext(context)
+        guard socialCacheGeneration == cacheGeneration else {
+            throw AuthServiceError.sessionChanged
+        }
+        return page
+    }
+
+    func socialFriendWorkoutDetailCapability(
+        profileID: String
+    ) async throws -> SocialFriendWorkoutDetailCapability {
+        let context = try socialContext()
+        let cacheGeneration = socialCacheGeneration
+        let capability = try await cloudSync.socialFriendWorkoutDetailCapability(
+            profileID: profileID,
+            expectedUserID: context.userID
+        )
+        try validateSocialContext(context)
+        guard socialCacheGeneration == cacheGeneration else {
+            throw AuthServiceError.sessionChanged
+        }
+        return capability
+    }
+
+    func refreshSocialWorkoutDetailPrivacy() async throws -> SocialWorkoutDetailPrivacy {
+        let context = try socialContext()
+        let cacheGeneration = socialCacheGeneration
+        let privacy = try await cloudSync.socialWorkoutDetailPrivacy(
+            expectedUserID: context.userID
+        )
+        try validateSocialContext(context)
+        guard socialCacheGeneration == cacheGeneration else {
+            throw AuthServiceError.sessionChanged
+        }
+        socialWorkoutDetailPrivacy = privacy
+        return privacy
+    }
+
     func sendFriendRequest(friendCode: String) async throws {
         let context = try socialContext()
         guard let normalizedFriendCode = SocialFriendCode.normalize(friendCode) else {
@@ -1286,6 +1336,22 @@ final class AppState: ObservableObject {
         guard result.0 == privacy else { throw CloudSyncError.invalidResponse }
         try validateSocialContext(context)
         _ = try await refreshSocialDashboard()
+        _ = try await refreshSocialWorkoutDetailPrivacy()
+    }
+
+    func updateSocialWorkoutDetailPrivacy(_ enabled: Bool) async throws {
+        let context = try socialContext()
+        guard let current = socialWorkoutDetailPrivacy else {
+            throw CloudSyncError.invalidResponse
+        }
+        let result = try await cloudSync.socialUpdateWorkoutDetailPrivacy(
+            enabled,
+            expectedRevision: current.settingsRevision,
+            expectedUserID: context.userID
+        )
+        try validateSocialContext(context)
+        socialWorkoutDetailPrivacy = result
+        socialDashboardRefreshRevision &+= 1
     }
 
     func refreshSocialWorkoutInbox() async throws -> SocialWorkoutInbox {

@@ -112,7 +112,7 @@ internal fun FriendWorkoutPickerSheet(
                                     text = DateTimeUtils.formatDate(session.session.date),
                                     style = MaterialTheme.typography.titleMedium,
                                     modifier = Modifier.weight(1f),
-                                    maxLines = 1,
+                                    maxLines = 2,
                                     overflow = TextOverflow.Ellipsis
                                 )
                                 InfoPill(

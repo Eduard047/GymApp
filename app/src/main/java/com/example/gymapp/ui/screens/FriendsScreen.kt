@@ -74,7 +74,7 @@ internal fun FriendsScreen(
     onOpenFriend: (SocialFriend) -> Unit,
     onBlockProfile: (String) -> Unit,
     onUnblockProfile: (SocialBlockedProfile) -> Unit,
-    onUpdatePrivacy: (SocialPrivacy) -> Unit,
+    onUpdatePrivacy: (SocialPrivacy, Boolean?) -> Unit,
     onAcceptWorkoutInvite: (SocialIncomingWorkoutInvite) -> Unit,
     onDeclineWorkoutInvite: (SocialIncomingWorkoutInvite) -> Unit,
     onReuseWorkoutInvite: (SocialIncomingWorkoutInvite) -> Unit,
@@ -283,7 +283,10 @@ internal fun FriendsScreen(
             PrivacyCard(
                 saved = dashboard.self.privacy,
                 revision = dashboard.self.settingsRevision,
+                shareWorkoutDetails = uiState.workoutDetailPrivacy?.shareWorkoutDetails,
                 isLoading = "privacy" in uiState.actionsInFlight,
+                isWorkoutDetailsLoading = uiState.isWorkoutDetailPrivacyLoading ||
+                    "privacy-details" in uiState.actionsInFlight,
                 onSave = onUpdatePrivacy
             )
         }
@@ -752,10 +755,15 @@ private fun FriendRankingCard(place: Int, friend: SocialFriend, onOpen: () -> Un
 private fun PrivacyCard(
     saved: SocialPrivacy,
     revision: Int,
+    shareWorkoutDetails: Boolean?,
     isLoading: Boolean,
-    onSave: (SocialPrivacy) -> Unit
+    isWorkoutDetailsLoading: Boolean,
+    onSave: (SocialPrivacy, Boolean?) -> Unit
 ) {
     var draft by remember(revision) { mutableStateOf(saved) }
+    var workoutDetailsDraft by remember(shareWorkoutDetails) {
+        mutableStateOf(shareWorkoutDetails ?: false)
+    }
     AppPanel(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -786,9 +794,23 @@ private fun PrivacyCard(
                 checked = draft.shareRecords,
                 onCheckedChange = { draft = draft.copy(shareRecords = it) }
             )
+            PrivacySwitchRow(
+                label = stringResource(R.string.friends_privacy_share_workout_details),
+                checked = workoutDetailsDraft,
+                onCheckedChange = { workoutDetailsDraft = it }
+            )
+            Text(
+                stringResource(R.string.friends_privacy_share_workout_details_supporting),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
             Button(
-                onClick = { onSave(draft) },
-                enabled = draft != saved && !isLoading,
+                onClick = {
+                    onSave(draft, shareWorkoutDetails?.let { workoutDetailsDraft })
+                },
+                enabled = (draft != saved ||
+                    shareWorkoutDetails != null && workoutDetailsDraft != shareWorkoutDetails) &&
+                    !isLoading && !isWorkoutDetailsLoading,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(stringResource(R.string.action_save))

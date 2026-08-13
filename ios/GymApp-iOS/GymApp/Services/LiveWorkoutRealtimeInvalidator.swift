@@ -81,6 +81,7 @@ final class LiveWorkoutRealtimeInvalidator {
                 config.isPrivate = true
             }
             let events = privateChannel.broadcastStream(event: "gymapp_live_changed")
+            let socialEvents = privateChannel.broadcastStream(event: "gymapp_social_changed")
             client = realtime
             channel = privateChannel
             try await privateChannel.subscribeWithError()
@@ -90,12 +91,29 @@ final class LiveWorkoutRealtimeInvalidator {
             }
             coordinator.setRealtimeConnectionState(true)
 
+            let socialTask = Task { @MainActor [weak auth, weak coordinator] in
+                for await payload in socialEvents {
+                    guard !Task.isCancelled,
+                          auth?.session?.cloud?.userID == self.expectedUserID else { break }
+                    let value = payload.mapValues(\.value)
+                    guard (try? SocialPayloadParser.realtimeHint(from: value)) != nil else {
+                        continue
+                    }
+                    NotificationCenter.default.post(
+                        name: .gymAppSocialChanged,
+                        object: self.expectedUserID
+                    )
+                    await coordinator?.receiveSocialInvalidation()
+                }
+            }
+
             for await payload in events {
                 guard !Task.isCancelled,
                       auth.session?.cloud?.userID == expectedUserID else { break }
                 let value = payload.mapValues(\.value)
                 await coordinator.receiveRealtimeInvalidation(value)
             }
+            socialTask.cancel()
         } catch is CancellationError {
             // Normal shutdown.
         } catch {
@@ -110,4 +128,8 @@ final class LiveWorkoutRealtimeInvalidator {
         channel = nil
         client = nil
     }
+}
+
+extension Notification.Name {
+    static let gymAppSocialChanged = Notification.Name("GymAppSocialChanged")
 }

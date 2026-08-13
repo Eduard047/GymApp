@@ -13,10 +13,13 @@ import com.example.gymapp.auth.SocialDashboard
 import com.example.gymapp.auth.SocialFriend
 import com.example.gymapp.auth.SocialFriendDetails
 import com.example.gymapp.auth.SocialFriendRequest
+import com.example.gymapp.auth.SocialFriendWorkout
 import com.example.gymapp.auth.SocialIncomingWorkoutInvite
 import com.example.gymapp.auth.SocialMyFriendCode
 import com.example.gymapp.auth.SocialPrivacy
 import com.example.gymapp.auth.SocialWorkoutInbox
+import com.example.gymapp.auth.SocialWorkoutDetailPrivacy
+import com.example.gymapp.auth.SocialRealtimeClient
 import com.example.gymapp.auth.authErrorText
 import com.example.gymapp.auth.normalizeSocialFriendCode
 import com.example.gymapp.data.repository.SharedWorkoutLink
@@ -28,6 +31,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -52,10 +56,16 @@ internal data class FriendsUiState(
     val workoutInbox: SocialWorkoutInbox? = null,
     val selectedProfileId: String? = null,
     val selectedFriendDetails: SocialFriendDetails? = null,
+    val friendWorkouts: List<SocialFriendWorkout> = emptyList(),
+    val friendWorkoutActivityRevision: String? = null,
+    val workoutDetailPrivacy: SocialWorkoutDetailPrivacy? = null,
+    val friendWorkoutDetailsAvailable: Boolean = false,
     val acceptedWorkout: AcceptedSocialWorkout? = null,
     val isDashboardLoading: Boolean = false,
     val isInboxLoading: Boolean = false,
     val isDetailsLoading: Boolean = false,
+    val isFriendWorkoutsLoading: Boolean = false,
+    val isWorkoutDetailPrivacyLoading: Boolean = false,
     val actionsInFlight: Set<String> = emptySet(),
     val error: LocalizedText? = null,
     val notice: LocalizedText? = null
@@ -65,8 +75,31 @@ internal fun invalidateSelectedFriendDetailsForRefresh(state: FriendsUiState): F
     if (state.selectedProfileId == null) {
         state
     } else {
-        state.copy(selectedFriendDetails = null, isDetailsLoading = true)
+        state.copy(
+            selectedFriendDetails = null,
+            friendWorkouts = emptyList(),
+            friendWorkoutActivityRevision = null,
+            friendWorkoutDetailsAvailable = false,
+            isDetailsLoading = true,
+            isFriendWorkoutsLoading = false
+        )
     }
+
+internal fun friendSummaryFallbackState(
+    state: FriendsUiState,
+    profileId: String,
+    details: SocialFriendDetails,
+    isExactDetailLoading: Boolean
+): FriendsUiState = state.copy(
+    selectedProfileId = profileId,
+    selectedFriendDetails = details,
+    friendWorkouts = emptyList(),
+    friendWorkoutActivityRevision = null,
+    friendWorkoutDetailsAvailable = false,
+    isDetailsLoading = false,
+    isFriendWorkoutsLoading = isExactDetailLoading,
+    error = null
+)
 
 internal fun resolvedSocialFriendCode(
     dashboard: SocialDashboard,
@@ -99,10 +132,15 @@ internal fun invalidateSocialAccessAfterRevocation(
         workoutInbox = null,
         selectedProfileId = null,
         selectedFriendDetails = null,
+        friendWorkouts = emptyList(),
+        friendWorkoutActivityRevision = null,
+        friendWorkoutDetailsAvailable = false,
         acceptedWorkout = null,
         isDashboardLoading = false,
         isInboxLoading = false,
-        isDetailsLoading = false
+        isDetailsLoading = false,
+        isFriendWorkoutsLoading = false,
+        isWorkoutDetailPrivacyLoading = false
     )
 }
 
@@ -114,6 +152,7 @@ internal class FriendsViewModel(
     private var dashboardRequestVersion = 0L
     private var inboxRequestVersion = 0L
     private var detailRequestVersion = 0L
+    private var privacyRequestVersion = 0L
     private val retainedWorkoutRequestIds = mutableMapOf<String, String>()
     private val mutationJobsLock = Any()
     private val mutationJobs = mutableSetOf<Job>()
@@ -124,12 +163,57 @@ internal class FriendsViewModel(
     val uiState: StateFlow<FriendsUiState> = _uiState.asStateFlow()
 
     init {
-        if (session != null) refreshAll()
+        if (session != null) {
+            refreshAll()
+            viewModelScope.launch {
+                while (true) {
+                    try {
+                        SocialRealtimeClient(authManager, session).events().collectLatest {
+                            detailRequestVersion += 1
+                            _uiState.update(::invalidateSelectedFriendDetailsForRefresh)
+                            refreshDashboard()
+                        }
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (_: Throwable) {
+                        kotlinx.coroutines.delay(8_000L)
+                    }
+                }
+            }
+        }
     }
 
     fun refreshAll() {
         refreshDashboard()
         refreshWorkoutInbox()
+        refreshWorkoutDetailPrivacy()
+    }
+
+    fun refreshWorkoutDetailPrivacy() {
+        val cloudSession = session ?: return
+        val requestVersion = ++privacyRequestVersion
+        _uiState.update { it.copy(isWorkoutDetailPrivacyLoading = true) }
+        viewModelScope.launch {
+            try {
+                val privacy = authManager.loadSocialWorkoutDetailPrivacy(cloudSession)
+                if (requestVersion == privacyRequestVersion) {
+                    _uiState.update {
+                        it.copy(
+                            workoutDetailPrivacy = privacy,
+                            isWorkoutDetailPrivacyLoading = false
+                        )
+                    }
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {
+                if (requestVersion == privacyRequestVersion) {
+                    _uiState.update {
+                        it.copy(workoutDetailPrivacy = null, isWorkoutDetailPrivacyLoading = false)
+                    }
+                }
+            }
+        }
     }
 
     fun refreshDashboard() {
@@ -180,6 +264,9 @@ internal class FriendsViewModel(
                             isDashboardLoading = false,
                             selectedProfileId = selectedProfileToReload,
                             selectedFriendDetails = null,
+                            friendWorkouts = emptyList(),
+                            friendWorkoutActivityRevision = null,
+                            friendWorkoutDetailsAvailable = false,
                             isDetailsLoading = selectedProfileToReload != null
                         )
                     }
@@ -249,20 +336,17 @@ internal class FriendsViewModel(
             it.copy(
                 selectedProfileId = profileId,
                 selectedFriendDetails = null,
+                friendWorkouts = emptyList(),
+                friendWorkoutActivityRevision = null,
+                friendWorkoutDetailsAvailable = false,
                 isDetailsLoading = true,
+                isFriendWorkoutsLoading = false,
                 error = null
             )
         }
         viewModelScope.launch {
-            try {
-                val details = authManager.loadSocialFriendDetails(cloudSession, profileId)
-                if (requestVersion == detailRequestVersion &&
-                    _uiState.value.dashboard?.friends?.any { it.profileId == profileId } == true
-                ) {
-                    _uiState.update {
-                        it.copy(selectedFriendDetails = details, isDetailsLoading = false)
-                    }
-                }
+            val details = try {
+                authManager.loadSocialFriendDetails(cloudSession, profileId)
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Throwable) {
@@ -270,8 +354,64 @@ internal class FriendsViewModel(
                     _uiState.update {
                         it.copy(
                             selectedFriendDetails = null,
+                            friendWorkouts = emptyList(),
+                            friendWorkoutActivityRevision = null,
+                            friendWorkoutDetailsAvailable = false,
                             isDetailsLoading = false,
+                            isFriendWorkoutsLoading = false,
                             error = authErrorText(error, R.string.friend_details_load_failed)
+                        )
+                    }
+                }
+                return@launch
+            }
+            fun requestIsCurrent(): Boolean = requestVersion == detailRequestVersion &&
+                _uiState.value.dashboard?.friends?.any { it.profileId == profileId } == true
+            if (!requestIsCurrent()) return@launch
+
+            val canTryExact = details.sharing.recentWorkouts && details.activityUpdatedAt != null
+            _uiState.update {
+                friendSummaryFallbackState(it, profileId, details, canTryExact)
+            }
+            if (!canTryExact) return@launch
+
+            val workoutPage = try {
+                val capability = authManager.loadSocialFriendWorkoutDetailCapability(
+                    cloudSession,
+                    profileId
+                )
+                if (capability.available) {
+                    authManager.loadSocialFriendWorkoutPage(
+                        cloudSession,
+                        profileId,
+                        expectedActivityRevision = details.activityUpdatedAt
+                    )
+                } else {
+                    null
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {
+                if (requestIsCurrent()) {
+                    _uiState.update {
+                        friendSummaryFallbackState(it, profileId, details, false)
+                    }
+                }
+                return@launch
+            }
+            if (requestIsCurrent()) {
+                _uiState.update {
+                    if (workoutPage == null) {
+                        friendSummaryFallbackState(it, profileId, details, false)
+                    } else {
+                        it.copy(
+                            selectedFriendDetails = details,
+                            friendWorkouts = workoutPage.items,
+                            friendWorkoutActivityRevision = workoutPage.activityRevision,
+                            friendWorkoutDetailsAvailable = true,
+                            isDetailsLoading = false,
+                            isFriendWorkoutsLoading = false,
+                            error = null
                         )
                     }
                 }
@@ -285,7 +425,11 @@ internal class FriendsViewModel(
             it.copy(
                 selectedProfileId = null,
                 selectedFriendDetails = null,
-                isDetailsLoading = false
+                friendWorkouts = emptyList(),
+                friendWorkoutActivityRevision = null,
+                friendWorkoutDetailsAvailable = false,
+                isDetailsLoading = false,
+                isFriendWorkoutsLoading = false
             )
         }
     }
@@ -378,12 +522,36 @@ internal class FriendsViewModel(
         }
     }
 
-    fun updatePrivacy(privacy: SocialPrivacy) {
-        val expectedRevision = _uiState.value.dashboard?.self?.settingsRevision ?: return
+    fun updatePrivacy(privacy: SocialPrivacy, shareWorkoutDetails: Boolean?) {
+        val current = _uiState.value
+        val dashboard = current.dashboard ?: return
+        val savedPrivacy = dashboard.self.privacy
+        var expectedRevision = dashboard.self.settingsRevision
+        val savedDetails = current.workoutDetailPrivacy
         launchMutation("privacy", R.string.friends_privacy_save_failed) { cloudSession ->
-            authManager.updateSocialPrivacy(cloudSession, privacy, expectedRevision)
-            _uiState.update { it.copy(notice = LocalizedText(R.string.friends_privacy_saved)) }
+            if (privacy != savedPrivacy) {
+                expectedRevision = authManager.updateSocialPrivacy(
+                    cloudSession,
+                    privacy,
+                    expectedRevision
+                ).settingsRevision
+            }
+            if (shareWorkoutDetails != null &&
+                savedDetails != null &&
+                shareWorkoutDetails != savedDetails.shareWorkoutDetails
+            ) {
+                val detailPrivacy = authManager.updateSocialWorkoutDetailPrivacy(
+                    cloudSession,
+                    shareWorkoutDetails,
+                    expectedRevision
+                )
+                _uiState.update { it.copy(workoutDetailPrivacy = detailPrivacy) }
+            }
+            _uiState.update { state ->
+                state.copy(notice = LocalizedText(R.string.friends_privacy_saved))
+            }
             refreshDashboard()
+            refreshWorkoutDetailPrivacy()
         }
     }
 
@@ -495,7 +663,11 @@ internal class FriendsViewModel(
             it.copy(
                 selectedProfileId = null,
                 selectedFriendDetails = null,
-                isDetailsLoading = false
+                friendWorkouts = emptyList(),
+                friendWorkoutActivityRevision = null,
+                friendWorkoutDetailsAvailable = false,
+                isDetailsLoading = false,
+                isFriendWorkoutsLoading = false
             )
         }
     }

@@ -92,7 +92,7 @@ internal fun ProfileScreen(
     onOpenFriend: (SocialFriend) -> Unit,
     onBlockProfile: (String) -> Unit,
     onUnblockProfile: (SocialBlockedProfile) -> Unit,
-    onUpdatePrivacy: (SocialPrivacy) -> Unit,
+    onUpdatePrivacy: (SocialPrivacy, Boolean?) -> Unit,
     onAcceptWorkoutInvite: (SocialIncomingWorkoutInvite) -> Unit,
     onDeclineWorkoutInvite: (SocialIncomingWorkoutInvite) -> Unit,
     onReuseWorkoutInvite: (SocialIncomingWorkoutInvite) -> Unit,

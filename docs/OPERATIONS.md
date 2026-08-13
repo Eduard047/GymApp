@@ -11,11 +11,13 @@ migration, and Edge Function deployment are separate operations.
 - Privacy policy: <https://gymapptracker.com/privacy-policy.html>
 - Releases: <https://github.com/Eduard047/GymApp/releases>
 
-GitHub Pages publishes the reviewed browser-retirement landing, native callback,
-and shared-workout handoff files from `pwa/` through the dedicated `gh-pages`
-branch. The public root must not load the retained workout/PWA runtime. The
-branch is deployment infrastructure and must not be deleted as stale source
-work.
+GitHub Pages publishes the reviewed full browser application, native callback,
+legal pages, and shared-workout handoff files from `pwa/` through the dedicated
+`gh-pages` branch. Canonical and immutable bundles, `index.html`, and the service
+worker cache allowlist/version must move together. Deploy only an explicit file
+allowlist and remove superseded cache assets deliberately; never use a broad
+delete that could remove callback, legal, or compatibility routes. The branch
+is deployment infrastructure and must not be deleted as stale source work.
 
 ## Authentication redirects
 
@@ -71,12 +73,20 @@ quarantined states, and zero profile/projection mismatches. `garmin-sync` versio
 fetch, acknowledge, replay, rotation, and post-cutover continuity checks.
 
 Production Auth currently enforces the historical eight-character server
-minimum. The current native clients enforce the twelve-character mixed-character
-policy, while the browser workout/authentication client is retired. Any server
-policy change still requires a separately reviewed native-client and backend
-release window. Email confirmation is enabled, anonymous sign-in is disabled,
-and the 2026-07-22 registration/login/refresh/password-change/logout/deletion E2E
-passed with disposable accounts.
+minimum. Android, iOS, and the browser client enforce the twelve-character
+mixed-character policy. Any server policy change still requires a separately
+reviewed three-client and backend release window. Email confirmation is enabled,
+anonymous sign-in is disabled, and the 2026-07-22
+registration/login/refresh/password-change/logout/deletion E2E passed with
+disposable accounts.
+
+On 2026-08-13 the production migration history was verified through
+`20260813112014`. The social release added explicit default-off detailed-workout
+consent, a bounded latest-five friend-workout view, atomic live-room activation,
+and a guarded waiting-to-active transition. A rollback-only synthetic smoke
+covered owner, friend, anonymous, non-friend, stale-revision, replay, revoke,
+future-workout, zero-weight, and exact-two-participant cases without retaining
+fixture rows.
 
 Public Supabase client identifiers are not privileged credentials. Secret keys,
 service-role keys, connection strings, raw device tokens, and real account data

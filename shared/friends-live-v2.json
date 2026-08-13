@@ -1,0 +1,114 @@
+{
+  "schemaVersion": 2,
+  "productVersion": "3.0.9",
+  "clients": ["android", "ios", "pwa"],
+  "friendWorkoutSharing": {
+    "summaryConsent": {
+      "field": "share_recent_workouts",
+      "meaning": "latestFiveSummariesOnly",
+      "mayAuthorizeExactSets": false
+    },
+    "detailConsent": {
+      "field": "share_workout_details",
+      "default": false,
+      "meaning": "exerciseNamesWeightsRepsAndSets",
+      "requiresSummaryConsent": true,
+      "explicitOwnerGesture": true,
+      "legacyClientsCanEnable": false
+    },
+    "authorization": {
+      "enforcedAt": "supabaseSecurityDefinerRpc",
+      "anonymous": "deny",
+      "nonFriend": "denyWithoutExistenceOracle",
+      "blockedOrRemoved": "deny",
+      "staleActivityRevision": "denyWithoutPayload",
+      "revokedWhileOpen": "closeAndRefetchSummary"
+    },
+    "page": {
+      "maximumWorkouts": 5,
+      "pagination": "none",
+      "futureSessions": "ignored",
+      "maximumExercisesPerWorkout": 20,
+      "maximumSetsPerExercise": 20,
+      "maximumRenderedSetsPerWorkout": 100,
+      "notesShared": false,
+      "rawStateShared": false,
+      "workoutId": "pseudonymousTargetAndActivityRevisionBoundDigest"
+    },
+    "presentation": {
+      "summaryWithoutDetailConsent": "visibleButNotTappableWithSetsPrivate",
+      "detailMode": "readOnlyOwnHistoryComposition",
+      "safeCatalogThumbnail": true,
+      "editDeleteCopyShareActions": false,
+      "recordMetrics": "neutralCompactSecondaryText",
+      "boldBlueRecordValues": false,
+      "dates": "localizedClientSide"
+    },
+    "invalidation": {
+      "transport": "privateAccountBoundRealtimeWithPollingFallback",
+      "event": "gymapp_social_changed",
+      "payload": ["version", "kind"],
+      "payloadContainsPrivateFieldOrValue": false,
+      "authoritativeRefetchRequired": true
+    }
+  },
+  "liveWorkout": {
+    "participants": 2,
+    "localActiveSlotReservation": {
+      "ownerCommitPoint": "durableBeforeInviteRpc",
+      "inviteeCommitPoint": "durableBeforeAcceptRpc",
+      "accountAndSessionBound": true,
+      "restartSafe": true,
+      "standaloneStartWhileReserved": "denyWithoutMutation",
+      "unknownMutationOutcome": "retainUntilAuthoritativeReconciliation",
+      "activeTransition": "consumeOnlyAfterLocalDraftAndBindingCommit",
+      "release": [
+        "inviteUnavailable",
+        "authoritativeRpcFailure",
+        "declineOrCancelOrLeave",
+        "expired",
+        "roomClosed"
+      ],
+      "unrelatedLocalActiveWorkout": "neverOverwrite"
+    },
+    "invitationAccept": {
+      "serverTransition": "waitingToActive",
+      "atomicMutations": [
+        "participantJoined",
+        "roomActive",
+        "roomStartedAt",
+        "bothProgressRows"
+      ],
+      "createsLocalActiveWorkoutAfterAuthoritativeSnapshot": true,
+      "unrelatedLocalActiveWorkout": "neverOverwrite",
+      "replay": "sameOperationReturnsSameResult",
+      "staleOrCrossAccount": "rejectWithoutMutation"
+    },
+    "activeScreen": {
+      "participantTabs": 2,
+      "placement": "top",
+      "labels": "participantDisplayNames",
+      "defaultTab": "self",
+      "selfTab": "editableLocalInputs",
+      "peerTab": "readOnlyCommittedWeightAndReps",
+      "switchPreservesSelfInputs": true,
+      "switchTriggersLocalMutation": false,
+      "privateNotesShared": false
+    },
+    "sync": {
+      "accountSessionRoomAndRevisionBound": true,
+      "pendingOperationsDurable": true,
+      "idempotentOperationIds": true,
+      "lateOldAccountResult": "ignored",
+      "realtimePayload": "invalidationOnly",
+      "authoritativeSnapshotRequired": true,
+      "pollingFallback": true
+    }
+  },
+  "compatibility": {
+    "legacyDashboardResponseKeysUnchanged": true,
+    "legacyFriendDetailsResponseKeysUnchanged": true,
+    "legacySummarySharingUnchanged": true,
+    "newExactDetailDisclosureDefault": "deny"
+  }
+}

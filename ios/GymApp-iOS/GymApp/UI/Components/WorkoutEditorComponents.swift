@@ -751,6 +751,7 @@ struct ExerciseMediaSheet: View {
                             gymText(
                                 "Choose your image",
                                 "Обрати своє фото",
+                                "Выбрать своё фото",
                                 languageCode: gymCurrentLanguageCode()
                             ),
                             systemImage: "photo.on.rectangle.angled"
@@ -781,6 +782,7 @@ struct ExerciseMediaSheet: View {
                                 gymText(
                                     "Restore built-in preview",
                                     "Повернути вбудовану демонстрацію",
+                                    "Вернуть встроенную демонстрацию",
                                     languageCode: gymCurrentLanguageCode()
                                 ),
                                 systemImage: "arrow.uturn.backward"
@@ -794,7 +796,12 @@ struct ExerciseMediaSheet: View {
             }
             .padding(18)
             .navigationTitle(
-                gymText("Exercise preview", "Демонстрація вправи", languageCode: gymCurrentLanguageCode())
+                gymText(
+                    "Exercise preview",
+                    "Демонстрація вправи",
+                    "Демонстрация упражнения",
+                    languageCode: gymCurrentLanguageCode()
+                )
             )
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -828,6 +835,7 @@ struct ExerciseMediaSheet: View {
                     errorMessage = gymText(
                         "Couldn’t use this image. Choose a photo up to 8 MB.",
                         "Не вдалося використати фото. Оберіть зображення до 8 МБ.",
+                        "Не удалось использовать фото. Выберите изображение до 8 МБ.",
                         languageCode: gymCurrentLanguageCode()
                     )
                 }
@@ -898,6 +906,7 @@ struct WorkoutRestTimerControls: View {
                 gymText(
                     "Reduce rest by 15 seconds",
                     "Зменшити відпочинок на 15 секунд",
+                    "Уменьшить отдых на 15 секунд",
                     languageCode: gymCurrentLanguageCode()
                 )
             )
@@ -911,6 +920,7 @@ struct WorkoutRestTimerControls: View {
                 gymText(
                     "Add 15 seconds of rest",
                     "Додати 15 секунд відпочинку",
+                    "Добавить 15 секунд отдыха",
                     languageCode: gymCurrentLanguageCode()
                 )
             )

@@ -783,7 +783,9 @@ struct WorkoutActivityHeatmap: View {
                 }
             }
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel(gymFormattedDate(day.date, date: .long, time: .omitted))
+            .accessibilityLabel(
+                gymFormattedDateWithoutWeekday(day.date, date: .long, time: .omitted)
+            )
             .accessibilityValue(dayAccessibilityValue(day))
             .accessibilityHidden(!day.isInMonth)
     }

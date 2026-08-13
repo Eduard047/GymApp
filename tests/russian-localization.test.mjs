@@ -246,15 +246,18 @@ test("retained browser source accepts Russian while the public landing owns its 
   assert.match(appSource, /tx\("metrics parsed from the saved note", "показники прочитано зі збереженої нотатки"\)/);
   assert.match(appSource, /txAttr\("Name in English, Ukrainian, or Russian", "Назва англійською, українською або російською"\)/);
   assert.doesNotMatch(appSource, /Name in English, Ukrainian or Russian/);
-  assert.match(indexSource, /retirement\.v1\.js/);
-  assert.doesNotMatch(indexSource, /russian-text\.v78\.js|exercise-search-vocabulary|app\.v86\.js/);
-  assert.doesNotMatch(workerSource, /russian-text|exercise-search-vocabulary|app\.v86\.js/);
+  assert.match(indexSource, /russian-text\.v80\.js/);
+  assert.match(indexSource, /exercise-search-vocabulary\.v1\.js/);
+  assert.match(indexSource, /app\.v88\.js/);
+  assert.match(workerSource, /russian-text\.v80\.js/);
+  assert.match(workerSource, /exercise-search-vocabulary\.v1\.js/);
+  assert.match(workerSource, /app\.v88\.js/);
   assert.match(retirementSource, /title: "Тренируйтесь в GymApp"/);
   assert.match(retirementSource, /deletion: "Удаление аккаунта и данных"/);
 });
 
 test("runtime language switches invalidate cached labels on every client", async () => {
-  const [androidRoot, iosRoot, iosAuth, iosWorkouts, iosProfile, iosProgress, iosMedia, pwaApp] = await Promise.all([
+  const [androidRoot, iosRoot, iosAuth, iosWorkouts, iosProfile, iosProgress, iosMedia, iosAccountSettings, pwaApp] = await Promise.all([
     readFile("app/src/main/java/com/example/gymapp/navigation/GymNavGraph.kt", "utf8"),
     readFile("ios/GymApp-iOS/GymApp/App/AppRootView.swift", "utf8"),
     readFile("ios/GymApp-iOS/GymApp/UI/Screens/AuthView.swift", "utf8"),
@@ -262,6 +265,7 @@ test("runtime language switches invalidate cached labels on every client", async
     readFile("ios/GymApp-iOS/GymApp/UI/Screens/ProfileView.swift", "utf8"),
     readFile("ios/GymApp-iOS/GymApp/UI/Screens/ProgressView.swift", "utf8"),
     readFile("ios/GymApp-iOS/GymApp/UI/Components/WorkoutEditorComponents.swift", "utf8"),
+    readFile("ios/GymApp-iOS/GymApp/UI/Screens/AccountSettingsView.swift", "utf8"),
     readFile("pwa/app.js", "utf8")
   ]);
   assert.match(androidRoot, /key\(uiIsolationKey, selectedLanguage\) \{ rememberNavController\(\) \}/);
@@ -283,6 +287,9 @@ test("runtime language switches invalidate cached labels on every client", async
   assert.doesNotMatch(iosProgress, /Порівнюй силу, обсяг і регулярність окремо для кожної вправи\./);
   assert.doesNotMatch(iosProgress, /Сравнивай силу, объём и регулярность отдельно для каждого упражнения\./);
   assert.match(iosMedia, /"Открыть демонстрацию упражнения"/);
+  assert.match(iosMedia, /"Выбрать своё фото"/);
+  assert.match(iosAccountSettings, /"Перед заменой или сбросом устройства воспользуйтесь экспортом резервной копии/);
+  assert.match(iosAccountSettings, /"Выходит из этого профиля\. Его тренировки останутся на устройстве/);
   assert.match(
     pwaApp,
     /if \(action === "set-language"\)[\s\S]*authNotice = null;[\s\S]*resetGarminProfileContext\(\);[\s\S]*saveState\(\);[\s\S]*return render\(\);/

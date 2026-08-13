@@ -127,8 +127,8 @@ enum ExportService {
             draw(gymLocalized(title), font: .boldSystemFont(ofSize: 24), spacing: 18)
             draw(
                 gymText(
-                    "Generated \(gymFormattedDate(Date(), date: .abbreviated, time: .standard))",
-                    "Створено \(gymFormattedDate(Date(), date: .abbreviated, time: .standard))",
+                    "Generated \(gymFormattedTimestamp(Date(), date: .abbreviated, time: .standard))",
+                    "Створено \(gymFormattedTimestamp(Date(), date: .abbreviated, time: .standard))",
                     languageCode: gymCurrentLanguageCode()
                 ),
                 font: .systemFont(ofSize: 10),

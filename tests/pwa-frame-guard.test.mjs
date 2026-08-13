@@ -10,7 +10,7 @@ const [guardSource, appSource, confirmedSource, indexHtml, confirmedHtml, styles
     readFile("pwa/confirmed.js", "utf8"),
     readFile("pwa/index.html", "utf8"),
     readFile("pwa/confirmed.html", "utf8"),
-    readFile("pwa/retirement.css", "utf8"),
+    readFile("pwa/styles.css", "utf8"),
     readFile("pwa/confirmed.css", "utf8")
   ]);
 
@@ -64,17 +64,16 @@ test("frame guard is the earliest script and both documents start fail-closed", 
     assert.ok(guardIndex > 0 && (nextScriptIndex === -1 || guardIndex < nextScriptIndex));
     assert.doesNotMatch(html.slice(guardIndex, guardIndex + 70), /defer|async/);
   }
-  assert.match(styles, /html\.frame-pending body \{[\s\S]*visibility: hidden;/);
+  assert.match(styles, /html\.frame-pending body \{ visibility: hidden !important; \}/);
   assert.match(confirmedStyles, /html\.frame-pending body \{ visibility: hidden !important; \}/);
   assert.match(appSource.slice(0, 350), /__GYMAPP_TOP_LEVEL__ !== true[\s\S]*window\.top !== window\.self/);
   assert.match(confirmedSource.slice(0, 350), /__GYMAPP_TOP_LEVEL__ !== true[\s\S]*window\.top !== window\.self/);
 });
 
-test("retired root CSP blocks inline code and all cloud connections", () => {
+test("main CSP blocks inline code and limits cloud connections to the configured project", () => {
   assert.match(indexHtml, /style-src 'self'/);
   assert.doesNotMatch(indexHtml, /unsafe-inline|https:\/\/\*\.supabase\.co|img-src[^;]*blob:/);
-  assert.match(indexHtml, /connect-src 'none'/);
-  assert.doesNotMatch(indexHtml, /owrcbsrectdgaotndtxy\.supabase\.co/);
+  assert.match(indexHtml, /connect-src 'self' https:\/\/owrcbsrectdgaotndtxy\.supabase\.co/);
   assert.match(indexHtml, /form-action 'none'/);
   assert.doesNotMatch(appSource, /\sstyle\s*=/i);
 });

@@ -431,8 +431,8 @@ test("workout stopwatch includes adjusted rest while its account-bound sidecar t
   assert.equal(timing.workoutId, vm.runInContext("activeWorkout.id", context));
   vm.runInContext("clearActiveWorkoutMemory(); reloadActiveWorkoutContext();", context);
   assert.equal(vm.runInContext(`activeWorkoutElapsedMillis(activeWorkout, ${createdAt + 120_000})`, context), 120_000);
-  assert.match(vm.runInContext("activeWorkoutScreen()", context), /Workout time/);
-  assert.match(vm.runInContext("activeWorkoutScreen()", context), /includes rest/);
+  assert.match(vm.runInContext("activeWorkoutScreen()", context), />Time</);
+  assert.doesNotMatch(vm.runInContext("activeWorkoutScreen()", context), /includes rest/);
 });
 
 test("write-ahead rest marker reconciles crashes between start, adjust, and stop state writes", async () => {

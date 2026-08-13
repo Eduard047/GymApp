@@ -67,7 +67,7 @@ const [
   readFile("ios/GymApp-iOS/GymAppTests/CoreParityTests.swift", "utf8"),
   readFile("pwa/index.html", "utf8"),
   readFile("pwa/workout/index.html", "utf8"),
-  readFile("pwa/workout/landing.v2.js", "utf8")
+  readFile("pwa/workout/landing.v3.js", "utf8")
 ]);
 
 const contract = JSON.parse(contractSource);
@@ -97,11 +97,11 @@ function iosTranslation(key, locale) {
   return iosLocalization.strings[key]?.localizations?.[locale]?.stringUnit?.value;
 }
 
-test("workout-plan editing v1 defines one exact native flow and browser exception", () => {
+test("workout-plan editing v1 defines one exact three-client flow", () => {
   assert.equal(contract.schemaVersion, 1);
   assert.deepEqual(contract.scope, {
-    fullEditors: ["android", "ios"],
-    browser: "shared-plan-preview-and-native-handoff-only"
+    fullEditors: ["android", "ios", "browser"],
+    browser: "full-workout-client"
   });
   assert.deepEqual(contract.locales.order, ["en", "uk", "ru"]);
   assert.deepEqual(contract.locales.copy.todayEditPlan, {
@@ -839,7 +839,7 @@ test("Clear plan is editor-only, confirmed, local, and leaves an actionable empt
   const iosExerciseHeaderStart = iosEditor.indexOf("private var editorSection: some View");
   const iosExerciseHeaderEnd = iosEditor.indexOf("if drafts.isEmpty {", iosExerciseHeaderStart);
   const iosExerciseHeader = iosEditor.slice(iosExerciseHeaderStart, iosExerciseHeaderEnd);
-  assert.match(iosExerciseHeader, /if !drafts\.isEmpty \{[\s\S]*Label\("Add", systemImage: "plus"\)/);
+  assert.match(iosExerciseHeader, /if !drafts\.isEmpty \{[\s\S]*showingExercisePicker = true[\s\S]*Image\(systemName: "plus"\)/);
   assert.doesNotMatch(androidActive, /clear[_A-Za-z]*plan|onClearPlan/i);
   assert.doesNotMatch(iosActive, /clear\s*plan|clearPlan/i);
 });
@@ -889,18 +889,21 @@ test("an active workout keeps Continue instead of exposing a second plan editor"
   assert.doesNotMatch(iosActive, /applySmartCoach|showingExercisePicker|removeExercise/);
 });
 
-test("browser remains a retirement landing plus validated native handoff, never a plan editor", () => {
-  assert.equal(contract.browserException.rootWorkoutEditor, false);
+test("browser exposes the same editor contract and validated shared-plan handoff", () => {
+  assert.equal(contract.browserException.rootWorkoutEditor, true);
   assert.equal(contract.browserException.sharedWorkoutRoute, "/workout/");
-  assert.equal(contract.browserException.browserDraftPersistence, false);
-  assert.equal(contract.browserException.continueOnWebsiteAction, false);
-  assert.doesNotMatch(rootHtml, /app\.v\d+\.js|shared-workout|workout-editor|add-workout/i);
+  assert.equal(contract.browserException.browserDraftPersistence, true);
+  assert.equal(contract.browserException.continueOnWebsiteAction, true);
+  assert.ok(contract.scope.fullEditors.includes("browser"));
+  assert.match(rootHtml, /app\.v\d+\.js/);
+  assert.match(rootHtml, /shared-workout\.v\d+\.js/);
   assert.match(sharedWorkoutHtml, /shared-workout\.v\d+\.js/);
-  assert.match(sharedWorkoutHtml, /landing\.v2\.js/);
-  assert.doesNotMatch(sharedWorkoutHtml, /app\.v\d+\.js|continue-web|Continue on website/);
+  assert.match(sharedWorkoutHtml, /landing\.v3\.js/);
+  assert.match(sharedWorkoutHtml, /continue-web|Continue on website/);
   assert.doesNotMatch(sharedWorkoutHtml, /<(?:form|input|textarea|select)\b/i);
   assert.match(sharedWorkoutScript, /codec\?\.fromHash|codec\.fromHash/);
   assert.match(sharedWorkoutScript, /ANDROID_SCHEME/);
   assert.match(sharedWorkoutScript, /IOS_SCHEME/);
+  assert.match(sharedWorkoutScript, /web: `\$\{CANONICAL_SITE\}#\$\{hash\}`/);
   assert.doesNotMatch(sharedWorkoutScript, /localStorage|indexedDB|createWorkout|startWorkout/);
 });

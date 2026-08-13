@@ -29,6 +29,8 @@ import com.example.gymapp.data.repository.LivePendingOperation
 import com.example.gymapp.data.repository.LivePendingOperationKind
 import com.example.gymapp.data.repository.LivePreparedMutation
 import com.example.gymapp.data.repository.LivePreparedMutationKind
+import com.example.gymapp.data.repository.LiveWorkoutReservation
+import com.example.gymapp.data.repository.LiveWorkoutReservationPhase
 import com.example.gymapp.data.repository.LiveWorkoutBinding
 import com.example.gymapp.data.repository.LiveWorkoutSidecarStore
 import com.example.gymapp.data.repository.SharedWorkoutPlan
@@ -81,7 +83,9 @@ internal data class LiveWorkoutUiState(
 
 data class ActiveLiveWorkoutUiState(
     val activeRoomId: String? = null,
+    val selfDisplayName: String? = null,
     val peerProgress: LivePeerProgressSummary? = null,
+    val peerExercises: List<LivePeerExerciseSummary> = emptyList(),
     val exerciseLanes: List<LiveExerciseLaneSummary> = emptyList(),
     val connectionMode: LiveConnectionMode = LiveConnectionMode.Offline,
     val pendingOperationCount: Int = 0
@@ -92,6 +96,24 @@ data class LivePeerProgressSummary(
     val completedSetCount: Int,
     val totalSetCount: Int,
     val isFinished: Boolean
+)
+
+data class LivePeerSetSummary(
+    val setId: String,
+    val orderIndex: Int,
+    val plannedWeight: Double,
+    val plannedReps: Int,
+    val completedWeight: Double?,
+    val completedReps: Int?
+) {
+    val isCompleted: Boolean get() = completedWeight != null && completedReps != null
+}
+
+data class LivePeerExerciseSummary(
+    val exerciseId: String,
+    val exerciseName: String,
+    val catalogKey: String?,
+    val sets: List<LivePeerSetSummary>
 )
 
 data class LiveExerciseLaneSummary(
@@ -120,6 +142,31 @@ internal fun liveExerciseLaneSummaries(
             exerciseName = exercise.name,
             selfCompletedSets = setIds.map(selfCompleted::contains),
             peerCompletedSets = setIds.map(peerCompleted::contains)
+        )
+    }
+}
+
+internal fun livePeerExerciseSummaries(
+    snapshot: LiveWorkoutSnapshot?
+): List<LivePeerExerciseSummary> {
+    if (snapshot == null || snapshot.room.status != "active") return emptyList()
+    val completedById = snapshot.peer.progress?.completedSets.orEmpty().associateBy { it.setId }
+    return snapshot.plan.exercises.map { exercise ->
+        LivePeerExerciseSummary(
+            exerciseId = exercise.exerciseId,
+            exerciseName = exercise.name,
+            catalogKey = exercise.catalogKey,
+            sets = exercise.sets.mapIndexed { index, planned ->
+                val completed = completedById[planned.setId]
+                LivePeerSetSummary(
+                    setId = planned.setId,
+                    orderIndex = index,
+                    plannedWeight = planned.weight,
+                    plannedReps = planned.reps,
+                    completedWeight = completed?.weight,
+                    completedReps = completed?.reps
+                )
+            }
         )
     }
 }
@@ -274,6 +321,8 @@ internal suspend fun acceptLiveInvitationAfterPreflight(
     ensureCanJoin: suspend () -> Unit,
     loadSnapshot: suspend (roomId: String) -> LiveWorkoutSnapshot,
     validatePlan: suspend (LiveCanonicalPlan) -> Unit,
+    reserveBeforeRespond: suspend (clientOperationId: String) -> Unit = {},
+    releaseAfterFailedRespond: suspend (clientOperationId: String) -> Unit = {},
     respond: suspend (expectedRoomRevision: Int, clientOperationId: String) ->
         LiveRespondInviteResult,
     newOperationId: () -> String = { UUID.randomUUID().toString() }
@@ -288,8 +337,23 @@ internal suspend fun acceptLiveInvitationAfterPreflight(
         "Live workout invitation is no longer available."
     }
     validatePlan(snapshot.plan)
-    return respond(invitation.roomRevision, newOperationId())
+    val clientOperationId = newOperationId()
+    reserveBeforeRespond(clientOperationId)
+    return try {
+        respond(invitation.roomRevision, clientOperationId)
+    } catch (error: Throwable) {
+        releaseAfterFailedRespond(clientOperationId)
+        throw error
+    }
 }
+
+internal fun shouldReleaseParticipantLiveReservation(
+    role: String,
+    invitationStillWaiting: Boolean,
+    responseInFlight: Boolean,
+    ignoreInFlight: Boolean
+): Boolean = !invitationStillWaiting && !responseInFlight ||
+    invitationStillWaiting && role == "participant" && (ignoreInFlight || !responseInFlight)
 
 internal fun resolveLiveInboxRoom(
     boundRoomId: String?,
@@ -432,6 +496,11 @@ internal class LiveWorkoutViewModel(
             .map { state ->
                 ActiveLiveWorkoutUiState(
                     activeRoomId = state.activeRoomId,
+                    selfDisplayName = state.snapshot
+                        ?.takeIf { it.room.status == "active" }
+                        ?.self
+                        ?.profile
+                        ?.displayName,
                     peerProgress = state.peerProgress?.let { peer ->
                         LivePeerProgressSummary(
                             displayName = peer.displayName,
@@ -440,6 +509,7 @@ internal class LiveWorkoutViewModel(
                             isFinished = peer.isFinished
                         )
                     },
+                    peerExercises = livePeerExerciseSummaries(state.snapshot),
                     exerciseLanes = liveExerciseLaneSummaries(state.snapshot),
                     connectionMode = state.connectionMode,
                     pendingOperationCount = state.pendingOperationCount
@@ -477,6 +547,7 @@ internal class LiveWorkoutViewModel(
                     check(authManager.isLiveSessionActive(cloudSession)) {
                         "Cloud session is no longer active."
                     }
+                    reconcileReservationWithInbox(cloudSession, inbox)
                     _uiState.update {
                         it.copy(
                             isLoading = false,
@@ -545,12 +616,46 @@ internal class LiveWorkoutViewModel(
 
     fun sendInvite(friend: SocialFriend, workout: SharedWorkoutPlan) {
         launchAction("send-${friend.profileId}", R.string.live_workout_send_failed) { cloudSession ->
-            val result = authManager.sendLiveWorkoutInvite(
-                session = cloudSession,
-                profileId = friend.profileId,
-                clientRequestId = UUID.randomUUID().toString(),
-                workout = workout
+            val clientRequestId = UUID.randomUUID().toString()
+            val createdAt = System.currentTimeMillis()
+            val reservation = LiveWorkoutReservation(
+                userId = cloudSession.userId,
+                sessionGeneration = cloudSession.sessionGeneration,
+                role = "owner",
+                operationId = clientRequestId,
+                roomId = null,
+                phase = LiveWorkoutReservationPhase.Preparing,
+                createdAt = createdAt,
+                expiresAt = createdAt + LIVE_INVITATION_RESERVATION_MILLIS
             )
+            check(sidecarStore.reserve(cloudSession, reservation) {
+                repository.getActiveWorkoutSnapshot() == null
+            }) { applicationContext.getString(R.string.live_workout_active_blocked) }
+            val result = try {
+                authManager.sendLiveWorkoutInvite(
+                    session = cloudSession,
+                    profileId = friend.profileId,
+                    clientRequestId = clientRequestId,
+                    workout = workout
+                )
+            } catch (error: Throwable) {
+                reconcileReservationAfterFailedMutation(cloudSession)
+                throw error
+            }
+            if (result.roomId == null) {
+                check(sidecarStore.clearReservation(cloudSession, clientRequestId)) {
+                    "Live workout reservation could not be released."
+                }
+            } else {
+                check(sidecarStore.replaceReservation(
+                    session = cloudSession,
+                    expectedOperationId = clientRequestId,
+                    replacement = reservation.copy(
+                        roomId = result.roomId,
+                        phase = LiveWorkoutReservationPhase.Waiting
+                    )
+                )) { "Live workout reservation could not be bound to its room." }
+            }
             _uiState.update {
                 it.copy(
                     notice = LocalizedText(
@@ -585,6 +690,26 @@ internal class LiveWorkoutViewModel(
                         authManager.loadLiveWorkoutSnapshot(cloudSession, roomId)
                     },
                     validatePlan = repository::preflightLiveCanonicalWorkout,
+                    reserveBeforeRespond = { clientOperationId ->
+                        val createdAt = liveTimestampMillis(invitation.createdAt)
+                        val expiresAt = liveTimestampMillis(invitation.inviteExpiresAt)
+                        val reservation = LiveWorkoutReservation(
+                            userId = cloudSession.userId,
+                            sessionGeneration = cloudSession.sessionGeneration,
+                            role = "participant",
+                            operationId = clientOperationId,
+                            roomId = invitation.roomId,
+                            phase = LiveWorkoutReservationPhase.Waiting,
+                            createdAt = createdAt,
+                            expiresAt = expiresAt
+                        )
+                        check(sidecarStore.reserve(cloudSession, reservation) {
+                            repository.getActiveWorkoutSnapshot() == null
+                        }) { applicationContext.getString(R.string.live_workout_active_blocked) }
+                    },
+                    releaseAfterFailedRespond = {
+                        reconcileReservationAfterFailedMutation(cloudSession)
+                    },
                     respond = { expectedRoomRevision, clientOperationId ->
                         authManager.respondLiveWorkoutInvite(
                             session = cloudSession,
@@ -612,12 +737,15 @@ internal class LiveWorkoutViewModel(
                 it.copy(
                     notice = LocalizedText(
                         if (decision == "accept") {
-                            R.string.live_workout_ready_waiting_owner
+                            R.string.live_workout_started_after_accept
                         } else {
                             R.string.live_workout_invite_declined
                         }
                     )
                 )
+            }
+            if (decision == "accept") {
+                refreshSnapshotNow(invitation.roomId)
             }
             refresh()
         }
@@ -659,6 +787,13 @@ internal class LiveWorkoutViewModel(
                     UUID.randomUUID().toString(),
                     room.membershipRevision
                 )
+            }
+            sidecarStore.reservation(cloudSession)?.takeIf { it.roomId == room.roomId }?.let {
+                check(sidecarStore.clearReservation(
+                    cloudSession,
+                    expectedOperationId = it.operationId,
+                    expectedRoomId = room.roomId
+                )) { "Live workout reservation could not be released." }
             }
             detachLiveWorkout(room.roomId)
             refresh()
@@ -1065,10 +1200,18 @@ internal class LiveWorkoutViewModel(
         check(authManager.isLiveSessionActive(cloudSession)) { "Cloud session is no longer active." }
         _uiState.update { it.copy(snapshot = snapshot, peerProgress = peerProgress(snapshot)) }
         if (snapshot.room.status in setOf("completed", "cancelled", "expired")) {
+            sidecarStore.reservation(cloudSession)?.takeIf { it.roomId == roomId }?.let {
+                check(sidecarStore.clearReservation(
+                    cloudSession,
+                    it.operationId,
+                    roomId
+                )) { "Live workout reservation could not be released." }
+            }
             detachLiveWorkout(roomId)
             return
         }
         if (snapshot.room.status != "active") return
+        ensureReservationForSnapshot(cloudSession, snapshot)
 
         var existingBinding = sidecarStore.load(cloudSession)
         if (existingBinding?.preparedMutation != null) {
@@ -1094,27 +1237,33 @@ internal class LiveWorkoutViewModel(
                 .toEpochMilli()
             var committedBinding: LiveWorkoutBinding? = null
             val imported = try {
-                repository.startLiveCanonicalWorkout(
-                    plan = snapshot.plan,
-                    startedAt = startedAt,
-                    initialProgress = selfProgress
-                ) { prepared ->
-                    val self = snapshot.self
-                    val binding = LiveWorkoutBinding(
-                        userId = cloudSession.userId,
-                        sessionGeneration = cloudSession.sessionGeneration,
-                        roomId = roomId,
-                        role = self.role,
-                        peerProfileId = snapshot.peer.profile.profileId,
-                        peerDisplayName = snapshot.peer.profile.displayName,
-                        roomRevision = snapshot.room.roomRevision,
-                        membershipRevision = self.membershipRevision,
-                        progressRevision = selfProgress.revision,
-                        workoutStartedAt = prepared.startedAt,
-                        serverToLocalSetIds = prepared.serverToLocalSetIds
-                    )
-                    sidecarStore.save(cloudSession, binding).also { saved ->
-                        if (saved) committedBinding = binding
+                sidecarStore.withLiveStartReservation(
+                    session = cloudSession,
+                    roomId = roomId,
+                    blockedValue = StartLiveCanonicalWorkoutResult.AlreadyActive
+                ) {
+                    repository.startLiveCanonicalWorkout(
+                        plan = snapshot.plan,
+                        startedAt = startedAt,
+                        initialProgress = selfProgress
+                    ) { prepared ->
+                        val self = snapshot.self
+                        val binding = LiveWorkoutBinding(
+                            userId = cloudSession.userId,
+                            sessionGeneration = cloudSession.sessionGeneration,
+                            roomId = roomId,
+                            role = self.role,
+                            peerProfileId = snapshot.peer.profile.profileId,
+                            peerDisplayName = snapshot.peer.profile.displayName,
+                            roomRevision = snapshot.room.roomRevision,
+                            membershipRevision = self.membershipRevision,
+                            progressRevision = selfProgress.revision,
+                            workoutStartedAt = prepared.startedAt,
+                            serverToLocalSetIds = prepared.serverToLocalSetIds
+                        )
+                        sidecarStore.save(cloudSession, binding).also { saved ->
+                            if (saved) committedBinding = binding
+                        }
                     }
                 }
             } catch (error: Throwable) {
@@ -1127,6 +1276,15 @@ internal class LiveWorkoutViewModel(
                 is StartLiveCanonicalWorkoutResult.Started -> {
                     val binding = checkNotNull(committedBinding) {
                         "Live workout binding was not committed."
+                    }
+                    sidecarStore.reservation(cloudSession)?.takeIf {
+                        it.roomId == roomId
+                    }?.let { reservation ->
+                        check(sidecarStore.clearReservation(
+                            cloudSession,
+                            expectedOperationId = reservation.operationId,
+                            expectedRoomId = roomId
+                        )) { "Live workout reservation could not be released." }
                     }
                     updateBindingUi(binding, shouldNavigate = true)
                 }
@@ -1257,6 +1415,203 @@ internal class LiveWorkoutViewModel(
             isFinished = peer.state == "finished" || peer.progress?.finishedAt != null
         )
     }
+
+    private suspend fun reconcileReservationAfterFailedMutation(
+        cloudSession: AccountSession.Cloud
+    ) {
+        if (!authManager.isLiveSessionActive(cloudSession)) return
+        runCatching { authManager.loadLiveWorkoutInbox(cloudSession) }
+            .getOrNull()
+            ?.let { reconcileReservationWithInbox(cloudSession, it, ignoreInFlight = true) }
+    }
+
+    private suspend fun reconcileReservationWithInbox(
+        cloudSession: AccountSession.Cloud,
+        inbox: LiveWorkoutInbox,
+        ignoreInFlight: Boolean = false
+    ) {
+        val openRooms = inbox.rooms.filter {
+            it.status in setOf("waiting", "ready", "active") &&
+                it.memberState in setOf("joined", "finished")
+        }
+        sidecarStore.sessionMismatchedReservation(cloudSession)?.let { previous ->
+            val room = if (previous.phase == LiveWorkoutReservationPhase.Preparing) {
+                val ownerRooms = openRooms.filter { it.role == "owner" }
+                check(ownerRooms.size <= 1) { "Multiple owner live rooms are open." }
+                ownerRooms.singleOrNull()
+            } else {
+                openRooms.singleOrNull { it.roomId == previous.roomId }
+            }
+            val replacement = room?.let {
+                check(repository.getActiveWorkoutSnapshot() == null) {
+                    "Another workout is already active."
+                }
+                previous.copy(
+                    sessionGeneration = cloudSession.sessionGeneration,
+                    role = it.role,
+                    roomId = it.roomId,
+                    phase = if (it.status == "active") {
+                        LiveWorkoutReservationPhase.Active
+                    } else {
+                        LiveWorkoutReservationPhase.Waiting
+                    },
+                    expiresAt = it.activeExpiresAt?.let(::liveTimestampMillis)
+                        ?: previous.expiresAt
+                )
+            }
+            check(sidecarStore.reconcileSessionMismatchedReservation(
+                session = cloudSession,
+                expectedSessionGeneration = previous.sessionGeneration,
+                expectedOperationId = previous.operationId,
+                replacement = replacement
+            )) { "Live workout reservation could not be reconciled after sign-in." }
+        }
+        val current = sidecarStore.reservation(cloudSession)
+        if (current == null) {
+            val room = openRooms.singleOrNull() ?: return
+            val createdAt = liveTimestampMillis(room.createdAt)
+            val expiresAt = room.activeExpiresAt?.let(::liveTimestampMillis)
+                ?: createdAt + LIVE_INVITATION_RESERVATION_MILLIS
+            sidecarStore.reserve(
+                cloudSession,
+                LiveWorkoutReservation(
+                    userId = cloudSession.userId,
+                    sessionGeneration = cloudSession.sessionGeneration,
+                    role = room.role,
+                    operationId = UUID.randomUUID().toString(),
+                    roomId = room.roomId,
+                    phase = if (room.status == "active") {
+                        LiveWorkoutReservationPhase.Active
+                    } else {
+                        LiveWorkoutReservationPhase.Waiting
+                    },
+                    createdAt = createdAt,
+                    expiresAt = expiresAt
+                )
+            ) { repository.getActiveWorkoutSnapshot() == null }
+            return
+        }
+
+        if (current.phase == LiveWorkoutReservationPhase.Preparing) {
+            val ownerRoom = openRooms.singleOrNull { it.role == "owner" }
+            if (ownerRoom != null) {
+                val expiresAt = ownerRoom.activeExpiresAt?.let(::liveTimestampMillis)
+                    ?: current.expiresAt
+                check(sidecarStore.replaceReservation(
+                    cloudSession,
+                    current.operationId,
+                    current.copy(
+                        roomId = ownerRoom.roomId,
+                        phase = if (ownerRoom.status == "active") {
+                            LiveWorkoutReservationPhase.Active
+                        } else {
+                            LiveWorkoutReservationPhase.Waiting
+                        },
+                        expiresAt = expiresAt
+                    )
+                )) { "Live workout reservation could not be reconciled." }
+            } else if (ignoreInFlight ||
+                _uiState.value.actionsInFlight.none { it.startsWith("send-") }
+            ) {
+                check(sidecarStore.clearReservation(cloudSession, current.operationId)) {
+                    "Live workout reservation could not be released."
+                }
+            }
+            return
+        }
+
+        val room = openRooms.singleOrNull { it.roomId == current.roomId }
+        if (room == null) {
+            val invitationStillWaiting = inbox.invitations.any { it.roomId == current.roomId }
+            val responseInFlight = !ignoreInFlight &&
+                _uiState.value.actionsInFlight.contains("respond-${current.roomId}")
+            if (shouldReleaseParticipantLiveReservation(
+                role = current.role,
+                invitationStillWaiting = invitationStillWaiting,
+                responseInFlight = responseInFlight,
+                ignoreInFlight = ignoreInFlight
+            )) {
+                check(sidecarStore.clearReservation(
+                    cloudSession,
+                    current.operationId,
+                    current.roomId
+                )) { "Live workout reservation could not be released." }
+            }
+            return
+        }
+        val phase = if (room.status == "active") {
+            LiveWorkoutReservationPhase.Active
+        } else {
+            LiveWorkoutReservationPhase.Waiting
+        }
+        val expiresAt = room.activeExpiresAt?.let(::liveTimestampMillis) ?: current.expiresAt
+        if (current.phase != phase || current.expiresAt != expiresAt) {
+            check(sidecarStore.replaceReservation(
+                cloudSession,
+                current.operationId,
+                current.copy(phase = phase, expiresAt = expiresAt)
+            )) { "Live workout reservation could not be refreshed." }
+        }
+    }
+
+    private suspend fun ensureReservationForSnapshot(
+        cloudSession: AccountSession.Cloud,
+        snapshot: LiveWorkoutSnapshot
+    ) {
+        check(snapshot.room.status == "active" && snapshot.self.state == "joined") {
+            "Live workout cannot reserve an inactive room."
+        }
+        val roomId = snapshot.room.roomId
+        val current = sidecarStore.reservation(cloudSession)
+        val bound = sidecarStore.load(cloudSession)?.roomId == roomId &&
+            repository.getActiveWorkoutSnapshot() != null
+        if (bound) {
+            current?.takeIf { it.roomId == roomId }?.let {
+                check(sidecarStore.clearReservation(
+                    cloudSession,
+                    it.operationId,
+                    roomId
+                )) { "Live workout reservation could not be released." }
+            }
+            return
+        }
+        val createdAt = liveTimestampMillis(snapshot.room.createdAt)
+        val expiresAt = liveTimestampMillis(checkNotNull(snapshot.room.activeExpiresAt))
+        if (current == null) {
+            check(sidecarStore.reserve(
+                cloudSession,
+                LiveWorkoutReservation(
+                    userId = cloudSession.userId,
+                    sessionGeneration = cloudSession.sessionGeneration,
+                    role = snapshot.self.role,
+                    operationId = UUID.randomUUID().toString(),
+                    roomId = roomId,
+                    phase = LiveWorkoutReservationPhase.Active,
+                    createdAt = createdAt,
+                    expiresAt = expiresAt
+                )
+            ) { repository.getActiveWorkoutSnapshot() == null }) {
+                "Live workout slot is unavailable."
+            }
+        } else {
+            check(current.roomId == roomId) { "Another live workout slot is reserved." }
+            if (current.phase != LiveWorkoutReservationPhase.Active ||
+                current.expiresAt != expiresAt
+            ) {
+                check(sidecarStore.replaceReservation(
+                    cloudSession,
+                    current.operationId,
+                    current.copy(
+                        phase = LiveWorkoutReservationPhase.Active,
+                        expiresAt = expiresAt
+                    )
+                )) { "Live workout reservation could not be activated." }
+            }
+        }
+    }
+
+    private fun liveTimestampMillis(value: String): Long =
+        OffsetDateTime.parse(value).toInstant().toEpochMilli()
 
     private fun restoreBinding() {
         val cloudSession = session ?: return
@@ -1429,6 +1784,9 @@ internal class LiveWorkoutViewModel(
     }
 
     companion object {
+        private const val LIVE_INVITATION_RESERVATION_MILLIS =
+            7L * 24L * 60L * 60L * 1_000L
+
         fun factory(
             context: Context,
             repository: GymRepository,

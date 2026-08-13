@@ -237,6 +237,103 @@ final class CloudSyncService: ObservableObject {
         }
     }
 
+    func socialFriendWorkoutPage(
+        profileID: String,
+        expectedActivityRevision: String? = nil,
+        expectedUserID: String? = nil
+    ) async throws -> SocialFriendWorkoutPage? {
+        guard SocialPayloadParser.isValidProfileID(profileID),
+              expectedActivityRevision == nil || Self.isValidSocialTimestamp(expectedActivityRevision)
+        else {
+            throw CloudSyncError.invalidSocialProfile
+        }
+        var body: [String: Any] = [
+            "p_profile_id": profileID,
+            "p_cursor": NSNull(),
+            "p_limit": 5
+        ]
+        if let expectedActivityRevision {
+            body["p_expected_activity_revision"] = expectedActivityRevision
+        }
+        do {
+            let (data, _) = try await socialRequest(
+                path: "/rest/v1/rpc/social_friend_workout_page",
+                expectedUserID: expectedUserID,
+                body: body,
+                maximumResponseBytes: SocialPayloadParser.maximumResponseBytes
+            )
+            let page = try SocialPayloadParser.friendWorkoutPage(from: data)
+            guard page.profileID == profileID,
+                  expectedActivityRevision == nil ||
+                    page.activityRevision == expectedActivityRevision else {
+                throw SocialPayloadError.invalidResponse
+            }
+            return page
+        } catch CloudSyncError.postgRESTFailure(_, let code, _)
+                    where ["P0002", "PGRST202", "42883"].contains(code) {
+            return nil
+        } catch {
+            throw CloudSyncError.invalidResponse
+        }
+    }
+
+    func socialFriendWorkoutDetailCapability(
+        profileID: String,
+        expectedUserID: String? = nil
+    ) async throws -> SocialFriendWorkoutDetailCapability {
+        guard SocialPayloadParser.isValidProfileID(profileID) else {
+            throw CloudSyncError.invalidSocialProfile
+        }
+        do {
+            let (data, _) = try await socialRequest(
+                path: "/rest/v1/rpc/social_friend_workout_detail_capability",
+                expectedUserID: expectedUserID,
+                body: ["p_profile_id": profileID],
+                maximumResponseBytes: SocialPayloadParser.maximumMutationResponseBytes
+            )
+            return try SocialPayloadParser.friendWorkoutDetailCapability(from: data)
+        } catch CloudSyncError.postgRESTFailure(let status, let code, _)
+                    where status == 404 && ["PGRST202", "42883"].contains(code) {
+            return SocialFriendWorkoutDetailCapability(available: false)
+        }
+    }
+
+    func socialWorkoutDetailPrivacy(
+        expectedUserID: String? = nil
+    ) async throws -> SocialWorkoutDetailPrivacy {
+        let (data, _) = try await socialRequest(
+            path: "/rest/v1/rpc/social_workout_detail_privacy",
+            expectedUserID: expectedUserID,
+            body: [:],
+            maximumResponseBytes: SocialPayloadParser.maximumMutationResponseBytes
+        )
+        return try SocialPayloadParser.workoutDetailPrivacy(from: data)
+    }
+
+    func socialUpdateWorkoutDetailPrivacy(
+        _ enabled: Bool,
+        expectedRevision: Int,
+        expectedUserID: String? = nil
+    ) async throws -> SocialWorkoutDetailPrivacy {
+        guard (1 ... 2_147_483_647).contains(expectedRevision) else {
+            throw CloudSyncError.invalidResponse
+        }
+        let (data, _) = try await socialRequest(
+            path: "/rest/v1/rpc/social_update_workout_detail_privacy",
+            expectedUserID: expectedUserID,
+            body: [
+                "p_share_workout_details": enabled,
+                "p_expected_revision": expectedRevision
+            ],
+            maximumResponseBytes: SocialPayloadParser.maximumMutationResponseBytes
+        )
+        let result = try SocialPayloadParser.workoutDetailPrivacy(from: data)
+        guard result.shareWorkoutDetails == enabled else {
+            throw CloudSyncError.invalidResponse
+        }
+        return result
+    }
+
     func socialSendFriendRequest(
         friendCode: String,
         expectedUserID: String? = nil
@@ -741,6 +838,16 @@ final class CloudSyncService: ObservableObject {
             next = previousDate.addingTimeInterval(0.001)
         }
         return formatter.string(from: next)
+    }
+
+    private static func isValidSocialTimestamp(_ value: String?) -> Bool {
+        guard let value, value.utf8.count <= 40 else { return false }
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if fractional.date(from: value) != nil { return true }
+        let standard = ISO8601DateFormatter()
+        standard.formatOptions = [.withInternetDateTime]
+        return standard.date(from: value) != nil
     }
 }
 

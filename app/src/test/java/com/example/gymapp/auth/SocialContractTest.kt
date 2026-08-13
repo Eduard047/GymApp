@@ -475,6 +475,116 @@ class SocialContractTest {
         assertFalse(isValidSocialClientRequestId("123E4567-E89B-42D3-A456-426614174000"))
     }
 
+    @Test
+    fun friendWorkoutPageIsExactBoundedReadOnlyAndAllowsBodyweightSets() {
+        val parsed = parseSocialFriendWorkoutPage(validFriendWorkoutPage().toString())
+
+        assertEquals(profileId('1'), parsed.profileId)
+        assertEquals(TIMESTAMP, parsed.activityRevision)
+        assertNull(parsed.nextCursor)
+        assertEquals(0.0, parsed.items.single().exercises.single().sets.first().weightKg, 0.0)
+        assertEquals(12, parsed.items.single().exercises.single().sets.first().reps)
+
+        val expanded = validFriendWorkoutPage().put("privateNote", "must stay private")
+        assertThrows(IllegalArgumentException::class.java) {
+            parseSocialFriendWorkoutPage(expanded.toString())
+        }
+
+        val cursor = validFriendWorkoutPage().put("nextCursor", "123:1")
+        assertThrows(IllegalArgumentException::class.java) {
+            parseSocialFriendWorkoutPage(cursor.toString())
+        }
+
+        val oversizedSets = validFriendWorkoutPage().apply {
+            val sets = getJSONArray("items").getJSONObject(0)
+                .getJSONArray("exercises").getJSONObject(0).getJSONArray("sets")
+            repeat(20) { sets.put(JSONObject().put("weightKg", 1).put("reps", 1)) }
+            getJSONArray("items").getJSONObject(0).put("setCount", 21)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            parseSocialFriendWorkoutPage(oversizedSets.toString())
+        }
+
+        val nonNumericWeight = validFriendWorkoutPage().apply {
+            getJSONArray("items").getJSONObject(0)
+                .getJSONArray("exercises").getJSONObject(0)
+                .getJSONArray("sets").getJSONObject(0).put("weightKg", "0")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            parseSocialFriendWorkoutPage(nonNumericWeight.toString())
+        }
+    }
+
+    @Test
+    fun detailPrivacyCapabilityAndRealtimeInvalidationAreExact() {
+        val privacy = parseSocialWorkoutDetailPrivacy(
+            """{"version":1,"shareWorkoutDetails":false,"settingsRevision":7}"""
+        )
+        assertFalse(privacy.shareWorkoutDetails)
+        assertEquals(7, privacy.settingsRevision)
+        assertFalse(parseSocialFriendWorkoutDetailCapability(
+            """{"version":1,"available":false}"""
+        ).available)
+        assertEquals(
+            "privacy_changed",
+            parseSocialRealtimeSignal(
+                """{"version":1,"kind":"privacy_changed"}"""
+            ).kind
+        )
+
+        listOf(
+            """{"version":1,"available":false,"profileId":"${profileId('1')}"}""",
+            """{"version":1,"kind":"privacy_changed","settingsRevision":7}""",
+            """{"version":1,"shareWorkoutDetails":false,"settingsRevision":0}"""
+        ).forEach { raw ->
+            assertThrows(IllegalArgumentException::class.java) {
+                when {
+                    raw.contains("available") -> parseSocialFriendWorkoutDetailCapability(raw)
+                    raw.contains("kind") -> parseSocialRealtimeSignal(raw)
+                    else -> parseSocialWorkoutDetailPrivacy(raw)
+                }
+            }
+        }
+    }
+
+    private fun validFriendWorkoutPage(): JSONObject = JSONObject()
+        .put("version", 1)
+        .put(
+            "friend",
+            JSONObject()
+                .put("profileId", profileId('1'))
+                .put("displayName", "Training Friend")
+        )
+        .put("activityRevision", TIMESTAMP)
+        .put(
+            "items",
+            JSONArray().put(
+                JSONObject()
+                    .put("workoutId", "fw_${"1".repeat(32)}")
+                    .put("startedAt", TIMESTAMP)
+                    .put("workoutDay", "2026-08-09")
+                    .put("exerciseCount", 1)
+                    .put("setCount", 1)
+                    .put("truncated", false)
+                    .put(
+                        "exercises",
+                        JSONArray().put(
+                            JSONObject()
+                                .put("catalogKey", "push_up")
+                                .put("name", "Push Up")
+                                .put(
+                                    "sets",
+                                    JSONArray().put(
+                                        JSONObject().put("weightKg", 0).put("reps", 12)
+                                    )
+                                )
+                        )
+                    )
+            )
+        )
+        .put("nextCursor", JSONObject.NULL)
+        .put("integrity", "self_reported")
+
     private fun validDashboard(): JSONObject = JSONObject()
         .put("version", 1)
         .put(

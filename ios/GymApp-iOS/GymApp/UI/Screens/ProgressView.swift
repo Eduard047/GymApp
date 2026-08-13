@@ -351,7 +351,7 @@ struct ExerciseProgressView: View {
         GymPanel {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(group.date.formatted(.dateTime.day().month(.wide).year().locale(appLocale)))
+                    Text(gymFormattedDate(group.date, date: .long, time: .omitted))
                         .font(.headline)
                     Spacer(minLength: 8)
                     GymInfoPill(
@@ -888,14 +888,14 @@ private struct ExerciseProgressChartsCard: View {
                 )
                 .foregroundStyle(point.id == latestPointID ? GymTheme.tertiary : GymTheme.primary)
                 .symbolSize(point.id == latestPointID ? 75 : 40)
-                .accessibilityLabel(point.date.formatted(.dateTime.day().month(.wide).locale(locale)))
+                .accessibilityLabel(gymFormattedDate(point.date, date: .long, time: .omitted))
                 .accessibilityValue(formatWeight(point.maxWeight))
             }
             .chartYScale(domain: .automatic(includesZero: true))
             .chartXAxis {
                 AxisMarks(values: .automatic(desiredCount: min(4, chartPoints.count))) {
                     AxisGridLine().foregroundStyle(GymTheme.outline.opacity(0.25))
-                    AxisValueLabel(format: .dateTime.day().month(.abbreviated))
+                    AxisValueLabel(format: .dateTime.weekday(.narrow).day())
                 }
             }
             .chartYAxis {
@@ -929,7 +929,7 @@ private struct ExerciseProgressChartsCard: View {
                         : GymTheme.secondary.gradient
                 )
                 .cornerRadius(7)
-                .accessibilityLabel(point.date.formatted(.dateTime.day().month(.wide).locale(locale)))
+                .accessibilityLabel(gymFormattedDate(point.date, date: .long, time: .omitted))
                 .accessibilityValue(
                     t(
                         "\(formatNumber(point.totalVolume)) volume, \(point.totalReps) reps",
@@ -941,7 +941,7 @@ private struct ExerciseProgressChartsCard: View {
             .chartXAxis {
                 AxisMarks(values: .automatic(desiredCount: min(4, chartPoints.count))) {
                     AxisGridLine().foregroundStyle(GymTheme.outline.opacity(0.25))
-                    AxisValueLabel(format: .dateTime.day().month(.abbreviated))
+                    AxisValueLabel(format: .dateTime.weekday(.narrow).day())
                 }
             }
             .chartYAxis {

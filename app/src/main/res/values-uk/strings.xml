@@ -88,6 +88,8 @@
     <string name="friends_privacy_allow_requests">Дозволити нові заявки в друзі</string>
     <string name="friends_privacy_share_progress">Показувати XP, рівень і кількість тренувань</string>
     <string name="friends_privacy_share_workouts">Показувати п’ять останніх тренувань</string>
+    <string name="friends_privacy_share_workout_details">Показувати вправи, вагу й повтори</string>
+    <string name="friends_privacy_share_workout_details_supporting">Вимкнено за замовчуванням. Друзі зможуть відкрити точні підходи лише після ввімкнення.</string>
     <string name="friends_privacy_share_records">Показувати рекорди у вправах</string>
     <string name="friends_privacy_saved">Налаштування приватності збережено.</string>
     <string name="friends_privacy_save_failed">Налаштування змінилися на іншому пристрої або не збереглися. Онови дані й повтори.</string>
@@ -108,6 +110,16 @@
     <string name="friend_recent_private_supporting">Цей друг не показує останні тренування.</string>
     <string name="friend_recent_empty_title">Немає останніх тренувань</string>
     <string name="friend_recent_empty_supporting">Спільних підсумків тренувань поки немає.</string>
+    <string name="friend_workout_open_action">Переглянути тренування</string>
+    <string name="friend_workout_sets_private">Підходи приховано.</string>
+    <string name="friend_workout_exercises_label">Вправи</string>
+    <string name="friend_workout_sets_label">Підходи</string>
+    <string name="friend_workout_read_only">Тренування %1$s · лише перегляд</string>
+    <string name="friend_workout_set_number">Підхід %1$d</string>
+    <string name="friend_workout_set_value">%1$s кг × %2$d</string>
+    <string name="friend_workout_truncated">Показано перші 100 спільних підходів.</string>
+    <string name="friend_workout_load_more">Показати більш ранні</string>
+    <string name="friend_workout_loading_more">Завантаження…</string>
     <string name="friend_activity_unavailable_title">Спільна активність неактуальна</string>
     <string name="friend_activity_unavailable_supporting">Друг дозволив показ, але остання безпечна хмарна проєкція тимчасово недоступна.</string>
     <string name="friend_records_eyebrow">РЕКОРДИ</string>
@@ -382,8 +394,11 @@
     <string name="focus_lens_supporting">Починай, коли готовий. Складай тренування поступово, у своєму темпі.</string>
     <string name="focus_lens_active_workout_supporting">Активне тренування збережене на цьому пристрої. Продовж із наступного запланованого підходу.</string>
     <string name="focus_lens_month_workouts">Тренувань</string>
-    <string name="focus_lens_week_streak">Тижні серії</string>
+    <string name="focus_lens_total_workouts">Усього тренувань</string>
+    <string name="focus_lens_week_streak">Серія тижнів</string>
+    <string name="focus_lens_week_streak_value">%1$d тиж</string>
     <string name="focus_lens_volume">Обсяг</string>
+    <string name="focus_lens_total_volume">Загальний обсяг</string>
     <string name="action_start_workout">Почати тренування</string>
     <string name="action_continue_workout">Продовжити тренування</string>
     <string name="add_workout_active_exercises">Вправи: %1$d</string>
@@ -1106,6 +1121,7 @@
     <string name="live_workout_invite_sent">Запрошення на спільне тренування надіслано.</string>
     <string name="live_workout_action_failed">Не вдалося оновити спільне тренування.</string>
     <string name="live_workout_ready_waiting_owner">Готово. Тренування почнеться, коли його запустить власник.</string>
+    <string name="live_workout_started_after_accept">Спільне тренування почалося.</string>
     <string name="live_workout_invite_declined">Запрошення на спільне тренування відхилено.</string>
     <string name="live_workout_start_failed">Не вдалося почати спільне тренування.</string>
     <string name="live_workout_active_blocked">Завершіть або видаліть поточне тренування перед підключенням.</string>
@@ -1136,6 +1152,9 @@
     <string name="live_workout_peer_title">Тренування разом із %1$s</string>
     <string name="live_workout_peer_progress">Прогрес друга: %1$d із %2$d підходів</string>
     <string name="live_workout_peer_finished">Друг уже завершив тренування.</string>
+    <string name="live_workout_peer_read_only">Прогрес live · лише перегляд</string>
+    <string name="live_workout_peer_set_completed">%1$s кг × %2$d</string>
+    <string name="live_workout_peer_set_pending">Не записано · план %1$s кг × %2$d</string>
     <string name="live_workout_two_lanes_title">ПІДХІД ЗА ПІДХОДОМ · ОБИДВА ТЕЛЕФОНИ</string>
     <string name="live_workout_lane_you">Ти</string>
     <string name="live_workout_set_completed_accessibility">Підхід %1$d виконано</string>

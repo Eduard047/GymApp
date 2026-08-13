@@ -7,12 +7,117 @@ import com.example.gymapp.auth.isValidSocialClientRequestId
 import org.json.JSONArray
 import org.json.JSONObject
 import org.json.JSONTokener
+import java.time.Duration
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 internal const val LIVE_SIDECAR_PREFERENCES = "gym_live_workout_sidecar"
 internal const val LIVE_MAX_PENDING_OPERATIONS = 256
 private const val LIVE_SIDECAR_LEGACY_KEY = "binding"
 private const val LIVE_SIDECAR_MAX_BYTES = 96 * 1_024
+private const val LIVE_RESERVATION_KEY_PREFIX = "reservation:"
+private const val LIVE_RESERVATION_MAX_BYTES = 2 * 1_024
+internal val LIVE_RESERVATION_MAX_DURATION_MILLIS: Long = Duration.ofDays(9).toMillis()
+
+internal enum class LiveWorkoutReservationPhase(val storageValue: String) {
+    Preparing("preparing"),
+    Waiting("waiting"),
+    Active("active")
+}
+
+internal data class LiveWorkoutReservation(
+    val userId: String,
+    val sessionGeneration: String,
+    val role: String,
+    val operationId: String,
+    val roomId: String?,
+    val phase: LiveWorkoutReservationPhase,
+    val createdAt: Long,
+    val expiresAt: Long
+)
+
+internal object LiveWorkoutReservationCodec {
+    fun encode(reservation: LiveWorkoutReservation): String {
+        validate(reservation)
+        return JSONObject()
+            .put("version", 1)
+            .put("userId", reservation.userId)
+            .put("sessionGeneration", reservation.sessionGeneration)
+            .put("role", reservation.role)
+            .put("operationId", reservation.operationId)
+            .put("roomId", reservation.roomId ?: JSONObject.NULL)
+            .put("phase", reservation.phase.storageValue)
+            .put("createdAt", reservation.createdAt)
+            .put("expiresAt", reservation.expiresAt)
+            .toString()
+            .also {
+                require(it.toByteArray(Charsets.UTF_8).size <= LIVE_RESERVATION_MAX_BYTES) {
+                    "Live workout reservation is too large."
+                }
+            }
+    }
+
+    fun decode(raw: String): LiveWorkoutReservation {
+        require(raw.toByteArray(Charsets.UTF_8).size <= LIVE_RESERVATION_MAX_BYTES) {
+            "Live workout reservation is too large."
+        }
+        val tokener = JSONTokener(raw)
+        val root = tokener.nextValue() as? JSONObject
+            ?: throw IllegalArgumentException("Live workout reservation is invalid.")
+        require(tokener.nextClean() == 0.toChar() &&
+            root.keys().asSequence().toSet() == setOf(
+                "version", "userId", "sessionGeneration", "role", "operationId",
+                "roomId", "phase", "createdAt", "expiresAt"
+            ) && root.strictInt("version", 1, 1) == 1
+        ) { "Live workout reservation is invalid." }
+        return LiveWorkoutReservation(
+            userId = root.strictString("userId", 36),
+            sessionGeneration = root.strictString("sessionGeneration", 36),
+            role = root.strictString("role", 16),
+            operationId = root.strictString("operationId", 36),
+            roomId = root.strictNullableString("roomId", 35),
+            phase = LiveWorkoutReservationPhase.entries.singleOrNull {
+                it.storageValue == root.opt("phase")
+            } ?: throw IllegalArgumentException("Live workout reservation is invalid."),
+            createdAt = root.strictLong(
+                "createdAt",
+                WorkoutDataLimits.MIN_TIMESTAMP_MILLIS,
+                WorkoutDataLimits.MAX_TIMESTAMP_MILLIS
+            ),
+            expiresAt = root.strictLong(
+                "expiresAt",
+                WorkoutDataLimits.MIN_TIMESTAMP_MILLIS,
+                WorkoutDataLimits.MAX_TIMESTAMP_MILLIS
+            )
+        ).also(::validate)
+    }
+
+    fun validate(reservation: LiveWorkoutReservation) {
+        require(runCatching {
+            UUID.fromString(reservation.userId).toString() == reservation.userId
+        }.getOrDefault(false) && runCatching {
+            UUID.fromString(reservation.sessionGeneration).toString() ==
+                reservation.sessionGeneration
+        }.getOrDefault(false) && isValidSocialClientRequestId(reservation.operationId)) {
+            "Live workout reservation identity is invalid."
+        }
+        require(reservation.role in setOf("owner", "participant") &&
+            WorkoutDataLimits.isValidTimestamp(reservation.createdAt) &&
+            WorkoutDataLimits.isValidTimestamp(reservation.expiresAt) &&
+            reservation.expiresAt > reservation.createdAt &&
+            reservation.expiresAt - reservation.createdAt <= LIVE_RESERVATION_MAX_DURATION_MILLIS
+        ) { "Live workout reservation lifetime is invalid." }
+        require(
+            if (reservation.phase == LiveWorkoutReservationPhase.Preparing) {
+                reservation.role == "owner" && reservation.roomId == null
+            } else {
+                reservation.roomId != null && isValidLiveRoomId(reservation.roomId)
+            }
+        ) { "Live workout reservation room is invalid." }
+    }
+}
 
 internal enum class LivePendingOperationKind(val wireValue: String) {
     CompleteSet("complete_set"),
@@ -354,6 +459,141 @@ internal class LiveWorkoutSidecarStore(context: Context) {
     )
     private val durableCache = mutableMapOf<String, LiveWorkoutBinding?>()
 
+    suspend fun reserve(
+        session: AccountSession.Cloud,
+        reservation: LiveWorkoutReservation,
+        nowMillis: Long = System.currentTimeMillis(),
+        canReserve: suspend () -> Boolean = { true }
+    ): Boolean = reservationMutex(session.userId).withLock {
+        if (reservation.userId != session.userId ||
+            reservation.sessionGeneration != session.sessionGeneration ||
+            reservation.expiresAt <= nowMillis
+        ) return@withLock false
+        val current = readReservationUnlocked(session, nowMillis)
+        val currentValue = current.value
+        if (current.unreadable ||
+            currentValue != null && currentValue.operationId != reservation.operationId
+        ) return@withLock false
+        if (!canReserve()) return@withLock false
+        if (current.value == reservation) return@withLock true
+        persistReservationUnlocked(session, reservation)
+    }
+
+    suspend fun reservation(
+        session: AccountSession.Cloud,
+        nowMillis: Long = System.currentTimeMillis()
+    ): LiveWorkoutReservation? = reservationMutex(session.userId).withLock {
+        val current = readReservationUnlocked(session, nowMillis)
+        check(!current.unreadable) { "Live workout reservation could not be read safely." }
+        current.value
+    }
+
+    suspend fun replaceReservation(
+        session: AccountSession.Cloud,
+        expectedOperationId: String,
+        replacement: LiveWorkoutReservation,
+        nowMillis: Long = System.currentTimeMillis()
+    ): Boolean = reservationMutex(session.userId).withLock {
+        val current = readReservationUnlocked(session, nowMillis)
+        if (current.unreadable || current.value?.operationId != expectedOperationId ||
+            replacement.userId != session.userId ||
+            replacement.sessionGeneration != session.sessionGeneration ||
+            replacement.operationId != expectedOperationId || replacement.expiresAt <= nowMillis
+        ) return@withLock false
+        persistReservationUnlocked(session, replacement)
+    }
+
+    suspend fun clearReservation(
+        session: AccountSession.Cloud,
+        expectedOperationId: String,
+        expectedRoomId: String? = null
+    ): Boolean = reservationMutex(session.userId).withLock {
+        val key = reservationKey(session)
+        val raw = preferences.getString(key, null) ?: return@withLock true
+        val current = runCatching { LiveWorkoutReservationCodec.decode(raw) }.getOrNull()
+            ?: return@withLock false
+        if (current.userId != session.userId ||
+            current.sessionGeneration != session.sessionGeneration ||
+            current.operationId != expectedOperationId ||
+            expectedRoomId != null && current.roomId != expectedRoomId
+        ) return@withLock false
+        preferences.edit().remove(key).commit() && !preferences.contains(key)
+    }
+
+    suspend fun sessionMismatchedReservation(
+        session: AccountSession.Cloud
+    ): LiveWorkoutReservation? = reservationMutex(session.userId).withLock {
+        val currentKey = reservationKey(session)
+        val candidates = preferences.all.filterKeys {
+            it.startsWith("$LIVE_RESERVATION_KEY_PREFIX${session.userId}:") && it != currentKey
+        }
+        check(candidates.size <= 1) { "Multiple stale live workout reservations exist." }
+        if (candidates.isEmpty()) return@withLock null
+        val raw = candidates.values.single() as? String
+            ?: error("Live workout reservation could not be read safely.")
+        LiveWorkoutReservationCodec.decode(raw).also {
+            check(it.userId == session.userId && it.sessionGeneration != session.sessionGeneration) {
+                "Live workout reservation belongs to an unexpected session."
+            }
+        }
+    }
+
+    suspend fun reconcileSessionMismatchedReservation(
+        session: AccountSession.Cloud,
+        expectedSessionGeneration: String,
+        expectedOperationId: String,
+        replacement: LiveWorkoutReservation?
+    ): Boolean = reservationMutex(session.userId).withLock {
+        val oldKey = "$LIVE_RESERVATION_KEY_PREFIX${session.userId}:$expectedSessionGeneration"
+        val currentKey = reservationKey(session)
+        if (preferences.contains(currentKey)) return@withLock false
+        val raw = preferences.getString(oldKey, null) ?: return@withLock false
+        val current = runCatching { LiveWorkoutReservationCodec.decode(raw) }.getOrNull()
+            ?: return@withLock false
+        if (current.userId != session.userId ||
+            current.sessionGeneration != expectedSessionGeneration ||
+            current.operationId != expectedOperationId ||
+            expectedSessionGeneration == session.sessionGeneration
+        ) return@withLock false
+        val editor = preferences.edit().remove(oldKey)
+        if (replacement != null) {
+            if (replacement.userId != session.userId ||
+                replacement.sessionGeneration != session.sessionGeneration ||
+                replacement.operationId != expectedOperationId
+            ) return@withLock false
+            val encoded = runCatching { LiveWorkoutReservationCodec.encode(replacement) }.getOrNull()
+                ?: return@withLock false
+            editor.putString(currentKey, encoded)
+            if (!editor.commit()) return@withLock false
+            preferences.getString(currentKey, null) == encoded && !preferences.contains(oldKey)
+        } else {
+            editor.commit() && !preferences.contains(oldKey) && !preferences.contains(currentKey)
+        }
+    }
+
+    suspend fun <T> withOrdinaryStartPermit(
+        userId: String,
+        blockedValue: T,
+        nowMillis: Long = System.currentTimeMillis(),
+        block: suspend () -> T
+    ): T = reservationMutex(userId).withLock {
+        if (hasBlockingReservationUnlocked(userId, nowMillis)) blockedValue else block()
+    }
+
+    suspend fun <T> withLiveStartReservation(
+        session: AccountSession.Cloud,
+        roomId: String,
+        blockedValue: T,
+        nowMillis: Long = System.currentTimeMillis(),
+        block: suspend (LiveWorkoutReservation) -> T
+    ): T = reservationMutex(session.userId).withLock {
+        val current = readReservationUnlocked(session, nowMillis)
+        val reservation = current.value
+        if (current.unreadable || reservation == null || reservation.roomId != roomId ||
+            reservation.phase == LiveWorkoutReservationPhase.Preparing
+        ) blockedValue else block(reservation)
+    }
+
     @Synchronized
     fun load(session: AccountSession.Cloud): LiveWorkoutBinding? {
         val key = bindingKey(session)
@@ -429,6 +669,64 @@ internal class LiveWorkoutSidecarStore(context: Context) {
 
     private fun bindingKey(session: AccountSession.Cloud): String =
         "binding:${session.userId}:${session.sessionGeneration}"
+
+    private data class ReservationRead(
+        val value: LiveWorkoutReservation? = null,
+        val unreadable: Boolean = false
+    )
+
+    private fun readReservationUnlocked(
+        session: AccountSession.Cloud,
+        nowMillis: Long
+    ): ReservationRead {
+        val key = reservationKey(session)
+        val raw = preferences.getString(key, null) ?: return ReservationRead()
+        val reservation = runCatching { LiveWorkoutReservationCodec.decode(raw) }.getOrNull()
+            ?: return ReservationRead(unreadable = true)
+        if (reservation.userId != session.userId ||
+            reservation.sessionGeneration != session.sessionGeneration
+        ) return ReservationRead(unreadable = true)
+        if (reservation.expiresAt <= nowMillis) {
+            val cleared = preferences.edit().remove(key).commit() && !preferences.contains(key)
+            return if (cleared) ReservationRead() else ReservationRead(unreadable = true)
+        }
+        return ReservationRead(reservation)
+    }
+
+    private fun hasBlockingReservationUnlocked(userId: String, nowMillis: Long): Boolean {
+        val prefix = "$LIVE_RESERVATION_KEY_PREFIX$userId:"
+        val candidates = preferences.all.filterKeys { it.startsWith(prefix) }
+        for ((key, rawValue) in candidates) {
+            val raw = rawValue as? String ?: return true
+            val reservation = runCatching { LiveWorkoutReservationCodec.decode(raw) }.getOrNull()
+                ?: return true
+            if (reservation.userId != userId) return true
+            if (reservation.expiresAt > nowMillis) return true
+            if (!preferences.edit().remove(key).commit() || preferences.contains(key)) return true
+        }
+        return false
+    }
+
+    private fun persistReservationUnlocked(
+        session: AccountSession.Cloud,
+        reservation: LiveWorkoutReservation
+    ): Boolean {
+        val encoded = runCatching { LiveWorkoutReservationCodec.encode(reservation) }.getOrNull()
+            ?: return false
+        val key = reservationKey(session)
+        return preferences.edit().putString(key, encoded).commit() &&
+            preferences.getString(key, null) == encoded
+    }
+
+    private fun reservationKey(session: AccountSession.Cloud): String =
+        "$LIVE_RESERVATION_KEY_PREFIX${session.userId}:${session.sessionGeneration}"
+
+    private companion object {
+        val reservationMutexes = ConcurrentHashMap<String, Mutex>()
+
+        fun reservationMutex(userId: String): Mutex =
+            reservationMutexes.computeIfAbsent(userId) { Mutex() }
+    }
 }
 
 private fun JSONObject.strictString(key: String, maxCodePoints: Int): String {

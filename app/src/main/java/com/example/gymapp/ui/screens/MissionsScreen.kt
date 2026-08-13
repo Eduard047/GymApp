@@ -21,7 +21,12 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.EmojiEvents
+import androidx.compose.material.icons.filled.EventAvailable
+import androidx.compose.material.icons.filled.FitnessCenter
+import androidx.compose.material.icons.filled.FormatListNumbered
 import androidx.compose.material.icons.filled.TrackChanges
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -37,6 +42,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.Role
@@ -147,7 +153,7 @@ fun MissionsScreen(
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         MetricTile(
-                            label = stringResource(R.string.solo_total_xp),
+                            label = "XP",
                             value = uiState.soloProgress.totalXp.toString(),
                             modifier = Modifier.weight(1f),
                             emphasized = true,
@@ -156,9 +162,8 @@ fun MissionsScreen(
                         MetricTile(
                             label = stringResource(R.string.solo_streak_label),
                             value = stringResource(
-                                R.string.solo_weekly_rhythm_value,
-                                uiState.soloProgress.weeklyStreakWeeks,
-                                uiState.soloProgress.weeklyTarget
+                                R.string.solo_streak_weekly_value,
+                                uiState.soloProgress.weeklyStreakWeeks
                             ),
                             modifier = Modifier.weight(1f),
                             onHero = true
@@ -306,7 +311,7 @@ private fun MissionCard(
                         imageVector = if (mission.isComplete) {
                             Icons.Default.CheckCircle
                         } else {
-                            Icons.Default.TrackChanges
+                            missionIcon(mission.id)
                         },
                         contentDescription = null,
                         modifier = Modifier.size(24.dp),
@@ -355,6 +360,15 @@ private fun MissionCard(
             )
         }
     }
+}
+
+private fun missionIcon(missionId: String): ImageVector = when {
+    missionId == "daily-check-in" -> Icons.Default.FitnessCenter
+    "active-days" in missionId -> Icons.Default.EventAvailable
+    "workouts" in missionId -> Icons.Default.CalendarMonth
+    "sets" in missionId -> Icons.Default.FormatListNumbered
+    "exercises" in missionId -> Icons.Default.Dashboard
+    else -> Icons.Default.TrackChanges
 }
 
 private enum class MissionPeriod(val titleRes: Int) {
