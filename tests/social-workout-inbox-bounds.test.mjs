@@ -6,6 +6,8 @@ const migrationPath =
   "supabase/migrations/20260814085251_bounded_social_workout_inbox.sql";
 const cursorWindowMigrationPath =
   "supabase/migrations/20260814085312_extend_social_workout_inbox_cursor_window.sql";
+const responseBudgetMigrationPath =
+  "supabase/migrations/20260814125503_budget_social_workout_inbox_response.sql";
 
 function functionBody(sql, functionName) {
   const start = sql.indexOf(`create or replace function ${functionName}`);
@@ -102,6 +104,51 @@ test("cursor validation covers the full accepted-invitation retention window", a
   );
 });
 
+test("latest inbox page uses stable outgoing and exact full-response byte budgets", async () => {
+  const migration = await readFile(responseBudgetMigrationPath, "utf8");
+  const page = functionBody(migration, "public.social_workout_inbox_page");
+
+  assert.match(migration, /^--[\s\S]*\nbegin;/);
+  assert.match(migration, /set local lock_timeout = '5s'/);
+  assert.match(migration, /set local statement_timeout = '2min'/);
+  assert.match(migration, /\ncommit;\s*$/);
+  assert.match(page, /security definer[\s\S]*set search_path = ''/);
+  assert.match(page, /social_require_caller\('workout_inbox'\)/);
+  assert.match(page, /invite\.recipient_user_id = caller_user_id/);
+  assert.match(page, /invite\.sender_user_id = caller_user_id/);
+  assert.match(page, /social_pair_is_accepted/);
+  assert.match(page, /p_limit not between 1 and 20/);
+  assert.match(page, /limit effective_limit \+ 1/);
+  assert.match(page, /outgoing_array_byte_limit constant integer := 98304/);
+  assert.match(page, /response_byte_limit constant integer := 258048/);
+  assert.match(page, /Keep 4 KiB below the clients' 256 KiB transport ceiling/);
+  assert.doesNotMatch(page, /single_row_responses|incoming_reserve_response/);
+  assert.doesNotMatch(page, /outgoing_json := outgoing_json -/);
+  assert.match(page, /message = 'Workout inbox row exceeds the response limit\.'/);
+  assert.match(page, /candidate_array := outgoing_json \|\|[\s\S]*jsonb_build_array\(candidate_json\)/);
+  assert.match(page, /candidate_array::text, 'UTF8'[\s\S]*> outgoing_array_byte_limit/);
+  assert.match(page, /order by bounded\.created_at desc, bounded\.id desc[\s\S]*loop/);
+  assert.match(page, /incoming_candidates->incoming_index/);
+  assert.match(page, /candidate_array := incoming_json \|\|[\s\S]*jsonb_build_array\(candidate_json\)/);
+  assert.match(page, /candidate_response::text, 'UTF8'[\s\S]*> response_byte_limit/);
+  assert.match(page, /'createdAt', candidate_envelope->'createdAt'/);
+  assert.match(page, /'inviteId', candidate_envelope->'inviteId'/);
+  assert.match(page, /'pending', candidate_envelope->'pending'/);
+  assert.match(page, /'nextCursor', case when has_more then last_cursor/);
+  assert.match(page, /p_cursor_created_at < read_time - interval '38 days'/);
+  assert.match(page, /'summary', eligible\.summary/);
+  assert.doesNotMatch(page, /'workout'\s*,|invite\.workout/);
+
+  assert.match(
+    migration,
+    /revoke all on function public\.social_workout_inbox_page\([\s\S]*from public, anon, authenticated, service_role/,
+  );
+  assert.match(
+    migration,
+    /grant execute on function public\.social_workout_inbox_page\([\s\S]*to authenticated/,
+  );
+});
+
 test("released full-plan inbox remains available only as a compatibility fallback", async () => {
   const [migration, activation] = await Promise.all([
     readFile(migrationPath, "utf8"),
@@ -123,13 +170,21 @@ test("database fixture covers paging, late acceptance, privacy, stale revision, 
   );
 
   assert.match(fixture, /^begin;/);
-  assert.match(fixture, /select plan\(20\)/);
+  assert.match(fixture, /select plan\(34\)/);
   assert.match(fixture, /social_workout_inbox_page\(/);
   assert.match(fixture, /pending invites remain ahead/);
   assert.match(fixture, /stable cursor does not repeat/);
   assert.match(fixture, /late accepted invitations remain pageable beyond the old 31-day cursor window/);
   assert.match(fixture, /another account cannot page late accepted invitations/);
   assert.match(fixture, /response stays inside the shared client byte limit/);
+  assert.match(fixture, /worst-case valid summaries reproduce the former aggregate overflow/);
+  assert.match(fixture, /large-summary response stays inside the shared client byte limit/);
+  assert.match(fixture, /outgoing byte budget keeps only a newest-first prefix/);
+  assert.match(fixture, /outgoing snapshot is stable across incoming pages/);
+  assert.match(fixture, /worst escaped valid single incoming row survives beside the maximum outgoing prefix/);
+  assert.match(fixture, /worst escaped structurally valid summary passes canonical server validation/);
+  assert.match(fixture, /byte-budgeted incoming cursor identifies the exact last emitted row/);
+  assert.match(fixture, /anonymous clients cannot execute the metadata inbox/);
   assert.match(fixture, /stale plan revision fails without an existence oracle/);
   assert.match(fixture, /another account cannot read or distinguish the invite/);
   assert.match(fixture, /detail execution is granted only to authenticated clients/);

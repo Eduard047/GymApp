@@ -292,8 +292,12 @@ enum SocialPayloadParser {
     static let maximumWorkoutPlanResponseBytes = 32 * 1_024
     static let maximumFriendCodeResponseBytes = 1_024
     static let workoutInboxPageLimit = 10
-    static let workoutInboxMaximumPageCount = 2
+    static let workoutInboxMaximumPendingCount = 25
     static let workoutInboxMaximumIncomingCount = 20
+    // Response budgeting may return a one-row cursor page. Because every cursor
+    // page must be nonempty, twenty requests remain a strict bound for the
+    // twenty-row client window.
+    static let workoutInboxMaximumPageCount = workoutInboxMaximumIncomingCount
     static let workoutInboxMaximumOutgoingCount = 20
 
     private static let maximumFriends = 200
@@ -556,13 +560,22 @@ enum SocialPayloadParser {
             keys: ["version", "pendingIncomingCount", "incoming", "outgoing"]
         )
         try version(root["version"])
-        let incoming = try array(root["incoming"], maximumCount: 25).map {
+        let incoming = try array(
+            root["incoming"],
+            maximumCount: workoutInboxMaximumPendingCount
+        ).map {
             try workoutInvite($0, includesWorkout: true)
         }
-        let outgoing = try array(root["outgoing"], maximumCount: 25).map {
+        let outgoing = try array(
+            root["outgoing"],
+            maximumCount: workoutInboxMaximumPendingCount
+        ).map {
             try workoutInvite($0, includesWorkout: false)
         }
-        let pendingIncomingCount = try integer(root["pendingIncomingCount"], range: 0 ... 25)
+        let pendingIncomingCount = try integer(
+            root["pendingIncomingCount"],
+            range: 0 ... workoutInboxMaximumPendingCount
+        )
         guard pendingIncomingCount == incoming.filter({ $0.status == .pending }).count,
               unique(incoming.map(\.inviteID)),
               unique(outgoing.map(\.inviteID)),
@@ -601,7 +614,7 @@ enum SocialPayloadParser {
         }
         let pendingIncomingCount = try integer(
             root["pendingIncomingCount"],
-            range: 0 ... maximumFriends
+            range: 0 ... workoutInboxMaximumPendingCount
         )
         let nextCursor: SocialWorkoutInboxCursor?
         if isNull(root["nextCursor"]) {
@@ -628,8 +641,7 @@ enum SocialPayloadParser {
             throw SocialPayloadError.invalidResponse
         }
         if let nextCursor {
-            guard incoming.count == expectedLimit,
-                  incoming.last?.createdAt == nextCursor.createdAt,
+            guard incoming.last?.createdAt == nextCursor.createdAt,
                   incoming.last?.inviteID == nextCursor.inviteID,
                   (incoming.last?.status == .pending) == nextCursor.pending else {
                 throw SocialPayloadError.invalidResponse
@@ -678,9 +690,9 @@ enum SocialPayloadParser {
             pendingIncomingCount: current.pendingIncomingCount,
             incoming: incoming,
             outgoing: current.outgoing,
-            // The shared surface is deliberately bounded to two 10-row incoming
-            // pages. A server cursor beyond row 20 is not exposed as a third UI
-            // action or followed by an exact-object push resolver.
+            // A cursor remains visible only while the bounded twenty-row client
+            // window has capacity. Short server-budgeted pages may therefore
+            // require more than two requests without increasing the data cap.
             nextCursor: incoming.count < workoutInboxMaximumIncomingCount
                 ? page.nextCursor
                 : nil

@@ -1510,41 +1510,64 @@ final class AppState: ObservableObject {
         guard let current = socialWorkoutInbox else {
             throw CloudSyncError.invalidResponse
         }
-        guard let cursor = current.nextCursor else { return current }
-        let page = try await cloudSync.socialWorkoutInboxPage(
-            after: cursor,
-            expectedUserID: context.userID
+        guard current.nextCursor != nil else { return current }
+        let maximumNewRows = min(
+            SocialPayloadParser.workoutInboxPageLimit,
+            SocialPayloadParser.workoutInboxMaximumIncomingCount - current.incoming.count
         )
-        try validateSocialContext(context)
-        guard socialCacheGeneration == cacheGeneration,
-              socialWorkoutInbox == current else {
-            throw AuthServiceError.sessionChanged
-        }
-        let merged: SocialWorkoutInbox
-        do {
-            merged = try SocialPayloadParser.mergingWorkoutInboxPage(
-                page,
-                into: current,
-                after: cursor
+        guard maximumNewRows > 0 else { return current }
+
+        var merged = current
+        var loadedRows = 0
+        while loadedRows < maximumNewRows, let cursor = merged.nextCursor {
+            let limit = min(
+                SocialPayloadParser.workoutInboxPageLimit,
+                maximumNewRows - loadedRows,
+                SocialPayloadParser.workoutInboxMaximumIncomingCount - merged.incoming.count
             )
-        } catch {
-            // A valid page can still belong to a newer server snapshot (privacy,
-            // cancellation, expiry, or another device changed the list between
-            // requests). Never splice revisions and never leave the stale cursor as
-            // the next retry target. Invalidate it, then perform exactly one bounded
-            // first-page read for this same account/generation.
-            socialWorkoutInbox = nil
-            let refreshed = try await cloudSync.socialWorkoutInbox(
+            guard limit > 0 else { break }
+            try validateSocialContext(context)
+            guard socialCacheGeneration == cacheGeneration,
+                  socialWorkoutInbox == current else {
+                throw AuthServiceError.sessionChanged
+            }
+            let page = try await cloudSync.socialWorkoutInboxPage(
+                after: cursor,
+                limit: limit,
                 expectedUserID: context.userID
             )
             try validateSocialContext(context)
             guard socialCacheGeneration == cacheGeneration,
-                  socialWorkoutInbox == nil else {
+                  socialWorkoutInbox == current else {
                 throw AuthServiceError.sessionChanged
             }
-            socialWorkoutInbox = refreshed
-            markSocialSurfaceReconciled(.workoutInbox)
-            return refreshed
+            if current.pendingIncomingCount != page.pendingIncomingCount
+                || current.outgoing != page.outgoing {
+                // A valid page can still belong to a newer server snapshot (privacy,
+                // cancellation, expiry, or another device changed the list between
+                // requests). Never splice revisions and never leave the stale cursor
+                // as the next retry target. Invalidate it, then perform exactly one
+                // bounded first-page read for this same account/generation.
+                socialWorkoutInbox = nil
+                let refreshed = try await cloudSync.socialWorkoutInbox(
+                    expectedUserID: context.userID
+                )
+                try validateSocialContext(context)
+                guard socialCacheGeneration == cacheGeneration,
+                      socialWorkoutInbox == nil else {
+                    throw AuthServiceError.sessionChanged
+                }
+                socialWorkoutInbox = refreshed
+                markSocialSurfaceReconciled(.workoutInbox)
+                return refreshed
+            }
+            let previousCount = merged.incoming.count
+            merged = try SocialPayloadParser.mergingWorkoutInboxPage(
+                page,
+                into: merged,
+                after: cursor
+            )
+            loadedRows += merged.incoming.count - previousCount
         }
         socialWorkoutInbox = merged
         return merged

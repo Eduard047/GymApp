@@ -67,7 +67,7 @@ function jsFunction(name) {
 
 test("friends/live v2 contract is the same three-client product", () => {
   assert.equal(contract.schemaVersion, 2);
-  assert.equal(contract.productVersion, "3.0.10");
+  assert.equal(contract.productVersion, "3.1.0");
   assert.deepEqual(contract.clients, ["android", "ios", "pwa"]);
   assert.equal(contract.friendWorkoutSharing.summaryConsent.mayAuthorizeExactSets, false);
   assert.equal(contract.friendWorkoutSharing.detailConsent.default, false);

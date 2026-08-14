@@ -99,7 +99,7 @@ function iosTranslation(key, locale) {
 
 test("workout-plan editing v1 defines one exact three-client flow", () => {
   assert.equal(contract.schemaVersion, 1);
-  assert.equal(contract.productVersion, "3.0.10");
+  assert.equal(contract.productVersion, "3.1.0");
   assert.deepEqual(contract.scope, {
     fullEditors: ["android", "ios", "browser"],
     browser: "full-workout-client"

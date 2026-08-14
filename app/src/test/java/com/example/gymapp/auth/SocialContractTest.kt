@@ -375,7 +375,7 @@ class SocialContractTest {
     }
 
     @Test
-    fun boundedWorkoutInboxPageRejectsShortCursorPagesAndCursorOrOrderDrift() {
+    fun boundedWorkoutInboxPageAcceptsBudgetedCursorPagesAndRejectsEmptyOrDriftedCursors() {
         val page = validWorkoutInbox().apply {
             put("version", 2)
             getJSONArray("incoming").getJSONObject(0).remove("workout")
@@ -388,8 +388,13 @@ class SocialContractTest {
             )
         }
 
+        val budgeted = parseSocialWorkoutInboxPage(page.toString())
+        assertEquals(1, budgeted.incoming.size)
+        assertEquals(inviteId('1'), budgeted.nextCursor?.inviteId)
+
+        val emptyCursorPage = JSONObject(page.toString()).put("incoming", JSONArray())
         assertThrows(IllegalArgumentException::class.java) {
-            parseSocialWorkoutInboxPage(page.toString())
+            parseSocialWorkoutInboxPage(emptyCursorPage.toString())
         }
 
         page.getJSONObject("nextCursor").put("inviteId", inviteId('2'))

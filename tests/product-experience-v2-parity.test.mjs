@@ -12,7 +12,7 @@ const contract = JSON.parse(contractSource);
 
 test("product experience v2 defines one full-client navigation and tutorial", () => {
   assert.equal(contract.schemaVersion, 2);
-  assert.equal(contract.productVersion, "3.0.10");
+  assert.equal(contract.productVersion, "3.1.0");
   assert.deepEqual(contract.fullClients, ["android", "ios", "pwa"]);
   assert.deepEqual(contract.navigation.fullClientTabOrder, [
     "today",
@@ -75,16 +75,34 @@ test("live mutation recovery and push navigation preserve confirmed server work"
     "revision",
     "accountBinding"
   ]);
+  assert.equal(
+    contract.socialAndLive.pushTarget.workoutInviteResolution,
+    "boundedCursorSearchUntilFoundCursorEndsOrWindowCaps"
+  );
   assert.equal(contract.socialAndLive.workoutInbox.listPayload, "metadataOnly");
   assert.equal(contract.socialAndLive.workoutInbox.maximumResponseBytes, 256 * 1024);
   assert.equal(contract.socialAndLive.workoutInbox.incomingPageSize, 10);
-  assert.equal(contract.socialAndLive.workoutInbox.maximumPages, 2);
+  assert.equal(contract.socialAndLive.workoutInbox.incomingPageMayBeShort, true);
+  assert.equal(contract.socialAndLive.workoutInbox.cursorRequiresNonemptyPage, true);
+  assert.equal(contract.socialAndLive.workoutInbox.cursorMatchesLastIncomingRow, true);
+  assert.equal(contract.socialAndLive.workoutInbox.maximumPages, 20);
+  assert.equal(contract.socialAndLive.workoutInbox.maximumRpcPageRequests, 20);
+  assert.equal(contract.socialAndLive.workoutInbox.maximumPendingIncomingCount, 25);
   assert.equal(contract.socialAndLive.workoutInbox.maximumIncomingItems, 20);
   assert.equal(contract.socialAndLive.workoutInbox.maximumOutgoingItems, 20);
   assert.equal(contract.socialAndLive.workoutInbox.maximumRenderedItems, 40);
   assert.equal(
     contract.socialAndLive.workoutInbox.loadMoreAction,
     "visibleOnlyWhenNextCursorExists"
+  );
+  assert.equal(
+    contract.socialAndLive.workoutInbox.snapshotMismatch,
+    "replaceWithFreshFirstPage"
+  );
+  assert.equal(contract.socialAndLive.workoutInbox.loadMoreChunkMaximumItems, 10);
+  assert.equal(
+    contract.socialAndLive.workoutInbox.loadMoreFetch,
+    "boundedLoopUntilChunkFullCursorEndsOrWindowCaps"
   );
 });
 

@@ -68,19 +68,19 @@ class PushTargetResolverTest {
     }
 
     @Test
-    fun workoutInvitePushSearchesAtMostTwoBoundedPages() {
+    fun workoutInvitePushKeepsSearchingShortPagesUntilTheBoundedWindowEnds() {
         val target = PushNavigationTarget.Social(
             SocialPushType.WorkoutInviteReceived,
-            workoutInviteId(1),
+            workoutInviteId(7),
             4
         )
         val firstPage = SocialWorkoutInbox(
-            pendingIncomingCount = 1,
-            incoming = listOf(workoutInvite(3)),
+            pendingIncomingCount = 14,
+            incoming = (20 downTo 15).map(::workoutInvite),
             outgoing = emptyList(),
             nextCursor = SocialWorkoutInboxCursor(
                 createdAt = "2026-08-13T10:00:00Z",
-                inviteId = workoutInviteId(3),
+                inviteId = workoutInviteId(15),
                 pending = true
             )
         )
@@ -93,24 +93,51 @@ class PushTargetResolverTest {
             )
         )
 
-        val exhaustedSecondPage = firstPage.copy(loadedPageCount = 2)
+        val shortSecondPage = firstPage.copy(
+            incoming = (20 downTo 8).map(::workoutInvite),
+            nextCursor = SocialWorkoutInboxCursor(
+                createdAt = "2026-08-13T10:00:00Z",
+                inviteId = workoutInviteId(8),
+                pending = true
+            ),
+            loadedPageCount = 2
+        )
         assertEquals(
-            SocialPushTargetResolution.GenericSocialFallback,
+            SocialPushTargetResolution.AwaitingAuthoritativeRefresh,
             resolveSocialPushTarget(
                 target,
-                FriendsUiState(workoutInbox = exhaustedSecondPage, inboxRefreshGeneration = 2)
+                FriendsUiState(workoutInbox = shortSecondPage, inboxRefreshGeneration = 2)
             )
         )
 
-        val exactSecondPage = exhaustedSecondPage.copy(
-            pendingIncomingCount = 2,
-            incoming = firstPage.incoming + workoutInvite(1, revision = 4)
+        val exactThirdPage = shortSecondPage.copy(
+            incoming = shortSecondPage.incoming + workoutInvite(7, revision = 4),
+            nextCursor = null,
+            loadedPageCount = 3
         )
         assertTrue(
             resolveSocialPushTarget(
                 target,
-                FriendsUiState(workoutInbox = exactSecondPage, inboxRefreshGeneration = 2)
+                FriendsUiState(workoutInbox = exactThirdPage, inboxRefreshGeneration = 3)
             ) is SocialPushTargetResolution.FocusSocialObject
+        )
+
+        val missingTarget = target.copy(objectId = workoutInviteId(6))
+        assertEquals(
+            SocialPushTargetResolution.GenericSocialFallback,
+            resolveSocialPushTarget(
+                missingTarget,
+                FriendsUiState(workoutInbox = exactThirdPage, inboxRefreshGeneration = 3)
+            )
+        )
+
+        val requestBoundReached = firstPage.copy(loadedPageCount = 20)
+        assertEquals(
+            SocialPushTargetResolution.GenericSocialFallback,
+            resolveSocialPushTarget(
+                missingTarget,
+                FriendsUiState(workoutInbox = requestBoundReached, inboxRefreshGeneration = 20)
+            )
         )
     }
 

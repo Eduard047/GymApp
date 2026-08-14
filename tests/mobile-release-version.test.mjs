@@ -3,13 +3,14 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const expected = Object.freeze({
-  marketingVersion: "3.0.10",
-  androidVersionCode: "2000320890",
-  iosBuildNumber: "28",
-  pwaBundle: "app.v91.js",
-  pwaStyleBundle: "styles.v73.css",
-  pwaRussianBundle: "russian-text.v81.js",
-  pwaCache: "gym-pwa-v127",
+  marketingVersion: "3.1.0",
+  androidVersionCode: "2000320891",
+  iosBuildNumber: "29",
+  pwaBundle: "app.v92.js",
+  pwaStyleBundle: "styles.v74.css",
+  pwaRussianBundle: "russian-text.v82.js",
+  pwaLiveWorkoutBundle: "live-workout.v3.js",
+  pwaCache: "gym-pwa-v128",
 });
 
 const [
@@ -23,6 +24,8 @@ const [
   pwaStyleBundle,
   pwaRussianText,
   pwaRussianBundle,
+  pwaLiveWorkout,
+  pwaLiveWorkoutBundle,
   pwaIndex,
   pwaServiceWorker,
 ] = await Promise.all([
@@ -36,6 +39,8 @@ const [
   readFile(`pwa/${expected.pwaStyleBundle}`, "utf8"),
   readFile("pwa/russian-text.js", "utf8"),
   readFile(`pwa/${expected.pwaRussianBundle}`, "utf8"),
+  readFile("pwa/live-workout.js", "utf8"),
+  readFile(`pwa/${expected.pwaLiveWorkoutBundle}`, "utf8"),
   readFile("pwa/index.html", "utf8"),
   readFile("pwa/sw.js", "utf8"),
 ]);
@@ -44,7 +49,7 @@ function matches(source, pattern) {
   return [...source.matchAll(pattern)].map((match) => match[1]);
 }
 
-test("Android release metadata declares GymApp 3.0.10 with the next versionCode", () => {
+test("Android release metadata declares GymApp 3.1.0 with the next versionCode", () => {
   assert.match(
     gradleProperties,
     new RegExp(`^appVersionName=${expected.marketingVersion.replaceAll(".", "\\.")}$`, "m")
@@ -74,7 +79,7 @@ test("iOS app target and archive defaults agree on release version and build", (
   );
 });
 
-test("Garmin and the immutable PWA entrypoints agree with release 3.0.10", () => {
+test("Garmin and the immutable PWA entrypoints agree with release 3.1.0", () => {
   assert.match(
     garminManifest,
     new RegExp(`\\bversion="${expected.marketingVersion.replaceAll(".", "\\.")}"`)
@@ -88,12 +93,15 @@ test("Garmin and the immutable PWA entrypoints agree with release 3.0.10", () =>
     new RegExp(`href="\\./${expected.pwaStyleBundle.replaceAll(".", "\\.")}"`)
   );
   assert.match(pwaIndex, new RegExp(`src="\\./${expected.pwaRussianBundle.replaceAll(".", "\\.")}"`));
+  assert.match(pwaIndex, new RegExp(`src="\\./${expected.pwaLiveWorkoutBundle.replaceAll(".", "\\.")}"`));
   assert.match(pwaIndex, /rel="manifest"/);
   assert.match(pwaServiceWorker, /CACHE_PREFIX\s*=\s*"gym-pwa-"/);
   const cacheSuffix = expected.pwaCache.replace(/^gym-pwa-/, "");
   assert.match(pwaServiceWorker, new RegExp(`CACHE_VERSION\\s*=\\s*"${cacheSuffix}"`));
   assert.match(pwaServiceWorker, new RegExp(`"\\./${expected.pwaBundle.replaceAll(".", "\\.")}"`));
+  assert.match(pwaServiceWorker, new RegExp(`"\\./${expected.pwaLiveWorkoutBundle.replaceAll(".", "\\.")}"`));
   assert.equal(pwaBundle, pwaApp, "the immutable PWA bundle must equal canonical app.js");
   assert.equal(pwaStyleBundle, pwaStyle, "the immutable PWA stylesheet must equal canonical styles.css");
   assert.equal(pwaRussianBundle, pwaRussianText, "the immutable Russian bundle must equal canonical russian-text.js");
+  assert.equal(pwaLiveWorkoutBundle, pwaLiveWorkout, "the immutable live-workout bundle must equal canonical live-workout.js");
 });

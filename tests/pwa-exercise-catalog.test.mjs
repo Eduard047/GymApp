@@ -2011,6 +2011,31 @@ test("metadata workout inbox pages exclude exact plans and validate the pending 
   assert.equal(Object.hasOwn(parsed.incoming[0], "workout"), false);
   assert.deepEqual(parsed.nextCursor, page.nextCursor);
 
+  const budgetedPage = structuredClone(page);
+  budgetedPage.incoming = budgetedPage.incoming.slice(0, 3);
+  const budgetedLast = budgetedPage.incoming.at(-1);
+  budgetedPage.nextCursor = {
+    createdAt: budgetedLast.createdAt,
+    inviteId: budgetedLast.inviteId,
+    pending: true
+  };
+  const budgeted = jsonFrom(
+    context,
+    `parseSocialWorkoutInboxPage(${JSON.stringify(budgetedPage)})`
+  );
+  assert.equal(budgeted.incoming.length, 3);
+  assert.deepEqual(budgeted.nextCursor, budgetedPage.nextCursor);
+
+  const emptyCursorPage = structuredClone(budgetedPage);
+  emptyCursorPage.incoming = [];
+  assert.throws(
+    () => vm.runInContext(
+      `parseSocialWorkoutInboxPage(${JSON.stringify(emptyCursorPage)})`,
+      context
+    ),
+    /cursor is inconsistent/
+  );
+
   const leaked = structuredClone(page);
   leaked.incoming[0].workout = sharedWorkoutFixture();
   assert.throws(
@@ -2113,7 +2138,7 @@ test("metadata inbox uses the four-argument stable cursor and legacy fallback on
   ]);
 });
 
-test("workout inbox loads one explicit second page, keeps the outgoing snapshot exact, and stops at 20", async () => {
+test("one load-more action loops across short budgeted pages, keeps the snapshot exact, and caps at ten new rows", async () => {
   const context = loadPwaContext();
   const incomingPage = (start, end) => Array.from({ length: end - start + 1 }, (_, offset) => {
     const value = start + offset;
@@ -2122,8 +2147,10 @@ test("workout inbox loads one explicit second page, keeps the outgoing snapshot 
       createdAt: new Date(Date.UTC(2026, 7, 9, 12, 0, 21 - value)).toISOString()
     });
   });
-  const firstIncoming = incomingPage(1, 10);
-  const secondIncoming = incomingPage(11, 20);
+  const firstIncoming = incomingPage(1, 6);
+  const secondIncoming = incomingPage(7, 13);
+  const thirdIncoming = incomingPage(14, 16);
+  const fourthIncoming = incomingPage(17, 20);
   const outgoing = [socialWorkoutInviteMetadataFixture({
     inviteId: `wi_${"f".repeat(32)}`,
     createdAt: "2026-08-09T12:00:30.000Z"
@@ -2143,6 +2170,28 @@ test("workout inbox loads one explicit second page, keeps the outgoing snapshot 
     version: 2,
     pendingIncomingCount: 20,
     incoming: secondIncoming,
+    outgoing,
+    nextCursor: {
+      createdAt: secondIncoming.at(-1).createdAt,
+      inviteId: secondIncoming.at(-1).inviteId,
+      pending: true
+    }
+  };
+  const thirdPage = {
+    version: 2,
+    pendingIncomingCount: 20,
+    incoming: thirdIncoming,
+    outgoing,
+    nextCursor: {
+      createdAt: thirdIncoming.at(-1).createdAt,
+      inviteId: thirdIncoming.at(-1).inviteId,
+      pending: true
+    }
+  };
+  const fourthPage = {
+    version: 2,
+    pendingIncomingCount: 20,
+    incoming: fourthIncoming,
     outgoing,
     nextCursor: null
   };
@@ -2171,7 +2220,9 @@ test("workout inbox loads one explicit second page, keeps the outgoing snapshot 
     const loadMoreCalls = [];
     socialRpc = async (name, body) => {
       loadMoreCalls.push({ name, body });
-      return ${JSON.stringify(secondPage)};
+      if (loadMoreCalls.length === 1) return ${JSON.stringify(secondPage)};
+      if (loadMoreCalls.length === 2) return ${JSON.stringify(thirdPage)};
+      return ${JSON.stringify(fourthPage)};
     };
     render = () => {};
   `, context);
@@ -2179,20 +2230,45 @@ test("workout inbox loads one explicit second page, keeps the outgoing snapshot 
   assert.match(vm.runInContext("explicitLoadMoreMarkup", context), /data-action="load-more-workout-invites"/);
   assert.match(vm.runInContext("explicitLoadMoreMarkup", context), />Load more</);
   assert.equal(await vm.runInContext("loadMoreSocialWorkoutInbox()", context), true);
+  assert.equal(vm.runInContext("socialState.inbox.incoming.length", context), 16);
+  assert.equal(vm.runInContext("socialState.inbox.outgoing.length", context), 1);
+  assert.equal(vm.runInContext("socialState.inboxPageCount", context), 3);
+  assert.equal(vm.runInContext("socialWorkoutInboxCanLoadMore()", context), true);
+  assert.equal(await vm.runInContext("loadMoreSocialWorkoutInbox()", context), true);
   assert.equal(vm.runInContext("socialState.inbox.incoming.length", context), 20);
   assert.equal(vm.runInContext("socialState.inbox.outgoing.length", context), 1);
-  assert.equal(vm.runInContext("socialState.inboxPageCount", context), 2);
+  assert.equal(vm.runInContext("socialState.inboxPageCount", context), 4);
   assert.equal(vm.runInContext("socialState.inbox.nextCursor", context), null);
   assert.equal(vm.runInContext("socialWorkoutInboxCanLoadMore()", context), false);
-  assert.deepEqual(jsonFrom(context, "loadMoreCalls"), [{
-    name: "social_workout_inbox_page",
-    body: {
-      p_cursor_created_at: firstPage.nextCursor.createdAt,
-      p_cursor_invite_id: firstPage.nextCursor.inviteId,
-      p_cursor_pending: true,
-      p_limit: 10
+  assert.deepEqual(jsonFrom(context, "loadMoreCalls"), [
+    {
+      name: "social_workout_inbox_page",
+      body: {
+        p_cursor_created_at: firstPage.nextCursor.createdAt,
+        p_cursor_invite_id: firstPage.nextCursor.inviteId,
+        p_cursor_pending: true,
+        p_limit: 10
+      }
+    },
+    {
+      name: "social_workout_inbox_page",
+      body: {
+        p_cursor_created_at: secondPage.nextCursor.createdAt,
+        p_cursor_invite_id: secondPage.nextCursor.inviteId,
+        p_cursor_pending: true,
+        p_limit: 3
+      }
+    },
+    {
+      name: "social_workout_inbox_page",
+      body: {
+        p_cursor_created_at: thirdPage.nextCursor.createdAt,
+        p_cursor_invite_id: thirdPage.nextCursor.inviteId,
+        p_cursor_pending: true,
+        p_limit: 4
+      }
     }
-  }]);
+  ]);
 
   const changedOutgoingPage = structuredClone(secondPage);
   changedOutgoingPage.outgoing[0].inviteRevision = 2;
@@ -2232,7 +2308,7 @@ test("workout inbox loads one explicit second page, keeps the outgoing snapshot 
   `, context);
   assert.equal(await vm.runInContext("loadMoreSocialWorkoutInbox()", context), true);
   assert.equal(vm.runInContext("snapshotRestartCount", context), 1);
-  assert.equal(vm.runInContext("socialState.inbox.incoming.length", context), 10);
+  assert.equal(vm.runInContext("socialState.inbox.incoming.length", context), 6);
   assert.equal(vm.runInContext("socialState.inboxPageCount", context), 1);
 
   vm.runInContext(`
@@ -2259,7 +2335,7 @@ test("workout inbox loads one explicit second page, keeps the outgoing snapshot 
     releaseStaleInboxPage(${JSON.stringify(secondPage)});
   `, context);
   assert.equal(await staleLoad, false);
-  assert.equal(vm.runInContext("socialState.inbox.incoming.length", context), 10);
+  assert.equal(vm.runInContext("socialState.inbox.incoming.length", context), 6);
   assert.equal(vm.runInContext("socialState.inboxLoadingMore", context), false);
 });
 
@@ -3113,7 +3189,10 @@ test("social push targets resolve only after an account-fenced authoritative ref
       id: "remote-${userId}", userId: "${userId}", remote: "supabase", name: "Owner"
     };
     accountEpoch = 31;
-    loadRemoteSession = () => ({ user: { id: "${userId}" } });
+    loadRemoteSession = () => ({
+      access_token: "social-push-session",
+      user: { id: "${userId}" }
+    });
     render = () => {};
     neutralPushToasts = 0;
     showToast = () => { neutralPushToasts += 1; };
@@ -3154,11 +3233,11 @@ test("social push targets resolve only after an account-fenced authoritative ref
   assert.equal(vm.runInContext("neutralPushToasts", context), 1);
 });
 
-test("an exact workout push may authorize the bounded second inbox page without an existence oracle", async () => {
+test("an exact workout push searches a third short cursor page and missing targets expose no oracle", async () => {
   const context = loadPwaContext();
   const userId = "11111111-1111-4111-8111-111111111111";
   const dashboard = socialDashboardFixture();
-  dashboard.pendingWorkoutInviteCount = 20;
+  dashboard.pendingWorkoutInviteCount = 12;
   const makeRows = (start, end) => Array.from({ length: end - start + 1 }, (_, offset) => {
     const value = start + offset;
     return socialWorkoutInviteMetadataFixture({
@@ -3166,11 +3245,13 @@ test("an exact workout push may authorize the bounded second inbox page without 
       createdAt: new Date(Date.UTC(2026, 7, 9, 12, 0, 21 - value)).toISOString()
     });
   });
-  const firstIncoming = makeRows(1, 10);
-  const secondIncoming = makeRows(11, 20);
+  const firstIncoming = makeRows(1, 1);
+  const secondIncoming = makeRows(2, 5);
+  const thirdIncoming = makeRows(6, 11);
+  const fourthIncoming = makeRows(12, 12);
   const firstPage = {
     version: 2,
-    pendingIncomingCount: 20,
+    pendingIncomingCount: 12,
     incoming: firstIncoming,
     outgoing: [],
     nextCursor: {
@@ -3181,8 +3262,30 @@ test("an exact workout push may authorize the bounded second inbox page without 
   };
   const secondPage = {
     version: 2,
-    pendingIncomingCount: 20,
+    pendingIncomingCount: 12,
     incoming: secondIncoming,
+    outgoing: [],
+    nextCursor: {
+      createdAt: secondIncoming.at(-1).createdAt,
+      inviteId: secondIncoming.at(-1).inviteId,
+      pending: true
+    }
+  };
+  const thirdPage = {
+    version: 2,
+    pendingIncomingCount: 12,
+    incoming: thirdIncoming,
+    outgoing: [],
+    nextCursor: {
+      createdAt: thirdIncoming.at(-1).createdAt,
+      inviteId: thirdIncoming.at(-1).inviteId,
+      pending: true
+    }
+  };
+  const fourthPage = {
+    version: 2,
+    pendingIncomingCount: 12,
+    incoming: fourthIncoming,
     outgoing: [],
     nextCursor: null
   };
@@ -3198,7 +3301,7 @@ test("an exact workout push may authorize the bounded second inbox page without 
     render = () => {};
     pushPageToasts = 0;
     showToast = () => { pushPageToasts += 1; };
-    pushPageReads = 0;
+    pushPageReads = [];
     refreshSocialData = async () => {
       socialState = {
         status: "loaded",
@@ -3215,27 +3318,45 @@ test("an exact workout push may authorize the bounded second inbox page without 
       };
     };
     socialRpc = async (name, body) => {
-      pushPageReads += 1;
-      if (name !== "social_workout_inbox_page" || body.p_limit !== 10) {
+      pushPageReads.push({ name, body });
+      if (name !== "social_workout_inbox_page") {
         throw new Error("unexpected push page read");
       }
-      return ${JSON.stringify(secondPage)};
+      if (body.p_cursor_invite_id === ${JSON.stringify(firstPage.nextCursor.inviteId)} &&
+          body.p_limit === 10) return ${JSON.stringify(secondPage)};
+      if (body.p_cursor_invite_id === ${JSON.stringify(secondPage.nextCursor.inviteId)} &&
+          body.p_limit === 6) return ${JSON.stringify(thirdPage)};
+      if (body.p_cursor_invite_id === ${JSON.stringify(thirdPage.nextCursor.inviteId)} &&
+          body.p_limit === 9) return ${JSON.stringify(fourthPage)};
+      throw new Error("unexpected push cursor or limit");
     };
   `, context);
   const target = {
     version: 1,
     target: "social",
     socialType: "workout_invite_received",
-    objectId: secondIncoming[4].inviteId,
+    objectId: fourthIncoming[0].inviteId,
     objectRevision: 1
   };
   assert.equal(await vm.runInContext(
     `openSocialPushTarget(${JSON.stringify(target)})`,
     context
   ), true);
-  assert.equal(vm.runInContext("pushPageReads", context), 1);
-  assert.equal(vm.runInContext("socialState.inbox.incoming.length", context), 20);
+  assert.equal(vm.runInContext("pushPageReads.length", context), 3);
+  assert.equal(vm.runInContext("socialState.inbox.incoming.length", context), 12);
   assert.equal(vm.runInContext("pushPageToasts", context), 0);
+
+  const missing = { ...target, objectId: `wi_${"f".repeat(32)}` };
+  assert.equal(await vm.runInContext(
+    `openSocialPushTarget(${JSON.stringify(missing)})`,
+    context
+  ), false);
+  assert.equal(vm.runInContext("pushPageReads.length", context), 6);
+  assert.deepEqual(
+    jsonFrom(context, "pushPageReads.map(call => call.name)"),
+    Array(6).fill("social_workout_inbox_page")
+  );
+  assert.equal(vm.runInContext("pushPageToasts", context), 1);
 });
 
 test("a precise live push opens only a server-visible room and fences a late account result", async () => {

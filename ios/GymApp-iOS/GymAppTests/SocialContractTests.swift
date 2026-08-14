@@ -464,7 +464,8 @@ final class SocialContractTests: XCTestCase {
 
     func testWorkoutInboxPageAndInvitePlanAreMetadataOnlyExactAndBounded() throws {
         XCTAssertEqual(SocialPayloadParser.workoutInboxPageLimit, 10)
-        XCTAssertEqual(SocialPayloadParser.workoutInboxMaximumPageCount, 2)
+        XCTAssertEqual(SocialPayloadParser.workoutInboxMaximumPendingCount, 25)
+        XCTAssertEqual(SocialPayloadParser.workoutInboxMaximumPageCount, 20)
         XCTAssertEqual(SocialPayloadParser.workoutInboxMaximumIncomingCount, 20)
         XCTAssertEqual(SocialPayloadParser.workoutInboxMaximumOutgoingCount, 20)
         let page = try SocialPayloadParser.workoutInboxPage(
@@ -484,12 +485,24 @@ final class SocialContractTests: XCTestCase {
         XCTAssertEqual(detail.workout.totalSetCount, 2)
 
         let cursorPage = try SocialPayloadParser.workoutInboxPage(
-            from: jsonData(try workoutInboxPageObject(nextCursor: true)),
-            expectedLimit: 1
+            from: jsonData(try workoutInboxPageObject(nextCursor: true))
         )
+        XCTAssertEqual(cursorPage.incoming.count, 1)
         XCTAssertEqual(cursorPage.nextCursor?.inviteID, inviteID(1))
         XCTAssertEqual(cursorPage.nextCursor?.createdAt, "2026-08-09T18:00:00Z")
         XCTAssertEqual(cursorPage.nextCursor?.pending, true)
+
+        var emptyCursorPage = try workoutInboxPageObject(nextCursor: true)
+        emptyCursorPage["incoming"] = []
+        XCTAssertThrowsError(
+            try SocialPayloadParser.workoutInboxPage(from: jsonData(emptyCursorPage))
+        )
+
+        var oversizedPendingCount = try workoutInboxPageObject()
+        oversizedPendingCount["pendingIncomingCount"] = 26
+        XCTAssertThrowsError(
+            try SocialPayloadParser.workoutInboxPage(from: jsonData(oversizedPendingCount))
+        )
 
         var leakedWorkout = try workoutInboxPageObject()
         var incoming = try XCTUnwrap(leakedWorkout["incoming"] as? [[String: Any]])
@@ -577,6 +590,43 @@ final class SocialContractTests: XCTestCase {
         )
         XCTAssertEqual(bounded.incoming.count, 20)
         XCTAssertNil(bounded.nextCursor)
+
+        let budgetedFirst = try SocialPayloadParser.workoutInboxPage(
+            from: jsonData(pagedWorkoutInboxObject(
+                inviteIndices: Array(1 ... 6),
+                pendingIncomingCount: 20,
+                hasMore: true
+            ))
+        )
+        let budgetedSecond = try SocialPayloadParser.workoutInboxPage(
+            from: jsonData(pagedWorkoutInboxObject(
+                inviteIndices: Array(7 ... 13),
+                pendingIncomingCount: 20,
+                hasMore: true
+            ))
+        )
+        let budgetedThird = try SocialPayloadParser.workoutInboxPage(
+            from: jsonData(pagedWorkoutInboxObject(
+                inviteIndices: Array(14 ... 20),
+                pendingIncomingCount: 20,
+                hasMore: true
+            )),
+            expectedLimit: 7
+        )
+        let afterBudgetedSecond = try SocialPayloadParser.mergingWorkoutInboxPage(
+            budgetedSecond,
+            into: budgetedFirst,
+            after: try XCTUnwrap(budgetedFirst.nextCursor)
+        )
+        XCTAssertEqual(afterBudgetedSecond.incoming.count, 13)
+        XCTAssertNotNil(afterBudgetedSecond.nextCursor)
+        let budgetedWindow = try SocialPayloadParser.mergingWorkoutInboxPage(
+            budgetedThird,
+            into: afterBudgetedSecond,
+            after: try XCTUnwrap(afterBudgetedSecond.nextCursor)
+        )
+        XCTAssertEqual(budgetedWindow.incoming.count, 20)
+        XCTAssertNil(budgetedWindow.nextCursor)
     }
 
     func testWorkoutInboxUsesPortableServerIdentityWithoutInferringLocalAliases() throws {
@@ -968,7 +1018,7 @@ final class SocialContractTests: XCTestCase {
         }.count, 1)
     }
 
-    func testInboxPaginationResolvesExactPushObjectBeyondFirstTen() async throws {
+    func testInboxPaginationResolvesExactPushObjectAcrossShortBudgetedPages() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("GymAppWorkoutInboxPagination", isDirectory: true)
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -978,13 +1028,18 @@ final class SocialContractTests: XCTestCase {
         let (auth, urlSession, defaults, suiteName) = try authenticatedServiceDependencies()
         let dashboardData = try jsonData(dashboardObject())
         let firstPageData = try jsonData(pagedWorkoutInboxObject(
-            inviteIndices: Array(1 ... 10),
-            pendingIncomingCount: 11,
+            inviteIndices: Array(1 ... 6),
+            pendingIncomingCount: 14,
             hasMore: true
         ))
         let secondPageData = try jsonData(pagedWorkoutInboxObject(
-            inviteIndices: [11],
-            pendingIncomingCount: 11,
+            inviteIndices: Array(7 ... 13),
+            pendingIncomingCount: 14,
+            hasMore: true
+        ))
+        let thirdPageData = try jsonData(pagedWorkoutInboxObject(
+            inviteIndices: [14],
+            pendingIncomingCount: 14,
             hasMore: false
         ))
         defer {
@@ -997,10 +1052,18 @@ final class SocialContractTests: XCTestCase {
             switch (request.url?.path, request.httpMethod) {
             case ("/rest/v1/rpc/social_workout_inbox_page", "POST"):
                 let body = try self.requestJSON(request)
-                let isFirstPage = body["p_cursor_created_at"] is NSNull
+                let cursorInviteID = body["p_cursor_invite_id"] as? String
+                let pageData: Data
+                if body["p_cursor_created_at"] is NSNull {
+                    pageData = firstPageData
+                } else if cursorInviteID == self.inviteID(6) {
+                    pageData = secondPageData
+                } else {
+                    pageData = thirdPageData
+                }
                 return try SocialURLProtocolStub.response(
                     for: request,
-                    jsonData: isFirstPage ? firstPageData : secondPageData
+                    jsonData: pageData
                 )
             default:
                 if let response = try self.baseCloudStateResponse(for: request) {
@@ -1030,31 +1093,34 @@ final class SocialContractTests: XCTestCase {
         XCTAssertTrue(accountReady)
         _ = try await appState.refreshSocialDashboard()
         let firstPage = try await appState.refreshSocialWorkoutInbox()
-        XCTAssertEqual(firstPage.incoming.count, 10)
+        XCTAssertEqual(firstPage.incoming.count, 6)
         XCTAssertNotNil(firstPage.nextCursor)
 
-        let resolvedEleventh = try await appState.resolveSocialWorkoutInvite(
-            inviteID: inviteID(11),
+        let resolvedFourteenth = try await appState.resolveSocialWorkoutInvite(
+            inviteID: inviteID(14),
             minimumRevision: 1
         )
-        XCTAssertTrue(resolvedEleventh)
-        XCTAssertEqual(appState.socialWorkoutInbox?.incoming.count, 11)
+        XCTAssertTrue(resolvedFourteenth)
+        XCTAssertEqual(appState.socialWorkoutInbox?.incoming.count, 14)
         XCTAssertNil(appState.socialWorkoutInbox?.nextCursor)
-        let resolvedTwelfth = try await appState.resolveSocialWorkoutInvite(
-            inviteID: inviteID(12),
+        let resolvedFifteenth = try await appState.resolveSocialWorkoutInvite(
+            inviteID: inviteID(15),
             minimumRevision: 1
         )
-        XCTAssertFalse(resolvedTwelfth)
+        XCTAssertFalse(resolvedFifteenth)
 
         let pageRequests = recorder.requests.filter {
             $0.url?.path == "/rest/v1/rpc/social_workout_inbox_page"
         }
-        XCTAssertEqual(pageRequests.count, 2)
+        XCTAssertEqual(pageRequests.count, 3)
         let nextBody = try requestJSON(pageRequests[1])
-        XCTAssertEqual(nextBody["p_cursor_created_at"] as? String, "2026-08-09T18:50:00Z")
-        XCTAssertEqual(nextBody["p_cursor_invite_id"] as? String, inviteID(10))
+        XCTAssertEqual(nextBody["p_cursor_created_at"] as? String, "2026-08-09T18:54:00Z")
+        XCTAssertEqual(nextBody["p_cursor_invite_id"] as? String, inviteID(6))
         XCTAssertEqual(nextBody["p_cursor_pending"] as? Bool, true)
         XCTAssertEqual(nextBody["p_limit"] as? Int, 10)
+        let finalBody = try requestJSON(pageRequests[2])
+        XCTAssertEqual(finalBody["p_cursor_invite_id"] as? String, inviteID(13))
+        XCTAssertEqual(finalBody["p_limit"] as? Int, 3)
         XCTAssertFalse(recorder.requests.contains {
             $0.url?.path == "/rest/v1/rpc/social_workout_inbox"
                 || $0.url?.path == "/rest/v1/rpc/social_workout_invite_plan"

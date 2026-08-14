@@ -175,7 +175,12 @@ test("PWA inbox pages metadata and authorizes one exact invite plan at its revis
   assert.match(inbox, /p_limit: SOCIAL_WORKOUT_INBOX_PAGE_LIMIT/);
   assert.match(appSource, /const MAX_SOCIAL_WORKOUT_INBOX_ITEMS = 20;/);
   assert.match(appSource, /const SOCIAL_WORKOUT_INBOX_PAGE_LIMIT = 10;/);
-  assert.match(appSource, /const SOCIAL_WORKOUT_INBOX_MAX_PAGES = 2;/);
+  assert.match(
+    appSource,
+    /const SOCIAL_WORKOUT_INBOX_MAX_PAGES = MAX_SOCIAL_WORKOUT_INBOX_ITEMS;/
+  );
+  assert.doesNotMatch(appSource, /incoming\.length !== expectedLimit/);
+  assert.match(appSource, /if \(!last \|\| last\.createdAt !== nextCursor\.createdAt/);
   assert.match(appSource, /JSON\.stringify\(current\.outgoing\) !== JSON\.stringify\(next\.outgoing\)/);
   assert.match(appSource, /incoming\.length > MAX_SOCIAL_WORKOUT_INBOX_ITEMS/);
   assert.match(inbox, /inboxPageCount < SOCIAL_WORKOUT_INBOX_MAX_PAGES/);

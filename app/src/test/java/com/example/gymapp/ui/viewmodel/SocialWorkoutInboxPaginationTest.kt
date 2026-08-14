@@ -16,7 +16,7 @@ import org.junit.Test
 
 class SocialWorkoutInboxPaginationTest {
     @Test
-    fun metadataPagesAppendInStableOrderAndStopAfterTheSecondPage() {
+    fun metadataPagesAppendInStableOrderAndContinueWhileTheCursorMakesProgress() {
         val first = SocialWorkoutInbox(
             pendingIncomingCount = 2,
             incoming = listOf(invite(2)),
@@ -36,11 +36,8 @@ class SocialWorkoutInboxPaginationTest {
         assertEquals(listOf(inviteId(2), inviteId(1)), merged.incoming.map { it.inviteId })
         assertEquals(2, merged.pendingIncomingCount)
         assertEquals(2, merged.loadedPageCount)
-        assertEquals(null, merged.nextCursor)
-        assertFalse(merged.hasAnotherBoundedPage())
-        assertThrows(IllegalArgumentException::class.java) {
-            mergeSocialWorkoutInboxPage(merged, next.copy(nextCursor = null))
-        }
+        assertEquals(cursor(1), merged.nextCursor)
+        assertTrue(merged.hasAnotherBoundedPage())
     }
 
     @Test
@@ -64,6 +61,83 @@ class SocialWorkoutInboxPaginationTest {
         assertEquals((20 downTo 1).map(::inviteId), merged.incoming.map { it.inviteId })
         assertEquals(null, merged.nextCursor)
         assertFalse(merged.hasAnotherBoundedPage())
+    }
+
+    @Test
+    fun shortBudgetedPagesCanContinuePastPageTwoButStillStopAtTwentyItems() {
+        val outgoing = listOf(outgoing(100))
+        val first = SocialWorkoutInbox(
+            pendingIncomingCount = 20,
+            incoming = (20 downTo 15).map(::invite),
+            outgoing = outgoing,
+            nextCursor = cursor(15)
+        )
+        val second = SocialWorkoutInbox(
+            pendingIncomingCount = 20,
+            incoming = (14 downTo 8).map(::invite),
+            outgoing = outgoing,
+            nextCursor = cursor(8)
+        )
+        val third = SocialWorkoutInbox(
+            pendingIncomingCount = 20,
+            incoming = (7 downTo 1).map(::invite),
+            outgoing = outgoing,
+            nextCursor = cursor(1)
+        )
+
+        val afterSecond = mergeSocialWorkoutInboxPage(first, second)
+        assertEquals(13, afterSecond.incoming.size)
+        assertEquals(2, afterSecond.loadedPageCount)
+        assertEquals(cursor(8), afterSecond.nextCursor)
+        assertTrue(afterSecond.hasAnotherBoundedPage())
+
+        val bounded = mergeSocialWorkoutInboxPage(afterSecond, third)
+        assertEquals(20, bounded.incoming.size)
+        assertEquals(3, bounded.loadedPageCount)
+        assertEquals(outgoing, bounded.outgoing)
+        assertNull(bounded.nextCursor)
+        assertFalse(bounded.hasAnotherBoundedPage())
+    }
+
+    @Test
+    fun oneLoadMoreActionLoopsAcrossShortPagesButAddsAtMostTenRows() = runBlocking {
+        val outgoing = listOf(outgoing(100))
+        val first = SocialWorkoutInbox(
+            pendingIncomingCount = 20,
+            incoming = (20 downTo 15).map(::invite),
+            outgoing = outgoing,
+            nextCursor = cursor(15)
+        )
+        val second = SocialWorkoutInbox(
+            pendingIncomingCount = 20,
+            incoming = (14 downTo 8).map(::invite),
+            outgoing = outgoing,
+            nextCursor = cursor(8)
+        )
+        val third = SocialWorkoutInbox(
+            pendingIncomingCount = 20,
+            incoming = (7 downTo 5).map(::invite),
+            outgoing = outgoing,
+            nextCursor = cursor(5)
+        )
+        val calls = mutableListOf<Pair<SocialWorkoutInboxCursor?, Int>>()
+
+        val loaded = loadNextSocialWorkoutInboxPage(
+            current = first,
+            isRequestCurrent = { true },
+            loadPage = { requestedCursor, requestedLimit ->
+                calls += requestedCursor to requestedLimit
+                if (requestedCursor == cursor(15)) second else third
+            }
+        )
+
+        assertEquals(listOf(cursor(15) to 10, cursor(8) to 3), calls)
+        val inbox = checkNotNull(loaded).inbox
+        assertEquals(16, inbox.incoming.size)
+        assertEquals(3, inbox.loadedPageCount)
+        assertEquals(cursor(5), inbox.nextCursor)
+        assertEquals(outgoing, inbox.outgoing)
+        assertTrue(inbox.hasAnotherBoundedPage())
     }
 
     @Test

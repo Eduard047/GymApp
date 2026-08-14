@@ -151,7 +151,7 @@ test("both production release entry points reject missing Firebase path and hash
     await assert.rejects(
       execFileAsync(
         "pwsh",
-        ["-NoProfile", "-File", script, "-VersionName", "3.0.10", "-VersionCode", "2000320890"],
+        ["-NoProfile", "-File", script, "-VersionName", "3.1.0", "-VersionCode", "2000320891"],
         { env: cleanEnvironment }
       ),
       (error) => {

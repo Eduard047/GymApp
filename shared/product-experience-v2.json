@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "productVersion": "3.0.10",
+  "productVersion": "3.1.0",
   "fullClients": ["android", "ios", "pwa"],
   "wearableClient": "garmin",
   "terminology": {
@@ -179,18 +179,27 @@
     "pushTarget": {
       "preserve": ["type", "opaqueObjectId", "revision", "accountBinding"],
       "openAfterAuthoritativeRefresh": true,
+      "workoutInviteResolution": "boundedCursorSearchUntilFoundCursorEndsOrWindowCaps",
       "missingOrRevokedFallback": "genericSocialSurfaceWithoutExistenceOracle"
     },
     "workoutInbox": {
       "listPayload": "metadataOnly",
       "planPayload": "separateBoundedOwnerAuthorizedFetch",
       "incomingPageSize": 10,
-      "maximumPages": 2,
+      "incomingPageMayBeShort": true,
+      "cursorRequiresNonemptyPage": true,
+      "cursorMatchesLastIncomingRow": true,
+      "maximumPages": 20,
+      "maximumRpcPageRequests": 20,
+      "maximumPendingIncomingCount": 25,
       "maximumIncomingItems": 20,
       "maximumOutgoingItems": 20,
       "maximumRenderedItems": 40,
       "maximumResponseBytes": 262144,
-      "pagination": "stableIncomingCursorWithIdenticalOutgoingSnapshot",
+      "pagination": "serverBudgetedStableIncomingCursorWithIdenticalOutgoingSnapshot",
+      "snapshotMismatch": "replaceWithFreshFirstPage",
+      "loadMoreChunkMaximumItems": 10,
+      "loadMoreFetch": "boundedLoopUntilChunkFullCursorEndsOrWindowCaps",
       "loadMoreAction": "visibleOnlyWhenNextCursorExists"
     },
     "realtime": {

@@ -119,32 +119,46 @@ internal suspend fun loadNextSocialWorkoutInboxPage(
     ) -> SocialWorkoutInbox
 ): SocialWorkoutInboxPageLoadResult? {
     require(current.hasAnotherBoundedPage())
-    val cursor = requireNotNull(current.nextCursor)
-    val remaining = SOCIAL_MAX_WORKOUT_INBOX_ITEMS - current.incoming.size
-    require(remaining > 0)
-    if (!isRequestCurrent()) return null
-
-    val next = loadPage(
-        cursor,
-        minOf(SOCIAL_WORKOUT_INBOX_PAGE_SIZE, remaining)
+    val maximumNewRows = minOf(
+        SOCIAL_WORKOUT_INBOX_PAGE_SIZE,
+        SOCIAL_MAX_WORKOUT_INBOX_ITEMS - current.incoming.size
     )
-    if (!isRequestCurrent()) return null
+    require(maximumNewRows > 0)
 
-    if (hasSocialWorkoutInboxSnapshotChanged(current, next)) {
-        // A count/outgoing change means the cursor page belongs to a different
-        // authoritative snapshot. Replace it with one fresh bounded first page;
-        // never combine rows across those snapshots.
-        val refreshedFirstPage = loadPage(null, SOCIAL_WORKOUT_INBOX_PAGE_SIZE)
-        if (!isRequestCurrent()) return null
-        require(refreshedFirstPage.loadedPageCount == 1)
-        return SocialWorkoutInboxPageLoadResult(
-            inbox = refreshedFirstPage,
-            replacedChangedSnapshot = true
+    var merged = current
+    var loadedRows = 0
+    while (loadedRows < maximumNewRows && merged.hasAnotherBoundedPage()) {
+        val cursor = requireNotNull(merged.nextCursor)
+        val limit = minOf(
+            SOCIAL_WORKOUT_INBOX_PAGE_SIZE,
+            maximumNewRows - loadedRows,
+            SOCIAL_MAX_WORKOUT_INBOX_ITEMS - merged.incoming.size
         )
+        require(limit > 0)
+        if (!isRequestCurrent()) return null
+        val next = loadPage(cursor, limit)
+        if (!isRequestCurrent()) return null
+
+        if (hasSocialWorkoutInboxSnapshotChanged(current, next)) {
+            // A count/outgoing change means the cursor page belongs to a different
+            // authoritative snapshot. Replace it with one fresh bounded first page;
+            // never combine rows across those snapshots.
+            val refreshedFirstPage = loadPage(null, SOCIAL_WORKOUT_INBOX_PAGE_SIZE)
+            if (!isRequestCurrent()) return null
+            require(refreshedFirstPage.loadedPageCount == 1)
+            return SocialWorkoutInboxPageLoadResult(
+                inbox = refreshedFirstPage,
+                replacedChangedSnapshot = true
+            )
+        }
+
+        val previousCount = merged.incoming.size
+        merged = mergeSocialWorkoutInboxPage(merged, next)
+        loadedRows += merged.incoming.size - previousCount
     }
 
     return SocialWorkoutInboxPageLoadResult(
-        inbox = mergeSocialWorkoutInboxPage(current, next),
+        inbox = merged,
         replacedChangedSnapshot = false
     )
 }

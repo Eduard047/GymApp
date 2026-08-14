@@ -21,7 +21,10 @@ internal const val SOCIAL_MAX_EXERCISE_RECORDS = 100
 internal const val SOCIAL_MAX_WORKOUT_INVITES = 25
 internal const val SOCIAL_WORKOUT_INBOX_PAGE_SIZE = 10
 internal const val SOCIAL_MAX_WORKOUT_INBOX_ITEMS = 20
-internal const val SOCIAL_MAX_WORKOUT_INBOX_PAGE_COUNT = 2
+// A response-budgeted page may contain only one row while still returning a
+// cursor. Requiring every cursor page to make progress keeps twenty requests a
+// strict upper bound for the twenty-row client window.
+internal const val SOCIAL_MAX_WORKOUT_INBOX_PAGE_COUNT = SOCIAL_MAX_WORKOUT_INBOX_ITEMS
 internal const val SOCIAL_MAX_FRIEND_WORKOUT_PAGE = 5
 internal const val SOCIAL_MAX_FRIEND_WORKOUT_SETS = 100
 internal const val SOCIAL_MAX_INVITE_JSON_BYTES = 32 * 1_024
@@ -644,8 +647,7 @@ internal fun parseSocialWorkoutInboxPage(
     if (cursor != null) {
         val last = incoming.lastOrNull()
         require(
-            incoming.size == expectedLimit &&
-                last != null &&
+            last != null &&
                 cursor.createdAt == last.createdAt &&
                 cursor.inviteId == last.inviteId &&
                 cursor.pending == (last.status == "pending")

@@ -467,6 +467,7 @@ final class CloudSyncService: ObservableObject {
     func socialWorkoutInbox(expectedUserID: String? = nil) async throws -> SocialWorkoutInbox {
         try await socialWorkoutInboxPage(
             after: nil,
+            limit: SocialPayloadParser.workoutInboxPageLimit,
             permitsLegacyFallback: true,
             expectedUserID: expectedUserID
         )
@@ -474,13 +475,16 @@ final class CloudSyncService: ObservableObject {
 
     func socialWorkoutInboxPage(
         after cursor: SocialWorkoutInboxCursor,
+        limit: Int = SocialPayloadParser.workoutInboxPageLimit,
         expectedUserID: String? = nil
     ) async throws -> SocialWorkoutInbox {
-        guard SocialPayloadParser.isValidWorkoutInboxCursor(cursor) else {
+        guard SocialPayloadParser.isValidWorkoutInboxCursor(cursor),
+              (1 ... SocialPayloadParser.workoutInboxPageLimit).contains(limit) else {
             throw CloudSyncError.invalidResponse
         }
         return try await socialWorkoutInboxPage(
             after: cursor,
+            limit: limit,
             permitsLegacyFallback: false,
             expectedUserID: expectedUserID
         )
@@ -488,12 +492,15 @@ final class CloudSyncService: ObservableObject {
 
     private func socialWorkoutInboxPage(
         after cursor: SocialWorkoutInboxCursor?,
+        limit: Int,
         permitsLegacyFallback: Bool,
         expectedUserID: String?
     ) async throws -> SocialWorkoutInbox {
+        guard (1 ... SocialPayloadParser.workoutInboxPageLimit).contains(limit) else {
+            throw CloudSyncError.invalidResponse
+        }
         let data: Data
         do {
-            let limit = SocialPayloadParser.workoutInboxPageLimit
             var body: [String: Any] = [
                 "p_cursor_created_at": NSNull(),
                 "p_cursor_invite_id": NSNull(),
@@ -534,7 +541,7 @@ final class CloudSyncService: ObservableObject {
         do {
             return try SocialPayloadParser.workoutInboxPage(
                 from: data,
-                expectedLimit: SocialPayloadParser.workoutInboxPageLimit
+                expectedLimit: limit
             )
         } catch {
             throw CloudSyncError.invalidResponse
