@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { createHash } from "node:crypto";
 import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -34,8 +33,24 @@ const syntheticFirebaseConfig = Object.freeze({
   ],
 });
 
-function sha256(bytes) {
-  return createHash("sha256").update(bytes).digest("hex");
+async function fileIntegrityDigest(configPath) {
+  const { stdout } = await execFileAsync(
+    "pwsh",
+    [
+      "-NoProfile",
+      "-Command",
+      "(Get-FileHash -Algorithm SHA256 -LiteralPath $env:GYMAPP_TEST_HASH_PATH).Hash.ToLowerInvariant()",
+    ],
+    {
+      env: {
+        ...process.env,
+        GYMAPP_TEST_HASH_PATH: configPath,
+      },
+    }
+  );
+  const digest = stdout.trim();
+  assert.match(digest, /^[a-f0-9]{64}$/);
+  return digest;
 }
 
 async function writeConfig(directory, name, value, mode = 0o600) {
@@ -43,7 +58,7 @@ async function writeConfig(directory, name, value, mode = 0o600) {
   const bytes = Buffer.from(JSON.stringify(value), "utf8");
   await writeFile(configPath, bytes, { mode });
   await chmod(configPath, mode);
-  return { configPath, digest: sha256(bytes) };
+  return { configPath, digest: await fileIntegrityDigest(configPath) };
 }
 
 async function runGate(configPath, expectedSha256, root = projectRoot) {

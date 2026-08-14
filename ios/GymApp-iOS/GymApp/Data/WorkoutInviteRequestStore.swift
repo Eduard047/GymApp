@@ -21,7 +21,7 @@ enum WorkoutInviteRequestStoreError: LocalizedError, Equatable, Sendable {
 /// Durable, account-bound idempotency journal for workout invitations whose network
 /// outcome is unknown. It intentionally stores only a canonical payload digest and
 /// opaque identifiers, never the workout payload, access token, or friend display data.
-final class WorkoutInviteRequestStore {
+final class WorkoutInviteRequestStore: @unchecked Sendable {
     private struct Entry: Codable, Equatable {
         let profileID: String
         let canonicalWorkoutDigest: Data
@@ -38,9 +38,14 @@ final class WorkoutInviteRequestStore {
     static let maximumEntries = 25
     private static let schemaVersion = 1
     private static let maximumFileBytes = 32 * 1_024
+    /// Multiple in-flight sends intentionally use separate store instances. Keep
+    /// their read/validate/mutate/atomic-write sequence indivisible so a response
+    /// for one invitation cannot replace a newer unresolved idempotency key.
+    private static let journalLock = NSLock()
 
     let storageURL: URL
-    private var envelope: Envelope
+    private let accountStorageKey: String
+    private let userID: String
 
     init(
         accountStorageKey: String,
@@ -49,26 +54,28 @@ final class WorkoutInviteRequestStore {
         fileManager: FileManager = .default
     ) throws {
         let resolvedStorageURL = Self.storageURL(forWorkoutStorageURL: workoutStorageURL)
-        let loadedEnvelope: Envelope
+        let emptyEnvelope = Envelope(
+            schemaVersion: Self.schemaVersion,
+            accountStorageKey: accountStorageKey,
+            userID: userID,
+            entries: []
+        )
         do {
-            try fileManager.createDirectory(
-                at: resolvedStorageURL.deletingLastPathComponent(),
-                withIntermediateDirectories: true
-            )
-            try Self.excludeFromBackup(resolvedStorageURL.deletingLastPathComponent())
-            if fileManager.fileExists(atPath: resolvedStorageURL.path) {
-                loadedEnvelope = try Self.load(
-                    accountStorageKey: accountStorageKey,
-                    userID: userID,
-                    storageURL: resolvedStorageURL
+            try Self.journalLock.withLock {
+                try fileManager.createDirectory(
+                    at: resolvedStorageURL.deletingLastPathComponent(),
+                    withIntermediateDirectories: true
                 )
-            } else {
-                loadedEnvelope = Envelope(
-                    schemaVersion: Self.schemaVersion,
-                    accountStorageKey: accountStorageKey,
-                    userID: userID,
-                    entries: []
-                )
+                try Self.excludeFromBackup(resolvedStorageURL.deletingLastPathComponent())
+                if fileManager.fileExists(atPath: resolvedStorageURL.path) {
+                    _ = try Self.load(
+                        accountStorageKey: accountStorageKey,
+                        userID: userID,
+                        storageURL: resolvedStorageURL
+                    )
+                } else {
+                    try Self.validate(emptyEnvelope)
+                }
             }
         } catch let error as WorkoutInviteRequestStoreError {
             throw error
@@ -76,7 +83,8 @@ final class WorkoutInviteRequestStore {
             throw WorkoutInviteRequestStoreError.storageUnavailable
         }
         self.storageURL = resolvedStorageURL
-        self.envelope = loadedEnvelope
+        self.accountStorageKey = accountStorageKey
+        self.userID = userID
     }
 
     static func storageURL(forWorkoutStorageURL workoutStorageURL: URL) -> URL {
@@ -90,37 +98,62 @@ final class WorkoutInviteRequestStore {
             profileID: profileID,
             canonicalWorkoutDigest: canonicalWorkoutDigest
         )
-        if let existing = envelope.entries.first(where: {
-            $0.profileID == profileID &&
-                $0.canonicalWorkoutDigest == canonicalWorkoutDigest
-        }) {
-            return existing.clientRequestID
+        return try Self.journalLock.withLock {
+            var candidate = try currentEnvelope()
+            if let existing = candidate.entries.first(where: {
+                $0.profileID == profileID &&
+                    $0.canonicalWorkoutDigest == canonicalWorkoutDigest
+            }) {
+                return existing.clientRequestID
+            }
+            guard candidate.entries.count < Self.maximumEntries else {
+                throw WorkoutInviteRequestStoreError.capacityReached
+            }
+            let entry = Entry(
+                profileID: profileID,
+                canonicalWorkoutDigest: canonicalWorkoutDigest,
+                clientRequestID: UUID()
+            )
+            candidate.entries.append(entry)
+            try persist(candidate)
+            return entry.clientRequestID
         }
-        guard envelope.entries.count < Self.maximumEntries else {
-            throw WorkoutInviteRequestStoreError.capacityReached
-        }
-        let entry = Entry(
-            profileID: profileID,
-            canonicalWorkoutDigest: canonicalWorkoutDigest,
-            clientRequestID: UUID()
-        )
-        var candidate = envelope
-        candidate.entries.append(entry)
-        try persist(candidate)
-        envelope = candidate
-        return entry.clientRequestID
     }
 
     func confirm(profileID: String, canonicalWorkoutDigest: Data, clientRequestID: UUID) throws {
-        guard let index = envelope.entries.firstIndex(where: {
-            $0.profileID == profileID &&
-                $0.canonicalWorkoutDigest == canonicalWorkoutDigest &&
-                $0.clientRequestID == clientRequestID
-        }) else { return }
-        var candidate = envelope
-        candidate.entries.remove(at: index)
-        try persist(candidate)
-        envelope = candidate
+        try Self.validateFingerprint(
+            profileID: profileID,
+            canonicalWorkoutDigest: canonicalWorkoutDigest
+        )
+        try Self.journalLock.withLock {
+            guard FileManager.default.fileExists(atPath: storageURL.path) else { return }
+            var candidate = try currentEnvelope()
+            guard let index = candidate.entries.firstIndex(where: {
+                $0.profileID == profileID &&
+                    $0.canonicalWorkoutDigest == canonicalWorkoutDigest &&
+                    $0.clientRequestID == clientRequestID
+            }) else { return }
+            candidate.entries.remove(at: index)
+            try persist(candidate)
+        }
+    }
+
+    private func currentEnvelope() throws -> Envelope {
+        if FileManager.default.fileExists(atPath: storageURL.path) {
+            return try Self.load(
+                accountStorageKey: accountStorageKey,
+                userID: userID,
+                storageURL: storageURL
+            )
+        }
+        let emptyEnvelope = Envelope(
+            schemaVersion: Self.schemaVersion,
+            accountStorageKey: accountStorageKey,
+            userID: userID,
+            entries: []
+        )
+        try Self.validate(emptyEnvelope)
+        return emptyEnvelope
     }
 
     private func persist(_ candidate: Envelope) throws {

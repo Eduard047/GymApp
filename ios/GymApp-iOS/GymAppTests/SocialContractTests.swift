@@ -1701,6 +1701,186 @@ final class SocialContractTests: XCTestCase {
         )
     }
 
+    func testWorkoutInviteRetryJournalMergesConcurrentStoreInterleaving() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("GymAppWorkoutInviteJournalConcurrent", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let workoutURL = directory.appendingPathComponent("account.json")
+        let firstProfile = profileID(2)
+        let secondProfile = profileID(3)
+        let firstDigest = Data(repeating: 0xA1, count: 32)
+        let secondDigest = Data(repeating: 0xB2, count: 32)
+        let accountStorageKey = "cloud_\(cloudUserID)"
+
+        // Both instances take their initial view before either request is recorded,
+        // matching two sends that begin together and then interleave on disk.
+        let firstStore = try WorkoutInviteRequestStore(
+            accountStorageKey: accountStorageKey,
+            userID: cloudUserID,
+            workoutStorageURL: workoutURL
+        )
+        let secondStore = try WorkoutInviteRequestStore(
+            accountStorageKey: accountStorageKey,
+            userID: cloudUserID,
+            workoutStorageURL: workoutURL
+        )
+        let firstTask = Task.detached {
+            try firstStore.requestID(
+                profileID: firstProfile,
+                canonicalWorkoutDigest: firstDigest
+            )
+        }
+        let secondTask = Task.detached {
+            try secondStore.requestID(
+                profileID: secondProfile,
+                canonicalWorkoutDigest: secondDigest
+            )
+        }
+        let firstRequestID = try await firstTask.value
+        let secondRequestID = try await secondTask.value
+
+        let relaunched = try WorkoutInviteRequestStore(
+            accountStorageKey: accountStorageKey,
+            userID: cloudUserID,
+            workoutStorageURL: workoutURL
+        )
+        XCTAssertEqual(
+            try relaunched.requestID(
+                profileID: firstProfile,
+                canonicalWorkoutDigest: firstDigest
+            ),
+            firstRequestID
+        )
+        XCTAssertEqual(
+            try relaunched.requestID(
+                profileID: secondProfile,
+                canonicalWorkoutDigest: secondDigest
+            ),
+            secondRequestID
+        )
+    }
+
+    func testWorkoutInviteRetryJournalKeepsLostResponseUUIDAfterOtherSendConfirms() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("GymAppWorkoutInviteJournalLostResponse", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let workoutURL = directory.appendingPathComponent("account.json")
+        let accountStorageKey = "cloud_\(cloudUserID)"
+        let confirmedProfile = profileID(2)
+        let unresolvedProfile = profileID(3)
+        let confirmedDigest = Data(repeating: 0xC3, count: 32)
+        let unresolvedDigest = Data(repeating: 0xD4, count: 32)
+
+        let confirmedStore = try WorkoutInviteRequestStore(
+            accountStorageKey: accountStorageKey,
+            userID: cloudUserID,
+            workoutStorageURL: workoutURL
+        )
+        let confirmedRequestID = try confirmedStore.requestID(
+            profileID: confirmedProfile,
+            canonicalWorkoutDigest: confirmedDigest
+        )
+        let unresolvedStore = try WorkoutInviteRequestStore(
+            accountStorageKey: accountStorageKey,
+            userID: cloudUserID,
+            workoutStorageURL: workoutURL
+        )
+        let unresolvedRequestID = try unresolvedStore.requestID(
+            profileID: unresolvedProfile,
+            canonicalWorkoutDigest: unresolvedDigest
+        )
+
+        // The first response succeeds while the second response is lost. Cleanup
+        // must remove only the confirmed triple, even though this store predates
+        // the unresolved entry written by the other send.
+        try confirmedStore.confirm(
+            profileID: confirmedProfile,
+            canonicalWorkoutDigest: confirmedDigest,
+            clientRequestID: confirmedRequestID
+        )
+
+        let relaunched = try WorkoutInviteRequestStore(
+            accountStorageKey: accountStorageKey,
+            userID: cloudUserID,
+            workoutStorageURL: workoutURL
+        )
+        XCTAssertEqual(
+            try relaunched.requestID(
+                profileID: unresolvedProfile,
+                canonicalWorkoutDigest: unresolvedDigest
+            ),
+            unresolvedRequestID,
+            "A retry after process restart must reuse the UUID whose response was lost."
+        )
+        XCTAssertNotEqual(
+            try relaunched.requestID(
+                profileID: confirmedProfile,
+                canonicalWorkoutDigest: confirmedDigest
+            ),
+            confirmedRequestID,
+            "A server-confirmed UUID must be released without deleting another send."
+        )
+    }
+
+    func testWorkoutInviteRetryJournalRejectsStaleStoreAfterAccountReplacement() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("GymAppWorkoutInviteJournalAccountFence", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let workoutURL = directory.appendingPathComponent("account.json")
+        let staleDigest = Data(repeating: 0xE5, count: 32)
+        let replacementDigest = Data(repeating: 0xF6, count: 32)
+        let staleProfile = profileID(2)
+        let replacementProfile = profileID(3)
+        let replacementUserID = "10000000-0000-4000-8000-000000000002"
+
+        let staleStore = try WorkoutInviteRequestStore(
+            accountStorageKey: "cloud_\(cloudUserID)",
+            userID: cloudUserID,
+            workoutStorageURL: workoutURL
+        )
+        let staleRequestID = try staleStore.requestID(
+            profileID: staleProfile,
+            canonicalWorkoutDigest: staleDigest
+        )
+        try FileManager.default.removeItem(at: staleStore.storageURL)
+
+        let replacementStore = try WorkoutInviteRequestStore(
+            accountStorageKey: "cloud_\(replacementUserID)",
+            userID: replacementUserID,
+            workoutStorageURL: workoutURL
+        )
+        let replacementRequestID = try replacementStore.requestID(
+            profileID: replacementProfile,
+            canonicalWorkoutDigest: replacementDigest
+        )
+
+        XCTAssertThrowsError(try staleStore.confirm(
+            profileID: staleProfile,
+            canonicalWorkoutDigest: staleDigest,
+            clientRequestID: staleRequestID
+        )) {
+            XCTAssertEqual($0 as? WorkoutInviteRequestStoreError, .invalidState)
+        }
+        let relaunchedReplacement = try WorkoutInviteRequestStore(
+            accountStorageKey: "cloud_\(replacementUserID)",
+            userID: replacementUserID,
+            workoutStorageURL: workoutURL
+        )
+        XCTAssertEqual(
+            try relaunchedReplacement.requestID(
+                profileID: replacementProfile,
+                canonicalWorkoutDigest: replacementDigest
+            ),
+            replacementRequestID
+        )
+    }
+
     func testAccountTransitionRejectsLateSocialResponse() async throws {
         let started = expectation(description: "social request started")
         let release = DispatchSemaphore(value: 0)
